@@ -75,6 +75,7 @@
 #ifdef MODULE_GLTF_ENABLED
 #include "extensions/openxr_render_model_extension.h"
 #endif
+#include "extensions/openxr_user_presence_extension.h"
 #include "extensions/openxr_valve_analog_threshold_extension.h"
 #include "extensions/openxr_valve_controller_extension.h"
 #include "extensions/openxr_visibility_mask_extension.h"
@@ -134,6 +135,7 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 		FOUNDRY_REGISTER_CLASS(OpenXRRenderModelExtension);
 #endif
 		FOUNDRY_REGISTER_CLASS(OpenXRAndroidThreadSettingsExtension);
+		FOUNDRY_REGISTER_CLASS(OpenXRUserPresenceExtension);
 
 		// Note, we're not registering all wrapper classes here, there is no point in exposing them
 		// if there isn't specific logic to expose.
@@ -205,6 +207,11 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 			OpenXRAndroidThreadSettingsExtension *android_thread_settings = memnew(OpenXRAndroidThreadSettingsExtension);
 			OpenXRAPI::register_extension_wrapper(android_thread_settings);
 			Engine::get_singleton()->add_singleton(Engine::Singleton("OpenXRAndroidThreadSettingsExtension", android_thread_settings));
+
+			// Register user presence extension as a singleton
+			OpenXRUserPresenceExtension *user_presence_extension = memnew(OpenXRUserPresenceExtension);
+			OpenXRAPI::register_extension_wrapper(user_presence_extension);
+			Engine::get_singleton()->add_singleton(Engine::Singleton("OpenXRUserPresenceExtension", user_presence_extension));
 
 			// register gated extensions
 			if (int(GLOBAL_GET("xr/openxr/extensions/debug_utils")) > 0) {
