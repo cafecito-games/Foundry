@@ -1150,7 +1150,7 @@ def generate_vs_project(env, original_args, project_name="foundry"):
         sys.modules.pop("msvs")
 
     extensions = {}
-    extensions["headers"] = [".h", ".hh", ".hpp", ".hxx", ".inc"]
+    extensions["headers"] = [".h", ".hh", ".hpp", ".hxx", ".inc", ".inl"]
     extensions["sources"] = [".c", ".cc", ".cpp", ".cxx", ".m", ".mm", ".java"]
     extensions["others"] = [".natvis", ".glsl", ".rc"]
 
