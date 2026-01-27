@@ -906,8 +906,12 @@ void EditorBuildProfileManager::_detect_from_project() {
 	const LocalVector<String> hardcoded_classes = {
 		"Font",
 		"InputEvent",
+		"MainLoop",
+		"Mutex",
 		"ShaderInclude",
+		"ShaderIncludeDB",
 		"StyleBox",
+		"Time",
 		"Window",
 	};
 
