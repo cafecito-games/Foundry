@@ -135,7 +135,6 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 		FOUNDRY_REGISTER_CLASS(OpenXRRenderModelExtension);
 #endif
 		FOUNDRY_REGISTER_CLASS(OpenXRAndroidThreadSettingsExtension);
-		FOUNDRY_REGISTER_CLASS(OpenXRUserPresenceExtension);
 
 		// Note, we're not registering all wrapper classes here, there is no point in exposing them
 		// if there isn't specific logic to expose.
@@ -211,7 +210,6 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 			// Register user presence extension as a singleton
 			OpenXRUserPresenceExtension *user_presence_extension = memnew(OpenXRUserPresenceExtension);
 			OpenXRAPI::register_extension_wrapper(user_presence_extension);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("OpenXRUserPresenceExtension", user_presence_extension));
 
 			// register gated extensions
 			if (int(GLOBAL_GET("xr/openxr/extensions/debug_utils")) > 0) {
