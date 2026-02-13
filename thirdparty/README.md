@@ -419,6 +419,7 @@ Patches:
 
 - `0001-apple-disable-absolute-paths.patch` ([GH-92010](https://github.com/godotengine/godot/pull/92010))
 - `0002-gcc15-include-fix.patch` ([GH-102022](https://github.com/godotengine/godot/pull/102022))
+- `0002-apple-m1-msaa-fix.patch` ([GH-115893](https://github.com/godotengine/godot/issues/115893))
 
 
 ## graphite
