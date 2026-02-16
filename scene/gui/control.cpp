@@ -1696,6 +1696,8 @@ void Control::update_minimum_size() {
 	}
 
 	if (!is_visible_in_tree()) {
+		// Invalidate the last minimum size so it will update when made visible.
+		data.last_minimum_size = Size2(-1, -1);
 		return;
 	}
 
