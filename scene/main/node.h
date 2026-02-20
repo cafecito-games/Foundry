@@ -32,6 +32,8 @@
 
 #include "core/input/input_event.h"
 #include "core/io/resource.h"
+#include "core/object/object.h"
+#include "core/object/ref_counted.h"
 #include "core/string/node_path.h"
 #include "core/templates/iterable.h"
 #include "core/variant/typed_array.h"
