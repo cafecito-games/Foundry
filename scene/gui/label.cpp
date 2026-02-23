@@ -30,7 +30,9 @@
 
 #include "label.h"
 
-#include "scene/gui/container.h"
+#include "core/object/callable_method_pointer.h"
+#include "core/object/class_db.h"
+#include "scene/main/scene_tree.h"
 #include "scene/theme/theme_db.h"
 #include "servers/text/text_server.h"
 
@@ -150,7 +152,11 @@ void Label::_shape() const {
 		if (maximum_width <= 0) {
 			maximum_width = 1;
 		}
-		width = maximum_width;
+		if (width > 0) {
+			width = MIN(width, maximum_width);
+		} else {
+			width = maximum_width;
+		}
 	}
 
 	if (text_dirty) {
@@ -257,7 +263,7 @@ void Label::_shape() const {
 	bool lines_hidden = visible_lines > 0 && visible_lines < total_line_count;
 
 	int line_index = 0;
-	if (autowrap_mode == TextServer::AUTOWRAP_OFF) {
+	if (autowrap_mode == TextServer::AUTOWRAP_OFF || wrap_with_max_width) {
 		minsize.width = 0.0f;
 	}
 	for (Paragraph &para : paragraphs) {
@@ -267,6 +273,8 @@ void Label::_shape() const {
 					minsize.width = TS->shaped_text_get_size(line_rid).x;
 				}
 			}
+		} else if (wrap_with_max_width) {
+			minsize.width = MAX(minsize.width, TS->shaped_text_get_size(para.text_rid).x);
 		}
 
 		if (para.lines_dirty) {
@@ -345,6 +353,9 @@ void Label::_shape() const {
 			para.lines_dirty = false;
 		}
 		line_index += para.lines_rid.size();
+	}
+	if (wrap_with_max_width && maximum_width > 0) {
+		minsize.width = MIN(minsize.width, maximum_width);
 	}
 
 	_update_visible();
@@ -983,6 +994,9 @@ Size2 Label::get_minimum_size() const {
 	_ensure_shaped();
 
 	Size2 min_size = minsize;
+	Size2 combined_maximum_size = get_combined_maximum_size();
+	bool wrap_with_max_width = autowrap_mode != TextServer::AUTOWRAP_OFF && combined_maximum_size.x > 0;
+	bool overrun_with_max_width = autowrap_mode == TextServer::AUTOWRAP_OFF && combined_maximum_size.x > 0 && (clip || overrun_behavior != TextServer::OVERRUN_NO_TRIMMING);
 
 	const Ref<Font> &font = (settings.is_valid() && settings->get_font().is_valid()) ? settings->get_font() : theme_cache.font;
 	int font_size = settings.is_valid() ? settings->get_font_size() : theme_cache.font_size;
@@ -997,12 +1011,25 @@ Size2 Label::get_minimum_size() const {
 		} else if (clip || overrun_behavior != TextServer::OVERRUN_NO_TRIMMING) {
 			min_size.height = 1;
 		}
-		return Size2(1, min_size.height) + min_style;
+		if (wrap_with_max_width) {
+			min_size.width = MAX(1, min_size.width);
+			return min_size + min_style;
+		} else {
+			return Size2(1, min_size.height) + min_style;
+		}
 	} else {
 		if (clip || overrun_behavior != TextServer::OVERRUN_NO_TRIMMING) {
-			min_size.width = 1;
+			if (overrun_with_max_width) {
+				min_size.width = MAX(1, min_size.width);
+			} else {
+				min_size.width = 1;
+			}
 		}
-		return min_size + min_style;
+		Size2 computed_min_size = min_size + min_style;
+		if (overrun_with_max_width) {
+			computed_min_size.width = MIN(computed_min_size.width, combined_maximum_size.x);
+		}
+		return computed_min_size;
 	}
 }
 
