@@ -141,6 +141,14 @@ void TabContainer::gui_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
+Control *TabContainer::_as_tab_control(Node *p_child) const {
+	Control *control = as_sortable_control(p_child, SortableVisibilityMode::IGNORE);
+	if (!control || control == tab_bar || children_removing.has(control)) {
+		return nullptr;
+	}
+	return control;
+}
+
 void TabContainer::_get_property_list(List<PropertyInfo> *p_list) const {
 	List<PropertyInfo> properties;
 	property_helper.get_property_list(&properties);
@@ -194,8 +202,8 @@ void TabContainer::_notification(int p_what) {
 				if (child_node->is_part_of_edited_scene()) {
 					continue;
 				}
-				Control *control = as_sortable_control(child_node, SortableVisibilityMode::IGNORE);
-				if (!control || control == tab_bar || children_removing.has(control)) {
+				Control *control = _as_tab_control(child_node);
+				if (!control) {
 					AccessibilityServer::get_singleton()->update_add_child(ae, child_node->get_accessibility_element());
 				} else {
 					if (!tab_panels.has(child_node)) {
@@ -461,15 +469,14 @@ void TabContainer::_on_mouse_exited() {
 
 Vector<Control *> TabContainer::_get_tab_controls() const {
 	Vector<Control *> controls;
-	for (int i = 0; i < get_child_count(); i++) {
-		Control *control = as_sortable_control(get_child(i), SortableVisibilityMode::IGNORE);
-		if (!control || control == tab_bar || children_removing.has(control)) {
-			continue;
+	ERR_THREAD_GUARD_V(controls);
+
+	for (Node *child : iterate_children()) {
+		Control *control = _as_tab_control(child);
+		if (control) {
+			controls.push_back(control);
 		}
-
-		controls.push_back(control);
 	}
-
 	return controls;
 }
 
@@ -782,12 +789,24 @@ bool TabContainer::get_deselect_enabled() const {
 }
 
 Control *TabContainer::get_tab_control(int p_idx) const {
-	Vector<Control *> controls = _get_tab_controls();
-	if (p_idx >= 0 && p_idx < controls.size()) {
-		return controls[p_idx];
-	} else {
+	if (p_idx < 0) {
 		return nullptr;
 	}
+	ERR_THREAD_GUARD_V(nullptr);
+
+	for (Node *child : iterate_children()) {
+		Control *control = _as_tab_control(child);
+		if (!control) {
+			continue;
+		}
+
+		if (p_idx > 0) {
+			p_idx--;
+		} else {
+			return control;
+		}
+	}
+	return nullptr;
 }
 
 Control *TabContainer::get_current_tab_control() const {
@@ -801,14 +820,20 @@ int TabContainer::get_tab_idx_at_point(const Point2 &p_point) const {
 int TabContainer::get_tab_idx_from_control(Control *p_child) const {
 	ERR_FAIL_NULL_V(p_child, -1);
 	ERR_FAIL_COND_V(p_child->get_parent() != this, -1);
+	ERR_THREAD_GUARD_V(-1);
 
-	Vector<Control *> controls = _get_tab_controls();
-	for (int i = 0; i < controls.size(); i++) {
-		if (controls[i] == p_child) {
-			return i;
+	int idx = 0;
+	for (Node *child : iterate_children()) {
+		Control *control = _as_tab_control(child);
+		if (!control) {
+			continue;
 		}
-	}
 
+		if (control == p_child) {
+			return idx;
+		}
+		idx++;
+	}
 	return -1;
 }
 
