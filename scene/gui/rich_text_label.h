@@ -388,7 +388,6 @@ private:
 			int width_with_padding = 0;
 		};
 
-		bool column_max_width_dirty = true;
 		LocalVector<Column> columns;
 		LocalVector<float> rows;
 		LocalVector<float> rows_baseline;
