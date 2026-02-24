@@ -119,6 +119,7 @@ private:
 
 	Rect2 _get_tab_rect() const;
 	int _get_tab_height() const;
+	Control *_as_tab_control(Node *p_child) const;
 	Vector<Control *> _get_tab_controls() const;
 	void _on_theme_changed();
 	void _repaint();
