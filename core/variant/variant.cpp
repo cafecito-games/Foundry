@@ -1505,6 +1505,10 @@ Variant::operator int8_t() const {
 	return _to_int<int8_t>();
 }
 
+Variant::operator Math::int_alt_t() const {
+	return _to_int<Math::int_alt_t>();
+}
+
 Variant::operator uint64_t() const {
 	return _to_int<uint64_t>();
 }
@@ -1519,6 +1523,10 @@ Variant::operator uint16_t() const {
 
 Variant::operator uint8_t() const {
 	return _to_int<uint8_t>();
+}
+
+Variant::operator Math::uint_alt_t() const {
+	return _to_int<Math::uint_alt_t>();
 }
 
 Variant::operator ObjectID() const {
@@ -2334,6 +2342,11 @@ Variant::Variant(int8_t p_int8) :
 	_data._int = p_int8;
 }
 
+Variant::Variant(Math::int_alt_t p_int_alt) :
+		type(INT) {
+	_data._int = p_int_alt;
+}
+
 Variant::Variant(uint64_t p_uint64) :
 		type(INT) {
 	_data._int = int64_t(p_uint64);
@@ -2352,6 +2365,11 @@ Variant::Variant(uint16_t p_uint16) :
 Variant::Variant(uint8_t p_uint8) :
 		type(INT) {
 	_data._int = int64_t(p_uint8);
+}
+
+Variant::Variant(Math::uint_alt_t p_uint_alt) :
+		type(INT) {
+	_data._int = p_uint_alt;
 }
 
 Variant::Variant(float p_float) :
