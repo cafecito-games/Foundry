@@ -4946,7 +4946,7 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	ED_SHORTCUT("scene_tree/expand_collapse_all", TTRC("Expand/Collapse Branch"));
 	ED_SHORTCUT("scene_tree/cut_node", TTRC("Cut"), KeyModifierMask::CMD_OR_CTRL | Key::X);
 	ED_SHORTCUT("scene_tree/copy_node", TTRC("Copy"), KeyModifierMask::CMD_OR_CTRL | Key::C);
-	ED_SHORTCUT("scene_tree/paste_node", TTRC("Paste"), KeyModifierMask::CMD_OR_CTRL | Key::V);
+	ED_SHORTCUT("scene_tree/paste_node", TTRC("Paste (as Child)"), KeyModifierMask::CMD_OR_CTRL | Key::V);
 	ED_SHORTCUT("scene_tree/paste_node_as_sibling", TTRC("Paste as Sibling"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::V);
 	ED_SHORTCUT("scene_tree/change_node_type", TTRC("Change Type..."));
 	ED_SHORTCUT("scene_tree/attach_script", TTRC("Attach Script..."));
