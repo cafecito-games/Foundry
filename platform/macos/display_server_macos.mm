@@ -57,6 +57,8 @@
 #include "drivers/png/png_driver_common.h"
 #include "main/main.h"
 #include "scene/resources/image_texture.h"
+#include "servers/display/accessibility_server.h"
+#include "servers/rendering/dummy/rasterizer_dummy.h"
 
 #ifdef TOOLS_ENABLED
 #import "display_server_embedded.h"
@@ -74,10 +76,6 @@
 #if defined(RD_ENABLED)
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering/rendering_device.h"
-#endif
-
-#if defined(ACCESSKIT_ENABLED)
-#include "drivers/accesskit/accessibility_driver_accesskit.h"
 #endif
 
 #import <Carbon/Carbon.h>
@@ -139,15 +137,11 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 		[wd.window_object setRestorable:NO];
 		[wd.window_object setColorSpace:[NSColorSpace sRGBColorSpace]];
 
-#ifdef ACCESSKIT_ENABLED
-		if (accessibility_driver && !accessibility_driver->window_create(id, (__bridge void *)wd.window_object)) {
+		if (!AccessibilityServer::get_singleton()->window_create(id, (__bridge void *)wd.window_object)) {
 			if (OS::get_singleton()->is_stdout_verbose()) {
 				ERR_PRINT("Can't create an accessibility adapter for window, accessibility support disabled!");
 			}
-			memdelete(accessibility_driver);
-			accessibility_driver = nullptr;
 		}
-#endif
 
 		if ([wd.window_object respondsToSelector:@selector(setTabbingMode:)]) {
 			[wd.window_object setTabbingMode:NSWindowTabbingModeDisallowed];
@@ -190,11 +184,11 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 			}
 #endif
 			Error err = rendering_context->window_create(window_id_counter, &wpd);
-#ifdef ACCESSKIT_ENABLED
-			if (err != OK && accessibility_driver) {
-				accessibility_driver->window_destroy(id);
+
+			if (err != OK) {
+				AccessibilityServer::get_singleton()->window_destroy(id);
 			}
-#endif
+
 			ERR_FAIL_COND_V_MSG(err != OK, INVALID_WINDOW_ID, vformat("Can't create a %s context", rendering_driver));
 
 			rendering_context->window_set_size(window_id_counter, p_rect.size.width, p_rect.size.height);
@@ -217,11 +211,8 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 			}
 		}
 		if (gl_failed) {
-#ifdef ACCESSKIT_ENABLED
-			if (accessibility_driver) {
-				accessibility_driver->window_destroy(id);
-			}
-#endif
+			AccessibilityServer::get_singleton()->window_destroy(id);
+
 			windows.erase(id);
 			ERR_FAIL_V_MSG(INVALID_WINDOW_ID, "Can't create an OpenGL context.");
 		}
@@ -777,11 +768,8 @@ void DisplayServerMacOS::window_destroy(WindowID p_window) {
 		rendering_context->window_destroy(p_window);
 	}
 #endif
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_driver) {
-		accessibility_driver->window_destroy(p_window);
-	}
-#endif
+	AccessibilityServer::get_singleton()->window_destroy(p_window);
+
 	windows.erase(p_window);
 
 	if (last_focused_window == p_window) {
@@ -837,11 +825,9 @@ bool DisplayServerMacOS::has_feature(Feature p_feature) const {
 		case FEATURE_EMOJI_AND_SYMBOL_PICKER:
 		case FEATURE_WINDOW_EMBEDDING:
 			return true;
-#ifdef ACCESSKIT_ENABLED
 		case FEATURE_ACCESSIBILITY_SCREEN_READER: {
-			return (accessibility_driver != nullptr);
+			return AccessibilityServer::get_singleton()->is_supported();
 		} break;
-#endif
 		default: {
 		}
 	}
@@ -3697,16 +3683,6 @@ DisplayServerMacOS::DisplayServerMacOS(const String &p_rendering_driver, WindowM
 
 	native_menu = memnew(NativeMenuMacOS);
 
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_get_mode() != DisplayServer::AccessibilityMode::ACCESSIBILITY_DISABLED) {
-		accessibility_driver = memnew(AccessibilityDriverAccessKit);
-		if (accessibility_driver->init() != OK) {
-			memdelete(accessibility_driver);
-			accessibility_driver = nullptr;
-		}
-	}
-#endif
-
 	NSMenuItem *menu_item;
 	NSString *title;
 
@@ -3976,11 +3952,6 @@ DisplayServerMacOS::~DisplayServerMacOS() {
 	if (rendering_context) {
 		memdelete(rendering_context);
 		rendering_context = nullptr;
-	}
-#endif
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_driver) {
-		memdelete(accessibility_driver);
 	}
 #endif
 	CGDisplayRemoveReconfigurationCallback(_displays_arrangement_changed, nullptr);

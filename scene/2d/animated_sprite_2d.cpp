@@ -31,6 +31,7 @@
 #include "animated_sprite_2d.h"
 
 #include "scene/main/viewport.h"
+#include "servers/display/accessibility_server.h"
 
 #ifdef TOOLS_ENABLED
 Dictionary AnimatedSprite2D::_edit_get_state() const {
@@ -178,9 +179,9 @@ void AnimatedSprite2D::_notification(int p_what) {
 
 			Rect2 dst_rect = _get_rect();
 
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_IMAGE);
-			DisplayServer::get_singleton()->accessibility_update_set_transform(ae, get_transform());
-			DisplayServer::get_singleton()->accessibility_update_set_bounds(ae, dst_rect);
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_IMAGE);
+			AccessibilityServer::get_singleton()->update_set_transform(ae, get_transform());
+			AccessibilityServer::get_singleton()->update_set_bounds(ae, dst_rect);
 		} break;
 
 		case NOTIFICATION_READY: {

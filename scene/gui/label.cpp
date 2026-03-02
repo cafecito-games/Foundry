@@ -34,6 +34,8 @@
 #include "core/object/class_db.h"
 #include "scene/main/scene_tree.h"
 #include "scene/theme/theme_db.h"
+#include "servers/display/accessibility_server.h"
+#include "servers/rendering/rendering_server.h"
 #include "servers/text/text_server.h"
 
 void Label::set_autowrap_mode(TextServer::AutowrapMode p_mode) {
@@ -724,9 +726,9 @@ void Label::_notification(int p_what) {
 			RID ae = get_accessibility_element();
 			ERR_FAIL_COND(ae.is_null());
 
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_STATIC_TEXT);
-			DisplayServer::get_singleton()->accessibility_update_set_value(ae, xl_text);
-			DisplayServer::get_singleton()->accessibility_update_set_text_align(ae, horizontal_alignment);
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_STATIC_TEXT);
+			AccessibilityServer::get_singleton()->update_set_value(ae, xl_text);
+			AccessibilityServer::get_singleton()->update_set_text_align(ae, horizontal_alignment);
 		} break;
 
 		case NOTIFICATION_TRANSLATION_CHANGED: {
