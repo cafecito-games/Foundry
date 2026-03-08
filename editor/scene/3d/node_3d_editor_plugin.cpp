@@ -4742,6 +4742,13 @@ void Node3DEditorViewport::_disable_follow_mode() {
 	times_focused_consecutively = 0;
 }
 
+void Node3DEditorViewport::_reset_follow_mode_count() {
+	bool is_in_follow_mode = times_focused_consecutively >= 2 && times_focused_consecutively % 2 == 0;
+	if (!is_in_follow_mode) {
+		times_focused_consecutively = 0;
+	}
+}
+
 void Node3DEditorViewport::_toggle_camera_preview(bool p_activate) {
 	ERR_FAIL_COND(p_activate && !preview);
 	ERR_FAIL_COND(!p_activate && !previewing);
@@ -6466,6 +6473,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	index = p_index;
 	viewport_binding = p_binding;
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	editor_selection->connect("selection_changed", callable_mp(this, &Node3DEditorViewport::_reset_follow_mode_count));
 
 	orthogonal = false;
 	auto_orthogonal = false;
