@@ -48,6 +48,7 @@
 #include "scene/resources/2d/navigation_polygon.h"
 #endif // NAVIGATION_2D_DISABLED
 
+class ArrayMesh;
 class TileSetSource;
 class TileSetAtlasSource;
 class TileData;
