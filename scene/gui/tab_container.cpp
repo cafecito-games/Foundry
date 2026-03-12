@@ -550,7 +550,7 @@ void TabContainer::_on_tab_hovered(int p_tab) {
 }
 
 void TabContainer::_on_tab_changed(int p_tab) {
-	callable_mp(this, &TabContainer::_repaint).call_deferred();
+	_repaint();
 	queue_redraw();
 
 	emit_signal(SNAME("tab_changed"), p_tab);
