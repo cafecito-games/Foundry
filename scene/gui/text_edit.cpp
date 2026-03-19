@@ -1962,7 +1962,7 @@ void TextEdit::_notification(int p_what) {
 		} break;
 
 		case MainLoop::NOTIFICATION_OS_IME_UPDATE: {
-			if (has_focus()) {
+			if (has_focus() && editable) {
 				const String &new_ime_text = DisplayServer::get_singleton()->ime_get_text();
 				const Vector2i &new_ime_selection = DisplayServer::get_singleton()->ime_get_selection();
 				if (ime_text == new_ime_text && ime_selection == new_ime_selection) {
@@ -2047,6 +2047,9 @@ void TextEdit::unhandled_key_input(const Ref<InputEvent> &p_event) {
 }
 
 bool TextEdit::alt_input(const Ref<InputEvent> &p_gui_input) {
+	if (!editable) {
+		return false;
+	}
 	Ref<InputEventKey> k = p_gui_input;
 	if (k.is_valid()) {
 		// Start Unicode Alt input (hold).
@@ -3422,6 +3425,10 @@ void TextEdit::_close_ime_window() {
 void TextEdit::_update_ime_window_position() {
 	DisplayServer::WindowID wid = get_window() ? get_window()->get_window_id() : DisplayServer::INVALID_WINDOW_ID;
 	if (wid == DisplayServer::INVALID_WINDOW_ID || !DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_IME)) {
+		return;
+	}
+	if (!editable) {
+		DisplayServer::get_singleton()->window_set_ime_active(false, wid);
 		return;
 	}
 	DisplayServer::get_singleton()->window_set_ime_active(true, wid);
