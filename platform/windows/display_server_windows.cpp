@@ -1798,7 +1798,15 @@ void DisplayServerWindows::delete_sub_window(WindowID p_window) {
 	WindowData &wd = windows[p_window];
 
 	while (wd.transient_children.size()) {
-		window_set_transient(*wd.transient_children.begin(), INVALID_WINDOW_ID);
+		WindowID wid = *wd.transient_children.begin();
+		if (windows.has(wid)) {
+			WindowData &wd_window = windows[wid];
+			wd_window.transient_parent = INVALID_WINDOW_ID;
+			if (wd_window.exclusive) {
+				SetWindowLongPtr(wd_window.hWnd, GWLP_HWNDPARENT, (LONG_PTR) nullptr);
+			}
+		}
+		wd.transient_children.erase(wid);
 	}
 
 	if (wd.transient_parent != INVALID_WINDOW_ID) {
@@ -6523,9 +6531,14 @@ Error DisplayServerWindows::_create_window(WindowID p_window_id, WindowMode p_mo
 		}
 
 		wd.exclusive = p_exclusive;
+		bool on_top = (p_flags & DisplayServerEnums::WINDOW_FLAG_ALWAYS_ON_TOP_BIT && p_mode != DisplayServerEnums::WINDOW_MODE_FULLSCREEN && p_mode != DisplayServerEnums::WINDOW_MODE_EXCLUSIVE_FULLSCREEN);
 		if (wd_transient_parent) {
-			wd.transient_parent = p_transient_parent;
-			wd_transient_parent->transient_children.insert(id);
+			if (on_top) {
+				ERR_PRINT("Windows with the 'on top' can't become transient.");
+			} else {
+				wd.transient_parent = p_transient_parent;
+				wd_transient_parent->transient_children.insert(id);
+			}
 		}
 
 		wd.sharp_corners = p_flags & WINDOW_FLAG_SHARP_CORNERS_BIT;
