@@ -1213,7 +1213,6 @@ void AnimatedSprite3D::set_sprite_frames(const Ref<SpriteFrames> &p_frames) {
 	if (frames.is_valid()) {
 		frames->disconnect(CoreStringName(changed), callable_mp(this, &AnimatedSprite3D::_res_changed));
 	}
-	stop();
 	frames = p_frames;
 	if (frames.is_valid()) {
 		frames->connect(CoreStringName(changed), callable_mp(this, &AnimatedSprite3D::_res_changed));
@@ -1232,6 +1231,7 @@ void AnimatedSprite3D::set_sprite_frames(const Ref<SpriteFrames> &p_frames) {
 			}
 		}
 	}
+	stop();
 
 	notify_property_list_changed();
 	_queue_redraw();
