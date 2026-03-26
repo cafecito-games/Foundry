@@ -709,8 +709,8 @@ _FORCE_INLINE_ void AccessibilityDriverAccessKit::_ensure_node(const RID &p_id, 
 
 		// Re-apply stored name if any, so nodes recreated by _ensure_node
 		// retain their label even if the caller doesn't re-set all properties.
-		if (!p_ae->name.is_empty() || !p_ae->name_extra_info.is_empty()) {
-			String full_name = p_ae->name + " " + p_ae->name_extra_info;
+		String full_name = (p_ae->name + " " + p_ae->name_extra_info).strip_edges();
+		if (!full_name.is_empty()) {
 			accesskit_node_set_label(p_ae->node, full_name.utf8().ptr());
 		}
 	}
@@ -765,7 +765,7 @@ void AccessibilityDriverAccessKit::accessibility_update_set_name(const RID &p_id
 	_ensure_node(p_id, ae);
 
 	ae->name = p_name;
-	String full_name = ae->name + " " + ae->name_extra_info;
+	String full_name = (ae->name + " " + ae->name_extra_info).strip_edges();
 	if (!full_name.is_empty()) {
 		accesskit_node_set_label(ae->node, full_name.utf8().ptr());
 	} else {
@@ -781,7 +781,7 @@ void AccessibilityDriverAccessKit::accessibility_update_set_extra_info(const RID
 	_ensure_node(p_id, ae);
 
 	ae->name_extra_info = p_name_extra_info;
-	String full_name = ae->name + " " + ae->name_extra_info;
+	String full_name = (ae->name + " " + ae->name_extra_info).strip_edges();
 	if (!full_name.is_empty()) {
 		accesskit_node_set_label(ae->node, full_name.utf8().ptr());
 	} else {
