@@ -232,6 +232,8 @@ void register_server_types() {
 	FOUNDRY_REGISTER_CLASS(RDPipelineSpecializationConstant);
 	FOUNDRY_REGISTER_CLASS(RDAccelerationStructureGeometry);
 	FOUNDRY_REGISTER_CLASS(RDAccelerationStructureInstance);
+	FOUNDRY_REGISTER_CLASS(RDPipelineShader);
+	FOUNDRY_REGISTER_CLASS(RDHitGroup);
 
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(RenderData);
 	FOUNDRY_REGISTER_CLASS(RenderDataExtension);
