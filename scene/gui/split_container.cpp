@@ -196,6 +196,10 @@ void SplitContainerDragger::update_touch_dragger() {
 	touch_dragger->set_default_cursor_shape(sc->vertical ? CURSOR_VSPLIT : CURSOR_HSPLIT);
 }
 
+String SplitContainerDragger::_get_accessibility_name() const {
+	return RTR("Drag to resize");
+}
+
 void SplitContainerDragger::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ACCESSIBILITY_UPDATE: {
@@ -206,7 +210,6 @@ void SplitContainerDragger::_notification(int p_what) {
 			ERR_FAIL_COND(ae.is_null());
 
 			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_SPLITTER);
-			AccessibilityServer::get_singleton()->update_set_name(ae, RTR("Drag to resize"));
 
 			SplitContainer *sc = Object::cast_to<SplitContainer>(get_parent());
 			if (sc->collapsed || sc->valid_children.size() < 2u || !sc->dragging_enabled) {

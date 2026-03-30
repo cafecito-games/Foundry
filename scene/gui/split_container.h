@@ -52,6 +52,8 @@ protected:
 	void _accessibility_action_dec(const Variant &p_data);
 	void _accessibility_action_set_value(const Variant &p_data);
 
+	virtual String _get_accessibility_name() const override;
+
 private:
 	bool dragging = false;
 	int drag_from = 0;
