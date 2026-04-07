@@ -180,25 +180,25 @@ private:
 		ItemType type = ITEM_FRAME;
 		List<Item *> subitems;
 		List<Item *>::Element *E = nullptr;
-		ObjectID owner;
 		int line = 0; // `line` is the index number of the paragraph (Line) this item is inside of (zero if the first paragraph).
 		RID rid;
 
 		RID accessibility_item_element;
 
 		void _clear_children() { // Only ever called on main or a paragraph (Line).
-			RichTextLabel *owner_rtl = ObjectDB::get_instance<RichTextLabel>(owner);
 			while (subitems.size()) {
 				Item *subitem = subitems.front()->get();
-				if (subitem && subitem->rid.is_valid() && owner_rtl) {
-					owner_rtl->items.free(subitem->rid);
-				}
 				memdelete(subitem);
 				subitems.pop_front();
 			}
 		}
 
-		virtual ~Item() { _clear_children(); }
+		virtual ~Item() {
+			_clear_children();
+			if (rid.is_valid()) {
+				items.free(rid);
+			}
+		}
 	};
 
 	struct ItemFrame : public Item {
@@ -239,6 +239,7 @@ private:
 		int ol_size = 0;
 		Color ol_color;
 		Rect2 dropcap_margins;
+		ObjectID owner;
 		ItemDropcap() { type = ITEM_DROPCAP; }
 		~ItemDropcap() {
 			if (font.is_valid()) {
@@ -263,6 +264,7 @@ private:
 		Color color;
 		Variant key;
 		String tooltip;
+		ObjectID owner;
 		ItemImage() { type = ITEM_IMAGE; }
 		~ItemImage() {
 			if (image.is_valid()) {
@@ -283,6 +285,7 @@ private:
 		bool variation = false;
 		bool def_size = false;
 		int font_size = 0;
+		ObjectID owner;
 		ItemFont() { type = ITEM_FONT; }
 		~ItemFont() {
 			if (font.is_valid()) {
@@ -581,7 +584,7 @@ private:
 
 	void _texture_changed(RID p_item);
 
-	static inline RID_PtrOwner<Item, true> items;
+	static inline RID_PtrOwner<Item, true> items{ 65536, 1048576 };
 	List<String> tag_stack;
 	HashSet<RID> hr_list;
 
