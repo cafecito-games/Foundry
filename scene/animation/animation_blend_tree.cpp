@@ -140,6 +140,9 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 
 	NodeTimeInfo cur_nti = get_node_time_info();
 	double cur_len = cur_nti.length;
+	// When time scale is stretched, the entire animation is played anyway using a time scale based on the timeline length.
+	// Therefore, the end of the animation section is the animation length.
+	double playback_end = (use_custom_timeline && stretch_time_scale) ? anim_size : cur_len;
 	double cur_time = p_playback_info.time;
 	double cur_delta = p_playback_info.delta;
 	bool cur_backward = get_parameter(backward);
@@ -270,7 +273,7 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 		if (immediately_after_start) {
 			AnimationMixer::PlaybackInfo pi = p_playback_info;
 			pi.start = 0.0;
-			pi.end = cur_len;
+			pi.end = playback_end;
 			if (play_mode == PLAY_MODE_FORWARD) {
 				pi.time = 0;
 			} else {
@@ -283,7 +286,7 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 
 		AnimationMixer::PlaybackInfo pi = p_playback_info;
 		pi.start = 0.0;
-		pi.end = cur_len;
+		pi.end = playback_end;
 		if (play_mode == PLAY_MODE_FORWARD) {
 			pi.time = cur_playback_time;
 		} else {
