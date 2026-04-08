@@ -3445,6 +3445,7 @@ PopupMenu::PopupMenu() {
 	scroll_container = memnew(ScrollContainer);
 	scroll_container->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	panel->add_child(scroll_container, false, INTERNAL_MODE_FRONT);
+	scroll_container->add_theme_style_override(SceneStringName(panel), memnew(StyleBoxEmpty));
 
 	// The control which will display the items
 	control = memnew(Control);
