@@ -9499,6 +9499,8 @@ void EditorNode::_feature_profile_changed() {
 	if (projectless_shell) {
 		_apply_projectless_shell_restrictions();
 	}
+
+	editor_dock_manager->update_docks_menu();
 }
 
 void EditorNode::_bind_methods() {
