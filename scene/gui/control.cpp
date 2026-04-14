@@ -1713,7 +1713,7 @@ void Control::update_maximum_size() {
 	}
 
 	// Keep minimum size propagation in sync so parent containers can relayout correctly.
-	update_minimum_size();
+	callable_mp(this, &Control::_update_minimum_size).call_deferred();
 
 	if (!is_visible_in_tree()) {
 		// Invalidate the last maximum size so it will update when made visible.
