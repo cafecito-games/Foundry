@@ -1593,7 +1593,7 @@ void EditorProperty::_update_popup() {
 	menu->add_icon_shortcut(theme_cache.paste_icon, ED_GET_SHORTCUT("property_editor/paste_value"), MENU_PASTE_VALUE);
 	menu->add_icon_shortcut(theme_cache.copy_node_path_icon, ED_GET_SHORTCUT("property_editor/copy_property_path"), MENU_COPY_PROPERTY_PATH);
 	menu->set_item_disabled(MENU_PASTE_VALUE, is_read_only());
-	menu->set_item_disabled(MENU_COPY_PROPERTY_PATH, internal);
+	menu->set_item_disabled(MENU_COPY_PROPERTY_PATH, internal || property_path.is_empty());
 
 	if (can_favorite || !pin_hidden) {
 		menu->add_separator();
