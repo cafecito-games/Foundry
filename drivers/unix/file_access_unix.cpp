@@ -43,10 +43,10 @@
 #endif
 #include <unistd.h>
 #include <cerrno>
+#include <cstdlib>
 
 #if defined(TOOLS_ENABLED)
 #include <climits>
-#include <cstdlib>
 #endif
 
 void FileAccessUnix::check_errors(bool p_write) const {
