@@ -103,7 +103,15 @@ static void handle_crash(int sig) {
 	uintptr_t relocation = 0;
 #endif //__GLIBC__
 
-	print_error(vformat("Load address: %x\n", (uint64_t)relocation));
+	void *load_addr = nullptr;
+	{
+		Dl_info info;
+		if (dladdr(bt_buffer[size - 1], &info)) {
+			load_addr = info.dli_fbase;
+		}
+	}
+
+	print_error(vformat("Load address: %x\n", (uint64_t)load_addr));
 
 	if (strings) {
 		int ret;
@@ -151,12 +159,19 @@ static void handle_crash(int sig) {
 		for (size_t i = 1; i < size; i++) {
 			char fname[1024];
 			Dl_info info;
+			String mod_name = "main";
+			uint64_t mod_off = (uint64_t)load_addr;
 
 			snprintf(fname, 1024, "%s", strings[i]);
 
-			// Try to demangle the function name to provide a more readable one
-			if (dladdr(bt_buffer[i], &info) && info.dli_sname) {
-				if (info.dli_sname[0] == '_') {
+			// Try to demangle the function name to provide a more readable one, and
+			// resolve the owning module so the offset can be re-traced.
+			if (dladdr(bt_buffer[i], &info)) {
+				mod_off = (uint64_t)info.dli_fbase;
+				if (mod_off != (uint64_t)load_addr) {
+					mod_name = String(info.dli_fname).get_file();
+				}
+				if (info.dli_sname && info.dli_sname[0] == '_') {
 					int status = 0;
 					char *demangled = abi::__cxa_demangle(info.dli_sname, nullptr, nullptr, &status);
 
@@ -168,10 +183,12 @@ static void handle_crash(int sig) {
 						free(demangled);
 					}
 				}
+			} else {
+				mod_name = "<unknown module>";
 			}
 
 			// Simplify printed file paths to remove redundant `/./` sections (e.g. `/opt/godot/./core` -> `/opt/godot/core`).
-			print_error(vformat("[%d] %x - %s (%s)", (int64_t)i, (uint64_t)bt_buffer[i], fname, err == OK ? addr2line_results[i].replace("/./", "/") : ""));
+			print_error(vformat("[%d] %x (%s+%x) - %s (%s)", (int64_t)i, (uint64_t)bt_buffer[i], mod_name, (uint64_t)bt_buffer[i] - mod_off, fname, err == OK ? addr2line_results[i].replace("/./", "/") : ""));
 		}
 
 		free(strings);
