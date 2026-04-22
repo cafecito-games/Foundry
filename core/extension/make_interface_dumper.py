@@ -17,7 +17,7 @@ def run(target, source, env):
 inline constexpr int _foundry_extension_interface_data_compressed_size = {len(buffer)};
 inline constexpr int _foundry_extension_interface_data_uncompressed_size = {decomp_size};
 inline constexpr unsigned char _foundry_extension_interface_data_compressed[] = {{
-	{methods.format_buffer(buffer, 1)}
+{methods.format_buffer(buffer, 1)}
 }};
 
 class FoundryExtensionInterfaceDump {{
