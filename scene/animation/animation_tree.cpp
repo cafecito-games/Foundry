@@ -751,7 +751,7 @@ void AnimationTree::_animation_node_renamed(const ObjectID &p_oid, const String 
 
 void AnimationTree::_animation_node_removed(const ObjectID &p_oid, const StringName &p_node) {
 	ERR_FAIL_COND(!property_reference_map.has(p_oid));
-	String base_path = String(property_reference_map[p_oid]) + String(p_node);
+	String base_path = String(property_reference_map[p_oid]) + String(p_node) + "/";
 	for (const PropertyInfo &E : properties) {
 		if (E.name.begins_with(base_path)) {
 			property_map.erase(E.name);
