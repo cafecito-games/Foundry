@@ -142,7 +142,7 @@ void *OpenXRFBFoveationExtension::set_system_properties_and_get_next_pointer(voi
 
 void *OpenXRFBFoveationExtension::set_swapchain_create_info_and_get_next_pointer(void *p_next_pointer) {
 	void *next = p_next_pointer;
-	if (is_enabled()) {
+	if (is_enabled() && foveation_level > 0) {
 		swapchain_create_info_foveation_fb.next = next;
 		next = &swapchain_create_info_foveation_fb;
 
