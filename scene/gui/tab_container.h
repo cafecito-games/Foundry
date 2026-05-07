@@ -140,6 +140,11 @@ private:
 	void _drag_move_tab(int p_from_index, int p_to_index);
 	void _drag_move_tab_from(TabBar *p_from_tabbar, int p_from_index, int p_to_index);
 
+	void _popup_button_hovered(bool p_hover);
+	void _popup_button_pressed();
+
+	Size2 _get_minimum_size(bool p_use_desired_sizes) const;
+
 protected:
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
@@ -225,6 +230,7 @@ public:
 
 	virtual Size2 get_minimum_size() const override;
 	virtual Size2 get_inner_combined_maximum_size() const override;
+	virtual Size2 get_desired_size() const override;
 
 	void set_popup(Node *p_popup);
 	Popup *get_popup() const;

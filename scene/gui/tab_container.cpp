@@ -337,6 +337,7 @@ void TabContainer::_on_theme_changed() {
 		_repaint();
 	} else {
 		update_minimum_size();
+		update_desired_size();
 	}
 	queue_redraw();
 
@@ -974,6 +975,7 @@ void TabContainer::set_tab_disabled(int p_tab, bool p_disabled) {
 	tab_bar->set_tab_disabled(p_tab, p_disabled);
 
 	_update_margins();
+	update_desired_size();
 	if (!get_clip_tabs()) {
 		update_minimum_size();
 	}
@@ -999,6 +1001,7 @@ void TabContainer::set_tab_hidden(int p_tab, bool p_hidden) {
 	child->hide();
 
 	_update_margins();
+	update_desired_size();
 	if (!get_clip_tabs()) {
 		update_minimum_size();
 	}
@@ -1028,16 +1031,16 @@ Ref<Texture2D> TabContainer::get_tab_button_icon(int p_tab) const {
 	return tab_bar->get_tab_button_icon(p_tab);
 }
 
-Size2 TabContainer::get_minimum_size() const {
+Size2 TabContainer::_get_minimum_size(bool p_use_desired_sizes) const {
 	Size2 ms;
 
 	if (tabs_visible) {
-		ms = tab_bar->get_minimum_size();
+		ms = p_use_desired_sizes ? tab_bar->get_bound_desired_size() : tab_bar->get_minimum_size();
 		ms.width += theme_cache.tabbar_style->get_margin(SIDE_LEFT) + theme_cache.tabbar_style->get_margin(SIDE_RIGHT);
 		ms.height += theme_cache.tabbar_style->get_margin(SIDE_TOP) + theme_cache.tabbar_style->get_margin(SIDE_BOTTOM);
 
 		if (get_popup()) {
-			ms.width += theme_cache.menu_icon->get_width();
+			ms.width += p_use_desired_sizes ? popup_button->get_bound_desired_size().x : popup_button->get_minimum_size().x;
 		}
 
 		if (theme_cache.side_margin > 0 && get_tab_alignment() != TabBar::ALIGNMENT_CENTER &&
@@ -1055,7 +1058,7 @@ Size2 TabContainer::get_minimum_size() const {
 			continue;
 		}
 
-		Size2 cms = c->get_bound_minimum_size();
+		Size2 cms = p_use_desired_sizes ? c->get_bound_desired_size() : c->get_bound_minimum_size();
 		largest_child_min_size = largest_child_min_size.max(cms);
 	}
 	ms.height += largest_child_min_size.height;
@@ -1066,6 +1069,14 @@ Size2 TabContainer::get_minimum_size() const {
 	ms.height += panel_ms.height;
 
 	return ms;
+}
+
+Size2 TabContainer::get_minimum_size() const {
+	return _get_minimum_size(false);
+}
+
+Size2 TabContainer::get_desired_size() const {
+	return _get_minimum_size(true);
 }
 
 Size2 TabContainer::get_inner_combined_maximum_size() const {
@@ -1128,6 +1139,7 @@ void TabContainer::set_popup(Node *p_popup) {
 		queue_redraw();
 		_update_margins();
 		update_minimum_size();
+		update_desired_size();
 	}
 }
 
@@ -1178,6 +1190,7 @@ void TabContainer::set_use_hidden_tabs_for_min_size(bool p_use_hidden_tabs) {
 
 	use_hidden_tabs_for_min_size = p_use_hidden_tabs;
 	update_minimum_size();
+	update_desired_size();
 }
 
 bool TabContainer::get_use_hidden_tabs_for_min_size() const {

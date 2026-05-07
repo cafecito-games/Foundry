@@ -287,7 +287,7 @@ void BoxContainer::_resort() {
 	}
 }
 
-Size2 BoxContainer::get_minimum_size() const {
+Size2 BoxContainer::_get_minimum_size(bool p_use_desired_sizes) const {
 	/* Calculate MINIMUM SIZE */
 
 	Size2i minimum;
@@ -300,7 +300,7 @@ Size2 BoxContainer::get_minimum_size() const {
 			continue;
 		}
 
-		Size2i size = c->get_bound_minimum_size();
+		Size2i size = p_use_desired_sizes ? c->get_bound_desired_size() : c->get_bound_minimum_size();
 
 		if (vertical) { /* VERTICAL */
 
@@ -323,6 +323,14 @@ Size2 BoxContainer::get_minimum_size() const {
 	}
 
 	return minimum;
+}
+
+Size2 BoxContainer::get_minimum_size() const {
+	return _get_minimum_size(false);
+}
+
+Size2 BoxContainer::get_desired_size() const {
+	return _get_minimum_size(true);
 }
 
 void BoxContainer::_notification(int p_what) {

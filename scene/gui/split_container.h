@@ -136,6 +136,13 @@ private:
 	void _add_valid_child(Control *p_control);
 	void _remove_valid_child(Control *p_control);
 
+	void _remove_nested_descendent(SplitContainer *p_nested_sc);
+	void _update_nested_descendent(SplitContainer *p_nested_sc, Control *p_direct_child);
+	void _update_nested_ancestors(bool p_remove = false);
+	void _update_all_nested_descendents(Control *p_control, Control *p_first_child = nullptr);
+
+	Size2 _get_minimum_size(bool p_use_desired_sizes) const;
+
 protected:
 	bool is_fixed = false;
 
@@ -169,6 +176,7 @@ public:
 	bool is_dragging_enabled() const;
 
 	virtual Size2 get_minimum_size() const override;
+	virtual Size2 get_desired_size() const override;
 
 	virtual Vector<int> get_allowed_size_flags_horizontal() const override;
 	virtual Vector<int> get_allowed_size_flags_vertical() const override;

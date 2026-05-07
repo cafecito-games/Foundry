@@ -49,6 +49,7 @@ void Label::set_autowrap_mode(TextServer::AutowrapMode p_mode) {
 	if (clip || overrun_behavior != TextServer::OVERRUN_NO_TRIMMING) {
 		update_minimum_size();
 	}
+	update_desired_size();
 }
 
 TextServer::AutowrapMode Label::get_autowrap_mode() const {
@@ -70,6 +71,7 @@ void Label::set_autowrap_trim_flags(BitField<TextServer::LineBreakFlag> p_flags)
 	if (clip || overrun_behavior != TextServer::OVERRUN_NO_TRIMMING) {
 		update_minimum_size();
 	}
+	update_desired_size();
 }
 
 BitField<TextServer::LineBreakFlag> Label::get_autowrap_trim_flags() const {
@@ -140,6 +142,16 @@ void Label::_shape() const {
 
 	Ref<StyleBox> style = theme_cache.normal_style;
 	int width = (get_size().width - style->get_minimum_size().width);
+	float combined_maximum_width = get_combined_maximum_size().x;
+	bool wrap_with_max_width = autowrap_mode != TextServer::AUTOWRAP_OFF && combined_maximum_width > 0;
+	int maximum_width = -1;
+	if (wrap_with_max_width) {
+		maximum_width = int(combined_maximum_width - style->get_minimum_size().width);
+		if (maximum_width <= 0) {
+			maximum_width = 1;
+		}
+		width = maximum_width;
+	}
 
 	if (text_dirty) {
 		for (Paragraph &para : paragraphs) {
@@ -895,6 +907,7 @@ void Label::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			font_dirty = true;
 			queue_redraw();
+			update_desired_size();
 			update_configuration_warnings();
 		} break;
 
@@ -997,6 +1010,33 @@ Size2 Label::get_minimum_size() const {
 	}
 }
 
+Size2 Label::get_desired_size() const {
+	Size2 combined_max = get_combined_maximum_size();
+	if (combined_max.width < 0) {
+		return Size2();
+	}
+
+	_ensure_shaped();
+	Size2 min_style = theme_cache.normal_style->get_minimum_size();
+	Size2 content_size = minsize + min_style;
+	content_size.width = MIN(content_size.width, int(combined_max.width));
+
+	return content_size;
+}
+
+#ifndef DISABLE_DEPRECATED
+bool Label::_set(const StringName &p_name, const Variant &p_value) {
+	if (p_name == SNAME("valign")) {
+		set_vertical_alignment((VerticalAlignment)p_value.operator int());
+		return true;
+	} else if (p_name == SNAME("align")) {
+		set_horizontal_alignment((HorizontalAlignment)p_value.operator int());
+		return true;
+	}
+	return false;
+}
+#endif
+
 int Label::get_line_count() const {
 	if (!is_inside_tree()) {
 		return 1;
@@ -1096,12 +1136,27 @@ void Label::set_text(const String &p_string) {
 	queue_accessibility_update();
 	queue_redraw();
 	update_minimum_size();
+	update_desired_size();
 	update_configuration_warnings();
 }
 
 void Label::_invalidate() {
 	font_dirty = true;
 	queue_redraw();
+	update_configuration_warnings();
+}
+
+void Label::_maximum_size_changed() {
+	if (autowrap_mode == TextServer::AUTOWRAP_OFF && overrun_behavior == TextServer::OVERRUN_NO_TRIMMING) {
+		return;
+	}
+
+	for (Paragraph &para : paragraphs) {
+		para.lines_dirty = true;
+	}
+	queue_redraw();
+	update_minimum_size();
+	update_desired_size();
 	update_configuration_warnings();
 }
 
@@ -1203,6 +1258,7 @@ void Label::set_clip_text(bool p_clip) {
 	clip = p_clip;
 	queue_redraw();
 	update_minimum_size();
+	update_desired_size();
 }
 
 bool Label::is_clipping_text() const {
@@ -1236,6 +1292,7 @@ void Label::set_text_overrun_behavior(TextServer::OverrunBehavior p_behavior) {
 	if (clip || overrun_behavior != TextServer::OVERRUN_NO_TRIMMING) {
 		update_minimum_size();
 	}
+	update_desired_size();
 }
 
 TextServer::OverrunBehavior Label::get_text_overrun_behavior() const {
@@ -1259,6 +1316,7 @@ void Label::set_ellipsis_char(const String &p_char) {
 	if (clip || overrun_behavior != TextServer::OVERRUN_NO_TRIMMING) {
 		update_minimum_size();
 	}
+	update_desired_size();
 }
 
 String Label::get_ellipsis_char() const {
