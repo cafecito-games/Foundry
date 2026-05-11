@@ -3228,6 +3228,19 @@ bool PopupMenu::get_allow_search() const {
 	return allow_search;
 }
 
+String PopupMenu::get_tooltip(const Point2 &p_pos) const {
+	Point2 pos = p_pos;
+	// Adjust for the top style margin and search bar.
+	pos.y += scroll_container->get_global_position().y;
+
+	int over = _get_mouse_over(pos);
+	if (over < 0 || over >= items.size()) {
+		return "";
+	}
+
+	return items[over].tooltip;
+}
+
 void PopupMenu::set_search_bar_enabled(bool p_enabled) {
 	search_bar_enabled = p_enabled;
 	_update_search_bar_visibility();
@@ -3670,14 +3683,6 @@ void PopupMenuItems::gui_input(const Ref<InputEvent> &p_event) {
 		accept_event();
 		return;
 	}
-}
-
-String PopupMenuItems::get_tooltip(const Point2 &p_pos) const {
-	int over = popup->_get_mouse_over(get_global_transform_with_canvas().xform(p_pos) * popup->get_content_scale_factor());
-	if (over < 0 || over >= popup->items.size()) {
-		return "";
-	}
-	return popup->items[over].tooltip;
 }
 
 PopupMenu::PopupMenu() {

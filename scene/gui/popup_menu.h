@@ -408,6 +408,8 @@ public:
 
 	void clear(bool p_free_submenus = true);
 
+	virtual String get_tooltip(const Point2 &p_pos) const;
+
 #ifdef TOOLS_ENABLED
 	PackedStringArray get_configuration_warnings() const override;
 #endif
@@ -452,5 +454,4 @@ public:
 
 	virtual RID get_focused_accessibility_element() const override;
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
-	virtual String get_tooltip(const Point2 &p_pos) const override;
 };

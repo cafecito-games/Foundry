@@ -37,6 +37,7 @@
 #include "scene/gui/control.h"
 #include "scene/gui/label.h"
 #include "scene/gui/popup.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/main/canvas_layer.h"
 #include "scene/main/window.h"
@@ -1532,9 +1533,14 @@ void Viewport::_gui_cancel_tooltip() {
 String Viewport::_gui_get_tooltip(Control *p_control, const Vector2 &p_pos, Control **r_tooltip_owner) {
 	Vector2 pos = p_pos;
 	String tooltip;
+	PopupMenu *menu = Object::cast_to<PopupMenu>(this);
 
 	while (p_control) {
-		tooltip = p_control->get_tooltip(pos);
+		if (menu) {
+			tooltip = menu->get_tooltip(pos);
+		} else {
+			tooltip = p_control->get_tooltip(pos);
+		}
 
 		if (r_tooltip_owner) {
 			*r_tooltip_owner = p_control;
