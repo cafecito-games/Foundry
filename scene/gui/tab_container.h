@@ -48,9 +48,6 @@ public:
 private:
 	TabBar *tab_bar = nullptr;
 	bool tabs_visible = true;
-#ifndef DISABLE_DEPRECATED
-	bool all_tabs_in_front = false;
-#endif
 	TabPosition tabs_position = POSITION_TOP;
 	bool menu_hovered = false;
 	mutable ObjectID popup_obj_id;
