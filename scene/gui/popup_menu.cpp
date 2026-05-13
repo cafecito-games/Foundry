@@ -528,6 +528,7 @@ void PopupMenu::_input_from_window_internal(const Ref<InputEvent> &p_event) {
 				if (!items[i].separator && !items[i].disabled && items[i].visible) {
 					prev_mouse_over = mouse_over;
 					mouse_over = i;
+					control->grab_focus();
 					emit_signal(SNAME("id_focused"), items[i].id);
 					scroll_to_item(i);
 					queue_accessibility_update();
@@ -544,6 +545,7 @@ void PopupMenu::_input_from_window_internal(const Ref<InputEvent> &p_event) {
 					if (!items[i].separator && !items[i].disabled && items[i].visible) {
 						prev_mouse_over = mouse_over;
 						mouse_over = i;
+						control->grab_focus();
 						emit_signal(SNAME("id_focused"), items[i].id);
 						scroll_to_item(i);
 						queue_accessibility_update();
@@ -571,6 +573,7 @@ void PopupMenu::_input_from_window_internal(const Ref<InputEvent> &p_event) {
 				if (!items[i].separator && !items[i].disabled && items[i].visible) {
 					prev_mouse_over = mouse_over;
 					mouse_over = i;
+					control->grab_focus();
 					emit_signal(SNAME("id_focused"), items[i].id);
 					scroll_to_item(i);
 					queue_accessibility_update();
@@ -587,6 +590,7 @@ void PopupMenu::_input_from_window_internal(const Ref<InputEvent> &p_event) {
 					if (!items[i].separator && !items[i].disabled && items[i].visible) {
 						prev_mouse_over = mouse_over;
 						mouse_over = i;
+						control->grab_focus();
 						emit_signal(SNAME("id_focused"), items[i].id);
 						scroll_to_item(i);
 						queue_accessibility_update();
@@ -1079,12 +1083,20 @@ void PopupMenu::_update_search_bar_visibility() {
 	}
 }
 
-void PopupMenu::_search_bar_input(const Ref<InputEvent> &p_event) {
-	// Redirect navigational key events to the tree.
-	Ref<InputEventKey> key = p_event;
-	if (key.is_valid()) {
-		if (key->is_action("ui_up", true) || key->is_action("ui_down", true) || key->is_action("ui_page_up") || key->is_action("ui_page_down")) {
-			search_bar->accept_event();
+void PopupMenu::_items_focus_entered() {
+	if (mouse_over != -1) {
+		return;
+	}
+
+	for (int i = 0; i < items.size(); i++) {
+		if (!items[i].separator && !items[i].disabled && items[i].visible) {
+			prev_mouse_over = mouse_over;
+			mouse_over = i;
+			emit_signal(SNAME("id_focused"), items[i].id);
+			scroll_to_item(i);
+			queue_accessibility_update();
+			control->queue_redraw();
+			break;
 		}
 	}
 }
@@ -1097,6 +1109,13 @@ void PopupMenu::_search_bar_text_changed(const String &p_new_text) {
 	child_controls_changed();
 	notify_property_list_changed();
 	_menu_changed();
+}
+
+void PopupMenu::_search_bar_focus_entered() {
+	prev_mouse_over = mouse_over;
+	mouse_over = -1;
+	queue_accessibility_update();
+	control->queue_redraw();
 }
 
 void PopupMenu::_filter_items(const String &p_query) {
@@ -1358,7 +1377,14 @@ void PopupMenu::_notification(int p_what) {
 				DisplayServer::get_singleton()->accessibility_update_set_name(ae, get_meta("_menu_name", get_name()));
 			}
 			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_MENU);
-			DisplayServer::get_singleton()->accessibility_update_set_list_item_count(ae, items.size());
+
+			int item_count = 0;
+			for (const Item &item : items) {
+				if (item.visible && !item.separator) {
+					item_count++;
+				}
+			}
+			DisplayServer::get_singleton()->accessibility_update_set_list_item_count(ae, item_count);
 
 			if (accessibility_scroll_element.is_null()) {
 				accessibility_scroll_element = DisplayServer::get_singleton()->accessibility_create_sub_element(ae, DisplayServer::AccessibilityRole::ROLE_CONTAINER);
@@ -1369,25 +1395,26 @@ void PopupMenu::_notification(int p_what) {
 			DisplayServer::get_singleton()->accessibility_update_set_transform(accessibility_scroll_element, scroll_xform);
 			DisplayServer::get_singleton()->accessibility_update_set_bounds(accessibility_scroll_element, Rect2(0, 0, get_size().x, scroll_container->get_v_scroll_bar()->get_max()));
 
-			float scroll_width = scroll_container->get_v_scroll_bar()->is_visible_in_tree() ? scroll_container->get_v_scroll_bar()->get_size().width : 0;
-			float display_width = control->get_size().width - scroll_width;
-			Point2 ofs;
+			float display_width = control->get_size().width;
+			Point2 ofs = scroll_container->get_global_position();
 
+			int item_index = 0;
+			bool first_visible = true;
 			for (int i = 0; i < items.size(); i++) {
 				const Item &item = items.write[i];
-				if (!item.visible) {
-					continue;
-				}
 
-				// Avoid discrepancy between min size and drawn items due to rounding.
-				ofs.y += i > 0 ? theme_cache.v_separation : theme_cache.v_separation - (theme_cache.v_separation / 2);
-
-				Point2 item_ofs = ofs;
 				if (item.accessibility_item_element.is_null()) {
 					item.accessibility_item_element = DisplayServer::get_singleton()->accessibility_create_sub_element(accessibility_scroll_element, DisplayServer::AccessibilityRole::ROLE_MENU_ITEM);
 					item.accessibility_item_dirty = true;
 				}
 
+				if (item.visible) {
+					// Avoid discrepancy between min size and drawn items due to rounding.
+					ofs.y += first_visible ? 0 : theme_cache.v_separation;
+					first_visible = false;
+				}
+
+				Point2 item_ofs = ofs;
 				item_ofs.x += item.indent * theme_cache.indent;
 				float h = _get_item_height(i);
 
@@ -1407,18 +1434,27 @@ void PopupMenu::_notification(int p_what) {
 					}
 
 					DisplayServer::get_singleton()->accessibility_update_add_action(item.accessibility_item_element, DisplayServer::AccessibilityAction::ACTION_CLICK, callable_mp(this, &PopupMenu::_accessibility_action_click).bind(i));
-					DisplayServer::get_singleton()->accessibility_update_set_list_item_index(item.accessibility_item_element, i);
+					DisplayServer::get_singleton()->accessibility_update_set_list_item_index(item.accessibility_item_element, item_index);
 					DisplayServer::get_singleton()->accessibility_update_set_list_item_level(item.accessibility_item_element, 0);
 					DisplayServer::get_singleton()->accessibility_update_set_list_item_selected(item.accessibility_item_element, i == mouse_over);
 					DisplayServer::get_singleton()->accessibility_update_set_name(item.accessibility_item_element, item.xl_text);
 					DisplayServer::get_singleton()->accessibility_update_set_flag(item.accessibility_item_element, DisplayServer::AccessibilityFlags::FLAG_DISABLED, item.disabled);
+					DisplayServer::get_singleton()->accessibility_update_set_flag(item.accessibility_item_element, DisplayServer::AccessibilityFlags::FLAG_HIDDEN, !item.visible);
 					DisplayServer::get_singleton()->accessibility_update_set_tooltip(item.accessibility_item_element, item.tooltip);
+
 
 					DisplayServer::get_singleton()->accessibility_update_set_bounds(item.accessibility_item_element, Rect2(item_ofs, Size2(display_width, h + theme_cache.v_separation)));
 
 					item.accessibility_item_dirty = false;
 				}
-				ofs.y += h;
+
+				if (item.visible) {
+					ofs.y += h;
+
+					if (!item.separator) {
+						item_index++;
+					}
+				}
 			}
 			prev_mouse_over = -1;
 
@@ -3192,19 +3228,6 @@ bool PopupMenu::get_allow_search() const {
 	return allow_search;
 }
 
-String PopupMenu::get_tooltip(const Point2 &p_pos) const {
-	Point2 pos = p_pos;
-	// Adjust for the top style margin and search bar.
-	pos.y += scroll_container->get_global_position().y;
-
-	int over = _get_mouse_over(pos);
-	if (over < 0 || over >= items.size()) {
-		return "";
-	}
-
-	return items[over].tooltip;
-}
-
 void PopupMenu::set_search_bar_enabled(bool p_enabled) {
 	search_bar_enabled = p_enabled;
 	_update_search_bar_visibility();
@@ -3618,7 +3641,7 @@ void PopupMenu::set_visible(bool p_visible) {
 		PopupMenu *parent_popup = Object::cast_to<PopupMenu>(get_parent());
 		if (!parent_popup) {
 			if (search_bar->is_visible()) {
-				search_bar->edit(true);
+				search_bar->edit();
 			}
 		}
 	}
@@ -3635,6 +3658,26 @@ void PopupMenu::set_visible(bool p_visible) {
 
 		Popup::set_visible(p_visible);
 	}
+}
+
+RID PopupMenuItems::get_focused_accessibility_element() const {
+	return popup->get_focused_accessibility_element();
+}
+
+void PopupMenuItems::gui_input(const Ref<InputEvent> &p_event) {
+	if (p_event->is_action("ui_up") || p_event->is_action("ui_down")) {
+		// We've already handled these in `PopupMenu::_input_from_window`, and these events will be handled as focus navigation if we don't stop them from propagating, causing focus to jump to the search bar.
+		accept_event();
+		return;
+	}
+}
+
+String PopupMenuItems::get_tooltip(const Point2 &p_pos) const {
+	int over = popup->_get_mouse_over(get_global_transform_with_canvas().xform(p_pos) * popup->get_content_scale_factor());
+	if (over < 0 || over >= popup->items.size()) {
+		return "";
+	}
+	return popup->items[over].tooltip;
 }
 
 PopupMenu::PopupMenu() {
@@ -3656,7 +3699,7 @@ PopupMenu::PopupMenu() {
 	search_bar->set_placeholder(ETR("Search"));
 	search_bar->set_keep_editing_on_text_submit(true);
 	search_bar->connect(SceneStringName(text_changed), callable_mp(this, &PopupMenu::_search_bar_text_changed));
-	search_bar->connect(SceneStringName(gui_input), callable_mp(this, &PopupMenu::_search_bar_input));
+	search_bar->connect(SceneStringName(focus_entered), callable_mp(this, &PopupMenu::_search_bar_focus_entered));
 	vbox_container->add_child(search_bar, false, INTERNAL_MODE_FRONT);
 
 	// Scroll Container
@@ -3668,13 +3711,15 @@ PopupMenu::PopupMenu() {
 	scroll_container->add_theme_style_override(SceneStringName(panel), memnew(StyleBoxEmpty));
 
 	// The control which will display the items
-	control = memnew(Control);
+	control = memnew(PopupMenuItems(this));
 	control->set_clip_contents(false);
 	control->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	control->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	control->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	control->set_focus_mode(Control::FOCUS_ALL);
 	scroll_container->add_child(control, false, INTERNAL_MODE_FRONT);
 	control->connect(SceneStringName(draw), callable_mp(this, &PopupMenu::_draw_items));
+	control->connect(SceneStringName(focus_entered), callable_mp(this, &PopupMenu::_items_focus_entered));
 
 	submenu_timer = memnew(Timer);
 	submenu_timer->set_wait_time(submenu_timer_popup_delay); // Default is 0.2.
