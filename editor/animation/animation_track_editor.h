@@ -615,6 +615,7 @@ class AnimationTrackEditor : public VBoxContainer {
 	HScrollBar *hscroll = nullptr;
 	ScrollContainer *scroll = nullptr;
 	VBoxContainer *track_vbox = nullptr;
+	MarginContainer *bezier_mc = nullptr;
 	AnimationBezierTrackEdit *bezier_edit = nullptr;
 	VBoxContainer *timeline_vbox = nullptr;
 
