@@ -4771,6 +4771,9 @@ void DisplayServerX11::process_events() {
 					OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_OUT);
 				}
 				app_focused = false;
+
+				// Release pressed events here instead of FocusOut because it's a no-op until NOTIFICATION_APPLICATION_FOCUS_OUT is processed.
+				Input::get_singleton()->release_pressed_events();
 			}
 		} else {
 			time_since_no_focus = OS::get_singleton()->get_ticks_msec();
@@ -5135,7 +5138,6 @@ void DisplayServerX11::process_events() {
 				}
 				wd.focused = false;
 
-				Input::get_singleton()->release_pressed_events();
 #ifdef ACCESSKIT_ENABLED
 				if (accessibility_driver) {
 					accessibility_driver->accessibility_set_window_focused(window_id, false);
