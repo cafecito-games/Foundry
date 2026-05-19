@@ -346,7 +346,6 @@ private:
 
 	// Focus.
 
-	bool _is_focusable() const;
 	void _window_find_focus_neighbor(const Vector2 &p_dir, Node *p_at, const Rect2 &p_rect, const Rect2 &p_clamp, real_t p_min, real_t &r_closest_dist_squared, Control **r_closest);
 	Control *_get_focus_neighbor(Side p_side, int p_count = 0);
 	bool _is_focus_mode_enabled() const;
@@ -392,6 +391,9 @@ protected:
 	void _accessibility_action_show_tooltip(const Variant &p_data);
 	void _accessibility_action_hide_tooltip(const Variant &p_data);
 	void _accessibility_action_scroll_into_view(const Variant &p_data);
+
+	// Focus.
+	bool _is_focusable() const;
 
 	// Exposed virtual methods.
 
