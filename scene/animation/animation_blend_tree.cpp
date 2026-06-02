@@ -215,7 +215,7 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 	// 3. Progress for Animation.
 	double prev_playback_time = prev_time + start_offset;
 	double cur_playback_time = cur_time + start_offset;
-	if (stretch_time_scale) {
+	if (use_custom_timeline && stretch_time_scale) {
 		double mlt = anim_size / cur_len;
 		prev_playback_time *= mlt;
 		cur_playback_time *= mlt;
