@@ -1969,6 +1969,11 @@ bool SceneTreeEditor::_is_script_type(const StringName &p_type) const {
 	return (script_types->has(p_type));
 }
 
+bool SceneTreeEditor::_has_drop_selection(TreeItem *p_item, const Point2 &p_point) const {
+	int section = (p_point == Vector2(Math::INF, Math::INF)) ? tree->get_drop_section_at_position(tree->get_item_rect(p_item).position) : tree->get_drop_section_at_position(p_point);
+	return !(section < -1 || (section == -1 && !p_item->get_parent()));
+}
+
 bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const {
 	if (!can_rename) {
 		return false; // Not editable tree.
@@ -1989,11 +1994,6 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 		return false;
 	}
 
-	int section = (p_point == Vector2(Math::INF, Math::INF)) ? tree->get_drop_section_at_position(tree->get_item_rect(item).position) : tree->get_drop_section_at_position(p_point);
-	if (section < -1 || (section == -1 && !item->get_parent())) {
-		return false;
-	}
-
 	if (String(d["type"]) == "files") {
 		Vector<String> files = d["files"];
 
@@ -2003,7 +2003,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 
 		if (_is_script_type(EditorFileSystem::get_singleton()->get_file_type(files[0]))) {
 			tree->set_drop_mode_flags(Tree::DROP_MODE_ON_ITEM);
-			return true;
+			return _has_drop_selection(item, p_point);
 		}
 
 		bool scene_drop = true;
@@ -2020,7 +2020,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 
 		if (scene_drop) {
 			tree->set_drop_mode_flags(Tree::DROP_MODE_INBETWEEN | Tree::DROP_MODE_ON_ITEM);
-			return true;
+			return _has_drop_selection(item, p_point);
 		}
 
 		if (audio_drop) {
@@ -2029,15 +2029,14 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 			} else {
 				tree->set_drop_mode_flags(Tree::DROP_MODE_INBETWEEN | Tree::DROP_MODE_ON_ITEM);
 			}
-			return true;
+			return _has_drop_selection(item, p_point);
 		}
 
 		if (files.size() > 1) {
 			return false;
 		}
 		tree->set_drop_mode_flags(Tree::DROP_MODE_ON_ITEM);
-
-		return true;
+		return _has_drop_selection(item, p_point);
 	}
 
 	if (String(d["type"]) == "script_list_element") {
@@ -2046,7 +2045,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 			String sp = se->get_edited_resource()->get_path();
 			if (_is_script_type(EditorFileSystem::get_singleton()->get_file_type(sp))) {
 				tree->set_drop_mode_flags(Tree::DROP_MODE_ON_ITEM);
-				return true;
+				return _has_drop_selection(item, p_point);
 			}
 		}
 	}
@@ -2066,7 +2065,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 			}
 		}
 
-		return true;
+		return _has_drop_selection(item, p_point);
 	}
 
 	return false;
