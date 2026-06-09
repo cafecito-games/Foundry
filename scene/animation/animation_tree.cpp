@@ -640,7 +640,8 @@ bool AnimationTree::_blend_pre_process(double p_delta, int p_track_count, const 
 	_update_properties(); // If properties need updating, update them.
 
 	if (root_animation_node.is_null()) {
-		return false;
+		process_state = AnimationNode::ProcessState();
+		return false; // Abort after _update_properties() and init process_state.
 	}
 
 	{ // Setup.
