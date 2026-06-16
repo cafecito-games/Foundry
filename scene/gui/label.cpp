@@ -638,12 +638,8 @@ PackedStringArray Label::get_configuration_warnings() const {
 	// but for now we have to warn about this impossible to resolve combination.
 	// See GH-83546.
 	if (is_inside_tree() && get_tree()->get_edited_scene_root() != this) {
-		// If the Label happens to be the root node of the edited scene, we don't need
-		// to check what its parent is. It's going to be some node from the editor tree
-		// and it can be a container, but that makes no difference to the user.
-		Container *parent_container = Object::cast_to<Container>(get_parent_control());
-		if (parent_container && autowrap_mode != TextServer::AUTOWRAP_OFF && get_custom_minimum_size() == Size2()) {
-			warnings.push_back(RTR("Labels with autowrapping enabled must have a custom minimum size configured to work correctly inside a container."));
+		if (autowrap_mode != TextServer::AUTOWRAP_OFF && get_combined_maximum_size().width <= 0 && get_custom_minimum_size().width <= 0) {
+			warnings.push_back(RTR("Labels with autowrapping enabled must have a positive custom minimum or maximum width configured to work correctly."));
 		}
 	}
 
