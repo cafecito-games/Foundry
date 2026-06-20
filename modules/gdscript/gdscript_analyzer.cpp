@@ -2322,6 +2322,17 @@ void GDScriptAnalyzer::apply_flow_narrowing(const GDScriptParser::IdentifierNode
 	flow_narrowed_types[key] = narrowed_type;
 }
 
+void GDScriptAnalyzer::apply_flow_narrowing(const GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::DataType &p_type) {
+	const GDScriptParser::Node *key = flow_narrowing_key_from_identifier(p_identifier);
+	if (key == nullptr || !p_type.is_set()) {
+		return;
+	}
+
+	GDScriptParser::DataType narrowed_type = p_type;
+	narrowed_type.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+	flow_narrowed_types[key] = narrowed_type;
+}
+
 void GDScriptAnalyzer::clear_flow_narrowing(const GDScriptParser::ExpressionNode *p_expression) {
 	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::IDENTIFIER) {
 		return;
@@ -2378,6 +2389,40 @@ bool GDScriptAnalyzer::null_check_narrowing_identifier(GDScriptParser::Expressio
 	return true;
 }
 
+bool GDScriptAnalyzer::type_test_narrowing_identifier(GDScriptParser::ExpressionNode *p_condition, bool p_condition_value, GDScriptParser::IdentifierNode *&r_identifier, GDScriptParser::DataType &r_type) const {
+	r_identifier = nullptr;
+	r_type = GDScriptParser::DataType();
+
+	bool condition_true_means_type_match = true;
+	GDScriptParser::ExpressionNode *condition = p_condition;
+	if (condition != nullptr && condition->type == GDScriptParser::Node::UNARY_OPERATOR) {
+		GDScriptParser::UnaryOpNode *unary_op = static_cast<GDScriptParser::UnaryOpNode *>(condition);
+		if (unary_op->variant_op != Variant::OP_NOT) {
+			return false;
+		}
+		condition_true_means_type_match = false;
+		condition = unary_op->operand;
+	}
+
+	if (p_condition_value != condition_true_means_type_match || condition == nullptr || condition->type != GDScriptParser::Node::TYPE_TEST) {
+		return false;
+	}
+
+	GDScriptParser::TypeTestNode *type_test = static_cast<GDScriptParser::TypeTestNode *>(condition);
+	if (type_test->operand == nullptr || type_test->operand->type != GDScriptParser::Node::IDENTIFIER || !type_test->test_datatype.is_set()) {
+		return false;
+	}
+
+	GDScriptParser::IdentifierNode *identifier = static_cast<GDScriptParser::IdentifierNode *>(type_test->operand);
+	if (flow_narrowing_key_from_identifier(identifier) == nullptr) {
+		return false;
+	}
+
+	r_identifier = identifier;
+	r_type = type_test->test_datatype;
+	return true;
+}
+
 void GDScriptAnalyzer::resolve_if(GDScriptParser::IfNode *p_if) {
 	reduce_expression(p_if->condition);
 
@@ -2385,6 +2430,11 @@ void GDScriptAnalyzer::resolve_if(GDScriptParser::IfNode *p_if) {
 	GDScriptParser::IdentifierNode *narrowed_identifier = nullptr;
 	if (null_check_narrowing_identifier(p_if->condition, true, narrowed_identifier)) {
 		apply_flow_narrowing(narrowed_identifier);
+	} else {
+		GDScriptParser::DataType narrowed_type;
+		if (type_test_narrowing_identifier(p_if->condition, true, narrowed_identifier, narrowed_type)) {
+			apply_flow_narrowing(narrowed_identifier, narrowed_type);
+		}
 	}
 	resolve_suite(p_if->true_block);
 	flow_narrowed_types = previous_flow_narrowed_types;
@@ -2394,6 +2444,11 @@ void GDScriptAnalyzer::resolve_if(GDScriptParser::IfNode *p_if) {
 		previous_flow_narrowed_types = flow_narrowed_types;
 		if (null_check_narrowing_identifier(p_if->condition, false, narrowed_identifier)) {
 			apply_flow_narrowing(narrowed_identifier);
+		} else {
+			GDScriptParser::DataType narrowed_type;
+			if (type_test_narrowing_identifier(p_if->condition, false, narrowed_identifier, narrowed_type)) {
+				apply_flow_narrowing(narrowed_identifier, narrowed_type);
+			}
 		}
 		resolve_suite(p_if->false_block);
 		flow_narrowed_types = previous_flow_narrowed_types;

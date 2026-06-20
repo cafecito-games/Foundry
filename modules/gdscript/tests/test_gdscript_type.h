@@ -1058,6 +1058,21 @@ TEST_CASE("[Modules][GDScript] Analyzer narrows nullable locals for assignments 
 	CHECK(analyze_source(narrowed_return_source, true) == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer narrows Variant locals after type tests") {
+	const String source_prefix = "func accept_node(node: Node) -> void:\n\tpass\nfunc accept_button(button: Button) -> void:\n\tpass\n";
+	const String node_test_source = source_prefix + "func test(value: Variant) -> void:\n\tif value is Node:\n\t\taccept_node(value)\n";
+	const String button_test_source = source_prefix + "func test(value: Variant) -> void:\n\tif value is Button:\n\t\taccept_button(value)\n";
+	const String is_not_else_source = source_prefix + "func test(value: Variant) -> void:\n\tif value is not Node:\n\t\tpass\n\telse:\n\t\taccept_node(value)\n";
+	const String outside_source = source_prefix + "func test(value: Variant) -> void:\n\tif value is Node:\n\t\tpass\n\taccept_node(value)\n";
+	const String reassigned_source = source_prefix + "func test(value: Variant) -> void:\n\tif value is Node:\n\t\tvalue = 1\n\t\taccept_node(value)\n";
+
+	CHECK(analyze_source(node_test_source, false, true) == OK);
+	CHECK(analyze_source(button_test_source, false, true) == OK);
+	CHECK(analyze_source(is_not_else_source, false, true) == OK);
+	CHECK(analyze_source(outside_source, false, true) != OK);
+	CHECK(analyze_source(reassigned_source, false, true) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer can reject null source callable and signal arguments to non-null types") {
 	const String callable_source = "func accept_node(node: Node) -> void:\n\tpass\nfunc test() -> void:\n\tvar callback: Callable[[Node], void] = accept_node\n\tcallback.call(null)\n";
 	const String nullable_callable_source = "func accept_node(node: Node?) -> void:\n\tpass\nfunc test() -> void:\n\tvar callback: Callable[[Node?], void] = accept_node\n\tcallback.call(null)\n";
