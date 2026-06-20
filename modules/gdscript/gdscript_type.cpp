@@ -108,6 +108,11 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 		return result;
 	}
 
+	if (p_options.strict_null && p_source.is_nullable && !p_target.is_nullable) {
+		result.compatible = false;
+		return result;
+	}
+
 	if (p_target.kind == GDScriptParser::DataType::BUILTIN) {
 		result.compatible = p_source.kind == GDScriptParser::DataType::BUILTIN && p_target.builtin_type == p_source.builtin_type;
 		if (!result.compatible && p_options.allow_implicit_conversion) {

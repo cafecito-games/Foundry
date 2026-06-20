@@ -2044,7 +2044,10 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 	bool previous_static_context = static_context;
 	static_context = p_function->is_static;
 
+	HashMap<const GDScriptParser::Node *, GDScriptParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
+	flow_narrowed_types.clear();
 	resolve_suite(p_function->body);
+	flow_narrowed_types = previous_flow_narrowed_types;
 
 	if (!p_function->get_datatype().is_hard_type() && p_function->body->get_datatype().is_set()) {
 		// Use the suite inferred type if return isn't explicitly set.
@@ -2195,7 +2198,8 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 					downgrade_node_type_source(p_assignable->initializer);
 				}
 			} else if (!is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer)) {
-				if (!is_constant && is_type_compatible(initializer_type, specified_type)) {
+				const bool nullable_mismatch = strict_null_checks && initializer_type.is_nullable && !specified_type.is_nullable && !specified_type.is_variant();
+				if (!nullable_mismatch && !is_constant && is_type_compatible(initializer_type, specified_type)) {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				} else {
@@ -2278,14 +2282,121 @@ void GDScriptAnalyzer::resolve_parameter(GDScriptParser::ParameterNode *p_parame
 	resolve_assignable(p_parameter, kind);
 }
 
+const GDScriptParser::Node *GDScriptAnalyzer::flow_narrowing_key_from_identifier(const GDScriptParser::IdentifierNode *p_identifier) const {
+	switch (p_identifier->source) {
+		case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+			return p_identifier->parameter_source;
+		case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+			return p_identifier->variable_source;
+		case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+		case GDScriptParser::IdentifierNode::LOCAL_BIND:
+			return p_identifier->bind_source;
+		case GDScriptParser::IdentifierNode::UNDEFINED_SOURCE:
+		case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+		case GDScriptParser::IdentifierNode::MEMBER_VARIABLE:
+		case GDScriptParser::IdentifierNode::MEMBER_CONSTANT:
+		case GDScriptParser::IdentifierNode::MEMBER_FUNCTION:
+		case GDScriptParser::IdentifierNode::MEMBER_SIGNAL:
+		case GDScriptParser::IdentifierNode::MEMBER_CLASS:
+		case GDScriptParser::IdentifierNode::INHERITED_VARIABLE:
+		case GDScriptParser::IdentifierNode::STATIC_VARIABLE:
+		case GDScriptParser::IdentifierNode::NATIVE_CLASS:
+			return nullptr;
+	}
+
+	return nullptr;
+}
+
+void GDScriptAnalyzer::apply_flow_narrowing(const GDScriptParser::IdentifierNode *p_identifier) {
+	const GDScriptParser::Node *key = flow_narrowing_key_from_identifier(p_identifier);
+	if (key == nullptr) {
+		return;
+	}
+
+	GDScriptParser::DataType narrowed_type = p_identifier->get_datatype();
+	if (!narrowed_type.is_nullable) {
+		return;
+	}
+
+	narrowed_type.is_nullable = false;
+	flow_narrowed_types[key] = narrowed_type;
+}
+
+void GDScriptAnalyzer::clear_flow_narrowing(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::IDENTIFIER) {
+		return;
+	}
+
+	const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
+	const GDScriptParser::Node *key = flow_narrowing_key_from_identifier(identifier);
+	if (key != nullptr) {
+		flow_narrowed_types.erase(key);
+	}
+}
+
+static bool _is_null_literal(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::LITERAL) {
+		return false;
+	}
+
+	const GDScriptParser::LiteralNode *literal = static_cast<const GDScriptParser::LiteralNode *>(p_expression);
+	return literal->value.get_type() == Variant::NIL;
+}
+
+bool GDScriptAnalyzer::null_check_narrowing_identifier(GDScriptParser::ExpressionNode *p_condition, bool p_condition_value, GDScriptParser::IdentifierNode *&r_identifier) const {
+	r_identifier = nullptr;
+	if (p_condition == nullptr || p_condition->type != GDScriptParser::Node::BINARY_OPERATOR) {
+		return false;
+	}
+
+	GDScriptParser::BinaryOpNode *binary_op = static_cast<GDScriptParser::BinaryOpNode *>(p_condition);
+	if (binary_op->variant_op != Variant::OP_EQUAL && binary_op->variant_op != Variant::OP_NOT_EQUAL) {
+		return false;
+	}
+
+	const bool condition_true_means_not_null = binary_op->variant_op == Variant::OP_NOT_EQUAL;
+	if (p_condition_value != condition_true_means_not_null) {
+		return false;
+	}
+
+	GDScriptParser::ExpressionNode *candidate = nullptr;
+	if (_is_null_literal(binary_op->left_operand)) {
+		candidate = binary_op->right_operand;
+	} else if (_is_null_literal(binary_op->right_operand)) {
+		candidate = binary_op->left_operand;
+	}
+	if (candidate == nullptr || candidate->type != GDScriptParser::Node::IDENTIFIER) {
+		return false;
+	}
+
+	GDScriptParser::IdentifierNode *identifier = static_cast<GDScriptParser::IdentifierNode *>(candidate);
+	if (flow_narrowing_key_from_identifier(identifier) == nullptr || !identifier->get_datatype().is_nullable) {
+		return false;
+	}
+
+	r_identifier = identifier;
+	return true;
+}
+
 void GDScriptAnalyzer::resolve_if(GDScriptParser::IfNode *p_if) {
 	reduce_expression(p_if->condition);
 
+	HashMap<const GDScriptParser::Node *, GDScriptParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
+	GDScriptParser::IdentifierNode *narrowed_identifier = nullptr;
+	if (null_check_narrowing_identifier(p_if->condition, true, narrowed_identifier)) {
+		apply_flow_narrowing(narrowed_identifier);
+	}
 	resolve_suite(p_if->true_block);
+	flow_narrowed_types = previous_flow_narrowed_types;
 	p_if->set_datatype(p_if->true_block->get_datatype());
 
 	if (p_if->false_block != nullptr) {
+		previous_flow_narrowed_types = flow_narrowed_types;
+		if (null_check_narrowing_identifier(p_if->condition, false, narrowed_identifier)) {
+			apply_flow_narrowing(narrowed_identifier);
+		}
 		resolve_suite(p_if->false_block);
+		flow_narrowed_types = previous_flow_narrowed_types;
 		decide_suite_type(p_if, p_if->false_block);
 	}
 }
@@ -2402,7 +2513,9 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 		}
 	}
 
+	HashMap<const GDScriptParser::Node *, GDScriptParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
 	resolve_suite(p_for->loop);
+	flow_narrowed_types = previous_flow_narrowed_types;
 	p_for->set_datatype(p_for->loop->get_datatype());
 #ifdef DEBUG_ENABLED
 	if (p_for->variable) {
@@ -2414,7 +2527,9 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 void GDScriptAnalyzer::resolve_while(GDScriptParser::WhileNode *p_while) {
 	resolve_node(p_while->condition, false);
 
+	HashMap<const GDScriptParser::Node *, GDScriptParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
 	resolve_suite(p_while->loop);
+	flow_narrowed_types = previous_flow_narrowed_types;
 	p_while->set_datatype(p_while->loop->get_datatype());
 }
 
@@ -2428,6 +2543,10 @@ void GDScriptAnalyzer::resolve_assert(GDScriptParser::AssertNode *p_assert) {
 	}
 
 	p_assert->set_datatype(p_assert->condition->get_datatype());
+	GDScriptParser::IdentifierNode *narrowed_identifier = nullptr;
+	if (null_check_narrowing_identifier(p_assert->condition, true, narrowed_identifier)) {
+		apply_flow_narrowing(narrowed_identifier);
+	}
 
 #ifdef DEBUG_ENABLED
 	if (p_assert->condition->is_constant) {
@@ -2616,8 +2735,9 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 				downgrade_node_type_source(p_return);
 			}
 		} else if (!is_type_compatible(expected_type, result, true, p_return)) {
+			const bool nullable_mismatch = strict_null_checks && result.is_nullable && !expected_type.is_nullable && !expected_type.is_variant();
 			mark_node_unsafe(p_return);
-			if (!is_type_compatible(result, expected_type)) {
+			if (nullable_mismatch || !is_type_compatible(result, expected_type)) {
 				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)", result.to_string(), expected_type.to_string()), p_return);
 			}
 #ifdef DEBUG_ENABLED
@@ -2946,6 +3066,7 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 	}
 #endif // DEBUG_ENABLED
 
+	clear_flow_narrowing(p_assignment->assignee);
 	reduce_expression(p_assignment->assignee);
 
 #ifdef DEBUG_ENABLED
@@ -3123,7 +3244,8 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 				// non-variant assignee and incompatible result
 				mark_node_unsafe(p_assignment);
 				if (assignee_is_hard) {
-					if (is_type_compatible(op_type, assignee_type)) {
+					const bool nullable_mismatch = strict_null_checks && op_type.is_nullable && !assignee_type.is_nullable && !assignee_type.is_variant();
+					if (!nullable_mismatch && is_type_compatible(op_type, assignee_type)) {
 						// hard non-variant assignee and maybe compatible result
 						p_assignment->use_conversion_assign = true;
 					} else {
@@ -4581,6 +4703,15 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 		case GDScriptParser::IdentifierNode::MEMBER_CLASS:
 		case GDScriptParser::IdentifierNode::NATIVE_CLASS:
 			break;
+	}
+
+	if (found_source) {
+		const GDScriptParser::Node *flow_key = flow_narrowing_key_from_identifier(p_identifier);
+		if (flow_key != nullptr) {
+			if (HashMap<const GDScriptParser::Node *, GDScriptParser::DataType>::Iterator E = flow_narrowed_types.find(flow_key)) {
+				p_identifier->set_datatype(E->value);
+			}
+		}
 	}
 
 #ifdef DEBUG_ENABLED
@@ -6738,7 +6869,8 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 #endif // DEBUG_ENABLED
 			}
 		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
-			if (!is_type_compatible(arg_type, par_type)) {
+			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
+			if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
 				push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
 								   p_call->function_name, i + 1, par_type.to_string(), arg_type.to_string()),
 						p_call->arguments[i]);
@@ -6796,7 +6928,8 @@ void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScrip
 #endif // DEBUG_ENABLED
 			}
 		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
-			if (!is_type_compatible(arg_type, par_type)) {
+			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
+			if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
 				push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
 								   p_function, i + 1, par_type.to_string(), arg_type.to_string()),
 						argument);

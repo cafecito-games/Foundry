@@ -141,6 +141,24 @@ TEST_CASE("[Modules][GDScript] Type compatibility can reject null source for str
 	CHECK(nullable_result.compatible);
 }
 
+TEST_CASE("[Modules][GDScript] Type compatibility can reject nullable source for strict checks") {
+	const GDScriptParser::DataType target = make_native_type(SNAME("Node"));
+	GDScriptParser::DataType nullable_source = target;
+	nullable_source.is_nullable = true;
+	GDScriptParser::DataType nullable_target = target;
+	nullable_target.is_nullable = true;
+	GDScriptTypeCompatibility::Options options;
+	options.strict_null = true;
+
+	const GDScriptTypeCompatibility::Result legacy_result = GDScriptTypeCompatibility::check(target, nullable_source);
+	const GDScriptTypeCompatibility::Result strict_result = GDScriptTypeCompatibility::check(target, nullable_source, options);
+	const GDScriptTypeCompatibility::Result nullable_result = GDScriptTypeCompatibility::check(nullable_target, nullable_source, options);
+
+	CHECK(legacy_result.compatible);
+	CHECK_FALSE(strict_result.compatible);
+	CHECK(nullable_result.compatible);
+}
+
 TEST_CASE("[Modules][GDScript] Type compatibility reports implicit builtin conversion") {
 	const GDScriptParser::DataType target = make_builtin_type(Variant::FLOAT);
 	const GDScriptParser::DataType source = make_builtin_type(Variant::INT);
@@ -998,6 +1016,46 @@ TEST_CASE("[Modules][GDScript] Analyzer can reject null source arguments and ret
 	CHECK(analyze_source(return_source) == OK);
 	CHECK(analyze_source(return_source, true) != OK);
 	CHECK(analyze_source(nullable_return_source, true) == OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer narrows nullable locals after null checks") {
+	const String source_prefix = "func accept_node(node: Node) -> void:\n\tpass\n";
+	const String if_not_null_source = source_prefix + "func test(node: Node?) -> void:\n\tif node != null:\n\t\taccept_node(node)\n";
+	const String null_not_equal_source = source_prefix + "func test(node: Node?) -> void:\n\tif null != node:\n\t\taccept_node(node)\n";
+	const String else_source = source_prefix + "func test(node: Node?) -> void:\n\tif node == null:\n\t\tpass\n\telse:\n\t\taccept_node(node)\n";
+	const String local_variable_source = source_prefix + "func test() -> void:\n\tvar node: Node? = null\n\tif node != null:\n\t\taccept_node(node)\n";
+	const String outside_source = source_prefix + "func test(node: Node?) -> void:\n\tif node != null:\n\t\tpass\n\taccept_node(node)\n";
+	const String reassigned_source = source_prefix + "func test(node: Node?) -> void:\n\tif node != null:\n\t\tnode = null\n\t\taccept_node(node)\n";
+
+	CHECK(analyze_source(if_not_null_source, true) == OK);
+	CHECK(analyze_source(null_not_equal_source, true) == OK);
+	CHECK(analyze_source(else_source, true) == OK);
+	CHECK(analyze_source(local_variable_source, true) == OK);
+	CHECK(analyze_source(outside_source, true) != OK);
+	CHECK(analyze_source(reassigned_source, true) != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer narrows nullable locals after non-null assert") {
+	const String source_prefix = "func accept_node(node: Node) -> void:\n\tpass\n";
+	const String assert_source = source_prefix + "func test(node: Node?) -> void:\n\tassert(node != null)\n\taccept_node(node)\n";
+	const String null_not_equal_source = source_prefix + "func test(node: Node?) -> void:\n\tassert(null != node)\n\taccept_node(node)\n";
+	const String reassigned_source = source_prefix + "func test(node: Node?) -> void:\n\tassert(node != null)\n\tnode = null\n\taccept_node(node)\n";
+
+	CHECK(analyze_source(assert_source, true) == OK);
+	CHECK(analyze_source(null_not_equal_source, true) == OK);
+	CHECK(analyze_source(reassigned_source, true) != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer narrows nullable locals for assignments and returns") {
+	const String assignment_source = "func test(maybe: Node?) -> void:\n\tvar node: Node = maybe\n";
+	const String narrowed_assignment_source = "func test(maybe: Node?) -> void:\n\tif maybe != null:\n\t\tvar node: Node = maybe\n";
+	const String return_source = "func get_node(maybe: Node?) -> Node:\n\treturn maybe\n";
+	const String narrowed_return_source = "func get_node(maybe: Node?) -> Node:\n\tassert(maybe != null)\n\treturn maybe\n";
+
+	CHECK(analyze_source(assignment_source, true) != OK);
+	CHECK(analyze_source(narrowed_assignment_source, true) == OK);
+	CHECK(analyze_source(return_source, true) != OK);
+	CHECK(analyze_source(narrowed_return_source, true) == OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer can reject null source callable and signal arguments to non-null types") {
