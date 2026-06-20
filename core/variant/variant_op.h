@@ -34,6 +34,7 @@
 
 #include "core/debugger/engine_debugger.h"
 #include "core/object/class_db.h"
+#include "core/variant/container_type_validate.h"
 
 template <typename Evaluator>
 class CommonEvaluate {
@@ -663,7 +664,7 @@ public:
 		int bsize = array_b.size();
 
 		if (array_a.is_typed() && array_a.is_same_typed(array_b)) {
-			sum.set_typed(array_a.get_typed_builtin(), array_a.get_typed_class_name(), array_a.get_typed_script());
+			sum.set_typed(array_a.get_element_type());
 		}
 
 		sum.resize(asize + bsize);

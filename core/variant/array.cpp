@@ -219,61 +219,18 @@ void Array::assign(const Array &p_array) {
 	const ContainerTypeValidate &source_typed = p_array._p->typed;
 
 	if (typed == source_typed || typed.type == Variant::NIL || (source_typed.type == Variant::OBJECT && typed.can_reference(source_typed))) {
-		// from same to same or
-		// from anything to variants or
-		// from subclasses to base classes
 		_p->array = p_array._p->array;
 		return;
 	}
 
 	const Variant *source = p_array._p->array.ptr();
 	int size = p_array._p->array.size();
-
-	if ((source_typed.type == Variant::NIL && typed.type == Variant::OBJECT) || (source_typed.type == Variant::OBJECT && source_typed.can_reference(typed))) {
-		// from variants to objects or
-		// from base classes to subclasses
-		for (int i = 0; i < size; i++) {
-			const Variant &element = source[i];
-			if (element.get_type() != Variant::NIL && (element.get_type() != Variant::OBJECT || !typed.validate_object(element, "assign"))) {
-				ERR_FAIL_MSG(vformat(R"(Unable to convert array index %d from "%s" to "%s".)", i, Variant::get_type_name(element.get_type()), Variant::get_type_name(typed.type)));
-			}
-		}
-		_p->array = p_array._p->array;
-		return;
-	}
-	if (typed.type == Variant::OBJECT || source_typed.type == Variant::OBJECT) {
-		ERR_FAIL_MSG(vformat(R"(Cannot assign contents of "Array[%s]" to "Array[%s]".)", Variant::get_type_name(source_typed.type), Variant::get_type_name(typed.type)));
-	}
-
 	Vector<Variant> array;
 	array.resize(size);
 	Variant *data = array.ptrw();
-
-	if (source_typed.type == Variant::NIL && typed.type != Variant::OBJECT) {
-		// from variants to primitives
-		for (int i = 0; i < size; i++) {
-			const Variant *value = source + i;
-			if (value->get_type() == typed.type) {
-				data[i] = *value;
-				continue;
-			}
-			if (!Variant::can_convert_strict(value->get_type(), typed.type)) {
-				ERR_FAIL_MSG(vformat(R"(Unable to convert array index %d from "%s" to "%s".)", i, Variant::get_type_name(value->get_type()), Variant::get_type_name(typed.type)));
-			}
-			Callable::CallError ce;
-			Variant::construct(typed.type, data[i], &value, 1, ce);
-			ERR_FAIL_COND_MSG(ce.error, vformat(R"(Unable to convert array index %d from "%s" to "%s".)", i, Variant::get_type_name(value->get_type()), Variant::get_type_name(typed.type)));
-		}
-	} else if (Variant::can_convert_strict(source_typed.type, typed.type)) {
-		// from primitives to different convertible primitives
-		for (int i = 0; i < size; i++) {
-			const Variant *value = source + i;
-			Callable::CallError ce;
-			Variant::construct(typed.type, data[i], &value, 1, ce);
-			ERR_FAIL_COND_MSG(ce.error, vformat(R"(Unable to convert array index %d from "%s" to "%s".)", i, Variant::get_type_name(value->get_type()), Variant::get_type_name(typed.type)));
-		}
-	} else {
-		ERR_FAIL_MSG(vformat(R"(Cannot assign contents of "Array[%s]" to "Array[%s]".)", Variant::get_type_name(source_typed.type), Variant::get_type_name(typed.type)));
+	for (int i = 0; i < size; i++) {
+		data[i] = source[i];
+		ERR_FAIL_COND_MSG(!typed.validate(data[i], "assign"), vformat(R"(Unable to convert array index %d from "%s" to "%s".)", i, Variant::get_type_name(source[i].get_type()), typed.get_type_name()));
 	}
 
 	_p->array = array;
@@ -305,13 +262,12 @@ void Array::append_array(const Array &p_array) {
 
 Error Array::resize(int p_new_size) {
 	ERR_FAIL_COND_V_MSG(_p->read_only, ERR_LOCKED, "Array is in read-only state.");
-	Variant::Type &variant_type = _p->typed.type;
 	int old_size = _p->array.size();
 	Error err = _p->array.resize_initialized(p_new_size);
-	if (!err && variant_type != Variant::NIL && variant_type != Variant::OBJECT) {
+	if (!err && _p->typed.type != Variant::NIL && _p->typed.type != Variant::OBJECT) {
 		Variant *write = _p->array.ptrw();
 		for (int i = old_size; i < p_new_size; i++) {
-			VariantInternal::initialize(&write[i], variant_type);
+			write[i] = _p->typed.make_default();
 		}
 	}
 	return err;
@@ -878,8 +834,23 @@ Array::Array(const Array &p_from, uint32_t p_type, const StringName &p_class_nam
 	assign(p_from);
 }
 
+Array::Array(const Array &p_from, const ContainerType &p_element_type) {
+	_p = memnew(ArrayPrivate);
+	_p->refcount.init();
+	set_typed(p_element_type);
+	assign(p_from);
+}
+
 void Array::set_typed(const ContainerType &p_element_type) {
-	set_typed(p_element_type.builtin_type, p_element_type.class_name, p_element_type.script);
+	ERR_FAIL_COND_MSG(_p->read_only, "Array is in read-only state.");
+	ERR_FAIL_COND_MSG(_p->array.size() > 0, "Type can only be set when array is empty.");
+	ERR_FAIL_COND_MSG(_p->refcount.get() > 1, "Type can only be set when array has no more than one user.");
+	ERR_FAIL_COND_MSG(_p->typed.type != Variant::NIL, "Type can only be set once.");
+	ERR_FAIL_COND_MSG(p_element_type.class_name != StringName() && p_element_type.builtin_type != Variant::OBJECT, "Class names can only be set for type OBJECT");
+	ERR_FAIL_COND_MSG(p_element_type.script.is_valid() && p_element_type.class_name == StringName(), "Script class can only be set together with base class name");
+
+	_p->typed = ContainerTypeValidate(p_element_type);
+	_p->typed.where = "TypedArray";
 }
 
 void Array::set_typed(uint32_t p_type, const StringName &p_class_name, const Variant &p_script) {
@@ -910,11 +881,7 @@ bool Array::is_same_instance(const Array &p_other) const {
 }
 
 ContainerType Array::get_element_type() const {
-	ContainerType type;
-	type.builtin_type = _p->typed.type;
-	type.class_name = _p->typed.class_name;
-	type.script = _p->typed.script;
-	return type;
+	return _p->typed.get_container_type();
 }
 
 uint32_t Array::get_typed_builtin() const {

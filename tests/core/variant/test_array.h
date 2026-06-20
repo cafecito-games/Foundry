@@ -30,11 +30,25 @@
 
 #pragma once
 
+#include "core/extension/gdextension.h"
+#include "core/object/ref_counted.h"
 #include "core/variant/array.h"
+#include "core/variant/container_type_validate.h"
+#include "core/variant/dictionary.h"
 #include "tests/test_macros.h"
 #include "tests/test_tools.h"
 
 namespace TestArray {
+
+static Dictionary make_type_descriptor(Variant::Type p_type, const Array &p_element_types = Array()) {
+	Dictionary descriptor;
+	descriptor["type"] = p_type;
+	if (!p_element_types.is_empty()) {
+		descriptor["element_types"] = p_element_types;
+	}
+	return descriptor;
+}
+
 TEST_CASE("[Array] initializer list") {
 	Array arr = { 0, 1, "test", true, { 0.0, 1.0 } };
 	CHECK(arr.size() == 5);
@@ -784,6 +798,216 @@ TEST_CASE("[Array] Test typed arrays") {
 	Array arr3;
 	arr3.set_typed(Variant::OBJECT, "Node", Variant());
 	CHECK_EQ(arr3.get_typed_class_name(), "Node");
+}
+
+TEST_CASE("[Array] Nested typed array validation") {
+	ContainerType string_type;
+	string_type.builtin_type = Variant::STRING;
+
+	ContainerType int_type;
+	int_type.builtin_type = Variant::INT;
+
+	ContainerType dictionary_type;
+	dictionary_type.builtin_type = Variant::DICTIONARY;
+	dictionary_type.element_types.push_back(string_type);
+	dictionary_type.element_types.push_back(int_type);
+
+	Array array;
+	array.set_typed(dictionary_type);
+	CHECK(array.is_typed());
+	CHECK_EQ(array.get_typed_builtin(), Variant::DICTIONARY);
+	CHECK_EQ(array.get_element_type().element_types.size(), 2);
+	CHECK_EQ(array.get_element_type().element_types[0].builtin_type, Variant::STRING);
+	CHECK_EQ(array.get_element_type().element_types[1].builtin_type, Variant::INT);
+
+	Dictionary valid_dictionary;
+	valid_dictionary["score"] = 10;
+	array.push_back(valid_dictionary);
+	CHECK_EQ(array.size(), 1);
+
+	Dictionary stored_dictionary = array[0];
+	CHECK(stored_dictionary.is_typed());
+	CHECK_EQ(stored_dictionary.get_typed_key_builtin(), Variant::STRING);
+	CHECK_EQ(stored_dictionary.get_typed_value_builtin(), Variant::INT);
+	CHECK_EQ(stored_dictionary["score"], Variant(10));
+
+	Dictionary invalid_dictionary;
+	invalid_dictionary["score"] = "bad";
+	ERR_PRINT_OFF;
+	array.push_back(invalid_dictionary);
+	ERR_PRINT_ON;
+	CHECK_EQ(array.size(), 1);
+}
+
+TEST_CASE("[ContainerType] Descriptor round trips nested typed containers") {
+	const Variant string_descriptor = make_type_descriptor(Variant::STRING);
+	const Variant int_descriptor = make_type_descriptor(Variant::INT);
+	const Variant variant_descriptor = make_type_descriptor(Variant::NIL);
+	const Variant object_descriptor = []() {
+		Dictionary descriptor;
+		descriptor["type"] = Variant::OBJECT;
+		descriptor["class_name"] = StringName("Node");
+		return descriptor;
+	}();
+	const Variant plain_array_descriptor = make_type_descriptor(Variant::ARRAY, Array({ int_descriptor }));
+	const Variant dictionary_descriptor = make_type_descriptor(Variant::DICTIONARY, Array({ string_descriptor, int_descriptor }));
+	const Variant array_descriptor = make_type_descriptor(Variant::ARRAY, Array({ dictionary_descriptor }));
+	const Variant dictionary_with_array_value_descriptor = make_type_descriptor(Variant::DICTIONARY, Array({ string_descriptor, plain_array_descriptor }));
+
+	ContainerType int_type;
+	CHECK(ContainerTypeDescriptor::from_variant(int_descriptor, int_type));
+	CHECK_EQ(int_type.get_type_name(), "int");
+
+	ContainerType variant_type;
+	CHECK(ContainerTypeDescriptor::from_variant(variant_descriptor, variant_type));
+	CHECK_EQ(variant_type.get_type_name(), "Variant");
+
+	ContainerType object_type;
+	CHECK(ContainerTypeDescriptor::from_variant(object_descriptor, object_type));
+	CHECK_EQ(object_type.get_type_name(), "Node");
+
+	ContainerType dictionary_with_array_value_type;
+	CHECK(ContainerTypeDescriptor::from_variant(dictionary_with_array_value_descriptor, dictionary_with_array_value_type));
+	CHECK_EQ(dictionary_with_array_value_type.get_type_name(), "Dictionary[String, Array[int]]");
+
+	ContainerType type;
+	CHECK(ContainerTypeDescriptor::from_variant(array_descriptor, type));
+	CHECK_EQ(type.builtin_type, Variant::ARRAY);
+	REQUIRE_EQ(type.element_types.size(), 1);
+	CHECK_EQ(type.element_types[0].builtin_type, Variant::DICTIONARY);
+	REQUIRE_EQ(type.element_types[0].element_types.size(), 2);
+	CHECK_EQ(type.element_types[0].element_types[0].builtin_type, Variant::STRING);
+	CHECK_EQ(type.element_types[0].element_types[1].builtin_type, Variant::INT);
+
+	const Variant round_trip = ContainerTypeDescriptor::to_variant(type);
+	ContainerType decoded_round_trip;
+	CHECK(ContainerTypeDescriptor::from_variant(round_trip, decoded_round_trip));
+	CHECK_EQ(decoded_round_trip, type);
+}
+
+TEST_CASE("[ContainerType] Descriptor rejects invalid shapes without changing output") {
+	ContainerType int_type;
+	int_type.builtin_type = Variant::INT;
+	ContainerType output_type = int_type;
+	String error;
+
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(Variant(), output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("Dictionary"));
+
+	Dictionary missing_type_descriptor;
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(missing_type_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("type"));
+
+	Dictionary invalid_type_descriptor;
+	invalid_type_descriptor["type"] = Variant::VARIANT_MAX;
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(invalid_type_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("invalid type id"));
+
+	Dictionary invalid_element_types_descriptor;
+	invalid_element_types_descriptor["type"] = Variant::ARRAY;
+	invalid_element_types_descriptor["element_types"] = 1;
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(invalid_element_types_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("element_types"));
+
+	const Variant int_descriptor = make_type_descriptor(Variant::INT);
+	Dictionary wrong_array_children_descriptor;
+	wrong_array_children_descriptor["type"] = Variant::ARRAY;
+	wrong_array_children_descriptor["element_types"] = Array({ int_descriptor, int_descriptor });
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(wrong_array_children_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("zero or one"));
+
+	Dictionary wrong_dictionary_children_descriptor;
+	wrong_dictionary_children_descriptor["type"] = Variant::DICTIONARY;
+	wrong_dictionary_children_descriptor["element_types"] = Array({ int_descriptor });
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(wrong_dictionary_children_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("zero or two"));
+
+	Dictionary scalar_children_descriptor;
+	scalar_children_descriptor["type"] = Variant::INT;
+	scalar_children_descriptor["element_types"] = Array({ int_descriptor });
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(scalar_children_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("Only Array and Dictionary"));
+
+	Dictionary scalar_class_name_descriptor;
+	scalar_class_name_descriptor["type"] = Variant::INT;
+	scalar_class_name_descriptor["class_name"] = StringName("Node");
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(scalar_class_name_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("class_name"));
+
+	Dictionary scalar_script_descriptor;
+	scalar_script_descriptor["type"] = Variant::INT;
+	scalar_script_descriptor["script"] = 1;
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(scalar_script_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("script"));
+
+	Dictionary non_script_object_descriptor;
+	non_script_object_descriptor["type"] = Variant::OBJECT;
+	Ref<RefCounted> ref_counted = memnew(RefCounted);
+	non_script_object_descriptor["script"] = ref_counted;
+	CHECK_FALSE(ContainerTypeDescriptor::from_variant(non_script_object_descriptor, output_type, &error));
+	CHECK_EQ(output_type, int_type);
+	CHECK(error.contains("Script object"));
+}
+
+TEST_CASE("[GDExtension] Typed container descriptor API sets and gets recursive metadata") {
+	GDExtensionInterfaceArraySetTypedByDescriptor array_set_typed_by_descriptor = reinterpret_cast<GDExtensionInterfaceArraySetTypedByDescriptor>(GDExtension::get_interface_function("array_set_typed_by_descriptor"));
+	GDExtensionInterfaceArrayGetTypedElementTypeDescriptor array_get_typed_element_type_descriptor = reinterpret_cast<GDExtensionInterfaceArrayGetTypedElementTypeDescriptor>(GDExtension::get_interface_function("array_get_typed_element_type_descriptor"));
+	GDExtensionInterfaceDictionarySetTypedByDescriptor dictionary_set_typed_by_descriptor = reinterpret_cast<GDExtensionInterfaceDictionarySetTypedByDescriptor>(GDExtension::get_interface_function("dictionary_set_typed_by_descriptor"));
+	GDExtensionInterfaceDictionaryGetTypedKeyTypeDescriptor dictionary_get_typed_key_type_descriptor = reinterpret_cast<GDExtensionInterfaceDictionaryGetTypedKeyTypeDescriptor>(GDExtension::get_interface_function("dictionary_get_typed_key_type_descriptor"));
+	GDExtensionInterfaceDictionaryGetTypedValueTypeDescriptor dictionary_get_typed_value_type_descriptor = reinterpret_cast<GDExtensionInterfaceDictionaryGetTypedValueTypeDescriptor>(GDExtension::get_interface_function("dictionary_get_typed_value_type_descriptor"));
+
+	const Variant string_descriptor = make_type_descriptor(Variant::STRING);
+	const Variant int_descriptor = make_type_descriptor(Variant::INT);
+	const Variant dictionary_descriptor = make_type_descriptor(Variant::DICTIONARY, Array({ string_descriptor, int_descriptor }));
+	const Variant array_descriptor = make_type_descriptor(Variant::ARRAY, Array({ dictionary_descriptor }));
+
+	Array array;
+	CHECK(array_set_typed_by_descriptor(&array, &dictionary_descriptor));
+	CHECK_EQ(array.get_element_type().get_type_name(), "Dictionary[String, int]");
+
+	alignas(Variant) uint8_t array_descriptor_storage[sizeof(Variant)];
+	Variant *array_element_descriptor = reinterpret_cast<Variant *>(array_descriptor_storage);
+	array_get_typed_element_type_descriptor(&array, array_element_descriptor);
+	ContainerType array_element_type;
+	CHECK(ContainerTypeDescriptor::from_variant(*array_element_descriptor, array_element_type));
+	CHECK_EQ(array_element_type, array.get_element_type());
+	array_element_descriptor->~Variant();
+
+	Dictionary dictionary;
+	CHECK(dictionary_set_typed_by_descriptor(&dictionary, &string_descriptor, &array_descriptor));
+	CHECK_EQ(dictionary.get_key_type().get_type_name(), "String");
+	CHECK_EQ(dictionary.get_value_type().get_type_name(), "Array[Dictionary[String, int]]");
+
+	alignas(Variant) uint8_t key_descriptor_storage[sizeof(Variant)];
+	Variant *key_descriptor = reinterpret_cast<Variant *>(key_descriptor_storage);
+	dictionary_get_typed_key_type_descriptor(&dictionary, key_descriptor);
+	ContainerType key_type;
+	CHECK(ContainerTypeDescriptor::from_variant(*key_descriptor, key_type));
+	CHECK_EQ(key_type, dictionary.get_key_type());
+	key_descriptor->~Variant();
+
+	alignas(Variant) uint8_t value_descriptor_storage[sizeof(Variant)];
+	Variant *value_descriptor = reinterpret_cast<Variant *>(value_descriptor_storage);
+	dictionary_get_typed_value_type_descriptor(&dictionary, value_descriptor);
+	ContainerType value_type;
+	CHECK(ContainerTypeDescriptor::from_variant(*value_descriptor, value_type));
+	CHECK_EQ(value_type, dictionary.get_value_type());
+	value_descriptor->~Variant();
+
+	const Variant invalid_descriptor = make_type_descriptor(Variant::ARRAY, Array({ int_descriptor, int_descriptor }));
+	ERR_PRINT_OFF;
+	CHECK_FALSE(array_set_typed_by_descriptor(&array, &invalid_descriptor));
+	ERR_PRINT_ON;
+	CHECK_EQ(array.get_element_type().get_type_name(), "Dictionary[String, int]");
 }
 
 } // namespace TestArray

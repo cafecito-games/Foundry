@@ -33,6 +33,7 @@
 #include "../gdscript.h"
 
 #include "core/config/project_settings.h"
+#include "core/variant/container_type_validate.h"
 
 HashMap<String, String> GDScriptDocGen::singletons;
 
@@ -59,6 +60,32 @@ String GDScriptDocGen::_get_class_name(const GDP::ClassNode &p_class) {
 		full_name = vformat("%s.%s", curr_class->identifier->name, full_name);
 	}
 	return full_name;
+}
+
+static String _doccontainer_type_from_container_type(const ContainerType &p_type) {
+	if (p_type.builtin_type == Variant::NIL) {
+		return "Variant";
+	}
+	if (p_type.builtin_type == Variant::ARRAY && !p_type.element_types.is_empty()) {
+		return vformat("Array[%s]", _doccontainer_type_from_container_type(p_type.element_types[0]));
+	}
+	if (p_type.builtin_type == Variant::DICTIONARY && !p_type.element_types.is_empty()) {
+		const String key = p_type.element_types.size() > 0 ? _doccontainer_type_from_container_type(p_type.element_types[0]) : String("Variant");
+		const String value = p_type.element_types.size() > 1 ? _doccontainer_type_from_container_type(p_type.element_types[1]) : String("Variant");
+		return vformat("Dictionary[%s, %s]", key, value);
+	}
+	if (p_type.script.is_valid()) {
+		if (p_type.script->get_global_name() != StringName()) {
+			return p_type.script->get_global_name();
+		}
+		if (!p_type.script->get_path().get_file().is_empty()) {
+			return p_type.script->get_path().get_file();
+		}
+	}
+	if (p_type.class_name != StringName()) {
+		return p_type.class_name;
+	}
+	return Variant::get_type_name(p_type.builtin_type);
 }
 
 void GDScriptDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, bool p_is_return) {
@@ -169,43 +196,9 @@ String GDScriptDocGen::_docvalue_from_variant(const Variant &p_variant, int p_re
 
 			if (dict.is_typed()) {
 				result += "Dictionary[";
-
-				Ref<Script> key_script = dict.get_typed_key_script();
-				if (key_script.is_valid()) {
-					if (key_script->get_global_name() != StringName()) {
-						result += key_script->get_global_name();
-					} else if (!key_script->get_path().get_file().is_empty()) {
-						result += key_script->get_path().get_file();
-					} else {
-						result += dict.get_typed_key_class_name();
-					}
-				} else if (dict.get_typed_key_class_name() != StringName()) {
-					result += dict.get_typed_key_class_name();
-				} else if (dict.is_typed_key()) {
-					result += Variant::get_type_name((Variant::Type)dict.get_typed_key_builtin());
-				} else {
-					result += "Variant";
-				}
-
+				result += _doccontainer_type_from_container_type(dict.get_key_type());
 				result += ", ";
-
-				Ref<Script> value_script = dict.get_typed_value_script();
-				if (value_script.is_valid()) {
-					if (value_script->get_global_name() != StringName()) {
-						result += value_script->get_global_name();
-					} else if (!value_script->get_path().get_file().is_empty()) {
-						result += value_script->get_path().get_file();
-					} else {
-						result += dict.get_typed_value_class_name();
-					}
-				} else if (dict.get_typed_value_class_name() != StringName()) {
-					result += dict.get_typed_value_class_name();
-				} else if (dict.is_typed_value()) {
-					result += Variant::get_type_name((Variant::Type)dict.get_typed_value_builtin());
-				} else {
-					result += "Variant";
-				}
-
+				result += _doccontainer_type_from_container_type(dict.get_value_type());
 				result += "](";
 			}
 
@@ -242,22 +235,7 @@ String GDScriptDocGen::_docvalue_from_variant(const Variant &p_variant, int p_re
 
 			if (array.is_typed()) {
 				result += "Array[";
-
-				Ref<Script> script = array.get_typed_script();
-				if (script.is_valid()) {
-					if (script->get_global_name() != StringName()) {
-						result += script->get_global_name();
-					} else if (!script->get_path().get_file().is_empty()) {
-						result += script->get_path().get_file();
-					} else {
-						result += array.get_typed_class_name();
-					}
-				} else if (array.get_typed_class_name() != StringName()) {
-					result += array.get_typed_class_name();
-				} else {
-					result += Variant::get_type_name((Variant::Type)array.get_typed_builtin());
-				}
-
+				result += _doccontainer_type_from_container_type(array.get_element_type());
 				result += "](";
 			}
 

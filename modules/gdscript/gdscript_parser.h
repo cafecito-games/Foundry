@@ -127,6 +127,7 @@ public:
 		bool is_meta_type = false;
 		bool is_pseudo_type = false; // For global names that can't be used standalone.
 		bool is_coroutine = false; // For function calls.
+		bool is_nullable = false;
 
 		Variant::Type builtin_type = Variant::NIL;
 		StringName native_type;
@@ -136,6 +137,10 @@ public:
 		ClassNode *class_type = nullptr;
 
 		MethodInfo method_info; // For callable/signals.
+		bool has_method_signature = false; // Whether method_info participates in callable/signal type checks.
+		bool has_explicit_method_signature = false; // Whether the signature came from a Callable/Signal type annotation.
+		Vector<DataType> method_parameter_types; // Rich GDScript signature preserving metadata MethodInfo cannot store.
+		Vector<DataType> method_return_type; // Empty for signals, one element for callables.
 		HashMap<StringName, int64_t> enum_values; // For enums.
 
 		_FORCE_INLINE_ bool is_set() const { return kind != RESOLVING && kind != UNRESOLVED; }
@@ -205,12 +210,15 @@ public:
 			if (kind != p_other.kind) {
 				return false;
 			}
+			if (is_nullable != p_other.is_nullable) {
+				return false;
+			}
 
 			switch (kind) {
 				case VARIANT:
 					return true; // All variants are the same.
 				case BUILTIN:
-					return builtin_type == p_other.builtin_type;
+					return builtin_type == p_other.builtin_type && container_element_types == p_other.container_element_types;
 				case NATIVE:
 				case ENUM: // Enums use native_type to identify the enum and its base class.
 					return native_type == p_other.native_type;
@@ -238,6 +246,7 @@ public:
 			is_meta_type = p_other.is_meta_type;
 			is_pseudo_type = p_other.is_pseudo_type;
 			is_coroutine = p_other.is_coroutine;
+			is_nullable = p_other.is_nullable;
 			builtin_type = p_other.builtin_type;
 			native_type = p_other.native_type;
 			enum_type = p_other.enum_type;
@@ -245,6 +254,10 @@ public:
 			script_path = p_other.script_path;
 			class_type = p_other.class_type;
 			method_info = p_other.method_info;
+			has_method_signature = p_other.has_method_signature;
+			has_explicit_method_signature = p_other.has_explicit_method_signature;
+			method_parameter_types = p_other.method_parameter_types;
+			method_return_type = p_other.method_return_type;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
 		}
@@ -1203,6 +1216,10 @@ public:
 	struct TypeNode : public Node {
 		Vector<IdentifierNode *> type_chain;
 		Vector<TypeNode *> container_types;
+		Vector<TypeNode *> signature_parameter_types;
+		TypeNode *signature_return_type = nullptr;
+		bool has_signature = false;
+		bool is_nullable = false;
 
 		TypeNode *get_container_type_or_null(int p_index) const {
 			return p_index >= 0 && p_index < container_types.size() ? container_types[p_index] : nullptr;

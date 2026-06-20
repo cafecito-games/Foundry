@@ -7313,6 +7313,58 @@
             "since": "4.1"
         },
         {
+            "name": "array_set_typed_by_descriptor",
+            "return_value": {
+                "type": "GDExtensionBool",
+                "description": [
+                    "True if the descriptor was valid and the Array was updated."
+                ]
+            },
+            "arguments": [
+                {
+                    "name": "p_self",
+                    "type": "GDExtensionTypePtr",
+                    "description": [
+                        "A pointer to the Array."
+                    ]
+                },
+                {
+                    "name": "p_element_type_descriptor",
+                    "type": "GDExtensionConstVariantPtr",
+                    "description": [
+                        "A pointer to a Variant containing the element type descriptor."
+                    ]
+                }
+            ],
+            "description": [
+                "Makes an Array into a typed Array using a recursive container type descriptor."
+            ],
+            "since": "4.7"
+        },
+        {
+            "name": "array_get_typed_element_type_descriptor",
+            "arguments": [
+                {
+                    "name": "p_self",
+                    "type": "GDExtensionConstTypePtr",
+                    "description": [
+                        "A const pointer to the Array."
+                    ]
+                },
+                {
+                    "name": "r_element_type_descriptor",
+                    "type": "GDExtensionUninitializedVariantPtr",
+                    "description": [
+                        "A pointer to a Variant that will receive the element type descriptor."
+                    ]
+                }
+            ],
+            "description": [
+                "Gets the recursive element type descriptor for an Array."
+            ],
+            "since": "4.7"
+        },
+        {
             "name": "dictionary_operator_index",
             "return_value": {
                 "type": "GDExtensionVariantPtr",
@@ -7427,6 +7479,88 @@
                 "Makes a Dictionary into a typed Dictionary."
             ],
             "since": "4.4"
+        },
+        {
+            "name": "dictionary_set_typed_by_descriptor",
+            "return_value": {
+                "type": "GDExtensionBool",
+                "description": [
+                    "True if both descriptors were valid and the Dictionary was updated."
+                ]
+            },
+            "arguments": [
+                {
+                    "name": "p_self",
+                    "type": "GDExtensionTypePtr",
+                    "description": [
+                        "A pointer to the Dictionary."
+                    ]
+                },
+                {
+                    "name": "p_key_type_descriptor",
+                    "type": "GDExtensionConstVariantPtr",
+                    "description": [
+                        "A pointer to a Variant containing the key type descriptor."
+                    ]
+                },
+                {
+                    "name": "p_value_type_descriptor",
+                    "type": "GDExtensionConstVariantPtr",
+                    "description": [
+                        "A pointer to a Variant containing the value type descriptor."
+                    ]
+                }
+            ],
+            "description": [
+                "Makes a Dictionary into a typed Dictionary using recursive container type descriptors."
+            ],
+            "since": "4.7"
+        },
+        {
+            "name": "dictionary_get_typed_key_type_descriptor",
+            "arguments": [
+                {
+                    "name": "p_self",
+                    "type": "GDExtensionConstTypePtr",
+                    "description": [
+                        "A const pointer to the Dictionary."
+                    ]
+                },
+                {
+                    "name": "r_key_type_descriptor",
+                    "type": "GDExtensionUninitializedVariantPtr",
+                    "description": [
+                        "A pointer to a Variant that will receive the key type descriptor."
+                    ]
+                }
+            ],
+            "description": [
+                "Gets the recursive key type descriptor for a Dictionary."
+            ],
+            "since": "4.7"
+        },
+        {
+            "name": "dictionary_get_typed_value_type_descriptor",
+            "arguments": [
+                {
+                    "name": "p_self",
+                    "type": "GDExtensionConstTypePtr",
+                    "description": [
+                        "A const pointer to the Dictionary."
+                    ]
+                },
+                {
+                    "name": "r_value_type_descriptor",
+                    "type": "GDExtensionUninitializedVariantPtr",
+                    "description": [
+                        "A pointer to a Variant that will receive the value type descriptor."
+                    ]
+                }
+            ],
+            "description": [
+                "Gets the recursive value type descriptor for a Dictionary."
+            ],
+            "since": "4.7"
         },
         {
             "name": "object_method_bind_call",

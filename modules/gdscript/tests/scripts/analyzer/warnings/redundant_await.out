@@ -6,5 +6,6 @@ GDTEST_OK
 ~~ WARNING at line 44: (REDUNDANT_AWAIT) "await" keyword is unnecessary because the expression isn't a coroutine nor a signal.
 ~~ WARNING at line 45: (REDUNDANT_AWAIT) "await" keyword is unnecessary because the expression isn't a coroutine nor a signal.
 ~~ WARNING at line 46: (REDUNDANT_AWAIT) "await" keyword is unnecessary because the expression isn't a coroutine nor a signal.
+~~ WARNING at line 48: (REDUNDANT_AWAIT) "await" keyword is unnecessary because the expression isn't a coroutine nor a signal.
 ~~ WARNING at line 51: (REDUNDANT_AWAIT) "await" keyword is unnecessary because the expression isn't a coroutine nor a signal.
 ~~ WARNING at line 53: (REDUNDANT_AWAIT) "await" keyword is unnecessary because the expression isn't a coroutine nor a signal.

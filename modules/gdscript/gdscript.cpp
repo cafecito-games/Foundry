@@ -694,13 +694,13 @@ void GDScript::_static_default_init() {
 		if (type.builtin_type == Variant::ARRAY && type.has_container_element_type(0)) {
 			const GDScriptDataType element_type = type.get_container_element_type(0);
 			Array default_value;
-			default_value.set_typed(element_type.builtin_type, element_type.native_type, element_type.script_type);
+			default_value.set_typed(element_type.to_container_type());
 			static_variables.write[E.value.index] = default_value;
 		} else if (type.builtin_type == Variant::DICTIONARY && type.has_container_element_types()) {
 			const GDScriptDataType key_type = type.get_container_element_type_or_variant(0);
 			const GDScriptDataType value_type = type.get_container_element_type_or_variant(1);
 			Dictionary default_value;
-			default_value.set_typed(key_type.builtin_type, key_type.native_type, key_type.script_type, value_type.builtin_type, value_type.native_type, value_type.script_type);
+			default_value.set_typed(key_type.to_container_type(), value_type.to_container_type());
 			static_variables.write[E.value.index] = default_value;
 		} else {
 			Variant default_value;
@@ -2821,6 +2821,8 @@ GDScriptLanguage::GDScriptLanguage() {
 	_debug_max_call_stack = GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "debug/settings/gdscript/max_call_stack", PROPERTY_HINT_RANGE, "512," + itos(GDScriptFunction::MAX_CALL_DEPTH - 1) + ",1"), 1024);
 	track_call_stack = GLOBAL_DEF_RST("debug/settings/gdscript/always_track_call_stacks", false);
 	track_locals = GLOBAL_DEF_RST("debug/settings/gdscript/always_track_local_variables", false);
+	GLOBAL_DEF("debug/gdscript/analysis/strict_null_checks", false);
+	GLOBAL_DEF("debug/gdscript/analysis/strict_dynamic_checks", false);
 
 #ifdef DEBUG_ENABLED
 	track_call_stack = true;

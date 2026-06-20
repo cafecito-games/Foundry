@@ -38,6 +38,7 @@
 #include "core/string/string_name.h"
 #include "core/templates/pair.h"
 #include "core/templates/self_list.h"
+#include "core/variant/container_type_validate.h"
 #include "core/variant/variant.h"
 
 class GDScriptInstance;
@@ -74,54 +75,13 @@ public:
 				bool valid = builtin_type == var_type;
 				if (valid && builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 					Array array = p_variant;
-					if (array.is_typed()) {
-						const GDScriptDataType &elem_type = container_element_types[0];
-						Variant::Type array_builtin_type = (Variant::Type)array.get_typed_builtin();
-						StringName array_native_type = array.get_typed_class_name();
-						Ref<Script> array_script_type_ref = array.get_typed_script();
-
-						if (array_script_type_ref.is_valid()) {
-							valid = (elem_type.kind == SCRIPT || elem_type.kind == GDSCRIPT) && elem_type.script_type == array_script_type_ref.ptr();
-						} else if (array_native_type != StringName()) {
-							valid = elem_type.kind == NATIVE && elem_type.native_type == array_native_type;
-						} else {
-							valid = elem_type.kind == BUILTIN && elem_type.builtin_type == array_builtin_type;
-						}
-					} else {
-						valid = false;
-					}
+					valid = array.is_typed() && container_element_types[0].is_same_container_type(array.get_element_type());
 				} else if (valid && builtin_type == Variant::DICTIONARY && has_container_element_types()) {
 					Dictionary dictionary = p_variant;
 					if (dictionary.is_typed()) {
-						if (dictionary.is_typed_key()) {
-							GDScriptDataType key = get_container_element_type_or_variant(0);
-							Variant::Type key_builtin_type = (Variant::Type)dictionary.get_typed_key_builtin();
-							StringName key_native_type = dictionary.get_typed_key_class_name();
-							Ref<Script> key_script_type_ref = dictionary.get_typed_key_script();
-
-							if (key_script_type_ref.is_valid()) {
-								valid = (key.kind == SCRIPT || key.kind == GDSCRIPT) && key.script_type == key_script_type_ref.ptr();
-							} else if (key_native_type != StringName()) {
-								valid = key.kind == NATIVE && key.native_type == key_native_type;
-							} else {
-								valid = key.kind == BUILTIN && key.builtin_type == key_builtin_type;
-							}
-						}
-
-						if (valid && dictionary.is_typed_value()) {
-							GDScriptDataType value = get_container_element_type_or_variant(1);
-							Variant::Type value_builtin_type = (Variant::Type)dictionary.get_typed_value_builtin();
-							StringName value_native_type = dictionary.get_typed_value_class_name();
-							Ref<Script> value_script_type_ref = dictionary.get_typed_value_script();
-
-							if (value_script_type_ref.is_valid()) {
-								valid = (value.kind == SCRIPT || value.kind == GDSCRIPT) && value.script_type == value_script_type_ref.ptr();
-							} else if (value_native_type != StringName()) {
-								valid = value.kind == NATIVE && value.native_type == value_native_type;
-							} else {
-								valid = value.kind == BUILTIN && value.builtin_type == value_builtin_type;
-							}
-						}
+						GDScriptDataType key = get_container_element_type_or_variant(0);
+						GDScriptDataType value = get_container_element_type_or_variant(1);
+						valid = key.is_same_container_type(dictionary.get_key_type()) && value.is_same_container_type(dictionary.get_value_type());
 					} else {
 						valid = false;
 					}
@@ -228,6 +188,27 @@ public:
 
 	bool has_container_element_types() const {
 		return !container_element_types.is_empty();
+	}
+
+	ContainerType to_container_type() const {
+		ContainerType type;
+		type.builtin_type = builtin_type;
+		if (builtin_type == Variant::OBJECT) {
+			type.class_name = native_type;
+			if (script_type_ref.is_valid()) {
+				type.script = script_type_ref;
+			} else if (script_type != nullptr) {
+				type.script.reference_ptr(script_type);
+			}
+		}
+		for (const GDScriptDataType &element_type : container_element_types) {
+			type.element_types.push_back(element_type.to_container_type());
+		}
+		return type;
+	}
+
+	bool is_same_container_type(const ContainerType &p_type) const {
+		return to_container_type() == p_type;
 	}
 
 	GDScriptDataType() = default;

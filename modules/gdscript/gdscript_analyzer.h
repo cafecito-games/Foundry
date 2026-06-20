@@ -35,6 +35,7 @@
 
 #include "core/object/object.h"
 #include "core/object/ref_counted.h"
+#include "core/variant/container_type_validate.h"
 
 class GDScriptAnalyzer {
 	GDScriptParser *parser = nullptr;
@@ -56,6 +57,8 @@ class GDScriptAnalyzer {
 	List<GDScriptParser::LambdaNode *> pending_body_resolution_lambdas;
 	HashMap<const GDScriptParser::ClassNode *, Ref<GDScriptParserRef>> external_class_parser_cache;
 	bool static_context = false;
+	bool strict_null_checks = false;
+	bool strict_dynamic_checks = false;
 
 	// Tests for detecting invalid overloading of script members
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_script_class(const StringName &p_name, const GDScriptParser::ClassNode *p_current_class_node, const GDScriptParser::Node *p_member);
@@ -125,13 +128,43 @@ class GDScriptAnalyzer {
 	// Helpers.
 	Array make_array_from_element_datatype(const GDScriptParser::DataType &p_element_datatype, const GDScriptParser::Node *p_source_node = nullptr);
 	Dictionary make_dictionary_from_element_datatype(const GDScriptParser::DataType &p_key_element_datatype, const GDScriptParser::DataType &p_value_element_datatype, const GDScriptParser::Node *p_source_node = nullptr);
+	ContainerType make_container_type_from_datatype(const GDScriptParser::DataType &p_datatype, const GDScriptParser::Node *p_source_node);
 	GDScriptParser::DataType type_from_variant(const Variant &p_value, const GDScriptParser::Node *p_source);
 	GDScriptParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false) const;
 	GDScriptParser::DataType make_global_class_meta_type(const StringName &p_class_name, const GDScriptParser::Node *p_source);
 	bool get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class = nullptr);
 	bool function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
+	bool callable_signature_from_type(const GDScriptParser::DataType &p_callable_type, Vector<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
+	GDScriptParser::DataType plain_callable_type() const;
+	GDScriptParser::DataType explicit_callable_type_from_signature(const GDScriptParser::DataType &p_return_type, const Vector<GDScriptParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const;
+	GDScriptParser::DataType transformed_callable_type(const GDScriptParser::DataType &p_source_callable_type, const Vector<GDScriptParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const;
+	GDScriptParser::DataType explicit_callable_type_from_info(const MethodInfo &p_info) const;
+	GDScriptParser::DataType explicit_signal_type_from_info(const MethodInfo &p_info) const;
+	GDScriptParser::DataType explicit_signal_type_from_node(const GDScriptParser::SignalNode *p_signal) const;
+	GDScriptParser::ArrayNode *array_literal_argument(const GDScriptParser::CallNode *p_call, int p_argument_index) const;
+	bool string_name_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_argument_index, StringName &r_name) const;
+	bool callable_type_from_method(const GDScriptParser::DataType &p_receiver_type, const StringName &p_method_name, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_callable_type);
+	bool callable_type_from_constant_method_args(const GDScriptParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, GDScriptParser::DataType &r_callable_type);
+	bool is_node_compatible_type(const GDScriptParser::DataType &p_type) const;
+	bool property_type_from_class(GDScriptParser::ClassNode *p_class, const StringName &p_property_name, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_property_type);
+	bool property_type_from_script(const Ref<Script> &p_script, const StringName &p_property_name, GDScriptParser::DataType &r_property_type) const;
+	bool property_type_from_native(const StringName &p_native_type, const StringName &p_property_name, GDScriptParser::DataType &r_property_type) const;
+	bool property_type_from_receiver(const GDScriptParser::DataType &p_receiver_type, const StringName &p_property_name, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_property_type);
+	bool property_path_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_argument_index, Vector<StringName> &r_property_path) const;
+	bool property_type_from_builtin_member(const GDScriptParser::DataType &p_base_type, const StringName &p_member_name, GDScriptParser::DataType &r_member_type) const;
+	bool property_type_from_indexed_receiver(const GDScriptParser::DataType &p_receiver_type, const Vector<StringName> &p_property_path, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_property_type);
+	bool signal_name_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const;
+	bool signal_type_from_class_constant_arg(const GDScriptParser::ClassNode *p_class, const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const;
+	bool signal_type_from_native_constant_arg(const StringName &p_native_type, const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const;
+	bool local_signal_type_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const;
 	void validate_call_arg(const List<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const GDScriptParser::CallNode *p_call);
 	void validate_call_arg(const MethodInfo &p_method, const GDScriptParser::CallNode *p_call);
+	void validate_callable_array_literal_args(const Vector<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, GDScriptParser::ArrayNode *p_array, const StringName &p_function);
+	void validate_signal_connect_arg(const GDScriptParser::DataType &p_signal_type, const GDScriptParser::CallNode *p_call, int p_callable_arg_index = 0, bool p_require_explicit_signal = true);
+	void validate_signal_emit_args(const GDScriptParser::DataType &p_signal_type, const GDScriptParser::CallNode *p_call, int p_first_emit_arg_index);
+	void validate_local_object_signal_callable_arg(const GDScriptParser::CallNode *p_call, bool p_is_self);
+	void validate_local_object_emit_signal_args(const GDScriptParser::CallNode *p_call, bool p_is_self);
+	void validate_typed_object_signal_api_args(const GDScriptParser::DataType &p_base_type, const GDScriptParser::CallNode *p_call, bool p_is_self);
 	GDScriptParser::DataType get_operation_type(Variant::Operator p_operation, const GDScriptParser::DataType &p_a, const GDScriptParser::DataType &p_b, bool &r_valid, const GDScriptParser::Node *p_source);
 	GDScriptParser::DataType get_operation_type(Variant::Operator p_operation, const GDScriptParser::DataType &p_a, bool &r_valid, const GDScriptParser::Node *p_source);
 	void update_const_expression_builtin_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_type, const char *p_usage, bool p_is_cast = false);
@@ -158,6 +191,8 @@ public:
 	Error resolve_body();
 	Error resolve_dependencies();
 	Error analyze();
+	void set_strict_null_checks(bool p_enabled) { strict_null_checks = p_enabled; }
+	void set_strict_dynamic_checks(bool p_enabled) { strict_dynamic_checks = p_enabled; }
 
 	Variant make_variable_default_value(GDScriptParser::VariableNode *p_variable);
 

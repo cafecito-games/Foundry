@@ -3858,6 +3858,41 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	type->type_chain.push_back(type_element);
 
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		const bool is_callable_type = type->type_chain.size() == 1 && type_element->name == SNAME("Callable");
+		const bool is_signal_type = type->type_chain.size() == 1 && type_element->name == SNAME("Signal");
+		if ((is_callable_type || is_signal_type) && match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+			type->has_signature = true;
+			if (!check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				bool first_pass = true;
+				do {
+					TypeNode *parameter_type = parse_type(false);
+					if (parameter_type == nullptr) {
+						push_error(vformat(R"(Expected parameter type for signature after "%s".)", first_pass ? "[" : ","));
+						break;
+					}
+					type->signature_parameter_types.append(parameter_type);
+					first_pass = false;
+				} while (match(GDScriptTokenizer::Token::COMMA) && !check(GDScriptTokenizer::Token::BRACKET_CLOSE));
+			}
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after signature parameter types.)");
+			if (is_callable_type) {
+				consume(GDScriptTokenizer::Token::COMMA, R"(Expected "," after Callable signature parameter types.)");
+				type->signature_return_type = parse_type(true);
+				if (type->signature_return_type == nullptr) {
+					push_error("Expected return type for Callable signature.");
+				}
+			} else if (match(GDScriptTokenizer::Token::COMMA)) {
+				push_error("Signal signatures cannot specify a return type.");
+				parse_type(true);
+			}
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after signature type.)");
+			if (match(GDScriptTokenizer::Token::QUESTION_MARK)) {
+				type->is_nullable = true;
+			}
+			complete_extents(type);
+			return type;
+		}
+
 		// Typed collection (like Array[int], Dictionary[String, int]).
 		bool first_pass = true;
 		do {
@@ -3867,8 +3902,6 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				complete_extents(type);
 				type = nullptr;
 				break;
-			} else if (container_type->container_types.size() > 0) {
-				push_error("Nested typed collections are not supported.");
 			} else {
 				type->container_types.append(container_type);
 			}
@@ -3876,6 +3909,9 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		} while (match(GDScriptTokenizer::Token::COMMA));
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after collection type.)");
 		if (type != nullptr) {
+			if (match(GDScriptTokenizer::Token::QUESTION_MARK)) {
+				type->is_nullable = true;
+			}
 			complete_extents(type);
 		}
 		return type;
@@ -3890,6 +3926,9 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 	}
 
+	if (match(GDScriptTokenizer::Token::QUESTION_MARK)) {
+		type->is_nullable = true;
+	}
 	complete_extents(type);
 	return type;
 }
@@ -5289,56 +5328,110 @@ String GDScriptParser::SuiteNode::Local::get_name() const {
 	}
 }
 
+static String _datatype_signature_type_to_string(const GDScriptParser::DataType &p_type, bool p_nil_is_void = false) {
+	if (p_nil_is_void && p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL) {
+		return "void";
+	}
+	return p_type.to_string();
+}
+
+static String _method_signature_to_string(const Vector<GDScriptParser::DataType> &p_argument_types, const Vector<GDScriptParser::DataType> &p_return_type, bool p_has_return) {
+	Vector<String> argument_types;
+	for (const GDScriptParser::DataType &argument_type : p_argument_types) {
+		argument_types.append(_datatype_signature_type_to_string(argument_type));
+	}
+
+	const String arguments = String(", ").join(argument_types);
+	if (p_has_return) {
+		const String return_type = p_return_type.is_empty() ? "void" : _datatype_signature_type_to_string(p_return_type[0], true);
+		return vformat("[[%s], %s]", arguments, return_type);
+	}
+	return vformat("[[%s]]", arguments);
+}
+
 String GDScriptParser::DataType::to_string() const {
+	String result;
+	bool valid_kind = true;
 	switch (kind) {
 		case VARIANT:
-			return "Variant";
+			result = "Variant";
+			break;
 		case BUILTIN:
 			if (builtin_type == Variant::NIL) {
 				return "null";
 			}
+			if (builtin_type == Variant::CALLABLE && has_explicit_method_signature) {
+				result = vformat("Callable%s", _method_signature_to_string(method_parameter_types, method_return_type, true));
+				break;
+			}
+			if (builtin_type == Variant::SIGNAL && has_explicit_method_signature) {
+				result = vformat("Signal%s", _method_signature_to_string(method_parameter_types, method_return_type, false));
+				break;
+			}
 			if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
-				return vformat("Array[%s]", get_container_element_type(0).to_string());
+				result = vformat("Array[%s]", get_container_element_type(0).to_string());
+				break;
 			}
 			if (builtin_type == Variant::DICTIONARY && has_container_element_types()) {
-				return vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
+				result = vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
+				break;
 			}
-			return Variant::get_type_name(builtin_type);
+			result = Variant::get_type_name(builtin_type);
+			break;
 		case NATIVE:
 			if (is_meta_type) {
-				return GDScriptNativeClass::get_class_static();
+				result = GDScriptNativeClass::get_class_static();
+				break;
 			}
-			return native_type.operator String();
+			result = native_type.operator String();
+			break;
 		case CLASS:
 			if (class_type->identifier != nullptr) {
-				return class_type->identifier->name.operator String();
+				result = class_type->identifier->name.operator String();
+				break;
 			}
-			return class_type->fqcn;
+			result = class_type->fqcn;
+			break;
 		case SCRIPT: {
 			if (is_meta_type) {
-				return script_type.is_valid() ? script_type->get_class_name().operator String() : "";
+				result = script_type.is_valid() ? script_type->get_class_name().operator String() : "";
+				break;
 			}
 			String name = script_type.is_valid() ? script_type->get_name() : "";
 			if (!name.is_empty()) {
-				return name;
+				result = name;
+				break;
 			}
 			name = script_path;
 			if (!name.is_empty()) {
-				return name;
+				result = name;
+				break;
 			}
-			return native_type.operator String();
+			result = native_type.operator String();
+			break;
 		}
 		case ENUM: {
 			// native_type contains either the native class defining the enum
 			// or the fully qualified class name of the script defining the enum
-			return String(native_type).get_file(); // Remove path, keep filename
+			result = String(native_type).get_file(); // Remove path, keep filename
+			break;
 		}
 		case RESOLVING:
 		case UNRESOLVED:
-			return "<unresolved type>";
+			result = "<unresolved type>";
+			break;
+		default:
+			valid_kind = false;
+			break;
 	}
 
-	ERR_FAIL_V_MSG("<unresolved type>", "Kind set outside the enum range.");
+	if (!valid_kind) {
+		ERR_FAIL_V_MSG("<unresolved type>", "Kind set outside the enum range.");
+	}
+	if (is_nullable && kind != VARIANT && !(kind == BUILTIN && builtin_type == Variant::NIL)) {
+		result += "?";
+	}
+	return result;
 }
 
 PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) const {
@@ -6362,6 +6455,9 @@ void GDScriptParser::TreePrinter::print_type(TypeNode *p_type) {
 			}
 			print_identifier(p_type->type_chain[i]);
 		}
+	}
+	if (p_type->is_nullable) {
+		push_text("?");
 	}
 }
 

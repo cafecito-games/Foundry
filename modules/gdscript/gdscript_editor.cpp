@@ -1734,6 +1734,7 @@ static GDScriptCompletionIdentifier _callable_type_from_method_info(const Method
 	ci.type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	ci.type.is_constant = true;
 	ci.type.method_info = p_method;
+	ci.type.has_method_signature = true;
 	return ci;
 }
 

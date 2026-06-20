@@ -40,6 +40,7 @@
 #include "core/object/script_language_extension.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/memory.h"
+#include "core/variant/container_type_validate.h"
 #include "core/variant/variant.h"
 #include "core/version.h"
 
@@ -1304,6 +1305,24 @@ void gdextension_array_set_typed(GDExtensionTypePtr p_self, GDExtensionVariantTy
 	self->set_typed((uint32_t)p_type, *class_name, *script);
 }
 
+static GDExtensionBool gdextension_array_set_typed_by_descriptor(GDExtensionTypePtr p_self, GDExtensionConstVariantPtr p_element_type_descriptor) {
+	Array *self = reinterpret_cast<Array *>(p_self);
+	const Variant *element_type_descriptor = reinterpret_cast<const Variant *>(p_element_type_descriptor);
+	ContainerType element_type;
+	String error;
+	if (!ContainerTypeDescriptor::from_variant(*element_type_descriptor, element_type, &error)) {
+		ERR_PRINT(vformat("Invalid Array element type descriptor: %s", error));
+		return false;
+	}
+	self->set_typed(element_type);
+	return true;
+}
+
+static void gdextension_array_get_typed_element_type_descriptor(GDExtensionConstTypePtr p_self, GDExtensionUninitializedVariantPtr r_element_type_descriptor) {
+	const Array *self = reinterpret_cast<const Array *>(p_self);
+	memnew_placement(r_element_type_descriptor, Variant(ContainerTypeDescriptor::to_variant(self->get_element_type())));
+}
+
 /* Dictionary functions */
 
 static GDExtensionVariantPtr gdextension_dictionary_operator_index(GDExtensionTypePtr p_self, GDExtensionConstVariantPtr p_key) {
@@ -1323,6 +1342,38 @@ void gdextension_dictionary_set_typed(GDExtensionTypePtr p_self, GDExtensionVari
 	const StringName *value_class_name = reinterpret_cast<const StringName *>(p_value_class_name);
 	const Variant *value_script = reinterpret_cast<const Variant *>(p_value_script);
 	self->set_typed((uint32_t)p_key_type, *key_class_name, *key_script, (uint32_t)p_value_type, *value_class_name, *value_script);
+}
+
+static GDExtensionBool gdextension_dictionary_set_typed_by_descriptor(GDExtensionTypePtr p_self, GDExtensionConstVariantPtr p_key_type_descriptor, GDExtensionConstVariantPtr p_value_type_descriptor) {
+	Dictionary *self = reinterpret_cast<Dictionary *>(p_self);
+	const Variant *key_type_descriptor = reinterpret_cast<const Variant *>(p_key_type_descriptor);
+	const Variant *value_type_descriptor = reinterpret_cast<const Variant *>(p_value_type_descriptor);
+
+	ContainerType key_type;
+	String error;
+	if (!ContainerTypeDescriptor::from_variant(*key_type_descriptor, key_type, &error)) {
+		ERR_PRINT(vformat("Invalid Dictionary key type descriptor: %s", error));
+		return false;
+	}
+
+	ContainerType value_type;
+	if (!ContainerTypeDescriptor::from_variant(*value_type_descriptor, value_type, &error)) {
+		ERR_PRINT(vformat("Invalid Dictionary value type descriptor: %s", error));
+		return false;
+	}
+
+	self->set_typed(key_type, value_type);
+	return true;
+}
+
+static void gdextension_dictionary_get_typed_key_type_descriptor(GDExtensionConstTypePtr p_self, GDExtensionUninitializedVariantPtr r_key_type_descriptor) {
+	const Dictionary *self = reinterpret_cast<const Dictionary *>(p_self);
+	memnew_placement(r_key_type_descriptor, Variant(ContainerTypeDescriptor::to_variant(self->get_key_type())));
+}
+
+static void gdextension_dictionary_get_typed_value_type_descriptor(GDExtensionConstTypePtr p_self, GDExtensionUninitializedVariantPtr r_value_type_descriptor) {
+	const Dictionary *self = reinterpret_cast<const Dictionary *>(p_self);
+	memnew_placement(r_value_type_descriptor, Variant(ContainerTypeDescriptor::to_variant(self->get_value_type())));
 }
 
 /* OBJECT API */
@@ -1821,9 +1872,14 @@ void gdextension_setup_interface() {
 	REGISTER_INTERFACE_FUNC(array_ref);
 #endif // DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(array_set_typed);
+	REGISTER_INTERFACE_FUNC(array_set_typed_by_descriptor);
+	REGISTER_INTERFACE_FUNC(array_get_typed_element_type_descriptor);
 	REGISTER_INTERFACE_FUNC(dictionary_operator_index);
 	REGISTER_INTERFACE_FUNC(dictionary_operator_index_const);
 	REGISTER_INTERFACE_FUNC(dictionary_set_typed);
+	REGISTER_INTERFACE_FUNC(dictionary_set_typed_by_descriptor);
+	REGISTER_INTERFACE_FUNC(dictionary_get_typed_key_type_descriptor);
+	REGISTER_INTERFACE_FUNC(dictionary_get_typed_value_type_descriptor);
 	REGISTER_INTERFACE_FUNC(object_method_bind_call);
 	REGISTER_INTERFACE_FUNC(object_method_bind_ptrcall);
 	REGISTER_INTERFACE_FUNC(object_destroy);

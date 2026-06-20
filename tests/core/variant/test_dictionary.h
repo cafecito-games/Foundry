@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/variant/container_type_validate.h"
 #include "core/variant/typed_dictionary.h"
 #include "tests/test_macros.h"
 
@@ -745,6 +746,42 @@ TEST_CASE("[Dictionary] RefCounted value init") {
 	};
 	CHECK_EQ(tdict[0.0], Variant(a));
 	CHECK_EQ(tdict[5.0], Variant(b));
+}
+
+TEST_CASE("[Dictionary] Nested typed dictionary validation") {
+	ContainerType string_type;
+	string_type.builtin_type = Variant::STRING;
+
+	ContainerType int_type;
+	int_type.builtin_type = Variant::INT;
+
+	ContainerType array_type;
+	array_type.builtin_type = Variant::ARRAY;
+	array_type.element_types.push_back(int_type);
+
+	Dictionary dictionary;
+	dictionary.set_typed(string_type, array_type);
+	CHECK(dictionary.is_typed());
+	CHECK_EQ(dictionary.get_typed_key_builtin(), Variant::STRING);
+	CHECK_EQ(dictionary.get_typed_value_builtin(), Variant::ARRAY);
+	CHECK_EQ(dictionary.get_value_type().element_types.size(), 1);
+	CHECK_EQ(dictionary.get_value_type().element_types[0].builtin_type, Variant::INT);
+
+	Array valid_array;
+	valid_array.push_back(20);
+	CHECK(dictionary.set("items", valid_array));
+
+	Array stored_array = dictionary["items"];
+	CHECK(stored_array.is_typed());
+	CHECK_EQ(stored_array.get_typed_builtin(), Variant::INT);
+	CHECK_EQ(stored_array[0], Variant(20));
+
+	Array invalid_array;
+	invalid_array.push_back("bad");
+	ERR_PRINT_OFF;
+	CHECK_FALSE(dictionary.set("bad", invalid_array));
+	ERR_PRINT_ON;
+	CHECK_FALSE(dictionary.has("bad"));
 }
 
 } // namespace TestDictionary

@@ -8,10 +8,12 @@ const const_ints : Array[int] = [1, 2, 3]
 func test():
 	var ints: Array[int] = [1, 2, 3]
 	var strings: Array[String] = ["4", "5", "6"]
+	var untyped_ints: Array = ints
+	var untyped_strings: Array = strings
 
 	var ints_concatenated: Array[int] = ints + ints
 	var strings_concatenated: Array[String] = strings + strings
-	var untyped_concatenated: Array = ints + strings
+	var untyped_concatenated: Array = untyped_ints + untyped_strings
 	var const_ints_concatenated: Array[int] = const_ints + const_ints
 
 	print(ints_concatenated.get_typed_builtin())

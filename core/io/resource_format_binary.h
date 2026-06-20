@@ -35,6 +35,8 @@
 #include "core/io/resource_saver.h"
 #include "core/templates/rb_map.h"
 
+struct ContainerType;
+
 class ResourceLoaderBinary {
 	bool translation_remapped = false;
 	String local_path;
@@ -161,6 +163,7 @@ class ResourceFormatSaverBinaryInstance {
 
 	static void _pad_buffer(Ref<FileAccess> f, int p_bytes);
 	void _find_resources(const Variant &p_variant, bool p_main = false);
+	void _find_resources_in_container_type(const ContainerType &p_type);
 	static void save_unicode_string(Ref<FileAccess> f, const String &p_string, bool p_bit_on_len = false);
 	int get_string_index(const String &p_string);
 

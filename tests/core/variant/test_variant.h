@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/variant/container_type_validate.h"
 #include "core/variant/variant.h"
 #include "core/variant/variant_parser.h"
 
@@ -1782,6 +1783,46 @@ TEST_CASE("[Variant] Writer and parser array") {
 	VariantParser::parse(&ss, a_parsed, errs, line);
 
 	CHECK_MESSAGE(a_parsed == Variant(a), "Should parse back.");
+}
+
+TEST_CASE("[Variant] Writer and parser nested typed container metadata") {
+	ContainerType dictionary_type;
+	dictionary_type.builtin_type = Variant::DICTIONARY;
+
+	ContainerType key_type;
+	key_type.builtin_type = Variant::STRING;
+	dictionary_type.element_types.push_back(key_type);
+
+	ContainerType value_type;
+	value_type.builtin_type = Variant::INT;
+	dictionary_type.element_types.push_back(value_type);
+
+	Dictionary dictionary;
+	dictionary["score"] = 10;
+
+	Array array;
+	array.set_typed(dictionary_type);
+	array.push_back(dictionary);
+
+	String array_str;
+	VariantWriter::write_to_string(array, array_str);
+	CHECK_EQ(array_str, "Array[Dictionary[String, int]]([Dictionary[String, int]({\n\"score\": 10\n})])");
+
+	VariantParser::StreamString ss;
+	String errs;
+	int line;
+	Variant parsed;
+
+	ss.s = array_str;
+	CHECK_EQ(VariantParser::parse(&ss, parsed, errs, line), OK);
+
+	Array parsed_array = parsed;
+	ContainerType parsed_element_type = parsed_array.get_element_type();
+	CHECK_EQ(parsed_element_type, dictionary_type);
+
+	Dictionary parsed_dictionary = parsed_array[0];
+	CHECK_EQ(parsed_dictionary.get_key_type(), key_type);
+	CHECK_EQ(parsed_dictionary.get_value_type(), value_type);
 }
 
 TEST_CASE("[Variant] Writer recursive array") {
