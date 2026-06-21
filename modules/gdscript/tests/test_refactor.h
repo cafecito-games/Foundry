@@ -306,6 +306,19 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(b_source.contains("var shared_value := 0"));
 			CHECK_FALSE(b_source.contains("renamed_value"));
 		}
+		SUBCASE("allows same name in a different scope") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_diff_scope.gd", 3, 5, "y", out); // caret on `x` in first()
+			REQUIRE(r.ok); // `y` exists only in second(), not in first()'s scope
+			CHECK(out.contains("var y := 1"));
+			CHECK(out.contains("print(y)"));
+		}
+		SUBCASE("rejects collision with a parameter") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_param_collision.gd", 3, 5, "value", out); // caret on `temp`
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("scope"));
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
