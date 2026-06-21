@@ -41,6 +41,12 @@
 
 #include "core/io/file_access.h"
 
+#ifndef GDSCRIPT_NO_LSP
+#include "test_lsp.h"
+
+#include "editor/file_system/editor_file_system.h"
+#endif
+
 namespace GDScriptTests {
 
 inline RefactorContext make_context(const String &p_path) {
@@ -61,10 +67,13 @@ inline RefactorLocation caret(int p_line, int p_column) {
 }
 
 TEST_SUITE("[Modules][GDScript][Refactor]") {
-	TEST_CASE("Engine returns no refactors for a trivial location") {
+	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK(available.is_empty());
+		REQUIRE_EQ(available.size(), 1);
+		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
+		CHECK_FALSE(available[0].enabled);
+		CHECK_FALSE(available[0].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Edit application") {
@@ -164,6 +173,84 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
 		}
 	}
+
+#ifndef GDSCRIPT_NO_LSP
+	TEST_CASE("Rename file-local symbols") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		auto run_rename = [](const String &p_res_path, int p_line, int p_column, const String &p_new_name, String &r_out) -> RefactorResult {
+			// Prime the LSP workspace so the document can be resolved and parsed.
+			GDScriptTests::assert_no_errors_in(p_res_path);
+
+			RefactorContext ctx;
+			ctx.path = p_res_path;
+			ctx.source = FileAccess::get_file_as_string(p_res_path);
+			RefactorParams params;
+			params.new_name = p_new_name;
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::RENAME, params);
+			if (r.ok) {
+				GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+			}
+			return r;
+		};
+
+		SUBCASE("local variable") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_local.gd", 3, 5, "sum", out); // caret on `total`
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "total");
+			CHECK(out.contains("var sum := 1"));
+			CHECK(out.contains("sum += 2"));
+			CHECK(out.contains("return sum"));
+			CHECK_FALSE(out.contains("total"));
+		}
+		SUBCASE("file-local member") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_member.gd", 2, 4, "tally", out); // caret on `counter`
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "counter");
+			CHECK(out.contains("var tally := 0"));
+			CHECK(out.contains("tally += 1"));
+			CHECK(out.contains("return tally"));
+			CHECK_FALSE(out.contains("counter"));
+		}
+		SUBCASE("strings and comments untouched") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_strings_comments.gd", 3, 5, "sum", out); // caret on `total`
+			REQUIRE(r.ok);
+			CHECK(out.contains("var sum := 1"));
+			CHECK(out.contains("print(sum)"));
+			CHECK(out.contains("# total is a comment word")); // comment unchanged
+			CHECK(out.contains("\"total in a string\"")); // string unchanged
+		}
+		SUBCASE("availability reports rename enabled on a symbol") {
+			GDScriptTests::assert_no_errors_in("res://refactor/rename_local.gd");
+			RefactorContext ctx;
+			ctx.path = "res://refactor/rename_local.gd";
+			ctx.source = FileAccess::get_file_as_string(ctx.path);
+			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
+			REQUIRE_EQ(available.size(), 1);
+			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
+			CHECK(available[0].enabled);
+		}
+		SUBCASE("availability disabled off a symbol") {
+			GDScriptTests::assert_no_errors_in("res://refactor/rename_local.gd");
+			RefactorContext ctx;
+			ctx.path = "res://refactor/rename_local.gd";
+			ctx.source = FileAccess::get_file_as_string(ctx.path);
+			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
+			REQUIRE_EQ(available.size(), 1);
+			CHECK_FALSE(available[0].enabled);
+			CHECK_FALSE(available[0].disabled_reason.is_empty());
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+#endif // GDSCRIPT_NO_LSP
 }
 
 } // namespace GDScriptTests
