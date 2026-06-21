@@ -511,14 +511,29 @@ TEST_CASE("[Modules][GDScript] Analyzer preserves typed vararg Callable.bind sig
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1).call()\n") != OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1).call(2, \"ok\")\n") == OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1).call(\"bad\", \"ok\")\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").call()\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").callv([])\n") == OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").call(2)\n") != OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").call(2, \"more\")\n") == OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").call(\"bad\", \"more\")\n") != OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([\"ok\"]).call(1)\n") == OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([\"ok\"]).call(1, 2)\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).call()\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).callv([])\n") == OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).call(2)\n") != OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).call(2, \"more\")\n") == OK);
 	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).call(\"bad\", \"more\")\n") != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer preserves non-contiguous vararg Callable arities for Signal.connect") {
+	const String source_prefix = "signal none\nsignal one(value: int)\nsignal two(value: int, text: String)\nfunc accept_int_string_vararg(value: int, text: String, ...args: Array) -> bool:\n\treturn true\nfunc test() -> void:\n\tvar none_event: Signal[[]] = none\n\tvar one_event: Signal[[int]] = one\n\tvar two_event: Signal[[int, String]] = two\n\tvar callback := Callable(self, \"accept_int_string_vararg\")\n";
+
+	CHECK(analyze_source(source_prefix + "\tnone_event.connect(callback.bind(1, \"ok\"))\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tone_event.connect(callback.bind(1, \"ok\"))\n") != OK);
+	CHECK(analyze_source(source_prefix + "\ttwo_event.connect(callback.bind(1, \"ok\"))\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tnone_event.connect(callback.bindv([1, \"ok\"]))\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tone_event.connect(callback.bindv([1, \"ok\"]))\n") != OK);
+	CHECK(analyze_source(source_prefix + "\ttwo_event.connect(callback.bindv([1, \"ok\"]))\n") == OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.unbind signatures") {
