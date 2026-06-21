@@ -6153,6 +6153,33 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		const bool is_callable_rpc_id = p_function == SNAME("rpc_id");
 		if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.has_explicit_method_signature) {
 			const bool is_callable_vararg = (p_base_type.method_info.flags & METHOD_FLAG_VARARG) != 0;
+			auto can_bound_argument_fill_parameter = [&](const GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_parameter_type) -> bool {
+				if (p_argument == nullptr) {
+					return false;
+				}
+				if (!p_parameter_type.is_hard_type()) {
+					return true;
+				}
+
+				GDScriptParser::DataType argument_type = p_argument->get_datatype();
+				if (argument_type.is_variant() || !argument_type.is_hard_type()) {
+					return false;
+				}
+
+				return is_type_compatible(p_parameter_type, argument_type, true);
+			};
+			auto preserve_single_fixed_vararg_callable = [&](const GDScriptParser::ExpressionNode *p_first_bound_argument) -> bool {
+				if (!is_callable_vararg || p_base_type.method_parameter_types.size() != 1) {
+					return false;
+				}
+
+				int default_arg_count = p_first_bound_argument == nullptr ? MIN(p_base_type.method_info.default_arguments.size(), 1) : 0;
+				if (can_bound_argument_fill_parameter(p_first_bound_argument, p_base_type.method_parameter_types[0])) {
+					default_arg_count = 1;
+				}
+				r_return_type = transformed_callable_type(p_base_type, p_base_type.method_parameter_types, default_arg_count, true);
+				return true;
+			};
 
 			if (is_callable_call || is_callable_call_deferred || is_callable_rpc || is_callable_rpc_id) {
 				r_default_arg_count = p_base_type.method_info.default_arguments.size();
@@ -6203,6 +6230,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 					r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
 				} else {
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
+					if (call != nullptr) {
+						preserve_single_fixed_vararg_callable(call->arguments.is_empty() ? nullptr : call->arguments[0]);
+					}
 				}
 				return true;
 			}
@@ -6234,6 +6264,8 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 					const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
 					r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+				} else if (is_callable_vararg && bind_array != nullptr) {
+					preserve_single_fixed_vararg_callable(bind_array->elements.is_empty() ? nullptr : bind_array->elements[0]);
 				}
 				return true;
 			}

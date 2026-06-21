@@ -485,6 +485,26 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.bindv signatures")
 	CHECK(analyze_source(inferred_source_prefix + "\tcallback.bindv([\"legacy dynamic\"]).call(\"legacy dynamic\")\n") == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer preserves typed vararg Callable.bind signatures") {
+	const String source_prefix = "func accept_int_vararg(value: int, ...args: Array) -> bool:\n\treturn true\nfunc test() -> void:\n\tvar callback := Callable(self, \"accept_int_vararg\")\n";
+	const String default_source_prefix = "func accept_default_vararg(value: int = 1, ...args: Array) -> bool:\n\treturn true\nfunc test() -> void:\n\tvar callback := Callable(self, \"accept_default_vararg\")\n";
+
+	CHECK(analyze_source(source_prefix + "\tcallback.call(1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.call(1, \"extra\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.call(\"bad\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bind(\"extra\").call(1, \"more\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bind(\"extra\").call(\"bad\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bind(1).call()\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bind(1).call(\"bad\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bindv([\"extra\"]).call(1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bindv([\"extra\"]).call(\"bad\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bindv([1]).call()\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tcallback.bindv([1]).call(\"bad\")\n") != OK);
+	CHECK(analyze_source(default_source_prefix + "\tcallback.call()\n") == OK);
+	CHECK(analyze_source(default_source_prefix + "\tcallback.bind(\"extra\").call()\n") != OK);
+	CHECK(analyze_source(default_source_prefix + "\tcallback.bindv([\"extra\"]).call()\n") != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.unbind signatures") {
 	const String source_prefix = "func accept_string(text: String) -> void:\n\tpass\nfunc test() -> void:\n\tvar callback: Callable[[String], void] = accept_string\n";
 	const String inferred_source_prefix = "func accept_string(text: String) -> void:\n\tpass\nfunc test() -> void:\n\tvar callback := accept_string\n";
