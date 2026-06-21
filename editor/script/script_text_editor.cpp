@@ -2922,8 +2922,9 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 		// confirm handler re-syncs and resolves against it. It is cleared once the
 		// rename completes (or is dismissed).
 		rename_line_edit->set_text(code_editor->get_text_editor()->get_word_under_caret());
-		rename_error_label->set_text("");
-		rename_dialog->get_ok_button()->set_disabled(false);
+		// set_text() does not emit text_changed, so validate the prefill manually to
+		// keep the error label and OK button in sync with the seeded name.
+		_on_rename_text_changed(rename_line_edit->get_text());
 		rename_dialog->popup_centered();
 		rename_line_edit->grab_focus();
 		rename_line_edit->select_all();
@@ -3109,7 +3110,7 @@ void ScriptTextEditor::_enable_code_editor() {
 	rename_error_label = memnew(Label);
 	rename_vbox->add_child(rename_error_label);
 	rename_dialog->connect(SceneStringName(confirmed), callable_mp(this, &ScriptTextEditor::_on_rename_confirmed));
-	rename_dialog->connect("canceled", callable_mp(this, &ScriptTextEditor::_clear_refactor_buffer));
+	rename_dialog->connect(SNAME("canceled"), callable_mp(this, &ScriptTextEditor::_clear_refactor_buffer));
 	add_child(rename_dialog);
 
 	add_child(color_panel);
@@ -3334,6 +3335,10 @@ ScriptTextEditor::ScriptTextEditor() {
 }
 
 ScriptTextEditor::~ScriptTextEditor() {
+	// Drop any rename buffer synced while the dialog was open; closing the tab
+	// fires neither the dialog's confirmed nor canceled handler.
+	_clear_refactor_buffer();
+
 	highlighters.clear();
 
 	if (!editor_enabled) {
