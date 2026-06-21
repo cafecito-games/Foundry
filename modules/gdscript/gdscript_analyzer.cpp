@@ -5058,6 +5058,11 @@ void GDScriptAnalyzer::reduce_lambda(GDScriptParser::LambdaNode *p_lambda) {
 	resolve_function_signature(p_lambda->function, p_lambda, true);
 	current_lambda = previous_lambda;
 
+	lambda_type = make_callable_type(p_lambda->function->info, p_lambda->function);
+	lambda_type.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+	lambda_type.is_constant = false;
+	p_lambda->set_datatype(lambda_type);
+
 	pending_body_resolution_lambdas.push_back(p_lambda);
 }
 

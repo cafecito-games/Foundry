@@ -373,6 +373,17 @@ TEST_CASE("[Modules][GDScript] Analyzer checks callable and signal signature ass
 	CHECK(analyze_source("signal event(value: int)\nvar typed_event: Signal[[String]] = event\n") != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer preserves lambda callable signatures") {
+	CHECK(analyze_source("func test() -> void:\n\tvar callback: Callable[[int], bool] = func(value: int) -> bool:\n\t\treturn true\n") == OK);
+	CHECK(analyze_source("func test() -> void:\n\tvar callback: Callable[[int], bool] = func(value: String) -> bool:\n\t\treturn true\n") != OK);
+	CHECK(analyze_source("func test() -> void:\n\tvar callback: Callable[[int], bool] = func(value: int) -> String:\n\t\treturn \"ok\"\n") != OK);
+	CHECK(analyze_source("func test() -> void:\n\tvar callback: Callable[[int], bool] = func(value: int) -> bool:\n\t\treturn true\n\tcallback.call(\"bad\")\n") != OK);
+	CHECK(analyze_source("func test() -> void:\n\tvar callback: Callable[[int], bool] = func(value: int) -> bool:\n\t\treturn true\n\tvar result: bool = callback.call(1)\n") == OK);
+	CHECK(analyze_source("func make_callback() -> Callable[[int], bool]:\n\treturn func(value: int) -> bool:\n\t\treturn true\n") == OK);
+	CHECK(analyze_source("func make_callback() -> Callable[[int], bool]:\n\treturn func(value: String) -> bool:\n\t\treturn true\n") != OK);
+	CHECK(analyze_source("func make_callback() -> Callable[[int], bool]:\n\treturn func(value: int) -> String:\n\t\treturn \"ok\"\n") != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.call invocations") {
 	const String source_prefix = "func accepts_int(value: int) -> bool:\n\treturn true\nfunc get_dynamic() -> Variant:\n\treturn 1\nfunc test() -> void:\n\tvar callback: Callable[[int], bool] = accepts_int\n";
 	const String inferred_source_prefix = "func accepts_int(value: int) -> bool:\n\treturn true\nfunc test() -> void:\n\tvar callback := accepts_int\n";
