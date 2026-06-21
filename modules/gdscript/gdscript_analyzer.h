@@ -145,8 +145,10 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType explicit_signal_type_from_node(const GDScriptParser::SignalNode *p_signal) const;
 	GDScriptParser::ArrayNode *array_literal_argument(const GDScriptParser::CallNode *p_call, int p_argument_index) const;
 	bool string_name_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_argument_index, StringName &r_name) const;
+	bool call_argument_can_be_string_name(const GDScriptParser::CallNode *p_call, int p_argument_index);
 	bool callable_type_from_method(const GDScriptParser::DataType &p_receiver_type, const StringName &p_method_name, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_callable_type);
 	bool callable_type_from_constant_method_args(const GDScriptParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, GDScriptParser::DataType &r_callable_type);
+	void validate_strict_callable_method_fallback(const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_receiver_type, int p_method_arg_index);
 	bool is_node_compatible_type(const GDScriptParser::DataType &p_type) const;
 	bool property_type_from_class(GDScriptParser::ClassNode *p_class, const StringName &p_property_name, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_property_type);
 	bool property_type_from_script(const Ref<Script> &p_script, const StringName &p_property_name, GDScriptParser::DataType &r_property_type) const;

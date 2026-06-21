@@ -594,6 +594,12 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable constructors from 
 	CHECK(analyze_source(source_prefix + "\tCallable.create(text, \"substr\").call(get_dynamic())\n", false, true) != OK);
 	CHECK(analyze_source(source_prefix + "\tCallable(worker, method_name).call(\"legacy dynamic\")\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tCallable(worker, \"unknown\").call(\"legacy dynamic\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tCallable.create(worker, method_name).call(\"legacy dynamic\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tCallable.create(worker, \"unknown\").call(\"legacy dynamic\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tCallable(worker, method_name).call(1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tCallable(worker, \"unknown\").call(1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tCallable.create(worker, method_name).call(1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tCallable.create(worker, \"unknown\").call(1)\n", false, true) != OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Object.call invocations from constant method names") {

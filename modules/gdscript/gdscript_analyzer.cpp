@@ -3762,6 +3762,8 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				GDScriptParser::DataType callable_type;
 				if (callable_type_from_constant_method_args(p_call, 0, 1, callable_type)) {
 					call_type = callable_type;
+				} else {
+					validate_strict_callable_method_fallback(p_call, p_call->arguments[0]->get_datatype(), 1);
 				}
 			}
 
@@ -6144,6 +6146,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				r_return_type = callable_type;
 				return true;
 			}
+			if (call != nullptr && call->arguments.size() >= 2) {
+				validate_strict_callable_method_fallback(call, call->arguments[0]->get_datatype(), 1);
+			}
 		}
 
 		const bool is_callable_call = p_function == SNAME("call");
@@ -6831,6 +6836,31 @@ bool GDScriptAnalyzer::string_name_from_constant_arg(const GDScriptParser::CallN
 	return true;
 }
 
+bool GDScriptAnalyzer::call_argument_can_be_string_name(const GDScriptParser::CallNode *p_call, int p_argument_index) {
+	if (p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
+		return false;
+	}
+
+	const GDScriptParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
+	if (argument == nullptr) {
+		return false;
+	}
+
+	if (argument->is_constant) {
+		const Variant::Type value_type = argument->reduced_value.get_type();
+		return value_type == Variant::STRING || value_type == Variant::STRING_NAME;
+	}
+
+	const GDScriptParser::DataType argument_type = argument->get_datatype();
+	if (argument_type.is_variant() || !argument_type.is_hard_type()) {
+		return true;
+	}
+
+	const GDScriptParser::DataType string_name_type = type_from_property(PropertyInfo(Variant::STRING_NAME, ""), true);
+	const GDScriptParser::DataType string_type = type_from_property(PropertyInfo(Variant::STRING, ""), true);
+	return is_type_compatible(string_name_type, argument_type, true) || is_type_compatible(string_type, argument_type, true);
+}
+
 bool GDScriptAnalyzer::callable_type_from_method(const GDScriptParser::DataType &p_receiver_type, const StringName &p_method_name, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_callable_type) {
 	GDScriptParser::DataType return_type;
 	List<GDScriptParser::DataType> parameter_types;
@@ -6859,6 +6889,19 @@ bool GDScriptAnalyzer::callable_type_from_constant_method_args(const GDScriptPar
 	}
 
 	return callable_type_from_method(p_call->arguments[p_receiver_arg_index]->get_datatype(), method_name, const_cast<GDScriptParser::CallNode *>(p_call), r_callable_type);
+}
+
+void GDScriptAnalyzer::validate_strict_callable_method_fallback(const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_receiver_type, int p_method_arg_index) {
+	if (!strict_dynamic_checks || p_call == nullptr || p_method_arg_index < 0 || p_method_arg_index >= p_call->arguments.size()) {
+		return;
+	}
+
+	StringName method_name;
+	if (string_name_from_constant_arg(p_call, p_method_arg_index, method_name)) {
+		push_error(vformat(R"*(Cannot resolve method "%s" on type "%s" for Callable construction in strict dynamic mode.)*", method_name, p_receiver_type.to_string()), p_call->arguments[p_method_arg_index]);
+	} else if (call_argument_can_be_string_name(p_call, p_method_arg_index)) {
+		push_error("Cannot use dynamic method name for Callable construction in strict dynamic mode.", p_call->arguments[p_method_arg_index]);
+	}
 }
 
 bool GDScriptAnalyzer::is_node_compatible_type(const GDScriptParser::DataType &p_type) const {
