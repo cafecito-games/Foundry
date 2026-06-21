@@ -37,6 +37,7 @@
 #include "../editor/gdscript_refactoring.h"
 #include "../editor/gdscript_refactoring_edits.h"
 #include "../editor/gdscript_refactoring_names.h"
+#include "../editor/gdscript_refactoring_types.h"
 
 #include "core/io/file_access.h"
 
@@ -135,6 +136,24 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("var", reason));
 			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("func", reason));
 			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("return", reason));
+		}
+	}
+
+	TEST_CASE("Type annotation rendering") {
+		SUBCASE("concrete builtin is annotatable") {
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::INT;
+			dt.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			String rendered;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "int");
+		}
+		SUBCASE("variant is not annotatable") {
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::VARIANT;
+			String rendered;
+			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
 		}
 	}
 }
