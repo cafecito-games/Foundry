@@ -36,6 +36,7 @@
 
 #include "../editor/gdscript_refactoring.h"
 #include "../editor/gdscript_refactoring_edits.h"
+#include "../editor/gdscript_refactoring_names.h"
 
 #include "core/io/file_access.h"
 
@@ -108,6 +109,30 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String out;
 			CHECK(GDScriptRefactorEdits::apply(src, edits, out));
 			CHECK_EQ(out, "oXree\n");
+		}
+	}
+
+	TEST_CASE("Identifier validation") {
+		String reason;
+		SUBCASE("accepts valid identifiers") {
+			CHECK(GDScriptRefactorNames::validate_identifier("foo", reason));
+			CHECK(GDScriptRefactorNames::validate_identifier("_bar", reason));
+			CHECK(GDScriptRefactorNames::validate_identifier("baz2", reason));
+		}
+		SUBCASE("rejects empty") {
+			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("", reason));
+			CHECK_FALSE(reason.is_empty());
+		}
+		SUBCASE("rejects leading digit") {
+			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("2foo", reason));
+		}
+		SUBCASE("rejects whitespace") {
+			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("foo bar", reason));
+		}
+		SUBCASE("rejects keywords") {
+			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("var", reason));
+			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("func", reason));
+			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("return", reason));
 		}
 	}
 }
