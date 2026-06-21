@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/io/marshalls.h"
+#include "core/variant/container_type_validate.h"
 
 #include "tests/test_macros.h"
 
@@ -487,6 +488,51 @@ TEST_CASE("[Marshalls] Typed dictionary decoding") {
 	CHECK(dictionary.size() == 1);
 	CHECK(dictionary.has(Variant(uint64_t(0x0f123456789abcdef))));
 	CHECK(dictionary[Variant(uint64_t(0x0f123456789abcdef))] == Variant(uint64_t(0x0f123456789abcdef)));
+}
+
+TEST_CASE("[Marshalls] Nested typed container Variant encoding and decoding") {
+	ContainerType string_type;
+	string_type.builtin_type = Variant::STRING;
+
+	ContainerType int_type;
+	int_type.builtin_type = Variant::INT;
+
+	ContainerType dictionary_type;
+	dictionary_type.builtin_type = Variant::DICTIONARY;
+	dictionary_type.element_types.push_back(string_type);
+	dictionary_type.element_types.push_back(int_type);
+
+	Array source;
+	source.set_typed(dictionary_type);
+	Dictionary item;
+	item["x"] = 1;
+	source.push_back(item);
+
+	int encoded_len = 0;
+	CHECK(encode_variant(source, nullptr, encoded_len) == OK);
+	PackedByteArray buffer;
+	buffer.resize(encoded_len);
+	CHECK(encode_variant(source, buffer.ptrw(), encoded_len) == OK);
+
+	Variant decoded_variant;
+	int decoded_len = 0;
+	CHECK(decode_variant(decoded_variant, buffer.ptr(), buffer.size(), &decoded_len) == OK);
+	CHECK_EQ(decoded_len, buffer.size());
+	CHECK_EQ(decoded_variant.get_type(), Variant::ARRAY);
+
+	Array decoded_array = decoded_variant;
+	CHECK(decoded_array.is_typed());
+	CHECK_EQ(decoded_array.get_typed_builtin(), Variant::DICTIONARY);
+	ContainerType decoded_element_type = decoded_array.get_element_type();
+	REQUIRE_EQ(decoded_element_type.element_types.size(), 2);
+	CHECK_EQ(decoded_element_type.element_types[0].builtin_type, Variant::STRING);
+	CHECK_EQ(decoded_element_type.element_types[1].builtin_type, Variant::INT);
+
+	Dictionary decoded_dictionary = decoded_array[0];
+	CHECK(decoded_dictionary.is_typed());
+	CHECK_EQ(decoded_dictionary.get_typed_key_builtin(), Variant::STRING);
+	CHECK_EQ(decoded_dictionary.get_typed_value_builtin(), Variant::INT);
+	CHECK_EQ(decoded_dictionary["x"], Variant(1));
 }
 
 } // namespace TestMarshalls

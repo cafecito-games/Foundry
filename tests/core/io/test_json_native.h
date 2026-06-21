@@ -32,6 +32,7 @@
 
 #include "core/io/json.h"
 
+#include "core/variant/container_type_validate.h"
 #include "core/variant/typed_array.h"
 #include "core/variant/typed_dictionary.h"
 #include "tests/test_macros.h"
@@ -169,6 +170,32 @@ TEST_CASE("[JSON][Native] Conversion between native and JSON formats") {
 
 	TypedArray<int64_t> int_arr = { 1, 2, 3 };
 	test(int_arr, R"({"type":"Array","elem_type":"int","args":["i:1","i:2","i:3"]})");
+
+	ContainerType nested_string_type;
+	nested_string_type.builtin_type = Variant::STRING;
+	ContainerType nested_int_type;
+	nested_int_type.builtin_type = Variant::INT;
+	ContainerType nested_dictionary_type;
+	nested_dictionary_type.builtin_type = Variant::DICTIONARY;
+	nested_dictionary_type.element_types.push_back(nested_string_type);
+	nested_dictionary_type.element_types.push_back(nested_int_type);
+	Array nested_typed_array;
+	nested_typed_array.set_typed(nested_dictionary_type);
+	Dictionary nested_dictionary;
+	nested_dictionary["x"] = 1;
+	nested_typed_array.push_back(nested_dictionary);
+	test(nested_typed_array, R"({"type":"Array","elem_type":{"type":"Dictionary","key_type":"String","value_type":"int"},"args":[{"type":"Dictionary","key_type":"String","value_type":"int","args":["s:x","i:1"]}]})");
+
+	ContainerType nested_variant_dictionary_type;
+	nested_variant_dictionary_type.builtin_type = Variant::DICTIONARY;
+	nested_variant_dictionary_type.element_types.push_back(ContainerType());
+	nested_variant_dictionary_type.element_types.push_back(nested_int_type);
+	Array nested_variant_typed_array;
+	nested_variant_typed_array.set_typed(nested_variant_dictionary_type);
+	Dictionary nested_variant_dictionary;
+	nested_variant_dictionary["x"] = 1;
+	nested_variant_typed_array.push_back(nested_variant_dictionary);
+	test(nested_variant_typed_array, R"({"type":"Array","elem_type":{"type":"Dictionary","key_type":"Variant","value_type":"int"},"args":[{"type":"Dictionary","value_type":"int","args":["s:x","i:1"]}]})");
 
 	Array arr2 = { 1, res, 9 };
 	const String arr2_repr = vformat(R"(["i:1",%s,"i:9"])", res_repr);

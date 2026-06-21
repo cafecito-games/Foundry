@@ -35,6 +35,7 @@
 #include "core/io/file_access_compressed.h"
 #include "core/io/missing_resource.h"
 #include "core/object/script_language.h"
+#include "core/variant/container_type_validate.h"
 #include "core/version.h"
 #include "scene/property_utils.h"
 #include "scene/resources/packed_scene.h"
@@ -850,7 +851,7 @@ Error ResourceLoaderBinary::load() {
 				if (is_get_valid && get_value.get_type() == Variant::ARRAY) {
 					Array get_array = get_value;
 					if (!set_array.is_same_typed(get_array)) {
-						value = Array(set_array, get_array.get_typed_builtin(), get_array.get_typed_class_name(), get_array.get_typed_script());
+						value = Array(set_array, get_array.get_element_type());
 					}
 				}
 			}
@@ -862,8 +863,7 @@ Error ResourceLoaderBinary::load() {
 				if (is_get_valid && get_value.get_type() == Variant::DICTIONARY) {
 					Dictionary get_dict = get_value;
 					if (!set_dict.is_same_typed(get_dict)) {
-						value = Dictionary(set_dict, get_dict.get_typed_key_builtin(), get_dict.get_typed_key_class_name(), get_dict.get_typed_key_script(),
-								get_dict.get_typed_value_builtin(), get_dict.get_typed_value_class_name(), get_dict.get_typed_value_script());
+						value = Dictionary(set_dict, get_dict.get_key_type(), get_dict.get_value_type());
 					}
 				}
 			}
@@ -2044,6 +2044,13 @@ void ResourceFormatSaverBinaryInstance::write_variant(Ref<FileAccess> f, const V
 	}
 }
 
+void ResourceFormatSaverBinaryInstance::_find_resources_in_container_type(const ContainerType &p_type) {
+	_find_resources(p_type.script);
+	for (const ContainerType &child_type : p_type.element_types) {
+		_find_resources_in_container_type(child_type);
+	}
+}
+
 void ResourceFormatSaverBinaryInstance::_find_resources(const Variant &p_variant, bool p_main) {
 	switch (p_variant.get_type()) {
 		case Variant::OBJECT: {
@@ -2101,7 +2108,7 @@ void ResourceFormatSaverBinaryInstance::_find_resources(const Variant &p_variant
 
 		case Variant::ARRAY: {
 			Array varray = p_variant;
-			_find_resources(varray.get_typed_script());
+			_find_resources_in_container_type(varray.get_element_type());
 			for (const Variant &v : varray) {
 				_find_resources(v);
 			}
@@ -2110,8 +2117,8 @@ void ResourceFormatSaverBinaryInstance::_find_resources(const Variant &p_variant
 
 		case Variant::DICTIONARY: {
 			Dictionary d = p_variant;
-			_find_resources(d.get_typed_key_script());
-			_find_resources(d.get_typed_value_script());
+			_find_resources_in_container_type(d.get_key_type());
+			_find_resources_in_container_type(d.get_value_type());
 			for (const KeyValue<Variant, Variant> &kv : d) {
 				_find_resources(kv.key);
 				_find_resources(kv.value);

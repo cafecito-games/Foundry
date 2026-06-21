@@ -236,6 +236,9 @@ class GDScriptByteCodeGenerator : public GDScriptCodeGenerator {
 		return pos;
 	}
 
+	Variant make_container_type_descriptor(const GDScriptDataType &p_type) const;
+	int get_container_type_pos(const GDScriptDataType &p_type);
+
 	int get_operation_pos(const Variant::ValidatedOperatorEvaluator p_operation) {
 		if (operator_func_map.has(p_operation)) {
 			return operator_func_map[p_operation];

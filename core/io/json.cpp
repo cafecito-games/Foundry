@@ -649,21 +649,60 @@ void JSON::_bind_methods() {
 #define ARGS "args"
 #define PROPS "props"
 
-static bool _encode_container_type(Dictionary &r_dict, const String &p_key, const ContainerType &p_type, bool p_full_objects) {
+static bool _encode_container_type_value(const ContainerType &p_type, Variant &r_value, bool p_full_objects) {
+	if (p_type.builtin_type == Variant::NIL) {
+		r_value = "Variant";
+		return true;
+	}
+
 	if (p_type.builtin_type != Variant::NIL) {
+		if (!p_type.element_types.is_empty()) {
+			Dictionary type_dict;
+			type_dict[TYPE] = Variant::get_type_name(p_type.builtin_type);
+			if (p_type.builtin_type == Variant::ARRAY) {
+				ERR_FAIL_COND_V_MSG(p_type.element_types.size() != 1, false, "Array container types must have exactly one element type.");
+				if (!_encode_container_type_value(p_type.element_types[0], type_dict[ELEM_TYPE], p_full_objects)) {
+					return false;
+				}
+			} else if (p_type.builtin_type == Variant::DICTIONARY) {
+				ERR_FAIL_COND_V_MSG(p_type.element_types.size() != 2, false, "Dictionary container types must have exactly two element types.");
+				if (!_encode_container_type_value(p_type.element_types[0], type_dict[KEY_TYPE], p_full_objects)) {
+					return false;
+				}
+				if (!_encode_container_type_value(p_type.element_types[1], type_dict[VALUE_TYPE], p_full_objects)) {
+					return false;
+				}
+			}
+			r_value = type_dict;
+			return true;
+		}
+
 		if (p_type.script.is_valid()) {
 			ERR_FAIL_COND_V(!p_full_objects, false);
 			const String path = p_type.script->get_path();
 			ERR_FAIL_COND_V_MSG(path.is_empty() || !path.begins_with("res://"), false, "Failed to encode a path to a custom script for a container type.");
-			r_dict[p_key] = path;
+			r_value = path;
 		} else if (p_type.class_name != StringName()) {
 			ERR_FAIL_COND_V(!p_full_objects, false);
-			r_dict[p_key] = String(p_type.class_name);
+			r_value = String(p_type.class_name);
 		} else {
 			// No need to check `p_full_objects` since `class_name` should be non-empty for `builtin_type == Variant::OBJECT`.
-			r_dict[p_key] = Variant::get_type_name(p_type.builtin_type);
+			r_value = Variant::get_type_name(p_type.builtin_type);
 		}
 	}
+	return true;
+}
+
+static bool _encode_container_type(Dictionary &r_dict, const String &p_key, const ContainerType &p_type, bool p_full_objects) {
+	if (p_type.builtin_type == Variant::NIL) {
+		return true;
+	}
+
+	Variant value;
+	if (!_encode_container_type_value(p_type, value, p_full_objects)) {
+		return false;
+	}
+	r_dict[p_key] = value;
 	return true;
 }
 
@@ -1018,33 +1057,32 @@ Variant JSON::_from_native(const Variant &p_variant, bool p_full_objects, int p_
 	ERR_FAIL_V_MSG(Variant(), vformat(R"(Unhandled Variant type "%s".)", Variant::get_type_name(p_variant.get_type())));
 }
 
-static bool _decode_container_type(const Dictionary &p_dict, const String &p_key, ContainerType &r_type, bool p_allow_objects) {
-	if (!p_dict.has(p_key)) {
+static bool _decode_container_type_name(const String &p_type_name, ContainerType &r_type, bool p_allow_objects) {
+	if (p_type_name == "Variant") {
+		r_type.builtin_type = Variant::NIL;
 		return true;
 	}
 
-	const String type_name = p_dict[p_key];
-
-	const Variant::Type builtin_type = Variant::get_type_by_name(type_name);
+	const Variant::Type builtin_type = Variant::get_type_by_name(p_type_name);
 	if (builtin_type < Variant::VARIANT_MAX && builtin_type != Variant::OBJECT) {
 		r_type.builtin_type = builtin_type;
 		return true;
 	}
 
-	if (ClassDB::class_exists(type_name)) {
+	if (ClassDB::class_exists(p_type_name)) {
 		ERR_FAIL_COND_V(!p_allow_objects, false);
 
 		r_type.builtin_type = Variant::OBJECT;
-		r_type.class_name = type_name;
+		r_type.class_name = p_type_name;
 		return true;
 	}
 
-	if (type_name.begins_with("res://")) {
+	if (p_type_name.begins_with("res://")) {
 		ERR_FAIL_COND_V(!p_allow_objects, false);
 
-		ERR_FAIL_COND_V_MSG(!ResourceLoader::exists(type_name, "Script"), false, vformat(R"(Invalid script path "%s".)", type_name));
-		const Ref<Script> script = ResourceLoader::load(type_name, "Script");
-		ERR_FAIL_COND_V_MSG(script.is_null(), false, vformat(R"(Can't load script at path "%s".)", type_name));
+		ERR_FAIL_COND_V_MSG(!ResourceLoader::exists(p_type_name, "Script"), false, vformat(R"(Invalid script path "%s".)", p_type_name));
+		const Ref<Script> script = ResourceLoader::load(p_type_name, "Script");
+		ERR_FAIL_COND_V_MSG(script.is_null(), false, vformat(R"(Can't load script at path "%s".)", p_type_name));
 
 		r_type.builtin_type = Variant::OBJECT;
 		r_type.class_name = script->get_instance_base_type();
@@ -1052,7 +1090,62 @@ static bool _decode_container_type(const Dictionary &p_dict, const String &p_key
 		return true;
 	}
 
-	ERR_FAIL_V_MSG(false, vformat(R"(Invalid type "%s".)", type_name));
+	ERR_FAIL_V_MSG(false, vformat(R"(Invalid type "%s".)", p_type_name));
+}
+
+static bool _decode_container_type_value(const Variant &p_value, ContainerType &r_type, bool p_allow_objects) {
+	if (p_value.get_type() == Variant::DICTIONARY) {
+		const Dictionary type_dict = p_value;
+		ERR_FAIL_COND_V_MSG(!type_dict.has(TYPE), false, vformat(R"(Missing "%s" for nested container type.)", TYPE));
+		ERR_FAIL_COND_V_MSG(type_dict[TYPE].get_type() != Variant::STRING, false, vformat(R"(Invalid "%s" for nested container type.)", TYPE));
+
+		const String type_name = type_dict[TYPE];
+		if (!_decode_container_type_name(type_name, r_type, p_allow_objects)) {
+			return false;
+		}
+
+		if (r_type.builtin_type == Variant::ARRAY) {
+			ContainerType element_type;
+			if (type_dict.has(ELEM_TYPE)) {
+				if (!_decode_container_type_value(type_dict[ELEM_TYPE], element_type, p_allow_objects)) {
+					return false;
+				}
+			}
+			if (element_type.builtin_type != Variant::NIL) {
+				r_type.element_types.push_back(element_type);
+			}
+		} else if (r_type.builtin_type == Variant::DICTIONARY) {
+			ContainerType key_type;
+			if (type_dict.has(KEY_TYPE)) {
+				if (!_decode_container_type_value(type_dict[KEY_TYPE], key_type, p_allow_objects)) {
+					return false;
+				}
+			}
+			ContainerType value_type;
+			if (type_dict.has(VALUE_TYPE)) {
+				if (!_decode_container_type_value(type_dict[VALUE_TYPE], value_type, p_allow_objects)) {
+					return false;
+				}
+			}
+			if (key_type.builtin_type != Variant::NIL || value_type.builtin_type != Variant::NIL) {
+				r_type.element_types.push_back(key_type);
+				r_type.element_types.push_back(value_type);
+			}
+		}
+		return true;
+	}
+
+	ERR_FAIL_COND_V_MSG(p_value.get_type() != Variant::STRING, false, vformat(R"(Invalid container type value "%s".)", Variant::get_type_name(p_value.get_type())));
+	const String type_name = p_value;
+	return _decode_container_type_name(type_name, r_type, p_allow_objects);
+}
+
+static bool _decode_container_type(const Dictionary &p_dict, const String &p_key, ContainerType &r_type, bool p_allow_objects) {
+	if (!p_dict.has(p_key)) {
+		return true;
+	}
+
+	return _decode_container_type_value(p_dict[p_key], r_type, p_allow_objects);
 }
 
 Variant JSON::_to_native(const Variant &p_json, bool p_allow_objects, int p_depth) {

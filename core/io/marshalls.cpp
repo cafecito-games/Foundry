@@ -65,6 +65,10 @@ ObjectID EncodedObjectAsID::get_object_id() const {
 // For `Variant::OBJECT`.
 #define HEADER_DATA_FLAG_OBJECT_AS_ID (1 << 16)
 
+// For `Variant::ARRAY` and `Variant::DICTIONARY`.
+// Signals that recursive container type metadata is encoded in the payload.
+#define HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE (1 << 8)
+
 // For `Variant::ARRAY`.
 // Occupies bits 16 and 17.
 #define HEADER_DATA_FIELD_TYPED_ARRAY_MASK (0b11 << 16)
@@ -180,6 +184,53 @@ static Error _decode_container_type(const uint8_t *&buf, int &len, int *r_len, b
 		} break;
 	}
 	ERR_FAIL_V_MSG(ERR_INVALID_DATA, "Invalid container type kind."); // Future proofing.
+}
+
+static Error _decode_container_type_extended(const uint8_t *&buf, int &len, int *r_len, bool p_allow_objects, ContainerType &r_type) {
+	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
+
+	ContainerTypeKind type_kind = (ContainerTypeKind)decode_uint32(buf);
+	buf += 4;
+	len -= 4;
+	if (r_len) {
+		(*r_len) += 4;
+	}
+
+	Error err = _decode_container_type(buf, len, r_len, p_allow_objects, type_kind, r_type);
+	if (err != OK) {
+		return err;
+	}
+	if (type_kind == CONTAINER_TYPE_KIND_NONE) {
+		return OK;
+	}
+
+	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
+	const int32_t child_count = decode_uint32(buf);
+	buf += 4;
+	len -= 4;
+	if (r_len) {
+		(*r_len) += 4;
+	}
+
+	ERR_FAIL_COND_V(child_count < 0, ERR_INVALID_DATA);
+	if (r_type.builtin_type == Variant::ARRAY) {
+		ERR_FAIL_COND_V(child_count != 0 && child_count != 1, ERR_INVALID_DATA);
+	} else if (r_type.builtin_type == Variant::DICTIONARY) {
+		ERR_FAIL_COND_V(child_count != 0 && child_count != 2, ERR_INVALID_DATA);
+	} else {
+		ERR_FAIL_COND_V(child_count != 0, ERR_INVALID_DATA);
+	}
+
+	for (int32_t i = 0; i < child_count; i++) {
+		ContainerType child_type;
+		err = _decode_container_type_extended(buf, len, r_len, p_allow_objects, child_type);
+		if (err != OK) {
+			return err;
+		}
+		r_type.element_types.push_back(child_type);
+	}
+
+	return OK;
 }
 
 Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int *r_len, bool p_allow_objects, int p_depth) {
@@ -807,8 +858,13 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 			ContainerType key_type;
 
 			{
-				ContainerTypeKind key_type_kind = GET_CONTAINER_TYPE_KIND(header, TYPED_DICTIONARY_KEY);
-				Error err = _decode_container_type(buf, len, r_len, p_allow_objects, key_type_kind, key_type);
+				Error err = OK;
+				if (header & HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE) {
+					err = _decode_container_type_extended(buf, len, r_len, p_allow_objects, key_type);
+				} else {
+					ContainerTypeKind key_type_kind = GET_CONTAINER_TYPE_KIND(header, TYPED_DICTIONARY_KEY);
+					err = _decode_container_type(buf, len, r_len, p_allow_objects, key_type_kind, key_type);
+				}
 				if (err) {
 					return err;
 				}
@@ -817,8 +873,13 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 			ContainerType value_type;
 
 			{
-				ContainerTypeKind value_type_kind = GET_CONTAINER_TYPE_KIND(header, TYPED_DICTIONARY_VALUE);
-				Error err = _decode_container_type(buf, len, r_len, p_allow_objects, value_type_kind, value_type);
+				Error err = OK;
+				if (header & HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE) {
+					err = _decode_container_type_extended(buf, len, r_len, p_allow_objects, value_type);
+				} else {
+					ContainerTypeKind value_type_kind = GET_CONTAINER_TYPE_KIND(header, TYPED_DICTIONARY_VALUE);
+					err = _decode_container_type(buf, len, r_len, p_allow_objects, value_type_kind, value_type);
+				}
 				if (err) {
 					return err;
 				}
@@ -874,8 +935,13 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 			ContainerType type;
 
 			{
-				ContainerTypeKind type_kind = GET_CONTAINER_TYPE_KIND(header, TYPED_ARRAY);
-				Error err = _decode_container_type(buf, len, r_len, p_allow_objects, type_kind, type);
+				Error err = OK;
+				if (header & HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE) {
+					err = _decode_container_type_extended(buf, len, r_len, p_allow_objects, type);
+				} else {
+					ContainerTypeKind type_kind = GET_CONTAINER_TYPE_KIND(header, TYPED_ARRAY);
+					err = _decode_container_type(buf, len, r_len, p_allow_objects, type_kind, type);
+				}
 				if (err) {
 					return err;
 				}
@@ -1334,6 +1400,23 @@ static void _encode_container_type_header(const ContainerType &p_type, uint32_t 
 	}
 }
 
+static ContainerTypeKind _get_container_type_kind(const ContainerType &p_type, bool p_full_objects) {
+	if (p_type.builtin_type == Variant::NIL) {
+		return CONTAINER_TYPE_KIND_NONE;
+	}
+	if (p_type.script.is_valid()) {
+		return p_full_objects ? CONTAINER_TYPE_KIND_SCRIPT : CONTAINER_TYPE_KIND_CLASS_NAME;
+	}
+	if (p_type.class_name != StringName()) {
+		return CONTAINER_TYPE_KIND_CLASS_NAME;
+	}
+	return CONTAINER_TYPE_KIND_BUILTIN;
+}
+
+static bool _container_type_needs_extended_encoding(const ContainerType &p_type) {
+	return !p_type.element_types.is_empty();
+}
+
 static Error _encode_container_type(const ContainerType &p_type, uint8_t *&buf, int &r_len, bool p_full_objects) {
 	if (p_type.builtin_type != Variant::NIL) {
 		if (p_type.script.is_valid()) {
@@ -1355,6 +1438,39 @@ static Error _encode_container_type(const ContainerType &p_type, uint8_t *&buf, 
 			r_len += 4;
 		}
 	}
+	return OK;
+}
+
+static Error _encode_container_type_extended(const ContainerType &p_type, uint8_t *&buf, int &r_len, bool p_full_objects) {
+	const ContainerTypeKind type_kind = _get_container_type_kind(p_type, p_full_objects);
+	if (buf) {
+		encode_uint32(type_kind, buf);
+		buf += 4;
+	}
+	r_len += 4;
+
+	if (type_kind == CONTAINER_TYPE_KIND_NONE) {
+		return OK;
+	}
+
+	Error err = _encode_container_type(p_type, buf, r_len, p_full_objects);
+	if (err != OK) {
+		return err;
+	}
+
+	if (buf) {
+		encode_uint32(p_type.element_types.size(), buf);
+		buf += 4;
+	}
+	r_len += 4;
+
+	for (const ContainerType &child_type : p_type.element_types) {
+		err = _encode_container_type_extended(child_type, buf, r_len, p_full_objects);
+		if (err != OK) {
+			return err;
+		}
+	}
+
 	return OK;
 }
 
@@ -1398,12 +1514,23 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 		} break;
 		case Variant::DICTIONARY: {
 			const Dictionary dict = p_variant;
-			_encode_container_type_header(dict.get_key_type(), header, HEADER_DATA_FIELD_TYPED_DICTIONARY_KEY_SHIFT, p_full_objects);
-			_encode_container_type_header(dict.get_value_type(), header, HEADER_DATA_FIELD_TYPED_DICTIONARY_VALUE_SHIFT, p_full_objects);
+			const ContainerType key_type = dict.get_key_type();
+			const ContainerType value_type = dict.get_value_type();
+			if (_container_type_needs_extended_encoding(key_type) || _container_type_needs_extended_encoding(value_type)) {
+				header |= HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE;
+			} else {
+				_encode_container_type_header(key_type, header, HEADER_DATA_FIELD_TYPED_DICTIONARY_KEY_SHIFT, p_full_objects);
+				_encode_container_type_header(value_type, header, HEADER_DATA_FIELD_TYPED_DICTIONARY_VALUE_SHIFT, p_full_objects);
+			}
 		} break;
 		case Variant::ARRAY: {
 			const Array array = p_variant;
-			_encode_container_type_header(array.get_element_type(), header, HEADER_DATA_FIELD_TYPED_ARRAY_SHIFT, p_full_objects);
+			const ContainerType element_type = array.get_element_type();
+			if (_container_type_needs_extended_encoding(element_type)) {
+				header |= HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE;
+			} else {
+				_encode_container_type_header(element_type, header, HEADER_DATA_FIELD_TYPED_ARRAY_SHIFT, p_full_objects);
+			}
 		} break;
 #ifdef REAL_T_IS_DOUBLE
 		case Variant::VECTOR2:
@@ -1832,14 +1959,24 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 			const Dictionary dict = p_variant;
 
 			{
-				Error err = _encode_container_type(dict.get_key_type(), buf, r_len, p_full_objects);
+				Error err = OK;
+				if (header & HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE) {
+					err = _encode_container_type_extended(dict.get_key_type(), buf, r_len, p_full_objects);
+				} else {
+					err = _encode_container_type(dict.get_key_type(), buf, r_len, p_full_objects);
+				}
 				if (err) {
 					return err;
 				}
 			}
 
 			{
-				Error err = _encode_container_type(dict.get_value_type(), buf, r_len, p_full_objects);
+				Error err = OK;
+				if (header & HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE) {
+					err = _encode_container_type_extended(dict.get_value_type(), buf, r_len, p_full_objects);
+				} else {
+					err = _encode_container_type(dict.get_value_type(), buf, r_len, p_full_objects);
+				}
 				if (err) {
 					return err;
 				}
@@ -1874,7 +2011,12 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 			const Array array = p_variant;
 
 			{
-				Error err = _encode_container_type(array.get_element_type(), buf, r_len, p_full_objects);
+				Error err = OK;
+				if (header & HEADER_DATA_FLAG_EXTENDED_CONTAINER_TYPE) {
+					err = _encode_container_type_extended(array.get_element_type(), buf, r_len, p_full_objects);
+				} else {
+					err = _encode_container_type(array.get_element_type(), buf, r_len, p_full_objects);
+				}
 				if (err) {
 					return err;
 				}
