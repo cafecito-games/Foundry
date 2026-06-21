@@ -235,6 +235,24 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
+		SUBCASE("function and all call sites") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_function.gd", 2, 5, "worker", out); // caret on `helper` decl
+			REQUIRE(r.ok);
+			CHECK(out.contains("func worker() -> int:"));
+			CHECK(out.contains("return worker() + worker()"));
+			CHECK_FALSE(out.contains("helper"));
+		}
+		SUBCASE("rejects invalid new name") {
+			String out;
+			RefactorResult bad_syntax = run_rename("res://refactor/rename_local.gd", 3, 5, "1bad", out); // caret on `total`
+			CHECK_FALSE(bad_syntax.ok);
+			CHECK_FALSE(bad_syntax.error_message.is_empty());
+
+			RefactorResult keyword = run_rename("res://refactor/rename_local.gd", 3, 5, "class", out);
+			CHECK_FALSE(keyword.ok);
+			CHECK_FALSE(keyword.error_message.is_empty());
+		}
 		SUBCASE("availability disabled off a symbol") {
 			GDScriptTests::assert_no_errors_in("res://refactor/rename_local.gd");
 			RefactorContext ctx;
