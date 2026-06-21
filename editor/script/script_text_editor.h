@@ -35,8 +35,11 @@
 #include "editor/gui/code_editor.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/tree.h"
+
+#include "modules/gdscript/editor/gdscript_refactoring.h"
 
 class RichTextLabel;
 
@@ -83,6 +86,11 @@ class ScriptTextEditor : public ScriptEditorBase {
 	PopupMenu *breakpoints_menu = nullptr;
 	PopupMenu *highlighter_menu = nullptr;
 	PopupMenu *context_menu = nullptr;
+
+	PopupMenu *refactor_submenu = nullptr;
+	ConfirmationDialog *rename_dialog = nullptr;
+	LineEdit *rename_line_edit = nullptr;
+	Label *rename_error_label = nullptr;
 
 	int inline_color_line = -1;
 	int inline_color_start = -1;
@@ -166,6 +174,13 @@ class ScriptTextEditor : public ScriptEditorBase {
 		HELP_CONTEXTUAL,
 		LOOKUP_SYMBOL,
 		EDIT_EMOJI_AND_SYMBOL,
+		// These must stay in the same order as RefactorKind: the dispatch maps
+		// the option id back to a RefactorKind via (id - EDIT_REFACTOR_RENAME).
+		EDIT_REFACTOR_RENAME,
+		EDIT_REFACTOR_EXTRACT_VARIABLE,
+		EDIT_REFACTOR_EXTRACT_METHOD,
+		EDIT_REFACTOR_ADD_TYPE_ANNOTATION,
+		EDIT_REFACTOR_INLINE_VARIABLE,
 	};
 
 	enum COLOR_MODE {
@@ -233,6 +248,14 @@ protected:
 	void _edit_option(int p_op);
 	void _edit_option_toggle_inline_comment();
 	void _make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos);
+
+	void _populate_refactor_submenu();
+	void _run_refactor(int p_kind);
+	void _apply_refactor_result(const RefactorResult &p_result);
+	void _on_rename_confirmed();
+	void _on_rename_text_changed(const String &p_text);
+	RefactorContext _make_refactor_context() const;
+	RefactorLocation _make_refactor_location() const;
 	void _text_edit_gui_input(const Ref<InputEvent> &ev);
 	void _color_changed(const Color &p_color);
 	void _prepare_edit_menu();

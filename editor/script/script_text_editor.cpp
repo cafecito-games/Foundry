@@ -48,6 +48,8 @@
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "modules/gdscript/editor/gdscript_refactoring.h"
+#include "modules/gdscript/editor/gdscript_refactoring_edits.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/rich_text_label.h"
@@ -2060,6 +2062,14 @@ void ScriptTextEditor::_edit_option(int p_op) {
 		case EDIT_EMOJI_AND_SYMBOL: {
 			code_editor->get_text_editor()->show_emoji_and_symbol_picker();
 		} break;
+		case EDIT_REFACTOR_RENAME:
+		case EDIT_REFACTOR_EXTRACT_VARIABLE:
+		case EDIT_REFACTOR_EXTRACT_METHOD:
+		case EDIT_REFACTOR_ADD_TYPE_ANNOTATION:
+		case EDIT_REFACTOR_INLINE_VARIABLE: {
+			// The option id encodes the RefactorKind; see the enum ordering note.
+			_run_refactor(p_op - EDIT_REFACTOR_RENAME);
+		} break;
 		default: {
 			if (p_op >= EditorContextMenuPlugin::BASE_ID) {
 				EditorContextMenuPluginManager::get_singleton()->activate_custom_option(EditorContextMenuPlugin::CONTEXT_SLOT_SCRIPT_EDITOR_CODE, p_op, tx);
@@ -2807,6 +2817,89 @@ void ScriptTextEditor::_prepare_edit_menu() {
 	popup->set_item_disabled(popup->get_item_index(EDIT_REDO), !tx->has_redo());
 }
 
+RefactorContext ScriptTextEditor::_make_refactor_context() const {
+	RefactorContext ctx;
+	if (script.is_valid()) {
+		ctx.path = script->get_path();
+	}
+	ctx.source = code_editor->get_text_editor()->get_text();
+	return ctx;
+}
+
+RefactorLocation ScriptTextEditor::_make_refactor_location() const {
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	RefactorLocation loc;
+	if (text_editor->has_selection()) {
+		loc.start_line = text_editor->get_selection_from_line();
+		loc.start_column = text_editor->get_selection_from_column();
+		loc.end_line = text_editor->get_selection_to_line();
+		loc.end_column = text_editor->get_selection_to_column();
+	} else {
+		loc.start_line = loc.end_line = text_editor->get_caret_line();
+		loc.start_column = loc.end_column = text_editor->get_caret_column();
+	}
+	return loc;
+}
+
+void ScriptTextEditor::_populate_refactor_submenu() {
+	refactor_submenu->clear();
+	const RefactorContext ctx = _make_refactor_context();
+	const RefactorLocation loc = _make_refactor_location();
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, loc);
+	for (const RefactorAvailability &availability : available) {
+		const int id = EDIT_REFACTOR_RENAME + (int)availability.kind;
+		refactor_submenu->add_item(availability.title, id);
+		const int index = refactor_submenu->get_item_index(id);
+		if (!availability.enabled) {
+			refactor_submenu->set_item_disabled(index, true);
+			refactor_submenu->set_item_tooltip(index, availability.disabled_reason);
+		}
+	}
+}
+
+void ScriptTextEditor::_run_refactor(int p_kind) {
+	const RefactorKind kind = (RefactorKind)p_kind;
+	if (kind == RefactorKind::RENAME) {
+		// The interactive rename flow (dialog, preview, apply) lands in a later task.
+		return;
+	}
+	const RefactorContext ctx = _make_refactor_context();
+	const RefactorLocation loc = _make_refactor_location();
+	RefactorParams params;
+	const RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, kind, params);
+	if (!result.ok) {
+		if (!result.error_message.is_empty()) {
+			EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
+		}
+		return;
+	}
+	_apply_refactor_result(result);
+}
+
+void ScriptTextEditor::_apply_refactor_result(const RefactorResult &p_result) {
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	String applied;
+	if (!GDScriptRefactorEdits::apply(text_editor->get_text(), p_result.edits, applied)) {
+		EditorToaster::get_singleton()->popup_str(TTR("Could not apply refactor edits."), EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+	text_editor->begin_complex_operation();
+	text_editor->set_text(applied);
+	text_editor->end_complex_operation();
+	if (p_result.rename_anchor_line >= 0) {
+		text_editor->set_caret_line(p_result.rename_anchor_line);
+		text_editor->set_caret_column(p_result.rename_anchor_column);
+	}
+}
+
+void ScriptTextEditor::_on_rename_confirmed() {
+	// The rename application flow lands in a later task.
+}
+
+void ScriptTextEditor::_on_rename_text_changed(const String &p_text) {
+	// The rename name validation flow lands in a later task.
+}
+
 void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos) {
 	context_menu->clear();
 	if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_EMOJI_AND_SYMBOL_PICKER)) {
@@ -2854,6 +2947,15 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 	const PackedStringArray paths = { String(code_editor->get_text_editor()->get_path()) };
 	EditorContextMenuPluginManager::get_singleton()->add_options_from_plugins(context_menu, EditorContextMenuPlugin::CONTEXT_SLOT_SCRIPT_EDITOR_CODE, paths);
 
+	// Refactors are GDScript-specific; only offer them when editing a GDScript file.
+	if (script.is_valid() && script->get_language() && script->get_language()->get_name() == "GDScript") {
+		_populate_refactor_submenu();
+		if (refactor_submenu->get_item_count() > 0) {
+			context_menu->add_separator();
+			context_menu->add_submenu_node_item(TTRC("Refactor"), refactor_submenu);
+		}
+	}
+
 	const CodeEdit *tx = code_editor->get_text_editor();
 	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_UNDO), !tx->has_undo());
 	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_REDO), !tx->has_redo());
@@ -2895,6 +2997,23 @@ void ScriptTextEditor::_enable_code_editor() {
 
 	add_child(context_menu);
 	context_menu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
+
+	refactor_submenu = memnew(PopupMenu);
+	refactor_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
+	context_menu->add_child(refactor_submenu);
+
+	rename_dialog = memnew(ConfirmationDialog);
+	rename_dialog->set_title(TTRC("Rename Symbol"));
+	VBoxContainer *rename_vbox = memnew(VBoxContainer);
+	rename_dialog->add_child(rename_vbox);
+	rename_line_edit = memnew(LineEdit);
+	rename_line_edit->connect(SceneStringName(text_changed), callable_mp(this, &ScriptTextEditor::_on_rename_text_changed));
+	rename_vbox->add_child(rename_line_edit);
+	rename_dialog->register_text_enter(rename_line_edit);
+	rename_error_label = memnew(Label);
+	rename_vbox->add_child(rename_error_label);
+	rename_dialog->connect(SceneStringName(confirmed), callable_mp(this, &ScriptTextEditor::_on_rename_confirmed));
+	add_child(rename_dialog);
 
 	add_child(color_panel);
 
