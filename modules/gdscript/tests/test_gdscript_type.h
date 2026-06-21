@@ -488,6 +488,7 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.bindv signatures")
 TEST_CASE("[Modules][GDScript] Analyzer preserves typed vararg Callable.bind signatures") {
 	const String source_prefix = "func accept_int_vararg(value: int, ...args: Array) -> bool:\n\treturn true\nfunc test() -> void:\n\tvar callback := Callable(self, \"accept_int_vararg\")\n";
 	const String default_source_prefix = "func accept_default_vararg(value: int = 1, ...args: Array) -> bool:\n\treturn true\nfunc test() -> void:\n\tvar callback := Callable(self, \"accept_default_vararg\")\n";
+	const String multi_fixed_source_prefix = "func accept_int_string_vararg(value: int, text: String, ...args: Array) -> bool:\n\treturn true\nfunc test() -> void:\n\tvar callback := Callable(self, \"accept_int_string_vararg\")\n";
 
 	CHECK(analyze_source(source_prefix + "\tcallback.call(1)\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.call(1, \"extra\")\n") == OK);
@@ -503,6 +504,21 @@ TEST_CASE("[Modules][GDScript] Analyzer preserves typed vararg Callable.bind sig
 	CHECK(analyze_source(default_source_prefix + "\tcallback.call()\n") == OK);
 	CHECK(analyze_source(default_source_prefix + "\tcallback.bind(\"extra\").call()\n") != OK);
 	CHECK(analyze_source(default_source_prefix + "\tcallback.bindv([\"extra\"]).call()\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(\"ok\").call(1)\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(\"ok\").call()\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(\"ok\").call(1, \"more\")\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(\"ok\").call(1, 2)\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1).call()\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1).call(2, \"ok\")\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1).call(\"bad\", \"ok\")\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").call(2)\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").call(2, \"more\")\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bind(1, \"ok\").call(\"bad\", \"more\")\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([\"ok\"]).call(1)\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([\"ok\"]).call(1, 2)\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).call(2)\n") != OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).call(2, \"more\")\n") == OK);
+	CHECK(analyze_source(multi_fixed_source_prefix + "\tcallback.bindv([1, \"ok\"]).call(\"bad\", \"more\")\n") != OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.unbind signatures") {
@@ -844,6 +860,11 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Signal.connect callables") 
 	CHECK(analyze_source(source_prefix + "\tvar callback: Callable[[Variant], void] = accept_any\n\ttyped_event.connect(callback)\n") == OK);
 	CHECK(analyze_source(inferred_source_prefix + "\ttyped_event.connect(accept_int)\n") == OK);
 	CHECK(analyze_source("signal event(value: Variant)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc test() -> void:\n\tvar typed_event: Signal[[Variant]] = event\n\ttyped_event.connect(accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_int)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_none)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_any)\n") == OK);
+	CHECK(analyze_source(inferred_source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_int)\n") == OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer can reject nullable typed Signal.connect callables") {
@@ -900,7 +921,7 @@ TEST_CASE("[Modules][GDScript] Analyzer checks native member Signal.emit argumen
 
 TEST_CASE("[Modules][GDScript] Analyzer checks local Object.connect callables") {
 	const String source_prefix = "signal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc accept_int(value: int) -> void:\n\tpass\nfunc accept_any(value: Variant) -> void:\n\tpass\nfunc accept_none() -> void:\n\tpass\nfunc test() -> void:\n";
-	const String dynamic_signal_source = "signal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(signal_name: StringName) -> void:\n\tconnect(signal_name, accept_int)\n";
+	const String dynamic_signal_source = "signal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(signal_name: StringName) -> void:\n\tconnect(signal_name, accept_int)\n\tis_connected(signal_name, accept_int)\n";
 
 	CHECK(analyze_source(source_prefix + "\tconnect(\"event\", accept_string)\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tself.connect(\"event\", accept_string)\n") == OK);
@@ -911,6 +932,14 @@ TEST_CASE("[Modules][GDScript] Analyzer checks local Object.connect callables") 
 	CHECK(analyze_source(source_prefix + "\tconnect(\"event\", accept_any)\n") == OK);
 	CHECK(analyze_source(dynamic_signal_source) == OK);
 	CHECK(analyze_source(source_prefix + "\tconnect(\"unknown\", accept_int)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = is_connected(\"event\", accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = self.is_connected(\"event\", accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = is_connected(&\"event\", accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = is_connected(\"event\", accept_int)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = self.is_connected(\"event\", accept_int)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = is_connected(\"event\", accept_none)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = is_connected(\"event\", accept_any)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = is_connected(\"unknown\", accept_int)\n") == OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer can reject nullable local Object.connect callables") {
@@ -1005,8 +1034,8 @@ TEST_CASE("[Modules][GDScript] Analyzer checks inherited native self Object.emit
 
 TEST_CASE("[Modules][GDScript] Analyzer checks typed receiver Object signal callables") {
 	const String source_prefix = "class Emitter:\n\tsignal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc accept_int(value: int) -> void:\n\tpass\nfunc accept_any(value: Variant) -> void:\n\tpass\nfunc accept_none() -> void:\n\tpass\nfunc test(emitter: Emitter) -> void:\n";
-	const String dynamic_signal_source = "class Emitter:\n\tsignal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(emitter: Emitter, signal_name: StringName) -> void:\n\temitter.connect(signal_name, accept_int)\n\temitter.disconnect(signal_name, accept_int)\n";
-	const String unknown_signal_source = "class Emitter:\n\tsignal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(emitter: Emitter) -> void:\n\temitter.connect(\"unknown\", accept_int)\n\temitter.disconnect(\"unknown\", accept_int)\n";
+	const String dynamic_signal_source = "class Emitter:\n\tsignal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(emitter: Emitter, signal_name: StringName) -> void:\n\temitter.connect(signal_name, accept_int)\n\temitter.disconnect(signal_name, accept_int)\n\tvar connected: bool = emitter.is_connected(signal_name, accept_int)\n";
+	const String unknown_signal_source = "class Emitter:\n\tsignal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(emitter: Emitter) -> void:\n\temitter.connect(\"unknown\", accept_int)\n\temitter.disconnect(\"unknown\", accept_int)\n\tvar connected: bool = emitter.is_connected(\"unknown\", accept_int)\n";
 
 	CHECK(analyze_source(source_prefix + "\temitter.connect(\"event\", accept_string)\n\temitter.disconnect(\"event\", accept_string)\n") == OK);
 	CHECK(analyze_source(source_prefix + "\temitter.connect(&\"event\", accept_string)\n\temitter.disconnect(&\"event\", accept_string)\n") == OK);
@@ -1017,6 +1046,11 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed receiver Object signal call
 	CHECK(analyze_source(source_prefix + "\temitter.connect(\"event\", accept_any)\n\temitter.disconnect(\"event\", accept_any)\n") == OK);
 	CHECK(analyze_source(dynamic_signal_source) == OK);
 	CHECK(analyze_source(unknown_signal_source) == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = emitter.is_connected(\"event\", accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = emitter.is_connected(&\"event\", accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = emitter.is_connected(\"event\", accept_int)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = emitter.is_connected(\"event\", accept_none)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = emitter.is_connected(\"event\", accept_any)\n") == OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer checks typed receiver Object.emit_signal arguments") {

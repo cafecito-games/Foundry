@@ -4054,8 +4054,8 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			parser->push_warning(p_call, GDScriptWarning::STATIC_CALLED_ON_INSTANCE, p_call->function_name, caller_type);
 		}
 
-		// Consider `emit_signal()`, `connect()`, and `disconnect()` as implicit uses of the signal.
-		if (is_self && (p_call->function_name == SNAME("emit_signal") || p_call->function_name == SNAME("connect") || p_call->function_name == SNAME("disconnect")) && !p_call->arguments.is_empty()) {
+		// Consider `emit_signal()`, `connect()`, `disconnect()`, and `is_connected()` as implicit uses of the signal.
+		if (is_self && (p_call->function_name == SNAME("emit_signal") || p_call->function_name == SNAME("connect") || p_call->function_name == SNAME("disconnect") || p_call->function_name == SNAME("is_connected")) && !p_call->arguments.is_empty()) {
 			const GDScriptParser::ExpressionNode *signal_arg = p_call->arguments[0];
 			if (signal_arg && signal_arg->is_constant) {
 				const StringName &signal_name = signal_arg->reduced_value;
@@ -6206,16 +6206,33 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 				return is_type_compatible(p_parameter_type, argument_type, true);
 			};
-			auto preserve_single_fixed_vararg_callable = [&](const GDScriptParser::ExpressionNode *p_first_bound_argument) -> bool {
-				if (!is_callable_vararg || p_base_type.method_parameter_types.size() != 1) {
+			auto fixed_vararg_default_arg_count = [&](const Vector<const GDScriptParser::ExpressionNode *> &p_bound_arguments) -> int {
+				const int fixed_argument_count = p_base_type.method_parameter_types.size();
+				const int original_default_arg_count = MIN(p_base_type.method_info.default_arguments.size(), fixed_argument_count);
+
+				for (int omitted_argument_count = 1; omitted_argument_count <= fixed_argument_count; omitted_argument_count++) {
+					const int bound_filled_count = MIN(omitted_argument_count, p_bound_arguments.size());
+					const int default_filled_count = omitted_argument_count - bound_filled_count;
+					if (default_filled_count > original_default_arg_count) {
+						return omitted_argument_count - 1;
+					}
+
+					const int first_omitted_parameter_index = fixed_argument_count - omitted_argument_count;
+					for (int i = 0; i < bound_filled_count; i++) {
+						if (!can_bound_argument_fill_parameter(p_bound_arguments[i], p_base_type.method_parameter_types[first_omitted_parameter_index + i])) {
+							return omitted_argument_count - 1;
+						}
+					}
+				}
+
+				return fixed_argument_count;
+			};
+			auto preserve_fixed_vararg_callable = [&](const Vector<const GDScriptParser::ExpressionNode *> &p_bound_arguments) -> bool {
+				if (!is_callable_vararg) {
 					return false;
 				}
 
-				int default_arg_count = p_first_bound_argument == nullptr ? MIN(p_base_type.method_info.default_arguments.size(), 1) : 0;
-				if (can_bound_argument_fill_parameter(p_first_bound_argument, p_base_type.method_parameter_types[0])) {
-					default_arg_count = 1;
-				}
-				r_return_type = transformed_callable_type(p_base_type, p_base_type.method_parameter_types, default_arg_count, true);
+				r_return_type = transformed_callable_type(p_base_type, p_base_type.method_parameter_types, fixed_vararg_default_arg_count(p_bound_arguments), true);
 				return true;
 			};
 
@@ -6269,7 +6286,11 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				} else {
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
 					if (call != nullptr) {
-						preserve_single_fixed_vararg_callable(call->arguments.is_empty() ? nullptr : call->arguments[0]);
+						Vector<const GDScriptParser::ExpressionNode *> bound_arguments;
+						for (GDScriptParser::ExpressionNode *argument : call->arguments) {
+							bound_arguments.push_back(argument);
+						}
+						preserve_fixed_vararg_callable(bound_arguments);
 					}
 				}
 				return true;
@@ -6303,7 +6324,11 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 					const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
 					r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
 				} else if (is_callable_vararg && bind_array != nullptr) {
-					preserve_single_fixed_vararg_callable(bind_array->elements.is_empty() ? nullptr : bind_array->elements[0]);
+					Vector<const GDScriptParser::ExpressionNode *> bound_arguments;
+					for (GDScriptParser::ExpressionNode *argument : bind_array->elements) {
+						bound_arguments.push_back(argument);
+					}
+					preserve_fixed_vararg_callable(bound_arguments);
 				}
 				return true;
 			}
@@ -7357,7 +7382,7 @@ void GDScriptAnalyzer::validate_strict_signal_name_fallback(const GDScriptParser
 }
 
 void GDScriptAnalyzer::validate_signal_connect_arg(const GDScriptParser::DataType &p_signal_type, const GDScriptParser::CallNode *p_call, int p_callable_arg_index, bool p_require_explicit_signal) {
-	if ((p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect")) || p_callable_arg_index < 0 || p_callable_arg_index >= p_call->arguments.size()) {
+	if ((p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("is_connected")) || p_callable_arg_index < 0 || p_callable_arg_index >= p_call->arguments.size()) {
 		return;
 	}
 	if (p_signal_type.kind != GDScriptParser::DataType::BUILTIN || p_signal_type.builtin_type != Variant::SIGNAL || !p_signal_type.has_method_signature) {
@@ -7378,7 +7403,7 @@ void GDScriptAnalyzer::validate_signal_connect_arg(const GDScriptParser::DataTyp
 	const int signal_argument_count = p_signal_type.method_parameter_types.size();
 	const int callable_argument_count = callable_parameter_types.size();
 	const int callable_min_argument_count = callable_argument_count - callable_default_arg_count;
-	const StringName action_name = p_call->function_name == SNAME("disconnect") ? SNAME("disconnect") : SNAME("connect");
+	const StringName action_name = p_call->function_name == SNAME("disconnect") ? SNAME("disconnect") : (p_call->function_name == SNAME("is_connected") ? StringName("check connection for") : SNAME("connect"));
 	if (signal_argument_count < callable_min_argument_count || (!callable_is_vararg && signal_argument_count > callable_argument_count)) {
 		push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal emits %d arguments but callable expects %s%d.)*",
 						   action_name,
@@ -7466,7 +7491,7 @@ void GDScriptAnalyzer::validate_signal_emit_args(const GDScriptParser::DataType 
 }
 
 void GDScriptAnalyzer::validate_local_object_signal_callable_arg(const GDScriptParser::CallNode *p_call, bool p_is_self) {
-	if (!p_is_self || (p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect")) || p_call->arguments.size() < 2) {
+	if (!p_is_self || (p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("is_connected")) || p_call->arguments.size() < 2) {
 		return;
 	}
 
@@ -7498,7 +7523,7 @@ void GDScriptAnalyzer::validate_typed_object_signal_api_args(const GDScriptParse
 		return;
 	}
 
-	if (p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("emit_signal")) {
+	if (p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("is_connected") && p_call->function_name != SNAME("emit_signal")) {
 		return;
 	}
 
