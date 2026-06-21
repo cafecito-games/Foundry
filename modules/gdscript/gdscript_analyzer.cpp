@@ -2644,12 +2644,21 @@ void GDScriptAnalyzer::resolve_match_branch(GDScriptParser::MatchBranchNode *p_m
 	decide_suite_type(p_match_branch, p_match_branch->block);
 }
 
-void GDScriptAnalyzer::resolve_match_pattern(GDScriptParser::PatternNode *p_match_pattern, GDScriptParser::ExpressionNode *p_match_test) {
+void GDScriptAnalyzer::resolve_match_pattern(GDScriptParser::PatternNode *p_match_pattern, GDScriptParser::ExpressionNode *p_match_test, const GDScriptParser::DataType *p_match_test_type) {
 	if (p_match_pattern == nullptr) {
 		return;
 	}
 
 	GDScriptParser::DataType result;
+	GDScriptParser::DataType match_test_type;
+	bool has_match_test_type = false;
+	if (p_match_test != nullptr) {
+		match_test_type = p_match_test->get_datatype();
+		has_match_test_type = match_test_type.is_set();
+	} else if (p_match_test_type != nullptr) {
+		match_test_type = *p_match_test_type;
+		has_match_test_type = match_test_type.is_set();
+	}
 
 	switch (p_match_pattern->pattern_type) {
 		case GDScriptParser::PatternNode::PT_LITERAL:
@@ -2679,10 +2688,10 @@ void GDScriptAnalyzer::resolve_match_pattern(GDScriptParser::PatternNode *p_matc
 			}
 			break;
 		case GDScriptParser::PatternNode::PT_BIND:
-			if (p_match_test != nullptr) {
-				result = p_match_test->get_datatype();
+			if (has_match_test_type) {
+				result = match_test_type;
 			} else {
-				result.kind = GDScriptParser::DataType::VARIANT;
+				result = GDScriptParser::DataType::get_variant_type();
 			}
 			p_match_pattern->bind->set_datatype(result);
 #ifdef DEBUG_ENABLED
@@ -2694,7 +2703,13 @@ void GDScriptAnalyzer::resolve_match_pattern(GDScriptParser::PatternNode *p_matc
 			break;
 		case GDScriptParser::PatternNode::PT_ARRAY:
 			for (int i = 0; i < p_match_pattern->array.size(); i++) {
-				resolve_match_pattern(p_match_pattern->array[i], nullptr);
+				GDScriptParser::DataType element_type;
+				GDScriptParser::DataType *element_type_ptr = nullptr;
+				if (has_match_test_type && match_test_type.kind == GDScriptParser::DataType::BUILTIN && match_test_type.builtin_type == Variant::ARRAY && match_test_type.has_container_element_type(0)) {
+					element_type = match_test_type.get_container_element_type(0);
+					element_type_ptr = &element_type;
+				}
+				resolve_match_pattern(p_match_pattern->array[i], nullptr, element_type_ptr);
 				decide_suite_type(p_match_pattern, p_match_pattern->array[i]);
 			}
 			result = p_match_pattern->get_datatype();
@@ -2709,7 +2724,13 @@ void GDScriptAnalyzer::resolve_match_pattern(GDScriptParser::PatternNode *p_matc
 				}
 
 				if (p_match_pattern->dictionary[i].value_pattern) {
-					resolve_match_pattern(p_match_pattern->dictionary[i].value_pattern, nullptr);
+					GDScriptParser::DataType value_type;
+					GDScriptParser::DataType *value_type_ptr = nullptr;
+					if (has_match_test_type && match_test_type.kind == GDScriptParser::DataType::BUILTIN && match_test_type.builtin_type == Variant::DICTIONARY && match_test_type.has_container_element_type(1)) {
+						value_type = match_test_type.get_container_element_type(1);
+						value_type_ptr = &value_type;
+					}
+					resolve_match_pattern(p_match_pattern->dictionary[i].value_pattern, nullptr, value_type_ptr);
 					decide_suite_type(p_match_pattern, p_match_pattern->dictionary[i].value_pattern);
 				}
 			}

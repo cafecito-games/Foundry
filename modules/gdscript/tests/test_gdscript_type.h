@@ -1073,6 +1073,17 @@ TEST_CASE("[Modules][GDScript] Analyzer narrows Variant locals after type tests"
 	CHECK(analyze_source(reassigned_source, false, true) != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer propagates typed match pattern bind types") {
+	const String source_prefix = "func accept_node(node: Node) -> void:\n\tpass\n";
+	const String array_source = source_prefix + "func test(nodes: Array[Node]) -> void:\n\tmatch nodes:\n\t\t[var node]:\n\t\t\taccept_node(node)\n";
+	const String dictionary_source = source_prefix + "func test(nodes: Dictionary[String, Node]) -> void:\n\tmatch nodes:\n\t\t{\"node\": var node}:\n\t\t\taccept_node(node)\n";
+	const String nested_array_source = source_prefix + "func test(nodes: Array[Array[Node]]) -> void:\n\tmatch nodes:\n\t\t[[var node]]:\n\t\t\taccept_node(node)\n";
+
+	CHECK(analyze_source(array_source, false, true) == OK);
+	CHECK(analyze_source(dictionary_source, false, true) == OK);
+	CHECK(analyze_source(nested_array_source, false, true) == OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer can reject null source callable and signal arguments to non-null types") {
 	const String callable_source = "func accept_node(node: Node) -> void:\n\tpass\nfunc test() -> void:\n\tvar callback: Callable[[Node], void] = accept_node\n\tcallback.call(null)\n";
 	const String nullable_callable_source = "func accept_node(node: Node?) -> void:\n\tpass\nfunc test() -> void:\n\tvar callback: Callable[[Node?], void] = accept_node\n\tcallback.call(null)\n";
