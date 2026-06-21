@@ -155,6 +155,14 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
 		}
+		SUBCASE("inferred concrete type is not annotatable") {
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::INT;
+			dt.type_source = GDScriptParser::DataType::INFERRED;
+			String rendered;
+			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+		}
 	}
 }
 

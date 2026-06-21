@@ -37,7 +37,9 @@ bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataTy
 		return false;
 	}
 	String rendered = p_type.to_string();
-	if (rendered.is_empty() || rendered == "Variant") {
+	// A hard, non-Variant type can still stringify to empty (e.g. an invalid
+	// script reference), which is not a usable annotation.
+	if (rendered.is_empty()) {
 		return false;
 	}
 	r_rendered = rendered;
