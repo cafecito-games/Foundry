@@ -534,6 +534,59 @@ func f():
 			REQUIRE(cls.documentation.contains("t3"));
 		}
 
+		SUBCASE("Strict type syntax is preserved in symbols and generated API") {
+			String path = "res://lsp/strict_type_presentation.gd";
+			assert_no_errors_in(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			const LSP::DocumentSymbol *maybe_node = parser->get_member_symbol("maybe_node");
+			REQUIRE(maybe_node);
+			CHECK_EQ(maybe_node->detail, "var maybe_node: Node?");
+
+			const LSP::DocumentSymbol *callback = parser->get_member_symbol("callback");
+			REQUIRE(callback);
+			CHECK_EQ(callback->detail, "var callback: Callable[[Node?], String]");
+
+			const LSP::DocumentSymbol *payloads = parser->get_member_symbol("payloads");
+			REQUIRE(payloads);
+			CHECK_EQ(payloads->detail, "var payloads: Dictionary[String, Array[int]]");
+
+			const LSP::DocumentSymbol *event = parser->get_member_symbol("event");
+			REQUIRE(event);
+			CHECK_EQ(event->detail, "var event: Signal[[String]]");
+
+			const LSP::DocumentSymbol *selected = parser->get_member_symbol("selected");
+			REQUIRE(selected);
+			CHECK_EQ(selected->detail, "signal selected(node: Node?, callbacks: Array[Callable[[int], void]])");
+			REQUIRE(selected->children.size() == 2);
+			CHECK_EQ(selected->children[0].detail, "var node: Node?");
+			CHECK_EQ(selected->children[1].detail, "var callbacks: Array[Callable[[int], void]]");
+
+			const LSP::DocumentSymbol *describe = parser->get_member_symbol("describe");
+			REQUIRE(describe);
+			CHECK_EQ(describe->detail, "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
+
+			Dictionary api = parser->generate_api();
+			Array signals = api["signals"];
+			REQUIRE(signals.size() == 1);
+			Dictionary signal_api = signals[0];
+			CHECK_EQ(String(signal_api["signature"]), "signal selected(node: Node?, callbacks: Array[Callable[[int], void]])");
+
+			Array methods = api["methods"];
+			REQUIRE(methods.size() == 1);
+			Dictionary method_api = methods[0];
+			CHECK_EQ(String(method_api["return_type"]), "Signal[[String]]");
+			CHECK_EQ(String(method_api["signature"]), "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
+
+			Array arguments = method_api["arguments"];
+			REQUIRE(arguments.size() == 2);
+			Dictionary handler_argument = arguments[0];
+			Dictionary values_argument = arguments[1];
+			CHECK_EQ(String(handler_argument["type"]), "Callable[[Node?], String]");
+			CHECK_EQ(String(values_argument["type"]), "Dictionary[String, Array[int]]");
+		}
+
 		memdelete(proto);
 		memdelete(efs);
 		finish_language();

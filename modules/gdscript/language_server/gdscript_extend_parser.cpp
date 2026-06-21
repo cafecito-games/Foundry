@@ -376,7 +376,11 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 					if (j > 0) {
 						symbol.detail += ", ";
 					}
-					symbol.detail += m.signal->parameters[j]->identifier->name;
+					const GDScriptParser::ParameterNode *parameter = m.signal->parameters[j];
+					symbol.detail += String(parameter->identifier->name);
+					if (parameter->get_datatype().is_hard_type()) {
+						symbol.detail += ": " + parameter->get_datatype().to_string();
+					}
 				}
 				symbol.detail += ")";
 
