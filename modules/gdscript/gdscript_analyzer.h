@@ -158,9 +158,11 @@ class GDScriptAnalyzer {
 	bool property_type_from_builtin_member(const GDScriptParser::DataType &p_base_type, const StringName &p_member_name, GDScriptParser::DataType &r_member_type) const;
 	bool property_type_from_indexed_receiver(const GDScriptParser::DataType &p_receiver_type, const Vector<StringName> &p_property_path, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_property_type);
 	bool signal_name_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const;
+	bool signal_type_from_receiver(const GDScriptParser::DataType &p_receiver_type, const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const;
 	bool signal_type_from_class_constant_arg(const GDScriptParser::ClassNode *p_class, const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const;
 	bool signal_type_from_native_constant_arg(const StringName &p_native_type, const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const;
 	bool local_signal_type_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const;
+	void validate_strict_signal_name_fallback(const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_receiver_type, int p_signal_arg_index);
 	const GDScriptParser::Node *flow_narrowing_key_from_identifier(const GDScriptParser::IdentifierNode *p_identifier) const;
 	void apply_flow_narrowing(const GDScriptParser::IdentifierNode *p_identifier);
 	void apply_flow_narrowing(const GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::DataType &p_type);

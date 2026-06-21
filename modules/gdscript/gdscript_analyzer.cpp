@@ -3766,6 +3766,14 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					validate_strict_callable_method_fallback(p_call, p_call->arguments[0]->get_datatype(), 1);
 				}
 			}
+			if (builtin_type == Variant::SIGNAL && p_call->arguments.size() == 2) {
+				GDScriptParser::DataType signal_type;
+				if (signal_type_from_receiver(p_call->arguments[0]->get_datatype(), p_call, 1, signal_type)) {
+					call_type = signal_type;
+				} else {
+					validate_strict_signal_name_fallback(p_call, p_call->arguments[0]->get_datatype(), 1);
+				}
+			}
 
 #ifdef DEBUG_ENABLED
 			// Consider `Signal(self, "my_signal")` as an implicit use of the signal.
@@ -7244,6 +7252,16 @@ bool GDScriptAnalyzer::signal_name_from_constant_arg(const GDScriptParser::CallN
 	return true;
 }
 
+bool GDScriptAnalyzer::signal_type_from_receiver(const GDScriptParser::DataType &p_receiver_type, const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const {
+	if (p_receiver_type.kind == GDScriptParser::DataType::CLASS) {
+		return signal_type_from_class_constant_arg(p_receiver_type.class_type, p_call, p_signal_arg_index, r_signal_type);
+	}
+	if (p_receiver_type.kind == GDScriptParser::DataType::NATIVE) {
+		return signal_type_from_native_constant_arg(p_receiver_type.native_type, p_call, p_signal_arg_index, r_signal_type);
+	}
+	return false;
+}
+
 bool GDScriptAnalyzer::signal_type_from_class_constant_arg(const GDScriptParser::ClassNode *p_class, const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const {
 	if (p_class == nullptr) {
 		return false;
@@ -7298,6 +7316,19 @@ bool GDScriptAnalyzer::signal_type_from_native_constant_arg(const StringName &p_
 
 bool GDScriptAnalyzer::local_signal_type_from_constant_arg(const GDScriptParser::CallNode *p_call, int p_signal_arg_index, GDScriptParser::DataType &r_signal_type) const {
 	return signal_type_from_class_constant_arg(parser->current_class, p_call, p_signal_arg_index, r_signal_type);
+}
+
+void GDScriptAnalyzer::validate_strict_signal_name_fallback(const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_receiver_type, int p_signal_arg_index) {
+	if (!strict_dynamic_checks || p_call == nullptr || p_signal_arg_index < 0 || p_signal_arg_index >= p_call->arguments.size()) {
+		return;
+	}
+
+	StringName signal_name;
+	if (signal_name_from_constant_arg(p_call, p_signal_arg_index, signal_name)) {
+		push_error(vformat(R"*(Cannot resolve signal "%s" on type "%s" in strict dynamic mode.)*", signal_name, p_receiver_type.to_string()), p_call->arguments[p_signal_arg_index]);
+	} else if (call_argument_can_be_string_name(p_call, p_signal_arg_index)) {
+		push_error("Cannot use dynamic signal name in strict dynamic mode.", p_call->arguments[p_signal_arg_index]);
+	}
 }
 
 void GDScriptAnalyzer::validate_signal_connect_arg(const GDScriptParser::DataType &p_signal_type, const GDScriptParser::CallNode *p_call, int p_callable_arg_index, bool p_require_explicit_signal) {
@@ -7416,6 +7447,7 @@ void GDScriptAnalyzer::validate_local_object_signal_callable_arg(const GDScriptP
 
 	GDScriptParser::DataType signal_type;
 	if (!local_signal_type_from_constant_arg(p_call, 0, signal_type)) {
+		validate_strict_signal_name_fallback(p_call, parser->current_class->get_datatype(), 0);
 		return;
 	}
 
@@ -7429,6 +7461,7 @@ void GDScriptAnalyzer::validate_local_object_emit_signal_args(const GDScriptPars
 
 	GDScriptParser::DataType signal_type;
 	if (!local_signal_type_from_constant_arg(p_call, 0, signal_type)) {
+		validate_strict_signal_name_fallback(p_call, parser->current_class->get_datatype(), 0);
 		return;
 	}
 
@@ -7444,16 +7477,13 @@ void GDScriptAnalyzer::validate_typed_object_signal_api_args(const GDScriptParse
 		return;
 	}
 
+	if (p_base_type.kind != GDScriptParser::DataType::CLASS && p_base_type.kind != GDScriptParser::DataType::NATIVE) {
+		return;
+	}
+
 	GDScriptParser::DataType signal_type;
-	if (p_base_type.kind == GDScriptParser::DataType::CLASS) {
-		if (!signal_type_from_class_constant_arg(p_base_type.class_type, p_call, 0, signal_type)) {
-			return;
-		}
-	} else if (p_base_type.kind == GDScriptParser::DataType::NATIVE) {
-		if (!signal_type_from_native_constant_arg(p_base_type.native_type, p_call, 0, signal_type)) {
-			return;
-		}
-	} else {
+	if (!signal_type_from_receiver(p_base_type, p_call, 0, signal_type)) {
+		validate_strict_signal_name_fallback(p_call, p_base_type, 0);
 		return;
 	}
 

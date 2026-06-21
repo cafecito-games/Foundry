@@ -773,6 +773,49 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Signal.emit invocations") {
 	CHECK(analyze_source(inferred_source_prefix + "\ttyped_event.emit(\"legacy dynamic\")\n") == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer checks typed Signal constructors from constant signal names") {
+	const String source_prefix = "class Emitter:\n\tsignal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(emitter: Emitter, button: Button, signal_name: StringName) -> void:\n";
+
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, \"event\").emit(\"ok\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, \"event\").emit(1)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, \"event\").connect(accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, \"event\").connect(accept_int)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(button, \"pressed\").emit()\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(button, \"pressed\").emit(1)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, signal_name).emit(\"legacy dynamic\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, \"unknown\").emit(\"legacy dynamic\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(button, signal_name).emit(\"legacy dynamic\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(button, \"unknown\").emit(\"legacy dynamic\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, signal_name).emit(\"ok\")\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(emitter, \"unknown\").emit(\"ok\")\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(button, signal_name).emit()\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(button, \"unknown\").emit()\n", false, true) != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects dynamic signal fallbacks in strict mode") {
+	const String local_source = "signal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc test(signal_name: StringName) -> void:\n";
+	const String typed_source = "class Emitter:\n\tsignal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc test(emitter: Emitter, button: Button, signal_name: StringName) -> void:\n";
+
+	CHECK(analyze_source(local_source + "\tconnect(signal_name, accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(local_source + "\tconnect(\"unknown\", accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(local_source + "\tdisconnect(signal_name, accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(local_source + "\tdisconnect(\"unknown\", accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(local_source + "\temit_signal(signal_name, \"ok\")\n", false, true) != OK);
+	CHECK(analyze_source(local_source + "\temit_signal(\"unknown\", \"ok\")\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\temitter.connect(signal_name, accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\temitter.connect(\"unknown\", accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\temitter.disconnect(signal_name, accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\temitter.disconnect(\"unknown\", accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\temitter.emit_signal(signal_name, \"ok\")\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\temitter.emit_signal(\"unknown\", \"ok\")\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\tbutton.connect(signal_name, accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\tbutton.connect(\"unknown\", accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\tbutton.disconnect(signal_name, accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\tbutton.disconnect(\"unknown\", accept_string)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\tbutton.emit_signal(signal_name)\n", false, true) != OK);
+	CHECK(analyze_source(typed_source + "\tbutton.emit_signal(\"unknown\")\n", false, true) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Signal.connect callables") {
 	const String source_prefix = "signal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc accept_int(value: int) -> void:\n\tpass\nfunc accept_any(value: Variant) -> void:\n\tpass\nfunc accept_none() -> void:\n\tpass\nfunc test() -> void:\n\tvar typed_event: Signal[[String]] = event\n";
 	const String inferred_source_prefix = "signal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test() -> void:\n\tvar typed_event := event\n";
