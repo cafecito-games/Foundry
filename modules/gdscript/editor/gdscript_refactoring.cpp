@@ -105,13 +105,17 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 	// scene/resource files), which a file-local rename will not touch. The LSP
 	// builds the symbol's `detail` with an "@export " prefix for exported vars
 	// (see gdscript_extend_parser.cpp), so the prefix is a reliable signal here.
-	if (resolved_symbol->detail.contains("@export ")) {
-		result.warning = "This is an exported variable; references outside this script (such as in the inspector or scene files) will not be updated.";
-	}
+	const bool is_exported = resolved_symbol->detail.contains("@export ");
+
+	// This rename is file-local: only usages in the current document are edited.
+	// Track whether any usage lives in another file so we can warn that those
+	// references were left untouched and may break the project.
+	bool has_out_of_file_usage = false;
 
 	const Vector<LSP::Location> usages = workspace->find_all_usages(*resolved_symbol);
 	for (const LSP::Location &usage : usages) {
 		if (usage.uri != doc_position.textDocument.uri) {
+			has_out_of_file_usage = true;
 			continue;
 		}
 		RefactorTextEdit edit;
@@ -127,6 +131,14 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 		result.ok = false;
 		result.error_message = "No references found to rename.";
 		return result;
+	}
+
+	if (is_exported && has_out_of_file_usage) {
+		result.warning = "This is an exported variable, and references were found in other files. Only references in this script were renamed; references elsewhere (other scripts, the inspector, or scene files) were not updated.";
+	} else if (is_exported) {
+		result.warning = "This is an exported variable; references outside this script (such as in the inspector or scene files) will not be updated.";
+	} else if (has_out_of_file_usage) {
+		result.warning = "References to this symbol were found in other files. Only references in this script were renamed; references in other files were not updated.";
 	}
 
 	result.ok = true;

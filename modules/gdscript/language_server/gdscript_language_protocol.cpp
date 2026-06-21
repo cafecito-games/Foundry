@@ -616,6 +616,13 @@ GDScriptLanguageProtocol::~GDScriptLanguageProtocol() {
 	}
 	editor_parse_results.clear();
 	clients.clear();
+
+	// Clear the singleton so callers that null-check `get_singleton()` after
+	// shutdown (such as the editor's refactor buffer cleanup) do not dereference
+	// a dangling pointer.
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }
 
 #undef SET_DOCUMENT_METHOD

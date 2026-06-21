@@ -103,7 +103,7 @@ bool GDScriptRefactorNames::validate_identifier(const String &p_name, String &r_
 		r_reason = "Name cannot be empty.";
 		return false;
 	}
-	if (!p_name.is_valid_ascii_identifier()) {
+	if (!p_name.is_valid_unicode_identifier()) {
 		r_reason = vformat("'%s' is not a valid identifier.", p_name);
 		return false;
 	}

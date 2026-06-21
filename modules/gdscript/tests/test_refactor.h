@@ -146,6 +146,10 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("func", reason));
 			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("return", reason));
 		}
+		SUBCASE("accepts unicode identifiers") {
+			CHECK(GDScriptRefactorNames::validate_identifier(String::utf8("café"), reason));
+			CHECK(GDScriptRefactorNames::validate_identifier(String::utf8("número"), reason));
+		}
 	}
 
 	TEST_CASE("Type annotation rendering") {
