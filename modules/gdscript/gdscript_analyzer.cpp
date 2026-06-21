@@ -4007,7 +4007,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				update_dictionary_literal_element_type(E.value, key, value);
 			}
 		}
-		validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts);
+		validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
 		validate_signal_connect_arg(base_type, p_call);
 		validate_local_object_signal_callable_arg(p_call, is_self);
 		validate_local_object_emit_signal_args(p_call, is_self);
@@ -6277,7 +6277,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_par_types.push_back(type_from_property(PropertyInfo(Variant::ARRAY, "arguments"), true));
 				r_return_type = p_base_type.method_return_type.is_empty() ? type_from_property(PropertyInfo(Variant::NIL, "")) : p_base_type.method_return_type[0];
-				validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts);
+				validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts, p_base_type.method_unbound_argument_count);
 				return true;
 			}
 
@@ -6359,19 +6359,24 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				r_par_types.push_back(type_from_property(PropertyInfo(Variant::INT, "argcount"), true));
 				r_return_type = plain_callable_type();
 
-				if (!is_callable_vararg && call != nullptr && call->arguments.size() == 1) {
+				if (call != nullptr && call->arguments.size() == 1) {
 					const GDScriptParser::ExpressionNode *unbind_count_arg = call->arguments[0];
 					if (unbind_count_arg->is_constant && unbind_count_arg->reduced_value.get_type() == Variant::INT) {
 						const int64_t unbind_argument_count = unbind_count_arg->reduced_value;
 						if (unbind_argument_count <= 0) {
 							push_error("Amount of \"unbind()\" arguments must be 1 or greater.", unbind_count_arg);
-						} else if (p_base_type.method_info.default_arguments.is_empty()) {
+						} else {
+							const int unbind_count = int(unbind_argument_count);
 							Vector<GDScriptParser::DataType> expanded_parameter_types = p_base_type.method_parameter_types;
 							const GDScriptParser::DataType variant_type = type_from_property(PropertyInfo(Variant::NIL, ""), true);
-							for (int i = 0; i < unbind_argument_count; i++) {
+							for (int i = 0; i < unbind_count; i++) {
 								expanded_parameter_types.push_back(variant_type);
 							}
-							r_return_type = transformed_callable_type(p_base_type, expanded_parameter_types, 0, false);
+							r_return_type = transformed_callable_type(p_base_type, expanded_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg);
+							r_return_type.method_unbound_argument_count = p_base_type.method_unbound_argument_count + unbind_count;
+							for (int extra_allowed_argument_count : p_base_type.method_extra_allowed_argument_counts) {
+								r_return_type.method_extra_allowed_argument_counts.push_back(extra_allowed_argument_count + unbind_count);
+							}
 						}
 					}
 				}
@@ -6867,6 +6872,7 @@ GDScriptParser::DataType GDScriptAnalyzer::transformed_callable_type(const GDScr
 	callable_type.has_explicit_method_signature = true;
 	callable_type.method_parameter_types = p_parameter_types;
 	callable_type.method_extra_allowed_argument_counts.clear();
+	callable_type.method_unbound_argument_count = 0;
 	callable_type.method_info.arguments.clear();
 	for (int i = 0; i < p_parameter_types.size(); i++) {
 		callable_type.method_info.arguments.push_back(p_parameter_types[i].to_property_info("arg" + itos(i + 1)));
@@ -7184,7 +7190,7 @@ static bool _method_signature_accepts_argument_count(int p_argument_count, int p
 	return false;
 }
 
-void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const GDScriptParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts) {
+void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const GDScriptParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count) {
 	if (p_call->arguments.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
 		push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_call->function_name, p_par_types.size() - p_default_args_count, p_call->arguments.size()), p_call);
 	}
@@ -7193,7 +7199,8 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 	}
 
 	List<GDScriptParser::DataType>::ConstIterator par_itr = p_par_types.begin();
-	for (int i = 0; i < p_call->arguments.size(); ++par_itr, ++i) {
+	const int checked_argument_count = MAX(p_call->arguments.size() - p_trailing_unbound_argument_count, 0);
+	for (int i = 0; i < checked_argument_count; ++par_itr, ++i) {
 		if (i >= p_par_types.size()) {
 			// Already on vararg place.
 			break;
@@ -7240,7 +7247,7 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 	}
 }
 
-void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, GDScriptParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts) {
+void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, GDScriptParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count) {
 	if (p_array == nullptr) {
 		return;
 	}
@@ -7252,7 +7259,8 @@ void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScrip
 		push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_function, p_par_types.size(), p_array->elements.size()), p_array->elements[p_par_types.size()]);
 	}
 
-	for (int i = 0; i < p_array->elements.size(); i++) {
+	const int checked_argument_count = MAX(p_array->elements.size() - p_trailing_unbound_argument_count, 0);
+	for (int i = 0; i < checked_argument_count; i++) {
 		if (i >= p_par_types.size()) {
 			break;
 		}
@@ -7457,7 +7465,8 @@ void GDScriptAnalyzer::validate_signal_connect_arg(const GDScriptParser::DataTyp
 	options.strict_dynamic = true;
 	options.strict_null = strict_null_checks;
 
-	for (int i = 0; i < signal_argument_count && i < callable_argument_count; i++) {
+	const int checked_signal_argument_count = MAX(signal_argument_count - callable_type.method_unbound_argument_count, 0);
+	for (int i = 0; i < checked_signal_argument_count && i < callable_argument_count; i++) {
 		const GDScriptParser::DataType &callable_parameter_type = callable_parameter_types[i];
 		const GDScriptParser::DataType &signal_parameter_type = p_signal_type.method_parameter_types[i];
 		const bool nullable_mismatch = strict_null_checks && signal_parameter_type.is_nullable && !callable_parameter_type.is_nullable && !callable_parameter_type.is_variant();

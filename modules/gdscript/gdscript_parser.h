@@ -142,6 +142,7 @@ public:
 		Vector<DataType> method_parameter_types; // Rich GDScript signature preserving metadata MethodInfo cannot store.
 		Vector<DataType> method_return_type; // Empty for signals, one element for callables.
 		Vector<int> method_extra_allowed_argument_counts; // Extra exact arities not expressible by default arguments, for transformed Callables.
+		int method_unbound_argument_count = 0; // Trailing arguments ignored by transformed Callables.
 		HashMap<StringName, int64_t> enum_values; // For enums.
 
 		_FORCE_INLINE_ bool is_set() const { return kind != RESOLVING && kind != UNRESOLVED; }
@@ -260,6 +261,7 @@ public:
 			method_parameter_types = p_other.method_parameter_types;
 			method_return_type = p_other.method_return_type;
 			method_extra_allowed_argument_counts = p_other.method_extra_allowed_argument_counts;
+			method_unbound_argument_count = p_other.method_unbound_argument_count;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
 		}
