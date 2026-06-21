@@ -34,11 +34,29 @@
 
 #include "core/string/ustring.h"
 
+#ifndef GDSCRIPT_NO_LSP
+#include "../language_server/godot_lsp.h"
+#endif
+
 namespace GDScriptRefactorNames {
 
 // Returns true if p_name is a legal, non-reserved GDScript identifier.
 // On failure, sets r_reason to a human-readable explanation.
 bool validate_identifier(const String &p_name, String &r_reason);
+
+#ifndef GDSCRIPT_NO_LSP
+// Returns true when renaming p_target to p_new_name would collide with another
+// symbol declared in the same scope (the same parent in the document-symbol tree).
+//
+// p_root is the script's root class symbol (parser->get_symbols()); p_target is
+// the parser-owned symbol being renamed (the exact pointer resolved by the
+// workspace, since the parent is located by pointer identity within the tree).
+//
+// This check is conservative: if the target's parent scope cannot be located in
+// the tree, it returns false (no collision). A genuine name clash that slips
+// through is still surfaced by the editor's re-parse after the edit is applied.
+bool has_scope_collision(const LSP::DocumentSymbol &p_root, const LSP::DocumentSymbol *p_target, const String &p_new_name, String &r_reason);
+#endif // GDSCRIPT_NO_LSP
 
 } // namespace GDScriptRefactorNames
 

@@ -52,6 +52,52 @@ bool is_reserved_keyword(const String &p_name) {
 
 } // namespace
 
+#ifndef GDSCRIPT_NO_LSP
+namespace {
+
+// Locates the parent symbol whose `children` Vector directly contains p_target,
+// matching by pointer identity. Returns nullptr if p_target is the root itself
+// or cannot be found anywhere in the tree.
+const LSP::DocumentSymbol *find_parent_scope(const LSP::DocumentSymbol &p_node, const LSP::DocumentSymbol *p_target) {
+	for (const LSP::DocumentSymbol &child : p_node.children) {
+		if (&child == p_target) {
+			return &p_node;
+		}
+		if (const LSP::DocumentSymbol *found = find_parent_scope(child, p_target)) {
+			return found;
+		}
+	}
+	return nullptr;
+}
+
+} // namespace
+
+bool GDScriptRefactorNames::has_scope_collision(const LSP::DocumentSymbol &p_root, const LSP::DocumentSymbol *p_target, const String &p_new_name, String &r_reason) {
+	r_reason = String();
+	if (!p_target) {
+		return false;
+	}
+
+	const LSP::DocumentSymbol *parent = find_parent_scope(p_root, p_target);
+	if (!parent) {
+		// Scope could not be determined; stay conservative and allow the rename.
+		// The editor re-parse will still report any genuine breakage.
+		return false;
+	}
+
+	for (const LSP::DocumentSymbol &sibling : parent->children) {
+		if (&sibling == p_target) {
+			continue;
+		}
+		if (sibling.name == p_new_name) {
+			r_reason = vformat("A symbol named '%s' already exists in this scope.", p_new_name);
+			return true;
+		}
+	}
+	return false;
+}
+#endif // GDSCRIPT_NO_LSP
+
 bool GDScriptRefactorNames::validate_identifier(const String &p_name, String &r_reason) {
 	if (p_name.is_empty()) {
 		r_reason = "Name cannot be empty.";

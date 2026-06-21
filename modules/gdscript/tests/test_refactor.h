@@ -263,6 +263,49 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
+		SUBCASE("rejects in-scope collision") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_collision.gd", 3, 5, "b", out); // caret on `a` decl
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(r.error_message.to_lower().contains("scope"));
+		}
+		SUBCASE("warns when renaming an exported variable") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_exported.gd", 2, 12, "velocity", out); // caret on `speed`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("exported"));
+			// The in-file edits still apply: declaration and use are both updated.
+			CHECK(out.contains("@export var velocity := 1.0"));
+			CHECK(out.contains("return velocity"));
+			CHECK_FALSE(out.contains("speed"));
+		}
+		SUBCASE("member rename stays within its own file") {
+			// rename_xfile_a.gd and rename_xfile_b.gd both declare an unrelated
+			// `var shared_value`. Renaming A's member must only touch A.
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_xfile_a.gd", 2, 4, "renamed_value", out); // caret on A's `shared_value`
+			REQUIRE(r.ok);
+			CHECK(out.contains("var renamed_value := 0"));
+			CHECK(out.contains("renamed_value += 1"));
+			CHECK(out.contains("return renamed_value"));
+			CHECK_FALSE(out.contains("shared_value"));
+
+			// Every emitted edit targets a line that exists within A; the engine's
+			// URI filter keeps edits single-file, so B's same-named symbol is untouched.
+			const RefactorContext a_ctx = make_context("res://refactor/rename_xfile_a.gd");
+			const int a_line_count = a_ctx.source.split("\n").size();
+			for (const RefactorTextEdit &edit : r.edits) {
+				CHECK(edit.start_line >= 0);
+				CHECK(edit.start_line < a_line_count);
+			}
+
+			// B on disk is unaffected: it still declares the original symbol name.
+			const String b_source = FileAccess::get_file_as_string("res://refactor/rename_xfile_b.gd");
+			CHECK(b_source.contains("var shared_value := 0"));
+			CHECK_FALSE(b_source.contains("renamed_value"));
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

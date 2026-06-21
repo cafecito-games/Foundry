@@ -64,6 +64,9 @@ struct RefactorAvailability {
 struct RefactorResult {
 	bool ok = false;
 	String error_message;
+	// Non-fatal advisory shown alongside a successful result (e.g. an @export var
+	// whose references may live outside this file and won't be updated).
+	String warning;
 	Vector<RefactorTextEdit> edits;
 	int rename_anchor_line = -1;
 	int rename_anchor_column = -1;

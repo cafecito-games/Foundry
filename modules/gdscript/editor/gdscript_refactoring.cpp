@@ -35,6 +35,7 @@
 #include "gdscript_refactoring_names.h"
 
 #ifndef GDSCRIPT_NO_LSP
+#include "../language_server/gdscript_extend_parser.h"
 #include "../language_server/gdscript_language_protocol.h"
 #include "../language_server/gdscript_workspace.h"
 #include "../language_server/godot_lsp.h"
@@ -88,6 +89,24 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 		result.ok = false;
 		result.error_message = "Cannot rename this symbol.";
 		return result;
+	}
+
+	const ExtendGDScriptParser *parser = protocol->get_parse_result(p_context.path);
+	if (parser) {
+		String collision_reason;
+		if (GDScriptRefactorNames::has_scope_collision(parser->get_symbols(), resolved_symbol, p_params.new_name, collision_reason)) {
+			result.ok = false;
+			result.error_message = collision_reason;
+			return result;
+		}
+	}
+
+	// An @export variable's references can live outside this script (the inspector,
+	// scene/resource files), which a file-local rename will not touch. The LSP
+	// builds the symbol's `detail` with an "@export " prefix for exported vars
+	// (see gdscript_extend_parser.cpp), so the prefix is a reliable signal here.
+	if (resolved_symbol->detail.contains("@export ")) {
+		result.warning = "This is an exported variable; references outside this script (such as in the inspector or scene files) will not be updated.";
 	}
 
 	const Vector<LSP::Location> usages = workspace->find_all_usages(*resolved_symbol);
