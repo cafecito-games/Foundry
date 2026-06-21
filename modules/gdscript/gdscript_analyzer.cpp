@@ -6517,10 +6517,70 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		}
 	}
 
+	auto argument_can_be_string_name = [&](const GDScriptParser::CallNode *p_call, int p_argument_index) -> bool {
+		if (p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
+			return false;
+		}
+
+		const GDScriptParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
+		if (argument == nullptr) {
+			return false;
+		}
+
+		if (argument->is_constant) {
+			const Variant::Type value_type = argument->reduced_value.get_type();
+			return value_type == Variant::STRING || value_type == Variant::STRING_NAME;
+		}
+
+		const GDScriptParser::DataType argument_type = argument->get_datatype();
+		if (argument_type.is_variant() || !argument_type.is_hard_type()) {
+			return true;
+		}
+
+		const GDScriptParser::DataType string_name_type = type_from_property(PropertyInfo(Variant::STRING_NAME, ""), true);
+		const GDScriptParser::DataType string_type = type_from_property(PropertyInfo(Variant::STRING, ""), true);
+		return is_type_compatible(string_name_type, argument_type, true) || is_type_compatible(string_type, argument_type, true);
+	};
+	auto argument_can_be_node_path = [&](const GDScriptParser::CallNode *p_call, int p_argument_index) -> bool {
+		if (p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
+			return false;
+		}
+
+		const GDScriptParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
+		if (argument == nullptr) {
+			return false;
+		}
+
+		if (argument->is_constant) {
+			return argument->reduced_value.get_type() == Variant::NODE_PATH;
+		}
+
+		const GDScriptParser::DataType argument_type = argument->get_datatype();
+		if (argument_type.is_variant() || !argument_type.is_hard_type()) {
+			return true;
+		}
+
+		const GDScriptParser::DataType node_path_type = type_from_property(PropertyInfo(Variant::NODE_PATH, ""), true);
+		return is_type_compatible(node_path_type, argument_type, true);
+	};
+	auto push_strict_dynamic_reflection_error = [&](const GDScriptParser::CallNode *p_call, int p_argument_index, const char *p_kind) {
+		if (!strict_dynamic_checks || p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
+			return;
+		}
+		push_error(vformat(R"*(Cannot use dynamic %s for "%s()" in strict dynamic mode.)*", p_kind, p_call->function_name), p_call->arguments[p_argument_index]);
+	};
+	auto push_strict_unresolved_reflection_error = [&](const GDScriptParser::CallNode *p_call, int p_argument_index, const char *p_kind, const String &p_name) {
+		if (!strict_dynamic_checks || p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
+			return;
+		}
+		push_error(vformat(R"*(Cannot resolve %s "%s" on type "%s" in strict dynamic mode.)*", p_kind, p_name, p_base_type.to_string()), p_call->arguments[p_argument_index]);
+	};
+
 	if (p_function == SNAME("call") || p_function == SNAME("call_deferred") || p_function == SNAME("callv")) {
 		const GDScriptParser::CallNode *call = p_source != nullptr && p_source->type == GDScriptParser::Node::CALL ? static_cast<const GDScriptParser::CallNode *>(p_source) : nullptr;
 		StringName method_name;
-		if (call != nullptr && string_name_from_constant_arg(call, 0, method_name) && method_name != SNAME("call") && method_name != SNAME("call_deferred") && method_name != SNAME("callv")) {
+		const bool has_constant_method_name = call != nullptr && string_name_from_constant_arg(call, 0, method_name);
+		if (has_constant_method_name && method_name != SNAME("call") && method_name != SNAME("call_deferred") && method_name != SNAME("callv")) {
 			GDScriptParser::DataType callable_type;
 			if (callable_type_from_method(p_base_type, method_name, p_source, callable_type)) {
 				r_method_flags = METHOD_FLAGS_DEFAULT;
@@ -6542,6 +6602,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				}
 				return true;
 			}
+			push_strict_unresolved_reflection_error(call, 0, "method", method_name);
+		} else if (!has_constant_method_name && argument_can_be_string_name(call, 0)) {
+			push_strict_dynamic_reflection_error(call, 0, "method name");
 		}
 	}
 
@@ -6549,7 +6612,8 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		const GDScriptParser::CallNode *call = p_source != nullptr && p_source->type == GDScriptParser::Node::CALL ? static_cast<const GDScriptParser::CallNode *>(p_source) : nullptr;
 		const int method_arg_index = p_function == SNAME("rpc_id") ? 1 : 0;
 		StringName method_name;
-		if (call != nullptr && string_name_from_constant_arg(call, method_arg_index, method_name) && method_name != SNAME("rpc") && method_name != SNAME("rpc_id")) {
+		const bool has_constant_method_name = call != nullptr && string_name_from_constant_arg(call, method_arg_index, method_name);
+		if (has_constant_method_name && method_name != SNAME("rpc") && method_name != SNAME("rpc_id")) {
 			GDScriptParser::DataType callable_type;
 			if (callable_type_from_method(p_base_type, method_name, p_source, callable_type)) {
 				r_default_arg_count = callable_type.method_info.default_arguments.size();
@@ -6567,13 +6631,17 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				}
 				return true;
 			}
+			push_strict_unresolved_reflection_error(call, method_arg_index, "method", method_name);
+		} else if (!has_constant_method_name && argument_can_be_string_name(call, method_arg_index)) {
+			push_strict_dynamic_reflection_error(call, method_arg_index, "method name");
 		}
 	}
 
 	if (p_function == SNAME("get") || p_function == SNAME("set") || p_function == SNAME("set_deferred")) {
 		const GDScriptParser::CallNode *call = p_source != nullptr && p_source->type == GDScriptParser::Node::CALL ? static_cast<const GDScriptParser::CallNode *>(p_source) : nullptr;
 		StringName property_name;
-		if (call != nullptr && string_name_from_constant_arg(call, 0, property_name)) {
+		const bool has_constant_property_name = call != nullptr && string_name_from_constant_arg(call, 0, property_name);
+		if (has_constant_property_name) {
 			GDScriptParser::DataType property_type;
 			if (property_type_from_receiver(p_base_type, property_name, p_source, property_type)) {
 				r_default_arg_count = 0;
@@ -6587,13 +6655,17 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				}
 				return true;
 			}
+			push_strict_unresolved_reflection_error(call, 0, "property", property_name);
+		} else if (!has_constant_property_name && argument_can_be_string_name(call, 0)) {
+			push_strict_dynamic_reflection_error(call, 0, "property name");
 		}
 	}
 
 	if (p_function == SNAME("get_indexed") || p_function == SNAME("set_indexed")) {
 		const GDScriptParser::CallNode *call = p_source != nullptr && p_source->type == GDScriptParser::Node::CALL ? static_cast<const GDScriptParser::CallNode *>(p_source) : nullptr;
 		Vector<StringName> property_path;
-		if (call != nullptr && property_path_from_constant_arg(call, 0, property_path)) {
+		const bool has_constant_property_path = call != nullptr && property_path_from_constant_arg(call, 0, property_path);
+		if (has_constant_property_path) {
 			GDScriptParser::DataType property_type;
 			if (property_type_from_indexed_receiver(p_base_type, property_path, p_source, property_type)) {
 				r_default_arg_count = 0;
@@ -6607,6 +6679,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				}
 				return true;
 			}
+			push_strict_unresolved_reflection_error(call, 0, "property path", String(NodePath(call->arguments[0]->reduced_value)));
+		} else if (!has_constant_property_path && argument_can_be_node_path(call, 0)) {
+			push_strict_dynamic_reflection_error(call, 0, "property path");
 		}
 	}
 

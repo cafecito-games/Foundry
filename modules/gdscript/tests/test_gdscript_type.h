@@ -731,6 +731,31 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Node.rpc_id invocations fro
 	CHECK(analyze_source(source_prefix + "\tworker.rpc_id(1, \"unknown\", \"legacy dynamic\")\n") == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rejects dynamic reflection fallbacks in strict mode") {
+	const String source_prefix = "class Worker extends Node:\n\tvar count: int\n\tfunc stringify(value: int) -> String:\n\t\treturn \"ok\"\nfunc test(worker: Worker, method_name: StringName, property_name: StringName, property_path: NodePath) -> void:\n";
+
+	CHECK(analyze_source(source_prefix + "\tworker.call(method_name, 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.call(\"unknown\", 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.call_deferred(method_name, 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.call_deferred(\"unknown\", 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.callv(method_name, [1])\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.callv(\"unknown\", [1])\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.rpc(method_name, 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.rpc(\"unknown\", 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.rpc_id(1, method_name, 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.rpc_id(1, \"unknown\", 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.get(property_name)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.get(\"unknown\")\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.set(property_name, 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.set(\"unknown\", 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.set_deferred(property_name, 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.set_deferred(\"unknown\", 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.get_indexed(property_path)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.get_indexed(^\"unknown\")\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.set_indexed(property_path, 1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.set_indexed(^\"unknown\", 1)\n", false, true) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Signal.emit invocations") {
 	const String source_prefix = "signal event(value: int)\nfunc test() -> void:\n\tvar typed_event: Signal[[int]] = event\n";
 	const String inferred_source_prefix = "signal event(value: int)\nfunc test() -> void:\n\tvar typed_event := event\n";
