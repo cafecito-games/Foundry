@@ -101,6 +101,13 @@ private:
 	Ref<GDScriptTextDocument> text_document;
 	Ref<GDScriptWorkspace> workspace;
 
+	// Parse results sourced from the built-in script editor's live buffers rather
+	// than a connected LSP client. The editor pushes the on-screen text here via
+	// `sync_script_content` so in-process features (such as refactoring) resolve
+	// against the exact buffer, and so they work even when no external LSP client
+	// (e.g. VS Code) is connected.
+	HashMap<String, ExtendGDScriptParser *> editor_parse_results;
+
 	Error on_client_connected();
 	void on_client_disconnected(const int &p_client_id);
 
@@ -150,8 +157,22 @@ public:
 	 */
 	ExtendGDScriptParser *get_parse_result(const String &p_path);
 
+	/**
+	 * Parses p_content for p_path and caches the result for the built-in editor.
+	 * Subsequent `get_parse_result(p_path)` calls return this parse, taking
+	 * precedence over any connected LSP client's cached parse. The editor calls
+	 * this with the live buffer text before invoking in-process refactoring so
+	 * symbol resolution and edits run against the exact on-screen source.
+	 */
+	void sync_script_content(const String &p_path, const String &p_content);
+
+	/**
+	 * Drops a parse cached by `sync_script_content` for p_path. The editor calls
+	 * this once a refactor finishes so later requests fall back to any connected
+	 * LSP client's own (authoritative) parse rather than the now-stale buffer.
+	 */
+	void clear_editor_script_content(const String &p_path);
+
 	GDScriptLanguageProtocol();
-	~GDScriptLanguageProtocol() {
-		clients.clear();
-	}
+	~GDScriptLanguageProtocol();
 };

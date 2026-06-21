@@ -251,7 +251,9 @@ protected:
 
 	void _populate_refactor_submenu();
 	void _run_refactor(int p_kind);
-	void _apply_refactor_result(const RefactorResult &p_result);
+	void _sync_refactor_buffer();
+	void _clear_refactor_buffer();
+	void _apply_refactor_result(const RefactorResult &p_result, const String &p_source);
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);
 	RefactorContext _make_refactor_context() const;
