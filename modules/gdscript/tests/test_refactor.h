@@ -98,6 +98,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			edits.push_back(edit(0, 2, 0, 5, "Y"));
 			String out = "untouched";
 			CHECK_FALSE(GDScriptRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "untouched");
 		}
 
 		SUBCASE("multi-line range") {
