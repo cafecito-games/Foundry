@@ -35,6 +35,7 @@
 #include "tests/test_macros.h"
 
 #include "../editor/gdscript_refactoring.h"
+#include "../editor/gdscript_refactoring_edits.h"
 
 #include "core/io/file_access.h"
 
@@ -62,6 +63,51 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
 		CHECK(available.is_empty());
+	}
+
+	TEST_CASE("Edit application") {
+		auto edit = [](int sl, int sc, int el, int ec, const String &t) {
+			RefactorTextEdit e;
+			e.start_line = sl; e.start_column = sc; e.end_line = el; e.end_column = ec; e.new_text = t;
+			return e;
+		};
+
+		SUBCASE("single in-line replacement") {
+			String src = "var foo = 1\n";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 4, 0, 7, "bar")); // "foo" -> "bar"
+			String out;
+			CHECK(GDScriptRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "var bar = 1\n");
+		}
+
+		SUBCASE("order independence") {
+			String src = "ab\ncd\n";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(1, 0, 1, 1, "X")); // later position, added first
+			edits.push_back(edit(0, 0, 0, 1, "Y")); // earlier position, added second
+			String out;
+			CHECK(GDScriptRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "Yb\nXd\n");
+		}
+
+		SUBCASE("overlapping edits rejected") {
+			String src = "abcdef";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 0, 0, 3, "X"));
+			edits.push_back(edit(0, 2, 0, 5, "Y"));
+			String out = "untouched";
+			CHECK_FALSE(GDScriptRefactorEdits::apply(src, edits, out));
+		}
+
+		SUBCASE("multi-line range") {
+			String src = "one\ntwo\nthree\n";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 1, 2, 2, "X")); // 'n'(line0,col1) .. before 'r'(line2,col2)
+			String out;
+			CHECK(GDScriptRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "oXree\n");
+		}
 	}
 }
 
