@@ -57,6 +57,7 @@ class GDScriptAnalyzer {
 	List<GDScriptParser::LambdaNode *> pending_body_resolution_lambdas;
 	HashMap<const GDScriptParser::ClassNode *, Ref<GDScriptParserRef>> external_class_parser_cache;
 	HashMap<const GDScriptParser::Node *, GDScriptParser::DataType> flow_narrowed_types;
+	HashMap<const GDScriptParser::Node *, bool> flow_narrowing_captured_sources;
 	bool static_context = false;
 	bool strict_null_checks = false;
 	bool strict_dynamic_checks = false;
@@ -162,6 +163,8 @@ class GDScriptAnalyzer {
 	void apply_flow_narrowing(const GDScriptParser::IdentifierNode *p_identifier);
 	void apply_flow_narrowing(const GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::DataType &p_type);
 	void clear_flow_narrowing(const GDScriptParser::ExpressionNode *p_expression);
+	void mark_flow_narrowing_capture(const GDScriptParser::IdentifierNode *p_identifier);
+	void clear_captured_flow_narrowing();
 	bool null_check_narrowing_identifier(GDScriptParser::ExpressionNode *p_condition, bool p_condition_value, GDScriptParser::IdentifierNode *&r_identifier) const;
 	bool type_test_narrowing_identifier(GDScriptParser::ExpressionNode *p_condition, bool p_condition_value, GDScriptParser::IdentifierNode *&r_identifier, GDScriptParser::DataType &r_type) const;
 	void validate_call_arg(const List<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const GDScriptParser::CallNode *p_call);

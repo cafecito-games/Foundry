@@ -1035,6 +1035,18 @@ TEST_CASE("[Modules][GDScript] Analyzer narrows nullable locals after null check
 	CHECK(analyze_source(reassigned_source, true) != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer keeps nullable narrowing across non-mutating calls") {
+	const String source = "func accept_node(node: Node) -> void:\n\tpass\nfunc do_nothing() -> void:\n\tpass\nfunc test(node: Node?) -> void:\n\tif node != null:\n\t\tdo_nothing()\n\t\taccept_node(node)\n";
+
+	CHECK(analyze_source(source, true) == OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer invalidates captured nullable narrowing across calls") {
+	const String source = "func accept_node(node: Node) -> void:\n\tpass\nfunc do_nothing() -> void:\n\tpass\nfunc test(node: Node?) -> void:\n\tvar read_node := func() -> void:\n\t\tprint(node)\n\tif node != null:\n\t\tdo_nothing()\n\t\taccept_node(node)\n";
+
+	CHECK(analyze_source(source, true) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer narrows nullable locals after non-null assert") {
 	const String source_prefix = "func accept_node(node: Node) -> void:\n\tpass\n";
 	const String assert_source = source_prefix + "func test(node: Node?) -> void:\n\tassert(node != null)\n\taccept_node(node)\n";

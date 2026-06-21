@@ -2045,9 +2045,17 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 	static_context = p_function->is_static;
 
 	HashMap<const GDScriptParser::Node *, GDScriptParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
+	HashMap<const GDScriptParser::Node *, bool> previous_flow_narrowing_captured_sources;
+	if (!p_is_lambda) {
+		previous_flow_narrowing_captured_sources = flow_narrowing_captured_sources;
+		flow_narrowing_captured_sources.clear();
+	}
 	flow_narrowed_types.clear();
 	resolve_suite(p_function->body);
 	flow_narrowed_types = previous_flow_narrowed_types;
+	if (!p_is_lambda) {
+		flow_narrowing_captured_sources = previous_flow_narrowing_captured_sources;
+	}
 
 	if (!p_function->get_datatype().is_hard_type() && p_function->body->get_datatype().is_set()) {
 		// Use the suite inferred type if return isn't explicitly set.
@@ -2342,6 +2350,19 @@ void GDScriptAnalyzer::clear_flow_narrowing(const GDScriptParser::ExpressionNode
 	const GDScriptParser::Node *key = flow_narrowing_key_from_identifier(identifier);
 	if (key != nullptr) {
 		flow_narrowed_types.erase(key);
+	}
+}
+
+void GDScriptAnalyzer::mark_flow_narrowing_capture(const GDScriptParser::IdentifierNode *p_identifier) {
+	const GDScriptParser::Node *key = flow_narrowing_key_from_identifier(p_identifier);
+	if (key != nullptr) {
+		flow_narrowing_captured_sources[key] = true;
+	}
+}
+
+void GDScriptAnalyzer::clear_captured_flow_narrowing() {
+	for (const KeyValue<const GDScriptParser::Node *, bool> &E : flow_narrowing_captured_sources) {
+		flow_narrowed_types.erase(E.key);
 	}
 }
 
@@ -3547,6 +3568,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 		all_is_constant = all_is_constant && p_call->arguments[i]->is_constant;
 	}
+
+	Finally clear_captured_flow_narrowing_after_call([&]() {
+		clear_captured_flow_narrowing();
+	});
 
 	GDScriptParser::Node::Type callee_type = p_call->get_callee_type();
 	GDScriptParser::DataType call_type;
@@ -4867,6 +4892,7 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 			while (function_test != nullptr && function_test != p_identifier->source_function && function_test->source_lambda != nullptr && !function_test->source_lambda->captures_indices.has(p_identifier->name)) {
 				function_test->source_lambda->captures_indices[p_identifier->name] = function_test->source_lambda->captures.size();
 				function_test->source_lambda->captures.push_back(p_identifier);
+				mark_flow_narrowing_capture(p_identifier);
 				function_test = function_test->source_lambda->parent_function;
 			}
 		}
