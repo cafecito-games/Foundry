@@ -762,6 +762,22 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects dynamic reflection fallbacks in 
 	CHECK(analyze_source(source_prefix + "\tworker.set_indexed(^\"unknown\", 1)\n", false, true) != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rejects unsafe dynamic expression fallbacks in strict mode") {
+	const String source_prefix = "class Worker:\n\tvar count: int\nfunc test(worker: Worker, dynamic_value: Variant, dynamic_key: Variant, values: Array[int]) -> void:\n";
+
+	CHECK(analyze_source(source_prefix + "\tdynamic_value.call_missing(1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tworker.call_missing(1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar value := values[dynamic_key]\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tdynamic_value.call_missing(1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tworker.call_missing(1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tvar value := dynamic_value.some_property\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tvar value := worker.some_property\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tvar value := dynamic_value[\"key\"]\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tvar value := values[dynamic_key]\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tvar value := dynamic_value + 1\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tvar value := -dynamic_value\n", false, true) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Signal.emit invocations") {
 	const String source_prefix = "signal event(value: int)\nfunc test() -> void:\n\tvar typed_event: Signal[[int]] = event\n";
 	const String inferred_source_prefix = "signal event(value: int)\nfunc test() -> void:\n\tvar typed_event := event\n";

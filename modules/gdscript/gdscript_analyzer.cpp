@@ -3485,7 +3485,11 @@ void GDScriptAnalyzer::reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_o
 	} else if (left_type.is_variant() || right_type.is_variant()) {
 		// Cannot infer type because one operand can be anything.
 		result.kind = GDScriptParser::DataType::VARIANT;
-		mark_node_unsafe(p_binary_op);
+		if (strict_dynamic_checks) {
+			push_error(vformat(R"*(Cannot use dynamic operand for "%s" operator in strict dynamic mode.)*", Variant::get_operator_name(p_binary_op->variant_op)), p_binary_op);
+		} else {
+			mark_node_unsafe(p_binary_op);
+		}
 	} else if (p_binary_op->variant_op < Variant::OP_MAX) {
 		bool valid = false;
 		result = get_operation_type(p_binary_op->variant_op, left_type, right_type, valid, p_binary_op);
@@ -4094,11 +4098,15 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					} else {
 						push_error(vformat(R"*(Name "%s" called as a function but is a "%s".)*", p_call->function_name, callee_datatype.to_string()), p_call->callee);
 					}
-#ifdef DEBUG_ENABLED
 				} else if (!is_self && !(base_type.is_hard_type() && base_type.kind == GDScriptParser::DataType::BUILTIN)) {
-					parser->push_warning(p_call, GDScriptWarning::UNSAFE_METHOD_ACCESS, p_call->function_name, base_type.to_string());
-					mark_node_unsafe(p_call);
+					if (strict_dynamic_checks) {
+						push_error(vformat(R"*(Cannot resolve method "%s" on type "%s" in strict dynamic mode.)*", p_call->function_name, base_type.to_string()), p_call->callee);
+					} else {
+#ifdef DEBUG_ENABLED
+						parser->push_warning(p_call, GDScriptWarning::UNSAFE_METHOD_ACCESS, p_call->function_name, base_type.to_string());
+						mark_node_unsafe(p_call);
 #endif // DEBUG_ENABLED
+					}
 				}
 			}
 		}
@@ -5229,6 +5237,8 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 					valid = false;
 					mark_node_unsafe(p_subscript);
 				}
+			} else if (strict_dynamic_checks) {
+				push_error(vformat(R"*(Cannot resolve member "%s" on type "%s" in strict dynamic mode.)*", p_subscript->attribute->name, base_type.to_string()), p_subscript->attribute);
 			} else {
 				mark_node_unsafe(p_subscript);
 			}
@@ -5255,11 +5265,15 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				}
 			} else if (!base_type.is_meta_type || !base_type.is_constant) {
 				valid = base_type.kind != GDScriptParser::DataType::BUILTIN;
-#ifdef DEBUG_ENABLED
 				if (valid) {
-					parser->push_warning(p_subscript, GDScriptWarning::UNSAFE_PROPERTY_ACCESS, p_subscript->attribute->name, base_type.to_string());
-				}
+					if (strict_dynamic_checks) {
+						push_error(vformat(R"*(Cannot resolve member "%s" on type "%s" in strict dynamic mode.)*", p_subscript->attribute->name, base_type.to_string()), p_subscript->attribute);
+					} else {
+#ifdef DEBUG_ENABLED
+						parser->push_warning(p_subscript, GDScriptWarning::UNSAFE_PROPERTY_ACCESS, p_subscript->attribute->name, base_type.to_string());
 #endif // DEBUG_ENABLED
+					}
+				}
 				result_type.kind = GDScriptParser::DataType::VARIANT;
 				mark_node_unsafe(p_subscript);
 			}
@@ -5299,8 +5313,15 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 
 			if (base_type.is_variant()) {
 				result_type.kind = GDScriptParser::DataType::VARIANT;
-				mark_node_unsafe(p_subscript);
+				if (strict_dynamic_checks) {
+					push_error("Cannot use subscript operator on Variant in strict dynamic mode.", p_subscript->base);
+				} else {
+					mark_node_unsafe(p_subscript);
+				}
 			} else {
+				if (index_type.is_variant() && strict_dynamic_checks) {
+					push_error(vformat(R"*(Cannot use dynamic index of type "%s" for base of type "%s" in strict dynamic mode.)*", index_type.to_string(), base_type.to_string()), p_subscript->index);
+				}
 				if (base_type.kind == GDScriptParser::DataType::BUILTIN && !index_type.is_variant()) {
 					// Check if indexing is valid.
 					bool error = index_type.kind != GDScriptParser::DataType::BUILTIN && base_type.builtin_type != Variant::DICTIONARY;
@@ -5627,7 +5648,11 @@ void GDScriptAnalyzer::reduce_unary_op(GDScriptParser::UnaryOpNode *p_unary_op) 
 
 	if (operand_type.is_variant()) {
 		result.kind = GDScriptParser::DataType::VARIANT;
-		mark_node_unsafe(p_unary_op);
+		if (strict_dynamic_checks) {
+			push_error(vformat(R"*(Cannot use dynamic operand for unary "%s" operator in strict dynamic mode.)*", Variant::get_operator_name(p_unary_op->variant_op)), p_unary_op);
+		} else {
+			mark_node_unsafe(p_unary_op);
+		}
 	} else {
 		bool valid = false;
 		result = get_operation_type(p_unary_op->variant_op, operand_type, valid, p_unary_op);
