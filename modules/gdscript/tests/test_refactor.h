@@ -118,6 +118,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(GDScriptRefactorNames::validate_identifier("foo", reason));
 			CHECK(GDScriptRefactorNames::validate_identifier("_bar", reason));
 			CHECK(GDScriptRefactorNames::validate_identifier("baz2", reason));
+			CHECK(GDScriptRefactorNames::validate_identifier("foo", reason));
+			CHECK(reason.is_empty());
 		}
 		SUBCASE("rejects empty") {
 			CHECK_FALSE(GDScriptRefactorNames::validate_identifier("", reason));

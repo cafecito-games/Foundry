@@ -32,37 +32,21 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "../gdscript.h"
+
 #include "core/templates/hash_set.h"
 #include "core/variant/variant.h"
 
 namespace {
 
-// GDScript reserved keywords. This mirrors the canonical KEYWORDS list in
-// gdscript_tokenizer.cpp; the tokenizer keeps that macro private to its own
-// translation unit and exposes no public reserved-keyword query, so the set is
-// reproduced here. The boolean and null literals are included because they are
-// likewise illegal as user-defined identifiers.
 bool is_reserved_keyword(const String &p_name) {
-	static const HashSet<String> keywords = {
-		"as", "and", "assert", "await",
-		"break", "breakpoint",
-		"class", "class_name", "const", "continue",
-		"elif", "else", "enum", "extends",
-		"for", "func",
-		"if", "in", "is",
-		"match",
-		"namespace", "not",
-		"or",
-		"pass", "preload",
-		"return",
-		"self", "signal", "static", "super",
-		"trait",
-		"var", "void",
-		"while", "when",
-		"yield",
-		"INF", "NAN", "PI", "TAU",
-		"true", "false", "null"
-	};
+	static const HashSet<String> keywords = []() {
+		HashSet<String> set;
+		for (const String &word : GDScriptLanguage::get_singleton()->get_reserved_words()) {
+			set.insert(word);
+		}
+		return set;
+	}();
 	return keywords.has(p_name);
 }
 
