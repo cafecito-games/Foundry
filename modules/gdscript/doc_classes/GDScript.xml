@@ -7,6 +7,49 @@
 		A script implemented in the GDScript programming language, saved with the [code].gd[/code] extension. The script extends the functionality of all objects that instantiate it.
 		Calling [method new] creates a new instance of the script. [method Object.set_script] extends an existing object, if that object's class matches one of the script's base classes.
 		If you are looking for GDScript's built-in functions, see [@GDScript] instead.
+		[b]Strict type analysis:[/b] GDScript supports nullable annotations, typed callable and signal signatures, and nested typed containers. Nullable object types use [code]T?[/code], while plain [code]T[/code] can be checked as non-nullable when [member ProjectSettings.debug/gdscript/analysis/strict_null_checks] is enabled. [Callable] and [Signal] signatures can be written as [code]Callable[[ArgType, ...], ReturnType][/code] and [code]Signal[[ArgType, ...]][/code]. [Array] and [Dictionary] annotations can contain nested typed containers such as [code]Dictionary[String, Array[int]][/code].
+		[codeblock]
+		signal renamed_to(new_name: String)
+
+		func get_target() -> Node?:
+			return null
+
+		func accept_target(target: Node) -> void:
+			pass
+
+		func name_length(name: String) -> int:
+			return name.length()
+
+		func on_renamed(new_name: String) -> void:
+			pass
+
+		func get_dynamic_value() -> Variant:
+			return 1
+
+		func use_strict_types() -> void:
+			var maybe_target: Node? = get_target()
+			if maybe_target != null:
+				accept_target(maybe_target)
+
+			var callback: Callable[[String], int] = name_length
+			var length: int = callback.call("Player")
+
+			var renamed: Signal[[String]] = renamed_to
+			renamed.connect(on_renamed)
+			renamed.emit("Player")
+
+			var scores: Dictionary[String, Array[int]] = {
+				"level_1": [10, 20, 30],
+			}
+			print(length, scores["level_1"][0])
+
+			# Rejected when strict_null_checks is enabled:
+			# accept_target(get_target())
+
+			# Rejected when strict_dynamic_checks is enabled:
+			# var typed_value: int = get_dynamic_value()
+		[/codeblock]
+		Most callable and signal signature checks run as part of normal static analysis. [member ProjectSettings.debug/gdscript/analysis/strict_dynamic_checks] adds stricter checks at dynamic boundaries by rejecting [Variant] values where a non-[Variant] static type is required.
 	</description>
 	<tutorials>
 		<link title="GDScript documentation index">$DOCS_URL/tutorials/scripting/gdscript/index.html</link>
