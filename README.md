@@ -1,10 +1,23 @@
-# Godot Engine
+# Enhanced Godot Engine
 
 <p align="center">
   <a href="https://godotengine.org">
     <img src="logo_outlined.svg" width="400" alt="Godot Engine logo">
   </a>
 </p>
+
+## Experiment
+
+This fork is an experiment to see how far I can push the Godot Engine in a few areas:
+
+1. Enhancing the GDScript language for type safety
+2. Better editor tooling for scripting (e.g. Refactoring support)
+3. Adding features to GDScript like Traits, async keyword on coroutine functions and other things of that nature.
+
+This might be useful to others, or it might not be. For the time being it is unclear to me how far to push this experiment, for now I am using AI to help implement a good amount of this and seeing how effective AI is at working in this codebase.
+
+I'll eventually publish builds here and people are free to try it out, but please note that my level of support for this project is currently not known. If I end up using this build to power my games, I'll be more incintivized to support it but please keep in mind that this is primarily for my own use and for my own personal tastes on what the language and tooling should look like. Also please keep in mind a lot of the work is being done by AI (both Claude and Codex for the most part), you might have feelings about that and that's ok, I understand.
+
 
 ## 2D and 3D cross-platform game engine
 
