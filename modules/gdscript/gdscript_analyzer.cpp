@@ -3330,7 +3330,12 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 			if (op_type.is_variant()) {
 				// non-variant assignee and variant result
 				mark_node_unsafe(p_assignment);
-				if (assignee_is_hard) {
+				if (strict_dynamic_checks) {
+					push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
+									   assigned_value_type.to_string(),
+									   assignee_type.to_string()),
+							p_assignment->assigned_value);
+				} else if (assignee_is_hard) {
 					// hard non-variant assignee and variant result
 					p_assignment->use_conversion_assign = true;
 				} else {

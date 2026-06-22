@@ -121,6 +121,18 @@ static Error analyze_source_with_project_settings(const String &p_source) {
 	return analyzer.analyze();
 }
 
+static void check_legacy_ok_strict_null_rejected(const String &p_source) {
+	INFO(p_source);
+	CHECK(analyze_source(p_source) == OK);
+	CHECK(analyze_source(p_source, true) != OK);
+}
+
+static void check_legacy_ok_strict_dynamic_rejected(const String &p_source) {
+	INFO(p_source);
+	CHECK(analyze_source(p_source) == OK);
+	CHECK(analyze_source(p_source, false, true) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Type compatibility marks dynamic source as runtime checked") {
 	const GDScriptParser::DataType target = make_builtin_type(Variant::INT);
 	const GDScriptParser::DataType source = make_variant_type();
@@ -825,6 +837,31 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects dynamic reflection fallbacks in 
 	CHECK(analyze_source(source_prefix + "\tworker.set_indexed(^\"unknown\", 1)\n", false, true) != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer preserves legacy reflection fallbacks until strict dynamic is enabled") {
+	const String source_prefix = "class Worker extends Node:\n\tvar count: int\n\tfunc stringify(value: int) -> String:\n\t\treturn \"ok\"\nfunc test(worker: Worker, method_name: StringName, property_name: StringName, property_path: NodePath) -> void:\n";
+
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.call(method_name, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.call(\"unknown\", 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.call_deferred(method_name, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.call_deferred(\"unknown\", 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.callv(method_name, [1])\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.callv(\"unknown\", [1])\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.rpc(method_name, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.rpc(\"unknown\", 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.rpc_id(1, method_name, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.rpc_id(1, \"unknown\", 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.get(property_name)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.get(\"unknown\")\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.set(property_name, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.set(\"unknown\", 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.set_deferred(property_name, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.set_deferred(\"unknown\", 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.get_indexed(property_path)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.get_indexed(^\"unknown\")\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.set_indexed(property_path, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tworker.set_indexed(^\"unknown\", 1)\n");
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer rejects unsafe dynamic expression fallbacks in strict mode") {
 	const String source_prefix = "class Worker:\n\tvar count: int\nfunc test(worker: Worker, dynamic_value: Variant, dynamic_key: Variant, values: Array[int]) -> void:\n";
 
@@ -893,6 +930,26 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects dynamic signal fallbacks in stri
 	CHECK(analyze_source(typed_source + "\tbutton.disconnect(\"unknown\", accept_string)\n", false, true) != OK);
 	CHECK(analyze_source(typed_source + "\tbutton.emit_signal(signal_name)\n", false, true) != OK);
 	CHECK(analyze_source(typed_source + "\tbutton.emit_signal(\"unknown\")\n", false, true) != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer preserves legacy callable and signal dynamics until strict dynamic is enabled") {
+	const String callable_source = "func accepts_int(value: int) -> bool:\n\treturn true\nfunc get_dynamic() -> Variant:\n\treturn 1\nfunc get_peer() -> Variant:\n\treturn 1\nfunc test() -> void:\n\tvar callback: Callable[[int], bool] = accepts_int\n";
+	const String signal_source = "signal event(value: int)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc get_dynamic() -> Variant:\n\treturn 1\nfunc get_dynamic_callable() -> Variant:\n\treturn accept_int\nfunc test(signal_name: StringName) -> void:\n\tvar typed_event: Signal[[int]] = event\n";
+	const String object_signal_source = "class Emitter:\n\tsignal event(value: int)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(emitter: Emitter, signal_name: StringName) -> void:\n";
+
+	check_legacy_ok_strict_dynamic_rejected(callable_source + "\tcallback.call(get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected(callable_source + "\tcallback.call_deferred(get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected(callable_source + "\tcallback.callv([get_dynamic()])\n");
+	check_legacy_ok_strict_dynamic_rejected(callable_source + "\tcallback.rpc(get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected(callable_source + "\tcallback.rpc_id(get_peer(), get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected(signal_source + "\ttyped_event.emit(get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected(signal_source + "\ttyped_event.connect(get_dynamic_callable())\n");
+	check_legacy_ok_strict_dynamic_rejected(signal_source + "\tconnect(signal_name, accept_int)\n");
+	check_legacy_ok_strict_dynamic_rejected(signal_source + "\tdisconnect(signal_name, accept_int)\n");
+	check_legacy_ok_strict_dynamic_rejected(signal_source + "\temit_signal(signal_name, 1)\n");
+	check_legacy_ok_strict_dynamic_rejected(object_signal_source + "\temitter.connect(signal_name, accept_int)\n");
+	check_legacy_ok_strict_dynamic_rejected(object_signal_source + "\temitter.disconnect(signal_name, accept_int)\n");
+	check_legacy_ok_strict_dynamic_rejected(object_signal_source + "\temitter.emit_signal(signal_name, 1)\n");
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer checks typed Signal.connect callables") {
@@ -1220,6 +1277,17 @@ TEST_CASE("[Modules][GDScript] Analyzer can reject null source arguments and ret
 	CHECK(analyze_source(nullable_return_source, true) == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer preserves legacy nullable flows until strict null is enabled") {
+	check_legacy_ok_strict_null_rejected("func test(maybe: Node?) -> void:\n\tvar node: Node = maybe\n");
+	check_legacy_ok_strict_null_rejected("func test(maybe: Node?, fallback: Node) -> void:\n\tvar node: Node = fallback\n\tnode = maybe\n");
+	check_legacy_ok_strict_null_rejected("func accept_node(node: Node) -> void:\n\tpass\nfunc test(maybe: Node?) -> void:\n\taccept_node(maybe)\n");
+	check_legacy_ok_strict_null_rejected("func get_node(maybe: Node?) -> Node:\n\treturn maybe\n");
+
+	CHECK(analyze_source("func test(maybe: Node?) -> void:\n\tvar node: Node? = maybe\n", true) == OK);
+	CHECK(analyze_source("func accept_node(node: Node?) -> void:\n\tpass\nfunc test(maybe: Node?) -> void:\n\taccept_node(maybe)\n", true) == OK);
+	CHECK(analyze_source("func get_node(maybe: Node?) -> Node?:\n\treturn maybe\n", true) == OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer narrows nullable locals after null checks") {
 	const String source_prefix = "func accept_node(node: Node) -> void:\n\tpass\n";
 	const String if_not_null_source = source_prefix + "func test(node: Node?) -> void:\n\tif node != null:\n\t\taccept_node(node)\n";
@@ -1366,6 +1434,19 @@ TEST_CASE("[Modules][GDScript] Analyzer can reject dynamic source arguments and 
 	CHECK(analyze_source(argument_source, false, true) != OK);
 	CHECK(analyze_source(return_source) == OK);
 	CHECK(analyze_source(return_source, false, true) != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer preserves legacy Variant flows until strict dynamic is enabled") {
+	const String source_prefix = "func get_dynamic() -> Variant:\n\treturn 1\n";
+
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "func test() -> void:\n\tvar value: int = get_dynamic()\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "func test() -> void:\n\tvar value: int = 1\n\tvalue = get_dynamic()\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "func accept_int(value: int) -> void:\n\tpass\nfunc test() -> void:\n\taccept_int(get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "func get_int() -> int:\n\treturn get_dynamic()\n");
+
+	CHECK(analyze_source(source_prefix + "func test() -> void:\n\tvar value: Variant = get_dynamic()\n", false, true) == OK);
+	CHECK(analyze_source(source_prefix + "func accept_variant(value: Variant) -> void:\n\tpass\nfunc test() -> void:\n\taccept_variant(get_dynamic())\n", false, true) == OK);
+	CHECK(analyze_source(source_prefix + "func get_variant() -> Variant:\n\treturn get_dynamic()\n", false, true) == OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer can reject dynamic elements in typed containers") {
@@ -1571,6 +1652,23 @@ TEST_CASE("[Modules][GDScript] Analyzer preserves nested container element types
 	CHECK(analyze_source(source_prefix + "\tvar nested: Array[Array[int]] = [get_dynamic_array()]\n", false, true) != OK);
 	CHECK(analyze_source(source_prefix + "\tvar nested: Dictionary[String, Dictionary[String, int]] = { \"outer\": get_dynamic_dictionary() }\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tvar nested: Dictionary[String, Dictionary[String, int]] = { \"outer\": get_dynamic_dictionary() }\n", false, true) != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer preserves legacy nested Variant containers until strict dynamic is enabled") {
+	const String source_prefix = "func get_dynamic() -> Variant:\n\treturn 1\nfunc test() -> void:\n";
+
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tvar nested: Array[Array[int]] = [[get_dynamic()]]\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tvar nested: Dictionary[String, Array[int]] = { \"values\": [get_dynamic()] }\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tvar nested: Array[Dictionary[String, int]] = [{ \"value\": get_dynamic() }]\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tvar nested: Dictionary[String, Dictionary[String, int]] = { \"outer\": { \"value\": get_dynamic() } }\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tvar nested: Array[Array[int]] = [[1]]\n\tnested[0].append(get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected(source_prefix + "\tvar nested: Dictionary[String, Array[int]] = { \"values\": [] }\n\tnested[\"values\"].append(get_dynamic())\n");
+	check_legacy_ok_strict_dynamic_rejected("func get_dynamic() -> Variant:\n\treturn 1\nfunc accept_nested(values: Array[Array[int]]) -> void:\n\tpass\nfunc test() -> void:\n\taccept_nested([[get_dynamic()]])\n");
+	check_legacy_ok_strict_dynamic_rejected("func get_dynamic() -> Variant:\n\treturn 1\nfunc get_nested() -> Array[Array[int]]:\n\treturn [[get_dynamic()]]\n");
+
+	CHECK(analyze_source(source_prefix + "\tvar nested: Array[Array[Variant]] = [[get_dynamic()]]\n", false, true) == OK);
+	CHECK(analyze_source("func get_dynamic() -> Variant:\n\treturn 1\nfunc accept_nested(values: Array[Array[Variant]]) -> void:\n\tpass\nfunc test() -> void:\n\taccept_nested([[get_dynamic()]])\n", false, true) == OK);
+	CHECK(analyze_source("func get_dynamic() -> Variant:\n\treturn 1\nfunc get_nested() -> Array[Array[Variant]]:\n\treturn [[get_dynamic()]]\n", false, true) == OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer reports strict dynamic argument diagnostics") {
