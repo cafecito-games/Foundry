@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdscript_refactoring_types.cpp                                        */
+/*  gdscript_position.h                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,28 +28,13 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "gdscript_refactoring_types.h"
+#pragma once
 
-#ifdef TOOLS_ENABLED
+#include "core/string/ustring.h"
 
-bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_rendered) {
-	if (!p_type.is_set() || p_type.is_variant()) {
-		return false;
-	}
-	if (p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL) {
-		return false;
-	}
-	if (p_type.is_meta_type || p_type.is_pseudo_type) {
-		return false;
-	}
-	String rendered = p_type.to_string();
-	// A concrete, non-Variant type can still stringify to empty or placeholder
-	// text (e.g. an invalid script reference), which is not a usable annotation.
-	if (rendered.is_empty() || rendered == "null" || rendered.contains("<unresolved type>")) {
-		return false;
-	}
-	r_rendered = rendered;
-	return true;
-}
-
-#endif // TOOLS_ENABLED
+class GDScriptTextPosition {
+public:
+	static int get_indent_size();
+	static int godot_column_to_text_column(const String &p_line, int p_column);
+	static int text_column_to_godot_column(const String &p_line, int p_text_column);
+};
