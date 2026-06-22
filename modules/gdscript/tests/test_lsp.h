@@ -503,6 +503,7 @@ func f():
 		EditorFileSystem *efs = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *proto = initialize(root);
 		REQUIRE(proto);
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
 
 		SUBCASE("selectionRange of root class must be inside range") {
 			LocalVector<String> paths = {
@@ -537,8 +538,10 @@ func f():
 		SUBCASE("Strict type syntax is preserved in symbols and generated API") {
 			String path = "res://lsp/strict_type_presentation.gd";
 			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
 			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
+			Ref<GDScriptTextDocument> text_document = proto->get_text_document();
 
 			const LSP::DocumentSymbol *maybe_node = parser->get_member_symbol("maybe_node");
 			REQUIRE(maybe_node);
@@ -567,6 +570,46 @@ func f():
 			REQUIRE(describe);
 			CHECK_EQ(describe->detail, "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
 
+			Variant hover_variant = text_document->hover(pos_in(uri, callback->selectionRange.start).to_json());
+			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary hover = hover_variant;
+			Dictionary hover_contents = hover["contents"];
+			CHECK(String(hover_contents["value"]).contains("var callback: Callable[[Node?], String]"));
+
+			const Array &completion_items = parser->get_member_completions();
+			Dictionary callback_completion;
+			Dictionary event_completion;
+			Dictionary describe_completion;
+			for (int i = 0; i < completion_items.size(); i++) {
+				Dictionary completion = completion_items[i];
+				const String label = completion["label"];
+				if (label == "callback") {
+					callback_completion = completion;
+				} else if (label == "event") {
+					event_completion = completion;
+				} else if (label == "describe") {
+					describe_completion = completion;
+				}
+			}
+			REQUIRE(!callback_completion.is_empty());
+			REQUIRE(!event_completion.is_empty());
+			REQUIRE(!describe_completion.is_empty());
+			Dictionary resolved_callback_completion = text_document->resolve(callback_completion);
+			Dictionary resolved_event_completion = text_document->resolve(event_completion);
+			Dictionary resolved_describe_completion = text_document->resolve(describe_completion);
+			CHECK_EQ(String(resolved_callback_completion["detail"]), "var callback: Callable[[Node?], String]");
+			CHECK_EQ(String(resolved_event_completion["detail"]), "var event: Signal[[String]]");
+			CHECK_EQ(String(resolved_describe_completion["detail"]), "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
+
+			LSP::SignatureHelp signature_help;
+			CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(13, 19)), signature_help), OK);
+			REQUIRE(signature_help.signatures.size() == 1);
+			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			CHECK_EQ(signature.label, "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
+			REQUIRE(signature.parameters.size() == 2);
+			CHECK_EQ(signature.parameters[0].label, "handler: Callable[[Node?], String]");
+			CHECK_EQ(signature.parameters[1].label, "values: Dictionary[String, Array[int]]");
+
 			Dictionary api = parser->generate_api();
 			Array signals = api["signals"];
 			REQUIRE(signals.size() == 1);
@@ -574,8 +617,15 @@ func f():
 			CHECK_EQ(String(signal_api["signature"]), "signal selected(node: Node?, callbacks: Array[Callable[[int], void]])");
 
 			Array methods = api["methods"];
-			REQUIRE(methods.size() == 1);
-			Dictionary method_api = methods[0];
+			Dictionary method_api;
+			for (int i = 0; i < methods.size(); i++) {
+				Dictionary method = methods[i];
+				if (String(method["name"]) == "describe") {
+					method_api = method;
+					break;
+				}
+			}
+			REQUIRE(!method_api.is_empty());
 			CHECK_EQ(String(method_api["return_type"]), "Signal[[String]]");
 			CHECK_EQ(String(method_api["signature"]), "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
 
