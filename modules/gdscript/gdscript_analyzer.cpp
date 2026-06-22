@@ -53,6 +53,37 @@
 #define UNNAMED_ENUM "<anonymous enum>"
 #define ENUM_SEPARATOR "."
 
+static GDScriptParser::DataType make_void_type() {
+	GDScriptParser::DataType type;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.kind = GDScriptParser::DataType::BUILTIN;
+	type.builtin_type = Variant::NIL;
+	return type;
+}
+
+static String identifier_name_from_expression(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression != nullptr && p_expression->type == GDScriptParser::Node::IDENTIFIER) {
+		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
+		return identifier->name;
+	}
+	return String();
+}
+
+static String callable_type_string_with_signature(
+		const GDScriptParser::DataType &p_callable_type,
+		const Vector<GDScriptParser::DataType> &p_callable_parameter_types) {
+	if (p_callable_type.has_explicit_method_signature || p_callable_parameter_types.is_empty()) {
+		return p_callable_type.to_string();
+	}
+
+	GDScriptParser::DataType callable_type = p_callable_type;
+	callable_type.has_method_signature = true;
+	callable_type.has_explicit_method_signature = true;
+	callable_type.method_parameter_types = p_callable_parameter_types;
+	callable_type.method_return_type.push_back(make_void_type());
+	return callable_type.to_string();
+}
+
 static MethodInfo info_from_utility_func(const StringName &p_function) {
 	ERR_FAIL_COND_V(!Variant::has_utility_function(p_function), MethodInfo());
 
@@ -2197,7 +2228,11 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 		} else if (!specified_type.is_variant()) {
 			if (initializer_type.is_variant() || !initializer_type.is_hard_type()) {
 				if (initializer_type.is_variant() && strict_dynamic_checks) {
-					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)", initializer_type.to_string(), p_kind, p_assignable->identifier->name, specified_type.to_string()), p_assignable->initializer);
+					push_error(vformat(R"(Cannot assign Variant value to %s "%s" in strict dynamic mode; expected "%s".)",
+									   p_kind,
+									   p_assignable->identifier->name,
+									   specified_type.to_string()),
+							p_assignable->initializer);
 				} else {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
@@ -2211,7 +2246,21 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				} else {
-					push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)", initializer_type.to_string(), p_kind, p_assignable->identifier->name, specified_type.to_string()), p_assignable->initializer);
+					if (nullable_mismatch) {
+						push_error(vformat(R"(Cannot assign nullable value of type "%s" to %s "%s"; expected non-nullable "%s".)",
+										   initializer_type.to_string(),
+										   p_kind,
+										   p_assignable->identifier->name,
+										   specified_type.to_string()),
+								p_assignable->initializer);
+					} else {
+						push_error(vformat(R"(Cannot assign a value of type %s to %s "%s" with specified type %s.)",
+										   initializer_type.to_string(),
+										   p_kind,
+										   p_assignable->identifier->name,
+										   specified_type.to_string()),
+								p_assignable->initializer);
+					}
 				}
 			} else if ((specified_type.has_container_element_type(0) && !initializer_type.has_container_element_type(0)) || (specified_type.has_container_element_type(1) && !initializer_type.has_container_element_type(1))) {
 				mark_node_unsafe(p_assignable->initializer);
@@ -2824,7 +2873,9 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 	if (has_expected_type && !expected_type.is_variant()) {
 		if (result.is_variant() || !result.is_hard_type()) {
 			if (result.is_variant() && strict_dynamic_checks) {
-				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)", result.to_string(), expected_type.to_string()), p_return);
+				push_error(vformat(R"(Cannot return Variant value in strict dynamic mode; expected "%s".)",
+								   expected_type.to_string()),
+						p_return);
 			} else {
 				mark_node_unsafe(p_return);
 			}
@@ -2835,7 +2886,17 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 			const bool nullable_mismatch = strict_null_checks && result.is_nullable && !expected_type.is_nullable && !expected_type.is_variant();
 			mark_node_unsafe(p_return);
 			if (nullable_mismatch || !is_type_compatible(result, expected_type)) {
-				push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)", result.to_string(), expected_type.to_string()), p_return);
+				if (nullable_mismatch) {
+					push_error(vformat(R"(Cannot return nullable value of type "%s"; expected non-nullable "%s".)",
+									   result.to_string(),
+									   expected_type.to_string()),
+							p_return);
+				} else {
+					push_error(vformat(R"(Cannot return value of type "%s" because the function return type is "%s".)",
+									   result.to_string(),
+									   expected_type.to_string()),
+							p_return);
+				}
 			}
 #ifdef DEBUG_ENABLED
 		} else if (expected_type.builtin_type == Variant::INT && result.builtin_type == Variant::FLOAT) {
@@ -3050,7 +3111,9 @@ void GDScriptAnalyzer::update_array_literal_element_type(GDScriptParser::ArrayNo
 		}
 		if (actual_type.is_variant()) {
 			if (strict_dynamic_checks && !expected_type.is_variant()) {
-				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
+				push_error(vformat(R"(Cannot include Variant value in array literal for "Array[%s]" in strict dynamic mode.)",
+								   expected_type.to_string()),
+						element_node);
 				return;
 			}
 			mark_node_unsafe(element_node);
@@ -3097,7 +3160,11 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 			mark_node_unsafe(key_element_node);
 		} else if (actual_key_type.is_variant()) {
 			if (strict_dynamic_checks && !expected_key_type.is_variant()) {
-				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
+				push_error(vformat("Cannot include Variant value as dictionary key for "
+								   "\"Dictionary[%s, %s]\" in strict dynamic mode.",
+								   expected_key_type.to_string(),
+								   expected_value_type.to_string()),
+						key_element_node);
 				return;
 			}
 			mark_node_unsafe(key_element_node);
@@ -3127,7 +3194,10 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 			mark_node_unsafe(value_element_node);
 		} else if (actual_value_type.is_variant()) {
 			if (strict_dynamic_checks && !expected_value_type.is_variant()) {
-				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
+				push_error(vformat(R"(Cannot include Variant value as dictionary value for "Dictionary[%s, %s]" in strict dynamic mode.)",
+								   expected_key_type.to_string(),
+								   expected_value_type.to_string()),
+						value_element_node);
 				return;
 			}
 			mark_node_unsafe(value_element_node);
@@ -3255,6 +3325,7 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 	}
 
 	GDScriptParser::DataType assigned_value_type = p_assignment->assigned_value->get_datatype();
+	const String assignee_name = identifier_name_from_expression(p_assignment->assignee);
 
 	if (p_assignment->assignee->type == GDScriptParser::Node::SUBSCRIPT) {
 		GDScriptParser::SubscriptNode *subscript = static_cast<GDScriptParser::SubscriptNode *>(p_assignment->assignee);
@@ -3331,10 +3402,16 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 				// non-variant assignee and variant result
 				mark_node_unsafe(p_assignment);
 				if (strict_dynamic_checks) {
-					push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
-									   assigned_value_type.to_string(),
-									   assignee_type.to_string()),
-							p_assignment->assigned_value);
+					if (!assignee_name.is_empty()) {
+						push_error(vformat(R"(Cannot assign Variant value to variable "%s" in strict dynamic mode; expected "%s".)",
+										   assignee_name,
+										   assignee_type.to_string()),
+								p_assignment->assigned_value);
+					} else {
+						push_error(vformat(R"(Cannot assign Variant value to target in strict dynamic mode; expected "%s".)",
+										   assignee_type.to_string()),
+								p_assignment->assigned_value);
+					}
 				} else if (assignee_is_hard) {
 					// hard non-variant assignee and variant result
 					p_assignment->use_conversion_assign = true;
@@ -3352,7 +3429,25 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 						p_assignment->use_conversion_assign = true;
 					} else {
 						// hard non-variant assignee and incompatible result
-						push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)", assigned_value_type.to_string(), assignee_type.to_string()), p_assignment->assigned_value);
+						if (nullable_mismatch) {
+							if (!assignee_name.is_empty()) {
+								push_error(vformat(R"(Cannot assign nullable value of type "%s" to variable "%s"; expected non-nullable "%s".)",
+												   assigned_value_type.to_string(),
+												   assignee_name,
+												   assignee_type.to_string()),
+										p_assignment->assigned_value);
+							} else {
+								push_error(vformat(R"(Cannot assign nullable value of type "%s" to target; expected non-nullable "%s".)",
+												   assigned_value_type.to_string(),
+												   assignee_type.to_string()),
+										p_assignment->assigned_value);
+							}
+						} else {
+							push_error(vformat(R"(Value of type "%s" cannot be assigned to a variable of type "%s".)",
+											   assigned_value_type.to_string(),
+											   assignee_type.to_string()),
+									p_assignment->assigned_value);
+						}
 					}
 				} else {
 					// weak non-variant assignee and incompatible result
@@ -6660,13 +6755,26 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (!strict_dynamic_checks || p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
 			return;
 		}
-		push_error(vformat(R"*(Cannot use dynamic %s for "%s()" in strict dynamic mode.)*", p_kind, p_call->function_name), p_call->arguments[p_argument_index]);
+		push_error(vformat(R"*(Cannot use dynamic %s for "%s()" on type "%s" in strict dynamic mode.)*",
+						   p_kind,
+						   p_call->function_name,
+						   p_base_type.to_string()),
+				p_call->arguments[p_argument_index]);
 	};
 	auto push_strict_unresolved_reflection_error = [&](const GDScriptParser::CallNode *p_call, int p_argument_index, const char *p_kind, const String &p_name) {
 		if (!strict_dynamic_checks || p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
 			return;
 		}
-		push_error(vformat(R"*(Cannot resolve %s "%s" on type "%s" in strict dynamic mode.)*", p_kind, p_name, p_base_type.to_string()), p_call->arguments[p_argument_index]);
+		String kind = p_kind;
+		if (kind.ends_with(" name")) {
+			kind = kind.substr(0, kind.length() - 5);
+		}
+		push_error(vformat(R"*(Cannot resolve %s "%s" on type "%s" for "%s()" in strict dynamic mode.)*",
+						   kind,
+						   p_name,
+						   p_base_type.to_string(),
+						   p_call->function_name),
+				p_call->arguments[p_argument_index]);
 	};
 
 	if (p_function == SNAME("call") || p_function == SNAME("call_deferred") || p_function == SNAME("callv")) {
@@ -7437,9 +7545,16 @@ void GDScriptAnalyzer::validate_strict_signal_name_fallback(const GDScriptParser
 
 	StringName signal_name;
 	if (signal_name_from_constant_arg(p_call, p_signal_arg_index, signal_name)) {
-		push_error(vformat(R"*(Cannot resolve signal "%s" on type "%s" in strict dynamic mode.)*", signal_name, p_receiver_type.to_string()), p_call->arguments[p_signal_arg_index]);
+		push_error(vformat(R"*(Cannot resolve signal "%s" on type "%s" for "%s()" in strict dynamic mode.)*",
+						   signal_name,
+						   p_receiver_type.to_string(),
+						   p_call->function_name),
+				p_call->arguments[p_signal_arg_index]);
 	} else if (call_argument_can_be_string_name(p_call, p_signal_arg_index)) {
-		push_error("Cannot use dynamic signal name in strict dynamic mode.", p_call->arguments[p_signal_arg_index]);
+		push_error(vformat(R"*(Cannot use dynamic signal name for "%s()" on type "%s" in strict dynamic mode.)*",
+						   p_call->function_name,
+						   p_receiver_type.to_string()),
+				p_call->arguments[p_signal_arg_index]);
 	}
 }
 
@@ -7466,11 +7581,12 @@ void GDScriptAnalyzer::validate_signal_connect_arg(const GDScriptParser::DataTyp
 	const int callable_argument_count = callable_parameter_types.size();
 	const int callable_min_argument_count = callable_argument_count - callable_default_arg_count;
 	const StringName action_name = p_call->function_name == SNAME("disconnect") ? SNAME("disconnect") : (p_call->function_name == SNAME("is_connected") ? StringName("check connection for") : SNAME("connect"));
+	const String callable_type_string = callable_type_string_with_signature(callable_type, callable_parameter_types);
 	if (!_method_signature_accepts_argument_count(signal_argument_count, callable_argument_count, callable_default_arg_count, callable_is_vararg, callable_type.method_extra_allowed_argument_counts)) {
 		push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal emits %d arguments but callable expects %s%d.)*",
 						   action_name,
 						   p_signal_type.to_string(),
-						   callable_type.to_string(),
+						   callable_type_string,
 						   signal_argument_count,
 						   callable_default_arg_count > 0 ? "at least " : "",
 						   callable_default_arg_count > 0 ? callable_min_argument_count : callable_argument_count),
@@ -7489,14 +7605,26 @@ void GDScriptAnalyzer::validate_signal_connect_arg(const GDScriptParser::DataTyp
 		const GDScriptParser::DataType &signal_parameter_type = p_signal_type.method_parameter_types[i];
 		const bool nullable_mismatch = strict_null_checks && signal_parameter_type.is_nullable && !callable_parameter_type.is_nullable && !callable_parameter_type.is_variant();
 		if (nullable_mismatch || !GDScriptTypeCompatibility::check(callable_parameter_type, signal_parameter_type, options).compatible) {
-			push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal argument %d of type "%s" cannot be passed to callable parameter of type "%s".)*",
-							   action_name,
-							   p_signal_type.to_string(),
-							   callable_type.to_string(),
-							   i + 1,
-							   signal_parameter_type.to_string(),
-							   callable_parameter_type.to_string()),
-					p_call->arguments[p_callable_arg_index]);
+			if (nullable_mismatch) {
+				push_error(vformat("Cannot %s signal \"%s\" to callable \"%s\": signal argument %d is nullable "
+								   "type \"%s\", but callable parameter expects non-nullable \"%s\".",
+								   action_name,
+								   p_signal_type.to_string(),
+								   callable_type_string,
+								   i + 1,
+								   signal_parameter_type.to_string(),
+								   callable_parameter_type.to_string()),
+						p_call->arguments[p_callable_arg_index]);
+			} else {
+				push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal argument %d of type "%s" cannot be passed to callable parameter of type "%s".)*",
+								   action_name,
+								   p_signal_type.to_string(),
+								   callable_type_string,
+								   i + 1,
+								   signal_parameter_type.to_string(),
+								   callable_parameter_type.to_string()),
+						p_call->arguments[p_callable_arg_index]);
+			}
 			return;
 		}
 	}
