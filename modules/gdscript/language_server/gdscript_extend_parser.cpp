@@ -32,17 +32,9 @@
 
 #include "../gdscript.h"
 #include "../gdscript_analyzer.h"
-#include "editor/settings/editor_settings.h"
+#include "../gdscript_position.h"
 #include "gdscript_language_protocol.h"
 #include "gdscript_workspace.h"
-
-int get_indent_size() {
-	if (EditorSettings::get_singleton()) {
-		return EditorSettings::get_singleton()->get_setting("text_editor/behavior/indent/size");
-	} else {
-		return 4;
-	}
-}
 
 LSP::Position GodotPosition::to_lsp(const Vector<String> &p_lines) const {
 	LSP::Position res;
@@ -63,28 +55,7 @@ LSP::Position GodotPosition::to_lsp(const Vector<String> &p_lines) const {
 		return res;
 	}
 
-	// Note: character outside of `pos_line.length()-1` is valid.
-	res.character = column - 1;
-
-	String pos_line = p_lines[res.line];
-	if (pos_line.contains_char('\t')) {
-		int tab_size = get_indent_size();
-
-		int in_col = 1;
-		int res_char = 0;
-
-		while (res_char < pos_line.size() && in_col < column) {
-			if (pos_line[res_char] == '\t') {
-				in_col += tab_size;
-				res_char++;
-			} else {
-				in_col++;
-				res_char++;
-			}
-		}
-
-		res.character = res_char;
-	}
+	res.character = GDScriptTextPosition::godot_column_to_text_column(p_lines[res.line], column);
 
 	return res;
 }
@@ -97,18 +68,7 @@ GodotPosition GodotPosition::from_lsp(const LSP::Position p_pos, const Vector<St
 		return res;
 	}
 
-	String line = p_lines[p_pos.line];
-	int tabs_before_char = 0;
-	for (int i = 0; i < p_pos.character && i < line.length(); i++) {
-		if (line[i] == '\t') {
-			tabs_before_char++;
-		}
-	}
-
-	if (tabs_before_char > 0) {
-		int tab_size = get_indent_size();
-		res.column += tabs_before_char * (tab_size - 1);
-	}
+	res.column = GDScriptTextPosition::text_column_to_godot_column(p_lines[p_pos.line], p_pos.character);
 
 	return res;
 }

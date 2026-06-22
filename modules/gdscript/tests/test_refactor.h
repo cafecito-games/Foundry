@@ -66,20 +66,39 @@ inline RefactorLocation caret(int p_line, int p_column) {
 	return loc;
 }
 
+inline RefactorResult run_type_annotation(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://type_annotation_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::ADD_TYPE_ANNOTATION, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		REQUIRE_EQ(available.size(), 1);
+		REQUIRE_EQ(available.size(), 2);
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 		CHECK_FALSE(available[0].enabled);
 		CHECK_FALSE(available[0].disabled_reason.is_empty());
+		CHECK_EQ(available[1].kind, RefactorKind::ADD_TYPE_ANNOTATION);
+		CHECK_FALSE(available[1].enabled);
+		CHECK_FALSE(available[1].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Edit application") {
 		auto edit = [](int sl, int sc, int el, int ec, const String &t) {
 			RefactorTextEdit e;
-			e.start_line = sl; e.start_column = sc; e.end_line = el; e.end_column = ec; e.new_text = t;
+			e.start_line = sl;
+			e.start_column = sc;
+			e.end_line = el;
+			e.end_column = ec;
+			e.new_text = t;
 			return e;
 		};
 
@@ -168,13 +187,172 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
 		}
-		SUBCASE("inferred concrete type is not annotatable") {
+		SUBCASE("inferred concrete type is annotatable") {
 			GDScriptParser::DataType dt;
 			dt.kind = GDScriptParser::DataType::BUILTIN;
 			dt.builtin_type = Variant::INT;
 			dt.type_source = GDScriptParser::DataType::INFERRED;
 			String rendered;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "int");
+		}
+		SUBCASE("unresolved type is not annotatable") {
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::UNRESOLVED;
+			dt.type_source = GDScriptParser::DataType::INFERRED;
+			String rendered;
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+		}
+		SUBCASE("null type is not annotatable") {
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::NIL;
+			dt.type_source = GDScriptParser::DataType::INFERRED;
+			String rendered;
+			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+		}
+	}
+
+	TEST_CASE("Add type annotation inserts concrete inferred types") {
+		SUBCASE("variable") {
+			const String source = "var score = 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 1, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "var score: int = 1\n");
+		}
+		SUBCASE("variable without assignment spacing") {
+			const String source = "var score=1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 1, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "var score: int = 1\n");
+		}
+		SUBCASE("constant") {
+			const String source = "const TITLE = \"Cafecito\"\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 2, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "const TITLE: String = \"Cafecito\"\n");
+		}
+		SUBCASE("parameter") {
+			const String source = "func scale(amount = 1.0) -> void:\n\tpass\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func scale(amount: float = 1.0) -> void:\n\tpass\n");
+		}
+		SUBCASE("function return") {
+			const String source = "func make_score():\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func make_score() -> int:\n\treturn 1\n");
+		}
+		SUBCASE("function return when parameter repeats function name") {
+			const String source = "func value(value = 1):\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func value(value = 1) -> int:\n\treturn 1\n");
+		}
+	}
+
+	TEST_CASE("Add type annotation preserves strict type spelling") {
+		const String source =
+				"signal selected(name: String)\n"
+				"func accept_score(score: int) -> bool:\n"
+				"\treturn true\n"
+				"func get_maybe_node() -> Node?:\n"
+				"\treturn null\n"
+				"func get_callback() -> Callable[[int], bool]:\n"
+				"\treturn accept_score\n"
+				"func get_selected() -> Signal[[String]]:\n"
+				"\treturn selected\n"
+				"func get_nested() -> Dictionary[String, Array[Callable[[int], bool]]]:\n"
+				"\treturn {}\n"
+				"var maybe_node = get_maybe_node()\n"
+				"var callback = get_callback()\n"
+				"var selected_signal = get_selected()\n"
+				"var nested = get_nested()\n";
+
+		SUBCASE("nullable") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 11, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var maybe_node: Node? = get_maybe_node()"));
+		}
+		SUBCASE("callable signature") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 12, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var callback: Callable[[int], bool] = get_callback()"));
+		}
+		SUBCASE("signal signature") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 13, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var selected_signal: Signal[[String]] = get_selected()"));
+		}
+		SUBCASE("nested typed containers") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 14, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var nested: Dictionary[String, Array[Callable[[int], bool]]] = get_nested()"));
+		}
+	}
+
+	TEST_CASE("Add type annotation repairs inferred declaration syntax") {
+		const String source =
+				"func typed_value() -> int:\n"
+				"\treturn 1\n"
+				"func run(value := typed_value()) -> void:\n"
+				"\tvar local := typed_value()\n";
+
+		SUBCASE("variable colon-equals") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar local: int = typed_value()"));
+			CHECK_FALSE(out.contains("local :="));
+		}
+		SUBCASE("parameter colon-equals") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 10, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func run(value: int = typed_value()) -> void:"));
+			CHECK_FALSE(out.contains("value :="));
+		}
+	}
+
+	TEST_CASE("Add type annotation rejects non-annotatable inferred types") {
+		SUBCASE("variant inferred variable") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"var value = dynamic_value()\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("already explicit variable") {
+			const String source = "var value: int = 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("return-less function with variant return") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"func passthrough():\n"
+					"\treturn dynamic_value()\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
 		}
 	}
 
@@ -235,7 +413,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 1);
+			REQUIRE_EQ(available.size(), 2);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -263,7 +441,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 1);
+			REQUIRE_EQ(available.size(), 2);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdscript_refactoring_types.cpp                                        */
+/*  gdscript_position.cpp                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,28 +28,47 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "gdscript_refactoring_types.h"
+#include "gdscript_position.h"
 
 #ifdef TOOLS_ENABLED
+#include "editor/settings/editor_settings.h"
+#endif
 
-bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_rendered) {
-	if (!p_type.is_set() || p_type.is_variant()) {
-		return false;
+int GDScriptTextPosition::get_indent_size() {
+#ifdef TOOLS_ENABLED
+	if (EditorSettings::get_singleton()) {
+		return EditorSettings::get_singleton()->get_setting("text_editor/behavior/indent/size");
 	}
-	if (p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL) {
-		return false;
-	}
-	if (p_type.is_meta_type || p_type.is_pseudo_type) {
-		return false;
-	}
-	String rendered = p_type.to_string();
-	// A concrete, non-Variant type can still stringify to empty or placeholder
-	// text (e.g. an invalid script reference), which is not a usable annotation.
-	if (rendered.is_empty() || rendered == "null" || rendered.contains("<unresolved type>")) {
-		return false;
-	}
-	r_rendered = rendered;
-	return true;
+#endif
+	return 4;
 }
 
-#endif // TOOLS_ENABLED
+int GDScriptTextPosition::godot_column_to_text_column(const String &p_line, int p_column) {
+	if (p_column <= 1) {
+		return 0;
+	}
+
+	const int tab_size = get_indent_size();
+	int text_column = 0;
+	int godot_column = 1;
+	while (text_column < p_line.length() && godot_column < p_column) {
+		if (p_line[text_column] == '\t') {
+			godot_column += tab_size;
+		} else {
+			godot_column++;
+		}
+		text_column++;
+	}
+	return text_column;
+}
+
+int GDScriptTextPosition::text_column_to_godot_column(const String &p_line, int p_text_column) {
+	int godot_column = p_text_column + 1;
+	const int tab_size = get_indent_size();
+	for (int i = 0; i < p_text_column && i < p_line.length(); i++) {
+		if (p_line[i] == '\t') {
+			godot_column += tab_size - 1;
+		}
+	}
+	return godot_column;
+}
