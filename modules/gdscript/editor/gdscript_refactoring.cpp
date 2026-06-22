@@ -67,6 +67,27 @@ struct ExtractVariableCandidate {
 	int name_column = -1;
 };
 
+struct ExtractMethodParameter {
+	StringName name;
+	GDScriptParser::DataType datatype;
+};
+
+struct ExtractMethodLocal {
+	StringName name;
+	GDScriptParser::DataType datatype;
+};
+
+struct ExtractMethodCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	String suggested_name;
+	RefactorTextEdit replacement_edit;
+	RefactorTextEdit method_edit;
+	int name_line = -1;
+	int name_column = -1;
+};
+
 struct TypeAnnotationCandidateCache {
 	bool valid = false;
 	String path;
@@ -88,6 +109,17 @@ struct ExtractVariableCandidateCache {
 };
 
 ExtractVariableCandidateCache extract_variable_cache;
+
+struct ExtractMethodCandidateCache {
+	bool valid = false;
+	String path;
+	uint64_t source_hash = 0;
+	int source_length = 0;
+	RefactorLocation location;
+	ExtractMethodCandidate candidate;
+};
+
+ExtractMethodCandidateCache extract_method_cache;
 
 bool same_location(const RefactorLocation &p_a, const RefactorLocation &p_b) {
 	return p_a.start_line == p_b.start_line &&
@@ -205,6 +237,53 @@ String get_leading_whitespace(const String &p_line) {
 		end++;
 	}
 	return p_line.substr(0, end);
+}
+
+bool string_name_vector_has(const Vector<StringName> &p_names, const StringName &p_name) {
+	for (const StringName &name : p_names) {
+		if (name == p_name) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool extract_method_has_param(const Vector<ExtractMethodParameter> &p_parameters, const StringName &p_name) {
+	for (const ExtractMethodParameter &parameter : p_parameters) {
+		if (parameter.name == p_name) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool extract_method_has_local(const Vector<ExtractMethodLocal> &p_locals, const StringName &p_name) {
+	for (const ExtractMethodLocal &local : p_locals) {
+		if (local.name == p_name) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void extract_method_add_local(
+		Vector<ExtractMethodLocal> &r_locals,
+		const StringName &p_name,
+		const GDScriptParser::DataType &p_datatype) {
+	if (extract_method_has_local(r_locals, p_name)) {
+		return;
+	}
+
+	ExtractMethodLocal local;
+	local.name = p_name;
+	local.datatype = p_datatype;
+	r_locals.push_back(local);
+}
+
+void extract_method_add_name(Vector<StringName> &r_names, const StringName &p_name) {
+	if (!string_name_vector_has(r_names, p_name)) {
+		r_names.push_back(p_name);
+	}
 }
 
 bool get_single_line_selection_text(const Vector<String> &p_lines, const RefactorLocation &p_location, String &r_text) {
@@ -648,6 +727,842 @@ bool find_type_annotation_in_suite(const RefactorLocation &p_location, const Vec
 
 bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, ExtractVariableCandidate &r_candidate);
 
+int get_node_start_line_0(const GDScriptParser::Node *p_node) {
+	return p_node != nullptr ? p_node->start_line - 1 : -1;
+}
+
+int get_node_end_line_exclusive_0(const GDScriptParser::Node *p_node) {
+	return p_node != nullptr ? p_node->end_line : -1;
+}
+
+bool extract_method_source_before(const GDScriptParser::IdentifierNode *p_identifier, int p_selection_start_line) {
+	if (p_identifier == nullptr) {
+		return false;
+	}
+
+	int start_line = -1;
+	switch (p_identifier->source) {
+		case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+			start_line = get_node_start_line_0(p_identifier->parameter_source);
+			break;
+		case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+			start_line = get_node_start_line_0(p_identifier->variable_source);
+			break;
+		case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+			start_line = get_node_start_line_0(p_identifier->constant_source);
+			break;
+		case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+		case GDScriptParser::IdentifierNode::LOCAL_BIND:
+			start_line = get_node_start_line_0(p_identifier->bind_source);
+			break;
+		default:
+			break;
+	}
+	return start_line >= 0 && start_line < p_selection_start_line;
+}
+
+bool extract_method_source_inside(
+		const GDScriptParser::IdentifierNode *p_identifier,
+		const RefactorLocation &p_location) {
+	if (p_identifier == nullptr) {
+		return false;
+	}
+
+	int start_line = -1;
+	switch (p_identifier->source) {
+		case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+			start_line = get_node_start_line_0(p_identifier->variable_source);
+			break;
+		case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+			start_line = get_node_start_line_0(p_identifier->constant_source);
+			break;
+		case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+		case GDScriptParser::IdentifierNode::LOCAL_BIND:
+			start_line = get_node_start_line_0(p_identifier->bind_source);
+			break;
+		default:
+			break;
+	}
+	return start_line >= p_location.start_line && start_line < p_location.end_line;
+}
+
+bool extract_method_is_local_like_identifier(const GDScriptParser::IdentifierNode *p_identifier) {
+	if (p_identifier == nullptr) {
+		return false;
+	}
+
+	switch (p_identifier->source) {
+		case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+		case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+		case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+		case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+		case GDScriptParser::IdentifierNode::LOCAL_BIND:
+			return true;
+		default:
+			return false;
+	}
+}
+
+struct ExtractMethodReadState {
+	Vector<ExtractMethodParameter> parameters;
+	Vector<ExtractMethodLocal> declared_inside;
+	Vector<StringName> *reads_after = nullptr;
+	String disabled_reason;
+};
+
+void collect_extract_method_expr_reads(
+		const GDScriptParser::ExpressionNode *p_expression,
+		const RefactorLocation &p_location,
+		ExtractMethodReadState &r_state);
+
+void collect_extract_method_stmt_reads(
+		const GDScriptParser::Node *p_statement,
+		const RefactorLocation &p_location,
+		ExtractMethodReadState &r_state);
+
+void collect_extract_method_suite_reads(
+		const GDScriptParser::SuiteNode *p_suite,
+		const RefactorLocation &p_location,
+		ExtractMethodReadState &r_state) {
+	if (p_suite == nullptr || !r_state.disabled_reason.is_empty()) {
+		return;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		collect_extract_method_stmt_reads(statement, p_location, r_state);
+		if (!r_state.disabled_reason.is_empty()) {
+			return;
+		}
+	}
+}
+
+void collect_extract_method_identifier_read(
+		const GDScriptParser::IdentifierNode *p_identifier,
+		const RefactorLocation &p_location,
+		ExtractMethodReadState &r_state) {
+	if (!extract_method_is_local_like_identifier(p_identifier)) {
+		return;
+	}
+
+	if (r_state.reads_after != nullptr) {
+		if (extract_method_source_inside(p_identifier, p_location)) {
+			extract_method_add_name(*r_state.reads_after, p_identifier->name);
+		}
+		return;
+	}
+
+	if (!extract_method_source_before(p_identifier, p_location.start_line) ||
+			extract_method_has_param(r_state.parameters, p_identifier->name)) {
+		return;
+	}
+
+	ExtractMethodParameter parameter;
+	parameter.name = p_identifier->name;
+	parameter.datatype = p_identifier->get_datatype();
+	r_state.parameters.push_back(parameter);
+}
+
+void collect_extract_method_expr_reads(
+		const GDScriptParser::ExpressionNode *p_expression,
+		const RefactorLocation &p_location,
+		ExtractMethodReadState &r_state) {
+	if (p_expression == nullptr || !r_state.disabled_reason.is_empty()) {
+		return;
+	}
+
+	switch (p_expression->type) {
+		case GDScriptParser::Node::AWAIT:
+			r_state.disabled_reason = "Cannot extract statements containing await.";
+			return;
+		case GDScriptParser::Node::IDENTIFIER:
+			collect_extract_method_identifier_read(
+					static_cast<const GDScriptParser::IdentifierNode *>(p_expression),
+					p_location,
+					r_state);
+			return;
+		case GDScriptParser::Node::ARRAY: {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				collect_extract_method_expr_reads(element, p_location, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
+			if (assignment->operation != GDScriptParser::AssignmentNode::OP_NONE) {
+				collect_extract_method_expr_reads(assignment->assignee, p_location, r_state);
+			}
+			collect_extract_method_expr_reads(assignment->assigned_value, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
+			collect_extract_method_expr_reads(binary->left_operand, p_location, r_state);
+			collect_extract_method_expr_reads(binary->right_operand, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
+			collect_extract_method_expr_reads(call->callee, p_location, r_state);
+			for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
+				collect_extract_method_expr_reads(argument, p_location, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::CAST: {
+			const GDScriptParser::CastNode *cast = static_cast<const GDScriptParser::CastNode *>(p_expression);
+			collect_extract_method_expr_reads(cast->operand, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::DICTIONARY: {
+			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
+			for (const GDScriptParser::DictionaryNode::Pair &pair : dictionary->elements) {
+				collect_extract_method_expr_reads(pair.key, p_location, r_state);
+				collect_extract_method_expr_reads(pair.value, p_location, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::GET_NODE:
+			break;
+		case GDScriptParser::Node::LAMBDA:
+			r_state.disabled_reason = "Cannot extract statements containing a lambda.";
+			return;
+		case GDScriptParser::Node::LITERAL:
+			break;
+		case GDScriptParser::Node::PRELOAD:
+			break;
+		case GDScriptParser::Node::SELF:
+			break;
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			collect_extract_method_expr_reads(subscript->base, p_location, r_state);
+			if (!subscript->is_attribute) {
+				collect_extract_method_expr_reads(subscript->index, p_location, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
+			collect_extract_method_expr_reads(ternary->condition, p_location, r_state);
+			collect_extract_method_expr_reads(ternary->true_expr, p_location, r_state);
+			collect_extract_method_expr_reads(ternary->false_expr, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::TYPE_TEST: {
+			const GDScriptParser::TypeTestNode *type_test = static_cast<const GDScriptParser::TypeTestNode *>(p_expression);
+			collect_extract_method_expr_reads(type_test->operand, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::UNARY_OPERATOR: {
+			const GDScriptParser::UnaryOpNode *unary = static_cast<const GDScriptParser::UnaryOpNode *>(p_expression);
+			collect_extract_method_expr_reads(unary->operand, p_location, r_state);
+		} break;
+		default:
+			break;
+	}
+}
+
+void collect_extract_method_stmt_reads(
+		const GDScriptParser::Node *p_statement,
+		const RefactorLocation &p_location,
+		ExtractMethodReadState &r_state) {
+	if (p_statement == nullptr || !r_state.disabled_reason.is_empty()) {
+		return;
+	}
+
+	switch (p_statement->type) {
+		case GDScriptParser::Node::RETURN:
+			r_state.disabled_reason = "Cannot extract statements containing return.";
+			return;
+		case GDScriptParser::Node::BREAK:
+			r_state.disabled_reason = "Cannot extract statements containing break.";
+			return;
+		case GDScriptParser::Node::CONTINUE:
+			r_state.disabled_reason = "Cannot extract statements containing continue.";
+			return;
+		case GDScriptParser::Node::AWAIT:
+			r_state.disabled_reason = "Cannot extract statements containing await.";
+			return;
+		case GDScriptParser::Node::VARIABLE: {
+			const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_statement);
+			if (r_state.reads_after == nullptr && variable->identifier != nullptr) {
+				extract_method_add_local(r_state.declared_inside, variable->identifier->name, variable->get_datatype());
+			}
+			collect_extract_method_expr_reads(variable->initializer, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::CONSTANT: {
+			const GDScriptParser::ConstantNode *constant = static_cast<const GDScriptParser::ConstantNode *>(p_statement);
+			if (r_state.reads_after == nullptr && constant->identifier != nullptr) {
+				extract_method_add_local(r_state.declared_inside, constant->identifier->name, constant->get_datatype());
+			}
+			collect_extract_method_expr_reads(constant->initializer, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::ASSIGNMENT:
+			collect_extract_method_expr_reads(
+					static_cast<const GDScriptParser::AssignmentNode *>(p_statement),
+					p_location,
+					r_state);
+			break;
+		case GDScriptParser::Node::ASSERT: {
+			const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(p_statement);
+			collect_extract_method_expr_reads(assert_node->condition, p_location, r_state);
+			collect_extract_method_expr_reads(assert_node->message, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_statement);
+			collect_extract_method_expr_reads(if_node->condition, p_location, r_state);
+			collect_extract_method_suite_reads(if_node->true_block, p_location, r_state);
+			collect_extract_method_suite_reads(if_node->false_block, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::FOR: {
+			const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_statement);
+			collect_extract_method_expr_reads(for_node->list, p_location, r_state);
+			collect_extract_method_suite_reads(for_node->loop, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::WHILE: {
+			const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(p_statement);
+			collect_extract_method_expr_reads(while_node->condition, p_location, r_state);
+			collect_extract_method_suite_reads(while_node->loop, p_location, r_state);
+		} break;
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
+			collect_extract_method_expr_reads(match_node->test, p_location, r_state);
+			for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+				if (branch != nullptr) {
+					collect_extract_method_suite_reads(branch->block, p_location, r_state);
+				}
+			}
+		} break;
+		default:
+			if (p_statement->is_expression()) {
+				collect_extract_method_expr_reads(
+						static_cast<const GDScriptParser::ExpressionNode *>(p_statement),
+						p_location,
+						r_state);
+			}
+			break;
+	}
+}
+
+void collect_extract_method_reads_after(
+		const GDScriptParser::SuiteNode *p_suite,
+		const RefactorLocation &p_location,
+		Vector<StringName> &r_reads_after,
+		String &r_disabled_reason) {
+	if (p_suite == nullptr || !r_disabled_reason.is_empty()) {
+		return;
+	}
+
+	ExtractMethodReadState state;
+	state.reads_after = &r_reads_after;
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		if (get_node_start_line_0(statement) >= p_location.end_line) {
+			collect_extract_method_stmt_reads(statement, p_location, state);
+			if (!state.disabled_reason.is_empty()) {
+				r_disabled_reason = state.disabled_reason;
+				return;
+			}
+		}
+	}
+}
+
+void collect_extract_method_external_assigns_in_suite(
+		const GDScriptParser::SuiteNode *p_suite,
+		const RefactorLocation &p_location,
+		Vector<StringName> &r_assigned_existing);
+
+void collect_extract_method_external_assign(
+		const GDScriptParser::ExpressionNode *p_expression,
+		const RefactorLocation &p_location,
+		Vector<StringName> &r_assigned_existing) {
+	if (p_expression == nullptr) {
+		return;
+	}
+	if (p_expression->type != GDScriptParser::Node::IDENTIFIER) {
+		return;
+	}
+
+	const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
+	if (!extract_method_source_inside(identifier, p_location)) {
+		extract_method_add_name(r_assigned_existing, identifier->name);
+	}
+}
+
+void collect_extract_method_external_assigns_in_statement(
+		const GDScriptParser::Node *p_statement,
+		const RefactorLocation &p_location,
+		Vector<StringName> &r_assigned_existing) {
+	if (p_statement == nullptr) {
+		return;
+	}
+
+	switch (p_statement->type) {
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_statement);
+			collect_extract_method_external_assign(assignment->assignee, p_location, r_assigned_existing);
+		} break;
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_statement);
+			collect_extract_method_external_assigns_in_suite(if_node->true_block, p_location, r_assigned_existing);
+			collect_extract_method_external_assigns_in_suite(if_node->false_block, p_location, r_assigned_existing);
+		} break;
+		case GDScriptParser::Node::FOR:
+			collect_extract_method_external_assigns_in_suite(
+					static_cast<const GDScriptParser::ForNode *>(p_statement)->loop,
+					p_location,
+					r_assigned_existing);
+			break;
+		case GDScriptParser::Node::WHILE:
+			collect_extract_method_external_assigns_in_suite(
+					static_cast<const GDScriptParser::WhileNode *>(p_statement)->loop,
+					p_location,
+					r_assigned_existing);
+			break;
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
+			for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+				if (branch != nullptr) {
+					collect_extract_method_external_assigns_in_suite(branch->block, p_location, r_assigned_existing);
+				}
+			}
+		} break;
+		default:
+			break;
+	}
+}
+
+void collect_extract_method_external_assigns_in_suite(
+		const GDScriptParser::SuiteNode *p_suite,
+		const RefactorLocation &p_location,
+		Vector<StringName> &r_assigned_existing) {
+	if (p_suite == nullptr) {
+		return;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		collect_extract_method_external_assigns_in_statement(statement, p_location, r_assigned_existing);
+	}
+}
+
+bool find_extract_method_range(
+		const RefactorLocation &p_location,
+		const GDScriptParser::SuiteNode *p_suite,
+		int &r_first_statement,
+		int &r_last_statement) {
+	if (p_suite == nullptr || !p_location.has_selection() || p_location.start_column != 0 || p_location.end_column != 0) {
+		return false;
+	}
+
+	r_first_statement = -1;
+	r_last_statement = -1;
+	for (int i = 0; i < p_suite->statements.size(); i++) {
+		const GDScriptParser::Node *statement = p_suite->statements[i];
+		if (statement == nullptr) {
+			continue;
+		}
+		if (get_node_start_line_0(statement) == p_location.start_line) {
+			r_first_statement = i;
+		}
+		if (get_node_end_line_exclusive_0(statement) == p_location.end_line) {
+			r_last_statement = i;
+		}
+	}
+
+	return r_first_statement >= 0 && r_last_statement >= r_first_statement;
+}
+
+String make_unique_method_name(const GDScriptParser::ClassNode *p_class) {
+	const String base = "_extracted_method";
+	String name = base;
+	int suffix = 2;
+	String reason;
+	while (!GDScriptRefactorNames::validate_identifier(name, reason) ||
+			(p_class != nullptr && p_class->has_member(StringName(name)))) {
+		name = vformat("%s_%d", base, suffix);
+		suffix++;
+		if (suffix > 1000) {
+			return String();
+		}
+	}
+	return name;
+}
+
+String build_extract_method_body(
+		const Vector<String> &p_lines,
+		int p_start_line,
+		int p_end_line,
+		const String &p_remove_indent,
+		const String &p_add_indent) {
+	String body;
+	for (int line_index = p_start_line; line_index < p_end_line && line_index < p_lines.size(); line_index++) {
+		const String line = p_lines[line_index];
+		if (line.strip_edges().is_empty()) {
+			body += "\n";
+			continue;
+		}
+		if (!p_remove_indent.is_empty() && line.begins_with(p_remove_indent)) {
+			body += p_add_indent + line.substr(p_remove_indent.length()) + "\n";
+		} else {
+			body += p_add_indent + line + "\n";
+		}
+	}
+	return body;
+}
+
+bool extract_method_position_is_eof(
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		int p_line) {
+	return !p_source_has_final_newline && p_line == p_lines.size() && p_line > 0;
+}
+
+void set_extract_method_edit_line_end(
+		RefactorTextEdit &r_edit,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		int p_line) {
+	if (extract_method_position_is_eof(p_lines, p_source_has_final_newline, p_line)) {
+		r_edit.end_line = p_line - 1;
+		r_edit.end_column = p_lines[p_line - 1].length();
+		return;
+	}
+
+	r_edit.end_line = p_line;
+	r_edit.end_column = 0;
+}
+
+void set_extract_method_insertion(
+		RefactorTextEdit &r_edit,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		int p_line,
+		const String &p_method_text) {
+	if (extract_method_position_is_eof(p_lines, p_source_has_final_newline, p_line)) {
+		r_edit.start_line = p_line - 1;
+		r_edit.start_column = p_lines[p_line - 1].length();
+		r_edit.end_line = r_edit.start_line;
+		r_edit.end_column = r_edit.start_column;
+		r_edit.new_text = "\n\n" + p_method_text;
+		return;
+	}
+
+	r_edit.start_line = p_line;
+	r_edit.start_column = 0;
+	r_edit.end_line = p_line;
+	r_edit.end_column = 0;
+	r_edit.new_text = "\n" + p_method_text;
+}
+
+ExtractMethodCandidate build_extract_method_candidate(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		const GDScriptParser::SuiteNode *p_suite,
+		int p_first_statement,
+		int p_last_statement) {
+	ExtractMethodCandidate candidate;
+	candidate.matched = true;
+
+	if (p_function == nullptr || p_suite == nullptr || p_function->body == nullptr) {
+		candidate.disabled_reason = "Select whole statements inside one function body.";
+		return candidate;
+	}
+	if (p_location.start_line < 0 || p_location.start_line >= p_lines.size() ||
+			p_location.end_line <= p_location.start_line || p_location.end_line > p_lines.size()) {
+		candidate.disabled_reason = "Select whole statements inside one function body.";
+		return candidate;
+	}
+
+	ExtractMethodReadState read_state;
+	for (int i = p_first_statement; i <= p_last_statement; i++) {
+		collect_extract_method_stmt_reads(p_suite->statements[i], p_location, read_state);
+		if (!read_state.disabled_reason.is_empty()) {
+			candidate.disabled_reason = read_state.disabled_reason;
+			return candidate;
+		}
+	}
+
+	Vector<StringName> reads_after;
+	String disabled_reason;
+	collect_extract_method_reads_after(p_suite, p_location, reads_after, disabled_reason);
+	if (!disabled_reason.is_empty()) {
+		candidate.disabled_reason = disabled_reason;
+		return candidate;
+	}
+
+	Vector<StringName> assigned_existing;
+	for (int i = p_first_statement; i <= p_last_statement; i++) {
+		collect_extract_method_external_assigns_in_statement(p_suite->statements[i], p_location, assigned_existing);
+	}
+	if (!assigned_existing.is_empty()) {
+		candidate.disabled_reason = "Cannot extract an assignment to an existing local.";
+		return candidate;
+	}
+
+	Vector<ExtractMethodLocal> outputs;
+	for (const ExtractMethodLocal &local : read_state.declared_inside) {
+		if (string_name_vector_has(reads_after, local.name)) {
+			outputs.push_back(local);
+		}
+	}
+	if (outputs.size() > 1) {
+		candidate.disabled_reason = "Extract method does not support multiple output values yet.";
+		return candidate;
+	}
+
+	Vector<String> rendered_parameter_types;
+	for (const ExtractMethodParameter &parameter : read_state.parameters) {
+		String rendered_type;
+		if (!GDScriptRefactorTypes::render_annotatable_type(parameter.datatype, rendered_type)) {
+			candidate.disabled_reason = vformat("Cannot render a type for parameter '%s'.", String(parameter.name));
+			return candidate;
+		}
+		rendered_parameter_types.push_back(rendered_type);
+	}
+
+	String rendered_return_type = "void";
+	if (outputs.size() == 1 &&
+			!GDScriptRefactorTypes::render_annotatable_type(outputs[0].datatype, rendered_return_type)) {
+		candidate.disabled_reason = vformat("Cannot render a return type for '%s'.", String(outputs[0].name));
+		return candidate;
+	}
+
+	const String method_name = make_unique_method_name(p_class);
+	if (method_name.is_empty()) {
+		candidate.disabled_reason = "Cannot suggest a safe method name.";
+		return candidate;
+	}
+
+	const String function_indent = get_leading_whitespace(p_lines[p_function->start_line - 1]);
+	const String statement_indent = get_leading_whitespace(p_lines[p_location.start_line]);
+	const String method_body_indent = function_indent + "\t";
+
+	String parameter_list;
+	String argument_list;
+	for (int i = 0; i < read_state.parameters.size(); i++) {
+		if (i > 0) {
+			parameter_list += ", ";
+			argument_list += ", ";
+		}
+		parameter_list += String(read_state.parameters[i].name) + ": " + rendered_parameter_types[i];
+		argument_list += String(read_state.parameters[i].name);
+	}
+
+	const String call = method_name + "(" + argument_list + ")";
+	candidate.replacement_edit.start_line = p_location.start_line;
+	candidate.replacement_edit.start_column = 0;
+	set_extract_method_edit_line_end(
+			candidate.replacement_edit,
+			p_lines,
+			p_source_has_final_newline,
+			p_location.end_line);
+	if (outputs.size() == 1) {
+		candidate.replacement_edit.new_text = statement_indent + "var " + String(outputs[0].name) + ": " +
+				rendered_return_type + " = " + call + "\n";
+	} else {
+		candidate.replacement_edit.new_text = statement_indent + call + "\n";
+	}
+
+	String method_text = function_indent + "func " + method_name + "(" + parameter_list + ") -> " +
+			rendered_return_type + ":\n";
+	method_text += build_extract_method_body(
+			p_lines,
+			p_location.start_line,
+			p_location.end_line,
+			statement_indent,
+			method_body_indent);
+	if (outputs.size() == 1) {
+		method_text += method_body_indent + "return " + String(outputs[0].name) + "\n";
+	}
+
+	const int insertion_line = p_function->end_line;
+	set_extract_method_insertion(
+			candidate.method_edit,
+			p_lines,
+			p_source_has_final_newline,
+			insertion_line,
+			method_text);
+	candidate.suggested_name = method_name;
+	candidate.name_line = insertion_line + 1;
+	candidate.name_column = function_indent.length() + String("func ").length();
+	candidate.enabled = true;
+	return candidate;
+}
+
+bool find_extract_method_in_suite(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		const GDScriptParser::SuiteNode *p_suite,
+		ExtractMethodCandidate &r_candidate);
+
+bool find_extract_method_in_children(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		const GDScriptParser::Node *p_statement,
+		ExtractMethodCandidate &r_candidate) {
+	if (p_statement == nullptr) {
+		return false;
+	}
+
+	switch (p_statement->type) {
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_statement);
+			return find_extract_method_in_suite(
+						   p_location,
+						   p_lines,
+						   p_source_has_final_newline,
+						   p_class,
+						   p_function,
+						   if_node->true_block,
+						   r_candidate) ||
+					find_extract_method_in_suite(
+							p_location,
+							p_lines,
+							p_source_has_final_newline,
+							p_class,
+							p_function,
+							if_node->false_block,
+							r_candidate);
+		}
+		case GDScriptParser::Node::FOR:
+			return find_extract_method_in_suite(
+					p_location,
+					p_lines,
+					p_source_has_final_newline,
+					p_class,
+					p_function,
+					static_cast<const GDScriptParser::ForNode *>(p_statement)->loop,
+					r_candidate);
+		case GDScriptParser::Node::WHILE:
+			return find_extract_method_in_suite(
+					p_location,
+					p_lines,
+					p_source_has_final_newline,
+					p_class,
+					p_function,
+					static_cast<const GDScriptParser::WhileNode *>(p_statement)->loop,
+					r_candidate);
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
+			for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+				if (branch != nullptr &&
+						find_extract_method_in_suite(
+								p_location,
+								p_lines,
+								p_source_has_final_newline,
+								p_class,
+								p_function,
+								branch->block,
+								r_candidate)) {
+					return true;
+				}
+			}
+		} break;
+		default:
+			break;
+	}
+	return false;
+}
+
+bool find_extract_method_in_suite(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		const GDScriptParser::SuiteNode *p_suite,
+		ExtractMethodCandidate &r_candidate) {
+	if (p_suite == nullptr) {
+		return false;
+	}
+
+	int first_statement = -1;
+	int last_statement = -1;
+	if (find_extract_method_range(p_location, p_suite, first_statement, last_statement)) {
+		r_candidate = build_extract_method_candidate(
+				p_location,
+				p_lines,
+				p_source_has_final_newline,
+				p_class,
+				p_function,
+				p_suite,
+				first_statement,
+				last_statement);
+		return true;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (find_extract_method_in_children(
+					p_location,
+					p_lines,
+					p_source_has_final_newline,
+					p_class,
+					p_function,
+					statement,
+					r_candidate)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool find_extract_method_in_function(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		ExtractMethodCandidate &r_candidate) {
+	if (p_function == nullptr || p_function->body == nullptr) {
+		return false;
+	}
+	return find_extract_method_in_suite(
+			p_location,
+			p_lines,
+			p_source_has_final_newline,
+			p_class,
+			p_function,
+			p_function->body,
+			r_candidate);
+}
+
+bool find_extract_method_in_class(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		const GDScriptParser::ClassNode *p_class,
+		ExtractMethodCandidate &r_candidate) {
+	if (p_class == nullptr) {
+		return false;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (find_extract_method_in_function(
+							p_location,
+							p_lines,
+							p_source_has_final_newline,
+							p_class,
+							member.function,
+							r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				if (find_extract_method_in_class(p_location, p_lines, p_source_has_final_newline, member.m_class, r_candidate)) {
+					return true;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
 bool find_extract_variable_in_function(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, ExtractVariableCandidate &r_candidate) {
 	if (p_function == nullptr || p_function->body == nullptr) {
 		return false;
@@ -826,6 +1741,33 @@ void cache_extract_variable_candidate(const RefactorContext &p_context, const Re
 	extract_variable_cache.candidate = p_candidate;
 }
 
+bool get_cached_extract_method_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		ExtractMethodCandidate &r_candidate) {
+	if (!extract_method_cache.valid ||
+			extract_method_cache.path != p_context.path ||
+			extract_method_cache.source_hash != p_context.source.hash64() ||
+			extract_method_cache.source_length != p_context.source.length() ||
+			!same_location(extract_method_cache.location, p_location)) {
+		return false;
+	}
+	r_candidate = extract_method_cache.candidate;
+	return true;
+}
+
+void cache_extract_method_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const ExtractMethodCandidate &p_candidate) {
+	extract_method_cache.valid = true;
+	extract_method_cache.path = p_context.path;
+	extract_method_cache.source_hash = p_context.source.hash64();
+	extract_method_cache.source_length = p_context.source.length();
+	extract_method_cache.location = p_location;
+	extract_method_cache.candidate = p_candidate;
+}
+
 TypeAnnotationCandidate find_type_annotation_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
 	TypeAnnotationCandidate candidate;
 
@@ -842,6 +1784,20 @@ ExtractVariableCandidate find_extract_variable_candidate_in_tree(const RefactorL
 	_ALLOW_DISCARD_ find_extract_variable_in_class(p_location, p_lines, p_tree, candidate);
 	if (!candidate.matched && candidate.disabled_reason.is_empty()) {
 		candidate.disabled_reason = "Select one complete expression that can be safely extracted.";
+	}
+	return candidate;
+}
+
+ExtractMethodCandidate find_extract_method_candidate_in_tree(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		bool p_source_has_final_newline,
+		const GDScriptParser::ClassNode *p_tree) {
+	ExtractMethodCandidate candidate;
+
+	_ALLOW_DISCARD_ find_extract_method_in_class(p_location, p_lines, p_source_has_final_newline, p_tree, candidate);
+	if (!candidate.matched && candidate.disabled_reason.is_empty()) {
+		candidate.disabled_reason = "Select complete statements inside one function body.";
 	}
 	return candidate;
 }
@@ -875,6 +1831,47 @@ ExtractVariableCandidate find_extract_variable_candidate_uncached(const Refactor
 	return find_extract_variable_candidate_in_tree(p_location, p_lines, parser.get_tree());
 }
 
+ExtractMethodCandidate find_extract_method_candidate_uncached(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines) {
+	const bool source_has_final_newline = p_context.source.ends_with("\n");
+#ifndef GDSCRIPT_NO_LSP
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	const ExtendGDScriptParser *lsp_parser = protocol != nullptr ? protocol->get_parse_result(p_context.path) : nullptr;
+	if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+		if (lsp_parser->parse_result != OK) {
+			ExtractMethodCandidate candidate;
+			candidate.disabled_reason = "Cannot analyze this script.";
+			return candidate;
+		}
+		return find_extract_method_candidate_in_tree(
+				p_location,
+				p_lines,
+				source_has_final_newline,
+				lsp_parser->get_tree());
+	}
+#endif // GDSCRIPT_NO_LSP
+
+	GDScriptParser parser;
+	Error err = parser.parse(p_context.source, p_context.path, false);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&parser);
+		err = analyzer.analyze();
+	}
+	if (err != OK) {
+		ExtractMethodCandidate candidate;
+		candidate.disabled_reason = "Cannot analyze this script.";
+		return candidate;
+	}
+
+	return find_extract_method_candidate_in_tree(
+			p_location,
+			p_lines,
+			source_has_final_newline,
+			parser.get_tree());
+}
+
 ExtractVariableCandidate find_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	ExtractVariableCandidate candidate;
 	if (get_cached_extract_variable_candidate(p_context, p_location, candidate)) {
@@ -903,6 +1900,31 @@ ExtractVariableCandidate find_extract_variable_candidate(const RefactorContext &
 	return candidate;
 }
 
+ExtractMethodCandidate find_extract_method_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location) {
+	ExtractMethodCandidate candidate;
+	if (get_cached_extract_method_candidate(p_context, p_location, candidate)) {
+		return candidate;
+	}
+
+	if (!p_location.has_selection()) {
+		candidate.disabled_reason = "Select complete statements to extract.";
+		cache_extract_method_candidate(p_context, p_location, candidate);
+		return candidate;
+	}
+	if (!is_location_ordered(p_location)) {
+		candidate.disabled_reason = "Select complete statements to extract.";
+		cache_extract_method_candidate(p_context, p_location, candidate);
+		return candidate;
+	}
+
+	const Vector<String> lines = p_context.source.split("\n");
+	candidate = find_extract_method_candidate_uncached(p_context, p_location, lines);
+	cache_extract_method_candidate(p_context, p_location, candidate);
+	return candidate;
+}
+
 RefactorResult prepare_extract_variable(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	RefactorResult result;
 	const ExtractVariableCandidate candidate = find_extract_variable_candidate(p_context, p_location);
@@ -918,6 +1940,24 @@ RefactorResult prepare_extract_variable(const RefactorContext &p_context, const 
 	result.rename_anchor_column = candidate.name_column;
 	result.edits.push_back(candidate.declaration_edit);
 	result.edits.push_back(candidate.replacement_edit);
+	return result;
+}
+
+RefactorResult prepare_extract_method(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	RefactorResult result;
+	const ExtractMethodCandidate candidate = find_extract_method_candidate(p_context, p_location);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason;
+		return result;
+	}
+
+	result.ok = true;
+	result.suggested_name = candidate.suggested_name;
+	result.rename_anchor_line = candidate.name_line;
+	result.rename_anchor_column = candidate.name_column;
+	result.edits.push_back(candidate.replacement_edit);
+	result.edits.push_back(candidate.method_edit);
 	return result;
 }
 
@@ -1133,6 +2173,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	}
 	result.push_back(extract_variable);
 
+	RefactorAvailability extract_method;
+	extract_method.kind = RefactorKind::EXTRACT_METHOD;
+	extract_method.title = "Extract Method";
+	const ExtractMethodCandidate extract_method_candidate = find_extract_method_candidate(p_context, p_location);
+	extract_method.enabled = extract_method_candidate.enabled;
+	if (!extract_method.enabled) {
+		extract_method.disabled_reason = extract_method_candidate.disabled_reason;
+	}
+	result.push_back(extract_method);
+
 	RefactorAvailability add_type;
 	add_type.kind = RefactorKind::ADD_TYPE_ANNOTATION;
 	add_type.title = "Add Type Annotation";
@@ -1151,6 +2201,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_rename(p_context, p_location, p_params);
 		case RefactorKind::EXTRACT_VARIABLE:
 			return prepare_extract_variable(p_context, p_location);
+		case RefactorKind::EXTRACT_METHOD:
+			return prepare_extract_method(p_context, p_location);
 		case RefactorKind::ADD_TYPE_ANNOTATION:
 			return prepare_type_annotation(p_context, p_location);
 		default:
