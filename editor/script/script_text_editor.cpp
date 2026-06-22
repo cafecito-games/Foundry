@@ -46,6 +46,7 @@
 #include "editor/inspector/editor_context_menu_plugin.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/inspector/multi_node_edit.h"
+#include "editor/script/refactor_diff_preview.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
@@ -3026,16 +3027,38 @@ void ScriptTextEditor::_apply_refactor_result(const RefactorResult &p_result, co
 		ScriptRefactorApplyPlan plan;
 		String error_message;
 		if (!_collect_refactor_sources(p_result.file_edits, sources, error_message) ||
-				!ScriptRefactorApply::build_plan(p_result.file_edits, sources, plan, error_message) ||
-				!ScriptEditor::get_singleton()->apply_script_refactor_plan(plan, error_message)) {
-			EditorToaster::get_singleton()->popup_str(error_message.is_empty() ? TTR("Could not apply refactor edits.") : error_message, EditorToaster::SEVERITY_ERROR);
+				!ScriptRefactorApply::build_plan(p_result.file_edits, sources, plan, error_message)) {
+			EditorToaster::get_singleton()->popup_str(
+					error_message.is_empty() ? TTR("Could not apply refactor edits.") : error_message,
+					EditorToaster::SEVERITY_ERROR);
 			return;
 		}
+
+		if (plan.files.size() > 1 || !p_result.unresolved_references.is_empty()) {
+			_show_refactor_diff_preview(
+					plan,
+					p_result.unresolved_references,
+					p_result.rename_anchor_line,
+					p_result.rename_anchor_column,
+					p_result.warning);
+			return;
+		}
+
+		if (!ScriptEditor::get_singleton()->apply_script_refactor_plan(plan, error_message)) {
+			EditorToaster::get_singleton()->popup_str(
+					error_message.is_empty() ? TTR("Could not apply refactor edits.") : error_message,
+					EditorToaster::SEVERITY_ERROR);
+			return;
+		}
+
 		// Rename starts from the active file, so its anchor coordinates are for
 		// this editor even though the apply plan may also contain other files.
 		if (p_result.rename_anchor_line >= 0) {
 			text_editor->set_caret_line(p_result.rename_anchor_line);
 			text_editor->set_caret_column(p_result.rename_anchor_column);
+		}
+		if (!p_result.warning.is_empty()) {
+			EditorToaster::get_singleton()->popup_str(p_result.warning, EditorToaster::SEVERITY_WARNING);
 		}
 		return;
 	}
@@ -3055,6 +3078,77 @@ void ScriptTextEditor::_apply_refactor_result(const RefactorResult &p_result, co
 		text_editor->set_caret_line(p_result.rename_anchor_line);
 		text_editor->set_caret_column(p_result.rename_anchor_column);
 	}
+	if (!p_result.warning.is_empty()) {
+		EditorToaster::get_singleton()->popup_str(p_result.warning, EditorToaster::SEVERITY_WARNING);
+	}
+}
+
+void ScriptTextEditor::_show_refactor_diff_preview(
+		const ScriptRefactorApplyPlan &p_plan,
+		const Vector<RefactorUnresolvedReference> &p_unresolved_references,
+		int p_anchor_line,
+		int p_anchor_column,
+		const String &p_warning) {
+	if (refactor_diff_preview_dialog == nullptr) {
+		refactor_diff_preview_dialog = memnew(RefactorDiffPreviewDialog);
+		refactor_diff_preview_dialog->connect(
+				SceneStringName(confirmed),
+				callable_mp(this, &ScriptTextEditor::_on_refactor_diff_confirmed));
+		refactor_diff_preview_dialog->connect(
+				SNAME("canceled"),
+				callable_mp(this, &ScriptTextEditor::_on_refactor_diff_canceled));
+		add_child(refactor_diff_preview_dialog);
+	}
+
+	pending_refactor_anchor_line = p_anchor_line;
+	pending_refactor_anchor_column = p_anchor_column;
+	pending_refactor_anchor_path = script.is_valid() ? script->get_path() : String();
+	pending_refactor_warning = p_warning;
+	refactor_diff_preview_dialog->popup_preview(p_plan, p_unresolved_references);
+}
+
+void ScriptTextEditor::_on_refactor_diff_confirmed() {
+	ERR_FAIL_NULL(refactor_diff_preview_dialog);
+
+	String error_message;
+	const ScriptRefactorApplyPlan accepted_plan = refactor_diff_preview_dialog->get_accepted_apply_plan();
+	bool accepted_anchor_file = false;
+	for (const ScriptRefactorFilePlan &file : accepted_plan.files) {
+		if (file.path == pending_refactor_anchor_path) {
+			accepted_anchor_file = true;
+			break;
+		}
+	}
+
+	if (!ScriptEditor::get_singleton()->apply_script_refactor_plan(accepted_plan, error_message)) {
+		EditorToaster::get_singleton()->popup_str(
+				error_message.is_empty() ? TTR("Could not apply refactor edits.") : error_message,
+				EditorToaster::SEVERITY_ERROR);
+		_clear_pending_refactor_preview();
+		return;
+	}
+
+	if (accepted_anchor_file && pending_refactor_anchor_line >= 0) {
+		CodeEdit *text_editor = code_editor->get_text_editor();
+		text_editor->set_caret_line(pending_refactor_anchor_line);
+		text_editor->set_caret_column(pending_refactor_anchor_column);
+	}
+	if (accepted_anchor_file && !pending_refactor_warning.is_empty()) {
+		EditorToaster::get_singleton()->popup_str(pending_refactor_warning, EditorToaster::SEVERITY_WARNING);
+	}
+
+	_clear_pending_refactor_preview();
+}
+
+void ScriptTextEditor::_on_refactor_diff_canceled() {
+	_clear_pending_refactor_preview();
+}
+
+void ScriptTextEditor::_clear_pending_refactor_preview() {
+	pending_refactor_anchor_line = -1;
+	pending_refactor_anchor_column = -1;
+	pending_refactor_anchor_path = String();
+	pending_refactor_warning = String();
 }
 
 void ScriptTextEditor::_on_rename_confirmed() {
@@ -3077,10 +3171,6 @@ void ScriptTextEditor::_on_rename_confirmed() {
 	}
 
 	_apply_refactor_result(result, ctx.source);
-
-	if (!result.warning.is_empty()) {
-		EditorToaster::get_singleton()->popup_str(result.warning, EditorToaster::SEVERITY_WARNING);
-	}
 	_clear_refactor_buffer();
 }
 

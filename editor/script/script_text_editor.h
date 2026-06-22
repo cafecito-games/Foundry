@@ -43,6 +43,7 @@
 #include "modules/gdscript/editor/gdscript_refactoring.h"
 
 class RichTextLabel;
+class RefactorDiffPreviewDialog;
 
 class ConnectionInfoDialog : public AcceptDialog {
 	GDCLASS(ConnectionInfoDialog, AcceptDialog);
@@ -92,6 +93,11 @@ class ScriptTextEditor : public ScriptEditorBase {
 	ConfirmationDialog *rename_dialog = nullptr;
 	LineEdit *rename_line_edit = nullptr;
 	Label *rename_error_label = nullptr;
+	RefactorDiffPreviewDialog *refactor_diff_preview_dialog = nullptr;
+	int pending_refactor_anchor_line = -1;
+	int pending_refactor_anchor_column = -1;
+	String pending_refactor_anchor_path;
+	String pending_refactor_warning;
 
 	int inline_color_line = -1;
 	int inline_color_start = -1;
@@ -256,6 +262,15 @@ protected:
 	void _clear_refactor_buffer();
 	bool _collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const;
 	void _apply_refactor_result(const RefactorResult &p_result, const String &p_source);
+	void _show_refactor_diff_preview(
+			const ScriptRefactorApplyPlan &p_plan,
+			const Vector<RefactorUnresolvedReference> &p_unresolved_references,
+			int p_anchor_line,
+			int p_anchor_column,
+			const String &p_warning);
+	void _on_refactor_diff_confirmed();
+	void _on_refactor_diff_canceled();
+	void _clear_pending_refactor_preview();
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);
 	RefactorContext _make_refactor_context() const;
