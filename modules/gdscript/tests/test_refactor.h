@@ -111,12 +111,24 @@ inline RefactorResult run_extract_method(const String &p_source, const RefactorL
 	return r;
 }
 
+inline RefactorResult run_inline_variable(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://inline_variable_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::INLINE_VARIABLE, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 4);
-		if (available.size() < 4) {
+		CHECK_EQ(available.size(), 5);
+		if (available.size() < 5) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -131,6 +143,9 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(available[3].kind, RefactorKind::ADD_TYPE_ANNOTATION);
 		CHECK_FALSE(available[3].enabled);
 		CHECK_FALSE(available[3].disabled_reason.is_empty());
+		CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
+		CHECK_FALSE(available[4].enabled);
+		CHECK_FALSE(available[4].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Edit application") {
@@ -515,7 +530,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 4);
+		REQUIRE_EQ(available.size(), 5);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -728,7 +743,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 4);
+		REQUIRE_EQ(available.size(), 5);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -851,6 +866,287 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Inline variable removes local declaration and replaces reads") {
+		SUBCASE("single use from declaration") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> int:\n"
+					"\treturn 2\n");
+		}
+		SUBCASE("single use from reference") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 2, 9, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> int:\n"
+					"\treturn 2\n");
+		}
+		SUBCASE("reference caret chooses identifier under caret") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar a = 1\n"
+					"\tvar b = 2\n"
+					"\treturn a + b\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 3, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> int:\n"
+					"\tvar a = 1\n"
+					"\treturn a + 2\n");
+		}
+		SUBCASE("multi-use pure initializer") {
+			const String source =
+					"func run(base: int) -> int:\n"
+					"\tvar value = base + 1\n"
+					"\tprint(value)\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(base: int) -> int:\n"
+					"\tprint(base + 1)\n"
+					"\treturn base + 1\n");
+		}
+		SUBCASE("parenthesizes lower-precedence initializer") {
+			const String source =
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\tvar value = a + b\n"
+					"\treturn x * value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\treturn x * (a + b)\n");
+		}
+		SUBCASE("parenthesizes same-precedence right initializer") {
+			const String source =
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\tvar value = a + b\n"
+					"\treturn x + value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\treturn x + (a + b)\n");
+		}
+		SUBCASE("parenthesizes logical-not initializer in comparison") {
+			const String source =
+					"func run(a: bool, done: bool) -> bool:\n"
+					"\tvar ok = not a\n"
+					"\treturn ok == done\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: bool, done: bool) -> bool:\n"
+					"\treturn (not a) == done\n");
+		}
+		SUBCASE("parenthesizes awaited initializer operand") {
+			const String source =
+					"func run(a, b) -> void:\n"
+					"\tvar value = a + b\n"
+					"\tawait value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a, b) -> void:\n"
+					"\tawait (a + b)\n");
+		}
+		SUBCASE("parenthesizes power initializer as left power operand") {
+			const String source =
+					"func run(a: float, b: float, c: float) -> float:\n"
+					"\tvar value = a ** b\n"
+					"\treturn value ** c\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: float, b: float, c: float) -> float:\n"
+					"\treturn (a ** b) ** c\n");
+		}
+		SUBCASE("single-use side-effecting initializer") {
+			const String source =
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\tvar value = get_value()\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\treturn get_value()\n");
+		}
+		SUBCASE("same-name local in another function is not replaced") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func other() -> void:\n"
+					"\tvar value = 2\n"
+					"\tprint(value)\n"
+					"\n"
+					"func run() -> int:\n"
+					"\tvar value = 1\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 8, 9, out);
+			REQUIRE_MESSAGE(r.ok, r.error_message);
+			CHECK_EQ(out,
+					"extends Node\n"
+					"\n"
+					"func other() -> void:\n"
+					"\tvar value = 2\n"
+					"\tprint(value)\n"
+					"\n"
+					"func run() -> int:\n"
+					"\treturn 1\n");
+		}
+	}
+
+	TEST_CASE("Inline variable availability follows local variable caret") {
+		const String source =
+				"func run() -> int:\n"
+				"\tvar value = 2\n"
+				"\treturn value\n";
+		RefactorContext ctx;
+		ctx.path = "user://inline_variable_availability.gd";
+		ctx.source = source;
+		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 6));
+		REQUIRE_EQ(available.size(), 5);
+		if (available.size() >= 5) {
+			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
+			CHECK(available[4].enabled);
+			CHECK(available[4].disabled_reason.is_empty());
+		}
+	}
+
+	TEST_CASE("Inline variable rejects unsafe or unsupported targets") {
+		SUBCASE("multi-use side-effecting initializer") {
+			const String source =
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\tvar value = get_value()\n"
+					"\tprint(value)\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 3, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("side-effect"), r.error_message);
+		}
+		SUBCASE("reassigned local") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 1\n"
+					"\tvalue = 3\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("parameter") {
+			const String source =
+					"func run(value: int) -> int:\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 0, 10, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("constant") {
+			const String source =
+					"func run() -> int:\n"
+					"\tconst VALUE = 1\n"
+					"\treturn VALUE\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 8, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("member variable") {
+			const String source =
+					"var value = 1\n"
+					"func run() -> int:\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 0, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("lambda capture") {
+			const String source =
+					"func run() -> Callable:\n"
+					"\tvar value = 1\n"
+					"\tvar callback = func():\n"
+					"\t\treturn value\n"
+					"\treturn callback\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("lambda"), r.error_message);
+		}
+		SUBCASE("no read usages") {
+			const String source =
+					"func run() -> void:\n"
+					"\tvar value = 2\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("read"), r.error_message);
+		}
+		SUBCASE("multiline initializer") {
+			const String source =
+					"func run():\n"
+					"\tvar value = [\n"
+					"\t\t1,\n"
+					"\t]\n"
+					"\treturn value[0]\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("single-line"), r.error_message);
+		}
+		SUBCASE("trailing comment on declaration") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2 # keep this\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("trailing"), r.error_message);
+		}
+		SUBCASE("same-line declaration and use") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2; return value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("trailing"), r.error_message);
+		}
+	}
+
 #ifndef GDSCRIPT_NO_LSP
 	TEST_CASE("Rename file-local symbols") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
@@ -908,7 +1204,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 4);
+			REQUIRE_EQ(available.size(), 5);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -936,7 +1232,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 4);
+			REQUIRE_EQ(available.size(), 5);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
