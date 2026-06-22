@@ -110,6 +110,17 @@ static PackedStringArray analyze_source_errors(const String &p_source, bool p_st
 	return errors;
 }
 
+static void check_source_error(
+		const String &p_source,
+		const String &p_expected_error,
+		bool p_strict_null_checks = false,
+		bool p_strict_dynamic_checks = false) {
+	INFO(p_source);
+	PackedStringArray errors = analyze_source_errors(p_source, p_strict_null_checks, p_strict_dynamic_checks);
+	REQUIRE(errors.size() == 1);
+	CHECK_EQ(errors[0], p_expected_error);
+}
+
 static Error analyze_source_with_project_settings(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://test.gd", false);
@@ -1700,6 +1711,100 @@ TEST_CASE("[Modules][GDScript] Analyzer reports strict nullable argument diagnos
 	PackedStringArray signal_errors = analyze_source_errors(signal_source, true);
 	REQUIRE(signal_errors.size() == 1);
 	CHECK_EQ(signal_errors[0], R"*(Cannot pass nullable value of type "Node?" as argument 1 of "emit()"; expected non-nullable "Node".)*");
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict assignment diagnostics") {
+	const String dynamic_initializer_source = "func get_dynamic() -> Variant:\n\treturn 1\n"
+											  "var typed_value: int = get_dynamic()\n";
+	const String dynamic_assignment_source = "func get_dynamic() -> Variant:\n\treturn 1\nfunc test() -> void:\n"
+											 "\tvar typed_value: int = 1\n\ttyped_value = get_dynamic()\n";
+	const String nullable_initializer_source = "func get_node() -> Node?:\n\treturn null\nvar node: Node = get_node()\n";
+	const String nullable_assignment_source = "func get_node() -> Node?:\n\treturn null\nfunc test() -> void:\n"
+											  "\tvar node: Node = Node.new()\n\tnode = get_node()\n";
+
+	check_source_error(dynamic_initializer_source,
+			R"*(Cannot assign Variant value to variable "typed_value" in strict dynamic mode; expected "int".)*",
+			false, true);
+	check_source_error(dynamic_assignment_source,
+			R"*(Cannot assign Variant value to variable "typed_value" in strict dynamic mode; expected "int".)*",
+			false, true);
+	check_source_error(nullable_initializer_source,
+			R"*(Cannot assign nullable value of type "Node?" to variable "node"; expected non-nullable "Node".)*",
+			true);
+	check_source_error(nullable_assignment_source,
+			R"*(Cannot assign nullable value of type "Node?" to variable "node"; expected non-nullable "Node".)*",
+			true);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict return diagnostics") {
+	const String dynamic_return_source = "func get_dynamic() -> Variant:\n\treturn 1\nfunc get_int() -> int:\n"
+										 "\treturn get_dynamic()\n";
+	const String nullable_return_source = "func get_node() -> Node?:\n\treturn null\nfunc get_required_node() -> Node:\n"
+										  "\treturn get_node()\n";
+
+	check_source_error(dynamic_return_source,
+			R"*(Cannot return Variant value in strict dynamic mode; expected "int".)*",
+			false, true);
+	check_source_error(nullable_return_source,
+			R"*(Cannot return nullable value of type "Node?"; expected non-nullable "Node".)*",
+			true);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict nested container diagnostics") {
+	const String array_source = "func get_dynamic() -> Variant:\n\treturn 1\n"
+								"var values: Array[Array[int]] = [[get_dynamic()]]\n";
+	const String dictionary_source = "func get_dynamic() -> Variant:\n\treturn 1\n"
+									 "var values: Dictionary[String, Array[int]] = { \"values\": [get_dynamic()] }\n";
+
+	check_source_error(array_source,
+			R"*(Cannot include Variant value in array literal for "Array[int]" in strict dynamic mode.)*",
+			false, true);
+	check_source_error(dictionary_source,
+			R"*(Cannot include Variant value in array literal for "Array[int]" in strict dynamic mode.)*",
+			false, true);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict reflection fallback diagnostics") {
+	const String source_prefix = "class Worker extends Node:\n\tvar count: int\n"
+								 "\tfunc stringify(value: int) -> String:\n\t\treturn \"ok\"\n"
+								 "func test(worker: Worker, method_name: StringName, property_name: StringName) -> void:\n";
+
+	check_source_error(source_prefix + "\tworker.call(method_name, 1)\n",
+			R"*(Cannot use dynamic method name for "call()" on type "Worker" in strict dynamic mode.)*",
+			false, true);
+	check_source_error(source_prefix + "\tworker.call(\"unknown\", 1)\n",
+			R"*(Cannot resolve method "unknown" on type "Worker" for "call()" in strict dynamic mode.)*",
+			false, true);
+	check_source_error(source_prefix + "\tworker.get(property_name)\n",
+			R"*(Cannot use dynamic property name for "get()" on type "Worker" in strict dynamic mode.)*",
+			false, true);
+	check_source_error(source_prefix + "\tworker.get(\"unknown\")\n",
+			R"*(Cannot resolve property "unknown" on type "Worker" for "get()" in strict dynamic mode.)*",
+			false, true);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict signal connection diagnostics") {
+	const String dynamic_signal_source = "class Emitter:\n\tsignal event(value: int)\n"
+										 "func accept_int(value: int) -> void:\n\tpass\n"
+										 "func test(emitter: Emitter, signal_name: StringName) -> void:\n"
+										 "\temitter.connect(signal_name, accept_int)\n";
+	const String unknown_signal_source = "class Emitter:\n\tsignal event(value: int)\n"
+										"func accept_int(value: int) -> void:\n\tpass\n"
+										"func test(emitter: Emitter) -> void:\n"
+										"\temitter.connect(\"missing\", accept_int)\n";
+	const String nullable_callable_source = "signal event(value: Node?)\nfunc accept_node(value: Node) -> void:\n\tpass\n"
+											"func test() -> void:\n\tconnect(\"event\", accept_node)\n";
+
+	check_source_error(dynamic_signal_source,
+			R"*(Cannot use dynamic signal name for "connect()" on type "Emitter" in strict dynamic mode.)*",
+			false, true);
+	check_source_error(unknown_signal_source,
+			R"*(Cannot resolve signal "missing" on type "Emitter" for "connect()" in strict dynamic mode.)*",
+			false, true);
+	check_source_error(nullable_callable_source,
+			"Cannot connect signal \"Signal[[Node?]]\" to callable \"Callable[[Node], void]\": signal argument 1 "
+			"is nullable type \"Node?\", but callable parameter expects non-nullable \"Node\".",
+			true);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer can reject dynamic container elements in arguments and returns") {
