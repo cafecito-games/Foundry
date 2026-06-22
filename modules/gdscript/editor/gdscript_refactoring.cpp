@@ -56,6 +56,15 @@ struct TypeAnnotationCandidate {
 	RefactorTextEdit edit;
 };
 
+struct ExtractVariableCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	String suggested_name;
+	RefactorTextEdit declaration_edit;
+	RefactorTextEdit replacement_edit;
+};
+
 struct TypeAnnotationCandidateCache {
 	bool valid = false;
 	String path;
@@ -168,6 +177,220 @@ int find_assignment_rhs_start(const String &p_line, int p_equal_index) {
 		rhs_start++;
 	}
 	return rhs_start;
+}
+
+bool is_location_ordered(const RefactorLocation &p_location) {
+	if (p_location.start_line < p_location.end_line) {
+		return true;
+	}
+	return p_location.start_line == p_location.end_line && p_location.start_column <= p_location.end_column;
+}
+
+String get_leading_whitespace(const String &p_line) {
+	int end = 0;
+	while (end < p_line.length() && is_whitespace(p_line[end])) {
+		end++;
+	}
+	return p_line.substr(0, end);
+}
+
+bool get_single_line_selection_text(const Vector<String> &p_lines, const RefactorLocation &p_location, String &r_text) {
+	if (p_location.start_line != p_location.end_line || p_location.start_line < 0 || p_location.start_line >= p_lines.size()) {
+		return false;
+	}
+	const String line = p_lines[p_location.start_line];
+	if (p_location.start_column < 0 || p_location.end_column < p_location.start_column || p_location.end_column > line.length()) {
+		return false;
+	}
+	r_text = line.substr(p_location.start_column, p_location.end_column - p_location.start_column);
+	return !r_text.is_empty();
+}
+
+bool get_node_text_range(const Vector<String> &p_lines, const GDScriptParser::Node *p_node, RefactorLocation &r_range) {
+	if (p_node == nullptr || p_node->start_line <= 0 || p_node->end_line <= 0) {
+		return false;
+	}
+	const int start_line = p_node->start_line - 1;
+	const int end_line = p_node->end_line - 1;
+	if (start_line < 0 || start_line >= p_lines.size() || end_line < 0 || end_line >= p_lines.size()) {
+		return false;
+	}
+	const int start_column = GDScriptTextPosition::godot_column_to_text_column(p_lines[start_line], p_node->start_column);
+	const int end_column = GDScriptTextPosition::godot_column_to_text_column(p_lines[end_line], p_node->end_column);
+	if (start_column < 0 || end_column < 0) {
+		return false;
+	}
+	r_range.start_line = start_line;
+	r_range.start_column = start_column;
+	r_range.end_line = end_line;
+	r_range.end_column = end_column;
+	return true;
+}
+
+bool expression_matches_selection(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression) {
+	RefactorLocation expression_range;
+	if (!get_node_text_range(p_lines, p_expression, expression_range)) {
+		return false;
+	}
+	return same_location(p_location, expression_range);
+}
+
+bool suite_or_ancestors_have_local(const GDScriptParser::SuiteNode *p_suite, const StringName &p_name) {
+	const GDScriptParser::SuiteNode *suite = p_suite;
+	while (suite != nullptr) {
+		if (suite->has_local(p_name)) {
+			return true;
+		}
+		suite = suite->parent_block;
+	}
+	return false;
+}
+
+String expression_name_hint(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr) {
+		return String();
+	}
+
+	switch (p_expression->type) {
+		case GDScriptParser::Node::IDENTIFIER:
+			return String(static_cast<const GDScriptParser::IdentifierNode *>(p_expression)->name);
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			if (subscript->is_attribute && subscript->attribute != nullptr) {
+				return String(subscript->attribute->name);
+			}
+		} break;
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
+			String name = expression_name_hint(call->callee);
+			if (name.begins_with("get_") && name.length() > 4) {
+				name = name.substr(4);
+			} else if (name.begins_with("is_") && name.length() > 3) {
+				name = name.substr(3);
+			} else if (name.begins_with("has_") && name.length() > 4) {
+				name = name.substr(4);
+			}
+			return name;
+		}
+		case GDScriptParser::Node::AWAIT:
+			return expression_name_hint(static_cast<const GDScriptParser::AwaitNode *>(p_expression)->to_await);
+		case GDScriptParser::Node::CAST:
+			return expression_name_hint(static_cast<const GDScriptParser::CastNode *>(p_expression)->operand);
+		default:
+			break;
+	}
+
+	return String();
+}
+
+String fallback_name_for_type(const GDScriptParser::DataType &p_type) {
+	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
+		switch (p_type.builtin_type) {
+			case Variant::BOOL:
+				return "flag";
+			case Variant::STRING:
+			case Variant::STRING_NAME:
+			case Variant::NODE_PATH:
+				return "text";
+			case Variant::ARRAY:
+			case Variant::PACKED_BYTE_ARRAY:
+			case Variant::PACKED_INT32_ARRAY:
+			case Variant::PACKED_INT64_ARRAY:
+			case Variant::PACKED_FLOAT32_ARRAY:
+			case Variant::PACKED_FLOAT64_ARRAY:
+			case Variant::PACKED_STRING_ARRAY:
+			case Variant::PACKED_VECTOR2_ARRAY:
+			case Variant::PACKED_VECTOR3_ARRAY:
+			case Variant::PACKED_COLOR_ARRAY:
+			case Variant::PACKED_VECTOR4_ARRAY:
+				return "items";
+			case Variant::DICTIONARY:
+				return "map";
+			default:
+				break;
+		}
+	}
+	return "value";
+}
+
+String make_unique_local_name(const GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_type, const GDScriptParser::SuiteNode *p_suite) {
+	String base = expression_name_hint(p_expression);
+	String reason;
+	if (base.is_empty() || !GDScriptRefactorNames::validate_identifier(base, reason)) {
+		base = fallback_name_for_type(p_type);
+	}
+	if (!GDScriptRefactorNames::validate_identifier(base, reason)) {
+		base = "value";
+	}
+
+	String name = base;
+	int suffix = 2;
+	while (!GDScriptRefactorNames::validate_identifier(name, reason) || suite_or_ancestors_have_local(p_suite, StringName(name))) {
+		name = vformat("%s_%d", base, suffix);
+		suffix++;
+		if (suffix > 1000) {
+			return String();
+		}
+	}
+	return name;
+}
+
+bool try_extract_direct_expression(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::Node *p_statement, const GDScriptParser::SuiteNode *p_suite, ExtractVariableCandidate &r_candidate) {
+	if (!expression_matches_selection(p_location, p_lines, p_expression)) {
+		return false;
+	}
+
+	r_candidate.matched = true;
+	if (p_suite == nullptr || p_suite->parent_function == nullptr) {
+		r_candidate.disabled_reason = "Extract variable is only available inside a function body.";
+		return true;
+	}
+	if (p_statement == nullptr || p_statement->start_line <= 0 || p_statement->start_line > p_lines.size()) {
+		r_candidate.disabled_reason = "Cannot find a safe insertion point for this expression.";
+		return true;
+	}
+
+	String rendered_type;
+	if (!GDScriptRefactorTypes::render_annotatable_type(p_expression->get_datatype(), rendered_type)) {
+		r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
+		return true;
+	}
+
+	String expression_text;
+	if (!get_single_line_selection_text(p_lines, p_location, expression_text)) {
+		r_candidate.disabled_reason = "Extract variable currently supports single-line expressions.";
+		return true;
+	}
+
+	const String name = make_unique_local_name(p_expression, p_expression->get_datatype(), p_suite);
+	if (name.is_empty()) {
+		r_candidate.disabled_reason = "Cannot suggest a safe local variable name.";
+		return true;
+	}
+
+	const int insertion_line = p_statement->start_line - 1;
+	const String indent = get_leading_whitespace(p_lines[insertion_line]);
+	r_candidate.declaration_edit.start_line = insertion_line;
+	r_candidate.declaration_edit.start_column = 0;
+	r_candidate.declaration_edit.end_line = insertion_line;
+	r_candidate.declaration_edit.end_column = 0;
+	r_candidate.declaration_edit.new_text = indent + "var " + name + ": " + rendered_type + " = " + expression_text + "\n";
+
+	r_candidate.replacement_edit.start_line = p_location.start_line;
+	r_candidate.replacement_edit.start_column = p_location.start_column;
+	r_candidate.replacement_edit.end_line = p_location.end_line;
+	r_candidate.replacement_edit.end_column = p_location.end_column;
+	r_candidate.replacement_edit.new_text = name;
+	r_candidate.suggested_name = name;
+	r_candidate.enabled = true;
+	return true;
+}
+
+bool is_simple_identifier_assignment(const GDScriptParser::AssignmentNode *p_assignment) {
+	return p_assignment != nullptr &&
+			p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE &&
+			p_assignment->assignee != nullptr &&
+			p_assignment->assignee->type == GDScriptParser::Node::IDENTIFIER;
 }
 
 bool find_assignable_type_annotation(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate) {
@@ -391,6 +614,132 @@ bool find_type_annotation_in_suite(const RefactorLocation &p_location, const Vec
 	return false;
 }
 
+bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, ExtractVariableCandidate &r_candidate);
+
+bool find_extract_variable_in_function(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, ExtractVariableCandidate &r_candidate) {
+	if (p_function == nullptr || p_function->body == nullptr) {
+		return false;
+	}
+	return find_extract_variable_in_suite(p_location, p_lines, p_function->body, r_candidate);
+}
+
+bool find_extract_variable_in_class(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, ExtractVariableCandidate &r_candidate) {
+	if (p_class == nullptr) {
+		return false;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (find_extract_variable_in_function(p_location, p_lines, member.function, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				if (find_extract_variable_in_class(p_location, p_lines, member.m_class, r_candidate)) {
+					return true;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, ExtractVariableCandidate &r_candidate) {
+	if (p_suite == nullptr) {
+		return false;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+
+		switch (statement->type) {
+			case GDScriptParser::Node::VARIABLE: {
+				const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(statement);
+				if (try_extract_direct_expression(p_location, p_lines, variable->initializer, statement, p_suite, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::CONSTANT: {
+				const GDScriptParser::ConstantNode *constant = static_cast<const GDScriptParser::ConstantNode *>(statement);
+				if (try_extract_direct_expression(p_location, p_lines, constant->initializer, statement, p_suite, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::RETURN: {
+				const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(statement);
+				if (try_extract_direct_expression(p_location, p_lines, return_node->return_value, statement, p_suite, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::ASSIGNMENT: {
+				const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(statement);
+				if (expression_matches_selection(p_location, p_lines, assignment->assigned_value) && !is_simple_identifier_assignment(assignment)) {
+					r_candidate.matched = true;
+					r_candidate.disabled_reason = "Cannot safely extract this assignment expression.";
+					return true;
+				}
+				if (try_extract_direct_expression(p_location, p_lines, assignment->assigned_value, statement, p_suite, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::ASSERT: {
+				const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(statement);
+				if (expression_matches_selection(p_location, p_lines, assert_node->condition) ||
+						expression_matches_selection(p_location, p_lines, assert_node->message)) {
+					r_candidate.matched = true;
+					r_candidate.disabled_reason = "Cannot safely extract assert expressions.";
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				if (try_extract_direct_expression(p_location, p_lines, if_node->condition, statement, p_suite, r_candidate) ||
+						find_extract_variable_in_suite(p_location, p_lines, if_node->true_block, r_candidate) ||
+						find_extract_variable_in_suite(p_location, p_lines, if_node->false_block, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
+				if (try_extract_direct_expression(p_location, p_lines, for_node->list, statement, p_suite, r_candidate) ||
+						find_extract_variable_in_suite(p_location, p_lines, for_node->loop, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
+				if (expression_matches_selection(p_location, p_lines, while_node->condition)) {
+					r_candidate.matched = true;
+					r_candidate.disabled_reason = "Cannot safely extract a while loop condition.";
+					return true;
+				}
+				if (find_extract_variable_in_suite(p_location, p_lines, while_node->loop, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				if (try_extract_direct_expression(p_location, p_lines, match_node->test, statement, p_suite, r_candidate)) {
+					return true;
+				}
+				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+					if (branch != nullptr && find_extract_variable_in_suite(p_location, p_lines, branch->block, r_candidate)) {
+						return true;
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
 bool source_lines_match(const Vector<String> &p_left, const Vector<String> &p_right) {
 	if (p_left.size() != p_right.size()) {
 		return false;
@@ -432,6 +781,80 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(const RefactorLoc
 		candidate.disabled_reason = "Place the caret on an untyped declaration with an inferred concrete type.";
 	}
 	return candidate;
+}
+
+ExtractVariableCandidate find_extract_variable_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
+	ExtractVariableCandidate candidate;
+
+	_ALLOW_DISCARD_ find_extract_variable_in_class(p_location, p_lines, p_tree, candidate);
+	if (!candidate.matched && candidate.disabled_reason.is_empty()) {
+		candidate.disabled_reason = "Select one complete expression that can be safely extracted.";
+	}
+	return candidate;
+}
+
+ExtractVariableCandidate find_extract_variable_candidate_uncached(const RefactorContext &p_context, const RefactorLocation &p_location, const Vector<String> &p_lines) {
+#ifndef GDSCRIPT_NO_LSP
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	const ExtendGDScriptParser *lsp_parser = protocol != nullptr ? protocol->get_parse_result(p_context.path) : nullptr;
+	if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+		if (lsp_parser->parse_result != OK) {
+			ExtractVariableCandidate candidate;
+			candidate.disabled_reason = "Cannot analyze this script.";
+			return candidate;
+		}
+		return find_extract_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
+	}
+#endif // GDSCRIPT_NO_LSP
+
+	GDScriptParser parser;
+	Error err = parser.parse(p_context.source, p_context.path, false);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&parser);
+		err = analyzer.analyze();
+	}
+	if (err != OK) {
+		ExtractVariableCandidate candidate;
+		candidate.disabled_reason = "Cannot analyze this script.";
+		return candidate;
+	}
+
+	return find_extract_variable_candidate_in_tree(p_location, p_lines, parser.get_tree());
+}
+
+ExtractVariableCandidate find_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	ExtractVariableCandidate candidate;
+	if (!p_location.has_selection()) {
+		candidate.disabled_reason = "Select one expression to extract.";
+		return candidate;
+	}
+	if (!is_location_ordered(p_location)) {
+		candidate.disabled_reason = "Select one expression to extract.";
+		return candidate;
+	}
+	if (p_location.start_line != p_location.end_line) {
+		candidate.disabled_reason = "Extract variable currently supports single-line expressions.";
+		return candidate;
+	}
+
+	const Vector<String> lines = p_context.source.split("\n");
+	return find_extract_variable_candidate_uncached(p_context, p_location, lines);
+}
+
+RefactorResult prepare_extract_variable(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	RefactorResult result;
+	const ExtractVariableCandidate candidate = find_extract_variable_candidate(p_context, p_location);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason;
+		return result;
+	}
+
+	result.ok = true;
+	result.suggested_name = candidate.suggested_name;
+	result.edits.push_back(candidate.declaration_edit);
+	result.edits.push_back(candidate.replacement_edit);
+	return result;
 }
 
 TypeAnnotationCandidate find_type_annotation_candidate_uncached(const RefactorContext &p_context, const RefactorLocation &p_location, const Vector<String> &p_lines) {
@@ -636,6 +1059,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 
 	result.push_back(rename);
 
+	RefactorAvailability extract_variable;
+	extract_variable.kind = RefactorKind::EXTRACT_VARIABLE;
+	extract_variable.title = "Extract Variable";
+	const ExtractVariableCandidate extract_candidate = find_extract_variable_candidate(p_context, p_location);
+	extract_variable.enabled = extract_candidate.enabled;
+	if (!extract_variable.enabled) {
+		extract_variable.disabled_reason = extract_candidate.disabled_reason;
+	}
+	result.push_back(extract_variable);
+
 	RefactorAvailability add_type;
 	add_type.kind = RefactorKind::ADD_TYPE_ANNOTATION;
 	add_type.title = "Add Type Annotation";
@@ -652,6 +1085,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 	switch (p_kind) {
 		case RefactorKind::RENAME:
 			return prepare_rename(p_context, p_location, p_params);
+		case RefactorKind::EXTRACT_VARIABLE:
+			return prepare_extract_variable(p_context, p_location);
 		case RefactorKind::ADD_TYPE_ANNOTATION:
 			return prepare_type_annotation(p_context, p_location);
 		default:

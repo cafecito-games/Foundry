@@ -66,6 +66,15 @@ inline RefactorLocation caret(int p_line, int p_column) {
 	return loc;
 }
 
+inline RefactorLocation selection(int p_start_line, int p_start_column, int p_end_line, int p_end_column) {
+	RefactorLocation loc;
+	loc.start_line = p_start_line;
+	loc.start_column = p_start_column;
+	loc.end_line = p_end_line;
+	loc.end_column = p_end_column;
+	return loc;
+}
+
 inline RefactorResult run_type_annotation(const String &p_source, int p_line, int p_column, String &r_out) {
 	RefactorContext ctx;
 	ctx.path = "user://type_annotation_refactor.gd";
@@ -78,17 +87,34 @@ inline RefactorResult run_type_annotation(const String &p_source, int p_line, in
 	return r;
 }
 
+inline RefactorResult run_extract_variable(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://extract_variable_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_VARIABLE, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		REQUIRE_EQ(available.size(), 2);
+		REQUIRE_EQ(available.size(), 3);
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 		CHECK_FALSE(available[0].enabled);
 		CHECK_FALSE(available[0].disabled_reason.is_empty());
-		CHECK_EQ(available[1].kind, RefactorKind::ADD_TYPE_ANNOTATION);
+		CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 		CHECK_FALSE(available[1].enabled);
 		CHECK_FALSE(available[1].disabled_reason.is_empty());
+		if (available.size() >= 3) {
+			CHECK_EQ(available[2].kind, RefactorKind::ADD_TYPE_ANNOTATION);
+			CHECK_FALSE(available[2].enabled);
+			CHECK_FALSE(available[2].disabled_reason.is_empty());
+		}
 	}
 
 	TEST_CASE("Edit application") {
@@ -356,6 +382,95 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Extract variable inserts typed local and replaces selected expression") {
+		SUBCASE("return expression") {
+			const String source =
+					"func calculate(base: int) -> int:\n"
+					"\treturn base + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(1, 8, 1, 16), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "value");
+			CHECK_EQ(out,
+					"func calculate(base: int) -> int:\n"
+					"\tvar value: int = base + 2\n"
+					"\treturn value\n");
+		}
+		SUBCASE("call expression name") {
+			const String source =
+					"func get_score() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\treturn get_score()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 8, 3, 19), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "score");
+			CHECK(out.contains("\tvar score: int = get_score()\n"));
+			CHECK(out.contains("\treturn score\n"));
+		}
+		SUBCASE("avoids local name collisions") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value: int = 0\n"
+					"\treturn 1 + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(2, 8, 2, 13), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "value_2");
+			CHECK(out.contains("\tvar value_2: int = 1 + 2\n"));
+			CHECK(out.contains("\treturn value_2\n"));
+		}
+	}
+
+	TEST_CASE("Extract variable availability follows expression selection") {
+		const String source =
+				"func calculate(base: int) -> int:\n"
+				"\treturn base + 2\n";
+		RefactorContext ctx;
+		ctx.path = "user://extract_variable_availability.gd";
+		ctx.source = source;
+		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
+		REQUIRE_EQ(available.size(), 3);
+		if (available.size() >= 2) {
+			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
+			CHECK(available[1].enabled);
+			CHECK(available[1].disabled_reason.is_empty());
+		}
+	}
+
+	TEST_CASE("Extract variable rejects unsafe or unprovable selections") {
+		SUBCASE("requires a selection") {
+			const String source =
+					"func calculate(base: int) -> int:\n"
+					"\treturn base + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, caret(1, 8), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects subexpressions inside larger expressions") {
+			const String source =
+					"func calculate(base: int) -> int:\n"
+					"\treturn base + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(1, 8, 1, 12), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects non-annotatable Variant expressions") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"func run() -> Variant:\n"
+					"\treturn dynamic_value()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 8, 3, 23), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+	}
+
 #ifndef GDSCRIPT_NO_LSP
 	TEST_CASE("Rename file-local symbols") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
@@ -413,7 +528,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 2);
+			REQUIRE_EQ(available.size(), 3);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -441,7 +556,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 2);
+			REQUIRE_EQ(available.size(), 3);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
