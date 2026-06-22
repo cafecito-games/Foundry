@@ -89,6 +89,27 @@ static Error analyze_source(const String &p_source, bool p_strict_null_checks = 
 	return analyzer.analyze();
 }
 
+static PackedStringArray analyze_source_errors(const String &p_source, bool p_strict_null_checks = false, bool p_strict_dynamic_checks = false) {
+	GDScriptParser parser;
+	Error err = parser.parse(p_source, "user://test.gd", false);
+	PackedStringArray errors;
+	if (err != OK) {
+		for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+			errors.push_back(parser_error.message);
+		}
+		return errors;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(p_strict_null_checks);
+	analyzer.set_strict_dynamic_checks(p_strict_dynamic_checks);
+	analyzer.analyze();
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		errors.push_back(parser_error.message);
+	}
+	return errors;
+}
+
 static Error analyze_source_with_project_settings(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://test.gd", false);
@@ -1550,6 +1571,37 @@ TEST_CASE("[Modules][GDScript] Analyzer preserves nested container element types
 	CHECK(analyze_source(source_prefix + "\tvar nested: Array[Array[int]] = [get_dynamic_array()]\n", false, true) != OK);
 	CHECK(analyze_source(source_prefix + "\tvar nested: Dictionary[String, Dictionary[String, int]] = { \"outer\": get_dynamic_dictionary() }\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tvar nested: Dictionary[String, Dictionary[String, int]] = { \"outer\": get_dynamic_dictionary() }\n", false, true) != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict dynamic argument diagnostics") {
+	const String callable_source = "func accepts_int(value: int) -> bool:\n\treturn true\nfunc get_dynamic() -> Variant:\n\treturn 1\nfunc test() -> void:\n\tvar callback: Callable[[int], bool] = accepts_int\n\tcallback.call(get_dynamic())\n";
+	const String callv_source = "func accepts_int(value: int) -> bool:\n\treturn true\nfunc get_dynamic() -> Variant:\n\treturn 1\nfunc test() -> void:\n\tvar callback: Callable[[int], bool] = accepts_int\n\tcallback.callv([get_dynamic()])\n";
+	const String signal_source = "signal event(value: int)\nfunc get_dynamic() -> Variant:\n\treturn 1\nfunc test() -> void:\n\tvar typed_event: Signal[[int]] = event\n\ttyped_event.emit(get_dynamic())\n";
+
+	PackedStringArray callable_errors = analyze_source_errors(callable_source, false, true);
+	REQUIRE(callable_errors.size() == 1);
+	CHECK_EQ(callable_errors[0], R"*(Cannot pass Variant value as argument 1 of "call()" in strict dynamic mode; expected "int".)*");
+
+	PackedStringArray callv_errors = analyze_source_errors(callv_source, false, true);
+	REQUIRE(callv_errors.size() == 1);
+	CHECK_EQ(callv_errors[0], R"*(Cannot pass Variant value as argument 1 of "callv()" in strict dynamic mode; expected "int".)*");
+
+	PackedStringArray signal_errors = analyze_source_errors(signal_source, false, true);
+	REQUIRE(signal_errors.size() == 1);
+	CHECK_EQ(signal_errors[0], R"*(Cannot pass Variant value as argument 1 of "emit()" in strict dynamic mode; expected "int".)*");
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict nullable argument diagnostics") {
+	const String callable_source = "func accepts_node(node: Node) -> void:\n\tpass\nfunc get_node() -> Node?:\n\treturn null\nfunc test() -> void:\n\tvar callback: Callable[[Node], void] = accepts_node\n\tcallback.call(get_node())\n";
+	const String signal_source = "signal event(node: Node)\nfunc get_node() -> Node?:\n\treturn null\nfunc test() -> void:\n\tvar typed_event: Signal[[Node]] = event\n\ttyped_event.emit(get_node())\n";
+
+	PackedStringArray callable_errors = analyze_source_errors(callable_source, true);
+	REQUIRE(callable_errors.size() == 1);
+	CHECK_EQ(callable_errors[0], R"*(Cannot pass nullable value of type "Node?" as argument 1 of "call()"; expected non-nullable "Node".)*");
+
+	PackedStringArray signal_errors = analyze_source_errors(signal_source, true);
+	REQUIRE(signal_errors.size() == 1);
+	CHECK_EQ(signal_errors[0], R"*(Cannot pass nullable value of type "Node?" as argument 1 of "emit()"; expected non-nullable "Node".)*");
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer can reject dynamic container elements in arguments and returns") {
