@@ -116,6 +116,7 @@ public:
 			ENUM,
 			EXTENDS,
 			FUNC,
+			IMPORT,
 			TK_IN, // Conflict with WinAPI.
 			IS,
 			NAMESPACE,
