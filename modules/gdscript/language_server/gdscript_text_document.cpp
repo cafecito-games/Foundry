@@ -319,6 +319,7 @@ Dictionary GDScriptTextDocument::resolve(const Dictionary &p_params) {
 	}
 
 	if (symbol) {
+		item.detail = symbol->detail;
 		item.documentation = symbol->render();
 	}
 

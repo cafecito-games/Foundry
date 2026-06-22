@@ -809,7 +809,13 @@ Error GDScriptWorkspace::resolve_signature(const LSP::TextDocumentPositionParams
 					for (int i = 0; i < symbol->children.size(); i++) {
 						const LSP::DocumentSymbol &arg = symbol->children[i];
 						LSP::ParameterInformation arg_info;
-						arg_info.label = arg.name;
+						arg_info.label = arg.detail;
+						if (arg_info.label.begins_with("var ")) {
+							arg_info.label = arg_info.label.substr(4);
+						}
+						if (arg_info.label.is_empty()) {
+							arg_info.label = arg.name;
+						}
 						signature_info.parameters.push_back(arg_info);
 					}
 					r_signature.signatures.push_back(signature_info);

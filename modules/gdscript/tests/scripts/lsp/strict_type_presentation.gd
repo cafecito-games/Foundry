@@ -9,3 +9,6 @@ var event: Signal[[String]]
 
 func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]:
 	return event
+
+func use_describe() -> void:
+	describe(callback, payloads)
