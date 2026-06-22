@@ -1952,7 +1952,9 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 					if (parent_return_type.is_hard_type() && !(parent_return_type.kind == GDScriptParser::DataType::BUILTIN && parent_return_type.builtin_type == Variant::NIL)) {
 						valid = false;
 					}
-				} else {
+				} else if (parent_return_type.is_set() && return_type.is_set()) {
+					// Skip while a type is still resolving (re-entrant member resolution);
+					// `is_type_compatible()` treats an unset type as compatible anyway.
 					valid = valid && is_type_compatible(parent_return_type, return_type);
 				}
 			}
@@ -1978,7 +1980,9 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 						// `is_type_compatible()` returns `true` if one of the types is `Variant`.
 						// Don't allow narrowing a hard `Variant`.
 						valid = valid && current_par_type.is_variant();
-					} else {
+					} else if (current_par_type.is_set() && parent_par_type.is_set()) {
+						// Skip while a type is still resolving (re-entrant member resolution);
+						// `is_type_compatible()` treats an unset type as compatible anyway.
 						valid = valid && is_type_compatible(current_par_type, parent_par_type);
 					}
 				}
@@ -5711,8 +5715,13 @@ void GDScriptAnalyzer::reduce_type_test(GDScriptParser::TypeTestNode *p_type_tes
 
 		if (!is_type_compatible(test_type, operand_type)) {
 			push_error(vformat(R"(Expression is of type "%s" so it can't be of type "%s".)", operand_type.to_string(), test_type.to_string()), p_type_test->operand);
-		} else if (is_type_compatible(test_type, type_from_variant(p_type_test->operand->reduced_value, p_type_test->operand))) {
-			p_type_test->reduced_value = test_type.builtin_type != Variant::OBJECT || !p_type_test->operand->reduced_value.is_null();
+		} else {
+			// The constant's type can still be resolving during re-entrant member resolution;
+			// only fold the test when it is known (`is_type_compatible()` treats unset as compatible anyway).
+			const GDScriptParser::DataType value_type = type_from_variant(p_type_test->operand->reduced_value, p_type_test->operand);
+			if (value_type.is_set() && is_type_compatible(test_type, value_type)) {
+				p_type_test->reduced_value = test_type.builtin_type != Variant::OBJECT || !p_type_test->operand->reduced_value.is_null();
+			}
 		}
 
 		return;
