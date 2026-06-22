@@ -32,6 +32,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/math/expression.h"
 #include "core/os/keyboard.h"
@@ -1768,11 +1769,21 @@ void ScriptTextEditor::_edit_option(int p_op) {
 
 	switch (p_op) {
 		case EDIT_UNDO: {
-			tx->undo();
+			ScriptEditor *script_editor = ScriptEditor::get_singleton();
+			if (tx->has_undo()) {
+				tx->undo();
+			} else if (script_editor != nullptr) {
+				script_editor->undo_script_refactor();
+			}
 			callable_mp((Control *)tx, &Control::grab_focus).call_deferred(false);
 		} break;
 		case EDIT_REDO: {
-			tx->redo();
+			ScriptEditor *script_editor = ScriptEditor::get_singleton();
+			if (tx->has_redo()) {
+				tx->redo();
+			} else if (script_editor != nullptr) {
+				script_editor->redo_script_refactor();
+			}
 			callable_mp((Control *)tx, &Control::grab_focus).call_deferred(false);
 		} break;
 		case EDIT_CUT: {
@@ -2816,9 +2827,12 @@ void ScriptTextEditor::_color_changed(const Color &p_color) {
 
 void ScriptTextEditor::_prepare_edit_menu() {
 	const CodeEdit *tx = code_editor->get_text_editor();
+	ScriptEditor *script_editor = ScriptEditor::get_singleton();
+	const bool can_undo_refactor = script_editor != nullptr && script_editor->can_undo_script_refactor();
+	const bool can_redo_refactor = script_editor != nullptr && script_editor->can_redo_script_refactor();
 	PopupMenu *popup = edit_menu->get_popup();
-	popup->set_item_disabled(popup->get_item_index(EDIT_UNDO), !tx->has_undo());
-	popup->set_item_disabled(popup->get_item_index(EDIT_REDO), !tx->has_redo());
+	popup->set_item_disabled(popup->get_item_index(EDIT_UNDO), !tx->has_undo() && !can_undo_refactor);
+	popup->set_item_disabled(popup->get_item_index(EDIT_REDO), !tx->has_redo() && !can_redo_refactor);
 }
 
 RefactorContext ScriptTextEditor::_make_refactor_context() const {
@@ -2896,6 +2910,57 @@ void ScriptTextEditor::_clear_refactor_buffer() {
 #endif // GDSCRIPT_NO_LSP
 }
 
+bool ScriptTextEditor::_collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const {
+	r_sources.clear();
+
+	ScriptEditor *script_editor = ScriptEditor::get_singleton();
+	if (script_editor == nullptr) {
+		r_error_message = TTR("Cannot apply refactor without the script editor.");
+		return false;
+	}
+
+	for (const RefactorFileEdit &file_edit : p_file_edits) {
+		if (file_edit.path.is_empty()) {
+			r_error_message = TTR("Refactor target path is empty.");
+			r_sources.clear();
+			return false;
+		}
+
+		ScriptRefactorSource source;
+		source.path = file_edit.path;
+
+		ScriptEditorBase *open_editor = script_editor->get_open_editor_for_path(file_edit.path);
+		if (open_editor != nullptr) {
+			CodeTextEditor *target_code_editor = open_editor->get_code_editor();
+			if (target_code_editor == nullptr || target_code_editor->get_text_editor() == nullptr) {
+				r_error_message = vformat(TTR("Cannot read open refactor target '%s'."), file_edit.path);
+				r_sources.clear();
+				return false;
+			}
+			CodeEdit *target_text_editor = target_code_editor->get_text_editor();
+			// Rename confirmation re-syncs while the modal dialog is active. The
+			// expected-text checks still make this live-buffer read fail safely if
+			// a future flow allows the resolved source and editor text to diverge.
+			source.source = target_text_editor->get_text();
+			source.source_is_saved_version = target_text_editor->get_version() == target_text_editor->get_saved_version();
+			r_sources.push_back(source);
+			continue;
+		}
+
+		Error err = OK;
+		source.source = FileAccess::get_file_as_string(file_edit.path, &err);
+		if (err != OK) {
+			r_error_message = vformat(TTR("Cannot read refactor target '%s'."), file_edit.path);
+			r_sources.clear();
+			return false;
+		}
+		r_sources.push_back(source);
+	}
+
+	r_error_message = String();
+	return true;
+}
+
 void ScriptTextEditor::_run_refactor(int p_kind) {
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::RENAME == EDIT_REFACTOR_RENAME, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::EXTRACT_VARIABLE == EDIT_REFACTOR_EXTRACT_VARIABLE, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
@@ -2956,6 +3021,25 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 
 void ScriptTextEditor::_apply_refactor_result(const RefactorResult &p_result, const String &p_source) {
 	CodeEdit *text_editor = code_editor->get_text_editor();
+	if (!p_result.file_edits.is_empty()) {
+		Vector<ScriptRefactorSource> sources;
+		ScriptRefactorApplyPlan plan;
+		String error_message;
+		if (!_collect_refactor_sources(p_result.file_edits, sources, error_message) ||
+				!ScriptRefactorApply::build_plan(p_result.file_edits, sources, plan, error_message) ||
+				!ScriptEditor::get_singleton()->apply_script_refactor_plan(plan, error_message)) {
+			EditorToaster::get_singleton()->popup_str(error_message.is_empty() ? TTR("Could not apply refactor edits.") : error_message, EditorToaster::SEVERITY_ERROR);
+			return;
+		}
+		// Rename starts from the active file, so its anchor coordinates are for
+		// this editor even though the apply plan may also contain other files.
+		if (p_result.rename_anchor_line >= 0) {
+			text_editor->set_caret_line(p_result.rename_anchor_line);
+			text_editor->set_caret_column(p_result.rename_anchor_column);
+		}
+		return;
+	}
+
 	// Edits were computed against `p_source` (the buffer the engine resolved
 	// against), so they must be applied to that same text rather than a possibly
 	// divergent re-read of the editor.
@@ -3064,8 +3148,11 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 	}
 
 	const CodeEdit *tx = code_editor->get_text_editor();
-	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_UNDO), !tx->has_undo());
-	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_REDO), !tx->has_redo());
+	ScriptEditor *script_editor = ScriptEditor::get_singleton();
+	const bool can_undo_refactor = script_editor != nullptr && script_editor->can_undo_script_refactor();
+	const bool can_redo_refactor = script_editor != nullptr && script_editor->can_redo_script_refactor();
+	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_UNDO), !tx->has_undo() && !can_undo_refactor);
+	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_REDO), !tx->has_redo() && !can_redo_refactor);
 
 	context_menu->set_position(get_screen_position() + p_pos);
 	context_menu->reset_size();

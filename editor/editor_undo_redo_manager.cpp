@@ -333,35 +333,9 @@ bool EditorUndoRedoManager::redo() {
 		return false;
 	}
 
-	int selected_history = INVALID_HISTORY;
-	double global_timestamp = Math::INF;
-
-	// Pick the history with lowest last action timestamp (either global or current scene).
-	{
-		History &history = get_or_create_history(GLOBAL_HISTORY);
-		if (!history.redo_stack.is_empty()) {
-			selected_history = history.id;
-			global_timestamp = history.redo_stack.back()->get().timestamp;
-		}
-	}
-
-	{
-		History &history = get_or_create_history(REMOTE_HISTORY);
-		if (!history.redo_stack.is_empty() && history.redo_stack.back()->get().timestamp < global_timestamp) {
-			selected_history = history.id;
-			global_timestamp = history.redo_stack.back()->get().timestamp;
-		}
-	}
-
-	{
-		History &history = get_or_create_history(EditorNode::get_editor_data().get_current_edited_scene_history_id());
-		if (!history.redo_stack.is_empty() && history.redo_stack.back()->get().timestamp < global_timestamp) {
-			selected_history = history.id;
-		}
-	}
-
-	if (selected_history != INVALID_HISTORY) {
-		return redo_history(selected_history);
+	History *selected_history = _get_newest_redo();
+	if (selected_history) {
+		return redo_history(selected_history->id);
 	}
 	return false;
 }
@@ -490,6 +464,26 @@ int EditorUndoRedoManager::get_current_action_history_id() {
 	return INVALID_HISTORY;
 }
 
+String EditorUndoRedoManager::get_current_redo_action_name() {
+	if (has_redo()) {
+		History *selected_history = _get_newest_redo();
+		if (selected_history && !selected_history->redo_stack.is_empty()) {
+			return selected_history->redo_stack.back()->get().action_name;
+		}
+	}
+	return "";
+}
+
+int EditorUndoRedoManager::get_current_redo_action_history_id() {
+	if (has_redo()) {
+		History *selected_history = _get_newest_redo();
+		if (selected_history) {
+			return selected_history->id;
+		}
+	}
+	return INVALID_HISTORY;
+}
+
 void EditorUndoRedoManager::discard_history(int p_idx, bool p_erase_from_map) {
 	ERR_FAIL_COND(!history_map.has(p_idx));
 	History &history = history_map[p_idx];
@@ -528,6 +522,37 @@ EditorUndoRedoManager::History *EditorUndoRedoManager::_get_newest_undo() {
 	{
 		History &history = get_or_create_history(EditorNode::get_editor_data().get_current_edited_scene_history_id());
 		if (!history.undo_stack.is_empty() && history.undo_stack.back()->get().timestamp > global_timestamp) {
+			selected_history = &history;
+		}
+	}
+
+	return selected_history;
+}
+
+EditorUndoRedoManager::History *EditorUndoRedoManager::_get_newest_redo() {
+	History *selected_history = nullptr;
+	double global_timestamp = Math::INF;
+
+	// Pick the history with lowest last action timestamp (either global or current scene).
+	{
+		History &history = get_or_create_history(GLOBAL_HISTORY);
+		if (!history.redo_stack.is_empty()) {
+			selected_history = &history;
+			global_timestamp = history.redo_stack.back()->get().timestamp;
+		}
+	}
+
+	{
+		History &history = get_or_create_history(REMOTE_HISTORY);
+		if (!history.redo_stack.is_empty() && history.redo_stack.back()->get().timestamp < global_timestamp) {
+			selected_history = &history;
+			global_timestamp = history.redo_stack.back()->get().timestamp;
+		}
+	}
+
+	{
+		History &history = get_or_create_history(EditorNode::get_editor_data().get_current_edited_scene_history_id());
+		if (!history.redo_stack.is_empty() && history.redo_stack.back()->get().timestamp < global_timestamp) {
 			selected_history = &history;
 		}
 	}

@@ -3177,10 +3177,13 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 	const bool is_exported = resolved_symbol->detail.contains("@export ");
 
 	const Vector<LSP::Location> usages = workspace->find_all_usages(*resolved_symbol);
-	bool has_out_of_file_usage = false;
 	for (const LSP::Location &usage : usages) {
 		const String path = workspace->get_file_path(usage.uri);
-		ERR_CONTINUE(path.is_empty());
+		if (path.is_empty()) {
+			result.ok = false;
+			result.error_message = "Cannot resolve a rename target path.";
+			return result;
+		}
 		if (is_string_literal_usage(path, usage)) {
 			continue;
 		}
@@ -3190,14 +3193,16 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 		edit.start_column = usage.range.start.character;
 		edit.end_line = usage.range.end.line;
 		edit.end_column = usage.range.end.character;
+		edit.has_expected_text = true;
+		edit.expected_text = resolved_symbol->name;
 		edit.new_text = p_params.new_name;
 
 		RefactorFileEdit *file_edit = find_or_add_file_edit(result.file_edits, path);
 		file_edit->edits.push_back(edit);
 		if (path == p_context.path) {
+			// The script editor applies rename through file_edits, but tests and
+			// direct engine consumers still use edits for the active file.
 			result.edits.push_back(edit);
-		} else {
-			has_out_of_file_usage = true;
 		}
 	}
 
@@ -3209,10 +3214,6 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 
 	collect_dynamic_string_references(workspace, *resolved_symbol, result);
 
-	if (has_out_of_file_usage) {
-		result.warning = "References were found in other files. The current editor action only updates this "
-						 "script; references in other files were not updated.";
-	}
 	if (!result.unresolved_references.is_empty()) {
 		if (!result.warning.is_empty()) {
 			result.warning += " ";

@@ -37,6 +37,7 @@
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_paths.h"
 #include "editor/settings/editor_settings.h"
+#include "tests/editor/test_script_refactor_apply.h"
 #endif // TOOLS_ENABLED
 
 #include "tests/core/config/test_project_settings.h"

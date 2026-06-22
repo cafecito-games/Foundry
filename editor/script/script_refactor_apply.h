@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdscript_refactoring.h                                                */
+/*  script_refactor_apply.h                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -34,89 +34,43 @@
 
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
+#include "modules/gdscript/editor/gdscript_refactoring.h"
 
-#include "../gdscript_parser.h"
+class CodeEdit;
 
-// A single text edit within ONE file. 0-based, half-open [start, end) range.
-struct RefactorTextEdit {
-	int start_line = 0;
-	int start_column = 0;
-	int end_line = 0;
-	int end_column = 0;
-	bool has_expected_text = false;
-	String expected_text;
-	String new_text;
-};
-
-struct RefactorFileEdit {
+struct ScriptRefactorSource {
 	String path;
-	Vector<RefactorTextEdit> edits;
+	String source;
+	bool source_is_saved_version = true;
 };
 
-struct RefactorUnresolvedReference {
+struct ScriptRefactorFilePlan {
 	String path;
-	int line = -1;
-	int column = -1;
-	String message;
+	String before_source;
+	String after_source;
+	int edit_count = 0;
+	bool before_source_is_saved_version = true;
 };
 
-enum class RefactorKind {
-	RENAME,
-	EXTRACT_VARIABLE,
-	EXTRACT_METHOD,
-	ADD_TYPE_ANNOTATION,
-	INLINE_VARIABLE,
-};
+struct ScriptRefactorApplyPlan {
+	Vector<ScriptRefactorFilePlan> files;
 
-struct RefactorAvailability {
-	RefactorKind kind = RefactorKind::RENAME;
-	String title;
-	bool enabled = false;
-	String disabled_reason;
-};
-
-struct RefactorResult {
-	bool ok = false;
-	String error_message;
-	// Non-fatal advisory shown alongside a successful result (e.g. an @export var
-	// whose references may live outside this file and won't be updated).
-	String warning;
-	// Edits in the active file, kept for existing single-file refactor callers.
-	Vector<RefactorTextEdit> edits;
-	Vector<RefactorFileEdit> file_edits;
-	Vector<RefactorUnresolvedReference> unresolved_references;
-	int rename_anchor_line = -1;
-	int rename_anchor_column = -1;
-	String suggested_name;
-};
-
-// Caret position OR selection range. 0-based. No selection => end == start.
-struct RefactorLocation {
-	int start_line = 0;
-	int start_column = 0;
-	int end_line = 0;
-	int end_column = 0;
-
-	bool has_selection() const {
-		return start_line != end_line || start_column != end_column;
+	bool is_empty() const {
+		return files.is_empty();
 	}
 };
 
-// Refactor-specific input gathered by the UI before `prepare`.
-struct RefactorParams {
-	String new_name;
-};
+namespace ScriptRefactorApply {
 
-// Everything a refactor needs about the target file.
-struct RefactorContext {
-	String path; // res:// path of the edited script.
-	String source; // Current buffer contents.
-};
+bool build_plan(
+		const Vector<RefactorFileEdit> &p_file_edits,
+		const Vector<ScriptRefactorSource> &p_sources,
+		ScriptRefactorApplyPlan &r_plan,
+		String &r_error_message);
+void replace_editor_text(CodeEdit *p_text_editor, const String &p_source, bool p_source_is_saved_version);
+bool can_write_file(const String &p_path, String &r_error_message);
+bool write_file(const String &p_path, const String &p_source, String &r_error_message);
 
-class GDScriptRefactoring {
-public:
-	static Vector<RefactorAvailability> get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location);
-	static RefactorResult prepare(const RefactorContext &p_context, const RefactorLocation &p_location, RefactorKind p_kind, const RefactorParams &p_params);
-};
+} // namespace ScriptRefactorApply
 
 #endif // TOOLS_ENABLED

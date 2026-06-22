@@ -251,6 +251,7 @@ typedef ScriptEditorBase *(*CreateScriptEditorFunc)(const Ref<Resource> &p_resou
 class EditorScriptCodeCompletionCache;
 class FindInFilesContainer;
 class FindInFilesDialog;
+struct ScriptRefactorApplyPlan;
 
 class ScriptEditor : public PanelContainer {
 	GDCLASS(ScriptEditor, PanelContainer);
@@ -432,6 +433,7 @@ class ScriptEditor : public PanelContainer {
 
 	void _copy_script_path();
 	void _copy_script_uid();
+	void _set_refactor_file_source(const String &p_path, const String &p_source, bool p_source_is_saved_version);
 
 	void _ask_close_current_unsaved_tab(ScriptEditorBase *current);
 
@@ -584,6 +586,12 @@ public:
 
 	_FORCE_INLINE_ bool edit(const Ref<Resource> &p_resource, bool p_grab_focus = true) { return edit(p_resource, -1, 0, p_grab_focus); }
 	bool edit(const Ref<Resource> &p_resource, int p_line, int p_col, bool p_grab_focus = true);
+	ScriptEditorBase *get_open_editor_for_path(const String &p_path) const;
+	bool apply_script_refactor_plan(const ScriptRefactorApplyPlan &p_plan, String &r_error_message);
+	bool can_undo_script_refactor() const;
+	bool can_redo_script_refactor() const;
+	bool undo_script_refactor();
+	bool redo_script_refactor();
 
 	Vector<String> _get_breakpoints();
 	void get_breakpoints(List<String> *p_breakpoints);

@@ -31,6 +31,7 @@
 #pragma once
 
 #include "script_editor_plugin.h"
+#include "script_refactor_apply.h"
 
 #include "editor/gui/code_editor.h"
 #include "scene/gui/color_picker.h"
@@ -253,6 +254,7 @@ protected:
 	void _run_refactor(int p_kind);
 	void _sync_refactor_buffer();
 	void _clear_refactor_buffer();
+	bool _collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const;
 	void _apply_refactor_result(const RefactorResult &p_result, const String &p_source);
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);

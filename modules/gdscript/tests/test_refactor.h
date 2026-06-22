@@ -1306,8 +1306,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_rename(
 					"res://refactor/rename_cross_file_target.gd", 2, 5, "renamed_count", out); // caret on `shared_count`
 			REQUIRE(r.ok);
-			CHECK_FALSE(r.warning.is_empty());
-			CHECK(r.warning.to_lower().contains("other files"));
+			CHECK(r.warning.is_empty());
 			REQUIRE_EQ(r.file_edits.size(), 2);
 
 			const RefactorFileEdit *target_edits = find_file_edit(r, "res://refactor/rename_cross_file_target.gd");

@@ -62,6 +62,8 @@ int to_offset(const String &p_source, int p_line, int p_column) {
 struct ResolvedEdit {
 	int start_offset = 0;
 	int end_offset = 0;
+	bool has_expected_text = false;
+	String expected_text;
 	String new_text;
 };
 
@@ -78,6 +80,8 @@ bool GDScriptRefactorEdits::apply(const String &p_source, const Vector<RefactorT
 		ResolvedEdit r;
 		r.start_offset = to_offset(p_source, e.start_line, e.start_column);
 		r.end_offset = to_offset(p_source, e.end_line, e.end_column);
+		r.has_expected_text = e.has_expected_text;
+		r.expected_text = e.expected_text;
 		r.new_text = e.new_text;
 		if (r.start_offset < 0 || r.end_offset < 0 || r.end_offset < r.start_offset) {
 			return false;
@@ -89,6 +93,14 @@ bool GDScriptRefactorEdits::apply(const String &p_source, const Vector<RefactorT
 	for (int i = 1; i < resolved.size(); i++) {
 		if (resolved[i].start_offset < resolved[i - 1].end_offset) {
 			return false; // Overlap.
+		}
+	}
+	// This guards the exact edit span. It catches stale buffers when that span's
+	// text changed, but it does not prove the surrounding token context is the
+	// same as when the edit was resolved.
+	for (const ResolvedEdit &r : resolved) {
+		if (r.has_expected_text && p_source.substr(r.start_offset, r.end_offset - r.start_offset) != r.expected_text) {
+			return false;
 		}
 	}
 
