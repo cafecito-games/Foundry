@@ -493,6 +493,12 @@ void GDScriptCache::clear() {
 	singleton->shallow_gdscript_cache.clear();
 	singleton->full_gdscript_cache.clear();
 	singleton->static_gdscript_cache.clear();
+
+	// `cleared` only guards against re-entrant `remove_script()`/`move_script()`
+	// calls triggered while the caches above are being emptied. Once that is done
+	// the cache is reusable, so reset the flag to allow a later `clear()` (e.g.
+	// when the language is re-initialized) to run instead of becoming a no-op.
+	singleton->cleared = false;
 }
 
 GDScriptCache::GDScriptCache() {
