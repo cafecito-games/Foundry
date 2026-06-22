@@ -30,6 +30,7 @@
 
 #include "test_gdscript.h"
 
+#include "../gdscript.h"
 #include "../gdscript_analyzer.h"
 #include "../gdscript_compiler.h"
 #include "../gdscript_parser.h"
@@ -46,6 +47,170 @@
 #endif
 
 namespace GDScriptTests {
+
+TEST_CASE("[Modules][GDScript] Language reserved words include namespace declarations") {
+	Vector<String> reserved_words = GDScriptLanguage::get_singleton()->get_reserved_words();
+	CHECK(reserved_words.has("import"));
+	CHECK(reserved_words.has("namespace"));
+}
+
+static PackedStringArray parse_source_errors(const String &p_source) {
+	GDScriptParser parser;
+	Error err = parser.parse(p_source, "user://namespace_import_test.gd", false);
+	PackedStringArray errors;
+	if (err == OK) {
+		return errors;
+	}
+
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		errors.push_back(parser_error.message);
+	}
+	return errors;
+}
+
+static void check_parse_source_error(const String &p_source, const String &p_expected_error) {
+	INFO(p_source);
+	PackedStringArray errors = parse_source_errors(p_source);
+	CHECK_EQ(errors.size(), 1);
+	if (errors.size() != 1) {
+		return;
+	}
+	CHECK_EQ(errors[0], p_expected_error);
+}
+
+TEST_CASE("[Modules][GDScript] Parser stores namespace and import declarations") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace characters.controllers
+import characters
+import characters.stats
+@abstract
+class_name MyCharacterController
+extends Node
+)",
+			"user://my_character_controller.gd", false);
+
+	CHECK(err == OK);
+	if (err != OK) {
+		return;
+	}
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK(root->identifier != nullptr);
+	if (root->identifier == nullptr) {
+		return;
+	}
+
+	CHECK_EQ(root->namespace_name, "characters.controllers");
+	CHECK_EQ(root->qualified_global_name, "characters.controllers.MyCharacterController");
+	CHECK_EQ(root->fqcn, "characters.controllers.MyCharacterController");
+	CHECK_EQ(root->identifier->name, SNAME("MyCharacterController"));
+	CHECK(root->is_abstract);
+	CHECK_EQ(root->imports.size(), 2);
+	if (root->imports.size() != 2) {
+		return;
+	}
+	CHECK_EQ(root->imports[0], "characters");
+	CHECK_EQ(root->imports[1], "characters.stats");
+}
+
+TEST_CASE("[Modules][GDScript] Parser accepts imports without namespace") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+import shared
+import shared.types
+class_name UsesShared
+)",
+			"user://uses_shared.gd", false);
+
+	CHECK(err == OK);
+	if (err != OK) {
+		return;
+	}
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK(root->identifier != nullptr);
+	if (root->identifier == nullptr) {
+		return;
+	}
+
+	CHECK(root->namespace_name.is_empty());
+	CHECK_EQ(root->qualified_global_name, "UsesShared");
+	CHECK_EQ(root->fqcn, "UsesShared");
+	CHECK_EQ(root->imports.size(), 2);
+	if (root->imports.size() != 2) {
+		return;
+	}
+	CHECK_EQ(root->imports[0], "shared");
+	CHECK_EQ(root->imports[1], "shared.types");
+}
+
+TEST_CASE("[Modules][GDScript] Parser rejects invalid namespace and import declarations") {
+	check_parse_source_error(R"(
+namespace first
+namespace second
+class_name DuplicateNamespace
+)",
+			R"("namespace" can only be used once.)");
+
+	check_parse_source_error(R"(
+namespace characters.
+class_name MalformedNamespace
+)",
+			R"(Expected identifier after "." in namespace declaration.)");
+
+	check_parse_source_error(R"(
+import .characters
+class_name MalformedImport
+)",
+			R"(Expected identifier after "import".)");
+
+	check_parse_source_error(R"(
+import characters
+namespace characters.controllers
+class_name NamespaceAfterImport
+)",
+			R"("namespace" must be declared before "import".)");
+
+	check_parse_source_error(R"(
+@abstract
+namespace characters.controllers
+class_name ClassAnnotationBeforeNamespace
+)",
+			R"(Class annotations must appear after "namespace" and "import" declarations.)");
+
+	{
+		PackedStringArray errors = parse_source_errors(R"(
+@abstract
+namespace characters.controllers import characters
+class_name ClassAnnotationBeforeMalformedNamespace
+)");
+		CHECK_EQ(errors.size(), 2);
+		if (errors.size() == 2) {
+			CHECK_EQ(errors[0], R"(Class annotations must appear after "namespace" and "import" declarations.)");
+			CHECK_EQ(errors[1], R"(Expected end of statement after namespace declaration, found "import" instead.)");
+		}
+	}
+
+	check_parse_source_error(R"(
+namespace characters.controllers
+@tool
+class_name ScriptAnnotationAfterNamespace
+)",
+			R"(Annotation "@tool" must be at the top of the script, before "extends" and "class_name".)");
+
+	check_parse_source_error(R"(
+class_name ImportAfterClassName
+import characters
+)",
+			R"("import" declarations must appear before "class_name", "extends", and body declarations.)");
+}
 
 static void test_tokenizer(const String &p_code, const Vector<String> &p_lines) {
 	GDScriptTokenizerText tokenizer;

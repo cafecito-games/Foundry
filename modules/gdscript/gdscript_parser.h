@@ -771,6 +771,9 @@ public:
 		Vector<IdentifierNode *> extends; // List for indexing: extends A.B.C
 		DataType base_type;
 		String fqcn; // Fully-qualified class name. Identifies uniquely any class in the project.
+		String namespace_name; // Root class only. Empty means global namespace.
+		String qualified_global_name; // Root class only. Namespace + "." + `class_name`.
+		Vector<String> imports; // Root class only. File-local imported namespaces.
 #ifdef TOOLS_ENABLED
 		ClassDocData doc_data;
 
@@ -1550,6 +1553,9 @@ private:
 	// Main blocks.
 	void parse_program();
 	ClassNode *parse_class(bool p_is_static);
+	bool parse_identifier_chain(const String &p_declaration_name, String &r_chain);
+	void parse_namespace();
+	void parse_import();
 	void parse_class_name();
 	void parse_extends();
 	void parse_class_body(bool p_is_multiline);

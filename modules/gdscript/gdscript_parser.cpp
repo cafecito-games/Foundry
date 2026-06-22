@@ -689,78 +689,124 @@ void GDScriptParser::parse_program() {
 	head->end_line = 1;
 	head->fqcn = GDScript::canonicalize_path(script_path);
 	current_class = head;
-	bool can_have_class_or_extends = true;
 
-#define PUSH_PENDING_ANNOTATIONS_TO_HEAD                 \
-	if (!annotation_stack.is_empty()) {                  \
-		for (AnnotationNode *annot : annotation_stack) { \
-			head->annotations.push_back(annot);          \
-		}                                                \
-		annotation_stack.clear();                        \
-	}
+	auto push_pending_annotations_to_head = [&]() {
+		if (!annotation_stack.is_empty()) {
+			for (AnnotationNode *annot : annotation_stack) {
+				head->annotations.push_back(annot);
+			}
+			annotation_stack.clear();
+		}
+	};
 
-	while (!check(GDScriptTokenizer::Token::TK_EOF)) {
-		if (match(GDScriptTokenizer::Token::ANNOTATION)) {
-			AnnotationNode *annotation = parse_annotation(AnnotationInfo::SCRIPT | AnnotationInfo::CLASS_LEVEL | AnnotationInfo::STANDALONE);
-			if (annotation != nullptr) {
-				if (annotation->applies_to(AnnotationInfo::CLASS)) {
-					// We do not know in advance what the annotation will be applied to: the `head` class or the subsequent inner class.
-					// If we encounter `class_name`, `extends` or pure `SCRIPT` annotation, then it's `head`, otherwise it's an inner class.
-					annotation_stack.push_back(annotation);
-				} else if (annotation->applies_to(AnnotationInfo::SCRIPT)) {
-					PUSH_PENDING_ANNOTATIONS_TO_HEAD;
-					if (annotation->name == SNAME("@tool") || annotation->name == SNAME("@icon") || annotation->name == SNAME("@static_unload")) {
-						// Some annotations need to be resolved and applied in the parser.
-						// The root class is not in any class, so `head->outer == nullptr`.
-						annotation->apply(this, head, nullptr);
+	auto parse_top_level_annotations = [&](uint32_t p_valid_targets) {
+		while (!check(GDScriptTokenizer::Token::TK_EOF)) {
+			if (match(GDScriptTokenizer::Token::ANNOTATION)) {
+				AnnotationNode *annotation = parse_annotation(p_valid_targets);
+				if (annotation != nullptr) {
+					if (annotation->applies_to(AnnotationInfo::CLASS)) {
+						// We do not know in advance what the annotation will be applied to: the `head` class or the subsequent inner class.
+						// If we encounter `class_name`, `extends` or pure `SCRIPT` annotation, then it's `head`, otherwise it's an inner class.
+						annotation_stack.push_back(annotation);
+					} else if (annotation->applies_to(AnnotationInfo::SCRIPT)) {
+						push_pending_annotations_to_head();
+						if (annotation->name == SNAME("@tool") || annotation->name == SNAME("@icon") || annotation->name == SNAME("@static_unload")) {
+							// Some annotations need to be resolved and applied in the parser.
+							// The root class is not in any class, so `head->outer == nullptr`.
+							annotation->apply(this, head, nullptr);
+						} else {
+							head->annotations.push_back(annotation);
+						}
+					} else if (annotation->applies_to(AnnotationInfo::STANDALONE)) {
+						if (previous.type != GDScriptTokenizer::Token::NEWLINE) {
+							push_error(R"(Expected newline after a standalone annotation.)");
+						}
+						if (annotation->name == SNAME("@export_category") || annotation->name == SNAME("@export_group") || annotation->name == SNAME("@export_subgroup")) {
+							head->add_member_group(annotation);
+							// This annotation must appear after script-level annotations and `class_name`/`extends`,
+							// so we stop looking for script-level stuff.
+							return false;
+						} else if (annotation->name == SNAME("@warning_ignore_start") || annotation->name == SNAME("@warning_ignore_restore")) {
+							// Some annotations need to be resolved and applied in the parser.
+							annotation->apply(this, nullptr, nullptr);
+						} else {
+							push_error(R"(Unexpected standalone annotation.)");
+						}
 					} else {
-						head->annotations.push_back(annotation);
-					}
-				} else if (annotation->applies_to(AnnotationInfo::STANDALONE)) {
-					if (previous.type != GDScriptTokenizer::Token::NEWLINE) {
-						push_error(R"(Expected newline after a standalone annotation.)");
-					}
-					if (annotation->name == SNAME("@export_category") || annotation->name == SNAME("@export_group") || annotation->name == SNAME("@export_subgroup")) {
-						head->add_member_group(annotation);
+						annotation_stack.push_back(annotation);
 						// This annotation must appear after script-level annotations and `class_name`/`extends`,
 						// so we stop looking for script-level stuff.
-						can_have_class_or_extends = false;
-						break;
-					} else if (annotation->name == SNAME("@warning_ignore_start") || annotation->name == SNAME("@warning_ignore_restore")) {
-						// Some annotations need to be resolved and applied in the parser.
-						annotation->apply(this, nullptr, nullptr);
-					} else {
-						push_error(R"(Unexpected standalone annotation.)");
+						return false;
 					}
-				} else {
-					annotation_stack.push_back(annotation);
-					// This annotation must appear after script-level annotations and `class_name`/`extends`,
-					// so we stop looking for script-level stuff.
-					can_have_class_or_extends = false;
+				}
+			} else if (check(GDScriptTokenizer::Token::LITERAL) && current.literal.get_type() == Variant::STRING) {
+				// Allow strings in class body as multiline comments.
+				advance();
+				if (!match(GDScriptTokenizer::Token::NEWLINE)) {
+					push_error("Expected newline after comment string.");
+				}
+			} else {
+				break;
+			}
+		}
+
+		return true;
+	};
+
+	bool can_have_class_or_extends = parse_top_level_annotations(AnnotationInfo::SCRIPT | AnnotationInfo::CLASS_LEVEL | AnnotationInfo::STANDALONE);
+
+	if (current.type == GDScriptTokenizer::Token::NAMESPACE || current.type == GDScriptTokenizer::Token::IMPORT || current.type == GDScriptTokenizer::Token::CLASS_NAME || current.type == GDScriptTokenizer::Token::EXTENDS) {
+		// Set range of the class to only start at the top-level declaration if present.
+		reset_extents(head, current);
+	}
+
+	if ((current.type == GDScriptTokenizer::Token::NAMESPACE || current.type == GDScriptTokenizer::Token::IMPORT) && !annotation_stack.is_empty()) {
+		bool was_in_panic_mode = panic_mode;
+		push_error(R"(Class annotations must appear after "namespace" and "import" declarations.)");
+		annotation_stack.clear();
+		panic_mode = was_in_panic_mode;
+	}
+
+	bool can_have_namespace_or_import = can_have_class_or_extends;
+	while (can_have_namespace_or_import) {
+		switch (current.type) {
+			case GDScriptTokenizer::Token::NAMESPACE:
+				advance();
+				parse_namespace();
+				break;
+			case GDScriptTokenizer::Token::IMPORT:
+				advance();
+				parse_import();
+				break;
+			case GDScriptTokenizer::Token::LITERAL:
+				if (current.literal.get_type() == Variant::STRING) {
+					// Allow strings in class body as multiline comments.
+					advance();
+					if (!match(GDScriptTokenizer::Token::NEWLINE)) {
+						push_error("Expected newline after comment string.");
+					}
 					break;
 				}
-			}
-		} else if (check(GDScriptTokenizer::Token::LITERAL) && current.literal.get_type() == Variant::STRING) {
-			// Allow strings in class body as multiline comments.
-			advance();
-			if (!match(GDScriptTokenizer::Token::NEWLINE)) {
-				push_error("Expected newline after comment string.");
-			}
-		} else {
-			break;
+				[[fallthrough]];
+			default:
+				can_have_namespace_or_import = false;
+				break;
+		}
+
+		if (panic_mode) {
+			synchronize();
 		}
 	}
 
-	if (current.type == GDScriptTokenizer::Token::CLASS_NAME || current.type == GDScriptTokenizer::Token::EXTENDS) {
-		// Set range of the class to only start at extends or class_name if present.
-		reset_extents(head, current);
+	if (can_have_class_or_extends) {
+		can_have_class_or_extends = parse_top_level_annotations(AnnotationInfo::CLASS_LEVEL | AnnotationInfo::STANDALONE);
 	}
 
 	while (can_have_class_or_extends) {
 		// Order here doesn't matter, but there should be only one of each at most.
 		switch (current.type) {
 			case GDScriptTokenizer::Token::CLASS_NAME:
-				PUSH_PENDING_ANNOTATIONS_TO_HEAD;
+				push_pending_annotations_to_head();
 				advance();
 				if (head->identifier != nullptr) {
 					push_error(R"("class_name" can only be used once.)");
@@ -769,7 +815,7 @@ void GDScriptParser::parse_program() {
 				}
 				break;
 			case GDScriptTokenizer::Token::EXTENDS:
-				PUSH_PENDING_ANNOTATIONS_TO_HEAD;
+				push_pending_annotations_to_head();
 				advance();
 				if (head->extends_used) {
 					push_error(R"("extends" can only be used once.)");
@@ -779,7 +825,7 @@ void GDScriptParser::parse_program() {
 				}
 				break;
 			case GDScriptTokenizer::Token::TK_EOF:
-				PUSH_PENDING_ANNOTATIONS_TO_HEAD;
+				push_pending_annotations_to_head();
 				can_have_class_or_extends = false;
 				break;
 			case GDScriptTokenizer::Token::LITERAL:
@@ -802,8 +848,6 @@ void GDScriptParser::parse_program() {
 			synchronize();
 		}
 	}
-
-#undef PUSH_PENDING_ANNOTATIONS_TO_HEAD
 
 	for (AnnotationNode *&annotation : head->annotations) {
 		if (annotation->name == SNAME("@abstract")) {
@@ -922,6 +966,54 @@ bool GDScriptParser::has_class(const GDScriptParser::ClassNode *p_class) const {
 	return false;
 }
 
+bool GDScriptParser::parse_identifier_chain(const String &p_declaration_name, String &r_chain) {
+	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, vformat(R"(Expected identifier after "%s".)", p_declaration_name))) {
+		return false;
+	}
+
+	r_chain = parse_identifier()->name;
+
+	while (match(GDScriptTokenizer::Token::PERIOD)) {
+		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, vformat(R"(Expected identifier after "." in %s declaration.)", p_declaration_name))) {
+			return false;
+		}
+		r_chain += "." + String(parse_identifier()->name);
+	}
+
+	return true;
+}
+
+void GDScriptParser::parse_namespace() {
+	bool can_store_namespace = true;
+	if (!head->namespace_name.is_empty()) {
+		push_error(R"("namespace" can only be used once.)");
+		can_store_namespace = false;
+	} else if (!head->imports.is_empty()) {
+		push_error(R"("namespace" must be declared before "import".)");
+		can_store_namespace = false;
+	}
+
+	String namespace_name;
+	if (parse_identifier_chain("namespace", namespace_name) && can_store_namespace) {
+		head->namespace_name = namespace_name;
+	}
+
+	if (!panic_mode) {
+		end_statement("namespace declaration");
+	}
+}
+
+void GDScriptParser::parse_import() {
+	String import;
+	if (parse_identifier_chain("import", import)) {
+		head->imports.push_back(import);
+	}
+
+	if (!panic_mode) {
+		end_statement("import declaration");
+	}
+}
+
 GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 	ClassNode *n_class = alloc_node<ClassNode>();
 
@@ -978,7 +1070,8 @@ GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 void GDScriptParser::parse_class_name() {
 	if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for the global class name after "class_name".)")) {
 		current_class->identifier = parse_identifier();
-		current_class->fqcn = String(current_class->identifier->name);
+		current_class->qualified_global_name = current_class->namespace_name.is_empty() ? String(current_class->identifier->name) : current_class->namespace_name + "." + String(current_class->identifier->name);
+		current_class->fqcn = current_class->qualified_global_name;
 	}
 
 	if (match(GDScriptTokenizer::Token::EXTENDS)) {
@@ -1154,6 +1247,14 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::PASS:
 				advance();
 				end_statement(R"("pass")");
+				break;
+			case GDScriptTokenizer::Token::NAMESPACE:
+				advance();
+				push_error(R"("namespace" declarations must appear before "import", "class_name", "extends", and body declarations.)");
+				break;
+			case GDScriptTokenizer::Token::IMPORT:
+				advance();
+				push_error(R"("import" declarations must appear before "class_name", "extends", and body declarations.)");
 				break;
 			case GDScriptTokenizer::Token::DEDENT:
 				class_end = true;
@@ -4313,6 +4414,7 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // ENUM,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // EXTENDS,
 		{ &GDScriptParser::parse_lambda,                    nullptr,                                        PREC_NONE }, // FUNC,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // IMPORT,
 		{ nullptr,                                          &GDScriptParser::parse_binary_operator,      	PREC_CONTENT_TEST }, // TK_IN,
 		{ nullptr,                                          &GDScriptParser::parse_type_test,            	PREC_TYPE_TEST }, // IS,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // NAMESPACE,
