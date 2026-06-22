@@ -63,6 +63,8 @@ struct ExtractVariableCandidate {
 	String suggested_name;
 	RefactorTextEdit declaration_edit;
 	RefactorTextEdit replacement_edit;
+	int name_line = -1;
+	int name_column = -1;
 };
 
 struct TypeAnnotationCandidateCache {
@@ -75,6 +77,17 @@ struct TypeAnnotationCandidateCache {
 };
 
 TypeAnnotationCandidateCache type_annotation_cache;
+
+struct ExtractVariableCandidateCache {
+	bool valid = false;
+	String path;
+	uint64_t source_hash = 0;
+	int source_length = 0;
+	RefactorLocation location;
+	ExtractVariableCandidate candidate;
+};
+
+ExtractVariableCandidateCache extract_variable_cache;
 
 bool same_location(const RefactorLocation &p_a, const RefactorLocation &p_b) {
 	return p_a.start_line == p_b.start_line &&
@@ -370,11 +383,16 @@ bool try_extract_direct_expression(const RefactorLocation &p_location, const Vec
 
 	const int insertion_line = p_statement->start_line - 1;
 	const String indent = get_leading_whitespace(p_lines[insertion_line]);
+	const String declaration_prefix = indent + "var ";
 	r_candidate.declaration_edit.start_line = insertion_line;
 	r_candidate.declaration_edit.start_column = 0;
 	r_candidate.declaration_edit.end_line = insertion_line;
 	r_candidate.declaration_edit.end_column = 0;
-	r_candidate.declaration_edit.new_text = indent + "var " + name + ": " + rendered_type + " = " + expression_text + "\n";
+	// The replacement expression is inside an indented function-body statement,
+	// so its start offset is after this column-0 insertion. That keeps edit
+	// ordering unambiguous even though RefactorEdits sorts only by start offset.
+	r_candidate.declaration_edit.new_text = declaration_prefix + name + ": " + rendered_type +
+			" = " + expression_text + "\n";
 
 	r_candidate.replacement_edit.start_line = p_location.start_line;
 	r_candidate.replacement_edit.start_column = p_location.start_column;
@@ -382,15 +400,29 @@ bool try_extract_direct_expression(const RefactorLocation &p_location, const Vec
 	r_candidate.replacement_edit.end_column = p_location.end_column;
 	r_candidate.replacement_edit.new_text = name;
 	r_candidate.suggested_name = name;
+	r_candidate.name_line = insertion_line;
+	r_candidate.name_column = declaration_prefix.length();
 	r_candidate.enabled = true;
 	return true;
 }
 
-bool is_simple_identifier_assignment(const GDScriptParser::AssignmentNode *p_assignment) {
-	return p_assignment != nullptr &&
-			p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE &&
-			p_assignment->assignee != nullptr &&
-			p_assignment->assignee->type == GDScriptParser::Node::IDENTIFIER;
+bool is_self_attribute(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::SUBSCRIPT) {
+		return false;
+	}
+	const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+	return subscript->is_attribute && subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF;
+}
+
+bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignment) {
+	if (p_assignment == nullptr || p_assignment->assignee == nullptr) {
+		return false;
+	}
+	if (p_assignment->assignee->type == GDScriptParser::Node::IDENTIFIER) {
+		return true;
+	}
+	return p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE &&
+			is_self_attribute(p_assignment->assignee);
 }
 
 bool find_assignable_type_annotation(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate) {
@@ -678,7 +710,7 @@ bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Ve
 			} break;
 			case GDScriptParser::Node::ASSIGNMENT: {
 				const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(statement);
-				if (expression_matches_selection(p_location, p_lines, assignment->assigned_value) && !is_simple_identifier_assignment(assignment)) {
+				if (expression_matches_selection(p_location, p_lines, assignment->assigned_value) && !is_safe_extract_assignment(assignment)) {
 					r_candidate.matched = true;
 					r_candidate.disabled_reason = "Cannot safely extract this assignment expression.";
 					return true;
@@ -773,6 +805,27 @@ void cache_type_annotation_candidate(const RefactorContext &p_context, const Ref
 	type_annotation_cache.candidate = p_candidate;
 }
 
+bool get_cached_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, ExtractVariableCandidate &r_candidate) {
+	if (!extract_variable_cache.valid ||
+			extract_variable_cache.path != p_context.path ||
+			extract_variable_cache.source_hash != p_context.source.hash64() ||
+			extract_variable_cache.source_length != p_context.source.length() ||
+			!same_location(extract_variable_cache.location, p_location)) {
+		return false;
+	}
+	r_candidate = extract_variable_cache.candidate;
+	return true;
+}
+
+void cache_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, const ExtractVariableCandidate &p_candidate) {
+	extract_variable_cache.valid = true;
+	extract_variable_cache.path = p_context.path;
+	extract_variable_cache.source_hash = p_context.source.hash64();
+	extract_variable_cache.source_length = p_context.source.length();
+	extract_variable_cache.location = p_location;
+	extract_variable_cache.candidate = p_candidate;
+}
+
 TypeAnnotationCandidate find_type_annotation_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
 	TypeAnnotationCandidate candidate;
 
@@ -824,21 +877,30 @@ ExtractVariableCandidate find_extract_variable_candidate_uncached(const Refactor
 
 ExtractVariableCandidate find_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	ExtractVariableCandidate candidate;
+	if (get_cached_extract_variable_candidate(p_context, p_location, candidate)) {
+		return candidate;
+	}
+
 	if (!p_location.has_selection()) {
 		candidate.disabled_reason = "Select one expression to extract.";
+		cache_extract_variable_candidate(p_context, p_location, candidate);
 		return candidate;
 	}
 	if (!is_location_ordered(p_location)) {
 		candidate.disabled_reason = "Select one expression to extract.";
+		cache_extract_variable_candidate(p_context, p_location, candidate);
 		return candidate;
 	}
 	if (p_location.start_line != p_location.end_line) {
 		candidate.disabled_reason = "Extract variable currently supports single-line expressions.";
+		cache_extract_variable_candidate(p_context, p_location, candidate);
 		return candidate;
 	}
 
 	const Vector<String> lines = p_context.source.split("\n");
-	return find_extract_variable_candidate_uncached(p_context, p_location, lines);
+	candidate = find_extract_variable_candidate_uncached(p_context, p_location, lines);
+	cache_extract_variable_candidate(p_context, p_location, candidate);
+	return candidate;
 }
 
 RefactorResult prepare_extract_variable(const RefactorContext &p_context, const RefactorLocation &p_location) {
@@ -852,6 +914,8 @@ RefactorResult prepare_extract_variable(const RefactorContext &p_context, const 
 
 	result.ok = true;
 	result.suggested_name = candidate.suggested_name;
+	result.rename_anchor_line = candidate.name_line;
+	result.rename_anchor_column = candidate.name_column;
 	result.edits.push_back(candidate.declaration_edit);
 	result.edits.push_back(candidate.replacement_edit);
 	return result;

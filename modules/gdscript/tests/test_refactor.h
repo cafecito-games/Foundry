@@ -391,6 +391,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_extract_variable(source, selection(1, 8, 1, 16), out);
 			REQUIRE(r.ok);
 			CHECK_EQ(r.suggested_name, "value");
+			CHECK_EQ(r.rename_anchor_line, 1);
+			CHECK_EQ(r.rename_anchor_column, 5);
 			CHECK_EQ(out,
 					"func calculate(base: int) -> int:\n"
 					"\tvar value: int = base + 2\n"
@@ -420,6 +422,72 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_EQ(r.suggested_name, "value_2");
 			CHECK(out.contains("\tvar value_2: int = 1 + 2\n"));
 			CHECK(out.contains("\treturn value_2\n"));
+		}
+		SUBCASE("compound assignment") {
+			const String source =
+					"func get_delta() -> int:\n"
+					"\treturn 2\n"
+					"func run() -> void:\n"
+					"\tvar total := 1\n"
+					"\ttotal += get_delta()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(4, 10, 4, 21), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar delta: int = get_delta()\n"));
+			CHECK(out.contains("\ttotal += delta\n"));
+		}
+		SUBCASE("member assignment") {
+			const String source =
+					"var total := 0\n"
+					"func get_delta() -> int:\n"
+					"\treturn 2\n"
+					"func run() -> void:\n"
+					"\tself.total = get_delta()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(4, 14, 4, 25), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar delta: int = get_delta()\n"));
+			CHECK(out.contains("\tself.total = delta\n"));
+		}
+		SUBCASE("if condition") {
+			const String source =
+					"func check_ready() -> bool:\n"
+					"\treturn true\n"
+					"func run() -> void:\n"
+					"\tif check_ready():\n"
+					"\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 4, 3, 17), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar check_ready: bool = check_ready()\n"));
+			CHECK(out.contains("\tif check_ready:\n"));
+		}
+		SUBCASE("for list") {
+			const String source =
+					"func get_items() -> Array[int]:\n"
+					"\treturn [1]\n"
+					"func run() -> void:\n"
+					"\tfor item in get_items():\n"
+					"\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 13, 3, 24), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar items: Array[int] = get_items()\n"));
+			CHECK(out.contains("\tfor item in items:\n"));
+		}
+		SUBCASE("match subject") {
+			const String source =
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> void:\n"
+					"\tmatch get_value():\n"
+					"\t\t1:\n"
+					"\t\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 7, 3, 18), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar value: int = get_value()\n"));
+			CHECK(out.contains("\tmatch value:\n"));
 		}
 	}
 
@@ -468,6 +536,29 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_extract_variable(source, selection(3, 8, 3, 23), out);
 			CHECK_FALSE(r.ok);
 			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects while conditions") {
+			const String source =
+					"func should_continue() -> bool:\n"
+					"\treturn true\n"
+					"func run() -> void:\n"
+					"\twhile should_continue():\n"
+					"\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 7, 3, 24), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("while"));
+		}
+		SUBCASE("rejects assert expressions") {
+			const String source =
+					"func check_ready() -> bool:\n"
+					"\treturn true\n"
+					"func run() -> void:\n"
+					"\tassert(check_ready())\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 8, 3, 21), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("assert"));
 		}
 	}
 
