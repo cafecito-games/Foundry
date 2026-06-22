@@ -99,22 +99,38 @@ inline RefactorResult run_extract_variable(const String &p_source, const Refacto
 	return r;
 }
 
+inline RefactorResult run_extract_method(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://extract_method_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_METHOD, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		REQUIRE_EQ(available.size(), 3);
+		CHECK_EQ(available.size(), 4);
+		if (available.size() < 4) {
+			return;
+		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 		CHECK_FALSE(available[0].enabled);
 		CHECK_FALSE(available[0].disabled_reason.is_empty());
 		CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 		CHECK_FALSE(available[1].enabled);
 		CHECK_FALSE(available[1].disabled_reason.is_empty());
-		if (available.size() >= 3) {
-			CHECK_EQ(available[2].kind, RefactorKind::ADD_TYPE_ANNOTATION);
-			CHECK_FALSE(available[2].enabled);
-			CHECK_FALSE(available[2].disabled_reason.is_empty());
-		}
+		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
+		CHECK_FALSE(available[2].enabled);
+		CHECK_FALSE(available[2].disabled_reason.is_empty());
+		CHECK_EQ(available[3].kind, RefactorKind::ADD_TYPE_ANNOTATION);
+		CHECK_FALSE(available[3].enabled);
+		CHECK_FALSE(available[3].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Edit application") {
@@ -499,7 +515,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 3);
+		REQUIRE_EQ(available.size(), 4);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -562,6 +578,279 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Extract method inserts nearby helper and replaces selected statements") {
+		SUBCASE("no parameters") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_extracted_method");
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("multiple parameters") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tprint(a + b)\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: int, b: int) -> void:\n"
+					"\t_extracted_method(a, b)\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method(a: int, b: int) -> void:\n"
+					"\tprint(a + b)\n");
+		}
+		SUBCASE("single output local uses explicit call-site type") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar total := a + b\n"
+					"\tprint(total)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar total: int = _extracted_method(a, b)\n"
+					"\tprint(total)\n"
+					"\n"
+					"func _extracted_method(a: int, b: int) -> int:\n"
+					"\tvar total := a + b\n"
+					"\treturn total\n");
+		}
+		SUBCASE("single output local inside nested suite") {
+			const String source =
+					"func run(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tvar total := 1\n"
+					"\t\tprint(total)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(2, 0, 3, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tvar total: int = _extracted_method()\n"
+					"\t\tprint(total)\n"
+					"\n"
+					"func _extracted_method() -> int:\n"
+					"\tvar total := 1\n"
+					"\treturn total\n");
+		}
+		SUBCASE("blank lines are preserved without trailing whitespace") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\n"
+					"\tprint(\"done\")\n"
+					"\tprint(\"after\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 4, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"after\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\n"
+					"\tprint(\"done\")\n");
+		}
+		SUBCASE("appends helper when source has no final newline") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("preserves nested control-flow indentation") {
+			const String source =
+					"func run(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tprint(\"yes\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(flag: bool) -> void:\n"
+					"\t_extracted_method(flag)\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tprint(\"yes\")\n");
+		}
+		SUBCASE("avoids method name collisions") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_extracted_method_2");
+			CHECK(out.contains("\t_extracted_method_2()\n"));
+			CHECK(out.contains("func _extracted_method_2() -> void:\n"));
+		}
+	}
+
+	TEST_CASE("Extract method availability follows whole-statement selection") {
+		const String source =
+				"func run() -> void:\n"
+				"\tprint(\"ready\")\n"
+				"\tprint(\"done\")\n";
+		RefactorContext ctx;
+		ctx.path = "user://extract_method_availability.gd";
+		ctx.source = source;
+		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
+		REQUIRE_EQ(available.size(), 4);
+		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
+		CHECK(available[2].enabled);
+		CHECK(available[2].disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Extract method rejects unsafe or unprovable selections") {
+		SUBCASE("requires whole statements") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, 6), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects multiple output locals") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar first := a + 1\n"
+					"\tvar second := b + 1\n"
+					"\tprint(first + second)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("multiple"));
+		}
+		SUBCASE("rejects assignment to an existing output local") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar total := 0\n"
+					"\ttotal = a + b\n"
+					"\tprint(total)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(2, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("assignment"));
+		}
+		SUBCASE("rejects Variant parameters") {
+			const String source =
+					"func run(value: Variant) -> void:\n"
+					"\tprint(value)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("parameter"));
+		}
+		SUBCASE("rejects Variant output locals") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"func run() -> void:\n"
+					"\tvar value := dynamic_value()\n"
+					"\tprint(value)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(3, 0, 4, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("return type"));
+		}
+		SUBCASE("rejects selections spanning functions") {
+			const String source =
+					"func first() -> void:\n"
+					"\tprint(\"first\")\n"
+					"func second() -> void:\n"
+					"\tprint(\"second\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 4, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects return") {
+			const String source =
+					"func run() -> int:\n"
+					"\treturn 1\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("return"));
+		}
+		SUBCASE("rejects break") {
+			const String source =
+					"func run() -> void:\n"
+					"\twhile true:\n"
+					"\t\tbreak\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("break"));
+		}
+		SUBCASE("rejects continue") {
+			const String source =
+					"func run() -> void:\n"
+					"\twhile true:\n"
+					"\t\tcontinue\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("continue"));
+		}
+		SUBCASE("rejects await") {
+			const String source =
+					"signal finished\n"
+					"func run() -> void:\n"
+					"\tawait finished\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(2, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("await"));
+		}
+		SUBCASE("rejects lambda") {
+			const String source =
+					"func run(factor: int) -> void:\n"
+					"\tvar unused := func(x: int) -> int:\n"
+					"\t\treturn x * factor\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("lambda"));
+		}
+	}
+
 #ifndef GDSCRIPT_NO_LSP
 	TEST_CASE("Rename file-local symbols") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
@@ -619,7 +908,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 3);
+			REQUIRE_EQ(available.size(), 4);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -647,7 +936,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 3);
+			REQUIRE_EQ(available.size(), 4);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
