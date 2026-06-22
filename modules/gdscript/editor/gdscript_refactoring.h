@@ -46,6 +46,18 @@ struct RefactorTextEdit {
 	String new_text;
 };
 
+struct RefactorFileEdit {
+	String path;
+	Vector<RefactorTextEdit> edits;
+};
+
+struct RefactorUnresolvedReference {
+	String path;
+	int line = -1;
+	int column = -1;
+	String message;
+};
+
 enum class RefactorKind {
 	RENAME,
 	EXTRACT_VARIABLE,
@@ -67,7 +79,10 @@ struct RefactorResult {
 	// Non-fatal advisory shown alongside a successful result (e.g. an @export var
 	// whose references may live outside this file and won't be updated).
 	String warning;
+	// Edits in the active file, kept for existing single-file refactor callers.
 	Vector<RefactorTextEdit> edits;
+	Vector<RefactorFileEdit> file_edits;
+	Vector<RefactorUnresolvedReference> unresolved_references;
 	int rename_anchor_line = -1;
 	int rename_anchor_column = -1;
 	String suggested_name;

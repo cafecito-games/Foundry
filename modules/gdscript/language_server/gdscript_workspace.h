@@ -98,6 +98,7 @@ public:
 	Error resolve_signature(const LSP::TextDocumentPositionParams &p_doc_pos, LSP::SignatureHelp &r_signature);
 	Dictionary rename(const LSP::TextDocumentPositionParams &p_doc_pos, const String &new_name);
 	bool can_rename(const LSP::TextDocumentPositionParams &p_doc_pos, LSP::DocumentSymbol &r_symbol, LSP::Range &r_range);
+	void list_project_script_files(List<String> &r_files) { list_script_files("res://", r_files); }
 	Vector<LSP::Location> find_usages_in_file(const LSP::DocumentSymbol &p_symbol, const String &p_file_path);
 	Vector<LSP::Location> find_all_usages(const LSP::DocumentSymbol &p_symbol);
 

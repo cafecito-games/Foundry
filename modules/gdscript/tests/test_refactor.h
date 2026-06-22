@@ -123,6 +123,15 @@ inline RefactorResult run_inline_variable(const String &p_source, int p_line, in
 	return r;
 }
 
+inline const RefactorFileEdit *find_file_edit(const RefactorResult &p_result, const String &p_path) {
+	for (const RefactorFileEdit &file_edit : p_result.file_edits) {
+		if (file_edit.path == p_path) {
+			return &file_edit;
+		}
+	}
+	return nullptr;
+}
+
 TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
@@ -1179,6 +1188,17 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(out.contains("return sum"));
 			CHECK_FALSE(out.contains("total"));
 		}
+		SUBCASE("local variable ignores string-based dynamic member references") {
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_local_dynamic_reference.gd", 3, 5, "local_total", out); // caret on `local_value`
+			REQUIRE(r.ok);
+			CHECK(r.warning.is_empty());
+			CHECK(r.unresolved_references.is_empty());
+			CHECK(out.contains("var local_total := 1"));
+			CHECK(out.contains("get(\"local_value\")"));
+			CHECK(out.contains("return local_total"));
+		}
 		SUBCASE("file-local member") {
 			String out;
 			RefactorResult r = run_rename("res://refactor/rename_member.gd", 2, 4, "tally", out); // caret on `counter`
@@ -1278,6 +1298,60 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			const String b_source = FileAccess::get_file_as_string("res://refactor/rename_xfile_b.gd");
 			CHECK(b_source.contains("var shared_value := 0"));
 			CHECK_FALSE(b_source.contains("renamed_value"));
+		}
+		SUBCASE("member rename reports grouped cross-file edits") {
+			GDScriptTests::assert_no_errors_in("res://refactor/rename_cross_file_user.gd");
+
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_cross_file_target.gd", 2, 5, "renamed_count", out); // caret on `shared_count`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("other files"));
+			REQUIRE_EQ(r.file_edits.size(), 2);
+
+			const RefactorFileEdit *target_edits = find_file_edit(r, "res://refactor/rename_cross_file_target.gd");
+			REQUIRE(target_edits);
+			CHECK_EQ(target_edits->edits.size(), 3);
+
+			const RefactorFileEdit *user_edits = find_file_edit(r, "res://refactor/rename_cross_file_user.gd");
+			REQUIRE(user_edits);
+			CHECK_EQ(user_edits->edits.size(), 2);
+
+			String target_out;
+			REQUIRE(GDScriptRefactorEdits::apply(
+					FileAccess::get_file_as_string(target_edits->path), target_edits->edits, target_out));
+			CHECK(target_out.contains("var renamed_count := 0"));
+			CHECK(target_out.contains("renamed_count += 1"));
+			CHECK(target_out.contains("return renamed_count"));
+			CHECK_FALSE(target_out.contains("shared_count"));
+
+			String user_out;
+			REQUIRE(GDScriptRefactorEdits::apply(FileAccess::get_file_as_string(user_edits->path), user_edits->edits, user_out));
+			CHECK(user_out.contains("target.renamed_count += 1"));
+			CHECK(user_out.contains("return target.renamed_count"));
+			CHECK_FALSE(user_out.contains("shared_count"));
+		}
+		SUBCASE("string-based dynamic references are reported") {
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_dynamic_reference.gd", 2, 5, "renamed_value", out); // caret on `dynamic_value`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("dynamic"));
+			REQUIRE_EQ(r.unresolved_references.size(), 1);
+			CHECK_EQ(r.unresolved_references[0].path, "res://refactor/rename_dynamic_reference.gd");
+			CHECK_EQ(r.unresolved_references[0].line, 5);
+			CHECK(out.contains("\treturn get(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\treturn get(\"renamed_value\")"));
+			CHECK(out.contains("\twidget(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\twidget(\"renamed_value\")"));
+			CHECK(out.contains("\toffset(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\toffset(\"renamed_value\")"));
+			CHECK(out.contains("\trecall(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\trecall(\"renamed_value\")"));
+			CHECK(out.contains("\tvar label := \"dynamic_value\"; call(\"unrelated_method\")"));
+			CHECK_FALSE(out.contains("\tvar label := \"renamed_value\"; call(\"unrelated_method\")"));
 		}
 		SUBCASE("allows same name in a different scope") {
 			String out;

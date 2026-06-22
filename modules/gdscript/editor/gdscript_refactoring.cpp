@@ -162,6 +162,157 @@ bool caret_on_segment(const RefactorLocation &p_location, int p_line, int p_star
 	return p_location.start_column >= p_start_column && p_location.start_column <= p_end_column;
 }
 
+RefactorFileEdit *find_or_add_file_edit(Vector<RefactorFileEdit> &r_file_edits, const String &p_path) {
+	for (RefactorFileEdit &file_edit : r_file_edits) {
+		if (file_edit.path == p_path) {
+			return &file_edit;
+		}
+	}
+
+	RefactorFileEdit file_edit;
+	file_edit.path = p_path;
+	r_file_edits.push_back(file_edit);
+	// The returned pointer is for immediate use only; a later push_back can move the Vector storage.
+	return &r_file_edits.write[r_file_edits.size() - 1];
+}
+
+bool is_supported_dynamic_string_call(const String &p_name) {
+	return p_name == "get" ||
+			p_name == "set" ||
+			p_name == "call" ||
+			p_name == "call_deferred" ||
+			p_name == "set_deferred";
+}
+
+int skip_string_literal(const String &p_line, int p_quote_column) {
+	const char32_t quote = p_line[p_quote_column];
+	bool escaped = false;
+	for (int i = p_quote_column + 1; i < p_line.length(); i++) {
+		const char32_t c = p_line[i];
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (c == '\\') {
+			escaped = true;
+			continue;
+		}
+		if (c == quote) {
+			return i + 1;
+		}
+	}
+	return p_line.length();
+}
+
+bool is_column_inside_string_literal(const String &p_line, int p_column) {
+	if (p_column < 0 || p_column >= p_line.length()) {
+		return false;
+	}
+
+	for (int i = 0; i < p_line.length(); i++) {
+		const char32_t c = p_line[i];
+		if (c == '#') {
+			return false;
+		}
+		if (c != '"' && c != '\'') {
+			continue;
+		}
+
+		const int end = skip_string_literal(p_line, i);
+		if (p_column >= i && p_column < end) {
+			return true;
+		}
+		i = end - 1;
+	}
+
+	return false;
+}
+
+int find_first_string_argument_column(
+		const String &p_line,
+		int p_open_paren_column,
+		const String &p_identifier,
+		int p_match_column = -1) {
+	int pos = p_open_paren_column + 1;
+	while (pos < p_line.length() && is_whitespace(p_line[pos])) {
+		pos++;
+	}
+
+	if (pos >= p_line.length() || (p_line[pos] != '"' && p_line[pos] != '\'')) {
+		return -1;
+	}
+
+	const char32_t quote = p_line[pos];
+	String value;
+	bool escaped = false;
+	for (int i = pos + 1; i < p_line.length(); i++) {
+		const char32_t c = p_line[i];
+		if (escaped) {
+			value += String::chr(c);
+			escaped = false;
+			continue;
+		}
+		if (c == '\\') {
+			escaped = true;
+			continue;
+		}
+		if (c == quote) {
+			const bool column_matches = p_match_column < 0 || (p_match_column >= pos && p_match_column <= i);
+			return value == p_identifier && column_matches ? pos + 1 : -1;
+		}
+		value += String::chr(c);
+	}
+
+	return -1;
+}
+
+int find_dynamic_string_reference_column(const String &p_line, const String &p_identifier, int p_match_column = -1) {
+	// This is a conservative scan for common Object string-call forms. It is not a
+	// complete dynamic-reference parser and intentionally ignores unrelated strings.
+	for (int i = 0; i < p_line.length(); i++) {
+		const char32_t c = p_line[i];
+		if (c == '#') {
+			return -1;
+		}
+		if (c == '"' || c == '\'') {
+			i = skip_string_literal(p_line, i) - 1;
+			continue;
+		}
+		if (!is_unicode_identifier_start(c)) {
+			continue;
+		}
+
+		const int name_start = i;
+		i++;
+		while (i < p_line.length() && is_unicode_identifier_continue(p_line[i])) {
+			i++;
+		}
+		const int name_end = i;
+		const String name = p_line.substr(name_start, name_end - name_start);
+		if (!is_supported_dynamic_string_call(name)) {
+			i--;
+			continue;
+		}
+
+		int open_paren = name_end;
+		while (open_paren < p_line.length() && is_whitespace(p_line[open_paren])) {
+			open_paren++;
+		}
+		if (open_paren >= p_line.length() || p_line[open_paren] != '(') {
+			i--;
+			continue;
+		}
+
+		const int column = find_first_string_argument_column(p_line, open_paren, p_identifier, p_match_column);
+		if (column >= 0) {
+			return column;
+		}
+		i--;
+	}
+
+	return -1;
+}
+
 bool render_annotation_or_disable(const GDScriptParser::DataType &p_type, TypeAnnotationCandidate &r_candidate, String &r_rendered) {
 	if (!GDScriptRefactorTypes::render_annotatable_type(p_type, r_rendered)) {
 		r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
@@ -2913,6 +3064,58 @@ static LSP::TextDocumentPositionParams make_document_position(const Ref<GDScript
 	doc_position.position.character = p_location.start_column;
 	return doc_position;
 }
+
+static bool is_string_literal_usage(
+		const String &p_path,
+		const LSP::Location &p_usage) {
+	const ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(p_path);
+	if (!parser) {
+		return false;
+	}
+
+	const PackedStringArray &lines = parser->get_lines();
+	if (p_usage.range.start.line < 0 || p_usage.range.start.line >= lines.size()) {
+		return false;
+	}
+
+	return is_column_inside_string_literal(lines[p_usage.range.start.line], p_usage.range.start.character);
+}
+
+static void collect_dynamic_string_references(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const LSP::DocumentSymbol &p_symbol,
+		RefactorResult &r_result) {
+	List<String> paths;
+	if (p_symbol.local) {
+		// Object string-call APIs cannot reference local variables or parameters.
+		return;
+	}
+
+	p_workspace->list_project_script_files(paths);
+
+	for (const String &path : paths) {
+		const ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+		if (!parser) {
+			continue;
+		}
+
+		const PackedStringArray &lines = parser->get_lines();
+		for (int i = 0; i < lines.size(); i++) {
+			const String &line = lines[i];
+			const int column = find_dynamic_string_reference_column(line, p_symbol.name);
+			if (column < 0) {
+				continue;
+			}
+
+			RefactorUnresolvedReference unresolved;
+			unresolved.path = path;
+			unresolved.line = i;
+			unresolved.column = column;
+			unresolved.message = "String-based dynamic reference cannot be renamed automatically.";
+			r_result.unresolved_references.push_back(unresolved);
+		}
+	}
+}
 #endif // GDSCRIPT_NO_LSP
 
 static RefactorResult prepare_rename(const RefactorContext &p_context, const RefactorLocation &p_location, const RefactorParams &p_params) {
@@ -2967,44 +3170,62 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 		}
 	}
 
-	// An @export variable's references can live outside this script (the inspector,
-	// scene/resource files), which a file-local rename will not touch. The LSP
-	// builds the symbol's `detail` with an "@export " prefix for exported vars
-	// (see gdscript_extend_parser.cpp), so the prefix is a reliable signal here.
+	// An @export variable's references can live outside scripts (the inspector,
+	// scene/resource files), which GDScript symbol resolution cannot enumerate.
+	// The LSP builds the symbol's `detail` with an "@export " prefix for exported
+	// vars (see gdscript_extend_parser.cpp), so the prefix is a reliable signal here.
 	const bool is_exported = resolved_symbol->detail.contains("@export ");
 
-	// This rename is file-local: only usages in the current document are edited.
-	// Track whether any usage lives in another file so we can warn that those
-	// references were left untouched and may break the project.
-	bool has_out_of_file_usage = false;
-
 	const Vector<LSP::Location> usages = workspace->find_all_usages(*resolved_symbol);
+	bool has_out_of_file_usage = false;
 	for (const LSP::Location &usage : usages) {
-		if (usage.uri != doc_position.textDocument.uri) {
-			has_out_of_file_usage = true;
+		const String path = workspace->get_file_path(usage.uri);
+		ERR_CONTINUE(path.is_empty());
+		if (is_string_literal_usage(path, usage)) {
 			continue;
 		}
+
 		RefactorTextEdit edit;
 		edit.start_line = usage.range.start.line;
 		edit.start_column = usage.range.start.character;
 		edit.end_line = usage.range.end.line;
 		edit.end_column = usage.range.end.character;
 		edit.new_text = p_params.new_name;
-		result.edits.push_back(edit);
+
+		RefactorFileEdit *file_edit = find_or_add_file_edit(result.file_edits, path);
+		file_edit->edits.push_back(edit);
+		if (path == p_context.path) {
+			result.edits.push_back(edit);
+		} else {
+			has_out_of_file_usage = true;
+		}
 	}
 
-	if (result.edits.is_empty()) {
+	if (result.file_edits.is_empty()) {
 		result.ok = false;
 		result.error_message = "No references found to rename.";
 		return result;
 	}
 
-	if (is_exported && has_out_of_file_usage) {
-		result.warning = "This is an exported variable, and references were found in other files. Only references in this script were renamed; references elsewhere (other scripts, the inspector, or scene files) were not updated.";
-	} else if (is_exported) {
-		result.warning = "This is an exported variable; references outside this script (such as in the inspector or scene files) will not be updated.";
-	} else if (has_out_of_file_usage) {
-		result.warning = "References to this symbol were found in other files. Only references in this script were renamed; references in other files were not updated.";
+	collect_dynamic_string_references(workspace, *resolved_symbol, result);
+
+	if (has_out_of_file_usage) {
+		result.warning = "References were found in other files. The current editor action only updates this "
+						 "script; references in other files were not updated.";
+	}
+	if (!result.unresolved_references.is_empty()) {
+		if (!result.warning.is_empty()) {
+			result.warning += " ";
+		}
+		result.warning += "Some string-based dynamic references to this symbol could not be resolved statically "
+						  "and were not renamed.";
+	}
+	if (is_exported) {
+		if (!result.warning.is_empty()) {
+			result.warning += " ";
+		}
+		result.warning += "This is an exported variable; references outside scripts (such as in the inspector "
+						  "or scene files) will not be updated.";
 	}
 
 	result.ok = true;
