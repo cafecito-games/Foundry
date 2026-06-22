@@ -88,6 +88,19 @@ struct ExtractMethodCandidate {
 	int name_column = -1;
 };
 
+struct InlineVariableUse {
+	const GDScriptParser::IdentifierNode *identifier = nullptr;
+	const GDScriptParser::Node *parent = nullptr;
+};
+
+struct InlineVariableCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	RefactorTextEdit declaration_edit;
+	Vector<RefactorTextEdit> replacement_edits;
+};
+
 struct TypeAnnotationCandidateCache {
 	bool valid = false;
 	String path;
@@ -120,6 +133,17 @@ struct ExtractMethodCandidateCache {
 };
 
 ExtractMethodCandidateCache extract_method_cache;
+
+struct InlineVariableCandidateCache {
+	bool valid = false;
+	String path;
+	uint64_t source_hash = 0;
+	int source_length = 0;
+	RefactorLocation location;
+	InlineVariableCandidate candidate;
+};
+
+InlineVariableCandidateCache inline_variable_cache;
 
 bool same_location(const RefactorLocation &p_a, const RefactorLocation &p_b) {
 	return p_a.start_line == p_b.start_line &&
@@ -317,6 +341,25 @@ bool get_node_text_range(const Vector<String> &p_lines, const GDScriptParser::No
 	r_range.end_line = end_line;
 	r_range.end_column = end_column;
 	return true;
+}
+
+bool get_single_line_node_text(const Vector<String> &p_lines, const GDScriptParser::Node *p_node, String &r_text, RefactorLocation *r_range = nullptr) {
+	RefactorLocation range;
+	if (!get_node_text_range(p_lines, p_node, range) || range.start_line != range.end_line) {
+		return false;
+	}
+	if (range.start_line < 0 || range.start_line >= p_lines.size()) {
+		return false;
+	}
+	const String line = p_lines[range.start_line];
+	if (range.start_column < 0 || range.end_column < range.start_column || range.end_column > line.length()) {
+		return false;
+	}
+	r_text = line.substr(range.start_column, range.end_column - range.start_column);
+	if (r_range != nullptr) {
+		*r_range = range;
+	}
+	return !r_text.is_empty();
 }
 
 bool expression_matches_selection(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression) {
@@ -1687,6 +1730,759 @@ bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Ve
 	return false;
 }
 
+bool find_inline_variable_target_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function);
+bool find_inline_variable_target_in_expression(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function);
+
+bool find_inline_variable_declaration(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::VariableNode *p_variable, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function) {
+	if (p_suite == nullptr || p_suite->parent_function == nullptr || p_variable == nullptr || p_variable->identifier == nullptr) {
+		return false;
+	}
+	const int line_index = p_variable->start_line - 1;
+	if (line_index < 0 || line_index >= p_lines.size()) {
+		return false;
+	}
+	const String line = p_lines[line_index];
+	int name_start = 0;
+	int name_end = 0;
+	if (!get_identifier_text_span(p_lines, line_index, p_variable->identifier, nullptr, name_start, name_end)) {
+		return false;
+	}
+	int declaration_start = name_start;
+	int keyword_start = 0;
+	if (get_node_text_start(p_lines, line_index, p_variable, "var", keyword_start)) {
+		declaration_start = keyword_start;
+	} else {
+		keyword_start = line.find("var");
+		if (keyword_start >= 0 && keyword_start <= name_start) {
+			declaration_start = keyword_start;
+		}
+	}
+	const int equal_index = line.find("=", name_end);
+	const int declaration_end = equal_index >= 0 ? equal_index : name_end;
+	if (!caret_on_segment(p_location, line_index, declaration_start, declaration_end)) {
+		return false;
+	}
+	r_variable = p_variable;
+	r_function = p_suite->parent_function;
+	return true;
+}
+
+bool find_inline_variable_target_in_identifier(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function) {
+	if (p_identifier == nullptr || p_identifier->source != GDScriptParser::IdentifierNode::LOCAL_VARIABLE || p_identifier->variable_source == nullptr) {
+		return false;
+	}
+	if (p_identifier->source_function != nullptr &&
+			(p_location.start_line + 1 < p_identifier->source_function->start_line ||
+					p_location.start_line + 1 > p_identifier->source_function->end_line)) {
+		return false;
+	}
+	const int line_index = p_identifier->start_line - 1;
+	int name_start = 0;
+	int name_end = 0;
+	if (!get_identifier_text_span(p_lines, line_index, p_identifier, &p_location, name_start, name_end) ||
+			!caret_on_segment(p_location, line_index, name_start, name_end)) {
+		return false;
+	}
+	r_variable = p_identifier->variable_source;
+	r_function = p_identifier->source_function;
+	return true;
+}
+
+bool find_inline_variable_target_in_lambda(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::LambdaNode *p_lambda, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function) {
+	if (p_lambda == nullptr || p_lambda->function == nullptr) {
+		return false;
+	}
+	return find_inline_variable_target_in_suite(p_location, p_lines, p_lambda->function->body, r_variable, r_function);
+}
+
+bool find_inline_variable_target_in_expression(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+
+	switch (p_expression->type) {
+		case GDScriptParser::Node::ARRAY: {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				if (find_inline_variable_target_in_expression(p_location, p_lines, element, r_variable, r_function)) {
+					return true;
+				}
+			}
+		} break;
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
+			return find_inline_variable_target_in_expression(p_location, p_lines, assignment->assignee, r_variable, r_function) ||
+					find_inline_variable_target_in_expression(p_location, p_lines, assignment->assigned_value, r_variable, r_function);
+		}
+		case GDScriptParser::Node::AWAIT:
+			return find_inline_variable_target_in_expression(p_location, p_lines, static_cast<const GDScriptParser::AwaitNode *>(p_expression)->to_await, r_variable, r_function);
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
+			return find_inline_variable_target_in_expression(p_location, p_lines, binary->left_operand, r_variable, r_function) ||
+					find_inline_variable_target_in_expression(p_location, p_lines, binary->right_operand, r_variable, r_function);
+		}
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
+			if (find_inline_variable_target_in_expression(p_location, p_lines, call->callee, r_variable, r_function)) {
+				return true;
+			}
+			for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
+				if (find_inline_variable_target_in_expression(p_location, p_lines, argument, r_variable, r_function)) {
+					return true;
+				}
+			}
+		} break;
+		case GDScriptParser::Node::CAST:
+			return find_inline_variable_target_in_expression(p_location, p_lines, static_cast<const GDScriptParser::CastNode *>(p_expression)->operand, r_variable, r_function);
+		case GDScriptParser::Node::DICTIONARY: {
+			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
+			for (const GDScriptParser::DictionaryNode::Pair &pair : dictionary->elements) {
+				if (find_inline_variable_target_in_expression(p_location, p_lines, pair.key, r_variable, r_function) ||
+						find_inline_variable_target_in_expression(p_location, p_lines, pair.value, r_variable, r_function)) {
+					return true;
+				}
+			}
+		} break;
+		case GDScriptParser::Node::IDENTIFIER:
+			return find_inline_variable_target_in_identifier(p_location, p_lines, static_cast<const GDScriptParser::IdentifierNode *>(p_expression), r_variable, r_function);
+		case GDScriptParser::Node::LAMBDA:
+			return find_inline_variable_target_in_lambda(p_location, p_lines, static_cast<const GDScriptParser::LambdaNode *>(p_expression), r_variable, r_function);
+		case GDScriptParser::Node::PRELOAD:
+			return find_inline_variable_target_in_expression(p_location, p_lines, static_cast<const GDScriptParser::PreloadNode *>(p_expression)->path, r_variable, r_function);
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			if (find_inline_variable_target_in_expression(p_location, p_lines, subscript->base, r_variable, r_function)) {
+				return true;
+			}
+			if (!subscript->is_attribute && find_inline_variable_target_in_expression(p_location, p_lines, subscript->index, r_variable, r_function)) {
+				return true;
+			}
+		} break;
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
+			return find_inline_variable_target_in_expression(p_location, p_lines, ternary->condition, r_variable, r_function) ||
+					find_inline_variable_target_in_expression(p_location, p_lines, ternary->true_expr, r_variable, r_function) ||
+					find_inline_variable_target_in_expression(p_location, p_lines, ternary->false_expr, r_variable, r_function);
+		}
+		case GDScriptParser::Node::TYPE_TEST:
+			return find_inline_variable_target_in_expression(p_location, p_lines, static_cast<const GDScriptParser::TypeTestNode *>(p_expression)->operand, r_variable, r_function);
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			return find_inline_variable_target_in_expression(p_location, p_lines, static_cast<const GDScriptParser::UnaryOpNode *>(p_expression)->operand, r_variable, r_function);
+		default:
+			break;
+	}
+	return false;
+}
+
+bool find_inline_variable_target_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function) {
+	if (p_suite == nullptr) {
+		return false;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::VARIABLE: {
+				const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(statement);
+				if (find_inline_variable_declaration(p_location, p_lines, p_suite, variable, r_variable, r_function) ||
+						find_inline_variable_target_in_expression(p_location, p_lines, variable->initializer, r_variable, r_function)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::CONSTANT: {
+				const GDScriptParser::ConstantNode *constant = static_cast<const GDScriptParser::ConstantNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, constant->initializer, r_variable, r_function)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::RETURN: {
+				const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, return_node->return_value, r_variable, r_function)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::ASSIGNMENT:
+				if (find_inline_variable_target_in_expression(p_location, p_lines, static_cast<const GDScriptParser::AssignmentNode *>(statement), r_variable, r_function)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::Node::ASSERT: {
+				const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, assert_node->condition, r_variable, r_function) ||
+						find_inline_variable_target_in_expression(p_location, p_lines, assert_node->message, r_variable, r_function)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, if_node->condition, r_variable, r_function) ||
+						find_inline_variable_target_in_suite(p_location, p_lines, if_node->true_block, r_variable, r_function) ||
+						find_inline_variable_target_in_suite(p_location, p_lines, if_node->false_block, r_variable, r_function)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, for_node->list, r_variable, r_function) ||
+						find_inline_variable_target_in_suite(p_location, p_lines, for_node->loop, r_variable, r_function)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, while_node->condition, r_variable, r_function) ||
+						find_inline_variable_target_in_suite(p_location, p_lines, while_node->loop, r_variable, r_function)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, match_node->test, r_variable, r_function)) {
+					return true;
+				}
+				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+					if (branch != nullptr &&
+							(find_inline_variable_target_in_suite(p_location, p_lines, branch->guard_body, r_variable, r_function) ||
+									find_inline_variable_target_in_suite(p_location, p_lines, branch->block, r_variable, r_function))) {
+						return true;
+					}
+				}
+			} break;
+			default:
+				if (statement->is_expression() && find_inline_variable_target_in_expression(p_location, p_lines, static_cast<const GDScriptParser::ExpressionNode *>(statement), r_variable, r_function)) {
+					return true;
+				}
+				break;
+		}
+	}
+	return false;
+}
+
+bool find_inline_variable_target_in_function(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function) {
+	if (p_function == nullptr) {
+		return false;
+	}
+	return find_inline_variable_target_in_suite(p_location, p_lines, p_function->body, r_variable, r_function);
+}
+
+bool find_inline_variable_target_in_class(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, const GDScriptParser::VariableNode *&r_variable, const GDScriptParser::FunctionNode *&r_function) {
+	if (p_class == nullptr) {
+		return false;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (find_inline_variable_target_in_function(p_location, p_lines, member.function, r_variable, r_function)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				if (find_inline_variable_target_in_class(p_location, p_lines, member.m_class, r_variable, r_function)) {
+					return true;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+struct InlineVariableUsageCollection {
+	Vector<InlineVariableUse> reads;
+	bool has_assignment_target = false;
+	bool has_lambda_capture = false;
+};
+
+void collect_inline_variable_uses_in_suite(const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::VariableNode *p_target, const GDScriptParser::FunctionNode *p_target_function, const GDScriptParser::FunctionNode *p_current_function, InlineVariableUsageCollection &r_collection);
+void collect_inline_variable_uses_in_expression(const GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::Node *p_parent, bool p_assignment_target, const GDScriptParser::VariableNode *p_target, const GDScriptParser::FunctionNode *p_target_function, const GDScriptParser::FunctionNode *p_current_function, InlineVariableUsageCollection &r_collection);
+
+void collect_inline_variable_identifier_use(const GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::Node *p_parent, bool p_assignment_target, const GDScriptParser::VariableNode *p_target, const GDScriptParser::FunctionNode *p_target_function, const GDScriptParser::FunctionNode *p_current_function, InlineVariableUsageCollection &r_collection) {
+	if (p_identifier == nullptr || p_identifier->source != GDScriptParser::IdentifierNode::LOCAL_VARIABLE || p_identifier->variable_source != p_target) {
+		return;
+	}
+	if (p_current_function != p_target_function) {
+		r_collection.has_lambda_capture = true;
+		return;
+	}
+	if (p_assignment_target) {
+		r_collection.has_assignment_target = true;
+		return;
+	}
+	InlineVariableUse use;
+	use.identifier = p_identifier;
+	use.parent = p_parent;
+	r_collection.reads.push_back(use);
+}
+
+void collect_inline_variable_uses_in_expression(const GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::Node *p_parent, bool p_assignment_target, const GDScriptParser::VariableNode *p_target, const GDScriptParser::FunctionNode *p_target_function, const GDScriptParser::FunctionNode *p_current_function, InlineVariableUsageCollection &r_collection) {
+	if (p_expression == nullptr) {
+		return;
+	}
+
+	switch (p_expression->type) {
+		case GDScriptParser::Node::ARRAY: {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				collect_inline_variable_uses_in_expression(element, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			}
+		} break;
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
+			collect_inline_variable_uses_in_expression(assignment->assignee, p_expression, true, p_target, p_target_function, p_current_function, r_collection);
+			collect_inline_variable_uses_in_expression(assignment->assigned_value, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+		} break;
+		case GDScriptParser::Node::AWAIT:
+			collect_inline_variable_uses_in_expression(static_cast<const GDScriptParser::AwaitNode *>(p_expression)->to_await, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			break;
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
+			collect_inline_variable_uses_in_expression(binary->left_operand, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			collect_inline_variable_uses_in_expression(binary->right_operand, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+		} break;
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
+			collect_inline_variable_uses_in_expression(call->callee, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
+				collect_inline_variable_uses_in_expression(argument, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			}
+		} break;
+		case GDScriptParser::Node::CAST:
+			collect_inline_variable_uses_in_expression(static_cast<const GDScriptParser::CastNode *>(p_expression)->operand, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			break;
+		case GDScriptParser::Node::DICTIONARY: {
+			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
+			for (const GDScriptParser::DictionaryNode::Pair &pair : dictionary->elements) {
+				collect_inline_variable_uses_in_expression(pair.key, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+				collect_inline_variable_uses_in_expression(pair.value, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			}
+		} break;
+		case GDScriptParser::Node::IDENTIFIER:
+			collect_inline_variable_identifier_use(static_cast<const GDScriptParser::IdentifierNode *>(p_expression), p_parent, p_assignment_target, p_target, p_target_function, p_current_function, r_collection);
+			break;
+		case GDScriptParser::Node::LAMBDA: {
+			const GDScriptParser::LambdaNode *lambda = static_cast<const GDScriptParser::LambdaNode *>(p_expression);
+			if (lambda->function != nullptr) {
+				collect_inline_variable_uses_in_suite(lambda->function->body, p_target, p_target_function, lambda->function, r_collection);
+			}
+		} break;
+		case GDScriptParser::Node::PRELOAD:
+			collect_inline_variable_uses_in_expression(static_cast<const GDScriptParser::PreloadNode *>(p_expression)->path, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			break;
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			collect_inline_variable_uses_in_expression(subscript->base, p_expression, p_assignment_target, p_target, p_target_function, p_current_function, r_collection);
+			if (!subscript->is_attribute) {
+				collect_inline_variable_uses_in_expression(subscript->index, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			}
+		} break;
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
+			collect_inline_variable_uses_in_expression(ternary->condition, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			collect_inline_variable_uses_in_expression(ternary->true_expr, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			collect_inline_variable_uses_in_expression(ternary->false_expr, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+		} break;
+		case GDScriptParser::Node::TYPE_TEST:
+			collect_inline_variable_uses_in_expression(static_cast<const GDScriptParser::TypeTestNode *>(p_expression)->operand, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			break;
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			collect_inline_variable_uses_in_expression(static_cast<const GDScriptParser::UnaryOpNode *>(p_expression)->operand, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			break;
+		default:
+			break;
+	}
+}
+
+void collect_inline_variable_uses_in_suite(const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::VariableNode *p_target, const GDScriptParser::FunctionNode *p_target_function, const GDScriptParser::FunctionNode *p_current_function, InlineVariableUsageCollection &r_collection) {
+	if (p_suite == nullptr) {
+		return;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::VARIABLE: {
+				const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(statement);
+				collect_inline_variable_uses_in_expression(variable->initializer, statement, false, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case GDScriptParser::Node::CONSTANT: {
+				const GDScriptParser::ConstantNode *constant = static_cast<const GDScriptParser::ConstantNode *>(statement);
+				collect_inline_variable_uses_in_expression(constant->initializer, statement, false, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case GDScriptParser::Node::RETURN: {
+				const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(statement);
+				collect_inline_variable_uses_in_expression(return_node->return_value, statement, false, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case GDScriptParser::Node::ASSIGNMENT:
+				collect_inline_variable_uses_in_expression(static_cast<const GDScriptParser::AssignmentNode *>(statement), nullptr, false, p_target, p_target_function, p_current_function, r_collection);
+				break;
+			case GDScriptParser::Node::ASSERT: {
+				const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(statement);
+				collect_inline_variable_uses_in_expression(assert_node->condition, statement, false, p_target, p_target_function, p_current_function, r_collection);
+				collect_inline_variable_uses_in_expression(assert_node->message, statement, false, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				collect_inline_variable_uses_in_expression(if_node->condition, statement, false, p_target, p_target_function, p_current_function, r_collection);
+				collect_inline_variable_uses_in_suite(if_node->true_block, p_target, p_target_function, p_current_function, r_collection);
+				collect_inline_variable_uses_in_suite(if_node->false_block, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
+				collect_inline_variable_uses_in_expression(for_node->list, statement, false, p_target, p_target_function, p_current_function, r_collection);
+				collect_inline_variable_uses_in_suite(for_node->loop, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
+				collect_inline_variable_uses_in_expression(while_node->condition, statement, false, p_target, p_target_function, p_current_function, r_collection);
+				collect_inline_variable_uses_in_suite(while_node->loop, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				collect_inline_variable_uses_in_expression(match_node->test, statement, false, p_target, p_target_function, p_current_function, r_collection);
+				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+					if (branch != nullptr) {
+						collect_inline_variable_uses_in_suite(branch->guard_body, p_target, p_target_function, p_current_function, r_collection);
+						collect_inline_variable_uses_in_suite(branch->block, p_target, p_target_function, p_current_function, r_collection);
+					}
+				}
+			} break;
+			default:
+				if (statement->is_expression()) {
+					collect_inline_variable_uses_in_expression(static_cast<const GDScriptParser::ExpressionNode *>(statement), nullptr, false, p_target, p_target_function, p_current_function, r_collection);
+				}
+				break;
+		}
+	}
+}
+
+void collect_inline_variable_uses_in_class(const GDScriptParser::ClassNode *p_class, const GDScriptParser::VariableNode *p_target, const GDScriptParser::FunctionNode *p_target_function, InlineVariableUsageCollection &r_collection) {
+	if (p_class == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (member.function != nullptr) {
+					collect_inline_variable_uses_in_suite(member.function->body, p_target, p_target_function, member.function, r_collection);
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				collect_inline_variable_uses_in_class(member.m_class, p_target, p_target_function, r_collection);
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+bool expression_has_side_effects(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+
+	switch (p_expression->type) {
+		case GDScriptParser::Node::ASSIGNMENT:
+		case GDScriptParser::Node::AWAIT:
+		case GDScriptParser::Node::CALL:
+		case GDScriptParser::Node::GET_NODE:
+		case GDScriptParser::Node::LAMBDA:
+		case GDScriptParser::Node::PRELOAD:
+			return true;
+		case GDScriptParser::Node::ARRAY: {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				if (expression_has_side_effects(element)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
+			return expression_has_side_effects(binary->left_operand) || expression_has_side_effects(binary->right_operand);
+		}
+		case GDScriptParser::Node::CAST:
+			return expression_has_side_effects(static_cast<const GDScriptParser::CastNode *>(p_expression)->operand);
+		case GDScriptParser::Node::DICTIONARY: {
+			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
+			for (const GDScriptParser::DictionaryNode::Pair &pair : dictionary->elements) {
+				if (expression_has_side_effects(pair.key) || expression_has_side_effects(pair.value)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			return expression_has_side_effects(subscript->base) ||
+					(!subscript->is_attribute && expression_has_side_effects(subscript->index));
+		}
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
+			return expression_has_side_effects(ternary->condition) ||
+					expression_has_side_effects(ternary->true_expr) ||
+					expression_has_side_effects(ternary->false_expr);
+		}
+		case GDScriptParser::Node::TYPE_TEST:
+			return expression_has_side_effects(static_cast<const GDScriptParser::TypeTestNode *>(p_expression)->operand);
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			return expression_has_side_effects(static_cast<const GDScriptParser::UnaryOpNode *>(p_expression)->operand);
+		default:
+			return false;
+	}
+}
+
+int binary_precedence(const GDScriptParser::BinaryOpNode *p_binary) {
+	if (p_binary == nullptr) {
+		return 0;
+	}
+	switch (p_binary->operation) {
+		case GDScriptParser::BinaryOpNode::OP_LOGIC_OR:
+			return 4;
+		case GDScriptParser::BinaryOpNode::OP_LOGIC_AND:
+			return 5;
+		case GDScriptParser::BinaryOpNode::OP_CONTENT_TEST:
+			return 7;
+		case GDScriptParser::BinaryOpNode::OP_COMP_EQUAL:
+		case GDScriptParser::BinaryOpNode::OP_COMP_NOT_EQUAL:
+		case GDScriptParser::BinaryOpNode::OP_COMP_LESS:
+		case GDScriptParser::BinaryOpNode::OP_COMP_LESS_EQUAL:
+		case GDScriptParser::BinaryOpNode::OP_COMP_GREATER:
+		case GDScriptParser::BinaryOpNode::OP_COMP_GREATER_EQUAL:
+			return 8;
+		case GDScriptParser::BinaryOpNode::OP_BIT_OR:
+			return 9;
+		case GDScriptParser::BinaryOpNode::OP_BIT_XOR:
+			return 10;
+		case GDScriptParser::BinaryOpNode::OP_BIT_AND:
+			return 11;
+		case GDScriptParser::BinaryOpNode::OP_BIT_LEFT_SHIFT:
+		case GDScriptParser::BinaryOpNode::OP_BIT_RIGHT_SHIFT:
+			return 12;
+		case GDScriptParser::BinaryOpNode::OP_ADDITION:
+		case GDScriptParser::BinaryOpNode::OP_SUBTRACTION:
+			return 13;
+		case GDScriptParser::BinaryOpNode::OP_MULTIPLICATION:
+		case GDScriptParser::BinaryOpNode::OP_DIVISION:
+		case GDScriptParser::BinaryOpNode::OP_MODULO:
+			return 14;
+		case GDScriptParser::BinaryOpNode::OP_POWER:
+			return 17;
+	}
+	return 0;
+}
+
+int unary_precedence(const GDScriptParser::UnaryOpNode *p_unary) {
+	if (p_unary == nullptr) {
+		return 0;
+	}
+	switch (p_unary->operation) {
+		case GDScriptParser::UnaryOpNode::OP_LOGIC_NOT:
+			return 6;
+		case GDScriptParser::UnaryOpNode::OP_POSITIVE:
+		case GDScriptParser::UnaryOpNode::OP_NEGATIVE:
+			return 15;
+		case GDScriptParser::UnaryOpNode::OP_COMPLEMENT:
+			return 16;
+	}
+	return 0;
+}
+
+int expression_precedence(const GDScriptParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr) {
+		return 0;
+	}
+	switch (p_expression->type) {
+		case GDScriptParser::Node::ASSIGNMENT:
+			return 1;
+		case GDScriptParser::Node::CAST:
+			return 2;
+		case GDScriptParser::Node::TERNARY_OPERATOR:
+			return 3;
+		case GDScriptParser::Node::BINARY_OPERATOR:
+			return binary_precedence(static_cast<const GDScriptParser::BinaryOpNode *>(p_expression));
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			return unary_precedence(static_cast<const GDScriptParser::UnaryOpNode *>(p_expression));
+		case GDScriptParser::Node::TYPE_TEST:
+			return 18;
+		case GDScriptParser::Node::AWAIT:
+			return 19;
+		case GDScriptParser::Node::CALL:
+		case GDScriptParser::Node::SUBSCRIPT:
+			return 20;
+		default:
+			return 21;
+	}
+}
+
+bool inline_replacement_needs_parentheses(const GDScriptParser::ExpressionNode *p_initializer, const InlineVariableUse &p_use) {
+	if (p_initializer == nullptr || p_use.parent == nullptr || p_use.identifier == nullptr) {
+		return false;
+	}
+	const int initializer_precedence = expression_precedence(p_initializer);
+
+	switch (p_use.parent->type) {
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *parent_binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_use.parent);
+			const int parent_precedence = binary_precedence(parent_binary);
+			if (initializer_precedence < parent_precedence) {
+				return true;
+			}
+			if (initializer_precedence == parent_precedence) {
+				return p_use.identifier == parent_binary->right_operand ||
+						(parent_binary->operation == GDScriptParser::BinaryOpNode::OP_POWER &&
+								p_use.identifier == parent_binary->left_operand);
+			}
+			return false;
+		}
+		case GDScriptParser::Node::AWAIT: {
+			const GDScriptParser::AwaitNode *await = static_cast<const GDScriptParser::AwaitNode *>(p_use.parent);
+			return await->to_await == p_use.identifier && initializer_precedence < expression_precedence(await);
+		}
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_use.parent);
+			return call->callee == p_use.identifier && initializer_precedence < expression_precedence(call);
+		}
+		case GDScriptParser::Node::CAST: {
+			const GDScriptParser::CastNode *cast = static_cast<const GDScriptParser::CastNode *>(p_use.parent);
+			return cast->operand == p_use.identifier && initializer_precedence < expression_precedence(cast);
+		}
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_use.parent);
+			return subscript->base == p_use.identifier && initializer_precedence < expression_precedence(subscript);
+		}
+		case GDScriptParser::Node::TYPE_TEST: {
+			const GDScriptParser::TypeTestNode *type_test = static_cast<const GDScriptParser::TypeTestNode *>(p_use.parent);
+			return type_test->operand == p_use.identifier && initializer_precedence < expression_precedence(type_test);
+		}
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			return initializer_precedence <= expression_precedence(static_cast<const GDScriptParser::ExpressionNode *>(p_use.parent));
+		default:
+			break;
+	}
+	return false;
+}
+
+bool inline_declaration_has_trailing_content(const Vector<String> &p_lines, const RefactorLocation &p_initializer_range) {
+	if (p_initializer_range.start_line != p_initializer_range.end_line ||
+			p_initializer_range.end_line < 0 || p_initializer_range.end_line >= p_lines.size()) {
+		return true;
+	}
+	const String line = p_lines[p_initializer_range.end_line];
+	for (int i = p_initializer_range.end_column; i < line.length(); i++) {
+		if (!is_whitespace(line[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool make_inline_variable_declaration_edit(const Vector<String> &p_lines, const GDScriptParser::VariableNode *p_variable, RefactorTextEdit &r_edit) {
+	if (p_variable == nullptr || p_variable->start_line <= 0) {
+		return false;
+	}
+	const int line_index = p_variable->start_line - 1;
+	if (line_index < 0 || line_index >= p_lines.size()) {
+		return false;
+	}
+	r_edit.start_line = line_index;
+	r_edit.start_column = 0;
+	if (line_index + 1 < p_lines.size()) {
+		r_edit.end_line = line_index + 1;
+		r_edit.end_column = 0;
+	} else {
+		r_edit.end_line = line_index;
+		r_edit.end_column = p_lines[line_index].length();
+	}
+	r_edit.new_text = "";
+	return true;
+}
+
+InlineVariableCandidate find_inline_variable_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
+	InlineVariableCandidate candidate;
+	const GDScriptParser::VariableNode *target = nullptr;
+	const GDScriptParser::FunctionNode *target_function = nullptr;
+
+	if (!find_inline_variable_target_in_class(p_location, p_lines, p_tree, target, target_function)) {
+		candidate.disabled_reason = "Place the caret on a local variable declaration or use.";
+		return candidate;
+	}
+
+	candidate.matched = true;
+	if (target_function == nullptr) {
+		candidate.disabled_reason = "Inline variable is only available for local variables.";
+		return candidate;
+	}
+	if (target->initializer == nullptr) {
+		candidate.disabled_reason = "This local variable has no initializer.";
+		return candidate;
+	}
+	if (target->assignments > 1) {
+		candidate.disabled_reason = "This local variable is reassigned.";
+		return candidate;
+	}
+
+	String initializer_text;
+	RefactorLocation initializer_range;
+	if (!get_single_line_node_text(p_lines, target->initializer, initializer_text, &initializer_range)) {
+		candidate.disabled_reason = "Inline variable currently supports single-line initializers.";
+		return candidate;
+	}
+	if (inline_declaration_has_trailing_content(p_lines, initializer_range)) {
+		candidate.disabled_reason = "Cannot inline declarations with trailing content after the initializer.";
+		return candidate;
+	}
+
+	InlineVariableUsageCollection usages;
+	collect_inline_variable_uses_in_class(p_tree, target, target_function, usages);
+	if (usages.has_assignment_target) {
+		candidate.disabled_reason = "This local variable is assigned after declaration.";
+		return candidate;
+	}
+	if (usages.has_lambda_capture) {
+		candidate.disabled_reason = "Cannot inline a local variable captured by a lambda.";
+		return candidate;
+	}
+	if (usages.reads.is_empty()) {
+		candidate.disabled_reason = "No read usages found for this local variable.";
+		return candidate;
+	}
+	if (usages.reads.size() > 1 && expression_has_side_effects(target->initializer)) {
+		candidate.disabled_reason = "Cannot inline a side-effecting initializer into multiple uses.";
+		return candidate;
+	}
+	if (!make_inline_variable_declaration_edit(p_lines, target, candidate.declaration_edit)) {
+		candidate.disabled_reason = "Cannot remove this local variable declaration safely.";
+		return candidate;
+	}
+
+	for (const InlineVariableUse &use : usages.reads) {
+		RefactorLocation range;
+		if (!get_node_text_range(p_lines, use.identifier, range)) {
+			candidate.disabled_reason = "Cannot locate a local variable use for replacement.";
+			candidate.replacement_edits.clear();
+			return candidate;
+		}
+
+		RefactorTextEdit edit;
+		edit.start_line = range.start_line;
+		edit.start_column = range.start_column;
+		edit.end_line = range.end_line;
+		edit.end_column = range.end_column;
+		edit.new_text = inline_replacement_needs_parentheses(target->initializer, use) ? "(" + initializer_text + ")" : initializer_text;
+		candidate.replacement_edits.push_back(edit);
+	}
+
+	candidate.enabled = true;
+	return candidate;
+}
+
 bool source_lines_match(const Vector<String> &p_left, const Vector<String> &p_right) {
 	if (p_left.size() != p_right.size()) {
 		return false;
@@ -1766,6 +2562,27 @@ void cache_extract_method_candidate(
 	extract_method_cache.source_length = p_context.source.length();
 	extract_method_cache.location = p_location;
 	extract_method_cache.candidate = p_candidate;
+}
+
+bool get_cached_inline_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, InlineVariableCandidate &r_candidate) {
+	if (!inline_variable_cache.valid ||
+			inline_variable_cache.path != p_context.path ||
+			inline_variable_cache.source_hash != p_context.source.hash64() ||
+			inline_variable_cache.source_length != p_context.source.length() ||
+			!same_location(inline_variable_cache.location, p_location)) {
+		return false;
+	}
+	r_candidate = inline_variable_cache.candidate;
+	return true;
+}
+
+void cache_inline_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, const InlineVariableCandidate &p_candidate) {
+	inline_variable_cache.valid = true;
+	inline_variable_cache.path = p_context.path;
+	inline_variable_cache.source_hash = p_context.source.hash64();
+	inline_variable_cache.source_length = p_context.source.length();
+	inline_variable_cache.location = p_location;
+	inline_variable_cache.candidate = p_candidate;
 }
 
 TypeAnnotationCandidate find_type_annotation_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
@@ -1872,6 +2689,35 @@ ExtractMethodCandidate find_extract_method_candidate_uncached(
 			parser.get_tree());
 }
 
+InlineVariableCandidate find_inline_variable_candidate_uncached(const RefactorContext &p_context, const RefactorLocation &p_location, const Vector<String> &p_lines) {
+#ifndef GDSCRIPT_NO_LSP
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	const ExtendGDScriptParser *lsp_parser = protocol != nullptr ? protocol->get_parse_result(p_context.path) : nullptr;
+	if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+		if (lsp_parser->parse_result != OK) {
+			InlineVariableCandidate candidate;
+			candidate.disabled_reason = "Cannot analyze this script.";
+			return candidate;
+		}
+		return find_inline_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
+	}
+#endif // GDSCRIPT_NO_LSP
+
+	GDScriptParser parser;
+	Error err = parser.parse(p_context.source, p_context.path, false);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&parser);
+		err = analyzer.analyze();
+	}
+	if (err != OK) {
+		InlineVariableCandidate candidate;
+		candidate.disabled_reason = "Cannot analyze this script.";
+		return candidate;
+	}
+
+	return find_inline_variable_candidate_in_tree(p_location, p_lines, parser.get_tree());
+}
+
 ExtractVariableCandidate find_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	ExtractVariableCandidate candidate;
 	if (get_cached_extract_variable_candidate(p_context, p_location, candidate)) {
@@ -1958,6 +2804,41 @@ RefactorResult prepare_extract_method(const RefactorContext &p_context, const Re
 	result.rename_anchor_column = candidate.name_column;
 	result.edits.push_back(candidate.replacement_edit);
 	result.edits.push_back(candidate.method_edit);
+	return result;
+}
+
+InlineVariableCandidate find_inline_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	InlineVariableCandidate candidate;
+	if (get_cached_inline_variable_candidate(p_context, p_location, candidate)) {
+		return candidate;
+	}
+
+	if (p_location.has_selection()) {
+		candidate.disabled_reason = "Place the caret on a local variable declaration or use.";
+		cache_inline_variable_candidate(p_context, p_location, candidate);
+		return candidate;
+	}
+
+	const Vector<String> lines = p_context.source.split("\n");
+	candidate = find_inline_variable_candidate_uncached(p_context, p_location, lines);
+	cache_inline_variable_candidate(p_context, p_location, candidate);
+	return candidate;
+}
+
+RefactorResult prepare_inline_variable(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	RefactorResult result;
+	const InlineVariableCandidate candidate = find_inline_variable_candidate(p_context, p_location);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason;
+		return result;
+	}
+
+	result.ok = true;
+	result.edits.push_back(candidate.declaration_edit);
+	for (const RefactorTextEdit &edit : candidate.replacement_edits) {
+		result.edits.push_back(edit);
+	}
 	return result;
 }
 
@@ -2192,6 +3073,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 		add_type.disabled_reason = type_candidate.disabled_reason;
 	}
 	result.push_back(add_type);
+
+	RefactorAvailability inline_variable;
+	inline_variable.kind = RefactorKind::INLINE_VARIABLE;
+	inline_variable.title = "Inline Variable";
+	const InlineVariableCandidate inline_candidate = find_inline_variable_candidate(p_context, p_location);
+	inline_variable.enabled = inline_candidate.enabled;
+	if (!inline_variable.enabled) {
+		inline_variable.disabled_reason = inline_candidate.disabled_reason;
+	}
+	result.push_back(inline_variable);
 	return result;
 }
 
@@ -2205,6 +3096,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_extract_method(p_context, p_location);
 		case RefactorKind::ADD_TYPE_ANNOTATION:
 			return prepare_type_annotation(p_context, p_location);
+		case RefactorKind::INLINE_VARIABLE:
+			return prepare_inline_variable(p_context, p_location);
 		default:
 			break;
 	}
