@@ -51,6 +51,8 @@
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#include "editor/editor_undo_redo_manager.h"
+#include "editor/file_system/editor_file_system.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
 #include "editor/gui/editor_file_dialog.h"
@@ -61,6 +63,7 @@
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/script/editor_script.h"
 #include "editor/script/find_in_files.h"
+#include "editor/script/script_refactor_apply.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/shader/shader_editor_plugin.h"
@@ -75,6 +78,20 @@
 #include "script_text_editor.h"
 #include "servers/display/display_server.h"
 #include "text_editor.h"
+
+namespace {
+
+const char *SCRIPT_REFACTOR_ACTION_NAME = "Apply Script Refactor";
+
+String get_script_refactor_action_name() {
+	return TTR(SCRIPT_REFACTOR_ACTION_NAME);
+}
+
+bool is_embedded_script_path(const String &p_path) {
+	return p_path.begins_with("local://") || p_path.contains("::");
+}
+
+} // namespace
 
 /*** SYNTAX HIGHLIGHTER ****/
 
@@ -645,6 +662,24 @@ ScriptEditorBase *ScriptEditor::_get_current_editor() const {
 	return Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(selected));
 }
 
+ScriptEditorBase *ScriptEditor::get_open_editor_for_path(const String &p_path) const {
+	for (int i = 0; i < tab_container->get_tab_count(); i++) {
+		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
+		if (!se) {
+			continue;
+		}
+
+		Ref<Resource> edited_resource = se->get_edited_resource();
+		if (edited_resource.is_valid() && edited_resource->get_path() == p_path) {
+			return se;
+		}
+		if (se->edited_file_data.path == p_path) {
+			return se;
+		}
+	}
+	return nullptr;
+}
+
 void ScriptEditor::_update_history_arrows() {
 	script_back->set_disabled(history_pos <= 0);
 	script_forward->set_disabled(history_pos >= history.size() - 1);
@@ -983,6 +1018,27 @@ void ScriptEditor::_copy_script_uid() {
 		Ref<Resource> scr = se->get_edited_resource();
 		ResourceUID::ID uid = ResourceLoader::get_resource_uid(scr->get_path());
 		DisplayServer::get_singleton()->clipboard_set(ResourceUID::get_singleton()->id_to_text(uid));
+	}
+}
+
+void ScriptEditor::_set_refactor_file_source(const String &p_path, const String &p_source, bool p_source_is_saved_version) {
+	ScriptEditorBase *se = get_open_editor_for_path(p_path);
+	if (se != nullptr) {
+		CodeTextEditor *code_editor = se->get_code_editor();
+		ERR_FAIL_NULL(code_editor);
+		CodeEdit *text_editor = code_editor->get_text_editor();
+		ERR_FAIL_NULL(text_editor);
+
+		ScriptRefactorApply::replace_editor_text(text_editor, p_source, p_source_is_saved_version);
+		se->apply_code();
+		return;
+	}
+
+	String error_message;
+	ERR_FAIL_COND_MSG(!ScriptRefactorApply::write_file(p_path, p_source, error_message), error_message);
+
+	if (EditorFileSystem::get_singleton()) {
+		EditorFileSystem::get_singleton()->update_file(p_path);
 	}
 }
 
@@ -2877,6 +2933,86 @@ void ScriptEditor::apply_scripts() const {
 	}
 }
 
+bool ScriptEditor::apply_script_refactor_plan(const ScriptRefactorApplyPlan &p_plan, String &r_error_message) {
+	if (p_plan.files.is_empty()) {
+		r_error_message = TTR("There are no refactor edits to apply.");
+		return false;
+	}
+
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	ERR_FAIL_NULL_V(undo_redo, false);
+
+	for (const ScriptRefactorFilePlan &file : p_plan.files) {
+		if (is_embedded_script_path(file.path)) {
+			r_error_message = vformat(TTR("Cannot apply refactor to embedded script path '%s'."), file.path);
+			return false;
+		}
+		if (get_open_editor_for_path(file.path) != nullptr) {
+			continue;
+		}
+
+		if (!ScriptRefactorApply::can_write_file(file.path, r_error_message)) {
+			return false;
+		}
+	}
+
+	// Closed-file writability is checked before commit so common failures happen
+	// before any file changes. The actual write step is still best-effort against
+	// races such as disk-full or files changing permissions between check and use.
+	undo_redo->create_action_for_history(get_script_refactor_action_name(), EditorUndoRedoManager::GLOBAL_HISTORY);
+	for (const ScriptRefactorFilePlan &file : p_plan.files) {
+		undo_redo->add_do_method(this, "_set_refactor_file_source", file.path, file.after_source, false);
+		undo_redo->add_undo_method(this, "_set_refactor_file_source", file.path, file.before_source, file.before_source_is_saved_version);
+	}
+	undo_redo->commit_action();
+
+	_update_script_names();
+	r_error_message = String();
+	return true;
+}
+
+bool ScriptEditor::can_undo_script_refactor() const {
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	return undo_redo != nullptr &&
+			undo_redo->get_current_action_history_id() == EditorUndoRedoManager::GLOBAL_HISTORY &&
+			undo_redo->get_current_action_name() == get_script_refactor_action_name();
+}
+
+bool ScriptEditor::can_redo_script_refactor() const {
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	return undo_redo != nullptr &&
+			undo_redo->get_current_redo_action_history_id() == EditorUndoRedoManager::GLOBAL_HISTORY &&
+			undo_redo->get_current_redo_action_name() == get_script_refactor_action_name();
+}
+
+bool ScriptEditor::undo_script_refactor() {
+	if (!can_undo_script_refactor()) {
+		return false;
+	}
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	ERR_FAIL_NULL_V(undo_redo, false);
+
+	const bool undone = undo_redo->undo_history(EditorUndoRedoManager::GLOBAL_HISTORY);
+	if (undone) {
+		_update_script_names();
+	}
+	return undone;
+}
+
+bool ScriptEditor::redo_script_refactor() {
+	if (!can_redo_script_refactor()) {
+		return false;
+	}
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	ERR_FAIL_NULL_V(undo_redo, false);
+
+	const bool redone = undo_redo->redo_history(EditorUndoRedoManager::GLOBAL_HISTORY);
+	if (redone) {
+		_update_script_names();
+	}
+	return redone;
+}
+
 void ScriptEditor::reload_scripts(bool p_refresh_only) {
 	// Call deferred to make sure it runs on the main thread.
 	if (!Thread::is_main_thread()) {
@@ -4182,6 +4318,7 @@ void ScriptEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("goto_help", "topic"), &ScriptEditor::goto_help);
 	ClassDB::bind_method(D_METHOD("update_docs_from_script", "script"), &ScriptEditor::update_docs_from_script);
 	ClassDB::bind_method(D_METHOD("clear_docs_from_script", "script"), &ScriptEditor::clear_docs_from_script);
+	ClassDB::bind_method(D_METHOD("_set_refactor_file_source", "path", "source", "source_is_saved_version"), &ScriptEditor::_set_refactor_file_source);
 
 	ADD_SIGNAL(MethodInfo("editor_script_changed", PropertyInfo(Variant::OBJECT, "script", PROPERTY_HINT_RESOURCE_TYPE, "Script")));
 	ADD_SIGNAL(MethodInfo("script_close", PropertyInfo(Variant::OBJECT, "script", PROPERTY_HINT_RESOURCE_TYPE, "Script")));
