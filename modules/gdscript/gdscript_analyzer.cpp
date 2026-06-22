@@ -7190,6 +7190,27 @@ static bool _method_signature_accepts_argument_count(int p_argument_count, int p
 	return false;
 }
 
+String GDScriptAnalyzer::make_invalid_argument_error(const StringName &p_function, int p_argument_number, const GDScriptParser::DataType &p_expected_type, const GDScriptParser::DataType &p_actual_type, bool p_strict_dynamic_mismatch, bool p_strict_nullable_mismatch) const {
+	if (p_strict_dynamic_mismatch) {
+		return vformat(R"*(Cannot pass Variant value as argument %d of "%s()" in strict dynamic mode; expected "%s".)*",
+				p_argument_number,
+				p_function,
+				p_expected_type.to_string());
+	}
+	if (p_strict_nullable_mismatch) {
+		return vformat(R"*(Cannot pass nullable value of type "%s" as argument %d of "%s()"; expected non-nullable "%s".)*",
+				p_actual_type.to_string(),
+				p_argument_number,
+				p_function,
+				p_expected_type.to_string());
+	}
+	return vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
+			p_function,
+			p_argument_number,
+			p_expected_type.to_string(),
+			p_actual_type.to_string());
+}
+
 void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const GDScriptParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count) {
 	if (p_call->arguments.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
 		push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_call->function_name, p_par_types.size() - p_default_args_count, p_call->arguments.size()), p_call);
@@ -7214,9 +7235,7 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 
 		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
 			if (arg_type.is_variant() && strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-								   p_call->function_name, i + 1, par_type.to_string(), arg_type.to_string()),
-						p_call->arguments[i]);
+				push_error(make_invalid_argument_error(p_call->function_name, i + 1, par_type, arg_type, true, false), p_call->arguments[i]);
 			} else {
 #ifdef DEBUG_ENABLED
 				// Argument can be anything, so this is unsafe (unless the parameter is a hard variant).
@@ -7229,9 +7248,7 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
 			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
 			if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
-				push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-								   p_call->function_name, i + 1, par_type.to_string(), arg_type.to_string()),
-						p_call->arguments[i]);
+				push_error(make_invalid_argument_error(p_call->function_name, i + 1, par_type, arg_type, false, nullable_mismatch), p_call->arguments[i]);
 #ifdef DEBUG_ENABLED
 			} else {
 				// Supertypes are acceptable for dynamic compliance, but it's unsafe.
@@ -7275,9 +7292,7 @@ void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScrip
 
 		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
 			if (arg_type.is_variant() && strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-								   p_function, i + 1, par_type.to_string(), arg_type.to_string()),
-						argument);
+				push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, true, false), argument);
 			} else {
 #ifdef DEBUG_ENABLED
 				if (!(par_type.is_hard_type() && par_type.is_variant())) {
@@ -7289,9 +7304,7 @@ void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScrip
 		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
 			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
 			if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
-				push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-								   p_function, i + 1, par_type.to_string(), arg_type.to_string()),
-						argument);
+				push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, false, nullable_mismatch), argument);
 #ifdef DEBUG_ENABLED
 			} else {
 				mark_node_unsafe(argument);
@@ -7516,9 +7529,7 @@ void GDScriptAnalyzer::validate_signal_emit_args(const GDScriptParser::DataType 
 		}
 		if (emit_argument_type.is_variant() || !emit_argument_type.is_hard_type()) {
 			if (emit_argument_type.is_variant() && strict_dynamic_checks && !(signal_parameter_type.is_hard_type() && signal_parameter_type.is_variant())) {
-				push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-								   p_call->function_name, emit_argument_index + 1, signal_parameter_type.to_string(), emit_argument_type.to_string()),
-						p_call->arguments[emit_argument_index]);
+				push_error(make_invalid_argument_error(p_call->function_name, emit_argument_index + 1, signal_parameter_type, emit_argument_type, true, false), p_call->arguments[emit_argument_index]);
 			} else {
 				mark_node_unsafe(p_call->arguments[emit_argument_index]);
 			}
@@ -7527,9 +7538,7 @@ void GDScriptAnalyzer::validate_signal_emit_args(const GDScriptParser::DataType 
 
 		const bool nullable_mismatch = strict_null_checks && emit_argument_type.is_nullable && !signal_parameter_type.is_nullable && !signal_parameter_type.is_variant();
 		if (nullable_mismatch || !GDScriptTypeCompatibility::check(signal_parameter_type, emit_argument_type, options).compatible) {
-			push_error(vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-							   p_call->function_name, emit_argument_index + 1, signal_parameter_type.to_string(), emit_argument_type.to_string()),
-					p_call->arguments[emit_argument_index]);
+			push_error(make_invalid_argument_error(p_call->function_name, emit_argument_index + 1, signal_parameter_type, emit_argument_type, false, nullable_mismatch), p_call->arguments[emit_argument_index]);
 			return;
 		}
 	}
