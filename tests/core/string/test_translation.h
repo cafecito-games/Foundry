@@ -208,9 +208,12 @@ TEST_CASE("[OptimizedTranslation] Generate from Translation and read messages") 
 	CHECK(optimized_translation->get_message("DoesNotExist") == "");
 
 	List<StringName> messages;
-	// `get_message_list()` can't return the list of messages stored in an OptimizedTranslation.
+	// `get_message_list()`/`get_message_count()` can't return the messages stored in an
+	// OptimizedTranslation and emit an expected warning; silence it for this deliberate check.
+	ERR_PRINT_OFF;
 	optimized_translation->get_message_list(&messages);
 	CHECK(optimized_translation->get_message_count() == 0);
+	ERR_PRINT_ON;
 	CHECK(messages.size() == 0);
 }
 
