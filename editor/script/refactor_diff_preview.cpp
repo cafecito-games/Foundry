@@ -227,7 +227,7 @@ Vector<RefactorDiffPreviewLine> RefactorDiffPreviewModel::make_diff_lines(
 	const int new_count = new_lines.size();
 
 	Vector<int> lcs;
-	lcs.resize((old_count + 1) * (new_count + 1));
+	lcs.resize_initialized((old_count + 1) * (new_count + 1));
 	for (int i = old_count - 1; i >= 0; i--) {
 		for (int j = new_count - 1; j >= 0; j--) {
 			if (old_lines[i] == new_lines[j]) {
