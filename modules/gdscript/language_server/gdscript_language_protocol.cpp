@@ -31,6 +31,7 @@
 #include "gdscript_language_protocol.h"
 
 #include "core/config/project_settings.h"
+#include "core/os/thread.h"
 #include "editor/doc/doc_tools.h"
 #include "editor/doc/editor_help.h"
 #include "editor/editor_log.h"
@@ -422,11 +423,16 @@ void GDScriptLanguageProtocol::LSPeer::remove_cached_parser(const String &p_path
 
 ExtendGDScriptParser *GDScriptLanguageProtocol::get_parse_result(const String &p_path) {
 	// A buffer synced from the built-in editor takes precedence so in-process
-	// features resolve against the live on-screen text, and so they work even
-	// when no external LSP client is connected.
-	ExtendGDScriptParser **editor_parser = editor_parse_results.getptr(p_path);
-	if (editor_parser != nullptr) {
-		return *editor_parser;
+	// features (refactoring) resolve against the live on-screen text, and so
+	// they work even when no external LSP client is connected. This cache is
+	// only touched on the main thread; the LSP server may poll on its own
+	// thread, so off-main-thread callers must not read it (it is mutated and
+	// freed on the main thread).
+	if (Thread::is_main_thread()) {
+		ExtendGDScriptParser **editor_parser = editor_parse_results.getptr(p_path);
+		if (editor_parser != nullptr) {
+			return *editor_parser;
+		}
 	}
 
 	LSP_CLIENT_V(nullptr);
@@ -439,6 +445,7 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::get_parse_result(const String &p
 }
 
 void GDScriptLanguageProtocol::sync_script_content(const String &p_path, const String &p_content) {
+	DEV_ASSERT(Thread::is_main_thread());
 	if (!p_path.has_extension("gd")) {
 		return;
 	}
@@ -451,6 +458,7 @@ void GDScriptLanguageProtocol::sync_script_content(const String &p_path, const S
 }
 
 void GDScriptLanguageProtocol::clear_editor_script_content(const String &p_path) {
+	DEV_ASSERT(Thread::is_main_thread());
 	ExtendGDScriptParser **existing = editor_parse_results.getptr(p_path);
 	if (existing == nullptr) {
 		return;
