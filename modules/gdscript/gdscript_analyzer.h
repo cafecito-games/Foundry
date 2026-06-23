@@ -134,6 +134,11 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType type_from_variant(const Variant &p_value, const GDScriptParser::Node *p_source);
 	GDScriptParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false) const;
 	GDScriptParser::DataType make_global_class_meta_type(const StringName &p_class_name, const GDScriptParser::Node *p_source);
+	bool get_global_class_in_namespace(const String &p_namespace, const StringName &p_class_name, StringName &r_global_class_name) const;
+	bool get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error);
+	bool get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error);
+	bool is_namespace_chain_root_shadowed(GDScriptParser::IdentifierNode *p_identifier);
+	Error validate_imports();
 	bool get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class = nullptr);
 	bool function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
 	bool callable_signature_from_type(const GDScriptParser::DataType &p_callable_type, Vector<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;

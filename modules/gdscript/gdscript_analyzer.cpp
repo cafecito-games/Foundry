@@ -735,6 +735,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	const GDScriptParser::IdentifierNode *first_id = p_type->type_chain[0];
 	StringName first = first_id->name;
 	bool type_found = false;
+	int resolved_type_chain_size = 1;
 
 	if (first_id->suite && first_id->suite->has_local(first)) {
 		const GDScriptParser::SuiteNode::Local &local = first_id->suite->get_local(first);
@@ -852,6 +853,33 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.kind = GDScriptParser::DataType::NATIVE;
 			result.builtin_type = Variant::OBJECT;
 			result.native_type = first;
+		} else {
+			bool current_scope_has_name = false;
+			List<GDScriptParser::ClassNode *> script_classes;
+			get_class_node_current_scope_classes(parser->current_class, &script_classes, p_type);
+			for (GDScriptParser::ClassNode *script_class : script_classes) {
+				if ((script_class->identifier && script_class->identifier->name == first) || script_class->members_indices.has(first)) {
+					current_scope_has_name = true;
+					break;
+				}
+			}
+
+			if (!current_scope_has_name) {
+				StringName namespace_global_class;
+				bool namespace_error = false;
+				int namespace_type_chain_size = 0;
+				if (get_namespace_global_class_from_type_chain(p_type->type_chain, p_type, namespace_global_class, namespace_type_chain_size, namespace_error)) {
+					if (namespace_error) {
+						return bad_type;
+					}
+					result = make_global_class_meta_type(namespace_global_class, p_type);
+					resolved_type_chain_size = namespace_type_chain_size;
+				}
+			}
+		}
+
+		if (result.is_set()) {
+			// Found.
 		} else if (ScriptServer::is_global_class(first)) {
 			if (GDScript::is_canonically_equal_paths(parser->script_path, ScriptServer::get_global_class_path(first))) {
 				result = parser->head->get_datatype();
@@ -971,35 +999,35 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		return bad_type;
 	}
 
-	if (p_type->type_chain.size() > 1) {
+	if (p_type->type_chain.size() > resolved_type_chain_size) {
 		if (result.kind == GDScriptParser::DataType::CLASS) {
-			for (int i = 1; i < p_type->type_chain.size(); i++) {
+			for (int i = resolved_type_chain_size; i < p_type->type_chain.size(); i++) {
 				GDScriptParser::DataType base = result;
 				reduce_identifier_from_base(p_type->type_chain[i], &base);
 				result = p_type->type_chain[i]->get_datatype();
 				if (!result.is_set()) {
-					push_error(vformat(R"(Could not find type "%s" under base "%s".)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[1]);
+					push_error(vformat(R"(Could not find type "%s" under base "%s".)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[resolved_type_chain_size]);
 					return bad_type;
 				} else if (!result.is_meta_type) {
-					push_error(vformat(R"(Member "%s" under base "%s" is not a valid type.)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[1]);
+					push_error(vformat(R"(Member "%s" under base "%s" is not a valid type.)", p_type->type_chain[i]->name, base.to_string()), p_type->type_chain[resolved_type_chain_size]);
 					return bad_type;
 				}
 			}
 		} else if (result.kind == GDScriptParser::DataType::NATIVE) {
 			// Only enums allowed for native.
-			if (ClassDB::has_enum(result.native_type, p_type->type_chain[1]->name)) {
-				if (p_type->type_chain.size() > 2) {
-					push_error(R"(Enums cannot contain nested types.)", p_type->type_chain[2]);
+			if (ClassDB::has_enum(result.native_type, p_type->type_chain[resolved_type_chain_size]->name)) {
+				if (p_type->type_chain.size() > resolved_type_chain_size + 1) {
+					push_error(R"(Enums cannot contain nested types.)", p_type->type_chain[resolved_type_chain_size + 1]);
 					return bad_type;
 				} else {
-					result = make_native_enum_type(p_type->type_chain[1]->name, result.native_type);
+					result = make_native_enum_type(p_type->type_chain[resolved_type_chain_size]->name, result.native_type);
 				}
 			} else {
-				push_error(vformat(R"(Could not find type "%s" in "%s".)", p_type->type_chain[1]->name, first), p_type->type_chain[1]);
+				push_error(vformat(R"(Could not find type "%s" in "%s".)", p_type->type_chain[resolved_type_chain_size]->name, first), p_type->type_chain[resolved_type_chain_size]);
 				return bad_type;
 			}
 		} else {
-			push_error(vformat(R"(Could not find nested type "%s" under base "%s".)", p_type->type_chain[1]->name, result.to_string()), p_type->type_chain[1]);
+			push_error(vformat(R"(Could not find nested type "%s" under base "%s".)", p_type->type_chain[resolved_type_chain_size]->name, result.to_string()), p_type->type_chain[resolved_type_chain_size]);
 			return bad_type;
 		}
 	}
@@ -4384,6 +4412,190 @@ GDScriptParser::DataType GDScriptAnalyzer::make_global_class_meta_type(const Str
 	}
 }
 
+static String _join_identifier_chain(const Vector<GDScriptParser::IdentifierNode *> &p_chain, int p_from, int p_count) {
+	String result;
+	for (int i = p_from; i < p_count; i++) {
+		if (i > p_from) {
+			result += ".";
+		}
+		result += String(p_chain[i]->name);
+	}
+	return result;
+}
+
+static bool _string_vector_has(const LocalVector<String> &p_strings, const String &p_string) {
+	for (const String &string : p_strings) {
+		if (string == p_string) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool _namespace_exists_in_global_classes(const LocalVector<StringName> &p_global_classes, const String &p_namespace) {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+
+	const String namespace_prefix = p_namespace + ".";
+	for (const StringName &global_class : p_global_classes) {
+		if (String(global_class).begins_with(namespace_prefix)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool GDScriptAnalyzer::get_global_class_in_namespace(const String &p_namespace, const StringName &p_class_name, StringName &r_global_class_name) const {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+
+	const String global_class_name = p_namespace + "." + String(p_class_name);
+	if (!ScriptServer::is_global_class(global_class_name)) {
+		return false;
+	}
+
+	r_global_class_name = global_class_name;
+	return true;
+}
+
+bool GDScriptAnalyzer::get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error) {
+	r_error = false;
+	String matched_import;
+	LocalVector<String> checked_imports;
+
+	for (const String &import : parser->head->imports) {
+		if (_string_vector_has(checked_imports, import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		StringName candidate;
+		if (!get_global_class_in_namespace(import, p_class_name, candidate)) {
+			continue;
+		}
+
+		if (r_global_class_name != StringName() && r_global_class_name != candidate) {
+			push_error(vformat(R"(Could not resolve class "%s": imported namespaces "%s" and "%s" are ambiguous.)", p_class_name, matched_import, import), p_source);
+			r_error = true;
+			return true;
+		}
+
+		r_global_class_name = candidate;
+		matched_import = import;
+	}
+
+	return r_global_class_name != StringName();
+}
+
+bool GDScriptAnalyzer::get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error) {
+	r_error = false;
+	r_type_chain_size = 0;
+	if (p_type_chain.is_empty()) {
+		return false;
+	}
+
+	for (int prefix_size = p_type_chain.size(); prefix_size >= 1; prefix_size--) {
+		const String class_prefix = _join_identifier_chain(p_type_chain, 0, prefix_size);
+
+		if (prefix_size > 1 && ScriptServer::is_global_class(class_prefix)) {
+			r_global_class_name = class_prefix;
+			r_type_chain_size = prefix_size;
+			return true;
+		}
+
+		StringName namespace_candidate;
+		if (get_global_class_in_namespace(parser->head->namespace_name, class_prefix, namespace_candidate)) {
+			r_global_class_name = namespace_candidate;
+			r_type_chain_size = prefix_size;
+			return true;
+		}
+
+		StringName imported_candidate;
+		bool import_error = false;
+		if (get_imported_global_class(class_prefix, p_source, imported_candidate, import_error)) {
+			if (import_error) {
+				r_error = true;
+				return true;
+			}
+
+			r_global_class_name = imported_candidate;
+			r_type_chain_size = prefix_size;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool GDScriptAnalyzer::is_namespace_chain_root_shadowed(GDScriptParser::IdentifierNode *p_identifier) {
+	// Keep this in sync with the non-global lookup precedence in reduce_identifier().
+	const StringName &name = p_identifier->name;
+
+	if (p_identifier->suite && p_identifier->suite->has_local(name)) {
+		return true;
+	}
+
+	if (GDScriptParser::get_builtin_type(name) < Variant::VARIANT_MAX || class_exists(name)) {
+		return true;
+	}
+
+	List<GDScriptParser::ClassNode *> script_classes;
+	get_class_node_current_scope_classes(parser->current_class, &script_classes, p_identifier);
+	for (GDScriptParser::ClassNode *script_class : script_classes) {
+		if ((script_class->identifier && script_class->identifier->name == name) || script_class->members_indices.has(name)) {
+			return true;
+		}
+	}
+
+	const StringName native = parser->current_class->base_type.native_type;
+	if (!class_exists(native)) {
+		return false;
+	}
+
+	if (ClassDB::has_property(native, name)) {
+		return true;
+	}
+
+	MethodInfo method_info;
+	if (ClassDB::get_method_info(native, name, &method_info) || ClassDB::get_signal(native, name, &method_info)) {
+		return true;
+	}
+
+	if (ClassDB::has_enum(native, name)) {
+		return true;
+	}
+
+	bool valid = false;
+	ClassDB::get_integer_constant(native, name, &valid);
+	return valid;
+}
+
+Error GDScriptAnalyzer::validate_imports() {
+	if (parser->head->imports.is_empty()) {
+		return OK;
+	}
+
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	LocalVector<String> checked_imports;
+
+	for (const String &import : parser->head->imports) {
+		if (_string_vector_has(checked_imports, import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		if (!_namespace_exists_in_global_classes(global_classes, import)) {
+			push_error(vformat(R"(Could not find imported namespace "%s".)", import), parser->head);
+		}
+	}
+
+	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+}
+
 Ref<GDScriptParserRef> GDScriptAnalyzer::ensure_cached_external_parser_for_class(const GDScriptParser::ClassNode *p_class, const GDScriptParser::ClassNode *p_from_class, const char *p_context, const GDScriptParser::Node *p_source) {
 	// Delicate piece of code that intentionally doesn't use the GDScript cache or `get_depended_parser_for`.
 	// Search dependencies for the parser that owns `p_class` and make a cache entry for it.
@@ -5044,6 +5256,20 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 		return;
 	}
 
+	StringName namespace_global_class;
+	bool namespace_error = false;
+	if (get_global_class_in_namespace(parser->head->namespace_name, name, namespace_global_class) ||
+			get_imported_global_class(name, p_identifier, namespace_global_class, namespace_error)) {
+		if (namespace_error) {
+			GDScriptParser::DataType dummy;
+			dummy.kind = GDScriptParser::DataType::VARIANT;
+			p_identifier->set_datatype(dummy);
+			return;
+		}
+		p_identifier->set_datatype(make_global_class_meta_type(namespace_global_class, p_identifier));
+		return;
+	}
+
 	if (ScriptServer::is_global_class(name)) {
 		p_identifier->set_datatype(make_global_class_meta_type(name, p_identifier));
 		return;
@@ -5270,6 +5496,60 @@ void GDScriptAnalyzer::reduce_self(GDScriptParser::SelfNode *p_self) {
 void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type) {
 	if (p_subscript->base == nullptr) {
 		return;
+	}
+	if (p_subscript->is_attribute && p_subscript->attribute != nullptr) {
+		Vector<GDScriptParser::IdentifierNode *> reversed_chain;
+		GDScriptParser::ExpressionNode *chain_base = p_subscript;
+		while (chain_base != nullptr && chain_base->type == GDScriptParser::Node::SUBSCRIPT) {
+			GDScriptParser::SubscriptNode *subscript = static_cast<GDScriptParser::SubscriptNode *>(chain_base);
+			if (!subscript->is_attribute || subscript->attribute == nullptr) {
+				break;
+			}
+			reversed_chain.push_back(subscript->attribute);
+			chain_base = subscript->base;
+		}
+
+		if (chain_base != nullptr && chain_base->type == GDScriptParser::Node::IDENTIFIER) {
+			GDScriptParser::IdentifierNode *root_identifier = static_cast<GDScriptParser::IdentifierNode *>(chain_base);
+			if (root_identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE && !is_namespace_chain_root_shadowed(root_identifier)) {
+				Vector<GDScriptParser::IdentifierNode *> type_chain;
+				type_chain.push_back(root_identifier);
+				for (int i = reversed_chain.size() - 1; i >= 0; i--) {
+					type_chain.push_back(reversed_chain[i]);
+				}
+
+				StringName namespace_global_class;
+				bool namespace_error = false;
+				int namespace_type_chain_size = 0;
+				if (get_namespace_global_class_from_type_chain(type_chain, p_subscript, namespace_global_class, namespace_type_chain_size, namespace_error)) {
+					if (namespace_error) {
+						GDScriptParser::DataType dummy;
+						dummy.kind = GDScriptParser::DataType::VARIANT;
+						p_subscript->set_datatype(dummy);
+						return;
+					}
+
+					GDScriptParser::DataType namespace_class_type = make_global_class_meta_type(namespace_global_class, p_subscript);
+					for (int i = namespace_type_chain_size; i < type_chain.size(); i++) {
+						GDScriptParser::DataType base = namespace_class_type;
+						reduce_identifier_from_base(type_chain[i], &base);
+						namespace_class_type = type_chain[i]->get_datatype();
+						if (!namespace_class_type.is_set()) {
+							GDScriptParser::DataType dummy;
+							dummy.kind = GDScriptParser::DataType::VARIANT;
+							p_subscript->set_datatype(dummy);
+							return;
+						}
+					}
+					GDScriptParser::IdentifierNode *last_identifier = type_chain[type_chain.size() - 1];
+					p_subscript->attribute->set_datatype(namespace_class_type);
+					p_subscript->set_datatype(namespace_class_type);
+					p_subscript->is_constant = last_identifier->is_constant;
+					p_subscript->reduced_value = last_identifier->reduced_value;
+					return;
+				}
+			}
+		}
 	}
 	if (p_subscript->base->type == GDScriptParser::Node::IDENTIFIER) {
 		reduce_identifier(static_cast<GDScriptParser::IdentifierNode *>(p_subscript->base), true);
@@ -8069,7 +8349,12 @@ Error GDScriptAnalyzer::resolve_dependencies() {
 Error GDScriptAnalyzer::analyze() {
 	parser->errors.clear();
 
-	Error err = resolve_inheritance();
+	Error err = validate_imports();
+	if (err) {
+		return err;
+	}
+
+	err = resolve_inheritance();
 	if (err) {
 		return err;
 	}
