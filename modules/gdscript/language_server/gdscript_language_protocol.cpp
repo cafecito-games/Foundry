@@ -422,19 +422,6 @@ void GDScriptLanguageProtocol::LSPeer::remove_cached_parser(const String &p_path
 }
 
 ExtendGDScriptParser *GDScriptLanguageProtocol::get_parse_result(const String &p_path) {
-	// A buffer synced from the built-in editor takes precedence so in-process
-	// features (refactoring) resolve against the live on-screen text, and so
-	// they work even when no external LSP client is connected. This cache is
-	// only touched on the main thread; the LSP server may poll on its own
-	// thread, so off-main-thread callers must not read it (it is mutated and
-	// freed on the main thread).
-	if (Thread::is_main_thread()) {
-		ExtendGDScriptParser **editor_parser = editor_parse_results.getptr(p_path);
-		if (editor_parser != nullptr) {
-			return *editor_parser;
-		}
-	}
-
 	LSP_CLIENT_V(nullptr);
 
 	ExtendGDScriptParser **cached_parser = client->parse_results.getptr(p_path);
@@ -442,29 +429,6 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::get_parse_result(const String &p
 		return client->parse_script(p_path);
 	}
 	return *cached_parser;
-}
-
-void GDScriptLanguageProtocol::sync_script_content(const String &p_path, const String &p_content) {
-	DEV_ASSERT(Thread::is_main_thread());
-	if (!p_path.has_extension("gd")) {
-		return;
-	}
-
-	clear_editor_script_content(p_path);
-
-	ExtendGDScriptParser *parser = memnew(ExtendGDScriptParser);
-	parser->parse(p_content, p_path);
-	editor_parse_results[p_path] = parser;
-}
-
-void GDScriptLanguageProtocol::clear_editor_script_content(const String &p_path) {
-	DEV_ASSERT(Thread::is_main_thread());
-	ExtendGDScriptParser **existing = editor_parse_results.getptr(p_path);
-	if (existing == nullptr) {
-		return;
-	}
-	memdelete(*existing);
-	editor_parse_results.erase(p_path);
 }
 
 void GDScriptLanguageProtocol::lsp_did_open(const Dictionary &p_params) {
@@ -619,15 +583,10 @@ GDScriptLanguageProtocol::GDScriptLanguageProtocol() {
 }
 
 GDScriptLanguageProtocol::~GDScriptLanguageProtocol() {
-	for (KeyValue<String, ExtendGDScriptParser *> &entry : editor_parse_results) {
-		memdelete(entry.value);
-	}
-	editor_parse_results.clear();
 	clients.clear();
 
 	// Clear the singleton so callers that null-check `get_singleton()` after
-	// shutdown (such as the editor's refactor buffer cleanup) do not dereference
-	// a dangling pointer.
+	// shutdown do not dereference a dangling pointer.
 	if (singleton == this) {
 		singleton = nullptr;
 	}

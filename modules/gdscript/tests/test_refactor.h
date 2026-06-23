@@ -39,6 +39,8 @@
 #include "../editor/gdscript_refactoring_names.h"
 #include "../editor/gdscript_refactoring_types.h"
 
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 
 #ifndef GDSCRIPT_NO_LSP
@@ -131,6 +133,23 @@ inline const RefactorFileEdit *find_file_edit(const RefactorResult &p_result, co
 	}
 	return nullptr;
 }
+
+#ifndef GDSCRIPT_NO_LSP
+struct TemporaryScriptFile {
+	String path;
+
+	TemporaryScriptFile(const String &p_path, const String &p_source) {
+		path = p_path;
+		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", path));
+		file->store_string(p_source);
+	}
+
+	~TemporaryScriptFile() {
+		DirAccess::remove_absolute(ProjectSettings::get_singleton()->globalize_path(path));
+	}
+};
+#endif // GDSCRIPT_NO_LSP
 
 TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
@@ -1331,6 +1350,34 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(user_out.contains("return target.renamed_count"));
 			CHECK_FALSE(user_out.contains("shared_count"));
 		}
+		SUBCASE("cross-file rename reports parse-failed textual references") {
+			const String broken_path = "res://refactor/rename_cross_file_broken_user.gd";
+			TemporaryScriptFile broken_script(
+					broken_path,
+					"extends Node\n"
+					"\n"
+					"const Target = preload(\"res://refactor/rename_cross_file_target.gd\")\n"
+					"\n"
+					"func use_target() -> int:\n"
+					"\tvar target := Target.new()\n"
+					"\ttarget.shared_count +=\n");
+
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_cross_file_target.gd", 2, 5, "renamed_count", out); // caret on `shared_count`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("parse"));
+
+			bool found_unresolved = false;
+			for (const RefactorUnresolvedReference &unresolved : r.unresolved_references) {
+				if (unresolved.path == broken_path && unresolved.line == 6 && unresolved.column == 8) {
+					found_unresolved = true;
+					CHECK(unresolved.message.to_lower().contains("parse"));
+				}
+			}
+			CHECK(found_unresolved);
+		}
 		SUBCASE("string-based dynamic references are reported") {
 			String out;
 			RefactorResult r = run_rename(
@@ -1365,6 +1412,40 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(r.ok);
 			CHECK(r.error_message.to_lower().contains("scope"));
 		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Rename uses caller source over stale protocol cache") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		GDScriptTests::assert_no_errors_in("res://refactor/rename_local.gd");
+
+		RefactorContext ctx;
+		ctx.path = "res://refactor/rename_local.gd";
+		ctx.source = "extends Node\n"
+					 "\n"
+					 "func compute() -> int:\n"
+					 "\tvar current_total := 1\n"
+					 "\tcurrent_total += 2\n"
+					 "\treturn current_total\n";
+
+		RefactorParams params;
+		params.new_name = "renamed_total";
+		RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(3, 5), RefactorKind::RENAME, params);
+		REQUIRE(r.ok);
+		CHECK_EQ(r.suggested_name, "current_total");
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("var renamed_total := 1"));
+		CHECK(out.contains("renamed_total += 2"));
+		CHECK(out.contains("return renamed_total"));
+		CHECK_FALSE(out.contains("current_total"));
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
