@@ -40,6 +40,11 @@ void ExtractMethodNamePromptModel::_validate() {
 		return;
 	}
 
+	if (name.is_empty()) {
+		error_message = "Name cannot be empty.";
+		return;
+	}
+
 	RefactorParams params;
 	params.new_name = name;
 	const RefactorResult result = GDScriptRefactoring::prepare(context, location, RefactorKind::EXTRACT_METHOD, params);

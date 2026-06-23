@@ -58,13 +58,20 @@ TEST_CASE("[Editor][ExtractMethodNamePrompt] Accepts valid names") {
 			"func run() -> void:\n"
 			"\tprint(\"ready\")\n"
 			"\tprint(\"done\")\n";
+	const RefactorLocation selection = extract_selection();
 	ExtractMethodNamePromptModel model;
-	model.begin(make_extract_context(source), extract_selection(), "_extracted_method");
+	model.begin(make_extract_context(source), selection, "_extracted_method");
 
 	CHECK(model.has_pending_request());
 	CHECK(model.is_valid());
 	CHECK_EQ(model.get_name(), "_extracted_method");
 	CHECK(model.get_error_message().is_empty());
+
+	const RefactorLocation &stored_location = model.get_location();
+	CHECK_EQ(stored_location.start_line, selection.start_line);
+	CHECK_EQ(stored_location.start_column, selection.start_column);
+	CHECK_EQ(stored_location.end_line, selection.end_line);
+	CHECK_EQ(stored_location.end_column, selection.end_column);
 
 	model.set_name("_print_ready");
 	CHECK(model.is_valid());
@@ -86,6 +93,31 @@ TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects invalid identifiers") {
 	CHECK(model.has_pending_request());
 	CHECK_FALSE(model.is_valid());
 	CHECK(model.get_error_message().contains("valid identifier"));
+
+	String confirmed;
+	CHECK_FALSE(model.confirm(confirmed));
+	CHECK(confirmed.is_empty());
+
+	model.set_name("_ok");
+
+	CHECK(model.is_valid());
+	CHECK(model.get_error_message().is_empty());
+	CHECK(model.confirm(confirmed));
+	CHECK_EQ(confirmed, "_ok");
+}
+
+TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects empty names") {
+	const String source =
+			"func run() -> void:\n"
+			"\tprint(\"ready\")\n"
+			"\tprint(\"done\")\n";
+	ExtractMethodNamePromptModel model;
+	model.begin(make_extract_context(source), extract_selection(), "_extracted_method");
+	model.set_name("");
+
+	CHECK(model.has_pending_request());
+	CHECK_FALSE(model.is_valid());
+	CHECK_EQ(model.get_error_message(), "Name cannot be empty.");
 
 	String confirmed;
 	CHECK_FALSE(model.confirm(confirmed));
