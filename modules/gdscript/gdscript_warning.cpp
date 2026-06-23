@@ -71,6 +71,9 @@ String GDScriptWarning::get_message() const {
 		case SHADOWED_GLOBAL_IDENTIFIER:
 			CHECK_SYMBOLS(3);
 			return vformat(R"(The %s "%s" has the same name as a %s.)", symbols[0], symbols[1], symbols[2]);
+		case MIXED_NAMESPACE_DIRECTORY:
+			CHECK_SYMBOLS(2);
+			return vformat(R"(Directory "%s" contains global script classes from mixed namespaces: %s.)", symbols[0], symbols[1]);
 		case UNREACHABLE_CODE:
 			CHECK_SYMBOLS(1);
 			return vformat(R"*(Unreachable code (statement after return) in function "%s()".)*", symbols[0]);
@@ -206,6 +209,7 @@ String GDScriptWarning::get_name_from_code(Code p_code) {
 		PNAME("SHADOWED_VARIABLE"),
 		PNAME("SHADOWED_VARIABLE_BASE_CLASS"),
 		PNAME("SHADOWED_GLOBAL_IDENTIFIER"),
+		PNAME("MIXED_NAMESPACE_DIRECTORY"),
 		PNAME("UNREACHABLE_CODE"),
 		PNAME("UNREACHABLE_PATTERN"),
 		PNAME("STANDALONE_EXPRESSION"),

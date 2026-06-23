@@ -67,6 +67,7 @@ class ScriptServer {
 	};
 
 	static HashMap<StringName, GlobalScriptClass> global_classes;
+	static uint64_t global_classes_version;
 	static HashMap<StringName, Vector<StringName>> inheriters_cache;
 	static bool inheriters_cache_dirty;
 
@@ -93,6 +94,7 @@ public:
 	static void remove_global_class_by_path(const String &p_path);
 	static void get_global_class_name_parts(const StringName &p_class, StringName *r_class_name,
 			String *r_namespace_name);
+	static uint64_t get_global_class_cache_version();
 	static bool is_global_class(const StringName &p_class);
 	static StringName get_global_class_language(const StringName &p_class);
 	static String get_global_class_path(const String &p_class);

@@ -4447,6 +4447,70 @@ static bool _namespace_exists_in_global_classes(const LocalVector<StringName> &p
 	return false;
 }
 
+#ifdef DEBUG_ENABLED
+static String _get_namespace_warning_name(const String &p_namespace) {
+	return p_namespace.is_empty() ? String("<global>") : p_namespace;
+}
+
+struct MixedNamespaceDirectoryClass {
+	String script_path;
+	String namespace_name;
+};
+
+struct MixedNamespaceDirectoryCache {
+	uint64_t global_class_cache_version = uint64_t(-1);
+	HashMap<String, Vector<MixedNamespaceDirectoryClass>> classes_by_directory;
+};
+
+static thread_local MixedNamespaceDirectoryCache mixed_namespace_directory_cache;
+
+static String _format_namespace_warning_list(Vector<String> p_namespaces) {
+	p_namespaces.sort();
+
+	String result;
+	for (int i = 0; i < p_namespaces.size(); i++) {
+		if (i > 0) {
+			result += i == p_namespaces.size() - 1 ? (p_namespaces.size() == 2 ? " and " : ", and ") : ", ";
+		}
+		result += "\"" + p_namespaces[i] + "\"";
+	}
+	return result;
+}
+
+static void _update_mixed_namespace_directory_cache() {
+	const uint64_t global_class_cache_version = ScriptServer::get_global_class_cache_version();
+	if (mixed_namespace_directory_cache.global_class_cache_version == global_class_cache_version) {
+		return;
+	}
+
+	mixed_namespace_directory_cache.global_class_cache_version = global_class_cache_version;
+	mixed_namespace_directory_cache.classes_by_directory.clear();
+
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+
+	for (const StringName &global_class : global_classes) {
+		const String class_path = GDScript::canonicalize_path(ScriptServer::get_global_class_path(global_class));
+		if (class_path.is_empty()) {
+			continue;
+		}
+
+		const String class_dir = class_path.get_base_dir();
+		if (class_dir.is_empty()) {
+			continue;
+		}
+
+		String class_namespace;
+		ScriptServer::get_global_class_name_parts(global_class, nullptr, &class_namespace);
+
+		MixedNamespaceDirectoryClass class_info;
+		class_info.script_path = class_path;
+		class_info.namespace_name = _get_namespace_warning_name(class_namespace);
+		mixed_namespace_directory_cache.classes_by_directory[class_dir].push_back(class_info);
+	}
+}
+#endif // DEBUG_ENABLED
+
 bool GDScriptAnalyzer::get_global_class_in_namespace(const String &p_namespace, const StringName &p_class_name, StringName &r_global_class_name) const {
 	if (p_namespace.is_empty()) {
 		return false;
@@ -4595,6 +4659,49 @@ Error GDScriptAnalyzer::validate_imports() {
 
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
 }
+
+#ifdef DEBUG_ENABLED
+void GDScriptAnalyzer::validate_mixed_namespace_directory() {
+	if (parser->head->get_global_name() == StringName() || parser->script_path.is_empty()) {
+		return;
+	}
+	if (parser->is_project_ignoring_warnings ||
+			parser->warning_levels[GDScriptWarning::MIXED_NAMESPACE_DIRECTORY] == GDScriptWarning::IGNORE) {
+		return;
+	}
+
+	const String current_path = GDScript::canonicalize_path(parser->script_path);
+	const String current_dir = current_path.get_base_dir();
+	if (current_dir.is_empty()) {
+		return;
+	}
+
+	Vector<String> namespaces;
+	namespaces.push_back(_get_namespace_warning_name(parser->head->namespace_name));
+
+	_update_mixed_namespace_directory_cache();
+
+	const Vector<MixedNamespaceDirectoryClass> *directory_classes = mixed_namespace_directory_cache.classes_by_directory.getptr(current_dir);
+	if (directory_classes != nullptr) {
+		for (const MixedNamespaceDirectoryClass &class_info : *directory_classes) {
+			if (class_info.script_path == current_path) {
+				continue;
+			}
+
+			if (!namespaces.has(class_info.namespace_name)) {
+				namespaces.push_back(class_info.namespace_name);
+			}
+		}
+	}
+
+	if (namespaces.size() < 2) {
+		return;
+	}
+
+	// GDScript warnings are source-file diagnostics, so this intentionally emits once per analyzed global script class.
+	parser->push_warning(parser->head, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY, current_dir, _format_namespace_warning_list(namespaces));
+}
+#endif // DEBUG_ENABLED
 
 Ref<GDScriptParserRef> GDScriptAnalyzer::ensure_cached_external_parser_for_class(const GDScriptParser::ClassNode *p_class, const GDScriptParser::ClassNode *p_from_class, const char *p_context, const GDScriptParser::Node *p_source) {
 	// Delicate piece of code that intentionally doesn't use the GDScript cache or `get_depended_parser_for`.
@@ -8353,6 +8460,10 @@ Error GDScriptAnalyzer::analyze() {
 	if (err) {
 		return err;
 	}
+
+#ifdef DEBUG_ENABLED
+	validate_mixed_namespace_directory();
+#endif // DEBUG_ENABLED
 
 	err = resolve_inheritance();
 	if (err) {
