@@ -38,6 +38,7 @@
 #include "../gdscript_analyzer.h"
 #include "../gdscript_position.h"
 
+#include "core/os/mutex.h"
 #include "core/string/char_utils.h"
 
 #ifndef GDSCRIPT_NO_LSP
@@ -215,6 +216,8 @@ struct InlineVariableCandidateCache {
 };
 
 InlineVariableCandidateCache inline_variable_cache;
+
+Mutex refactor_candidate_cache_mutex;
 
 bool same_location(const RefactorLocation &p_a, const RefactorLocation &p_b) {
 	return p_a.start_line == p_b.start_line &&
@@ -2724,7 +2727,10 @@ bool source_lines_match(const Vector<String> &p_left, const Vector<String> &p_ri
 	return true;
 }
 
+// Cache locks only protect shared state. Concurrent misses may compute the same pure candidate twice.
 bool get_cached_type_annotation_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, TypeAnnotationCandidate &r_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	if (!type_annotation_cache.valid ||
 			type_annotation_cache.path != p_context.path ||
 			type_annotation_cache.source_hash != p_context.source.hash64() ||
@@ -2737,6 +2743,8 @@ bool get_cached_type_annotation_candidate(const RefactorContext &p_context, cons
 }
 
 void cache_type_annotation_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, const TypeAnnotationCandidate &p_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	type_annotation_cache.valid = true;
 	type_annotation_cache.path = p_context.path;
 	type_annotation_cache.source_hash = p_context.source.hash64();
@@ -2746,6 +2754,8 @@ void cache_type_annotation_candidate(const RefactorContext &p_context, const Ref
 }
 
 bool get_cached_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, ExtractVariableCandidate &r_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	if (!extract_variable_cache.valid ||
 			extract_variable_cache.path != p_context.path ||
 			extract_variable_cache.source_hash != p_context.source.hash64() ||
@@ -2758,6 +2768,8 @@ bool get_cached_extract_variable_candidate(const RefactorContext &p_context, con
 }
 
 void cache_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, const ExtractVariableCandidate &p_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	extract_variable_cache.valid = true;
 	extract_variable_cache.path = p_context.path;
 	extract_variable_cache.source_hash = p_context.source.hash64();
@@ -2770,6 +2782,8 @@ bool get_cached_extract_method_candidate(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
 		ExtractMethodCandidate &r_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	if (!extract_method_cache.valid ||
 			extract_method_cache.path != p_context.path ||
 			extract_method_cache.source_hash != p_context.source.hash64() ||
@@ -2785,6 +2799,8 @@ void cache_extract_method_candidate(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
 		const ExtractMethodCandidate &p_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	extract_method_cache.valid = true;
 	extract_method_cache.path = p_context.path;
 	extract_method_cache.source_hash = p_context.source.hash64();
@@ -2794,6 +2810,8 @@ void cache_extract_method_candidate(
 }
 
 bool get_cached_inline_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, InlineVariableCandidate &r_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	if (!inline_variable_cache.valid ||
 			inline_variable_cache.path != p_context.path ||
 			inline_variable_cache.source_hash != p_context.source.hash64() ||
@@ -2806,6 +2824,8 @@ bool get_cached_inline_variable_candidate(const RefactorContext &p_context, cons
 }
 
 void cache_inline_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, const InlineVariableCandidate &p_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
 	inline_variable_cache.valid = true;
 	inline_variable_cache.path = p_context.path;
 	inline_variable_cache.source_hash = p_context.source.hash64();

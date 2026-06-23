@@ -562,6 +562,7 @@ GDScriptLanguageProtocol::GDScriptLanguageProtocol() {
 	SET_DOCUMENT_METHOD(completion);
 	SET_DOCUMENT_METHOD(rename);
 	SET_DOCUMENT_METHOD(prepareRename);
+	SET_DOCUMENT_METHOD(codeAction);
 	SET_DOCUMENT_METHOD(references);
 	SET_DOCUMENT_METHOD(foldingRange);
 	SET_DOCUMENT_METHOD(codeLens);
@@ -575,6 +576,7 @@ GDScriptLanguageProtocol::GDScriptLanguageProtocol() {
 	SET_DOCUMENT_METHOD(nativeSymbol); // Custom method.
 
 	SET_COMPLETION_METHOD(resolve);
+	set_method("codeAction/resolve", callable_mp(text_document.ptr(), &GDScriptTextDocument::resolveCodeAction));
 
 	set_method("initialize", callable_mp(this, &GDScriptLanguageProtocol::initialize));
 	set_method("initialized", callable_mp(this, &GDScriptLanguageProtocol::initialized));

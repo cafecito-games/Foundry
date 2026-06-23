@@ -43,6 +43,7 @@
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access_pack.h"
+#include "core/io/json.h"
 #include "core/os/os.h"
 #include "editor/doc/editor_help.h"
 #include "editor/editor_node.h"
@@ -60,6 +61,42 @@ public:
 		proto->clients.insert(proto->next_client_id, peer);
 		proto->latest_client_id = proto->next_client_id;
 		proto->next_client_id++;
+	}
+
+	static void mark_initialized(GDScriptLanguageProtocol *p_proto) {
+		p_proto->_initialized = true;
+	}
+
+	static Array take_client_notifications(GDScriptLanguageProtocol *p_proto, const String &p_method) {
+		Array notifications;
+		if (p_proto == nullptr ||
+				p_proto->latest_client_id == LSP_NO_CLIENT ||
+				!p_proto->clients.has(p_proto->latest_client_id)) {
+			return notifications;
+		}
+
+		Ref<GDScriptLanguageProtocol::LSPeer> peer = p_proto->clients.get(p_proto->latest_client_id);
+		while (!peer->res_queue.is_empty()) {
+			const CharString message_utf8 = peer->res_queue[0];
+			peer->res_queue.remove_at(0);
+
+			String message = String::utf8(message_utf8.get_data(), message_utf8.length());
+			const int body_start = message.find("\r\n\r\n");
+			if (body_start == -1) {
+				continue;
+			}
+
+			Variant parsed = JSON::parse_string(message.substr(body_start + 4));
+			if (parsed.get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+
+			Dictionary notification = parsed;
+			if (String(notification.get("method", "")) == p_method) {
+				notifications.push_back(notification);
+			}
+		}
+		return notifications;
 	}
 };
 
@@ -134,6 +171,87 @@ LSP::TextDocumentPositionParams pos_in(const LSP::DocumentUri &p_uri, const LSP:
 	params.textDocument.uri = p_uri;
 	params.position = p_pos;
 	return params;
+}
+
+Dictionary make_text_document_item(const String &p_uri, const String &p_source) {
+	Dictionary text_document;
+	text_document["uri"] = p_uri;
+	text_document["languageId"] = "gdscript";
+	text_document["version"] = 1;
+	text_document["text"] = p_source;
+	return text_document;
+}
+
+Dictionary make_did_open_params(const String &p_uri, const String &p_source) {
+	Dictionary params;
+	params["textDocument"] = make_text_document_item(p_uri, p_source);
+	return params;
+}
+
+Dictionary make_text_document_identifier(const String &p_uri) {
+	Dictionary text_document;
+	text_document["uri"] = p_uri;
+	return text_document;
+}
+
+Dictionary make_did_change_params(const String &p_uri, const String &p_source) {
+	Dictionary change;
+	change["text"] = p_source;
+
+	Array changes;
+	changes.push_back(change);
+
+	Dictionary params;
+	params["textDocument"] = make_text_document_identifier(p_uri);
+	params["contentChanges"] = changes;
+	return params;
+}
+
+Dictionary make_code_action_params(const String &p_uri, const LSP::Range &p_range, const Array &p_only = Array()) {
+	Dictionary context;
+	context["diagnostics"] = Array();
+	if (!p_only.is_empty()) {
+		context["only"] = p_only;
+	}
+
+	Dictionary params;
+	params["textDocument"] = make_text_document_identifier(p_uri);
+	params["range"] = p_range.to_json();
+	params["context"] = context;
+	return params;
+}
+
+Dictionary make_rename_params(const String &p_uri, const LSP::Position &p_position, const String &p_new_name) {
+	Dictionary params = pos_in(p_uri, p_position).to_json();
+	params["newName"] = p_new_name;
+	return params;
+}
+
+String first_workspace_edit_text(const Dictionary &p_workspace_edit, const String &p_uri) {
+	REQUIRE(p_workspace_edit.has("changes"));
+	Dictionary changes = p_workspace_edit["changes"];
+	REQUIRE(changes.has(p_uri));
+	Array edits = changes[p_uri];
+	REQUIRE_FALSE(edits.is_empty());
+	Dictionary first_edit = edits[0];
+	return first_edit["newText"];
+}
+
+Array workspace_edits_for_uri(const Dictionary &p_workspace_edit, const String &p_uri) {
+	REQUIRE(p_workspace_edit.has("changes"));
+	Dictionary changes = p_workspace_edit["changes"];
+	REQUIRE(changes.has(p_uri));
+	return changes[p_uri];
+}
+
+Dictionary first_code_action_with_kind(const Array &p_actions, const String &p_kind) {
+	for (int i = 0; i < p_actions.size(); i++) {
+		Dictionary action = p_actions[i];
+		if (String(action.get("kind", "")) == p_kind) {
+			return action;
+		}
+	}
+	return Dictionary();
 }
 
 const LSP::DocumentSymbol *test_resolve_symbol_at(const String &p_uri, const LSP::Position p_pos, const String &p_expected_uri, const String &p_expected_name, const LSP::Range &p_expected_range) {
@@ -650,6 +768,156 @@ func f():
 			Dictionary values_argument = arguments[1];
 			CHECK_EQ(String(handler_argument["type"]), "Callable[[Node?], String]");
 			CHECK_EQ(String(values_argument["type"]), "Dictionary[String, Array[int]]");
+		}
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][codeAction] exposes refactors") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+
+		SUBCASE("server capabilities advertise code actions") {
+			TestGDScriptLanguageProtocolInitializer::mark_initialized(proto);
+
+			Dictionary init_params;
+			init_params["rootUri"] = workspace->root_uri;
+			init_params["rootPath"] = workspace->root;
+
+			Dictionary request;
+			request["jsonrpc"] = "2.0";
+			request["id"] = 1;
+			request["method"] = "initialize";
+			request["params"] = init_params;
+
+			Dictionary response = proto->process_action(request);
+			Dictionary result = response["result"];
+			Dictionary capabilities = result["capabilities"];
+			REQUIRE(capabilities["codeActionProvider"].get_type() == Variant::DICTIONARY);
+
+			Dictionary code_action_provider = capabilities["codeActionProvider"];
+			CHECK(bool(code_action_provider["resolveProvider"]));
+			Array kinds = code_action_provider["codeActionKinds"];
+			CHECK(kinds.has("refactor.extract"));
+			CHECK(kinds.has("refactor.rewrite"));
+			CHECK(kinds.has("refactor.inline"));
+			CHECK_FALSE(kinds.has("refactor.rename"));
+		}
+
+		SUBCASE("returns Add Type Annotation and resolves its workspace edit") {
+			const String source = "var score = 1\n";
+			const String uri = workspace->get_file_uri("res://lsp/code_action_type_annotation.gd");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Array only;
+			only.push_back("refactor");
+			Array actions = text_document->codeAction(make_code_action_params(uri, range(pos(0, 1), pos(0, 1)), only));
+			Dictionary action = first_code_action_with_kind(actions, "refactor.rewrite");
+			REQUIRE_FALSE(action.is_empty());
+			CHECK_EQ(String(action["title"]), "Add Type Annotation");
+			CHECK_FALSE(action.has("edit"));
+
+			Dictionary data = action["data"];
+			data["clientPayload"] = "keep-me";
+			action["data"] = data;
+
+			Dictionary resolved = text_document->resolveCodeAction(action);
+			REQUIRE(resolved.has("edit"));
+			Dictionary edit = resolved["edit"];
+			CHECK_EQ(first_workspace_edit_text(edit, uri), ": int = ");
+
+			Dictionary resolved_data = resolved["data"];
+			CHECK_EQ(String(resolved_data["clientPayload"]), "keep-me");
+		}
+
+		SUBCASE("notifies when a stale code action cannot resolve") {
+			const String uri = workspace->get_file_uri("res://lsp/code_action_stale.gd");
+			text_document->didOpen(make_did_open_params(uri, "var score = 1\n"));
+
+			Array actions = text_document->codeAction(make_code_action_params(uri, range(pos(0, 1), pos(0, 1))));
+			Dictionary action = first_code_action_with_kind(actions, "refactor.rewrite");
+			REQUIRE_FALSE(action.is_empty());
+
+			text_document->didChange(make_did_change_params(uri, "var score: int = 1\n"));
+			Dictionary resolved = text_document->resolveCodeAction(action);
+			CHECK_FALSE(resolved.has("edit"));
+
+			Array notifications = TestGDScriptLanguageProtocolInitializer::take_client_notifications(
+					proto, "window/showMessage");
+			CHECK_FALSE(notifications.is_empty());
+			if (!notifications.is_empty()) {
+				Dictionary notification = notifications[0];
+				Dictionary params = notification["params"];
+				CHECK_EQ(int(params["type"]), LSP::MessageType::Error);
+				CHECK(String(params["message"]).contains("Cannot resolve code action"));
+			}
+		}
+
+		SUBCASE("does not list Rename as a code action") {
+			const String uri = workspace->get_file_uri("res://refactor/rename_local.gd");
+
+			Array actions = text_document->codeAction(make_code_action_params(uri, range(pos(3, 5), pos(3, 5))));
+			Dictionary action = first_code_action_with_kind(actions, "refactor.rename");
+			CHECK(action.is_empty());
+		}
+
+		SUBCASE("filters code actions by requested kind") {
+			const String source = "var score = 1\n";
+			const String uri = workspace->get_file_uri("res://lsp/code_action_filter.gd");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Array rewrite_only;
+			rewrite_only.push_back("refactor.rewrite");
+			Dictionary rewrite_params = make_code_action_params(uri, range(pos(0, 1), pos(0, 1)), rewrite_only);
+			Array rewrite_actions = text_document->codeAction(rewrite_params);
+			CHECK_FALSE(first_code_action_with_kind(rewrite_actions, "refactor.rewrite").is_empty());
+
+			Array extract_only;
+			extract_only.push_back("refactor.extract");
+			Dictionary extract_params = make_code_action_params(uri, range(pos(0, 1), pos(0, 1)), extract_only);
+			Array extract_actions = text_document->codeAction(extract_params);
+			CHECK(first_code_action_with_kind(extract_actions, "refactor.rewrite").is_empty());
+		}
+
+		SUBCASE("textDocument rename returns grouped cross-file edits") {
+			GDScriptTests::assert_no_errors_in("res://refactor/rename_cross_file_user.gd");
+
+			const String target_uri = workspace->get_file_uri("res://refactor/rename_cross_file_target.gd");
+			const String user_uri = workspace->get_file_uri("res://refactor/rename_cross_file_user.gd");
+			Dictionary edit = text_document->rename(make_rename_params(target_uri, pos(2, 5), "renamed_count"));
+
+			CHECK_EQ(workspace_edits_for_uri(edit, target_uri).size(), 3);
+			CHECK_EQ(workspace_edits_for_uri(edit, user_uri).size(), 2);
+		}
+
+		SUBCASE("textDocument rename returns exported cross-file script edits") {
+			GDScriptTests::assert_no_errors_in("res://refactor/rename_cross_file_exported_user.gd");
+
+			const String target_uri = workspace->get_file_uri("res://refactor/rename_cross_file_exported_target.gd");
+			const String user_uri = workspace->get_file_uri("res://refactor/rename_cross_file_exported_user.gd");
+			const String scene_uri = workspace->get_file_uri("res://refactor/rename_cross_file_exported_scene.tscn");
+			Dictionary rename_params = make_rename_params(target_uri, pos(2, 13), "renamed_exported_count");
+			Dictionary edit = text_document->rename(rename_params);
+
+			CHECK_EQ(workspace_edits_for_uri(edit, target_uri).size(), 3);
+			CHECK_EQ(workspace_edits_for_uri(edit, user_uri).size(), 2);
+			Dictionary changes = edit["changes"];
+			CHECK_FALSE(changes.has(scene_uri));
+
+			Array notifications = TestGDScriptLanguageProtocolInitializer::take_client_notifications(
+					proto, "window/showMessage");
+			CHECK_FALSE(notifications.is_empty());
+			if (!notifications.is_empty()) {
+				Dictionary notification = notifications[0];
+				Dictionary params = notification["params"];
+				CHECK_EQ(int(params["type"]), LSP::MessageType::Warning);
+				CHECK(String(params["message"]).to_lower().contains("exported"));
+			}
 		}
 
 		memdelete(proto);
