@@ -39,6 +39,32 @@
 #include "editor/themes/editor_theme_manager.h"
 #include "scene/gui/text_edit.h"
 
+static bool _is_word_at(const String &p_text, int p_column, const String &p_word) {
+	const int word_length = p_word.length();
+	if (p_column < 0 || p_column + word_length > p_text.length()) {
+		return false;
+	}
+	if (p_text.substr(p_column, word_length) != p_word) {
+		return false;
+	}
+	if (p_column > 0 && is_unicode_identifier_continue(p_text[p_column - 1])) {
+		return false;
+	}
+	const int word_end = p_column + word_length;
+	if (word_end < p_text.length() && is_unicode_identifier_continue(p_text[word_end])) {
+		return false;
+	}
+	return true;
+}
+
+static bool _is_contextual_async_modifier(const String &p_text, int p_word_end) {
+	int next_column = p_word_end;
+	while (next_column < p_text.length() && is_whitespace(p_text[next_column])) {
+		next_column++;
+	}
+	return _is_word_at(p_text, next_column, "func");
+}
+
 Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_line) {
 	Dictionary color_map;
 
@@ -478,6 +504,9 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 				col = reserved_keywords[word];
 				// Don't highlight `list` as a type in `for elem: Type in list`.
 				expect_type = false;
+			} else if (word == "async" && _is_contextual_async_modifier(str, to)) {
+				// `async` is contextual and remains a valid identifier outside declaration modifiers.
+				col = reserved_keywords[GDScriptTokenizer::get_token_name(GDScriptTokenizer::Token::FUNC)];
 			} else if (member_keywords.has(word)) {
 				col = member_keywords[word];
 				in_member_variable = true;

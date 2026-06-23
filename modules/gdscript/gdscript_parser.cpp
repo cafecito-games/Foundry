@@ -1307,8 +1307,8 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 					}
 					break;
 				}
-				// Display a completion with identifiers.
-				make_completion_context(COMPLETION_IDENTIFIER, nullptr);
+				// Display a completion with declaration-oriented identifiers.
+				make_completion_context(COMPLETION_DECLARATION, nullptr);
 				advance();
 				if (previous.get_identifier() == "export") {
 					push_error(R"(The "export" keyword was removed in Godot 4. Use an export annotation ("@export", "@export_range", etc.) instead.)");

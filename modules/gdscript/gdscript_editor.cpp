@@ -747,6 +747,9 @@ static String _get_visual_datatype(const PropertyInfo &p_info, bool p_is_arg, co
 
 static String _make_arguments_hint(const MethodInfo &p_info, int p_arg_idx, bool p_is_annotation = false) {
 	String arghint;
+	if (!p_is_annotation && (p_info.flags & METHOD_FLAG_ASYNC)) {
+		arghint += "async ";
+	}
 	if (!p_is_annotation) {
 		arghint += _get_visual_datatype(p_info.return_val, false) + " ";
 	}
@@ -799,10 +802,13 @@ static String _make_arguments_hint(const GDScriptParser::FunctionNode *p_functio
 	if (p_just_args) {
 		arghint = "(";
 	} else {
+		if (p_function->is_coroutine) {
+			arghint += "async ";
+		}
 		if (p_function->get_datatype().builtin_type == Variant::NIL) {
-			arghint = "void " + p_function->identifier->name + "(";
+			arghint += "void " + p_function->identifier->name + "(";
 		} else {
-			arghint = p_function->get_datatype().to_string() + " " + p_function->identifier->name + "(";
+			arghint += p_function->get_datatype().to_string() + " " + p_function->identifier->name + "(";
 		}
 	}
 
@@ -1924,6 +1930,16 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 		ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
 		r_result.insert(option.display, option);
 	}
+}
+
+static void _add_async_function_declaration_options(HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	ScriptLanguage::CodeCompletionOption async_func("async func", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+	async_func.insert_text += " ";
+	r_result.insert(async_func.display, async_func);
+
+	ScriptLanguage::CodeCompletionOption static_async_func("static async func", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+	static_async_func.insert_text += " ";
+	r_result.insert(static_async_func.display, static_async_func);
 }
 
 static GDScriptCompletionIdentifier _type_from_variant(const Variant &p_value, GDScriptParser::CompletionContext &p_context) {
@@ -3871,6 +3887,10 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				r_forced = true;
 			}
 		} break;
+		case GDScriptParser::COMPLETION_DECLARATION: {
+			_find_identifiers(completion_context, false, !_guess_expecting_callable(completion_context), options, 0);
+			_add_async_function_declaration_options(options);
+		} break;
 		case GDScriptParser::COMPLETION_METHOD:
 			is_function = true;
 			[[fallthrough]];
@@ -3975,7 +3995,8 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 		case GDScriptParser::COMPLETION_OVERRIDE_METHOD: {
 			GDScriptParser::DataType native_type = completion_context.current_class->base_type;
 			GDScriptParser::FunctionNode *function_node = static_cast<GDScriptParser::FunctionNode *>(completion_context.node);
-			bool is_static = function_node != nullptr && function_node->is_static;
+			const bool is_static = function_node != nullptr && function_node->is_static;
+			const bool is_coroutine = function_node != nullptr && function_node->is_coroutine;
 			while (native_type.is_set() && native_type.kind != GDScriptParser::DataType::NATIVE) {
 				switch (native_type.kind) {
 					case GDScriptParser::DataType::CLASS: {
@@ -3995,11 +4016,15 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 							if (is_static != member.function->is_static) {
 								continue;
 							}
+							const bool parent_is_coroutine = member.function->is_coroutine;
+							if (is_coroutine != parent_is_coroutine) {
+								continue;
+							}
 
 							String insert_text = member.function->identifier->name;
 							insert_text += member.function->signature + ":";
 							String display_name = insert_text;
-							if (member.function->is_declared_async) {
+							if (parent_is_coroutine) {
 								display_name = "async " + display_name;
 							}
 							ScriptLanguage::CodeCompletionOption option(display_name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
@@ -4043,6 +4068,10 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				if (completion_context.current_class->has_function(mi.name) && completion_context.current_class->get_member(mi.name).function != function_node) {
 					continue;
 				}
+				const bool parent_is_coroutine = mi.flags & METHOD_FLAG_ASYNC;
+				if (is_coroutine != parent_is_coroutine) {
+					continue;
+				}
 				String method_hint = mi.name;
 				if (method_hint.contains_char(':')) {
 					method_hint = method_hint.get_slicec(':', 0);
@@ -4077,7 +4106,13 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				}
 				method_hint += ":";
 
-				ScriptLanguage::CodeCompletionOption option(method_hint, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+				String display_hint = method_hint;
+				if (parent_is_coroutine) {
+					display_hint = "async " + display_hint;
+				}
+
+				ScriptLanguage::CodeCompletionOption option(display_hint, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+				option.insert_text = method_hint;
 				options.insert(option.display, option);
 			}
 		} break;

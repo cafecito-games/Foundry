@@ -31,6 +31,9 @@
 #include "test_gdscript.h"
 
 #include "../editor/gdscript_docgen.h"
+#ifdef TOOLS_ENABLED
+#include "../editor/gdscript_highlighter.h"
+#endif
 #include "../gdscript.h"
 #include "../gdscript_analyzer.h"
 #include "../gdscript_compiler.h"
@@ -47,6 +50,7 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/settings/editor_settings.h"
+#include "scene/gui/text_edit.h"
 #endif
 
 namespace GDScriptTests {
@@ -249,6 +253,53 @@ struct GlobalScriptClassCacheBackup {
 		}
 	}
 };
+
+#ifdef TOOLS_ENABLED
+static Color get_highlighted_color_at(const Dictionary &p_highlighting, int p_column) {
+	Color color;
+	Array columns = p_highlighting.keys();
+	columns.sort();
+
+	for (int i = 0; i < columns.size(); i++) {
+		const int column = columns[i];
+		if (column > p_column) {
+			break;
+		}
+		const Dictionary info = p_highlighting[column];
+		if (info.has("color")) {
+			color = info["color"];
+		}
+	}
+
+	return color;
+}
+
+TEST_CASE("[Modules][GDScript][Editor] Syntax highlighter treats async as contextual function modifier") {
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text(R"(async func load() -> void:
+static async func make() -> void:
+var async = 1
+func async() -> int:
+	return async
+)");
+
+	Ref<GDScriptSyntaxHighlighter> highlighter;
+	highlighter.instantiate();
+	highlighter->set_text_edit(text_edit);
+	highlighter->_update_cache();
+
+	const Color keyword_color = EDITOR_GET("text_editor/theme/highlighting/keyword_color");
+	const Color normal_color = text_edit->get_theme_color(SceneStringName(font_color));
+	const Color function_definition_color = EDITOR_GET("text_editor/theme/highlighting/gdscript/function_definition_color");
+
+	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(0), 0), keyword_color);
+	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(1), 7), keyword_color);
+	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(2), 4), normal_color);
+	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(3), 5), function_definition_color);
+
+	memdelete(text_edit);
+}
+#endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][GDScript] Parser stores namespace and import declarations") {
 	GDScriptParser parser;
@@ -860,6 +911,60 @@ var map: Dictionary[String, DocTarget]
 	CHECK_EQ(docs[0].properties[0].type, "characters.DocTarget");
 	CHECK_EQ(docs[0].properties[1].type, "characters.DocTarget[]");
 	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
+}
+
+TEST_CASE("[Modules][GDScript] Docgen emits async method qualifiers") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+async func load() -> int:
+	return 1
+
+static async func make() -> void:
+	pass
+
+func legacy_wait(done: Signal) -> void:
+	await done
+)",
+			"user://async_docgen.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptCompiler::make_scripts(script.ptr(), root, false);
+	GDScriptDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	String load_qualifiers;
+	String make_qualifiers;
+	String legacy_wait_qualifiers;
+	for (const DocData::MethodDoc &method : docs[0].methods) {
+		if (method.name == "load") {
+			load_qualifiers = method.qualifiers;
+		} else if (method.name == "make") {
+			make_qualifiers = method.qualifiers;
+		} else if (method.name == "legacy_wait") {
+			legacy_wait_qualifiers = method.qualifiers;
+		}
+	}
+
+	CHECK_EQ(load_qualifiers, "async");
+	CHECK_EQ(make_qualifiers, "static async");
+	CHECK_EQ(legacy_wait_qualifiers, "async");
 }
 
 TEST_CASE("[Modules][GDScript] Namespaced global classes can share a local name") {

@@ -1318,7 +1318,7 @@ public:
 		COMPLETION_ATTRIBUTE_METHOD, // After id.| to look for methods.
 		COMPLETION_BUILT_IN_TYPE_CONSTANT_OR_STATIC_METHOD, // Constants inside a built-in type (e.g. Color.BLUE) or static methods (e.g. Color.html).
 		COMPLETION_CALL_ARGUMENTS, // Complete with nodes, input actions, enum values (or usual expressions).
-		// TODO: COMPLETION_DECLARATION, // Potential declaration (var, const, func).
+		COMPLETION_DECLARATION, // Potential class-body declaration (var, const, func).
 		COMPLETION_GET_NODE, // Get node with $ notation.
 		COMPLETION_IDENTIFIER, // List available identifiers in scope.
 		COMPLETION_IMPORT_NAMESPACE, // Namespace after import.
