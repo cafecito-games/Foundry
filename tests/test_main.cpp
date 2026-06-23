@@ -115,6 +115,7 @@
 #include "tests/core/templates/test_vector.h"
 #include "tests/core/templates/test_vset.h"
 #include "tests/core/test_crypto.h"
+#include "tests/core/test_doc_data.h"
 #include "tests/core/test_hashing_context.h"
 #include "tests/core/test_time.h"
 #include "tests/core/threads/test_worker_thread_pool.h"

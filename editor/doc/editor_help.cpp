@@ -149,6 +149,8 @@ static void _add_qualifiers_to_rt(const String &p_qualifiers, RichTextLabel *p_r
 			hint = TTR("This method is called by the engine.\nIt can be overridden to customize built-in behavior.");
 		} else if (qualifier == "required") {
 			hint = TTR("This method is required to be overridden when extending its base class.");
+		} else if (qualifier == "async") {
+			hint = TTR("This method is a coroutine: it may suspend with await before returning.");
 		} else if (qualifier == "const") {
 			hint = TTR("This method has no side effects.\nIt does not modify the object in any way.");
 		} else if (qualifier == "static") {
