@@ -254,6 +254,13 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(GDScriptRefactorNames::validate_identifier(String::utf8("café"), reason));
 			CHECK(GDScriptRefactorNames::validate_identifier(String::utf8("número"), reason));
 		}
+		SUBCASE("identifier at caret column") {
+			const String line = String::utf8("\tvar número := número + 1");
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 8), String::utf8("número"));
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 11), String::utf8("número"));
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 21), String::utf8("número"));
+			CHECK(GDScriptRefactorNames::identifier_at_column(line, 12).is_empty());
+		}
 	}
 
 	TEST_CASE("Type annotation rendering") {
@@ -1264,11 +1271,39 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_rename("res://refactor/rename_strings_comments.gd", 3, 5, "total", out); // caret on `total`
 			REQUIRE(r.ok);
 			REQUIRE_EQ(r.rename_occurrences.size(), 2);
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[1].start_line, 6);
 			for (const RefactorTextEdit &occurrence : r.rename_occurrences) {
 				CHECK_EQ(occurrence.expected_text, "total");
-				CHECK(occurrence.start_line != 1); // Comment line.
+				CHECK(occurrence.start_line != 4); // Comment line.
 				CHECK(occurrence.start_line != 5); // String line.
 			}
+		}
+		SUBCASE("inline rename exposes same-line occurrence ranges") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_same_line.gd", 3, 5, "sum", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 5);
+
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].start_column, 5);
+			CHECK_EQ(r.rename_occurrences[0].end_column, 10);
+
+			CHECK_EQ(r.rename_occurrences[1].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].start_column, 1);
+			CHECK_EQ(r.rename_occurrences[1].end_column, 6);
+
+			CHECK_EQ(r.rename_occurrences[2].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[2].start_column, 9);
+			CHECK_EQ(r.rename_occurrences[2].end_column, 14);
+
+			CHECK_EQ(r.rename_occurrences[3].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[3].start_column, 17);
+			CHECK_EQ(r.rename_occurrences[3].end_column, 22);
+
+			CHECK_EQ(r.rename_occurrences[4].start_line, 5);
+			CHECK_EQ(r.rename_occurrences[4].start_column, 8);
+			CHECK_EQ(r.rename_occurrences[4].end_column, 13);
 		}
 		SUBCASE("availability reports rename enabled on a symbol") {
 			GDScriptTests::assert_no_errors_in("res://refactor/rename_local.gd");

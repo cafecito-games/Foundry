@@ -152,6 +152,7 @@ void ScriptTextEditor::apply_code() {
 	if (script.is_null()) {
 		return;
 	}
+	_cancel_inline_rename(true);
 	script->set_source_code(code_editor->get_text_editor()->get_text());
 	script->update_exports();
 	if (!pending_dragged_exports.is_empty()) {
@@ -169,6 +170,7 @@ void ScriptTextEditor::set_edited_resource(const Ref<Resource> &p_res) {
 	ERR_FAIL_COND(script.is_valid());
 	ERR_FAIL_COND(p_res.is_null());
 
+	_cancel_inline_rename(true);
 	script = p_res;
 
 	code_editor->get_text_editor()->set_text(script->get_source_code());
@@ -363,6 +365,7 @@ void ScriptTextEditor::_error_clicked(const Variant &p_line) {
 void ScriptTextEditor::reload_text() {
 	ERR_FAIL_COND(script.is_null());
 
+	_cancel_inline_rename(true);
 	CodeEdit *te = code_editor->get_text_editor();
 	int column = te->get_caret_column();
 	int row = te->get_caret_line();
@@ -2136,6 +2139,12 @@ void ScriptTextEditor::_change_syntax_highlighter(int p_idx) {
 
 void ScriptTextEditor::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			if (!is_visible_in_tree()) {
+				_cancel_inline_rename(true);
+			}
+		} break;
+
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			if (is_ready() && is_visible_in_tree()) {
 				_update_errors();
@@ -2182,6 +2191,7 @@ void ScriptTextEditor::reload(bool p_soft) {
 	if (scr.is_null()) {
 		return;
 	}
+	_cancel_inline_rename(true);
 	scr->set_source_code(te->get_text());
 	bool soft = p_soft || ClassDB::is_parent_class(scr->get_instance_base_type(), "EditorPlugin"); // Always soft-reload editor plugins.
 
@@ -2684,6 +2694,9 @@ void ScriptTextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 			return;
 		}
 	}
+	if (inline_rename_active && mb.is_valid() && mb->is_pressed()) {
+		_cancel_inline_rename(true);
+	}
 
 	if (mb.is_valid() && mb->get_button_index() == MouseButton::RIGHT && mb->is_pressed()) {
 		local_pos = mb->get_global_position() - tx->get_global_position();
@@ -2950,6 +2963,10 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 
 	const RefactorKind kind = (RefactorKind)p_kind;
 
+	if (inline_rename_active) {
+		_cancel_inline_rename(true);
+	}
+
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 
@@ -3125,8 +3142,9 @@ bool ScriptTextEditor::_try_start_inline_rename(const RefactorContext &p_context
 		return false;
 	}
 
+	const int primary_occurrence = _find_inline_rename_primary_occurrence(result.rename_occurrences, p_location);
 	_save_inline_rename_caret_state();
-	if (!_select_inline_rename_occurrences(result.rename_occurrences)) {
+	if (!_select_inline_rename_occurrences(result.rename_occurrences, primary_occurrence)) {
 		_restore_inline_rename_caret_state();
 		return false;
 	}
@@ -3135,8 +3153,6 @@ bool ScriptTextEditor::_try_start_inline_rename(const RefactorContext &p_context
 	inline_rename_context = p_context;
 	inline_rename_location = p_location;
 	inline_rename_occurrences = result.rename_occurrences;
-	inline_rename_primary_line = result.rename_occurrences[0].start_line;
-	inline_rename_primary_column = result.rename_occurrences[0].start_column;
 	code_editor->get_text_editor()->begin_complex_operation();
 	return true;
 }
@@ -3151,18 +3167,44 @@ bool ScriptTextEditor::_is_inline_rename_safe(const RefactorResult &p_result, co
 	return p_result.file_edits[0].path == p_context.path;
 }
 
-bool ScriptTextEditor::_select_inline_rename_occurrences(const Vector<RefactorTextEdit> &p_occurrences) {
+int ScriptTextEditor::_find_inline_rename_primary_occurrence(const Vector<RefactorTextEdit> &p_occurrences, const RefactorLocation &p_location) const {
+	for (int i = 0; i < p_occurrences.size(); i++) {
+		const RefactorTextEdit &occurrence = p_occurrences[i];
+		if (p_location.start_line < occurrence.start_line || p_location.start_line > occurrence.end_line) {
+			continue;
+		}
+		if (p_location.start_line == occurrence.start_line && p_location.start_column < occurrence.start_column) {
+			continue;
+		}
+		if (p_location.start_line == occurrence.end_line && p_location.start_column > occurrence.end_column) {
+			continue;
+		}
+		return i;
+	}
+	return 0;
+}
+
+bool ScriptTextEditor::_select_inline_rename_occurrences(const Vector<RefactorTextEdit> &p_occurrences, int p_primary_occurrence) {
 	if (p_occurrences.is_empty()) {
 		return false;
 	}
+	ERR_FAIL_INDEX_V(p_primary_occurrence, p_occurrences.size(), false);
 
 	CodeEdit *text_editor = code_editor->get_text_editor();
 	text_editor->remove_secondary_carets();
 	text_editor->deselect();
 
+	const RefactorTextEdit &primary = p_occurrences[p_primary_occurrence];
+	text_editor->set_caret_line(primary.end_line, false, false, -1, 0);
+	text_editor->set_caret_column(primary.end_column, false, 0);
+	text_editor->select(primary.start_line, primary.start_column, primary.end_line, primary.end_column, 0);
+
 	for (int i = 0; i < p_occurrences.size(); i++) {
+		if (i == p_primary_occurrence) {
+			continue;
+		}
 		const RefactorTextEdit &occurrence = p_occurrences[i];
-		const int caret = i == 0 ? 0 : text_editor->add_caret(occurrence.end_line, occurrence.end_column);
+		const int caret = text_editor->add_caret(occurrence.end_line, occurrence.end_column);
 		if (caret < 0) {
 			text_editor->remove_secondary_carets();
 			text_editor->deselect();
@@ -3212,16 +3254,16 @@ void ScriptTextEditor::_restore_inline_rename_caret_state() {
 
 String ScriptTextEditor::_get_inline_rename_name() const {
 	CodeEdit *text_editor = code_editor->get_text_editor();
-	if (inline_rename_primary_line < 0 || inline_rename_primary_line >= text_editor->get_line_count()) {
+	if (text_editor->get_caret_count() <= 0 || text_editor->get_caret_line(0) < 0 || text_editor->get_caret_line(0) >= text_editor->get_line_count()) {
 		return String();
 	}
 
-	const String line = text_editor->get_line(inline_rename_primary_line);
-	const int end_column = text_editor->get_caret_line(0) == inline_rename_primary_line ? text_editor->get_caret_column(0) : inline_rename_primary_column;
-	if (end_column < inline_rename_primary_column || end_column > line.length()) {
-		return String();
+	if (text_editor->has_selection(0)) {
+		return text_editor->get_selected_text(0);
 	}
-	return line.substr(inline_rename_primary_column, end_column - inline_rename_primary_column);
+
+	const int line_idx = text_editor->get_caret_line(0);
+	return GDScriptRefactorNames::identifier_at_column(text_editor->get_line(line_idx), text_editor->get_caret_column(0));
 }
 
 void ScriptTextEditor::_commit_inline_rename() {
@@ -3249,11 +3291,25 @@ void ScriptTextEditor::_commit_inline_rename() {
 		return;
 	}
 
+	String applied;
+	if (!GDScriptRefactorEdits::apply(inline_rename_context.source, result.edits, applied)) {
+		EditorToaster::get_singleton()->popup_str(TTR("Could not apply refactor edits."), EditorToaster::SEVERITY_ERROR);
+		_cancel_inline_rename(true);
+		return;
+	}
+
 	CodeEdit *text_editor = code_editor->get_text_editor();
+	const int h_scroll = text_editor->get_h_scroll();
+	const int v_scroll = text_editor->get_v_scroll();
+	text_editor->set_text(applied);
 	text_editor->remove_secondary_carets();
 	text_editor->deselect();
-	text_editor->set_caret_line(result.rename_anchor_line);
-	text_editor->set_caret_column(result.rename_anchor_column + new_name.length());
+	text_editor->set_h_scroll(h_scroll);
+	text_editor->set_v_scroll(v_scroll);
+	if (result.rename_anchor_line >= 0) {
+		text_editor->set_caret_line(result.rename_anchor_line);
+		text_editor->set_caret_column(result.rename_anchor_column + new_name.length());
+	}
 	text_editor->end_complex_operation();
 	_clear_inline_rename_state();
 }
@@ -3264,10 +3320,16 @@ void ScriptTextEditor::_cancel_inline_rename(bool p_restore_text) {
 	}
 
 	CodeEdit *text_editor = code_editor->get_text_editor();
+	const int h_scroll = text_editor->get_h_scroll();
+	const int v_scroll = text_editor->get_v_scroll();
 	if (p_restore_text) {
 		text_editor->set_text(inline_rename_context.source);
 	}
 	_restore_inline_rename_caret_state();
+	if (p_restore_text) {
+		text_editor->set_h_scroll(h_scroll);
+		text_editor->set_v_scroll(v_scroll);
+	}
 	text_editor->end_complex_operation();
 	_clear_inline_rename_state();
 }
@@ -3278,8 +3340,6 @@ void ScriptTextEditor::_clear_inline_rename_state() {
 	inline_rename_location = RefactorLocation();
 	inline_rename_occurrences.clear();
 	inline_rename_caret_states.clear();
-	inline_rename_primary_line = -1;
-	inline_rename_primary_column = -1;
 }
 
 void ScriptTextEditor::_show_rename_dialog() {

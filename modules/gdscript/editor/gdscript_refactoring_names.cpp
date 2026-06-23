@@ -34,6 +34,7 @@
 
 #include "../gdscript.h"
 
+#include "core/string/char_utils.h"
 #include "core/templates/hash_set.h"
 #include "core/variant/variant.h"
 
@@ -113,6 +114,33 @@ bool GDScriptRefactorNames::validate_identifier(const String &p_name, String &r_
 	}
 	r_reason = String();
 	return true;
+}
+
+String GDScriptRefactorNames::identifier_at_column(const String &p_line, int p_column) {
+	if (p_column < 0 || p_column > p_line.length()) {
+		return String();
+	}
+
+	int probe_column = p_column;
+	if (probe_column == p_line.length() || !is_unicode_identifier_continue(p_line[probe_column])) {
+		probe_column--;
+	}
+	if (probe_column < 0 || !is_unicode_identifier_continue(p_line[probe_column])) {
+		return String();
+	}
+
+	int start_column = probe_column;
+	while (start_column > 0 && is_unicode_identifier_continue(p_line[start_column - 1])) {
+		start_column--;
+	}
+
+	int end_column = probe_column + 1;
+	while (end_column < p_line.length() && is_unicode_identifier_continue(p_line[end_column])) {
+		end_column++;
+	}
+
+	const String identifier = p_line.substr(start_column, end_column - start_column);
+	return identifier.is_valid_unicode_identifier() ? identifier : String();
 }
 
 #endif // TOOLS_ENABLED

@@ -114,8 +114,6 @@ class ScriptTextEditor : public ScriptEditorBase {
 	RefactorLocation inline_rename_location;
 	Vector<RefactorTextEdit> inline_rename_occurrences;
 	Vector<InlineRenameCaretState> inline_rename_caret_states;
-	int inline_rename_primary_line = -1;
-	int inline_rename_primary_column = -1;
 
 	int inline_color_line = -1;
 	int inline_color_start = -1;
@@ -289,7 +287,8 @@ protected:
 	void _clear_pending_refactor_preview();
 	bool _try_start_inline_rename(const RefactorContext &p_context, const RefactorLocation &p_location);
 	bool _is_inline_rename_safe(const RefactorResult &p_result, const RefactorContext &p_context) const;
-	bool _select_inline_rename_occurrences(const Vector<RefactorTextEdit> &p_occurrences);
+	int _find_inline_rename_primary_occurrence(const Vector<RefactorTextEdit> &p_occurrences, const RefactorLocation &p_location) const;
+	bool _select_inline_rename_occurrences(const Vector<RefactorTextEdit> &p_occurrences, int p_primary_occurrence);
 	void _save_inline_rename_caret_state();
 	void _restore_inline_rename_caret_state();
 	String _get_inline_rename_name() const;

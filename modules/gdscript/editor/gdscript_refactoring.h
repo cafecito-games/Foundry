@@ -85,6 +85,9 @@ struct RefactorResult {
 	Vector<RefactorTextEdit> edits;
 	Vector<RefactorFileEdit> file_edits;
 	Vector<RefactorUnresolvedReference> unresolved_references;
+	// Current-file rename ranges for inline editing. These carry expected_text
+	// guards but intentionally clear new_text because the live editor provides
+	// the tentative replacement text.
 	Vector<RefactorTextEdit> rename_occurrences;
 	int rename_anchor_line = -1;
 	int rename_anchor_column = -1;
