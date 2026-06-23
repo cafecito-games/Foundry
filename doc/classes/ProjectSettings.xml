@@ -603,6 +603,9 @@
 		<member name="debug/gdscript/warnings/missing_tool" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when the base class script has the [code]@tool[/code] annotation, but the current class script does not have it.
 		</member>
+		<member name="debug/gdscript/warnings/mixed_namespace_directory" type="int" setter="" getter="" default="1">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively for each analyzed global script class in a directory whose global script classes declare different namespaces.
+		</member>
 		<member name="debug/gdscript/warnings/narrowing_conversion" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when passing a floating-point value to a function that expects an integer (it will be converted and lose precision).
 		</member>

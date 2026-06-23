@@ -403,12 +403,14 @@ void ScriptServer::thread_exit() {
 }
 
 HashMap<StringName, ScriptServer::GlobalScriptClass> ScriptServer::global_classes;
+uint64_t ScriptServer::global_classes_version = 0;
 HashMap<StringName, Vector<StringName>> ScriptServer::inheriters_cache;
 bool ScriptServer::inheriters_cache_dirty = true;
 
 void ScriptServer::global_classes_clear() {
 	global_classes.clear();
 	inheriters_cache.clear();
+	global_classes_version++;
 }
 
 void ScriptServer::get_global_class_name_parts(const StringName &p_class, StringName *r_class_name,
@@ -451,6 +453,7 @@ void ScriptServer::add_global_class(const StringName &p_class, const StringName 
 			existing->is_abstract = p_is_abstract;
 			existing->is_tool = p_is_tool;
 			inheriters_cache_dirty = true;
+			global_classes_version++;
 		}
 	} else {
 		// Add new class.
@@ -462,12 +465,15 @@ void ScriptServer::add_global_class(const StringName &p_class, const StringName 
 		g.is_tool = p_is_tool;
 		global_classes[p_class] = g;
 		inheriters_cache_dirty = true;
+		global_classes_version++;
 	}
 }
 
 void ScriptServer::remove_global_class(const StringName &p_class) {
-	global_classes.erase(p_class);
-	inheriters_cache_dirty = true;
+	if (global_classes.erase(p_class)) {
+		inheriters_cache_dirty = true;
+		global_classes_version++;
+	}
 }
 
 void ScriptServer::get_inheriters_list(const StringName &p_base_type, List<StringName> *r_classes) {
@@ -509,9 +515,14 @@ void ScriptServer::remove_global_class_by_path(const String &p_path) {
 		if (kv.value.path == p_path) {
 			global_classes.erase(kv.key);
 			inheriters_cache_dirty = true;
+			global_classes_version++;
 			return;
 		}
 	}
+}
+
+uint64_t ScriptServer::get_global_class_cache_version() {
+	return global_classes_version;
 }
 
 bool ScriptServer::is_global_class(const StringName &p_class) {

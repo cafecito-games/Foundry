@@ -55,6 +55,7 @@ public:
 		SHADOWED_VARIABLE, // A local variable/constant shadows a current class member.
 		SHADOWED_VARIABLE_BASE_CLASS, // A local variable/constant shadows a base class member.
 		SHADOWED_GLOBAL_IDENTIFIER, // A global class or function has the same name as variable.
+		MIXED_NAMESPACE_DIRECTORY, // Global script classes in the same directory declare different namespaces.
 		UNREACHABLE_CODE, // Code after a return statement.
 		UNREACHABLE_PATTERN, // Pattern in a match statement after a catch all pattern (wildcard or bind).
 		STANDALONE_EXPRESSION, // Expression not assigned to a variable.
@@ -113,6 +114,7 @@ public:
 		WARN, // SHADOWED_VARIABLE
 		WARN, // SHADOWED_VARIABLE_BASE_CLASS
 		WARN, // SHADOWED_GLOBAL_IDENTIFIER
+		WARN, // MIXED_NAMESPACE_DIRECTORY
 		WARN, // UNREACHABLE_CODE
 		WARN, // UNREACHABLE_PATTERN
 		WARN, // STANDALONE_EXPRESSION

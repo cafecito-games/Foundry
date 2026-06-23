@@ -159,6 +159,27 @@ static int count_parser_errors(const GDScriptParser &p_parser, const String &p_e
 	return count;
 }
 
+#ifdef DEBUG_ENABLED
+static bool has_parser_warning(const GDScriptParser &p_parser, GDScriptWarning::Code p_code, const String &p_expected_message) {
+	for (const GDScriptWarning &warning : p_parser.get_warnings()) {
+		if (warning.code == p_code && warning.get_message() == p_expected_message) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static int count_parser_warnings(const GDScriptParser &p_parser, GDScriptWarning::Code p_code) {
+	int count = 0;
+	for (const GDScriptWarning &warning : p_parser.get_warnings()) {
+		if (warning.code == p_code) {
+			count++;
+		}
+	}
+	return count;
+}
+#endif // DEBUG_ENABLED
+
 static String write_temp_script(const String &p_file_name, const String &p_source) {
 	Error err = OK;
 	Ref<FileAccess> file = FileAccess::create_temp(FileAccess::WRITE, p_file_name.get_basename(), "gd", true, &err);
@@ -939,6 +960,182 @@ TEST_CASE("[Modules][GDScript] Global class re-registration can update the scrip
 
 	CHECK_EQ(ScriptServer::get_global_class_path("characters.MovedCharacter"), "res://characters/new_path.gd");
 }
+
+TEST_CASE("[Modules][GDScript] Global class cache version tracks mutations") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	const uint64_t empty_version = ScriptServer::get_global_class_cache_version();
+	ScriptServer::add_global_class("characters.VersionedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/versioned_character.gd", false, false);
+	const uint64_t added_version = ScriptServer::get_global_class_cache_version();
+	CHECK_NE(added_version, empty_version);
+
+	ScriptServer::add_global_class("characters.VersionedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/versioned_character.gd", false, false);
+	CHECK_EQ(ScriptServer::get_global_class_cache_version(), added_version);
+
+	ScriptServer::add_global_class("characters.VersionedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/renamed_character.gd", false, false);
+	const uint64_t updated_version = ScriptServer::get_global_class_cache_version();
+	CHECK_NE(updated_version, added_version);
+
+	ScriptServer::remove_global_class("characters.VersionedCharacter");
+	const uint64_t removed_version = ScriptServer::get_global_class_cache_version();
+	CHECK_NE(removed_version, updated_version);
+
+	ScriptServer::remove_global_class("characters.VersionedCharacter");
+	CHECK_EQ(ScriptServer::get_global_class_cache_version(), removed_version);
+}
+
+#ifdef DEBUG_ENABLED
+TEST_CASE("[Modules][GDScript] Analyzer reports mixed namespace directories through warning levels") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	const String warning_setting = GDScriptWarning::get_setting_path_from_code(GDScriptWarning::MIXED_NAMESPACE_DIRECTORY);
+	const Variant original_warning_setting = ProjectSettings::get_singleton()->get_setting(warning_setting);
+
+	TempScriptFile global_script("mixed_global_script.gd", R"(
+class_name MixedGlobalScript
+extends Node
+)");
+	TempScriptFile namespaced_script("mixed_namespaced_script.gd", R"(
+namespace characters
+class_name MixedNamespacedScript
+extends Node
+)");
+	TempScriptFile ui_script("mixed_ui_script.gd", R"(
+namespace ui
+class_name MixedUiScript
+extends Node
+)");
+
+	ScriptServer::add_global_class("MixedGlobalScript", "Node", GDScriptLanguage::get_singleton()->get_name(), global_script.path, false, false);
+	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false);
+	ScriptServer::add_global_class("ui.MixedUiScript", "Node", GDScriptLanguage::get_singleton()->get_name(), ui_script.path, false, false);
+
+	const String expected_directory = GDScript::canonicalize_path(namespaced_script.path).get_base_dir();
+	const String expected_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "<global>", "characters", and "ui".)", expected_directory);
+
+	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::WARN);
+	GDScriptParser::update_project_settings();
+
+	GDScriptParser warn_parser;
+	Error err = warn_parser.parse(R"(
+namespace characters
+class_name MixedNamespacedScript
+extends Node
+)",
+			namespaced_script.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&warn_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK(has_parser_warning(warn_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY, expected_warning));
+	}
+
+	GDScriptParser global_trigger_parser;
+	err = global_trigger_parser.parse(R"(
+class_name MixedGlobalScript
+extends Node
+)",
+			global_script.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&global_trigger_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK(has_parser_warning(global_trigger_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY, expected_warning));
+	}
+
+	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::IGNORE);
+	GDScriptParser::update_project_settings();
+	GDScriptParser ignore_parser;
+	err = ignore_parser.parse(R"(
+namespace characters
+class_name MixedNamespacedScript
+extends Node
+)",
+			namespaced_script.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&ignore_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK_EQ(count_parser_warnings(ignore_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY), 0);
+	}
+
+	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::ERROR);
+	GDScriptParser::update_project_settings();
+	GDScriptParser error_parser;
+	err = error_parser.parse(R"(
+namespace characters
+class_name MixedNamespacedScript
+extends Node
+)",
+			namespaced_script.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&error_parser);
+		err = analyzer.analyze();
+		CHECK_NE(err, OK);
+		CHECK(has_parser_error(error_parser, expected_warning + " (Warning treated as error.)"));
+	}
+
+	ScriptServer::global_classes_clear();
+	ScriptServer::add_global_class("MixedGlobalScript", "Node", GDScriptLanguage::get_singleton()->get_name(), global_script.path, false, false);
+	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false);
+
+	const String expected_two_namespace_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "<global>" and "characters".)", expected_directory);
+	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::WARN);
+	GDScriptParser::update_project_settings();
+	GDScriptParser two_namespace_parser;
+	err = two_namespace_parser.parse(R"(
+namespace characters
+class_name MixedNamespacedScript
+extends Node
+)",
+			namespaced_script.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&two_namespace_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK(has_parser_warning(two_namespace_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY, expected_two_namespace_warning));
+	}
+
+	ScriptServer::global_classes_clear();
+	TempScriptFile same_namespace_peer("same_namespace_peer.gd", R"(
+namespace characters
+class_name SameNamespacePeer
+extends Node
+)");
+	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false);
+	ScriptServer::add_global_class("characters.SameNamespacePeer", "Node", GDScriptLanguage::get_singleton()->get_name(), same_namespace_peer.path, false, false);
+
+	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::WARN);
+	GDScriptParser::update_project_settings();
+	GDScriptParser same_namespace_parser;
+	err = same_namespace_parser.parse(R"(
+namespace characters
+class_name MixedNamespacedScript
+extends Node
+)",
+			namespaced_script.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&same_namespace_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK_EQ(count_parser_warnings(same_namespace_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY), 0);
+	}
+
+	ProjectSettings::get_singleton()->set_setting(warning_setting, original_warning_setting);
+	GDScriptParser::update_project_settings();
+}
+#endif // DEBUG_ENABLED
 
 TEST_CASE("[Modules][GDScript] Analyzer resolves namespaced global classes") {
 	GlobalScriptClassCacheBackup backup;

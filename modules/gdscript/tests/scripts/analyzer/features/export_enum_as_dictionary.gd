@@ -1,3 +1,4 @@
+@warning_ignore("mixed_namespace_directory")
 class_name TestExportEnumAsDictionary
 
 enum MyEnum {A, B, C}

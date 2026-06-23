@@ -1,3 +1,4 @@
+@warning_ignore("mixed_namespace_directory")
 class_name EnumTypecheckOuterClass
 
 enum MyEnum { V0, V1, V2 }
