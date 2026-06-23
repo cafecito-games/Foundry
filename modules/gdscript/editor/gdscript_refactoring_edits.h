@@ -40,6 +40,7 @@ namespace GDScriptRefactorEdits {
 // edits overlap or address out-of-range positions. Edits may be supplied in any
 // order; they are sorted and applied last-to-first internally.
 bool apply(const String &p_source, const Vector<RefactorTextEdit> &p_edits, String &r_result);
+int find_edit_at_location(const Vector<RefactorTextEdit> &p_edits, const RefactorLocation &p_location);
 
 } // namespace GDScriptRefactorEdits
 

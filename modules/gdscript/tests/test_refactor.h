@@ -224,6 +224,33 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(GDScriptRefactorEdits::apply(src, edits, out));
 			CHECK_EQ(out, "oXree\n");
 		}
+
+		SUBCASE("finds edit touched by caret or selection") {
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(1, 4, 1, 9, "first"));
+			edits.push_back(edit(3, 8, 3, 13, "second"));
+
+			RefactorLocation caret_location;
+			caret_location.start_line = 3;
+			caret_location.end_line = 3;
+			caret_location.start_column = 10;
+			caret_location.end_column = 10;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, caret_location), 1);
+
+			RefactorLocation left_anchored_selection;
+			left_anchored_selection.start_line = 3;
+			left_anchored_selection.end_line = 3;
+			left_anchored_selection.start_column = 7;
+			left_anchored_selection.end_column = 13;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, left_anchored_selection), 1);
+
+			RefactorLocation outside_location;
+			outside_location.start_line = 2;
+			outside_location.end_line = 2;
+			outside_location.start_column = 1;
+			outside_location.end_column = 1;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, outside_location), -1);
+		}
 	}
 
 	TEST_CASE("Identifier validation") {

@@ -292,10 +292,10 @@ protected:
 	void _save_inline_rename_caret_state();
 	void _restore_inline_rename_caret_state();
 	String _get_inline_rename_name() const;
-	void _commit_inline_rename();
+	bool _commit_inline_rename();
 	void _cancel_inline_rename(bool p_restore_text = true);
 	void _clear_inline_rename_state();
-	void _show_rename_dialog();
+	void _show_rename_dialog(const String &p_initial_name = String());
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);
 	RefactorContext _make_refactor_context() const;

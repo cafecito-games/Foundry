@@ -152,7 +152,9 @@ void ScriptTextEditor::apply_code() {
 	if (script.is_null()) {
 		return;
 	}
-	_cancel_inline_rename(true);
+	if (inline_rename_active && !_commit_inline_rename()) {
+		return;
+	}
 	script->set_source_code(code_editor->get_text_editor()->get_text());
 	script->update_exports();
 	if (!pending_dragged_exports.is_empty()) {
@@ -3168,20 +3170,8 @@ bool ScriptTextEditor::_is_inline_rename_safe(const RefactorResult &p_result, co
 }
 
 int ScriptTextEditor::_find_inline_rename_primary_occurrence(const Vector<RefactorTextEdit> &p_occurrences, const RefactorLocation &p_location) const {
-	for (int i = 0; i < p_occurrences.size(); i++) {
-		const RefactorTextEdit &occurrence = p_occurrences[i];
-		if (p_location.start_line < occurrence.start_line || p_location.start_line > occurrence.end_line) {
-			continue;
-		}
-		if (p_location.start_line == occurrence.start_line && p_location.start_column < occurrence.start_column) {
-			continue;
-		}
-		if (p_location.start_line == occurrence.end_line && p_location.start_column > occurrence.end_column) {
-			continue;
-		}
-		return i;
-	}
-	return 0;
+	const int occurrence = GDScriptRefactorEdits::find_edit_at_location(p_occurrences, p_location);
+	return occurrence >= 0 ? occurrence : 0;
 }
 
 bool ScriptTextEditor::_select_inline_rename_occurrences(const Vector<RefactorTextEdit> &p_occurrences, int p_primary_occurrence) {
@@ -3266,16 +3256,16 @@ String ScriptTextEditor::_get_inline_rename_name() const {
 	return GDScriptRefactorNames::identifier_at_column(text_editor->get_line(line_idx), text_editor->get_caret_column(0));
 }
 
-void ScriptTextEditor::_commit_inline_rename() {
+bool ScriptTextEditor::_commit_inline_rename() {
 	if (!inline_rename_active) {
-		return;
+		return true;
 	}
 
 	const String new_name = _get_inline_rename_name();
 	String reason;
 	if (!GDScriptRefactorNames::validate_identifier(new_name, reason)) {
 		EditorToaster::get_singleton()->popup_str(reason, EditorToaster::SEVERITY_ERROR);
-		return;
+		return false;
 	}
 
 	RefactorParams params;
@@ -3283,24 +3273,24 @@ void ScriptTextEditor::_commit_inline_rename() {
 	const RefactorResult result = GDScriptRefactoring::prepare(inline_rename_context, inline_rename_location, RefactorKind::RENAME, params);
 	if (!result.ok) {
 		EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
-		return;
+		return false;
 	}
 	if (!_is_inline_rename_safe(result, inline_rename_context)) {
 		_cancel_inline_rename(true);
-		_show_rename_dialog();
-		return;
+		_show_rename_dialog(new_name);
+		return false;
 	}
 
 	String applied;
 	if (!GDScriptRefactorEdits::apply(inline_rename_context.source, result.edits, applied)) {
 		EditorToaster::get_singleton()->popup_str(TTR("Could not apply refactor edits."), EditorToaster::SEVERITY_ERROR);
 		_cancel_inline_rename(true);
-		return;
+		return false;
 	}
 
 	CodeEdit *text_editor = code_editor->get_text_editor();
 	const int h_scroll = text_editor->get_h_scroll();
-	const int v_scroll = text_editor->get_v_scroll();
+	const double v_scroll = text_editor->get_v_scroll();
 	text_editor->set_text(applied);
 	text_editor->remove_secondary_carets();
 	text_editor->deselect();
@@ -3312,6 +3302,7 @@ void ScriptTextEditor::_commit_inline_rename() {
 	}
 	text_editor->end_complex_operation();
 	_clear_inline_rename_state();
+	return true;
 }
 
 void ScriptTextEditor::_cancel_inline_rename(bool p_restore_text) {
@@ -3321,7 +3312,7 @@ void ScriptTextEditor::_cancel_inline_rename(bool p_restore_text) {
 
 	CodeEdit *text_editor = code_editor->get_text_editor();
 	const int h_scroll = text_editor->get_h_scroll();
-	const int v_scroll = text_editor->get_v_scroll();
+	const double v_scroll = text_editor->get_v_scroll();
 	if (p_restore_text) {
 		text_editor->set_text(inline_rename_context.source);
 	}
@@ -3342,8 +3333,8 @@ void ScriptTextEditor::_clear_inline_rename_state() {
 	inline_rename_caret_states.clear();
 }
 
-void ScriptTextEditor::_show_rename_dialog() {
-	rename_line_edit->set_text(code_editor->get_text_editor()->get_word_under_caret());
+void ScriptTextEditor::_show_rename_dialog(const String &p_initial_name) {
+	rename_line_edit->set_text(p_initial_name.is_empty() ? code_editor->get_text_editor()->get_word_under_caret() : p_initial_name);
 	// set_text() does not emit text_changed, so validate the prefill manually to
 	// keep the error label and OK button in sync with the seeded name.
 	_on_rename_text_changed(rename_line_edit->get_text());
