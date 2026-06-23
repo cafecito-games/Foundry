@@ -3388,6 +3388,10 @@ static RefactorResult prepare_rename(
 			// The script editor applies rename through file_edits, but tests and
 			// direct engine consumers still use edits for the active file.
 			result.edits.push_back(edit);
+
+			RefactorTextEdit occurrence = edit;
+			occurrence.new_text = String();
+			result.rename_occurrences.push_back(occurrence);
 		}
 	}
 

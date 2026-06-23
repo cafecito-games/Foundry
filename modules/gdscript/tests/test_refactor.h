@@ -1237,6 +1237,39 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(out.contains("# total is a comment word")); // comment unchanged
 			CHECK(out.contains("\"total in a string\"")); // string unchanged
 		}
+		SUBCASE("local variable exposes current-file occurrence ranges for inline rename") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_local.gd", 3, 5, "total", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 3);
+
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].start_column, 5);
+			CHECK_EQ(r.rename_occurrences[0].end_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].end_column, 10);
+			CHECK_EQ(r.rename_occurrences[0].expected_text, "total");
+
+			CHECK_EQ(r.rename_occurrences[1].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].start_column, 1);
+			CHECK_EQ(r.rename_occurrences[1].end_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].end_column, 6);
+
+			CHECK_EQ(r.rename_occurrences[2].start_line, 5);
+			CHECK_EQ(r.rename_occurrences[2].start_column, 8);
+			CHECK_EQ(r.rename_occurrences[2].end_line, 5);
+			CHECK_EQ(r.rename_occurrences[2].end_column, 13);
+		}
+		SUBCASE("inline rename occurrence ranges ignore strings and comments") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_strings_comments.gd", 3, 5, "total", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 2);
+			for (const RefactorTextEdit &occurrence : r.rename_occurrences) {
+				CHECK_EQ(occurrence.expected_text, "total");
+				CHECK(occurrence.start_line != 1); // Comment line.
+				CHECK(occurrence.start_line != 5); // String line.
+			}
+		}
 		SUBCASE("availability reports rename enabled on a symbol") {
 			GDScriptTests::assert_no_errors_in("res://refactor/rename_local.gd");
 			RefactorContext ctx;

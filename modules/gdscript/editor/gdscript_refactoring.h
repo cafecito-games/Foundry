@@ -85,6 +85,7 @@ struct RefactorResult {
 	Vector<RefactorTextEdit> edits;
 	Vector<RefactorFileEdit> file_edits;
 	Vector<RefactorUnresolvedReference> unresolved_references;
+	Vector<RefactorTextEdit> rename_occurrences;
 	int rename_anchor_line = -1;
 	int rename_anchor_column = -1;
 	String suggested_name;
