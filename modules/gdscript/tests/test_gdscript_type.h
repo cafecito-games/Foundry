@@ -41,6 +41,28 @@
 
 namespace GDScriptTests {
 
+// Initializing the language or running the script fixtures enables project warnings globally, and some
+// of them default to errors (e.g. NATIVE_METHOD_OVERRIDE). The analyzer-error helpers below validate
+// analyzer errors only, so they suppress warnings while analyzing to stay isolated from that global state.
+class IgnoreWarningsScope {
+#ifdef DEBUG_ENABLED
+	bool previous_ignore = false;
+#endif
+
+public:
+	IgnoreWarningsScope() {
+#ifdef DEBUG_ENABLED
+		previous_ignore = GDScriptParser::is_ignoring_warnings();
+		GDScriptParser::set_ignoring_warnings(true);
+#endif
+	}
+	~IgnoreWarningsScope() {
+#ifdef DEBUG_ENABLED
+		GDScriptParser::set_ignoring_warnings(previous_ignore);
+#endif
+	}
+};
+
 static GDScriptParser::DataType make_builtin_type(Variant::Type p_type) {
 	GDScriptParser::DataType type;
 	type.kind = GDScriptParser::DataType::BUILTIN;
@@ -77,6 +99,7 @@ static GDScriptParser::DataType make_signature_builtin_type(Variant::Type p_buil
 }
 
 static Error analyze_source(const String &p_source, bool p_strict_null_checks = false, bool p_strict_dynamic_checks = false) {
+	IgnoreWarningsScope ignore_warnings;
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://test.gd", false);
 	if (err != OK) {
@@ -90,6 +113,7 @@ static Error analyze_source(const String &p_source, bool p_strict_null_checks = 
 }
 
 static PackedStringArray analyze_source_errors(const String &p_source, bool p_strict_null_checks = false, bool p_strict_dynamic_checks = false) {
+	IgnoreWarningsScope ignore_warnings;
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://test.gd", false);
 	PackedStringArray errors;
@@ -1732,6 +1756,18 @@ TEST_CASE("[Modules][GDScript] Analyzer reports strict assignment diagnostics") 
 			R"*(Cannot assign nullable value of type "Node?" to variable "node"; expected non-nullable "Node".)*",
 			true);
 	check_source_error(nullable_assignment_source,
+			R"*(Cannot assign nullable value of type "Node?" to variable "node"; expected non-nullable "Node".)*",
+			true);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer error checks ignore globally enabled warnings") {
+	// Initializing the language enables project warnings globally and some of them default to errors
+	// (e.g. NATIVE_METHOD_OVERRIDE, triggered here by overriding the native "get_node" method). The
+	// analyzer-error helpers must report analyzer errors only, regardless of that leaked warning state.
+	GDScriptLanguage::get_singleton()->init();
+
+	const String source = "func get_node() -> Node?:\n\treturn null\nvar node: Node = get_node()\n";
+	check_source_error(source,
 			R"*(Cannot assign nullable value of type "Node?" to variable "node"; expected non-nullable "Node".)*",
 			true);
 }
