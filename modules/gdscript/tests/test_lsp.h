@@ -41,6 +41,7 @@
 #include "../language_server/gdscript_workspace.h"
 #include "../language_server/godot_lsp.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access_pack.h"
 #include "core/io/json.h"
@@ -439,6 +440,43 @@ void assert_no_errors_in(const String &p_path) {
 	REQUIRE_MESSAGE(err == OK, vformat("Errors while analyzing '%s'", p_path));
 }
 
+static void restore_lsp_global_script_classes(const Array &p_classes) {
+	ScriptServer::global_classes_clear();
+	for (const Variant &script_class : p_classes) {
+		Dictionary c = script_class;
+		if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") ||
+				!c.has("is_abstract") || !c.has("is_tool")) {
+			continue;
+		}
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
+	}
+	ProjectSettings::get_singleton()->store_global_class_list(p_classes);
+}
+
+struct LSPGlobalScriptClassBackup {
+	Array classes;
+
+	LSPGlobalScriptClassBackup() {
+		classes = ProjectSettings::get_singleton()->get_global_class_list();
+	}
+
+	~LSPGlobalScriptClassBackup() {
+		restore_lsp_global_script_classes(classes);
+	}
+};
+
+void register_lsp_namespace_global_classes() {
+	// The global registry is test-scoped; construct LSPGlobalScriptClassBackup before calling this helper.
+	ScriptServer::global_classes_clear();
+	const StringName language = GDScriptLanguage::get_singleton()->get_name();
+	ScriptServer::add_global_class("lsp.characters.LspBaseCharacter", "Node", language, "res://lsp/namespace_lsp_base.gd", false, false);
+	ScriptServer::add_global_class("lsp.characters.controllers.LspMyCharacterController", "Node", language, "res://lsp/namespace_lsp_controller.gd", false, false);
+	ScriptServer::add_global_class("lsp.characters.LspNamespaceUser", "Node", language, "res://lsp/namespace_lsp_user.gd", false, false);
+	ScriptServer::add_global_class("lsp.ambiguous.first.LspAmbiguousClass", "Node", language, "res://lsp/namespace_lsp_ambiguous_first.gd", false, false);
+	ScriptServer::add_global_class("lsp.ambiguous.second.LspAmbiguousClass", "Node", language, "res://lsp/namespace_lsp_ambiguous_second.gd", false, false);
+	ScriptServer::add_global_class("lsp.ambiguous.LspAmbiguousNamespaceUser", "Node", language, "res://lsp/namespace_lsp_ambiguous_user.gd", false, false);
+}
+
 inline LSP::Position lsp_pos(int line, int character) {
 	LSP::Position p;
 	p.line = line;
@@ -769,6 +807,83 @@ func f():
 			CHECK_EQ(String(handler_argument["type"]), "Callable[[Node?], String]");
 			CHECK_EQ(String(values_argument["type"]), "Dictionary[String, Array[int]]");
 		}
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][definition] resolves GDScript namespaces") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		LSPGlobalScriptClassBackup global_class_backup;
+		register_lsp_namespace_global_classes();
+
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		const String user_uri = workspace->get_file_uri("res://lsp/namespace_lsp_user.gd");
+		const String base_uri = workspace->get_file_uri("res://lsp/namespace_lsp_base.gd");
+		const String controller_uri = workspace->get_file_uri("res://lsp/namespace_lsp_controller.gd");
+
+		assert_no_errors_in("res://lsp/namespace_lsp_user.gd");
+
+		const LSP::Range base_selection = range(pos(1, 11), pos(1, 27));
+		test_resolve_symbol_at(user_uri, pos(5, 21), base_uri, "LspBaseCharacter", base_selection);
+		test_resolve_symbol_at(user_uri, pos(7, 37), base_uri, "LspBaseCharacter", base_selection);
+		test_resolve_symbol_at(user_uri, pos(10, 14), base_uri, "LspBaseCharacter", base_selection);
+		test_resolve_symbol_at(user_uri, pos(11, 34), base_uri, "LspBaseCharacter", base_selection);
+
+		test_resolve_symbol_at(user_uri, pos(6, 33), controller_uri, "LspMyCharacterController", range(pos(1, 11), pos(1, 35)));
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][definition] leaves ambiguous GDScript namespace imports unresolved") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		LSPGlobalScriptClassBackup global_class_backup;
+		register_lsp_namespace_global_classes();
+
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		const String namespace_user_uri = workspace->get_file_uri("res://lsp/namespace_lsp_user.gd");
+		const String base_uri = workspace->get_file_uri("res://lsp/namespace_lsp_base.gd");
+		const String user_uri = workspace->get_file_uri("res://lsp/namespace_lsp_ambiguous_user.gd");
+
+		assert_no_errors_in("res://lsp/namespace_lsp_user.gd");
+		test_resolve_symbol_at(namespace_user_uri, pos(5, 21), base_uri, "LspBaseCharacter", range(pos(1, 11), pos(1, 27)));
+
+		const LSP::DocumentSymbol *symbol = workspace->resolve_symbol(pos_in(user_uri, pos(6, 16)));
+		CHECK_FALSE(symbol);
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][rename] updates GDScript namespace references") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		LSPGlobalScriptClassBackup global_class_backup;
+		register_lsp_namespace_global_classes();
+
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+		const String user_uri = workspace->get_file_uri("res://lsp/namespace_lsp_user.gd");
+		const String base_uri = workspace->get_file_uri("res://lsp/namespace_lsp_base.gd");
+		const String controller_uri = workspace->get_file_uri("res://lsp/namespace_lsp_controller.gd");
+
+		assert_no_errors_in("res://lsp/namespace_lsp_user.gd");
+
+		Dictionary edit = text_document->rename(make_rename_params(base_uri, pos(1, 12), "RenamedBaseCharacter"));
+
+		CHECK_EQ(workspace_edits_for_uri(edit, base_uri).size(), 1);
+		CHECK_EQ(workspace_edits_for_uri(edit, user_uri).size(), 4);
+		Dictionary changes = edit["changes"];
+		CHECK_FALSE(changes.has(controller_uri));
 
 		memdelete(proto);
 		memdelete(efs);

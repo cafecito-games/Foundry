@@ -967,6 +967,9 @@ bool GDScriptParser::has_class(const GDScriptParser::ClassNode *p_class) const {
 }
 
 bool GDScriptParser::parse_identifier_chain(const String &p_declaration_name, String &r_chain) {
+	if (p_declaration_name == "import") {
+		make_completion_context(COMPLETION_IMPORT_NAMESPACE, nullptr);
+	}
 	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, vformat(R"(Expected identifier after "%s".)", p_declaration_name))) {
 		return false;
 	}
@@ -974,6 +977,9 @@ bool GDScriptParser::parse_identifier_chain(const String &p_declaration_name, St
 	r_chain = parse_identifier()->name;
 
 	while (match(GDScriptTokenizer::Token::PERIOD)) {
+		if (p_declaration_name == "import") {
+			make_completion_context(COMPLETION_IMPORT_NAMESPACE, nullptr);
+		}
 		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, vformat(R"(Expected identifier after "." in %s declaration.)", p_declaration_name))) {
 			return false;
 		}
@@ -1359,6 +1365,9 @@ GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static, b
 	variable->is_static = p_is_static;
 
 	if (match(GDScriptTokenizer::Token::COLON)) {
+		if (p_allow_property) {
+			make_completion_context(COMPLETION_PROPERTY_DECLARATION_OR_TYPE, variable);
+		}
 		if (check(GDScriptTokenizer::Token::NEWLINE)) {
 			if (p_allow_property) {
 				advance();
@@ -1373,7 +1382,6 @@ GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static, b
 			variable->infer_datatype = true;
 		} else {
 			if (p_allow_property) {
-				make_completion_context(COMPLETION_PROPERTY_DECLARATION_OR_TYPE, variable);
 				if (check(GDScriptTokenizer::Token::IDENTIFIER)) {
 					// Check if get or set.
 					if (current.get_identifier() == "get" || current.get_identifier() == "set") {

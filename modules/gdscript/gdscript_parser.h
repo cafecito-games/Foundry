@@ -1321,6 +1321,7 @@ public:
 		// TODO: COMPLETION_DECLARATION, // Potential declaration (var, const, func).
 		COMPLETION_GET_NODE, // Get node with $ notation.
 		COMPLETION_IDENTIFIER, // List available identifiers in scope.
+		COMPLETION_IMPORT_NAMESPACE, // Namespace after import.
 		COMPLETION_INHERIT_TYPE, // Type after extends. Exclude non-viable types (built-ins, enums, void). Includes subtypes using the argument index.
 		COMPLETION_METHOD, // List available methods in scope.
 		COMPLETION_OVERRIDE_METHOD, // Override implementation, also for native virtuals.

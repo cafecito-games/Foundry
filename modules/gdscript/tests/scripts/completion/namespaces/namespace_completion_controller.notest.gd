@@ -1,0 +1,3 @@
+namespace completion.characters.controllers
+class_name CompletionController
+extends Node

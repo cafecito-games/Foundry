@@ -1,0 +1,3 @@
+namespace completion.characters
+class_name CompletionBaseCharacter
+extends Node
