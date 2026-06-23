@@ -99,6 +99,24 @@ class ScriptTextEditor : public ScriptEditorBase {
 	String pending_refactor_anchor_path;
 	String pending_refactor_warning;
 
+	struct InlineRenameCaretState {
+		int line = 0;
+		int column = 0;
+		bool has_selection = false;
+		int selection_from_line = 0;
+		int selection_from_column = 0;
+		int selection_to_line = 0;
+		int selection_to_column = 0;
+	};
+
+	bool inline_rename_active = false;
+	RefactorContext inline_rename_context;
+	RefactorLocation inline_rename_location;
+	Vector<RefactorTextEdit> inline_rename_occurrences;
+	Vector<InlineRenameCaretState> inline_rename_caret_states;
+	int inline_rename_primary_line = -1;
+	int inline_rename_primary_column = -1;
+
 	int inline_color_line = -1;
 	int inline_color_start = -1;
 	int inline_color_end = -1;
@@ -269,6 +287,16 @@ protected:
 	void _on_refactor_diff_confirmed();
 	void _on_refactor_diff_canceled();
 	void _clear_pending_refactor_preview();
+	bool _try_start_inline_rename(const RefactorContext &p_context, const RefactorLocation &p_location);
+	bool _is_inline_rename_safe(const RefactorResult &p_result, const RefactorContext &p_context) const;
+	bool _select_inline_rename_occurrences(const Vector<RefactorTextEdit> &p_occurrences);
+	void _save_inline_rename_caret_state();
+	void _restore_inline_rename_caret_state();
+	String _get_inline_rename_name() const;
+	void _commit_inline_rename();
+	void _cancel_inline_rename(bool p_restore_text = true);
+	void _clear_inline_rename_state();
+	void _show_rename_dialog();
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);
 	RefactorContext _make_refactor_context() const;
