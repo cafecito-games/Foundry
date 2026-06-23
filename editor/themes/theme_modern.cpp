@@ -78,6 +78,11 @@ void ThemeModern::populate_shared_styles(const Ref<EditorTheme> &p_theme, Editor
 		p_config.success_color = Color(0.45, 0.95, 0.5);
 		p_config.warning_color = Color(0.83, 0.78, 0.62);
 		p_config.error_color = Color(1, 0.47, 0.42);
+		if (p_config.preset == "Cafecito") {
+			p_config.success_color = Color(0.36, 0.95, 0.67);
+			p_config.warning_color = Color(1.0, 0.72, 0.34);
+			p_config.error_color = Color(1.0, 0.39, 0.45);
+		}
 
 		// Keep dark theme colors accessible for use in the frame time gradient in the 3D editor.
 		// This frame time gradient is used to colorize text for a dark background, so it should keep using bright colors
@@ -235,9 +240,15 @@ void ThemeModern::populate_shared_styles(const Ref<EditorTheme> &p_theme, Editor
 
 		// Special colors for rendering methods.
 
-		p_theme->set_color("forward_plus_color", EditorStringName(Editor), Color::hex(0x5d8c3fff));
-		p_theme->set_color("mobile_color", EditorStringName(Editor), Color::hex(0xa5557dff));
-		p_theme->set_color("gl_compatibility_color", EditorStringName(Editor), Color::hex(0x5586a4ff));
+		if (p_config.preset == "Cafecito") {
+			p_theme->set_color("forward_plus_color", EditorStringName(Editor), Color::hex(0x6ddf9eff));
+			p_theme->set_color("mobile_color", EditorStringName(Editor), Color::hex(0xff9f43ff));
+			p_theme->set_color("gl_compatibility_color", EditorStringName(Editor), Color::hex(0xb58cffff));
+		} else {
+			p_theme->set_color("forward_plus_color", EditorStringName(Editor), Color::hex(0x5d8c3fff));
+			p_theme->set_color("mobile_color", EditorStringName(Editor), Color::hex(0xa5557dff));
+			p_theme->set_color("gl_compatibility_color", EditorStringName(Editor), Color::hex(0x5586a4ff));
+		}
 	}
 
 	// Constants.
