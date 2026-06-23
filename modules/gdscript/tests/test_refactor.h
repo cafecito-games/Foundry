@@ -101,16 +101,25 @@ inline RefactorResult run_extract_variable(const String &p_source, const Refacto
 	return r;
 }
 
-inline RefactorResult run_extract_method(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+inline RefactorResult run_extract_method_named(
+		const String &p_source,
+		const RefactorLocation &p_location,
+		const String &p_new_name,
+		String &r_out) {
 	RefactorContext ctx;
 	ctx.path = "user://extract_method_refactor.gd";
 	ctx.source = p_source;
 	RefactorParams params;
+	params.new_name = p_new_name;
 	RefactorResult r = GDScriptRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_METHOD, params);
 	if (r.ok) {
 		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
 	return r;
+}
+
+inline RefactorResult run_extract_method(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+	return run_extract_method_named(p_source, p_location, String(), r_out);
 }
 
 inline RefactorResult run_inline_variable(const String &p_source, int p_line, int p_column, String &r_out) {
@@ -816,6 +825,48 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_EQ(r.suggested_name, "_extracted_method_2");
 			CHECK(out.contains("\t_extracted_method_2()\n"));
 			CHECK(out.contains("func _extracted_method_2() -> void:\n"));
+		}
+		SUBCASE("uses requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "_print_ready", out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_print_ready");
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_print_ready()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _print_ready() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("rejects invalid requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "1bad", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("valid identifier"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects requested method name collision") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func existing() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "existing", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("already exists"));
+			CHECK(out.is_empty());
 		}
 	}
 
