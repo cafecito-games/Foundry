@@ -411,12 +411,40 @@ void ScriptServer::global_classes_clear() {
 	inheriters_cache.clear();
 }
 
+void ScriptServer::get_global_class_name_parts(const StringName &p_class, StringName *r_class_name,
+		String *r_namespace_name) {
+	const String qualified_name = p_class;
+	// Namespaces are dot-joined; class identifiers cannot contain dots.
+	const int namespace_separator = qualified_name.rfind(".");
+	if (namespace_separator == -1) {
+		if (r_class_name) {
+			*r_class_name = p_class;
+		}
+		if (r_namespace_name) {
+			*r_namespace_name = String();
+		}
+		return;
+	}
+
+	if (r_class_name) {
+		*r_class_name = qualified_name.substr(namespace_separator + 1);
+	}
+	if (r_namespace_name) {
+		*r_namespace_name = qualified_name.substr(0, namespace_separator);
+	}
+}
+
 void ScriptServer::add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool) {
 	ERR_FAIL_COND_MSG(p_class == p_base || (global_classes.has(p_base) && get_global_class_native_base(p_base) == p_class), "Cyclic inheritance in script class.");
+
 	GlobalScriptClass *existing = global_classes.getptr(p_class);
 	if (existing) {
 		// Update an existing class (only set dirty if something changed).
-		if (existing->base != p_base || existing->path != p_path || existing->language != p_language) {
+		if (existing->base != p_base ||
+				existing->path != p_path ||
+				existing->language != p_language ||
+				existing->is_abstract != p_is_abstract ||
+				existing->is_tool != p_is_tool) {
 			existing->base = p_base;
 			existing->path = p_path;
 			existing->language = p_language;

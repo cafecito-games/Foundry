@@ -30,6 +30,7 @@
 
 #include "test_gdscript.h"
 
+#include "../editor/gdscript_docgen.h"
 #include "../gdscript.h"
 #include "../gdscript_analyzer.h"
 #include "../gdscript_compiler.h"
@@ -38,9 +39,11 @@
 #include "../gdscript_tokenizer_buffer.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
 #include "core/string/string_builder.h"
+#include "tests/test_tools.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/settings/editor_settings.h"
@@ -77,6 +80,76 @@ static void check_parse_source_error(const String &p_source, const String &p_exp
 	}
 	CHECK_EQ(errors[0], p_expected_error);
 }
+
+static String write_temp_script(const String &p_file_name, const String &p_source) {
+	Error err = OK;
+	Ref<FileAccess> file = FileAccess::create_temp(FileAccess::WRITE, p_file_name.get_basename(), "gd", true, &err);
+	CHECK_EQ(err, OK);
+	CHECK(file.is_valid());
+	if (file.is_valid()) {
+		file->store_string(p_source);
+		return file->get_path_absolute();
+	}
+	return String();
+}
+
+struct TempScriptFile {
+	String path;
+
+	TempScriptFile(const String &p_file_name, const String &p_source) {
+		path = write_temp_script(p_file_name, p_source);
+	}
+
+	~TempScriptFile() {
+		if (!path.is_empty()) {
+			DirAccess::remove_absolute(path);
+		}
+	}
+};
+
+static void restore_global_script_classes(const Array &p_classes) {
+	ScriptServer::global_classes_clear();
+	for (const Variant &script_class : p_classes) {
+		Dictionary c = script_class;
+		if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") ||
+				!c.has("is_abstract") || !c.has("is_tool")) {
+			continue;
+		}
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
+	}
+	ProjectSettings::get_singleton()->store_global_class_list(p_classes);
+}
+
+struct GlobalScriptClassCacheBackup {
+	Array classes;
+	String cache_path;
+	String cache_contents;
+	bool cache_existed = false;
+
+	GlobalScriptClassCacheBackup() {
+		classes = ProjectSettings::get_singleton()->get_global_class_list();
+		cache_path = ProjectSettings::get_singleton()->get_global_class_list_path();
+		cache_existed = FileAccess::exists(cache_path);
+		if (cache_existed) {
+			Ref<FileAccess> file = FileAccess::open(cache_path, FileAccess::READ);
+			if (file.is_valid()) {
+				cache_contents = file->get_as_utf8_string();
+			}
+		}
+	}
+
+	~GlobalScriptClassCacheBackup() {
+		restore_global_script_classes(classes);
+		if (cache_existed) {
+			Ref<FileAccess> file = FileAccess::open(cache_path, FileAccess::WRITE);
+			if (file.is_valid()) {
+				file->store_string(cache_contents);
+			}
+		} else {
+			DirAccess::remove_absolute(cache_path);
+		}
+	}
+};
 
 TEST_CASE("[Modules][GDScript] Parser stores namespace and import declarations") {
 	GDScriptParser parser;
@@ -210,6 +283,235 @@ class_name ImportAfterClassName
 import characters
 )",
 			R"("import" declarations must appear before "class_name", "extends", and body declarations.)");
+}
+
+TEST_CASE("[Modules][GDScript] Global class names use namespace-qualified identity") {
+	TempScriptFile script("qualified_global_name.gd", R"(
+namespace characters
+class_name BaseCharacter
+extends Node
+)");
+
+	String base_type;
+	bool is_abstract = true;
+	bool is_tool = true;
+	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr, &is_abstract, &is_tool);
+
+	CHECK_EQ(class_name, "characters.BaseCharacter");
+	CHECK_EQ(base_type, "Node");
+	CHECK_FALSE(is_abstract);
+	CHECK_FALSE(is_tool);
+}
+
+TEST_CASE("[Modules][GDScript] Global namespace class names stay unqualified") {
+	TempScriptFile script("unqualified_global_name.gd", R"(
+class_name PlainCharacter
+extends Node
+)");
+
+	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path);
+
+	CHECK_EQ(class_name, "PlainCharacter");
+}
+
+TEST_CASE("[Modules][GDScript] Loaded namespaced global class keeps qualified runtime identity") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace characters
+class_name RuntimeCharacter
+)",
+			"user://qualified_runtime_global_name.gd", false);
+	CHECK_EQ(err, OK);
+
+	Ref<GDScript> compiled;
+	compiled.instantiate();
+	GDScriptCompiler::make_scripts(compiled.ptr(), parser.get_tree(), false);
+	ScriptServer::add_global_class("characters.RuntimeCharacter", "RefCounted",
+			GDScriptLanguage::get_singleton()->get_name(), "user://qualified_runtime_global_name.gd", false, false);
+
+	CHECK_EQ(compiled->get_global_name(), "characters.RuntimeCharacter");
+	CHECK(ScriptServer::is_global_class(compiled->get_global_name()));
+}
+
+TEST_CASE("[Modules][GDScript] Namespaced global class property metadata uses qualified names") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace characters
+class_name PropertyTarget
+
+var direct: PropertyTarget
+var list: Array[PropertyTarget]
+var map: Dictionary[String, PropertyTarget]
+)",
+			"user://qualified_property_metadata.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr || root->members.size() < 3) {
+		return;
+	}
+
+	CHECK_EQ(root->get_global_name(), "characters.PropertyTarget");
+
+	const PropertyInfo direct = root->members[0].variable->get_datatype().to_property_info("direct");
+	CHECK_EQ(direct.type, Variant::OBJECT);
+	CHECK_EQ(direct.class_name, "characters.PropertyTarget");
+
+	const PropertyInfo list = root->members[1].variable->get_datatype().to_property_info("list");
+	CHECK_EQ(list.type, Variant::ARRAY);
+	CHECK_EQ(list.hint, PROPERTY_HINT_ARRAY_TYPE);
+	CHECK_EQ(list.hint_string, "characters.PropertyTarget");
+
+	const PropertyInfo map = root->members[2].variable->get_datatype().to_property_info("map");
+	CHECK_EQ(map.type, Variant::DICTIONARY);
+	CHECK_EQ(map.hint, PROPERTY_HINT_DICTIONARY_TYPE);
+	CHECK_EQ(map.hint_string, "String;characters.PropertyTarget");
+}
+
+TEST_CASE("[Modules][GDScript] Docgen emits qualified names for namespaced global class types") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace characters
+class_name DocTarget
+
+var direct: DocTarget
+var list: Array[DocTarget]
+var map: Dictionary[String, DocTarget]
+)",
+			"user://qualified_docgen_types.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptCompiler::make_scripts(script.ptr(), root, false);
+	GDScriptDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1 || docs[0].properties.size() < 3) {
+		return;
+	}
+
+	CHECK_EQ(docs[0].properties[0].type, "characters.DocTarget");
+	CHECK_EQ(docs[0].properties[1].type, "characters.DocTarget[]");
+	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
+}
+
+TEST_CASE("[Modules][GDScript] Namespaced global classes can share a local name") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	ScriptServer::add_global_class("characters.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), "res://characters/controller.gd", false, false);
+	ScriptServer::add_global_class("ui.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), "res://ui/controller.gd", false, false);
+
+	CHECK(ScriptServer::is_global_class("characters.Controller"));
+	CHECK(ScriptServer::is_global_class("ui.Controller"));
+	CHECK_EQ(ScriptServer::get_global_class_path("characters.Controller"), "res://characters/controller.gd");
+	CHECK_EQ(ScriptServer::get_global_class_path("ui.Controller"), "res://ui/controller.gd");
+}
+
+TEST_CASE("[Modules][GDScript] Global script class cache saves qualified class names") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+	ProjectSettings::get_singleton()->store_global_class_list(Array());
+
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/base_character.gd", true, false);
+	ScriptServer::save_global_classes();
+
+	TypedArray<Dictionary> script_classes = ProjectSettings::get_singleton()->get_global_class_list();
+	CHECK_EQ(script_classes.size(), 1);
+	if (script_classes.size() == 1) {
+		Dictionary script_class = script_classes[0];
+		CHECK_EQ(String(script_class["class"]), "characters.BaseCharacter");
+		CHECK_FALSE(script_class.has("namespace"));
+		CHECK_FALSE(script_class.has("class_name"));
+	}
+}
+
+TEST_CASE("[Modules][GDScript] Old global script class cache entries still load") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	Dictionary old_script_class;
+	old_script_class["class"] = "LegacyCharacter";
+	old_script_class["language"] = GDScriptLanguage::get_singleton()->get_name();
+	old_script_class["path"] = "res://legacy_character.gd";
+	old_script_class["base"] = "Node";
+	old_script_class["is_abstract"] = false;
+	old_script_class["is_tool"] = false;
+
+	Array old_cache;
+	old_cache.push_back(old_script_class);
+	ProjectSettings::get_singleton()->store_global_class_list(old_cache);
+
+	ProjectSettings::get_singleton()->refresh_global_class_list();
+
+	CHECK(ScriptServer::is_global_class("LegacyCharacter"));
+	CHECK_EQ(ScriptServer::get_global_class_path("LegacyCharacter"), "res://legacy_character.gd");
+}
+
+TEST_CASE("[Modules][GDScript] Fully qualified global class collisions keep both paths visible") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/base_character.gd", false, false);
+
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace characters
+class_name BaseCharacter
+extends Node
+)",
+			"res://duplicates/base_character.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_NE(err, OK);
+	const String expected_error = R"(Class "characters.BaseCharacter" from "res://duplicates/base_character.gd" )"
+								  "collides with global script class from \"res://characters/base_character.gd\".";
+	bool found_expected_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message == expected_error) {
+			found_expected_error = true;
+			break;
+		}
+	}
+	CHECK(found_expected_error);
+	CHECK_EQ(ScriptServer::get_global_class_path("characters.BaseCharacter"), "res://characters/base_character.gd");
+}
+
+TEST_CASE("[Modules][GDScript] Global class re-registration can update the script path") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	ScriptServer::add_global_class("characters.MovedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/old_path.gd", false, false);
+	ScriptServer::add_global_class("characters.MovedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/new_path.gd", false, false);
+
+	CHECK_EQ(ScriptServer::get_global_class_path("characters.MovedCharacter"), "res://characters/new_path.gd");
 }
 
 static void test_tokenizer(const String &p_code, const Vector<String> &p_lines) {

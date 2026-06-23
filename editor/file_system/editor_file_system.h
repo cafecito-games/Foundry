@@ -68,6 +68,9 @@ class EditorFileSystemDirectory : public Object {
 		// This is for script resources only.
 		struct ScriptClassInfo {
 			String name;
+			// Derived from the qualified name for namespace-aware editor tooling. Not serialized.
+			String class_name;
+			String namespace_name;
 			String extends;
 			String icon_path;
 			bool is_abstract = false;
@@ -305,6 +308,8 @@ class EditorFileSystem : public Node {
 			ScriptClassInfoUpdate update;
 			update.type = p_fi->type;
 			update.name = p_fi->class_info.name;
+			update.class_name = p_fi->class_info.class_name;
+			update.namespace_name = p_fi->class_info.namespace_name;
 			update.extends = p_fi->class_info.extends;
 			update.icon_path = p_fi->class_info.icon_path;
 			update.is_abstract = p_fi->class_info.is_abstract;

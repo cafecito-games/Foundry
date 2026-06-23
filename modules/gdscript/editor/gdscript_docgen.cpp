@@ -156,6 +156,10 @@ void GDScriptDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type
 				r_type = GDScript::get_class_static();
 				return;
 			}
+			if (p_gdtype.class_type->get_global_name() != StringName()) {
+				r_type = p_gdtype.class_type->get_global_name();
+				return;
+			}
 			r_type = _get_class_name(*p_gdtype.class_type);
 			return;
 		case GDType::ENUM:

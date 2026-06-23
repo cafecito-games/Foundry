@@ -436,12 +436,13 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 
 	if (p_class->identifier) {
 		StringName class_name = p_class->identifier->name;
+		StringName global_class_name = (p_class == parser->head && !p_class->qualified_global_name.is_empty()) ? StringName(p_class->qualified_global_name) : class_name;
 		if (GDScriptParser::get_builtin_type(class_name) < Variant::VARIANT_MAX) {
 			push_error(vformat(R"(Class "%s" hides a built-in type.)", class_name), p_class->identifier);
 		} else if (class_exists(class_name)) {
 			push_error(vformat(R"(Class "%s" hides a native class.)", class_name), p_class->identifier);
-		} else if (ScriptServer::is_global_class(class_name) && (!GDScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(class_name), parser->script_path) || p_class != parser->head)) {
-			push_error(vformat(R"(Class "%s" hides a global script class.)", class_name), p_class->identifier);
+		} else if (ScriptServer::is_global_class(global_class_name) && (!GDScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(global_class_name), parser->script_path) || p_class != parser->head)) {
+			push_error(vformat(R"(Class "%s" from "%s" collides with global script class from "%s".)", global_class_name, parser->script_path, ScriptServer::get_global_class_path(global_class_name)), p_class->identifier);
 		} else if (ProjectSettings::get_singleton()->has_autoload(class_name) && ProjectSettings::get_singleton()->get_autoload(class_name).is_singleton) {
 			push_error(vformat(R"(Class "%s" hides an autoload singleton.)", class_name), p_class->identifier);
 		}

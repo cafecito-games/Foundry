@@ -2780,7 +2780,10 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 	if (r_is_tool) {
 		*r_is_tool = parser.is_tool();
 	}
-	return c->identifier != nullptr ? String(c->identifier->name) : String();
+	if (c->identifier == nullptr) {
+		return String();
+	}
+	return c->qualified_global_name.is_empty() ? String(c->identifier->name) : c->qualified_global_name;
 }
 
 thread_local GDScriptLanguage::CallLevel *GDScriptLanguage::_call_stack = nullptr;
