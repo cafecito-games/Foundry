@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: The function "fetch()" must be async because it overrides an async parent function.

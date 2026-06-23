@@ -460,6 +460,62 @@ func async() -> int:
 	CHECK(!async_function->is_coroutine);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer marks coroutine function metadata as async") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+async func explicit_async() -> int:
+	return 1
+
+func body_inferred_async() -> int:
+	@warning_ignore("redundant_await")
+	await 0
+	return 2
+
+func synchronous() -> int:
+	return 3
+)",
+			"user://async_metadata.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::FunctionNode *explicit_async = find_parser_function(root, SNAME("explicit_async"));
+	CHECK(explicit_async != nullptr);
+	if (explicit_async == nullptr) {
+		return;
+	}
+	CHECK((explicit_async->info.flags & METHOD_FLAG_ASYNC) != 0);
+
+	const GDScriptParser::FunctionNode *body_inferred_async = find_parser_function(root, SNAME("body_inferred_async"));
+	CHECK(body_inferred_async != nullptr);
+	if (body_inferred_async == nullptr) {
+		return;
+	}
+	CHECK((body_inferred_async->info.flags & METHOD_FLAG_ASYNC) != 0);
+
+	const GDScriptParser::FunctionNode *synchronous = find_parser_function(root, SNAME("synchronous"));
+	CHECK(synchronous != nullptr);
+	if (synchronous == nullptr) {
+		return;
+	}
+	CHECK_FALSE((synchronous->info.flags & METHOD_FLAG_ASYNC) != 0);
+}
+
 TEST_CASE("[Modules][GDScript] Parser rejects invalid namespace and import declarations") {
 	check_parse_source_error(R"(
 namespace first

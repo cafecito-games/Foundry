@@ -1824,6 +1824,9 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	if (p_function->is_static) {
 		method_info.flags |= MethodFlags::METHOD_FLAG_STATIC;
 	}
+	if (p_function->is_coroutine) {
+		method_info.flags |= MethodFlags::METHOD_FLAG_ASYNC;
+	}
 
 	GDScriptParser::DataType prev_datatype = p_function->get_datatype();
 
@@ -1939,6 +1942,10 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		StringName native_base;
 		if (!p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
 			bool valid = p_function->is_static == method_flags.has_flag(METHOD_FLAG_STATIC);
+			const bool parent_is_coroutine = method_flags.has_flag(METHOD_FLAG_ASYNC);
+			const bool current_is_coroutine = p_function->is_coroutine;
+			const bool valid_coroutine_override = parent_is_coroutine == current_is_coroutine;
+			valid = valid && valid_coroutine_override;
 
 			if (p_function->return_type != nullptr) {
 				// Check return type covariance.
@@ -1989,7 +1996,13 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 				}
 			}
 
-			if (!valid) {
+			if (!valid_coroutine_override) {
+				if (parent_is_coroutine) {
+					push_error(vformat(R"*(The function "%s()" must be async because it overrides an async parent function.)*", function_name), p_function);
+				} else {
+					push_error(vformat(R"*(The function "%s()" cannot be async because it overrides a synchronous parent function.)*", function_name), p_function);
+				}
+			} else if (!valid) {
 				// Compute parent signature as a string to show in the error message.
 				String parent_signature = String(function_name) + "(";
 				int j = 0;
@@ -6678,6 +6691,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (p_is_constructor || found_function->is_static) {
 			r_method_flags.set_flag(METHOD_FLAG_STATIC);
 		}
+		if (found_function->is_coroutine) {
+			r_method_flags.set_flag(METHOD_FLAG_ASYNC);
+		}
 		for (int i = 0; i < found_function->parameters.size(); i++) {
 			r_par_types.push_back(found_function->parameters[i]->get_datatype());
 			if (found_function->parameters[i]->initializer != nullptr) {
@@ -6924,6 +6940,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 bool GDScriptAnalyzer::function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
 	r_return_type = type_from_property(p_info.return_val);
+	r_return_type.is_coroutine = (p_info.flags & METHOD_FLAG_ASYNC) != 0;
 	r_default_arg_count = p_info.default_arguments.size();
 	r_method_flags = p_info.flags;
 
