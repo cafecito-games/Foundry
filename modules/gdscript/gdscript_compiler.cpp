@@ -2330,6 +2330,9 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	if (is_static) {
 		method_info.flags |= METHOD_FLAG_STATIC;
 	}
+	if (p_func && p_func->is_coroutine) {
+		method_info.flags |= METHOD_FLAG_ASYNC;
+	}
 	codegen.generator->write_start(p_script, func_name, is_static, rpc_config, return_type);
 
 	int optional_parameters = 0;
