@@ -152,7 +152,7 @@ void ScriptTextEditor::apply_code() {
 	if (script.is_null()) {
 		return;
 	}
-	if (inline_rename_active && !_commit_inline_rename()) {
+	if (inline_rename_active && !_commit_inline_rename(false)) {
 		return;
 	}
 	script->set_source_code(code_editor->get_text_editor()->get_text());
@@ -3171,6 +3171,7 @@ bool ScriptTextEditor::_is_inline_rename_safe(const RefactorResult &p_result, co
 
 int ScriptTextEditor::_find_inline_rename_primary_occurrence(const Vector<RefactorTextEdit> &p_occurrences, const RefactorLocation &p_location) const {
 	const int occurrence = GDScriptRefactorEdits::find_edit_at_location(p_occurrences, p_location);
+	// Keep a deterministic topmost fallback if the invocation range cannot be mapped.
 	return occurrence >= 0 ? occurrence : 0;
 }
 
@@ -3256,7 +3257,7 @@ String ScriptTextEditor::_get_inline_rename_name() const {
 	return GDScriptRefactorNames::identifier_at_column(text_editor->get_line(line_idx), text_editor->get_caret_column(0));
 }
 
-bool ScriptTextEditor::_commit_inline_rename() {
+bool ScriptTextEditor::_commit_inline_rename(bool p_allow_dialog_fallback) {
 	if (!inline_rename_active) {
 		return true;
 	}
@@ -3264,6 +3265,10 @@ bool ScriptTextEditor::_commit_inline_rename() {
 	const String new_name = _get_inline_rename_name();
 	String reason;
 	if (!GDScriptRefactorNames::validate_identifier(new_name, reason)) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
 		EditorToaster::get_singleton()->popup_str(reason, EditorToaster::SEVERITY_ERROR);
 		return false;
 	}
@@ -3272,10 +3277,18 @@ bool ScriptTextEditor::_commit_inline_rename() {
 	params.new_name = new_name;
 	const RefactorResult result = GDScriptRefactoring::prepare(inline_rename_context, inline_rename_location, RefactorKind::RENAME, params);
 	if (!result.ok) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
 		EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
 		return false;
 	}
 	if (!_is_inline_rename_safe(result, inline_rename_context)) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
 		_cancel_inline_rename(true);
 		_show_rename_dialog(new_name);
 		return false;
@@ -3283,6 +3296,10 @@ bool ScriptTextEditor::_commit_inline_rename() {
 
 	String applied;
 	if (!GDScriptRefactorEdits::apply(inline_rename_context.source, result.edits, applied)) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
 		EditorToaster::get_singleton()->popup_str(TTR("Could not apply refactor edits."), EditorToaster::SEVERITY_ERROR);
 		_cancel_inline_rename(true);
 		return false;
@@ -3291,6 +3308,7 @@ bool ScriptTextEditor::_commit_inline_rename() {
 	CodeEdit *text_editor = code_editor->get_text_editor();
 	const int h_scroll = text_editor->get_h_scroll();
 	const double v_scroll = text_editor->get_v_scroll();
+	inline_rename_active = false;
 	text_editor->set_text(applied);
 	text_editor->remove_secondary_carets();
 	text_editor->deselect();
@@ -3310,11 +3328,13 @@ void ScriptTextEditor::_cancel_inline_rename(bool p_restore_text) {
 		return;
 	}
 
+	const String restored_source = inline_rename_context.source;
 	CodeEdit *text_editor = code_editor->get_text_editor();
 	const int h_scroll = text_editor->get_h_scroll();
 	const double v_scroll = text_editor->get_v_scroll();
+	inline_rename_active = false;
 	if (p_restore_text) {
-		text_editor->set_text(inline_rename_context.source);
+		text_editor->set_text(restored_source);
 	}
 	_restore_inline_rename_caret_state();
 	if (p_restore_text) {

@@ -292,7 +292,7 @@ protected:
 	void _save_inline_rename_caret_state();
 	void _restore_inline_rename_caret_state();
 	String _get_inline_rename_name() const;
-	bool _commit_inline_rename();
+	bool _commit_inline_rename(bool p_allow_dialog_fallback = true);
 	void _cancel_inline_rename(bool p_restore_text = true);
 	void _clear_inline_rename_state();
 	void _show_rename_dialog(const String &p_initial_name = String());

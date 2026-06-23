@@ -85,12 +85,16 @@ int compare_line_column(int p_a_line, int p_a_column, int p_b_line, int p_b_colu
 
 bool edit_contains_position(const RefactorTextEdit &p_edit, int p_line, int p_column) {
 	return compare_line_column(p_line, p_column, p_edit.start_line, p_edit.start_column) >= 0 &&
-			compare_line_column(p_line, p_column, p_edit.end_line, p_edit.end_column) <= 0;
+			compare_line_column(p_line, p_column, p_edit.end_line, p_edit.end_column) < 0;
+}
+
+bool edit_ends_at_position(const RefactorTextEdit &p_edit, int p_line, int p_column) {
+	return compare_line_column(p_line, p_column, p_edit.end_line, p_edit.end_column) == 0;
 }
 
 bool edit_overlaps_location(const RefactorTextEdit &p_edit, const RefactorLocation &p_location) {
-	return compare_line_column(p_location.start_line, p_location.start_column, p_edit.end_line, p_edit.end_column) <= 0 &&
-			compare_line_column(p_location.end_line, p_location.end_column, p_edit.start_line, p_edit.start_column) >= 0;
+	return compare_line_column(p_location.start_line, p_location.start_column, p_edit.end_line, p_edit.end_column) < 0 &&
+			compare_line_column(p_location.end_line, p_location.end_column, p_edit.start_line, p_edit.start_column) > 0;
 }
 } // namespace
 
@@ -139,16 +143,22 @@ int GDScriptRefactorEdits::find_edit_at_location(const Vector<RefactorTextEdit> 
 			return i;
 		}
 	}
-	if (p_location.has_selection()) {
+	if (!p_location.has_selection()) {
 		for (int i = 0; i < p_edits.size(); i++) {
-			if (edit_contains_position(p_edits[i], p_location.end_line, p_location.end_column)) {
+			if (edit_ends_at_position(p_edits[i], p_location.start_line, p_location.start_column)) {
 				return i;
 			}
 		}
-		for (int i = 0; i < p_edits.size(); i++) {
-			if (edit_overlaps_location(p_edits[i], p_location)) {
-				return i;
-			}
+		return -1;
+	}
+	for (int i = 0; i < p_edits.size(); i++) {
+		if (edit_contains_position(p_edits[i], p_location.end_line, p_location.end_column)) {
+			return i;
+		}
+	}
+	for (int i = 0; i < p_edits.size(); i++) {
+		if (edit_overlaps_location(p_edits[i], p_location)) {
+			return i;
 		}
 	}
 	return -1;

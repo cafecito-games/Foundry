@@ -251,6 +251,26 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			outside_location.end_column = 1;
 			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, outside_location), -1);
 		}
+
+		SUBCASE("finds adjacent edits using half-open ranges") {
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 0, 0, 3, "first"));
+			edits.push_back(edit(0, 3, 0, 6, "second"));
+
+			RefactorLocation boundary_location;
+			boundary_location.start_line = 0;
+			boundary_location.end_line = 0;
+			boundary_location.start_column = 3;
+			boundary_location.end_column = 3;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, boundary_location), 1);
+
+			RefactorLocation after_last_location;
+			after_last_location.start_line = 0;
+			after_last_location.end_line = 0;
+			after_last_location.start_column = 6;
+			after_last_location.end_column = 6;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, after_last_location), 1);
+		}
 	}
 
 	TEST_CASE("Identifier validation") {
@@ -283,10 +303,13 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 		SUBCASE("identifier at caret column") {
 			const String line = String::utf8("\tvar número := número + 1");
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column("name := 1", 0), "name");
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column("name := 1", 1), "name");
 			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 8), String::utf8("número"));
 			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 11), String::utf8("número"));
 			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 21), String::utf8("número"));
 			CHECK(GDScriptRefactorNames::identifier_at_column(line, 12).is_empty());
+			CHECK(GDScriptRefactorNames::identifier_at_column("", 0).is_empty());
 		}
 	}
 
