@@ -570,6 +570,10 @@ func f():
 			REQUIRE(describe);
 			CHECK_EQ(describe->detail, "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
 
+			const LSP::DocumentSymbol *fetch_description = parser->get_member_symbol("fetch_description");
+			REQUIRE(fetch_description);
+			CHECK_EQ(fetch_description->detail, "async func fetch_description() -> String");
+
 			Variant hover_variant = text_document->hover(pos_in(uri, callback->selectionRange.start).to_json());
 			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
 			Dictionary hover = hover_variant;
@@ -580,6 +584,7 @@ func f():
 			Dictionary callback_completion;
 			Dictionary event_completion;
 			Dictionary describe_completion;
+			Dictionary fetch_description_completion;
 			for (int i = 0; i < completion_items.size(); i++) {
 				Dictionary completion = completion_items[i];
 				const String label = completion["label"];
@@ -589,17 +594,22 @@ func f():
 					event_completion = completion;
 				} else if (label == "describe") {
 					describe_completion = completion;
+				} else if (label == "fetch_description") {
+					fetch_description_completion = completion;
 				}
 			}
 			REQUIRE(!callback_completion.is_empty());
 			REQUIRE(!event_completion.is_empty());
 			REQUIRE(!describe_completion.is_empty());
+			REQUIRE(!fetch_description_completion.is_empty());
 			Dictionary resolved_callback_completion = text_document->resolve(callback_completion);
 			Dictionary resolved_event_completion = text_document->resolve(event_completion);
 			Dictionary resolved_describe_completion = text_document->resolve(describe_completion);
+			Dictionary resolved_fetch_description_completion = text_document->resolve(fetch_description_completion);
 			CHECK_EQ(String(resolved_callback_completion["detail"]), "var callback: Callable[[Node?], String]");
 			CHECK_EQ(String(resolved_event_completion["detail"]), "var event: Signal[[String]]");
 			CHECK_EQ(String(resolved_describe_completion["detail"]), "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
+			CHECK_EQ(String(resolved_fetch_description_completion["detail"]), "async func fetch_description() -> String");
 
 			LSP::SignatureHelp signature_help;
 			CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(13, 19)), signature_help), OK);
@@ -618,16 +628,21 @@ func f():
 
 			Array methods = api["methods"];
 			Dictionary method_api;
+			Dictionary async_method_api;
 			for (int i = 0; i < methods.size(); i++) {
 				Dictionary method = methods[i];
 				if (String(method["name"]) == "describe") {
 					method_api = method;
-					break;
+				} else if (String(method["name"]) == "fetch_description") {
+					async_method_api = method;
 				}
 			}
 			REQUIRE(!method_api.is_empty());
 			CHECK_EQ(String(method_api["return_type"]), "Signal[[String]]");
 			CHECK_EQ(String(method_api["signature"]), "func describe(handler: Callable[[Node?], String], values: Dictionary[String, Array[int]]) -> Signal[[String]]");
+			REQUIRE(!async_method_api.is_empty());
+			CHECK_EQ(String(async_method_api["return_type"]), "String");
+			CHECK_EQ(String(async_method_api["signature"]), "async func fetch_description() -> String");
 
 			Array arguments = method_api["arguments"];
 			REQUIRE(arguments.size() == 2);

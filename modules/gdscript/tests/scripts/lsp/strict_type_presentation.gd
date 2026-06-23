@@ -12,3 +12,6 @@ func describe(handler: Callable[[Node?], String], values: Dictionary[String, Arr
 
 func use_describe() -> void:
 	describe(callback, payloads)
+
+async func fetch_description() -> String:
+	return "ready"

@@ -81,6 +81,38 @@ static void check_parse_source_error(const String &p_source, const String &p_exp
 	CHECK_EQ(errors[0], p_expected_error);
 }
 
+static const GDScriptParser::FunctionNode *find_parser_function(const GDScriptParser::ClassNode *p_class, const StringName &p_name) {
+	ERR_FAIL_NULL_V(p_class, nullptr);
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::FUNCTION || member.function == nullptr ||
+				member.function->identifier == nullptr) {
+			continue;
+		}
+		if (member.function->identifier->name == p_name) {
+			return member.function;
+		}
+	}
+
+	return nullptr;
+}
+
+static const GDScriptParser::ClassNode *find_parser_class(const GDScriptParser::ClassNode *p_class, const StringName &p_name) {
+	ERR_FAIL_NULL_V(p_class, nullptr);
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::CLASS || member.m_class == nullptr ||
+				member.m_class->identifier == nullptr) {
+			continue;
+		}
+		if (member.m_class->identifier->name == p_name) {
+			return member.m_class;
+		}
+	}
+
+	return nullptr;
+}
+
 static String write_temp_script(const String &p_file_name, const String &p_source) {
 	Error err = OK;
 	Ref<FileAccess> file = FileAccess::create_temp(FileAccess::WRITE, p_file_name.get_basename(), "gd", true, &err);
@@ -222,6 +254,210 @@ class_name UsesShared
 	}
 	CHECK_EQ(root->imports[0], "shared");
 	CHECK_EQ(root->imports[1], "shared.types");
+}
+
+TEST_CASE("[Modules][GDScript] Parser accepts contextual async function modifiers") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+@abstract
+class_name AsyncParserContract
+
+async func load() -> int:
+	return 1
+
+static async func make() -> int:
+	return 2
+
+@abstract async func download_data() -> String
+
+@rpc async func remote_load() -> void:
+	pass
+
+@rpc static async func remote_make() -> void:
+	pass
+
+class InlineAsync: async func tick() -> void: pass
+
+class InlineStatic: static func make() -> int: return 3
+)",
+			"user://async_parser_contract.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::FunctionNode *load = find_parser_function(root, SNAME("load"));
+	CHECK(load != nullptr);
+	if (load == nullptr) {
+		return;
+	}
+	CHECK(load->is_declared_async);
+	CHECK(load->is_coroutine);
+	CHECK(!load->is_static);
+#ifdef TOOLS_ENABLED
+	CHECK_EQ(load->signature, "() -> int");
+#endif // TOOLS_ENABLED
+
+	const GDScriptParser::FunctionNode *make = find_parser_function(root, SNAME("make"));
+	CHECK(make != nullptr);
+	if (make == nullptr) {
+		return;
+	}
+	CHECK(make->is_declared_async);
+	CHECK(make->is_coroutine);
+	CHECK(make->is_static);
+#ifdef TOOLS_ENABLED
+	CHECK_EQ(make->signature, "() -> int");
+#endif // TOOLS_ENABLED
+
+	const GDScriptParser::FunctionNode *download_data = find_parser_function(root, SNAME("download_data"));
+	CHECK(download_data != nullptr);
+	if (download_data == nullptr) {
+		return;
+	}
+	CHECK(download_data->is_declared_async);
+	CHECK(download_data->is_coroutine);
+	CHECK(!download_data->is_static);
+#ifdef TOOLS_ENABLED
+	CHECK_EQ(download_data->signature, "() -> String");
+#endif // TOOLS_ENABLED
+
+	const GDScriptParser::FunctionNode *remote_load = find_parser_function(root, SNAME("remote_load"));
+	CHECK(remote_load != nullptr);
+	if (remote_load == nullptr) {
+		return;
+	}
+	CHECK(remote_load->is_declared_async);
+	CHECK(remote_load->is_coroutine);
+	CHECK(!remote_load->is_static);
+
+	const GDScriptParser::FunctionNode *remote_make = find_parser_function(root, SNAME("remote_make"));
+	CHECK(remote_make != nullptr);
+	if (remote_make == nullptr) {
+		return;
+	}
+	CHECK(remote_make->is_declared_async);
+	CHECK(remote_make->is_coroutine);
+	CHECK(remote_make->is_static);
+
+	const GDScriptParser::ClassNode *inline_async = find_parser_class(root, SNAME("InlineAsync"));
+	CHECK(inline_async != nullptr);
+	if (inline_async == nullptr) {
+		return;
+	}
+	const GDScriptParser::FunctionNode *tick = find_parser_function(inline_async, SNAME("tick"));
+	CHECK(tick != nullptr);
+	if (tick == nullptr) {
+		return;
+	}
+	CHECK(tick->is_declared_async);
+	CHECK(tick->is_coroutine);
+	CHECK(!tick->is_static);
+
+	const GDScriptParser::ClassNode *inline_static = find_parser_class(root, SNAME("InlineStatic"));
+	CHECK(inline_static != nullptr);
+	if (inline_static == nullptr) {
+		return;
+	}
+	const GDScriptParser::FunctionNode *inline_make = find_parser_function(inline_static, SNAME("make"));
+	CHECK(inline_make != nullptr);
+	if (inline_make == nullptr) {
+		return;
+	}
+	CHECK(!inline_make->is_declared_async);
+	CHECK(!inline_make->is_coroutine);
+	CHECK(inline_make->is_static);
+}
+
+TEST_CASE("[Modules][GDScript] Parser rejects invalid async function modifier positions") {
+	check_parse_source_error(R"(
+async static func load() -> void:
+	pass
+)",
+			R"("static" must appear before "async" in a static async function declaration.)");
+
+	check_parse_source_error(R"(
+func async load() -> void:
+	pass
+)",
+			R"("async" must appear before "func" when used as a function modifier.)");
+
+	check_parse_source_error(R"(
+async var value = 1
+)",
+			R"("async" can only be used as a function modifier before "func".)");
+
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+func async load() -> void:
+	pass
+
+func after() -> void:
+	pass
+)",
+			"user://async_recovery.gd", false);
+	CHECK(err != OK);
+	CHECK_EQ(parser.get_errors().size(), 1);
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK(find_parser_function(root, SNAME("after")) != nullptr);
+
+	GDScriptParser inline_parser;
+	Error inline_err = inline_parser.parse(R"(
+class BrokenInline: static async var value = 1
+
+func after_inline() -> void:
+	pass
+)",
+			"user://async_inline_recovery.gd", false);
+	CHECK(inline_err != OK);
+	CHECK_GE(inline_parser.get_errors().size(), 1);
+
+	const GDScriptParser::ClassNode *inline_root = inline_parser.get_tree();
+	CHECK(inline_root != nullptr);
+	if (inline_root == nullptr) {
+		return;
+	}
+	CHECK(find_parser_function(inline_root, SNAME("after_inline")) != nullptr);
+}
+
+TEST_CASE("[Modules][GDScript] Parser keeps async usable as an identifier outside modifier positions") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+func async() -> int:
+	var async = 1
+	return async
+)",
+			"user://async_identifier.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	const GDScriptParser::FunctionNode *async_function = find_parser_function(root, SNAME("async"));
+	CHECK(async_function != nullptr);
+	if (async_function == nullptr) {
+		return;
+	}
+	CHECK(!async_function->is_declared_async);
+	CHECK(!async_function->is_coroutine);
 }
 
 TEST_CASE("[Modules][GDScript] Parser rejects invalid namespace and import declarations") {

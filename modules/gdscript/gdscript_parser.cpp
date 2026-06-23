@@ -1115,11 +1115,7 @@ void GDScriptParser::parse_extends() {
 	}
 }
 
-template <typename T>
-void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static) {
-	advance();
-
-	// Consume annotations.
+List<GDScriptParser::AnnotationNode *> GDScriptParser::parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind) {
 	List<AnnotationNode *> annotations;
 	while (!annotation_stack.is_empty()) {
 		AnnotationNode *last_annotation = annotation_stack.back()->get();
@@ -1131,18 +1127,21 @@ void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(b
 			clear_unused_annotations();
 		}
 	}
+	return annotations;
+}
 
-	T *member = (this->*p_parse_function)(p_is_static);
-	if (member == nullptr) {
+template <typename T>
+void GDScriptParser::finalize_class_member(T *p_member, List<AnnotationNode *> &p_annotations, const String &p_member_kind) {
+	if (p_member == nullptr) {
 		return;
 	}
 
 #ifdef TOOLS_ENABLED
-	int doc_comment_line = member->start_line - 1;
+	int doc_comment_line = p_member->start_line - 1;
 #endif // TOOLS_ENABLED
 
-	for (AnnotationNode *&annotation : annotations) {
-		member->annotations.push_back(annotation);
+	for (AnnotationNode *&annotation : p_annotations) {
+		p_member->annotations.push_back(annotation);
 #ifdef TOOLS_ENABLED
 		if (annotation->start_line <= doc_comment_line) {
 			doc_comment_line = annotation->start_line - 1;
@@ -1152,45 +1151,62 @@ void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(b
 
 #ifdef TOOLS_ENABLED
 	if constexpr (std::is_same_v<T, ClassNode>) {
-		if (has_comment(member->start_line, true)) {
+		if (has_comment(p_member->start_line, true)) {
 			// Inline doc comment.
-			member->doc_data = parse_class_doc_comment(member->start_line, true);
+			p_member->doc_data = parse_class_doc_comment(p_member->start_line, true);
 		} else if (has_comment(doc_comment_line, true) && tokenizer->get_comments()[doc_comment_line].new_line) {
 			// Normal doc comment. Don't check `min_member_doc_line` because a class ends parsing after its members.
 			// This may not work correctly for cases like `var a; class B`, but it doesn't matter in practice.
-			member->doc_data = parse_class_doc_comment(doc_comment_line);
+			p_member->doc_data = parse_class_doc_comment(doc_comment_line);
 		}
 	} else {
-		if (has_comment(member->start_line, true)) {
+		if (has_comment(p_member->start_line, true)) {
 			// Inline doc comment.
-			member->doc_data = parse_doc_comment(member->start_line, true);
+			p_member->doc_data = parse_doc_comment(p_member->start_line, true);
 		} else if (doc_comment_line >= min_member_doc_line && has_comment(doc_comment_line, true) && tokenizer->get_comments()[doc_comment_line].new_line) {
 			// Normal doc comment.
-			member->doc_data = parse_doc_comment(doc_comment_line);
+			p_member->doc_data = parse_doc_comment(doc_comment_line);
 		}
 	}
 
-	min_member_doc_line = member->end_line + 1; // Prevent multiple members from using the same doc comment.
+	min_member_doc_line = p_member->end_line + 1; // Prevent multiple members from using the same doc comment.
 #endif // TOOLS_ENABLED
 
-	if (member->identifier != nullptr) {
-		if (!((String)member->identifier->name).is_empty()) { // Enums may be unnamed.
-			if (current_class->members_indices.has(member->identifier->name)) {
-				push_error(vformat(R"(%s "%s" has the same name as a previously declared %s.)", p_member_kind.capitalize(), member->identifier->name, current_class->get_member(member->identifier->name).get_type_name()), member->identifier);
+	if (p_member->identifier != nullptr) {
+		if (!((String)p_member->identifier->name).is_empty()) { // Enums may be unnamed.
+			if (current_class->members_indices.has(p_member->identifier->name)) {
+				push_error(vformat(R"(%s "%s" has the same name as a previously declared %s.)", p_member_kind.capitalize(), p_member->identifier->name, current_class->get_member(p_member->identifier->name).get_type_name()), p_member->identifier);
 			} else {
-				current_class->add_member(member);
+				current_class->add_member(p_member);
 			}
 		} else {
-			current_class->add_member(member);
+			current_class->add_member(p_member);
 		}
 	}
+}
+
+template <typename T>
+void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static) {
+	advance();
+	List<AnnotationNode *> annotations = parse_class_member_annotations(p_target, p_member_kind);
+	T *member = (this->*p_parse_function)(p_is_static);
+	finalize_class_member(member, annotations, p_member_kind);
+}
+
+void GDScriptParser::parse_function_class_member(bool p_is_static, bool p_is_async) {
+	advance();
+	List<AnnotationNode *> annotations = parse_class_member_annotations(AnnotationInfo::FUNCTION, "function");
+	FunctionNode *member = parse_function_declaration(p_is_static, p_is_async);
+	finalize_class_member(member, annotations, "function");
 }
 
 void GDScriptParser::parse_class_body(bool p_is_multiline) {
 	bool class_end = false;
 	bool next_is_static = false;
+	bool next_is_async = false;
 	while (!class_end && !is_at_end()) {
 		GDScriptTokenizer::Token token = current;
+		const bool token_is_async_identifier = token.type == GDScriptTokenizer::Token::IDENTIFIER && token.get_identifier() == "async";
 		switch (token.type) {
 			case GDScriptTokenizer::Token::VAR:
 				parse_class_member(&GDScriptParser::parse_variable, AnnotationInfo::VARIABLE, "variable", next_is_static);
@@ -1205,7 +1221,7 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				parse_class_member(&GDScriptParser::parse_signal, AnnotationInfo::SIGNAL, "signal");
 				break;
 			case GDScriptTokenizer::Token::FUNC:
-				parse_class_member(&GDScriptParser::parse_function, AnnotationInfo::FUNCTION, "function", next_is_static);
+				parse_function_class_member(next_is_static, next_is_async);
 				break;
 			case GDScriptTokenizer::Token::CLASS:
 				parse_class_member(&GDScriptParser::parse_class, AnnotationInfo::CLASS, "class");
@@ -1216,7 +1232,8 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::STATIC: {
 				advance();
 				next_is_static = true;
-				if (!check(GDScriptTokenizer::Token::FUNC) && !check(GDScriptTokenizer::Token::VAR)) {
+				if (!check(GDScriptTokenizer::Token::FUNC) && !check(GDScriptTokenizer::Token::VAR) &&
+						!(current.type == GDScriptTokenizer::Token::IDENTIFIER && current.get_identifier() == "async")) {
 					push_error(R"(Expected "func" or "var" after "static".)");
 				}
 			} break;
@@ -1270,6 +1287,20 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				}
 				[[fallthrough]];
 			default:
+				if (token_is_async_identifier) {
+					advance();
+					if (match(GDScriptTokenizer::Token::STATIC)) {
+						push_error(R"("static" must appear before "async" in a static async function declaration.)");
+						next_is_static = true;
+						next_is_async = check(GDScriptTokenizer::Token::FUNC);
+					} else if (check(GDScriptTokenizer::Token::FUNC)) {
+						next_is_async = true;
+					} else {
+						push_error(R"("async" can only be used as a function modifier before "func".)");
+						next_is_async = false;
+					}
+					break;
+				}
 				// Display a completion with identifiers.
 				make_completion_context(COMPLETION_IDENTIFIER, nullptr);
 				advance();
@@ -1296,13 +1327,16 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				}
 				break;
 		}
-		if (token.type != GDScriptTokenizer::Token::STATIC) {
+		if (token.type != GDScriptTokenizer::Token::STATIC && !(token_is_async_identifier && next_is_async)) {
 			next_is_static = false;
+		}
+		if (!(token_is_async_identifier && next_is_async)) {
+			next_is_async = false;
 		}
 		if (panic_mode) {
 			synchronize();
 		}
-		if (!p_is_multiline) {
+		if (!p_is_multiline && !next_is_static && !next_is_async) {
 			class_end = true;
 		}
 	}
@@ -1846,9 +1880,12 @@ bool GDScriptParser::parse_function_signature(FunctionNode *p_function, SuiteNod
 	return match(GDScriptTokenizer::Token::COLON);
 }
 
-GDScriptParser::FunctionNode *GDScriptParser::parse_function(bool p_is_static) {
+GDScriptParser::FunctionNode *GDScriptParser::parse_function_declaration(bool p_is_static, bool p_is_declared_async) {
 	FunctionNode *function = alloc_node<FunctionNode>();
 	function->is_static = p_is_static;
+	function->is_declared_async = p_is_declared_async;
+	// Declared async functions are coroutine-callable even before parsing a body-level await.
+	function->is_coroutine = p_is_declared_async;
 
 	make_completion_context(COMPLETION_OVERRIDE_METHOD, function);
 
@@ -1867,6 +1904,10 @@ GDScriptParser::FunctionNode *GDScriptParser::parse_function(bool p_is_static) {
 	current_function = function;
 
 	function->identifier = parse_identifier();
+	if (function->identifier != nullptr && function->identifier->name == SNAME("async") && check(GDScriptTokenizer::Token::IDENTIFIER)) {
+		push_error(R"("async" must appear before "func" when used as a function modifier.)", function->identifier);
+		advance();
+	}
 
 	SuiteNode *body = alloc_node<SuiteNode>();
 
@@ -6248,6 +6289,9 @@ void GDScriptParser::TreePrinter::print_function(FunctionNode *p_function, const
 	}
 	if (p_function->is_static) {
 		push_text("Static ");
+	}
+	if (p_function->is_declared_async) {
+		push_text("Async ");
 	}
 	push_text(p_context);
 	push_text(" ");
