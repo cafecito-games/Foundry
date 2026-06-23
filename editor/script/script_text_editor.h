@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "extract_method_name_prompt.h"
 #include "script_editor_plugin.h"
 #include "script_refactor_apply.h"
 
@@ -93,6 +94,10 @@ class ScriptTextEditor : public ScriptEditorBase {
 	ConfirmationDialog *rename_dialog = nullptr;
 	LineEdit *rename_line_edit = nullptr;
 	Label *rename_error_label = nullptr;
+	ConfirmationDialog *extract_method_dialog = nullptr;
+	LineEdit *extract_method_line_edit = nullptr;
+	Label *extract_method_error_label = nullptr;
+	ExtractMethodNamePromptModel extract_method_name_prompt;
 	RefactorDiffPreviewDialog *refactor_diff_preview_dialog = nullptr;
 	int pending_refactor_anchor_line = -1;
 	int pending_refactor_anchor_column = -1;
@@ -298,6 +303,13 @@ protected:
 	void _show_rename_dialog(const String &p_initial_name = String());
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);
+	void _show_extract_method_dialog(
+			const RefactorContext &p_context,
+			const RefactorLocation &p_location,
+			const String &p_suggested_name);
+	void _on_extract_method_confirmed();
+	void _on_extract_method_canceled();
+	void _on_extract_method_text_changed(const String &p_text);
 	RefactorContext _make_refactor_context() const;
 	RefactorLocation _make_refactor_location() const;
 	void _text_edit_gui_input(const Ref<InputEvent> &ev);

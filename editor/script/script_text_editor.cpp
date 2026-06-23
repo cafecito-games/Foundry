@@ -173,6 +173,7 @@ void ScriptTextEditor::set_edited_resource(const Ref<Resource> &p_res) {
 	ERR_FAIL_COND(p_res.is_null());
 
 	_cancel_inline_rename(true);
+	extract_method_name_prompt.clear();
 	script = p_res;
 
 	code_editor->get_text_editor()->set_text(script->get_source_code());
@@ -2993,6 +2994,20 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 		return;
 	}
 
+	if (kind == RefactorKind::EXTRACT_METHOD) {
+		RefactorParams params;
+		const RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, kind, params);
+		if (!result.ok) {
+			if (!result.error_message.is_empty()) {
+				EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
+			}
+			return;
+		}
+
+		_show_extract_method_dialog(ctx, loc, result.suggested_name);
+		return;
+	}
+
 	RefactorParams params;
 	const RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, kind, params);
 	if (!result.ok) {
@@ -3387,6 +3402,55 @@ void ScriptTextEditor::_on_rename_text_changed(const String &p_text) {
 	rename_dialog->get_ok_button()->set_disabled(!valid);
 }
 
+void ScriptTextEditor::_show_extract_method_dialog(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const String &p_suggested_name) {
+	extract_method_name_prompt.begin(p_context, p_location, p_suggested_name);
+	extract_method_line_edit->set_text(extract_method_name_prompt.get_name());
+	_on_extract_method_text_changed(extract_method_line_edit->get_text());
+	extract_method_dialog->popup_centered();
+	extract_method_line_edit->grab_focus();
+	extract_method_line_edit->select_all();
+}
+
+void ScriptTextEditor::_on_extract_method_confirmed() {
+	String method_name;
+	if (!extract_method_name_prompt.confirm(method_name)) {
+		return;
+	}
+
+	RefactorContext ctx = _make_refactor_context();
+	RefactorParams params;
+	params.new_name = method_name;
+	const RefactorResult result = GDScriptRefactoring::prepare(
+			ctx,
+			extract_method_name_prompt.get_location(),
+			RefactorKind::EXTRACT_METHOD,
+			params);
+	extract_method_name_prompt.clear();
+
+	if (!result.ok) {
+		if (!result.error_message.is_empty()) {
+			EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
+		}
+		return;
+	}
+
+	_apply_refactor_result(result, ctx.source);
+}
+
+void ScriptTextEditor::_on_extract_method_canceled() {
+	extract_method_name_prompt.cancel();
+}
+
+void ScriptTextEditor::_on_extract_method_text_changed(const String &p_text) {
+	extract_method_name_prompt.set_name(p_text);
+	const bool valid = extract_method_name_prompt.is_valid();
+	extract_method_error_label->set_text(valid ? String() : extract_method_name_prompt.get_error_message());
+	extract_method_dialog->get_ok_button()->set_disabled(!valid);
+}
+
 void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos) {
 	context_menu->clear();
 	if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_EMOJI_AND_SYMBOL_PICKER)) {
@@ -3504,6 +3568,26 @@ void ScriptTextEditor::_enable_code_editor() {
 	rename_vbox->add_child(rename_error_label);
 	rename_dialog->connect(SceneStringName(confirmed), callable_mp(this, &ScriptTextEditor::_on_rename_confirmed));
 	add_child(rename_dialog);
+
+	extract_method_dialog = memnew(ConfirmationDialog);
+	extract_method_dialog->set_title(TTRC("Extract Method"));
+	VBoxContainer *extract_method_vbox = memnew(VBoxContainer);
+	extract_method_dialog->add_child(extract_method_vbox);
+	extract_method_line_edit = memnew(LineEdit);
+	extract_method_line_edit->connect(
+			SceneStringName(text_changed),
+			callable_mp(this, &ScriptTextEditor::_on_extract_method_text_changed));
+	extract_method_vbox->add_child(extract_method_line_edit);
+	extract_method_dialog->register_text_enter(extract_method_line_edit);
+	extract_method_error_label = memnew(Label);
+	extract_method_vbox->add_child(extract_method_error_label);
+	extract_method_dialog->connect(
+			SceneStringName(confirmed),
+			callable_mp(this, &ScriptTextEditor::_on_extract_method_confirmed));
+	extract_method_dialog->connect(
+			SNAME("canceled"),
+			callable_mp(this, &ScriptTextEditor::_on_extract_method_canceled));
+	add_child(extract_method_dialog);
 
 	add_child(color_panel);
 
