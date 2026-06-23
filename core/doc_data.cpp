@@ -134,9 +134,6 @@ String DocData::get_method_qualifiers_from_methodinfo(const MethodInfo &p_method
 	if (p_methodinfo.flags & METHOD_FLAG_VIRTUAL_REQUIRED) {
 		_append_method_qualifier(qualifiers, "required");
 	}
-	if (p_methodinfo.flags & METHOD_FLAG_ASYNC) {
-		_append_method_qualifier(qualifiers, "async");
-	}
 	if (p_methodinfo.flags & METHOD_FLAG_VARARG) {
 		_append_method_qualifier(qualifiers, "vararg");
 	}
@@ -145,6 +142,10 @@ String DocData::get_method_qualifiers_from_methodinfo(const MethodInfo &p_method
 	}
 	if (p_methodinfo.flags & METHOD_FLAG_STATIC) {
 		_append_method_qualifier(qualifiers, "static");
+	}
+	// GDScript declares static async func; keep async last so doc XML stays in parser order.
+	if (p_methodinfo.flags & METHOD_FLAG_ASYNC) {
+		_append_method_qualifier(qualifiers, "async");
 	}
 	return qualifiers;
 }

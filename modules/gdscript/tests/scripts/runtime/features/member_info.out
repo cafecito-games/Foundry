@@ -37,6 +37,8 @@ var test_var_hard_resource: Resource
 var test_var_hard_this: TestMemberInfo
 var test_var_hard_my_class: RefCounted
 static func test_static_func() -> void
+async func test_async_func() -> void
+static async func test_static_async_func() -> void
 func test_func_implicit_void() -> void
 func test_func_explicit_void() -> void
 func test_func_weak_null() -> Variant

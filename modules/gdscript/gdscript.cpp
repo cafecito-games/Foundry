@@ -2608,6 +2608,7 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 		"namespace",
 		"signal",
 		"static",
+		// Do not add `async` here: it is contextual and remains a valid identifier outside function modifiers.
 		"trait", // Reserved for potential future use.
 		"var",
 		// Other keywords.

@@ -46,8 +46,8 @@ TEST_CASE("[DocData] method qualifiers include async method flag") {
 	DocData::MethodDoc method_doc;
 	DocData::method_doc_from_methodinfo(method_doc, method_info, String());
 
-	CHECK(DocData::get_method_qualifiers_from_methodinfo(method_info) == "virtual required async vararg const static");
-	CHECK(method_doc.qualifiers == "virtual required async vararg const static");
+	CHECK(DocData::get_method_qualifiers_from_methodinfo(method_info) == "virtual required vararg const static async");
+	CHECK(method_doc.qualifiers == "virtual required vararg const static async");
 }
 
 TEST_CASE("[DocData] method qualifiers preserve vararg before const order") {

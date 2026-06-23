@@ -130,6 +130,8 @@ static func get_method_signature(method: Dictionary, is_signal: bool = false) ->
 		result += "@abstract "
 	if method.flags & METHOD_FLAG_STATIC:
 		result += "static "
+	if method.flags & METHOD_FLAG_ASYNC:
+		result += "async "
 	result += ("signal " if is_signal else "func ") + method.name + "("
 
 	var args: Array[Dictionary] = method.args

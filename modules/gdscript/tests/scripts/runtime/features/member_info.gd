@@ -47,6 +47,8 @@ var test_var_hard_my_class: MyClass
 
 static func test_static_func(): pass
 
+async func test_async_func() -> void: pass
+static async func test_static_async_func() -> void: pass
 func test_func_implicit_void(): pass
 func test_func_explicit_void() -> void: pass
 func test_func_weak_null(): return null
