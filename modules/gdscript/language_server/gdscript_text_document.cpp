@@ -30,13 +30,191 @@
 
 #include "gdscript_text_document.h"
 
+#include "../editor/gdscript_refactoring.h"
 #include "../gdscript.h"
 #include "gdscript_extend_parser.h"
 #include "gdscript_language_protocol.h"
 
+#include "core/io/file_access.h"
 #include "editor/script/script_text_editor.h"
 #include "editor/settings/editor_settings.h"
 #include "servers/display/display_server.h"
+
+namespace {
+
+String refactor_kind_to_lsp_kind(RefactorKind p_kind) {
+	switch (p_kind) {
+		case RefactorKind::RENAME:
+			return "refactor.rename";
+		case RefactorKind::EXTRACT_VARIABLE:
+		case RefactorKind::EXTRACT_METHOD:
+			// LSP groups both extraction refactors under the same standard action kind.
+			return "refactor.extract";
+		case RefactorKind::ADD_TYPE_ANNOTATION:
+			return "refactor.rewrite";
+		case RefactorKind::INLINE_VARIABLE:
+			return "refactor.inline";
+	}
+	return "refactor";
+}
+
+bool code_action_kind_matches(const String &p_action_kind, const Array &p_only) {
+	if (p_only.is_empty()) {
+		return true;
+	}
+	for (int i = 0; i < p_only.size(); i++) {
+		const String requested = p_only[i];
+		if (p_action_kind == requested || p_action_kind.begins_with(requested + ".")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool is_resolvable_code_action_kind(RefactorKind p_kind) {
+	switch (p_kind) {
+		case RefactorKind::EXTRACT_VARIABLE:
+		case RefactorKind::EXTRACT_METHOD:
+		case RefactorKind::ADD_TYPE_ANNOTATION:
+		case RefactorKind::INLINE_VARIABLE:
+			return true;
+		case RefactorKind::RENAME:
+			return false;
+	}
+	return false;
+}
+
+void notify_refactor_message(int p_type, const String &p_message) {
+	if (p_message.is_empty()) {
+		return;
+	}
+
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	ERR_FAIL_NULL(protocol);
+
+	LSP::ShowMessageParams params{
+		p_type,
+		p_message,
+	};
+	protocol->notify_client("window/showMessage", params.to_json());
+}
+
+Dictionary code_action_resolve_error(Dictionary &r_action, Dictionary &r_data, const String &p_message) {
+	const String message = p_message.is_empty() ? "Refactor could not be resolved." : p_message;
+	r_data["errorMessage"] = message;
+	r_action["data"] = r_data;
+	notify_refactor_message(LSP::MessageType::Error, "Cannot resolve code action: " + message);
+	return r_action;
+}
+
+RefactorLocation refactor_location_from_lsp(const LSP::Range &p_range) {
+	RefactorLocation loc;
+	loc.start_line = p_range.start.line;
+	loc.start_column = p_range.start.character;
+	loc.end_line = p_range.end.line;
+	loc.end_column = p_range.end.character;
+	return loc;
+}
+
+String source_from_parser(const ExtendGDScriptParser *p_parser) {
+	return String("\n").join(p_parser->get_lines());
+}
+
+bool make_refactor_context(const String &p_uri, RefactorContext &r_context) {
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	ERR_FAIL_NULL_V(protocol, false);
+
+	Ref<GDScriptWorkspace> workspace = protocol->get_workspace();
+	ERR_FAIL_COND_V(workspace.is_null(), false);
+
+	const String path = workspace->get_file_path(p_uri);
+	if (path.is_empty()) {
+		return false;
+	}
+
+	r_context.path = path;
+
+	if (const ExtendGDScriptParser *parser = protocol->get_parse_result(path)) {
+		r_context.source = source_from_parser(parser);
+		return true;
+	}
+
+	Error err = OK;
+	r_context.source = FileAccess::get_file_as_string(path, &err);
+	return err == OK;
+}
+
+LSP::TextEdit lsp_text_edit_from_refactor(const RefactorTextEdit &p_edit) {
+	LSP::TextEdit edit;
+	edit.range.start.line = p_edit.start_line;
+	edit.range.start.character = p_edit.start_column;
+	edit.range.end.line = p_edit.end_line;
+	edit.range.end.character = p_edit.end_column;
+	edit.newText = p_edit.new_text;
+	return edit;
+}
+
+bool add_refactor_edits_to_workspace_edit(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const Vector<RefactorTextEdit> &p_edits,
+		LSP::WorkspaceEdit &r_workspace_edit) {
+	if (p_path.is_empty()) {
+		return false;
+	}
+	const String uri = p_workspace->get_file_uri(p_path);
+	if (uri.is_empty()) {
+		return false;
+	}
+	for (const RefactorTextEdit &edit : p_edits) {
+		r_workspace_edit.add_edit(uri, lsp_text_edit_from_refactor(edit));
+	}
+	return true;
+}
+
+bool workspace_edit_from_refactor_result(
+		const RefactorResult &p_result,
+		const RefactorContext &p_context,
+		LSP::WorkspaceEdit &r_workspace_edit) {
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	ERR_FAIL_NULL_V(protocol, false);
+
+	Ref<GDScriptWorkspace> workspace = protocol->get_workspace();
+	ERR_FAIL_COND_V(workspace.is_null(), false);
+
+	if (!p_result.file_edits.is_empty()) {
+		for (const RefactorFileEdit &file_edit : p_result.file_edits) {
+			if (!add_refactor_edits_to_workspace_edit(workspace, file_edit.path, file_edit.edits, r_workspace_edit)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	return add_refactor_edits_to_workspace_edit(workspace, p_context.path, p_result.edits, r_workspace_edit);
+}
+
+Dictionary refactor_action_data(const String &p_uri, const LSP::Range &p_range, RefactorKind p_kind) {
+	Dictionary data;
+	data["godotRefactor"] = true;
+	data["uri"] = p_uri;
+	data["range"] = p_range.to_json();
+	data["kind"] = (int)p_kind;
+	return data;
+}
+
+Dictionary code_action_for_availability(
+		const RefactorAvailability &p_availability,
+		const String &p_uri,
+		const LSP::Range &p_range) {
+	LSP::CodeAction action;
+	action.title = p_availability.title;
+	action.kind = refactor_kind_to_lsp_kind(p_availability.kind);
+	action.data = refactor_action_data(p_uri, p_range, p_availability.kind);
+	return action.to_json();
+}
+
+} // namespace
 
 void GDScriptTextDocument::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("didOpen"), &GDScriptTextDocument::didOpen);
@@ -50,6 +228,8 @@ void GDScriptTextDocument::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("resolve"), &GDScriptTextDocument::resolve);
 	ClassDB::bind_method(D_METHOD("rename"), &GDScriptTextDocument::rename);
 	ClassDB::bind_method(D_METHOD("prepareRename"), &GDScriptTextDocument::prepareRename);
+	ClassDB::bind_method(D_METHOD("codeAction"), &GDScriptTextDocument::codeAction);
+	ClassDB::bind_method(D_METHOD("resolveCodeAction"), &GDScriptTextDocument::resolveCodeAction);
 	ClassDB::bind_method(D_METHOD("references"), &GDScriptTextDocument::references);
 	ClassDB::bind_method(D_METHOD("foldingRange"), &GDScriptTextDocument::foldingRange);
 	ClassDB::bind_method(D_METHOD("codeLens"), &GDScriptTextDocument::codeLens);
@@ -232,7 +412,29 @@ Dictionary GDScriptTextDocument::rename(const Dictionary &p_params) {
 	params.load(p_params);
 	String new_name = p_params["newName"];
 
-	return GDScriptLanguageProtocol::get_singleton()->get_workspace()->rename(params, new_name);
+	RefactorContext ctx;
+	if (!make_refactor_context(params.textDocument.uri, ctx)) {
+		return LSP::WorkspaceEdit().to_json();
+	}
+
+	RefactorParams refactor_params;
+	refactor_params.new_name = new_name;
+
+	LSP::Range range;
+	range.start = params.position;
+	range.end = params.position;
+	const RefactorLocation loc = refactor_location_from_lsp(range);
+	RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, RefactorKind::RENAME, refactor_params);
+	if (!result.ok) {
+		return LSP::WorkspaceEdit().to_json();
+	}
+
+	LSP::WorkspaceEdit edit;
+	if (!workspace_edit_from_refactor_result(result, ctx, edit)) {
+		return LSP::WorkspaceEdit().to_json();
+	}
+	notify_refactor_message(LSP::MessageType::Warning, result.warning);
+	return edit.to_json();
 }
 
 Variant GDScriptTextDocument::prepareRename(const Dictionary &p_params) {
@@ -247,6 +449,84 @@ Variant GDScriptTextDocument::prepareRename(const Dictionary &p_params) {
 
 	// `null` -> rename not valid at current location.
 	return Variant();
+}
+
+Array GDScriptTextDocument::codeAction(const Dictionary &p_params) {
+	Array actions;
+
+	LSP::CodeActionParams params;
+	params.load(p_params);
+
+	RefactorContext ctx;
+	if (!make_refactor_context(params.textDocument.uri, ctx)) {
+		return actions;
+	}
+
+	const RefactorLocation loc = refactor_location_from_lsp(params.range);
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, loc);
+	for (const RefactorAvailability &availability : available) {
+		if (!availability.enabled || availability.kind == RefactorKind::RENAME) {
+			continue;
+		}
+
+		const String action_kind = refactor_kind_to_lsp_kind(availability.kind);
+		if (!code_action_kind_matches(action_kind, params.context.only)) {
+			continue;
+		}
+
+		Dictionary action = code_action_for_availability(availability, params.textDocument.uri, params.range);
+		if (!action.is_empty()) {
+			actions.push_back(action);
+		}
+	}
+
+	return actions;
+}
+
+Dictionary GDScriptTextDocument::resolveCodeAction(const Dictionary &p_params) {
+	Dictionary action = p_params;
+	Variant data_variant = action.get("data", Variant());
+	if (data_variant.get_type() != Variant::DICTIONARY) {
+		return action;
+	}
+
+	Dictionary data = data_variant;
+	if (!bool(data.get("godotRefactor", false))) {
+		return action;
+	}
+
+	const RefactorKind kind = (RefactorKind)(int)data.get("kind", -1);
+	if (!is_resolvable_code_action_kind(kind)) {
+		return action;
+	}
+
+	const String uri = data.get("uri", "");
+	if (uri.is_empty() || !data.has("range")) {
+		return code_action_resolve_error(action, data, "Cannot resolve refactor action data.");
+	}
+
+	LSP::Range range;
+	range.load(data["range"]);
+
+	RefactorContext ctx;
+	if (!make_refactor_context(uri, ctx)) {
+		return code_action_resolve_error(action, data, "Cannot read refactor source.");
+	}
+
+	RefactorParams refactor_params;
+	RefactorResult result = GDScriptRefactoring::prepare(ctx, refactor_location_from_lsp(range), kind, refactor_params);
+	if (!result.ok) {
+		return code_action_resolve_error(action, data, result.error_message);
+	}
+
+	LSP::WorkspaceEdit edit;
+	if (!workspace_edit_from_refactor_result(result, ctx, edit)) {
+		return code_action_resolve_error(action, data, "Cannot convert refactor edits.");
+	}
+
+	action["edit"] = edit.to_json();
+	notify_refactor_message(LSP::MessageType::Warning, result.warning);
+	return action;
 }
 
 Array GDScriptTextDocument::references(const Dictionary &p_params) {

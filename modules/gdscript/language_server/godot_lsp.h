@@ -310,6 +310,13 @@ struct TextEdit {
 	 * empty string.
 	 */
 	String newText;
+
+	Dictionary to_json() const {
+		Dictionary dict;
+		dict["range"] = range.to_json();
+		dict["newText"] = newText;
+		return dict;
+	}
 };
 
 /**
@@ -338,10 +345,7 @@ struct WorkspaceEdit {
 		for (const KeyValue<String, Vector<TextEdit>> &E : changes) {
 			Array edits;
 			for (int i = 0; i < E.value.size(); ++i) {
-				Dictionary text_edit;
-				text_edit["range"] = E.value[i].range.to_json();
-				text_edit["newText"] = E.value[i].newText;
-				edits.push_back(text_edit);
+				edits.push_back(E.value[i].to_json());
 			}
 			out_changes[E.key] = edits;
 		}
@@ -396,6 +400,62 @@ struct Command {
 		dict["command"] = command;
 		if (arguments.size()) {
 			dict["arguments"] = arguments;
+		}
+		return dict;
+	}
+};
+
+struct CodeActionContext {
+	Array diagnostics;
+	Array only;
+
+	void load(const Dictionary &p_params) {
+		diagnostics = p_params.get("diagnostics", Array());
+		only = p_params.get("only", Array());
+	}
+};
+
+struct CodeActionParams {
+	TextDocumentIdentifier textDocument;
+	Range range;
+	CodeActionContext context;
+
+	void load(const Dictionary &p_params) {
+		textDocument.load(p_params["textDocument"]);
+		range.load(p_params["range"]);
+		if (p_params.has("context")) {
+			context.load(p_params["context"]);
+		}
+	}
+};
+
+struct CodeAction {
+	String title;
+	String kind;
+	WorkspaceEdit edit;
+	bool has_edit = false;
+	Dictionary data;
+
+	void load(const Dictionary &p_params) {
+		title = p_params.get("title", "");
+		kind = p_params.get("kind", "");
+		data = p_params.get("data", Dictionary());
+		if (p_params.has("edit")) {
+			has_edit = true;
+		}
+	}
+
+	Dictionary to_json() const {
+		Dictionary dict;
+		dict["title"] = title;
+		if (!kind.is_empty()) {
+			dict["kind"] = kind;
+		}
+		if (has_edit) {
+			dict["edit"] = edit.to_json();
+		}
+		if (!data.is_empty()) {
+			dict["data"] = data;
 		}
 		return dict;
 	}
@@ -502,6 +562,34 @@ struct CodeLensOptions {
 	Dictionary to_json() {
 		Dictionary dict;
 		dict["resolveProvider"] = resolveProvider;
+		return dict;
+	}
+};
+
+/**
+ * Code Action options.
+ */
+struct CodeActionOptions {
+	/**
+	 * Code actions are resolved lazily.
+	 */
+	bool resolveProvider = true;
+
+	/**
+	 * Code action kinds this server may return.
+	 */
+	Vector<String> codeActionKinds;
+
+	CodeActionOptions() {
+		codeActionKinds.push_back("refactor.extract");
+		codeActionKinds.push_back("refactor.rewrite");
+		codeActionKinds.push_back("refactor.inline");
+	}
+
+	Dictionary to_json() const {
+		Dictionary dict;
+		dict["resolveProvider"] = resolveProvider;
+		dict["codeActionKinds"] = codeActionKinds;
 		return dict;
 	}
 };
@@ -1784,11 +1872,9 @@ struct ServerCapabilities {
 	Workspace workspace;
 
 	/**
-	 * The server provides code actions. The `CodeActionOptions` return type is only
-	 * valid if the client signals code action literal support via the property
-	 * `textDocument.codeAction.codeActionLiteralSupport`.
+	 * The server provides code actions.
 	 */
-	bool codeActionProvider = false;
+	CodeActionOptions codeActionProvider;
 
 	/**
 	 * The server provides code lens.
@@ -1871,7 +1957,7 @@ struct ServerCapabilities {
 		dict["documentSymbolProvider"] = documentSymbolProvider;
 		dict["workspaceSymbolProvider"] = workspaceSymbolProvider;
 		dict["workspace"] = workspace.to_json();
-		dict["codeActionProvider"] = codeActionProvider;
+		dict["codeActionProvider"] = codeActionProvider.to_json();
 		dict["documentFormattingProvider"] = documentFormattingProvider;
 		dict["documentRangeFormattingProvider"] = documentRangeFormattingProvider;
 		dict["declarationProvider"] = declarationProvider;
