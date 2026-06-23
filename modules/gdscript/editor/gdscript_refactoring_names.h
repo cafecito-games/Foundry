@@ -43,6 +43,7 @@ namespace GDScriptRefactorNames {
 // Returns true if p_name is a legal, non-reserved GDScript identifier.
 // On failure, sets r_reason to a human-readable explanation.
 bool validate_identifier(const String &p_name, String &r_reason);
+String identifier_at_column(const String &p_line, int p_column);
 
 #ifndef GDSCRIPT_NO_LSP
 // Returns true when renaming p_target to p_new_name would collide with another

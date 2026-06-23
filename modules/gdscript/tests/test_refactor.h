@@ -224,6 +224,53 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(GDScriptRefactorEdits::apply(src, edits, out));
 			CHECK_EQ(out, "oXree\n");
 		}
+
+		SUBCASE("finds edit touched by caret or selection") {
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(1, 4, 1, 9, "first"));
+			edits.push_back(edit(3, 8, 3, 13, "second"));
+
+			RefactorLocation caret_location;
+			caret_location.start_line = 3;
+			caret_location.end_line = 3;
+			caret_location.start_column = 10;
+			caret_location.end_column = 10;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, caret_location), 1);
+
+			RefactorLocation left_anchored_selection;
+			left_anchored_selection.start_line = 3;
+			left_anchored_selection.end_line = 3;
+			left_anchored_selection.start_column = 7;
+			left_anchored_selection.end_column = 13;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, left_anchored_selection), 1);
+
+			RefactorLocation outside_location;
+			outside_location.start_line = 2;
+			outside_location.end_line = 2;
+			outside_location.start_column = 1;
+			outside_location.end_column = 1;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, outside_location), -1);
+		}
+
+		SUBCASE("finds adjacent edits using half-open ranges") {
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 0, 0, 3, "first"));
+			edits.push_back(edit(0, 3, 0, 6, "second"));
+
+			RefactorLocation boundary_location;
+			boundary_location.start_line = 0;
+			boundary_location.end_line = 0;
+			boundary_location.start_column = 3;
+			boundary_location.end_column = 3;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, boundary_location), 1);
+
+			RefactorLocation after_last_location;
+			after_last_location.start_line = 0;
+			after_last_location.end_line = 0;
+			after_last_location.start_column = 6;
+			after_last_location.end_column = 6;
+			CHECK_EQ(GDScriptRefactorEdits::find_edit_at_location(edits, after_last_location), 1);
+		}
 	}
 
 	TEST_CASE("Identifier validation") {
@@ -253,6 +300,16 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		SUBCASE("accepts unicode identifiers") {
 			CHECK(GDScriptRefactorNames::validate_identifier(String::utf8("café"), reason));
 			CHECK(GDScriptRefactorNames::validate_identifier(String::utf8("número"), reason));
+		}
+		SUBCASE("identifier at caret column") {
+			const String line = String::utf8("\tvar número := número + 1");
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column("name := 1", 0), "name");
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column("name := 1", 1), "name");
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 8), String::utf8("número"));
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 11), String::utf8("número"));
+			CHECK_EQ(GDScriptRefactorNames::identifier_at_column(line, 21), String::utf8("número"));
+			CHECK(GDScriptRefactorNames::identifier_at_column(line, 12).is_empty());
+			CHECK(GDScriptRefactorNames::identifier_at_column("", 0).is_empty());
 		}
 	}
 
@@ -1236,6 +1293,67 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(out.contains("print(sum)"));
 			CHECK(out.contains("# total is a comment word")); // comment unchanged
 			CHECK(out.contains("\"total in a string\"")); // string unchanged
+		}
+		SUBCASE("local variable exposes current-file occurrence ranges for inline rename") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_local.gd", 3, 5, "total", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 3);
+
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].start_column, 5);
+			CHECK_EQ(r.rename_occurrences[0].end_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].end_column, 10);
+			CHECK_EQ(r.rename_occurrences[0].expected_text, "total");
+
+			CHECK_EQ(r.rename_occurrences[1].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].start_column, 1);
+			CHECK_EQ(r.rename_occurrences[1].end_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].end_column, 6);
+
+			CHECK_EQ(r.rename_occurrences[2].start_line, 5);
+			CHECK_EQ(r.rename_occurrences[2].start_column, 8);
+			CHECK_EQ(r.rename_occurrences[2].end_line, 5);
+			CHECK_EQ(r.rename_occurrences[2].end_column, 13);
+		}
+		SUBCASE("inline rename occurrence ranges ignore strings and comments") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_strings_comments.gd", 3, 5, "total", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 2);
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[1].start_line, 6);
+			for (const RefactorTextEdit &occurrence : r.rename_occurrences) {
+				CHECK_EQ(occurrence.expected_text, "total");
+				CHECK(occurrence.start_line != 4); // Comment line.
+				CHECK(occurrence.start_line != 5); // String line.
+			}
+		}
+		SUBCASE("inline rename exposes same-line occurrence ranges") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_same_line.gd", 3, 5, "sum", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 5);
+
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].start_column, 5);
+			CHECK_EQ(r.rename_occurrences[0].end_column, 10);
+
+			CHECK_EQ(r.rename_occurrences[1].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].start_column, 1);
+			CHECK_EQ(r.rename_occurrences[1].end_column, 6);
+
+			CHECK_EQ(r.rename_occurrences[2].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[2].start_column, 9);
+			CHECK_EQ(r.rename_occurrences[2].end_column, 14);
+
+			CHECK_EQ(r.rename_occurrences[3].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[3].start_column, 17);
+			CHECK_EQ(r.rename_occurrences[3].end_column, 22);
+
+			CHECK_EQ(r.rename_occurrences[4].start_line, 5);
+			CHECK_EQ(r.rename_occurrences[4].start_column, 8);
+			CHECK_EQ(r.rename_occurrences[4].end_column, 13);
 		}
 		SUBCASE("availability reports rename enabled on a symbol") {
 			GDScriptTests::assert_no_errors_in("res://refactor/rename_local.gd");

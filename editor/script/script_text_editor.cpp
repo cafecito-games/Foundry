@@ -152,6 +152,9 @@ void ScriptTextEditor::apply_code() {
 	if (script.is_null()) {
 		return;
 	}
+	if (inline_rename_active && !_commit_inline_rename(false)) {
+		return;
+	}
 	script->set_source_code(code_editor->get_text_editor()->get_text());
 	script->update_exports();
 	if (!pending_dragged_exports.is_empty()) {
@@ -169,6 +172,7 @@ void ScriptTextEditor::set_edited_resource(const Ref<Resource> &p_res) {
 	ERR_FAIL_COND(script.is_valid());
 	ERR_FAIL_COND(p_res.is_null());
 
+	_cancel_inline_rename(true);
 	script = p_res;
 
 	code_editor->get_text_editor()->set_text(script->get_source_code());
@@ -363,6 +367,7 @@ void ScriptTextEditor::_error_clicked(const Variant &p_line) {
 void ScriptTextEditor::reload_text() {
 	ERR_FAIL_COND(script.is_null());
 
+	_cancel_inline_rename(true);
 	CodeEdit *te = code_editor->get_text_editor();
 	int column = te->get_caret_column();
 	int row = te->get_caret_line();
@@ -2136,6 +2141,12 @@ void ScriptTextEditor::_change_syntax_highlighter(int p_idx) {
 
 void ScriptTextEditor::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			if (!is_visible_in_tree()) {
+				_cancel_inline_rename(true);
+			}
+		} break;
+
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			if (is_ready() && is_visible_in_tree()) {
 				_update_errors();
@@ -2182,6 +2193,7 @@ void ScriptTextEditor::reload(bool p_soft) {
 	if (scr.is_null()) {
 		return;
 	}
+	_cancel_inline_rename(true);
 	scr->set_source_code(te->get_text());
 	bool soft = p_soft || ClassDB::is_parent_class(scr->get_instance_base_type(), "EditorPlugin"); // Always soft-reload editor plugins.
 
@@ -2672,6 +2684,22 @@ void ScriptTextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 	bool create_menu = false;
 
 	CodeEdit *tx = code_editor->get_text_editor();
+	if (inline_rename_active && k.is_valid() && k->is_pressed() && !k->is_echo()) {
+		if (k->get_keycode() == Key::ENTER || k->get_keycode() == Key::KP_ENTER) {
+			_commit_inline_rename();
+			tx->accept_event();
+			return;
+		}
+		if (k->get_keycode() == Key::ESCAPE) {
+			_cancel_inline_rename(true);
+			tx->accept_event();
+			return;
+		}
+	}
+	if (inline_rename_active && mb.is_valid() && mb->is_pressed()) {
+		_cancel_inline_rename(true);
+	}
+
 	if (mb.is_valid() && mb->get_button_index() == MouseButton::RIGHT && mb->is_pressed()) {
 		local_pos = mb->get_global_position() - tx->get_global_position();
 		create_menu = true;
@@ -2937,6 +2965,10 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 
 	const RefactorKind kind = (RefactorKind)p_kind;
 
+	if (inline_rename_active) {
+		_cancel_inline_rename(true);
+	}
+
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 
@@ -2953,13 +2985,11 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 			break;
 		}
 
-		rename_line_edit->set_text(code_editor->get_text_editor()->get_word_under_caret());
-		// set_text() does not emit text_changed, so validate the prefill manually to
-		// keep the error label and OK button in sync with the seeded name.
-		_on_rename_text_changed(rename_line_edit->get_text());
-		rename_dialog->popup_centered();
-		rename_line_edit->grab_focus();
-		rename_line_edit->select_all();
+		if (_try_start_inline_rename(ctx, loc)) {
+			return;
+		}
+
+		_show_rename_dialog();
 		return;
 	}
 
@@ -3103,6 +3133,234 @@ void ScriptTextEditor::_clear_pending_refactor_preview() {
 	pending_refactor_anchor_column = -1;
 	pending_refactor_anchor_path = String();
 	pending_refactor_warning = String();
+}
+
+bool ScriptTextEditor::_try_start_inline_rename(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	RefactorParams params;
+	params.new_name = code_editor->get_text_editor()->get_word_under_caret();
+
+	const RefactorResult result = GDScriptRefactoring::prepare(p_context, p_location, RefactorKind::RENAME, params);
+	if (!_is_inline_rename_safe(result, p_context)) {
+		return false;
+	}
+
+	const int primary_occurrence = _find_inline_rename_primary_occurrence(result.rename_occurrences, p_location);
+	_save_inline_rename_caret_state();
+	if (!_select_inline_rename_occurrences(result.rename_occurrences, primary_occurrence)) {
+		_restore_inline_rename_caret_state();
+		return false;
+	}
+
+	inline_rename_active = true;
+	inline_rename_context = p_context;
+	inline_rename_location = p_location;
+	inline_rename_occurrences = result.rename_occurrences;
+	code_editor->get_text_editor()->begin_complex_operation();
+	return true;
+}
+
+bool ScriptTextEditor::_is_inline_rename_safe(const RefactorResult &p_result, const RefactorContext &p_context) const {
+	if (!p_result.ok || !p_result.warning.is_empty() || !p_result.unresolved_references.is_empty()) {
+		return false;
+	}
+	if (p_result.file_edits.size() != 1 || p_result.rename_occurrences.is_empty()) {
+		return false;
+	}
+	return p_result.file_edits[0].path == p_context.path;
+}
+
+int ScriptTextEditor::_find_inline_rename_primary_occurrence(const Vector<RefactorTextEdit> &p_occurrences, const RefactorLocation &p_location) const {
+	const int occurrence = GDScriptRefactorEdits::find_edit_at_location(p_occurrences, p_location);
+	// Keep a deterministic topmost fallback if the invocation range cannot be mapped.
+	return occurrence >= 0 ? occurrence : 0;
+}
+
+bool ScriptTextEditor::_select_inline_rename_occurrences(const Vector<RefactorTextEdit> &p_occurrences, int p_primary_occurrence) {
+	if (p_occurrences.is_empty()) {
+		return false;
+	}
+	ERR_FAIL_INDEX_V(p_primary_occurrence, p_occurrences.size(), false);
+
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	text_editor->remove_secondary_carets();
+	text_editor->deselect();
+
+	const RefactorTextEdit &primary = p_occurrences[p_primary_occurrence];
+	text_editor->set_caret_line(primary.end_line, false, false, -1, 0);
+	text_editor->set_caret_column(primary.end_column, false, 0);
+	text_editor->select(primary.start_line, primary.start_column, primary.end_line, primary.end_column, 0);
+
+	for (int i = 0; i < p_occurrences.size(); i++) {
+		if (i == p_primary_occurrence) {
+			continue;
+		}
+		const RefactorTextEdit &occurrence = p_occurrences[i];
+		const int caret = text_editor->add_caret(occurrence.end_line, occurrence.end_column);
+		if (caret < 0) {
+			text_editor->remove_secondary_carets();
+			text_editor->deselect();
+			return false;
+		}
+		text_editor->select(occurrence.start_line, occurrence.start_column, occurrence.end_line, occurrence.end_column, caret);
+	}
+	return true;
+}
+
+void ScriptTextEditor::_save_inline_rename_caret_state() {
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	inline_rename_caret_states.clear();
+	for (int i = 0; i < text_editor->get_caret_count(); i++) {
+		InlineRenameCaretState state;
+		state.line = text_editor->get_caret_line(i);
+		state.column = text_editor->get_caret_column(i);
+		state.has_selection = text_editor->has_selection(i);
+		if (state.has_selection) {
+			state.selection_from_line = text_editor->get_selection_from_line(i);
+			state.selection_from_column = text_editor->get_selection_from_column(i);
+			state.selection_to_line = text_editor->get_selection_to_line(i);
+			state.selection_to_column = text_editor->get_selection_to_column(i);
+		}
+		inline_rename_caret_states.push_back(state);
+	}
+}
+
+void ScriptTextEditor::_restore_inline_rename_caret_state() {
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	text_editor->remove_secondary_carets();
+	text_editor->deselect();
+
+	for (int i = 0; i < inline_rename_caret_states.size(); i++) {
+		const InlineRenameCaretState &state = inline_rename_caret_states[i];
+		const int caret = i == 0 ? 0 : text_editor->add_caret(state.line, state.column);
+		if (caret < 0) {
+			continue;
+		}
+		text_editor->set_caret_line(state.line, false, false, -1, caret);
+		text_editor->set_caret_column(state.column, false, caret);
+		if (state.has_selection) {
+			text_editor->select(state.selection_from_line, state.selection_from_column, state.selection_to_line, state.selection_to_column, caret);
+		}
+	}
+}
+
+String ScriptTextEditor::_get_inline_rename_name() const {
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	if (text_editor->get_caret_count() <= 0 || text_editor->get_caret_line(0) < 0 || text_editor->get_caret_line(0) >= text_editor->get_line_count()) {
+		return String();
+	}
+
+	if (text_editor->has_selection(0)) {
+		return text_editor->get_selected_text(0);
+	}
+
+	const int line_idx = text_editor->get_caret_line(0);
+	return GDScriptRefactorNames::identifier_at_column(text_editor->get_line(line_idx), text_editor->get_caret_column(0));
+}
+
+bool ScriptTextEditor::_commit_inline_rename(bool p_allow_dialog_fallback) {
+	if (!inline_rename_active) {
+		return true;
+	}
+
+	const String new_name = _get_inline_rename_name();
+	String reason;
+	if (!GDScriptRefactorNames::validate_identifier(new_name, reason)) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
+		EditorToaster::get_singleton()->popup_str(reason, EditorToaster::SEVERITY_ERROR);
+		return false;
+	}
+
+	RefactorParams params;
+	params.new_name = new_name;
+	const RefactorResult result = GDScriptRefactoring::prepare(inline_rename_context, inline_rename_location, RefactorKind::RENAME, params);
+	if (!result.ok) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
+		EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
+		return false;
+	}
+	if (!_is_inline_rename_safe(result, inline_rename_context)) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
+		_cancel_inline_rename(true);
+		_show_rename_dialog(new_name);
+		return false;
+	}
+
+	String applied;
+	if (!GDScriptRefactorEdits::apply(inline_rename_context.source, result.edits, applied)) {
+		if (!p_allow_dialog_fallback) {
+			_cancel_inline_rename(false);
+			return true;
+		}
+		EditorToaster::get_singleton()->popup_str(TTR("Could not apply refactor edits."), EditorToaster::SEVERITY_ERROR);
+		_cancel_inline_rename(true);
+		return false;
+	}
+
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	const int h_scroll = text_editor->get_h_scroll();
+	const double v_scroll = text_editor->get_v_scroll();
+	inline_rename_active = false;
+	text_editor->set_text(applied);
+	text_editor->remove_secondary_carets();
+	text_editor->deselect();
+	text_editor->set_h_scroll(h_scroll);
+	text_editor->set_v_scroll(v_scroll);
+	if (result.rename_anchor_line >= 0) {
+		text_editor->set_caret_line(result.rename_anchor_line);
+		text_editor->set_caret_column(result.rename_anchor_column + new_name.length());
+	}
+	text_editor->end_complex_operation();
+	_clear_inline_rename_state();
+	return true;
+}
+
+void ScriptTextEditor::_cancel_inline_rename(bool p_restore_text) {
+	if (!inline_rename_active) {
+		return;
+	}
+
+	const String restored_source = inline_rename_context.source;
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	const int h_scroll = text_editor->get_h_scroll();
+	const double v_scroll = text_editor->get_v_scroll();
+	inline_rename_active = false;
+	if (p_restore_text) {
+		text_editor->set_text(restored_source);
+	}
+	_restore_inline_rename_caret_state();
+	if (p_restore_text) {
+		text_editor->set_h_scroll(h_scroll);
+		text_editor->set_v_scroll(v_scroll);
+	}
+	text_editor->end_complex_operation();
+	_clear_inline_rename_state();
+}
+
+void ScriptTextEditor::_clear_inline_rename_state() {
+	inline_rename_active = false;
+	inline_rename_context = RefactorContext();
+	inline_rename_location = RefactorLocation();
+	inline_rename_occurrences.clear();
+	inline_rename_caret_states.clear();
+}
+
+void ScriptTextEditor::_show_rename_dialog(const String &p_initial_name) {
+	rename_line_edit->set_text(p_initial_name.is_empty() ? code_editor->get_text_editor()->get_word_under_caret() : p_initial_name);
+	// set_text() does not emit text_changed, so validate the prefill manually to
+	// keep the error label and OK button in sync with the seeded name.
+	_on_rename_text_changed(rename_line_edit->get_text());
+	rename_dialog->popup_centered();
+	rename_line_edit->grab_focus();
+	rename_line_edit->select_all();
 }
 
 void ScriptTextEditor::_on_rename_confirmed() {
