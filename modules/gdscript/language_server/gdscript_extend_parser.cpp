@@ -445,7 +445,11 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 
 	r_symbol.name = is_named ? p_func->identifier->name : "";
 	r_symbol.kind = (p_func->is_static || p_func->source_lambda != nullptr) ? LSP::SymbolKind::Function : LSP::SymbolKind::Method;
-	r_symbol.detail = "func";
+	if (p_func->is_declared_async) {
+		r_symbol.detail = p_func->is_static ? "static async func" : "async func";
+	} else {
+		r_symbol.detail = "func";
+	}
 	if (is_named) {
 		r_symbol.detail += " " + String(p_func->identifier->name);
 	}

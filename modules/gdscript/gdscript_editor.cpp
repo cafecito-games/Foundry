@@ -3703,9 +3703,14 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 								continue;
 							}
 
-							String display_name = member.function->identifier->name;
-							display_name += member.function->signature + ":";
+							String insert_text = member.function->identifier->name;
+							insert_text += member.function->signature + ":";
+							String display_name = insert_text;
+							if (member.function->is_declared_async) {
+								display_name = "async " + display_name;
+							}
 							ScriptLanguage::CodeCompletionOption option(display_name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+							option.insert_text = insert_text;
 							options.insert(member.function->identifier->name, option); // Insert name instead of display to track duplicates.
 						}
 						native_type = native_type.class_type->base_type;

@@ -879,6 +879,7 @@ public:
 		SuiteNode *body = nullptr;
 		bool is_abstract = false;
 		bool is_static = false; // For lambdas it's determined in the analyzer.
+		bool is_declared_async = false;
 		bool is_coroutine = false;
 		Variant rpc_config;
 		MethodInfo info;
@@ -1562,12 +1563,16 @@ private:
 	void parse_class_name();
 	void parse_extends();
 	void parse_class_body(bool p_is_multiline);
+	List<AnnotationNode *> parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind);
+	template <typename T>
+	void finalize_class_member(T *p_member, List<AnnotationNode *> &p_annotations, const String &p_member_kind);
 	template <typename T>
 	void parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static = false);
+	void parse_function_class_member(bool p_is_static, bool p_is_async);
 	SignalNode *parse_signal(bool p_is_static);
 	EnumNode *parse_enum(bool p_is_static);
 	ParameterNode *parse_parameter();
-	FunctionNode *parse_function(bool p_is_static);
+	FunctionNode *parse_function_declaration(bool p_is_static, bool p_is_declared_async);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);
 	SuiteNode *parse_suite(const String &p_context, SuiteNode *p_suite = nullptr, bool p_for_lambda = false);
 	// Annotations
