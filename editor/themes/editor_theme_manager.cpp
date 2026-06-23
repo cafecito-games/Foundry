@@ -294,7 +294,7 @@ EditorThemeManager::ThemeConfiguration EditorThemeManager::_create_theme_config(
 		Color system_accent_color = display_server->get_accent_color();
 
 		if (follow_system_theme) {
-			String dark_theme = "Default";
+			String dark_theme = "Cafecito";
 			String light_theme = "Light";
 
 			config.preset = light_theme; // Assume light theme if we can't detect system theme attributes.
@@ -330,6 +330,11 @@ EditorThemeManager::ThemeConfiguration EditorThemeManager::_create_theme_config(
 			} else if (config.preset == "Breeze Dark") {
 				preset_accent_color = Color(0.239, 0.682, 0.914);
 				preset_base_color = Color(0.1255, 0.1373, 0.149);
+			} else if (config.preset == "Cafecito") {
+				preset_accent_color = Color(1.0, 0.58, 0.2);
+				preset_base_color = Color(0.085, 0.075, 0.115);
+				preset_contrast = 0.24;
+				preset_icon_saturation = 1.65;
 			} else if (config.preset == "Godot 2") {
 				preset_accent_color = Color(0.53, 0.67, 0.89);
 				preset_base_color = Color(0.24, 0.23, 0.27);
@@ -561,6 +566,47 @@ void EditorThemeManager::_populate_text_editor_styles(const Ref<EditorTheme> &p_
 				colors["text_editor/theme/highlighting/comment_markers/critical_color"] = Color(0.8, 0.14, 0.14);
 				colors["text_editor/theme/highlighting/comment_markers/warning_color"] = Color(0.75, 0.39, 0.03);
 				colors["text_editor/theme/highlighting/comment_markers/notice_color"] = Color(0.24, 0.54, 0.09);
+			}
+			if (is_default_theme && p_config.preset == "Cafecito") {
+				if (p_config.dark_icon_and_font) {
+					colors["text_editor/theme/highlighting/symbol_color"] = Color(0.83, 0.78, 1.0);
+					colors["text_editor/theme/highlighting/keyword_color"] = Color(1.0, 0.47, 0.56);
+					colors["text_editor/theme/highlighting/control_flow_keyword_color"] = Color(1.0, 0.56, 0.78);
+					colors["text_editor/theme/highlighting/base_type_color"] = Color(0.47, 0.98, 0.75);
+					colors["text_editor/theme/highlighting/engine_type_color"] = Color(0.67, 1.0, 0.84);
+					colors["text_editor/theme/highlighting/user_type_color"] = Color(0.78, 0.98, 0.88);
+					colors["text_editor/theme/highlighting/string_color"] = Color(1.0, 0.78, 0.47);
+					colors["text_editor/theme/highlighting/string_placeholder_color"] = Color(1.0, 0.63, 0.38);
+					colors["text_editor/theme/highlighting/number_color"] = Color(0.67, 1.0, 0.82);
+					colors["text_editor/theme/highlighting/function_color"] = Color(0.55, 0.72, 1.0);
+					colors["text_editor/theme/highlighting/member_variable_color"] = Color(0.78, 0.67, 1.0);
+					colors["text_editor/theme/highlighting/search_result_border_color"] = Color(1.0, 0.58, 0.2, 0.42);
+					colors["text_editor/theme/highlighting/gdscript/function_definition_color"] = Color(0.58, 0.95, 1.0);
+					colors["text_editor/theme/highlighting/gdscript/global_function_color"] = Color(0.73, 0.7, 1.0);
+					colors["text_editor/theme/highlighting/gdscript/node_path_color"] = Color(0.85, 0.72, 0.43);
+					colors["text_editor/theme/highlighting/gdscript/node_reference_color"] = Color(0.47, 0.86, 0.54);
+					colors["text_editor/theme/highlighting/gdscript/annotation_color"] = Color(1.0, 0.65, 0.42);
+					colors["text_editor/theme/highlighting/gdscript/string_name_color"] = Color(1.0, 0.71, 0.57);
+				} else {
+					colors["text_editor/theme/highlighting/symbol_color"] = Color(0.18, 0.11, 0.58);
+					colors["text_editor/theme/highlighting/keyword_color"] = Color(0.78, 0.16, 0.32);
+					colors["text_editor/theme/highlighting/control_flow_keyword_color"] = Color(0.72, 0.12, 0.56);
+					colors["text_editor/theme/highlighting/base_type_color"] = Color(0.0, 0.52, 0.34);
+					colors["text_editor/theme/highlighting/engine_type_color"] = Color(0.0, 0.48, 0.42);
+					colors["text_editor/theme/highlighting/user_type_color"] = Color(0.12, 0.42, 0.38);
+					colors["text_editor/theme/highlighting/string_color"] = Color(0.74, 0.36, 0.03);
+					colors["text_editor/theme/highlighting/string_placeholder_color"] = Color(0.88, 0.45, 0.12);
+					colors["text_editor/theme/highlighting/number_color"] = Color(0.0, 0.48, 0.3);
+					colors["text_editor/theme/highlighting/function_color"] = Color(0.14, 0.25, 0.82);
+					colors["text_editor/theme/highlighting/member_variable_color"] = Color(0.32, 0.18, 0.72);
+					colors["text_editor/theme/highlighting/search_result_border_color"] = Color(0.86, 0.37, 0.02, 0.42);
+					colors["text_editor/theme/highlighting/gdscript/function_definition_color"] = Color(0.0, 0.52, 0.58);
+					colors["text_editor/theme/highlighting/gdscript/global_function_color"] = Color(0.42, 0.2, 0.78);
+					colors["text_editor/theme/highlighting/gdscript/node_path_color"] = Color(0.48, 0.38, 0.0);
+					colors["text_editor/theme/highlighting/gdscript/node_reference_color"] = Color(0.0, 0.46, 0.1);
+					colors["text_editor/theme/highlighting/gdscript/annotation_color"] = Color(0.78, 0.29, 0.0);
+					colors["text_editor/theme/highlighting/gdscript/string_name_color"] = Color(0.78, 0.42, 0.34);
+				}
 			}
 		} else if (is_godot2_theme) {
 			colors = EditorSettings::get_godot2_text_editor_theme();
