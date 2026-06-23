@@ -1046,6 +1046,285 @@ static void _find_global_enums(HashMap<String, ScriptLanguage::CodeCompletionOpt
 	}
 }
 
+static void _insert_namespace_completion_option(const String &p_display, ScriptLanguage::CodeCompletionKind p_kind, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_display.is_empty() || r_result.has(p_display)) {
+		return;
+	}
+
+	ScriptLanguage::CodeCompletionOption option(p_display, p_kind, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+	r_result.insert(option.display, option);
+}
+
+struct GDScriptNamespaceCompletionCache {
+	HashSet<String> namespaces;
+	HashMap<String, LocalVector<StringName>> direct_classes_by_namespace;
+	HashMap<String, LocalVector<String>> direct_child_namespaces_by_namespace;
+	bool populated = false;
+
+	void ensure_populated() {
+		if (populated) {
+			return;
+		}
+
+		populated = true;
+		populate();
+	}
+
+	void populate() {
+		LocalVector<StringName> global_classes;
+		ScriptServer::get_global_class_list(global_classes);
+		for (const StringName &global_class : global_classes) {
+			StringName class_name;
+			String namespace_name;
+			ScriptServer::get_global_class_name_parts(global_class, &class_name, &namespace_name);
+
+			if (!namespace_name.is_empty()) {
+				LocalVector<StringName> &classes = direct_classes_by_namespace[namespace_name];
+				if (!classes.has(class_name)) {
+					classes.push_back(class_name);
+				}
+			}
+
+			add_namespace(namespace_name);
+		}
+	}
+
+	void add_namespace(const String &p_namespace) {
+		String prefix;
+		const int slice_count = p_namespace.get_slice_count(".");
+		for (int i = 0; i < slice_count; i++) {
+			if (!prefix.is_empty()) {
+				prefix += ".";
+			}
+			prefix += p_namespace.get_slicec('.', i);
+			namespaces.insert(prefix);
+
+			if (i < slice_count - 1) {
+				const String child_namespace = p_namespace.get_slicec('.', i + 1);
+				LocalVector<String> &children = direct_child_namespaces_by_namespace[prefix];
+				if (!children.has(child_namespace)) {
+					children.push_back(child_namespace);
+				}
+			}
+		}
+	}
+};
+
+static void _list_importable_namespaces(GDScriptNamespaceCompletionCache &r_cache, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+	for (const String &namespace_name : r_cache.namespaces) {
+		_insert_namespace_completion_option(namespace_name, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT, r_result);
+	}
+}
+
+static void _add_direct_global_classes_in_namespace(GDScriptNamespaceCompletionCache &r_cache, const String &p_namespace, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+	const LocalVector<StringName> *classes = r_cache.direct_classes_by_namespace.getptr(p_namespace);
+	if (classes == nullptr) {
+		return;
+	}
+
+	for (const StringName &class_name : *classes) {
+		_insert_namespace_completion_option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, r_result);
+	}
+}
+
+static bool _namespace_exists(GDScriptNamespaceCompletionCache &r_cache, const String &p_namespace) {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+
+	r_cache.ensure_populated();
+	return r_cache.namespaces.has(p_namespace);
+}
+
+static void _add_direct_child_namespaces(GDScriptNamespaceCompletionCache &r_cache, const String &p_namespace, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_namespace.is_empty()) {
+		return;
+	}
+
+	r_cache.ensure_populated();
+	const LocalVector<String> *children = r_cache.direct_child_namespaces_by_namespace.getptr(p_namespace);
+	if (children == nullptr) {
+		return;
+	}
+
+	for (const String &child_namespace : *children) {
+		_insert_namespace_completion_option(child_namespace, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT, r_result);
+	}
+}
+
+static void _add_imported_global_classes_in_namespaces(GDScriptNamespaceCompletionCache &r_cache, const Vector<String> &p_imports, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+
+	HashMap<StringName, String> imported_class_namespaces;
+	HashSet<StringName> ambiguous_class_names;
+	LocalVector<String> checked_imports;
+
+	for (const String &import : p_imports) {
+		if (checked_imports.has(import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		const LocalVector<StringName> *classes = r_cache.direct_classes_by_namespace.getptr(import);
+		if (classes == nullptr) {
+			continue;
+		}
+
+		for (const StringName &class_name : *classes) {
+			const String *existing_namespace = imported_class_namespaces.getptr(class_name);
+			if (existing_namespace == nullptr) {
+				imported_class_namespaces[class_name] = import;
+			} else if (*existing_namespace != import) {
+				ambiguous_class_names.insert(class_name);
+			}
+		}
+	}
+
+	for (const KeyValue<StringName, String> &E : imported_class_namespaces) {
+		if (ambiguous_class_names.has(E.key)) {
+			continue;
+		}
+		_insert_namespace_completion_option(E.key, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, r_result);
+	}
+}
+
+static void _add_imported_child_namespaces(GDScriptNamespaceCompletionCache &r_cache, const Vector<String> &p_imports, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+
+	HashMap<String, String> imported_child_namespaces;
+	HashSet<String> ambiguous_child_namespaces;
+	LocalVector<String> checked_imports;
+
+	for (const String &import : p_imports) {
+		if (checked_imports.has(import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		const LocalVector<String> *children = r_cache.direct_child_namespaces_by_namespace.getptr(import);
+		if (children == nullptr) {
+			continue;
+		}
+
+		for (const String &child_namespace : *children) {
+			const String *existing_import = imported_child_namespaces.getptr(child_namespace);
+			if (existing_import == nullptr) {
+				imported_child_namespaces[child_namespace] = import;
+			} else if (*existing_import != import) {
+				ambiguous_child_namespaces.insert(child_namespace);
+			}
+		}
+	}
+
+	for (const KeyValue<String, String> &E : imported_child_namespaces) {
+		if (ambiguous_child_namespaces.has(E.key)) {
+			continue;
+		}
+		_insert_namespace_completion_option(E.key, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT, r_result);
+	}
+}
+
+static const GDScriptParser::ClassNode *_get_completion_root_class(const GDScriptParser::CompletionContext &p_context) {
+	if (p_context.parser != nullptr) {
+		return p_context.parser->get_tree();
+	}
+
+	const GDScriptParser::ClassNode *current_class = p_context.current_class;
+	while (current_class != nullptr && current_class->outer != nullptr) {
+		current_class = current_class->outer;
+	}
+	return current_class;
+}
+
+static void _add_namespace_type_completion_options(GDScriptNamespaceCompletionCache &r_cache, const GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	const GDScriptParser::ClassNode *root = _get_completion_root_class(p_context);
+	if (root == nullptr) {
+		return;
+	}
+
+	_add_direct_global_classes_in_namespace(r_cache, root->namespace_name, r_result);
+	_add_direct_child_namespaces(r_cache, root->namespace_name, r_result);
+	_add_imported_global_classes_in_namespaces(r_cache, root->imports, r_result);
+	_add_imported_child_namespaces(r_cache, root->imports, r_result);
+}
+
+static String _join_identifier_chain(const Vector<GDScriptParser::IdentifierNode *> &p_chain, int p_start, int p_count) {
+	String result;
+	for (int i = 0; i < p_count; i++) {
+		if (!result.is_empty()) {
+			result += ".";
+		}
+		result += String(p_chain[p_start + i]->name);
+	}
+	return result;
+}
+
+static bool _resolve_namespace_from_prefix(GDScriptNamespaceCompletionCache &r_cache, const GDScriptParser::ClassNode *p_root, const String &p_prefix, String &r_namespace) {
+	if (p_prefix.is_empty()) {
+		return false;
+	}
+
+	if (_namespace_exists(r_cache, p_prefix)) {
+		r_namespace = p_prefix;
+		return true;
+	}
+
+	if (p_root == nullptr) {
+		return false;
+	}
+
+	if (!p_root->namespace_name.is_empty()) {
+		const String current_namespace_candidate = p_root->namespace_name + "." + p_prefix;
+		if (_namespace_exists(r_cache, current_namespace_candidate)) {
+			r_namespace = current_namespace_candidate;
+			return true;
+		}
+	}
+
+	String matched_import_namespace;
+	for (const String &import : p_root->imports) {
+		const String imported_namespace_candidate = import + "." + p_prefix;
+		if (!_namespace_exists(r_cache, imported_namespace_candidate)) {
+			continue;
+		}
+
+		if (!matched_import_namespace.is_empty() && matched_import_namespace != imported_namespace_candidate) {
+			return false;
+		}
+		matched_import_namespace = imported_namespace_candidate;
+	}
+
+	if (!matched_import_namespace.is_empty()) {
+		r_namespace = matched_import_namespace;
+		return true;
+	}
+
+	return false;
+}
+
+static void _add_namespace_type_attribute_completion_options(GDScriptNamespaceCompletionCache &r_cache, const GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_context.node == nullptr || p_context.node->type != GDScriptParser::Node::TYPE) {
+		return;
+	}
+
+	const GDScriptParser::TypeNode *type = static_cast<const GDScriptParser::TypeNode *>(p_context.node);
+	if (p_context.type_chain_index <= 0 || p_context.type_chain_index > type->type_chain.size()) {
+		return;
+	}
+
+	const String prefix = _join_identifier_chain(type->type_chain, 0, p_context.type_chain_index);
+	const GDScriptParser::ClassNode *root = _get_completion_root_class(p_context);
+	String namespace_name;
+	if (!_resolve_namespace_from_prefix(r_cache, root, prefix, namespace_name)) {
+		return;
+	}
+
+	_add_direct_global_classes_in_namespace(r_cache, namespace_name, r_result);
+	_add_direct_child_namespaces(r_cache, namespace_name, r_result);
+}
+
 static void _list_available_types(bool p_inherit_only, GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	// Built-in Variant Types
 	_find_built_in_variants(r_result);
@@ -3462,6 +3741,7 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 		completion_context.base = p_owner;
 	}
 	bool is_function = false;
+	GDScriptNamespaceCompletionCache namespace_cache;
 
 	switch (completion_context.type) {
 		case GDScriptParser::COMPLETION_NONE:
@@ -3522,6 +3802,7 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 		} break;
 		case GDScriptParser::COMPLETION_INHERIT_TYPE: {
 			_list_available_types(true, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, options);
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_TYPE_NAME_OR_VOID: {
@@ -3531,10 +3812,16 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			[[fallthrough]];
 		case GDScriptParser::COMPLETION_TYPE_NAME: {
 			_list_available_types(false, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, options);
+			r_forced = true;
+		} break;
+		case GDScriptParser::COMPLETION_IMPORT_NAMESPACE: {
+			_list_importable_namespaces(namespace_cache, options);
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_PROPERTY_DECLARATION_OR_TYPE: {
 			_list_available_types(false, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, options);
 			ScriptLanguage::CodeCompletionOption get("get", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
 			options.insert(get.display, get);
 			ScriptLanguage::CodeCompletionOption set("set", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
@@ -3642,6 +3929,8 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 		} break;
 		case GDScriptParser::COMPLETION_TYPE_ATTRIBUTE: {
 			if (!completion_context.current_class) {
+				_add_namespace_type_attribute_completion_options(namespace_cache, completion_context, options);
+				r_forced = true;
 				break;
 			}
 
@@ -3662,7 +3951,11 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				}
 				if (found) {
 					_find_identifiers_in_base(base, false, true, true, options, 0);
+				} else {
+					_add_namespace_type_attribute_completion_options(namespace_cache, completion_context, options);
 				}
+			} else {
+				_add_namespace_type_attribute_completion_options(namespace_cache, completion_context, options);
 			}
 
 			r_forced = true;
@@ -4299,6 +4592,122 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 	return ERR_CANT_RESOLVE;
 }
 
+static String _get_lookup_identifier_chain(const String &p_code, const String &p_symbol) {
+	const String cursor_marker = String::chr(0xFFFF);
+	const int cursor_index = p_code.find(cursor_marker);
+	if (cursor_index == -1) {
+		return p_symbol;
+	}
+
+	int start = cursor_index;
+	while (start > 0) {
+		const char32_t c = p_code[start - 1];
+		if (c != '.' && !is_unicode_identifier_continue(c)) {
+			break;
+		}
+		start--;
+	}
+
+	String identifier_chain = p_code.substr(start, cursor_index - start);
+	while (identifier_chain.begins_with(".")) {
+		identifier_chain = identifier_chain.substr(1);
+	}
+
+	// The backward scan accepts identifier-continuation characters; only keep chains that actually end at the resolved symbol.
+	if (identifier_chain == p_symbol || identifier_chain.ends_with("." + p_symbol)) {
+		return identifier_chain;
+	}
+
+	return p_symbol;
+}
+
+static bool _lookup_global_class_in_namespace(const String &p_namespace, const String &p_class_name, StringName &r_global_class_name) {
+	if (p_namespace.is_empty() || p_class_name.is_empty()) {
+		return false;
+	}
+
+	const String global_class_name = p_namespace + "." + p_class_name;
+	if (!ScriptServer::is_global_class(global_class_name)) {
+		return false;
+	}
+
+	r_global_class_name = global_class_name;
+	return true;
+}
+
+static bool _lookup_imported_global_class(const GDScriptParser::ClassNode *p_root, const String &p_class_name, StringName &r_global_class_name) {
+	if (p_root == nullptr) {
+		return false;
+	}
+
+	LocalVector<String> checked_imports;
+	for (const String &import : p_root->imports) {
+		if (checked_imports.has(import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		StringName candidate;
+		if (!_lookup_global_class_in_namespace(import, p_class_name, candidate)) {
+			continue;
+		}
+
+		if (r_global_class_name != StringName() && r_global_class_name != candidate) {
+			// The analyzer reports ambiguous imports as an error. Lookup should not pick an arbitrary target.
+			r_global_class_name = StringName();
+			return false;
+		}
+
+		r_global_class_name = candidate;
+	}
+
+	return r_global_class_name != StringName();
+}
+
+static bool _resolve_namespace_global_class(const GDScriptParser::ClassNode *p_root, const String &p_identifier_chain, StringName &r_global_class_name) {
+	if (p_identifier_chain.is_empty()) {
+		return false;
+	}
+
+	if (p_identifier_chain.get_slice_count(".") > 1 && ScriptServer::is_global_class(p_identifier_chain)) {
+		r_global_class_name = p_identifier_chain;
+		return true;
+	}
+
+	if (p_root != nullptr) {
+		// Keep this in sync with GDScriptAnalyzer name binding: current namespace, imported namespaces, then legacy direct globals.
+		if (_lookup_global_class_in_namespace(p_root->namespace_name, p_identifier_chain, r_global_class_name)) {
+			return true;
+		}
+
+		if (_lookup_imported_global_class(p_root, p_identifier_chain, r_global_class_name)) {
+			return true;
+		}
+	}
+
+	if (ScriptServer::is_global_class(p_identifier_chain)) {
+		r_global_class_name = p_identifier_chain;
+		return true;
+	}
+
+	return false;
+}
+
+static Error _lookup_global_script_class(const StringName &p_global_class_name, GDScriptLanguage::LookupResult &r_result) {
+	const String script_path = ScriptServer::get_global_class_path(p_global_class_name);
+	const Ref<Script> script = ResourceLoader::load(script_path);
+	if (script.is_null()) {
+		return ERR_BUG;
+	}
+
+	r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+	r_result.class_name = script->get_doc_class_name();
+	r_result.script = script;
+	r_result.script_path = script_path;
+	r_result.location = 0;
+	return OK;
+}
+
 ::Error GDScriptLanguage::lookup_code(const String &p_code, const String &p_symbol, const String &p_path, Object *p_owner, LookupResult &r_result) {
 	// Before parsing, try the usual stuff.
 	if (GDScriptAnalyzer::class_exists(p_symbol)) {
@@ -4507,18 +4916,9 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 					}
 				}
 
-				if (ScriptServer::is_global_class(p_symbol)) {
-					const String scr_path = ScriptServer::get_global_class_path(p_symbol);
-					const Ref<Script> scr = ResourceLoader::load(scr_path);
-					if (scr.is_null()) {
-						return ERR_BUG;
-					}
-					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
-					r_result.class_name = scr->get_doc_class_name();
-					r_result.script = scr;
-					r_result.script_path = scr_path;
-					r_result.location = 0;
-					return OK;
+				StringName namespace_global_class;
+				if (_resolve_namespace_global_class(parser.get_tree(), p_symbol, namespace_global_class)) {
+					return _lookup_global_script_class(namespace_global_class, r_result);
 				}
 
 				const HashMap<StringName, int> &global_map = GDScriptLanguage::get_singleton()->get_global_map();
@@ -4635,6 +5035,12 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 		} break;
 		default: {
 		}
+	}
+
+	StringName namespace_global_class;
+	const String identifier_chain = _get_lookup_identifier_chain(p_code, p_symbol);
+	if (_resolve_namespace_global_class(parser.get_tree(), identifier_chain, namespace_global_class)) {
+		return _lookup_global_script_class(namespace_global_class, r_result);
 	}
 
 	return ERR_CANT_RESOLVE;

@@ -1,0 +1,3 @@
+namespace completion.items
+class_name CompletionInventoryItem
+extends Node

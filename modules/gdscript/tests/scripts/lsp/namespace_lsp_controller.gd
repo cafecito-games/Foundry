@@ -1,0 +1,3 @@
+namespace lsp.characters.controllers
+class_name LspMyCharacterController
+extends Node

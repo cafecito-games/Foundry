@@ -1,0 +1,3 @@
+namespace completion.characters
+class_name CompletionSameNamespacePeer
+extends Node

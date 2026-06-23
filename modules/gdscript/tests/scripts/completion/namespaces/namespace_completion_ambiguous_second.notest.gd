@@ -1,0 +1,3 @@
+namespace completion.ambiguous.second
+class_name CompletionAmbiguousClass
+extends Node
