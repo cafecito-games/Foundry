@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://refactor/rename_cross_file_exported_target.gd" id="1_target"]
+
+[node name="Target" type="Node"]
+script = ExtResource("1_target")
+shared_exported_count = 7
