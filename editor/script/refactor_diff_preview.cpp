@@ -396,21 +396,11 @@ void RefactorDiffPreviewDialog::_refresh_unresolved_references() {
 	const int max_visible_references = MIN(unresolved_references.size(), 4);
 	for (int i = 0; i < max_visible_references; i++) {
 		const RefactorUnresolvedReference &reference = unresolved_references[i];
-		text += "\n" + vformat(
-							   "%s:%d:%d %s",
-							   reference.path,
-							   reference.line + 1,
-							   reference.column + 1,
-							   reference.message);
+		text += "\n" + vformat("%s:%d:%d %s", reference.path, reference.line + 1, reference.column + 1, reference.message);
 	}
 	if (unresolved_references.size() > max_visible_references) {
 		const int omitted_count = unresolved_references.size() - max_visible_references;
-		text += "\n" + vformat(
-							   TTRN(
-									   "%d more unresolved reference omitted.",
-									   "%d more unresolved references omitted.",
-									   omitted_count),
-							   omitted_count);
+		text += "\n" + vformat(TTRN("%d more unresolved reference omitted.", "%d more unresolved references omitted.", omitted_count), omitted_count);
 	}
 
 	unresolved_references_label->set_text(text);

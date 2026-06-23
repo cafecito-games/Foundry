@@ -30,10 +30,10 @@
 
 #pragma once
 
-#include "modules/gdscript/gdscript_analyzer.h"
-#include "modules/gdscript/gdscript.h"
-#include "modules/gdscript/gdscript_type.h"
 #include "modules/gdscript/editor/gdscript_docgen.h"
+#include "modules/gdscript/gdscript.h"
+#include "modules/gdscript/gdscript_analyzer.h"
+#include "modules/gdscript/gdscript_type.h"
 
 #include "core/config/project_settings.h"
 
@@ -1789,9 +1789,9 @@ TEST_CASE("[Modules][GDScript] Analyzer reports strict signal connection diagnos
 										 "func test(emitter: Emitter, signal_name: StringName) -> void:\n"
 										 "\temitter.connect(signal_name, accept_int)\n";
 	const String unknown_signal_source = "class Emitter:\n\tsignal event(value: int)\n"
-										"func accept_int(value: int) -> void:\n\tpass\n"
-										"func test(emitter: Emitter) -> void:\n"
-										"\temitter.connect(\"missing\", accept_int)\n";
+										 "func accept_int(value: int) -> void:\n\tpass\n"
+										 "func test(emitter: Emitter) -> void:\n"
+										 "\temitter.connect(\"missing\", accept_int)\n";
 	const String nullable_callable_source = "signal event(value: Node?)\nfunc accept_node(value: Node) -> void:\n\tpass\n"
 											"func test() -> void:\n\tconnect(\"event\", accept_node)\n";
 
