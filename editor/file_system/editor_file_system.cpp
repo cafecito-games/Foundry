@@ -462,6 +462,11 @@ void EditorFileSystem::_scan_filesystem() {
 						fc.class_info.icon_path = slices[2];
 						fc.class_info.is_abstract = slices[3].to_int();
 						fc.class_info.is_tool = slices[4].to_int();
+						StringName local_class_name;
+						String namespace_name;
+						ScriptServer::get_global_class_name_parts(fc.class_info.name, &local_class_name, &namespace_name);
+						fc.class_info.class_name = local_class_name;
+						fc.class_info.namespace_name = namespace_name;
 						fc.import_md5 = slices[5];
 						fc.import_dest_paths = slices[6].split("<*>");
 					}
@@ -1855,7 +1860,9 @@ void EditorFileSystem::_save_filesystem_cache(EditorFileSystemDirectory *p_dir, 
 		cache_string.append(itos(file_info->import_modified_time));
 		cache_string.append(itos(file_info->import_valid));
 		cache_string.append(file_info->import_group_file);
-		cache_string.append(String("<>").join({ file_info->class_info.name, file_info->class_info.extends, file_info->class_info.icon_path, itos(file_info->class_info.is_abstract), itos(file_info->class_info.is_tool), file_info->import_md5, String("<*>").join(file_info->import_dest_paths) }));
+		cache_string.append(String("<>").join({ file_info->class_info.name, file_info->class_info.extends,
+				file_info->class_info.icon_path, itos(file_info->class_info.is_abstract),
+				itos(file_info->class_info.is_tool), file_info->import_md5, String("<*>").join(file_info->import_dest_paths) }));
 		cache_string.append(String("<>").join(file_info->deps));
 
 		p_file->store_line(String("::").join(cache_string));
@@ -2089,6 +2096,11 @@ EditorFileSystem::ScriptClassInfo EditorFileSystem::_get_global_script_class(con
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 		if (ScriptServer::get_language(i)->handles_global_class_type(p_type)) {
 			info.name = ScriptServer::get_language(i)->get_global_class_name(p_path, &info.extends, &info.icon_path, &info.is_abstract, &info.is_tool);
+			StringName local_class_name;
+			String namespace_name;
+			ScriptServer::get_global_class_name_parts(info.name, &local_class_name, &namespace_name);
+			info.class_name = local_class_name;
+			info.namespace_name = namespace_name;
 			break;
 		}
 	}
@@ -2558,6 +2570,14 @@ void EditorFileSystem::_register_global_class_script(const String &p_search_path
 
 	if (p_script_update.name.is_empty()) {
 		return;
+	}
+
+	if (ScriptServer::is_global_class(p_script_update.name)) {
+		const String existing_path = ScriptServer::get_global_class_path(p_script_update.name);
+		ERR_FAIL_COND_MSG(
+				existing_path != p_target_path,
+				vformat(R"(Global script class "%s" from "%s" collides with existing script class from "%s".)",
+						p_script_update.name, p_target_path, existing_path));
 	}
 
 	String lang;

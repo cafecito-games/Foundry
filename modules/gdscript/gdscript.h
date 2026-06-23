@@ -183,7 +183,7 @@ private:
 	String path;
 	bool path_valid = false; // False if using default path.
 	StringName local_name; // Inner class identifier or `class_name`.
-	StringName global_name; // `class_name`.
+	StringName global_name; // Qualified `class_name`.
 	String fully_qualified_name;
 	String simplified_icon_path;
 	SelfList<GDScript> script_list;

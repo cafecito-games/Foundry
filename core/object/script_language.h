@@ -91,6 +91,8 @@ public:
 	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool);
 	static void remove_global_class(const StringName &p_class);
 	static void remove_global_class_by_path(const String &p_path);
+	static void get_global_class_name_parts(const StringName &p_class, StringName *r_class_name,
+			String *r_namespace_name);
 	static bool is_global_class(const StringName &p_class);
 	static StringName get_global_class_language(const StringName &p_class);
 	static String get_global_class_path(const String &p_class);
