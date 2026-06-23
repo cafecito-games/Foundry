@@ -1673,6 +1673,10 @@ public:
 
 #ifdef DEBUG_ENABLED
 	static void update_project_settings();
+	// Global toggle for warning collection. Used by tests to isolate analyzer-error
+	// checks from warning state that other test cases enable globally.
+	static bool is_ignoring_warnings() { return is_project_ignoring_warnings; }
+	static void set_ignoring_warnings(bool p_ignore) { is_project_ignoring_warnings = p_ignore; }
 	const List<GDScriptWarning> &get_warnings() const { return warnings; }
 	const HashSet<int> &get_unsafe_lines() const { return unsafe_lines; }
 	int get_last_line_number() const { return current.end_line; }
