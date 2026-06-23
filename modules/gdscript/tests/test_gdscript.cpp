@@ -97,6 +97,33 @@ static const GDScriptParser::FunctionNode *find_parser_function(const GDScriptPa
 	return nullptr;
 }
 
+static MethodInfo find_method_info(const List<MethodInfo> &p_methods, const StringName &p_name) {
+	for (const MethodInfo &method : p_methods) {
+		if (method.name == p_name) {
+			return method;
+		}
+	}
+	return MethodInfo();
+}
+
+struct ScopedGDScriptNativeGlobals {
+	bool initialized = false;
+
+	ScopedGDScriptNativeGlobals() {
+		if (!GDScriptLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+			GDScriptLanguage::get_singleton()->init();
+			initialized = true;
+		}
+	}
+
+	~ScopedGDScriptNativeGlobals() {
+		// Some sibling GDScript doctests initialize the language without finishing it; only tear down state owned by this guard.
+		if (initialized) {
+			GDScriptLanguage::get_singleton()->finish();
+		}
+	}
+};
+
 static const GDScriptParser::ClassNode *find_parser_class(const GDScriptParser::ClassNode *p_class, const StringName &p_name) {
 	ERR_FAIL_NULL_V(p_class, nullptr);
 
@@ -533,6 +560,94 @@ func synchronous() -> int:
 		return;
 	}
 	CHECK_FALSE((synchronous->info.flags & METHOD_FLAG_ASYNC) != 0);
+}
+
+TEST_CASE("[Modules][GDScript] Compiled coroutine functions reflect async method flags") {
+	ScopedGDScriptNativeGlobals native_globals;
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+async func explicit_async() -> int:
+	return 1
+
+func body_inferred_async() -> int:
+	@warning_ignore("redundant_await")
+	await 0
+	return 2
+
+func synchronous() -> int:
+	return 3
+)",
+			"user://async_reflection.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptCompiler compiler;
+	Ref<GDScript> script;
+	script.instantiate();
+	script->set_path("user://async_reflection.gd");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const MethodInfo explicit_async_info = script->get_method_info(SNAME("explicit_async"));
+	CHECK_EQ(explicit_async_info.name, SNAME("explicit_async"));
+	CHECK((explicit_async_info.flags & METHOD_FLAG_ASYNC) != 0);
+	CHECK_EQ(explicit_async_info.return_val.type, Variant::INT);
+
+	const MethodInfo body_inferred_async_info = script->get_method_info(SNAME("body_inferred_async"));
+	CHECK_EQ(body_inferred_async_info.name, SNAME("body_inferred_async"));
+	CHECK((body_inferred_async_info.flags & METHOD_FLAG_ASYNC) != 0);
+	CHECK_EQ(body_inferred_async_info.return_val.type, Variant::INT);
+
+	const MethodInfo synchronous_info = script->get_method_info(SNAME("synchronous"));
+	CHECK_EQ(synchronous_info.name, SNAME("synchronous"));
+	CHECK_FALSE((synchronous_info.flags & METHOD_FLAG_ASYNC) != 0);
+	CHECK_EQ(synchronous_info.return_val.type, Variant::INT);
+
+	Object *obj = ClassDB::instantiate(script->get_native()->get_name());
+	CHECK(obj != nullptr);
+	if (obj == nullptr) {
+		return;
+	}
+
+	Ref<RefCounted> obj_ref;
+	if (obj->is_ref_counted()) {
+		obj_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(obj));
+	}
+	obj->set_script(script);
+
+	List<MethodInfo> reflected_methods;
+	obj->get_method_list(&reflected_methods);
+
+	const MethodInfo reflected_explicit_async_info = find_method_info(reflected_methods, SNAME("explicit_async"));
+	CHECK_EQ(reflected_explicit_async_info.name, SNAME("explicit_async"));
+	CHECK((reflected_explicit_async_info.flags & METHOD_FLAG_ASYNC) != 0);
+
+	const MethodInfo reflected_body_inferred_async_info = find_method_info(reflected_methods, SNAME("body_inferred_async"));
+	CHECK_EQ(reflected_body_inferred_async_info.name, SNAME("body_inferred_async"));
+	CHECK((reflected_body_inferred_async_info.flags & METHOD_FLAG_ASYNC) != 0);
+
+	const MethodInfo reflected_synchronous_info = find_method_info(reflected_methods, SNAME("synchronous"));
+	CHECK_EQ(reflected_synchronous_info.name, SNAME("synchronous"));
+	CHECK_FALSE((reflected_synchronous_info.flags & METHOD_FLAG_ASYNC) != 0);
+
+	if (obj_ref.is_null()) {
+		memdelete(obj);
+	}
 }
 
 TEST_CASE("[Modules][GDScript] Parser rejects invalid namespace and import declarations") {
