@@ -871,27 +871,7 @@ void DocTools::generate(BitField<GenerateFlags> p_flags) {
 			}
 
 			DocData::return_doc_from_retinfo(method, mi.return_val);
-
-			if (mi.flags & METHOD_FLAG_VARARG) {
-				if (!method.qualifiers.is_empty()) {
-					method.qualifiers += " ";
-				}
-				method.qualifiers += "vararg";
-			}
-
-			if (mi.flags & METHOD_FLAG_CONST) {
-				if (!method.qualifiers.is_empty()) {
-					method.qualifiers += " ";
-				}
-				method.qualifiers += "const";
-			}
-
-			if (mi.flags & METHOD_FLAG_STATIC) {
-				if (!method.qualifiers.is_empty()) {
-					method.qualifiers += " ";
-				}
-				method.qualifiers += "static";
-			}
+			method.qualifiers = DocData::get_method_qualifiers_from_methodinfo(mi);
 
 			if (method.name == cname) {
 				c.constructors.push_back(method);
@@ -1058,13 +1038,7 @@ void DocTools::generate(BitField<GenerateFlags> p_flags) {
 			for (const MethodInfo &mi : minfo) {
 				DocData::MethodDoc md;
 				md.name = mi.name;
-
-				if (mi.flags & METHOD_FLAG_VARARG) {
-					if (!md.qualifiers.is_empty()) {
-						md.qualifiers += " ";
-					}
-					md.qualifiers += "vararg";
-				}
+				md.qualifiers = DocData::get_method_qualifiers_from_methodinfo(mi);
 
 				DocData::return_doc_from_retinfo(md, mi.return_val);
 
@@ -1103,13 +1077,7 @@ void DocTools::generate(BitField<GenerateFlags> p_flags) {
 			for (const MethodInfo &ai : ainfo) {
 				DocData::MethodDoc atd;
 				atd.name = ai.name;
-
-				if (ai.flags & METHOD_FLAG_VARARG) {
-					if (!atd.qualifiers.is_empty()) {
-						atd.qualifiers += " ";
-					}
-					atd.qualifiers += "vararg";
-				}
+				atd.qualifiers = DocData::get_method_qualifiers_from_methodinfo(ai);
 
 				DocData::return_doc_from_retinfo(atd, ai.return_val);
 

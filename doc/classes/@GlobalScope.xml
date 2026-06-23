@@ -3104,6 +3104,9 @@
 		<constant name="METHOD_FLAG_VIRTUAL_REQUIRED" value="128" enum="MethodFlags" is_bitfield="true">
 			Flag for a virtual method that is required. In GDScript, this flag is set for abstract functions.
 		</constant>
+		<constant name="METHOD_FLAG_ASYNC" value="256" enum="MethodFlags" is_bitfield="true">
+			Flag for an asynchronous method.
+		</constant>
 		<constant name="METHOD_FLAGS_DEFAULT" value="1" enum="MethodFlags" is_bitfield="true">
 			Default method flags (normal).
 		</constant>

@@ -119,41 +119,40 @@ void DocData::argument_doc_from_arginfo(DocData::ArgumentDoc &p_argument, const 
 	}
 }
 
+static void _append_method_qualifier(String &r_qualifiers, const char *p_qualifier) {
+	if (!r_qualifiers.is_empty()) {
+		r_qualifiers += " ";
+	}
+	r_qualifiers += p_qualifier;
+}
+
+String DocData::get_method_qualifiers_from_methodinfo(const MethodInfo &p_methodinfo) {
+	String qualifiers;
+	if (p_methodinfo.flags & METHOD_FLAG_VIRTUAL) {
+		_append_method_qualifier(qualifiers, "virtual");
+	}
+	if (p_methodinfo.flags & METHOD_FLAG_VIRTUAL_REQUIRED) {
+		_append_method_qualifier(qualifiers, "required");
+	}
+	if (p_methodinfo.flags & METHOD_FLAG_ASYNC) {
+		_append_method_qualifier(qualifiers, "async");
+	}
+	if (p_methodinfo.flags & METHOD_FLAG_VARARG) {
+		_append_method_qualifier(qualifiers, "vararg");
+	}
+	if (p_methodinfo.flags & METHOD_FLAG_CONST) {
+		_append_method_qualifier(qualifiers, "const");
+	}
+	if (p_methodinfo.flags & METHOD_FLAG_STATIC) {
+		_append_method_qualifier(qualifiers, "static");
+	}
+	return qualifiers;
+}
+
 void DocData::method_doc_from_methodinfo(DocData::MethodDoc &p_method, const MethodInfo &p_methodinfo, const String &p_desc) {
 	p_method.name = p_methodinfo.name;
 	p_method.description = p_desc;
-
-	if (p_methodinfo.flags & METHOD_FLAG_VIRTUAL) {
-		p_method.qualifiers = "virtual";
-	}
-
-	if (p_methodinfo.flags & METHOD_FLAG_VIRTUAL_REQUIRED) {
-		if (!p_method.qualifiers.is_empty()) {
-			p_method.qualifiers += " ";
-		}
-		p_method.qualifiers += "required";
-	}
-
-	if (p_methodinfo.flags & METHOD_FLAG_CONST) {
-		if (!p_method.qualifiers.is_empty()) {
-			p_method.qualifiers += " ";
-		}
-		p_method.qualifiers += "const";
-	}
-
-	if (p_methodinfo.flags & METHOD_FLAG_VARARG) {
-		if (!p_method.qualifiers.is_empty()) {
-			p_method.qualifiers += " ";
-		}
-		p_method.qualifiers += "vararg";
-	}
-
-	if (p_methodinfo.flags & METHOD_FLAG_STATIC) {
-		if (!p_method.qualifiers.is_empty()) {
-			p_method.qualifiers += " ";
-		}
-		p_method.qualifiers += "static";
-	}
+	p_method.qualifiers = get_method_qualifiers_from_methodinfo(p_methodinfo);
 
 	return_doc_from_retinfo(p_method, p_methodinfo.return_val);
 
