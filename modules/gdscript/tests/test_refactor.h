@@ -1350,6 +1350,46 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(user_out.contains("return target.renamed_count"));
 			CHECK_FALSE(user_out.contains("shared_count"));
 		}
+		SUBCASE("exported member rename reports cross-file edits with advisory") {
+			GDScriptTests::assert_no_errors_in("res://refactor/rename_cross_file_exported_user.gd");
+
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_cross_file_exported_target.gd", 2, 13, "renamed_exported_count", out); // caret on `shared_exported_count`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("exported"));
+			CHECK(r.unresolved_references.is_empty());
+			REQUIRE_EQ(r.file_edits.size(), 2);
+
+			const RefactorFileEdit *target_edits = find_file_edit(r, "res://refactor/rename_cross_file_exported_target.gd");
+			REQUIRE(target_edits);
+			CHECK_EQ(target_edits->edits.size(), 3);
+
+			const RefactorFileEdit *user_edits = find_file_edit(r, "res://refactor/rename_cross_file_exported_user.gd");
+			REQUIRE(user_edits);
+			CHECK_EQ(user_edits->edits.size(), 2);
+
+			const String scene_path = "res://refactor/rename_cross_file_exported_scene.tscn";
+			CHECK(find_file_edit(r, scene_path) == nullptr);
+			const String scene_source = FileAccess::get_file_as_string(scene_path);
+			CHECK(scene_source.contains("shared_exported_count = 7"));
+			CHECK_FALSE(scene_source.contains("renamed_exported_count = 7"));
+
+			String target_out;
+			REQUIRE(GDScriptRefactorEdits::apply(
+					FileAccess::get_file_as_string(target_edits->path), target_edits->edits, target_out));
+			CHECK(target_out.contains("@export var renamed_exported_count := 0"));
+			CHECK(target_out.contains("renamed_exported_count += 1"));
+			CHECK(target_out.contains("return renamed_exported_count"));
+			CHECK_FALSE(target_out.contains("shared_exported_count"));
+
+			String user_out;
+			REQUIRE(GDScriptRefactorEdits::apply(FileAccess::get_file_as_string(user_edits->path), user_edits->edits, user_out));
+			CHECK(user_out.contains("target.renamed_exported_count += 1"));
+			CHECK(user_out.contains("return target.renamed_exported_count"));
+			CHECK_FALSE(user_out.contains("shared_exported_count"));
+		}
 		SUBCASE("cross-file rename reports parse-failed textual references") {
 			const String broken_path = "res://refactor/rename_cross_file_broken_user.gd";
 			TemporaryScriptFile broken_script(
