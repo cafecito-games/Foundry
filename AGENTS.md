@@ -23,3 +23,16 @@ Add or update tests with behavior changes. C++ tests use doctest macros from `te
 ## Commit & Pull Request Guidelines
 
 Keep commits focused and readable. Recent history uses concise imperative subjects, sometimes with scope prefixes, for example `Polish strict argument diagnostics` and `docs(README): Add note about experimental status of this fork`. Prefer first lines under 72 characters. PRs should target `develop`, describe the behavior change, include relevant tests, link issues when applicable, and add screenshots or reproduction projects for editor-facing changes.
+
+## Cursor Cloud specific instructions
+
+This is a Godot Engine fork; the only product is the single `godot` binary (editor, runtime, headless tool, and unit-test runner in one). Build it with SCons on `platform=linuxbsd`.
+
+- SCons is installed via `pip --user`, so its console script lives in `~/.local/bin` (added to PATH in `~/.bashrc`). Invoke as `scons` in a login shell, or robustly as `python3 -m SCons` in non-login shells.
+- Build (mirrors CI flags), from repo root: `python3 -m SCons platform=linuxbsd target=editor dev_build=yes tests=yes module_text_server_fb_enabled=yes -j$(nproc)`. A clean build takes ~13 min on this VM; incremental rebuilds are much faster, so do NOT clean unless necessary.
+  - CI additionally uses `dev_mode=yes` (warnings-as-errors). Prefer `dev_build=yes` for local iteration; use `dev_mode=yes` only when you need to reproduce CI warning failures.
+- Output binary: `bin/godot.linuxbsd.editor.dev.x86_64`.
+- Run the full C++ + GDScript test suite: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors`. Always pass `--headless`.
+- Regenerate GDScript `.out` fixtures after intentional behavior changes: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-tests modules/gdscript/tests/scripts`.
+- The editor GUI does launch on the desktop (display `:1`), but the VM has no GPU: Vulkan init prints `VK_KHR_surface not found` errors and Godot falls back to software rendering. These errors are expected and non-blocking. For scripted/automated runs, prefer `--headless`.
+- Lint/format gate (optional, not engine validation): `pre-commit run --all-files`.
