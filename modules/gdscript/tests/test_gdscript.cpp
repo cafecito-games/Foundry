@@ -113,6 +113,25 @@ static const GDScriptParser::ClassNode *find_parser_class(const GDScriptParser::
 	return nullptr;
 }
 
+static bool has_parser_error(const GDScriptParser &p_parser, const String &p_expected_error) {
+	for (const GDScriptParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (parser_error.message == p_expected_error) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static int count_parser_errors(const GDScriptParser &p_parser, const String &p_expected_error) {
+	int count = 0;
+	for (const GDScriptParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (parser_error.message == p_expected_error) {
+			count++;
+		}
+	}
+	return count;
+}
+
 static String write_temp_script(const String &p_file_name, const String &p_source) {
 	Error err = OK;
 	Ref<FileAccess> file = FileAccess::create_temp(FileAccess::WRITE, p_file_name.get_basename(), "gd", true, &err);
@@ -748,6 +767,263 @@ TEST_CASE("[Modules][GDScript] Global class re-registration can update the scrip
 			"res://characters/new_path.gd", false, false);
 
 	CHECK_EQ(ScriptServer::get_global_class_path("characters.MovedCharacter"), "res://characters/new_path.gd");
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer resolves namespaced global classes") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile base_character("base_character.gd", R"(
+namespace characters
+class_name BaseCharacter
+extends Node
+
+enum Role { HERO = 11 }
+)");
+	TempScriptFile controller("my_character_controller.gd", R"(
+namespace characters.controllers
+class_name MyCharacterController
+extends Node
+
+enum State { IDLE = 17 }
+)");
+	TempScriptFile stat_block("stat_block.gd", R"(
+namespace shared
+class_name StatBlock
+extends Resource
+)");
+	TempScriptFile global_base_character("global_base_character.gd", R"(
+class_name BaseCharacter
+extends Resource
+)");
+	TempScriptFile global_stat_block("global_stat_block.gd", R"(
+class_name StatBlock
+extends Node
+)");
+
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(), base_character.path, false, false);
+	ScriptServer::add_global_class("characters.controllers.MyCharacterController", "Node", GDScriptLanguage::get_singleton()->get_name(), controller.path, false, false);
+	ScriptServer::add_global_class("shared.StatBlock", "Resource", GDScriptLanguage::get_singleton()->get_name(), stat_block.path, false, false);
+	ScriptServer::add_global_class("BaseCharacter", "Resource", GDScriptLanguage::get_singleton()->get_name(), global_base_character.path, false, false);
+	ScriptServer::add_global_class("StatBlock", "Node", GDScriptLanguage::get_singleton()->get_name(), global_stat_block.path, false, false);
+
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace characters
+import characters
+import shared
+class_name Hero
+extends Node
+
+var same_namespace: BaseCharacter
+var imported: StatBlock
+var child_namespace: controllers.MyCharacterController
+var fully_qualified: characters.BaseCharacter
+var same_namespace_nested: BaseCharacter.Role = BaseCharacter.Role.HERO
+var child_namespace_nested: controllers.MyCharacterController.State = controllers.MyCharacterController.State.IDLE
+var fully_qualified_nested: characters.BaseCharacter.Role = characters.BaseCharacter.Role.HERO
+
+const SAME_NAMESPACE_ROLE = BaseCharacter.Role.HERO
+const CHILD_NAMESPACE_STATE = controllers.MyCharacterController.State.IDLE
+const FULLY_QUALIFIED_ROLE = characters.BaseCharacter.Role.HERO
+
+func make_instances() -> void:
+	var same := BaseCharacter.new()
+	var child := controllers.MyCharacterController.new()
+	var qualified := characters.BaseCharacter.new()
+)",
+			"user://hero.gd", false);
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr || root->members.size() < 4) {
+		return;
+	}
+
+	CHECK_EQ(root->members[0].variable->get_datatype().to_property_info("same_namespace").class_name, "characters.BaseCharacter");
+	CHECK_EQ(root->members[1].variable->get_datatype().to_property_info("imported").class_name, "shared.StatBlock");
+	CHECK_EQ(root->members[2].variable->get_datatype().to_property_info("child_namespace").class_name, "characters.controllers.MyCharacterController");
+	CHECK_EQ(root->members[3].variable->get_datatype().to_property_info("fully_qualified").class_name, "characters.BaseCharacter");
+	CHECK_EQ(root->members[4].variable->get_datatype().kind, GDScriptParser::DataType::ENUM);
+	CHECK_EQ(root->members[4].variable->get_datatype().native_type, "characters.BaseCharacter.Role");
+	CHECK(root->members[4].variable->initializer->is_constant);
+	CHECK_EQ(root->members[4].variable->initializer->reduced_value, Variant(11));
+	CHECK_EQ(root->members[5].variable->get_datatype().kind, GDScriptParser::DataType::ENUM);
+	CHECK_EQ(root->members[5].variable->get_datatype().native_type, "characters.controllers.MyCharacterController.State");
+	CHECK(root->members[5].variable->initializer->is_constant);
+	CHECK_EQ(root->members[5].variable->initializer->reduced_value, Variant(17));
+	CHECK_EQ(root->members[6].variable->get_datatype().kind, GDScriptParser::DataType::ENUM);
+	CHECK_EQ(root->members[6].variable->get_datatype().native_type, "characters.BaseCharacter.Role");
+	CHECK(root->members[6].variable->initializer->is_constant);
+	CHECK_EQ(root->members[6].variable->initializer->reduced_value, Variant(11));
+
+	const GDScriptParser::ConstantNode *same_namespace_role = root->get_member(SNAME("SAME_NAMESPACE_ROLE")).constant;
+	CHECK(same_namespace_role != nullptr);
+	if (same_namespace_role != nullptr) {
+		CHECK(same_namespace_role->initializer->is_constant);
+		CHECK_EQ(same_namespace_role->initializer->reduced_value, Variant(11));
+	}
+
+	const GDScriptParser::ConstantNode *child_namespace_state = root->get_member(SNAME("CHILD_NAMESPACE_STATE")).constant;
+	CHECK(child_namespace_state != nullptr);
+	if (child_namespace_state != nullptr) {
+		CHECK(child_namespace_state->initializer->is_constant);
+		CHECK_EQ(child_namespace_state->initializer->reduced_value, Variant(17));
+	}
+
+	const GDScriptParser::ConstantNode *fully_qualified_role = root->get_member(SNAME("FULLY_QUALIFIED_ROLE")).constant;
+	CHECK(fully_qualified_role != nullptr);
+	if (fully_qualified_role != nullptr) {
+		CHECK(fully_qualified_role->initializer->is_constant);
+		CHECK_EQ(fully_qualified_role->initializer->reduced_value, Variant(11));
+	}
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer keeps local and native names ahead of namespace imports") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile imported_base("imported_base_character.gd", R"(
+namespace characters
+class_name BaseCharacter
+extends Node
+)");
+	TempScriptFile imported_node("imported_node.gd", R"(
+namespace characters
+class_name Node
+extends Resource
+)");
+	TempScriptFile imported_controller("imported_controller.gd", R"(
+namespace characters.controllers
+class_name MyCharacterController
+extends Resource
+)");
+
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(), imported_base.path, false, false);
+	ScriptServer::add_global_class("characters.Node", "Resource", GDScriptLanguage::get_singleton()->get_name(), imported_node.path, false, false);
+	ScriptServer::add_global_class("characters.controllers.MyCharacterController", "Resource", GDScriptLanguage::get_singleton()->get_name(), imported_controller.path, false, false);
+
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+import characters
+class_name Precedence
+extends Node
+
+class BaseCharacter:
+	extends RefCounted
+
+var native_node: Node
+var local_class: BaseCharacter
+var controllers := { "MyCharacterController": 1 }
+
+func check_local_precedence() -> int:
+	var controllers := { "MyCharacterController": 1 }
+	var controller_value: int = controllers.MyCharacterController
+	return controller_value
+
+func check_member_precedence() -> int:
+	var controller_value: int = controllers.MyCharacterController
+	return controller_value
+)",
+			"user://precedence.gd", false);
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr || root->members.size() < 3) {
+		return;
+	}
+
+	const GDScriptParser::DataType native_node_type = root->get_member(SNAME("native_node")).variable->get_datatype();
+	CHECK_EQ(native_node_type.kind, GDScriptParser::DataType::NATIVE);
+	CHECK_EQ(native_node_type.native_type, SNAME("Node"));
+
+	const GDScriptParser::DataType local_class_type = root->get_member(SNAME("local_class")).variable->get_datatype();
+	CHECK_EQ(local_class_type.kind, GDScriptParser::DataType::CLASS);
+	CHECK_EQ(local_class_type.class_type, root->get_member(SNAME("BaseCharacter")).m_class);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports namespace import errors") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile characters_controller("characters_controller.gd", R"(
+namespace characters
+class_name Controller
+extends Node
+)");
+	TempScriptFile ui_controller("ui_controller.gd", R"(
+namespace ui
+class_name Controller
+extends Node
+)");
+
+	ScriptServer::add_global_class("characters.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), characters_controller.path, false, false);
+	ScriptServer::add_global_class("ui.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), ui_controller.path, false, false);
+
+	GDScriptParser missing_import_parser;
+	Error err = missing_import_parser.parse(R"(
+import missing.tools
+class_name MissingImport
+extends Node
+)",
+			"user://missing_import.gd", false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&missing_import_parser);
+		err = analyzer.analyze();
+		CHECK_NE(err, OK);
+		CHECK(has_parser_error(missing_import_parser, R"(Could not find imported namespace "missing.tools".)"));
+	}
+
+	GDScriptParser duplicate_missing_import_parser;
+	err = duplicate_missing_import_parser.parse(R"(
+import missing.tools
+import missing.tools
+class_name DuplicateMissingImport
+extends Node
+)",
+			"user://duplicate_missing_import.gd", false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&duplicate_missing_import_parser);
+		err = analyzer.analyze();
+		CHECK_NE(err, OK);
+		CHECK_EQ(count_parser_errors(duplicate_missing_import_parser, R"(Could not find imported namespace "missing.tools".)"), 1);
+	}
+
+	GDScriptParser ambiguous_parser;
+	err = ambiguous_parser.parse(R"(
+import characters
+import ui
+class_name AmbiguousImport
+extends Node
+
+var controller: Controller
+)",
+			"user://ambiguous_import.gd", false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&ambiguous_parser);
+		err = analyzer.analyze();
+		CHECK_NE(err, OK);
+		CHECK(has_parser_error(ambiguous_parser, R"(Could not resolve class "Controller": imported namespaces "characters" and "ui" are ambiguous.)"));
+	}
 }
 
 static void test_tokenizer(const String &p_code, const Vector<String> &p_lines) {

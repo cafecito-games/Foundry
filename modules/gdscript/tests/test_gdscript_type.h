@@ -1718,9 +1718,9 @@ TEST_CASE("[Modules][GDScript] Analyzer reports strict assignment diagnostics") 
 											  "var typed_value: int = get_dynamic()\n";
 	const String dynamic_assignment_source = "func get_dynamic() -> Variant:\n\treturn 1\nfunc test() -> void:\n"
 											 "\tvar typed_value: int = 1\n\ttyped_value = get_dynamic()\n";
-	const String nullable_initializer_source = "func get_node() -> Node?:\n\treturn null\nvar node: Node = get_node()\n";
-	const String nullable_assignment_source = "func get_node() -> Node?:\n\treturn null\nfunc test() -> void:\n"
-											  "\tvar node: Node = Node.new()\n\tnode = get_node()\n";
+	const String nullable_initializer_source = "func get_nullable_node() -> Node?:\n\treturn null\nvar node: Node = get_nullable_node()\n";
+	const String nullable_assignment_source = "func get_nullable_node() -> Node?:\n\treturn null\nfunc test() -> void:\n"
+											  "\tvar node: Node = Node.new()\n\tnode = get_nullable_node()\n";
 
 	check_source_error(dynamic_initializer_source,
 			R"*(Cannot assign Variant value to variable "typed_value" in strict dynamic mode; expected "int".)*",
