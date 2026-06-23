@@ -53,9 +53,6 @@
 #include "modules/gdscript/editor/gdscript_refactoring.h"
 #include "modules/gdscript/editor/gdscript_refactoring_edits.h"
 #include "modules/gdscript/editor/gdscript_refactoring_names.h"
-#ifndef GDSCRIPT_NO_LSP
-#include "modules/gdscript/language_server/gdscript_language_protocol.h"
-#endif
 #include "scene/gui/grid_container.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/rich_text_label.h"
@@ -2862,7 +2859,6 @@ RefactorLocation ScriptTextEditor::_make_refactor_location() const {
 
 void ScriptTextEditor::_populate_refactor_submenu() {
 	refactor_submenu->clear();
-	_sync_refactor_buffer();
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, loc);
@@ -2875,40 +2871,6 @@ void ScriptTextEditor::_populate_refactor_submenu() {
 			refactor_submenu->set_item_tooltip(index, availability.disabled_reason);
 		}
 	}
-	_clear_refactor_buffer();
-}
-
-void ScriptTextEditor::_sync_refactor_buffer() {
-	// The refactoring engine resolves symbols through the in-process language
-	// server, which parses from its own cache rather than the live editor buffer.
-	// Push the on-screen text so resolution and the computed edits line up with
-	// exactly what the user sees; without this, unsaved edits would misalign
-	// positions and could corrupt the file.
-#ifndef GDSCRIPT_NO_LSP
-	if (script.is_null()) {
-		return;
-	}
-	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
-	if (protocol == nullptr) {
-		return;
-	}
-	protocol->sync_script_content(script->get_path(), code_editor->get_text_editor()->get_text());
-#endif // GDSCRIPT_NO_LSP
-}
-
-void ScriptTextEditor::_clear_refactor_buffer() {
-	// Drop the editor-synced parse so later language-server requests fall back to
-	// any connected client's authoritative parse instead of a stale buffer.
-#ifndef GDSCRIPT_NO_LSP
-	if (script.is_null()) {
-		return;
-	}
-	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
-	if (protocol == nullptr) {
-		return;
-	}
-	protocol->clear_editor_script_content(script->get_path());
-#endif // GDSCRIPT_NO_LSP
 }
 
 bool ScriptTextEditor::_collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const {
@@ -2975,8 +2937,6 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 
 	const RefactorKind kind = (RefactorKind)p_kind;
 
-	_sync_refactor_buffer();
-
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 
@@ -2988,15 +2948,11 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 			}
 			if (!availability.enabled) {
 				EditorToaster::get_singleton()->popup_str(availability.disabled_reason, EditorToaster::SEVERITY_WARNING);
-				_clear_refactor_buffer();
 				return;
 			}
 			break;
 		}
 
-		// The synced buffer is intentionally kept alive here: the modal dialog's
-		// confirm handler re-syncs and resolves against it. It is cleared once the
-		// rename completes (or is dismissed).
 		rename_line_edit->set_text(code_editor->get_text_editor()->get_word_under_caret());
 		// set_text() does not emit text_changed, so validate the prefill manually to
 		// keep the error label and OK button in sync with the seeded name.
@@ -3013,11 +2969,9 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 		if (!result.error_message.is_empty()) {
 			EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
 		}
-		_clear_refactor_buffer();
 		return;
 	}
 	_apply_refactor_result(result, ctx.source);
-	_clear_refactor_buffer();
 }
 
 void ScriptTextEditor::_apply_refactor_result(const RefactorResult &p_result, const String &p_source) {
@@ -3152,10 +3106,6 @@ void ScriptTextEditor::_clear_pending_refactor_preview() {
 }
 
 void ScriptTextEditor::_on_rename_confirmed() {
-	// The dialog is modal, so the buffer synced when it opened still matches the
-	// editor; re-sync here so the apply-time source is unquestionably current.
-	_sync_refactor_buffer();
-
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 	RefactorParams params;
@@ -3166,12 +3116,10 @@ void ScriptTextEditor::_on_rename_confirmed() {
 		if (!result.error_message.is_empty()) {
 			EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
 		}
-		_clear_refactor_buffer();
 		return;
 	}
 
 	_apply_refactor_result(result, ctx.source);
-	_clear_refactor_buffer();
 }
 
 void ScriptTextEditor::_on_rename_text_changed(const String &p_text) {
@@ -3297,7 +3245,6 @@ void ScriptTextEditor::_enable_code_editor() {
 	rename_error_label = memnew(Label);
 	rename_vbox->add_child(rename_error_label);
 	rename_dialog->connect(SceneStringName(confirmed), callable_mp(this, &ScriptTextEditor::_on_rename_confirmed));
-	rename_dialog->connect(SNAME("canceled"), callable_mp(this, &ScriptTextEditor::_clear_refactor_buffer));
 	add_child(rename_dialog);
 
 	add_child(color_panel);
@@ -3522,10 +3469,6 @@ ScriptTextEditor::ScriptTextEditor() {
 }
 
 ScriptTextEditor::~ScriptTextEditor() {
-	// Drop any rename buffer synced while the dialog was open; closing the tab
-	// fires neither the dialog's confirmed nor canceled handler.
-	_clear_refactor_buffer();
-
 	highlighters.clear();
 
 	if (!editor_enabled) {

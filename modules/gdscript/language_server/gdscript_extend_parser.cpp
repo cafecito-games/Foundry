@@ -36,6 +36,8 @@
 #include "gdscript_language_protocol.h"
 #include "gdscript_workspace.h"
 
+#include "core/io/file_access.h"
+
 LSP::Position GodotPosition::to_lsp(const Vector<String> &p_lines) const {
 	LSP::Position res;
 
@@ -1010,6 +1012,26 @@ Dictionary ExtendGDScriptParser::generate_api() const {
 		api = dump_class_api(gdclass);
 	}
 	return api;
+}
+
+ExtendGDScriptParser *ExtendGDScriptParser::parse_source(const String &p_code, const String &p_path) {
+	ExtendGDScriptParser *parser = memnew(ExtendGDScriptParser);
+	parser->parse(p_code, p_path);
+	return parser;
+}
+
+ExtendGDScriptParser *ExtendGDScriptParser::parse_file(const String &p_path) {
+	if (!p_path.has_extension("gd")) {
+		return nullptr;
+	}
+
+	Error err = OK;
+	const String source = FileAccess::get_file_as_string(p_path, &err);
+	if (err != OK) {
+		return nullptr;
+	}
+
+	return parse_source(source, p_path);
 }
 
 void ExtendGDScriptParser::parse(const String &p_code, const String &p_path) {

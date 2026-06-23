@@ -37,6 +37,12 @@
 #include "core/variant/variant.h"
 #include "editor/file_system/editor_file_system.h"
 
+class GDScriptParseResultProvider {
+public:
+	virtual const ExtendGDScriptParser *get_parse_result(const String &p_path) const = 0;
+	virtual ~GDScriptParseResultProvider() = default;
+};
+
 class GDScriptWorkspace : public RefCounted {
 	GDCLASS(GDScriptWorkspace, RefCounted);
 
@@ -65,7 +71,8 @@ protected:
 	HashSet<String> absolute_res_paths;
 
 	const LSP::DocumentSymbol *get_native_symbol(const String &p_class, const String &p_member = "") const;
-	const LSP::DocumentSymbol *get_script_symbol(const String &p_path) const;
+	const ExtendGDScriptParser *get_parse_result(const String &p_path, const GDScriptParseResultProvider *p_parse_result_provider) const;
+	const LSP::DocumentSymbol *get_script_symbol(const String &p_path, const GDScriptParseResultProvider *p_parse_result_provider = nullptr) const;
 	const LSP::DocumentSymbol *get_parameter_symbol(const LSP::DocumentSymbol *p_parent, const String &symbol_identifier);
 	const LSP::DocumentSymbol *get_local_symbol_at(const ExtendGDScriptParser *p_parser, const String &p_symbol_identifier, const LSP::Position p_position);
 
@@ -90,17 +97,28 @@ public:
 	void publish_diagnostics(const String &p_path);
 	void completion(const LSP::CompletionParams &p_params, List<ScriptLanguage::CodeCompletionOption> *r_options);
 
-	const LSP::DocumentSymbol *resolve_symbol(const LSP::TextDocumentPositionParams &p_doc_pos, const String &p_symbol_name = "", bool p_func_required = false);
+	const LSP::DocumentSymbol *resolve_symbol(
+			const LSP::TextDocumentPositionParams &p_doc_pos,
+			const String &p_symbol_name = "",
+			bool p_func_required = false,
+			const GDScriptParseResultProvider *p_parse_result_provider = nullptr);
 
 	const LSP::DocumentSymbol *resolve_native_symbol(const LSP::NativeSymbolInspectParams &p_params);
 	void resolve_document_links(const String &p_uri, List<LSP::DocumentLink> &r_list);
 	Dictionary generate_script_api(const String &p_path);
 	Error resolve_signature(const LSP::TextDocumentPositionParams &p_doc_pos, LSP::SignatureHelp &r_signature);
 	Dictionary rename(const LSP::TextDocumentPositionParams &p_doc_pos, const String &new_name);
-	bool can_rename(const LSP::TextDocumentPositionParams &p_doc_pos, LSP::DocumentSymbol &r_symbol, LSP::Range &r_range);
+	bool can_rename(
+			const LSP::TextDocumentPositionParams &p_doc_pos,
+			LSP::DocumentSymbol &r_symbol,
+			LSP::Range &r_range,
+			const GDScriptParseResultProvider *p_parse_result_provider = nullptr);
 	void list_project_script_files(List<String> &r_files) { list_script_files("res://", r_files); }
-	Vector<LSP::Location> find_usages_in_file(const LSP::DocumentSymbol &p_symbol, const String &p_file_path);
-	Vector<LSP::Location> find_all_usages(const LSP::DocumentSymbol &p_symbol);
+	Vector<LSP::Location> find_usages_in_file(
+			const LSP::DocumentSymbol &p_symbol,
+			const String &p_file_path,
+			const GDScriptParseResultProvider *p_parse_result_provider = nullptr);
+	Vector<LSP::Location> find_all_usages(const LSP::DocumentSymbol &p_symbol, const GDScriptParseResultProvider *p_parse_result_provider = nullptr);
 
 	GDScriptWorkspace();
 	~GDScriptWorkspace();

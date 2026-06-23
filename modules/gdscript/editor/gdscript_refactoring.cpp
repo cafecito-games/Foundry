@@ -47,6 +47,10 @@
 #include "../language_server/godot_lsp.h"
 #endif // GDSCRIPT_NO_LSP
 
+#ifdef GDSCRIPT_NO_LSP
+class GDScriptParseResultProvider;
+#endif // GDSCRIPT_NO_LSP
+
 namespace {
 
 struct TypeAnnotationCandidate {
@@ -100,6 +104,73 @@ struct InlineVariableCandidate {
 	RefactorTextEdit declaration_edit;
 	Vector<RefactorTextEdit> replacement_edits;
 };
+
+#ifndef GDSCRIPT_NO_LSP
+class RefactorParseResultProvider : public GDScriptParseResultProvider {
+	mutable HashMap<String, ExtendGDScriptParser *> parse_results;
+
+	void parse_source(const String &p_path, const String &p_source) const {
+		if (!p_path.has_extension("gd")) {
+			return;
+		}
+
+		parse_results[p_path] = ExtendGDScriptParser::parse_source(p_source, p_path);
+	}
+
+public:
+	explicit RefactorParseResultProvider(const RefactorContext &p_context) {
+		parse_source(p_context.path, p_context.source);
+	}
+
+	~RefactorParseResultProvider() {
+		for (KeyValue<String, ExtendGDScriptParser *> &E : parse_results) {
+			memdelete(E.value);
+		}
+	}
+
+	const ExtendGDScriptParser *get_parse_result(const String &p_path) const override {
+		ExtendGDScriptParser **existing = parse_results.getptr(p_path);
+		if (existing != nullptr) {
+			return *existing;
+		}
+
+		// Cross-file refactors intentionally parse non-active scripts from disk
+		// instead of consulting connected clients' unsaved buffers or the shared
+		// protocol cache.
+		ExtendGDScriptParser *parser = ExtendGDScriptParser::parse_file(p_path);
+		if (parser != nullptr) {
+			parse_results[p_path] = parser;
+		}
+		return parser;
+	}
+};
+
+bool can_use_refactor_parse_results() {
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	return protocol != nullptr && protocol->get_workspace().is_valid();
+}
+
+class RefactorParseResultProviderScope {
+	RefactorParseResultProvider *parse_results = nullptr;
+
+public:
+	explicit RefactorParseResultProviderScope(const RefactorContext &p_context) {
+		if (can_use_refactor_parse_results()) {
+			parse_results = memnew(RefactorParseResultProvider(p_context));
+		}
+	}
+
+	~RefactorParseResultProviderScope() {
+		if (parse_results != nullptr) {
+			memdelete(parse_results);
+		}
+	}
+
+	const GDScriptParseResultProvider *get() const {
+		return parse_results;
+	}
+};
+#endif // GDSCRIPT_NO_LSP
 
 struct TypeAnnotationCandidateCache {
 	bool valid = false;
@@ -174,6 +245,13 @@ RefactorFileEdit *find_or_add_file_edit(Vector<RefactorFileEdit> &r_file_edits, 
 	r_file_edits.push_back(file_edit);
 	// The returned pointer is for immediate use only; a later push_back can move the Vector storage.
 	return &r_file_edits.write[r_file_edits.size() - 1];
+}
+
+void append_warning(RefactorResult &r_result, const String &p_warning) {
+	if (!r_result.warning.is_empty()) {
+		r_result.warning += " ";
+	}
+	r_result.warning += p_warning;
 }
 
 bool is_supported_dynamic_string_call(const String &p_name) {
@@ -2770,17 +2848,22 @@ ExtractMethodCandidate find_extract_method_candidate_in_tree(
 	return candidate;
 }
 
-ExtractVariableCandidate find_extract_variable_candidate_uncached(const RefactorContext &p_context, const RefactorLocation &p_location, const Vector<String> &p_lines) {
+ExtractVariableCandidate find_extract_variable_candidate_uncached(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const GDScriptParseResultProvider *p_parse_results) {
 #ifndef GDSCRIPT_NO_LSP
-	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
-	const ExtendGDScriptParser *lsp_parser = protocol != nullptr ? protocol->get_parse_result(p_context.path) : nullptr;
-	if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
-		if (lsp_parser->parse_result != OK) {
-			ExtractVariableCandidate candidate;
-			candidate.disabled_reason = "Cannot analyze this script.";
-			return candidate;
+	if (p_parse_results != nullptr) {
+		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+			if (lsp_parser->parse_result != OK) {
+				ExtractVariableCandidate candidate;
+				candidate.disabled_reason = "Cannot analyze this script.";
+				return candidate;
+			}
+			return find_extract_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 		}
-		return find_extract_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 	}
 #endif // GDSCRIPT_NO_LSP
 
@@ -2802,22 +2885,24 @@ ExtractVariableCandidate find_extract_variable_candidate_uncached(const Refactor
 ExtractMethodCandidate find_extract_method_candidate_uncached(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
-		const Vector<String> &p_lines) {
+		const Vector<String> &p_lines,
+		const GDScriptParseResultProvider *p_parse_results) {
 	const bool source_has_final_newline = p_context.source.ends_with("\n");
 #ifndef GDSCRIPT_NO_LSP
-	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
-	const ExtendGDScriptParser *lsp_parser = protocol != nullptr ? protocol->get_parse_result(p_context.path) : nullptr;
-	if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
-		if (lsp_parser->parse_result != OK) {
-			ExtractMethodCandidate candidate;
-			candidate.disabled_reason = "Cannot analyze this script.";
-			return candidate;
+	if (p_parse_results != nullptr) {
+		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+			if (lsp_parser->parse_result != OK) {
+				ExtractMethodCandidate candidate;
+				candidate.disabled_reason = "Cannot analyze this script.";
+				return candidate;
+			}
+			return find_extract_method_candidate_in_tree(
+					p_location,
+					p_lines,
+					source_has_final_newline,
+					lsp_parser->get_tree());
 		}
-		return find_extract_method_candidate_in_tree(
-				p_location,
-				p_lines,
-				source_has_final_newline,
-				lsp_parser->get_tree());
 	}
 #endif // GDSCRIPT_NO_LSP
 
@@ -2840,17 +2925,22 @@ ExtractMethodCandidate find_extract_method_candidate_uncached(
 			parser.get_tree());
 }
 
-InlineVariableCandidate find_inline_variable_candidate_uncached(const RefactorContext &p_context, const RefactorLocation &p_location, const Vector<String> &p_lines) {
+InlineVariableCandidate find_inline_variable_candidate_uncached(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const GDScriptParseResultProvider *p_parse_results) {
 #ifndef GDSCRIPT_NO_LSP
-	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
-	const ExtendGDScriptParser *lsp_parser = protocol != nullptr ? protocol->get_parse_result(p_context.path) : nullptr;
-	if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
-		if (lsp_parser->parse_result != OK) {
-			InlineVariableCandidate candidate;
-			candidate.disabled_reason = "Cannot analyze this script.";
-			return candidate;
+	if (p_parse_results != nullptr) {
+		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+			if (lsp_parser->parse_result != OK) {
+				InlineVariableCandidate candidate;
+				candidate.disabled_reason = "Cannot analyze this script.";
+				return candidate;
+			}
+			return find_inline_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 		}
-		return find_inline_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 	}
 #endif // GDSCRIPT_NO_LSP
 
@@ -2869,7 +2959,10 @@ InlineVariableCandidate find_inline_variable_candidate_uncached(const RefactorCo
 	return find_inline_variable_candidate_in_tree(p_location, p_lines, parser.get_tree());
 }
 
-ExtractVariableCandidate find_extract_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+ExtractVariableCandidate find_extract_variable_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	ExtractVariableCandidate candidate;
 	if (get_cached_extract_variable_candidate(p_context, p_location, candidate)) {
 		return candidate;
@@ -2892,14 +2985,15 @@ ExtractVariableCandidate find_extract_variable_candidate(const RefactorContext &
 	}
 
 	const Vector<String> lines = p_context.source.split("\n");
-	candidate = find_extract_variable_candidate_uncached(p_context, p_location, lines);
+	candidate = find_extract_variable_candidate_uncached(p_context, p_location, lines, p_parse_results);
 	cache_extract_variable_candidate(p_context, p_location, candidate);
 	return candidate;
 }
 
 ExtractMethodCandidate find_extract_method_candidate(
 		const RefactorContext &p_context,
-		const RefactorLocation &p_location) {
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	ExtractMethodCandidate candidate;
 	if (get_cached_extract_method_candidate(p_context, p_location, candidate)) {
 		return candidate;
@@ -2917,14 +3011,17 @@ ExtractMethodCandidate find_extract_method_candidate(
 	}
 
 	const Vector<String> lines = p_context.source.split("\n");
-	candidate = find_extract_method_candidate_uncached(p_context, p_location, lines);
+	candidate = find_extract_method_candidate_uncached(p_context, p_location, lines, p_parse_results);
 	cache_extract_method_candidate(p_context, p_location, candidate);
 	return candidate;
 }
 
-RefactorResult prepare_extract_variable(const RefactorContext &p_context, const RefactorLocation &p_location) {
+RefactorResult prepare_extract_variable(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	RefactorResult result;
-	const ExtractVariableCandidate candidate = find_extract_variable_candidate(p_context, p_location);
+	const ExtractVariableCandidate candidate = find_extract_variable_candidate(p_context, p_location, p_parse_results);
 	if (!candidate.enabled) {
 		result.ok = false;
 		result.error_message = candidate.disabled_reason;
@@ -2940,9 +3037,12 @@ RefactorResult prepare_extract_variable(const RefactorContext &p_context, const 
 	return result;
 }
 
-RefactorResult prepare_extract_method(const RefactorContext &p_context, const RefactorLocation &p_location) {
+RefactorResult prepare_extract_method(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	RefactorResult result;
-	const ExtractMethodCandidate candidate = find_extract_method_candidate(p_context, p_location);
+	const ExtractMethodCandidate candidate = find_extract_method_candidate(p_context, p_location, p_parse_results);
 	if (!candidate.enabled) {
 		result.ok = false;
 		result.error_message = candidate.disabled_reason;
@@ -2958,7 +3058,10 @@ RefactorResult prepare_extract_method(const RefactorContext &p_context, const Re
 	return result;
 }
 
-InlineVariableCandidate find_inline_variable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+InlineVariableCandidate find_inline_variable_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	InlineVariableCandidate candidate;
 	if (get_cached_inline_variable_candidate(p_context, p_location, candidate)) {
 		return candidate;
@@ -2971,14 +3074,17 @@ InlineVariableCandidate find_inline_variable_candidate(const RefactorContext &p_
 	}
 
 	const Vector<String> lines = p_context.source.split("\n");
-	candidate = find_inline_variable_candidate_uncached(p_context, p_location, lines);
+	candidate = find_inline_variable_candidate_uncached(p_context, p_location, lines, p_parse_results);
 	cache_inline_variable_candidate(p_context, p_location, candidate);
 	return candidate;
 }
 
-RefactorResult prepare_inline_variable(const RefactorContext &p_context, const RefactorLocation &p_location) {
+RefactorResult prepare_inline_variable(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	RefactorResult result;
-	const InlineVariableCandidate candidate = find_inline_variable_candidate(p_context, p_location);
+	const InlineVariableCandidate candidate = find_inline_variable_candidate(p_context, p_location, p_parse_results);
 	if (!candidate.enabled) {
 		result.ok = false;
 		result.error_message = candidate.disabled_reason;
@@ -2993,17 +3099,22 @@ RefactorResult prepare_inline_variable(const RefactorContext &p_context, const R
 	return result;
 }
 
-TypeAnnotationCandidate find_type_annotation_candidate_uncached(const RefactorContext &p_context, const RefactorLocation &p_location, const Vector<String> &p_lines) {
+TypeAnnotationCandidate find_type_annotation_candidate_uncached(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const GDScriptParseResultProvider *p_parse_results) {
 #ifndef GDSCRIPT_NO_LSP
-	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
-	const ExtendGDScriptParser *lsp_parser = protocol != nullptr ? protocol->get_parse_result(p_context.path) : nullptr;
-	if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
-		if (lsp_parser->parse_result != OK) {
-			TypeAnnotationCandidate candidate;
-			candidate.disabled_reason = "Cannot analyze this script.";
-			return candidate;
+	if (p_parse_results != nullptr) {
+		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+			if (lsp_parser->parse_result != OK) {
+				TypeAnnotationCandidate candidate;
+				candidate.disabled_reason = "Cannot analyze this script.";
+				return candidate;
+			}
+			return find_type_annotation_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 		}
-		return find_type_annotation_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 	}
 #endif // GDSCRIPT_NO_LSP
 
@@ -3022,7 +3133,10 @@ TypeAnnotationCandidate find_type_annotation_candidate_uncached(const RefactorCo
 	return find_type_annotation_candidate_in_tree(p_location, p_lines, parser.get_tree());
 }
 
-TypeAnnotationCandidate find_type_annotation_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+TypeAnnotationCandidate find_type_annotation_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	TypeAnnotationCandidate candidate;
 	if (get_cached_type_annotation_candidate(p_context, p_location, candidate)) {
 		return candidate;
@@ -3035,14 +3149,17 @@ TypeAnnotationCandidate find_type_annotation_candidate(const RefactorContext &p_
 	}
 
 	const Vector<String> lines = p_context.source.split("\n");
-	candidate = find_type_annotation_candidate_uncached(p_context, p_location, lines);
+	candidate = find_type_annotation_candidate_uncached(p_context, p_location, lines, p_parse_results);
 	cache_type_annotation_candidate(p_context, p_location, candidate);
 	return candidate;
 }
 
-RefactorResult prepare_type_annotation(const RefactorContext &p_context, const RefactorLocation &p_location) {
+RefactorResult prepare_type_annotation(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
 	RefactorResult result;
-	const TypeAnnotationCandidate candidate = find_type_annotation_candidate(p_context, p_location);
+	const TypeAnnotationCandidate candidate = find_type_annotation_candidate(p_context, p_location, p_parse_results);
 	if (!candidate.enabled) {
 		result.ok = false;
 		result.error_message = candidate.disabled_reason;
@@ -3067,8 +3184,9 @@ static LSP::TextDocumentPositionParams make_document_position(const Ref<GDScript
 
 static bool is_string_literal_usage(
 		const String &p_path,
-		const LSP::Location &p_usage) {
-	const ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(p_path);
+		const LSP::Location &p_usage,
+		const GDScriptParseResultProvider &p_parse_results) {
+	const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(p_path);
 	if (!parser) {
 		return false;
 	}
@@ -3084,6 +3202,7 @@ static bool is_string_literal_usage(
 static void collect_dynamic_string_references(
 		const Ref<GDScriptWorkspace> &p_workspace,
 		const LSP::DocumentSymbol &p_symbol,
+		const GDScriptParseResultProvider &p_parse_results,
 		RefactorResult &r_result) {
 	List<String> paths;
 	if (p_symbol.local) {
@@ -3094,7 +3213,7 @@ static void collect_dynamic_string_references(
 	p_workspace->list_project_script_files(paths);
 
 	for (const String &path : paths) {
-		const ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+		const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(path);
 		if (!parser) {
 			continue;
 		}
@@ -3116,9 +3235,49 @@ static void collect_dynamic_string_references(
 		}
 	}
 }
+
+static void collect_parse_error_textual_references(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const LSP::DocumentSymbol &p_symbol,
+		const GDScriptParseResultProvider &p_parse_results,
+		RefactorResult &r_result) {
+	if (p_symbol.local) {
+		return;
+	}
+
+	List<String> paths;
+	p_workspace->list_project_script_files(paths);
+
+	for (const String &path : paths) {
+		const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(path);
+		if (parser == nullptr || parser->parse_result == OK) {
+			continue;
+		}
+
+		const PackedStringArray &lines = parser->get_lines();
+		for (int i = 0; i < lines.size(); i++) {
+			const int column = lines[i].find(p_symbol.name);
+			if (column < 0) {
+				continue;
+			}
+
+			RefactorUnresolvedReference unresolved;
+			unresolved.path = path;
+			unresolved.line = i;
+			unresolved.column = column;
+			unresolved.message = "Script could not be parsed; verify references to this symbol after rename.";
+			r_result.unresolved_references.push_back(unresolved);
+			break;
+		}
+	}
+}
 #endif // GDSCRIPT_NO_LSP
 
-static RefactorResult prepare_rename(const RefactorContext &p_context, const RefactorLocation &p_location, const RefactorParams &p_params) {
+static RefactorResult prepare_rename(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const RefactorParams &p_params,
+		const GDScriptParseResultProvider *p_parse_results) {
 	RefactorResult result;
 
 #ifdef GDSCRIPT_NO_LSP
@@ -3134,11 +3293,17 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 		return result;
 	}
 
+	if (p_parse_results == nullptr) {
+		result.ok = false;
+		result.error_message = "Rename requires the language server, which is not available in this build.";
+		return result;
+	}
+
 	LSP::TextDocumentPositionParams doc_position = make_document_position(workspace, p_context, p_location);
 
 	LSP::DocumentSymbol symbol;
 	LSP::Range identifier_range;
-	if (!workspace->can_rename(doc_position, symbol, identifier_range)) {
+	if (!workspace->can_rename(doc_position, symbol, identifier_range, p_parse_results)) {
 		result.ok = false;
 		result.error_message = "Cannot rename this symbol.";
 		return result;
@@ -3152,15 +3317,15 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 	}
 
 	// `find_all_usages` matches usages by the address of the resolved symbol, so it must
-	// receive the workspace-owned symbol rather than the copy returned by `can_rename`.
-	const LSP::DocumentSymbol *resolved_symbol = workspace->resolve_symbol(doc_position);
+	// receive the provider-owned symbol rather than the copy returned by `can_rename`.
+	const LSP::DocumentSymbol *resolved_symbol = workspace->resolve_symbol(doc_position, "", false, p_parse_results);
 	if (!resolved_symbol) {
 		result.ok = false;
 		result.error_message = "Cannot rename this symbol.";
 		return result;
 	}
 
-	const ExtendGDScriptParser *parser = protocol->get_parse_result(p_context.path);
+	const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(p_context.path);
 	if (parser) {
 		String collision_reason;
 		if (GDScriptRefactorNames::has_scope_collision(parser->get_symbols(), resolved_symbol, p_params.new_name, collision_reason)) {
@@ -3176,7 +3341,7 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 	// vars (see gdscript_extend_parser.cpp), so the prefix is a reliable signal here.
 	const bool is_exported = resolved_symbol->detail.contains("@export ");
 
-	const Vector<LSP::Location> usages = workspace->find_all_usages(*resolved_symbol);
+	const Vector<LSP::Location> usages = workspace->find_all_usages(*resolved_symbol, p_parse_results);
 	for (const LSP::Location &usage : usages) {
 		const String path = workspace->get_file_path(usage.uri);
 		if (path.is_empty()) {
@@ -3184,7 +3349,7 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 			result.error_message = "Cannot resolve a rename target path.";
 			return result;
 		}
-		if (is_string_literal_usage(path, usage)) {
+		if (is_string_literal_usage(path, usage, *p_parse_results)) {
 			continue;
 		}
 
@@ -3212,21 +3377,24 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 		return result;
 	}
 
-	collect_dynamic_string_references(workspace, *resolved_symbol, result);
+	const int parse_error_reference_count = result.unresolved_references.size();
+	collect_parse_error_textual_references(workspace, *resolved_symbol, *p_parse_results, result);
+	const bool has_parse_error_references = result.unresolved_references.size() > parse_error_reference_count;
 
-	if (!result.unresolved_references.is_empty()) {
-		if (!result.warning.is_empty()) {
-			result.warning += " ";
-		}
-		result.warning += "Some string-based dynamic references to this symbol could not be resolved statically "
-						  "and were not renamed.";
+	const int dynamic_reference_count = result.unresolved_references.size();
+	collect_dynamic_string_references(workspace, *resolved_symbol, *p_parse_results, result);
+	const bool has_dynamic_references = result.unresolved_references.size() > dynamic_reference_count;
+
+	if (has_parse_error_references) {
+		append_warning(result, "Some scripts could not be parsed; references in those files may need manual verification.");
+	}
+	if (has_dynamic_references) {
+		append_warning(result, "Some string-based dynamic references to this symbol could not be resolved statically "
+							   "and were not renamed.");
 	}
 	if (is_exported) {
-		if (!result.warning.is_empty()) {
-			result.warning += " ";
-		}
-		result.warning += "This is an exported variable; references outside scripts (such as in the inspector "
-						  "or scene files) will not be updated.";
+		append_warning(result, "This is an exported variable; references outside scripts (such as in the inspector "
+							   "or scene files) will not be updated.");
 	}
 
 	result.ok = true;
@@ -3239,6 +3407,13 @@ static RefactorResult prepare_rename(const RefactorContext &p_context, const Ref
 
 Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	Vector<RefactorAvailability> result;
+
+#ifndef GDSCRIPT_NO_LSP
+	RefactorParseResultProviderScope parse_results(p_context);
+	const GDScriptParseResultProvider *parse_result_provider = parse_results.get();
+#else
+	const GDScriptParseResultProvider *parse_result_provider = nullptr;
+#endif // GDSCRIPT_NO_LSP
 
 	RefactorAvailability rename;
 	rename.kind = RefactorKind::RENAME;
@@ -3253,11 +3428,14 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	if (workspace.is_null()) {
 		rename.enabled = false;
 		rename.disabled_reason = "Rename requires the language server.";
+	} else if (parse_result_provider == nullptr) {
+		rename.enabled = false;
+		rename.disabled_reason = "Rename requires the language server.";
 	} else {
 		LSP::TextDocumentPositionParams doc_position = make_document_position(workspace, p_context, p_location);
 		LSP::DocumentSymbol symbol;
 		LSP::Range identifier_range;
-		rename.enabled = workspace->can_rename(doc_position, symbol, identifier_range);
+		rename.enabled = workspace->can_rename(doc_position, symbol, identifier_range, parse_result_provider);
 		if (!rename.enabled) {
 			rename.disabled_reason = "Place the caret on a renameable symbol.";
 		}
@@ -3269,7 +3447,7 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	RefactorAvailability extract_variable;
 	extract_variable.kind = RefactorKind::EXTRACT_VARIABLE;
 	extract_variable.title = "Extract Variable";
-	const ExtractVariableCandidate extract_candidate = find_extract_variable_candidate(p_context, p_location);
+	const ExtractVariableCandidate extract_candidate = find_extract_variable_candidate(p_context, p_location, parse_result_provider);
 	extract_variable.enabled = extract_candidate.enabled;
 	if (!extract_variable.enabled) {
 		extract_variable.disabled_reason = extract_candidate.disabled_reason;
@@ -3279,7 +3457,7 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	RefactorAvailability extract_method;
 	extract_method.kind = RefactorKind::EXTRACT_METHOD;
 	extract_method.title = "Extract Method";
-	const ExtractMethodCandidate extract_method_candidate = find_extract_method_candidate(p_context, p_location);
+	const ExtractMethodCandidate extract_method_candidate = find_extract_method_candidate(p_context, p_location, parse_result_provider);
 	extract_method.enabled = extract_method_candidate.enabled;
 	if (!extract_method.enabled) {
 		extract_method.disabled_reason = extract_method_candidate.disabled_reason;
@@ -3289,7 +3467,7 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	RefactorAvailability add_type;
 	add_type.kind = RefactorKind::ADD_TYPE_ANNOTATION;
 	add_type.title = "Add Type Annotation";
-	const TypeAnnotationCandidate type_candidate = find_type_annotation_candidate(p_context, p_location);
+	const TypeAnnotationCandidate type_candidate = find_type_annotation_candidate(p_context, p_location, parse_result_provider);
 	add_type.enabled = type_candidate.enabled;
 	if (!add_type.enabled) {
 		add_type.disabled_reason = type_candidate.disabled_reason;
@@ -3299,7 +3477,7 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	RefactorAvailability inline_variable;
 	inline_variable.kind = RefactorKind::INLINE_VARIABLE;
 	inline_variable.title = "Inline Variable";
-	const InlineVariableCandidate inline_candidate = find_inline_variable_candidate(p_context, p_location);
+	const InlineVariableCandidate inline_candidate = find_inline_variable_candidate(p_context, p_location, parse_result_provider);
 	inline_variable.enabled = inline_candidate.enabled;
 	if (!inline_variable.enabled) {
 		inline_variable.disabled_reason = inline_candidate.disabled_reason;
@@ -3309,17 +3487,24 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 }
 
 RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, const RefactorLocation &p_location, RefactorKind p_kind, const RefactorParams &p_params) {
+#ifndef GDSCRIPT_NO_LSP
+	RefactorParseResultProviderScope parse_results(p_context);
+	const GDScriptParseResultProvider *parse_result_provider = parse_results.get();
+#else
+	const GDScriptParseResultProvider *parse_result_provider = nullptr;
+#endif // GDSCRIPT_NO_LSP
+
 	switch (p_kind) {
 		case RefactorKind::RENAME:
-			return prepare_rename(p_context, p_location, p_params);
+			return prepare_rename(p_context, p_location, p_params, parse_result_provider);
 		case RefactorKind::EXTRACT_VARIABLE:
-			return prepare_extract_variable(p_context, p_location);
+			return prepare_extract_variable(p_context, p_location, parse_result_provider);
 		case RefactorKind::EXTRACT_METHOD:
-			return prepare_extract_method(p_context, p_location);
+			return prepare_extract_method(p_context, p_location, parse_result_provider);
 		case RefactorKind::ADD_TYPE_ANNOTATION:
-			return prepare_type_annotation(p_context, p_location);
+			return prepare_type_annotation(p_context, p_location, parse_result_provider);
 		case RefactorKind::INLINE_VARIABLE:
-			return prepare_inline_variable(p_context, p_location);
+			return prepare_inline_variable(p_context, p_location, parse_result_provider);
 		default:
 			break;
 	}
