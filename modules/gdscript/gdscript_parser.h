@@ -575,6 +575,7 @@ public:
 	struct ClassNode : public Node {
 		struct TraitUse {
 			Vector<IdentifierNode *> name;
+			ClassNode *resolved_trait = nullptr;
 
 			String to_string() const {
 				String result;
@@ -791,6 +792,7 @@ public:
 		String extends_path;
 		Vector<IdentifierNode *> extends; // List for indexing: extends A.B.C
 		Vector<TraitUse> used_traits;
+		Vector<ClassNode *> resolved_traits;
 		DataType base_type;
 		String fqcn; // Fully-qualified class name. Identifies uniquely any class in the project.
 		String namespace_name; // Root class only. Empty means global namespace.
@@ -808,6 +810,9 @@ public:
 
 		bool resolved_interface = false;
 		bool resolved_body = false;
+		bool resolving_trait_uses = false;
+		bool resolved_trait_uses = false;
+		bool failed_trait_uses = false;
 
 		StringName get_global_name() const {
 			if (outer != nullptr || identifier == nullptr) {

@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Class "trait_concrete_method_scope.gd" must implement trait method "RequiresFoo.foo()".

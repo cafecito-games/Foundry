@@ -2752,10 +2752,6 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 	 * Before changing this function, please ask the current maintainer of EditorFileSystem.
 	 */
 
-	if (c->is_trait) {
-		return String();
-	}
-
 	if (r_base_type) {
 		const GDScriptParser::ClassNode *subclass = c;
 		String path = p_path;
