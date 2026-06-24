@@ -191,4 +191,23 @@ TEST_CASE("[Modules][GDScript] A generic constructor call parses like a typed-co
 	REQUIRE(application->index != nullptr);
 }
 
+TEST_CASE("[Modules][GDScript] A generic method call accepts a nested type argument") {
+	GDScriptParser parser;
+	const Error error = parser.parse("func caller():\n\tidentity[Array[int]]([])\n", "user://test.gd", false);
+	REQUIRE(error == OK);
+	REQUIRE(parser.get_errors().is_empty());
+
+	const GDScriptParser::CallNode *call = first_statement_call(find_function(parser.get_tree(), "caller"));
+	REQUIRE(call != nullptr);
+	CHECK(call->function_name == StringName("identity"));
+	REQUIRE(call->callee != nullptr);
+	REQUIRE(call->callee->type == GDScriptParser::Node::SUBSCRIPT);
+
+	const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+	CHECK_FALSE(callee->is_attribute);
+	REQUIRE(callee->index != nullptr);
+	// The type argument `Array[int]` parses structurally as a nested subscript expression.
+	CHECK(callee->index->type == GDScriptParser::Node::SUBSCRIPT);
+}
+
 } // namespace GDScriptTests
