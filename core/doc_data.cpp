@@ -57,15 +57,18 @@ String DocData::get_default_value_string(const Variant &p_value, const PropertyI
 					enum_constants[constant] = ClassDB::get_integer_constant(class_name, constant);
 				}
 			}
-			struct ConstantSort {
-				constexpr bool operator()(const KeyValue<StringName, int64_t> &p_lhs, const KeyValue<StringName, int64_t> &p_rhs) const {
-					return p_lhs.value >= p_rhs.value;
-				}
-			};
-			enum_constants.sort_custom<ConstantSort>();
 			if (enum_name.is_empty() && CoreConstants::is_global_enum(class_name)) {
 				CoreConstants::get_enum_values(class_name, &enum_constants);
 			}
+			// Sort by descending value so bitfield decomposition greedily matches
+			// combined constants (e.g. PROPERTY_USAGE_DEFAULT) before their sub-bits.
+			// Must run after every population branch, including global enums above.
+			struct ConstantSort {
+				constexpr bool operator()(const KeyValue<StringName, int64_t> &p_lhs, const KeyValue<StringName, int64_t> &p_rhs) const {
+					return p_lhs.value > p_rhs.value;
+				}
+			};
+			enum_constants.sort_custom<ConstantSort>();
 			if (!enum_constants.is_empty()) {
 				if (is_bitfield) {
 					val = String();

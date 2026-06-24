@@ -86,4 +86,35 @@ TEST_CASE("[DocData] method qualifiers omit async method flag") {
 	CHECK(method_doc.qualifiers == "virtual required vararg const static");
 }
 
+TEST_CASE("[DocData] non-enum integer default value is left as a number") {
+	CHECK(DocData::get_default_value_string(Variant(42), PropertyInfo()) == "42");
+}
+
+TEST_CASE("[DocData] enum default value resolves to its constant name") {
+	PropertyInfo info(Variant::INT, "hint", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CLASS_IS_ENUM, "PropertyHint");
+	CHECK(DocData::get_default_value_string(Variant(int(PROPERTY_HINT_RANGE)), info) == "PROPERTY_HINT_RANGE");
+}
+
+TEST_CASE("[DocData] enum default value falls back to a number when it matches no constant") {
+	PropertyInfo info(Variant::INT, "hint", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CLASS_IS_ENUM, "PropertyHint");
+	CHECK(DocData::get_default_value_string(Variant(999999), info) == "999999");
+}
+
+TEST_CASE("[DocData] bitfield default value resolves to the combined constant name") {
+	// Regression: the constant sort must run after the global-enum map is populated,
+	// so greedy decomposition matches PROPERTY_USAGE_DEFAULT before its sub-bits
+	// (PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR) instead of emitting them.
+	PropertyInfo info(Variant::INT, "usage", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CLASS_IS_BITFIELD, "PropertyUsageFlags");
+	CHECK(DocData::get_default_value_string(Variant(int(PROPERTY_USAGE_DEFAULT)), info) == "PROPERTY_USAGE_DEFAULT");
+}
+
+TEST_CASE("[DocData] bitfield default value decomposes into an OR of constants") {
+	PropertyInfo info(Variant::INT, "usage", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CLASS_IS_BITFIELD, "PropertyUsageFlags");
+	const int combination = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_INTERNAL;
+	const String result = DocData::get_default_value_string(Variant(combination), info);
+	CHECK(result.contains("PROPERTY_USAGE_DEFAULT"));
+	CHECK(result.contains("PROPERTY_USAGE_INTERNAL"));
+	CHECK(result.contains(" | "));
+}
+
 } // namespace TestDocData
