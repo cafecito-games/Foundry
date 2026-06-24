@@ -3513,7 +3513,7 @@ int find_attached_style_order_block_start(
 		int p_floor_line,
 		int p_member_annotation_start_line,
 		int p_export_group_start_line,
-		bool p_allow_leading_ordinary_comments) {
+		bool p_has_previous_member_block) {
 	if (p_member_start_line < 0 || p_member_start_line >= p_lines.size()) {
 		return p_member_start_line;
 	}
@@ -3537,12 +3537,9 @@ int find_attached_style_order_block_start(
 	}
 	const bool comment_has_blank_before = ordinary_comment_start_line > 0 &&
 			p_lines[ordinary_comment_start_line - 1].strip_edges().is_empty();
-	const bool comment_starts_at_safe_floor = ordinary_comment_start_line == floor_line &&
-			(floor_line == 0 || p_lines[floor_line - 1].strip_edges().is_empty());
-	const bool comment_is_first_member_leading_comment =
-			p_allow_leading_ordinary_comments && ordinary_comment_start_line < start_line;
 	if (ordinary_comment_start_line < start_line &&
-			(comment_has_blank_before || comment_starts_at_safe_floor || comment_is_first_member_leading_comment)) {
+			p_has_previous_member_block &&
+			comment_has_blank_before) {
 		start_line = ordinary_comment_start_line;
 	}
 
@@ -3701,14 +3698,24 @@ bool is_private_style_order_name(const String &p_name) {
 
 bool is_builtin_virtual_callback_name(const String &p_name) {
 	return p_name == "_init" ||
+			p_name == "_to_string" ||
+			p_name == "_get" ||
+			p_name == "_set" ||
+			p_name == "_get_property_list" ||
+			p_name == "_property_can_revert" ||
+			p_name == "_property_get_revert" ||
+			p_name == "_validate_property" ||
 			p_name == "_enter_tree" ||
 			p_name == "_ready" ||
 			p_name == "_process" ||
 			p_name == "_physics_process" ||
 			p_name == "_exit_tree" ||
 			p_name == "_input" ||
+			p_name == "_shortcut_input" ||
 			p_name == "_unhandled_input" ||
 			p_name == "_unhandled_key_input" ||
+			p_name == "_gui_input" ||
+			p_name == "_draw" ||
 			p_name == "_notification";
 }
 
@@ -3716,6 +3723,137 @@ bool native_class_has_function(const StringName &p_class_name, const StringName 
 	return p_class_name != StringName() &&
 			ClassDB::class_exists(p_class_name) &&
 			ClassDB::has_method(p_class_name, p_function_name);
+}
+
+bool native_class_has_virtual_method(const StringName &p_class_name, const StringName &p_function_name) {
+	if (p_class_name == StringName() || p_function_name == StringName() || !ClassDB::class_exists(p_class_name)) {
+		return false;
+	}
+
+	List<MethodInfo> virtual_methods;
+	ClassDB::get_virtual_methods(p_class_name, &virtual_methods);
+	for (const MethodInfo &method : virtual_methods) {
+		if (method.name == String(p_function_name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+const GDScriptParser::ClassNode *find_style_order_local_class(
+		const GDScriptParser::ClassNode *p_class,
+		const StringName &p_class_name) {
+	if (p_class == nullptr || p_class_name == StringName()) {
+		return nullptr;
+	}
+
+	for (const GDScriptParser::ClassNode *scope = p_class->outer; scope != nullptr; scope = scope->outer) {
+		for (const GDScriptParser::ClassNode::Member &member : scope->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::CLASS &&
+					member.m_class != nullptr &&
+					member.m_class->identifier != nullptr &&
+					member.m_class->identifier->name == p_class_name) {
+				return member.m_class;
+			}
+		}
+	}
+	return nullptr;
+}
+
+bool style_order_class_has_single_identifier_extends(const GDScriptParser::ClassNode *p_class) {
+	return p_class != nullptr &&
+			p_class->extends_path.is_empty() &&
+			p_class->extends.size() == 1 &&
+			p_class->extends[0] != nullptr;
+}
+
+const GDScriptParser::ClassNode *find_style_order_syntax_base_class(const GDScriptParser::ClassNode *p_class) {
+	if (!style_order_class_has_single_identifier_extends(p_class)) {
+		return nullptr;
+	}
+	return find_style_order_local_class(p_class, p_class->extends[0]->name);
+}
+
+bool class_has_syntax_base_function(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	const GDScriptParser::ClassNode *base_class = find_style_order_syntax_base_class(p_class);
+	for (int depth = 0; base_class != nullptr && depth < 64; depth++) {
+		if (base_class->has_function(p_function_name)) {
+			return true;
+		}
+		base_class = find_style_order_syntax_base_class(base_class);
+	}
+	return false;
+}
+
+bool class_has_syntax_native_virtual_method(
+		const GDScriptParser::ClassNode *p_class,
+		const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	const GDScriptParser::ClassNode *current_class = p_class;
+	for (int depth = 0; current_class != nullptr && depth < 64; depth++) {
+		if (style_order_class_has_single_identifier_extends(current_class)) {
+			const StringName base_name = current_class->extends[0]->name;
+			if (native_class_has_virtual_method(base_name, p_function_name)) {
+				return true;
+			}
+		}
+		current_class = find_style_order_syntax_base_class(current_class);
+	}
+	return false;
+}
+
+bool class_has_native_base_virtual_method(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	GDScriptParser::DataType base_type = p_class->base_type;
+	while (true) {
+		switch (base_type.kind) {
+			case GDScriptParser::DataType::CLASS: {
+				const GDScriptParser::ClassNode *base_class = base_type.class_type;
+				while (base_class != nullptr) {
+					base_type = base_class->base_type;
+					if (base_type.kind != GDScriptParser::DataType::CLASS) {
+						break;
+					}
+					base_class = base_type.class_type;
+				}
+				if (base_type.kind == GDScriptParser::DataType::CLASS) {
+					return false;
+				}
+				continue;
+			}
+			case GDScriptParser::DataType::SCRIPT: {
+				Ref<Script> base_script = base_type.script_type;
+				StringName native_type = base_type.native_type;
+				while (base_script.is_valid()) {
+					if (native_type == StringName()) {
+						native_type = base_script->get_instance_base_type();
+					}
+					base_script = base_script->get_base_script();
+				}
+				return native_class_has_virtual_method(native_type, p_function_name);
+			}
+			case GDScriptParser::DataType::NATIVE:
+				return native_class_has_virtual_method(base_type.native_type, p_function_name);
+			case GDScriptParser::DataType::BUILTIN:
+			case GDScriptParser::DataType::ENUM:
+			case GDScriptParser::DataType::TYPE_PARAMETER:
+			case GDScriptParser::DataType::VARIANT:
+			case GDScriptParser::DataType::RESOLVING:
+			case GDScriptParser::DataType::UNRESOLVED:
+				return false;
+		}
+	}
+	return false;
 }
 
 bool class_has_base_function(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
@@ -3763,6 +3901,7 @@ bool class_has_base_function(const GDScriptParser::ClassNode *p_class, const Str
 				return native_class_has_function(base_type.native_type, p_function_name);
 			case GDScriptParser::DataType::BUILTIN:
 			case GDScriptParser::DataType::ENUM:
+			case GDScriptParser::DataType::TYPE_PARAMETER:
 			case GDScriptParser::DataType::VARIANT:
 			case GDScriptParser::DataType::RESOLVING:
 			case GDScriptParser::DataType::UNRESOLVED:
@@ -3851,20 +3990,25 @@ StyleOrderBucket get_style_order_bucket(
 				return StyleOrderBucket::PRIVATE_VARIABLE;
 			}
 			return StyleOrderBucket::PUBLIC_VARIABLE;
-		case GDScriptParser::ClassNode::Member::FUNCTION:
+		case GDScriptParser::ClassNode::Member::FUNCTION: {
 			if (p_member.function != nullptr && p_member.function->is_static) {
 				return member_name == "_static_init" ? StyleOrderBucket::STATIC_INIT : StyleOrderBucket::STATIC_METHOD;
 			}
-			if (is_builtin_virtual_callback_name(member_name)) {
+			const StringName function_name = p_member.function != nullptr && p_member.function->identifier != nullptr ? p_member.function->identifier->name : StringName();
+			const bool is_builtin_virtual = function_name != StringName() &&
+					(p_analysis_ok ? class_has_native_base_virtual_method(p_class, function_name) : class_has_syntax_native_virtual_method(p_class, function_name));
+			if (is_builtin_virtual_callback_name(member_name) ||
+					is_builtin_virtual) {
 				return StyleOrderBucket::BUILTIN_VIRTUAL_METHOD;
 			}
-			if (p_analysis_ok &&
-					p_member.function != nullptr &&
-					p_member.function->identifier != nullptr &&
-					class_has_base_function(p_class, p_member.function->identifier->name)) {
+			const bool is_custom_override = function_name != StringName() &&
+					(p_analysis_ok ? class_has_base_function(p_class, function_name) : class_has_syntax_base_function(p_class, function_name));
+			if (function_name != StringName() &&
+					is_custom_override) {
 				return StyleOrderBucket::CUSTOM_OVERRIDE_METHOD;
 			}
 			return is_private_style_order_name(member_name) ? StyleOrderBucket::PRIVATE_METHOD : StyleOrderBucket::PUBLIC_METHOD;
+		}
 		case GDScriptParser::ClassNode::Member::CLASS:
 			return StyleOrderBucket::INNER_TYPE;
 		case GDScriptParser::ClassNode::Member::GROUP:
@@ -3984,7 +4128,7 @@ StyleOrderCandidate find_style_order_candidate_in_class(
 				block_floor_line,
 				member_annotation_start_line,
 				pending_export_group_start_line,
-				blocks.is_empty());
+				!blocks.is_empty());
 		const int member_end_line = get_style_order_member_end_line(member);
 		const String trailing_comment_indent = !p_is_root_class && member_start_line >= 0 && member_start_line < p_lines.size() ? get_leading_whitespace(p_lines[member_start_line]) : String();
 		const int block_end_line = find_attached_style_order_block_end(p_lines, member_end_line, trailing_comment_indent);

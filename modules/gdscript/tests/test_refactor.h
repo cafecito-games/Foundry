@@ -2092,7 +2092,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		const String source =
 				"extends Node\n"
 				"\n"
-				"# Handles the ready callback.\n"
+				"## Handles the ready callback.\n"
 				"func _ready() -> void:\n"
 				"\tpass\n"
 				"\n"
@@ -2112,7 +2112,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"## Health points shown in the inspector.\n"
 				"@export var health := 10\n"
 				"\n"
-				"# Handles the ready callback.\n"
+				"## Handles the ready callback.\n"
 				"func _ready() -> void:\n"
 				"\tpass\n";
 
@@ -2211,20 +2211,18 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
-	TEST_CASE("Sort members by style guide moves first member comments after headers") {
+	TEST_CASE("Sort members by style guide leaves leading ordinary comments outside sorted span") {
 		const String source =
 				"extends Node\n"
-				"# Handles ready.\n"
-				"func _ready() -> void:\n"
-				"\tpass\n"
+				"# Header note.\n"
+				"var value := 1\n"
 				"signal changed\n";
 		const String expected =
 				"extends Node\n"
+				"# Header note.\n"
 				"signal changed\n"
 				"\n"
-				"# Handles ready.\n"
-				"func _ready() -> void:\n"
-				"\tpass\n";
+				"var value := 1\n";
 
 		String out;
 		RefactorResult r = run_sort_members_by_style_guide(source, out);
@@ -2441,6 +2439,130 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\tfunc configure() -> void:\n"
 				"\t\tpass\n"
 				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only custom overrides when trait analysis fails") {
+		const String source =
+				"trait Marker:\n"
+				"\tpass\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"trait Marker:\n"
+				"\tpass\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only custom overrides when uses analysis fails") {
+		const String source =
+				"class_name Player\n"
+				"uses Damageable\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class_name Player\n"
+				"uses Damageable\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide places native virtual callbacks before custom overrides") {
+		const String source =
+				"class Base extends Control:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _draw() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends Control:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc _draw() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide uses native virtual metadata before custom overrides") {
+		const String source =
+				"class Base extends BaseButton:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _pressed() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends BaseButton:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc _pressed() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
 				"\t\tpass\n";
 
 		String out;
