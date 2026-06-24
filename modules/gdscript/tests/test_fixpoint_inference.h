@@ -200,6 +200,57 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 		memdelete(editor_file_system);
 		GDScriptTests::finish_language();
 	}
+
+	TEST_CASE("Edge cases: empty input, unreadable path, unanalyzable file") {
+		// Initialize the GDScript test project so res:// resolves to the test
+		// scripts directory and the analyzer can read dependencies from disk.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		SUBCASE("empty input is a successful no-op") {
+			FixpointInferenceResult result = GDScriptFixpointInference::run(Vector<String>());
+			CHECK(result.ok);
+			CHECK_EQ(result.changed_files.size(), 0);
+			CHECK_EQ(result.total_annotations_applied, 0);
+		}
+
+		SUBCASE("unreadable path fails fatally without changes") {
+			Vector<String> paths;
+			paths.push_back("res://refactor/fixpoint_does_not_exist.gd");
+
+			FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
+			CHECK_FALSE(result.ok);
+			CHECK_FALSE(result.error_message.is_empty());
+			CHECK_EQ(result.changed_files.size(), 0);
+		}
+
+		SUBCASE("an unanalyzable file does not abort the batch") {
+			const String path_broken = "res://refactor/fixpoint_broken.gd";
+			const String path_good = "res://refactor/fixpoint_good_leaf.gd";
+
+			// Malformed function signature: fails to parse, so analysis never succeeds.
+			const String source_broken = "func broken( ->:\n\tpass\n";
+			const String source_good = "static func value():\n\treturn 42\n";
+
+			TemporaryScriptFile file_broken(path_broken, source_broken);
+			TemporaryScriptFile file_good(path_good, source_good);
+
+			Vector<String> paths;
+			paths.push_back(path_broken);
+			paths.push_back(path_good);
+
+			FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
+			REQUIRE(result.ok);
+
+			// The valid leaf is still typed despite the broken sibling.
+			CHECK(FileAccess::get_file_as_string(path_good).contains("static func value() -> int:"));
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
 }
 
 } // namespace GDScriptTests

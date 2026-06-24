@@ -176,7 +176,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 				continue;
 			}
 			pending_source[path] = new_source;
-			pending_count[path] = edits.size();
+			pending_count[path] = enabled;
 		}
 
 		// Commit at pass end so each iteration advances exactly one dependency layer.

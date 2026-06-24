@@ -75,6 +75,8 @@ class GDScriptFixpointInference {
 public:
 	// Drives Add Type Annotation to a fixpoint over p_paths, writing accepted
 	// changes to disk. Returns a report of what changed and what was skipped.
+	// Mutates files on disk and global GDScriptCache state, so it is NOT safe to
+	// call concurrently with a live editing session or another run().
 	static FixpointInferenceResult run(
 			const Vector<String> &p_paths,
 			const FixpointInferenceOptions &p_options = FixpointInferenceOptions());
