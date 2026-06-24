@@ -4473,8 +4473,11 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			return;
 		}
 		if (!subscript->is_attribute) {
-			// Invalid call. Error already sent in parser.
-			// TODO: Could check if Callable here.
+			// A `name[...](...)` call. The parser leaves use-site type arguments for the
+			// analyzer to interpret, but generic-method application is not resolved yet
+			// (see epic #125), so for now this is a call on an expression.
+			// TODO: Once generic-method application is analyzed, intercept that case before this error.
+			push_error(R"*(Cannot call on an expression. Use ".call()" if it's a Callable.)*", p_call);
 			p_call->set_datatype(call_type);
 			mark_node_unsafe(p_call);
 			return;

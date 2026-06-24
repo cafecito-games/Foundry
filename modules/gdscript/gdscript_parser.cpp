@@ -3883,8 +3883,15 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_call(ExpressionNode *p_pre
 				}
 				make_completion_context(COMPLETION_ATTRIBUTE_METHOD, call->callee);
 			} else {
-				// TODO: The analyzer can see if this is actually a Callable and give better error message.
-				push_error(R"*(Cannot call on an expression. Use ".call()" if it's a Callable.)*");
+				// `expr[...](...)`: either a generic method application (`name[TypeArgs](...)`,
+				// where the brackets are a use-site type-argument list) or an invalid call on an
+				// index. The parser cannot tell them apart, so it builds the call and lets call
+				// reduction decide and diagnose (mirroring how `Array[int]` is read during
+				// analysis). For an identifier base, record the method name for the analyzer.
+				if (attribute->base != nullptr && attribute->base->type == Node::IDENTIFIER) {
+					call->function_name = static_cast<IdentifierNode *>(attribute->base)->name;
+					make_completion_context(COMPLETION_METHOD, attribute->base);
+				}
 			}
 		} else {
 			push_error(R"*(Cannot call on an expression. Use ".call()" if it's a Callable.)*");
