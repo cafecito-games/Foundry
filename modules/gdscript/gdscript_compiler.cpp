@@ -199,8 +199,17 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 		}
 	}
 
+	// A nullable value type must accept null at runtime. Metatypes are never nullable.
+	result.is_nullable = p_datatype.is_nullable && !(p_handle_metatype && p_datatype.is_meta_type);
+
 	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
-		result.set_container_element_type(i, _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false));
+		GDScriptDataType element_type = _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false);
+		if (element_type.is_nullable) {
+			// Core typed containers cannot hold null elements, so a nullable element type becomes an
+			// untyped element. The analyzer still enforces element types statically.
+			element_type = GDScriptDataType();
+		}
+		result.set_container_element_type(i, element_type);
 	}
 
 	return result;

@@ -209,6 +209,34 @@ TEST_CASE("[Modules][GDScript] Type compatibility can reject null source for str
 	CHECK(nullable_result.compatible);
 }
 
+TEST_CASE("[Modules][GDScript] Type compatibility accepts null source for nullable builtin and enum targets") {
+	const GDScriptParser::DataType source = make_builtin_type(Variant::NIL);
+
+	GDScriptParser::DataType nullable_builtin = make_builtin_type(Variant::BOOL);
+	nullable_builtin.is_nullable = true;
+
+	GDScriptParser::DataType nullable_enum;
+	nullable_enum.kind = GDScriptParser::DataType::ENUM;
+	nullable_enum.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	nullable_enum.builtin_type = Variant::INT;
+	nullable_enum.native_type = SNAME("Direction");
+	nullable_enum.is_nullable = true;
+
+	GDScriptTypeCompatibility::Options options;
+	options.strict_null = true;
+
+	const GDScriptTypeCompatibility::Result builtin_result = GDScriptTypeCompatibility::check(nullable_builtin, source, options);
+	const GDScriptTypeCompatibility::Result enum_result = GDScriptTypeCompatibility::check(nullable_enum, source, options);
+
+	CHECK(builtin_result.compatible);
+	CHECK(enum_result.compatible);
+
+	// A non-nullable builtin still rejects null.
+	const GDScriptParser::DataType non_nullable_builtin = make_builtin_type(Variant::BOOL);
+	const GDScriptTypeCompatibility::Result non_nullable_result = GDScriptTypeCompatibility::check(non_nullable_builtin, source, options);
+	CHECK_FALSE(non_nullable_result.compatible);
+}
+
 TEST_CASE("[Modules][GDScript] Type compatibility can reject nullable source for strict checks") {
 	const GDScriptParser::DataType target = make_native_type(SNAME("Node"));
 	GDScriptParser::DataType nullable_source = target;
