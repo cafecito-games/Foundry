@@ -147,7 +147,10 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = ";
 				text += DADDR(2);
 				text += " is ";
-				text += Variant::get_type_name(Variant::Type(_code_ptr[ip + 3]));
+				text += Variant::get_type_name(Variant::Type(_code_ptr[ip + 3] & ~GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG));
+				if (_code_ptr[ip + 3] & GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG) {
+					text += "?";
+				}
 
 				incr += 4;
 			} break;
@@ -434,7 +437,10 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 			} break;
 			case OPCODE_ASSIGN_TYPED_BUILTIN: {
 				text += "assign typed builtin (";
-				text += Variant::get_type_name((Variant::Type)_code_ptr[ip + 3]);
+				text += Variant::get_type_name((Variant::Type)(_code_ptr[ip + 3] & ~GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG));
+				if (_code_ptr[ip + 3] & GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG) {
+					text += "?";
+				}
 				text += ") ";
 				text += DADDR(1);
 				text += " = ";
@@ -1079,7 +1085,10 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 			} break;
 			case OPCODE_RETURN_TYPED_BUILTIN: {
 				text += "return typed builtin (";
-				text += Variant::get_type_name((Variant::Type)_code_ptr[ip + 2]);
+				text += Variant::get_type_name((Variant::Type)(_code_ptr[ip + 2] & ~GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG));
+				if (_code_ptr[ip + 2] & GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG) {
+					text += "?";
+				}
 				text += ") ";
 				text += DADDR(1);
 

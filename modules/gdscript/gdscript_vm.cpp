@@ -901,10 +901,12 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(value, 1);
 
-				Variant::Type builtin_type = (Variant::Type)_code_ptr[ip + 3];
+				int builtin_type_operand = _code_ptr[ip + 3];
+				const bool is_nullable = builtin_type_operand & GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG;
+				Variant::Type builtin_type = (Variant::Type)(builtin_type_operand & ~GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG);
 				GD_ERR_BREAK(builtin_type < 0 || builtin_type >= Variant::VARIANT_MAX);
 
-				*dst = value->get_type() == builtin_type;
+				*dst = value->get_type() == builtin_type || (is_nullable && value->get_type() == Variant::NIL);
 				ip += 4;
 			}
 			DISPATCH_OPCODE;
@@ -1462,10 +1464,15 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(src, 1);
 
-				Variant::Type var_type = (Variant::Type)_code_ptr[ip + 3];
+				int var_type_operand = _code_ptr[ip + 3];
+				const bool is_nullable = var_type_operand & GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG;
+				Variant::Type var_type = (Variant::Type)(var_type_operand & ~GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG);
 				GD_ERR_BREAK(var_type < 0 || var_type >= Variant::VARIANT_MAX);
 
-				if (src->get_type() != var_type) {
+				if (is_nullable && src->get_type() == Variant::NIL) {
+					// A nullable target stores null as-is instead of converting it to the underlying type.
+					*dst = *src;
+				} else if (src->get_type() != var_type) {
 #ifdef DEBUG_ENABLED
 					if (Variant::can_convert_strict(src->get_type(), var_type)) {
 #endif // DEBUG_ENABLED
@@ -1665,7 +1672,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				CHECK_SPACE(4);
 				GET_VARIANT_PTR(src, 0);
 				GET_VARIANT_PTR(dst, 1);
-				Variant::Type to_type = (Variant::Type)_code_ptr[ip + 3];
+				int to_type_operand = _code_ptr[ip + 3];
+				const bool is_nullable = to_type_operand & GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG;
+				Variant::Type to_type = (Variant::Type)(to_type_operand & ~GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG);
 
 				GD_ERR_BREAK(to_type < 0 || to_type >= Variant::VARIANT_MAX);
 
@@ -1675,6 +1684,13 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					OPCODE_BREAK;
 				}
 #endif
+
+				if (is_nullable && src->get_type() == Variant::NIL) {
+					// Casting null to a nullable builtin yields null instead of the type's default value.
+					*dst = *src;
+					ip += 4;
+					DISPATCH_OPCODE;
+				}
 
 				Callable::CallError err;
 				Variant::construct(to_type, *dst, (const Variant **)&src, 1, err);
@@ -2853,10 +2869,15 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				CHECK_SPACE(3);
 				GET_VARIANT_PTR(r, 0);
 
-				Variant::Type ret_type = (Variant::Type)_code_ptr[ip + 2];
+				int ret_type_operand = _code_ptr[ip + 2];
+				const bool is_nullable = ret_type_operand & GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG;
+				Variant::Type ret_type = (Variant::Type)(ret_type_operand & ~GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG);
 				GD_ERR_BREAK(ret_type < 0 || ret_type >= Variant::VARIANT_MAX);
 
-				if (r->get_type() != ret_type) {
+				if (is_nullable && r->get_type() == Variant::NIL) {
+					// A nullable return type returns null as-is instead of converting it to the underlying type.
+					retvalue = *r;
+				} else if (r->get_type() != ret_type) {
 					if (Variant::can_convert_strict(r->get_type(), ret_type)) {
 						Callable::CallError ce;
 						Variant::construct(ret_type, retvalue, const_cast<const Variant **>(&r), 1, ce);

@@ -62,10 +62,16 @@ public:
 	StringName native_type;
 	Script *script_type = nullptr;
 	Ref<Script> script_type_ref;
+	// Whether this type also accepts null. Builtin and enum kinds reject null otherwise; object kinds
+	// already do at runtime, but the flag keeps the information available for them too.
+	bool is_nullable = false;
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const {
+		if (is_nullable && p_variant.get_type() == Variant::NIL) {
+			return true;
+		}
 		switch (kind) {
 			case VARIANT: {
 				return true;
@@ -192,6 +198,11 @@ public:
 
 	ContainerType to_container_type() const {
 		ContainerType type;
+		if (is_nullable) {
+			// Core typed containers cannot express "this type or null", so a nullable element type
+			// becomes an untyped element. The analyzer still enforces element types statically.
+			return type;
+		}
 		type.builtin_type = builtin_type;
 		if (builtin_type == Variant::OBJECT) {
 			type.class_name = native_type;
@@ -217,6 +228,7 @@ public:
 		return kind == p_other.kind &&
 				builtin_type == p_other.builtin_type &&
 				native_type == p_other.native_type &&
+				is_nullable == p_other.is_nullable &&
 				(script_type == p_other.script_type || script_type_ref == p_other.script_type_ref) &&
 				container_element_types == p_other.container_element_types;
 	}
@@ -231,6 +243,7 @@ public:
 		native_type = p_other.native_type;
 		script_type = p_other.script_type;
 		script_type_ref = p_other.script_type_ref;
+		is_nullable = p_other.is_nullable;
 		container_element_types = p_other.container_element_types;
 	}
 
@@ -243,6 +256,11 @@ public:
 
 class GDScriptFunction {
 public:
+	// Set on the builtin-type operand of OPCODE_ASSIGN_TYPED_BUILTIN / OPCODE_RETURN_TYPED_BUILTIN to mark
+	// the target as nullable, so a null source is stored as-is instead of being rejected or converted.
+	// The flag sits well above Variant::VARIANT_MAX, so the real type is recovered by masking it off.
+	static constexpr int NULLABLE_TYPE_OPERAND_FLAG = 1 << 24;
+
 	enum Opcode {
 		OPCODE_OPERATOR,
 		OPCODE_OPERATOR_VALIDATED,

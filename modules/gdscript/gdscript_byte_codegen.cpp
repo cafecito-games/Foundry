@@ -687,7 +687,7 @@ void GDScriptByteCodeGenerator::write_type_test(const Address &p_target, const A
 				append_opcode(GDScriptFunction::OPCODE_TYPE_TEST_BUILTIN);
 				append(p_target);
 				append(p_source);
-				append(p_type.builtin_type);
+				append(p_type.builtin_type | (p_type.is_nullable ? GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
 			}
 		} break;
 		case GDScriptDataType::NATIVE: {
@@ -954,7 +954,7 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 				append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_BUILTIN);
 				append(p_target);
 				append(p_source);
-				append(p_target.type.builtin_type);
+				append(p_target.type.builtin_type | (p_target.type.is_nullable ? GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
 			}
 		} break;
 		case GDScriptDataType::NATIVE: {
@@ -1013,7 +1013,7 @@ void GDScriptByteCodeGenerator::write_assign(const Address &p_target, const Addr
 		append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_BUILTIN);
 		append(p_target);
 		append(p_source);
-		append(p_target.type.builtin_type);
+		append(p_target.type.builtin_type | (p_target.type.is_nullable ? GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
 	} else {
 		append_opcode(GDScriptFunction::OPCODE_ASSIGN);
 		append(p_target);
@@ -1063,7 +1063,7 @@ void GDScriptByteCodeGenerator::write_cast(const Address &p_target, const Addres
 	switch (p_type.kind) {
 		case GDScriptDataType::BUILTIN: {
 			append_opcode(GDScriptFunction::OPCODE_CAST_TO_BUILTIN);
-			index = p_type.builtin_type;
+			index = p_type.builtin_type | (p_type.is_nullable ? GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG : 0);
 		} break;
 		case GDScriptDataType::NATIVE: {
 			int class_idx = GDScriptLanguage::get_singleton()->get_global_map()[p_type.native_type];
@@ -1884,7 +1884,7 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value) {
 				// Add conversion.
 				append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_BUILTIN);
 				append(p_return_value);
-				append(function->return_type.builtin_type);
+				append(function->return_type.builtin_type | (function->return_type.is_nullable ? GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
 			} else {
 				// Just assign.
 				append_opcode(GDScriptFunction::OPCODE_RETURN);
@@ -1918,7 +1918,7 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value) {
 				} else {
 					append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_BUILTIN);
 					append(p_return_value);
-					append(function->return_type.builtin_type);
+					append(function->return_type.builtin_type | (function->return_type.is_nullable ? GDScriptFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
 				}
 			} break;
 			case GDScriptDataType::NATIVE: {
