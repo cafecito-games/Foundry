@@ -1,0 +1,33 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-23-implement-abstract-methods.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Plumbing skeleton — refactor appears in menu, disabled",
+      "status": "completed",
+      "description": "Wire IMPLEMENT_ABSTRACT_METHODS end-to-end as an inert, always-disabled entry; update existing available.size() assertions 5 -> 6.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_refactoring.h\", \"modules/gdscript/editor/gdscript_refactoring.cpp\", \"editor/script/script_text_editor.h\", \"editor/script/script_text_editor.cpp\", \"modules/gdscript/tests/test_refactor.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-suite=\\\"*Refactor*\\\" --force-colors\", \"acceptanceCriteria\": [\"Builds with dev_build=yes tests=yes\", \"6 refactors, 6th disabled IMPLEMENT_ABSTRACT_METHODS\", \"Existing tests pass after count update\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Detection — find owed abstract methods + availability",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "Walk analyzer-resolved base chain, collect owed abstract methods, set availability; handle abstract-target and inner-class edge cases.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_refactoring.cpp\", \"modules/gdscript/tests/test_refactor.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-suite=\\\"*Refactor*\\\" --force-colors\", \"acceptanceCriteria\": [\"Enabled when class owes inherited abstract method\", \"Correct disabled reasons\", \"Abstract target disabled\", \"Parse failure disabled\", \"Intermediate concrete override excluded\", \"Inner classes resolve relative to caret\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Stub rendering + edit production",
+      "status": "completed",
+      "blockedBy": [2],
+      "description": "Render concrete stubs (signature + push_error body) and emit one insertion edit at end of class.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_refactoring.cpp\", \"modules/gdscript/tests/test_refactor.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-suite=\\\"*Refactor*\\\" --force-colors\", \"acceptanceCriteria\": [\"Typed->literal, void->no return, object->pass\", \"Preserves static/params/types/defaults\", \"All owed methods at end of class, separated\", \"Applied source matches\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Cross-file base resolution + LSP coverage",
+      "status": "completed",
+      "blockedBy": [3],
+      "description": "Resolve abstract bases in other files; verify over LSP availability + prepare; run full suite.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_refactoring.cpp\", \"modules/gdscript/tests/test_refactor.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"Cross-file abstract base detected and stubbed\", \"Works over LSP availability + prepare\", \"No same-file regression\", \"Full suite passes\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-23T00:00:00Z"
+}

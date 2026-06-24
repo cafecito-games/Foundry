@@ -40,6 +40,7 @@
 
 #include "core/os/mutex.h"
 #include "core/string/char_utils.h"
+#include "core/templates/hash_set.h"
 
 #ifndef GDSCRIPT_NO_LSP
 #include "core/object/class_db.h"
@@ -114,6 +115,20 @@ struct InlineVariableCandidate {
 	String disabled_reason;
 	RefactorTextEdit declaration_edit;
 	Vector<RefactorTextEdit> replacement_edits;
+};
+
+struct ImplementAbstractCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	// Owed abstract methods, most-derived-first.
+	Vector<const GDScriptParser::FunctionNode *> abstract_methods;
+	// Insertion point: the line AFTER the last member of the target class (1-based,
+	// matching FunctionNode::end_line semantics used by extract method).
+	int insertion_line = -1;
+	// Finalized stub text, rendered during detection while the parse tree is alive so
+	// no live FunctionNode pointer is ever cached.
+	String rendered_block;
 };
 
 #ifndef GDSCRIPT_NO_LSP
@@ -226,6 +241,17 @@ struct InlineVariableCandidateCache {
 };
 
 InlineVariableCandidateCache inline_variable_cache;
+
+struct ImplementAbstractCandidateCache {
+	bool valid = false;
+	String path;
+	uint64_t source_hash = 0;
+	int source_length = 0;
+	RefactorLocation location;
+	ImplementAbstractCandidate candidate;
+};
+
+ImplementAbstractCandidateCache implement_abstract_cache;
 
 Mutex refactor_candidate_cache_mutex;
 
@@ -644,6 +670,36 @@ bool get_single_line_node_text(const Vector<String> &p_lines, const GDScriptPars
 		*r_range = range;
 	}
 	return !r_text.is_empty();
+}
+
+// Reconstructs a node's source text even when it spans multiple lines, joining the
+// intermediate lines verbatim. Single-line nodes are sliced directly; multi-line nodes
+// reproduce the original line breaks so the recovered text parses identically.
+bool get_multi_line_node_text(const Vector<String> &p_lines, const GDScriptParser::Node *p_node, String &r_text) {
+	RefactorLocation range;
+	if (!get_node_text_range(p_lines, p_node, range)) {
+		return false;
+	}
+	if (range.start_line == range.end_line) {
+		const String line = p_lines[range.start_line];
+		if (range.start_column < 0 || range.end_column < range.start_column || range.end_column > line.length()) {
+			return false;
+		}
+		r_text = line.substr(range.start_column, range.end_column - range.start_column);
+		return !r_text.is_empty();
+	}
+
+	const String first_line = p_lines[range.start_line];
+	const String last_line = p_lines[range.end_line];
+	if (range.start_column < 0 || range.start_column > first_line.length() || range.end_column < 0 || range.end_column > last_line.length()) {
+		return false;
+	}
+	String text = first_line.substr(range.start_column, first_line.length() - range.start_column);
+	for (int line_index = range.start_line + 1; line_index < range.end_line; line_index++) {
+		text += "\n" + p_lines[line_index];
+	}
+	text += "\n" + last_line.substr(0, range.end_column);
+	return !text.is_empty();
 }
 
 bool expression_matches_selection(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression) {
@@ -3326,6 +3382,31 @@ void cache_inline_variable_candidate(const RefactorContext &p_context, const Ref
 
 void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates);
 
+bool get_cached_implement_abstract_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, ImplementAbstractCandidate &r_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
+	if (!implement_abstract_cache.valid ||
+			implement_abstract_cache.path != p_context.path ||
+			implement_abstract_cache.source_hash != p_context.source.hash64() ||
+			implement_abstract_cache.source_length != p_context.source.length() ||
+			!same_location(implement_abstract_cache.location, p_location)) {
+		return false;
+	}
+	r_candidate = implement_abstract_cache.candidate;
+	return true;
+}
+
+void cache_implement_abstract_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, const ImplementAbstractCandidate &p_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
+	implement_abstract_cache.valid = true;
+	implement_abstract_cache.path = p_context.path;
+	implement_abstract_cache.source_hash = p_context.source.hash64();
+	implement_abstract_cache.source_length = p_context.source.length();
+	implement_abstract_cache.location = p_location;
+	implement_abstract_cache.candidate = p_candidate;
+}
+
 void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates) {
 	TypeAnnotationCandidate candidate;
 	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate) && candidate.matched) {
@@ -3865,6 +3946,419 @@ TypeAnnotationCandidate find_type_annotation_candidate(
 	return candidate;
 }
 
+// Deepest class whose [start_line, end_line] span contains the caret line.
+// Node line numbers are 1-based; RefactorLocation lines are 0-based.
+const GDScriptParser::ClassNode *find_enclosing_class(const GDScriptParser::ClassNode *p_class, int p_caret_line_0based) {
+	if (p_class == nullptr) {
+		return nullptr;
+	}
+	const int line_1based = p_caret_line_0based + 1;
+	const GDScriptParser::ClassNode *best = p_class;
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::CLASS) {
+			continue;
+		}
+		const GDScriptParser::ClassNode *inner = member.m_class;
+		if (inner == nullptr) {
+			continue;
+		}
+		if (line_1based >= inner->start_line && line_1based <= inner->end_line) {
+			const GDScriptParser::ClassNode *deeper = find_enclosing_class(inner, p_caret_line_0based);
+			if (deeper != nullptr) {
+				best = deeper;
+			}
+		}
+	}
+	return best;
+}
+
+// Next GDScript class up the inheritance chain, or nullptr when the base is not a
+// resolved GDScript class reachable in-tree (native bases / unresolved). A base resolved
+// as a separate script (SCRIPT kind, or a CLASS without an in-tree class_type) is
+// followed through the parse-result provider when one is available.
+const GDScriptParser::ClassNode *resolve_base_class(
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParseResultProvider *p_parse_results) {
+	if (p_class == nullptr) {
+		return nullptr;
+	}
+	const GDScriptParser::DataType &base = p_class->base_type;
+	if (base.kind == GDScriptParser::DataType::CLASS && base.class_type != nullptr) {
+		return base.class_type;
+	}
+
+#ifndef GDSCRIPT_NO_LSP
+	if (p_parse_results != nullptr && !base.script_path.is_empty() &&
+			(base.kind == GDScriptParser::DataType::SCRIPT || base.kind == GDScriptParser::DataType::CLASS)) {
+		const ExtendGDScriptParser *base_parser = p_parse_results->get_parse_result(base.script_path);
+		if (base_parser != nullptr) {
+			return base_parser->get_tree();
+		}
+	}
+#else
+	(void)p_parse_results;
+#endif // GDSCRIPT_NO_LSP
+
+	return nullptr;
+}
+
+// Collect abstract methods the target class still owes, most-derived-first.
+// Walks {target, base, base-of-base, ...}; for each method name the FIRST
+// declaration encountered (the most-derived) decides its fate: if that
+// declaration is abstract and lives in an ancestor (not the target), it is owed.
+void collect_owed_abstract_methods(
+		const GDScriptParser::ClassNode *p_target,
+		Vector<const GDScriptParser::FunctionNode *> &r_owed,
+		const GDScriptParseResultProvider *p_parse_results) {
+	HashSet<StringName> decided;
+	// Detection runs even when the analyzer reported errors, so the inheritance chain
+	// may be malformed or self-referential; track visited classes to avoid looping.
+	HashSet<const GDScriptParser::ClassNode *> visited;
+	const GDScriptParser::ClassNode *current = p_target;
+	bool is_target = true;
+	while (current != nullptr) {
+		if (visited.has(current)) {
+			break;
+		}
+		visited.insert(current);
+		for (const GDScriptParser::ClassNode::Member &member : current->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const GDScriptParser::FunctionNode *function = member.function;
+			if (function == nullptr || function->identifier == nullptr) {
+				continue;
+			}
+			const StringName name = function->identifier->name;
+			if (decided.has(name)) {
+				// A more-derived declaration already decided this name.
+				continue;
+			}
+			decided.insert(name);
+			if (function->is_abstract && !is_target) {
+				r_owed.push_back(function);
+			}
+		}
+		current = resolve_base_class(current, p_parse_results);
+		is_target = false;
+	}
+}
+
+// Returns the GDScript literal default for a return type, or false when the type
+// has no clean literal (objects, custom classes, other builtins) so the caller emits
+// `pass` instead of a `return`.
+bool default_return_literal(const GDScriptParser::DataType &p_type, String &r_literal) {
+	if (p_type.kind != GDScriptParser::DataType::BUILTIN) {
+		// NATIVE / SCRIPT / CLASS / ENUM have no unambiguous literal default.
+		return false;
+	}
+	switch (p_type.builtin_type) {
+		case Variant::BOOL:
+			r_literal = "false";
+			return true;
+		case Variant::INT:
+			r_literal = "0";
+			return true;
+		case Variant::FLOAT:
+			r_literal = "0.0";
+			return true;
+		case Variant::STRING:
+			r_literal = "\"\"";
+			return true;
+		case Variant::STRING_NAME:
+			r_literal = "&\"\"";
+			return true;
+		case Variant::ARRAY:
+			r_literal = "[]";
+			return true;
+		case Variant::DICTIONARY:
+			r_literal = "{}";
+			return true;
+		default:
+			// Other builtins (Vector2, Color, ...) have no bare literal -> emit pass.
+			return false;
+	}
+}
+
+// Renders a concrete stub for an inherited abstract method: a faithful signature
+// (preserving `static`, parameter names, annotated parameter/return types and base
+// default values where recoverable) plus a body that reports the missing
+// implementation and either returns a literal default or falls through to `pass`.
+String render_abstract_stub(
+		const GDScriptParser::FunctionNode *p_function,
+		const Vector<String> &p_lines,
+		const String &p_class_indent) {
+	const String body_indent = p_class_indent + "\t";
+	const String name = String(p_function->identifier->name);
+
+	// Abstract methods cannot be static in GDScript, so no static modifier is rendered.
+	// The async modifier, when present, precedes `func`.
+	String signature = p_class_indent;
+	if (p_function->is_declared_async) {
+		signature += "async ";
+	}
+	signature += "func " + name + "(";
+
+	bool first_parameter = true;
+	for (int i = 0; i < p_function->parameters.size(); i++) {
+		if (!first_parameter) {
+			signature += ", ";
+		}
+		first_parameter = false;
+		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
+		signature += String(parameter->identifier->name);
+
+		String rendered_type;
+		if (GDScriptRefactorTypes::render_annotatable_type(parameter->get_datatype(), rendered_type)) {
+			signature += ": " + rendered_type;
+		}
+
+		if (parameter->initializer != nullptr) {
+			// Reproduce the base default verbatim from the source span when it is
+			// recoverable; otherwise omit it so the stub still compiles.
+			String default_text;
+			if (get_multi_line_node_text(p_lines, parameter->initializer, default_text)) {
+				signature += " = " + default_text;
+			}
+		}
+	}
+
+	// A rest (vararg) parameter is rendered last as `...name` with its optional type.
+	// The parser forbids a default value on the rest parameter, so none is emitted.
+	if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr) {
+		if (!first_parameter) {
+			signature += ", ";
+		}
+		signature += "..." + String(p_function->rest_parameter->identifier->name);
+		String rendered_rest_type;
+		if (GDScriptRefactorTypes::render_annotatable_type(p_function->rest_parameter->get_datatype(), rendered_rest_type)) {
+			signature += ": " + rendered_rest_type;
+		}
+	}
+	signature += ")";
+
+	const GDScriptParser::DataType return_type = p_function->get_datatype();
+	// A void return type is set but stringifies as a NIL builtin, which
+	// render_annotatable_type rejects; treat it as an explicit `-> void` with no
+	// return statement.
+	const bool is_void = return_type.is_set() && !return_type.is_variant() &&
+			return_type.kind == GDScriptParser::DataType::BUILTIN &&
+			return_type.builtin_type == Variant::NIL;
+	String rendered_return;
+	const bool has_typed_return = !is_void && GDScriptRefactorTypes::render_annotatable_type(return_type, rendered_return);
+
+	String result = signature;
+	if (is_void) {
+		result += " -> void";
+	} else if (has_typed_return) {
+		result += " -> " + rendered_return;
+	}
+	result += ":\n";
+	result += body_indent + "push_error(\"Not implemented: " + name + "\")\n";
+
+	if (has_typed_return) {
+		String literal;
+		if (default_return_literal(return_type, literal)) {
+			result += body_indent + "return " + literal + "\n";
+		} else {
+			// No clean literal: leave a `pass` so the stub parses, intentionally
+			// surfacing a strict "not all paths return a value" error for the author.
+			result += body_indent + "pass\n";
+		}
+	}
+	return result;
+}
+
+// Per-member indentation of the target class. When the class has members, mirror the
+// real indentation of its first member line. When it has none, the top-level (root)
+// class has members at column zero, while an inner class is one tab deeper than its
+// header.
+String class_member_indent(const GDScriptParser::ClassNode *p_class, const Vector<String> &p_lines, bool p_is_top_level) {
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		const GDScriptParser::Node *node = member.get_source_node();
+		if (node == nullptr) {
+			continue;
+		}
+		const int line_index = node->start_line - 1;
+		if (line_index >= 0 && line_index < p_lines.size()) {
+			return get_leading_whitespace(p_lines[line_index]);
+		}
+	}
+	if (p_is_top_level) {
+		return "";
+	}
+	if (p_class->start_line >= 1 && p_class->start_line - 1 < p_lines.size()) {
+		return get_leading_whitespace(p_lines[p_class->start_line - 1]) + "\t";
+	}
+	return "\t";
+}
+
+ImplementAbstractCandidate find_implement_abstract_in_tree(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_tree,
+		const GDScriptParseResultProvider *p_parse_results) {
+	ImplementAbstractCandidate candidate;
+
+	const GDScriptParser::ClassNode *target = find_enclosing_class(p_tree, p_location.start_line);
+	if (target == nullptr) {
+		candidate.disabled_reason = "No unimplemented abstract methods.";
+		return candidate;
+	}
+
+	if (target->is_abstract) {
+		candidate.disabled_reason = "Abstract classes don't need to implement abstract methods.";
+		return candidate;
+	}
+
+	collect_owed_abstract_methods(target, candidate.abstract_methods, p_parse_results);
+	if (candidate.abstract_methods.is_empty()) {
+		candidate.disabled_reason = "No unimplemented abstract methods.";
+		return candidate;
+	}
+
+	// Finalize all rendered text now, while the parse tree is alive, so the cached
+	// candidate carries only value types and no live FunctionNode pointer.
+	const String class_indent = class_member_indent(target, p_lines, target == p_tree);
+	String block;
+	for (int i = 0; i < candidate.abstract_methods.size(); i++) {
+		if (i > 0) {
+			block += "\n";
+		}
+		block += render_abstract_stub(candidate.abstract_methods[i], p_lines, class_indent);
+	}
+	candidate.rendered_block = block;
+	// The class end_line overshoots the buffer for a whole-file root class, so derive
+	// the insertion point from the last member's end_line (a real line) instead, and
+	// clamp it to the available lines as a final guard.
+	int insertion_line = target->start_line;
+	bool has_member_line = false;
+	for (const GDScriptParser::ClassNode::Member &member : target->members) {
+		const GDScriptParser::Node *node = member.get_source_node();
+		if (node != nullptr && node->end_line > 0) {
+			has_member_line = true;
+			if (node->end_line > insertion_line) {
+				insertion_line = node->end_line;
+			}
+		}
+	}
+	// A root class with no members spans only its header lines (e.g. `@tool`,
+	// `class_name X`, `extends Y`). Its start_line is the first header line, so
+	// inserting there would land mid-header and break the file; append at end instead.
+	// A trailing newline yields an empty final split element; the insertion point is the
+	// last line that actually carries content so the stub is appended after it.
+	if (!has_member_line && target == p_tree) {
+		insertion_line = p_lines.size();
+		if (insertion_line > 0 && p_lines[insertion_line - 1].is_empty()) {
+			insertion_line -= 1;
+		}
+	}
+	if (insertion_line > p_lines.size()) {
+		insertion_line = p_lines.size();
+	}
+	candidate.insertion_line = insertion_line;
+	candidate.abstract_methods.clear(); // Do not cache live pointers.
+	candidate.matched = true;
+	candidate.enabled = true;
+	return candidate;
+}
+
+ImplementAbstractCandidate find_implement_abstract_candidate_uncached(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const GDScriptParseResultProvider *p_parse_results) {
+#ifndef GDSCRIPT_NO_LSP
+	if (p_parse_results != nullptr) {
+		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+			// A class that still owes abstract methods makes the analyzer report an
+			// error, so `parse_result` is not OK even though the tree is fully built
+			// and base types are resolved. Detect from the tree whenever one exists;
+			// only a hard parse failure leaves no usable tree.
+			const GDScriptParser::ClassNode *tree = lsp_parser->get_tree();
+			if (tree == nullptr) {
+				ImplementAbstractCandidate candidate;
+				candidate.disabled_reason = "Cannot analyze this script.";
+				return candidate;
+			}
+			return find_implement_abstract_in_tree(p_location, p_lines, tree, p_parse_results);
+		}
+	}
+#endif // GDSCRIPT_NO_LSP
+
+	GDScriptParser parser;
+	Error err = parser.parse(p_context.source, p_context.path, false);
+	if (err != OK) {
+		ImplementAbstractCandidate candidate;
+		candidate.disabled_reason = "Cannot analyze this script.";
+		return candidate;
+	}
+
+	// A class that still owes abstract methods makes the analyzer report an error
+	// ("must implement ... abstract methods") — that is precisely the situation this
+	// refactor resolves. The analyzer still resolves base types and builds the tree
+	// before flagging that error, so detection must run regardless of the analyze
+	// result; only a hard parse failure (handled above) leaves no usable tree.
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	return find_implement_abstract_in_tree(p_location, p_lines, parser.get_tree(), p_parse_results);
+}
+
+ImplementAbstractCandidate find_implement_abstract_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
+	ImplementAbstractCandidate candidate;
+	if (get_cached_implement_abstract_candidate(p_context, p_location, candidate)) {
+		return candidate;
+	}
+
+	const Vector<String> lines = p_context.source.split("\n");
+	candidate = find_implement_abstract_candidate_uncached(p_context, p_location, lines, p_parse_results);
+	cache_implement_abstract_candidate(p_context, p_location, candidate);
+	return candidate;
+}
+
+RefactorResult prepare_implement_abstract(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
+	RefactorResult result;
+	const ImplementAbstractCandidate candidate = find_implement_abstract_candidate(p_context, p_location, p_parse_results);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason;
+		return result;
+	}
+
+	const Vector<String> lines = p_context.source.split("\n");
+	const bool has_final_newline = p_context.source.ends_with("\n");
+
+	RefactorTextEdit edit;
+	set_extract_method_insertion(edit, lines, has_final_newline, candidate.insertion_line, candidate.rendered_block);
+
+	// Point the post-edit caret at the first inserted stub so the editor scrolls to it.
+	// The inserted text is the leading newlines of the edit followed by the rendered
+	// block, so the first stub line sits just past those newlines. The column targets the
+	// stub's leading indentation, which is where the `func`/`async func` keyword begins.
+	int leading_newlines = 0;
+	while (leading_newlines < edit.new_text.length() && edit.new_text[leading_newlines] == '\n') {
+		leading_newlines++;
+	}
+	result.rename_anchor_line = edit.start_line + leading_newlines;
+	int caret_column = 0;
+	while (caret_column < candidate.rendered_block.length() && candidate.rendered_block[caret_column] == '\t') {
+		caret_column++;
+	}
+	result.rename_anchor_column = caret_column;
+
+	result.ok = true;
+	result.edits.push_back(edit);
+	return result;
+}
+
 RefactorResult prepare_type_annotation(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
@@ -4283,6 +4777,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 		inline_variable.disabled_reason = inline_candidate.disabled_reason;
 	}
 	result.push_back(inline_variable);
+
+	RefactorAvailability implement_abstract;
+	implement_abstract.kind = RefactorKind::IMPLEMENT_ABSTRACT_METHODS;
+	implement_abstract.title = "Implement Abstract Methods";
+	const ImplementAbstractCandidate implement_abstract_candidate = find_implement_abstract_candidate(p_context, p_location, parse_result_provider);
+	implement_abstract.enabled = implement_abstract_candidate.enabled;
+	if (!implement_abstract.enabled) {
+		implement_abstract.disabled_reason = implement_abstract_candidate.disabled_reason;
+	}
+	result.push_back(implement_abstract);
 	return result;
 }
 
@@ -4305,6 +4809,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_type_annotation(p_context, p_location, parse_result_provider);
 		case RefactorKind::INLINE_VARIABLE:
 			return prepare_inline_variable(p_context, p_location, parse_result_provider);
+		case RefactorKind::IMPLEMENT_ABSTRACT_METHODS:
+			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
 		default:
 			break;
 	}

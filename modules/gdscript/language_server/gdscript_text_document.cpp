@@ -51,6 +51,7 @@ String refactor_kind_to_lsp_kind(RefactorKind p_kind) {
 			// LSP groups both extraction refactors under the same standard action kind.
 			return "refactor.extract";
 		case RefactorKind::ADD_TYPE_ANNOTATION:
+		case RefactorKind::IMPLEMENT_ABSTRACT_METHODS:
 			return "refactor.rewrite";
 		case RefactorKind::INLINE_VARIABLE:
 			return "refactor.inline";
@@ -77,6 +78,7 @@ bool is_resolvable_code_action_kind(RefactorKind p_kind) {
 		case RefactorKind::EXTRACT_METHOD:
 		case RefactorKind::ADD_TYPE_ANNOTATION:
 		case RefactorKind::INLINE_VARIABLE:
+		case RefactorKind::IMPLEMENT_ABSTRACT_METHODS:
 			return true;
 		case RefactorKind::RENAME:
 			return false;

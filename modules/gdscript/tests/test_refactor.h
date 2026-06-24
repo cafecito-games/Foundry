@@ -143,6 +143,45 @@ inline const RefactorFileEdit *find_file_edit(const RefactorResult &p_result, co
 	return nullptr;
 }
 
+inline const RefactorAvailability *find_availability(const Vector<RefactorAvailability> &p_available, RefactorKind p_kind) {
+	for (const RefactorAvailability &a : p_available) {
+		if (a.kind == p_kind) {
+			return &a;
+		}
+	}
+	return nullptr;
+}
+
+inline bool implement_abstract_enabled(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+	return entry != nullptr && entry->enabled;
+}
+
+inline String implement_abstract_reason(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+	return entry != nullptr ? entry->disabled_reason : String();
+}
+
+inline RefactorResult run_implement_abstract(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 #ifndef GDSCRIPT_NO_LSP
 struct TemporaryScriptFile {
 	String path;
@@ -164,8 +203,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 5);
-		if (available.size() < 5) {
+		CHECK_EQ(available.size(), 6);
+		if (available.size() < 6) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -183,6 +222,296 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 		CHECK_FALSE(available[4].enabled);
 		CHECK_FALSE(available[4].disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
+		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
+		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
+		const RefactorAvailability *entry = nullptr;
+		for (const RefactorAvailability &a : available) {
+			if (a.kind == RefactorKind::IMPLEMENT_ABSTRACT_METHODS) {
+				entry = &a;
+				break;
+			}
+		}
+		REQUIRE(entry != nullptr);
+		CHECK_EQ(entry->title, String("Implement Abstract Methods"));
+		CHECK_FALSE(entry->enabled);
+		CHECK_FALSE(entry->disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Implement abstract: enabled when a derived class owes an abstract method") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		CHECK(GDScriptTests::implement_abstract_enabled(source, 3, 1));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the method is already overridden") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tfunc area() -> float:\n"
+				"\t\treturn 3.14\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 2, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 2, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled for an abstract derived class") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"@abstract class Shape extends Base:\n"
+				"\tvar name := \"\"\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 3, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 3, 1), String("Abstract classes don't need to implement abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the script cannot be parsed") {
+		const String source =
+				"class Circle extends:\n" // Malformed extends -> parse error.
+				"\tfunc\n";
+		RefactorContext ctx;
+		ctx.path = "user://implement_abstract_refactor.gd";
+		ctx.source = source;
+		const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, GDScriptTests::caret(0, 0));
+		const RefactorAvailability *entry = GDScriptTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		REQUIRE(entry != nullptr);
+		CHECK_FALSE(entry->enabled);
+		CHECK_EQ(entry->disabled_reason, String("Cannot analyze this script."));
+	}
+
+	TEST_CASE("Implement abstract: intermediate concrete override satisfies the contract") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"\t@abstract func name() -> String\n"
+				"@abstract class Mid extends Base:\n"
+				"\tfunc area() -> float:\n"
+				"\t\treturn 0.0\n"
+				"class Leaf extends Mid:\n"
+				"\tvar tag := 1\n";
+		// Leaf still owes name() but not area().
+		CHECK(GDScriptTests::implement_abstract_enabled(source, 7, 1));
+	}
+
+	TEST_CASE("Implement abstract: renders typed stub with push_error and default return") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("push_error(\"Not implemented: area\")"));
+		CHECK(out.contains("return 0.0"));
+	}
+
+	TEST_CASE("Implement abstract: void method has no return") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func tick() -> void\n"
+				"class Clock extends Base:\n"
+				"\tvar t := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func tick() -> void:"));
+		CHECK(out.contains("push_error(\"Not implemented: tick\")"));
+		CHECK_FALSE(out.contains("return"));
+	}
+
+	TEST_CASE("Implement abstract: object return type uses pass") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func make() -> Node\n"
+				"class Factory extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func make() -> Node:"));
+		CHECK(out.contains("push_error(\"Not implemented: make\")"));
+		CHECK(out.contains("pass"));
+		CHECK_FALSE(out.contains("return"));
+	}
+
+	TEST_CASE("Implement abstract: preserves params and annotated types") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func combine(a: int, b: int) -> int\n"
+				"class Math extends Base:\n"
+				"\tvar seed := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func combine(a: int, b: int) -> int:"));
+		CHECK(out.contains("return 0"));
+	}
+
+	TEST_CASE("Implement abstract: generates all owed methods at once") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"\t@abstract func name() -> String\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 4, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("func name() -> String:"));
+		CHECK(out.contains("return \"\""));
+	}
+
+	TEST_CASE("Implement abstract: inner class stub is indented one level deeper") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\tfunc area() -> float:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: area\")\n"));
+		CHECK(out.contains("\t\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: reproduces parameter default values") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func scaled(factor: float = 1.0) -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func scaled(factor: float = 1.0) -> float:"));
+	}
+
+	TEST_CASE("Implement abstract: Array return defaults to empty array") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func items() -> Array\n"
+				"class Bag extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func items() -> Array:"));
+		CHECK(out.contains("return []"));
+	}
+
+	TEST_CASE("Implement abstract: Dictionary return defaults to empty dictionary") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func lookup() -> Dictionary\n"
+				"class Store extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func lookup() -> Dictionary:"));
+		CHECK(out.contains("return {}"));
+	}
+
+	TEST_CASE("Implement abstract: StringName return defaults to empty string name") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func tag() -> StringName\n"
+				"class Label extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func tag() -> StringName:"));
+		CHECK(out.contains("return &\"\""));
+	}
+
+	TEST_CASE("Implement abstract: top-level class stub has no indentation") {
+		const String source =
+				"extends Base\n"
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"var radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 0, 0, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\nfunc area() -> float:\n"));
+		CHECK(out.contains("\n\tpush_error(\"Not implemented: area\")\n"));
+		CHECK(out.contains("\n\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: top-level class with no members has no indentation") {
+		const String source =
+				"extends Base\n"
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 0, 0, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\nfunc area() -> float:\n"));
+		CHECK(out.contains("\n\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: preserves the async modifier") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract async func area() -> int\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("async func area() -> int:"));
+	}
+
+	TEST_CASE("Implement abstract: preserves the rest (vararg) parameter") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func record(...args)\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		// An untyped rest parameter is inferred as Array, which the stub renders faithfully.
+		CHECK(out.contains("func record(...args: Array):"));
+	}
+
+	TEST_CASE("Implement abstract: rest parameter follows fixed parameters") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func record(prefix: String, ...args)\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func record(prefix: String, ...args: Array):"));
+	}
+
+	TEST_CASE("Implement abstract: reproduces a multi-line default value") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func build(options := {\n"
+				"\t\t\t\"a\": 1,\n"
+				"\t\t\t\"b\": 2,\n"
+				"\t\t}) -> int\n"
+				"class Maker extends Base:\n"
+				"\tvar seed := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 6, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\"a\": 1,"));
+		CHECK(out.contains("\"b\": 2,"));
+		CHECK(out.contains("options"));
 	}
 
 	TEST_CASE("Edit application") {
@@ -751,7 +1080,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 5);
+		REQUIRE_EQ(available.size(), 6);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -1104,7 +1433,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 5);
+		REQUIRE_EQ(available.size(), 6);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -1113,7 +1442,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = GDScriptRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 5);
+		REQUIRE_EQ(text_selection_available.size(), 6);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -1423,8 +1752,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 5);
-		if (available.size() >= 5) {
+		REQUIRE_EQ(available.size(), 6);
+		if (available.size() >= 6) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
 			CHECK(available[4].disabled_reason.is_empty());
@@ -1669,7 +1998,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 5);
+			REQUIRE_EQ(available.size(), 6);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -1697,7 +2026,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 5);
+			REQUIRE_EQ(available.size(), 6);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
@@ -2006,6 +2335,119 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(r.ok);
 			CHECK_FALSE(r.error_message.is_empty());
 		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Implement abstract methods resolves a base defined in another file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Prime the workspace so the abstract base resolves. The derived script is
+		// intentionally left with unimplemented abstract methods, which the analyzer
+		// reports as an error; the refactor still operates on its parse tree.
+		GDScriptTests::assert_no_errors_in("res://refactor/implement_abstract_base.gd");
+
+		const String derived_path = "res://refactor/implement_abstract_derived.gd";
+		RefactorContext ctx;
+		ctx.path = derived_path;
+		ctx.source = FileAccess::get_file_as_string(derived_path);
+
+		SUBCASE("availability reports the refactor as enabled") {
+			const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(2, 0));
+			const RefactorAvailability *entry = GDScriptTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+			REQUIRE(entry != nullptr);
+			CHECK(entry->enabled);
+		}
+
+		SUBCASE("prepare stubs the inherited abstract methods") {
+			RefactorParams params;
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+			REQUIRE(r.ok);
+			REQUIRE_FALSE(r.edits.is_empty());
+
+			String out;
+			REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+			CHECK(out.contains("func area() -> float:"));
+			CHECK(out.contains("push_error(\"Not implemented: area\")"));
+			CHECK(out.contains("return 0.0"));
+			CHECK(out.contains("func describe() -> String:"));
+			CHECK(out.contains("return \"\""));
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Implement abstract methods resolves a multi-level cross-file base chain") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Prime the abstract base and the abstract intermediate so the leaf's base chain
+		// resolves through separate script files. The leaf still owes ping(), inherited
+		// from the base two levels up; the intermediate does not override it.
+		GDScriptTests::assert_no_errors_in("res://refactor/implement_abstract_chain_base.gd");
+
+		const String leaf_path = "res://refactor/implement_abstract_chain_leaf.gd";
+		RefactorContext ctx;
+		ctx.path = leaf_path;
+		ctx.source = FileAccess::get_file_as_string(leaf_path);
+
+		const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(2, 0));
+		const RefactorAvailability *entry = GDScriptTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		REQUIRE(entry != nullptr);
+		CHECK(entry->enabled);
+
+		RefactorParams params;
+		RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+		REQUIRE_FALSE(r.edits.is_empty());
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func ping() -> int:"));
+		CHECK(out.contains("return 0"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Implement abstract: root class with only header lines appends at end of file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		GDScriptTests::assert_no_errors_in("res://refactor/implement_abstract_base.gd");
+
+		// A root class whose body is only header lines (@tool / class_name / extends) and
+		// that owes inherited abstract methods. The stubs must be appended after the
+		// extends line, not inserted mid-header, to keep the file valid.
+		const String derived_path = "res://refactor/implement_abstract_header_only.gd";
+		RefactorContext ctx;
+		ctx.path = derived_path;
+		ctx.source = FileAccess::get_file_as_string(derived_path);
+
+		RefactorParams params;
+		RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+		REQUIRE_FALSE(r.edits.is_empty());
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+		const int class_name_index = out.find("class_name RefactorAbstractHeaderOnly");
+		const int extends_index = out.find("extends \"res://refactor/implement_abstract_base.gd\"");
+		const int func_index = out.find("func area() -> float:");
+		CHECK(class_name_index >= 0);
+		CHECK(extends_index >= 0);
+		CHECK(func_index >= 0);
+		CHECK(func_index > extends_index);
+		CHECK(func_index > class_name_index);
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

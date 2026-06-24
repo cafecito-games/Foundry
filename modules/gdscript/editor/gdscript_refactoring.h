@@ -66,6 +66,7 @@ enum class RefactorKind {
 	EXTRACT_METHOD,
 	ADD_TYPE_ANNOTATION,
 	INLINE_VARIABLE,
+	IMPLEMENT_ABSTRACT_METHODS,
 };
 
 struct RefactorAvailability {
