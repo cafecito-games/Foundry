@@ -119,26 +119,26 @@ as before/after per file and is undoable by the wizard.
 ```cpp
 struct FixpointInferenceOptions {
     int max_iterations = 0; // 0 = auto: (first-pass candidate count) + 1
-    bool strict_null_checks = false;
-    bool strict_dynamic_checks = false;
 };
 
 struct FixpointFileChange {
     String path;
     String before_source;
     String after_source;
-    int annotations_applied = 0;
+    int annotations_applied = 0; // Counts applied annotations (candidates), not text edits.
 };
 
 struct FixpointSkipped {
     String path;
     int line = -1;
-    String reason; // unprovable, or verification rejected the file's batch
+    String reason; // unprovable/disabled, or verification rejected the file's batch
 };
 
 struct FixpointInferenceResult {
     bool ok = false;
     String error_message;
+    bool converged = false; // true => a pass produced nothing (real fixpoint);
+                            // false => the iteration bound stopped the loop early.
     int iterations = 0;
     int total_annotations_applied = 0;
     Vector<FixpointFileChange> changed_files;
@@ -152,6 +152,16 @@ public:
         const FixpointInferenceOptions &p_options = FixpointInferenceOptions());
 };
 ```
+
+Notes:
+- The strict-mode toggles are intentionally absent: enabling strict checks is a
+  later opt-in step (out of scope here), and `find_candidates` collects under
+  default analyzer settings, so the verification gate must use the same settings
+  to stay symmetric.
+- Duplicate paths in `p_paths` are de-duplicated once; each unique file is
+  processed and reported a single time.
+- `annotations_applied` and `total_annotations_applied` count applied annotations
+  (candidates), not the underlying text edits.
 
 ## Algorithm
 
@@ -221,6 +231,24 @@ is #34's responsibility.
   not an error but bounds the work.
 - `run()` mutates files on disk and global `GDScriptCache` state; it is not safe
   to run concurrently with a live editing session or another `run()`.
+- Disk writes use a temp-file + flush + rename so a failed or partial write
+  cannot truncate or corrupt the target file.
+
+### Limitation: per-file verification only (cross-file regressions deferred to #34)
+
+Verification re-analyzes only the **edited** file. It does not check that the
+file's *dependents* still analyze after an annotation is written. An annotation
+that is locally valid can still introduce a new error in a caller — e.g. writing
+`func value() -> int` makes a caller's `var x: String = value()` a type error,
+where `var x: String = <Variant>` was previously allowed. In that case the
+orchestrator commits the annotation and the dependent then fails to analyze on the
+next pass (it simply yields no further candidates), leaving a regression on disk.
+
+Closing this hole — re-analyzing inverse dependents and rolling back edits that
+break them — is the job of the post-edit verification harness (#34). Until #34
+lands, `ok = true` does **not** guarantee every dependent still analyzes, and the
+wizard (#41/#42) must not apply `run()`'s output to a real project without that
+harness gating it. This limitation is documented on the public API.
 
 ## Testing
 
