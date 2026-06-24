@@ -5164,21 +5164,26 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			// well as traits (possibly nested) declared in other files.
 			if (context.current_class != nullptr) {
 				const String identifier_chain = _get_lookup_identifier_chain(p_code, p_symbol);
-				const GDScriptParser::ClassNode::TraitUse *match = nullptr;
+				const GDScriptParser::ClassNode::TraitUse *chain_match = nullptr;
+				const GDScriptParser::ClassNode::TraitUse *leaf_match = nullptr;
+				int leaf_match_count = 0;
 				for (const GDScriptParser::ClassNode::TraitUse &trait_use : context.current_class->used_traits) {
 					if (trait_use.name.is_empty() || trait_use.resolved_trait == nullptr) {
 						continue;
 					}
 					if (trait_use.to_string() == identifier_chain) {
 						// Exact match on the qualified name under the cursor.
-						match = &trait_use;
+						chain_match = &trait_use;
 						break;
 					}
-					if (match == nullptr && trait_use.name[trait_use.name.size() - 1]->name == p_symbol) {
-						// Fallback: first trait whose leaf name matches the symbol.
-						match = &trait_use;
+					if (trait_use.name[trait_use.name.size() - 1]->name == p_symbol) {
+						leaf_match = &trait_use;
+						leaf_match_count++;
 					}
 				}
+				// Only fall back to a leaf-name match when it is unambiguous; otherwise a
+				// reference like `uses A.Mixin, B.Mixin` could resolve to the wrong trait.
+				const GDScriptParser::ClassNode::TraitUse *match = chain_match != nullptr ? chain_match : (leaf_match_count == 1 ? leaf_match : nullptr);
 				if (match != nullptr) {
 					const GDScriptParser::ClassNode *trait = match->resolved_trait;
 					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
