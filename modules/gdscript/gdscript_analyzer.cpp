@@ -8211,14 +8211,18 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 	while (found_function == nullptr && base_class != nullptr) {
 		if (base_class->has_member(function_name)) {
-			if (base_class->get_member(function_name).type != GDScriptParser::ClassNode::Member::FUNCTION) {
-				// TODO: If this is Callable it can have a better error message.
+			const GDScriptParser::ClassNode::Member &member = base_class->get_member(function_name);
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				const GDScriptParser::DataType member_type = member.get_datatype();
+				if (member_type.is_set() && member_type.kind == GDScriptParser::DataType::BUILTIN && member_type.builtin_type == Variant::CALLABLE) {
+					return false;
+				}
 				push_error(vformat(R"(Member "%s" is not a function.)", function_name), p_source);
 				return false;
 			}
 
 			resolve_class_member(base_class, function_name, p_source);
-			found_function = base_class->get_member(function_name).function;
+			found_function = member.function;
 		}
 
 		resolve_class_inheritance(base_class, p_source);
@@ -8232,13 +8236,18 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				continue;
 			}
 
-			if (trait->get_member(function_name).type != GDScriptParser::ClassNode::Member::FUNCTION) {
+			const GDScriptParser::ClassNode::Member &member = trait->get_member(function_name);
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				const GDScriptParser::DataType member_type = member.get_datatype();
+				if (member_type.is_set() && member_type.kind == GDScriptParser::DataType::BUILTIN && member_type.builtin_type == Variant::CALLABLE) {
+					return false;
+				}
 				push_error(vformat(R"(Member "%s" is not a function.)", function_name), p_source);
 				return false;
 			}
 
 			resolve_class_member(trait, function_name, p_source);
-			found_function = trait->get_member(function_name).function;
+			found_function = member.function;
 			break;
 		}
 	}
