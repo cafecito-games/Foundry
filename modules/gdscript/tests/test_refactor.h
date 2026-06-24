@@ -134,6 +134,18 @@ inline RefactorResult run_inline_variable(const String &p_source, int p_line, in
 	return r;
 }
 
+inline RefactorResult run_sort_members_by_style_guide(const String &p_source, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://style_order_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(0, 0), RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 inline const RefactorFileEdit *find_file_edit(const RefactorResult &p_result, const String &p_path) {
 	for (const RefactorFileEdit &file_edit : p_result.file_edits) {
 		if (file_edit.path == p_path) {
@@ -1921,6 +1933,41 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(available[4].enabled);
 			CHECK(available[4].disabled_reason.is_empty());
 		}
+	}
+
+	TEST_CASE("Sort members by style guide reorders root members stably") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func beta() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"var second := 2\n"
+				"signal changed\n"
+				"var first := 1\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"func alpha() -> void:\n"
+				"\tpass\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"var second := 2\n"
+				"var first := 1\n"
+				"\n"
+				"func beta() -> void:\n"
+				"\tpass\n"
+				"func alpha() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
 	}
 
 	TEST_CASE("Inline variable rejects unsafe or unsupported targets") {
