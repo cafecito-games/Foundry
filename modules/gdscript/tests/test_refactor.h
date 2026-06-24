@@ -1917,6 +1917,100 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		memdelete(editor_file_system);
 		GDScriptTests::finish_language();
 	}
+
+	TEST_CASE("Add type annotation infers parameters from resolved call sites") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		auto run_callsite_type_annotation = [](const String &p_res_path, int p_line, int p_column, String &r_out) -> RefactorResult {
+			GDScriptTests::assert_no_errors_in(p_res_path);
+
+			RefactorContext ctx;
+			ctx.path = p_res_path;
+			ctx.source = FileAccess::get_file_as_string(p_res_path);
+			RefactorParams params;
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			if (r.ok) {
+				GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+			}
+			return r;
+		};
+
+		SUBCASE("agreeing call sites produce a parameter annotation") {
+			GDScriptTests::assert_no_errors_in("res://refactor/callsite_parameter_agree_user.gd");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_agree_target.gd", 2, 19, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func accept_score(score: int):"));
+		}
+
+		SUBCASE("default-less parameter before defaulted parameter keeps its insertion point") {
+			GDScriptTests::assert_no_errors_in("res://refactor/callsite_parameter_before_default_user.gd");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_before_default_target.gd", 2, 19, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func accept_value(value: String, count = 5):"));
+		}
+
+		SUBCASE("non-first parameter uses its own argument index") {
+			GDScriptTests::assert_no_errors_in("res://refactor/callsite_parameter_second_arg_user.gd");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_second_arg_target.gd", 2, 29, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func accept_second(prefix, score: int):"));
+		}
+
+		SUBCASE("disagreeing call sites are skipped") {
+			GDScriptTests::assert_no_errors_in("res://refactor/callsite_parameter_disagree_user.gd");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_disagree_target.gd", 2, 19, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		SUBCASE("string-based dynamic dispatch keeps direct calls skipped") {
+			GDScriptTests::assert_no_errors_in("res://refactor/callsite_parameter_dynamic_user.gd");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_dynamic_target.gd", 2, 21, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		SUBCASE("overridden methods are skipped") {
+			GDScriptTests::assert_no_errors_in("res://refactor/callsite_parameter_override_user.gd");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_override_target.gd", 2, 22, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		SUBCASE("inline property accessor call sites are included") {
+			GDScriptTests::assert_no_errors_in("res://refactor/callsite_parameter_property_user.gd");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_property_target.gd", 2, 21, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
 #endif // GDSCRIPT_NO_LSP
 }
 
