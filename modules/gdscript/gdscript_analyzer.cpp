@@ -1180,12 +1180,15 @@ bool GDScriptAnalyzer::resolve_type_parameter(const StringName &p_name, GDScript
 		return false;
 	};
 
+	GDScriptParser::ClassNode *declaring_class = nullptr;
+
 	// Method type parameters shadow class ones, and inner classes shadow their outer classes.
 	if (parser->current_function != nullptr && match_in(parser->current_function->type_parameters, GDScriptParser::DataType::TYPE_PARAMETER_METHOD)) {
 		// Found a method type parameter.
 	} else {
-		for (const GDScriptParser::ClassNode *script_class = parser->current_class; script_class != nullptr; script_class = script_class->outer) {
+		for (GDScriptParser::ClassNode *script_class = parser->current_class; script_class != nullptr; script_class = script_class->outer) {
 			if (match_in(script_class->type_parameters, GDScriptParser::DataType::TYPE_PARAMETER_CLASS)) {
+				declaring_class = script_class;
 				break;
 			}
 		}
@@ -1202,7 +1205,18 @@ bool GDScriptAnalyzer::resolve_type_parameter(const StringName &p_name, GDScript
 	type.type_parameter_scope = scope;
 	type.type_parameter_index = index;
 	if (parameter->bound != nullptr) {
+		// A class type parameter's bound belongs to its declaring class, not wherever the parameter is
+		// used. Resolve (and thus cache) it in that scope so an enclosing method type parameter cannot
+		// shadow the bound name and poison the cached datatype for later uses.
+		GDScriptParser::ClassNode *previous_class = parser->current_class;
+		GDScriptParser::FunctionNode *previous_function = parser->current_function;
+		if (scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS && declaring_class != nullptr) {
+			parser->current_class = declaring_class;
+			parser->current_function = nullptr;
+		}
 		type.type_parameter_bound.push_back(type_from_metatype(resolve_datatype(parameter->bound)));
+		parser->current_class = previous_class;
+		parser->current_function = previous_function;
 	}
 
 	r_type = type;

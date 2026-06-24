@@ -481,6 +481,35 @@ TEST_CASE("[Modules][GDScript] Analyzer resolves a class bound ignoring shadowin
 	CHECK(found_bound_error);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer does not let a method type parameter poison a cached class bound") {
+	GDScriptParser parser;
+	// Resolving `item: T` inside `poison` first touches `T`'s bound while the method type parameter
+	// `Real` is in scope. The class bound must still resolve to the class `Real`, so `Box[Object]`
+	// is rejected.
+	const String source =
+			"class Real:\n"
+			"\tpass\n"
+			"class Box[T: Real]:\n"
+			"\tvar value: T\n"
+			"\tfunc poison[Real](item: T) -> void:\n"
+			"\t\tpass\n"
+			"var bad: Box[Object]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer exposes bound members on a type-parameter value") {
 	GDScriptParser parser;
 	// `value` has the type parameter type `T` bound by `RefCounted`, so calling a
