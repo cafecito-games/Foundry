@@ -1011,6 +1011,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				if (object && object->get_script_instance()) {
 					Ref<Script> script_ref = object->get_script_instance()->get_script();
 					if (is_trait_type) {
+						// Trait-typed values are Object-backed: a trait has no native class of its
+						// own, so membership is a nominal trait-set lookup over the flattened
+						// implementer rather than a native/script inheritance walk.
 						result = script_ref.is_valid() && script_ref->has_script_trait(gdscript_type->get_trait_type_name());
 					} else {
 						Script *script_ptr = script_ref.ptr();

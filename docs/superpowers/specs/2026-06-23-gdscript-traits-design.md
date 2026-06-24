@@ -254,6 +254,69 @@ A future migration to first-class trait objects with a per-class trait table is
 tracked as a follow-up and would replace flattening without changing the language
 surface.
 
+### Implementation Status (compiler / runtime)
+
+The compiler/runtime flattening landed with the following shape:
+
+- Flattening is physical: each implementer recompiles the trait's variables,
+  constants, enums, signals, and method bodies into itself. The flattenable trait
+  members are collected in declaration order across the transitive trait set
+  (`GDScriptCompiler::_collect_flattened_trait_members`), skipping names the
+  implementer or any of its base classes already defines (an override that shadows
+  the trait, matching analyzer resolution) and including a diamond-reached trait
+  once. Abstract requirements, inner classes, and export groups are not flattened.
+  Instance and static trait state is initialized per implementer in the
+  implicit/static initializers, and trait-provided static data drives the script's
+  static registration just like an inline `static var`.
+- The shared `GDScriptTrait` function object (pointing identical method bytecode at
+  one shared object) is intentionally deferred to a follow-up. Physical
+  recompilation is correct because trait methods bind member access by name against
+  the implementer's flattened member layout, which a shared object would have to
+  normalize. This is a pure code-size optimization, not a correctness requirement.
+- Trait-set tagging and `is`/`as` membership across the inheritance chain were
+  already in place (`script_trait_list`, `has_script_trait`); this work makes the
+  flattened members usable, which required extending analyzer member/identifier and
+  call resolution so a class can see its applied traits' members (previously only
+  trait-typed values resolved trait members).
+- External global traits are raised to `FULLY_SOLVED` before an implementer's body
+  resolves, so identifier sources inside trait method bodies are resolved before the
+  bodies are flattened and compiled.
+
+### Object-backed trait-typed value tradeoff
+
+A trait-typed value (`var d: Damageable`) is `Object`-backed: it is just the
+implementing instance observed through the trait's nominal identity. Because the
+trait has no native class of its own, trait-typed values do not benefit from
+native-class call/property optimizations the way an engine-class-typed value does,
+and member access through a trait type resolves against the flattened members rather
+than a dedicated dispatch table. This is the documented cost of the flattening model
+and is the motivation for the deferred first-class-trait-object follow-up.
+
+### Cross-file cache lifecycle
+
+Because flattening recompiles trait members directly into each implementer, there is
+no separate trait compilation artifact to cache or purge. Cross-file freshness rides
+on the existing dependency tracking: an implementer resolves an external global trait
+through `get_depended_parser_for`, so a change to the trait's file invalidates and
+recompiles the implementer through the normal reload path.
+
+### Known limitations
+
+- Transitive external traits: direct members of a directly applied trait flatten
+  across files, but accessing a member that arrives only *transitively* through an
+  external global trait (class uses global trait `A`, `A` uses global trait `B`, and
+  the class names `B`'s members directly) currently fails analyzer resolution, because
+  the implementer's parser cannot reach a transitively-used external trait's parser.
+  Inline transitive traits and indirect use (an `A` method that touches `B`'s state)
+  work. Wiring transitive external trait parsers is tracked as a follow-up.
+- Static-vs-instance name collisions between a trait member and a base/class member
+  are not yet diagnosed. A trait member whose name collides with a *native* base member
+  or a non-overridable base member is rejected (as the class's own members would be),
+  and a method may override a base method, but a static trait member sharing a name with
+  an instance member (or vice versa) is not flagged and can resolve inconsistently
+  between the analyzer and codegen. Tightening static/instance conflict detection is
+  tracked as a follow-up.
+
 ## Namespace Interop
 
 - Global traits share the qualified-name registry from the namespaces epic.
