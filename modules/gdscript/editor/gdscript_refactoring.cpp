@@ -1443,6 +1443,7 @@ bool find_extract_method_range(
 
 	int end_line_exclusive = p_location.end_line;
 	if (p_location.end_column != 0) {
+		// The selection must cover the final statement text; trailing whitespace is allowed.
 		if (p_location.end_line >= p_lines.size() ||
 				p_location.end_column > p_lines[p_location.end_line].length() ||
 				p_location.end_column < get_trailing_whitespace_start_column(p_lines[p_location.end_line])) {

@@ -3503,6 +3503,8 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 
 	// Refactors are GDScript-specific; only offer them when editing a GDScript file.
 	if (script.is_valid() && script->get_language() && script->get_language()->get_name() == "GDScript") {
+		// Ownership is transferred to context_menu when this becomes a submenu;
+		// the context_menu->clear() call above frees the previous submenu.
 		PopupMenu *refactor_submenu = memnew(PopupMenu);
 		refactor_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
 		_populate_refactor_submenu(refactor_submenu);

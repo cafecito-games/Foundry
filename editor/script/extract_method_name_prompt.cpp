@@ -40,11 +40,6 @@ void ExtractMethodNamePromptModel::_validate() {
 		return;
 	}
 
-	if (name.is_empty()) {
-		error_message = "Name cannot be empty.";
-		return;
-	}
-
 	if (!GDScriptRefactoring::validate_extract_method_name(existing_member_names, name, error_message)) {
 		return;
 	}

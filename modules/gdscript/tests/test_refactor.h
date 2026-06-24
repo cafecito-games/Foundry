@@ -880,6 +880,23 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"\tprint(message)\n"
 					"\tprint(\"Score length: \", str(score).length())\n");
 		}
+		SUBCASE("accepts single-line full statement text selection") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, lines[1].length()), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
 		SUBCASE("allows requested method name matching export group label") {
 			const String source =
 					"@export_group(\"helper\")\n"
@@ -984,6 +1001,29 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_extract_method(source, selection(1, 1, 1, 6), out);
 			CHECK_FALSE(r.ok);
 			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects text selection starting inside a statement") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 2, 1, lines[1].length()), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects text selection ending before statement text ends") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, 6), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(out.is_empty());
 		}
 		SUBCASE("rejects multiple output locals") {
 			const String source =
