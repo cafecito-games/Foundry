@@ -2122,6 +2122,74 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
+	TEST_CASE("Sort members by style guide leaves script annotations outside sorted span") {
+		const String source =
+				"@tool\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"signal changed\n";
+		const String expected =
+				"@tool\n"
+				"signal changed\n"
+				"\n"
+				"func _ready() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves member annotations across ordinary comments") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@export\n"
+				"# Inspector speed.\n"
+				"var speed := 1\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"@export\n"
+				"# Inspector speed.\n"
+				"var speed := 1\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps trailing comments with the previous member") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"# trailing note about value\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1\n"
+				"# trailing note about value\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
 	TEST_CASE("Sort members by style guide declines ambiguous export groups") {
 		const String source =
 				"extends Node\n"

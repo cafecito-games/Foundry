@@ -3495,9 +3495,9 @@ bool line_span_has_standalone_warning_annotation(const Vector<String> &p_lines, 
 	return false;
 }
 
-bool is_annotation_or_doc_comment_line(const String &p_line) {
+bool is_doc_comment_line(const String &p_line) {
 	const String stripped_line = p_line.strip_edges();
-	return stripped_line.begins_with("@") || stripped_line.begins_with("##");
+	return stripped_line.begins_with("##");
 }
 
 bool is_ordinary_comment_line(const String &p_line) {
@@ -3505,14 +3505,25 @@ bool is_ordinary_comment_line(const String &p_line) {
 	return stripped_line.begins_with("#") && !stripped_line.begins_with("##");
 }
 
-int find_attached_style_order_block_start(const Vector<String> &p_lines, int p_member_start_line, int p_floor_line) {
+int find_attached_style_order_block_start(
+		const Vector<String> &p_lines,
+		int p_member_start_line,
+		int p_floor_line,
+		int p_member_annotation_start_line,
+		int p_export_group_start_line) {
 	if (p_member_start_line < 0 || p_member_start_line >= p_lines.size()) {
 		return p_member_start_line;
 	}
 
 	const int floor_line = p_floor_line < 0 ? 0 : p_floor_line;
 	int start_line = p_member_start_line;
-	while (start_line > floor_line && is_annotation_or_doc_comment_line(p_lines[start_line - 1])) {
+	if (p_member_annotation_start_line >= floor_line && p_member_annotation_start_line < start_line) {
+		start_line = p_member_annotation_start_line;
+	}
+	if (p_export_group_start_line >= floor_line && p_export_group_start_line < start_line) {
+		start_line = p_export_group_start_line;
+	}
+	while (start_line > floor_line && is_doc_comment_line(p_lines[start_line - 1])) {
 		start_line--;
 	}
 
@@ -3521,8 +3532,12 @@ int find_attached_style_order_block_start(const Vector<String> &p_lines, int p_m
 			is_ordinary_comment_line(p_lines[ordinary_comment_start_line - 1])) {
 		ordinary_comment_start_line--;
 	}
+	const bool comment_has_blank_before = ordinary_comment_start_line > 0 &&
+			p_lines[ordinary_comment_start_line - 1].strip_edges().is_empty();
+	const bool comment_starts_at_safe_floor = ordinary_comment_start_line == floor_line &&
+			(floor_line == 0 || p_lines[floor_line - 1].strip_edges().is_empty());
 	if (ordinary_comment_start_line < start_line &&
-			(ordinary_comment_start_line <= floor_line || p_lines[ordinary_comment_start_line - 1].strip_edges().is_empty())) {
+			(comment_has_blank_before || comment_starts_at_safe_floor)) {
 		start_line = ordinary_comment_start_line;
 	}
 
@@ -3774,6 +3789,26 @@ const GDScriptParser::Node *get_style_order_member_source_node(const GDScriptPar
 	return p_member.get_source_node();
 }
 
+int get_style_order_member_annotation_start_line(const GDScriptParser::ClassNode::Member &p_member) {
+	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
+	if (node == nullptr || node->start_line <= 0) {
+		return -1;
+	}
+
+	int annotation_start_line = -1;
+	for (const GDScriptParser::AnnotationNode *annotation : node->annotations) {
+		if (annotation == nullptr || annotation->start_line <= 0 || annotation->start_line >= node->start_line) {
+			continue;
+		}
+
+		const int line = annotation->start_line - 1;
+		if (annotation_start_line < 0 || line < annotation_start_line) {
+			annotation_start_line = line;
+		}
+	}
+	return annotation_start_line;
+}
+
 int get_style_order_member_start_line(const GDScriptParser::ClassNode::Member &p_member) {
 	if (p_member.type == GDScriptParser::ClassNode::Member::UNDEFINED) {
 		return -1;
@@ -3847,7 +3882,13 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 		}
 
 		const int member_start_line = get_style_order_member_start_line(member);
-		const int block_start_line = find_attached_style_order_block_start(p_lines, member_start_line, block_floor_line);
+		const int member_annotation_start_line = get_style_order_member_annotation_start_line(member);
+		const int block_start_line = find_attached_style_order_block_start(
+				p_lines,
+				member_start_line,
+				block_floor_line,
+				member_annotation_start_line,
+				pending_export_group_start_line);
 		const int member_end_line = get_style_order_member_end_line(member);
 		if (block_start_line < 0 || member_end_line <= block_start_line) {
 			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
