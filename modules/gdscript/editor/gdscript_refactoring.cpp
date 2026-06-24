@@ -3536,17 +3536,49 @@ int get_style_order_member_start_line(const GDScriptParser::ClassNode::Member &p
 	if (p_member.type == GDScriptParser::ClassNode::Member::UNDEFINED) {
 		return -1;
 	}
+	if (p_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE) {
+		const GDScriptParser::EnumNode *enum_node = p_member.enum_value.parent_enum;
+		return enum_node != nullptr && enum_node->start_line > 0 ? enum_node->start_line - 1 : -1;
+	}
 	const int line = p_member.get_line();
 	return line > 0 ? line - 1 : -1;
 }
 
 int get_style_order_member_end_line(const GDScriptParser::ClassNode::Member &p_member) {
+	if (p_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE) {
+		const GDScriptParser::EnumNode *enum_node = p_member.enum_value.parent_enum;
+		return enum_node != nullptr && enum_node->end_line > 0 ? enum_node->end_line : -1;
+	}
 	const GDScriptParser::Node *node = p_member.get_source_node();
 	if (node != nullptr && node->end_line > 0) {
 		return node->end_line;
 	}
-	if (p_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE && p_member.enum_value.line > 0) {
-		return p_member.enum_value.line;
+	return -1;
+}
+
+bool is_style_order_unnamed_enum_continuation(const GDScriptParser::ClassNode *p_class, int p_member_index) {
+	if (p_class == nullptr || p_member_index <= 0 || p_member_index >= p_class->members.size()) {
+		return false;
+	}
+
+	const GDScriptParser::ClassNode::Member &member = p_class->members[p_member_index];
+	const GDScriptParser::ClassNode::Member &previous_member = p_class->members[p_member_index - 1];
+	return member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE &&
+			previous_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE &&
+			member.enum_value.parent_enum != nullptr &&
+			member.enum_value.parent_enum == previous_member.enum_value.parent_enum;
+}
+
+int get_next_style_order_block_start_line(const GDScriptParser::ClassNode *p_class, int p_member_index) {
+	if (p_class == nullptr) {
+		return -1;
+	}
+
+	for (int i = p_member_index + 1; i < p_class->members.size(); i++) {
+		if (is_style_order_unnamed_enum_continuation(p_class, i)) {
+			continue;
+		}
+		return get_style_order_member_start_line(p_class->members[i]);
 	}
 	return -1;
 }
@@ -3571,12 +3603,14 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 
 	Vector<StyleOrderBlock> blocks;
 	for (int i = 0; i < p_class->members.size(); i++) {
+		if (is_style_order_unnamed_enum_continuation(p_class, i)) {
+			continue;
+		}
+
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
 		const int start_line = get_style_order_member_start_line(member);
-		int end_line = -1;
-		if (i + 1 < p_class->members.size()) {
-			end_line = get_style_order_member_start_line(p_class->members[i + 1]);
-		} else {
+		int end_line = get_next_style_order_block_start_line(p_class, i);
+		if (end_line < 0) {
 			end_line = get_style_order_member_end_line(member);
 		}
 		if (start_line < 0 || end_line <= start_line) {

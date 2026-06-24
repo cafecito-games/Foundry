@@ -1970,6 +1970,62 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
+	TEST_CASE("Sort members by style guide keeps unnamed enums intact") {
+		SUBCASE("same-line unnamed enum") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"enum { IDLE, RUNNING }\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"enum { IDLE, RUNNING }\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("multiline unnamed enum") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"enum {\n"
+					"\tIDLE,\n"
+					"\tRUNNING,\n"
+					"}\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"enum {\n"
+					"\tIDLE,\n"
+					"\tRUNNING,\n"
+					"}\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
 	TEST_CASE("Inline variable rejects unsafe or unsupported targets") {
 		SUBCASE("multi-use side-effecting initializer") {
 			const String source =
