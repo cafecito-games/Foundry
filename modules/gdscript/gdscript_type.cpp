@@ -270,6 +270,7 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 				src_script = base->base_type.script_type;
 			}
 			break;
+		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::VARIANT:
 		case GDScriptParser::DataType::BUILTIN:
 		case GDScriptParser::DataType::ENUM:
@@ -312,6 +313,7 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 				src_class = src_class->base_type.class_type;
 			}
 			return result;
+		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::VARIANT:
 		case GDScriptParser::DataType::BUILTIN:
 		case GDScriptParser::DataType::ENUM:

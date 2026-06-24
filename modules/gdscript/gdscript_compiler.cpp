@@ -199,6 +199,10 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.kind = GDScriptDataType::BUILTIN;
 			result.builtin_type = p_datatype.builtin_type;
 			break;
+		case GDScriptParser::DataType::TYPE_PARAMETER: {
+			// Generics are type-erased at runtime; an unsubstituted parameter becomes Variant.
+			result.kind = GDScriptDataType::VARIANT;
+		} break;
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED: {
 			_set_error("Parser bug (please report): converting unresolved type.", nullptr);
@@ -217,6 +221,11 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			element_type = GDScriptDataType();
 		}
 		result.set_container_element_type(i, element_type);
+	}
+
+	// Preserve specialized type arguments (e.g. the `int` in `Box[int]`) so runtime metadata is not lost.
+	for (int i = 0; i < p_datatype.type_arguments.size(); i++) {
+		result.type_arguments.push_back(_gdtype_from_datatype(p_datatype.type_arguments[i], p_owner, false));
 	}
 
 	return result;

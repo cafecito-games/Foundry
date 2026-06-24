@@ -110,11 +110,19 @@ public:
 			SCRIPT,
 			CLASS, // GDScript.
 			ENUM, // Enumeration.
+			TYPE_PARAMETER, // Generic type parameter, e.g. `T` in `class Box[T]`.
 			VARIANT, // Can be any type.
 			RESOLVING, // Currently resolving.
 			UNRESOLVED,
 		};
 		Kind kind = UNRESOLVED;
+
+		// Where a TYPE_PARAMETER was declared, used to disambiguate parameters that share a name across scopes.
+		enum TypeParameterScope {
+			TYPE_PARAMETER_NONE,
+			TYPE_PARAMETER_CLASS,
+			TYPE_PARAMETER_METHOD,
+		};
 
 		enum TypeSource {
 			UNDETECTED, // Can be any type.
@@ -146,6 +154,26 @@ public:
 		Vector<int> method_extra_allowed_argument_counts; // Extra exact arities not expressible by default arguments, for transformed Callables.
 		int method_unbound_argument_count = 0; // Trailing arguments ignored by transformed Callables.
 		HashMap<StringName, int64_t> enum_values; // For enums.
+
+		// For TYPE_PARAMETER kind.
+		StringName type_parameter_name;
+		int type_parameter_index = -1; // Ordinal position in its declaring scope.
+		TypeParameterScope type_parameter_scope = TYPE_PARAMETER_NONE;
+		Vector<DataType> type_parameter_bound; // 0 or 1 element: optional upper bound, e.g. `[T: Resource]`.
+
+		// Type arguments of a specialized type handle, e.g. the `int` in `Box[int]`. Empty for unspecialized types.
+		Vector<DataType> type_arguments;
+
+		_FORCE_INLINE_ bool is_type_parameter() const { return kind == TYPE_PARAMETER; }
+		_FORCE_INLINE_ bool has_type_arguments() const { return !type_arguments.is_empty(); }
+
+		// Returns a copy of p_type with every TYPE_PARAMETER replaced by its bound argument from p_bindings,
+		// recursing through container elements, type arguments, and method signatures. Unbound parameters are left intact.
+		//
+		// p_bindings is keyed by type-parameter name and must hold the parameters of a single declaration scope, since a
+		// name uniquely identifies a parameter within its own scope. For nested generics (e.g. a generic method on a
+		// generic class), substitute outermost scope first so an inner parameter that shadows an outer name wins.
+		static DataType substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings);
 
 		_FORCE_INLINE_ bool is_set() const { return kind != RESOLVING && kind != UNRESOLVED; }
 		_FORCE_INLINE_ bool is_resolving() const { return kind == RESOLVING; }
@@ -218,24 +246,41 @@ public:
 				return false;
 			}
 
+			bool equal = false;
 			switch (kind) {
 				case VARIANT:
-					return true; // All variants are the same.
+					equal = true; // All variants are the same.
+					break;
 				case BUILTIN:
-					return builtin_type == p_other.builtin_type && container_element_types == p_other.container_element_types;
+					equal = builtin_type == p_other.builtin_type && container_element_types == p_other.container_element_types;
+					break;
 				case NATIVE:
 				case ENUM: // Enums use native_type to identify the enum and its base class.
-					return native_type == p_other.native_type;
+					equal = native_type == p_other.native_type;
+					break;
 				case SCRIPT:
-					return script_type == p_other.script_type;
+					equal = script_type == p_other.script_type;
+					break;
 				case CLASS:
-					return class_type == p_other.class_type || class_type->fqcn == p_other.class_type->fqcn;
+					equal = class_type == p_other.class_type || class_type->fqcn == p_other.class_type->fqcn;
+					break;
+				case TYPE_PARAMETER:
+					equal = type_parameter_name == p_other.type_parameter_name &&
+							type_parameter_scope == p_other.type_parameter_scope &&
+							type_parameter_index == p_other.type_parameter_index &&
+							type_parameter_bound == p_other.type_parameter_bound;
+					break;
 				case RESOLVING:
 				case UNRESOLVED:
 					break;
 			}
 
-			return false;
+			if (!equal) {
+				return false;
+			}
+
+			// Specialized handles differ by their type arguments, e.g. Box[int] != Box[String].
+			return type_arguments == p_other.type_arguments;
 		}
 
 		bool operator!=(const DataType &p_other) const {
@@ -266,6 +311,11 @@ public:
 			method_unbound_argument_count = p_other.method_unbound_argument_count;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
+			type_parameter_name = p_other.type_parameter_name;
+			type_parameter_index = p_other.type_parameter_index;
+			type_parameter_scope = p_other.type_parameter_scope;
+			type_parameter_bound = p_other.type_parameter_bound;
+			type_arguments = p_other.type_arguments;
 		}
 
 		DataType() = default;

@@ -5817,6 +5817,9 @@ String GDScriptParser::DataType::to_string() const {
 			result = String(native_type).get_file(); // Remove path, keep filename
 			break;
 		}
+		case TYPE_PARAMETER:
+			result = type_parameter_name.operator String();
+			break;
 		case RESOLVING:
 		case UNRESOLVED:
 			result = "<unresolved type>";
@@ -5829,8 +5832,46 @@ String GDScriptParser::DataType::to_string() const {
 	if (!valid_kind) {
 		ERR_FAIL_V_MSG("<unresolved type>", "Kind set outside the enum range.");
 	}
+
+	// Render specialized type arguments, e.g. Box[int] or Box[String, float].
+	if (kind != TYPE_PARAMETER && !type_arguments.is_empty()) {
+		String arguments;
+		for (int i = 0; i < type_arguments.size(); i++) {
+			if (i > 0) {
+				arguments += ", ";
+			}
+			arguments += type_arguments[i].to_string();
+		}
+		result += vformat("[%s]", arguments);
+	}
 	if (is_nullable && kind != VARIANT && !(kind == BUILTIN && builtin_type == Variant::NIL)) {
 		result += "?";
+	}
+	return result;
+}
+
+GDScriptParser::DataType GDScriptParser::DataType::substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings) {
+	if (p_type.kind == TYPE_PARAMETER) {
+		const DataType *binding = p_bindings.getptr(p_type.type_parameter_name);
+		if (binding != nullptr) {
+			return *binding;
+		}
+		// Unbound parameter: leave it intact so an outer scope can substitute it later.
+		return p_type;
+	}
+
+	DataType result = p_type;
+	for (int i = 0; i < result.container_element_types.size(); i++) {
+		result.container_element_types.write[i] = substitute(result.container_element_types[i], p_bindings);
+	}
+	for (int i = 0; i < result.type_arguments.size(); i++) {
+		result.type_arguments.write[i] = substitute(result.type_arguments[i], p_bindings);
+	}
+	for (int i = 0; i < result.method_parameter_types.size(); i++) {
+		result.method_parameter_types.write[i] = substitute(result.method_parameter_types[i], p_bindings);
+	}
+	for (int i = 0; i < result.method_return_type.size(); i++) {
+		result.method_return_type.write[i] = substitute(result.method_return_type[i], p_bindings);
 	}
 	return result;
 }
@@ -5879,6 +5920,7 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 						result.hint = PROPERTY_HINT_ARRAY_TYPE;
 						result.hint_string = String(elem_type.native_type).replace("::", ".");
 						break;
+					case TYPE_PARAMETER:
 					case VARIANT:
 					case RESOLVING:
 					case UNRESOLVED:
@@ -5989,6 +6031,8 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 				result.class_name = String(native_type).replace("::", ".");
 			}
 			break;
+		case TYPE_PARAMETER:
+			// Type parameters are erased to Variant outside the type checker.
 		case VARIANT:
 		case RESOLVING:
 		case UNRESOLVED:
