@@ -12,11 +12,12 @@ func test():
 	print("end")
 
 func test_construct(v, f):
-	@warning_ignore("unsafe_call_argument")
+	@warning_ignore("unsafe_call_argument", "return_value_discarded")
 	Vector2(v, v) # Built-in type construct.
 	Utils.check(not f) # Test unary operator reading from `nil`.
 
 func test_utility(v, f):
+	@warning_ignore("return_value_discarded")
 	abs(v) # Utility function.
 	Utils.check(not f) # Test unary operator reading from `nil`.
 

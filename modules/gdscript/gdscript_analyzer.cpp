@@ -2101,7 +2101,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 				push_error(vformat(R"(The function signature doesn't match the parent. Parent signature is "%s".)", parent_signature), p_function);
 			}
 #ifdef DEBUG_ENABLED
-			if (native_base != StringName()) {
+			if (native_base != StringName() && !(parser->current_class->is_trait && p_function->is_abstract)) {
 				parser->push_warning(p_function, GDScriptWarning::NATIVE_METHOD_OVERRIDE, function_name, native_base);
 			}
 #endif // DEBUG_ENABLED
@@ -3044,7 +3044,8 @@ void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_m
 			} else if (pattern->pattern_type == GDScriptParser::PatternNode::PT_EXPRESSION) {
 				value_node = pattern->expression;
 			} else {
-				return; // Array/dict/rest pattern: cannot reason about coverage; bail out.
+				// Array/dictionary patterns cannot cover enum integers or bool values.
+				continue;
 			}
 
 			if (value_node == nullptr || !value_node->is_constant) {
@@ -4079,6 +4080,15 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		// Call to name directly.
 		StringName function_name = p_call->function_name;
 
+#ifdef DEBUG_ENABLED
+		const auto warn_return_value_discarded = [&]() {
+			const GDScriptParser::DataType &return_type = p_call->get_datatype();
+			if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL) {
+				parser->push_warning(p_call, GDScriptWarning::RETURN_VALUE_DISCARDED, p_call->function_name);
+			}
+		};
+#endif // DEBUG_ENABLED
+
 		if (function_name == SNAME("Object")) {
 			push_error(R"*(Invalid constructor "Object()", use "Object.new()" instead.)*", p_call);
 			p_call->set_datatype(call_type);
@@ -4165,6 +4175,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 						if (arg_type.kind == GDScriptParser::DataType::BUILTIN && arg_type.builtin_type == builtin_type) {
 							// Okay.
 							p_call->set_datatype(call_type);
+#ifdef DEBUG_ENABLED
+							warn_return_value_discarded();
+#endif // DEBUG_ENABLED
 							return;
 						}
 					} else {
@@ -4189,6 +4202,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 						parser->push_warning(p_call->arguments[0], GDScriptWarning::UNSAFE_CALL_ARGUMENT, "1", "constructor", function_name, expected_types, "Variant");
 #endif // DEBUG_ENABLED
 						p_call->set_datatype(call_type);
+#ifdef DEBUG_ENABLED
+						warn_return_value_discarded();
+#endif // DEBUG_ENABLED
 						return;
 					}
 				}
@@ -4294,6 +4310,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 #endif // DEBUG_ENABLED
 
 			p_call->set_datatype(call_type);
+#ifdef DEBUG_ENABLED
+			warn_return_value_discarded();
+#endif // DEBUG_ENABLED
 			return;
 		} else if (GDScriptUtilityFunctions::function_exists(function_name)) {
 			MethodInfo function_info = GDScriptUtilityFunctions::get_function_info(function_name);
@@ -4345,6 +4364,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				validate_call_arg(function_info, p_call);
 			}
 			p_call->set_datatype(type_from_property(function_info.return_val));
+#ifdef DEBUG_ENABLED
+			warn_return_value_discarded();
+#endif // DEBUG_ENABLED
 			return;
 		} else if (Variant::has_utility_function(function_name)) {
 			MethodInfo function_info = info_from_utility_func(function_name);
@@ -4397,6 +4419,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			}
 			p_call->is_noreturn = function_name == SNAME("push_fatal");
 			p_call->set_datatype(type_from_property(function_info.return_val));
+#ifdef DEBUG_ENABLED
+			warn_return_value_discarded();
+#endif // DEBUG_ENABLED
 			return;
 		}
 	}
@@ -4548,7 +4573,6 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 
 #ifdef DEBUG_ENABLED
-		// FIXME: No warning for built-in constructors and utilities due to early return.
 		if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL &&
 				!(p_call->is_super && p_call->function_name == GDScriptLanguage::get_singleton()->strings._init)) {
 			parser->push_warning(p_call, GDScriptWarning::RETURN_VALUE_DISCARDED, p_call->function_name);

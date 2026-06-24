@@ -1693,8 +1693,13 @@ GDScriptParser::VariableNode *GDScriptParser::parse_property(VariableNode *p_var
 				getter_used = true;
 			}
 		} else {
-			// TODO: Update message to only have the missing one if it's the case.
-			push_error(R"(Expected "get" or "set" for property declaration.)");
+			if (setter_used && !getter_used) {
+				push_error(R"(Expected "get" for property declaration.)");
+			} else if (getter_used && !setter_used) {
+				push_error(R"(Expected "set" for property declaration.)");
+			} else {
+				push_error(R"(Expected "get" or "set" for property declaration.)");
+			}
 		}
 
 		if (i == 0 && p_variable->property == VariableNode::PROP_SETGET) {
@@ -2586,8 +2591,6 @@ GDScriptParser::Node *GDScriptParser::parse_statement() {
 		current_suite->has_unreachable_code = true;
 		if (current_function) {
 			push_warning(result, GDScriptWarning::UNREACHABLE_CODE, current_function->identifier ? current_function->identifier->name : "<anonymous lambda>");
-		} else {
-			// TODO: Properties setters and getters with unreachable code are not being warned
 		}
 	}
 #endif
