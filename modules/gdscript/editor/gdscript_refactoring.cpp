@@ -3510,7 +3510,8 @@ int find_attached_style_order_block_start(
 		int p_member_start_line,
 		int p_floor_line,
 		int p_member_annotation_start_line,
-		int p_export_group_start_line) {
+		int p_export_group_start_line,
+		bool p_allow_leading_ordinary_comments) {
 	if (p_member_start_line < 0 || p_member_start_line >= p_lines.size()) {
 		return p_member_start_line;
 	}
@@ -3536,12 +3537,26 @@ int find_attached_style_order_block_start(
 			p_lines[ordinary_comment_start_line - 1].strip_edges().is_empty();
 	const bool comment_starts_at_safe_floor = ordinary_comment_start_line == floor_line &&
 			(floor_line == 0 || p_lines[floor_line - 1].strip_edges().is_empty());
+	const bool comment_is_first_member_leading_comment =
+			p_allow_leading_ordinary_comments && ordinary_comment_start_line < start_line;
 	if (ordinary_comment_start_line < start_line &&
-			(comment_has_blank_before || comment_starts_at_safe_floor)) {
+			(comment_has_blank_before || comment_starts_at_safe_floor || comment_is_first_member_leading_comment)) {
 		start_line = ordinary_comment_start_line;
 	}
 
 	return start_line;
+}
+
+int find_attached_style_order_block_end(const Vector<String> &p_lines, int p_member_end_line) {
+	if (p_member_end_line < 0) {
+		return p_member_end_line;
+	}
+
+	int end_line = p_member_end_line;
+	while (end_line < p_lines.size() && is_ordinary_comment_line(p_lines[end_line])) {
+		end_line++;
+	}
+	return end_line;
 }
 
 String normalize_block_text(const String &p_text) {
@@ -3888,9 +3903,11 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 				member_start_line,
 				block_floor_line,
 				member_annotation_start_line,
-				pending_export_group_start_line);
+				pending_export_group_start_line,
+				blocks.is_empty());
 		const int member_end_line = get_style_order_member_end_line(member);
-		if (block_start_line < 0 || member_end_line <= block_start_line) {
+		const int block_end_line = find_attached_style_order_block_end(p_lines, member_end_line);
+		if (block_start_line < 0 || member_end_line <= block_start_line || block_end_line <= block_start_line) {
 			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
 			return candidate;
 		}
@@ -3911,7 +3928,7 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 		block.original_index = i;
 		block.bucket = get_style_order_bucket(member);
 		block.start_line = block_start_line;
-		block.end_line = member_end_line;
+		block.end_line = block_end_line;
 		blocks.push_back(block);
 		block_floor_line = member_end_line;
 	}

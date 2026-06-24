@@ -2190,6 +2190,48 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
+	TEST_CASE("Sort members by style guide moves trailing comments with the last member") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"signal changed\n"
+				"# signal note\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"# signal note\n"
+				"\n"
+				"var value := 1\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves first member comments after headers") {
+		const String source =
+				"extends Node\n"
+				"# Handles ready.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"signal changed\n"
+				"\n"
+				"# Handles ready.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
 	TEST_CASE("Sort members by style guide declines ambiguous export groups") {
 		const String source =
 				"extends Node\n"
@@ -2209,7 +2251,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK(r.error_message.to_lower().contains("export group"));
 	}
 
-	TEST_CASE("Sort members by style guide rejects unsafe annotation blocks") {
+	TEST_CASE("Sort members by style guide moves safe annotation blocks") {
 		SUBCASE("separate-line member annotation remains sortable") {
 			const String source =
 					"extends Node\n"
