@@ -57,23 +57,27 @@ know script-defined enums, the common GDScript case.
 
 Chosen: the GDScript analyzer already populates `DataType.enum_values`
 (name -> int) on enum types for *both* native and script enums
-(`gdscript_parser.h:147`). A small shared helper resolves a reduced integer
-against that map:
+(`gdscript_parser.h:147`). A small shared helper
+(`GDScriptDocGen::docvalue_from_enum_value`) resolves a reduced integer against
+that map by **exact match only**: an exact constant match returns the bare
+constant name; anything else falls back to the raw integer.
 
-- exact single match -> constant name;
-- else, if the value is a clean OR of known constants -> `A | B`;
-- else, raw number fallback.
-
-GDScript's `DataType` has no explicit bitfield flag, so decomposition is
-attempted generically with a numeric fallback rather than flag-gated.
+Bitfield OR-decomposition is intentionally *not* performed on the GDScript
+surfaces. GDScript's `DataType` carries no authoritative bitfield flag, and a
+power-of-two heuristic misreads small sequential enums (e.g. `IDLE=0,
+RUNNING=1, PAUSED=2`, where value `3` would wrongly render as
+`RUNNING | PAUSED`). Decomposition therefore stays on the engine surface
+(`core/doc_data.cpp`), where `PROPERTY_USAGE_CLASS_IS_BITFIELD` is available and
+correct. The rare GDScript value that is a native-bitfield combination falls
+back to the integer, which is acceptable and never misleading.
 
 ## Components
 
 1. **Port PR #115958** — `core/doc_data.{h,cpp}`, `editor/doc/doc_tools.cpp`,
    plus regenerated `doc/classes/*.xml`.
-2. **Shared helper** — `gdscript_docgen` static method resolving
-   `(int64_t value, const HashMap<StringName,int64_t> &enum_values)` to a name
-   or OR-combination, reused by the LSP path.
+2. **Shared helper** — `GDScriptDocGen::docvalue_from_enum_value(int64_t value,
+   const HashMap<StringName,int64_t> &enum_values)`, exact-match to a constant
+   name with integer fallback, reused by the LSP path.
 3. **GDScript docgen (surface 2)** — thread the variable/parameter `DataType`
    into `docvalue_from_expression`/`_docvalue_from_variant`; call the helper for
    enum-typed integer constants.

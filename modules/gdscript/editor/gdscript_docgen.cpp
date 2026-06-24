@@ -271,10 +271,22 @@ String GDScriptDocGen::_docvalue_from_variant(const Variant &p_variant, int p_re
 	}
 }
 
-String GDScriptDocGen::docvalue_from_expression(const GDP::ExpressionNode *p_expression) {
+String GDScriptDocGen::docvalue_from_enum_value(int64_t p_value, const HashMap<StringName, int64_t> &p_enum_values) {
+	for (const KeyValue<StringName, int64_t> &E : p_enum_values) {
+		if (E.value == p_value) {
+			return E.key;
+		}
+	}
+	return itos(p_value);
+}
+
+String GDScriptDocGen::docvalue_from_expression(const GDP::ExpressionNode *p_expression, const GDType &p_type) {
 	ERR_FAIL_NULL_V(p_expression, String());
 
 	if (p_expression->is_constant) {
+		if (p_type.kind == GDType::ENUM && !p_type.enum_values.is_empty() && p_expression->reduced_value.get_type() == Variant::INT) {
+			return docvalue_from_enum_value(p_expression->reduced_value, p_type.enum_values);
+		}
 		return _docvalue_from_variant(p_expression->reduced_value);
 	}
 
@@ -438,7 +450,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 					arg_doc.name = p->identifier->name;
 					_doctype_from_gdtype(p->get_datatype(), arg_doc.type, arg_doc.enumeration);
 					if (p->initializer != nullptr) {
-						arg_doc.default_value = docvalue_from_expression(p->initializer);
+						arg_doc.default_value = docvalue_from_expression(p->initializer, p->get_datatype());
 					}
 					method_doc.arguments.push_back(arg_doc);
 				}
@@ -507,7 +519,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 				}
 
 				if (m_var->initializer != nullptr) {
-					prop_doc.default_value = docvalue_from_expression(m_var->initializer);
+					prop_doc.default_value = docvalue_from_expression(m_var->initializer, m_var->get_datatype());
 				}
 
 				prop_doc.overridden = false;
