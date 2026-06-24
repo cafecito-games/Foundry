@@ -3495,6 +3495,40 @@ bool line_span_has_standalone_warning_annotation(const Vector<String> &p_lines, 
 	return false;
 }
 
+bool is_annotation_or_doc_comment_line(const String &p_line) {
+	const String stripped_line = p_line.strip_edges();
+	return stripped_line.begins_with("@") || stripped_line.begins_with("##");
+}
+
+bool is_ordinary_comment_line(const String &p_line) {
+	const String stripped_line = p_line.strip_edges();
+	return stripped_line.begins_with("#") && !stripped_line.begins_with("##");
+}
+
+int find_attached_style_order_block_start(const Vector<String> &p_lines, int p_member_start_line, int p_floor_line) {
+	if (p_member_start_line < 0 || p_member_start_line >= p_lines.size()) {
+		return p_member_start_line;
+	}
+
+	const int floor_line = p_floor_line < 0 ? 0 : p_floor_line;
+	int start_line = p_member_start_line;
+	while (start_line > floor_line && is_annotation_or_doc_comment_line(p_lines[start_line - 1])) {
+		start_line--;
+	}
+
+	int ordinary_comment_start_line = start_line;
+	while (ordinary_comment_start_line > floor_line &&
+			is_ordinary_comment_line(p_lines[ordinary_comment_start_line - 1])) {
+		ordinary_comment_start_line--;
+	}
+	if (ordinary_comment_start_line < start_line &&
+			(ordinary_comment_start_line <= floor_line || p_lines[ordinary_comment_start_line - 1].strip_edges().is_empty())) {
+		start_line = ordinary_comment_start_line;
+	}
+
+	return start_line;
+}
+
 String normalize_block_text(const String &p_text) {
 	if (p_text.is_empty()) {
 		return p_text;
@@ -3655,6 +3689,22 @@ bool style_order_variable_has_export_annotation(const GDScriptParser::VariableNo
 	return false;
 }
 
+bool style_order_export_group_has_variable_target(const GDScriptParser::ClassNode *p_class, int p_group_index) {
+	if (p_class == nullptr || p_group_index < 0 || p_group_index >= p_class->members.size()) {
+		return false;
+	}
+
+	for (int i = p_group_index + 1; i < p_class->members.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == GDScriptParser::ClassNode::Member::GROUP) {
+			continue;
+		}
+		return member.type == GDScriptParser::ClassNode::Member::VARIABLE &&
+				style_order_variable_has_export_annotation(member.variable);
+	}
+	return false;
+}
+
 bool style_order_variable_has_onready_annotation(const GDScriptParser::VariableNode *p_variable) {
 	if (p_variable == nullptr) {
 		return false;
@@ -3724,20 +3774,6 @@ const GDScriptParser::Node *get_style_order_member_source_node(const GDScriptPar
 	return p_member.get_source_node();
 }
 
-bool style_order_member_has_separate_line_annotation(const GDScriptParser::ClassNode::Member &p_member) {
-	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
-	if (node == nullptr || node->start_line <= 0) {
-		return false;
-	}
-
-	for (const GDScriptParser::AnnotationNode *annotation : node->annotations) {
-		if (annotation != nullptr && annotation->start_line > 0 && annotation->start_line < node->start_line) {
-			return true;
-		}
-	}
-	return false;
-}
-
 int get_style_order_member_start_line(const GDScriptParser::ClassNode::Member &p_member) {
 	if (p_member.type == GDScriptParser::ClassNode::Member::UNDEFINED) {
 		return -1;
@@ -3767,20 +3803,6 @@ bool is_style_order_unnamed_enum_continuation(const GDScriptParser::ClassNode *p
 			member.enum_value.parent_enum == previous_member.enum_value.parent_enum;
 }
 
-int get_next_style_order_block_start_line(const GDScriptParser::ClassNode *p_class, int p_member_index) {
-	if (p_class == nullptr) {
-		return -1;
-	}
-
-	for (int i = p_member_index + 1; i < p_class->members.size(); i++) {
-		if (is_style_order_unnamed_enum_continuation(p_class, i)) {
-			continue;
-		}
-		return get_style_order_member_start_line(p_class->members[i]);
-	}
-	return -1;
-}
-
 bool style_order_blocks_are_sorted(const Vector<StyleOrderBlock> &p_blocks) {
 	for (int i = 1; i < p_blocks.size(); i++) {
 		if (static_cast<int>(p_blocks[i].bucket) < static_cast<int>(p_blocks[i - 1].bucket)) {
@@ -3800,6 +3822,8 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 	}
 
 	Vector<StyleOrderBlock> blocks;
+	int block_floor_line = 0;
+	int pending_export_group_start_line = -1;
 	for (int i = 0; i < p_class->members.size(); i++) {
 		if (is_style_order_unnamed_enum_continuation(p_class, i)) {
 			continue;
@@ -3807,37 +3831,62 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
 		if (member.type == GDScriptParser::ClassNode::Member::GROUP) {
-			candidate.disabled_reason = "Cannot sort members while export group annotations are present.";
-			return candidate;
-		}
-		if (style_order_member_has_separate_line_annotation(member)) {
-			candidate.disabled_reason = "Cannot sort members with separate-line annotations yet.";
-			return candidate;
+			if (!style_order_export_group_has_variable_target(p_class, i)) {
+				candidate.disabled_reason = "Cannot sort members because an export group is not followed by an exported variable.";
+				return candidate;
+			}
+			const int group_start_line = get_style_order_member_start_line(member);
+			if (group_start_line < 0) {
+				candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+				return candidate;
+			}
+			if (pending_export_group_start_line < 0 || group_start_line < pending_export_group_start_line) {
+				pending_export_group_start_line = group_start_line;
+			}
+			continue;
 		}
 
-		const int start_line = get_style_order_member_start_line(member);
-		int end_line = get_next_style_order_block_start_line(p_class, i);
-		if (end_line < 0) {
-			end_line = get_style_order_member_end_line(member);
-		}
-		if (start_line < 0 || end_line <= start_line) {
+		const int member_start_line = get_style_order_member_start_line(member);
+		const int block_start_line = find_attached_style_order_block_start(p_lines, member_start_line, block_floor_line);
+		const int member_end_line = get_style_order_member_end_line(member);
+		if (block_start_line < 0 || member_end_line <= block_start_line) {
 			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
 			return candidate;
 		}
 
-		String text;
-		if (!get_line_span_text(p_lines, start_line, end_line, text)) {
-			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
-			return candidate;
+		if (pending_export_group_start_line >= 0) {
+			if (block_start_line > pending_export_group_start_line) {
+				candidate.disabled_reason = "Cannot sort members because an export group is not followed by an exported variable.";
+				return candidate;
+			}
+			pending_export_group_start_line = -1;
+		}
+
+		if (!blocks.is_empty()) {
+			blocks.write[blocks.size() - 1].end_line = block_start_line;
 		}
 
 		StyleOrderBlock block;
 		block.original_index = i;
 		block.bucket = get_style_order_bucket(member);
-		block.start_line = start_line;
-		block.end_line = end_line;
-		block.text = normalize_block_text(text);
+		block.start_line = block_start_line;
+		block.end_line = member_end_line;
 		blocks.push_back(block);
+		block_floor_line = member_end_line;
+	}
+
+	for (int i = 0; i < blocks.size(); i++) {
+		if (blocks[i].start_line < 0 || blocks[i].end_line <= blocks[i].start_line) {
+			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+			return candidate;
+		}
+
+		String text;
+		if (!get_line_span_text(p_lines, blocks[i].start_line, blocks[i].end_line, text)) {
+			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+			return candidate;
+		}
+		blocks.write[i].text = normalize_block_text(text);
 	}
 
 	if (blocks.size() < 2 || style_order_blocks_are_sorted(blocks)) {

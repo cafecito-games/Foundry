@@ -2088,8 +2088,61 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
+	TEST_CASE("Sort members by style guide moves attached comments and annotations with declarations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"# Handles the ready callback.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"## Health points shown in the inspector.\n"
+				"@export var health := 10\n"
+				"\n"
+				"# Emitted after health changes.\n"
+				"signal health_changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"# Emitted after health changes.\n"
+				"signal health_changed\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"## Health points shown in the inspector.\n"
+				"@export var health := 10\n"
+				"\n"
+				"# Handles the ready callback.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide declines ambiguous export groups") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func later() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"func unrelated() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK(r.error_message.to_lower().contains("export group"));
+	}
+
 	TEST_CASE("Sort members by style guide rejects unsafe annotation blocks") {
-		SUBCASE("separate-line member annotation") {
+		SUBCASE("separate-line member annotation remains sortable") {
 			const String source =
 					"extends Node\n"
 					"\n"
@@ -2098,11 +2151,21 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"@export\n"
 					"var speed := 1\n"
 					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@export\n"
+					"var speed := 1\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
 
 			String out;
 			RefactorResult r = run_sort_members_by_style_guide(source, out);
-			CHECK_FALSE(r.ok);
-			CHECK_MESSAGE(r.error_message.to_lower().contains("annotation"), r.error_message);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
 		}
 
 		SUBCASE("same-line member annotation remains sortable") {
@@ -2154,7 +2217,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
-	TEST_CASE("Sort members by style guide rejects export group annotations") {
+	TEST_CASE("Sort members by style guide moves export group annotations with exported variables") {
 		const String export_groups[] = {
 			"@export_category(\"Stats\")",
 			"@export_group(\"Stats\")",
@@ -2170,11 +2233,21 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					export_group + "\n"
 								   "@export var speed := 1\n"
 								   "signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n" +
+					export_group + "\n"
+								   "@export var speed := 1\n"
+								   "\n"
+								   "func run() -> void:\n"
+								   "\tpass\n";
 
 			String out;
 			RefactorResult r = run_sort_members_by_style_guide(source, out);
-			CHECK_FALSE(r.ok);
-			CHECK_MESSAGE(r.error_message.to_lower().contains("group"), r.error_message);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
 		}
 	}
 
