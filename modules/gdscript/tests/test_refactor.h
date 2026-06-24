@@ -2286,6 +2286,48 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		memdelete(editor_file_system);
 		GDScriptTests::finish_language();
 	}
+
+	TEST_CASE("Implement abstract methods resolves a base defined in another file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Prime the workspace so the abstract base resolves. The derived script is
+		// intentionally left with unimplemented abstract methods, which the analyzer
+		// reports as an error; the refactor still operates on its parse tree.
+		GDScriptTests::assert_no_errors_in("res://refactor/implement_abstract_base.gd");
+
+		const String derived_path = "res://refactor/implement_abstract_derived.gd";
+		RefactorContext ctx;
+		ctx.path = derived_path;
+		ctx.source = FileAccess::get_file_as_string(derived_path);
+
+		SUBCASE("availability reports the refactor as enabled") {
+			const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(2, 0));
+			const RefactorAvailability *entry = GDScriptTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+			REQUIRE(entry != nullptr);
+			CHECK(entry->enabled);
+		}
+
+		SUBCASE("prepare stubs the inherited abstract methods") {
+			RefactorParams params;
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+			REQUIRE(r.ok);
+			REQUIRE_FALSE(r.edits.is_empty());
+
+			String out;
+			REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+			CHECK(out.contains("func area() -> float:"));
+			CHECK(out.contains("push_error(\"Not implemented: area\")"));
+			CHECK(out.contains("return 0.0"));
+			CHECK(out.contains("func describe() -> String:"));
+			CHECK(out.contains("return \"\""));
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
 #endif // GDSCRIPT_NO_LSP
 }
 
