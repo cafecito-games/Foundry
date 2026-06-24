@@ -223,8 +223,17 @@ is #34's responsibility.
   This keeps a single broken file from aborting a whole-project migration. The
   wizard surfaces such files through its own scan/report (#38/#41); honest
   per-file diagnostics from the orchestrator itself are deferred to that layer.
-- A file whose batch fails verification is recorded in `skipped` and left
-  untouched; the run continues for other files and remains `ok = true`.
+- A file whose batch fails verification is left untouched and the run continues
+  (still `ok = true`). Rather than recording transient per-pass rejections (which
+  may resolve on a later pass once a dependency is typed), `skipped` is built once
+  from the **final** on-disk state: after the loop, each declaration that is still
+  an enabled candidate (inferable but never landed — verification rejected it or
+  the bound was hit) or a genuinely-unprovable disabled candidate is reported.
+  Declarations that already carry an annotation (pre-existing or applied by this
+  run) are excluded — `find_candidates` still returns them as disabled candidates,
+  so they are filtered by their `disabled_reason`. (A structural "already
+  annotated" flag on `RefactorCandidate` would be more robust than the reason
+  match; a regression test guards the current behavior. Tracked as a follow-up.)
 - Empty input is valid: the run does nothing and returns `ok = true` with no
   changes.
 - The hard iteration ceiling guards against any non-convergence; reaching it is
