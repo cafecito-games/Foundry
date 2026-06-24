@@ -234,6 +234,10 @@ bool OS::is_exit_requested() const {
 	return _exit_requested.is_set();
 }
 
+void OS::clear_exit_request() {
+	_exit_requested.clear();
+}
+
 String OS::get_locale() const {
 	return "en";
 }

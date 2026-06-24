@@ -139,6 +139,7 @@ TEST_CASE("[VariantUtility] push_fatal decision logic") {
 
 	// Save state we will mutate so the test does not leak.
 	const int saved_exit_code = os->get_exit_code();
+	const bool saved_exit_requested = os->is_exit_requested();
 	const bool saved_editor_hint = engine->is_editor_hint();
 	settings->set_setting("application/run/push_fatal_terminates", true);
 
@@ -184,10 +185,16 @@ TEST_CASE("[VariantUtility] push_fatal decision logic") {
 		CHECK(os->get_exit_code() == EXIT_FAILURE);
 	}
 
-	// Restore mutated state.
+	// Restore mutated state, including the process-global exit-request flag
+	// that Case 4 trips, so this test does not leak into others.
 	engine->set_editor_hint(saved_editor_hint);
 	settings->set_setting("application/run/push_fatal_terminates", true);
-	os->set_exit_code(saved_exit_code);
+	if (saved_exit_requested) {
+		os->request_exit(saved_exit_code);
+	} else {
+		os->clear_exit_request();
+		os->set_exit_code(saved_exit_code);
+	}
 }
 
 } // namespace TestVariantUtility
