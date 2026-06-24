@@ -67,6 +67,7 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 		FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
 		REQUIRE(result.ok);
+		CHECK(result.converged);
 		REQUIRE_EQ(result.changed_files.size(), 1);
 
 		const String after = FileAccess::get_file_as_string(path);
@@ -77,6 +78,34 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 		FixpointInferenceResult second = GDScriptFixpointInference::run(paths);
 		REQUIRE(second.ok);
 		CHECK_EQ(second.changed_files.size(), 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Duplicate input paths are collapsed and reported once") {
+		// Initialize the GDScript test project so res:// resolves to the test
+		// scripts directory and the analyzer can read dependencies from disk.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String path = "res://refactor/fixpoint_dedup_leaf.gd";
+		const String source = "static func value():\n\treturn 42\n";
+		TemporaryScriptFile file(path, source);
+
+		// The same path appears twice in the input vector.
+		Vector<String> paths;
+		paths.push_back(path);
+		paths.push_back(path);
+
+		FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
+		REQUIRE(result.ok);
+
+		// The file is reported exactly once despite the duplicate input.
+		CHECK_EQ(result.changed_files.size(), 1);
+		CHECK(FileAccess::get_file_as_string(path).contains("static func value() -> int:"));
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
@@ -121,6 +150,7 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 			options.max_iterations = 1;
 			FixpointInferenceResult result = GDScriptFixpointInference::run(paths, options);
 			REQUIRE(result.ok);
+			CHECK_FALSE(result.converged);
 
 			CHECK(FileAccess::get_file_as_string(path_c).contains("static func value() -> int:"));
 			CHECK_FALSE(FileAccess::get_file_as_string(path_b).contains("relay() -> "));
@@ -134,6 +164,7 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 			FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
 			REQUIRE(result.ok);
+			CHECK(result.converged);
 			CHECK(result.iterations > 1);
 
 			CHECK(FileAccess::get_file_as_string(path_c).contains("static func value() -> int:"));

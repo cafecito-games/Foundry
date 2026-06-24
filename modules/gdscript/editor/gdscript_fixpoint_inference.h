@@ -39,8 +39,6 @@
 struct FixpointInferenceOptions {
 	// 0 => auto: (first-pass candidate count) + 1, clamped by a hard ceiling.
 	int max_iterations = 0;
-	bool strict_null_checks = false;
-	bool strict_dynamic_checks = false;
 };
 
 // Before/after record for one file the run modified.
@@ -67,10 +65,21 @@ struct FixpointInferenceResult {
 	// detects the fixpoint, so a chain of depth N typically reports N+1.
 	int iterations = 0;
 	int total_annotations_applied = 0;
+	// True means a pass produced no new annotations, so the iteration reached a real
+	// fixpoint. False means the iteration bound stopped the loop early before any such
+	// empty pass, so further annotations might still have been inferable.
+	bool converged = false;
 	Vector<FixpointFileChange> changed_files;
 	Vector<FixpointSkipped> skipped;
 };
 
+// Verification re-analyzes only each edited file, never its dependents. An accepted
+// annotation can therefore introduce a new error in a caller (for example, typing
+// `func value() -> int` breaks a caller's `var x: String = value()`), and that change
+// is still committed because the caller is not re-analyzed. Re-analyzing inverse
+// dependents and rolling back conflicting changes is deferred to issue #34. Until that
+// lands, `ok == true` does not guarantee every dependent still analyzes cleanly, so
+// callers must not apply results to a real project before #34 gates this.
 class GDScriptFixpointInference {
 public:
 	// Drives Add Type Annotation to a fixpoint over p_paths, writing accepted
