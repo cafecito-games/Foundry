@@ -3548,13 +3548,20 @@ int find_attached_style_order_block_start(
 	return start_line;
 }
 
-int find_attached_style_order_block_end(const Vector<String> &p_lines, int p_member_end_line) {
+int find_attached_style_order_block_end(
+		const Vector<String> &p_lines,
+		int p_member_end_line,
+		const String &p_trailing_comment_indent) {
 	if (p_member_end_line < 0) {
 		return p_member_end_line;
 	}
 
 	int end_line = p_member_end_line;
 	while (end_line < p_lines.size() && is_ordinary_comment_line(p_lines[end_line])) {
+		if (!p_trailing_comment_indent.is_empty() &&
+				!get_leading_whitespace(p_lines[end_line]).begins_with(p_trailing_comment_indent)) {
+			break;
+		}
 		end_line++;
 	}
 	return end_line;
@@ -3908,7 +3915,8 @@ StyleOrderCandidate find_style_order_candidate_in_class(
 				pending_export_group_start_line,
 				blocks.is_empty());
 		const int member_end_line = get_style_order_member_end_line(member);
-		const int block_end_line = find_attached_style_order_block_end(p_lines, member_end_line);
+		const String trailing_comment_indent = !p_is_root_class && member_start_line >= 0 && member_start_line < p_lines.size() ? get_leading_whitespace(p_lines[member_start_line]) : String();
+		const int block_end_line = find_attached_style_order_block_end(p_lines, member_end_line, trailing_comment_indent);
 		if (block_start_line < 0 || member_end_line <= block_start_line || block_end_line <= block_start_line) {
 			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
 			return candidate;
@@ -5970,6 +5978,7 @@ StyleOrderCandidate find_style_order_candidate(const RefactorContext &p_context)
 	StyleOrderCandidate candidate;
 	const String original_source = p_context.source;
 	String transformed_source = original_source;
+	bool converged = false;
 
 	for (int pass = 0; pass < 16; pass++) {
 		String pass_result;
@@ -5979,9 +5988,15 @@ StyleOrderCandidate find_style_order_candidate(const RefactorContext &p_context)
 			return candidate;
 		}
 		if (pass_result == transformed_source) {
+			converged = true;
 			break;
 		}
 		transformed_source = pass_result;
+	}
+
+	if (!converged) {
+		candidate.disabled_reason = "Cannot finish style-order sorting for this script.";
+		return candidate;
 	}
 
 	if (transformed_source == original_source) {

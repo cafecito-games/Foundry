@@ -2421,6 +2421,122 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
+	TEST_CASE("Sort members by style guide finishes repeated nested passes") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func root_method() -> void:\n"
+				"\tpass\n"
+				"class Outer:\n"
+				"\tfunc outer_method() -> void:\n"
+				"\t\tpass\n"
+				"\tclass Middle:\n"
+				"\t\tfunc middle_method() -> void:\n"
+				"\t\t\tpass\n"
+				"\t\tclass Inner:\n"
+				"\t\t\tfunc inner_method() -> void:\n"
+				"\t\t\t\tpass\n"
+				"\t\t\tvar inner_value := 1\n"
+				"\t\t\tsignal inner_signal\n"
+				"\t\tvar middle_value := 2\n"
+				"\t\tsignal middle_signal\n"
+				"\tvar outer_value := 3\n"
+				"\tsignal outer_signal\n"
+				"signal root_signal\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal root_signal\n"
+				"\n"
+				"func root_method() -> void:\n"
+				"\tpass\n"
+				"class Outer:\n"
+				"\tsignal outer_signal\n"
+				"\n"
+				"\tvar outer_value := 3\n"
+				"\n"
+				"\tfunc outer_method() -> void:\n"
+				"\t\tpass\n"
+				"\tclass Middle:\n"
+				"\t\tsignal middle_signal\n"
+				"\n"
+				"\t\tvar middle_value := 2\n"
+				"\n"
+				"\t\tfunc middle_method() -> void:\n"
+				"\t\t\tpass\n"
+				"\t\tclass Inner:\n"
+				"\t\t\tsignal inner_signal\n"
+				"\n"
+				"\t\t\tvar inner_value := 1\n"
+				"\n"
+				"\t\t\tfunc inner_method() -> void:\n"
+				"\t\t\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide leaves dedented comments outside nested types") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"signal ready\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"# Parent-scope note.\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal ready\n"
+				"class Inventory:\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"# Parent-scope note.\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide reports unfinished deep nesting") {
+		String source =
+				"func root_method() -> void:\n"
+				"\tpass\n";
+		const int depth = 18;
+		for (int level = 0; level < depth; level++) {
+			String indent;
+			for (int i = 0; i < level; i++) {
+				indent += "\t";
+			}
+			const String level_name = String::num_int64(level);
+			source += indent + "class Level" + level_name + ":\n";
+			source += indent + "\tfunc method_" + level_name + "() -> void:\n";
+			source += indent + "\t\tpass\n";
+		}
+		for (int level = depth - 1; level >= 0; level--) {
+			String indent;
+			for (int i = 0; i <= level; i++) {
+				indent += "\t";
+			}
+			const String level_name = String::num_int64(level);
+			source += indent + "var value_" + level_name + " := " + level_name + "\n";
+			source += indent + "signal signal_" + level_name + "\n";
+		}
+		source += "signal root_signal\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK_EQ(r.error_message, "Cannot finish style-order sorting for this script.");
+	}
+
 	TEST_CASE("Sort members by style guide rejects standalone warning annotations") {
 		const String source =
 				"extends Node\n"
