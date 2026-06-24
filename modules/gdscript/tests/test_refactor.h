@@ -460,6 +460,60 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK(out.contains("\n\treturn 0.0\n"));
 	}
 
+	TEST_CASE("Implement abstract: preserves the async modifier") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract async func area() -> int\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("async func area() -> int:"));
+	}
+
+	TEST_CASE("Implement abstract: preserves the rest (vararg) parameter") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func record(...args)\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		// An untyped rest parameter is inferred as Array, which the stub renders faithfully.
+		CHECK(out.contains("func record(...args: Array):"));
+	}
+
+	TEST_CASE("Implement abstract: rest parameter follows fixed parameters") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func record(prefix: String, ...args)\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func record(prefix: String, ...args: Array):"));
+	}
+
+	TEST_CASE("Implement abstract: reproduces a multi-line default value") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func build(options := {\n"
+				"\t\t\t\"a\": 1,\n"
+				"\t\t\t\"b\": 2,\n"
+				"\t\t}) -> int\n"
+				"class Maker extends Base:\n"
+				"\tvar seed := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 6, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\"a\": 1,"));
+		CHECK(out.contains("\"b\": 2,"));
+		CHECK(out.contains("options"));
+	}
+
 	TEST_CASE("Edit application") {
 		auto edit = [](int sl, int sc, int el, int ec, const String &t) {
 			RefactorTextEdit e;
@@ -2323,6 +2377,77 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(out.contains("func describe() -> String:"));
 			CHECK(out.contains("return \"\""));
 		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Implement abstract methods resolves a multi-level cross-file base chain") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Prime the abstract base and the abstract intermediate so the leaf's base chain
+		// resolves through separate script files. The leaf still owes ping(), inherited
+		// from the base two levels up; the intermediate does not override it.
+		GDScriptTests::assert_no_errors_in("res://refactor/implement_abstract_chain_base.gd");
+
+		const String leaf_path = "res://refactor/implement_abstract_chain_leaf.gd";
+		RefactorContext ctx;
+		ctx.path = leaf_path;
+		ctx.source = FileAccess::get_file_as_string(leaf_path);
+
+		const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(2, 0));
+		const RefactorAvailability *entry = GDScriptTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		REQUIRE(entry != nullptr);
+		CHECK(entry->enabled);
+
+		RefactorParams params;
+		RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+		REQUIRE_FALSE(r.edits.is_empty());
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func ping() -> int:"));
+		CHECK(out.contains("return 0"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Implement abstract: root class with only header lines appends at end of file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		GDScriptTests::assert_no_errors_in("res://refactor/implement_abstract_base.gd");
+
+		// A root class whose body is only header lines (@tool / class_name / extends) and
+		// that owes inherited abstract methods. The stubs must be appended after the
+		// extends line, not inserted mid-header, to keep the file valid.
+		const String derived_path = "res://refactor/implement_abstract_header_only.gd";
+		RefactorContext ctx;
+		ctx.path = derived_path;
+		ctx.source = FileAccess::get_file_as_string(derived_path);
+
+		RefactorParams params;
+		RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+		REQUIRE_FALSE(r.edits.is_empty());
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+		const int class_name_index = out.find("class_name RefactorAbstractHeaderOnly");
+		const int extends_index = out.find("extends \"res://refactor/implement_abstract_base.gd\"");
+		const int func_index = out.find("func area() -> float:");
+		CHECK(class_name_index >= 0);
+		CHECK(extends_index >= 0);
+		CHECK(func_index >= 0);
+		CHECK(func_index > extends_index);
+		CHECK(func_index > class_name_index);
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
