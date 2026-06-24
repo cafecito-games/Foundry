@@ -240,6 +240,46 @@ Vector<int> ddmin_offending(
 	return current;
 }
 
+// Analyze p_source twice (non-strict baseline, then with p_options' strict flags) and
+// append violations present only under strict mode to r_violations.
+void collect_strict_violations(const String &p_path, const String &p_source, const VerificationOptions &p_options, Vector<StrictViolation> &r_violations) {
+	// Non-strict baseline: count diagnostics keyed by line:column:message. The message is
+	// part of the key so a null-mode and a dynamic-mode diagnostic at the same position
+	// stay distinct. Counts (rather than set membership) so a strict pass that emits a
+	// shared diagnostic more times than the baseline surfaces only the extra occurrences.
+	HashMap<String, int> baseline_counts;
+	{
+		GDScriptParser parser;
+		parser.parse(p_source, p_path, false);
+		GDScriptAnalyzer analyzer(&parser);
+		analyzer.analyze();
+		for (const GDScriptParser::ParserError &error : parser.get_errors()) {
+			baseline_counts[vformat("%d:%d:%s", error.line, error.column, error.message)] += 1;
+		}
+	}
+	// Strict pass.
+	GDScriptParser parser;
+	parser.parse(p_source, p_path, false);
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(p_options.strict_null_checks);
+	analyzer.set_strict_dynamic_checks(p_options.strict_dynamic_checks);
+	analyzer.analyze();
+	for (const GDScriptParser::ParserError &error : parser.get_errors()) {
+		const String key = vformat("%d:%d:%s", error.line, error.column, error.message);
+		HashMap<String, int>::Iterator baseline = baseline_counts.find(key);
+		if (baseline && baseline->value > 0) {
+			baseline->value -= 1;
+			continue;
+		}
+		StrictViolation violation;
+		violation.path = p_path;
+		violation.line = error.line;
+		violation.column = error.column;
+		violation.message = error.message;
+		r_violations.push_back(violation);
+	}
+}
+
 } // namespace
 
 VerificationResult GDScriptVerificationHarness::verify(
@@ -483,8 +523,25 @@ StrictPreviewResult GDScriptVerificationHarness::preview_strict(
 		const Vector<String> &p_paths,
 		const VerificationOptions &p_options) {
 	StrictPreviewResult result;
-	result.ok = false;
-	result.error_message = "Not implemented.";
+	result.strict_null_checks = p_options.strict_null_checks;
+	result.strict_dynamic_checks = p_options.strict_dynamic_checks;
+
+	HashSet<String> seen;
+	for (const String &path : p_paths) {
+		if (seen.has(path)) {
+			continue;
+		}
+		seen.insert(path);
+		bool ok = false;
+		const String source = read_source(path, ok);
+		if (!ok) {
+			result.ok = false;
+			result.error_message = vformat("Cannot read '%s'.", path);
+			return result;
+		}
+		collect_strict_violations(path, source, p_options, result.violations);
+	}
+	result.ok = true;
 	return result;
 }
 

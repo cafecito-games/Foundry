@@ -195,6 +195,36 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		memdelete(editor_file_system);
 		GDScriptTests::finish_language();
 	}
+
+	TEST_CASE("Strict preview lists violations without modifying files") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Assigning a Variant (from an untyped function) to a typed local is silently
+		// allowed under default analysis but is a hard error under strict_dynamic_checks.
+		const String path = "res://refactor/verify_strict.gd";
+		const String source =
+				"func dyn():\n"
+				"\treturn JSON.parse_string(\"1\")\n"
+				"func use() -> void:\n"
+				"\tvar x: int = dyn()\n";
+		TemporaryScriptFile file(path, source);
+
+		VerificationOptions options;
+		options.strict_dynamic_checks = true;
+		StrictPreviewResult result = GDScriptVerificationHarness::preview_strict({ path }, options);
+		REQUIRE(result.ok);
+		CHECK_GT(result.violations.size(), 0);
+		CHECK_EQ(result.violations[0].path, path);
+
+		// File untouched.
+		CHECK_EQ(FileAccess::get_file_as_string(path), source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
 }
 
 } // namespace GDScriptTests
