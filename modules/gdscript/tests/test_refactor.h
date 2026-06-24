@@ -400,6 +400,44 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Add type annotation return type skips trailing comment colon") {
+		SUBCASE("caret-driven path") {
+			const String source = "func make_score(): # returns: score\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func make_score() -> int: # returns: score\n\treturn 1\n");
+		}
+		SUBCASE("typed parameter with trailing comment colon") {
+			const String source = "func scale(amount: float): # ratio: keep\n\treturn amount\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func scale(amount: float) -> float: # ratio: keep\n\treturn amount\n");
+		}
+	}
+
+	TEST_CASE("find_candidates return-type edit skips trailing comment colon") {
+		RefactorContext ctx;
+		ctx.path = "user://type_annotation_comment.gd";
+		ctx.source = "func make_score(): # returns: score\n\treturn 1\n";
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *return_candidate = nullptr;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			if (candidate.enabled && candidate.line == 0) {
+				return_candidate = &candidate;
+				break;
+			}
+		}
+		REQUIRE(return_candidate != nullptr);
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, return_candidate->edits, out));
+		CHECK_EQ(out, "func make_score() -> int: # returns: score\n\treturn 1\n");
+	}
+
 	TEST_CASE("Add type annotation preserves strict type spelling") {
 		const String source =
 				"signal selected(name: String)\n"

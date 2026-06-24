@@ -315,6 +315,40 @@ bool is_column_inside_string_literal(const String &p_line, int p_column) {
 	return false;
 }
 
+// Locates the colon that terminates a single-line function signature: the first
+// top-level ':' that is not inside the parameter list, a bracketed/braced type or
+// default value, a string literal, or a trailing comment. Returns -1 when none is
+// found on the line (e.g. a multi-line signature). Scanning from the signature
+// start and stopping at the first '#' keeps the return-type edit off comment and
+// string colons.
+int find_function_signature_colon(const String &p_line, int p_search_start) {
+	int depth = 0;
+	for (int i = p_search_start < 0 ? 0 : p_search_start; i < p_line.length(); i++) {
+		const char32_t c = p_line[i];
+		if (c == '#') {
+			break;
+		}
+		if (c == '"' || c == '\'') {
+			i = skip_string_literal(p_line, i) - 1;
+			continue;
+		}
+		if (c == '(' || c == '[' || c == '{') {
+			depth++;
+			continue;
+		}
+		if (c == ')' || c == ']' || c == '}') {
+			if (depth > 0) {
+				depth--;
+			}
+			continue;
+		}
+		if (c == ':' && depth == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 int find_first_string_argument_column(
 		const String &p_line,
 		int p_open_paren_column,
@@ -866,8 +900,9 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 		function_start = line.find("func");
 	}
 	// The parser does not expose the body-colon token for the signature, so this
-	// refactor intentionally handles single-line function signatures.
-	const int body_colon = line.rfind(":");
+	// refactor intentionally handles single-line function signatures. Scan for the
+	// first top-level colon so a trailing comment or string colon is never targeted.
+	const int body_colon = find_function_signature_colon(line, function_start);
 	if (function_start < 0 || body_colon < 0) {
 		return false;
 	}
