@@ -18,7 +18,7 @@ Binary: `bin/godot.macos.editor.dev.<arch>` (e.g. `arm64`). Substitute the match
 
 **Test command (whole refactor suite):**
 ```
-./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors
+./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors
 ```
 
 ---
@@ -53,7 +53,7 @@ All new logic lives inside the existing anonymous namespace in `gdscript_refacto
 - [ ] `get_available_refactors` returns 6 entries; the 6th is `IMPLEMENT_ABSTRACT_METHODS` titled "Implement Abstract Methods", `enabled == false`, with a non-empty `disabled_reason`.
 - [ ] Existing refactor tests pass after updating count assertions.
 
-**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors` → all pass.
+**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors` → all pass.
 
 **Steps:**
 
@@ -263,7 +263,7 @@ Update each `5` to `6`. Example edit:
 Run:
 ```
 scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)
-./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors
+./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors
 ```
 Expected: build succeeds; all refactor tests pass.
 
@@ -296,7 +296,7 @@ git commit -m "feat(gdscript): Scaffold implement-abstract-methods refactor"
 - [ ] A method concretely overridden by the target or any intermediate class is excluded; an intermediate `@abstract` re-declaration is NOT.
 - [ ] Inner classes resolve relative to the class enclosing the caret.
 
-**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors` → new detection cases pass.
+**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors` → new detection cases pass.
 
 **Steps:**
 
@@ -570,7 +570,7 @@ Add test cases inside the suite (inline sources keep abstract base + derived in 
 Run:
 ```
 scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)
-./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors
+./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors
 ```
 Expected: all detection cases pass.
 
@@ -601,7 +601,7 @@ git commit -m "feat(gdscript): Detect owed abstract methods for implement refact
 - [ ] Stubs are appended at the end of the target class body with correct indentation, a blank line separating each.
 - [ ] Applying the result (`GDScriptRefactorEdits::apply`) yields the expected source text.
 
-**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors` → rendering cases pass.
+**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors` → rendering cases pass.
 
 **Steps:**
 
@@ -868,7 +868,7 @@ inline RefactorResult run_implement_abstract(const String &p_source, int p_line,
 Run:
 ```
 scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)
-./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors
+./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors
 ```
 Expected: all rendering cases pass.
 
@@ -898,7 +898,7 @@ git commit -m "feat(gdscript): Render abstract method stubs and insertion edit"
 - [ ] The refactor surfaces over LSP `get_available_refactors`/`prepare` and produces an applicable edit.
 - [ ] No regression in same-file behavior from Task 2/3.
 
-**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*Refactor*" --force-colors` → cross-file + LSP cases pass.
+**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Refactor*" --force-colors` → cross-file + LSP cases pass.
 
 **Steps:**
 
