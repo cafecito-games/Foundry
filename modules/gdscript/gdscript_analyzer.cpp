@@ -2794,6 +2794,10 @@ void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_m
 		return; // Exhaustive via default, or nothing to check.
 	}
 
+	// `match` compares typeof() before value, so only same-typed constants can
+	// cover a value at runtime: INT for enums, BOOL for the bool domain.
+	const Variant::Type expected_type = match_type.kind == GDScriptParser::DataType::ENUM ? Variant::INT : Variant::BOOL;
+
 	// Collect values covered by unguarded, statically-constant patterns.
 	HashSet<int64_t> covered_values;
 	for (GDScriptParser::MatchBranchNode *branch : p_match->branches) {
@@ -2813,9 +2817,11 @@ void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_m
 			if (value_node == nullptr || !value_node->is_constant) {
 				return; // Non-constant pattern: cannot prove coverage; bail out.
 			}
-			const Variant::Type reduced_type = value_node->reduced_value.get_type();
-			if (reduced_type != Variant::INT && reduced_type != Variant::BOOL) {
-				return; // Unexpected value type for a finite domain; bail out.
+			if (value_node->reduced_value.get_type() != expected_type) {
+				// A different-typed constant can never match this domain at
+				// runtime (match compares typeof() first), so it covers nothing.
+				// Skip it — do NOT bail out, the value stays unhandled.
+				continue;
 			}
 			covered_values.insert((int64_t)value_node->reduced_value);
 		}
