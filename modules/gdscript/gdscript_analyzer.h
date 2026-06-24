@@ -40,6 +40,13 @@
 class GDScriptAnalyzer {
 	GDScriptParser *parser = nullptr;
 
+	struct TraitMethodImplementation {
+		GDScriptParser::FunctionNode *function = nullptr;
+		GDScriptParser::ClassNode *owner_class = nullptr;
+		MethodInfo method_info;
+		bool has_method_info = false;
+	};
+
 	template <typename Fn>
 	class Finally {
 		Fn fn;
@@ -79,6 +86,10 @@ class GDScriptAnalyzer {
 	void resolve_annotation(GDScriptParser::AnnotationNode *p_annotation);
 	void resolve_class_member(GDScriptParser::ClassNode *p_class, const StringName &p_name, const GDScriptParser::Node *p_source = nullptr);
 	void resolve_class_member(GDScriptParser::ClassNode *p_class, int p_index, const GDScriptParser::Node *p_source = nullptr);
+	void resolve_function_signature_in_class(GDScriptParser::FunctionNode *p_function,
+			GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source);
+	Error resolve_trait_uses(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source = nullptr);
+	Error resolve_trait_uses(GDScriptParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source = nullptr);
 	void resolve_class_interface(GDScriptParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_body(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source = nullptr);
@@ -138,8 +149,26 @@ class GDScriptAnalyzer {
 	bool get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error);
 	bool get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error);
 	bool is_namespace_chain_root_shadowed(GDScriptParser::IdentifierNode *p_identifier);
+	GDScriptParser::ClassNode *resolve_trait_reference(GDScriptParser::ClassNode *p_owner,
+			GDScriptParser::ClassNode::TraitUse &r_trait_use, const GDScriptParser::Node *p_source);
+	GDScriptParser::ClassNode *resolve_local_trait_reference(GDScriptParser::ClassNode *p_owner,
+			const GDScriptParser::ClassNode::TraitUse &p_trait_use, const GDScriptParser::Node *p_source,
+			bool &r_found);
+	GDScriptParser::ClassNode *resolve_global_trait_reference(const StringName &p_global_class_name,
+			const GDScriptParser::Node *p_source);
+	GDScriptParser::ClassNode *resolve_nested_trait_reference(GDScriptParser::ClassNode *p_base,
+			const GDScriptParser::ClassNode::TraitUse &p_trait_use, int p_chain_index,
+			const GDScriptParser::Node *p_source);
+	bool class_satisfies_trait_base(GDScriptParser::ClassNode *p_class, GDScriptParser::ClassNode *p_trait);
+	bool datatype_derives_from_datatype(GDScriptParser::DataType p_type, const GDScriptParser::DataType &p_base);
+	void validate_trait_requirements(GDScriptParser::ClassNode *p_class);
+	bool find_trait_implementation(GDScriptParser::ClassNode *p_class, const StringName &p_function_name,
+			TraitMethodImplementation &r_implementation);
+	bool validate_trait_method_signature(GDScriptParser::ClassNode *p_trait,
+			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation);
+	bool validate_trait_method_info_signature(GDScriptParser::ClassNode *p_trait,
+			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation);
 	Error validate_imports();
-	Error validate_traits_not_implemented(GDScriptParser::ClassNode *p_class);
 #ifdef DEBUG_ENABLED
 	void validate_mixed_namespace_directory();
 #endif // DEBUG_ENABLED

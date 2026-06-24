@@ -198,6 +198,13 @@ static bool has_parser_error(const GDScriptParser &p_parser, const String &p_exp
 	return false;
 }
 
+static String first_parser_error_message(const GDScriptParser &p_parser) {
+	for (const GDScriptParser::ParserError &parser_error : p_parser.get_errors()) {
+		return parser_error.message;
+	}
+	return String();
+}
+
 static int count_parser_errors(const GDScriptParser &p_parser, const String &p_expected_error) {
 	int count = 0;
 	for (const GDScriptParser::ParserError &parser_error : p_parser.get_errors()) {
@@ -206,6 +213,17 @@ static int count_parser_errors(const GDScriptParser &p_parser, const String &p_e
 		}
 	}
 	return count;
+}
+
+static Error analyze_source(GDScriptParser &r_parser, const String &p_source,
+		const String &p_path = "user://trait_analyzer_test.gd") {
+	Error err = r_parser.parse(p_source, p_path, false);
+	if (err != OK) {
+		return err;
+	}
+
+	GDScriptAnalyzer analyzer(&r_parser);
+	return analyzer.analyze();
 }
 
 #ifdef DEBUG_ENABLED
@@ -298,6 +316,20 @@ struct GlobalScriptClassCacheBackup {
 		}
 	}
 };
+
+static String register_global_script_class(const TempScriptFile &p_script) {
+	String base_type;
+	bool is_abstract = false;
+	bool is_tool = false;
+	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(p_script.path, &base_type, nullptr,
+			&is_abstract, &is_tool);
+	CHECK_FALSE(class_name.is_empty());
+	if (!class_name.is_empty()) {
+		ScriptServer::add_global_class(class_name, base_type, GDScriptLanguage::get_singleton()->get_name(), p_script.path,
+				is_abstract, is_tool);
+	}
+	return class_name;
+}
 
 #ifdef TOOLS_ENABLED
 static Color get_highlighted_color_at(const Dictionary &p_highlighting, int p_column) {
@@ -582,58 +614,423 @@ func echo(uses: int) -> int:
 	CHECK(find_parser_function(root, SNAME("echo")) != nullptr);
 }
 
-TEST_CASE("[Modules][GDScript] Analyzer rejects traits until trait semantics are implemented") {
-	GDScriptParser trait_parser;
-	Error err = trait_parser.parse(R"(
-trait_name Damageable
-)",
-			"user://damageable_trait_gate.gd", false);
-
-	CHECK_EQ(err, OK);
-	if (err != OK) {
-		return;
-	}
-
-	GDScriptAnalyzer trait_analyzer(&trait_parser);
-	err = trait_analyzer.analyze();
-	CHECK_EQ(err, ERR_PARSE_ERROR);
-	CHECK(has_parser_error(trait_parser, R"(GDScript trait declarations are parsed, but trait analysis is not implemented yet.)"));
-
-	GDScriptParser uses_parser;
-	err = uses_parser.parse(R"(
+TEST_CASE("[Modules][GDScript] Analyzer resolves inline trait uses") {
+	GDScriptParser parser;
+	Error err = analyze_source(parser, R"(
 class_name Player
 uses Damageable
-)",
-			"user://player_trait_gate.gd", false);
 
-	CHECK_EQ(err, OK);
-	if (err != OK) {
-		return;
-	}
+trait Damageable:
+	@abstract func take_damage(amount: int) -> void
 
-	GDScriptAnalyzer uses_analyzer(&uses_parser);
-	err = uses_analyzer.analyze();
-	CHECK_EQ(err, ERR_PARSE_ERROR);
-	CHECK(has_parser_error(uses_parser, R"("uses" clauses are parsed, but trait analysis is not implemented yet.)"));
-
-	GDScriptParser inline_trait_parser;
-	err = inline_trait_parser.parse(R"(
-class_name Player
-
-trait LocalTrait:
+func take_damage(amount: int) -> void:
 	pass
 )",
-			"user://player_inline_trait_gate.gd", false);
+			"user://player_inline_trait_resolution.gd");
 
+	INFO(first_parser_error_message(parser));
 	CHECK_EQ(err, OK);
 	if (err != OK) {
 		return;
 	}
 
-	GDScriptAnalyzer inline_trait_analyzer(&inline_trait_parser);
-	err = inline_trait_analyzer.analyze();
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	const GDScriptParser::ClassNode *damageable = find_parser_trait(root, SNAME("Damageable"));
+	CHECK(damageable != nullptr);
+	CHECK_EQ(root->used_traits.size(), 1);
+	if (damageable == nullptr || root->used_traits.size() != 1) {
+		return;
+	}
+	CHECK_EQ(root->used_traits[0].resolved_trait, damageable);
+	CHECK_EQ(root->resolved_traits.size(), 1);
+	CHECK_EQ(root->resolved_traits[0], damageable);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer resolves global and namespace-qualified trait uses") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile trait("namespaced_damageable_trait.gd", R"(
+namespace characters
+trait_name Damageable
+extends RefCounted
+
+@abstract func take_damage(amount: int) -> void
+)");
+
+	String base_type;
+	bool is_abstract = true;
+	bool is_tool = true;
+	String trait_name = GDScriptLanguage::get_singleton()->get_global_class_name(trait.path, &base_type, nullptr,
+			&is_abstract, &is_tool);
+	CHECK_EQ(trait_name, "characters.Damageable");
+	CHECK_EQ(base_type, "RefCounted");
+	CHECK_FALSE(is_abstract);
+	CHECK_FALSE(is_tool);
+	if (trait_name.is_empty()) {
+		return;
+	}
+
+	ScriptServer::add_global_class(trait_name, base_type, GDScriptLanguage::get_singleton()->get_name(), trait.path,
+			is_abstract, is_tool);
+
+	GDScriptParser imported_parser;
+	Error err = analyze_source(imported_parser, R"(
+import characters
+class_name ImportedPlayer
+uses Damageable
+
+func take_damage(amount: int) -> void:
+	pass
+)",
+			"user://player_imported_trait_resolution.gd");
+
+	INFO(first_parser_error_message(imported_parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *imported_root = imported_parser.get_tree();
+	CHECK_EQ(imported_root->used_traits.size(), 1);
+	if (imported_root->used_traits.size() != 1) {
+		return;
+	}
+	CHECK(imported_root->used_traits[0].resolved_trait != nullptr);
+	if (imported_root->used_traits[0].resolved_trait == nullptr) {
+		return;
+	}
+	CHECK_EQ(imported_root->used_traits[0].resolved_trait->get_global_name(), SNAME("characters.Damageable"));
+
+	GDScriptParser qualified_parser;
+	err = analyze_source(qualified_parser, R"(
+class_name QualifiedPlayer
+uses characters.Damageable
+
+func take_damage(amount: int) -> void:
+	pass
+)",
+			"user://player_qualified_trait_resolution.gd");
+
+	INFO(first_parser_error_message(qualified_parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *qualified_root = qualified_parser.get_tree();
+	CHECK_EQ(qualified_root->used_traits.size(), 1);
+	if (qualified_root->used_traits.size() != 1) {
+		return;
+	}
+	CHECK(qualified_root->used_traits[0].resolved_trait != nullptr);
+	if (qualified_root->used_traits[0].resolved_trait == nullptr) {
+		return;
+	}
+	CHECK_EQ(qualified_root->used_traits[0].resolved_trait->get_global_name(), SNAME("characters.Damageable"));
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer enforces trait base class constraints") {
+	GDScriptParser parser;
+	Error err = analyze_source(parser, R"(
+class_name Player
+extends RefCounted
+uses Movable
+
+trait Movable extends Node2D:
+	pass
+)",
+			"user://trait_base_constraint_error.gd");
+
 	CHECK_EQ(err, ERR_PARSE_ERROR);
-	CHECK(has_parser_error(inline_trait_parser, R"(GDScript trait declarations are parsed, but trait analysis is not implemented yet.)"));
+	CHECK(has_parser_error(parser,
+			R"(Class "Player" cannot use trait "Movable" because it does not inherit from "Node2D".)"));
+
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile base_script("trait_base_constraint_external_base.gd", R"(
+class_name ActorBase
+extends Node2D
+)");
+	String base_class_name = register_global_script_class(base_script);
+	CHECK_EQ(base_class_name, "ActorBase");
+
+	GDScriptParser external_base_parser;
+	err = analyze_source(external_base_parser, R"(
+class_name Actor
+extends ActorBase
+uses Movable
+
+trait Movable extends Node2D:
+	pass
+)",
+			"user://trait_base_constraint_external_base_user.gd");
+
+	INFO(first_parser_error_message(external_base_parser));
+	CHECK_EQ(err, OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer enforces required trait methods") {
+	GDScriptParser missing_parser;
+	Error err = analyze_source(missing_parser, R"(
+class_name Player
+uses Damageable
+
+trait Damageable:
+	@abstract func take_damage(amount: int) -> void
+)",
+			"user://trait_required_method_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(missing_parser,
+			R"msg(Class "Player" must implement trait method "Damageable.take_damage()".)msg"));
+
+	GDScriptParser async_parser;
+	err = analyze_source(async_parser, R"(
+class_name Player
+uses RemoteLoadable
+
+trait RemoteLoadable:
+	@abstract async func fetch() -> String
+
+func fetch() -> String:
+	return ""
+)",
+			"user://trait_async_required_method_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(async_parser,
+			R"msg(The function "fetch()" must be async because it implements async trait method "RemoteLoadable.fetch()".)msg"));
+
+	GDScriptParser sync_parser;
+	err = analyze_source(sync_parser, R"(
+class_name Player
+uses LocalLoadable
+
+trait LocalLoadable:
+	@abstract func fetch() -> String
+
+async func fetch() -> String:
+	return ""
+)",
+			"user://trait_sync_required_method_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(sync_parser,
+			R"msg(The function "fetch()" cannot be async because it implements synchronous trait method )msg"
+			R"msg("LocalLoadable.fetch()".)msg"));
+
+	GDScriptParser signature_parser;
+	err = analyze_source(signature_parser, R"(
+class_name Player
+uses Damageable
+
+trait Damageable:
+	@abstract func take_damage(amount: int) -> void
+
+func take_damage(amount: String) -> void:
+	pass
+)",
+			"user://trait_signature_required_method_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(signature_parser,
+			R"msg(The function "take_damage()" signature does not match required trait method "Damageable.take_damage()".)msg"));
+
+	GDScriptParser native_parser;
+	err = analyze_source(native_parser, R"(
+class_name Named
+extends RefCounted
+uses NamedTrait
+
+trait NamedTrait:
+	@abstract func get_class() -> String
+)",
+			"user://trait_required_method_native_base.gd");
+
+	INFO(first_parser_error_message(native_parser));
+	CHECK_EQ(err, OK);
+
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile base_script("trait_required_method_external_base.gd", R"(
+class_name TraitMethodBase
+extends RefCounted
+
+func take_damage(amount: int) -> void:
+	pass
+)");
+	String base_class_name = register_global_script_class(base_script);
+	CHECK_EQ(base_class_name, "TraitMethodBase");
+
+	GDScriptParser external_parser;
+	err = analyze_source(external_parser, R"(
+class_name Player
+extends TraitMethodBase
+uses Damageable
+
+trait Damageable:
+	@abstract func take_damage(amount: int) -> void
+)",
+			"user://trait_required_method_external_base_user.gd");
+
+	INFO(first_parser_error_message(external_parser));
+	CHECK_EQ(err, OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects trait inheritance and construction") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile trait("global_trait_inheritance_gate.gd", R"(
+trait_name Damageable
+)");
+	String trait_class_name = register_global_script_class(trait);
+	CHECK_EQ(trait_class_name, "Damageable");
+
+	GDScriptParser extends_parser;
+	Error err = analyze_source(extends_parser, R"(
+class_name Player
+extends Damageable
+)",
+			"user://trait_extends_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(extends_parser,
+			R"(Class "Player" cannot extend trait "Damageable"; use "uses Damageable" instead.)"));
+
+	const String new_source = R"(
+class_name Player
+
+trait Damageable:
+	pass
+
+func test() -> void:
+	var _damageable = Damageable.new()
+)";
+	TempScriptFile new_script("trait_constructor_error.gd", new_source);
+
+	GDScriptParser new_parser;
+	err = analyze_source(new_parser, new_source, new_script.path);
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(new_parser, R"(Cannot construct trait "Damageable".)"));
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects traits as static value types") {
+	GDScriptParser annotation_parser;
+	Error err = analyze_source(annotation_parser, R"(
+class_name Player
+
+trait Damageable:
+	pass
+
+var _damageable: Damageable
+)",
+			"user://trait_type_annotation_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(annotation_parser, R"(Trait "Damageable" cannot be used as a static type.)"));
+
+	GDScriptParser type_test_parser;
+	err = analyze_source(type_test_parser, R"(
+class_name Player
+
+trait Damageable:
+	pass
+
+func test(value: Variant) -> void:
+	var _result = value is Damageable
+)",
+			"user://trait_type_test_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(type_test_parser, R"(Trait "Damageable" cannot be used as a static type.)"));
+
+	GDScriptParser cast_parser;
+	err = analyze_source(cast_parser, R"(
+class_name Player
+
+trait Damageable:
+	pass
+
+func test(value: Variant) -> void:
+	var _result = value as Damageable
+)",
+			"user://trait_cast_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(cast_parser, R"(Trait "Damageable" cannot be used as a static type.)"));
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer resolves trait signatures in trait scope") {
+	const String source = R"(
+class_name Player
+uses Loader
+
+trait Loader:
+	class Payload:
+		pass
+
+	@abstract func load(value: Payload) -> Payload
+
+func load(value: Loader.Payload) -> Loader.Payload:
+	return value
+)";
+	TempScriptFile script("trait_signature_scope_resolution.gd", source);
+
+	GDScriptParser parser;
+	Error err = analyze_source(parser, source, script.path);
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer emits one unresolved trait error") {
+	GDScriptParser parser;
+	Error err = analyze_source(parser, R"(
+class_name Player
+uses MissingTrait
+)",
+			"user://trait_unresolved_single_error.gd");
+
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK_EQ(count_parser_errors(parser, R"(Could not resolve trait "MissingTrait".)"), 1);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer resolves trait composition without diamond duplication") {
+	GDScriptParser parser;
+	Error err = analyze_source(parser, R"(
+class_name Player
+uses Damageable, Trackable
+
+trait Identified:
+	@abstract func id() -> int
+
+trait Damageable uses Identified:
+	pass
+
+trait Trackable uses Identified:
+	pass
+
+func id() -> int:
+	return 1
+)",
+			"user://trait_diamond_resolution.gd");
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK_EQ(root->resolved_traits.size(), 3);
+	CHECK_EQ(root->resolved_traits[0]->identifier->name, SNAME("Damageable"));
+	CHECK_EQ(root->resolved_traits[1]->identifier->name, SNAME("Identified"));
+	CHECK_EQ(root->resolved_traits[2]->identifier->name, SNAME("Trackable"));
 }
 
 TEST_CASE("[Modules][GDScript] Parser accepts contextual async function modifiers") {
@@ -1233,7 +1630,8 @@ extends Node
 	String base_type;
 	bool is_abstract = true;
 	bool is_tool = true;
-	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr, &is_abstract, &is_tool);
+	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr,
+			&is_abstract, &is_tool);
 
 	CHECK_EQ(class_name, "characters.BaseCharacter");
 	CHECK_EQ(base_type, "Node");
@@ -1252,9 +1650,11 @@ extends Node
 	CHECK_EQ(class_name, "PlainCharacter");
 }
 
-TEST_CASE("[Modules][GDScript] Trait names do not register as global classes before analysis support") {
+TEST_CASE("[Modules][GDScript] Global trait names use namespace-qualified identity") {
 	TempScriptFile script("global_trait_name.gd", R"(
+namespace characters
 trait_name Damageable
+extends Node2D
 )");
 
 	String base_type;
@@ -1262,7 +1662,10 @@ trait_name Damageable
 	bool is_tool = true;
 	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr, &is_abstract, &is_tool);
 
-	CHECK(class_name.is_empty());
+	CHECK_EQ(class_name, "characters.Damageable");
+	CHECK_EQ(base_type, "Node2D");
+	CHECK_FALSE(is_abstract);
+	CHECK_FALSE(is_tool);
 }
 
 TEST_CASE("[Modules][GDScript] Loaded namespaced global class keeps qualified runtime identity") {
