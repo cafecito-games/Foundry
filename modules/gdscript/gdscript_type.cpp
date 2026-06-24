@@ -320,7 +320,14 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 			}
 			while (src_class != nullptr) {
 				if (src_class == p_target.class_type || src_class->fqcn == p_target.class_type->fqcn) {
-					result.compatible = true;
+					// Specialized generic handles are invariant in their type arguments: a `Box[int]`
+					// is not a `Box[String]`. Only enforce this on a direct (non-upcast) match of the same
+					// class; specialization through inheritance is tracked separately (see epic #125).
+					if (p_target.has_type_arguments() && p_source.has_type_arguments() && src_class == p_source.class_type) {
+						result.compatible = p_source.type_arguments == p_target.type_arguments;
+					} else {
+						result.compatible = true;
+					}
 					return result;
 				}
 				src_class = src_class->base_type.class_type;

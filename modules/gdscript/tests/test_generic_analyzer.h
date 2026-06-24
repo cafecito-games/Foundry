@@ -208,6 +208,26 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects a wrong type-argument arity") {
 	CHECK(found_arity_error);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer treats specialized handles as invariant") {
+	GDScriptParser parser;
+	const String source =
+			"class Box[T]:\n"
+			"\tvar value: T\n"
+			"func same(a: Box[int]) -> void:\n"
+			"\tvar b: Box[int] = a\n"
+			"func different(a: Box[int]) -> void:\n"
+			"\tvar b: Box[String] = a\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	const Error analyze_error = analyzer.analyze();
+	CHECK(analyze_error != OK);
+
+	// The only error must come from the mismatched specialization, not the matching one.
+	REQUIRE(parser.get_errors().size() == 1);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer rejects specializing a non-generic class") {
 	GDScriptParser parser;
 	const Error parse_error = parser.parse("class Plain:\n\tpass\nvar bad: Plain[int]\n", "user://test.gd", false);
