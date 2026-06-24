@@ -600,6 +600,9 @@
 		<member name="debug/gdscript/warnings/integer_division" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when dividing an integer by another integer (the decimal part will be discarded).
 		</member>
+		<member name="debug/gdscript/warnings/match_without_default" type="int" setter="" getter="" default="0">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [code]match[/code] statement over a value without a finite set of cases has no [code]_[/code] wildcard (default) branch. Disabled by default.
+		</member>
 		<member name="debug/gdscript/warnings/missing_await" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling a coroutine without [code]await[/code].
 		</member>
@@ -614,6 +617,9 @@
 		</member>
 		<member name="debug/gdscript/warnings/native_method_override" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a method in the script overrides a native method, because it may not behave as expected.
+		</member>
+		<member name="debug/gdscript/warnings/non_exhaustive_match" type="int" setter="" getter="" default="1">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [code]match[/code] statement over an enum or [bool] does not handle all possible values and has no [code]_[/code] wildcard (default) branch.
 		</member>
 		<member name="debug/gdscript/warnings/onready_with_export" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when the [code]@onready[/code] annotation is used together with the [code]@export[/code] annotation, since it may not behave as expected.

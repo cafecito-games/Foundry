@@ -1,0 +1,33 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-23-match-exhaustiveness-warning.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Register match warning codes",
+      "status": "completed",
+      "description": "**Goal:** Add NON_EXHAUSTIVE_MATCH and MATCH_WITHOUT_DEFAULT to the warning enum, default-level table, name table, and message switch (no behavior yet).\n\n**Files:**\n- Modify: modules/gdscript/gdscript_warning.h (enum ~L93; default_warning_levels ~L152)\n- Modify: modules/gdscript/gdscript_warning.cpp (get_message ~L168; names ~L247)\n\n**Acceptance Criteria:**\n- Codes inserted after ONREADY_WITH_EXPORT, before the #ifndef DISABLE_DEPRECATED block\n- NON_EXHAUSTIVE_MATCH default WARN; MATCH_WITHOUT_DEFAULT default IGNORE\n- Matching entries in default_warning_levels, names, get_message\n- Both static_asserts hold; engine builds\n\n**Verify:** scons platform=macos target=editor dev_build=yes tests=yes\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_warning.h\", \"modules/gdscript/gdscript_warning.cpp\"], \"verifyCommand\": \"scons platform=macos target=editor dev_build=yes tests=yes\", \"acceptanceCriteria\": [\"codes after ONREADY_WITH_EXPORT before deprecated block\", \"levels WARN and IGNORE\", \"static_asserts hold\", \"builds\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Implement match exhaustiveness analysis",
+      "status": "completed",
+      "blockedBy": [0],
+      "description": "**Goal:** Add check_match_exhaustiveness() and call it from resolve_match so the warnings are emitted per the spec rules.\n\n**Files:**\n- Modify: modules/gdscript/gdscript_analyzer.h (decl ~L98, DEBUG-guarded)\n- Modify: modules/gdscript/gdscript_analyzer.cpp (resolve_match ~L2733 + helper)\n\n**Acceptance Criteria:**\n- resolve_match calls helper inside #ifdef DEBUG_ENABLED\n- enum/bool missing values, no unguarded _ -> NON_EXHAUSTIVE_MATCH listing names\n- full coverage / both bool -> no warning\n- unguarded _/bind suppresses both\n- guarded branches don't count toward coverage\n- unguarded non-constant pattern bails out (no false positive)\n- non-finite domain, no _ -> MATCH_WITHOUT_DEFAULT\n- builds in debug and release\n\n**Verify:** build succeeds; behavior verified by Task 3 fixtures\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_analyzer.h\", \"modules/gdscript/gdscript_analyzer.cpp\"], \"verifyCommand\": \"scons platform=macos target=editor dev_build=yes tests=yes\", \"acceptanceCriteria\": [\"helper called in resolve_match under DEBUG\", \"enum/bool partial -> NON_EXHAUSTIVE_MATCH\", \"full coverage no warning\", \"wildcard suppresses\", \"guard excluded from coverage\", \"non-constant bails\", \"non-finite -> MATCH_WITHOUT_DEFAULT\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Add GDScript fixtures and verify",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** Add 7 .gd/.out fixture pairs exercising each rule, generate expected output, review it, and confirm the full suite passes.\n\n**Files (modules/gdscript/tests/scripts/analyzer/warnings/):**\n- match_non_exhaustive_enum, match_exhaustive_enum_no_warning, match_non_exhaustive_enum_with_wildcard, match_enum_guarded_branch, match_enum_non_constant_pattern, match_bool_non_exhaustive, match_without_default (.gd + .out each)\n\n**Acceptance Criteria:**\n- each .gd has func test(), produces only intended warnings\n- non-exhaustive enum lists unhandled enumerators in declaration order\n- full/wildcard/non-constant fixtures emit no match warning\n- match_without_default emits MATCH_WITHOUT_DEFAULT (runner forces Warn)\n- full test suite passes\n\n**Verify:** ./bin/godot.<...> --headless --test --force-colors\n\n```json:metadata\n{\"files\": [\"modules/gdscript/tests/scripts/analyzer/warnings/\"], \"verifyCommand\": \"./bin/godot.<...> --headless --test --force-colors\", \"acceptanceCriteria\": [\"7 fixture pairs\", \"review generated .out matches intent\", \"no incidental UNUSED_/INT_AS_ENUM_ warnings\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Document the new settings",
+      "status": "completed",
+      "blockedBy": [0],
+      "description": "**Goal:** Add two <member> entries to ProjectSettings.xml so doc-sync pre-commit checks pass.\n\n**Files:**\n- Modify: doc/classes/ProjectSettings.xml (alphabetical order)\n\n**Acceptance Criteria:**\n- match_without_default documented default=\"0\" (between integer_division and missing_await)\n- non_exhaustive_match documented default=\"1\" (between native_method_override and onready_with_export)\n- pre-commit doc checks pass\n\n**Verify:** pre-commit run --all-files\n\n```json:metadata\n{\"files\": [\"doc/classes/ProjectSettings.xml\"], \"verifyCommand\": \"pre-commit run --all-files\", \"acceptanceCriteria\": [\"match_without_default default=0 in order\", \"non_exhaustive_match default=1 in order\", \"doc hooks pass\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-23"
+}

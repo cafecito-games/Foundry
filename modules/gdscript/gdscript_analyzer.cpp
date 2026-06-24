@@ -43,6 +43,7 @@
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 #include "scene/main/node.h"
 
 #if defined(TOOLS_ENABLED) && !defined(DISABLE_DEPRECATED)
@@ -2774,7 +2775,107 @@ void GDScriptAnalyzer::resolve_match(GDScriptParser::MatchNode *p_match) {
 
 		decide_suite_type(p_match, p_match->branches[i]);
 	}
+
+#ifdef DEBUG_ENABLED
+	check_match_exhaustiveness(p_match);
+#endif
 }
+
+#ifdef DEBUG_ENABLED
+void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_match) {
+	if (p_match->test == nullptr) {
+		return; // Parse error: `match` with no test expression.
+	}
+	const GDScriptParser::DataType &match_type = p_match->test->get_datatype();
+	if (!match_type.is_set()) {
+		return; // Type unknown; cannot classify the domain.
+	}
+
+	// A branch counts as a default only with an unguarded wildcard/bind pattern.
+	// The parser already clears `has_wildcard` when a guard is present.
+	bool has_default = false;
+	for (GDScriptParser::MatchBranchNode *branch : p_match->branches) {
+		if (branch->has_wildcard) {
+			has_default = true;
+			break;
+		}
+	}
+
+	// Classify the matched type's domain.
+	// `domain_values` maps each value's display name to its integer value.
+	// Iteration order follows insertion order (Godot HashMap), i.e. enum
+	// declaration order, so the unhandled list is deterministic.
+	bool is_finite_domain = false;
+	HashMap<StringName, int64_t> domain_values;
+	String type_name;
+	if (match_type.kind == GDScriptParser::DataType::ENUM) {
+		is_finite_domain = true;
+		domain_values = match_type.enum_values;
+		type_name = match_type.enum_type;
+	} else if (match_type.kind == GDScriptParser::DataType::BUILTIN && match_type.builtin_type == Variant::BOOL) {
+		is_finite_domain = true;
+		domain_values[SNAME("false")] = 0;
+		domain_values[SNAME("true")] = 1;
+		type_name = "bool";
+	}
+
+	if (!is_finite_domain) {
+		if (!has_default) {
+			parser->push_warning(p_match, GDScriptWarning::MATCH_WITHOUT_DEFAULT);
+		}
+		return;
+	}
+
+	if (has_default || domain_values.is_empty()) {
+		return; // Exhaustive via default, or nothing to check.
+	}
+
+	// `match` compares typeof() before value, so only same-typed constants can
+	// cover a value at runtime: INT for enums, BOOL for the bool domain.
+	const Variant::Type expected_type = match_type.kind == GDScriptParser::DataType::ENUM ? Variant::INT : Variant::BOOL;
+
+	// Collect values covered by unguarded, statically-constant patterns.
+	HashSet<int64_t> covered_values;
+	for (GDScriptParser::MatchBranchNode *branch : p_match->branches) {
+		if (branch->guard_body != nullptr) {
+			continue; // Guard may fail; does not guarantee coverage.
+		}
+		for (GDScriptParser::PatternNode *pattern : branch->patterns) {
+			const GDScriptParser::ExpressionNode *value_node = nullptr;
+			if (pattern->pattern_type == GDScriptParser::PatternNode::PT_LITERAL) {
+				value_node = pattern->literal;
+			} else if (pattern->pattern_type == GDScriptParser::PatternNode::PT_EXPRESSION) {
+				value_node = pattern->expression;
+			} else {
+				return; // Array/dict/rest pattern: cannot reason about coverage; bail out.
+			}
+
+			if (value_node == nullptr || !value_node->is_constant) {
+				return; // Non-constant pattern: cannot prove coverage; bail out.
+			}
+			if (value_node->reduced_value.get_type() != expected_type) {
+				// A different-typed constant can never match this domain at
+				// runtime (match compares typeof() first), so it covers nothing.
+				// Skip it — do NOT bail out, the value stays unhandled.
+				continue;
+			}
+			covered_values.insert((int64_t)value_node->reduced_value);
+		}
+	}
+
+	// Report any domain value with no covering pattern.
+	Vector<String> unhandled;
+	for (const KeyValue<StringName, int64_t> &E : domain_values) {
+		if (!covered_values.has(E.value)) {
+			unhandled.push_back(String(E.key));
+		}
+	}
+
+	if (!unhandled.is_empty()) {
+		parser->push_warning(p_match, GDScriptWarning::NON_EXHAUSTIVE_MATCH, type_name, String(", ").join(unhandled));
+	}
+}
+#endif // DEBUG_ENABLED
 
 void GDScriptAnalyzer::resolve_match_branch(GDScriptParser::MatchBranchNode *p_match_branch, GDScriptParser::ExpressionNode *p_match_test) {
 	// Apply annotations.

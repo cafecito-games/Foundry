@@ -107,6 +107,9 @@ class GDScriptAnalyzer {
 	void resolve_while(GDScriptParser::WhileNode *p_while);
 	void resolve_assert(GDScriptParser::AssertNode *p_assert);
 	void resolve_match(GDScriptParser::MatchNode *p_match);
+#ifdef DEBUG_ENABLED
+	void check_match_exhaustiveness(GDScriptParser::MatchNode *p_match);
+#endif
 	void resolve_match_branch(GDScriptParser::MatchBranchNode *p_match_branch, GDScriptParser::ExpressionNode *p_match_test);
 	void resolve_match_pattern(GDScriptParser::PatternNode *p_match_pattern, GDScriptParser::ExpressionNode *p_match_test, const GDScriptParser::DataType *p_match_test_type = nullptr);
 	void resolve_return(GDScriptParser::ReturnNode *p_return);

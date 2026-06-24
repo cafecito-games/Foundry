@@ -1,4 +1,5 @@
 GDTEST_OK
+~~ WARNING at line 30: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
 {"key1": "value1", "key2": "value2"}
 {"key1": "value1", "key2"}
 {"key1", "key2": "value2"}
