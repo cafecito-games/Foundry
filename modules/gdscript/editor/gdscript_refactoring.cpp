@@ -59,6 +59,12 @@ struct TypeAnnotationCandidate {
 	bool enabled = false;
 	String disabled_reason;
 	RefactorTextEdit edit;
+	// Caret-test span of the declaration this candidate was found at. Used by the
+	// caret-driven path to select the candidate under the caret; the headless
+	// collector ignores it.
+	int line = -1;
+	int caret_span_start = -1;
+	int caret_span_end = -1;
 };
 
 struct ExtractVariableCandidate {
@@ -779,7 +785,7 @@ bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignme
 			is_self_attribute(p_assignment->assignee);
 }
 
-bool find_assignable_type_annotation(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate) {
+bool find_assignable_type_annotation(const RefactorLocation *p_location, const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate) {
 	if (p_assignable == nullptr || p_assignable->identifier == nullptr) {
 		return false;
 	}
@@ -792,7 +798,7 @@ bool find_assignable_type_annotation(const RefactorLocation &p_location, const V
 	const String line = p_lines[line_index];
 	int name_start = 0;
 	int name_end = 0;
-	const RefactorLocation *identifier_location = p_has_keyword ? nullptr : &p_location;
+	const RefactorLocation *identifier_location = p_has_keyword ? nullptr : p_location;
 	if (!get_identifier_text_span(p_lines, line_index, p_assignable->identifier, identifier_location, name_start, name_end)) {
 		return false;
 	}
@@ -815,11 +821,11 @@ bool find_assignable_type_annotation(const RefactorLocation &p_location, const V
 	// declaration line.
 	const int equal_index = line.find("=", name_end);
 	const int declaration_end = equal_index >= 0 ? equal_index : name_end;
-	if (!caret_on_segment(p_location, line_index, declaration_start, declaration_end)) {
-		return false;
-	}
 
 	r_candidate.matched = true;
+	r_candidate.line = line_index;
+	r_candidate.caret_span_start = declaration_start;
+	r_candidate.caret_span_end = declaration_end;
 	if (p_assignable->datatype_specifier != nullptr) {
 		r_candidate.disabled_reason = "This declaration already has a type annotation.";
 		return true;
@@ -844,9 +850,7 @@ bool find_assignable_type_annotation(const RefactorLocation &p_location, const V
 	return true;
 }
 
-bool find_type_annotation_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, TypeAnnotationCandidate &r_candidate);
-
-bool find_function_return_type_annotation(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, TypeAnnotationCandidate &r_candidate) {
+bool find_function_return_type_annotation(const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, TypeAnnotationCandidate &r_candidate) {
 	if (p_function == nullptr || p_function->identifier == nullptr) {
 		return false;
 	}
@@ -867,11 +871,11 @@ bool find_function_return_type_annotation(const RefactorLocation &p_location, co
 	if (function_start < 0 || body_colon < 0) {
 		return false;
 	}
-	if (!caret_on_segment(p_location, line_index, function_start, body_colon)) {
-		return false;
-	}
 
 	r_candidate.matched = true;
+	r_candidate.line = line_index;
+	r_candidate.caret_span_start = function_start;
+	r_candidate.caret_span_end = body_colon;
 	if (p_function->return_type != nullptr) {
 		r_candidate.disabled_reason = "This function already has a return type annotation.";
 		return true;
@@ -889,115 +893,6 @@ bool find_function_return_type_annotation(const RefactorLocation &p_location, co
 	r_candidate.edit.new_text = " -> " + rendered_type + ":";
 	r_candidate.enabled = true;
 	return true;
-}
-
-bool find_type_annotation_in_function(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, TypeAnnotationCandidate &r_candidate) {
-	if (p_function == nullptr) {
-		return false;
-	}
-
-	for (const GDScriptParser::ParameterNode *parameter : p_function->parameters) {
-		if (find_assignable_type_annotation(p_location, p_lines, parameter, "parameter", false, r_candidate)) {
-			return true;
-		}
-	}
-	if (p_function->rest_parameter != nullptr && find_assignable_type_annotation(p_location, p_lines, p_function->rest_parameter, "parameter", false, r_candidate)) {
-		return true;
-	}
-	if (find_function_return_type_annotation(p_location, p_lines, p_function, r_candidate)) {
-		return true;
-	}
-	if (find_type_annotation_in_suite(p_location, p_lines, p_function->body, r_candidate)) {
-		return true;
-	}
-	return false;
-}
-
-bool find_type_annotation_in_class(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, TypeAnnotationCandidate &r_candidate) {
-	if (p_class == nullptr) {
-		return false;
-	}
-
-	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
-		switch (member.type) {
-			case GDScriptParser::ClassNode::Member::CONSTANT:
-				if (find_assignable_type_annotation(p_location, p_lines, member.constant, "constant", true, r_candidate)) {
-					return true;
-				}
-				break;
-			case GDScriptParser::ClassNode::Member::VARIABLE:
-				if (find_assignable_type_annotation(p_location, p_lines, member.variable, "variable", true, r_candidate)) {
-					return true;
-				}
-				break;
-			case GDScriptParser::ClassNode::Member::FUNCTION:
-				if (find_type_annotation_in_function(p_location, p_lines, member.function, r_candidate)) {
-					return true;
-				}
-				break;
-			case GDScriptParser::ClassNode::Member::CLASS:
-				if (find_type_annotation_in_class(p_location, p_lines, member.m_class, r_candidate)) {
-					return true;
-				}
-				break;
-			default:
-				break;
-		}
-	}
-	return false;
-}
-
-bool find_type_annotation_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, TypeAnnotationCandidate &r_candidate) {
-	if (p_suite == nullptr) {
-		return false;
-	}
-
-	for (const GDScriptParser::Node *statement : p_suite->statements) {
-		if (statement == nullptr) {
-			continue;
-		}
-		switch (statement->type) {
-			case GDScriptParser::Node::VARIABLE:
-				if (find_assignable_type_annotation(p_location, p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidate)) {
-					return true;
-				}
-				break;
-			case GDScriptParser::Node::CONSTANT:
-				if (find_assignable_type_annotation(p_location, p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidate)) {
-					return true;
-				}
-				break;
-			case GDScriptParser::Node::IF: {
-				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
-				if (find_type_annotation_in_suite(p_location, p_lines, if_node->true_block, r_candidate) || find_type_annotation_in_suite(p_location, p_lines, if_node->false_block, r_candidate)) {
-					return true;
-				}
-			} break;
-			case GDScriptParser::Node::FOR: {
-				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
-				if (find_type_annotation_in_suite(p_location, p_lines, for_node->loop, r_candidate)) {
-					return true;
-				}
-			} break;
-			case GDScriptParser::Node::WHILE: {
-				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
-				if (find_type_annotation_in_suite(p_location, p_lines, while_node->loop, r_candidate)) {
-					return true;
-				}
-			} break;
-			case GDScriptParser::Node::MATCH: {
-				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
-				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
-					if (branch != nullptr && find_type_annotation_in_suite(p_location, p_lines, branch->block, r_candidate)) {
-						return true;
-					}
-				}
-			} break;
-			default:
-				break;
-		}
-	}
-	return false;
 }
 
 bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, ExtractVariableCandidate &r_candidate);
@@ -2834,13 +2729,114 @@ void cache_inline_variable_candidate(const RefactorContext &p_context, const Ref
 	inline_variable_cache.candidate = p_candidate;
 }
 
-TypeAnnotationCandidate find_type_annotation_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
-	TypeAnnotationCandidate candidate;
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates);
 
-	_ALLOW_DISCARD_ find_type_annotation_in_class(p_location, p_lines, p_tree, candidate);
-	if (!candidate.matched && candidate.disabled_reason.is_empty()) {
-		candidate.disabled_reason = "Place the caret on an untyped declaration with an inferred concrete type.";
+void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates) {
+	TypeAnnotationCandidate candidate;
+	if (find_assignable_type_annotation(nullptr, p_lines, p_assignable, p_kind, p_has_keyword, candidate) && candidate.matched) {
+		r_candidates.push_back(candidate);
 	}
+}
+
+void collect_type_annotation_in_function(const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, Vector<TypeAnnotationCandidate> &r_candidates) {
+	if (p_function == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::ParameterNode *parameter : p_function->parameters) {
+		collect_assignable_candidate(p_lines, parameter, "parameter", false, r_candidates);
+	}
+	if (p_function->rest_parameter != nullptr) {
+		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates);
+	}
+	TypeAnnotationCandidate return_candidate;
+	if (find_function_return_type_annotation(p_lines, p_function, return_candidate) && return_candidate.matched) {
+		r_candidates.push_back(return_candidate);
+	}
+	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates);
+}
+
+void collect_type_annotation_in_class(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, Vector<TypeAnnotationCandidate> &r_candidates) {
+	if (p_class == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::CONSTANT:
+				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates);
+				break;
+			case GDScriptParser::ClassNode::Member::VARIABLE:
+				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates);
+				break;
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				collect_type_annotation_in_function(p_lines, member.function, r_candidates);
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				collect_type_annotation_in_class(p_lines, member.m_class, r_candidates);
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates) {
+	if (p_suite == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::VARIABLE:
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates);
+				break;
+			case GDScriptParser::Node::CONSTANT:
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates);
+				break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates);
+				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates);
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
+				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates);
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
+				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates);
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+					if (branch != nullptr) {
+						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates);
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+}
+
+Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
+	Vector<TypeAnnotationCandidate> candidates;
+	collect_type_annotation_in_class(p_lines, p_tree, candidates);
+	return candidates;
+}
+
+TypeAnnotationCandidate find_type_annotation_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree);
+	for (const TypeAnnotationCandidate &candidate : candidates) {
+		if (caret_on_segment(p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
+			return candidate;
+		}
+	}
+
+	TypeAnnotationCandidate candidate;
+	candidate.disabled_reason = "Place the caret on an untyped declaration with an inferred concrete type.";
 	return candidate;
 }
 
