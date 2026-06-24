@@ -186,6 +186,12 @@ Staging and restoring are paired by a scope guard so originals are always restor
 This keeps the common case (no regression) at a single affected-set analysis, bounds
 the regression case to O(log N) analyses, and retains the maximal set of good edits.
 
+To bound worst-case cost (every analysis stages to disk and re-analyzes the whole
+affected set), a hard ceiling caps how many candidates the bisection path will
+attribute. When a regressing batch exceeds the ceiling, the harness logs that the
+ceiling was hit and falls back to all-or-nothing rejection of that batch rather than
+running ddmin over an unbounded candidate set.
+
 ### 3. Strict-mode preview
 
 ```cpp
@@ -215,7 +221,10 @@ static StrictPreviewResult preview_strict(
 A diagnostic is a strict violation when it appears in the strict analysis but not in
 the non-strict baseline for the same file. Because both passes analyze the same
 unmodified source, line/column/message identity matching is reliable here (no line
-shifts), so violations carry precise locations.
+shifts), so violations carry precise locations. The baseline is held as a multiset
+(count keyed by line/column/message) and the strict pass consumes one baseline count
+per match, so a diagnostic that occurs more often under strict mode than at baseline
+still surfaces its additional occurrences as violations.
 
 ### 4. Wire into `GDScriptFixpointInference`
 
