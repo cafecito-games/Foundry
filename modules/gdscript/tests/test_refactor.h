@@ -2421,6 +2421,34 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
+	TEST_CASE("Sort members by style guide places resolved custom overrides before remaining methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
 	TEST_CASE("Sort members by style guide finishes repeated nested passes") {
 		const String source =
 				"extends Node\n"

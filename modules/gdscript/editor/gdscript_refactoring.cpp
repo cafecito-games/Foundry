@@ -40,6 +40,7 @@
 #include "../gdscript_analyzer.h"
 #include "../gdscript_position.h"
 
+#include "core/object/class_db.h"
 #include "core/os/mutex.h"
 #include "core/string/char_utils.h"
 #include "core/templates/hash_set.h"
@@ -3711,6 +3712,66 @@ bool is_builtin_virtual_callback_name(const String &p_name) {
 			p_name == "_notification";
 }
 
+bool native_class_has_function(const StringName &p_class_name, const StringName &p_function_name) {
+	return p_class_name != StringName() &&
+			ClassDB::class_exists(p_class_name) &&
+			ClassDB::has_method(p_class_name, p_function_name);
+}
+
+bool class_has_base_function(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	GDScriptParser::DataType base_type = p_class->base_type;
+	while (true) {
+		switch (base_type.kind) {
+			case GDScriptParser::DataType::CLASS: {
+				const GDScriptParser::ClassNode *base_class = base_type.class_type;
+				while (base_class != nullptr) {
+					if (base_class->has_member(p_function_name) &&
+							base_class->get_member(p_function_name).type == GDScriptParser::ClassNode::Member::FUNCTION) {
+						return true;
+					}
+
+					base_type = base_class->base_type;
+					if (base_type.kind != GDScriptParser::DataType::CLASS) {
+						break;
+					}
+					base_class = base_type.class_type;
+				}
+				if (base_type.kind == GDScriptParser::DataType::CLASS) {
+					return false;
+				}
+				continue;
+			}
+			case GDScriptParser::DataType::SCRIPT: {
+				Ref<Script> base_script = base_type.script_type;
+				StringName native_type = base_type.native_type;
+				while (base_script.is_valid()) {
+					if (base_script->has_method(p_function_name)) {
+						return true;
+					}
+					if (native_type == StringName()) {
+						native_type = base_script->get_instance_base_type();
+					}
+					base_script = base_script->get_base_script();
+				}
+				return native_class_has_function(native_type, p_function_name);
+			}
+			case GDScriptParser::DataType::NATIVE:
+				return native_class_has_function(base_type.native_type, p_function_name);
+			case GDScriptParser::DataType::BUILTIN:
+			case GDScriptParser::DataType::ENUM:
+			case GDScriptParser::DataType::VARIANT:
+			case GDScriptParser::DataType::RESOLVING:
+			case GDScriptParser::DataType::UNRESOLVED:
+				return false;
+		}
+	}
+	return false;
+}
+
 bool style_order_variable_has_export_annotation(const GDScriptParser::VariableNode *p_variable) {
 	if (p_variable == nullptr) {
 		return false;
@@ -3759,7 +3820,10 @@ bool style_order_variable_has_onready_annotation(const GDScriptParser::VariableN
 	return false;
 }
 
-StyleOrderBucket get_style_order_bucket(const GDScriptParser::ClassNode::Member &p_member) {
+StyleOrderBucket get_style_order_bucket(
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::ClassNode::Member &p_member,
+		bool p_analysis_ok) {
 	const String member_name = style_order_member_name(p_member);
 
 	switch (p_member.type) {
@@ -3793,6 +3857,12 @@ StyleOrderBucket get_style_order_bucket(const GDScriptParser::ClassNode::Member 
 			}
 			if (is_builtin_virtual_callback_name(member_name)) {
 				return StyleOrderBucket::BUILTIN_VIRTUAL_METHOD;
+			}
+			if (p_analysis_ok &&
+					p_member.function != nullptr &&
+					p_member.function->identifier != nullptr &&
+					class_has_base_function(p_class, p_member.function->identifier->name)) {
+				return StyleOrderBucket::CUSTOM_OVERRIDE_METHOD;
 			}
 			return is_private_style_order_name(member_name) ? StyleOrderBucket::PRIVATE_METHOD : StyleOrderBucket::PUBLIC_METHOD;
 		case GDScriptParser::ClassNode::Member::CLASS:
@@ -3873,7 +3943,8 @@ bool style_order_blocks_are_sorted(const Vector<StyleOrderBlock> &p_blocks) {
 StyleOrderCandidate find_style_order_candidate_in_class(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_class,
-		bool p_is_root_class) {
+		bool p_is_root_class,
+		bool p_analysis_ok) {
 	StyleOrderCandidate candidate;
 	if (p_class == nullptr || p_class->members.size() < 2) {
 		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
@@ -3936,7 +4007,7 @@ StyleOrderCandidate find_style_order_candidate_in_class(
 
 		StyleOrderBlock block;
 		block.original_index = i;
-		block.bucket = get_style_order_bucket(member);
+		block.bucket = get_style_order_bucket(p_class, member, p_analysis_ok);
 		block.start_line = block_start_line;
 		block.end_line = block_end_line;
 		blocks.push_back(block);
@@ -4065,13 +4136,18 @@ void collect_style_order_class_edits(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_class,
 		bool p_is_root_class,
+		bool p_analysis_ok,
 		Vector<RefactorTextEdit> &r_edits,
 		String &r_disabled_reason) {
 	if (p_class == nullptr || !r_disabled_reason.is_empty()) {
 		return;
 	}
 
-	const StyleOrderCandidate candidate = find_style_order_candidate_in_class(p_lines, p_class, p_is_root_class);
+	const StyleOrderCandidate candidate = find_style_order_candidate_in_class(
+			p_lines,
+			p_class,
+			p_is_root_class,
+			p_analysis_ok);
 	if (candidate.enabled) {
 		for (const RefactorTextEdit &edit : candidate.edits) {
 			r_edits.push_back(edit);
@@ -4085,7 +4161,7 @@ void collect_style_order_class_edits(
 		if (member.type != GDScriptParser::ClassNode::Member::CLASS) {
 			continue;
 		}
-		collect_style_order_class_edits(p_lines, member.m_class, false, r_edits, r_disabled_reason);
+		collect_style_order_class_edits(p_lines, member.m_class, false, p_analysis_ok, r_edits, r_disabled_reason);
 		if (!r_disabled_reason.is_empty()) {
 			return;
 		}
@@ -4132,9 +4208,12 @@ bool apply_style_order_pass(
 		return false;
 	}
 
+	GDScriptAnalyzer analyzer(&parser);
+	const bool analysis_ok = analyzer.analyze() == OK;
+
 	const Vector<String> lines = p_source.split("\n");
 	Vector<RefactorTextEdit> edits;
-	collect_style_order_class_edits(lines, parser.get_tree(), true, edits, r_disabled_reason);
+	collect_style_order_class_edits(lines, parser.get_tree(), true, analysis_ok, edits, r_disabled_reason);
 	if (!r_disabled_reason.is_empty()) {
 		return false;
 	}
