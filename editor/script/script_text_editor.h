@@ -304,9 +304,9 @@ protected:
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);
 	void _show_extract_method_dialog(
-			const RefactorContext &p_context,
 			const RefactorLocation &p_location,
-			const String &p_suggested_name);
+			const String &p_suggested_name,
+			const Vector<String> &p_existing_member_names);
 	void _on_extract_method_confirmed();
 	void _on_extract_method_canceled();
 	void _on_extract_method_text_changed(const String &p_text);

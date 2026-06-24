@@ -87,6 +87,7 @@ struct ExtractMethodCandidate {
 	bool enabled = false;
 	String disabled_reason;
 	String suggested_name;
+	Vector<String> member_names;
 	RefactorTextEdit replacement_edit;
 	RefactorTextEdit method_edit;
 	int name_line = -1;
@@ -1456,6 +1457,22 @@ String make_unique_method_name(const GDScriptParser::ClassNode *p_class) {
 	return name;
 }
 
+Vector<String> collect_extract_method_member_names(const GDScriptParser::ClassNode *p_class) {
+	Vector<String> names;
+	if (p_class == nullptr) {
+		return names;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		// Export group/category labels are editor metadata, not script member identifiers.
+		if (member.type == GDScriptParser::ClassNode::Member::GROUP) {
+			continue;
+		}
+		names.push_back(member.get_name());
+	}
+	return names;
+}
+
 String resolve_extract_method_name(
 		const GDScriptParser::ClassNode *p_class,
 		const String &p_requested_name,
@@ -1468,14 +1485,8 @@ String resolve_extract_method_name(
 		return generated_name;
 	}
 
-	String reason;
-	if (!GDScriptRefactorNames::validate_identifier(p_requested_name, reason)) {
-		r_disabled_reason = reason;
-		return String();
-	}
-
-	if (p_class != nullptr && p_class->has_member(StringName(p_requested_name))) {
-		r_disabled_reason = vformat("A member named '%s' already exists in this class.", p_requested_name);
+	const Vector<String> member_names = collect_extract_method_member_names(p_class);
+	if (!GDScriptRefactoring::validate_extract_method_name(member_names, p_requested_name, r_disabled_reason)) {
 		return String();
 	}
 
@@ -1561,6 +1572,7 @@ ExtractMethodCandidate build_extract_method_candidate(
 		const String &p_requested_name) {
 	ExtractMethodCandidate candidate;
 	candidate.matched = true;
+	candidate.member_names = collect_extract_method_member_names(p_class);
 
 	if (p_function == nullptr || p_suite == nullptr || p_function->body == nullptr) {
 		candidate.disabled_reason = "Select whole statements inside one function body.";
@@ -3129,6 +3141,8 @@ RefactorResult prepare_extract_method(
 	} else if (!p_location.has_selection() || !is_location_ordered(p_location)) {
 		candidate.disabled_reason = "Select complete statements to extract.";
 	} else {
+		// Requested names affect the generated edits, so this path intentionally
+		// bypasses the default-name candidate cache.
 		const Vector<String> lines = p_context.source.split("\n");
 		candidate = find_extract_method_candidate_uncached(p_context, p_location, lines, p_parse_results, p_params.new_name);
 	}
@@ -3143,6 +3157,7 @@ RefactorResult prepare_extract_method(
 	result.suggested_name = candidate.suggested_name;
 	result.rename_anchor_line = candidate.name_line;
 	result.rename_anchor_column = candidate.name_column;
+	result.extract_method_member_names = candidate.member_names;
 	result.edits.push_back(candidate.replacement_edit);
 	result.edits.push_back(candidate.method_edit);
 	return result;
@@ -3262,6 +3277,25 @@ RefactorResult prepare_type_annotation(
 }
 
 } // namespace
+
+bool GDScriptRefactoring::validate_extract_method_name(
+		const Vector<String> &p_existing_member_names,
+		const String &p_name,
+		String &r_error_message) {
+	if (!GDScriptRefactorNames::validate_identifier(p_name, r_error_message)) {
+		return false;
+	}
+
+	for (const String &member_name : p_existing_member_names) {
+		if (member_name == p_name) {
+			r_error_message = vformat("A member named '%s' already exists in this class.", p_name);
+			return false;
+		}
+	}
+
+	r_error_message = String();
+	return true;
+}
 
 #ifndef GDSCRIPT_NO_LSP
 static LSP::TextDocumentPositionParams make_document_position(const Ref<GDScriptWorkspace> &p_workspace, const RefactorContext &p_context, const RefactorLocation &p_location) {

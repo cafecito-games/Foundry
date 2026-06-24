@@ -3004,7 +3004,7 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 			return;
 		}
 
-		_show_extract_method_dialog(ctx, loc, result.suggested_name);
+		_show_extract_method_dialog(loc, result.suggested_name, result.extract_method_member_names);
 		return;
 	}
 
@@ -3403,10 +3403,10 @@ void ScriptTextEditor::_on_rename_text_changed(const String &p_text) {
 }
 
 void ScriptTextEditor::_show_extract_method_dialog(
-		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
-		const String &p_suggested_name) {
-	extract_method_name_prompt.begin(p_context, p_location, p_suggested_name);
+		const String &p_suggested_name,
+		const Vector<String> &p_existing_member_names) {
+	extract_method_name_prompt.begin(p_location, p_existing_member_names, p_suggested_name);
 	extract_method_line_edit->set_text(extract_method_name_prompt.get_name());
 	_on_extract_method_text_changed(extract_method_line_edit->get_text());
 	extract_method_dialog->popup_centered();

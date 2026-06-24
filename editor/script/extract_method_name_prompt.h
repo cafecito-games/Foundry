@@ -37,15 +37,18 @@
 class ExtractMethodNamePromptModel {
 	bool pending = false;
 	bool valid = false;
-	RefactorContext context;
 	RefactorLocation location;
+	Vector<String> existing_member_names;
 	String name;
 	String error_message;
 
 	void _validate();
 
 public:
-	void begin(const RefactorContext &p_context, const RefactorLocation &p_location, const String &p_suggested_name);
+	void begin(
+			const RefactorLocation &p_location,
+			const Vector<String> &p_existing_member_names,
+			const String &p_suggested_name);
 	void set_name(const String &p_name);
 	void cancel();
 	void clear();

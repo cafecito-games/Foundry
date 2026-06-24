@@ -826,6 +826,22 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(out.contains("\t_extracted_method_2()\n"));
 			CHECK(out.contains("func _extracted_method_2() -> void:\n"));
 		}
+		SUBCASE("export group labels do not invalidate suggested prompt names") {
+			const String source =
+					"@export_group(\"_extracted_method\")\n"
+					"@export var value := 0\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(4, 0, 5, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_extracted_method");
+			String reason;
+			CHECK(GDScriptRefactoring::validate_extract_method_name(r.extract_method_member_names, r.suggested_name, reason));
+			CHECK(reason.is_empty());
+		}
 		SUBCASE("uses requested method name") {
 			const String source =
 					"func run() -> void:\n"
@@ -843,6 +859,21 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"func _print_ready() -> void:\n"
 					"\tprint(\"ready\")\n");
 		}
+		SUBCASE("allows requested method name matching export group label") {
+			const String source =
+					"@export_group(\"helper\")\n"
+					"@export var value := 0\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(4, 0, 5, 0), "helper", out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "helper");
+			CHECK(out.contains("\thelper()\n"));
+			CHECK(out.contains("func helper() -> void:\n"));
+		}
 		SUBCASE("rejects invalid requested method name") {
 			const String source =
 					"func run() -> void:\n"
@@ -852,6 +883,17 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "1bad", out);
 			CHECK_FALSE(r.ok);
 			CHECK(r.error_message.contains("valid identifier"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects reserved requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "class", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("reserved keyword"));
 			CHECK(out.is_empty());
 		}
 		SUBCASE("rejects requested method name collision") {
@@ -864,6 +906,24 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"\tpass\n";
 			String out;
 			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "existing", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("already exists"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects requested method name collision inside target inner class") {
+			const String source =
+					"class Inner:\n"
+					"\tfunc run() -> void:\n"
+					"\t\tprint(\"ready\")\n"
+					"\t\tprint(\"done\")\n"
+					"\n"
+					"\tfunc existing() -> void:\n"
+					"\t\tpass\n"
+					"\n"
+					"func existing() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(2, 0, 3, 0), "existing", out);
 			CHECK_FALSE(r.ok);
 			CHECK(r.error_message.contains("already exists"));
 			CHECK(out.is_empty());

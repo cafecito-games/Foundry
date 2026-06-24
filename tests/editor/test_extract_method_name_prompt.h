@@ -37,13 +37,6 @@
 
 namespace TestExtractMethodNamePrompt {
 
-RefactorContext make_extract_context(const String &p_source) {
-	RefactorContext ctx;
-	ctx.path = "user://extract_method_prompt.gd";
-	ctx.source = p_source;
-	return ctx;
-}
-
 RefactorLocation extract_selection() {
 	RefactorLocation loc;
 	loc.start_line = 1;
@@ -53,14 +46,16 @@ RefactorLocation extract_selection() {
 	return loc;
 }
 
+Vector<String> member_names(const String &p_name) {
+	Vector<String> names;
+	names.push_back(p_name);
+	return names;
+}
+
 TEST_CASE("[Editor][ExtractMethodNamePrompt] Accepts valid names") {
-	const String source =
-			"func run() -> void:\n"
-			"\tprint(\"ready\")\n"
-			"\tprint(\"done\")\n";
 	const RefactorLocation selection = extract_selection();
 	ExtractMethodNamePromptModel model;
-	model.begin(make_extract_context(source), selection, "_extracted_method");
+	model.begin(selection, Vector<String>(), "_extracted_method");
 
 	CHECK(model.has_pending_request());
 	CHECK(model.is_valid());
@@ -82,12 +77,8 @@ TEST_CASE("[Editor][ExtractMethodNamePrompt] Accepts valid names") {
 }
 
 TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects invalid identifiers") {
-	const String source =
-			"func run() -> void:\n"
-			"\tprint(\"ready\")\n"
-			"\tprint(\"done\")\n";
 	ExtractMethodNamePromptModel model;
-	model.begin(make_extract_context(source), extract_selection(), "_extracted_method");
+	model.begin(extract_selection(), Vector<String>(), "_extracted_method");
 	model.set_name("1bad");
 
 	CHECK(model.has_pending_request());
@@ -106,13 +97,23 @@ TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects invalid identifiers") {
 	CHECK_EQ(confirmed, "_ok");
 }
 
-TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects empty names") {
-	const String source =
-			"func run() -> void:\n"
-			"\tprint(\"ready\")\n"
-			"\tprint(\"done\")\n";
+TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects reserved keywords") {
 	ExtractMethodNamePromptModel model;
-	model.begin(make_extract_context(source), extract_selection(), "_extracted_method");
+	model.begin(extract_selection(), Vector<String>(), "_extracted_method");
+	model.set_name("class");
+
+	CHECK(model.has_pending_request());
+	CHECK_FALSE(model.is_valid());
+	CHECK(model.get_error_message().contains("reserved keyword"));
+
+	String confirmed;
+	CHECK_FALSE(model.confirm(confirmed));
+	CHECK(confirmed.is_empty());
+}
+
+TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects empty names") {
+	ExtractMethodNamePromptModel model;
+	model.begin(extract_selection(), Vector<String>(), "_extracted_method");
 	model.set_name("");
 
 	CHECK(model.has_pending_request());
@@ -124,16 +125,15 @@ TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects empty names") {
 	CHECK(confirmed.is_empty());
 }
 
-TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects member collisions") {
-	const String source =
-			"func run() -> void:\n"
-			"\tprint(\"ready\")\n"
-			"\tprint(\"done\")\n"
-			"\n"
-			"func existing() -> void:\n"
-			"\tpass\n";
+TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects collisions in the target inner class") {
+	RefactorLocation loc;
+	loc.start_line = 2;
+	loc.start_column = 0;
+	loc.end_line = 3;
+	loc.end_column = 0;
+
 	ExtractMethodNamePromptModel model;
-	model.begin(make_extract_context(source), extract_selection(), "_extracted_method");
+	model.begin(loc, member_names("existing"), "_extracted_method");
 	model.set_name("existing");
 
 	CHECK(model.has_pending_request());
@@ -142,15 +142,26 @@ TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects member collisions") {
 
 	String confirmed;
 	CHECK_FALSE(model.confirm(confirmed));
+	CHECK(confirmed.is_empty());
+}
+
+TEST_CASE("[Editor][ExtractMethodNamePrompt] Rejects member collisions") {
+	ExtractMethodNamePromptModel model;
+	model.begin(extract_selection(), member_names("existing"), "_extracted_method");
+	model.set_name("existing");
+
+	CHECK(model.has_pending_request());
+	CHECK_FALSE(model.is_valid());
+	CHECK(model.get_error_message().contains("already exists"));
+
+	String confirmed;
+	CHECK_FALSE(model.confirm(confirmed));
+	CHECK(confirmed.is_empty());
 }
 
 TEST_CASE("[Editor][ExtractMethodNamePrompt] Cancel clears pending state") {
-	const String source =
-			"func run() -> void:\n"
-			"\tprint(\"ready\")\n"
-			"\tprint(\"done\")\n";
 	ExtractMethodNamePromptModel model;
-	model.begin(make_extract_context(source), extract_selection(), "_extracted_method");
+	model.begin(extract_selection(), Vector<String>(), "_extracted_method");
 	REQUIRE(model.has_pending_request());
 
 	model.cancel();

@@ -45,11 +45,7 @@ void ExtractMethodNamePromptModel::_validate() {
 		return;
 	}
 
-	RefactorParams params;
-	params.new_name = name;
-	const RefactorResult result = GDScriptRefactoring::prepare(context, location, RefactorKind::EXTRACT_METHOD, params);
-	if (!result.ok) {
-		error_message = result.error_message;
+	if (!GDScriptRefactoring::validate_extract_method_name(existing_member_names, name, error_message)) {
 		return;
 	}
 
@@ -57,12 +53,12 @@ void ExtractMethodNamePromptModel::_validate() {
 }
 
 void ExtractMethodNamePromptModel::begin(
-		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
+		const Vector<String> &p_existing_member_names,
 		const String &p_suggested_name) {
 	pending = true;
-	context = p_context;
 	location = p_location;
+	existing_member_names = p_existing_member_names;
 	name = p_suggested_name;
 	_validate();
 }
@@ -79,8 +75,8 @@ void ExtractMethodNamePromptModel::cancel() {
 void ExtractMethodNamePromptModel::clear() {
 	pending = false;
 	valid = false;
-	context = RefactorContext();
 	location = RefactorLocation();
+	existing_member_names.clear();
 	name = String();
 	error_message = String();
 }
@@ -107,6 +103,7 @@ const RefactorLocation &ExtractMethodNamePromptModel::get_location() const {
 
 bool ExtractMethodNamePromptModel::confirm(String &r_name) const {
 	if (!pending || !valid) {
+		r_name = String();
 		return false;
 	}
 	r_name = name;
