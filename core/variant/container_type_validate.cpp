@@ -200,7 +200,14 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 	}
 
 	Ref<Script> other_script = object->get_script();
-	if (other_script.is_null() || !other_script->inherits_script(script)) {
+	if (script->is_trait_type()) {
+		if (other_script.is_null() || !other_script->has_script_trait(script->get_trait_type_name())) {
+			if (p_output_errors) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object into a %s, that does not use the trait '%s'.", String(p_operation), String(where), String(script->get_trait_type_name())));
+			}
+			return false;
+		}
+	} else if (other_script.is_null() || !other_script->inherits_script(script)) {
 		if (p_output_errors) {
 			ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object into a %s, that does not inherit from '%s'.", String(p_operation), String(where), String(script->get_class_name())));
 		}
@@ -316,6 +323,10 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 		return true;
 	} else if (p_type.script.is_null()) {
 		return false;
+	} else if (script->is_trait_type()) {
+		if (!p_type.script->has_script_trait(script->get_trait_type_name())) {
+			return false;
+		}
 	} else if (script != p_type.script && !p_type.script->inherits_script(script)) {
 		return false;
 	}

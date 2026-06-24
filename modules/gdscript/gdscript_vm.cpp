@@ -997,6 +997,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(type, 2);
 				Script *script_type = Object::cast_to<Script>(type->operator Object *());
 				GD_ERR_BREAK(!script_type);
+				GDScript *gdscript_type = Object::cast_to<GDScript>(script_type);
+				const bool is_trait_type = gdscript_type != nullptr && gdscript_type->is_trait_type();
 
 				bool was_freed = false;
 				Object *object = value->get_validated_object_with_check(was_freed);
@@ -1007,13 +1009,18 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				bool result = false;
 				if (object && object->get_script_instance()) {
-					Script *script_ptr = object->get_script_instance()->get_script().ptr();
-					while (script_ptr) {
-						if (script_ptr == script_type) {
-							result = true;
-							break;
+					Ref<Script> script_ref = object->get_script_instance()->get_script();
+					if (is_trait_type) {
+						result = script_ref.is_valid() && script_ref->has_script_trait(gdscript_type->get_trait_type_name());
+					} else {
+						Script *script_ptr = script_ref.ptr();
+						while (script_ptr) {
+							if (script_ptr == script_type) {
+								result = true;
+								break;
+							}
+							script_ptr = script_ptr->get_base_script().ptr();
 						}
-						script_ptr = script_ptr->get_base_script().ptr();
 					}
 				}
 
@@ -1620,6 +1627,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				Script *base_type = Object::cast_to<Script>(type->operator Object *());
 
 				GD_ERR_BREAK(!base_type);
+				GDScript *gdscript_base_type = Object::cast_to<GDScript>(base_type);
+				const bool is_trait_type = gdscript_base_type != nullptr && gdscript_base_type->is_trait_type();
 
 				if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
 					err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
@@ -1642,15 +1651,20 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 							OPCODE_BREAK;
 						}
 
-						Script *src_type = scr_inst->get_script().ptr();
+						Ref<Script> src_script = scr_inst->get_script();
 						bool valid = false;
 
-						while (src_type) {
-							if (src_type == base_type) {
-								valid = true;
-								break;
+						if (is_trait_type) {
+							valid = src_script.is_valid() && src_script->has_script_trait(gdscript_base_type->get_trait_type_name());
+						} else {
+							Script *src_type = src_script.ptr();
+							while (src_type) {
+								if (src_type == base_type) {
+									valid = true;
+									break;
+								}
+								src_type = src_type->get_base_script().ptr();
 							}
-							src_type = src_type->get_base_script().ptr();
 						}
 
 						if (!valid) {
@@ -1746,6 +1760,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				Script *base_type = Object::cast_to<Script>(to_type->operator Object *());
 
 				GD_ERR_BREAK(!base_type);
+				GDScript *gdscript_base_type = Object::cast_to<GDScript>(base_type);
+				const bool is_trait_type = gdscript_base_type != nullptr && gdscript_base_type->is_trait_type();
 
 #ifdef DEBUG_ENABLED
 				if (src->operator Object *() && !src->get_validated_object()) {
@@ -1764,14 +1780,18 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					ScriptInstance *scr_inst = src->operator Object *()->get_script_instance();
 
 					if (scr_inst) {
-						Script *src_type = src->operator Object *()->get_script_instance()->get_script().ptr();
-
-						while (src_type) {
-							if (src_type == base_type) {
-								valid = true;
-								break;
+						Ref<Script> src_script = src->operator Object *()->get_script_instance()->get_script();
+						if (is_trait_type) {
+							valid = src_script.is_valid() && src_script->has_script_trait(gdscript_base_type->get_trait_type_name());
+						} else {
+							Script *src_type = src_script.ptr();
+							while (src_type) {
+								if (src_type == base_type) {
+									valid = true;
+									break;
+								}
+								src_type = src_type->get_base_script().ptr();
 							}
-							src_type = src_type->get_base_script().ptr();
 						}
 					}
 				}

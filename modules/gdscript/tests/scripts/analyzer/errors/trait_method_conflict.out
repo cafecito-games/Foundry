@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Trait method "collide()" from "TraitA" conflicts with trait method "collide()" from "TraitB"; override it in "trait_method_conflict.gd" to disambiguate.

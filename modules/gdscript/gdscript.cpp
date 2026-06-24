@@ -1487,6 +1487,8 @@ void GDScript::clear() {
 	static_variables.clear();
 	static_variables_indices.clear();
 	script_trait_list.clear();
+	_is_trait_type = false;
+	trait_type_name = StringName();
 
 	if (implicit_initializer) {
 		functions_to_clear.insert(implicit_initializer);

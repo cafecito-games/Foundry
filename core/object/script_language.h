@@ -191,6 +191,8 @@ public:
 	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const = 0;
 	virtual bool has_script_trait(const StringName &p_trait) const;
 	virtual void get_script_trait_list(List<StringName> *r_traits) const {}
+	virtual bool is_trait_type() const { return false; }
+	virtual StringName get_trait_type_name() const { return StringName(); }
 
 	virtual bool get_property_default_value(const StringName &p_property, Variant &r_value) const = 0;
 

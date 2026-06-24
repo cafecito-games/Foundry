@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: Class "trait_state_conflict_bad_redeclare.gd" redeclares trait member "health" from "TraitA" with incompatible type. Expected "int", got "String".

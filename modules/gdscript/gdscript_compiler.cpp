@@ -34,6 +34,7 @@
 #include "gdscript_analyzer.h"
 #include "gdscript_byte_codegen.h"
 #include "gdscript_cache.h"
+#include "gdscript_trait_utils.h"
 #include "gdscript_utility_functions.h"
 
 #include "core/config/engine.h"
@@ -180,6 +181,12 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 				}
 				result.script_type = script.ptr();
 				result.native_type = p_datatype.native_type;
+				if (p_datatype.class_type->is_trait) {
+					result.is_script_trait = true;
+					result.script_trait = gdscript_trait_identity_name(p_datatype.class_type);
+					script->_is_trait_type = true;
+					script->trait_type_name = result.script_trait;
+				}
 			}
 		} break;
 		case GDScriptParser::DataType::ENUM:
@@ -2769,6 +2776,8 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 
 	p_script->tool = parser->is_tool();
 	p_script->_is_abstract = p_class->is_abstract;
+	p_script->_is_trait_type = p_class->is_trait;
+	p_script->trait_type_name = p_class->is_trait ? gdscript_trait_identity_name(p_class) : StringName();
 
 	if (p_script->local_name != StringName()) {
 		if (GDScriptAnalyzer::class_exists(p_script->local_name)) {
@@ -2844,6 +2853,13 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	// Base script isn't valid because it should not have been compiled yet, but the reference contains relevant info.
 	if (base_type.kind == GDScriptDataType::GDSCRIPT && p_script->base.is_valid()) {
 		p_script->rpc_config = p_script->base->rpc_config.duplicate();
+	}
+
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		const StringName trait_name = gdscript_trait_identity_name(trait);
+		if (trait_name != StringName() && !p_script->script_trait_list.has(trait_name)) {
+			p_script->script_trait_list.push_back(trait_name);
+		}
 	}
 
 	for (int i = 0; i < p_class->members.size(); i++) {

@@ -65,6 +65,8 @@ public:
 	// Whether this type also accepts null. Builtin and enum kinds reject null otherwise; object kinds
 	// already do at runtime, but the flag keeps the information available for them too.
 	bool is_nullable = false;
+	bool is_script_trait = false;
+	StringName script_trait;
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
@@ -131,6 +133,10 @@ public:
 				}
 
 				Ref<Script> base = obj && obj->get_script_instance() ? obj->get_script_instance()->get_script() : nullptr;
+				if (is_script_trait) {
+					return base.is_valid() && base->has_script_trait(script_trait);
+				}
+
 				bool valid = false;
 				while (base.is_valid()) {
 					if (base == script_type) {
@@ -230,6 +236,8 @@ public:
 				native_type == p_other.native_type &&
 				is_nullable == p_other.is_nullable &&
 				(script_type == p_other.script_type || script_type_ref == p_other.script_type_ref) &&
+				is_script_trait == p_other.is_script_trait &&
+				script_trait == p_other.script_trait &&
 				container_element_types == p_other.container_element_types;
 	}
 
@@ -244,6 +252,8 @@ public:
 		script_type = p_other.script_type;
 		script_type_ref = p_other.script_type_ref;
 		is_nullable = p_other.is_nullable;
+		is_script_trait = p_other.is_script_trait;
+		script_trait = p_other.script_trait;
 		container_element_types = p_other.container_element_types;
 	}
 
