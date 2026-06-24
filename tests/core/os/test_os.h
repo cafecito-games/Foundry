@@ -200,4 +200,17 @@ TEST_CASE("[OS] Execute") {
 #endif
 }
 
+TEST_CASE("[OS] Exit request flag") {
+	OS *os = OS::get_singleton();
+
+	const int saved_exit_code = os->get_exit_code();
+
+	os->request_exit(123);
+	CHECK(os->is_exit_requested());
+	CHECK(os->get_exit_code() == 123);
+
+	// Restore the exit code so this test does not leak state into others.
+	os->set_exit_code(saved_exit_code);
+}
+
 } // namespace TestOS
