@@ -2747,6 +2747,9 @@ void GDScriptAnalyzer::resolve_match(GDScriptParser::MatchNode *p_match) {
 
 #ifdef DEBUG_ENABLED
 void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_match) {
+	if (p_match->test == nullptr) {
+		return; // Parse error: `match` with no test expression.
+	}
 	const GDScriptParser::DataType &match_type = p_match->test->get_datatype();
 	if (!match_type.is_set()) {
 		return; // Type unknown; cannot classify the domain.
