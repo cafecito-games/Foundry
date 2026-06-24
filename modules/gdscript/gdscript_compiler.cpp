@@ -2513,11 +2513,12 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	}
 
 	if (p_func) {
-		// If no `return` statement, then return type is `void`, not `Variant`.
-		if (p_func->body->has_return) {
+		// Abstract functions have no executable body, but MethodInfo must still expose annotated return contracts.
+		if ((p_func->is_abstract && p_func->return_type != nullptr) || p_func->body->has_return) {
 			gd_function->return_type = _gdtype_from_datatype(p_func->get_datatype(), p_script);
 			method_info.return_val = p_func->get_datatype().to_property_info(String());
 		} else {
+			// If no `return` statement, then return type is `void`, not `Variant`.
 			gd_function->return_type = GDScriptDataType();
 			gd_function->return_type.kind = GDScriptDataType::BUILTIN;
 			gd_function->return_type.builtin_type = Variant::NIL;
@@ -2712,6 +2713,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->native = Ref<GDScriptNativeClass>();
 	p_script->base = Ref<GDScript>();
 	p_script->members.clear();
+	p_script->script_trait_list.clear();
 
 	// This makes possible to clear script constants and member_functions without heap-use-after-free errors.
 	HashMap<StringName, Variant> constants;

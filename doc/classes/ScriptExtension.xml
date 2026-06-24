@@ -107,6 +107,13 @@
 			<description>
 			</description>
 		</method>
+		<method name="_get_script_trait_list" qualifiers="virtual const">
+			<return type="StringName[]" />
+			<description>
+				Override this method to expose the list of traits applied to this script, including traits applied transitively.
+				For languages that store only directly-applied traits, include inherited traits in the returned list so [method Script.get_script_trait_list] reflects the full trait set.
+			</description>
+		</method>
 		<method name="_get_source_code" qualifiers="virtual required const">
 			<return type="String" />
 			<description>

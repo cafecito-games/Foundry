@@ -102,6 +102,16 @@ TypedArray<Dictionary> Script::_get_script_signal_list() {
 	return ret;
 }
 
+TypedArray<StringName> Script::_get_script_trait_list() {
+	TypedArray<StringName> ret;
+	List<StringName> list;
+	get_script_trait_list(&list);
+	for (const StringName &E : list) {
+		ret.append(E);
+	}
+	return ret;
+}
+
 Dictionary Script::_get_script_constant_map() {
 	Dictionary ret;
 	HashMap<StringName, Variant> map;
@@ -132,6 +142,17 @@ int Script::get_script_method_argument_count(const StringName &p_method, bool *r
 		*r_is_valid = true;
 	}
 	return mi.arguments.size();
+}
+
+bool Script::has_script_trait(const StringName &p_trait) const {
+	List<StringName> traits;
+	get_script_trait_list(&traits);
+	for (const StringName &trait : traits) {
+		if (trait == p_trait) {
+			return true;
+		}
+	}
+	return false;
 }
 
 #ifdef TOOLS_ENABLED
@@ -173,10 +194,12 @@ void Script::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_global_name"), &Script::get_global_name);
 
 	ClassDB::bind_method(D_METHOD("has_script_signal", "signal_name"), &Script::has_script_signal);
+	ClassDB::bind_method(D_METHOD("has_script_trait", "trait_name"), &Script::has_script_trait);
 
 	ClassDB::bind_method(D_METHOD("get_script_property_list"), &Script::_get_script_property_list);
 	ClassDB::bind_method(D_METHOD("get_script_method_list"), &Script::_get_script_method_list);
 	ClassDB::bind_method(D_METHOD("get_script_signal_list"), &Script::_get_script_signal_list);
+	ClassDB::bind_method(D_METHOD("get_script_trait_list"), &Script::_get_script_trait_list);
 	ClassDB::bind_method(D_METHOD("get_script_constant_map"), &Script::_get_script_constant_map);
 	ClassDB::bind_method(D_METHOD("get_property_default_value", "property"), &Script::_get_property_default_value);
 

@@ -117,6 +117,28 @@ static MethodInfo find_method_info(const List<MethodInfo> &p_methods, const Stri
 	return MethodInfo();
 }
 
+static Vector<StringName> get_script_trait_vector(const Ref<Script> &p_script) {
+	List<StringName> trait_list;
+	p_script->get_script_trait_list(&trait_list);
+
+	Vector<StringName> traits;
+	for (const StringName &trait : trait_list) {
+		traits.push_back(trait);
+	}
+	return traits;
+}
+
+class TestGDScriptTraitReflectionAccessor {
+public:
+	static void set_base(const Ref<GDScript> &p_script, const Ref<GDScript> &p_base) {
+		p_script->base = p_base;
+	}
+
+	static void set_script_trait_list(const Ref<GDScript> &p_script, const Vector<StringName> &p_traits) {
+		p_script->script_trait_list = p_traits;
+	}
+};
+
 struct ScopedGDScriptNativeGlobals {
 	bool initialized = false;
 
@@ -959,6 +981,134 @@ func synchronous() -> int:
 
 	if (obj_ref.is_null()) {
 		memdelete(obj);
+	}
+}
+
+TEST_CASE("[Modules][GDScript] Compiled abstract functions reflect required method contracts") {
+	ScopedGDScriptNativeGlobals native_globals;
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+@abstract
+class_name RequiredMethodReflection
+extends RefCounted
+
+@abstract
+func required_contract(amount: int, label: String = "default") -> bool
+
+@abstract
+func untyped_required_contract()
+
+func implemented() -> void:
+	pass
+)",
+			"user://required_method_reflection.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptCompiler compiler;
+	Ref<GDScript> script;
+	script.instantiate();
+	script->set_path("user://required_method_reflection.gd");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const MethodInfo required_info = script->get_method_info(SNAME("required_contract"));
+	CHECK_EQ(required_info.name, SNAME("required_contract"));
+	CHECK((required_info.flags & METHOD_FLAG_VIRTUAL_REQUIRED) != 0);
+	CHECK_EQ(required_info.arguments.size(), 2);
+	CHECK_EQ(required_info.arguments[0].type, Variant::INT);
+	CHECK_EQ(required_info.arguments[1].type, Variant::STRING);
+	CHECK_EQ(required_info.default_arguments.size(), 1);
+	CHECK_EQ(required_info.return_val.type, Variant::BOOL);
+
+	List<MethodInfo> script_methods;
+	script->get_script_method_list(&script_methods);
+	const MethodInfo reflected_required_info = find_method_info(script_methods, SNAME("required_contract"));
+	CHECK_EQ(reflected_required_info.name, SNAME("required_contract"));
+	CHECK((reflected_required_info.flags & METHOD_FLAG_VIRTUAL_REQUIRED) != 0);
+
+	const MethodInfo untyped_required_info = script->get_method_info(SNAME("untyped_required_contract"));
+	CHECK_EQ(untyped_required_info.name, SNAME("untyped_required_contract"));
+	CHECK((untyped_required_info.flags & METHOD_FLAG_VIRTUAL_REQUIRED) != 0);
+	CHECK_EQ(untyped_required_info.return_val.type, Variant::NIL);
+
+	const MethodInfo implemented_info = script->get_method_info(SNAME("implemented"));
+	CHECK_EQ(implemented_info.name, SNAME("implemented"));
+	CHECK_FALSE((implemented_info.flags & METHOD_FLAG_VIRTUAL_REQUIRED) != 0);
+}
+
+TEST_CASE("[Modules][GDScript] Scripts reflect trait identities") {
+	Ref<GDScript> base;
+	base.instantiate();
+
+	Ref<GDScript> script;
+	script.instantiate();
+
+	SUBCASE("empty by default") {
+		Vector<StringName> reflected_traits = get_script_trait_vector(script);
+		CHECK(reflected_traits.is_empty());
+
+		Variant bound_traits_variant = script->call(SNAME("get_script_trait_list"));
+		CHECK_EQ(bound_traits_variant.get_type(), Variant::ARRAY);
+
+		TypedArray<StringName> bound_traits = bound_traits_variant;
+		CHECK(bound_traits.is_empty());
+		CHECK_FALSE(script->has_script_trait(SNAME("Damageable")));
+		CHECK_FALSE(bool(script->call(SNAME("has_script_trait"), SNAME("Damageable"))));
+	}
+
+	SUBCASE("merges base traits with duplicate suppression") {
+		Vector<StringName> base_traits;
+		base_traits.push_back(SNAME("Damageable"));
+		base_traits.push_back(SNAME("Trackable"));
+		TestGDScriptTraitReflectionAccessor::set_script_trait_list(base, base_traits);
+
+		Vector<StringName> script_traits;
+		script_traits.push_back(SNAME("characters.Movable"));
+		script_traits.push_back(SNAME("Damageable"));
+		TestGDScriptTraitReflectionAccessor::set_script_trait_list(script, script_traits);
+		TestGDScriptTraitReflectionAccessor::set_base(script, base);
+
+		Vector<StringName> reflected_traits = get_script_trait_vector(script);
+		CHECK_EQ(reflected_traits.size(), 3);
+		CHECK_EQ(reflected_traits[0], SNAME("characters.Movable"));
+		CHECK_EQ(reflected_traits[1], SNAME("Damageable"));
+		CHECK_EQ(reflected_traits[2], SNAME("Trackable"));
+
+		CHECK(script->has_script_trait(SNAME("characters.Movable")));
+		CHECK(script->has_script_trait(SNAME("Damageable")));
+		CHECK(script->has_script_trait(SNAME("Trackable")));
+		CHECK_FALSE(script->has_script_trait(SNAME("MissingTrait")));
+
+		Variant bound_traits_variant = script->call(SNAME("get_script_trait_list"));
+		CHECK_EQ(bound_traits_variant.get_type(), Variant::ARRAY);
+
+		TypedArray<StringName> bound_traits = bound_traits_variant;
+		CHECK_EQ(bound_traits.size(), 3);
+		const StringName first_bound_trait = bound_traits[0];
+		const StringName second_bound_trait = bound_traits[1];
+		const StringName third_bound_trait = bound_traits[2];
+		CHECK_EQ(first_bound_trait, SNAME("characters.Movable"));
+		CHECK_EQ(second_bound_trait, SNAME("Damageable"));
+		CHECK_EQ(third_bound_trait, SNAME("Trackable"));
+
+		CHECK(bool(script->call(SNAME("has_script_trait"), SNAME("Trackable"))));
+		CHECK_FALSE(bool(script->call(SNAME("has_script_trait"), SNAME("MissingTrait"))));
 	}
 }
 

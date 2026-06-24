@@ -136,6 +136,7 @@ protected:
 	TypedArray<Dictionary> _get_script_property_list();
 	TypedArray<Dictionary> _get_script_method_list();
 	TypedArray<Dictionary> _get_script_signal_list();
+	TypedArray<StringName> _get_script_trait_list();
 	Dictionary _get_script_constant_map();
 
 	void _set_debugger_break_language();
@@ -188,6 +189,8 @@ public:
 
 	virtual bool has_script_signal(const StringName &p_signal) const = 0;
 	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const = 0;
+	virtual bool has_script_trait(const StringName &p_trait) const;
+	virtual void get_script_trait_list(List<StringName> *r_traits) const {}
 
 	virtual bool get_property_default_value(const StringName &p_property, Variant &r_value) const = 0;
 
