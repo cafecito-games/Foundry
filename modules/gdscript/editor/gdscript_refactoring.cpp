@@ -5199,6 +5199,13 @@ static RefactorResult prepare_rename(
 #endif // GDSCRIPT_NO_LSP
 }
 
+static RefactorResult prepare_sort_members_by_style_guide_stub() {
+	RefactorResult result;
+	result.ok = false;
+	result.error_message = "Members are already sorted by the GDScript style guide.";
+	return result;
+}
+
 Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	Vector<RefactorAvailability> result;
 
@@ -5297,6 +5304,14 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 		insert_cast.disabled_reason = cast_candidate.disabled_reason;
 	}
 	result.push_back(insert_cast);
+
+	RefactorAvailability sort_members;
+	sort_members.kind = RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE;
+	sort_members.title = "Sort Members by Style Guide";
+	sort_members.enabled = false;
+	sort_members.disabled_reason = "Members are already sorted by the GDScript style guide.";
+	result.push_back(sort_members);
+
 	return result;
 }
 
@@ -5323,6 +5338,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 			return prepare_explicit_cast(p_context, p_location);
+		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
+			return prepare_sort_members_by_style_guide_stub();
 		default:
 			break;
 	}

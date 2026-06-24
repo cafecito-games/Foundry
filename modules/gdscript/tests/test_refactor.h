@@ -233,8 +233,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 7);
-		if (available.size() < 6) {
+		CHECK_EQ(available.size(), 8);
+		if (available.size() < 8) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -252,6 +252,15 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 		CHECK_FALSE(available[4].enabled);
 		CHECK_FALSE(available[4].disabled_reason.is_empty());
+		CHECK_EQ(available[5].kind, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		CHECK_FALSE(available[5].enabled);
+		CHECK_FALSE(available[5].disabled_reason.is_empty());
+		CHECK_EQ(available[6].kind, RefactorKind::INSERT_EXPLICIT_CAST);
+		CHECK_FALSE(available[6].enabled);
+		CHECK_FALSE(available[6].disabled_reason.is_empty());
+		CHECK_EQ(available[7].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_FALSE(available[7].enabled);
+		CHECK_FALSE(available[7].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
@@ -1234,7 +1243,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 7);
+		REQUIRE_EQ(available.size(), 8);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -1587,7 +1596,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 7);
+		REQUIRE_EQ(available.size(), 8);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -1596,7 +1605,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = GDScriptRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 7);
+		REQUIRE_EQ(text_selection_available.size(), 8);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -1906,8 +1915,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 7);
-		if (available.size() >= 6) {
+		REQUIRE_EQ(available.size(), 8);
+		if (available.size() >= 5) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
 			CHECK(available[4].disabled_reason.is_empty());
@@ -2236,7 +2245,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 7);
+			REQUIRE_EQ(available.size(), 8);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -2264,7 +2273,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 7);
+			REQUIRE_EQ(available.size(), 8);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
