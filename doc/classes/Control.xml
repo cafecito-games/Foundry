@@ -837,7 +837,7 @@
 		<method name="set_anchors_and_offsets_preset">
 			<return type="void" />
 			<param index="0" name="preset" type="int" enum="Control.LayoutPreset" />
-			<param index="1" name="resize_mode" type="int" enum="Control.LayoutPresetMode" default="0" />
+			<param index="1" name="resize_mode" type="int" enum="Control.LayoutPresetMode" default="PRESET_MODE_MINSIZE" />
 			<param index="2" name="margin" type="int" default="0" />
 			<description>
 				Sets both anchor preset and offset preset. See [method set_anchors_preset] and [method set_offsets_preset].
@@ -941,7 +941,7 @@
 		<method name="set_offsets_preset">
 			<return type="void" />
 			<param index="0" name="preset" type="int" enum="Control.LayoutPreset" />
-			<param index="1" name="resize_mode" type="int" enum="Control.LayoutPresetMode" default="0" />
+			<param index="1" name="resize_mode" type="int" enum="Control.LayoutPresetMode" default="PRESET_MODE_MINSIZE" />
 			<param index="2" name="margin" type="int" default="0" />
 			<description>
 				Sets the offsets to a [param preset] from [enum Control.LayoutPreset] enum. This is the code equivalent to using the Layout menu in the 2D editor.
@@ -998,7 +998,7 @@
 		<member name="accessibility_labeled_by_nodes" type="NodePath[]" setter="set_accessibility_labeled_by_nodes" getter="get_accessibility_labeled_by_nodes" default="[]">
 			The paths to the nodes which label this node.
 		</member>
-		<member name="accessibility_live" type="int" setter="set_accessibility_live" getter="get_accessibility_live" enum="DisplayServer.AccessibilityLiveMode" default="0">
+		<member name="accessibility_live" type="int" setter="set_accessibility_live" getter="get_accessibility_live" enum="DisplayServer.AccessibilityLiveMode" default="LIVE_OFF">
 			The mode with which a live region updates. A live region is a [Node] that is updated as a result of an external event when the user's focus may be elsewhere.
 		</member>
 		<member name="accessibility_name" type="String" setter="set_accessibility_name" getter="get_accessibility_name" default="&quot;&quot;">
@@ -1025,10 +1025,10 @@
 		<member name="custom_minimum_size" type="Vector2" setter="set_custom_minimum_size" getter="get_custom_minimum_size" default="Vector2(0, 0)">
 			The minimum size of the node's bounding rectangle. If you set it to a value greater than [code](0, 0)[/code], the node's bounding rectangle will always have at least this size. Note that [Control] nodes have their internal minimum size returned by [method get_minimum_size]. It depends on the control's contents, like text, textures, or style boxes. The actual minimum size is the maximum value of this property and the internal minimum size (see [method get_combined_minimum_size]).
 		</member>
-		<member name="focus_behavior_recursive" type="int" setter="set_focus_behavior_recursive" getter="get_focus_behavior_recursive" enum="Control.FocusBehaviorRecursive" default="0">
+		<member name="focus_behavior_recursive" type="int" setter="set_focus_behavior_recursive" getter="get_focus_behavior_recursive" enum="Control.FocusBehaviorRecursive" default="FOCUS_BEHAVIOR_INHERITED">
 			Determines which controls can be focused together with [member focus_mode]. See [method get_focus_mode_with_override]. Since the default behavior is [constant FOCUS_BEHAVIOR_INHERITED], this can be used to prevent all children controls from getting focused.
 		</member>
-		<member name="focus_mode" type="int" setter="set_focus_mode" getter="get_focus_mode" enum="Control.FocusMode" default="0">
+		<member name="focus_mode" type="int" setter="set_focus_mode" getter="get_focus_mode" enum="Control.FocusMode" default="FOCUS_NONE">
 			Determines which controls can be focused. Only one control can be focused at a time, and the focused control will receive keyboard, gamepad, and mouse events in [method _gui_input]. Use [method get_focus_mode_with_override] to determine if a control can grab focus, since [member focus_behavior_recursive] also affects it. See also [method grab_focus].
 		</member>
 		<member name="focus_neighbor_bottom" type="NodePath" setter="set_focus_neighbor" getter="get_focus_neighbor" default="NodePath(&quot;&quot;)" keywords="focus_neighbour_bottom">
@@ -1054,27 +1054,27 @@
 		<member name="global_position" type="Vector2" setter="_set_global_position" getter="get_global_position">
 			The node's global position, relative to the world (usually to the [CanvasLayer]).
 		</member>
-		<member name="grow_horizontal" type="int" setter="set_h_grow_direction" getter="get_h_grow_direction" enum="Control.GrowDirection" default="1">
+		<member name="grow_horizontal" type="int" setter="set_h_grow_direction" getter="get_h_grow_direction" enum="Control.GrowDirection" default="GROW_DIRECTION_END">
 			Controls the direction on the horizontal axis in which the control should grow if its horizontal minimum size is changed to be greater than its current size, as the control always has to be at least the minimum size.
 		</member>
-		<member name="grow_vertical" type="int" setter="set_v_grow_direction" getter="get_v_grow_direction" enum="Control.GrowDirection" default="1">
+		<member name="grow_vertical" type="int" setter="set_v_grow_direction" getter="get_v_grow_direction" enum="Control.GrowDirection" default="GROW_DIRECTION_END">
 			Controls the direction on the vertical axis in which the control should grow if its vertical minimum size is changed to be greater than its current size, as the control always has to be at least the minimum size.
 		</member>
-		<member name="layout_direction" type="int" setter="set_layout_direction" getter="get_layout_direction" enum="Control.LayoutDirection" default="0">
+		<member name="layout_direction" type="int" setter="set_layout_direction" getter="get_layout_direction" enum="Control.LayoutDirection" default="LAYOUT_DIRECTION_INHERITED">
 			Controls layout direction and text writing direction. Right-to-left layouts are necessary for certain languages (e.g. Arabic and Hebrew). See also [method is_layout_rtl].
 		</member>
 		<member name="localize_numeral_system" type="bool" setter="set_localize_numeral_system" getter="is_localizing_numeral_system" default="true">
 			If [code]true[/code], automatically converts code line numbers, list indices, [SpinBox] and [ProgressBar] values from the Western Arabic (0..9) to the numeral systems used in current locale.
 			[b]Note:[/b] Numbers within the text are not automatically converted, it can be done manually, using [method TextServer.format_number].
 		</member>
-		<member name="mouse_behavior_recursive" type="int" setter="set_mouse_behavior_recursive" getter="get_mouse_behavior_recursive" enum="Control.MouseBehaviorRecursive" default="0">
+		<member name="mouse_behavior_recursive" type="int" setter="set_mouse_behavior_recursive" getter="get_mouse_behavior_recursive" enum="Control.MouseBehaviorRecursive" default="MOUSE_BEHAVIOR_INHERITED">
 			Determines which controls can receive mouse input together with [member mouse_filter]. See [method get_mouse_filter_with_override]. Since the default behavior is [constant MOUSE_BEHAVIOR_INHERITED], this can be used to prevent all children controls from receiving mouse input.
 		</member>
-		<member name="mouse_default_cursor_shape" type="int" setter="set_default_cursor_shape" getter="get_default_cursor_shape" enum="Control.CursorShape" default="0">
+		<member name="mouse_default_cursor_shape" type="int" setter="set_default_cursor_shape" getter="get_default_cursor_shape" enum="Control.CursorShape" default="CURSOR_ARROW">
 			The default cursor shape for this control. Useful for Godot plugins and applications or games that use the system's mouse cursors.
 			[b]Note:[/b] On Linux, shapes may vary depending on the cursor theme of the system.
 		</member>
-		<member name="mouse_filter" type="int" setter="set_mouse_filter" getter="get_mouse_filter" enum="Control.MouseFilter" default="0">
+		<member name="mouse_filter" type="int" setter="set_mouse_filter" getter="get_mouse_filter" enum="Control.MouseFilter" default="MOUSE_FILTER_STOP">
 			Determines which controls will be able to receive mouse button input events through [method _gui_input] and the [signal mouse_entered], and [signal mouse_exited] signals. Also determines how these events should be propagated. See the constants to learn what each does. Use [method get_mouse_filter_with_override] to determine if a control can receive mouse input, since [member mouse_behavior_recursive] also affects it.
 		</member>
 		<member name="mouse_force_pass_scroll_events" type="bool" setter="set_force_pass_scroll_events" getter="is_force_pass_scroll_events" default="true">
@@ -1098,7 +1098,7 @@
 			Distance between the node's top edge and its parent control, based on [member anchor_top].
 			Offsets are often controlled by one or multiple parent [Container] nodes, so you should not modify them manually if your node is a direct child of a [Container]. Offsets update automatically when you move or resize the node.
 		</member>
-		<member name="physics_interpolation_mode" type="int" setter="set_physics_interpolation_mode" getter="get_physics_interpolation_mode" overrides="Node" enum="Node.PhysicsInterpolationMode" default="2" />
+		<member name="physics_interpolation_mode" type="int" setter="set_physics_interpolation_mode" getter="get_physics_interpolation_mode" overrides="Node" enum="Node.PhysicsInterpolationMode" default="PHYSICS_INTERPOLATION_MODE_OFF" />
 		<member name="pivot_offset" type="Vector2" setter="set_pivot_offset" getter="get_pivot_offset" default="Vector2(0, 0)">
 			By default, the node's pivot is its top-left corner. When you change its [member rotation] or [member scale], it will rotate or scale around this pivot.
 			The actual offset is the combined value of this property and [member pivot_offset_ratio].
@@ -1129,13 +1129,13 @@
 		<member name="size" type="Vector2" setter="_set_size" getter="get_size" default="Vector2(0, 0)">
 			The size of the node's bounding rectangle, in the node's coordinate system. [Container] nodes update this property automatically.
 		</member>
-		<member name="size_flags_horizontal" type="int" setter="set_h_size_flags" getter="get_h_size_flags" enum="Control.SizeFlags" is_bitfield="true" default="1">
+		<member name="size_flags_horizontal" type="int" setter="set_h_size_flags" getter="get_h_size_flags" enum="Control.SizeFlags" is_bitfield="true" default="SIZE_FILL">
 			Tells the parent [Container] nodes how they should resize and place the node on the X axis. Use a combination of the [enum SizeFlags] constants to change the flags. See the constants to learn what each does.
 		</member>
 		<member name="size_flags_stretch_ratio" type="float" setter="set_stretch_ratio" getter="get_stretch_ratio" default="1.0">
 			If the node and at least one of its neighbors uses the [constant SIZE_EXPAND] size flag, the parent [Container] will let it take more or less space depending on this property. If this node has a stretch ratio of 2 and its neighbor a ratio of 1, this node will take two thirds of the available space.
 		</member>
-		<member name="size_flags_vertical" type="int" setter="set_v_size_flags" getter="get_v_size_flags" enum="Control.SizeFlags" is_bitfield="true" default="1">
+		<member name="size_flags_vertical" type="int" setter="set_v_size_flags" getter="get_v_size_flags" enum="Control.SizeFlags" is_bitfield="true" default="SIZE_FILL">
 			Tells the parent [Container] nodes how they should resize and place the node on the Y axis. Use a combination of the [enum SizeFlags] constants to change the flags. See the constants to learn what each does.
 		</member>
 		<member name="theme" type="Theme" setter="set_theme" getter="get_theme">
@@ -1148,7 +1148,7 @@
 			[b]Note:[/b] To look up [Control]'s own items use various [code]get_theme_*[/code] methods without specifying [code]theme_type[/code].
 			[b]Note:[/b] Theme items are looked for in the tree order, from branch to root, where each [Control] node is checked for its [member theme] property. The earliest match against any type/class name is returned. The project-level Theme and the default Theme are checked last.
 		</member>
-		<member name="tooltip_auto_translate_mode" type="int" setter="set_tooltip_auto_translate_mode" getter="get_tooltip_auto_translate_mode" enum="Node.AutoTranslateMode" default="0">
+		<member name="tooltip_auto_translate_mode" type="int" setter="set_tooltip_auto_translate_mode" getter="get_tooltip_auto_translate_mode" enum="Node.AutoTranslateMode" default="AUTO_TRANSLATE_MODE_INHERIT">
 			Defines if tooltip text should automatically change to its translated version depending on the current locale. Uses the same auto translate mode as this control when set to [constant Node.AUTO_TRANSLATE_MODE_INHERIT].
 			[b]Note:[/b] Tooltips customized using [method _make_custom_tooltip] do not use this auto translate mode automatically.
 		</member>

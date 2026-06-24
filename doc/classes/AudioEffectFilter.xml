@@ -13,7 +13,7 @@
 		<member name="cutoff_hz" type="float" setter="set_cutoff" getter="get_cutoff" default="2000.0">
 			Threshold frequency for the filter, in Hz.
 		</member>
-		<member name="db" type="int" setter="set_db" getter="get_db" enum="AudioEffectFilter.FilterDB" default="0">
+		<member name="db" type="int" setter="set_db" getter="get_db" enum="AudioEffectFilter.FilterDB" default="FILTER_6DB">
 			Steepness of the cutoff curve in dB per octave, also known as the order of the filter. Higher orders have a more aggressive cutoff.
 		</member>
 		<member name="gain" type="float" setter="set_gain" getter="get_gain" default="1.0">

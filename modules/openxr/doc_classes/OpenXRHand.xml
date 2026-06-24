@@ -12,19 +12,19 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="bone_update" type="int" setter="set_bone_update" getter="get_bone_update" enum="OpenXRHand.BoneUpdate" default="0">
+		<member name="bone_update" type="int" setter="set_bone_update" getter="get_bone_update" enum="OpenXRHand.BoneUpdate" default="BONE_UPDATE_FULL">
 			Specify the type of updates to perform on the bone.
 		</member>
-		<member name="hand" type="int" setter="set_hand" getter="get_hand" enum="OpenXRHand.Hands" default="0">
+		<member name="hand" type="int" setter="set_hand" getter="get_hand" enum="OpenXRHand.Hands" default="HAND_LEFT">
 			Specifies whether this node tracks the left or right hand of the player.
 		</member>
 		<member name="hand_skeleton" type="NodePath" setter="set_hand_skeleton" getter="get_hand_skeleton" default="NodePath(&quot;&quot;)">
 			Set a [Skeleton3D] node for which the pose positions will be updated.
 		</member>
-		<member name="motion_range" type="int" setter="set_motion_range" getter="get_motion_range" enum="OpenXRHand.MotionRange" default="0">
+		<member name="motion_range" type="int" setter="set_motion_range" getter="get_motion_range" enum="OpenXRHand.MotionRange" default="MOTION_RANGE_UNOBSTRUCTED">
 			Set the motion range (if supported) limiting the hand motion.
 		</member>
-		<member name="skeleton_rig" type="int" setter="set_skeleton_rig" getter="get_skeleton_rig" enum="OpenXRHand.SkeletonRig" default="0">
+		<member name="skeleton_rig" type="int" setter="set_skeleton_rig" getter="get_skeleton_rig" enum="OpenXRHand.SkeletonRig" default="SKELETON_RIG_OPENXR">
 			Set the type of skeleton rig the [member hand_skeleton] is compliant with.
 		</member>
 	</members>

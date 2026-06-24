@@ -60,7 +60,7 @@
 			Defines the amount of light that the sky brings on the scene. A value of [code]0.0[/code] means that the sky's light emission has no effect on the scene illumination, thus all ambient illumination is provided by the ambient light. On the contrary, a value of [code]1.0[/code] means that [i]all[/i] the light that affects the scene is provided by the sky, thus the ambient light parameter has no effect on the scene.
 			[b]Note:[/b] [member ambient_light_sky_contribution] is internally clamped between [code]0.0[/code] and [code]1.0[/code] (inclusive).
 		</member>
-		<member name="ambient_light_source" type="int" setter="set_ambient_source" getter="get_ambient_source" enum="Environment.AmbientSource" default="0">
+		<member name="ambient_light_source" type="int" setter="set_ambient_source" getter="get_ambient_source" enum="Environment.AmbientSource" default="AMBIENT_SOURCE_BG">
 			The ambient light source to use for rendering materials and global illumination.
 		</member>
 		<member name="background_camera_feed_id" type="int" setter="set_camera_feed_id" getter="get_camera_feed_id" default="1">
@@ -78,7 +78,7 @@
 		<member name="background_intensity" type="float" setter="set_bg_intensity" getter="get_bg_intensity" default="30000.0">
 			Luminance of background measured in nits (candela per square meter). Only used when [member ProjectSettings.rendering/lights_and_shadows/use_physical_light_units] is enabled. The default value is roughly equivalent to the sky at midday.
 		</member>
-		<member name="background_mode" type="int" setter="set_background" getter="get_background" enum="Environment.BGMode" default="0">
+		<member name="background_mode" type="int" setter="set_background" getter="get_background" enum="Environment.BGMode" default="BG_CLEAR_COLOR">
 			The background mode.
 		</member>
 		<member name="fog_aerial_perspective" type="float" setter="set_fog_aerial_perspective" getter="get_fog_aerial_perspective" default="0.0">
@@ -115,7 +115,7 @@
 		<member name="fog_light_energy" type="float" setter="set_fog_light_energy" getter="get_fog_light_energy" default="1.0">
 			The fog's brightness. Higher values result in brighter fog.
 		</member>
-		<member name="fog_mode" type="int" setter="set_fog_mode" getter="get_fog_mode" enum="Environment.FogMode" default="0">
+		<member name="fog_mode" type="int" setter="set_fog_mode" getter="get_fog_mode" enum="Environment.FogMode" default="FOG_MODE_EXPONENTIAL">
 			The fog mode.
 		</member>
 		<member name="fog_sky_affect" type="float" setter="set_fog_sky_affect" getter="get_fog_sky_affect" default="1.0">
@@ -125,7 +125,7 @@
 		<member name="fog_sun_scatter" type="float" setter="set_fog_sun_scatter" getter="get_fog_sun_scatter" default="0.0">
 			If set above [code]0.0[/code], renders the scene's directional light(s) in the fog color depending on the view angle. This can be used to give the impression that the sun is "piercing" through the fog.
 		</member>
-		<member name="glow_blend_mode" type="int" setter="set_glow_blend_mode" getter="get_glow_blend_mode" enum="Environment.GlowBlendMode" default="1">
+		<member name="glow_blend_mode" type="int" setter="set_glow_blend_mode" getter="get_glow_blend_mode" enum="Environment.GlowBlendMode" default="GLOW_BLEND_MODE_SCREEN">
 			The glow blending mode.
 			[b]Note:[/b] The Compatibility renderer always uses [constant GLOW_BLEND_MODE_SCREEN] and [member glow_blend_mode] will have no effect.
 		</member>
@@ -199,7 +199,7 @@
 			The strength that is used when blurring across the screen to generate the glow effect. This affects the distance and intensity of the blur. When using the Mobile rendering method, this should be increased to compensate for the lower dynamic range.
 			[b]Note:[/b] [member glow_strength] has no effect when using the Compatibility rendering method, due to this rendering method using a simpler glow implementation optimized for low-end devices.
 		</member>
-		<member name="reflected_light_source" type="int" setter="set_reflection_source" getter="get_reflection_source" enum="Environment.ReflectionSource" default="0">
+		<member name="reflected_light_source" type="int" setter="set_reflection_source" getter="get_reflection_source" enum="Environment.ReflectionSource" default="REFLECTION_SOURCE_BG">
 			The reflected (specular) light source.
 		</member>
 		<member name="sdfgi_bounce_feedback" type="float" setter="set_sdfgi_bounce_feedback" getter="get_sdfgi_bounce_feedback" default="0.5">
@@ -242,7 +242,7 @@
 		<member name="sdfgi_use_occlusion" type="bool" setter="set_sdfgi_use_occlusion" getter="is_sdfgi_using_occlusion" default="false">
 			If [code]true[/code], SDFGI uses an occlusion detection approach to reduce light leaking. Occlusion may however introduce dark blotches in certain spots, which may be undesired in mostly outdoor scenes. [member sdfgi_use_occlusion] has a performance impact and should only be enabled when needed.
 		</member>
-		<member name="sdfgi_y_scale" type="int" setter="set_sdfgi_y_scale" getter="get_sdfgi_y_scale" enum="Environment.SDFGIYScale" default="1">
+		<member name="sdfgi_y_scale" type="int" setter="set_sdfgi_y_scale" getter="get_sdfgi_y_scale" enum="Environment.SDFGIYScale" default="SDFGI_Y_SCALE_75_PERCENT">
 			The Y scale to use for SDFGI cells. Lower values will result in SDFGI cells being packed together more closely on the Y axis. This is used to balance between quality and covering a lot of vertical ground. [member sdfgi_y_scale] should be set depending on how vertical your scene is (and how fast your camera may move on the Y axis).
 		</member>
 		<member name="sky" type="Sky" setter="set_sky" getter="get_sky">
@@ -326,7 +326,7 @@
 			Adjusts the brightness of values before they are provided to the tonemapper. Higher [member tonemap_exposure] values result in a brighter image. See also [member tonemap_white].
 			[b]Note:[/b] Values provided to the tonemapper will also be multiplied by [code]2.0[/code] and [code]1.8[/code] for [constant TONE_MAPPER_FILMIC] and [constant TONE_MAPPER_ACES] respectively to produce a similar apparent brightness as [constant TONE_MAPPER_LINEAR].
 		</member>
-		<member name="tonemap_mode" type="int" setter="set_tonemapper" getter="get_tonemapper" enum="Environment.ToneMapper" default="0">
+		<member name="tonemap_mode" type="int" setter="set_tonemapper" getter="get_tonemapper" enum="Environment.ToneMapper" default="TONE_MAPPER_LINEAR">
 			The tonemapping mode to use. Tonemapping is the process that "converts" HDR values to be suitable for rendering on an LDR display. (Godot doesn't support rendering on HDR displays yet.)
 		</member>
 		<member name="tonemap_white" type="float" setter="set_tonemap_white" getter="get_tonemap_white" default="1.0">

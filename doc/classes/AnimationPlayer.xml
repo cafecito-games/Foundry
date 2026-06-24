@@ -194,8 +194,8 @@
 			<param index="2" name="custom_blend" type="float" default="-1" />
 			<param index="3" name="custom_speed" type="float" default="1.0" />
 			<param index="4" name="from_end" type="bool" default="false" />
-			<param index="5" name="trans_type" type="int" enum="Tween.TransitionType" default="0" />
-			<param index="6" name="ease_type" type="int" enum="Tween.EaseType" default="0" />
+			<param index="5" name="trans_type" type="int" enum="Tween.TransitionType" default="TRANS_LINEAR" />
+			<param index="6" name="ease_type" type="int" enum="Tween.EaseType" default="EASE_IN" />
 			<description>
 				See also [method AnimationMixer.capture].
 				You can use this method to use more detailed options for capture than those performed by [member playback_auto_capture]. When [member playback_auto_capture] is [code]false[/code], this method is almost the same as the following:
@@ -319,10 +319,10 @@
 			See also [method play_with_capture] and [method AnimationMixer.capture].
 			If [member playback_auto_capture_duration] is negative value, the duration is set to the interval between the current position and the first key.
 		</member>
-		<member name="playback_auto_capture_ease_type" type="int" setter="set_auto_capture_ease_type" getter="get_auto_capture_ease_type" enum="Tween.EaseType" default="0">
+		<member name="playback_auto_capture_ease_type" type="int" setter="set_auto_capture_ease_type" getter="get_auto_capture_ease_type" enum="Tween.EaseType" default="EASE_IN">
 			The ease type of the capture interpolation. See also [enum Tween.EaseType].
 		</member>
-		<member name="playback_auto_capture_transition_type" type="int" setter="set_auto_capture_transition_type" getter="get_auto_capture_transition_type" enum="Tween.TransitionType" default="0">
+		<member name="playback_auto_capture_transition_type" type="int" setter="set_auto_capture_transition_type" getter="get_auto_capture_transition_type" enum="Tween.TransitionType" default="TRANS_LINEAR">
 			The transition type of the capture interpolation. See also [enum Tween.TransitionType].
 		</member>
 		<member name="playback_default_blend_time" type="float" setter="set_default_blend_time" getter="get_default_blend_time" default="0.0">

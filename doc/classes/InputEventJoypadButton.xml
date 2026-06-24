@@ -10,7 +10,7 @@
 		<link title="Using InputEvent">$DOCS_URL/tutorials/inputs/inputevent.html</link>
 	</tutorials>
 	<members>
-		<member name="button_index" type="int" setter="set_button_index" getter="get_button_index" enum="JoyButton" default="0">
+		<member name="button_index" type="int" setter="set_button_index" getter="get_button_index" enum="JoyButton" default="JOY_BUTTON_A">
 			Button identifier. One of the [enum JoyButton] button constants.
 		</member>
 		<member name="pressed" type="bool" setter="set_pressed" getter="is_pressed" default="false">

@@ -76,7 +76,7 @@
 			[b]Note:[/b] [AudioStreamGenerator] is not automatically resampling input data, to produce expected result [member mix_rate_mode] should match the sampling rate of input data.
 			[b]Note:[/b] If you are using [AudioEffectCapture] as the source of your data, set [member mix_rate_mode] to [constant MIX_RATE_INPUT] or [constant MIX_RATE_OUTPUT] to automatically match current [AudioServer] mixing rate.
 		</member>
-		<member name="mix_rate_mode" type="int" setter="set_mix_rate_mode" getter="get_mix_rate_mode" enum="AudioStreamGenerator.AudioStreamGeneratorMixRate" default="2">
+		<member name="mix_rate_mode" type="int" setter="set_mix_rate_mode" getter="get_mix_rate_mode" enum="AudioStreamGenerator.AudioStreamGeneratorMixRate" default="MIX_RATE_CUSTOM">
 			Mixing rate mode. If set to [constant MIX_RATE_CUSTOM], [member mix_rate] is used, otherwise current [AudioServer] mixing rate is used.
 		</member>
 	</members>

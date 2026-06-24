@@ -46,13 +46,13 @@
 		<member name="follow_focus" type="bool" setter="set_follow_focus" getter="is_following_focus" default="false">
 			If [code]true[/code], the ScrollContainer will automatically scroll to focused children (including indirect children) to make sure they are fully visible.
 		</member>
-		<member name="horizontal_scroll_mode" type="int" setter="set_horizontal_scroll_mode" getter="get_horizontal_scroll_mode" enum="ScrollContainer.ScrollMode" default="1">
+		<member name="horizontal_scroll_mode" type="int" setter="set_horizontal_scroll_mode" getter="get_horizontal_scroll_mode" enum="ScrollContainer.ScrollMode" default="SCROLL_MODE_AUTO">
 			Controls whether horizontal scrollbar can be used and when it should be visible.
 		</member>
 		<member name="scroll_deadzone" type="int" setter="set_deadzone" getter="get_deadzone" default="0">
 			Deadzone for touch scrolling. Lower deadzone makes the scrolling more sensitive.
 		</member>
-		<member name="scroll_hint_mode" type="int" setter="set_scroll_hint_mode" getter="get_scroll_hint_mode" enum="ScrollContainer.ScrollHintMode" default="0">
+		<member name="scroll_hint_mode" type="int" setter="set_scroll_hint_mode" getter="get_scroll_hint_mode" enum="ScrollContainer.ScrollHintMode" default="SCROLL_HINT_MODE_DISABLED">
 			The way which scroll hints (indicators that show that the content can still be scrolled in a certain direction) will be shown.
 			[b]Note:[/b] Hints won't be shown if the content can be scrolled both vertically and horizontally.
 		</member>
@@ -81,7 +81,7 @@
 		<member name="tile_scroll_hint" type="bool" setter="set_tile_scroll_hint" getter="is_scroll_hint_tiled" default="false">
 			If [code]true[/code], the scroll hint texture will be tiled instead of stretched. See [member scroll_hint_mode].
 		</member>
-		<member name="vertical_scroll_mode" type="int" setter="set_vertical_scroll_mode" getter="get_vertical_scroll_mode" enum="ScrollContainer.ScrollMode" default="1">
+		<member name="vertical_scroll_mode" type="int" setter="set_vertical_scroll_mode" getter="get_vertical_scroll_mode" enum="ScrollContainer.ScrollMode" default="SCROLL_MODE_AUTO">
 			Controls whether vertical scrollbar can be used and when it should be visible.
 		</member>
 	</members>

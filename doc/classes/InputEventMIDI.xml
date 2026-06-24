@@ -79,7 +79,7 @@
 			The instrument (also called [i]program[/i] or [i]preset[/i]) used on this MIDI message. This value ranges from [code]0[/code] to [code]127[/code].
 			To see what each value means, refer to the [url=https://en.wikipedia.org/wiki/General_MIDI#Program_change_events]General MIDI's instrument list[/url]. Keep in mind that the list is off by 1 because it does not begin from 0. A value of [code]0[/code] corresponds to the acoustic grand piano.
 		</member>
-		<member name="message" type="int" setter="set_message" getter="get_message" enum="MIDIMessage" default="0">
+		<member name="message" type="int" setter="set_message" getter="get_message" enum="MIDIMessage" default="MIDI_MESSAGE_NONE">
 			Represents the type of MIDI message (see the [enum MIDIMessage] enum).
 			For more information, see the [url=https://www.midi.org/specifications-old/item/table-2-expanded-messages-list-status-bytes]MIDI message status byte list chart[/url].
 		</member>

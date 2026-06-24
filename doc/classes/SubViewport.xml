@@ -19,11 +19,11 @@
 		<link title="3D Resolution Scaling Demo">https://godotengine.org/asset-library/asset/2805</link>
 	</tutorials>
 	<members>
-		<member name="render_target_clear_mode" type="int" setter="set_clear_mode" getter="get_clear_mode" enum="SubViewport.ClearMode" default="0">
+		<member name="render_target_clear_mode" type="int" setter="set_clear_mode" getter="get_clear_mode" enum="SubViewport.ClearMode" default="CLEAR_MODE_ALWAYS">
 			The clear mode when the sub-viewport is used as a render target.
 			[b]Note:[/b] This property is intended for 2D usage.
 		</member>
-		<member name="render_target_update_mode" type="int" setter="set_update_mode" getter="get_update_mode" enum="SubViewport.UpdateMode" default="2">
+		<member name="render_target_update_mode" type="int" setter="set_update_mode" getter="get_update_mode" enum="SubViewport.UpdateMode" default="UPDATE_WHEN_VISIBLE">
 			The update mode when the sub-viewport is used as a render target.
 		</member>
 		<member name="size" type="Vector2i" setter="set_size" getter="get_size" default="Vector2i(512, 512)">

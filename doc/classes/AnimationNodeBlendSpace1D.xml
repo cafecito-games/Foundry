@@ -66,7 +66,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="AnimationNodeBlendSpace1D.BlendMode" default="0">
+		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="AnimationNodeBlendSpace1D.BlendMode" default="BLEND_MODE_INTERPOLATED">
 			Controls the interpolation between animations.
 		</member>
 		<member name="max_space" type="float" setter="set_max_space" getter="get_max_space" default="1.0">

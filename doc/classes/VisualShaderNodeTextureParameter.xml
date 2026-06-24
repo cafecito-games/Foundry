@@ -9,19 +9,19 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="color_default" type="int" setter="set_color_default" getter="get_color_default" enum="VisualShaderNodeTextureParameter.ColorDefault" default="0">
+		<member name="color_default" type="int" setter="set_color_default" getter="get_color_default" enum="VisualShaderNodeTextureParameter.ColorDefault" default="COLOR_DEFAULT_WHITE">
 			Sets the default color if no texture is assigned to the uniform.
 		</member>
-		<member name="texture_filter" type="int" setter="set_texture_filter" getter="get_texture_filter" enum="VisualShaderNodeTextureParameter.TextureFilter" default="0">
+		<member name="texture_filter" type="int" setter="set_texture_filter" getter="get_texture_filter" enum="VisualShaderNodeTextureParameter.TextureFilter" default="FILTER_DEFAULT">
 			Sets the texture filtering mode.
 		</member>
-		<member name="texture_repeat" type="int" setter="set_texture_repeat" getter="get_texture_repeat" enum="VisualShaderNodeTextureParameter.TextureRepeat" default="0">
+		<member name="texture_repeat" type="int" setter="set_texture_repeat" getter="get_texture_repeat" enum="VisualShaderNodeTextureParameter.TextureRepeat" default="REPEAT_DEFAULT">
 			Sets the texture repeating mode.
 		</member>
-		<member name="texture_source" type="int" setter="set_texture_source" getter="get_texture_source" enum="VisualShaderNodeTextureParameter.TextureSource" default="0">
+		<member name="texture_source" type="int" setter="set_texture_source" getter="get_texture_source" enum="VisualShaderNodeTextureParameter.TextureSource" default="SOURCE_NONE">
 			Sets the texture source mode. Used for reading from the screen, depth, or normal_roughness texture.
 		</member>
-		<member name="texture_type" type="int" setter="set_texture_type" getter="get_texture_type" enum="VisualShaderNodeTextureParameter.TextureType" default="0">
+		<member name="texture_type" type="int" setter="set_texture_type" getter="get_texture_type" enum="VisualShaderNodeTextureParameter.TextureType" default="TYPE_DATA">
 			Defines the type of data provided by the source texture.
 		</member>
 	</members>

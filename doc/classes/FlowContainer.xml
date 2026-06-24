@@ -18,10 +18,10 @@
 		</method>
 	</methods>
 	<members>
-		<member name="alignment" type="int" setter="set_alignment" getter="get_alignment" enum="FlowContainer.AlignmentMode" default="0">
+		<member name="alignment" type="int" setter="set_alignment" getter="get_alignment" enum="FlowContainer.AlignmentMode" default="ALIGNMENT_BEGIN">
 			The alignment of the container's children (must be one of [constant ALIGNMENT_BEGIN], [constant ALIGNMENT_CENTER], or [constant ALIGNMENT_END]).
 		</member>
-		<member name="last_wrap_alignment" type="int" setter="set_last_wrap_alignment" getter="get_last_wrap_alignment" enum="FlowContainer.LastWrapAlignmentMode" default="0">
+		<member name="last_wrap_alignment" type="int" setter="set_last_wrap_alignment" getter="get_last_wrap_alignment" enum="FlowContainer.LastWrapAlignmentMode" default="LAST_WRAP_ALIGNMENT_INHERIT">
 			The wrap behavior of the last, partially filled row or column (must be one of [constant LAST_WRAP_ALIGNMENT_INHERIT], [constant LAST_WRAP_ALIGNMENT_BEGIN], [constant LAST_WRAP_ALIGNMENT_CENTER], or [constant LAST_WRAP_ALIGNMENT_END]).
 		</member>
 		<member name="reverse_fill" type="bool" setter="set_reverse_fill" getter="is_reverse_fill" default="false">

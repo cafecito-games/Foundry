@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeTransformFunc.Function" default="0">
+		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeTransformFunc.Function" default="FUNC_INVERSE">
 			The function to be computed.
 		</member>
 	</members>

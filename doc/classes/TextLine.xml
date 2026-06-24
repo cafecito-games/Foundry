@@ -13,7 +13,7 @@
 			<return type="bool" />
 			<param index="0" name="key" type="Variant" />
 			<param index="1" name="size" type="Vector2" />
-			<param index="2" name="inline_align" type="int" enum="InlineAlignment" default="5" />
+			<param index="2" name="inline_align" type="int" enum="InlineAlignment" default="INLINE_ALIGNMENT_CENTER" />
 			<param index="3" name="length" type="int" default="1" />
 			<param index="4" name="baseline" type="float" default="0.0" />
 			<description>
@@ -143,7 +143,7 @@
 			<return type="bool" />
 			<param index="0" name="key" type="Variant" />
 			<param index="1" name="size" type="Vector2" />
-			<param index="2" name="inline_align" type="int" enum="InlineAlignment" default="5" />
+			<param index="2" name="inline_align" type="int" enum="InlineAlignment" default="INLINE_ALIGNMENT_CENTER" />
 			<param index="3" name="baseline" type="float" default="0.0" />
 			<description>
 				Sets new size and alignment of embedded object.
@@ -166,19 +166,19 @@
 		</method>
 	</methods>
 	<members>
-		<member name="alignment" type="int" setter="set_horizontal_alignment" getter="get_horizontal_alignment" enum="HorizontalAlignment" default="0">
+		<member name="alignment" type="int" setter="set_horizontal_alignment" getter="get_horizontal_alignment" enum="HorizontalAlignment" default="HORIZONTAL_ALIGNMENT_LEFT">
 			Sets text alignment within the line as if the line was horizontal.
 		</member>
-		<member name="direction" type="int" setter="set_direction" getter="get_direction" enum="TextServer.Direction" default="0">
+		<member name="direction" type="int" setter="set_direction" getter="get_direction" enum="TextServer.Direction" default="DIRECTION_AUTO">
 			Text writing direction.
 		</member>
 		<member name="ellipsis_char" type="String" setter="set_ellipsis_char" getter="get_ellipsis_char" default="&quot;…&quot;">
 			Ellipsis character used for text clipping.
 		</member>
-		<member name="flags" type="int" setter="set_flags" getter="get_flags" enum="TextServer.JustificationFlag" is_bitfield="true" default="3">
+		<member name="flags" type="int" setter="set_flags" getter="get_flags" enum="TextServer.JustificationFlag" is_bitfield="true" default="JUSTIFICATION_WORD_BOUND | JUSTIFICATION_KASHIDA">
 			Line alignment rules. For more info see [TextServer].
 		</member>
-		<member name="orientation" type="int" setter="set_orientation" getter="get_orientation" enum="TextServer.Orientation" default="0">
+		<member name="orientation" type="int" setter="set_orientation" getter="get_orientation" enum="TextServer.Orientation" default="ORIENTATION_HORIZONTAL">
 			Text orientation.
 		</member>
 		<member name="preserve_control" type="bool" setter="set_preserve_control" getter="get_preserve_control" default="false">
@@ -187,7 +187,7 @@
 		<member name="preserve_invalid" type="bool" setter="set_preserve_invalid" getter="get_preserve_invalid" default="true">
 			If set to [code]true[/code] text will display invalid characters.
 		</member>
-		<member name="text_overrun_behavior" type="int" setter="set_text_overrun_behavior" getter="get_text_overrun_behavior" enum="TextServer.OverrunBehavior" default="3">
+		<member name="text_overrun_behavior" type="int" setter="set_text_overrun_behavior" getter="get_text_overrun_behavior" enum="TextServer.OverrunBehavior" default="OVERRUN_TRIM_ELLIPSIS">
 			The clipping behavior when the text exceeds the text line's set width.
 		</member>
 		<member name="width" type="float" setter="set_width" getter="get_width" default="-1.0">

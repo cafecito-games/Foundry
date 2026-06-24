@@ -9,13 +9,13 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="condition" type="int" setter="set_condition" getter="get_condition" enum="VisualShaderNodeCompare.Condition" default="0">
+		<member name="condition" type="int" setter="set_condition" getter="get_condition" enum="VisualShaderNodeCompare.Condition" default="COND_ALL">
 			Extra condition which is applied if [member type] is set to [constant CTYPE_VECTOR_3D].
 		</member>
-		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeCompare.Function" default="0">
+		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeCompare.Function" default="FUNC_EQUAL">
 			A comparison function.
 		</member>
-		<member name="type" type="int" setter="set_comparison_type" getter="get_comparison_type" enum="VisualShaderNodeCompare.ComparisonType" default="0">
+		<member name="type" type="int" setter="set_comparison_type" getter="get_comparison_type" enum="VisualShaderNodeCompare.ComparisonType" default="CTYPE_SCALAR">
 			The type to be used in the comparison.
 		</member>
 	</members>

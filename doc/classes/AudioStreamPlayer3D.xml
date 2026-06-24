@@ -62,7 +62,7 @@
 		<member name="attenuation_filter_db" type="float" setter="set_attenuation_filter_db" getter="get_attenuation_filter_db" default="-24.0">
 			Amount how much the filter affects the loudness, in decibels.
 		</member>
-		<member name="attenuation_model" type="int" setter="set_attenuation_model" getter="get_attenuation_model" enum="AudioStreamPlayer3D.AttenuationModel" default="0">
+		<member name="attenuation_model" type="int" setter="set_attenuation_model" getter="get_attenuation_model" enum="AudioStreamPlayer3D.AttenuationModel" default="ATTENUATION_INVERSE_DISTANCE">
 			Decides if audio should get quieter with distance linearly, quadratically, logarithmically, or not be affected by distance, effectively disabling attenuation.
 		</member>
 		<member name="autoplay" type="bool" setter="set_autoplay" getter="is_autoplay_enabled" default="false">
@@ -72,7 +72,7 @@
 			The bus on which this audio is playing.
 			[b]Note:[/b] When setting this property, keep in mind that no validation is performed to see if the given name matches an existing bus. This is because audio bus layouts might be loaded after this property is set. If this given name can't be resolved at runtime, it will fall back to [code]"Master"[/code].
 		</member>
-		<member name="doppler_tracking" type="int" setter="set_doppler_tracking" getter="get_doppler_tracking" enum="AudioStreamPlayer3D.DopplerTracking" default="0">
+		<member name="doppler_tracking" type="int" setter="set_doppler_tracking" getter="get_doppler_tracking" enum="AudioStreamPlayer3D.DopplerTracking" default="DOPPLER_TRACKING_DISABLED">
 			Decides in which step the Doppler effect should be calculated.
 			[b]Note:[/b] If [member doppler_tracking] is not [constant DOPPLER_TRACKING_DISABLED] but the current [Camera3D]/[AudioListener3D] has doppler tracking disabled, the Doppler effect will be heard but will not take the movement of the current listener into account. If accurate Doppler effect is desired, doppler tracking should be enabled on both the [AudioStreamPlayer3D] and the current [Camera3D]/[AudioListener3D].
 		</member>
@@ -102,7 +102,7 @@
 		<member name="pitch_scale" type="float" setter="set_pitch_scale" getter="get_pitch_scale" default="1.0">
 			The pitch and the tempo of the audio, as a multiplier of the audio sample's sample rate.
 		</member>
-		<member name="playback_type" type="int" setter="set_playback_type" getter="get_playback_type" enum="AudioServer.PlaybackType" default="0" experimental="">
+		<member name="playback_type" type="int" setter="set_playback_type" getter="get_playback_type" enum="AudioServer.PlaybackType" default="PLAYBACK_TYPE_DEFAULT" experimental="">
 			The playback type of the stream player. If set other than to the default value, it will force that playback type.
 		</member>
 		<member name="playing" type="bool" setter="set_playing" getter="is_playing" default="false">

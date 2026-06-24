@@ -9,13 +9,13 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeDerivativeFunc.Function" default="0">
+		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeDerivativeFunc.Function" default="FUNC_SUM">
 			A derivative function type.
 		</member>
-		<member name="op_type" type="int" setter="set_op_type" getter="get_op_type" enum="VisualShaderNodeDerivativeFunc.OpType" default="0">
+		<member name="op_type" type="int" setter="set_op_type" getter="get_op_type" enum="VisualShaderNodeDerivativeFunc.OpType" default="OP_TYPE_SCALAR">
 			A type of operands and returned value.
 		</member>
-		<member name="precision" type="int" setter="set_precision" getter="get_precision" enum="VisualShaderNodeDerivativeFunc.Precision" default="0">
+		<member name="precision" type="int" setter="set_precision" getter="get_precision" enum="VisualShaderNodeDerivativeFunc.Precision" default="PRECISION_NONE">
 			Sets the level of precision to use for the derivative function. When using the Compatibility renderer, this setting has no effect.
 		</member>
 	</members>

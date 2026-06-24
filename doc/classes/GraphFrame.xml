@@ -28,7 +28,7 @@
 		<member name="drag_margin" type="int" setter="set_drag_margin" getter="get_drag_margin" default="16">
 			The margin inside the frame that can be used to drag the frame.
 		</member>
-		<member name="mouse_filter" type="int" setter="set_mouse_filter" getter="get_mouse_filter" overrides="Control" enum="Control.MouseFilter" default="0" />
+		<member name="mouse_filter" type="int" setter="set_mouse_filter" getter="get_mouse_filter" overrides="Control" enum="Control.MouseFilter" default="MOUSE_FILTER_STOP" />
 		<member name="tint_color" type="Color" setter="set_tint_color" getter="get_tint_color" default="Color(0.3, 0.3, 0.3, 0.75)">
 			The color of the frame when [member tint_color_enabled] is [code]true[/code].
 		</member>

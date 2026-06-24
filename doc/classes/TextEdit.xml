@@ -1280,7 +1280,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="autowrap_mode" type="int" setter="set_autowrap_mode" getter="get_autowrap_mode" enum="TextServer.AutowrapMode" default="3">
+		<member name="autowrap_mode" type="int" setter="set_autowrap_mode" getter="get_autowrap_mode" enum="TextServer.AutowrapMode" default="AUTOWRAP_WORD_SMART">
 			If [member wrap_mode] is set to [constant LINE_WRAPPING_BOUNDARY], sets text wrapping mode.
 		</member>
 		<member name="backspace_deletes_composite_character_enabled" type="bool" setter="set_backspace_deletes_composite_character_enabled" getter="is_backspace_deletes_composite_character_enabled" default="false">
@@ -1306,7 +1306,7 @@
 		<member name="caret_multiple" type="bool" setter="set_multiple_carets_enabled" getter="is_multiple_carets_enabled" default="true">
 			If [code]true[/code], multiple carets are allowed. Left-clicking with [kbd]Alt[/kbd] adds a new caret. See [method add_caret] and [method get_caret_count].
 		</member>
-		<member name="caret_type" type="int" setter="set_caret_type" getter="get_caret_type" enum="TextEdit.CaretType" default="0">
+		<member name="caret_type" type="int" setter="set_caret_type" getter="get_caret_type" enum="TextEdit.CaretType" default="CARET_TYPE_LINE">
 			Set the type of caret to draw.
 		</member>
 		<member name="context_menu_enabled" type="bool" setter="set_context_menu_enabled" getter="is_context_menu_enabled" default="true">
@@ -1339,7 +1339,7 @@
 		<member name="empty_selection_clipboard_enabled" type="bool" setter="set_empty_selection_clipboard_enabled" getter="is_empty_selection_clipboard_enabled" default="true">
 			If [code]true[/code], copying or cutting without a selection is performed on all lines with a caret. Otherwise, copy and cut require a selection.
 		</member>
-		<member name="focus_mode" type="int" setter="set_focus_mode" getter="get_focus_mode" overrides="Control" enum="Control.FocusMode" default="2" />
+		<member name="focus_mode" type="int" setter="set_focus_mode" getter="get_focus_mode" overrides="Control" enum="Control.FocusMode" default="FOCUS_ALL" />
 		<member name="highlight_all_occurrences" type="bool" setter="set_highlight_all_occurrences" getter="is_highlight_all_occurrences_enabled" default="false">
 			If [code]true[/code], all occurrences of the selected text will be highlighted.
 		</member>
@@ -1362,7 +1362,7 @@
 		<member name="minimap_width" type="int" setter="set_minimap_width" getter="get_minimap_width" default="80">
 			The width, in pixels, of the minimap.
 		</member>
-		<member name="mouse_default_cursor_shape" type="int" setter="set_default_cursor_shape" getter="get_default_cursor_shape" overrides="Control" enum="Control.CursorShape" default="1" />
+		<member name="mouse_default_cursor_shape" type="int" setter="set_default_cursor_shape" getter="get_default_cursor_shape" overrides="Control" enum="Control.CursorShape" default="CURSOR_IBEAM" />
 		<member name="placeholder_text" type="String" setter="set_placeholder" getter="get_placeholder" default="&quot;&quot;">
 			Text shown when the [TextEdit] is empty. It is [b]not[/b] the [TextEdit]'s default value (see [member text]).
 		</member>
@@ -1394,7 +1394,7 @@
 		<member name="shortcut_keys_enabled" type="bool" setter="set_shortcut_keys_enabled" getter="is_shortcut_keys_enabled" default="true">
 			If [code]true[/code], shortcut keys for context menu items are enabled, even if the context menu is disabled.
 		</member>
-		<member name="structured_text_bidi_override" type="int" setter="set_structured_text_bidi_override" getter="get_structured_text_bidi_override" enum="TextServer.StructuredTextParser" default="0">
+		<member name="structured_text_bidi_override" type="int" setter="set_structured_text_bidi_override" getter="get_structured_text_bidi_override" enum="TextServer.StructuredTextParser" default="STRUCTURED_TEXT_DEFAULT">
 			Set BiDi algorithm override for the structured text.
 		</member>
 		<member name="structured_text_bidi_override_options" type="Array" setter="set_structured_text_bidi_override_options" getter="get_structured_text_bidi_override_options" default="[]">
@@ -1410,7 +1410,7 @@
 		<member name="text" type="String" setter="set_text" getter="get_text" default="&quot;&quot;">
 			String value of the [TextEdit].
 		</member>
-		<member name="text_direction" type="int" setter="set_text_direction" getter="get_text_direction" enum="Control.TextDirection" default="0">
+		<member name="text_direction" type="int" setter="set_text_direction" getter="get_text_direction" enum="Control.TextDirection" default="TEXT_DIRECTION_AUTO">
 			Base text writing direction.
 		</member>
 		<member name="use_custom_word_separators" type="bool" setter="set_use_custom_word_separators" getter="is_custom_word_separators_enabled" default="false">
@@ -1425,7 +1425,7 @@
 		<member name="virtual_keyboard_show_on_focus" type="bool" setter="set_virtual_keyboard_show_on_focus" getter="get_virtual_keyboard_show_on_focus" default="true">
 			If [code]true[/code], the native virtual keyboard is shown on focus events on platforms that support it.
 		</member>
-		<member name="wrap_mode" type="int" setter="set_line_wrapping_mode" getter="get_line_wrapping_mode" enum="TextEdit.LineWrappingMode" default="0">
+		<member name="wrap_mode" type="int" setter="set_line_wrapping_mode" getter="get_line_wrapping_mode" enum="TextEdit.LineWrappingMode" default="LINE_WRAPPING_NONE">
 			Sets the line wrapping mode to use.
 		</member>
 	</members>

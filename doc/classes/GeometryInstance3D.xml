@@ -30,7 +30,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="cast_shadow" type="int" setter="set_cast_shadows_setting" getter="get_cast_shadows_setting" enum="GeometryInstance3D.ShadowCastingSetting" default="1">
+		<member name="cast_shadow" type="int" setter="set_cast_shadows_setting" getter="get_cast_shadows_setting" enum="GeometryInstance3D.ShadowCastingSetting" default="SHADOW_CASTING_SETTING_ON">
 			The mode used to cast shadows from this instance.
 		</member>
 		<member name="custom_aabb" type="AABB" setter="set_custom_aabb" getter="get_custom_aabb" default="AABB(0, 0, 0, 0, 0, 0)">
@@ -39,14 +39,14 @@
 		<member name="extra_cull_margin" type="float" setter="set_extra_cull_margin" getter="get_extra_cull_margin" default="0.0">
 			The extra distance added to the GeometryInstance3D's bounding box ([AABB]) to increase its cull box.
 		</member>
-		<member name="gi_lightmap_scale" type="int" setter="set_lightmap_scale" getter="get_lightmap_scale" enum="GeometryInstance3D.LightmapScale" default="0" deprecated="Use [member gi_lightmap_texel_scale] instead.">
+		<member name="gi_lightmap_scale" type="int" setter="set_lightmap_scale" getter="get_lightmap_scale" enum="GeometryInstance3D.LightmapScale" default="LIGHTMAP_SCALE_1X" deprecated="Use [member gi_lightmap_texel_scale] instead.">
 			The texel density to use for lightmapping in [LightmapGI].
 		</member>
 		<member name="gi_lightmap_texel_scale" type="float" setter="set_lightmap_texel_scale" getter="get_lightmap_texel_scale" default="1.0">
 			The texel density to use for lightmapping in [LightmapGI]. Greater scale values provide higher resolution in the lightmap, which can result in sharper shadows for lights that have both direct and indirect light baked. However, greater scale values will also increase the space taken by the mesh in the lightmap texture, which increases the memory, storage, and bake time requirements. When using a single mesh at different scales, consider adjusting this value to keep the lightmap texel density consistent across meshes.
 			For example, doubling [member gi_lightmap_texel_scale] doubles the lightmap texture resolution for this object [i]on each axis[/i], so it will [i]quadruple[/i] the texel count.
 		</member>
-		<member name="gi_mode" type="int" setter="set_gi_mode" getter="get_gi_mode" enum="GeometryInstance3D.GIMode" default="1" keywords="global_illumination_mode, light_bake_mode">
+		<member name="gi_mode" type="int" setter="set_gi_mode" getter="get_gi_mode" enum="GeometryInstance3D.GIMode" default="GI_MODE_STATIC" keywords="global_illumination_mode, light_bake_mode">
 			The global illumination mode to use for the whole geometry. To avoid inconsistent results, use a mode that matches the purpose of the mesh during gameplay (static/dynamic).
 			[b]Note:[/b] Lights' bake mode will also affect the global illumination rendering. See [member Light3D.light_bake_mode].
 		</member>
@@ -86,7 +86,7 @@
 			Margin for the [member visibility_range_end] threshold. The GeometryInstance3D will only change its visibility state when it goes over or under the [member visibility_range_end] threshold by this amount.
 			If [member visibility_range_fade_mode] is [constant VISIBILITY_RANGE_FADE_DISABLED], this acts as a hysteresis distance. If [member visibility_range_fade_mode] is [constant VISIBILITY_RANGE_FADE_SELF] or [constant VISIBILITY_RANGE_FADE_DEPENDENCIES], this acts as a fade transition distance and must be set to a value greater than [code]0.0[/code] for the effect to be noticeable.
 		</member>
-		<member name="visibility_range_fade_mode" type="int" setter="set_visibility_range_fade_mode" getter="get_visibility_range_fade_mode" enum="GeometryInstance3D.VisibilityRangeFadeMode" default="0" keywords="lod_fade_mode, hlod_fade_mode">
+		<member name="visibility_range_fade_mode" type="int" setter="set_visibility_range_fade_mode" getter="get_visibility_range_fade_mode" enum="GeometryInstance3D.VisibilityRangeFadeMode" default="VISIBILITY_RANGE_FADE_DISABLED" keywords="lod_fade_mode, hlod_fade_mode">
 			Controls which instances will be faded when approaching the limits of the visibility range.
 		</member>
 	</members>

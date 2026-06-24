@@ -10,13 +10,13 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="cellular_distance_function" type="int" setter="set_cellular_distance_function" getter="get_cellular_distance_function" enum="FastNoiseLite.CellularDistanceFunction" default="0">
+		<member name="cellular_distance_function" type="int" setter="set_cellular_distance_function" getter="get_cellular_distance_function" enum="FastNoiseLite.CellularDistanceFunction" default="DISTANCE_EUCLIDEAN">
 			Determines how the distance to the nearest/second-nearest point is computed.
 		</member>
 		<member name="cellular_jitter" type="float" setter="set_cellular_jitter" getter="get_cellular_jitter" default="1.0">
 			Maximum distance a point can move off of its grid position. Set to [code]0[/code] for an even grid.
 		</member>
-		<member name="cellular_return_type" type="int" setter="set_cellular_return_type" getter="get_cellular_return_type" enum="FastNoiseLite.CellularReturnType" default="1">
+		<member name="cellular_return_type" type="int" setter="set_cellular_return_type" getter="get_cellular_return_type" enum="FastNoiseLite.CellularReturnType" default="RETURN_DISTANCE">
 			Return type from cellular noise calculations.
 		</member>
 		<member name="domain_warp_amplitude" type="float" setter="set_domain_warp_amplitude" getter="get_domain_warp_amplitude" default="30.0">
@@ -35,13 +35,13 @@
 		<member name="domain_warp_fractal_octaves" type="int" setter="set_domain_warp_fractal_octaves" getter="get_domain_warp_fractal_octaves" default="5">
 			The number of noise layers that are sampled to get the final value for the fractal noise which warps the space.
 		</member>
-		<member name="domain_warp_fractal_type" type="int" setter="set_domain_warp_fractal_type" getter="get_domain_warp_fractal_type" enum="FastNoiseLite.DomainWarpFractalType" default="1">
+		<member name="domain_warp_fractal_type" type="int" setter="set_domain_warp_fractal_type" getter="get_domain_warp_fractal_type" enum="FastNoiseLite.DomainWarpFractalType" default="DOMAIN_WARP_FRACTAL_PROGRESSIVE">
 			The method for combining octaves into a fractal which is used to warp the space.
 		</member>
 		<member name="domain_warp_frequency" type="float" setter="set_domain_warp_frequency" getter="get_domain_warp_frequency" default="0.05">
 			Frequency of the noise which warps the space. Low frequency results in smooth noise while high frequency results in rougher, more granular noise.
 		</member>
-		<member name="domain_warp_type" type="int" setter="set_domain_warp_type" getter="get_domain_warp_type" enum="FastNoiseLite.DomainWarpType" default="0">
+		<member name="domain_warp_type" type="int" setter="set_domain_warp_type" getter="get_domain_warp_type" enum="FastNoiseLite.DomainWarpType" default="DOMAIN_WARP_SIMPLEX">
 			The warp algorithm.
 		</member>
 		<member name="fractal_gain" type="float" setter="set_fractal_gain" getter="get_fractal_gain" default="0.5">
@@ -57,7 +57,7 @@
 		<member name="fractal_ping_pong_strength" type="float" setter="set_fractal_ping_pong_strength" getter="get_fractal_ping_pong_strength" default="2.0">
 			Sets the strength of the fractal ping pong type.
 		</member>
-		<member name="fractal_type" type="int" setter="set_fractal_type" getter="get_fractal_type" enum="FastNoiseLite.FractalType" default="1">
+		<member name="fractal_type" type="int" setter="set_fractal_type" getter="get_fractal_type" enum="FastNoiseLite.FractalType" default="FRACTAL_FBM">
 			The method for combining octaves into a fractal.
 		</member>
 		<member name="fractal_weighted_strength" type="float" setter="set_fractal_weighted_strength" getter="get_fractal_weighted_strength" default="0.0">
@@ -66,7 +66,7 @@
 		<member name="frequency" type="float" setter="set_frequency" getter="get_frequency" default="0.01">
 			The frequency for all noise types. Low frequency results in smooth noise while high frequency results in rougher, more granular noise.
 		</member>
-		<member name="noise_type" type="int" setter="set_noise_type" getter="get_noise_type" enum="FastNoiseLite.NoiseType" default="1">
+		<member name="noise_type" type="int" setter="set_noise_type" getter="get_noise_type" enum="FastNoiseLite.NoiseType" default="TYPE_SIMPLEX_SMOOTH">
 			The noise algorithm used.
 		</member>
 		<member name="offset" type="Vector3" setter="set_offset" getter="get_offset" default="Vector3(0, 0, 0)">

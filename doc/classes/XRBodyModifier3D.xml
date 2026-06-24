@@ -15,10 +15,10 @@
 		<member name="body_tracker" type="StringName" setter="set_body_tracker" getter="get_body_tracker" default="&amp;&quot;/user/body_tracker&quot;">
 			The name of the [XRBodyTracker] registered with [XRServer] to obtain the body tracking data from.
 		</member>
-		<member name="body_update" type="int" setter="set_body_update" getter="get_body_update" enum="XRBodyModifier3D.BodyUpdate" is_bitfield="true" default="7">
+		<member name="body_update" type="int" setter="set_body_update" getter="get_body_update" enum="XRBodyModifier3D.BodyUpdate" is_bitfield="true" default="BODY_UPDATE_HANDS | BODY_UPDATE_LOWER_BODY | BODY_UPDATE_UPPER_BODY">
 			Specifies the body parts to update.
 		</member>
-		<member name="bone_update" type="int" setter="set_bone_update" getter="get_bone_update" enum="XRBodyModifier3D.BoneUpdate" default="0">
+		<member name="bone_update" type="int" setter="set_bone_update" getter="get_bone_update" enum="XRBodyModifier3D.BoneUpdate" default="BONE_UPDATE_FULL">
 			Specifies the type of updates to perform on the bones.
 		</member>
 	</members>

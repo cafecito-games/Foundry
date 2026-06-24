@@ -631,13 +631,13 @@
 		</method>
 	</methods>
 	<members>
-		<member name="tile_layout" type="int" setter="set_tile_layout" getter="get_tile_layout" enum="TileSet.TileLayout" default="0">
+		<member name="tile_layout" type="int" setter="set_tile_layout" getter="get_tile_layout" enum="TileSet.TileLayout" default="TILE_LAYOUT_STACKED">
 			For all half-offset shapes (Isometric, Hexagonal and Half-Offset square), changes the way tiles are indexed in the [TileMapLayer] grid.
 		</member>
-		<member name="tile_offset_axis" type="int" setter="set_tile_offset_axis" getter="get_tile_offset_axis" enum="TileSet.TileOffsetAxis" default="0">
+		<member name="tile_offset_axis" type="int" setter="set_tile_offset_axis" getter="get_tile_offset_axis" enum="TileSet.TileOffsetAxis" default="TILE_OFFSET_AXIS_HORIZONTAL">
 			For all half-offset shapes (Isometric, Hexagonal and Half-Offset square), determines the offset axis.
 		</member>
-		<member name="tile_shape" type="int" setter="set_tile_shape" getter="get_tile_shape" enum="TileSet.TileShape" default="0">
+		<member name="tile_shape" type="int" setter="set_tile_shape" getter="get_tile_shape" enum="TileSet.TileShape" default="TILE_SHAPE_SQUARE">
 			The tile shape.
 		</member>
 		<member name="tile_size" type="Vector2i" setter="set_tile_size" getter="get_tile_size" default="Vector2i(16, 16)">

@@ -82,13 +82,13 @@
 		</method>
 	</methods>
 	<members>
-		<member name="available_layouts" type="int" setter="set_available_layouts" getter="get_available_layouts" enum="EditorDock.DockLayout" is_bitfield="true" default="5">
+		<member name="available_layouts" type="int" setter="set_available_layouts" getter="get_available_layouts" enum="EditorDock.DockLayout" is_bitfield="true" default="DOCK_LAYOUT_FLOATING | DOCK_LAYOUT_VERTICAL">
 			The available layouts for this dock, as a bitmask. By default, the dock allows vertical and floating layouts.
 		</member>
 		<member name="closable" type="bool" setter="set_closable" getter="is_closable" default="false">
 			If [code]true[/code], the dock can be closed with the Close button in the context popup. Docks with [member global] enabled are always closable.
 		</member>
-		<member name="default_slot" type="int" setter="set_default_slot" getter="get_default_slot" enum="EditorDock.DockSlot" default="-1">
+		<member name="default_slot" type="int" setter="set_default_slot" getter="get_default_slot" enum="EditorDock.DockSlot" default="DOCK_SLOT_NONE">
 			The default dock slot used when adding the dock with [method EditorPlugin.add_dock].
 			After the dock is added, it can be moved to a different slot and the editor will automatically remember its position between sessions. If you remove and re-add the dock, it will be reset to default.
 		</member>

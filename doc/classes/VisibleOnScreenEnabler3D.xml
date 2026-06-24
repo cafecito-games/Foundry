@@ -11,7 +11,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="enable_mode" type="int" setter="set_enable_mode" getter="get_enable_mode" enum="VisibleOnScreenEnabler3D.EnableMode" default="0">
+		<member name="enable_mode" type="int" setter="set_enable_mode" getter="get_enable_mode" enum="VisibleOnScreenEnabler3D.EnableMode" default="ENABLE_MODE_INHERIT">
 			Determines how the target node is enabled. Corresponds to [enum Node.ProcessMode]. When the node is disabled, it always uses [constant Node.PROCESS_MODE_DISABLED].
 		</member>
 		<member name="enable_node_path" type="NodePath" setter="set_enable_node_path" getter="get_enable_node_path" default="NodePath(&quot;..&quot;)">

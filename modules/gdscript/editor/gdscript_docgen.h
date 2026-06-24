@@ -49,5 +49,8 @@ class GDScriptDocGen {
 public:
 	static void generate_docs(GDScript *p_script, const GDP::ClassNode *p_class);
 	static void doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, bool p_is_return = false);
-	static String docvalue_from_expression(const GDP::ExpressionNode *p_expression);
+	// Resolves an integer value to its enum constant name when the declared type is an enum.
+	// Returns the bare constant name on an exact match, or the integer as a string otherwise.
+	static String docvalue_from_enum_value(int64_t p_value, const HashMap<StringName, int64_t> &p_enum_values);
+	static String docvalue_from_expression(const GDP::ExpressionNode *p_expression, const GDType &p_type = GDType());
 };

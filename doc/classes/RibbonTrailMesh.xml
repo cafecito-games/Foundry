@@ -24,7 +24,7 @@
 		<member name="sections" type="int" setter="set_sections" getter="get_sections" default="5">
 			The total number of sections on the ribbon.
 		</member>
-		<member name="shape" type="int" setter="set_shape" getter="get_shape" enum="RibbonTrailMesh.Shape" default="1">
+		<member name="shape" type="int" setter="set_shape" getter="get_shape" enum="RibbonTrailMesh.Shape" default="SHAPE_CROSS">
 			Determines the shape of the ribbon.
 		</member>
 		<member name="size" type="float" setter="set_size" getter="get_size" default="1.0">

@@ -19,7 +19,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="alignment" type="int" setter="set_alignment" getter="get_alignment" enum="BoxContainer.AlignmentMode" default="0">
+		<member name="alignment" type="int" setter="set_alignment" getter="get_alignment" enum="BoxContainer.AlignmentMode" default="ALIGNMENT_BEGIN">
 			The alignment of the container's children (must be one of [constant ALIGNMENT_BEGIN], [constant ALIGNMENT_CENTER], or [constant ALIGNMENT_END]).
 		</member>
 		<member name="vertical" type="bool" setter="set_vertical" getter="is_vertical" default="false">

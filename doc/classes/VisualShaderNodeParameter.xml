@@ -15,7 +15,7 @@
 		<member name="parameter_name" type="String" setter="set_parameter_name" getter="get_parameter_name" default="&quot;&quot;">
 			Name of the parameter, by which it can be accessed through the [ShaderMaterial] properties.
 		</member>
-		<member name="qualifier" type="int" setter="set_qualifier" getter="get_qualifier" enum="VisualShaderNodeParameter.Qualifier" default="0">
+		<member name="qualifier" type="int" setter="set_qualifier" getter="get_qualifier" enum="VisualShaderNodeParameter.Qualifier" default="QUAL_NONE">
 			Defines the scope of the parameter.
 		</member>
 	</members>

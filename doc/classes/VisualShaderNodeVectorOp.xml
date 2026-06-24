@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="operator" type="int" setter="set_operator" getter="get_operator" enum="VisualShaderNodeVectorOp.Operator" default="0">
+		<member name="operator" type="int" setter="set_operator" getter="get_operator" enum="VisualShaderNodeVectorOp.Operator" default="OP_ADD">
 			The operator to be used.
 		</member>
 	</members>

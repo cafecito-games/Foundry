@@ -12,7 +12,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="action_type" type="int" setter="set_action_type" getter="get_action_type" enum="OpenXRAction.ActionType" default="1">
+		<member name="action_type" type="int" setter="set_action_type" getter="get_action_type" enum="OpenXRAction.ActionType" default="OPENXR_ACTION_FLOAT">
 			The type of action.
 		</member>
 		<member name="localized_name" type="String" setter="set_localized_name" getter="get_localized_name" default="&quot;&quot;">

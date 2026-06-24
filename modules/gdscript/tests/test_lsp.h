@@ -827,6 +827,33 @@ func f():
 			CHECK_EQ(String(values_argument["type"]), "Dictionary[String, Array[int]]");
 		}
 
+		SUBCASE("Enum default values are shown as constant names") {
+			String path = "res://lsp/enum_default_values.gd";
+			assert_no_errors_in(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			// A property typed with a script enum shows the constant name, not the integer.
+			const LSP::DocumentSymbol *mode = parser->get_member_symbol("mode");
+			REQUIRE(mode);
+			CHECK_EQ(mode->detail, "var mode: enum_default_values.gd.Mode = RUNNING");
+
+			// A property typed with a native enum resolves through the same path.
+			const LSP::DocumentSymbol *alignment = parser->get_member_symbol("alignment");
+			REQUIRE(alignment);
+			CHECK_EQ(alignment->detail, "var alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_CENTER");
+
+			// A plain integer property is unaffected.
+			const LSP::DocumentSymbol *count = parser->get_member_symbol("count");
+			REQUIRE(count);
+			CHECK_EQ(count->detail, "var count: int = 3");
+
+			// Enum-typed parameter defaults render as names; plain int defaults are untouched.
+			const LSP::DocumentSymbol *set_mode = parser->get_member_symbol("set_mode");
+			REQUIRE(set_mode);
+			CHECK_EQ(set_mode->detail, "func set_mode(target: enum_default_values.gd.Mode = IDLE, repeats: int = 2) -> void");
+		}
+
 		memdelete(proto);
 		memdelete(efs);
 		finish_language();
