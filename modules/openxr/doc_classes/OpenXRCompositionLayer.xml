@@ -57,11 +57,11 @@
 			The sort order for this composition layer. Higher numbers will be shown in front of lower numbers.
 			[b]Note:[/b] This will have no effect if a fallback mesh is being used.
 		</member>
-		<member name="swapchain_state_alpha_swizzle" type="int" setter="set_alpha_swizzle" getter="get_alpha_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="3">
+		<member name="swapchain_state_alpha_swizzle" type="int" setter="set_alpha_swizzle" getter="get_alpha_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="SWIZZLE_ALPHA">
 			The swizzle value for the alpha channel of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_blue_swizzle" type="int" setter="set_blue_swizzle" getter="get_blue_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="2">
+		<member name="swapchain_state_blue_swizzle" type="int" setter="set_blue_swizzle" getter="get_blue_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="SWIZZLE_BLUE">
 			The swizzle value for the blue channel of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
@@ -69,15 +69,15 @@
 			The border color of the swapchain state that is used when the wrap mode clamps to the border.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_green_swizzle" type="int" setter="set_green_swizzle" getter="get_green_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="1">
+		<member name="swapchain_state_green_swizzle" type="int" setter="set_green_swizzle" getter="get_green_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="SWIZZLE_GREEN">
 			The swizzle value for the green channel of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_horizontal_wrap" type="int" setter="set_horizontal_wrap" getter="get_horizontal_wrap" enum="OpenXRCompositionLayer.Wrap" default="0">
+		<member name="swapchain_state_horizontal_wrap" type="int" setter="set_horizontal_wrap" getter="get_horizontal_wrap" enum="OpenXRCompositionLayer.Wrap" default="WRAP_CLAMP_TO_BORDER">
 			The horizontal wrap mode of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_mag_filter" type="int" setter="set_mag_filter" getter="get_mag_filter" enum="OpenXRCompositionLayer.Filter" default="1">
+		<member name="swapchain_state_mag_filter" type="int" setter="set_mag_filter" getter="get_mag_filter" enum="OpenXRCompositionLayer.Filter" default="FILTER_LINEAR">
 			The magnification filter of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
@@ -85,19 +85,19 @@
 			The max anisotropy of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_min_filter" type="int" setter="set_min_filter" getter="get_min_filter" enum="OpenXRCompositionLayer.Filter" default="1">
+		<member name="swapchain_state_min_filter" type="int" setter="set_min_filter" getter="get_min_filter" enum="OpenXRCompositionLayer.Filter" default="FILTER_LINEAR">
 			The minification filter of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_mipmap_mode" type="int" setter="set_mipmap_mode" getter="get_mipmap_mode" enum="OpenXRCompositionLayer.MipmapMode" default="2">
+		<member name="swapchain_state_mipmap_mode" type="int" setter="set_mipmap_mode" getter="get_mipmap_mode" enum="OpenXRCompositionLayer.MipmapMode" default="MIPMAP_MODE_LINEAR">
 			The mipmap mode of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_red_swizzle" type="int" setter="set_red_swizzle" getter="get_red_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="0">
+		<member name="swapchain_state_red_swizzle" type="int" setter="set_red_swizzle" getter="get_red_swizzle" enum="OpenXRCompositionLayer.Swizzle" default="SWIZZLE_RED">
 			The swizzle value for the red channel of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>
-		<member name="swapchain_state_vertical_wrap" type="int" setter="set_vertical_wrap" getter="get_vertical_wrap" enum="OpenXRCompositionLayer.Wrap" default="0">
+		<member name="swapchain_state_vertical_wrap" type="int" setter="set_vertical_wrap" getter="get_vertical_wrap" enum="OpenXRCompositionLayer.Wrap" default="WRAP_CLAMP_TO_BORDER">
 			The vertical wrap mode of the swapchain state.
 			[b]Note:[/b] This property only has an effect on devices that support the OpenXR XR_FB_swapchain_update_state OpenGLES/Vulkan extensions.
 		</member>

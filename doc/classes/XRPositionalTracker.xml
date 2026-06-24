@@ -61,7 +61,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="hand" type="int" setter="set_tracker_hand" getter="get_tracker_hand" enum="XRPositionalTracker.TrackerHand" default="0">
+		<member name="hand" type="int" setter="set_tracker_hand" getter="get_tracker_hand" enum="XRPositionalTracker.TrackerHand" default="TRACKER_HAND_UNKNOWN">
 			Defines which hand this tracker relates to.
 		</member>
 		<member name="profile" type="String" setter="set_tracker_profile" getter="get_tracker_profile" default="&quot;&quot;">

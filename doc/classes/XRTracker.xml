@@ -23,7 +23,7 @@
 			- [code]"/user/body_tracker"[/code] identifies the [XRBodyTracker] for the player's body
 			- [code]"/user/face_tracker"[/code] identifies the [XRFaceTracker] for the player's face
 		</member>
-		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" enum="XRServer.TrackerType" default="128">
+		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" enum="XRServer.TrackerType" default="TRACKER_UNKNOWN">
 			The type of tracker.
 		</member>
 	</members>

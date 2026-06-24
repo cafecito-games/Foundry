@@ -56,7 +56,7 @@
 		<member name="drag_area_offset" type="int" setter="set_drag_area_offset" getter="get_drag_area_offset" default="0">
 			Shifts the drag area in the axis of the container to prevent the drag area from overlapping the [ScrollBar] or other selectable [Control] of a child node.
 		</member>
-		<member name="dragger_visibility" type="int" setter="set_dragger_visibility" getter="get_dragger_visibility" enum="SplitContainer.DraggerVisibility" default="0">
+		<member name="dragger_visibility" type="int" setter="set_dragger_visibility" getter="get_dragger_visibility" enum="SplitContainer.DraggerVisibility" default="DRAGGER_VISIBLE">
 			Determines the dragger's visibility. This property does not determine whether dragging is enabled or not. Use [member dragging_enabled] for that.
 		</member>
 		<member name="dragging_enabled" type="bool" setter="set_dragging_enabled" getter="is_dragging_enabled" default="true">

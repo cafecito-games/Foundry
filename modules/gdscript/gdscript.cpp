@@ -1299,6 +1299,52 @@ void GDScript::get_script_signal_list(List<MethodInfo> *r_signals) const {
 	_get_script_signal_list(r_signals, true);
 }
 
+void GDScript::_get_script_trait_list(List<StringName> *r_list, HashSet<StringName> &r_seen, bool p_include_base) const {
+	for (const StringName &trait : script_trait_list) {
+		if (r_seen.has(trait)) {
+			continue;
+		}
+		r_seen.insert(trait);
+		r_list->push_back(trait);
+	}
+
+	if (!p_include_base) {
+		return;
+	}
+
+	if (base.is_valid()) {
+		base->_get_script_trait_list(r_list, r_seen, true);
+	}
+#ifdef TOOLS_ENABLED
+	else if (base_cache.is_valid()) {
+		base_cache->_get_script_trait_list(r_list, r_seen, true);
+	}
+#endif
+}
+
+void GDScript::get_script_trait_list(List<StringName> *r_traits) const {
+	HashSet<StringName> seen;
+	_get_script_trait_list(r_traits, seen, true);
+}
+
+bool GDScript::has_script_trait(const StringName &p_trait) const {
+	for (const StringName &trait : script_trait_list) {
+		if (trait == p_trait) {
+			return true;
+		}
+	}
+
+	if (base.is_valid()) {
+		return base->has_script_trait(p_trait);
+	}
+#ifdef TOOLS_ENABLED
+	else if (base_cache.is_valid()) {
+		return base_cache->has_script_trait(p_trait);
+	}
+#endif
+	return false;
+}
+
 GDScript::GDScript() :
 		script_list(this) {
 	{
@@ -1440,6 +1486,7 @@ void GDScript::clear() {
 	member_indices.clear();
 	static_variables.clear();
 	static_variables_indices.clear();
+	script_trait_list.clear();
 
 	if (implicit_initializer) {
 		functions_to_clear.insert(implicit_initializer);
@@ -2609,7 +2656,8 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 		"signal",
 		"static",
 		// Do not add `async` here: it is contextual and remains a valid identifier outside function modifiers.
-		"trait", // Reserved for potential future use.
+		"trait",
+		"trait_name",
 		"var",
 		// Other keywords.
 		"await",
@@ -2703,6 +2751,10 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 	 *
 	 * Before changing this function, please ask the current maintainer of EditorFileSystem.
 	 */
+
+	if (c->is_trait) {
+		return String();
+	}
 
 	if (r_base_type) {
 		const GDScriptParser::ClassNode *subclass = c;

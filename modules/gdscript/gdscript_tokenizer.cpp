@@ -121,6 +121,8 @@ static const char *token_names[] = {
 	"static", // STATIC,
 	"super", // SUPER,
 	"trait", // TRAIT,
+	"trait_name", // TRAIT_NAME,
+	"uses", // USES,
 	"var", // VAR,
 	"void", // TK_VOID,
 	"yield", // YIELD,
@@ -200,6 +202,7 @@ bool GDScriptTokenizer::Token::is_identifier() const {
 		case IDENTIFIER:
 		case MATCH: // Used in String.match().
 		case WHEN: // New keyword, avoid breaking existing code.
+		case USES: // Contextual trait declaration keyword.
 		// Allow constants to be treated as regular identifiers.
 		case CONST_PI:
 		case CONST_INF:
@@ -251,6 +254,8 @@ bool GDScriptTokenizer::Token::is_node_name() const {
 		case STATIC:
 		case SUPER:
 		case TRAIT:
+		case TRAIT_NAME:
+		case USES:
 		case UNDERSCORE:
 		case VAR:
 		case TK_VOID:
@@ -534,6 +539,9 @@ GDScriptTokenizer::Token GDScriptTokenizerText::annotation() {
 	KEYWORD("super", Token::SUPER)           \
 	KEYWORD_GROUP('t')                       \
 	KEYWORD("trait", Token::TRAIT)           \
+	KEYWORD("trait_name", Token::TRAIT_NAME) \
+	KEYWORD_GROUP('u')                       \
+	KEYWORD("uses", Token::USES)             \
 	KEYWORD_GROUP('v')                       \
 	KEYWORD("var", Token::VAR)               \
 	KEYWORD("void", Token::TK_VOID)          \

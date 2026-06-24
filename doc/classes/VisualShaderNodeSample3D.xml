@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="source" type="int" setter="set_source" getter="get_source" enum="VisualShaderNodeSample3D.Source" default="0">
+		<member name="source" type="int" setter="set_source" getter="get_source" enum="VisualShaderNodeSample3D.Source" default="SOURCE_TEXTURE">
 			An input source type.
 		</member>
 	</members>

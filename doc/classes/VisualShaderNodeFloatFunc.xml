@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeFloatFunc.Function" default="13">
+		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeFloatFunc.Function" default="FUNC_SIGN">
 			A function to be applied to the scalar.
 		</member>
 	</members>

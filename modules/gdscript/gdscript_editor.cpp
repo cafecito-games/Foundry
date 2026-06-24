@@ -4893,7 +4893,7 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 								r_result.is_experimental = local.constant->doc_data.is_experimental;
 								r_result.experimental_message = local.constant->doc_data.experimental_message;
 								if (local.constant->initializer != nullptr) {
-									r_result.value = GDScriptDocGen::docvalue_from_expression(local.constant->initializer);
+									r_result.value = GDScriptDocGen::docvalue_from_expression(local.constant->initializer, local.constant->get_datatype());
 								}
 								break;
 							case GDScriptParser::SuiteNode::Local::VARIABLE:
@@ -4904,7 +4904,7 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 								r_result.is_experimental = local.variable->doc_data.is_experimental;
 								r_result.experimental_message = local.variable->doc_data.experimental_message;
 								if (local.variable->initializer != nullptr) {
-									r_result.value = GDScriptDocGen::docvalue_from_expression(local.variable->initializer);
+									r_result.value = GDScriptDocGen::docvalue_from_expression(local.variable->initializer, local.variable->get_datatype());
 								}
 								break;
 							case GDScriptParser::SuiteNode::Local::PARAMETER:

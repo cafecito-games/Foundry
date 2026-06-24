@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeIs.Function" default="0">
+		<member name="function" type="int" setter="set_function" getter="get_function" enum="VisualShaderNodeIs.Function" default="FUNC_IS_INF">
 			The comparison function.
 		</member>
 	</members>

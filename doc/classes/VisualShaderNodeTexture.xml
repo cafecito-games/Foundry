@@ -9,13 +9,13 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="source" type="int" setter="set_source" getter="get_source" enum="VisualShaderNodeTexture.Source" default="0">
+		<member name="source" type="int" setter="set_source" getter="get_source" enum="VisualShaderNodeTexture.Source" default="SOURCE_TEXTURE">
 			Determines the source for the lookup.
 		</member>
 		<member name="texture" type="Texture2D" setter="set_texture" getter="get_texture">
 			The source texture, if needed for the selected [member source].
 		</member>
-		<member name="texture_type" type="int" setter="set_texture_type" getter="get_texture_type" enum="VisualShaderNodeTexture.TextureType" default="0">
+		<member name="texture_type" type="int" setter="set_texture_type" getter="get_texture_type" enum="VisualShaderNodeTexture.TextureType" default="TYPE_DATA">
 			Specifies the type of the texture if [member source] is set to [constant SOURCE_TEXTURE].
 		</member>
 	</members>

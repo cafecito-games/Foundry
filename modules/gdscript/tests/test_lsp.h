@@ -245,6 +245,25 @@ Array workspace_edits_for_uri(const Dictionary &p_workspace_edit, const String &
 	return changes[p_uri];
 }
 
+bool text_edits_include(const Array &p_edits, int p_line, int p_start_character, int p_end_character, const String &p_new_text) {
+	for (int i = 0; i < p_edits.size(); i++) {
+		Dictionary edit = p_edits[i];
+		if (String(edit["newText"]) != p_new_text) {
+			continue;
+		}
+		Dictionary range = edit["range"];
+		Dictionary start = range["start"];
+		Dictionary end = range["end"];
+		if (int(start["line"]) == p_line &&
+				int(start["character"]) == p_start_character &&
+				int(end["line"]) == p_line &&
+				int(end["character"]) == p_end_character) {
+			return true;
+		}
+	}
+	return false;
+}
+
 Dictionary first_code_action_with_kind(const Array &p_actions, const String &p_kind) {
 	for (int i = 0; i < p_actions.size(); i++) {
 		Dictionary action = p_actions[i];
@@ -808,6 +827,33 @@ func f():
 			CHECK_EQ(String(values_argument["type"]), "Dictionary[String, Array[int]]");
 		}
 
+		SUBCASE("Enum default values are shown as constant names") {
+			String path = "res://lsp/enum_default_values.gd";
+			assert_no_errors_in(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			// A property typed with a script enum shows the constant name, not the integer.
+			const LSP::DocumentSymbol *mode = parser->get_member_symbol("mode");
+			REQUIRE(mode);
+			CHECK_EQ(mode->detail, "var mode: enum_default_values.gd.Mode = RUNNING");
+
+			// A property typed with a native enum resolves through the same path.
+			const LSP::DocumentSymbol *alignment = parser->get_member_symbol("alignment");
+			REQUIRE(alignment);
+			CHECK_EQ(alignment->detail, "var alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_CENTER");
+
+			// A plain integer property is unaffected.
+			const LSP::DocumentSymbol *count = parser->get_member_symbol("count");
+			REQUIRE(count);
+			CHECK_EQ(count->detail, "var count: int = 3");
+
+			// Enum-typed parameter defaults render as names; plain int defaults are untouched.
+			const LSP::DocumentSymbol *set_mode = parser->get_member_symbol("set_mode");
+			REQUIRE(set_mode);
+			CHECK_EQ(set_mode->detail, "func set_mode(target: enum_default_values.gd.Mode = IDLE, repeats: int = 2) -> void");
+		}
+
 		memdelete(proto);
 		memdelete(efs);
 		finish_language();
@@ -880,8 +926,15 @@ func f():
 
 		Dictionary edit = text_document->rename(make_rename_params(base_uri, pos(1, 12), "RenamedBaseCharacter"));
 
-		CHECK_EQ(workspace_edits_for_uri(edit, base_uri).size(), 1);
-		CHECK_EQ(workspace_edits_for_uri(edit, user_uri).size(), 4);
+		const Array base_edits = workspace_edits_for_uri(edit, base_uri);
+		const Array user_edits = workspace_edits_for_uri(edit, user_uri);
+		CHECK_EQ(base_edits.size(), 1);
+		CHECK(text_edits_include(base_edits, 1, 11, 27, "RenamedBaseCharacter"));
+		CHECK_EQ(user_edits.size(), 4);
+		CHECK(text_edits_include(user_edits, 5, 20, 36, "RenamedBaseCharacter"));
+		CHECK(text_edits_include(user_edits, 7, 36, 52, "RenamedBaseCharacter"));
+		CHECK(text_edits_include(user_edits, 10, 13, 29, "RenamedBaseCharacter"));
+		CHECK(text_edits_include(user_edits, 11, 33, 49, "RenamedBaseCharacter"));
 		Dictionary changes = edit["changes"];
 		CHECK_FALSE(changes.has(controller_uri));
 

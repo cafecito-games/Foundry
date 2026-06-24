@@ -91,11 +91,26 @@
 				[b]Note:[/b] The dictionaries returned by this method are formatted identically to those returned by [method Object.get_signal_list].
 			</description>
 		</method>
+		<method name="get_script_trait_list" qualifiers="const">
+			<return type="StringName[]" />
+			<description>
+				Returns the list of traits applied to this [Script], including traits applied transitively.
+				[b]Note:[/b] GDScript trait analysis is experimental and is not populated by the GDScript compiler until trait semantics are enabled.
+			</description>
+		</method>
 		<method name="has_script_signal" qualifiers="const">
 			<return type="bool" />
 			<param index="0" name="signal_name" type="StringName" />
 			<description>
 				Returns [code]true[/code] if the script, or a base class, defines a signal with the given name.
+			</description>
+		</method>
+		<method name="has_script_trait" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="trait_name" type="StringName" />
+			<description>
+				Returns [code]true[/code] if this [Script] applies the given trait directly or transitively.
+				[b]Note:[/b] GDScript trait analysis is experimental and is not populated by the GDScript compiler until trait semantics are enabled.
 			</description>
 		</method>
 		<method name="has_source_code" qualifiers="const">

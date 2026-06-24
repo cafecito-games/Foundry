@@ -580,7 +580,7 @@
 		<member name="indent_use_spaces" type="bool" setter="set_indent_using_spaces" getter="is_indent_using_spaces" default="false">
 			Use spaces instead of tabs for indentation.
 		</member>
-		<member name="layout_direction" type="int" setter="set_layout_direction" getter="get_layout_direction" overrides="Control" enum="Control.LayoutDirection" default="2" />
+		<member name="layout_direction" type="int" setter="set_layout_direction" getter="get_layout_direction" overrides="Control" enum="Control.LayoutDirection" default="LAYOUT_DIRECTION_LTR" />
 		<member name="line_folding" type="bool" setter="set_line_folding_enabled" getter="is_line_folding_enabled" default="false">
 			If [code]true[/code], lines can be folded. Otherwise, line folding methods like [method fold_line] will not work and [method can_fold_line] will always return [code]false[/code]. See [member gutters_draw_fold_gutter].
 		</member>
@@ -593,7 +593,7 @@
 		<member name="symbol_tooltip_on_hover" type="bool" setter="set_symbol_tooltip_on_hover_enabled" getter="is_symbol_tooltip_on_hover_enabled" default="false">
 			If [code]true[/code], the [signal symbol_hovered] signal is emitted when hovering over a word.
 		</member>
-		<member name="text_direction" type="int" setter="set_text_direction" getter="get_text_direction" overrides="TextEdit" enum="Control.TextDirection" default="1" />
+		<member name="text_direction" type="int" setter="set_text_direction" getter="get_text_direction" overrides="TextEdit" enum="Control.TextDirection" default="TEXT_DIRECTION_LTR" />
 	</members>
 	<signals>
 		<signal name="breakpoint_toggled">

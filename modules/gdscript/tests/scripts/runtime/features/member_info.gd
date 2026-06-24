@@ -49,6 +49,9 @@ static func test_static_func(): pass
 
 async func test_async_func() -> void: pass
 static async func test_static_async_func() -> void: pass
+func test_body_inferred_async_func() -> void:
+	@warning_ignore("redundant_await")
+	await 0
 func test_func_implicit_void(): pass
 func test_func_explicit_void() -> void: pass
 func test_func_weak_null(): return null

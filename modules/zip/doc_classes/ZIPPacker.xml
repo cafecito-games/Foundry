@@ -39,7 +39,7 @@
 		<method name="open">
 			<return type="int" enum="Error" />
 			<param index="0" name="path" type="String" />
-			<param index="1" name="append" type="int" enum="ZIPPacker.ZipAppend" default="0" />
+			<param index="1" name="append" type="int" enum="ZIPPacker.ZipAppend" default="APPEND_CREATE" />
 			<description>
 				Opens a zip file for writing at the given path using the specified write mode.
 				This must be called before everything else.

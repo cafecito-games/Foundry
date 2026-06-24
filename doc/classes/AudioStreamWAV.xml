@@ -59,7 +59,7 @@
 			[b]Note:[/b] If [member format] is set to [constant FORMAT_8_BITS], this property expects signed 8-bit PCM data. To convert from unsigned 8-bit PCM, subtract 128 from each byte.
 			[b]Note:[/b] If [member format] is set to [constant FORMAT_QOA], this property expects data from a full QOA file.
 		</member>
-		<member name="format" type="int" setter="set_format" getter="get_format" enum="AudioStreamWAV.Format" default="0">
+		<member name="format" type="int" setter="set_format" getter="get_format" enum="AudioStreamWAV.Format" default="FORMAT_8_BITS">
 			Audio format.
 		</member>
 		<member name="loop_begin" type="int" setter="set_loop_begin" getter="get_loop_begin" default="0">
@@ -68,7 +68,7 @@
 		<member name="loop_end" type="int" setter="set_loop_end" getter="get_loop_end" default="0">
 			The loop end point (in number of samples, relative to the beginning of the stream).
 		</member>
-		<member name="loop_mode" type="int" setter="set_loop_mode" getter="get_loop_mode" enum="AudioStreamWAV.LoopMode" default="0">
+		<member name="loop_mode" type="int" setter="set_loop_mode" getter="get_loop_mode" enum="AudioStreamWAV.LoopMode" default="LOOP_DISABLED">
 			The loop mode.
 		</member>
 		<member name="mix_rate" type="int" setter="set_mix_rate" getter="get_mix_rate" default="44100">

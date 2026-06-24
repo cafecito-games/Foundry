@@ -149,6 +149,18 @@ public:
 		}
 	}
 
+	GDVIRTUAL0RC(TypedArray<StringName>, _get_script_trait_list)
+
+	virtual void get_script_trait_list(List<StringName> *r_traits) const override {
+		TypedArray<StringName> traits;
+		if (!GDVIRTUAL_CALL(_get_script_trait_list, traits)) {
+			return;
+		}
+		for (int i = 0; i < traits.size(); i++) {
+			r_traits->push_back(traits[i]);
+		}
+	}
+
 	GDVIRTUAL1RC_REQUIRED(bool, _has_property_default_value, const StringName &)
 	GDVIRTUAL1RC_REQUIRED(Variant, _get_property_default_value, const StringName &)
 

@@ -755,7 +755,7 @@ void GDScriptParser::parse_program() {
 
 	bool can_have_class_or_extends = parse_top_level_annotations(AnnotationInfo::SCRIPT | AnnotationInfo::CLASS_LEVEL | AnnotationInfo::STANDALONE);
 
-	if (current.type == GDScriptTokenizer::Token::NAMESPACE || current.type == GDScriptTokenizer::Token::IMPORT || current.type == GDScriptTokenizer::Token::CLASS_NAME || current.type == GDScriptTokenizer::Token::EXTENDS) {
+	if (current.type == GDScriptTokenizer::Token::NAMESPACE || current.type == GDScriptTokenizer::Token::IMPORT || current.type == GDScriptTokenizer::Token::CLASS_NAME || current.type == GDScriptTokenizer::Token::TRAIT_NAME || current.type == GDScriptTokenizer::Token::EXTENDS || current.type == GDScriptTokenizer::Token::USES) {
 		// Set range of the class to only start at the top-level declaration if present.
 		reset_extents(head, current);
 	}
@@ -808,21 +808,47 @@ void GDScriptParser::parse_program() {
 			case GDScriptTokenizer::Token::CLASS_NAME:
 				push_pending_annotations_to_head();
 				advance();
-				if (head->identifier != nullptr) {
+				if (head->trait_name_used) {
+					push_error(R"("class_name" cannot be combined with "trait_name" in the same file.)");
+				} else if (head->identifier != nullptr) {
 					push_error(R"("class_name" can only be used once.)");
 				} else {
 					parse_class_name();
 				}
 				break;
+			case GDScriptTokenizer::Token::TRAIT_NAME:
+				push_pending_annotations_to_head();
+				advance();
+				if (head->trait_name_used) {
+					push_error(R"("trait_name" can only be used once.)");
+				} else if (head->identifier != nullptr) {
+					push_error(R"("trait_name" cannot be combined with "class_name" in the same file.)");
+				} else {
+					parse_trait_name();
+				}
+				break;
 			case GDScriptTokenizer::Token::EXTENDS:
 				push_pending_annotations_to_head();
 				advance();
-				if (head->extends_used) {
+				if (head->uses_used) {
+					push_error(R"("extends" must appear before "uses".)");
+				} else if (head->extends_used) {
 					push_error(R"("extends" can only be used once.)");
 				} else {
 					parse_extends();
-					end_statement("superclass");
+					if (match(GDScriptTokenizer::Token::USES)) {
+						parse_uses();
+						end_statement("uses declaration");
+					} else {
+						end_statement("superclass");
+					}
 				}
+				break;
+			case GDScriptTokenizer::Token::USES:
+				push_pending_annotations_to_head();
+				advance();
+				parse_uses();
+				end_statement("uses declaration");
 				break;
 			case GDScriptTokenizer::Token::TK_EOF:
 				push_pending_annotations_to_head();
@@ -1044,6 +1070,10 @@ GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 		parse_extends();
 	}
 
+	if (match(GDScriptTokenizer::Token::USES)) {
+		parse_uses();
+	}
+
 	consume(GDScriptTokenizer::Token::COLON, R"(Expected ":" after class declaration.)");
 
 	bool multiline = match(GDScriptTokenizer::Token::NEWLINE);
@@ -1059,7 +1089,15 @@ GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 			push_error(R"(Cannot use "extends" more than once in the same class.)");
 		}
 		parse_extends();
-		end_statement("superclass");
+		if (match(GDScriptTokenizer::Token::USES)) {
+			parse_uses();
+			end_statement("uses declaration");
+		} else {
+			end_statement("superclass");
+		}
+	} else if (match(GDScriptTokenizer::Token::USES)) {
+		parse_uses();
+		end_statement("uses declaration");
 	}
 
 	parse_class_body(multiline);
@@ -1073,6 +1111,71 @@ GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 	return n_class;
 }
 
+GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
+	TraitNode *trait = alloc_node<TraitNode>();
+
+	ClassNode *previous_class = current_class;
+	current_class = trait;
+	trait->outer = previous_class;
+
+	if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for the trait name after "trait".)")) {
+		trait->identifier = parse_identifier();
+		if (trait->outer) {
+			String fqcn = trait->outer->fqcn;
+			if (fqcn.is_empty()) {
+				fqcn = GDScript::canonicalize_path(script_path);
+			}
+			trait->fqcn = fqcn + "::" + trait->identifier->name;
+		} else {
+			trait->fqcn = trait->identifier->name;
+		}
+	}
+
+	if (match(GDScriptTokenizer::Token::EXTENDS)) {
+		parse_extends();
+	}
+
+	if (match(GDScriptTokenizer::Token::USES)) {
+		parse_uses();
+	}
+
+	consume(GDScriptTokenizer::Token::COLON, R"(Expected ":" after trait declaration.)");
+
+	bool multiline = match(GDScriptTokenizer::Token::NEWLINE);
+
+	if (multiline && !consume(GDScriptTokenizer::Token::INDENT, R"(Expected indented block after trait declaration.)")) {
+		current_class = previous_class;
+		complete_extents(trait);
+		return trait;
+	}
+
+	if (match(GDScriptTokenizer::Token::EXTENDS)) {
+		if (trait->extends_used) {
+			push_error(R"(Cannot use "extends" more than once in the same trait.)");
+		}
+		parse_extends();
+		if (match(GDScriptTokenizer::Token::USES)) {
+			parse_uses();
+			end_statement("uses declaration");
+		} else {
+			end_statement("supertrait");
+		}
+	} else if (match(GDScriptTokenizer::Token::USES)) {
+		parse_uses();
+		end_statement("uses declaration");
+	}
+
+	parse_class_body(multiline);
+	complete_extents(trait);
+
+	if (multiline) {
+		consume(GDScriptTokenizer::Token::DEDENT, R"(Missing unindent at the end of the trait body.)");
+	}
+
+	current_class = previous_class;
+	return trait;
+}
+
 void GDScriptParser::parse_class_name() {
 	if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for the global class name after "class_name".)")) {
 		current_class->identifier = parse_identifier();
@@ -1083,9 +1186,43 @@ void GDScriptParser::parse_class_name() {
 	if (match(GDScriptTokenizer::Token::EXTENDS)) {
 		// Allow extends on the same line.
 		parse_extends();
-		end_statement("superclass");
+		if (match(GDScriptTokenizer::Token::USES)) {
+			parse_uses();
+			end_statement("uses declaration");
+		} else {
+			end_statement("superclass");
+		}
+	} else if (match(GDScriptTokenizer::Token::USES)) {
+		parse_uses();
+		end_statement("uses declaration");
 	} else {
 		end_statement("class_name statement");
+	}
+}
+
+void GDScriptParser::parse_trait_name() {
+	if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for the global trait name after "trait_name".)")) {
+		current_class->is_trait = true;
+		current_class->trait_name_used = true;
+		current_class->identifier = parse_identifier();
+		current_class->qualified_global_name = current_class->namespace_name.is_empty() ? String(current_class->identifier->name) : current_class->namespace_name + "." + String(current_class->identifier->name);
+		current_class->fqcn = current_class->qualified_global_name;
+	}
+
+	if (match(GDScriptTokenizer::Token::EXTENDS)) {
+		// Allow extends on the same line.
+		parse_extends();
+		if (match(GDScriptTokenizer::Token::USES)) {
+			parse_uses();
+			end_statement("uses declaration");
+		} else {
+			end_statement("supertrait");
+		}
+	} else if (match(GDScriptTokenizer::Token::USES)) {
+		parse_uses();
+		end_statement("uses declaration");
+	} else {
+		end_statement("trait_name statement");
 	}
 }
 
@@ -1119,6 +1256,30 @@ void GDScriptParser::parse_extends() {
 		}
 		current_class->extends.push_back(parse_identifier());
 	}
+}
+
+void GDScriptParser::parse_uses() {
+	if (current_class->uses_used) {
+		push_error(vformat(R"(Cannot use "uses" more than once in the same %s.)", current_class->is_trait ? "trait" : "class"));
+	}
+	current_class->uses_used = true;
+
+	do {
+		ClassNode::TraitUse trait_use;
+		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected trait name after "uses".)")) {
+			return;
+		}
+		trait_use.name.push_back(parse_identifier());
+
+		while (match(GDScriptTokenizer::Token::PERIOD)) {
+			if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected trait name after ".".)")) {
+				return;
+			}
+			trait_use.name.push_back(parse_identifier());
+		}
+
+		current_class->used_traits.push_back(trait_use);
+	} while (match(GDScriptTokenizer::Token::COMMA));
 }
 
 List<GDScriptParser::AnnotationNode *> GDScriptParser::parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind) {
@@ -1156,7 +1317,7 @@ void GDScriptParser::finalize_class_member(T *p_member, List<AnnotationNode *> &
 	}
 
 #ifdef TOOLS_ENABLED
-	if constexpr (std::is_same_v<T, ClassNode>) {
+	if constexpr (std::is_base_of_v<ClassNode, T>) {
 		if (has_comment(p_member->start_line, true)) {
 			// Inline doc comment.
 			p_member->doc_data = parse_class_doc_comment(p_member->start_line, true);
@@ -1232,6 +1393,9 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::CLASS:
 				parse_class_member(&GDScriptParser::parse_class, AnnotationInfo::CLASS, "class");
 				break;
+			case GDScriptTokenizer::Token::TRAIT:
+				parse_class_member(&GDScriptParser::parse_trait, AnnotationInfo::CLASS, "trait");
+				break;
 			case GDScriptTokenizer::Token::ENUM:
 				parse_class_member(&GDScriptParser::parse_enum, AnnotationInfo::NONE, "enum");
 				break;
@@ -1278,6 +1442,26 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::IMPORT:
 				advance();
 				push_error(R"("import" declarations must appear before "class_name", "extends", and body declarations.)");
+				break;
+			case GDScriptTokenizer::Token::TRAIT_NAME:
+				advance();
+				push_error(R"("trait_name" declarations must appear before class body declarations.)");
+				break;
+			case GDScriptTokenizer::Token::EXTENDS:
+				advance();
+				if (current_class->uses_used) {
+					push_error(R"("extends" must appear before "uses".)");
+				} else {
+					push_error(vformat(R"(Unexpected %s in class body.)", previous.get_debug_name()));
+				}
+				break;
+			case GDScriptTokenizer::Token::USES:
+				advance();
+				if (current_class->uses_used) {
+					push_error(vformat(R"(Cannot use "uses" more than once in the same %s.)", current_class->is_trait ? "trait" : "class"));
+				} else {
+					push_error(R"("uses" declarations must appear before class body declarations.)");
+				}
 				break;
 			case GDScriptTokenizer::Token::DEDENT:
 				class_end = true;
@@ -4473,6 +4657,8 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // STATIC,
 		{ &GDScriptParser::parse_call,						nullptr,                                        PREC_NONE }, // SUPER,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TRAIT,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TRAIT_NAME,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // USES,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // VAR,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TK_VOID,
 		{ &GDScriptParser::parse_yield,                     nullptr,                                        PREC_NONE }, // YIELD,
@@ -6096,7 +6282,7 @@ void GDScriptParser::TreePrinter::print_class(ClassNode *p_class) {
 	for (const AnnotationNode *E : p_class->annotations) {
 		print_annotation(E);
 	}
-	push_text("Class ");
+	push_text(p_class->is_trait ? "Trait " : "Class ");
 	if (p_class->identifier == nullptr) {
 		push_text("<unnamed>");
 	} else {
@@ -6117,6 +6303,16 @@ void GDScriptParser::TreePrinter::print_class(ClassNode *p_class) {
 				first = false;
 			}
 			push_text(p_class->extends[i]->name);
+		}
+	}
+
+	if (!p_class->used_traits.is_empty()) {
+		push_text(" Uses ");
+		for (int i = 0; i < p_class->used_traits.size(); i++) {
+			if (i > 0) {
+				push_text(", ");
+			}
+			push_text(p_class->used_traits[i].to_string());
 		}
 	}
 

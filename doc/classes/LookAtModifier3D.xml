@@ -44,10 +44,10 @@
 			- When an axis is flipped due to angle limitation
 			[b]Note:[/b] The flipping occurs when the target is outside the angle limitation and the internally computed secondary rotation axis of the forward vector is flipped. Visually, it occurs when the target is outside the angle limitation and crosses the plane of the [member forward_axis] and [member primary_rotation_axis].
 		</member>
-		<member name="ease_type" type="int" setter="set_ease_type" getter="get_ease_type" enum="Tween.EaseType" default="0">
+		<member name="ease_type" type="int" setter="set_ease_type" getter="get_ease_type" enum="Tween.EaseType" default="EASE_IN">
 			The ease type of the time-based interpolation. See also [enum Tween.EaseType].
 		</member>
-		<member name="forward_axis" type="int" setter="set_forward_axis" getter="get_forward_axis" enum="SkeletonModifier3D.BoneAxis" default="4">
+		<member name="forward_axis" type="int" setter="set_forward_axis" getter="get_forward_axis" enum="SkeletonModifier3D.BoneAxis" default="BONE_AXIS_PLUS_Z">
 			The forward axis of the bone. This [SkeletonModifier3D] modifies the bone so that this axis points toward the [member target_node].
 		</member>
 		<member name="origin_bone" type="int" setter="set_origin_bone" getter="get_origin_bone">
@@ -59,7 +59,7 @@
 		<member name="origin_external_node" type="NodePath" setter="set_origin_external_node" getter="get_origin_external_node">
 			If [member origin_from] is [constant ORIGIN_FROM_EXTERNAL_NODE], the global position of the [Node3D] specified for this is used as origin.
 		</member>
-		<member name="origin_from" type="int" setter="set_origin_from" getter="get_origin_from" enum="LookAtModifier3D.OriginFrom" default="0">
+		<member name="origin_from" type="int" setter="set_origin_from" getter="get_origin_from" enum="LookAtModifier3D.OriginFrom" default="ORIGIN_FROM_SELF">
 			This value determines from what origin is retrieved for use in the calculation of the forward vector.
 		</member>
 		<member name="origin_offset" type="Vector3" setter="set_origin_offset" getter="get_origin_offset" default="Vector3(0, 0, 0)">
@@ -120,7 +120,7 @@
 		<member name="target_node" type="NodePath" setter="set_target_node" getter="get_target_node" default="NodePath(&quot;&quot;)">
 			The [NodePath] to the node that is the target for the look at modification. This node is what the modification will rotate the bone to.
 		</member>
-		<member name="transition_type" type="int" setter="set_transition_type" getter="get_transition_type" enum="Tween.TransitionType" default="0">
+		<member name="transition_type" type="int" setter="set_transition_type" getter="get_transition_type" enum="Tween.TransitionType" default="TRANS_LINEAR">
 			The transition type of the time-based interpolation. See also [enum Tween.TransitionType].
 		</member>
 		<member name="use_angle_limitation" type="bool" setter="set_use_angle_limitation" getter="is_using_angle_limitation" default="false">

@@ -31,7 +31,7 @@
 		<member name="depth" type="int" setter="set_depth" getter="get_depth" default="1">
 			The texture's depth (in pixels). This is always [code]1[/code] for 2D textures.
 		</member>
-		<member name="format" type="int" setter="set_format" getter="get_format" enum="RenderingDevice.DataFormat" default="8">
+		<member name="format" type="int" setter="set_format" getter="get_format" enum="RenderingDevice.DataFormat" default="DATA_FORMAT_R8_UNORM">
 			The texture's pixel data format.
 		</member>
 		<member name="height" type="int" setter="set_height" getter="get_height" default="1">
@@ -47,10 +47,10 @@
 		<member name="mipmaps" type="int" setter="set_mipmaps" getter="get_mipmaps" default="1">
 			The number of mipmaps available in the texture.
 		</member>
-		<member name="samples" type="int" setter="set_samples" getter="get_samples" enum="RenderingDevice.TextureSamples" default="0">
+		<member name="samples" type="int" setter="set_samples" getter="get_samples" enum="RenderingDevice.TextureSamples" default="TEXTURE_SAMPLES_1">
 			The number of samples used when sampling the texture.
 		</member>
-		<member name="texture_type" type="int" setter="set_texture_type" getter="get_texture_type" enum="RenderingDevice.TextureType" default="1">
+		<member name="texture_type" type="int" setter="set_texture_type" getter="get_texture_type" enum="RenderingDevice.TextureType" default="TEXTURE_TYPE_2D">
 			The texture type.
 		</member>
 		<member name="usage_bits" type="int" setter="set_usage_bits" getter="get_usage_bits" enum="RenderingDevice.TextureUsageBits" is_bitfield="true" default="0">

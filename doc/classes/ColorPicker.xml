@@ -61,7 +61,7 @@
 		<member name="color" type="Color" setter="set_pick_color" getter="get_pick_color" default="Color(1, 1, 1, 1)" keywords="colour">
 			The currently selected color.
 		</member>
-		<member name="color_mode" type="int" setter="set_color_mode" getter="get_color_mode" enum="ColorPicker.ColorModeType" default="0">
+		<member name="color_mode" type="int" setter="set_color_mode" getter="get_color_mode" enum="ColorPicker.ColorModeType" default="MODE_RGB">
 			The currently selected color mode.
 		</member>
 		<member name="color_modes_visible" type="bool" setter="set_modes_visible" getter="are_modes_visible" default="true">
@@ -79,7 +79,7 @@
 		<member name="hex_visible" type="bool" setter="set_hex_visible" getter="is_hex_visible" default="true">
 			If [code]true[/code], the hex color code input field is visible.
 		</member>
-		<member name="picker_shape" type="int" setter="set_picker_shape" getter="get_picker_shape" enum="ColorPicker.PickerShapeType" default="0">
+		<member name="picker_shape" type="int" setter="set_picker_shape" getter="get_picker_shape" enum="ColorPicker.PickerShapeType" default="SHAPE_HSV_RECTANGLE">
 			The shape of the color space view.
 		</member>
 		<member name="presets_visible" type="bool" setter="set_presets_visible" getter="are_presets_visible" default="true">

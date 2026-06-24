@@ -21,13 +21,13 @@
 		<member name="map" type="RID" setter="set_map" getter="get_map" default="RID()">
 			The navigation map [RID] used in the path query.
 		</member>
-		<member name="metadata_flags" type="int" setter="set_metadata_flags" getter="get_metadata_flags" enum="NavigationPathQueryParameters2D.PathMetadataFlags" is_bitfield="true" default="7">
+		<member name="metadata_flags" type="int" setter="set_metadata_flags" getter="get_metadata_flags" enum="NavigationPathQueryParameters2D.PathMetadataFlags" is_bitfield="true" default="PATH_METADATA_INCLUDE_ALL">
 			Additional information to include with the navigation path.
 		</member>
 		<member name="navigation_layers" type="int" setter="set_navigation_layers" getter="get_navigation_layers" default="1">
 			The navigation layers the query will use (as a bitmask).
 		</member>
-		<member name="path_postprocessing" type="int" setter="set_path_postprocessing" getter="get_path_postprocessing" enum="NavigationPathQueryParameters2D.PathPostProcessing" default="0">
+		<member name="path_postprocessing" type="int" setter="set_path_postprocessing" getter="get_path_postprocessing" enum="NavigationPathQueryParameters2D.PathPostProcessing" default="PATH_POSTPROCESSING_CORRIDORFUNNEL">
 			The path postprocessing applied to the raw path corridor found by the [member pathfinding_algorithm].
 		</member>
 		<member name="path_return_max_length" type="float" setter="set_path_return_max_length" getter="get_path_return_max_length" default="0.0">
@@ -43,7 +43,7 @@
 		<member name="path_search_max_polygons" type="int" setter="set_path_search_max_polygons" getter="get_path_search_max_polygons" default="4096">
 			The maximum number of polygons that are searched before the pathfinding cancels the search for a path to the (possibly unreachable or very far away) target position polygon. In this case the pathfinding resets and builds a path from the start polygon to the polygon that was found closest to the target position so far. A value of [code]0[/code] or below counts as unlimited. In case of unlimited the pathfinding will search all polygons connected with the start polygon until either the target position polygon is found or all available polygon search options are exhausted.
 		</member>
-		<member name="pathfinding_algorithm" type="int" setter="set_pathfinding_algorithm" getter="get_pathfinding_algorithm" enum="NavigationPathQueryParameters2D.PathfindingAlgorithm" default="0">
+		<member name="pathfinding_algorithm" type="int" setter="set_pathfinding_algorithm" getter="get_pathfinding_algorithm" enum="NavigationPathQueryParameters2D.PathfindingAlgorithm" default="PATHFINDING_ALGORITHM_ASTAR">
 			The pathfinding algorithm used in the path query.
 		</member>
 		<member name="simplify_epsilon" type="float" setter="set_simplify_epsilon" getter="get_simplify_epsilon" default="0.0">

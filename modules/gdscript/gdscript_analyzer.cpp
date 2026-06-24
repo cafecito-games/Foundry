@@ -4673,6 +4673,34 @@ Error GDScriptAnalyzer::validate_imports() {
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
 }
 
+Error GDScriptAnalyzer::validate_traits_not_implemented(GDScriptParser::ClassNode *p_class) {
+	bool has_error = false;
+
+	if (p_class->is_trait) {
+		const GDScriptParser::Node *source = p_class->identifier != nullptr ? static_cast<const GDScriptParser::Node *>(p_class->identifier) : p_class;
+		push_error(R"(GDScript trait declarations are parsed, but trait analysis is not implemented yet.)", source);
+		has_error = true;
+	}
+
+	if (!p_class->used_traits.is_empty()) {
+		const GDScriptParser::Node *source = p_class;
+		if (!p_class->used_traits[0].name.is_empty()) {
+			source = p_class->used_traits[0].name[0];
+		}
+		push_error(R"("uses" clauses are parsed, but trait analysis is not implemented yet.)", source);
+		has_error = true;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::CLASS || member.m_class == nullptr) {
+			continue;
+		}
+		has_error = validate_traits_not_implemented(member.m_class) != OK || has_error;
+	}
+
+	return has_error ? ERR_PARSE_ERROR : OK;
+}
+
 #ifdef DEBUG_ENABLED
 void GDScriptAnalyzer::validate_mixed_namespace_directory() {
 	if (parser->head->get_global_name() == StringName() || parser->script_path.is_empty()) {
@@ -8481,6 +8509,11 @@ Error GDScriptAnalyzer::analyze() {
 #ifdef DEBUG_ENABLED
 	validate_mixed_namespace_directory();
 #endif // DEBUG_ENABLED
+
+	err = validate_traits_not_implemented(parser->head);
+	if (err) {
+		return err;
+	}
 
 	err = resolve_inheritance();
 	if (err) {

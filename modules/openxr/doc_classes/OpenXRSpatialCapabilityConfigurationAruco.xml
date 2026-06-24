@@ -18,7 +18,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="aruco_dict" type="int" setter="set_aruco_dict" getter="get_aruco_dict" enum="OpenXRSpatialCapabilityConfigurationAruco.ArucoDict" default="16">
+		<member name="aruco_dict" type="int" setter="set_aruco_dict" getter="get_aruco_dict" enum="OpenXRSpatialCapabilityConfigurationAruco.ArucoDict" default="ARUCO_DICT_7X7_1000">
 			Dictionary to use to decode Aruco markers.
 			[b]Note:[/b] Must be set before using this configuration to create a spatial context.
 		</member>

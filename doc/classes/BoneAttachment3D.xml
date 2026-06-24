@@ -36,7 +36,7 @@
 			Whether the [BoneAttachment3D] node will override the bone pose of the bone it is attached to. When set to [code]true[/code], the [BoneAttachment3D] node can change the pose of the bone. When set to [code]false[/code], the [BoneAttachment3D] will always be set to the bone's transform.
 			[b]Note:[/b] This override performs interruptively in the skeleton update process using signals due to the old design. It may cause unintended behavior when used at the same time with [SkeletonModifier3D].
 		</member>
-		<member name="physics_interpolation_mode" type="int" setter="set_physics_interpolation_mode" getter="get_physics_interpolation_mode" overrides="Node" enum="Node.PhysicsInterpolationMode" default="2" />
+		<member name="physics_interpolation_mode" type="int" setter="set_physics_interpolation_mode" getter="get_physics_interpolation_mode" overrides="Node" enum="Node.PhysicsInterpolationMode" default="PHYSICS_INTERPOLATION_MODE_OFF" />
 		<member name="use_external_skeleton" type="bool" setter="set_use_external_skeleton" getter="get_use_external_skeleton" default="false">
 			Whether the [BoneAttachment3D] node will use an external [Skeleton3D] node rather than attempting to use its parent node as the [Skeleton3D]. When set to [code]true[/code], the [BoneAttachment3D] node will use the external [Skeleton3D] node set in [member external_skeleton].
 		</member>

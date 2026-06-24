@@ -10,7 +10,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="build_mode" type="int" setter="set_build_mode" getter="get_build_mode" enum="CollisionPolygon2D.BuildMode" default="0">
+		<member name="build_mode" type="int" setter="set_build_mode" getter="get_build_mode" enum="CollisionPolygon2D.BuildMode" default="BUILD_SOLIDS">
 			Collision build mode.
 		</member>
 		<member name="disabled" type="bool" setter="set_disabled" getter="is_disabled" default="false" keywords="enabled">

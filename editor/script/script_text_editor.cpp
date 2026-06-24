@@ -173,6 +173,7 @@ void ScriptTextEditor::set_edited_resource(const Ref<Resource> &p_res) {
 	ERR_FAIL_COND(p_res.is_null());
 
 	_cancel_inline_rename(true);
+	extract_method_name_prompt.clear();
 	script = p_res;
 
 	code_editor->get_text_editor()->set_text(script->get_source_code());
@@ -2885,18 +2886,19 @@ RefactorLocation ScriptTextEditor::_make_refactor_location() const {
 	return loc;
 }
 
-void ScriptTextEditor::_populate_refactor_submenu() {
-	refactor_submenu->clear();
+void ScriptTextEditor::_populate_refactor_submenu(PopupMenu *p_refactor_submenu) {
+	ERR_FAIL_NULL(p_refactor_submenu);
+	p_refactor_submenu->clear();
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, loc);
 	for (const RefactorAvailability &availability : available) {
 		const int id = EDIT_REFACTOR_RENAME + (int)availability.kind;
-		refactor_submenu->add_item(availability.title, id);
-		const int index = refactor_submenu->get_item_index(id);
+		p_refactor_submenu->add_item(availability.title, id);
+		const int index = p_refactor_submenu->get_item_index(id);
 		if (!availability.enabled) {
-			refactor_submenu->set_item_disabled(index, true);
-			refactor_submenu->set_item_tooltip(index, availability.disabled_reason);
+			p_refactor_submenu->set_item_disabled(index, true);
+			p_refactor_submenu->set_item_tooltip(index, availability.disabled_reason);
 		}
 	}
 }
@@ -2990,6 +2992,20 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 		}
 
 		_show_rename_dialog();
+		return;
+	}
+
+	if (kind == RefactorKind::EXTRACT_METHOD) {
+		RefactorParams params;
+		const RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, kind, params);
+		if (!result.ok) {
+			if (!result.error_message.is_empty()) {
+				EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
+			}
+			return;
+		}
+
+		_show_extract_method_dialog(loc, result.suggested_name, result.extract_method_member_names);
 		return;
 	}
 
@@ -3387,6 +3403,57 @@ void ScriptTextEditor::_on_rename_text_changed(const String &p_text) {
 	rename_dialog->get_ok_button()->set_disabled(!valid);
 }
 
+void ScriptTextEditor::_show_extract_method_dialog(
+		const RefactorLocation &p_location,
+		const String &p_suggested_name,
+		const Vector<String> &p_existing_member_names) {
+	extract_method_name_prompt.begin(p_location, p_existing_member_names, p_suggested_name);
+	extract_method_line_edit->set_text(extract_method_name_prompt.get_name());
+	_on_extract_method_text_changed(extract_method_line_edit->get_text());
+	extract_method_dialog->popup_centered();
+	extract_method_line_edit->grab_focus();
+	extract_method_line_edit->select_all();
+}
+
+void ScriptTextEditor::_on_extract_method_confirmed() {
+	String method_name;
+	if (!extract_method_name_prompt.confirm(method_name)) {
+		return;
+	}
+
+	RefactorContext ctx = _make_refactor_context();
+	RefactorParams params;
+	params.new_name = method_name;
+	// The modal dialog keeps the buffer stable after name validation; rebuild
+	// the authoritative edits before applying them.
+	const RefactorResult result = GDScriptRefactoring::prepare(
+			ctx,
+			extract_method_name_prompt.get_location(),
+			RefactorKind::EXTRACT_METHOD,
+			params);
+	extract_method_name_prompt.clear();
+
+	if (!result.ok) {
+		if (!result.error_message.is_empty()) {
+			EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
+		}
+		return;
+	}
+
+	_apply_refactor_result(result, ctx.source);
+}
+
+void ScriptTextEditor::_on_extract_method_canceled() {
+	extract_method_name_prompt.cancel();
+}
+
+void ScriptTextEditor::_on_extract_method_text_changed(const String &p_text) {
+	extract_method_name_prompt.set_name(p_text);
+	const bool valid = extract_method_name_prompt.is_valid();
+	extract_method_error_label->set_text(valid ? String() : extract_method_name_prompt.get_error_message());
+	extract_method_dialog->get_ok_button()->set_disabled(!valid);
+}
+
 void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos) {
 	context_menu->clear();
 	if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_EMOJI_AND_SYMBOL_PICKER)) {
@@ -3436,10 +3503,16 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 
 	// Refactors are GDScript-specific; only offer them when editing a GDScript file.
 	if (script.is_valid() && script->get_language() && script->get_language()->get_name() == "GDScript") {
-		_populate_refactor_submenu();
+		// Ownership is transferred to context_menu when this becomes a submenu;
+		// the context_menu->clear() call above frees the previous submenu.
+		PopupMenu *refactor_submenu = memnew(PopupMenu);
+		refactor_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
+		_populate_refactor_submenu(refactor_submenu);
 		if (refactor_submenu->get_item_count() > 0) {
 			context_menu->add_separator();
 			context_menu->add_submenu_node_item(TTRC("Refactor"), refactor_submenu);
+		} else {
+			memdelete(refactor_submenu);
 		}
 	}
 
@@ -3488,10 +3561,6 @@ void ScriptTextEditor::_enable_code_editor() {
 	add_child(context_menu);
 	context_menu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
 
-	refactor_submenu = memnew(PopupMenu);
-	refactor_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
-	context_menu->add_child(refactor_submenu);
-
 	rename_dialog = memnew(ConfirmationDialog);
 	rename_dialog->set_title(TTRC("Rename Symbol"));
 	VBoxContainer *rename_vbox = memnew(VBoxContainer);
@@ -3504,6 +3573,26 @@ void ScriptTextEditor::_enable_code_editor() {
 	rename_vbox->add_child(rename_error_label);
 	rename_dialog->connect(SceneStringName(confirmed), callable_mp(this, &ScriptTextEditor::_on_rename_confirmed));
 	add_child(rename_dialog);
+
+	extract_method_dialog = memnew(ConfirmationDialog);
+	extract_method_dialog->set_title(TTRC("Extract Method"));
+	VBoxContainer *extract_method_vbox = memnew(VBoxContainer);
+	extract_method_dialog->add_child(extract_method_vbox);
+	extract_method_line_edit = memnew(LineEdit);
+	extract_method_line_edit->connect(
+			SceneStringName(text_changed),
+			callable_mp(this, &ScriptTextEditor::_on_extract_method_text_changed));
+	extract_method_vbox->add_child(extract_method_line_edit);
+	extract_method_dialog->register_text_enter(extract_method_line_edit);
+	extract_method_error_label = memnew(Label);
+	extract_method_vbox->add_child(extract_method_error_label);
+	extract_method_dialog->connect(
+			SceneStringName(confirmed),
+			callable_mp(this, &ScriptTextEditor::_on_extract_method_confirmed));
+	extract_method_dialog->connect(
+			SNAME("canceled"),
+			callable_mp(this, &ScriptTextEditor::_on_extract_method_canceled));
+	add_child(extract_method_dialog);
 
 	add_child(color_panel);
 

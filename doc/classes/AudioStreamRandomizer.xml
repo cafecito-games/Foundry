@@ -65,7 +65,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="playback_mode" type="int" setter="set_playback_mode" getter="get_playback_mode" enum="AudioStreamRandomizer.PlaybackMode" default="0">
+		<member name="playback_mode" type="int" setter="set_playback_mode" getter="get_playback_mode" enum="AudioStreamRandomizer.PlaybackMode" default="PLAYBACK_RANDOM_NO_REPEATS">
 			Controls how this AudioStreamRandomizer picks which AudioStream to play next.
 		</member>
 		<member name="random_pitch" type="float" setter="set_random_pitch" getter="get_random_pitch" default="1.0">

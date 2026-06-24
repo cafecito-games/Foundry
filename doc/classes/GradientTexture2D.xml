@@ -10,7 +10,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="fill" type="int" setter="set_fill" getter="get_fill" enum="GradientTexture2D.Fill" default="0">
+		<member name="fill" type="int" setter="set_fill" getter="get_fill" enum="GradientTexture2D.Fill" default="FILL_LINEAR">
 			The gradient's fill type.
 		</member>
 		<member name="fill_from" type="Vector2" setter="set_fill_from" getter="get_fill_from" default="Vector2(0, 0)">
@@ -25,7 +25,7 @@
 		<member name="height" type="int" setter="set_height" getter="get_height" default="64">
 			The number of vertical color samples that will be obtained from the [Gradient], which also represents the texture's height.
 		</member>
-		<member name="repeat" type="int" setter="set_repeat" getter="get_repeat" enum="GradientTexture2D.Repeat" default="0">
+		<member name="repeat" type="int" setter="set_repeat" getter="get_repeat" enum="GradientTexture2D.Repeat" default="REPEAT_NONE">
 			The gradient's repeat type.
 		</member>
 		<member name="resource_local_to_scene" type="bool" setter="set_local_to_scene" getter="is_local_to_scene" overrides="Resource" default="false" />

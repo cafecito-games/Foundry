@@ -86,7 +86,7 @@
 			The fade-out duration. For example, setting this to [code]1.0[/code] for a 5 second length animation will produce a cross-fade that starts at 4 second and ends at 5 second during the animation.
 			[b]Note:[/b] [AnimationNodeOneShot] transitions the current state after the fading has finished.
 		</member>
-		<member name="mix_mode" type="int" setter="set_mix_mode" getter="get_mix_mode" enum="AnimationNodeOneShot.MixMode" default="0">
+		<member name="mix_mode" type="int" setter="set_mix_mode" getter="get_mix_mode" enum="AnimationNodeOneShot.MixMode" default="MIX_MODE_BLEND">
 			The blend type.
 		</member>
 	</members>

@@ -297,7 +297,7 @@
 		<member name="collision_enabled" type="bool" setter="set_collision_enabled" getter="is_collision_enabled" default="true">
 			Enable or disable collisions.
 		</member>
-		<member name="collision_visibility_mode" type="int" setter="set_collision_visibility_mode" getter="get_collision_visibility_mode" enum="TileMapLayer.DebugVisibilityMode" default="0">
+		<member name="collision_visibility_mode" type="int" setter="set_collision_visibility_mode" getter="get_collision_visibility_mode" enum="TileMapLayer.DebugVisibilityMode" default="DEBUG_VISIBILITY_MODE_DEFAULT">
 			Show or hide the [TileMapLayer]'s collision shapes. If set to [constant DEBUG_VISIBILITY_MODE_DEFAULT], this depends on the show collision debug settings.
 		</member>
 		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
@@ -306,7 +306,7 @@
 		<member name="navigation_enabled" type="bool" setter="set_navigation_enabled" getter="is_navigation_enabled" default="true">
 			If [code]true[/code], navigation regions are enabled.
 		</member>
-		<member name="navigation_visibility_mode" type="int" setter="set_navigation_visibility_mode" getter="get_navigation_visibility_mode" enum="TileMapLayer.DebugVisibilityMode" default="0">
+		<member name="navigation_visibility_mode" type="int" setter="set_navigation_visibility_mode" getter="get_navigation_visibility_mode" enum="TileMapLayer.DebugVisibilityMode" default="DEBUG_VISIBILITY_MODE_DEFAULT">
 			Show or hide the [TileMapLayer]'s navigation meshes. If set to [constant DEBUG_VISIBILITY_MODE_DEFAULT], this depends on the show navigation debug settings.
 		</member>
 		<member name="occlusion_enabled" type="bool" setter="set_occlusion_enabled" getter="is_occlusion_enabled" default="true">

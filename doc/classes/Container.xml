@@ -40,7 +40,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="mouse_filter" type="int" setter="set_mouse_filter" getter="get_mouse_filter" overrides="Control" enum="Control.MouseFilter" default="1" />
+		<member name="mouse_filter" type="int" setter="set_mouse_filter" getter="get_mouse_filter" overrides="Control" enum="Control.MouseFilter" default="MOUSE_FILTER_PASS" />
 	</members>
 	<signals>
 		<signal name="pre_sort_children">

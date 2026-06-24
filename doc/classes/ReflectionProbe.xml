@@ -20,7 +20,7 @@
 		<member name="ambient_color_energy" type="float" setter="set_ambient_color_energy" getter="get_ambient_color_energy" default="1.0">
 			The custom ambient color energy to use within the [ReflectionProbe]'s box defined by its [member size]. Only effective if [member ambient_mode] is [constant AMBIENT_COLOR].
 		</member>
-		<member name="ambient_mode" type="int" setter="set_ambient_mode" getter="get_ambient_mode" enum="ReflectionProbe.AmbientMode" default="1">
+		<member name="ambient_mode" type="int" setter="set_ambient_mode" getter="get_ambient_mode" enum="ReflectionProbe.AmbientMode" default="AMBIENT_ENVIRONMENT">
 			The ambient color to use within the [ReflectionProbe]'s box defined by its [member size]. The ambient color will smoothly blend with other [ReflectionProbe]s and the rest of the scene (outside the [ReflectionProbe]'s box defined by its [member size]).
 		</member>
 		<member name="blend_distance" type="float" setter="set_blend_distance" getter="get_blend_distance" default="1.0">
@@ -61,7 +61,7 @@
 			The size of the reflection probe. The larger the size, the more space covered by the probe, which will lower the perceived resolution. It is best to keep the size only as large as you need it.
 			[b]Note:[/b] To better fit areas that are not aligned to the grid, you can rotate the [ReflectionProbe] node.
 		</member>
-		<member name="update_mode" type="int" setter="set_update_mode" getter="get_update_mode" enum="ReflectionProbe.UpdateMode" default="0">
+		<member name="update_mode" type="int" setter="set_update_mode" getter="get_update_mode" enum="ReflectionProbe.UpdateMode" default="UPDATE_ONCE">
 			Sets how frequently the [ReflectionProbe] is updated. Can be [constant UPDATE_ONCE] or [constant UPDATE_ALWAYS].
 		</member>
 	</members>

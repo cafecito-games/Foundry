@@ -55,7 +55,7 @@
 		<member name="paused" type="bool" setter="set_paused" getter="is_paused">
 			If [code]true[/code], the timer is paused. A paused timer does not process until this property is set back to [code]false[/code], even when [method start] is called. See also [method stop].
 		</member>
-		<member name="process_callback" type="int" setter="set_timer_process_callback" getter="get_timer_process_callback" enum="Timer.TimerProcessCallback" default="1">
+		<member name="process_callback" type="int" setter="set_timer_process_callback" getter="get_timer_process_callback" enum="Timer.TimerProcessCallback" default="TIMER_PROCESS_IDLE">
 			Specifies when the timer is updated during the main loop.
 		</member>
 		<member name="time_left" type="float" setter="" getter="get_time_left">

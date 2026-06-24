@@ -31,7 +31,7 @@
 		<member name="marker_id" type="int" setter="set_marker_id" getter="get_marker_id" default="0">
 			The marker ID for this marker, this is only returned for Aruco and April Tag markers. Call [method get_marker_data] for QRCode markers.
 		</member>
-		<member name="marker_type" type="int" setter="set_marker_type" getter="get_marker_type" enum="OpenXRSpatialComponentMarkerList.MarkerType" default="0">
+		<member name="marker_type" type="int" setter="set_marker_type" getter="get_marker_type" enum="OpenXRSpatialComponentMarkerList.MarkerType" default="MARKER_TYPE_UNKNOWN">
 			The type of marker.
 		</member>
 	</members>

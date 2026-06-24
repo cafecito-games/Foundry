@@ -49,7 +49,7 @@
 		<member name="has_tracking_data" type="bool" setter="set_has_tracking_data" getter="get_has_tracking_data" default="false">
 			If [code]true[/code], the body tracking data is valid.
 		</member>
-		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" overrides="XRTracker" enum="XRServer.TrackerType" default="32" />
+		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" overrides="XRTracker" enum="XRServer.TrackerType" default="TRACKER_BODY" />
 	</members>
 	<constants>
 		<constant name="BODY_FLAG_UPPER_BODY_SUPPORTED" value="1" enum="BodyFlags" is_bitfield="true">

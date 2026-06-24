@@ -165,7 +165,7 @@
 		<member name="direction" type="Vector3" setter="set_direction" getter="get_direction" default="Vector3(1, 0, 0)">
 			Unit vector specifying the particles' emission direction.
 		</member>
-		<member name="draw_order" type="int" setter="set_draw_order" getter="get_draw_order" enum="CPUParticles3D.DrawOrder" default="0">
+		<member name="draw_order" type="int" setter="set_draw_order" getter="get_draw_order" enum="CPUParticles3D.DrawOrder" default="DRAW_ORDER_INDEX">
 			Particle draw order.
 		</member>
 		<member name="emission_box_extents" type="Vector3" setter="set_emission_box_extents" getter="get_emission_box_extents">
@@ -197,7 +197,7 @@
 		<member name="emission_ring_radius" type="float" setter="set_emission_ring_radius" getter="get_emission_ring_radius">
 			The radius of the ring when using the emitter [constant EMISSION_SHAPE_RING].
 		</member>
-		<member name="emission_shape" type="int" setter="set_emission_shape" getter="get_emission_shape" enum="CPUParticles3D.EmissionShape" default="0">
+		<member name="emission_shape" type="int" setter="set_emission_shape" getter="get_emission_shape" enum="CPUParticles3D.EmissionShape" default="EMISSION_SHAPE_POINT">
 			Particles will be emitted inside this region.
 		</member>
 		<member name="emission_sphere_radius" type="float" setter="set_emission_sphere_radius" getter="get_emission_sphere_radius">

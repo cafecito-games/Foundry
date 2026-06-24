@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="billboard_type" type="int" setter="set_billboard_type" getter="get_billboard_type" enum="VisualShaderNodeBillboard.BillboardType" default="1">
+		<member name="billboard_type" type="int" setter="set_billboard_type" getter="get_billboard_type" enum="VisualShaderNodeBillboard.BillboardType" default="BILLBOARD_TYPE_ENABLED">
 			Controls how the object faces the camera.
 		</member>
 		<member name="keep_scale" type="bool" setter="set_keep_scale_enabled" getter="is_keep_scale_enabled" default="false">

@@ -101,16 +101,25 @@ inline RefactorResult run_extract_variable(const String &p_source, const Refacto
 	return r;
 }
 
-inline RefactorResult run_extract_method(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+inline RefactorResult run_extract_method_named(
+		const String &p_source,
+		const RefactorLocation &p_location,
+		const String &p_new_name,
+		String &r_out) {
 	RefactorContext ctx;
 	ctx.path = "user://extract_method_refactor.gd";
 	ctx.source = p_source;
 	RefactorParams params;
+	params.new_name = p_new_name;
 	RefactorResult r = GDScriptRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_METHOD, params);
 	if (r.ok) {
 		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
 	return r;
+}
+
+inline RefactorResult run_extract_method(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+	return run_extract_method_named(p_source, p_location, String(), r_out);
 }
 
 inline RefactorResult run_inline_variable(const String &p_source, int p_line, int p_column, String &r_out) {
@@ -944,6 +953,146 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(out.contains("\t_extracted_method_2()\n"));
 			CHECK(out.contains("func _extracted_method_2() -> void:\n"));
 		}
+		SUBCASE("export group labels do not invalidate suggested prompt names") {
+			const String source =
+					"@export_group(\"_extracted_method\")\n"
+					"@export var value := 0\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(4, 0, 5, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_extracted_method");
+			String reason;
+			CHECK(GDScriptRefactoring::validate_extract_method_name(r.extract_method_member_names, r.suggested_name, reason));
+			CHECK(reason.is_empty());
+		}
+		SUBCASE("uses requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "_print_ready", out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_print_ready");
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_print_ready()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _print_ready() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("accepts full statement text selection without newline selection") {
+			const String source =
+					"func run(player_name: String, score: int) -> void:\n"
+					"\tvar message := \"Player %s scored %d points\" % [player_name, score]\n"
+					"\tprint(message)\n"
+					"\tprint(\"Score length: \", str(score).length())\n"
+					"\tprint(\"Done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 1, 3, lines[3].length()), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(player_name: String, score: int) -> void:\n"
+					"\t_extracted_method(player_name, score)\n"
+					"\tprint(\"Done\")\n"
+					"\n"
+					"func _extracted_method(player_name: String, score: int) -> void:\n"
+					"\tvar message := \"Player %s scored %d points\" % [player_name, score]\n"
+					"\tprint(message)\n"
+					"\tprint(\"Score length: \", str(score).length())\n");
+		}
+		SUBCASE("accepts single-line full statement text selection") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, lines[1].length()), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("allows requested method name matching export group label") {
+			const String source =
+					"@export_group(\"helper\")\n"
+					"@export var value := 0\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(4, 0, 5, 0), "helper", out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "helper");
+			CHECK(out.contains("\thelper()\n"));
+			CHECK(out.contains("func helper() -> void:\n"));
+		}
+		SUBCASE("rejects invalid requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "1bad", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("valid identifier"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects reserved requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "class", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("reserved keyword"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects requested method name collision") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func existing() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "existing", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("already exists"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects requested method name collision inside target inner class") {
+			const String source =
+					"class Inner:\n"
+					"\tfunc run() -> void:\n"
+					"\t\tprint(\"ready\")\n"
+					"\t\tprint(\"done\")\n"
+					"\n"
+					"\tfunc existing() -> void:\n"
+					"\t\tpass\n"
+					"\n"
+					"func existing() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(2, 0, 3, 0), "existing", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("already exists"));
+			CHECK(out.is_empty());
+		}
 	}
 
 	TEST_CASE("Extract method availability follows whole-statement selection") {
@@ -959,6 +1108,15 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
+
+		const Vector<String> lines = source.split("\n");
+		Vector<RefactorAvailability> text_selection_available = GDScriptRefactoring::get_available_refactors(
+				ctx,
+				selection(1, 1, 1, lines[1].length()));
+		REQUIRE_EQ(text_selection_available.size(), 5);
+		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
+		CHECK(text_selection_available[2].enabled);
+		CHECK(text_selection_available[2].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Extract method rejects unsafe or unprovable selections") {
@@ -970,6 +1128,29 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_extract_method(source, selection(1, 1, 1, 6), out);
 			CHECK_FALSE(r.ok);
 			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects text selection starting inside a statement") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 2, 1, lines[1].length()), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects text selection ending before statement text ends") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, 6), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(out.is_empty());
 		}
 		SUBCASE("rejects multiple output locals") {
 			const String source =

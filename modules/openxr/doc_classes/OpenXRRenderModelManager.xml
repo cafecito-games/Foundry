@@ -13,7 +13,7 @@
 		<member name="make_local_to_pose" type="String" setter="set_make_local_to_pose" getter="get_make_local_to_pose" default="&quot;&quot;">
 			Position render models local to this pose (this will adjust the position of the render models container node).
 		</member>
-		<member name="tracker" type="int" setter="set_tracker" getter="get_tracker" enum="OpenXRRenderModelManager.RenderModelTracker" default="0">
+		<member name="tracker" type="int" setter="set_tracker" getter="get_tracker" enum="OpenXRRenderModelManager.RenderModelTracker" default="RENDER_MODEL_TRACKER_ANY">
 			Limits render models to the specified tracker. Include: 0 = All render models, 1 = Render models not related to a tracker, 2 = Render models related to the left hand tracker, 3 = Render models related to the right hand tracker.
 		</member>
 	</members>

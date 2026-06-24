@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="op_type" type="int" setter="set_op_type" getter="get_op_type" enum="VisualShaderNodeRemap.OpType" default="0">
+		<member name="op_type" type="int" setter="set_op_type" getter="get_op_type" enum="VisualShaderNodeRemap.OpType" default="OP_TYPE_SCALAR">
 		</member>
 	</members>
 	<constants>

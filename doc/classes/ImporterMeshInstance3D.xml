@@ -7,7 +7,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="cast_shadow" type="int" setter="set_cast_shadows_setting" getter="get_cast_shadows_setting" enum="GeometryInstance3D.ShadowCastingSetting" default="1">
+		<member name="cast_shadow" type="int" setter="set_cast_shadows_setting" getter="get_cast_shadows_setting" enum="GeometryInstance3D.ShadowCastingSetting" default="SHADOW_CASTING_SETTING_ON">
 		</member>
 		<member name="layer_mask" type="int" setter="set_layer_mask" getter="get_layer_mask" default="1">
 		</member>
@@ -25,7 +25,7 @@
 		</member>
 		<member name="visibility_range_end_margin" type="float" setter="set_visibility_range_end_margin" getter="get_visibility_range_end_margin" default="0.0">
 		</member>
-		<member name="visibility_range_fade_mode" type="int" setter="set_visibility_range_fade_mode" getter="get_visibility_range_fade_mode" enum="GeometryInstance3D.VisibilityRangeFadeMode" default="0">
+		<member name="visibility_range_fade_mode" type="int" setter="set_visibility_range_fade_mode" getter="get_visibility_range_fade_mode" enum="GeometryInstance3D.VisibilityRangeFadeMode" default="VISIBILITY_RANGE_FADE_DISABLED">
 		</member>
 	</members>
 </class>

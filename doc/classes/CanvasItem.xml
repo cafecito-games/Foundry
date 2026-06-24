@@ -245,15 +245,15 @@
 			<param index="0" name="font" type="Font" />
 			<param index="1" name="pos" type="Vector2" />
 			<param index="2" name="text" type="String" />
-			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="0" />
+			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="HORIZONTAL_ALIGNMENT_LEFT" />
 			<param index="4" name="width" type="float" default="-1" />
 			<param index="5" name="font_size" type="int" default="16" />
 			<param index="6" name="max_lines" type="int" default="-1" />
 			<param index="7" name="modulate" type="Color" default="Color(1, 1, 1, 1)" />
-			<param index="8" name="brk_flags" type="int" enum="TextServer.LineBreakFlag" is_bitfield="true" default="3" />
-			<param index="9" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="3" />
-			<param index="10" name="direction" type="int" enum="TextServer.Direction" default="0" />
-			<param index="11" name="orientation" type="int" enum="TextServer.Orientation" default="0" />
+			<param index="8" name="brk_flags" type="int" enum="TextServer.LineBreakFlag" is_bitfield="true" default="BREAK_WORD_BOUND | BREAK_MANDATORY" />
+			<param index="9" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="JUSTIFICATION_WORD_BOUND | JUSTIFICATION_KASHIDA" />
+			<param index="10" name="direction" type="int" enum="TextServer.Direction" default="DIRECTION_AUTO" />
+			<param index="11" name="orientation" type="int" enum="TextServer.Orientation" default="ORIENTATION_HORIZONTAL" />
 			<param index="12" name="oversampling" type="float" default="0.0" />
 			<description>
 				Breaks [param text] into lines and draws it using the specified [param font] at the [param pos] in local space (top-left corner). The text will have its color multiplied by [param modulate]. If [param width] is greater than or equal to 0, the text will be clipped if it exceeds the specified width. If [param oversampling] is greater than zero, it is used as font oversampling factor, otherwise viewport oversampling settings are used.
@@ -264,16 +264,16 @@
 			<param index="0" name="font" type="Font" />
 			<param index="1" name="pos" type="Vector2" />
 			<param index="2" name="text" type="String" />
-			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="0" />
+			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="HORIZONTAL_ALIGNMENT_LEFT" />
 			<param index="4" name="width" type="float" default="-1" />
 			<param index="5" name="font_size" type="int" default="16" />
 			<param index="6" name="max_lines" type="int" default="-1" />
 			<param index="7" name="size" type="int" default="1" />
 			<param index="8" name="modulate" type="Color" default="Color(1, 1, 1, 1)" />
-			<param index="9" name="brk_flags" type="int" enum="TextServer.LineBreakFlag" is_bitfield="true" default="3" />
-			<param index="10" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="3" />
-			<param index="11" name="direction" type="int" enum="TextServer.Direction" default="0" />
-			<param index="12" name="orientation" type="int" enum="TextServer.Orientation" default="0" />
+			<param index="9" name="brk_flags" type="int" enum="TextServer.LineBreakFlag" is_bitfield="true" default="BREAK_WORD_BOUND | BREAK_MANDATORY" />
+			<param index="10" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="JUSTIFICATION_WORD_BOUND | JUSTIFICATION_KASHIDA" />
+			<param index="11" name="direction" type="int" enum="TextServer.Direction" default="DIRECTION_AUTO" />
+			<param index="12" name="orientation" type="int" enum="TextServer.Orientation" default="ORIENTATION_HORIZONTAL" />
 			<param index="13" name="oversampling" type="float" default="0.0" />
 			<description>
 				Breaks [param text] to the lines and draws text outline using the specified [param font] at the [param pos] in local space (top-left corner). The text will have its color multiplied by [param modulate]. If [param width] is greater than or equal to 0, the text will be clipped if it exceeds the specified width. If [param oversampling] is greater than zero, it is used as font oversampling factor, otherwise viewport oversampling settings are used.
@@ -370,13 +370,13 @@
 			<param index="0" name="font" type="Font" />
 			<param index="1" name="pos" type="Vector2" />
 			<param index="2" name="text" type="String" />
-			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="0" />
+			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="HORIZONTAL_ALIGNMENT_LEFT" />
 			<param index="4" name="width" type="float" default="-1" />
 			<param index="5" name="font_size" type="int" default="16" />
 			<param index="6" name="modulate" type="Color" default="Color(1, 1, 1, 1)" />
-			<param index="7" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="3" />
-			<param index="8" name="direction" type="int" enum="TextServer.Direction" default="0" />
-			<param index="9" name="orientation" type="int" enum="TextServer.Orientation" default="0" />
+			<param index="7" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="JUSTIFICATION_WORD_BOUND | JUSTIFICATION_KASHIDA" />
+			<param index="8" name="direction" type="int" enum="TextServer.Direction" default="DIRECTION_AUTO" />
+			<param index="9" name="orientation" type="int" enum="TextServer.Orientation" default="ORIENTATION_HORIZONTAL" />
 			<param index="10" name="oversampling" type="float" default="0.0" />
 			<description>
 				Draws [param text] using the specified [param font] at the [param pos] in local space (bottom-left corner using the baseline of the font). The text will have its color multiplied by [param modulate]. If [param width] is greater than or equal to 0, the text will be clipped if it exceeds the specified width. If [param oversampling] is greater than zero, it is used as font oversampling factor, otherwise viewport oversampling settings are used.
@@ -397,14 +397,14 @@
 			<param index="0" name="font" type="Font" />
 			<param index="1" name="pos" type="Vector2" />
 			<param index="2" name="text" type="String" />
-			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="0" />
+			<param index="3" name="alignment" type="int" enum="HorizontalAlignment" default="HORIZONTAL_ALIGNMENT_LEFT" />
 			<param index="4" name="width" type="float" default="-1" />
 			<param index="5" name="font_size" type="int" default="16" />
 			<param index="6" name="size" type="int" default="1" />
 			<param index="7" name="modulate" type="Color" default="Color(1, 1, 1, 1)" />
-			<param index="8" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="3" />
-			<param index="9" name="direction" type="int" enum="TextServer.Direction" default="0" />
-			<param index="10" name="orientation" type="int" enum="TextServer.Orientation" default="0" />
+			<param index="8" name="justification_flags" type="int" enum="TextServer.JustificationFlag" is_bitfield="true" default="JUSTIFICATION_WORD_BOUND | JUSTIFICATION_KASHIDA" />
+			<param index="9" name="direction" type="int" enum="TextServer.Direction" default="DIRECTION_AUTO" />
+			<param index="10" name="orientation" type="int" enum="TextServer.Orientation" default="ORIENTATION_HORIZONTAL" />
 			<param index="11" name="oversampling" type="float" default="0.0" />
 			<description>
 				Draws [param text] outline using the specified [param font] at the [param pos] in local space (bottom-left corner using the baseline of the font). The text will have its color multiplied by [param modulate]. If [param width] is greater than or equal to 0, the text will be clipped if it exceeds the specified width. If [param oversampling] is greater than zero, it is used as font oversampling factor, otherwise viewport oversampling settings are used.
@@ -655,7 +655,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="clip_children" type="int" setter="set_clip_children_mode" getter="get_clip_children_mode" enum="CanvasItem.ClipChildrenMode" default="0">
+		<member name="clip_children" type="int" setter="set_clip_children_mode" getter="get_clip_children_mode" enum="CanvasItem.ClipChildrenMode" default="CLIP_CHILDREN_DISABLED">
 			The mode in which this node clips its children, acting as a mask.
 			[b]Note:[/b] Clipping nodes cannot be nested or placed within a [CanvasGroup]. If an ancestor of this node clips its children or is a [CanvasGroup], then this node's clip mode should be set to [constant CLIP_CHILDREN_DISABLED] to avoid unexpected behavior.
 		</member>
@@ -675,10 +675,10 @@
 		<member name="show_behind_parent" type="bool" setter="set_draw_behind_parent" getter="is_draw_behind_parent_enabled" default="false">
 			If [code]true[/code], this node draws behind its parent.
 		</member>
-		<member name="texture_filter" type="int" setter="set_texture_filter" getter="get_texture_filter" enum="CanvasItem.TextureFilter" default="0">
+		<member name="texture_filter" type="int" setter="set_texture_filter" getter="get_texture_filter" enum="CanvasItem.TextureFilter" default="TEXTURE_FILTER_PARENT_NODE">
 			The filtering mode used to render this [CanvasItem]'s texture(s).
 		</member>
-		<member name="texture_repeat" type="int" setter="set_texture_repeat" getter="get_texture_repeat" enum="CanvasItem.TextureRepeat" default="0">
+		<member name="texture_repeat" type="int" setter="set_texture_repeat" getter="get_texture_repeat" enum="CanvasItem.TextureRepeat" default="TEXTURE_REPEAT_PARENT_NODE">
 			The repeating mode used to render this [CanvasItem]'s texture(s). It affects what happens when the texture is sampled outside its extents, for example by setting a [member Sprite2D.region_rect] that is larger than the texture or assigning [Polygon2D] UV points outside the texture.
 			[b]Note:[/b] [TextureRect] is not affected by [member texture_repeat], as it uses its own texture repeating implementation.
 		</member>

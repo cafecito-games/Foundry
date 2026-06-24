@@ -30,6 +30,7 @@
 
 #include "gdscript_extend_parser.h"
 
+#include "../editor/gdscript_docgen.h"
 #include "../gdscript.h"
 #include "../gdscript_analyzer.h"
 #include "../gdscript_position.h"
@@ -252,7 +253,13 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 					symbol.detail += ": " + m.get_datatype().to_string();
 				}
 				if (m.variable->initializer != nullptr && m.variable->initializer->is_constant) {
-					symbol.detail += " = " + m.variable->initializer->reduced_value.to_json_string();
+					const GDScriptParser::DataType var_type = m.get_datatype();
+					const Variant &reduced_value = m.variable->initializer->reduced_value;
+					if (var_type.kind == GDScriptParser::DataType::ENUM && !var_type.enum_values.is_empty() && reduced_value.get_type() == Variant::INT) {
+						symbol.detail += " = " + GDScriptDocGen::docvalue_from_enum_value(reduced_value, var_type.enum_values);
+					} else {
+						symbol.detail += " = " + reduced_value.to_json_string();
+					}
 				}
 
 				symbol.documentation = m.variable->doc_data.description;
@@ -476,7 +483,13 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 			parameters += ": " + parameter->get_datatype().to_string();
 		}
 		if (parameter->initializer != nullptr) {
-			parameters += " = " + parameter->initializer->reduced_value.to_json_string();
+			const GDScriptParser::DataType param_type = parameter->get_datatype();
+			const Variant &reduced_value = parameter->initializer->reduced_value;
+			if (param_type.kind == GDScriptParser::DataType::ENUM && !param_type.enum_values.is_empty() && reduced_value.get_type() == Variant::INT) {
+				parameters += " = " + GDScriptDocGen::docvalue_from_enum_value(reduced_value, param_type.enum_values);
+			} else {
+				parameters += " = " + reduced_value.to_json_string();
+			}
 		}
 	}
 	if (p_func->is_vararg()) {
