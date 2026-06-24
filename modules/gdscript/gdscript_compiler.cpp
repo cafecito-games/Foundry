@@ -2513,8 +2513,8 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	}
 
 	if (p_func) {
-		// Abstract functions have no executable body, but MethodInfo must still expose the declared contract.
-		if (p_func->is_abstract || p_func->body->has_return) {
+		// Abstract functions have no executable body, but MethodInfo must still expose annotated return contracts.
+		if ((p_func->is_abstract && p_func->return_type != nullptr) || p_func->body->has_return) {
 			gd_function->return_type = _gdtype_from_datatype(p_func->get_datatype(), p_script);
 			method_info.return_val = p_func->get_datatype().to_property_info(String());
 		} else {

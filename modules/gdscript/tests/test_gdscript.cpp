@@ -995,6 +995,9 @@ extends RefCounted
 @abstract
 func required_contract(amount: int, label: String = "default") -> bool
 
+@abstract
+func untyped_required_contract()
+
 func implemented() -> void:
 	pass
 )",
@@ -1038,6 +1041,11 @@ func implemented() -> void:
 	const MethodInfo reflected_required_info = find_method_info(script_methods, SNAME("required_contract"));
 	CHECK_EQ(reflected_required_info.name, SNAME("required_contract"));
 	CHECK((reflected_required_info.flags & METHOD_FLAG_VIRTUAL_REQUIRED) != 0);
+
+	const MethodInfo untyped_required_info = script->get_method_info(SNAME("untyped_required_contract"));
+	CHECK_EQ(untyped_required_info.name, SNAME("untyped_required_contract"));
+	CHECK((untyped_required_info.flags & METHOD_FLAG_VIRTUAL_REQUIRED) != 0);
+	CHECK_EQ(untyped_required_info.return_val.type, Variant::NIL);
 
 	const MethodInfo implemented_info = script->get_method_info(SNAME("implemented"));
 	CHECK_EQ(implemented_info.name, SNAME("implemented"));
