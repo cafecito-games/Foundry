@@ -1101,15 +1101,32 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			}
 			result.type_arguments.clear();
 			const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = result.class_type->type_parameters;
-			bool bound_violation = false;
+
+			// Resolve every argument first so that bound checking can substitute the concrete argument
+			// for any sibling parameter, regardless of declaration order. Arguments that fail to resolve
+			// already reported an error and are excluded from bound checking to avoid double diagnostics.
+			Vector<bool> argument_failed;
 			for (int i = 0; i < p_type->container_types.size(); i++) {
 				const int errors_before = parser->get_errors().size();
-				const GDScriptParser::DataType argument = type_from_metatype(resolve_datatype(p_type->container_types[i]));
-				const bool argument_resolution_failed = parser->get_errors().size() > errors_before;
-				result.type_arguments.push_back(argument);
+				result.type_arguments.push_back(type_from_metatype(resolve_datatype(p_type->container_types[i])));
+				argument_failed.push_back(parser->get_errors().size() > errors_before);
+			}
 
+			// Bind every parameter to its argument so a dependent bound like `[U: Resource, T: U]` (or its
+			// forward-referencing form `[T: U, U: Resource]`) is checked against the concrete argument
+			// supplied for the referenced sibling.
+			HashMap<StringName, GDScriptParser::DataType> bindings;
+			for (int i = 0; i < result.type_arguments.size(); i++) {
 				const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
-				if (parameter == nullptr || parameter->bound == nullptr || argument_resolution_failed) {
+				if (parameter != nullptr && parameter->identifier != nullptr) {
+					bindings.insert(parameter->identifier->name, result.type_arguments[i]);
+				}
+			}
+
+			bool bound_violation = false;
+			for (int i = 0; i < result.type_arguments.size(); i++) {
+				const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+				if (parameter == nullptr || parameter->bound == nullptr || argument_failed[i]) {
 					continue;
 				}
 				// Resolve the bound in the generic class's own scope so relative bound names bind to the
@@ -1127,18 +1144,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				if (!bound.is_set() || bound.is_variant()) {
 					continue;
 				}
-				// Substitute the arguments bound to earlier parameters so a dependent bound like
-				// `[U: Resource, T: U]` is checked against the concrete argument supplied for `U`.
-				HashMap<StringName, GDScriptParser::DataType> bindings;
-				for (int j = 0; j < result.type_arguments.size(); j++) {
-					const GDScriptParser::TypeParameterNode *bound_parameter = type_parameters[j];
-					if (bound_parameter != nullptr && bound_parameter->identifier != nullptr) {
-						bindings.insert(bound_parameter->identifier->name, result.type_arguments[j]);
-					}
-				}
 				const GDScriptParser::DataType effective_bound = bindings.is_empty() ? bound : GDScriptParser::DataType::substitute(bound, bindings);
-				if (!type_argument_satisfies_bound(argument, effective_bound)) {
-					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", argument.to_string(), effective_bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
+				if (!type_argument_satisfies_bound(result.type_arguments[i], effective_bound)) {
+					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", result.type_arguments[i].to_string(), effective_bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
 					bound_violation = true;
 				}
 			}
