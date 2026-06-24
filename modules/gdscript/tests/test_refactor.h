@@ -498,6 +498,95 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("find_candidates collects all type annotations without a caret") {
+		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd");
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		// The fixture's annotatable declarations are: member_score (line 0, enabled),
+		// member_typed (line 1, disabled: already typed), the amount parameter (line 3,
+		// enabled), make_total's inferred return type (line 3, disabled: the return-less
+		// body yields no concrete annotation), local_name (line 4, enabled), and
+		// nested_flag (line 6, enabled).
+		int enabled_count = 0;
+		int disabled_count = 0;
+		bool saw_member_score = false;
+		bool saw_nested_flag = false;
+		bool saw_disabled_at_line_1 = false;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			CHECK_EQ(candidate.kind, RefactorKind::ADD_TYPE_ANNOTATION);
+			if (candidate.enabled) {
+				enabled_count++;
+				REQUIRE_FALSE(candidate.edits.is_empty());
+				if (candidate.line == 0) {
+					saw_member_score = true;
+					CHECK_EQ(candidate.edits[0].new_text, ": int = ");
+				}
+				if (candidate.line == 6) {
+					saw_nested_flag = true;
+				}
+			} else {
+				disabled_count++;
+				CHECK_FALSE(candidate.disabled_reason.is_empty());
+				if (candidate.line == 1) {
+					saw_disabled_at_line_1 = true; // member_typed is already typed.
+				}
+			}
+		}
+		CHECK(saw_member_score);
+		CHECK(saw_nested_flag);
+		CHECK(saw_disabled_at_line_1);
+		CHECK_EQ(enabled_count, 4);
+		CHECK_EQ(disabled_count, 2);
+		CHECK_EQ(result.candidates.size(), 6);
+	}
+
+	TEST_CASE("find_candidates rejects unsupported refactor kinds") {
+		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd");
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::RENAME);
+		CHECK_FALSE(result.ok);
+		CHECK_EQ(result.error_message, "Headless candidate collection is not implemented for this refactor.");
+	}
+
+	TEST_CASE("find_candidates edit matches the caret-driven path") {
+		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd");
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *member_score = nullptr;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			if (candidate.enabled && candidate.line == 0) {
+				member_score = &candidate;
+				break;
+			}
+		}
+		REQUIRE(member_score != nullptr);
+
+		RefactorParams params;
+		RefactorResult caret_result = GDScriptRefactoring::prepare(ctx, caret(0, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+		REQUIRE(caret_result.ok);
+		REQUIRE_EQ(caret_result.edits.size(), 1);
+		CHECK_EQ(member_score->edits[0].new_text, caret_result.edits[0].new_text);
+		CHECK_EQ(member_score->edits[0].start_line, caret_result.edits[0].start_line);
+		CHECK_EQ(member_score->edits[0].start_column, caret_result.edits[0].start_column);
+		CHECK_EQ(member_score->edits[0].end_line, caret_result.edits[0].end_line);
+		CHECK_EQ(member_score->edits[0].end_column, caret_result.edits[0].end_column);
+
+		// The headless disabled_reason for an already-typed declaration must match the
+		// caret path's error_message for the same declaration.
+		const RefactorCandidate *member_typed = nullptr;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			if (!candidate.enabled && candidate.line == 1) {
+				member_typed = &candidate;
+				break;
+			}
+		}
+		REQUIRE(member_typed != nullptr);
+		RefactorResult typed_caret = GDScriptRefactoring::prepare(ctx, caret(1, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+		CHECK_FALSE(typed_caret.ok);
+		CHECK_EQ(typed_caret.error_message, member_typed->disabled_reason);
+	}
+
 	TEST_CASE("Extract variable inserts typed local and replaces selected expression") {
 		SUBCASE("return expression") {
 			const String source =

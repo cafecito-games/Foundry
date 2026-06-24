@@ -75,6 +75,22 @@ struct RefactorAvailability {
 	String disabled_reason;
 };
 
+// One independently-applicable refactor opportunity found without a caret.
+struct RefactorCandidate {
+	RefactorKind kind = RefactorKind::ADD_TYPE_ANNOTATION;
+	bool enabled = false; // false => found but not applicable.
+	String disabled_reason; // Populated when !enabled.
+	int line = -1; // 0-based anchor line of the declaration.
+	int column = -1; // 0-based anchor column.
+	Vector<RefactorTextEdit> edits; // Active-file edits (reuses RefactorTextEdit).
+};
+
+struct RefactorCandidatesResult {
+	bool ok = false;
+	String error_message; // Set only when the file cannot be analyzed at all.
+	Vector<RefactorCandidate> candidates;
+};
+
 struct RefactorResult {
 	bool ok = false;
 	String error_message;
@@ -121,6 +137,7 @@ class GDScriptRefactoring {
 public:
 	static Vector<RefactorAvailability> get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location);
 	static RefactorResult prepare(const RefactorContext &p_context, const RefactorLocation &p_location, RefactorKind p_kind, const RefactorParams &p_params);
+	static RefactorCandidatesResult find_candidates(const RefactorContext &p_context, RefactorKind p_kind);
 };
 
 #endif // TOOLS_ENABLED

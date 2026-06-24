@@ -785,7 +785,7 @@ bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignme
 			is_self_attribute(p_assignment->assignee);
 }
 
-bool find_assignable_type_annotation(const RefactorLocation *p_location, const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate) {
+bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate) {
 	if (p_assignable == nullptr || p_assignable->identifier == nullptr) {
 		return false;
 	}
@@ -798,7 +798,7 @@ bool find_assignable_type_annotation(const RefactorLocation *p_location, const V
 	const String line = p_lines[line_index];
 	int name_start = 0;
 	int name_end = 0;
-	const RefactorLocation *identifier_location = p_has_keyword ? nullptr : p_location;
+	const RefactorLocation *identifier_location = nullptr; // Collect mode resolves the declaration identifier without caret scoping.
 	if (!get_identifier_text_span(p_lines, line_index, p_assignable->identifier, identifier_location, name_start, name_end)) {
 		return false;
 	}
@@ -2733,7 +2733,7 @@ void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScr
 
 void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates) {
 	TypeAnnotationCandidate candidate;
-	if (find_assignable_type_annotation(nullptr, p_lines, p_assignable, p_kind, p_has_keyword, candidate) && candidate.matched) {
+	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate) && candidate.matched) {
 		r_candidates.push_back(candidate);
 	}
 }
@@ -3187,6 +3187,57 @@ RefactorResult prepare_type_annotation(
 	return result;
 }
 
+RefactorCandidatesResult collect_type_annotation_candidates(
+		const RefactorContext &p_context,
+		const GDScriptParseResultProvider *p_parse_results) {
+	RefactorCandidatesResult result;
+	const Vector<String> lines = p_context.source.split("\n");
+
+	const GDScriptParser::ClassNode *tree = nullptr;
+#ifndef GDSCRIPT_NO_LSP
+	if (p_parse_results != nullptr) {
+		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), lines)) {
+			if (lsp_parser->parse_result != OK) {
+				result.error_message = "Cannot analyze this script.";
+				return result;
+			}
+			tree = lsp_parser->get_tree();
+		}
+	}
+#endif // GDSCRIPT_NO_LSP
+
+	GDScriptParser parser;
+	if (tree == nullptr) {
+		Error err = parser.parse(p_context.source, p_context.path, false);
+		if (err == OK) {
+			GDScriptAnalyzer analyzer(&parser);
+			err = analyzer.analyze();
+		}
+		if (err != OK) {
+			result.error_message = "Cannot analyze this script.";
+			return result;
+		}
+		tree = parser.get_tree();
+	}
+
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree);
+	for (const TypeAnnotationCandidate &candidate : candidates) {
+		RefactorCandidate public_candidate;
+		public_candidate.kind = RefactorKind::ADD_TYPE_ANNOTATION;
+		public_candidate.enabled = candidate.enabled;
+		public_candidate.disabled_reason = candidate.disabled_reason;
+		public_candidate.line = candidate.line;
+		public_candidate.column = candidate.caret_span_start; // Anchor at the start of the declaration span.
+		if (candidate.enabled) {
+			public_candidate.edits.push_back(candidate.edit);
+		}
+		result.candidates.push_back(public_candidate);
+	}
+	result.ok = true;
+	return result;
+}
+
 } // namespace
 
 #ifndef GDSCRIPT_NO_LSP
@@ -3533,6 +3584,23 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 	result.ok = false;
 	result.error_message = "Refactor not implemented.";
 	return result;
+}
+
+RefactorCandidatesResult GDScriptRefactoring::find_candidates(const RefactorContext &p_context, RefactorKind p_kind) {
+	if (p_kind != RefactorKind::ADD_TYPE_ANNOTATION) {
+		RefactorCandidatesResult result;
+		result.error_message = "Headless candidate collection is not implemented for this refactor.";
+		return result;
+	}
+
+#ifndef GDSCRIPT_NO_LSP
+	RefactorParseResultProviderScope parse_results(p_context);
+	const GDScriptParseResultProvider *parse_result_provider = parse_results.get();
+#else
+	const GDScriptParseResultProvider *parse_result_provider = nullptr;
+#endif // GDSCRIPT_NO_LSP
+
+	return collect_type_annotation_candidates(p_context, parse_result_provider);
 }
 
 #endif // TOOLS_ENABLED
