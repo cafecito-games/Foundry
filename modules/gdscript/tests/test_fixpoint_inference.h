@@ -232,6 +232,60 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Run does not commit an edit that would break a dependent") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/fixpoint_provider.gd";
+		const String provider_source =
+				"func get_value():\n"
+				"\treturn 42\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		// The consumer uses preload so GDScriptCache records a parser inverse dependency
+		// from the provider back to the consumer, which the harness needs to re-analyze
+		// the consumer when verifying changes to the provider.
+		const String consumer_path = "res://refactor/fixpoint_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/fixpoint_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<String> paths = { provider_path, consumer_path };
+		FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
+		REQUIRE(result.ok);
+
+		// The run reaches a real fixpoint: the only candidate is permanently rejected, so
+		// a pass eventually applies nothing rather than the bound merely being exhausted.
+		CHECK(result.converged);
+
+		// The breaking return-type edit must not have been committed.
+		const String provider_after = FileAccess::get_file_as_string(provider_path);
+		CHECK_FALSE(provider_after.contains("func get_value() -> int:"));
+		CHECK_EQ(provider_after, provider_source);
+
+		// The consumer is already fully typed (its locals and return type are annotated),
+		// so the run has nothing to legitimately apply there and must leave it untouched.
+		const String consumer_after = FileAccess::get_file_as_string(consumer_path);
+		CHECK_EQ(consumer_after, consumer_source);
+
+		// It is reported as a skip.
+		bool reported = false;
+		for (const FixpointSkipped &skip : result.skipped) {
+			if (skip.path == provider_path) {
+				reported = true;
+			}
+		}
+		CHECK(reported);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Edge cases: empty input, unreadable path, unanalyzable file") {
 		// Initialize the GDScript test project so res:// resolves to the test
 		// scripts directory and the analyzer can read dependencies from disk.

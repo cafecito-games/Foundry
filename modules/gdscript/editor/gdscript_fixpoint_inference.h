@@ -39,6 +39,9 @@
 struct FixpointInferenceOptions {
 	// 0 => auto: (first-pass candidate count) + 1, clamped by a hard ceiling.
 	int max_iterations = 0;
+	// Strict modes are forwarded to per-pass verification (issue #34).
+	bool strict_null_checks = false;
+	bool strict_dynamic_checks = false;
 };
 
 // Before/after record for one file the run modified.
@@ -73,13 +76,12 @@ struct FixpointInferenceResult {
 	Vector<FixpointSkipped> skipped;
 };
 
-// Verification re-analyzes only each edited file, never its dependents. An accepted
-// annotation can therefore introduce a new error in a caller (for example, typing
-// `func value() -> int` breaks a caller's `var x: String = value()`), and that change
-// is still committed because the caller is not re-analyzed. Re-analyzing inverse
-// dependents and rolling back conflicting changes is deferred to issue #34. Until that
-// lands, `ok == true` does not guarantee every dependent still analyzes cleanly, so
-// callers must not apply results to a real project before #34 gates this.
+// Each pass routes its accepted rewrites through GDScriptVerificationHarness::verify,
+// which re-analyzes the inverse-dependency closure of the edited files (bounded by the
+// run's path set) and rolls back any rewrite that introduces a new error in a
+// dependent. An edit that would break a caller is therefore rejected and reported as a
+// skip rather than committed. Dependents outside p_paths are not re-analyzed, so the
+// path set should cover the project being migrated.
 class GDScriptFixpointInference {
 public:
 	// Drives Add Type Annotation to a fixpoint over p_paths, writing accepted
