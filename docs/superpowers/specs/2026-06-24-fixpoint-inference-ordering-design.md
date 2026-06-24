@@ -194,18 +194,33 @@ measure of dependency depth.
 ### Verification granularity
 
 Per-file batch: apply all of a file's enabled candidates, verify once, and roll
-back the whole file's batch on failure. Because candidates are already restricted
-to types the analyzer resolves, verification is a safety net rather than the
-common path. Finer-grained, per-candidate verification is #34's responsibility.
+back the whole file's batch on failure. The verification gate is simply that the
+edited file still analyzes cleanly (`analyze() == OK`). Because `find_candidates`
+only produces candidates for a file that already analyzes cleanly (it returns
+`!ok` otherwise), this absolute gate is equivalent to "the applied annotations
+introduced no new errors" — a file that does not analyze yields no candidates in
+the first place, so there is no separate baseline to capture. Verification is a
+safety net rather than the common path. Finer-grained, per-candidate verification
+is #34's responsibility.
 
 ### Error handling
 
-- A path that cannot be read or initially analyzed sets `ok = false` and a
-  descriptive `error_message`; no files are modified.
+- A path that cannot be **read** is fatal: the run sets `ok = false` with a
+  descriptive `error_message` and modifies no files. (Capturing originals up front
+  requires every input to be readable.)
+- A path that **reads but does not analyze** is not fatal: it simply yields no
+  candidates and is left untouched while the rest of the working set proceeds.
+  This keeps a single broken file from aborting a whole-project migration. The
+  wizard surfaces such files through its own scan/report (#38/#41); honest
+  per-file diagnostics from the orchestrator itself are deferred to that layer.
 - A file whose batch fails verification is recorded in `skipped` and left
   untouched; the run continues for other files and remains `ok = true`.
+- Empty input is valid: the run does nothing and returns `ok = true` with no
+  changes.
 - The hard iteration ceiling guards against any non-convergence; reaching it is
   not an error but bounds the work.
+- `run()` mutates files on disk and global `GDScriptCache` state; it is not safe
+  to run concurrently with a live editing session or another `run()`.
 
 ## Testing
 
@@ -222,6 +237,10 @@ disk writes never touch committed fixtures.
 - **Termination on cycles:** a fixture where A and B reference each other; assert
   the run terminates (does not hit the ceiling spuriously, does not crash) and
   types what is provable.
+- **Edge cases:** empty input returns `ok = true` with no changes; an unreadable
+  path returns `ok = false` with an `error_message` and modifies nothing; a file
+  that reads but does not analyze is skipped while the rest of the set still
+  converges.
 - **Honest reporting:** assert `changed_files` before/after and
   `total_annotations_applied` match expectations.
 
