@@ -1521,6 +1521,28 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 
 	resolve_class_interface(p_class, p_source);
 
+	// A class flattens its applied traits' members — including method bodies — into
+	// itself at compile time. Identifiers inside a trait body only get their source
+	// resolved when that trait is fully solved, so external traits must be raised to
+	// `FULLY_SOLVED` here before the implementer's own body (and later the compiler)
+	// flattens them. Only the directly applied traits are raised: a trait reached
+	// transitively is fully solved by the body resolution of the trait that applies it
+	// (reachable from that trait's parser, not necessarily this one). Inline traits are
+	// solved as members of this same parser.
+	for (const GDScriptParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		GDScriptParser::ClassNode *trait = trait_use.resolved_trait;
+		if (trait == nullptr) {
+			continue;
+		}
+		Ref<GDScriptParserRef> trait_parser_ref = ensure_cached_external_parser_for_class(trait, p_class, "Trying to resolve trait body for flattening", p_source);
+		if (trait_parser_ref.is_valid()) {
+			Error err = trait_parser_ref->raise_status(GDScriptParserRef::FULLY_SOLVED);
+			if (err != OK) {
+				push_error(vformat(R"(Could not resolve body of trait "%s" applied by "%s".)", _class_or_trait_name(trait), _class_or_trait_name(p_class)), p_source);
+			}
+		}
+	}
+
 	GDScriptParser::DataType base_type = p_class->base_type;
 	if (base_type.kind == GDScriptParser::DataType::CLASS) {
 		GDScriptParser::ClassNode *base_class = base_type.class_type;
@@ -6081,7 +6103,10 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 	if (base_class != nullptr) {
 		get_class_node_current_scope_classes(base_class, &script_classes, p_identifier);
-		if (base_class->is_trait) {
+		// Flattened trait members are reachable from a class that applies the trait
+		// (directly or transitively), and from a trait that requires another trait.
+		// They are treated as instance-accessible members of the using scope.
+		if (base_class->is_trait || !base_class->used_traits.is_empty()) {
 			resolve_trait_uses(base_class, p_identifier);
 			for (GDScriptParser::ClassNode *trait : base_class->resolved_traits) {
 				if (script_classes.find(trait) == nullptr) {
@@ -8201,7 +8226,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		base_class = base_class->base_type.class_type;
 	}
 
-	if (found_function == nullptr && original_base_class != nullptr && original_base_class->is_trait) {
+	// Resolve calls to methods flattened in from applied traits, both when the base is a
+	// trait (trait-requires-trait) and when it is a class that applies traits directly.
+	if (found_function == nullptr && original_base_class != nullptr && (original_base_class->is_trait || !original_base_class->used_traits.is_empty())) {
 		resolve_trait_uses(original_base_class, p_source);
 		for (GDScriptParser::ClassNode *trait : original_base_class->resolved_traits) {
 			if (trait == nullptr || !trait->has_member(function_name)) {

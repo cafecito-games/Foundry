@@ -332,23 +332,38 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 					// Try methods and signals (can be Callable and Signal).
 					{
-						// Search upwards through parent classes:
+						// Search upwards through parent classes, including the members each
+						// class flattens in from applied traits (functions and signals are
+						// referenced by name off `self`/`class` at runtime, where the trait
+						// member has been flattened into the script).
 						const GDScriptParser::ClassNode *base_class = codegen.class_node;
 						while (base_class != nullptr) {
+							bool found_member = false;
+							GDScriptParser::ClassNode::Member member;
 							if (base_class->has_member(identifier)) {
-								const GDScriptParser::ClassNode::Member &member = base_class->get_member(identifier);
-								if (member.type == GDScriptParser::ClassNode::Member::FUNCTION || member.type == GDScriptParser::ClassNode::Member::SIGNAL) {
-									// Get like it was a property.
-									GDScriptCodeGenerator::Address temp = codegen.add_temporary(); // TODO: Get type here.
-
-									GDScriptCodeGenerator::Address base(GDScriptCodeGenerator::Address::SELF);
-									if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function->is_static) {
-										base = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::CLASS);
+								member = base_class->get_member(identifier);
+								found_member = true;
+							} else {
+								for (GDScriptParser::ClassNode *trait : base_class->resolved_traits) {
+									if (trait != nullptr && trait->has_member(identifier)) {
+										member = trait->get_member(identifier);
+										found_member = true;
+										break;
 									}
-
-									gen->write_get_named(temp, identifier, base);
-									return temp;
 								}
+							}
+
+							if (found_member && (member.type == GDScriptParser::ClassNode::Member::FUNCTION || member.type == GDScriptParser::ClassNode::Member::SIGNAL)) {
+								// Get like it was a property.
+								GDScriptCodeGenerator::Address temp = codegen.add_temporary(); // TODO: Get type here.
+
+								GDScriptCodeGenerator::Address base(GDScriptCodeGenerator::Address::SELF);
+								if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function->is_static) {
+									base = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::CLASS);
+								}
+
+								gen->write_get_named(temp, identifier, base);
+								return temp;
 							}
 							base_class = base_class->base_type.class_type;
 						}
@@ -2300,6 +2315,68 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 	return OK;
 }
 
+// Returns whether a trait member of the given kind is flattened into an implementer.
+// Variables, constants, enums, enum values, signals, and concrete functions are
+// flattened; abstract (required) functions are contracts the implementer satisfies
+// rather than bodies to copy, and inner classes and export groups are not flattened.
+static bool _is_flattenable_trait_member(const GDScriptParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+		case GDScriptParser::ClassNode::Member::ENUM:
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			return true;
+		case GDScriptParser::ClassNode::Member::FUNCTION:
+			return p_member.function != nullptr && !p_member.function->is_abstract;
+		default:
+			return false;
+	}
+}
+
+// Collects the trait members to flatten into an implementing class, in declaration
+// order across the class's transitively-resolved trait set. A member is skipped when a
+// member with the same name is already defined by the implementer or any of its
+// (GDScript) base classes — an explicit override that shadows the trait, matching how
+// the analyzer resolves such names — or when an earlier trait already contributed it,
+// so a diamond-reached trait is included exactly once.
+//
+// The trait member nodes are owned by other parsers' trees (for external traits); they
+// remain valid only while those parsers stay cached for the duration of compilation,
+// the same lifetime assumption the trait analyzer already relies on.
+void GDScriptCompiler::_collect_flattened_trait_members(const GDScriptParser::ClassNode *p_class, Vector<const GDScriptParser::ClassNode::Member *> &r_members) {
+	if (p_class->resolved_traits.is_empty()) {
+		return;
+	}
+
+	HashSet<StringName> defined;
+	for (const GDScriptParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
+		for (const GDScriptParser::ClassNode::Member &member : owner->members) {
+			const StringName name = member.get_name();
+			if (name != StringName()) {
+				defined.insert(name);
+			}
+		}
+	}
+
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (!_is_flattenable_trait_member(member)) {
+				continue;
+			}
+			const StringName name = member.get_name();
+			if (defined.has(name)) {
+				continue;
+			}
+			defined.insert(name);
+			r_members.push_back(&member);
+		}
+	}
+}
+
 GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class, const GDScriptParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda) {
 	r_error = OK;
 	CodeGen codegen;
@@ -2381,11 +2458,23 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	bool is_initializer = p_func && !p_for_lambda && p_func->identifier->name == GDScriptLanguage::get_singleton()->strings._init;
 	bool is_implicit_ready = !p_func && p_for_ready;
 
+	// The implicit initializer (and `@implicit_ready()`) must construct and initialize
+	// the variables flattened in from applied traits as well as the class's own, so
+	// trait state is set up per implementer.
+	Vector<const GDScriptParser::ClassNode::Member *> initializer_members;
+	if (!p_for_lambda && (is_implicit_initializer || is_implicit_ready)) {
+		for (int i = 0; i < p_class->members.size(); i++) {
+			initializer_members.push_back(&p_class->members[i]);
+		}
+		_collect_flattened_trait_members(p_class, initializer_members);
+	}
+
 	if (!p_for_lambda && is_implicit_initializer) {
 		// Initialize the default values for typed variables before anything.
 		// This avoids crashes if they are accessed with validated calls before being properly initialized.
 		// It may happen with out-of-order access or with `@onready` variables.
-		for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		for (const GDScriptParser::ClassNode::Member *member_ptr : initializer_members) {
+			const GDScriptParser::ClassNode::Member &member = *member_ptr;
 			if (member.type != GDScriptParser::ClassNode::Member::VARIABLE) {
 				continue;
 			}
@@ -2416,11 +2505,11 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	if (!p_for_lambda && (is_implicit_initializer || is_implicit_ready)) {
 		// Initialize class fields.
-		for (int i = 0; i < p_class->members.size(); i++) {
-			if (p_class->members[i].type != GDScriptParser::ClassNode::Member::VARIABLE) {
+		for (const GDScriptParser::ClassNode::Member *member_ptr : initializer_members) {
+			if (member_ptr->type != GDScriptParser::ClassNode::Member::VARIABLE) {
 				continue;
 			}
-			const GDScriptParser::VariableNode *field = p_class->members[i].variable;
+			const GDScriptParser::VariableNode *field = member_ptr->variable;
 			if (field->is_static) {
 				continue;
 			}
@@ -2579,10 +2668,18 @@ GDScriptFunction *GDScriptCompiler::_make_static_initializer(Error &r_error, GDS
 	// so the CLASS address (current class) can be used instead of `codegen.add_constant(p_script)`.
 	GDScriptCodeGenerator::Address class_addr(GDScriptCodeGenerator::Address::CLASS);
 
+	// Static variables flattened in from applied traits are initialized here too.
+	Vector<const GDScriptParser::ClassNode::Member *> static_members;
+	for (int i = 0; i < p_class->members.size(); i++) {
+		static_members.push_back(&p_class->members[i]);
+	}
+	_collect_flattened_trait_members(p_class, static_members);
+
 	// Initialize the default values for typed variables before anything.
 	// This avoids crashes if they are accessed with validated calls before being properly initialized.
 	// It may happen with out-of-order access or with `@onready` variables.
-	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+	for (const GDScriptParser::ClassNode::Member *member_ptr : static_members) {
+		const GDScriptParser::ClassNode::Member &member = *member_ptr;
 		if (member.type != GDScriptParser::ClassNode::Member::VARIABLE) {
 			continue;
 		}
@@ -2617,12 +2714,12 @@ GDScriptFunction *GDScriptCompiler::_make_static_initializer(Error &r_error, GDS
 		}
 	}
 
-	for (int i = 0; i < p_class->members.size(); i++) {
+	for (const GDScriptParser::ClassNode::Member *member_ptr : static_members) {
 		// Initialize static fields.
-		if (p_class->members[i].type != GDScriptParser::ClassNode::Member::VARIABLE) {
+		if (member_ptr->type != GDScriptParser::ClassNode::Member::VARIABLE) {
 			continue;
 		}
-		const GDScriptParser::VariableNode *field = p_class->members[i].variable;
+		const GDScriptParser::VariableNode *field = member_ptr->variable;
 		if (!field->is_static) {
 			continue;
 		}
@@ -2862,8 +2959,17 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 		}
 	}
 
+	// Flatten the applied traits' members into this script alongside the class's own
+	// members so their state, constants, signals, and methods are recompiled per
+	// implementer. Shadowed names and abstract requirements are filtered out here.
+	Vector<const GDScriptParser::ClassNode::Member *> members_to_compile;
 	for (int i = 0; i < p_class->members.size(); i++) {
-		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		members_to_compile.push_back(&p_class->members[i]);
+	}
+	_collect_flattened_trait_members(p_class, members_to_compile);
+
+	for (int i = 0; i < members_to_compile.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = *members_to_compile[i];
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::VARIABLE: {
 				const GDScriptParser::VariableNode *variable = member.variable;
@@ -3017,9 +3123,17 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 }
 
 Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser::ClassNode *p_class, bool p_keep_state) {
-	// Compile member functions, getters, and setters.
+	// Compile member functions, getters, and setters, including the bodies flattened in
+	// from applied traits. Trait functions are compiled against the implementing script
+	// so member accesses bind to the flattened member layout of this class.
+	Vector<const GDScriptParser::ClassNode::Member *> members_to_compile;
 	for (int i = 0; i < p_class->members.size(); i++) {
-		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		members_to_compile.push_back(&p_class->members[i]);
+	}
+	_collect_flattened_trait_members(p_class, members_to_compile);
+
+	for (int i = 0; i < members_to_compile.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = *members_to_compile[i];
 		if (member.type == member.FUNCTION) {
 			const GDScriptParser::FunctionNode *function = member.function;
 			Error err = OK;
@@ -3064,7 +3178,15 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 		}
 	}
 
-	if (p_class->has_static_data) {
+	bool traits_have_static_data = false;
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait != nullptr && trait->has_static_data) {
+			traits_have_static_data = true;
+			break;
+		}
+	}
+
+	if (p_class->has_static_data || traits_have_static_data) {
 		Error err = OK;
 		GDScriptFunction *func = _make_static_initializer(err, p_script, p_class);
 		p_script->static_initializer = func;
@@ -3121,7 +3243,10 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 	}
 #endif //DEBUG_ENABLED
 
-	has_static_data = p_class->has_static_data;
+	// Trait static data is flattened into this script, so it must drive `has_static_data`
+	// too — otherwise a class with only trait-provided static data would skip static-script
+	// registration and its flattened static state would not be pinned by the static cache.
+	has_static_data = p_class->has_static_data || traits_have_static_data;
 
 	for (int i = 0; i < p_class->members.size(); i++) {
 		if (p_class->members[i].type != GDScriptParser::ClassNode::Member::CLASS) {
