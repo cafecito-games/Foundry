@@ -204,13 +204,20 @@ TEST_CASE("[OS] Exit request flag") {
 	OS *os = OS::get_singleton();
 
 	const int saved_exit_code = os->get_exit_code();
+	const bool saved_exit_requested = os->is_exit_requested();
 
 	os->request_exit(123);
 	CHECK(os->is_exit_requested());
 	CHECK(os->get_exit_code() == 123);
 
-	// Restore the exit code so this test does not leak state into others.
-	os->set_exit_code(saved_exit_code);
+	// Restore the exit code and the process-global exit-request flag so this
+	// test does not leak state into others.
+	if (saved_exit_requested) {
+		os->request_exit(saved_exit_code);
+	} else {
+		os->clear_exit_request();
+		os->set_exit_code(saved_exit_code);
+	}
 }
 
 } // namespace TestOS

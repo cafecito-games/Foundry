@@ -338,6 +338,9 @@ public:
 	// request and ends the loop at the next frame boundary.
 	void request_exit(int p_exit_code = EXIT_FAILURE);
 	bool is_exit_requested() const;
+	// Clears a pending exit request. Intended for tests that exercise
+	// `request_exit` and must reset the process-global flag during teardown.
+	void clear_exit_request();
 
 	virtual int get_processor_count() const;
 	virtual String get_processor_name() const;
