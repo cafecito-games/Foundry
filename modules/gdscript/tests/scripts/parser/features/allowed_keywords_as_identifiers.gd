@@ -18,3 +18,7 @@ func test():
 	# New keyword for pattern guards.
 	var when = "when"
 	print(when)
+
+	# Contextual keyword for trait declarations.
+	var uses = "uses"
+	print(uses)

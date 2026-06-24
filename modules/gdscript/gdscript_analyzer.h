@@ -139,6 +139,7 @@ class GDScriptAnalyzer {
 	bool get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error);
 	bool is_namespace_chain_root_shadowed(GDScriptParser::IdentifierNode *p_identifier);
 	Error validate_imports();
+	Error validate_traits_not_implemented(GDScriptParser::ClassNode *p_class);
 #ifdef DEBUG_ENABLED
 	void validate_mixed_namespace_directory();
 #endif // DEBUG_ENABLED

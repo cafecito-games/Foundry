@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: "uses" clauses are parsed, but trait analysis is not implemented yet.

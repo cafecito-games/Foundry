@@ -2609,7 +2609,8 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 		"signal",
 		"static",
 		// Do not add `async` here: it is contextual and remains a valid identifier outside function modifiers.
-		"trait", // Reserved for potential future use.
+		"trait",
+		"trait_name",
 		"var",
 		// Other keywords.
 		"await",
@@ -2703,6 +2704,10 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 	 *
 	 * Before changing this function, please ask the current maintainer of EditorFileSystem.
 	 */
+
+	if (c->is_trait) {
+		return String();
+	}
 
 	if (r_base_type) {
 		const GDScriptParser::ClassNode *subclass = c;

@@ -61,6 +61,13 @@ TEST_CASE("[Modules][GDScript] Language reserved words include namespace declara
 	CHECK(reserved_words.has("namespace"));
 }
 
+TEST_CASE("[Modules][GDScript] Language reserved words include hard trait declarations") {
+	Vector<String> reserved_words = GDScriptLanguage::get_singleton()->get_reserved_words();
+	CHECK(reserved_words.has("trait"));
+	CHECK(reserved_words.has("trait_name"));
+	CHECK_FALSE(reserved_words.has("uses"));
+}
+
 static PackedStringArray parse_source_errors(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://namespace_import_test.gd", false);
@@ -134,6 +141,22 @@ static const GDScriptParser::ClassNode *find_parser_class(const GDScriptParser::
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		if (member.type != GDScriptParser::ClassNode::Member::CLASS || member.m_class == nullptr ||
 				member.m_class->identifier == nullptr) {
+			continue;
+		}
+		if (member.m_class->identifier->name == p_name) {
+			return member.m_class;
+		}
+	}
+
+	return nullptr;
+}
+
+static const GDScriptParser::ClassNode *find_parser_trait(const GDScriptParser::ClassNode *p_class, const StringName &p_name) {
+	ERR_FAIL_NULL_V(p_class, nullptr);
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::CLASS || member.m_class == nullptr ||
+				!member.m_class->is_trait || member.m_class->identifier == nullptr) {
 			continue;
 		}
 		if (member.m_class->identifier->name == p_name) {
@@ -372,6 +395,223 @@ class_name UsesShared
 	}
 	CHECK_EQ(root->imports[0], "shared");
 	CHECK_EQ(root->imports[1], "shared.types");
+}
+
+TEST_CASE("[Modules][GDScript] Parser stores global trait declarations and uses") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace characters.stats
+trait_name Damageable
+extends Node
+uses Trackable, shared.CombatTag
+
+signal died
+var health: int = 100
+)",
+			"user://damageable.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK(root->is_trait);
+	CHECK(root->trait_name_used);
+	CHECK(root->identifier != nullptr);
+	if (root->identifier == nullptr) {
+		return;
+	}
+	CHECK_EQ(root->identifier->name, SNAME("Damageable"));
+	CHECK_EQ(root->namespace_name, "characters.stats");
+	CHECK_EQ(root->qualified_global_name, "characters.stats.Damageable");
+	CHECK_EQ(root->fqcn, "characters.stats.Damageable");
+	CHECK_EQ(root->extends.size(), 1);
+	if (root->extends.size() != 1) {
+		return;
+	}
+	CHECK_EQ(root->extends[0]->name, SNAME("Node"));
+	CHECK_EQ(root->used_traits.size(), 2);
+	if (root->used_traits.size() != 2) {
+		return;
+	}
+	CHECK_EQ(root->used_traits[0].to_string(), "Trackable");
+	CHECK_EQ(root->used_traits[1].to_string(), "shared.CombatTag");
+}
+
+TEST_CASE("[Modules][GDScript] Parser stores inline traits and class uses") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+class_name Player
+extends Node
+uses Damageable, characters.Movable
+
+trait LocalTrait extends Node:
+	uses Trackable
+	func touch() -> void:
+		pass
+)",
+			"user://player.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK_FALSE(root->is_trait);
+	CHECK_FALSE(root->trait_name_used);
+	CHECK_EQ(root->used_traits.size(), 2);
+	if (root->used_traits.size() != 2) {
+		return;
+	}
+	CHECK_EQ(root->used_traits[0].to_string(), "Damageable");
+	CHECK_EQ(root->used_traits[1].to_string(), "characters.Movable");
+
+	const GDScriptParser::ClassNode *local_trait = find_parser_trait(root, SNAME("LocalTrait"));
+	CHECK(local_trait != nullptr);
+	if (local_trait == nullptr) {
+		return;
+	}
+	CHECK(local_trait->is_trait);
+	CHECK_FALSE(local_trait->trait_name_used);
+	CHECK_EQ(local_trait->outer, root);
+	CHECK_EQ(local_trait->fqcn, "Player::LocalTrait");
+	CHECK_EQ(local_trait->extends.size(), 1);
+	if (local_trait->extends.size() != 1) {
+		return;
+	}
+	CHECK_EQ(local_trait->extends[0]->name, SNAME("Node"));
+	CHECK_EQ(local_trait->used_traits.size(), 1);
+	if (local_trait->used_traits.size() != 1) {
+		return;
+	}
+	CHECK_EQ(local_trait->used_traits[0].to_string(), "Trackable");
+	CHECK(find_parser_function(local_trait, SNAME("touch")) != nullptr);
+}
+
+TEST_CASE("[Modules][GDScript] Parser stores inline root trait metadata without extends") {
+	const String script_path = "user://root_inline_trait.gd";
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+trait LocalTrait uses Trackable:
+	pass
+)",
+			script_path, false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *local_trait = find_parser_trait(root, SNAME("LocalTrait"));
+	CHECK(local_trait != nullptr);
+	if (local_trait == nullptr) {
+		return;
+	}
+	CHECK_EQ(local_trait->outer, root);
+	CHECK_EQ(local_trait->fqcn, GDScript::canonicalize_path(script_path) + "::LocalTrait");
+	CHECK_EQ(local_trait->used_traits.size(), 1);
+	if (local_trait->used_traits.size() != 1) {
+		return;
+	}
+	CHECK_EQ(local_trait->used_traits[0].to_string(), "Trackable");
+}
+
+TEST_CASE("[Modules][GDScript] Parser keeps uses available as an identifier") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+var uses := 1
+
+func echo(uses: int) -> int:
+	var nested := uses
+	return nested
+)",
+			"user://uses_identifier.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK(root->has_member(SNAME("uses")));
+	if (root->has_member(SNAME("uses"))) {
+		CHECK_EQ(root->get_member(SNAME("uses")).type, GDScriptParser::ClassNode::Member::VARIABLE);
+	}
+	CHECK(find_parser_function(root, SNAME("echo")) != nullptr);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects traits until trait semantics are implemented") {
+	GDScriptParser trait_parser;
+	Error err = trait_parser.parse(R"(
+trait_name Damageable
+)",
+			"user://damageable_trait_gate.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer trait_analyzer(&trait_parser);
+	err = trait_analyzer.analyze();
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(trait_parser, R"(GDScript trait declarations are parsed, but trait analysis is not implemented yet.)"));
+
+	GDScriptParser uses_parser;
+	err = uses_parser.parse(R"(
+class_name Player
+uses Damageable
+)",
+			"user://player_trait_gate.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer uses_analyzer(&uses_parser);
+	err = uses_analyzer.analyze();
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(uses_parser, R"("uses" clauses are parsed, but trait analysis is not implemented yet.)"));
+
+	GDScriptParser inline_trait_parser;
+	err = inline_trait_parser.parse(R"(
+class_name Player
+
+trait LocalTrait:
+	pass
+)",
+			"user://player_inline_trait_gate.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer inline_trait_analyzer(&inline_trait_parser);
+	err = inline_trait_analyzer.analyze();
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(has_parser_error(inline_trait_parser, R"(GDScript trait declarations are parsed, but trait analysis is not implemented yet.)"));
 }
 
 TEST_CASE("[Modules][GDScript] Parser accepts contextual async function modifiers") {
@@ -783,6 +1023,56 @@ import characters
 			R"("import" declarations must appear before "class_name", "extends", and body declarations.)");
 }
 
+TEST_CASE("[Modules][GDScript] Parser rejects invalid trait declaration ordering") {
+	check_parse_source_error(R"(
+class_name Actor
+trait_name Damageable
+)",
+			R"("trait_name" cannot be combined with "class_name" in the same file.)");
+
+	check_parse_source_error(R"(
+trait_name Damageable
+class_name Actor
+)",
+			R"("class_name" cannot be combined with "trait_name" in the same file.)");
+
+	check_parse_source_error(R"(
+func body() -> void:
+	pass
+uses Damageable
+)",
+			R"("uses" declarations must appear before class body declarations.)");
+
+	check_parse_source_error(R"(
+class Broken:
+	func body() -> void:
+		pass
+	uses Damageable
+)",
+			R"("uses" declarations must appear before class body declarations.)");
+
+	check_parse_source_error(R"(
+class_name Actor
+uses Damageable
+uses Trackable
+)",
+			R"(Cannot use "uses" more than once in the same class.)");
+
+	check_parse_source_error(R"(
+class Broken:
+	uses Damageable
+	uses Trackable
+)",
+			R"(Cannot use "uses" more than once in the same class.)");
+
+	check_parse_source_error(R"(
+class Broken:
+	uses Damageable
+	extends Node
+)",
+			R"("extends" must appear before "uses".)");
+}
+
 TEST_CASE("[Modules][GDScript] Global class names use namespace-qualified identity") {
 	TempScriptFile script("qualified_global_name.gd", R"(
 namespace characters
@@ -810,6 +1100,19 @@ extends Node
 	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path);
 
 	CHECK_EQ(class_name, "PlainCharacter");
+}
+
+TEST_CASE("[Modules][GDScript] Trait names do not register as global classes before analysis support") {
+	TempScriptFile script("global_trait_name.gd", R"(
+trait_name Damageable
+)");
+
+	String base_type;
+	bool is_abstract = true;
+	bool is_tool = true;
+	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr, &is_abstract, &is_tool);
+
+	CHECK(class_name.is_empty());
 }
 
 TEST_CASE("[Modules][GDScript] Loaded namespaced global class keeps qualified runtime identity") {
