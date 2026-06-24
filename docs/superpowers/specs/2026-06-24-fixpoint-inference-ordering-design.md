@@ -163,28 +163,33 @@ bound = p_options.max_iterations > 0 ? p_options.max_iterations
 iteration = 0
 loop:
     iteration += 1
-    applied_this_pass = 0
+    snapshot = read every path's current source from disk   // one consistent view
+    pending = {}                                            // path -> (new_source, count)
     for each path:
-        source = read current source fresh from disk
-        candidates = find_candidates({path, source}, ADD_TYPE_ANNOTATION)
+        candidates = find_candidates({path, snapshot[path]}, ADD_TYPE_ANNOTATION)
         enabled = candidates where enabled
         if enabled is empty: continue
-        new_source = apply(source, enabled edits)
+        new_source = apply(snapshot[path], enabled edits)
         if verify(path, new_source): // re-parse + analyze, no new errors vs baseline
-            write new_source to disk
-            invalidate GDScriptCache for path
-            applied_this_pass += enabled.size()
+            pending[path] = (new_source, enabled.size())
         else:
             record FixpointSkipped for the file; leave it unchanged
+    applied_this_pass = 0
+    for each (path, (new_source, count)) in pending:        // commit at pass end
+        write new_source to disk
+        invalidate GDScriptCache for path
+        applied_this_pass += count
     if applied_this_pass == 0: break          // fixpoint reached
     if iteration >= bound: break              // safety
 build changed_files from captured originals vs final on-disk source
 return result
 ```
 
-Reading each file fresh at the moment it is processed lets a later file in the
-same pass benefit from an earlier file's write; either way the loop converges,
-and fresh reads converge faster.
+Snapshotting every source at the start of a pass and committing all writes at the
+end means each iteration advances exactly one dependency layer, independent of the
+order paths are supplied in. This makes the single-pass behavior deterministic
+(a one-iteration run types only the leaves) and keeps `iterations` a meaningful
+measure of dependency depth.
 
 ### Verification granularity
 
