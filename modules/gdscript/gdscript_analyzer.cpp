@@ -4947,7 +4947,7 @@ bool GDScriptAnalyzer::get_global_class_in_namespace(const String &p_namespace, 
 	return true;
 }
 
-bool GDScriptAnalyzer::get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error) {
+bool GDScriptAnalyzer::get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error, const String &p_symbol_kind) {
 	r_error = false;
 	String matched_import;
 	LocalVector<String> checked_imports;
@@ -4964,7 +4964,7 @@ bool GDScriptAnalyzer::get_imported_global_class(const StringName &p_class_name,
 		}
 
 		if (r_global_class_name != StringName() && r_global_class_name != candidate) {
-			push_error(vformat(R"(Could not resolve class "%s": imported namespaces "%s" and "%s" are ambiguous.)", p_class_name, matched_import, import), p_source);
+			push_error(vformat(R"(Could not resolve %s "%s": imported namespaces "%s" and "%s" are ambiguous.)", p_symbol_kind, p_class_name, matched_import, import), p_source);
 			r_error = true;
 			return true;
 		}
@@ -4976,7 +4976,7 @@ bool GDScriptAnalyzer::get_imported_global_class(const StringName &p_class_name,
 	return r_global_class_name != StringName();
 }
 
-bool GDScriptAnalyzer::get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error) {
+bool GDScriptAnalyzer::get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error, const String &p_symbol_kind) {
 	r_error = false;
 	r_type_chain_size = 0;
 	if (p_type_chain.is_empty()) {
@@ -5001,7 +5001,7 @@ bool GDScriptAnalyzer::get_namespace_global_class_from_type_chain(const Vector<G
 
 		StringName imported_candidate;
 		bool import_error = false;
-		if (get_imported_global_class(class_prefix, p_source, imported_candidate, import_error)) {
+		if (get_imported_global_class(class_prefix, p_source, imported_candidate, import_error, p_symbol_kind)) {
 			if (import_error) {
 				r_error = true;
 				return true;
@@ -5210,7 +5210,7 @@ GDScriptParser::ClassNode *GDScriptAnalyzer::resolve_trait_reference(GDScriptPar
 	bool namespace_error = false;
 	int namespace_type_chain_size = 0;
 	if (get_namespace_global_class_from_type_chain(r_trait_use.name, p_source, namespace_global_class,
-				namespace_type_chain_size, namespace_error)) {
+				namespace_type_chain_size, namespace_error, "trait")) {
 		if (namespace_error) {
 			return nullptr;
 		}

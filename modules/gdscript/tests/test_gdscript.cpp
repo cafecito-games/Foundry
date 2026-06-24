@@ -2216,6 +2216,165 @@ func make_instances() -> void:
 	}
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer resolves namespaced global traits") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile damageable("ns_trait_damageable.gd", R"(
+namespace combat
+trait_name Damageable
+
+var health: int = 100
+)");
+	TempScriptFile loggable("ns_trait_loggable.gd", R"(
+namespace shared
+trait_name Loggable
+
+var log_count: int = 0
+)");
+	TempScriptFile trackable("ns_trait_trackable.gd", R"(
+namespace combat.controllers
+trait_name Trackable
+
+var tracked: bool = false
+)");
+
+	ScriptServer::add_global_class("combat.Damageable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), damageable.path, false, false);
+	ScriptServer::add_global_class("shared.Loggable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), loggable.path, false, false);
+	ScriptServer::add_global_class("combat.controllers.Trackable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), trackable.path, false, false);
+
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace combat
+import shared
+extends RefCounted
+uses Damageable, Loggable, controllers.Trackable
+
+var same_namespace: Damageable
+var imported: Loggable
+var child_namespace: controllers.Trackable
+var fully_qualified: combat.Damageable
+)",
+			"user://ns_trait_consumer.gd", false);
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	CHECK_EQ(root->used_traits.size(), 3);
+	if (root->used_traits.size() == 3) {
+		CHECK(root->used_traits[0].resolved_trait != nullptr);
+		CHECK(root->used_traits[1].resolved_trait != nullptr);
+		CHECK(root->used_traits[2].resolved_trait != nullptr);
+		if (root->used_traits[0].resolved_trait != nullptr) {
+			CHECK_EQ(root->used_traits[0].resolved_trait->get_global_name(), StringName("combat.Damageable"));
+		}
+		if (root->used_traits[1].resolved_trait != nullptr) {
+			CHECK_EQ(root->used_traits[1].resolved_trait->get_global_name(), StringName("shared.Loggable"));
+		}
+		if (root->used_traits[2].resolved_trait != nullptr) {
+			CHECK_EQ(root->used_traits[2].resolved_trait->get_global_name(), StringName("combat.controllers.Trackable"));
+		}
+	}
+
+	const GDScriptParser::VariableNode *same_namespace = root->get_member(SNAME("same_namespace")).variable;
+	CHECK(same_namespace != nullptr);
+	if (same_namespace != nullptr) {
+		CHECK_EQ(same_namespace->get_datatype().to_property_info("same_namespace").class_name, "combat.Damageable");
+	}
+
+	const GDScriptParser::VariableNode *imported = root->get_member(SNAME("imported")).variable;
+	CHECK(imported != nullptr);
+	if (imported != nullptr) {
+		CHECK_EQ(imported->get_datatype().to_property_info("imported").class_name, "shared.Loggable");
+	}
+
+	const GDScriptParser::VariableNode *child_namespace = root->get_member(SNAME("child_namespace")).variable;
+	CHECK(child_namespace != nullptr);
+	if (child_namespace != nullptr) {
+		CHECK_EQ(child_namespace->get_datatype().to_property_info("child_namespace").class_name, "combat.controllers.Trackable");
+	}
+
+	const GDScriptParser::VariableNode *fully_qualified = root->get_member(SNAME("fully_qualified")).variable;
+	CHECK(fully_qualified != nullptr);
+	if (fully_qualified != nullptr) {
+		CHECK_EQ(fully_qualified->get_datatype().to_property_info("fully_qualified").class_name, "combat.Damageable");
+	}
+}
+
+#ifdef DEBUG_ENABLED
+TEST_CASE("[Modules][GDScript] Analyzer reports mixed namespace directories for trait declarations") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	const String warning_setting = GDScriptWarning::get_setting_path_from_code(GDScriptWarning::MIXED_NAMESPACE_DIRECTORY);
+	const Variant original_warning_setting = ProjectSettings::get_singleton()->get_setting(warning_setting);
+
+	TempScriptFile namespaced_class("mixed_trait_class.gd", R"(
+namespace characters
+class_name MixedTraitClass
+extends Node
+)");
+	TempScriptFile namespaced_trait("mixed_trait_decl.gd", R"(
+namespace combat
+trait_name MixedDeclTrait
+)");
+
+	ScriptServer::add_global_class("characters.MixedTraitClass", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_class.path, false, false);
+	ScriptServer::add_global_class("combat.MixedDeclTrait", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), namespaced_trait.path, false, false);
+
+	const String expected_directory = GDScript::canonicalize_path(namespaced_trait.path).get_base_dir();
+	const String expected_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "characters" and "combat".)", expected_directory);
+
+	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::WARN);
+	GDScriptParser::update_project_settings();
+
+	// A `trait_name` declaration is a global script class, so analyzing it must surface the mixed-namespace warning.
+	GDScriptParser trait_parser;
+	Error err = trait_parser.parse(R"(
+namespace combat
+trait_name MixedDeclTrait
+)",
+			namespaced_trait.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&trait_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK(has_parser_warning(trait_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY, expected_warning));
+	}
+
+	// A namespaced class sharing the directory with a differently-namespaced trait is warned too.
+	GDScriptParser class_parser;
+	err = class_parser.parse(R"(
+namespace characters
+class_name MixedTraitClass
+extends Node
+)",
+			namespaced_class.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&class_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK(has_parser_warning(class_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY, expected_warning));
+	}
+
+	ProjectSettings::get_singleton()->set_setting(warning_setting, original_warning_setting);
+	GDScriptParser::update_project_settings();
+}
+#endif // DEBUG_ENABLED
+
 TEST_CASE("[Modules][GDScript] Analyzer keeps local and native names ahead of namespace imports") {
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
