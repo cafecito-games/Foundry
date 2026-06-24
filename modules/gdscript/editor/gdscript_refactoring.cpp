@@ -3532,24 +3532,37 @@ StyleOrderBucket get_style_order_bucket(const GDScriptParser::ClassNode::Member 
 	return StyleOrderBucket::PUBLIC_METHOD;
 }
 
+const GDScriptParser::Node *get_style_order_member_source_node(const GDScriptParser::ClassNode::Member &p_member) {
+	if (p_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE) {
+		return p_member.enum_value.parent_enum;
+	}
+	return p_member.get_source_node();
+}
+
+bool style_order_member_has_separate_line_annotation(const GDScriptParser::ClassNode::Member &p_member) {
+	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
+	if (node == nullptr || node->start_line <= 0) {
+		return false;
+	}
+
+	for (const GDScriptParser::AnnotationNode *annotation : node->annotations) {
+		if (annotation != nullptr && annotation->start_line > 0 && annotation->start_line < node->start_line) {
+			return true;
+		}
+	}
+	return false;
+}
+
 int get_style_order_member_start_line(const GDScriptParser::ClassNode::Member &p_member) {
 	if (p_member.type == GDScriptParser::ClassNode::Member::UNDEFINED) {
 		return -1;
 	}
-	if (p_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE) {
-		const GDScriptParser::EnumNode *enum_node = p_member.enum_value.parent_enum;
-		return enum_node != nullptr && enum_node->start_line > 0 ? enum_node->start_line - 1 : -1;
-	}
-	const int line = p_member.get_line();
-	return line > 0 ? line - 1 : -1;
+	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
+	return node != nullptr && node->start_line > 0 ? node->start_line - 1 : -1;
 }
 
 int get_style_order_member_end_line(const GDScriptParser::ClassNode::Member &p_member) {
-	if (p_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE) {
-		const GDScriptParser::EnumNode *enum_node = p_member.enum_value.parent_enum;
-		return enum_node != nullptr && enum_node->end_line > 0 ? enum_node->end_line : -1;
-	}
-	const GDScriptParser::Node *node = p_member.get_source_node();
+	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
 	if (node != nullptr && node->end_line > 0) {
 		return node->end_line;
 	}
@@ -3608,6 +3621,15 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 		}
 
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == GDScriptParser::ClassNode::Member::GROUP) {
+			candidate.disabled_reason = "Cannot sort members while export group annotations are present.";
+			return candidate;
+		}
+		if (style_order_member_has_separate_line_annotation(member)) {
+			candidate.disabled_reason = "Cannot sort members with separate-line annotations yet.";
+			return candidate;
+		}
+
 		const int start_line = get_style_order_member_start_line(member);
 		int end_line = get_next_style_order_block_start_line(p_class, i);
 		if (end_line < 0) {

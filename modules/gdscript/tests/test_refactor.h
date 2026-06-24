@@ -2026,6 +2026,96 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Sort members by style guide rejects unsafe annotation blocks") {
+		SUBCASE("separate-line member annotation") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@export\n"
+					"var speed := 1\n"
+					"signal changed\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("annotation"), r.error_message);
+		}
+
+		SUBCASE("same-line member annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@export var health := 10\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@export var health := 10\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("same-line onready annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@onready var child := Node.new()\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@onready var child := Node.new()\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
+	TEST_CASE("Sort members by style guide rejects export group annotations") {
+		const String export_groups[] = {
+			"@export_category(\"Stats\")",
+			"@export_group(\"Stats\")",
+			"@export_subgroup(\"Movement\")",
+		};
+
+		for (const String &export_group : export_groups) {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n" +
+					export_group + "\n"
+								   "@export var speed := 1\n"
+								   "signal changed\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("group"), r.error_message);
+		}
+	}
+
 	TEST_CASE("Inline variable rejects unsafe or unsupported targets") {
 		SUBCASE("multi-use side-effecting initializer") {
 			const String source =
