@@ -1489,6 +1489,16 @@ TEST_CASE("[Modules][GDScript] Analyzer can reject dynamic source assignments to
 	CHECK(analyze_source("func get_dynamic() -> Variant:\n\treturn 1\nvar dynamic_value: Variant = get_dynamic()\n", false, true) == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer checks custom Object hash/equality signatures") {
+	const String valid_source = "extends RefCounted\nfunc _equals(other: Variant) -> bool:\n\treturn false\nfunc _hash_code() -> int:\n\treturn 0\n";
+	const String invalid_equals_source = "extends RefCounted\nfunc _equals(other: Variant) -> int:\n\treturn 0\nfunc _hash_code() -> int:\n\treturn 0\n";
+	const String invalid_hash_source = "extends RefCounted\nfunc _equals(other: Variant) -> bool:\n\treturn false\nfunc _hash_code(value: int) -> int:\n\treturn value\n";
+
+	CHECK(analyze_source(valid_source) == OK);
+	CHECK(analyze_source(invalid_equals_source) != OK);
+	CHECK(analyze_source(invalid_hash_source) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer can reject dynamic source arguments and returns to static types") {
 	const String argument_source = "func get_dynamic() -> Variant:\n\treturn 1\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test() -> void:\n\taccept_int(get_dynamic())\n";
 	const String return_source = "func get_dynamic() -> Variant:\n\treturn 1\nfunc get_int() -> int:\n\treturn get_dynamic()\n";

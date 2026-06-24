@@ -2042,6 +2042,14 @@ void Object::_bind_methods() {
 	BIND_OBJ_CORE_METHOD(MethodInfo(Variant::STRING, "_to_string"));
 
 	{
+		MethodInfo mi(Variant::BOOL, "_equals");
+		mi.arguments.push_back(PropertyInfo(Variant::NIL, "other", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_NIL_IS_VARIANT));
+		BIND_OBJ_CORE_METHOD(mi);
+	}
+
+	BIND_OBJ_CORE_METHOD(MethodInfo(Variant::INT, "_hash_code"));
+
+	{
 		MethodInfo mi("_notification");
 		mi.arguments.push_back(PropertyInfo(Variant::INT, "what"));
 		mi.arguments_metadata.push_back(GodotTypeInfo::Metadata::METADATA_INT_IS_INT32);

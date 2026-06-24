@@ -53,6 +53,8 @@ public:
 	const StringName _iter_get = "_iter_get";
 	const StringName get_rid = "get_rid";
 	const StringName _to_string = "_to_string";
+	const StringName _equals = "_equals";
+	const StringName _hash_code = "_hash_code";
 	const StringName _custom_features = "_custom_features";
 
 	const StringName x = "x";
