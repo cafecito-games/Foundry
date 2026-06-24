@@ -92,6 +92,7 @@ public:
 	struct SubscriptNode;
 	struct SuiteNode;
 	struct TernaryOpNode;
+	struct TraitNode;
 	struct TypeNode;
 	struct TypeTestNode;
 	struct UnaryOpNode;
@@ -572,6 +573,21 @@ public:
 	};
 
 	struct ClassNode : public Node {
+		struct TraitUse {
+			Vector<IdentifierNode *> name;
+
+			String to_string() const {
+				String result;
+				for (int i = 0; i < name.size(); i++) {
+					if (i > 0) {
+						result += ".";
+					}
+					result += name[i]->name;
+				}
+				return result;
+			}
+		};
+
 		struct Member {
 			enum Type {
 				UNDEFINED,
@@ -629,7 +645,7 @@ public:
 					case UNDEFINED:
 						return "???";
 					case CLASS:
-						return "class";
+						return m_class != nullptr && m_class->is_trait ? "trait" : "class";
 					case CONSTANT:
 						return "constant";
 					case FUNCTION:
@@ -767,8 +783,14 @@ public:
 		bool is_abstract = false;
 		bool has_static_data = false;
 		bool annotated_static_unload = false;
+		// True for inline TraitNode declarations and root ClassNode declarations created by `trait_name`.
+		// Do not infer the dynamic node type from this flag.
+		bool is_trait = false;
+		bool trait_name_used = false;
+		bool uses_used = false;
 		String extends_path;
 		Vector<IdentifierNode *> extends; // List for indexing: extends A.B.C
+		Vector<TraitUse> used_traits;
 		DataType base_type;
 		String fqcn; // Fully-qualified class name. Identifies uniquely any class in the project.
 		String namespace_name; // Root class only. Empty means global namespace.
@@ -821,6 +843,12 @@ public:
 
 		ClassNode() {
 			type = CLASS;
+		}
+	};
+
+	struct TraitNode : public ClassNode {
+		TraitNode() {
+			is_trait = true;
 		}
 	};
 
@@ -1558,11 +1586,14 @@ private:
 	// Main blocks.
 	void parse_program();
 	ClassNode *parse_class(bool p_is_static);
+	TraitNode *parse_trait(bool p_is_static);
 	bool parse_identifier_chain(const String &p_declaration_name, String &r_chain);
 	void parse_namespace();
 	void parse_import();
 	void parse_class_name();
+	void parse_trait_name();
 	void parse_extends();
+	void parse_uses();
 	void parse_class_body(bool p_is_multiline);
 	List<AnnotationNode *> parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind);
 	template <typename T>
