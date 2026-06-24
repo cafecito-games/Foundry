@@ -151,6 +151,19 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 		return result;
 	}
 
+	if (p_target.kind == GDScriptParser::DataType::TYPE_PARAMETER || p_source.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		// Type parameters are erased to Variant at runtime. Two handles are statically compatible only
+		// when they denote the same parameter; mixing a parameter with a concrete type is accepted with a
+		// runtime check, mirroring how the runtime defensively accepts any value for an erased parameter.
+		if (p_target.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_source.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+			result.compatible = p_target == p_source;
+		} else {
+			result.compatible = true;
+			result.requires_runtime_check = true;
+		}
+		return result;
+	}
+
 	if (p_target.kind == GDScriptParser::DataType::BUILTIN) {
 		result.compatible = p_source.kind == GDScriptParser::DataType::BUILTIN && p_target.builtin_type == p_source.builtin_type;
 		if (!result.compatible && p_options.allow_implicit_conversion) {
@@ -307,7 +320,14 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 			}
 			while (src_class != nullptr) {
 				if (src_class == p_target.class_type || src_class->fqcn == p_target.class_type->fqcn) {
-					result.compatible = true;
+					// Specialized generic handles are invariant in their type arguments: a `Box[int]`
+					// is not a `Box[String]`. Only enforce this on a direct (non-upcast) match of the same
+					// class; specialization through inheritance is tracked separately (see epic #125).
+					if (p_target.has_type_arguments() && p_source.has_type_arguments() && src_class == p_source.class_type) {
+						result.compatible = p_source.type_arguments == p_target.type_arguments;
+					} else {
+						result.compatible = true;
+					}
 					return result;
 				}
 				src_class = src_class->base_type.class_type;

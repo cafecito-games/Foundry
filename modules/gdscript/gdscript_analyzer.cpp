@@ -764,6 +764,23 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	bool type_found = false;
 	int resolved_type_chain_size = 1;
 
+	// Type parameters of the enclosing generic class or method shadow any other name, so a bare
+	// `T` resolves to the parameter handle before falling back to the normal type lookup below.
+	{
+		GDScriptParser::DataType type_parameter;
+		if (resolve_type_parameter(first, type_parameter)) {
+			if (p_type->type_chain.size() > 1) {
+				push_error(vformat(R"(Type parameter "%s" does not contain nested types.)", first), p_type->type_chain[1]);
+				return bad_type;
+			}
+			if (!p_type->container_types.is_empty()) {
+				push_error(vformat(R"(Type parameter "%s" cannot be specialized with type arguments.)", first), p_type);
+				return bad_type;
+			}
+			return finalize_datatype(type_parameter);
+		}
+	}
+
 	if (first_id->suite && first_id->suite->has_local(first)) {
 		const GDScriptParser::SuiteNode::Local &local = first_id->suite->get_local(first);
 		if (local.type == GDScriptParser::SuiteNode::Local::CONSTANT) {
@@ -1070,6 +1087,22 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				push_error(R"(Typed dictionaries require exactly two collection element types.)", p_type);
 				return bad_type;
 			}
+		} else if (result.kind == GDScriptParser::DataType::CLASS && result.class_type != nullptr) {
+			// Generic class specialization, e.g. `Box[int]`. The brackets carry type arguments
+			// rather than collection element types, so they must match the class's parameter list.
+			const int expected_argument_count = result.class_type->type_parameters.size();
+			if (expected_argument_count == 0) {
+				push_error(vformat(R"(Class "%s" is not generic and cannot take type arguments.)", result.to_string()), p_type);
+				return bad_type;
+			}
+			if (p_type->container_types.size() != expected_argument_count) {
+				push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)", result.to_string(), expected_argument_count, p_type->container_types.size()), p_type);
+				return bad_type;
+			}
+			result.type_arguments.clear();
+			for (int i = 0; i < p_type->container_types.size(); i++) {
+				result.type_arguments.push_back(type_from_metatype(resolve_datatype(p_type->container_types[i])));
+			}
 		} else {
 			push_error(R"(Only arrays and dictionaries can specify collection element types.)", p_type);
 			return bad_type;
@@ -1077,6 +1110,73 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	}
 
 	return finalize_datatype(result);
+}
+
+bool GDScriptAnalyzer::resolve_type_parameter(const StringName &p_name, GDScriptParser::DataType &r_type) {
+	const GDScriptParser::TypeParameterNode *parameter = nullptr;
+	GDScriptParser::DataType::TypeParameterScope scope = GDScriptParser::DataType::TYPE_PARAMETER_NONE;
+	int index = -1;
+
+	auto match_in = [&](const Vector<GDScriptParser::TypeParameterNode *> &p_parameters, GDScriptParser::DataType::TypeParameterScope p_scope) -> bool {
+		for (int i = 0; i < p_parameters.size(); i++) {
+			const GDScriptParser::TypeParameterNode *candidate = p_parameters[i];
+			if (candidate != nullptr && candidate->identifier != nullptr && candidate->identifier->name == p_name) {
+				parameter = candidate;
+				scope = p_scope;
+				index = i;
+				return true;
+			}
+		}
+		return false;
+	};
+
+	// Method type parameters shadow class ones, and inner classes shadow their outer classes.
+	if (parser->current_function != nullptr && match_in(parser->current_function->type_parameters, GDScriptParser::DataType::TYPE_PARAMETER_METHOD)) {
+		// Found a method type parameter.
+	} else {
+		for (const GDScriptParser::ClassNode *script_class = parser->current_class; script_class != nullptr; script_class = script_class->outer) {
+			if (match_in(script_class->type_parameters, GDScriptParser::DataType::TYPE_PARAMETER_CLASS)) {
+				break;
+			}
+		}
+	}
+
+	if (parameter == nullptr) {
+		return false;
+	}
+
+	GDScriptParser::DataType type;
+	type.kind = GDScriptParser::DataType::TYPE_PARAMETER;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.type_parameter_name = p_name;
+	type.type_parameter_scope = scope;
+	type.type_parameter_index = index;
+	if (parameter->bound != nullptr) {
+		type.type_parameter_bound.push_back(type_from_metatype(resolve_datatype(parameter->bound)));
+	}
+
+	r_type = type;
+	return true;
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base) {
+	if (!p_base.has_type_arguments() || p_base.class_type == nullptr) {
+		return p_member_type;
+	}
+
+	const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = p_base.class_type->type_parameters;
+	HashMap<StringName, GDScriptParser::DataType> bindings;
+	const int binding_count = MIN(type_parameters.size(), p_base.type_arguments.size());
+	for (int i = 0; i < binding_count; i++) {
+		const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+		if (parameter != nullptr && parameter->identifier != nullptr) {
+			bindings.insert(parameter->identifier->name, p_base.type_arguments[i]);
+		}
+	}
+	if (bindings.is_empty()) {
+		return p_member_type;
+	}
+	return GDScriptParser::DataType::substitute(p_member_type, bindings);
 }
 
 void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, const StringName &p_name, const GDScriptParser::Node *p_source) {
@@ -6203,7 +6303,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 				case GDScriptParser::ClassNode::Member::VARIABLE: {
 					if (can_access_instance_member && (!base.is_meta_type || member.variable->is_static)) {
-						p_identifier->set_datatype(member.get_datatype());
+						p_identifier->set_datatype(substitute_member_type(member.get_datatype(), base));
 						p_identifier->source = member.variable->is_static ? GDScriptParser::IdentifierNode::STATIC_VARIABLE : GDScriptParser::IdentifierNode::MEMBER_VARIABLE;
 						p_identifier->variable_source = member.variable;
 						member.variable->usages += 1;
