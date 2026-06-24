@@ -24,7 +24,7 @@
     {
       "id": 4,
       "subject": "Task 4: Cross-file base resolution + LSP coverage",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [3],
       "description": "Resolve abstract bases in other files; verify over LSP availability + prepare; run full suite.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_refactoring.cpp\", \"modules/gdscript/tests/test_refactor.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"Cross-file abstract base detected and stubbed\", \"Works over LSP availability + prepare\", \"No same-file regression\", \"Full suite passes\"]}\n```"
     }
