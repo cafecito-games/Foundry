@@ -196,6 +196,167 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Dependent-break rejection is stable across repeated verify calls") {
+		// Regression guard for inverse-dependency edge loss: after the first verify() call
+		// invalidates caches, a second call must still discover the consumer as a dependent
+		// of the provider and reject the breaking candidate.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/verify_repeat_provider.gd";
+		const String provider_source =
+				"func get_value():\n"
+				"\treturn 42\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_repeat_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_repeat_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 0);
+
+		Vector<String> universe = { provider_path, consumer_path };
+
+		// First call — establishes baseline behavior.
+		VerificationResult first = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(first.ok);
+		CHECK_GT(first.rejected.size(), 0);
+
+		// Second call — must still detect the dependent via a freshly rebuilt dep graph.
+		VerificationResult second = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(second.ok);
+		CHECK_GT(second.rejected.size(), 0);
+		CHECK_GT(second.rejected[0].diagnostics.size(), 0);
+
+		// Files unchanged.
+		CHECK_EQ(FileAccess::get_file_as_string(provider_path), provider_source);
+		CHECK_EQ(FileAccess::get_file_as_string(consumer_path), consumer_source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("A candidate with an out-of-range edit is rejected with 'could not be applied'") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String path = "res://refactor/verify_bad_edit.gd";
+		const String source =
+				"func foo():\n"
+				"\treturn 1\n";
+		TemporaryScriptFile file(path, source);
+
+		// Construct a candidate whose edit references a line far beyond the file.
+		RefactorTextEdit bad_edit;
+		bad_edit.start_line = 9999;
+		bad_edit.start_column = 0;
+		bad_edit.end_line = 9999;
+		bad_edit.end_column = 0;
+		bad_edit.new_text = "-> int";
+
+		VerificationCandidate candidate;
+		candidate.path = path;
+		candidate.line = 0;
+		candidate.edits.push_back(bad_edit);
+
+		Vector<VerificationCandidate> candidates;
+		candidates.push_back(candidate);
+
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, { path });
+		REQUIRE(result.ok);
+
+		// The candidate must appear in rejected, not accepted.
+		CHECK_EQ(result.accepted.size(), 0);
+		REQUIRE_GT(result.rejected.size(), 0);
+		bool found_reason = false;
+		for (const VerificationRejected &rejected : result.rejected) {
+			if (rejected.reason.contains("could not be applied")) {
+				found_reason = true;
+			}
+		}
+		CHECK(found_reason);
+
+		// File untouched.
+		CHECK_EQ(FileAccess::get_file_as_string(path), source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("A net-zero diagnostic swap is rejected, not accepted") {
+		// A candidate that removes one baseline error but introduces a different one at a
+		// new location must be rejected. A count-only oracle would incorrectly accept it
+		// because the total error count is the same; the multiset-difference oracle must
+		// detect the new diagnostic key and reject the candidate.
+		//
+		// We verify behavior via the harness using real files where the swap occurs.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Provider is typed `-> int` so the consumer's `var s: String = p.get_value()`
+		// produces one baseline error (int assigned to String). The candidate replaces
+		// `return 42` with `return "hello"`, removing the consumer error (provider now
+		// returns String) but introducing a NEW error inside the provider (return "hello"
+		// does not match declared -> int). Net count = 1 either way; only the multiset
+		// oracle detects the moved diagnostic key and rejects the candidate.
+		const String provider_path = "res://refactor/verify_swap_provider.gd";
+		const String provider_source =
+				"func get_value() -> int:\n"
+				"\treturn 42\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_swap_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_swap_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		// Replace `return 42` with `return "hello"` on line 1 (0-based, after the tab).
+		RefactorTextEdit swap_edit;
+		swap_edit.start_line = 1;
+		swap_edit.start_column = 1;
+		swap_edit.end_line = 1;
+		swap_edit.end_column = 10;
+		swap_edit.new_text = "return \"hello\"";
+
+		VerificationCandidate swap_candidate;
+		swap_candidate.path = provider_path;
+		swap_candidate.line = 0;
+		swap_candidate.edits.push_back(swap_edit);
+
+		Vector<VerificationCandidate> candidates;
+		candidates.push_back(swap_candidate);
+
+		Vector<String> universe = { provider_path, consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+
+		// The swap candidate introduces a new diagnostic key even though the total error
+		// count does not increase; the multiset oracle must reject it.
+		CHECK_EQ(result.accepted.size(), 0);
+		CHECK_GT(result.rejected.size(), 0);
+
+		// Files untouched.
+		CHECK_EQ(FileAccess::get_file_as_string(provider_path), provider_source);
+		CHECK_EQ(FileAccess::get_file_as_string(consumer_path), consumer_source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Strict preview lists violations without modifying files") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

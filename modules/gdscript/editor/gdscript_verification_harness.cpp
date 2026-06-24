@@ -60,7 +60,7 @@ void invalidate_cache(const String &p_path) {
 	GDScriptCache::remove_script(p_path);
 }
 
-// Analyze one source as if saved at p_path; append "path:line: message" for every
+// Analyze one source as if saved at p_path; append "path:line:column:message" for every
 // parser/analyzer error to r_messages. Returns the count contributed by this file.
 // A parse failure contributes at least one error so a malformed edit is never "clean".
 int analyze_one(const String &p_path, const String &p_source, const VerificationOptions &p_options, Vector<String> &r_messages) {
@@ -72,7 +72,7 @@ int analyze_one(const String &p_path, const String &p_source, const Verification
 	analyzer.analyze();
 	int count = 0;
 	for (const GDScriptParser::ParserError &error : parser.get_errors()) {
-		r_messages.push_back(vformat("%s:%d: %s", p_path, error.line, error.message));
+		r_messages.push_back(vformat("%s:%d:%d:%s", p_path, error.line, error.column, error.message));
 		count++;
 	}
 	if (parse_err != OK && count == 0) {
@@ -83,10 +83,31 @@ int analyze_one(const String &p_path, const String &p_source, const Verification
 }
 
 // Result of analyzing the whole affected set under a given staged-source map.
+// Each message key encodes path:line:column:message so position and text are both
+// part of the identity; two diagnostics at different locations are always distinct.
 struct AffectedAnalysis {
 	int error_count = 0;
-	Vector<String> messages;
+	Vector<String> messages; // Each entry is a "path:line:column:message" key.
 };
+
+// Returns true when p_candidate introduces at least one diagnostic key that appears
+// more times in p_candidate than in p_baseline (multiset difference is non-empty).
+// A net-zero swap — one error removed, a different one added — correctly returns true.
+bool regresses(const AffectedAnalysis &p_baseline, const AffectedAnalysis &p_candidate) {
+	HashMap<String, int> baseline_counts;
+	for (const String &key : p_baseline.messages) {
+		baseline_counts[key] += 1;
+	}
+	for (const String &key : p_candidate.messages) {
+		HashMap<String, int>::Iterator it = baseline_counts.find(key);
+		if (it && it->value > 0) {
+			it->value -= 1;
+		} else {
+			return true; // New diagnostic not covered by baseline.
+		}
+	}
+	return false;
+}
 
 // Stages p_staged (path -> source) to disk for the edited files, invalidates affected
 // caches, analyzes every affected file, then restores originals. Always restores.
@@ -148,12 +169,13 @@ AffectedAnalysis analyze_affected(
 }
 
 // Apply every candidate's edits, grouped by file, over p_original.
-// A non-applying edit group is treated as no-change so the batch is not silently
-// corrupted; ddmin attribution re-detects non-applying candidates in isolation.
-// Returns staged path->source.
+// Files whose combined edit group fails to apply (overlap, out-of-range) are recorded
+// in r_unapplicable_paths so callers can explicitly reject candidates on those files.
+// Returns staged path->source for successfully-applied files only.
 HashMap<String, String> stage_candidates(
 		const Vector<VerificationCandidate> &p_candidates,
-		const HashMap<String, String> &p_original) {
+		const HashMap<String, String> &p_original,
+		HashSet<String> *r_unapplicable_paths = nullptr) {
 	HashMap<String, Vector<RefactorTextEdit>> edits_by_path;
 	for (int i = 0; i < p_candidates.size(); i++) {
 		const VerificationCandidate &candidate = p_candidates[i];
@@ -166,6 +188,8 @@ HashMap<String, String> stage_candidates(
 		String applied;
 		if (p_original.has(entry.key) && GDScriptRefactorEdits::apply(p_original[entry.key], entry.value, applied)) {
 			staged[entry.key] = applied;
+		} else if (r_unapplicable_paths != nullptr) {
+			r_unapplicable_paths->insert(entry.key);
 		}
 	}
 	return staged;
@@ -193,15 +217,16 @@ Vector<VerificationCandidate> subset_of(const Vector<VerificationCandidate> &p_p
 }
 
 // Classic ddmin: find a 1-minimal subset of p_indices whose application still
-// regresses (error_count > p_baseline). p_pool is the full candidate list.
-// Returns the minimal offending index list. Assumes the full p_indices regresses.
+// regresses (introduces new diagnostics vs p_baseline_analysis). p_pool is the full
+// candidate list. Returns the minimal offending index list. Assumes the full
+// p_indices regresses.
 Vector<int> ddmin_offending(
 		const Vector<int> &p_indices,
 		const Vector<VerificationCandidate> &p_pool,
 		const Vector<String> &p_affected,
 		const HashMap<String, String> &p_original,
 		const VerificationOptions &p_options,
-		int p_baseline,
+		const AffectedAnalysis &p_baseline_analysis,
 		bool &r_fatal) {
 	Vector<int> current = p_indices;
 	int granularity = 2;
@@ -223,7 +248,7 @@ Vector<int> ddmin_offending(
 			if (r_fatal) {
 				return current;
 			}
-			if (analysis.error_count > p_baseline) {
+			if (regresses(p_baseline_analysis, analysis)) {
 				current = complement;
 				granularity = MAX(granularity - 1, 2);
 				reduced = true;
@@ -311,10 +336,19 @@ VerificationResult GDScriptVerificationHarness::verify(
 		touched.insert(candidate.path);
 	}
 
-	// Prime the cache so inverse-dependency edges exist for the universe.
+	// Rebuild the dependency graph from disk for every universe path so inverse-dependency
+	// edges are always accurate on this call, regardless of what a previous call may have
+	// invalidated. Flush each path first so get_full_script re-resolves dependencies and
+	// repopulates parser_inverse_dependencies rather than returning a cached script.
+	for (const String &path : universe) {
+		GDScriptCache::remove_parser(path);
+		GDScriptCache::remove_script(path);
+	}
 	for (const String &path : universe) {
 		Error err = OK;
-		GDScriptCache::get_full_script(path, err);
+		GDScriptCache::get_full_script(path, err, String(), true);
+		// A load error on one path means its edges are absent, but other paths are
+		// still primed correctly — the BFS will simply miss dependents of this path.
 	}
 
 	// Affected set = touched ∪ transitive inverse-dependents(touched) ∩ universe.
@@ -356,7 +390,7 @@ VerificationResult GDScriptVerificationHarness::verify(
 		original[path] = source;
 	}
 
-	// Baseline error count across the affected set.
+	// Baseline diagnostics across the affected set.
 	bool fatal = false;
 	const AffectedAnalysis baseline = analyze_affected(affected, original, HashMap<String, String>(), p_options, fatal);
 	if (fatal) {
@@ -366,8 +400,34 @@ VerificationResult GDScriptVerificationHarness::verify(
 	}
 	result.baseline_error_count = baseline.error_count;
 
-	// Optimistic: apply all candidates at once.
-	const HashMap<String, String> all_staged = stage_candidates(p_candidates, original);
+	// Identify candidates whose edits cannot be applied to the current source (overlap or
+	// out-of-range). These are immediately rejected so they never silently land in accepted.
+	HashSet<String> unapplicable_paths;
+	stage_candidates(p_candidates, original, &unapplicable_paths);
+
+	// Separate candidates into those that can be applied and those that cannot.
+	Vector<VerificationCandidate> applicable_candidates;
+	for (int i = 0; i < p_candidates.size(); i++) {
+		const VerificationCandidate &candidate = p_candidates[i];
+		if (unapplicable_paths.has(candidate.path)) {
+			VerificationRejected early_rejected;
+			early_rejected.path = candidate.path;
+			early_rejected.line = candidate.line;
+			early_rejected.reason = "edit could not be applied";
+			result.rejected.push_back(early_rejected);
+		} else {
+			applicable_candidates.push_back(candidate);
+		}
+	}
+
+	if (applicable_candidates.is_empty()) {
+		result.accepted_error_count = baseline.error_count;
+		result.ok = true;
+		return result;
+	}
+
+	// Optimistic: apply all applicable candidates at once.
+	const HashMap<String, String> all_staged = stage_candidates(applicable_candidates, original);
 	const AffectedAnalysis combined = analyze_affected(affected, original, all_staged, p_options, fatal);
 	if (fatal) {
 		result.ok = false;
@@ -375,8 +435,11 @@ VerificationResult GDScriptVerificationHarness::verify(
 		return result;
 	}
 
-	if (combined.error_count <= baseline.error_count) {
-		result.accepted = p_candidates;
+	// Accept all applicable candidates when none introduces a new diagnostic key.
+	// A count-only check would accept a net-zero diagnostic swap (one error removed,
+	// a different one added at a different location), so the multiset difference is used.
+	if (!regresses(baseline, combined)) {
+		result.accepted = applicable_candidates;
 		result.accepted_error_count = combined.error_count;
 		result.ok = true;
 		return result;
@@ -389,23 +452,27 @@ VerificationResult GDScriptVerificationHarness::verify(
 	// delta debugging and reject the whole batch to keep verification cost bounded; the
 	// common case (no regression, or small batches) keeps precise per-candidate ddmin.
 	const int max_bisection_candidates = 64;
-	if (p_candidates.size() > max_bisection_candidates) {
+	if (applicable_candidates.size() > max_bisection_candidates) {
 		ERR_PRINT(vformat(
 				"Verification: %d candidates exceed the bisection ceiling of %d; rejecting the batch as a whole to bound cost.",
-				p_candidates.size(), max_bisection_candidates));
+				applicable_candidates.size(), max_bisection_candidates));
+		// New diagnostic keys = combined multiset minus baseline multiset.
 		Vector<String> new_messages;
 		{
-			HashSet<String> baseline_messages;
+			HashMap<String, int> baseline_counts;
 			for (const String &message : baseline.messages) {
-				baseline_messages.insert(message);
+				baseline_counts[message] += 1;
 			}
 			for (const String &message : combined.messages) {
-				if (!baseline_messages.has(message)) {
+				HashMap<String, int>::Iterator it = baseline_counts.find(message);
+				if (it && it->value > 0) {
+					it->value -= 1;
+				} else {
 					new_messages.push_back(message);
 				}
 			}
 		}
-		for (const VerificationCandidate &candidate : p_candidates) {
+		for (const VerificationCandidate &candidate : applicable_candidates) {
 			VerificationRejected rejected;
 			rejected.path = candidate.path;
 			rejected.line = candidate.line;
@@ -420,23 +487,23 @@ VerificationResult GDScriptVerificationHarness::verify(
 
 	// Regression: isolate offending candidates via delta debugging, keep the rest.
 	Vector<int> remaining;
-	for (int i = 0; i < p_candidates.size(); i++) {
+	for (int i = 0; i < applicable_candidates.size(); i++) {
 		remaining.push_back(i);
 	}
 	HashSet<int> rejected_indices;
 
 	// Repeatedly carve out a minimal offending subset until the remainder is clean.
 	while (true) {
-		const AffectedAnalysis analysis = analyze_subset(subset_of(p_candidates, remaining), affected, original, p_options, fatal);
+		const AffectedAnalysis analysis = analyze_subset(subset_of(applicable_candidates, remaining), affected, original, p_options, fatal);
 		if (fatal) {
 			result.ok = false;
 			result.error_message = "Verification aborted during attribution.";
 			return result;
 		}
-		if (analysis.error_count <= baseline.error_count) {
+		if (!regresses(baseline, analysis)) {
 			break;
 		}
-		const Vector<int> offending = ddmin_offending(remaining, p_candidates, affected, original, p_options, baseline.error_count, fatal);
+		const Vector<int> offending = ddmin_offending(remaining, applicable_candidates, affected, original, p_options, baseline, fatal);
 		if (fatal) {
 			result.ok = false;
 			result.error_message = "Verification aborted during attribution.";
@@ -467,9 +534,9 @@ VerificationResult GDScriptVerificationHarness::verify(
 
 	// Build the accepted list and re-verify it as a final confirmation.
 	Vector<VerificationCandidate> accepted_candidates;
-	for (int i = 0; i < p_candidates.size(); i++) {
+	for (int i = 0; i < applicable_candidates.size(); i++) {
 		if (!rejected_indices.has(i)) {
-			accepted_candidates.push_back(p_candidates[i]);
+			accepted_candidates.push_back(applicable_candidates[i]);
 		}
 	}
 	const HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
@@ -482,21 +549,16 @@ VerificationResult GDScriptVerificationHarness::verify(
 	result.accepted = accepted_candidates;
 	result.accepted_error_count = accepted_analysis.error_count;
 
-	// Attribute diagnostics to each rejected candidate: messages it alone introduces
-	// over the accepted base.
-	HashSet<String> accepted_messages;
-	for (const String &message : accepted_analysis.messages) {
-		accepted_messages.insert(message);
-	}
-	for (int i = 0; i < p_candidates.size(); i++) {
+	// Attribute diagnostics to each rejected applicable candidate: new diagnostic keys
+	// it alone introduces over the accepted base.
+	for (int i = 0; i < applicable_candidates.size(); i++) {
 		if (!rejected_indices.has(i)) {
 			continue;
 		}
-		// A second analysis is required here because ddmin only compared error counts;
-		// attribution needs the actual messages this candidate introduces over the
-		// accepted base, so re-analyze the accepted set plus this one candidate.
+		// Re-analyze the accepted set plus this one candidate to find the diagnostics
+		// it uniquely introduces.
 		Vector<VerificationCandidate> probe = accepted_candidates;
-		probe.push_back(p_candidates[i]);
+		probe.push_back(applicable_candidates[i]);
 		const AffectedAnalysis probe_analysis = analyze_subset(probe, affected, original, p_options, fatal);
 		if (fatal) {
 			result.ok = false;
@@ -504,11 +566,19 @@ VerificationResult GDScriptVerificationHarness::verify(
 			return result;
 		}
 		VerificationRejected rejected;
-		rejected.path = p_candidates[i].path;
-		rejected.line = p_candidates[i].line;
+		rejected.path = applicable_candidates[i].path;
+		rejected.line = applicable_candidates[i].line;
 		rejected.reason = "introduces new analyzer error(s) in the affected set";
+		// Attribute only the new diagnostic keys (multiset difference).
+		HashMap<String, int> accepted_counts;
+		for (const String &message : accepted_analysis.messages) {
+			accepted_counts[message] += 1;
+		}
 		for (const String &message : probe_analysis.messages) {
-			if (!accepted_messages.has(message)) {
+			HashMap<String, int>::Iterator it = accepted_counts.find(message);
+			if (it && it->value > 0) {
+				it->value -= 1;
+			} else {
 				rejected.diagnostics.push_back(message);
 			}
 		}

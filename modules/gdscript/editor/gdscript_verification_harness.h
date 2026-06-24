@@ -61,10 +61,9 @@ struct VerificationRejected {
 struct VerificationResult {
 	bool ok = false; // false only on a fatal precondition (e.g. unreadable file).
 	String error_message; // Populated only when !ok.
-	// Candidates proven to introduce no new errors. Acceptance means the candidate's
-	// edits did not regress the affected set; candidates whose edits fail to apply at
-	// all are treated as no-change and may appear here. Callers re-derive and apply
-	// accepted candidates' edits themselves and should silently drop any that fail to apply.
+	// Candidates proven to introduce no new diagnostics vs the baseline (multiset
+	// difference is empty). Candidates whose edits fail to apply are always in rejected,
+	// never here. Callers re-apply accepted candidates' edits themselves.
 	Vector<VerificationCandidate> accepted;
 	Vector<VerificationRejected> rejected; // Dropped, with attributed diagnostics.
 	int baseline_error_count = 0; // Total analyzer errors across the affected set before any edit.
