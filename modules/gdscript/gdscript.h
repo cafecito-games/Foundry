@@ -57,6 +57,12 @@ public:
 	GDScriptNativeClass(const StringName &p_name);
 };
 
+#ifdef TESTS_ENABLED
+namespace GDScriptTests {
+class TestGDScriptTraitReflectionAccessor;
+}
+#endif // TESTS_ENABLED
+
 class GDScript : public Script {
 	GDCLASS(GDScript, Script);
 	bool tool = false;
@@ -90,6 +96,9 @@ class GDScript : public Script {
 	friend class GDScriptLambdaSelfCallable;
 	friend class GDScriptLanguage;
 	friend struct GDScriptUtilityFunctionsDefinitions;
+#ifdef TESTS_ENABLED
+	friend class GDScriptTests::TestGDScriptTraitReflectionAccessor;
+#endif // TESTS_ENABLED
 
 	Ref<GDScriptNativeClass> native;
 	Ref<GDScript> base;
@@ -107,6 +116,8 @@ class GDScript : public Script {
 	HashMap<StringName, GDScriptFunction *> member_functions;
 	HashMap<StringName, Ref<GDScript>> subclasses;
 	HashMap<StringName, MethodInfo> _signals;
+	// Direct trait identities recorded for this script. Transitive script-inheritance traits are computed at query time.
+	Vector<StringName> script_trait_list;
 	Dictionary rpc_config;
 
 public:
@@ -214,6 +225,7 @@ private:
 	void _get_script_property_list(List<PropertyInfo> *r_list, bool p_include_base) const;
 	void _get_script_method_list(List<MethodInfo> *r_list, bool p_include_base) const;
 	void _get_script_signal_list(List<MethodInfo> *r_list, bool p_include_base) const;
+	void _get_script_trait_list(List<StringName> *r_list, HashSet<StringName> &r_seen, bool p_include_base) const;
 
 protected:
 	bool _get(const StringName &p_name, Variant &r_ret) const;
@@ -268,6 +280,8 @@ public:
 
 	virtual bool has_script_signal(const StringName &p_signal) const override;
 	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const override;
+	virtual bool has_script_trait(const StringName &p_trait) const override;
+	virtual void get_script_trait_list(List<StringName> *r_traits) const override;
 
 	bool is_tool() const override { return tool; }
 	bool is_abstract() const override { return _is_abstract; }
