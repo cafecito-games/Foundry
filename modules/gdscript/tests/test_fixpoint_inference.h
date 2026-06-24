@@ -145,6 +145,61 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 		memdelete(editor_file_system);
 		GDScriptTests::finish_language();
 	}
+
+	TEST_CASE("Mutually-referencing files terminate and report honest counts") {
+		// Initialize the GDScript test project so res:// resolves to the test
+		// scripts directory and cross-file analysis can read dependencies from disk.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String path_a = "res://refactor/fixpoint_cycle_a.gd";
+		const String path_b = "res://refactor/fixpoint_cycle_b.gd";
+
+		// A and B reference each other; each also has an independently-typable leaf
+		// so the run produces some annotations and then converges.
+		const String source_a =
+				"const B = preload(\"res://refactor/fixpoint_cycle_b.gd\")\n"
+				"static func a_leaf():\n"
+				"\treturn 1\n"
+				"static func uses_b():\n"
+				"\treturn B.b_leaf()\n";
+		const String source_b =
+				"const A = preload(\"res://refactor/fixpoint_cycle_a.gd\")\n"
+				"static func b_leaf():\n"
+				"\treturn 2\n"
+				"static func uses_a():\n"
+				"\treturn A.a_leaf()\n";
+
+		TemporaryScriptFile file_a(path_a, source_a);
+		TemporaryScriptFile file_b(path_b, source_b);
+
+		Vector<String> paths;
+		paths.push_back(path_a);
+		paths.push_back(path_b);
+
+		FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
+		REQUIRE(result.ok);
+
+		// Terminated well under the safety ceiling.
+		CHECK(result.iterations < 1000);
+
+		// The independently-typable leaves are resolved.
+		CHECK(FileAccess::get_file_as_string(path_a).contains("static func a_leaf() -> int:"));
+		CHECK(FileAccess::get_file_as_string(path_b).contains("static func b_leaf() -> int:"));
+
+		// Report counts are internally consistent.
+		int summed = 0;
+		for (const FixpointFileChange &change : result.changed_files) {
+			CHECK(change.annotations_applied > 0);
+			summed += change.annotations_applied;
+		}
+		CHECK_EQ(summed, result.total_annotations_applied);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
 }
 
 } // namespace GDScriptTests
