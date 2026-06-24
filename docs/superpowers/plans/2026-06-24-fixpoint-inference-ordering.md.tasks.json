@@ -4,20 +4,20 @@
     {
       "id": 1,
       "subject": "Task 1: Orchestrator with single-file fixpoint",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Implement GDScriptFixpointInference::run() end to end (snapshot → collect → apply → verify → commit-with-cache-invalidation → report), proven on a single file whose two functions both get typed.\n\n**Files:**\n- Create: modules/gdscript/editor/gdscript_fixpoint_inference.h\n- Create: modules/gdscript/editor/gdscript_fixpoint_inference.cpp\n- Create: modules/gdscript/tests/test_fixpoint_inference.h\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_fixpoint_inference.h\", \"modules/gdscript/editor/gdscript_fixpoint_inference.cpp\", \"modules/gdscript/tests/test_fixpoint_inference.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test --test-suite=\\\"*Fixpoint*\\\" --force-colors\", \"acceptanceCriteria\": [\"run() public API exists\", \"single file fully typed and reported\", \"second run idempotent\", \"builds with tests=yes\"]}\n```"
     },
     {
       "id": 2,
       "subject": "Task 2: Cross-file convergence (acceptance criterion)",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [1],
       "description": "**Goal:** Prove the fixpoint types an A→B→C chain across three separate files, whereas a single pass types only the leaf.\n\n**Files:**\n- Modify: modules/gdscript/tests/test_fixpoint_inference.h (add a TEST_CASE)\n\n```json:metadata\n{\"files\": [\"modules/gdscript/tests/test_fixpoint_inference.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test --test-suite=\\\"*Fixpoint*\\\" --force-colors\", \"acceptanceCriteria\": [\"single pass types only leaf\", \"full run types whole chain, iterations>1\"]}\n```"
     },
     {
       "id": 3,
       "subject": "Task 3: Termination on cycles and honest reporting",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [1],
       "description": "**Goal:** Guarantee the loop terminates on a dependency cycle without crashing, and assert report counts are honest.\n\n**Files:**\n- Modify: modules/gdscript/tests/test_fixpoint_inference.h (add a TEST_CASE)\n\n```json:metadata\n{\"files\": [\"modules/gdscript/tests/test_fixpoint_inference.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test --test-suite=\\\"*Fixpoint*\\\" --force-colors\", \"acceptanceCriteria\": [\"cycle terminates under ceiling, no crash\", \"report counts internally consistent\"]}\n```"
     }
