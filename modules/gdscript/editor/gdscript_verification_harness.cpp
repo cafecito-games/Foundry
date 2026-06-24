@@ -147,12 +147,13 @@ AffectedAnalysis analyze_affected(
 	return analysis;
 }
 
-// Apply every candidate's edits, grouped by file, over p_original. Candidates whose
-// edits fail to apply are returned in r_unappliable. Returns staged path->source.
+// Apply every candidate's edits, grouped by file, over p_original.
+// A non-applying edit group is treated as no-change so the batch is not silently
+// corrupted; ddmin attribution re-detects non-applying candidates in isolation.
+// Returns staged path->source.
 HashMap<String, String> stage_candidates(
 		const Vector<VerificationCandidate> &p_candidates,
-		const HashMap<String, String> &p_original,
-		Vector<int> &r_unappliable_indices) {
+		const HashMap<String, String> &p_original) {
 	HashMap<String, Vector<RefactorTextEdit>> edits_by_path;
 	for (int i = 0; i < p_candidates.size(); i++) {
 		const VerificationCandidate &candidate = p_candidates[i];
@@ -166,11 +167,77 @@ HashMap<String, String> stage_candidates(
 		if (p_original.has(entry.key) && GDScriptRefactorEdits::apply(p_original[entry.key], entry.value, applied)) {
 			staged[entry.key] = applied;
 		}
-		// A non-applying group is treated as no-change here so the batch is not silently
-		// corrupted; the per-candidate attribution path re-detects and reports it.
 	}
-	(void)r_unappliable_indices;
 	return staged;
+}
+
+// Stage only the given subset of candidates over originals and return the affected
+// analysis. Used as the ddmin test oracle.
+AffectedAnalysis analyze_subset(
+		const Vector<VerificationCandidate> &p_subset,
+		const Vector<String> &p_affected,
+		const HashMap<String, String> &p_original,
+		const VerificationOptions &p_options,
+		bool &r_fatal) {
+	const HashMap<String, String> staged = stage_candidates(p_subset, p_original);
+	return analyze_affected(p_affected, p_original, staged, p_options, r_fatal);
+}
+
+// Returns the candidates from p_pool indexed by p_indices.
+Vector<VerificationCandidate> subset_of(const Vector<VerificationCandidate> &p_pool, const Vector<int> &p_indices) {
+	Vector<VerificationCandidate> out;
+	for (int index : p_indices) {
+		out.push_back(p_pool[index]);
+	}
+	return out;
+}
+
+// Classic ddmin: find a 1-minimal subset of p_indices whose application still
+// regresses (error_count > p_baseline). p_pool is the full candidate list.
+// Returns the minimal offending index list. Assumes the full p_indices regresses.
+Vector<int> ddmin_offending(
+		const Vector<int> &p_indices,
+		const Vector<VerificationCandidate> &p_pool,
+		const Vector<String> &p_affected,
+		const HashMap<String, String> &p_original,
+		const VerificationOptions &p_options,
+		int p_baseline,
+		bool &r_fatal) {
+	Vector<int> current = p_indices;
+	int granularity = 2;
+	while (current.size() >= 2) {
+		const int subset_size = current.size() / granularity;
+		bool reduced = false;
+		for (int start = 0; start < current.size(); start += subset_size) {
+			// Complement = current minus [start, start+subset_size).
+			Vector<int> complement;
+			for (int i = 0; i < current.size(); i++) {
+				if (i < start || i >= start + subset_size) {
+					complement.push_back(current[i]);
+				}
+			}
+			if (complement.is_empty()) {
+				continue;
+			}
+			const AffectedAnalysis analysis = analyze_subset(subset_of(p_pool, complement), p_affected, p_original, p_options, r_fatal);
+			if (r_fatal) {
+				return current;
+			}
+			if (analysis.error_count > p_baseline) {
+				current = complement;
+				granularity = MAX(granularity - 1, 2);
+				reduced = true;
+				break;
+			}
+		}
+		if (!reduced) {
+			if (granularity >= current.size()) {
+				break;
+			}
+			granularity = MIN(granularity * 2, current.size());
+		}
+	}
+	return current;
 }
 
 } // namespace
@@ -260,8 +327,7 @@ VerificationResult GDScriptVerificationHarness::verify(
 	result.baseline_error_count = baseline.error_count;
 
 	// Optimistic: apply all candidates at once.
-	Vector<int> unappliable;
-	const HashMap<String, String> all_staged = stage_candidates(p_candidates, original, unappliable);
+	const HashMap<String, String> all_staged = stage_candidates(p_candidates, original);
 	const AffectedAnalysis combined = analyze_affected(affected, original, all_staged, p_options, fatal);
 	if (fatal) {
 		result.ok = false;
@@ -276,28 +342,139 @@ VerificationResult GDScriptVerificationHarness::verify(
 		return result;
 	}
 
-	// Regression: reject every candidate, attributing the newly-introduced diagnostics.
-	Vector<String> new_messages;
-	{
-		HashSet<String> baseline_messages;
-		for (const String &message : baseline.messages) {
-			baseline_messages.insert(message);
-		}
-		for (const String &message : combined.messages) {
-			if (!baseline_messages.has(message)) {
-				new_messages.push_back(message);
+	// Bound the cost of attribution. Each oracle/probe call stages sources to disk and
+	// re-analyzes the entire affected set, so it is far from free. ddmin needs roughly
+	// O(k log k) oracle calls to isolate offending clusters, plus one confirmation probe
+	// per rejected candidate, where k is the candidate count. Above this ceiling we skip
+	// delta debugging and reject the whole batch to keep verification cost bounded; the
+	// common case (no regression, or small batches) keeps precise per-candidate ddmin.
+	const int max_bisection_candidates = 64;
+	if (p_candidates.size() > max_bisection_candidates) {
+		ERR_PRINT(vformat(
+				"Verification: %d candidates exceed the bisection ceiling of %d; rejecting the batch as a whole to bound cost.",
+				p_candidates.size(), max_bisection_candidates));
+		Vector<String> new_messages;
+		{
+			HashSet<String> baseline_messages;
+			for (const String &message : baseline.messages) {
+				baseline_messages.insert(message);
+			}
+			for (const String &message : combined.messages) {
+				if (!baseline_messages.has(message)) {
+					new_messages.push_back(message);
+				}
 			}
 		}
+		for (const VerificationCandidate &candidate : p_candidates) {
+			VerificationRejected rejected;
+			rejected.path = candidate.path;
+			rejected.line = candidate.line;
+			rejected.reason = "batch exceeds bisection ceiling; rejected as a whole to bound verification cost";
+			rejected.diagnostics = new_messages;
+			result.rejected.push_back(rejected);
+		}
+		result.accepted_error_count = baseline.error_count;
+		result.ok = true;
+		return result;
 	}
-	for (const VerificationCandidate &candidate : p_candidates) {
+
+	// Regression: isolate offending candidates via delta debugging, keep the rest.
+	Vector<int> remaining;
+	for (int i = 0; i < p_candidates.size(); i++) {
+		remaining.push_back(i);
+	}
+	HashSet<int> rejected_indices;
+
+	// Repeatedly carve out a minimal offending subset until the remainder is clean.
+	while (true) {
+		const AffectedAnalysis analysis = analyze_subset(subset_of(p_candidates, remaining), affected, original, p_options, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted during attribution.";
+			return result;
+		}
+		if (analysis.error_count <= baseline.error_count) {
+			break;
+		}
+		const Vector<int> offending = ddmin_offending(remaining, p_candidates, affected, original, p_options, baseline.error_count, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted during attribution.";
+			return result;
+		}
+		HashSet<int> offending_set;
+		for (int index : offending) {
+			offending_set.insert(index);
+			rejected_indices.insert(index);
+		}
+		Vector<int> next;
+		for (int index : remaining) {
+			if (!offending_set.has(index)) {
+				next.push_back(index);
+			}
+		}
+		// Safety: if ddmin failed to shrink (shouldn't happen with a monotonic predicate),
+		// drop the whole remainder to guarantee termination.
+		if (next.size() == remaining.size()) {
+			for (int index : remaining) {
+				rejected_indices.insert(index);
+			}
+			remaining.clear();
+			break;
+		}
+		remaining = next;
+	}
+
+	// Build the accepted list and re-verify it as a final confirmation.
+	Vector<VerificationCandidate> accepted_candidates;
+	for (int i = 0; i < p_candidates.size(); i++) {
+		if (!rejected_indices.has(i)) {
+			accepted_candidates.push_back(p_candidates[i]);
+		}
+	}
+	const HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
+	const AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+	if (fatal) {
+		result.ok = false;
+		result.error_message = "Verification aborted confirming accepted set.";
+		return result;
+	}
+	result.accepted = accepted_candidates;
+	result.accepted_error_count = accepted_analysis.error_count;
+
+	// Attribute diagnostics to each rejected candidate: messages it alone introduces
+	// over the accepted base.
+	HashSet<String> accepted_messages;
+	for (const String &message : accepted_analysis.messages) {
+		accepted_messages.insert(message);
+	}
+	for (int i = 0; i < p_candidates.size(); i++) {
+		if (!rejected_indices.has(i)) {
+			continue;
+		}
+		// A second analysis is required here because ddmin only compared error counts;
+		// attribution needs the actual messages this candidate introduces over the
+		// accepted base, so re-analyze the accepted set plus this one candidate.
+		Vector<VerificationCandidate> probe = accepted_candidates;
+		probe.push_back(p_candidates[i]);
+		const AffectedAnalysis probe_analysis = analyze_subset(probe, affected, original, p_options, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted attributing diagnostics; files may be left modified on disk.";
+			return result;
+		}
 		VerificationRejected rejected;
-		rejected.path = candidate.path;
-		rejected.line = candidate.line;
-		rejected.reason = "batch introduces new analyzer error(s) in the affected set";
-		rejected.diagnostics = new_messages;
+		rejected.path = p_candidates[i].path;
+		rejected.line = p_candidates[i].line;
+		rejected.reason = "introduces new analyzer error(s) in the affected set";
+		for (const String &message : probe_analysis.messages) {
+			if (!accepted_messages.has(message)) {
+				rejected.diagnostics.push_back(message);
+			}
+		}
 		result.rejected.push_back(rejected);
 	}
-	result.accepted_error_count = baseline.error_count;
+
 	result.ok = true;
 	return result;
 }

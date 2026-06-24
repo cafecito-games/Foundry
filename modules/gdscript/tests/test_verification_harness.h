@@ -138,6 +138,63 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		memdelete(editor_file_system);
 		GDScriptTests::finish_language();
 	}
+
+	TEST_CASE("Bisection drops only the offending candidate and keeps the rest") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// One provider with two getters: get_value() (consumed as String -> bad once
+		// typed int) and get_label() (consumed correctly as String -> safe to type).
+		const String provider_path = "res://refactor/verify_multi_provider.gd";
+		const String provider_source =
+				"func get_value():\n"
+				"\treturn 42\n"
+				"func get_label():\n"
+				"\treturn \"hi\"\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_multi_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_multi_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar bad: String = p.get_value()\n"
+				"\tvar ok: String = p.get_label()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GE(candidates.size(), 2);
+
+		Vector<String> universe = { provider_path, consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+
+		// Declaration anchors of the two getters in provider_source (0-based):
+		// get_value() is on line 0, get_label() on line 2.
+		const int get_value_line = 0;
+		const int get_label_line = 2;
+
+		// Exactly one candidate is dropped, and it must be get_value()'s return-type
+		// edit (the only one that regresses the consumer once typed int), not get_label().
+		CHECK_EQ(result.rejected.size(), 1);
+		CHECK_EQ(result.rejected[0].line, get_value_line);
+		CHECK_GT(result.rejected[0].diagnostics.size(), 0);
+
+		// get_label()'s candidate must be retained, and the accepted set re-verifies clean.
+		bool kept_get_label = false;
+		for (const VerificationCandidate &accepted : result.accepted) {
+			if (accepted.line == get_label_line) {
+				kept_get_label = true;
+			}
+		}
+		CHECK(kept_get_label);
+		CHECK_LE(result.accepted_error_count, result.baseline_error_count);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
 }
 
 } // namespace GDScriptTests
