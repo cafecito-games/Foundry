@@ -5659,6 +5659,15 @@ void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_cla
 				continue;
 			}
 
+			// A trait member that the class does not itself redeclare will be flattened
+			// in, so it must not collide with a member of the implementer's base classes
+			// or native base — the same diagnostic the class's own members would raise.
+			// (A method overriding a base method is allowed, as for normal classes.)
+			if (!p_class->has_member(member_name) &&
+					check_class_member_name_conflict(p_class, member_name, member.get_source_node()) != OK) {
+				continue;
+			}
+
 			if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 				if (member.function == nullptr) {
 					continue;

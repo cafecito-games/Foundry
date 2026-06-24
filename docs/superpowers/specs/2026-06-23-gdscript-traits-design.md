@@ -300,15 +300,22 @@ on the existing dependency tracking: an implementer resolves an external global 
 through `get_depended_parser_for`, so a change to the trait's file invalidates and
 recompiles the implementer through the normal reload path.
 
-### Known limitation
+### Known limitations
 
-Direct members of a directly applied trait flatten across files. Accessing a member
-that arrives only *transitively* through an external global trait (class uses global
-trait `A`, `A` uses global trait `B`, and the class names `B`'s members directly)
-currently fails analyzer resolution, because the implementer's parser cannot reach a
-transitively-used external trait's parser. Inline transitive traits and indirect use
-(an `A` method that touches `B`'s state) work. Wiring transitive external trait
-parsers is tracked as a follow-up.
+- Transitive external traits: direct members of a directly applied trait flatten
+  across files, but accessing a member that arrives only *transitively* through an
+  external global trait (class uses global trait `A`, `A` uses global trait `B`, and
+  the class names `B`'s members directly) currently fails analyzer resolution, because
+  the implementer's parser cannot reach a transitively-used external trait's parser.
+  Inline transitive traits and indirect use (an `A` method that touches `B`'s state)
+  work. Wiring transitive external trait parsers is tracked as a follow-up.
+- Static-vs-instance name collisions between a trait member and a base/class member
+  are not yet diagnosed. A trait member whose name collides with a *native* base member
+  or a non-overridable base member is rejected (as the class's own members would be),
+  and a method may override a base method, but a static trait member sharing a name with
+  an instance member (or vice versa) is not flagged and can resolve inconsistently
+  between the analyzer and codegen. Tightening static/instance conflict detection is
+  tracked as a follow-up.
 
 ## Namespace Interop
 

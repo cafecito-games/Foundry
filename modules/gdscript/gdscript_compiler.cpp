@@ -2315,6 +2315,21 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 	return OK;
 }
 
+// Whether a class has static data of its own or flattens static data in from an
+// applied trait. Trait static data is recompiled into the implementer, so it must be
+// accounted for wherever the class's own static data is.
+static bool _class_or_traits_have_static_data(const GDScriptParser::ClassNode *p_class) {
+	if (p_class->has_static_data) {
+		return true;
+	}
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait != nullptr && trait->has_static_data) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // Returns whether a trait member of the given kind is flattened into an implementer.
 // Variables, constants, enums, enum values, signals, and concrete functions are
 // flattened; abstract (required) functions are contracts the implementer satisfies
@@ -3169,7 +3184,21 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 		}
 	}
 
-	if (p_class->onready_used) {
+	// `@onready` variables flattened in from applied traits also require the
+	// `@implicit_ready()` function, even when the implementer declares none of its own.
+	bool onready_used = p_class->onready_used;
+	if (!onready_used) {
+		Vector<const GDScriptParser::ClassNode::Member *> flattened_trait_members;
+		_collect_flattened_trait_members(p_class, flattened_trait_members);
+		for (const GDScriptParser::ClassNode::Member *member_ptr : flattened_trait_members) {
+			if (member_ptr->type == GDScriptParser::ClassNode::Member::VARIABLE && member_ptr->variable->onready) {
+				onready_used = true;
+				break;
+			}
+		}
+	}
+
+	if (onready_used) {
 		// Create `@implicit_ready()` special function.
 		Error err = OK;
 		_parse_function(err, p_script, p_class, nullptr, true);
@@ -3178,15 +3207,7 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 		}
 	}
 
-	bool traits_have_static_data = false;
-	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
-		if (trait != nullptr && trait->has_static_data) {
-			traits_have_static_data = true;
-			break;
-		}
-	}
-
-	if (p_class->has_static_data || traits_have_static_data) {
+	if (_class_or_traits_have_static_data(p_class)) {
 		Error err = OK;
 		GDScriptFunction *func = _make_static_initializer(err, p_script, p_class);
 		p_script->static_initializer = func;
@@ -3246,7 +3267,7 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 	// Trait static data is flattened into this script, so it must drive `has_static_data`
 	// too — otherwise a class with only trait-provided static data would skip static-script
 	// registration and its flattened static state would not be pinned by the static cache.
-	has_static_data = p_class->has_static_data || traits_have_static_data;
+	has_static_data = _class_or_traits_have_static_data(p_class);
 
 	for (int i = 0; i < p_class->members.size(); i++) {
 		if (p_class->members[i].type != GDScriptParser::ClassNode::Member::CLASS) {
@@ -3261,7 +3282,7 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 			return err;
 		}
 
-		has_static_data = has_static_data || inner_class->has_static_data;
+		has_static_data = has_static_data || _class_or_traits_have_static_data(inner_class);
 	}
 
 	p_script->_static_default_init();
