@@ -1,0 +1,33 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-23-push-fatal.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: OS exit-request flag",
+      "status": "pending",
+      "description": "**Goal:** Add a thread-safe one-way exit-request signal to OS, independent of scene/.\n\n**Files:**\n- Modify: core/os/os.h\n- Modify: core/os/os.cpp\n- Test: tests/core/os/test_os.h\n\n```json:metadata\n{\"files\": [\"core/os/os.h\", \"core/os/os.cpp\", \"tests/core/os/test_os.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-case=\\\"[OS] Exit request flag\\\"\", \"acceptanceCriteria\": [\"request_exit stores code and sets flag\", \"is_exit_requested returns flag\", \"uses SafeFlag\", \"doctest passes\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Honor exit request in Main::iteration()",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "**Goal:** Main loop ends gracefully when OS::is_exit_requested() is true.\n\n**Files:**\n- Modify: main/main.cpp (Main::iteration(), after process() block, before fixed_fps early return)\n\n```json:metadata\n{\"files\": [\"main/main.cpp\"], \"verifyCommand\": \"scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)\", \"acceptanceCriteria\": [\"OR is_exit_requested into exit after process()\", \"before fixed_fps early return\", \"builds cleanly\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: push_fatal utility function + project setting",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "**Goal:** Add push_fatal vararg utility (log + conditional graceful quit), register it, define project setting, unit-test decision logic.\n\n**Files:**\n- Modify: core/variant/variant_utility.h\n- Modify: core/variant/variant_utility.cpp\n- Modify: main/main.cpp\n- Test: tests/core/variant/test_variant_utility.h\n\n```json:metadata\n{\"files\": [\"core/variant/variant_utility.h\", \"core/variant/variant_utility.cpp\", \"main/main.cpp\", \"tests/core/variant/test_variant_utility.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-case=\\\"[VariantUtility] push_fatal decision logic\\\"\", \"acceptanceCriteria\": [\"logs via ERR_PRINT\", \"0 args too-few error no exit\", \"editor hint log only\", \"setting false log only\", \"else request_exit EXIT_FAILURE\", \"setting default true\", \"doctest passes\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Document push_fatal in @GlobalScope.xml",
+      "status": "pending",
+      "blockedBy": [2],
+      "description": "**Goal:** Document push_fatal and the application/run/push_fatal_terminates setting.\n\n**Files:**\n- Modify: doc/classes/@GlobalScope.xml\n- Modify: doc/classes/ProjectSettings.xml\n\n```json:metadata\n{\"files\": [\"doc/classes/@GlobalScope.xml\", \"doc/classes/ProjectSettings.xml\"], \"verifyCommand\": \"pre-commit run --files doc/classes/@GlobalScope.xml doc/classes/ProjectSettings.xml\", \"acceptanceCriteria\": [\"push_fatal method entry with full behavior\", \"doc checks pass\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-23"
+}
