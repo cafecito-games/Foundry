@@ -116,6 +116,18 @@ struct InlineVariableCandidate {
 	Vector<RefactorTextEdit> replacement_edits;
 };
 
+struct ImplementAbstractCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	// Owed abstract methods, most-derived-first.
+	Vector<const GDScriptParser::FunctionNode *> abstract_methods;
+	// Insertion point: the line AFTER the last member of the target class (1-based,
+	// matching FunctionNode::end_line semantics used by extract method).
+	int insertion_line = -1;
+	String class_body_indent;
+};
+
 #ifndef GDSCRIPT_NO_LSP
 class RefactorParseResultProvider : public GDScriptParseResultProvider {
 	mutable HashMap<String, ExtendGDScriptParser *> parse_results;
@@ -226,6 +238,17 @@ struct InlineVariableCandidateCache {
 };
 
 InlineVariableCandidateCache inline_variable_cache;
+
+struct ImplementAbstractCandidateCache {
+	bool valid = false;
+	String path;
+	uint64_t source_hash = 0;
+	int source_length = 0;
+	RefactorLocation location;
+	ImplementAbstractCandidate candidate;
+};
+
+ImplementAbstractCandidateCache implement_abstract_cache;
 
 Mutex refactor_candidate_cache_mutex;
 
@@ -3326,6 +3349,31 @@ void cache_inline_variable_candidate(const RefactorContext &p_context, const Ref
 
 void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates);
 
+bool get_cached_implement_abstract_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, ImplementAbstractCandidate &r_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
+	if (!implement_abstract_cache.valid ||
+			implement_abstract_cache.path != p_context.path ||
+			implement_abstract_cache.source_hash != p_context.source.hash64() ||
+			implement_abstract_cache.source_length != p_context.source.length() ||
+			!same_location(implement_abstract_cache.location, p_location)) {
+		return false;
+	}
+	r_candidate = implement_abstract_cache.candidate;
+	return true;
+}
+
+void cache_implement_abstract_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, const ImplementAbstractCandidate &p_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
+	implement_abstract_cache.valid = true;
+	implement_abstract_cache.path = p_context.path;
+	implement_abstract_cache.source_hash = p_context.source.hash64();
+	implement_abstract_cache.source_length = p_context.source.length();
+	implement_abstract_cache.location = p_location;
+	implement_abstract_cache.candidate = p_candidate;
+}
+
 void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates) {
 	TypeAnnotationCandidate candidate;
 	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate) && candidate.matched) {
@@ -3865,6 +3913,40 @@ TypeAnnotationCandidate find_type_annotation_candidate(
 	return candidate;
 }
 
+ImplementAbstractCandidate find_implement_abstract_candidate(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
+	ImplementAbstractCandidate candidate;
+	if (get_cached_implement_abstract_candidate(p_context, p_location, candidate)) {
+		return candidate;
+	}
+
+	// Detection is added separately; until then this stub reports the refactor as unavailable.
+	candidate.disabled_reason = "No unimplemented abstract methods.";
+
+	cache_implement_abstract_candidate(p_context, p_location, candidate);
+	return candidate;
+}
+
+RefactorResult prepare_implement_abstract(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const GDScriptParseResultProvider *p_parse_results) {
+	RefactorResult result;
+	const ImplementAbstractCandidate candidate = find_implement_abstract_candidate(p_context, p_location, p_parse_results);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason;
+		return result;
+	}
+
+	// Edit production is added separately; the candidate is never enabled yet, so this is unreachable.
+	result.ok = false;
+	result.error_message = "Implement Abstract Methods is not implemented yet.";
+	return result;
+}
+
 RefactorResult prepare_type_annotation(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
@@ -4283,6 +4365,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 		inline_variable.disabled_reason = inline_candidate.disabled_reason;
 	}
 	result.push_back(inline_variable);
+
+	RefactorAvailability implement_abstract;
+	implement_abstract.kind = RefactorKind::IMPLEMENT_ABSTRACT_METHODS;
+	implement_abstract.title = "Implement Abstract Methods";
+	const ImplementAbstractCandidate implement_abstract_candidate = find_implement_abstract_candidate(p_context, p_location, parse_result_provider);
+	implement_abstract.enabled = implement_abstract_candidate.enabled;
+	if (!implement_abstract.enabled) {
+		implement_abstract.disabled_reason = implement_abstract_candidate.disabled_reason;
+	}
+	result.push_back(implement_abstract);
 	return result;
 }
 
@@ -4305,6 +4397,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_type_annotation(p_context, p_location, parse_result_provider);
 		case RefactorKind::INLINE_VARIABLE:
 			return prepare_inline_variable(p_context, p_location, parse_result_provider);
+		case RefactorKind::IMPLEMENT_ABSTRACT_METHODS:
+			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
 		default:
 			break;
 	}

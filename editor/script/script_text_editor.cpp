@@ -2085,7 +2085,8 @@ void ScriptTextEditor::_edit_option(int p_op) {
 		case EDIT_REFACTOR_EXTRACT_VARIABLE:
 		case EDIT_REFACTOR_EXTRACT_METHOD:
 		case EDIT_REFACTOR_ADD_TYPE_ANNOTATION:
-		case EDIT_REFACTOR_INLINE_VARIABLE: {
+		case EDIT_REFACTOR_INLINE_VARIABLE:
+		case EDIT_REFACTOR_IMPLEMENT_ABSTRACT_METHODS: {
 			// The option id encodes the RefactorKind; see the enum ordering note.
 			_run_refactor(p_op - EDIT_REFACTOR_RENAME);
 		} break;
@@ -2960,6 +2961,7 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::EXTRACT_METHOD == EDIT_REFACTOR_EXTRACT_METHOD, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::ADD_TYPE_ANNOTATION == EDIT_REFACTOR_ADD_TYPE_ANNOTATION, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::INLINE_VARIABLE == EDIT_REFACTOR_INLINE_VARIABLE, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
+	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::IMPLEMENT_ABSTRACT_METHODS == EDIT_REFACTOR_IMPLEMENT_ABSTRACT_METHODS, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 
 	if (!(script.is_valid() && script->get_language() && script->get_language()->get_name() == "GDScript")) {
 		return;
