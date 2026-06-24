@@ -4617,6 +4617,7 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 
 				return ERR_CANT_RESOLVE;
 			} break;
+			case GDScriptParser::DataType::TYPE_PARAMETER:
 			case GDScriptParser::DataType::RESOLVING:
 			case GDScriptParser::DataType::UNRESOLVED: {
 				return ERR_CANT_RESOLVE;

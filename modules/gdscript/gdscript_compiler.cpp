@@ -199,6 +199,10 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.kind = GDScriptDataType::BUILTIN;
 			result.builtin_type = p_datatype.builtin_type;
 			break;
+		case GDScriptParser::DataType::TYPE_PARAMETER: {
+			// Generics are type-erased at runtime; an unsubstituted parameter becomes Variant.
+			result.kind = GDScriptDataType::VARIANT;
+		} break;
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED: {
 			_set_error("Parser bug (please report): converting unresolved type.", nullptr);

@@ -54,9 +54,16 @@ public:
 		NATIVE,
 		SCRIPT,
 		GDSCRIPT,
+		TYPE_PARAMETER, // Generic type parameter, erased before execution.
 	};
 
 	Kind kind = VARIANT;
+
+	enum TypeParameterScope {
+		TYPE_PARAMETER_NONE,
+		TYPE_PARAMETER_CLASS,
+		TYPE_PARAMETER_METHOD,
+	};
 
 	Variant::Type builtin_type = Variant::NIL;
 	StringName native_type;
@@ -67,6 +74,14 @@ public:
 	bool is_nullable = false;
 	bool is_script_trait = false;
 	StringName script_trait;
+
+	// For TYPE_PARAMETER kind.
+	StringName type_parameter_name;
+	int type_parameter_index = -1;
+	TypeParameterScope type_parameter_scope = TYPE_PARAMETER_NONE;
+
+	// Type arguments of a specialized type handle, e.g. the `int` in `Box[int]`. Empty for unspecialized types.
+	Vector<GDScriptDataType> type_arguments;
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
@@ -146,6 +161,10 @@ public:
 					base = base->get_base_script();
 				}
 				return valid;
+			} break;
+			case TYPE_PARAMETER: {
+				// Type parameters are erased before execution; accept any value defensively.
+				return true;
 			} break;
 		}
 		return false;
@@ -238,7 +257,10 @@ public:
 				(script_type == p_other.script_type || script_type_ref == p_other.script_type_ref) &&
 				is_script_trait == p_other.is_script_trait &&
 				script_trait == p_other.script_trait &&
-				container_element_types == p_other.container_element_types;
+				container_element_types == p_other.container_element_types &&
+				type_parameter_name == p_other.type_parameter_name &&
+				type_parameter_scope == p_other.type_parameter_scope &&
+				type_arguments == p_other.type_arguments;
 	}
 
 	bool operator!=(const GDScriptDataType &p_other) const {
@@ -255,6 +277,10 @@ public:
 		is_script_trait = p_other.is_script_trait;
 		script_trait = p_other.script_trait;
 		container_element_types = p_other.container_element_types;
+		type_parameter_name = p_other.type_parameter_name;
+		type_parameter_index = p_other.type_parameter_index;
+		type_parameter_scope = p_other.type_parameter_scope;
+		type_arguments = p_other.type_arguments;
 	}
 
 	GDScriptDataType(const GDScriptDataType &p_other) {
