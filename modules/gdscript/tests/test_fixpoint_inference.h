@@ -123,8 +123,8 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 			REQUIRE(result.ok);
 
 			CHECK(FileAccess::get_file_as_string(path_c).contains("static func value() -> int:"));
-			CHECK_FALSE(FileAccess::get_file_as_string(path_b).contains("-> int"));
-			CHECK_FALSE(FileAccess::get_file_as_string(path_a).contains(": int"));
+			CHECK_FALSE(FileAccess::get_file_as_string(path_b).contains("relay() -> "));
+			CHECK_FALSE(FileAccess::get_file_as_string(path_a).contains("var x: "));
 		}
 
 		SUBCASE("full fixpoint types the whole chain") {
