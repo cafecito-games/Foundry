@@ -3520,6 +3520,38 @@ String normalize_block_text(const String &p_text) {
 	return normalized;
 }
 
+bool style_order_bucket_is_callable_or_inner_type(StyleOrderBucket p_bucket) {
+	switch (p_bucket) {
+		case StyleOrderBucket::STATIC_INIT:
+		case StyleOrderBucket::STATIC_METHOD:
+		case StyleOrderBucket::BUILTIN_VIRTUAL_METHOD:
+		case StyleOrderBucket::CUSTOM_OVERRIDE_METHOD:
+		case StyleOrderBucket::PUBLIC_METHOD:
+		case StyleOrderBucket::PRIVATE_METHOD:
+		case StyleOrderBucket::INNER_TYPE:
+			return true;
+		case StyleOrderBucket::SIGNAL:
+		case StyleOrderBucket::ENUM:
+		case StyleOrderBucket::CONSTANT:
+		case StyleOrderBucket::STATIC_VARIABLE:
+		case StyleOrderBucket::EXPORTED_VARIABLE:
+		case StyleOrderBucket::PUBLIC_VARIABLE:
+		case StyleOrderBucket::PRIVATE_VARIABLE:
+		case StyleOrderBucket::ONREADY_PUBLIC_VARIABLE:
+		case StyleOrderBucket::ONREADY_PRIVATE_VARIABLE:
+			return false;
+	}
+	return false;
+}
+
+bool style_order_buckets_need_blank_line_between(StyleOrderBucket p_previous, StyleOrderBucket p_current) {
+	if (p_previous == p_current) {
+		return false;
+	}
+	return !style_order_bucket_is_callable_or_inner_type(p_previous) ||
+			!style_order_bucket_is_callable_or_inner_type(p_current);
+}
+
 String join_style_order_blocks(const Vector<StyleOrderBlock> &p_blocks) {
 	String text;
 	for (int i = 0; i < p_blocks.size(); i++) {
@@ -3527,7 +3559,7 @@ String join_style_order_blocks(const Vector<StyleOrderBlock> &p_blocks) {
 			if (!text.ends_with("\n")) {
 				text += "\n";
 			}
-			if (p_blocks[i].bucket != p_blocks[i - 1].bucket) {
+			if (style_order_buckets_need_blank_line_between(p_blocks[i - 1].bucket, p_blocks[i].bucket)) {
 				text += "\n";
 			}
 		}
@@ -3548,7 +3580,100 @@ String match_style_order_span_final_newline(const String &p_text, bool p_should_
 	return text;
 }
 
+String style_order_member_name(const GDScriptParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::CLASS:
+			if (p_member.m_class == nullptr || p_member.m_class->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.m_class->identifier->name);
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+			if (p_member.constant == nullptr || p_member.constant->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.constant->identifier->name);
+		case GDScriptParser::ClassNode::Member::FUNCTION:
+			if (p_member.function == nullptr || p_member.function->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.function->identifier->name);
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			if (p_member.signal == nullptr || p_member.signal->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.signal->identifier->name);
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+			if (p_member.variable == nullptr || p_member.variable->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.variable->identifier->name);
+		case GDScriptParser::ClassNode::Member::ENUM:
+			if (p_member.m_enum == nullptr || p_member.m_enum->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.m_enum->identifier->name);
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+			return p_member.enum_value.identifier != nullptr ? String(p_member.enum_value.identifier->name) : String();
+		case GDScriptParser::ClassNode::Member::GROUP:
+			return p_member.annotation != nullptr ? String(p_member.annotation->export_info.name) : String();
+		case GDScriptParser::ClassNode::Member::UNDEFINED:
+			return String();
+	}
+	return String();
+}
+
+bool is_private_style_order_name(const String &p_name) {
+	return p_name.begins_with("_");
+}
+
+bool is_builtin_virtual_callback_name(const String &p_name) {
+	return p_name == "_init" ||
+			p_name == "_enter_tree" ||
+			p_name == "_ready" ||
+			p_name == "_process" ||
+			p_name == "_physics_process" ||
+			p_name == "_exit_tree" ||
+			p_name == "_input" ||
+			p_name == "_unhandled_input" ||
+			p_name == "_unhandled_key_input" ||
+			p_name == "_notification";
+}
+
+bool style_order_variable_has_export_annotation(const GDScriptParser::VariableNode *p_variable) {
+	if (p_variable == nullptr) {
+		return false;
+	}
+	if (p_variable->exported) {
+		return true;
+	}
+
+	for (const GDScriptParser::AnnotationNode *annotation : p_variable->annotations) {
+		if (annotation != nullptr && String(annotation->name).begins_with("@export")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool style_order_variable_has_onready_annotation(const GDScriptParser::VariableNode *p_variable) {
+	if (p_variable == nullptr) {
+		return false;
+	}
+	if (p_variable->onready) {
+		return true;
+	}
+
+	for (const GDScriptParser::AnnotationNode *annotation : p_variable->annotations) {
+		if (annotation != nullptr && annotation->name == "@onready") {
+			return true;
+		}
+	}
+	return false;
+}
+
 StyleOrderBucket get_style_order_bucket(const GDScriptParser::ClassNode::Member &p_member) {
+	const String member_name = style_order_member_name(p_member);
+
 	switch (p_member.type) {
 		case GDScriptParser::ClassNode::Member::SIGNAL:
 			return StyleOrderBucket::SIGNAL;
@@ -3558,9 +3683,30 @@ StyleOrderBucket get_style_order_bucket(const GDScriptParser::ClassNode::Member 
 		case GDScriptParser::ClassNode::Member::CONSTANT:
 			return StyleOrderBucket::CONSTANT;
 		case GDScriptParser::ClassNode::Member::VARIABLE:
+			if (p_member.variable != nullptr && p_member.variable->is_static) {
+				return StyleOrderBucket::STATIC_VARIABLE;
+			}
+			if (style_order_variable_has_export_annotation(p_member.variable)) {
+				return StyleOrderBucket::EXPORTED_VARIABLE;
+			}
+			if (style_order_variable_has_onready_annotation(p_member.variable)) {
+				if (is_private_style_order_name(member_name)) {
+					return StyleOrderBucket::ONREADY_PRIVATE_VARIABLE;
+				}
+				return StyleOrderBucket::ONREADY_PUBLIC_VARIABLE;
+			}
+			if (is_private_style_order_name(member_name)) {
+				return StyleOrderBucket::PRIVATE_VARIABLE;
+			}
 			return StyleOrderBucket::PUBLIC_VARIABLE;
 		case GDScriptParser::ClassNode::Member::FUNCTION:
-			return StyleOrderBucket::PUBLIC_METHOD;
+			if (p_member.function != nullptr && p_member.function->is_static) {
+				return member_name == "_static_init" ? StyleOrderBucket::STATIC_INIT : StyleOrderBucket::STATIC_METHOD;
+			}
+			if (is_builtin_virtual_callback_name(member_name)) {
+				return StyleOrderBucket::BUILTIN_VIRTUAL_METHOD;
+			}
+			return is_private_style_order_name(member_name) ? StyleOrderBucket::PRIVATE_METHOD : StyleOrderBucket::PUBLIC_METHOD;
 		case GDScriptParser::ClassNode::Member::CLASS:
 			return StyleOrderBucket::INNER_TYPE;
 		case GDScriptParser::ClassNode::Member::GROUP:

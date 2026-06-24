@@ -2026,6 +2026,68 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Sort members by style guide classifies all supported member buckets") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"class Inner:\n"
+				"\tpass\n"
+				"func public_method() -> void:\n"
+				"\tpass\n"
+				"func _private_method() -> void:\n"
+				"\tpass\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"static func helper() -> void:\n"
+				"\tpass\n"
+				"static func _static_init() -> void:\n"
+				"\tpass\n"
+				"@onready var node := Node.new()\n"
+				"var _private_value := 2\n"
+				"var public_value := 1\n"
+				"@export var exported_value := 3\n"
+				"static var shared_value := 4\n"
+				"const LIMIT := 10\n"
+				"enum State { IDLE, RUNNING }\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"enum State { IDLE, RUNNING }\n"
+				"\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"static var shared_value := 4\n"
+				"\n"
+				"@export var exported_value := 3\n"
+				"\n"
+				"var public_value := 1\n"
+				"\n"
+				"var _private_value := 2\n"
+				"\n"
+				"@onready var node := Node.new()\n"
+				"\n"
+				"static func _static_init() -> void:\n"
+				"\tpass\n"
+				"static func helper() -> void:\n"
+				"\tpass\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"func public_method() -> void:\n"
+				"\tpass\n"
+				"func _private_method() -> void:\n"
+				"\tpass\n"
+				"class Inner:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
 	TEST_CASE("Sort members by style guide rejects unsafe annotation blocks") {
 		SUBCASE("separate-line member annotation") {
 			const String source =
