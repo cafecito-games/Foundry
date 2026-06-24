@@ -697,6 +697,33 @@ func f():
 			}
 		}
 
+		SUBCASE("Traits are reported with the trait symbol kind and detail") {
+			String path = "res://lsp/traits.gd";
+			assert_no_errors_in(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			const LSP::DocumentSymbol *drawable = parser->get_member_symbol("Drawable");
+			REQUIRE(drawable);
+			CHECK_EQ(drawable->kind, LSP::SymbolKind::Interface);
+			CHECK_EQ(drawable->detail, "trait Drawable");
+
+			const LSP::DocumentSymbol *sprite = parser->get_member_symbol("Sprite");
+			REQUIRE(sprite);
+			CHECK_EQ(sprite->kind, LSP::SymbolKind::Class);
+			CHECK_EQ(sprite->detail, "class Sprite");
+		}
+
+		SUBCASE("A global trait_name file is reported as a trait") {
+			String path = "res://lsp/global_trait.gd";
+			assert_no_errors_in(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			LSP::DocumentSymbol cls = parser->get_symbols();
+			CHECK_EQ(cls.kind, LSP::SymbolKind::Interface);
+			CHECK_EQ(cls.detail, "trait LspGlobalTrait");
+		}
+
 		SUBCASE("Documentation is correctly set") {
 			String path = "res://lsp/doc_comments.gd";
 			assert_no_errors_in(path);
@@ -937,6 +964,53 @@ func f():
 		CHECK(text_edits_include(user_edits, 11, 33, 49, "RenamedBaseCharacter"));
 		Dictionary changes = edit["changes"];
 		CHECK_FALSE(changes.has(controller_uri));
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][definition] resolves trait references") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		const String uri = workspace->get_file_uri("res://lsp/traits.gd");
+
+		assert_no_errors_in("res://lsp/traits.gd");
+
+		const LSP::Range trait_selection = range(pos(2, 6), pos(2, 14));
+		// Reference in a `uses` clause.
+		test_resolve_symbol_at(uri, pos(7, 8), uri, "Drawable", trait_selection);
+		// Reference in a type position.
+		test_resolve_symbol_at(uri, pos(9, 20), uri, "Drawable", trait_selection);
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][rename] updates trait declarations and uses references") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+		const String uri = workspace->get_file_uri("res://lsp/traits.gd");
+
+		assert_no_errors_in("res://lsp/traits.gd");
+
+		Dictionary edit = text_document->rename(make_rename_params(uri, pos(2, 8), "Renderable"));
+		const Array edits = workspace_edits_for_uri(edit, uri);
+		CHECK_EQ(edits.size(), 3);
+		// Declaration.
+		CHECK(text_edits_include(edits, 2, 6, 14, "Renderable"));
+		// `uses` reference.
+		CHECK(text_edits_include(edits, 7, 6, 14, "Renderable"));
+		// Type-position reference.
+		CHECK(text_edits_include(edits, 9, 18, 26, "Renderable"));
 
 		memdelete(proto);
 		memdelete(efs);

@@ -1420,6 +1420,45 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 	}
 }
 
+// Lists the traits that can appear after `uses`: inline trait declarations from the
+// surrounding class hierarchy plus globally registered `trait_name` traits.
+static void _list_available_traits(GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	// Inline trait declarations visible from the current class and its outer classes.
+	const GDScriptParser::ClassNode *current = p_context.current_class;
+	int location_offset = 0;
+	while (current) {
+		for (int i = 0; i < current->members.size(); i++) {
+			const GDScriptParser::ClassNode::Member &member = current->members[i];
+			if (member.type == GDScriptParser::ClassNode::Member::CLASS && member.m_class->is_trait) {
+				ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+				r_result.insert(option.display, option);
+			}
+		}
+		location_offset += 1;
+		current = current->outer;
+	}
+
+	// Global `trait_name` traits. Only GDScript globals can be traits; a lightweight
+	// parse per global tells traits apart from ordinary `class_name` globals.
+	GDScriptLanguage *gdscript_language = GDScriptLanguage::get_singleton();
+	const StringName gdscript_name = gdscript_language->get_name();
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	for (const StringName &global_class : global_classes) {
+		if (ScriptServer::get_global_class_language(global_class) != gdscript_name) {
+			continue;
+		}
+		const String path = ScriptServer::get_global_class_path(global_class);
+		bool is_trait = false;
+		_ALLOW_DISCARD_ gdscript_language->get_global_class_name(path, nullptr, nullptr, nullptr, nullptr, &is_trait);
+		if (!is_trait) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(global_class, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		r_result.insert(option.display, option);
+	}
+}
+
 static void _find_identifiers_in_suite(const GDScriptParser::SuiteNode *p_suite, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth = 0) {
 	for (int i = 0; i < p_suite->locals.size(); i++) {
 		ScriptLanguage::CodeCompletionOption option;
@@ -3831,6 +3870,13 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			_add_namespace_type_completion_options(namespace_cache, completion_context, options);
 			r_forced = true;
 		} break;
+		case GDScriptParser::COMPLETION_USES: {
+			// Globally registered traits are listed under their fully-qualified names
+			// (e.g. `characters.Damageable`), so namespace-qualified traits are covered
+			// without suggesting non-trait classes.
+			_list_available_traits(completion_context, options);
+			r_forced = true;
+		} break;
 		case GDScriptParser::COMPLETION_IMPORT_NAMESPACE: {
 			_list_importable_namespaces(namespace_cache, options);
 			r_forced = true;
@@ -4036,6 +4082,38 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 					default: {
 						native_type.kind = GDScriptParser::DataType::UNRESOLVED;
 					} break;
+				}
+			}
+
+			// Required (abstract) methods owed to applied traits, including transitive traits.
+			for (const GDScriptParser::ClassNode *trait : completion_context.current_class->resolved_traits) {
+				for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+					if (member.type != GDScriptParser::ClassNode::Member::FUNCTION || !member.function->is_abstract) {
+						continue;
+					}
+					if (options.has(member.function->identifier->name)) {
+						continue;
+					}
+					if (completion_context.current_class->has_function(member.get_name()) && completion_context.current_class->get_member(member.get_name()).function != function_node) {
+						continue;
+					}
+					if (is_static != member.function->is_static) {
+						continue;
+					}
+					const bool parent_is_coroutine = member.function->is_coroutine;
+					if (is_coroutine != parent_is_coroutine) {
+						continue;
+					}
+
+					String insert_text = member.function->identifier->name;
+					insert_text += member.function->signature + ":";
+					String display_name = insert_text;
+					if (parent_is_coroutine) {
+						display_name = "async " + display_name;
+					}
+					ScriptLanguage::CodeCompletionOption option(display_name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+					option.insert_text = insert_text;
+					options.insert(member.function->identifier->name, option); // Insert name instead of display to track duplicates.
 				}
 			}
 
@@ -5056,6 +5134,32 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 		case GDScriptParser::COMPLETION_TYPE_NAME: {
 			GDScriptParser::DataType base_type = context.current_class->get_datatype();
 
+			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+		} break;
+		case GDScriptParser::COMPLETION_USES: {
+			// Resolve a trait reference in a `uses` clause through the analyzer-resolved
+			// trait, so references from an inner scope reach an outer or sibling inline
+			// trait. Global `trait_name` traits are resolved earlier as global classes.
+			if (context.current_class != nullptr) {
+				for (const GDScriptParser::ClassNode::TraitUse &trait_use : context.current_class->used_traits) {
+					if (trait_use.name.is_empty() || trait_use.resolved_trait == nullptr) {
+						continue;
+					}
+					if (trait_use.name[trait_use.name.size() - 1]->name != p_symbol) {
+						continue;
+					}
+					const GDScriptParser::ClassNode *trait = trait_use.resolved_trait;
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+					r_result.class_name = trait->identifier != nullptr ? String(trait->identifier->name) : String();
+					// A non-global trait reachable through `uses` is declared in this file.
+					r_result.location = trait->start_line;
+					return OK;
+				}
+			}
+
+			GDScriptParser::DataType base_type = context.current_class->get_datatype();
 			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
 				return OK;
 			}

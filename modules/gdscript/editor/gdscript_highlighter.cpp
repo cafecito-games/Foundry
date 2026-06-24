@@ -65,6 +65,17 @@ static bool _is_contextual_async_modifier(const String &p_text, int p_word_end) 
 	return _is_word_at(p_text, next_column, "func");
 }
 
+static bool _is_contextual_uses_keyword(const String &p_text, int p_word_end) {
+	// `uses` is contextual and remains a valid identifier; it only acts as the
+	// trait-application keyword when followed by a trait name, which is the only
+	// position where two bare identifiers appear in a row.
+	int next_column = p_word_end;
+	while (next_column < p_text.length() && is_whitespace(p_text[next_column])) {
+		next_column++;
+	}
+	return next_column < p_text.length() && is_unicode_identifier_start(p_text[next_column]);
+}
+
 Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_line) {
 	Dictionary color_map;
 
@@ -507,6 +518,9 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 			} else if (word == "async" && _is_contextual_async_modifier(str, to)) {
 				// `async` is contextual and remains a valid identifier outside declaration modifiers.
 				col = reserved_keywords[GDScriptTokenizer::get_token_name(GDScriptTokenizer::Token::FUNC)];
+			} else if (word == "uses" && _is_contextual_uses_keyword(str, to)) {
+				// `uses` is contextual and remains a valid identifier outside trait application.
+				col = reserved_keywords[GDScriptTokenizer::get_token_name(GDScriptTokenizer::Token::EXTENDS)];
 			} else if (member_keywords.has(word)) {
 				col = member_keywords[word];
 				in_member_variable = true;

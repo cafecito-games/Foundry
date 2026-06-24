@@ -326,6 +326,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 	DocData::ClassDoc &doc = p_script->doc;
 
 	doc.is_script_doc = true;
+	doc.is_trait = p_class->is_trait;
 
 	if (p_script->local_name == StringName()) {
 		// This is an outer unnamed class.

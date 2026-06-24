@@ -1271,12 +1271,15 @@ void GDScriptParser::parse_uses() {
 
 	do {
 		ClassNode::TraitUse trait_use;
+		int chain_index = 0;
+		make_completion_context(COMPLETION_USES, current_class, chain_index++);
 		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected trait name after "uses".)")) {
 			return;
 		}
 		trait_use.name.push_back(parse_identifier());
 
 		while (match(GDScriptTokenizer::Token::PERIOD)) {
+			make_completion_context(COMPLETION_USES, current_class, chain_index++);
 			if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected trait name after ".".)")) {
 				return;
 			}
