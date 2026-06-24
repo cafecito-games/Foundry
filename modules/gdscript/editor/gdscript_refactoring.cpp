@@ -1475,6 +1475,7 @@ Vector<String> collect_extract_method_member_names(const GDScriptParser::ClassNo
 
 String resolve_extract_method_name(
 		const GDScriptParser::ClassNode *p_class,
+		const Vector<String> &p_existing_member_names,
 		const String &p_requested_name,
 		String &r_disabled_reason) {
 	if (p_requested_name.is_empty()) {
@@ -1485,8 +1486,7 @@ String resolve_extract_method_name(
 		return generated_name;
 	}
 
-	const Vector<String> member_names = collect_extract_method_member_names(p_class);
-	if (!GDScriptRefactoring::validate_extract_method_name(member_names, p_requested_name, r_disabled_reason)) {
+	if (!GDScriptRefactoring::validate_extract_method_name(p_existing_member_names, p_requested_name, r_disabled_reason)) {
 		return String();
 	}
 
@@ -1639,7 +1639,7 @@ ExtractMethodCandidate build_extract_method_candidate(
 	}
 
 	String name_error;
-	const String method_name = resolve_extract_method_name(p_class, p_requested_name, name_error);
+	const String method_name = resolve_extract_method_name(p_class, candidate.member_names, p_requested_name, name_error);
 	if (method_name.is_empty()) {
 		candidate.disabled_reason = name_error;
 		return candidate;

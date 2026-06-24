@@ -3423,6 +3423,8 @@ void ScriptTextEditor::_on_extract_method_confirmed() {
 	RefactorContext ctx = _make_refactor_context();
 	RefactorParams params;
 	params.new_name = method_name;
+	// The modal dialog keeps the buffer stable after name validation; rebuild
+	// the authoritative edits before applying them.
 	const RefactorResult result = GDScriptRefactoring::prepare(
 			ctx,
 			extract_method_name_prompt.get_location(),
