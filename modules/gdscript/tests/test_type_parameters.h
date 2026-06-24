@@ -133,4 +133,62 @@ TEST_CASE("[Modules][GDScript] A non-generic declaration has no type parameters"
 	CHECK(plain->type_parameters.is_empty());
 }
 
+static const GDScriptParser::CallNode *first_statement_call(const GDScriptParser::FunctionNode *p_function) {
+	if (p_function == nullptr || p_function->body == nullptr || p_function->body->statements.is_empty()) {
+		return nullptr;
+	}
+	const GDScriptParser::Node *statement = p_function->body->statements[0];
+	if (statement->type != GDScriptParser::Node::CALL) {
+		return nullptr;
+	}
+	return static_cast<const GDScriptParser::CallNode *>(statement);
+}
+
+TEST_CASE("[Modules][GDScript] A generic method call parses its type-argument application") {
+	GDScriptParser parser;
+	const Error error = parser.parse("func caller():\n\tswap[float](1, 2)\n", "user://test.gd", false);
+	REQUIRE(error == OK);
+	REQUIRE(parser.get_errors().is_empty());
+
+	const GDScriptParser::CallNode *call = first_statement_call(find_function(parser.get_tree(), "caller"));
+	REQUIRE(call != nullptr);
+	CHECK(call->function_name == StringName("swap"));
+	REQUIRE(call->callee != nullptr);
+	REQUIRE(call->callee->type == GDScriptParser::Node::SUBSCRIPT);
+
+	const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+	CHECK_FALSE(callee->is_attribute); // The brackets are a type-argument list, not an attribute access.
+	REQUIRE(callee->base != nullptr);
+	REQUIRE(callee->base->type == GDScriptParser::Node::IDENTIFIER);
+	CHECK(static_cast<const GDScriptParser::IdentifierNode *>(callee->base)->name == StringName("swap"));
+	REQUIRE(callee->index != nullptr); // The applied type argument `float`.
+	REQUIRE(call->arguments.size() == 2);
+}
+
+TEST_CASE("[Modules][GDScript] A generic constructor call parses like a typed-collection constructor") {
+	GDScriptParser parser;
+	const Error error = parser.parse("func caller():\n\tBox[int].new()\n", "user://test.gd", false);
+	REQUIRE(error == OK);
+	REQUIRE(parser.get_errors().is_empty());
+
+	const GDScriptParser::CallNode *call = first_statement_call(find_function(parser.get_tree(), "caller"));
+	REQUIRE(call != nullptr);
+	CHECK(call->function_name == StringName("new"));
+	REQUIRE(call->callee != nullptr);
+	REQUIRE(call->callee->type == GDScriptParser::Node::SUBSCRIPT);
+
+	// `.new` is an attribute access whose base is the `Box[int]` type-argument subscript.
+	const GDScriptParser::SubscriptNode *attribute = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+	CHECK(attribute->is_attribute);
+	REQUIRE(attribute->base != nullptr);
+	REQUIRE(attribute->base->type == GDScriptParser::Node::SUBSCRIPT);
+
+	const GDScriptParser::SubscriptNode *application = static_cast<const GDScriptParser::SubscriptNode *>(attribute->base);
+	CHECK_FALSE(application->is_attribute);
+	REQUIRE(application->base != nullptr);
+	REQUIRE(application->base->type == GDScriptParser::Node::IDENTIFIER);
+	CHECK(static_cast<const GDScriptParser::IdentifierNode *>(application->base)->name == StringName("Box"));
+	REQUIRE(application->index != nullptr);
+}
+
 } // namespace GDScriptTests
