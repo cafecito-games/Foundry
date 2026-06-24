@@ -202,7 +202,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="access" type="int" setter="set_access" getter="get_access" enum="FileDialog.Access" default="0">
+		<member name="access" type="int" setter="set_access" getter="get_access" enum="FileDialog.Access" default="ACCESS_RESOURCES">
 			The file system access scope.
 			[b]Warning:[/b] In Web builds, FileDialog cannot access the host file system. In sandboxed Linux and macOS environments, [member use_native_dialog] is automatically used to allow limited access to host file system.
 		</member>
@@ -220,7 +220,7 @@
 			If [code]true[/code], the context menu will show the "Delete" option, which allows moving files and folders to trash.
 		</member>
 		<member name="dialog_hide_on_ok" type="bool" setter="set_hide_on_ok" getter="get_hide_on_ok" overrides="AcceptDialog" default="false" />
-		<member name="display_mode" type="int" setter="set_display_mode" getter="get_display_mode" enum="FileDialog.DisplayMode" default="0">
+		<member name="display_mode" type="int" setter="set_display_mode" getter="get_display_mode" enum="FileDialog.DisplayMode" default="DISPLAY_THUMBNAILS">
 			Display mode of the dialog's file list.
 		</member>
 		<member name="favorites_enabled" type="bool" setter="set_customization_flag_enabled" getter="is_customization_flag_enabled" default="true">
@@ -229,7 +229,7 @@
 		<member name="file_filter_toggle_enabled" type="bool" setter="set_customization_flag_enabled" getter="is_customization_flag_enabled" default="true">
 			If [code]true[/code], shows the toggle file filter button.
 		</member>
-		<member name="file_mode" type="int" setter="set_file_mode" getter="get_file_mode" enum="FileDialog.FileMode" default="4">
+		<member name="file_mode" type="int" setter="set_file_mode" getter="get_file_mode" enum="FileDialog.FileMode" default="FILE_MODE_SAVE_FILE">
 			The dialog's open or save mode, which affects the selection behavior.
 		</member>
 		<member name="file_sort_options_enabled" type="bool" setter="set_customization_flag_enabled" getter="is_customization_flag_enabled" default="true">

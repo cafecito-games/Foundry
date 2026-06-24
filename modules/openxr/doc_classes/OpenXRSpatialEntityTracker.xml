@@ -12,10 +12,10 @@
 		<member name="entity" type="RID" setter="set_entity" getter="get_entity" default="RID()">
 			The spatial entity associated with this tracker.
 		</member>
-		<member name="spatial_tracking_state" type="int" setter="set_spatial_tracking_state" getter="get_spatial_tracking_state" enum="OpenXRSpatialEntityTracker.EntityTrackingState" default="2">
+		<member name="spatial_tracking_state" type="int" setter="set_spatial_tracking_state" getter="get_spatial_tracking_state" enum="OpenXRSpatialEntityTracker.EntityTrackingState" default="ENTITY_TRACKING_STATE_PAUSED">
 			The spatial tracking state for this tracker.
 		</member>
-		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" overrides="XRTracker" enum="XRServer.TrackerType" default="8" />
+		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" overrides="XRTracker" enum="XRServer.TrackerType" default="TRACKER_ANCHOR" />
 	</members>
 	<signals>
 		<signal name="spatial_tracking_state_changed">

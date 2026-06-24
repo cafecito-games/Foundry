@@ -11,7 +11,7 @@
 		<link title="Screen-reading shaders">$DOCS_URL/tutorials/shaders/screen-reading_shaders.html</link>
 	</tutorials>
 	<members>
-		<member name="copy_mode" type="int" setter="set_copy_mode" getter="get_copy_mode" enum="BackBufferCopy.CopyMode" default="1">
+		<member name="copy_mode" type="int" setter="set_copy_mode" getter="get_copy_mode" enum="BackBufferCopy.CopyMode" default="COPY_MODE_RECT">
 			Buffer mode.
 		</member>
 		<member name="rect" type="Rect2" setter="set_rect" getter="get_rect" default="Rect2(-100, -100, 200, 200)">

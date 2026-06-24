@@ -373,7 +373,7 @@
 			If you follow the recommended workflow and explicitly have [PhysicalBoneSimulator3D] as a child of [Skeleton3D], you can control whether it is affected by raycasting without running [method physical_bones_start_simulation], by its [member SkeletonModifier3D.active].
 			However, for old (deprecated) configurations, [Skeleton3D] has an internal virtual [PhysicalBoneSimulator3D] for compatibility. This property controls the internal virtual [PhysicalBoneSimulator3D]'s [member SkeletonModifier3D.active].
 		</member>
-		<member name="modifier_callback_mode_process" type="int" setter="set_modifier_callback_mode_process" getter="get_modifier_callback_mode_process" enum="Skeleton3D.ModifierCallbackModeProcess" default="1">
+		<member name="modifier_callback_mode_process" type="int" setter="set_modifier_callback_mode_process" getter="get_modifier_callback_mode_process" enum="Skeleton3D.ModifierCallbackModeProcess" default="MODIFIER_CALLBACK_MODE_PROCESS_IDLE">
 			Sets the processing timing for the Modifier.
 		</member>
 		<member name="motion_scale" type="float" setter="set_motion_scale" getter="get_motion_scale" default="1.0">

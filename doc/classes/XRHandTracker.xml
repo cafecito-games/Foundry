@@ -88,14 +88,14 @@
 		</method>
 	</methods>
 	<members>
-		<member name="hand" type="int" setter="set_tracker_hand" getter="get_tracker_hand" overrides="XRPositionalTracker" enum="XRPositionalTracker.TrackerHand" default="1" />
-		<member name="hand_tracking_source" type="int" setter="set_hand_tracking_source" getter="get_hand_tracking_source" enum="XRHandTracker.HandTrackingSource" default="0">
+		<member name="hand" type="int" setter="set_tracker_hand" getter="get_tracker_hand" overrides="XRPositionalTracker" enum="XRPositionalTracker.TrackerHand" default="TRACKER_HAND_LEFT" />
+		<member name="hand_tracking_source" type="int" setter="set_hand_tracking_source" getter="get_hand_tracking_source" enum="XRHandTracker.HandTrackingSource" default="HAND_TRACKING_SOURCE_UNKNOWN">
 			The source of the hand tracking data.
 		</member>
 		<member name="has_tracking_data" type="bool" setter="set_has_tracking_data" getter="get_has_tracking_data" default="false">
 			If [code]true[/code], the hand tracking data is valid.
 		</member>
-		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" overrides="XRTracker" enum="XRServer.TrackerType" default="16" />
+		<member name="type" type="int" setter="set_tracker_type" getter="get_tracker_type" overrides="XRTracker" enum="XRServer.TrackerType" default="TRACKER_HAND" />
 	</members>
 	<constants>
 		<constant name="HAND_TRACKING_SOURCE_UNKNOWN" value="0" enum="HandTrackingSource">

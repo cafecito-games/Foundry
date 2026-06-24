@@ -10,7 +10,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="control_state" type="int" setter="set_control_state" getter="get_control_state" enum="EditorSpinSlider.ControlState" default="0">
+		<member name="control_state" type="int" setter="set_control_state" getter="get_control_state" enum="EditorSpinSlider.ControlState" default="CONTROL_STATE_DEFAULT">
 			The state in which the control used to manipulate the value will be.
 		</member>
 		<member name="editing_integer" type="bool" setter="set_editing_integer" getter="is_editing_integer" default="false">
@@ -19,7 +19,7 @@
 		<member name="flat" type="bool" setter="set_flat" getter="is_flat" default="false">
 			If [code]true[/code], the slider will not draw background.
 		</member>
-		<member name="focus_mode" type="int" setter="set_focus_mode" getter="get_focus_mode" overrides="Control" enum="Control.FocusMode" default="2" />
+		<member name="focus_mode" type="int" setter="set_focus_mode" getter="get_focus_mode" overrides="Control" enum="Control.FocusMode" default="FOCUS_ALL" />
 		<member name="hide_slider" type="bool" setter="set_hide_slider" getter="is_hiding_slider" default="false" deprecated="Use [member control_state] instead.">
 			If [code]true[/code], the slider and up/down arrows are hidden.
 		</member>
@@ -29,7 +29,7 @@
 		<member name="read_only" type="bool" setter="set_read_only" getter="is_read_only" default="false" keywords="enabled, disabled, editable">
 			If [code]true[/code], the slider can't be interacted with.
 		</member>
-		<member name="size_flags_vertical" type="int" setter="set_v_size_flags" getter="get_v_size_flags" overrides="Control" enum="Control.SizeFlags" is_bitfield="true" default="1" />
+		<member name="size_flags_vertical" type="int" setter="set_v_size_flags" getter="get_v_size_flags" overrides="Control" enum="Control.SizeFlags" is_bitfield="true" default="SIZE_FILL" />
 		<member name="step" type="float" setter="set_step" getter="get_step" overrides="Range" default="1.0" />
 		<member name="suffix" type="String" setter="set_suffix" getter="get_suffix" default="&quot;&quot;">
 			The suffix to display after the value (in a faded color). This should generally be a plural word. You may have to use an abbreviation if the suffix is too long to be displayed.

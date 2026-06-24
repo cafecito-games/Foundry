@@ -16,7 +16,7 @@
 		<member name="allow_system_fallback" type="bool" setter="set_allow_system_fallback" getter="is_allow_system_fallback" default="true">
 			If set to [code]true[/code], system fonts can be automatically used as fallbacks.
 		</member>
-		<member name="antialiasing" type="int" setter="set_antialiasing" getter="get_antialiasing" enum="TextServer.FontAntialiasing" default="1">
+		<member name="antialiasing" type="int" setter="set_antialiasing" getter="get_antialiasing" enum="TextServer.FontAntialiasing" default="FONT_ANTIALIASING_GRAY">
 			Font anti-aliasing mode.
 		</member>
 		<member name="disable_embedded_bitmaps" type="bool" setter="set_disable_embedded_bitmaps" getter="get_disable_embedded_bitmaps" default="true">
@@ -40,7 +40,7 @@
 		<member name="generate_mipmaps" type="bool" setter="set_generate_mipmaps" getter="get_generate_mipmaps" default="false">
 			If set to [code]true[/code], generate mipmaps for the font textures.
 		</member>
-		<member name="hinting" type="int" setter="set_hinting" getter="get_hinting" enum="TextServer.Hinting" default="1">
+		<member name="hinting" type="int" setter="set_hinting" getter="get_hinting" enum="TextServer.Hinting" default="HINTING_LIGHT">
 			Font hinting mode.
 		</member>
 		<member name="keep_rounding_remainders" type="bool" setter="set_keep_rounding_remainders" getter="get_keep_rounding_remainders" default="true">
@@ -61,7 +61,7 @@
 		<member name="oversampling" type="float" setter="set_oversampling" getter="get_oversampling" default="0.0">
 			If set to a positive value, overrides the oversampling factor of the viewport this font is used in. See [member Viewport.oversampling]. This value doesn't override the [code skip-lint]oversampling[/code] parameter of [code skip-lint]draw_*[/code] methods.
 		</member>
-		<member name="subpixel_positioning" type="int" setter="set_subpixel_positioning" getter="get_subpixel_positioning" enum="TextServer.SubpixelPositioning" default="1">
+		<member name="subpixel_positioning" type="int" setter="set_subpixel_positioning" getter="get_subpixel_positioning" enum="TextServer.SubpixelPositioning" default="SUBPIXEL_POSITIONING_AUTO">
 			Font glyph subpixel positioning mode. Subpixel positioning provides shaper text and better kerning for smaller font sizes, at the cost of memory usage and font rasterization speed. Use [constant TextServer.SUBPIXEL_POSITIONING_AUTO] to automatically enable it based on the font size.
 		</member>
 	</members>

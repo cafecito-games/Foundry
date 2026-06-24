@@ -12,7 +12,7 @@
 		<member name="varying_name" type="String" setter="set_varying_name" getter="get_varying_name" default="&quot;[None]&quot;">
 			Name of the variable. Must be unique.
 		</member>
-		<member name="varying_type" type="int" setter="set_varying_type" getter="get_varying_type" enum="VisualShader.VaryingType" default="0">
+		<member name="varying_type" type="int" setter="set_varying_type" getter="get_varying_type" enum="VisualShader.VaryingType" default="VARYING_TYPE_FLOAT">
 			Type of the variable. Determines where the variable can be accessed.
 		</member>
 	</members>

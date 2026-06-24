@@ -108,7 +108,7 @@
 		<member name="ao_texture" type="Texture2D" setter="set_texture" getter="get_texture">
 			Texture that defines the amount of ambient occlusion for a given point on the object.
 		</member>
-		<member name="ao_texture_channel" type="int" setter="set_ao_texture_channel" getter="get_ao_texture_channel" enum="BaseMaterial3D.TextureChannel" default="0">
+		<member name="ao_texture_channel" type="int" setter="set_ao_texture_channel" getter="get_ao_texture_channel" enum="BaseMaterial3D.TextureChannel" default="TEXTURE_CHANNEL_RED">
 			Specifies the channel of the [member ao_texture] in which the ambient occlusion information is stored. This is useful when you store the information for multiple effects in a single texture. For example if you stored metallic in the red channel, roughness in the blue, and ambient occlusion in the green you could reduce the number of textures you use.
 		</member>
 		<member name="backlight" type="Color" setter="set_backlight" getter="get_backlight" default="Color(0, 0, 0, 1)">
@@ -132,11 +132,11 @@
 		<member name="billboard_keep_scale" type="bool" setter="set_flag" getter="get_flag" default="false">
 			If [code]true[/code], the shader will keep the scale set for the mesh. Otherwise, the scale is lost when billboarding. Only applies when [member billboard_mode] is not [constant BILLBOARD_DISABLED].
 		</member>
-		<member name="billboard_mode" type="int" setter="set_billboard_mode" getter="get_billboard_mode" enum="BaseMaterial3D.BillboardMode" default="0">
+		<member name="billboard_mode" type="int" setter="set_billboard_mode" getter="get_billboard_mode" enum="BaseMaterial3D.BillboardMode" default="BILLBOARD_DISABLED">
 			Controls how the object faces the camera.
 			[b]Note:[/b] Billboard mode is not suitable for VR because the left-right vector of the camera is not horizontal when the screen is attached to your head instead of on the table. See [url=https://github.com/godotengine/godot/issues/41567]GitHub issue #41567[/url] for details.
 		</member>
-		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="BaseMaterial3D.BlendMode" default="0">
+		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="BaseMaterial3D.BlendMode" default="BLEND_MODE_MIX">
 			The material's blend mode.
 			[b]Note:[/b] Values other than [code]Mix[/code] force the object into the transparent pipeline.
 		</member>
@@ -153,13 +153,13 @@
 		<member name="clearcoat_texture" type="Texture2D" setter="set_texture" getter="get_texture">
 			Texture that defines the strength of the clearcoat effect and the glossiness of the clearcoat. Strength is specified in the red channel while glossiness is specified in the green channel.
 		</member>
-		<member name="cull_mode" type="int" setter="set_cull_mode" getter="get_cull_mode" enum="BaseMaterial3D.CullMode" default="0">
+		<member name="cull_mode" type="int" setter="set_cull_mode" getter="get_cull_mode" enum="BaseMaterial3D.CullMode" default="CULL_BACK">
 			Determines which side of the triangle to cull depending on whether the triangle faces towards or away from the camera.
 		</member>
-		<member name="depth_draw_mode" type="int" setter="set_depth_draw_mode" getter="get_depth_draw_mode" enum="BaseMaterial3D.DepthDrawMode" default="0">
+		<member name="depth_draw_mode" type="int" setter="set_depth_draw_mode" getter="get_depth_draw_mode" enum="BaseMaterial3D.DepthDrawMode" default="DEPTH_DRAW_OPAQUE_ONLY">
 			Determines when depth rendering takes place. See also [member transparency].
 		</member>
-		<member name="depth_test" type="int" setter="set_depth_test" getter="get_depth_test" enum="BaseMaterial3D.DepthTest" default="0" experimental="May be affected by future rendering pipeline changes.">
+		<member name="depth_test" type="int" setter="set_depth_test" getter="get_depth_test" enum="BaseMaterial3D.DepthTest" default="DEPTH_TEST_DEFAULT" experimental="May be affected by future rendering pipeline changes.">
 			Determines which comparison operator is used when testing depth.
 			[b]Note:[/b] Changing [member depth_test] to a non-default value only has a visible effect when used on a transparent material, or a material that has [member depth_draw_mode] set to [constant DEPTH_DRAW_DISABLED].
 		</member>
@@ -167,7 +167,7 @@
 			Texture that specifies the color of the detail overlay. [member detail_albedo]'s alpha channel is used as a mask, even when the material is opaque. To use a dedicated texture as a mask, see [member detail_mask].
 			[b]Note:[/b] [member detail_albedo] is [i]not[/i] modulated by [member albedo_color].
 		</member>
-		<member name="detail_blend_mode" type="int" setter="set_detail_blend_mode" getter="get_detail_blend_mode" enum="BaseMaterial3D.BlendMode" default="0">
+		<member name="detail_blend_mode" type="int" setter="set_detail_blend_mode" getter="get_detail_blend_mode" enum="BaseMaterial3D.BlendMode" default="BLEND_MODE_MIX">
 			Specifies how the [member detail_albedo] should blend with the current [code]ALBEDO[/code].
 		</member>
 		<member name="detail_enabled" type="bool" setter="set_feature" getter="get_feature" default="false">
@@ -180,10 +180,10 @@
 			Texture that specifies the per-pixel normal of the detail overlay. The [member detail_normal] texture only uses the red and green channels; the blue and alpha channels are ignored. The normal read from [member detail_normal] is oriented around the surface normal provided by the [Mesh].
 			[b]Note:[/b] Godot expects the normal map to use X+, Y+, and Z+ coordinates. See [url=http://wiki.polycount.com/wiki/Normal_Map_Technical_Details#Common_Swizzle_Coordinates]this page[/url] for a comparison of normal map coordinates expected by popular engines.
 		</member>
-		<member name="detail_uv_layer" type="int" setter="set_detail_uv" getter="get_detail_uv" enum="BaseMaterial3D.DetailUV" default="0">
+		<member name="detail_uv_layer" type="int" setter="set_detail_uv" getter="get_detail_uv" enum="BaseMaterial3D.DetailUV" default="DETAIL_UV_1">
 			Specifies whether to use [code]UV[/code] or [code]UV2[/code] for the detail layer.
 		</member>
-		<member name="diffuse_mode" type="int" setter="set_diffuse_mode" getter="get_diffuse_mode" enum="BaseMaterial3D.DiffuseMode" default="0">
+		<member name="diffuse_mode" type="int" setter="set_diffuse_mode" getter="get_diffuse_mode" enum="BaseMaterial3D.DiffuseMode" default="DIFFUSE_BURLEY">
 			The algorithm used for diffuse light scattering.
 		</member>
 		<member name="disable_ambient_light" type="bool" setter="set_flag" getter="get_flag" default="false">
@@ -206,7 +206,7 @@
 			Distance at which the object starts to become visible. If the object is less than this distance away, it will be invisible.
 			[b]Note:[/b] If [member distance_fade_min_distance] is greater than [member distance_fade_max_distance], the behavior will be reversed. The object will start to fade away at [member distance_fade_max_distance] and will fully disappear once it reaches [member distance_fade_min_distance].
 		</member>
-		<member name="distance_fade_mode" type="int" setter="set_distance_fade" getter="get_distance_fade" enum="BaseMaterial3D.DistanceFadeMode" default="0">
+		<member name="distance_fade_mode" type="int" setter="set_distance_fade" getter="get_distance_fade" enum="BaseMaterial3D.DistanceFadeMode" default="DISTANCE_FADE_DISABLED">
 			Specifies which type of fade to use. Can be any of the [enum DistanceFadeMode]s.
 		</member>
 		<member name="emission" type="Color" setter="set_emission" getter="get_emission" default="Color(0, 0, 0, 1)">
@@ -224,7 +224,7 @@
 		<member name="emission_on_uv2" type="bool" setter="set_flag" getter="get_flag" default="false">
 			Use [code]UV2[/code] to read from the [member emission_texture].
 		</member>
-		<member name="emission_operator" type="int" setter="set_emission_operator" getter="get_emission_operator" enum="BaseMaterial3D.EmissionOperator" default="0">
+		<member name="emission_operator" type="int" setter="set_emission_operator" getter="get_emission_operator" enum="BaseMaterial3D.EmissionOperator" default="EMISSION_OP_ADD">
 			Sets how [member emission] interacts with [member emission_texture]. Can either add or multiply.
 		</member>
 		<member name="emission_texture" type="Texture2D" setter="set_texture" getter="get_texture">
@@ -288,7 +288,7 @@
 		<member name="metallic_texture" type="Texture2D" setter="set_texture" getter="get_texture">
 			Texture used to specify metallic for an object. This is multiplied by [member metallic].
 		</member>
-		<member name="metallic_texture_channel" type="int" setter="set_metallic_texture_channel" getter="get_metallic_texture_channel" enum="BaseMaterial3D.TextureChannel" default="0">
+		<member name="metallic_texture_channel" type="int" setter="set_metallic_texture_channel" getter="get_metallic_texture_channel" enum="BaseMaterial3D.TextureChannel" default="TEXTURE_CHANNEL_RED">
 			Specifies the channel of the [member metallic_texture] in which the metallic information is stored. This is useful when you store the information for multiple effects in a single texture. For example if you stored metallic in the red channel, roughness in the blue, and ambient occlusion in the green you could reduce the number of textures you use.
 		</member>
 		<member name="msdf_outline_size" type="float" setter="set_msdf_outline_size" getter="get_msdf_outline_size" default="0.0">
@@ -343,7 +343,7 @@
 		<member name="refraction_texture" type="Texture2D" setter="set_texture" getter="get_texture">
 			Texture that controls the strength of the refraction per-pixel. Multiplied by [member refraction_scale].
 		</member>
-		<member name="refraction_texture_channel" type="int" setter="set_refraction_texture_channel" getter="get_refraction_texture_channel" enum="BaseMaterial3D.TextureChannel" default="0">
+		<member name="refraction_texture_channel" type="int" setter="set_refraction_texture_channel" getter="get_refraction_texture_channel" enum="BaseMaterial3D.TextureChannel" default="TEXTURE_CHANNEL_RED">
 			Specifies the channel of the [member refraction_texture] in which the refraction information is stored. This is useful when you store the information for multiple effects in a single texture. For example if you stored refraction in the red channel, roughness in the blue, and ambient occlusion in the green you could reduce the number of textures you use.
 		</member>
 		<member name="rim" type="float" setter="set_rim" getter="get_rim" default="1.0">
@@ -365,29 +365,29 @@
 		<member name="roughness_texture" type="Texture2D" setter="set_texture" getter="get_texture">
 			Texture used to control the roughness per-pixel. Multiplied by [member roughness].
 		</member>
-		<member name="roughness_texture_channel" type="int" setter="set_roughness_texture_channel" getter="get_roughness_texture_channel" enum="BaseMaterial3D.TextureChannel" default="0">
+		<member name="roughness_texture_channel" type="int" setter="set_roughness_texture_channel" getter="get_roughness_texture_channel" enum="BaseMaterial3D.TextureChannel" default="TEXTURE_CHANNEL_RED">
 			Specifies the channel of the [member roughness_texture] in which the roughness information is stored. This is useful when you store the information for multiple effects in a single texture. For example if you stored metallic in the red channel, roughness in the blue, and ambient occlusion in the green you could reduce the number of textures you use.
 		</member>
-		<member name="shading_mode" type="int" setter="set_shading_mode" getter="get_shading_mode" enum="BaseMaterial3D.ShadingMode" default="1">
+		<member name="shading_mode" type="int" setter="set_shading_mode" getter="get_shading_mode" enum="BaseMaterial3D.ShadingMode" default="SHADING_MODE_PER_PIXEL">
 			Sets whether the shading takes place, per-pixel, per-vertex or unshaded. Per-vertex lighting is faster, making it the best choice for mobile applications, however it looks considerably worse than per-pixel. Unshaded rendering is the fastest, but disables all interactions with lights.
 		</member>
 		<member name="shadow_to_opacity" type="bool" setter="set_flag" getter="get_flag" default="false">
 			If [code]true[/code], enables the "shadow to opacity" render mode where lighting modifies the alpha so shadowed areas are opaque and non-shadowed areas are transparent. Useful for overlaying shadows onto a camera feed in AR.
 		</member>
-		<member name="specular_mode" type="int" setter="set_specular_mode" getter="get_specular_mode" enum="BaseMaterial3D.SpecularMode" default="0">
+		<member name="specular_mode" type="int" setter="set_specular_mode" getter="get_specular_mode" enum="BaseMaterial3D.SpecularMode" default="SPECULAR_SCHLICK_GGX">
 			The method for rendering the specular blob.
 			[b]Note:[/b] [member specular_mode] only applies to the specular blob. It does not affect specular reflections from the sky, screen-space reflections, [VoxelGI], SDFGI or [ReflectionProbe]s. To disable reflections from these sources as well, set [member metallic_specular] to [code]0.0[/code] instead.
 		</member>
 		<member name="stencil_color" type="Color" setter="set_stencil_effect_color" getter="get_stencil_effect_color" default="Color(0, 0, 0, 1)" experimental="May be affected by future rendering pipeline changes.">
 			The primary color of the stencil effect.
 		</member>
-		<member name="stencil_compare" type="int" setter="set_stencil_compare" getter="get_stencil_compare" enum="BaseMaterial3D.StencilCompare" default="0" experimental="May be affected by future rendering pipeline changes.">
+		<member name="stencil_compare" type="int" setter="set_stencil_compare" getter="get_stencil_compare" enum="BaseMaterial3D.StencilCompare" default="STENCIL_COMPARE_ALWAYS" experimental="May be affected by future rendering pipeline changes.">
 			The comparison operator to use for stencil masking operations.
 		</member>
 		<member name="stencil_flags" type="int" setter="set_stencil_flags" getter="get_stencil_flags" default="0" experimental="May be affected by future rendering pipeline changes.">
 			The flags dictating how the stencil operation behaves.
 		</member>
-		<member name="stencil_mode" type="int" setter="set_stencil_mode" getter="get_stencil_mode" enum="BaseMaterial3D.StencilMode" default="0" experimental="May be affected by future rendering pipeline changes.">
+		<member name="stencil_mode" type="int" setter="set_stencil_mode" getter="get_stencil_mode" enum="BaseMaterial3D.StencilMode" default="STENCIL_MODE_DISABLED" experimental="May be affected by future rendering pipeline changes.">
 			The stencil effect mode.
 		</member>
 		<member name="stencil_outline_thickness" type="float" setter="set_stencil_effect_outline_thickness" getter="get_stencil_effect_outline_thickness" default="0.01" experimental="May be affected by future rendering pipeline changes.">
@@ -424,14 +424,14 @@
 		<member name="subsurf_scatter_transmittance_texture" type="Texture2D" setter="set_texture" getter="get_texture">
 			The texture to use for multiplying the intensity of the subsurface scattering transmittance intensity. See also [member subsurf_scatter_texture]. Ignored if [member subsurf_scatter_skin_mode] is [code]true[/code].
 		</member>
-		<member name="texture_filter" type="int" setter="set_texture_filter" getter="get_texture_filter" enum="BaseMaterial3D.TextureFilter" default="3">
+		<member name="texture_filter" type="int" setter="set_texture_filter" getter="get_texture_filter" enum="BaseMaterial3D.TextureFilter" default="TEXTURE_FILTER_LINEAR_WITH_MIPMAPS">
 			Filter flags for the texture.
 			[b]Note:[/b] [member heightmap_texture] is always sampled with linear filtering, even if nearest-neighbor filtering is selected here. This is to ensure the heightmap effect looks as intended. If you need sharper height transitions between pixels, resize the heightmap texture in an image editor with nearest-neighbor filtering.
 		</member>
 		<member name="texture_repeat" type="bool" setter="set_flag" getter="get_flag" default="true">
 			If [code]true[/code], the texture repeats when exceeding the texture's size. See [constant FLAG_USE_TEXTURE_REPEAT].
 		</member>
-		<member name="transparency" type="int" setter="set_transparency" getter="get_transparency" enum="BaseMaterial3D.Transparency" default="0">
+		<member name="transparency" type="int" setter="set_transparency" getter="get_transparency" enum="BaseMaterial3D.Transparency" default="TRANSPARENCY_DISABLED">
 			The material's transparency mode. Some transparency modes will disable shadow casting. Any transparency mode other than [constant TRANSPARENCY_DISABLED] has a greater performance impact compared to opaque rendering. See also [member blend_mode].
 		</member>
 		<member name="use_fov_override" type="bool" setter="set_flag" getter="get_flag" default="false">

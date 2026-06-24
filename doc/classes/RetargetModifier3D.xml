@@ -52,7 +52,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="enable" type="int" setter="set_enable_flags" getter="get_enable_flags" enum="RetargetModifier3D.TransformFlag" is_bitfield="true" default="7">
+		<member name="enable" type="int" setter="set_enable_flags" getter="get_enable_flags" enum="RetargetModifier3D.TransformFlag" is_bitfield="true" default="TRANSFORM_FLAG_ALL">
 			Flags to control the process of the transform elements individually when [member use_global_pose] is disabled.
 		</member>
 		<member name="profile" type="SkeletonProfile" setter="set_profile" getter="get_profile">

@@ -25,7 +25,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="size_flags_horizontal" type="int" setter="set_h_size_flags" getter="get_h_size_flags" overrides="Control" enum="Control.SizeFlags" is_bitfield="true" default="3" />
+		<member name="size_flags_horizontal" type="int" setter="set_h_size_flags" getter="get_h_size_flags" overrides="Control" enum="Control.SizeFlags" is_bitfield="true" default="SIZE_EXPAND_FILL" />
 	</members>
 	<signals>
 		<signal name="binding_modifier_removed">

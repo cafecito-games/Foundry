@@ -48,7 +48,7 @@
 		<member name="bounds_size" type="Vector2" setter="set_bounds_size" getter="get_bounds_size" default="Vector2(0, 0)">
 			The bounding size of the plane. This is a 2D size.
 		</member>
-		<member name="plane_alignment" type="int" setter="set_plane_alignment" getter="get_plane_alignment" enum="OpenXRSpatialComponentPlaneAlignmentList.PlaneAlignment" default="0">
+		<member name="plane_alignment" type="int" setter="set_plane_alignment" getter="get_plane_alignment" enum="OpenXRSpatialComponentPlaneAlignmentList.PlaneAlignment" default="PLANE_ALIGNMENT_HORIZONTAL_UPWARD">
 			The main alignment in space of this plane.
 		</member>
 		<member name="plane_label" type="String" setter="set_plane_label" getter="get_plane_label" default="&quot;&quot;">

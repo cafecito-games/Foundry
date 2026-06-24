@@ -12,7 +12,7 @@
 		<link title="XR documentation index">$DOCS_URL/tutorials/xr/index.html</link>
 	</tutorials>
 	<members>
-		<member name="bone_update" type="int" setter="set_bone_update" getter="get_bone_update" enum="XRHandModifier3D.BoneUpdate" default="0">
+		<member name="bone_update" type="int" setter="set_bone_update" getter="get_bone_update" enum="XRHandModifier3D.BoneUpdate" default="BONE_UPDATE_FULL">
 			Specifies the type of updates to perform on the bones.
 		</member>
 		<member name="hand_tracker" type="StringName" setter="set_hand_tracker" getter="get_hand_tracker" default="&amp;&quot;/user/hand_tracker/left&quot;">

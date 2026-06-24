@@ -9,7 +9,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="op_type" type="int" setter="set_op_type" getter="get_op_type" enum="VisualShaderNodeVectorBase.OpType" default="1">
+		<member name="op_type" type="int" setter="set_op_type" getter="get_op_type" enum="VisualShaderNodeVectorBase.OpType" default="OP_TYPE_VECTOR_3D">
 			A vector type that this operation is performed on.
 		</member>
 	</members>

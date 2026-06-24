@@ -18,7 +18,7 @@
 		<member name="enum_names" type="PackedStringArray" setter="set_enum_names" getter="get_enum_names" default="PackedStringArray()">
 			The names used for the enum select in the editor. [member hint] must be [constant HINT_ENUM] for this to take effect.
 		</member>
-		<member name="hint" type="int" setter="set_hint" getter="get_hint" enum="VisualShaderNodeIntParameter.Hint" default="0">
+		<member name="hint" type="int" setter="set_hint" getter="get_hint" enum="VisualShaderNodeIntParameter.Hint" default="HINT_NONE">
 			Range hint of this node. Use it to customize valid parameter range.
 		</member>
 		<member name="max" type="int" setter="set_max" getter="get_max" default="100">

@@ -18,7 +18,7 @@
 		<member name="enable_logic_op" type="bool" setter="set_enable_logic_op" getter="get_enable_logic_op" default="false">
 			If [code]true[/code], performs the logic operation defined in [member logic_op].
 		</member>
-		<member name="logic_op" type="int" setter="set_logic_op" getter="get_logic_op" enum="RenderingDevice.LogicOperation" default="0">
+		<member name="logic_op" type="int" setter="set_logic_op" getter="get_logic_op" enum="RenderingDevice.LogicOperation" default="LOGIC_OP_CLEAR">
 			The logic operation to perform for blending. Only effective if [member enable_logic_op] is [code]true[/code].
 		</member>
 	</members>

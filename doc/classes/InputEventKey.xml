@@ -63,7 +63,7 @@
 			If [code]true[/code], the key was already pressed before this event. An echo event is a repeated key event sent when the user is holding down the key.
 			[b]Note:[/b] The rate at which echo events are sent is typically around 20 events per second (after holding down the key for roughly half a second). However, the key repeat delay/speed can be changed by the user or disabled entirely in the operating system settings. To ensure your project works correctly on all configurations, do not assume the user has a specific key repeat configuration in your project's behavior.
 		</member>
-		<member name="key_label" type="int" setter="set_key_label" getter="get_key_label" enum="Key" default="0">
+		<member name="key_label" type="int" setter="set_key_label" getter="get_key_label" enum="Key" default="KEY_NONE">
 			Represents the localized label printed on the key in the current keyboard layout, which corresponds to one of the [enum Key] constants or any valid Unicode character. Key labels are meant for key prompts.
 			For keyboard layouts with a single label on the key, it is equivalent to [member keycode].
 			To get a human-readable representation of the [InputEventKey], use [code]OS.get_keycode_string(event.key_label)[/code] where [code]event[/code] is the [InputEventKey].
@@ -74,7 +74,7 @@
 			+-----+ +-----+
 			[/codeblock]
 		</member>
-		<member name="keycode" type="int" setter="set_keycode" getter="get_keycode" enum="Key" default="0">
+		<member name="keycode" type="int" setter="set_keycode" getter="get_keycode" enum="Key" default="KEY_NONE">
 			Latin label printed on the key in the current keyboard layout, which corresponds to one of the [enum Key] constants. Key codes are meant for shortcuts expressed with a standard Latin keyboard, such as [kbd]Ctrl + S[/kbd] for a "Save" shortcut.
 			To get a human-readable representation of the [InputEventKey], use [code]OS.get_keycode_string(event.keycode)[/code] where [code]event[/code] is the [InputEventKey].
 			[codeblock lang=text]
@@ -84,10 +84,10 @@
 			+-----+ +-----+
 			[/codeblock]
 		</member>
-		<member name="location" type="int" setter="set_location" getter="get_location" enum="KeyLocation" default="0">
+		<member name="location" type="int" setter="set_location" getter="get_location" enum="KeyLocation" default="KEY_LOCATION_UNSPECIFIED">
 			Represents the location of a key which has both left and right versions, such as [kbd]Shift[/kbd] or [kbd]Alt[/kbd].
 		</member>
-		<member name="physical_keycode" type="int" setter="set_physical_keycode" getter="get_physical_keycode" enum="Key" default="0">
+		<member name="physical_keycode" type="int" setter="set_physical_keycode" getter="get_physical_keycode" enum="Key" default="KEY_NONE">
 			Represents the physical location of a key on the 101/102-key US QWERTY keyboard, which corresponds to one of the [enum Key] constants. Physical key codes meant for game input, such as WASD movement, where only the location of the keys is important.
 			To get a human-readable representation of the [InputEventKey], use [method OS.get_keycode_string] in combination with [method DisplayServer.keyboard_get_keycode_from_physical] or [method DisplayServer.keyboard_get_label_from_physical]:
 			[codeblocks]

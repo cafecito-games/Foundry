@@ -12,7 +12,7 @@
 		<link title="Mouse and input coordinates">$DOCS_URL/tutorials/inputs/mouse_and_input_coordinates.html</link>
 	</tutorials>
 	<members>
-		<member name="button_index" type="int" setter="set_button_index" getter="get_button_index" enum="MouseButton" default="0">
+		<member name="button_index" type="int" setter="set_button_index" getter="get_button_index" enum="MouseButton" default="MOUSE_BUTTON_NONE">
 			The mouse button identifier, one of the [enum MouseButton] button or button wheel constants.
 		</member>
 		<member name="canceled" type="bool" setter="set_canceled" getter="is_canceled" default="false">

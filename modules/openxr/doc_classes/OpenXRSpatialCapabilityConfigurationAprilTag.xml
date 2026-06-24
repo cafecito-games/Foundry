@@ -18,7 +18,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="april_dict" type="int" setter="set_april_dict" getter="get_april_dict" enum="OpenXRSpatialCapabilityConfigurationAprilTag.AprilTagDict" default="4">
+		<member name="april_dict" type="int" setter="set_april_dict" getter="get_april_dict" enum="OpenXRSpatialCapabilityConfigurationAprilTag.AprilTagDict" default="APRIL_TAG_DICT_36H11">
 			Dictionary to use to decode April tags.
 			[b]Note:[/b] Must be set before using this configuration to create a spatial context.
 		</member>

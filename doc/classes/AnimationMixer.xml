@@ -294,15 +294,15 @@
 			The number of possible simultaneous sounds for each of the assigned AudioStreamPlayers.
 			For example, if this value is [code]32[/code] and the animation has two audio tracks, the two [AudioStreamPlayer]s assigned can play simultaneously up to [code]32[/code] voices each.
 		</member>
-		<member name="callback_mode_discrete" type="int" setter="set_callback_mode_discrete" getter="get_callback_mode_discrete" enum="AnimationMixer.AnimationCallbackModeDiscrete" default="1">
+		<member name="callback_mode_discrete" type="int" setter="set_callback_mode_discrete" getter="get_callback_mode_discrete" enum="AnimationMixer.AnimationCallbackModeDiscrete" default="ANIMATION_CALLBACK_MODE_DISCRETE_RECESSIVE">
 			Ordinarily, tracks can be set to [constant Animation.UPDATE_DISCRETE] to update infrequently, usually when using nearest interpolation.
 			However, when blending with [constant Animation.UPDATE_CONTINUOUS] several results are considered. The [member callback_mode_discrete] specify it explicitly. See also [enum AnimationCallbackModeDiscrete].
 			To make the blended results look good, it is recommended to set this to [constant ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS] to update every frame during blending. Other values exist for compatibility and they are fine if there is no blending, but not so, may produce artifacts.
 		</member>
-		<member name="callback_mode_method" type="int" setter="set_callback_mode_method" getter="get_callback_mode_method" enum="AnimationMixer.AnimationCallbackModeMethod" default="0">
+		<member name="callback_mode_method" type="int" setter="set_callback_mode_method" getter="get_callback_mode_method" enum="AnimationMixer.AnimationCallbackModeMethod" default="ANIMATION_CALLBACK_MODE_METHOD_DEFERRED">
 			The call mode used for "Call Method" tracks.
 		</member>
-		<member name="callback_mode_process" type="int" setter="set_callback_mode_process" getter="get_callback_mode_process" enum="AnimationMixer.AnimationCallbackModeProcess" default="1">
+		<member name="callback_mode_process" type="int" setter="set_callback_mode_process" getter="get_callback_mode_process" enum="AnimationMixer.AnimationCallbackModeProcess" default="ANIMATION_CALLBACK_MODE_PROCESS_IDLE">
 			The process notification in which to update animations.
 		</member>
 		<member name="deterministic" type="bool" setter="set_deterministic" getter="is_deterministic" default="false">
