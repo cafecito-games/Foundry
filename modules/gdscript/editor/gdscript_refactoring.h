@@ -92,6 +92,10 @@ struct RefactorResult {
 	int rename_anchor_line = -1;
 	int rename_anchor_column = -1;
 	String suggested_name;
+	// Existing members in the Extract Method target class. The script editor uses
+	// this to validate typed method names without rebuilding extract candidates on
+	// every keystroke.
+	Vector<String> extract_method_member_names;
 };
 
 // Caret position OR selection range. 0-based. No selection => end == start.
@@ -121,6 +125,10 @@ class GDScriptRefactoring {
 public:
 	static Vector<RefactorAvailability> get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location);
 	static RefactorResult prepare(const RefactorContext &p_context, const RefactorLocation &p_location, RefactorKind p_kind, const RefactorParams &p_params);
+	static bool validate_extract_method_name(
+			const Vector<String> &p_existing_member_names,
+			const String &p_name,
+			String &r_error_message);
 };
 
 #endif // TOOLS_ENABLED

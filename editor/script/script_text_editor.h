@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "extract_method_name_prompt.h"
 #include "script_editor_plugin.h"
 #include "script_refactor_apply.h"
 
@@ -88,11 +89,13 @@ class ScriptTextEditor : public ScriptEditorBase {
 	PopupMenu *breakpoints_menu = nullptr;
 	PopupMenu *highlighter_menu = nullptr;
 	PopupMenu *context_menu = nullptr;
-
-	PopupMenu *refactor_submenu = nullptr;
 	ConfirmationDialog *rename_dialog = nullptr;
 	LineEdit *rename_line_edit = nullptr;
 	Label *rename_error_label = nullptr;
+	ConfirmationDialog *extract_method_dialog = nullptr;
+	LineEdit *extract_method_line_edit = nullptr;
+	Label *extract_method_error_label = nullptr;
+	ExtractMethodNamePromptModel extract_method_name_prompt;
 	RefactorDiffPreviewDialog *refactor_diff_preview_dialog = nullptr;
 	int pending_refactor_anchor_line = -1;
 	int pending_refactor_anchor_column = -1;
@@ -272,7 +275,7 @@ protected:
 	void _edit_option_toggle_inline_comment();
 	void _make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos);
 
-	void _populate_refactor_submenu();
+	void _populate_refactor_submenu(PopupMenu *p_refactor_submenu);
 	void _run_refactor(int p_kind);
 	bool _collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const;
 	void _apply_refactor_result(const RefactorResult &p_result, const String &p_source);
@@ -298,6 +301,13 @@ protected:
 	void _show_rename_dialog(const String &p_initial_name = String());
 	void _on_rename_confirmed();
 	void _on_rename_text_changed(const String &p_text);
+	void _show_extract_method_dialog(
+			const RefactorLocation &p_location,
+			const String &p_suggested_name,
+			const Vector<String> &p_existing_member_names);
+	void _on_extract_method_confirmed();
+	void _on_extract_method_canceled();
+	void _on_extract_method_text_changed(const String &p_text);
 	RefactorContext _make_refactor_context() const;
 	RefactorLocation _make_refactor_location() const;
 	void _text_edit_gui_input(const Ref<InputEvent> &ev);
