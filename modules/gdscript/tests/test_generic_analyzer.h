@@ -238,4 +238,119 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects specializing a non-generic class
 	CHECK(analyze_error != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer accepts a type argument that satisfies a class bound") {
+	GDScriptParser parser;
+	// `Resource` derives from `RefCounted`, so it satisfies the upper bound.
+	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar ok: Box[Resource]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+
+	const GDScriptParser::VariableNode *ok = generic_find_member_variable(parser.get_tree(), "ok");
+	REQUIRE(ok != nullptr);
+	const GDScriptParser::DataType type = ok->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::CLASS);
+	REQUIRE(type.type_arguments.size() == 1);
+	CHECK(type.type_arguments[0].native_type == StringName("Resource"));
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects a type argument that violates a class bound") {
+	GDScriptParser parser;
+	// `Object` is a supertype of `RefCounted`, so it does not satisfy the bound.
+	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar bad: Box[Object]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects a builtin type argument against a class bound") {
+	GDScriptParser parser;
+	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar bad: Box[int]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer accepts a user-class type argument satisfying a user-class bound") {
+	GDScriptParser parser;
+	const String source =
+			"class Animal:\n"
+			"\tpass\n"
+			"class Dog extends Animal:\n"
+			"\tpass\n"
+			"class Box[T: Animal]:\n"
+			"\tvar value: T\n"
+			"var ok: Box[Dog]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer exposes bound members on a type-parameter value") {
+	GDScriptParser parser;
+	// `value` has the type parameter type `T` bound by `RefCounted`, so calling a
+	// `RefCounted` method on it must resolve through the bound to its `int` return.
+	const String source =
+			"class Box[T: RefCounted]:\n"
+			"\tvar value: T\n"
+			"\tfunc test() -> void:\n"
+			"\t\tvar refs := value.get_reference_count()\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::ClassNode *box = generic_find_inner_class(parser.get_tree(), "Box");
+	REQUIRE(box != nullptr);
+	const GDScriptParser::FunctionNode *test = generic_find_function(box, "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *refs = generic_find_local_variable(test, "refs");
+	REQUIRE(refs != nullptr);
+
+	const GDScriptParser::DataType type = refs->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer keeps an unbounded type-parameter value dynamic") {
+	GDScriptParser parser;
+	// Without a bound, `T` exposes no members, so member access stays dynamic rather than
+	// gaining any concrete surface.
+	const String source =
+			"class Box[T]:\n"
+			"\tvar value: T\n"
+			"\tfunc test() -> void:\n"
+			"\t\tvar refs = value.get_reference_count()\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::ClassNode *box = generic_find_inner_class(parser.get_tree(), "Box");
+	REQUIRE(box != nullptr);
+	const GDScriptParser::FunctionNode *test = generic_find_function(box, "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *refs = generic_find_local_variable(test, "refs");
+	REQUIRE(refs != nullptr);
+
+	// An unbounded parameter has no static surface, so the value stays a Variant.
+	CHECK(refs->get_datatype().is_variant());
+}
+
 } // namespace GDScriptTests

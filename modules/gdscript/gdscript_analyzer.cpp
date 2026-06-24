@@ -1100,8 +1100,28 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				return bad_type;
 			}
 			result.type_arguments.clear();
+			const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = result.class_type->type_parameters;
+			bool bound_violation = false;
 			for (int i = 0; i < p_type->container_types.size(); i++) {
-				result.type_arguments.push_back(type_from_metatype(resolve_datatype(p_type->container_types[i])));
+				const GDScriptParser::DataType argument = type_from_metatype(resolve_datatype(p_type->container_types[i]));
+				result.type_arguments.push_back(argument);
+
+				const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+				if (parameter == nullptr || parameter->bound == nullptr) {
+					continue;
+				}
+				const GDScriptParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
+				// Skip checking when either side failed to resolve; that error is reported elsewhere.
+				if (!bound.is_set() || bound.is_variant() || !argument.is_set() || argument.is_variant()) {
+					continue;
+				}
+				if (!datatype_derives_from_datatype(argument, bound)) {
+					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", argument.to_string(), bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
+					bound_violation = true;
+				}
+			}
+			if (bound_violation) {
+				return bad_type;
 			}
 		} else {
 			push_error(R"(Only arrays and dictionaries can specify collection element types.)", p_type);
@@ -6132,6 +6152,14 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 		base = *p_base;
 	}
 
+	// A value of a constrained type parameter `[T: Bound]` exposes the members of its bound,
+	// so member access on `T` is resolved against `Bound`.
+	if (base.kind == GDScriptParser::DataType::TYPE_PARAMETER && !base.type_parameter_bound.is_empty()) {
+		const bool was_meta_type = base.is_meta_type;
+		base = base.type_parameter_bound[0];
+		base.is_meta_type = was_meta_type;
+	}
+
 	StringName name = p_identifier->name;
 
 	if (base.kind == GDScriptParser::DataType::ENUM) {
@@ -7966,6 +7994,14 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		*r_is_noreturn = false;
 	}
 	StringName function_name = p_function;
+
+	// A constrained type parameter `[T: Bound]` exposes the methods of its bound, so calls on a
+	// `T`-typed value are resolved against `Bound`.
+	if (p_base_type.kind == GDScriptParser::DataType::TYPE_PARAMETER && !p_base_type.type_parameter_bound.is_empty()) {
+		const bool was_meta_type = p_base_type.is_meta_type;
+		p_base_type = p_base_type.type_parameter_bound[0];
+		p_base_type.is_meta_type = was_meta_type;
+	}
 
 	bool was_enum = false;
 	if (p_base_type.kind == GDScriptParser::DataType::ENUM) {
