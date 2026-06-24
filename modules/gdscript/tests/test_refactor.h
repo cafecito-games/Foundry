@@ -2361,6 +2361,66 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Sort members by style guide preserves fork headers and sorts nested types") {
+		const String source =
+				"@tool\n"
+				"namespace game.characters\n"
+				"import game.shared\n"
+				"import game.ui\n"
+				"class_name Player\n"
+				"extends Node\n"
+				"uses Damageable\n"
+				"\n"
+				"signal spawned\n"
+				"\n"
+				"func use_player() -> void:\n"
+				"\tpass\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"\tsignal changed\n"
+				"\n"
+				"trait Damageable:\n"
+				"\tfunc apply_damage() -> void:\n"
+				"\t\tpass\n"
+				"\tvar health := 10\n"
+				"\tsignal damaged\n"
+				"\n";
+		const String expected =
+				"@tool\n"
+				"namespace game.characters\n"
+				"import game.shared\n"
+				"import game.ui\n"
+				"class_name Player\n"
+				"extends Node\n"
+				"uses Damageable\n"
+				"\n"
+				"signal spawned\n"
+				"\n"
+				"func use_player() -> void:\n"
+				"\tpass\n"
+				"class Inventory:\n"
+				"\tsignal changed\n"
+				"\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"trait Damageable:\n"
+				"\tsignal damaged\n"
+				"\n"
+				"\tvar health := 10\n"
+				"\n"
+				"\tfunc apply_damage() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
 	TEST_CASE("Sort members by style guide rejects standalone warning annotations") {
 		const String source =
 				"extends Node\n"

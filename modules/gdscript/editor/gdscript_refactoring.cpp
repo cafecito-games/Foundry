@@ -33,6 +33,7 @@
 #ifdef TOOLS_ENABLED
 
 #include "gdscript_container_inference.h"
+#include "gdscript_refactoring_edits.h"
 #include "gdscript_refactoring_names.h"
 #include "gdscript_refactoring_types.h"
 
@@ -3862,9 +3863,10 @@ bool style_order_blocks_are_sorted(const Vector<StyleOrderBlock> &p_blocks) {
 	return true;
 }
 
-StyleOrderCandidate find_style_order_candidate_in_root_class(
+StyleOrderCandidate find_style_order_candidate_in_class(
 		const Vector<String> &p_lines,
-		const GDScriptParser::ClassNode *p_class) {
+		const GDScriptParser::ClassNode *p_class,
+		bool p_is_root_class) {
 	StyleOrderCandidate candidate;
 	if (p_class == nullptr || p_class->members.size() < 2) {
 		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
@@ -3955,12 +3957,22 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 	Vector<StyleOrderBlock> sorted_blocks = blocks;
 	sorted_blocks.sort_custom<StyleOrderBlockComparator>();
 
+	int edit_end_line = blocks[blocks.size() - 1].end_line;
+	if (!p_is_root_class) {
+		int effective_end_line = get_effective_line_span_end_line(p_lines, edit_end_line);
+		while (effective_end_line >= 0 && effective_end_line < p_lines.size() &&
+				p_lines[effective_end_line].strip_edges().is_empty()) {
+			edit_end_line = effective_end_line + 1;
+			effective_end_line = get_effective_line_span_end_line(p_lines, edit_end_line);
+		}
+	}
+
 	String expected_text;
-	if (!get_line_span_text(p_lines, blocks[0].start_line, blocks[blocks.size() - 1].end_line, expected_text)) {
+	if (!get_line_span_text(p_lines, blocks[0].start_line, edit_end_line, expected_text)) {
 		candidate.disabled_reason = "Cannot map a member declaration back to source text.";
 		return candidate;
 	}
-	if (line_span_has_standalone_warning_annotation(p_lines, blocks[0].start_line, blocks[blocks.size() - 1].end_line)) {
+	if (line_span_has_standalone_warning_annotation(p_lines, blocks[0].start_line, edit_end_line)) {
 		candidate.disabled_reason = "Cannot sort members while standalone warning annotations are present.";
 		return candidate;
 	}
@@ -3973,7 +3985,7 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 	if (!make_line_span_edit(
 				p_lines,
 				blocks[0].start_line,
-				blocks[blocks.size() - 1].end_line,
+				edit_end_line,
 				expected_text,
 				replacement_text,
 				edit)) {
@@ -3983,6 +3995,156 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 	candidate.enabled = true;
 	candidate.edits.push_back(edit);
 	return candidate;
+}
+
+bool is_style_order_already_sorted_reason(const String &p_reason) {
+	return p_reason == "Members are already sorted by the GDScript style guide.";
+}
+
+int compare_style_order_position(int p_a_line, int p_a_column, int p_b_line, int p_b_column) {
+	if (p_a_line != p_b_line) {
+		return p_a_line < p_b_line ? -1 : 1;
+	}
+	if (p_a_column == p_b_column) {
+		return 0;
+	}
+	return p_a_column < p_b_column ? -1 : 1;
+}
+
+bool style_order_edits_have_same_span(const RefactorTextEdit &p_a, const RefactorTextEdit &p_b) {
+	return compare_style_order_position(p_a.start_line, p_a.start_column, p_b.start_line, p_b.start_column) == 0 &&
+			compare_style_order_position(p_a.end_line, p_a.end_column, p_b.end_line, p_b.end_column) == 0;
+}
+
+bool style_order_edit_contains_span(const RefactorTextEdit &p_outer, const RefactorTextEdit &p_inner) {
+	const bool starts_before_or_at_inner =
+			compare_style_order_position(
+					p_outer.start_line,
+					p_outer.start_column,
+					p_inner.start_line,
+					p_inner.start_column) <= 0;
+	const bool ends_after_or_at_inner =
+			compare_style_order_position(
+					p_outer.end_line,
+					p_outer.end_column,
+					p_inner.end_line,
+					p_inner.end_column) >= 0;
+	return starts_before_or_at_inner && ends_after_or_at_inner && !style_order_edits_have_same_span(p_outer, p_inner);
+}
+
+void remove_nested_style_order_edits(Vector<RefactorTextEdit> &r_edits) {
+	Vector<RefactorTextEdit> filtered_edits;
+	for (int i = 0; i < r_edits.size(); i++) {
+		bool is_nested = false;
+		for (int j = 0; j < r_edits.size(); j++) {
+			if (i == j) {
+				continue;
+			}
+			if (style_order_edit_contains_span(r_edits[j], r_edits[i]) ||
+					(style_order_edits_have_same_span(r_edits[j], r_edits[i]) && j < i)) {
+				is_nested = true;
+				break;
+			}
+		}
+		if (!is_nested) {
+			filtered_edits.push_back(r_edits[i]);
+		}
+	}
+	r_edits = filtered_edits;
+}
+
+void collect_style_order_class_edits(
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_class,
+		bool p_is_root_class,
+		Vector<RefactorTextEdit> &r_edits,
+		String &r_disabled_reason) {
+	if (p_class == nullptr || !r_disabled_reason.is_empty()) {
+		return;
+	}
+
+	const StyleOrderCandidate candidate = find_style_order_candidate_in_class(p_lines, p_class, p_is_root_class);
+	if (candidate.enabled) {
+		for (const RefactorTextEdit &edit : candidate.edits) {
+			r_edits.push_back(edit);
+		}
+	} else if (!is_style_order_already_sorted_reason(candidate.disabled_reason)) {
+		r_disabled_reason = candidate.disabled_reason;
+		return;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::CLASS) {
+			continue;
+		}
+		collect_style_order_class_edits(p_lines, member.m_class, false, r_edits, r_disabled_reason);
+		if (!r_disabled_reason.is_empty()) {
+			return;
+		}
+	}
+}
+
+void get_source_end_position(const String &p_source, int &r_line, int &r_column) {
+	r_line = 0;
+	r_column = 0;
+	for (int i = 0; i < p_source.length(); i++) {
+		if (p_source[i] == '\n') {
+			r_line++;
+			r_column = 0;
+		} else {
+			r_column++;
+		}
+	}
+}
+
+void make_whole_source_style_order_edit(
+		const String &p_source,
+		const String &p_transformed,
+		RefactorTextEdit &r_edit) {
+	r_edit.start_line = 0;
+	r_edit.start_column = 0;
+	get_source_end_position(p_source, r_edit.end_line, r_edit.end_column);
+	r_edit.has_expected_text = true;
+	r_edit.expected_text = p_source;
+	r_edit.new_text = p_transformed;
+}
+
+bool apply_style_order_pass(
+		const String &p_source,
+		const String &p_path,
+		String &r_transformed,
+		String &r_disabled_reason) {
+	r_transformed = p_source;
+	r_disabled_reason = String();
+
+	GDScriptParser parser;
+	const Error err = parser.parse(p_source, p_path, false);
+	if (err != OK || parser.get_tree() == nullptr) {
+		r_disabled_reason = "Cannot parse this script.";
+		return false;
+	}
+
+	const Vector<String> lines = p_source.split("\n");
+	Vector<RefactorTextEdit> edits;
+	collect_style_order_class_edits(lines, parser.get_tree(), true, edits, r_disabled_reason);
+	if (!r_disabled_reason.is_empty()) {
+		return false;
+	}
+	if (edits.is_empty()) {
+		return true;
+	}
+
+	remove_nested_style_order_edits(edits);
+	if (edits.is_empty()) {
+		return true;
+	}
+
+	if (!GDScriptRefactorEdits::apply(p_source, edits, r_transformed)) {
+		r_transformed = p_source;
+		r_disabled_reason = "Cannot apply style-order edits to this script.";
+		return false;
+	}
+	return true;
 }
 
 // Cache locks only protect shared state. Concurrent misses may compute the same pure candidate twice.
@@ -5806,16 +5968,32 @@ static RefactorResult prepare_rename(
 
 StyleOrderCandidate find_style_order_candidate(const RefactorContext &p_context) {
 	StyleOrderCandidate candidate;
-	const Vector<String> lines = p_context.source.split("\n");
+	const String original_source = p_context.source;
+	String transformed_source = original_source;
 
-	GDScriptParser parser;
-	const Error err = parser.parse(p_context.source, p_context.path, false);
-	if (err != OK || parser.get_tree() == nullptr) {
-		candidate.disabled_reason = "Cannot parse this script.";
+	for (int pass = 0; pass < 16; pass++) {
+		String pass_result;
+		String disabled_reason;
+		if (!apply_style_order_pass(transformed_source, p_context.path, pass_result, disabled_reason)) {
+			candidate.disabled_reason = disabled_reason;
+			return candidate;
+		}
+		if (pass_result == transformed_source) {
+			break;
+		}
+		transformed_source = pass_result;
+	}
+
+	if (transformed_source == original_source) {
+		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
 		return candidate;
 	}
 
-	return find_style_order_candidate_in_root_class(lines, parser.get_tree());
+	RefactorTextEdit edit;
+	make_whole_source_style_order_edit(original_source, transformed_source, edit);
+	candidate.enabled = true;
+	candidate.edits.push_back(edit);
+	return candidate;
 }
 
 RefactorResult prepare_sort_members_by_style_guide(const RefactorContext &p_context) {
