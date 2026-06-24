@@ -5570,8 +5570,22 @@ bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::Clas
 	const StringName function_name = p_required_function->identifier->name;
 	const String trait_method_name = _class_or_trait_name(p_trait) + "." + String(function_name) + "()";
 
-	bool valid = !p_required_function->is_coroutine;
-	valid = valid && (p_required_function->is_static == ((p_implementation.method_info.flags & METHOD_FLAG_STATIC) != 0));
+	const bool required_is_coroutine = p_required_function->is_coroutine;
+	const bool implementation_is_coroutine = (p_implementation.method_info.flags & METHOD_FLAG_ASYNC) != 0;
+	if (required_is_coroutine != implementation_is_coroutine) {
+		if (required_is_coroutine) {
+			push_error(vformat(R"*(The function "%s()" must be async because it implements async trait method "%s".)*",
+							   function_name, trait_method_name),
+					p_required_function);
+		} else {
+			push_error(vformat(R"*(The function "%s()" cannot be async because it implements synchronous trait method "%s".)*",
+							   function_name, trait_method_name),
+					p_required_function);
+		}
+		return false;
+	}
+
+	bool valid = (p_required_function->is_static == ((p_implementation.method_info.flags & METHOD_FLAG_STATIC) != 0));
 
 	if (p_required_function->return_type != nullptr) {
 		const GDScriptParser::DataType required_return_type = p_required_function->get_datatype();
