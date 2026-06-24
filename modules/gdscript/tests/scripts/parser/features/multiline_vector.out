@@ -1,1 +1,5 @@
 GDTEST_OK
+~~ WARNING at line 2: (RETURN_VALUE_DISCARDED) The function "Vector2()" returns a value that will be discarded if not used.
+~~ WARNING at line 7: (RETURN_VALUE_DISCARDED) The function "Vector3()" returns a value that will be discarded if not used.
+~~ WARNING at line 13: (RETURN_VALUE_DISCARDED) The function "Vector2i()" returns a value that will be discarded if not used.
+~~ WARNING at line 15: (RETURN_VALUE_DISCARDED) The function "Vector3i()" returns a value that will be discarded if not used.

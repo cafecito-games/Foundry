@@ -2119,7 +2119,7 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				// Loop variables must be cleared even when `break`/`continue` is used.
 				List<GDScriptCodeGenerator::Address> loop_locals = _add_block_locals(codegen, for_n->loop);
 
-				//_clear_block_locals(codegen, loop_locals); // Inside loop, before block - for `continue`. // TODO
+				_clear_block_locals(codegen, loop_locals); // Inside loop, before block - for `continue`.
 
 				err = _parse_block(codegen, for_n->loop, false); // Don't add locals again.
 				if (err) {
@@ -2153,7 +2153,7 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				// Loop variables must be cleared even when `break`/`continue` is used.
 				List<GDScriptCodeGenerator::Address> loop_locals = _add_block_locals(codegen, while_n->loop);
 
-				//_clear_block_locals(codegen, loop_locals); // Inside loop, before block - for `continue`. // TODO
+				_clear_block_locals(codegen, loop_locals); // Inside loop, before block - for `continue`.
 
 				err = _parse_block(codegen, while_n->loop, false); // Don't add locals again.
 				if (err) {
