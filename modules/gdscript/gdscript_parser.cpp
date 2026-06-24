@@ -5539,12 +5539,6 @@ bool GDScriptParser::warning_ignore_annotation(AnnotationNode *p_annotation, Nod
 
 				// Can contain properties (set/get).
 				SIMPLE_CASE(Node::VARIABLE, VariableNode, initializer)
-
-				// Contain bodies.
-				SIMPLE_CASE(Node::FOR, ForNode, list)
-				SIMPLE_CASE(Node::IF, IfNode, condition)
-				SIMPLE_CASE(Node::MATCH, MatchNode, test)
-				SIMPLE_CASE(Node::WHILE, WhileNode, condition)
 #undef SIMPLE_CASE
 
 				case Node::CLASS: {

@@ -15,7 +15,13 @@ func test_func(_i: int = f):
 
 func test():
 	@warning_ignore("narrowing_conversion")
-	if signi(f): # TODO: Allow `@warning_ignore` before `elif`?
+	if signi(f):
+		i = f
+
+	@warning_ignore("narrowing_conversion")
+	if false:
+		pass
+	elif signi(f):
 		i = f
 
 	@warning_ignore("narrowing_conversion")
