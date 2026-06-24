@@ -859,6 +859,27 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"func _print_ready() -> void:\n"
 					"\tprint(\"ready\")\n");
 		}
+		SUBCASE("accepts full statement text selection without newline selection") {
+			const String source =
+					"func run(player_name: String, score: int) -> void:\n"
+					"\tvar message := \"Player %s scored %d points\" % [player_name, score]\n"
+					"\tprint(message)\n"
+					"\tprint(\"Score length: \", str(score).length())\n"
+					"\tprint(\"Done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 1, 3, lines[3].length()), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(player_name: String, score: int) -> void:\n"
+					"\t_extracted_method(player_name, score)\n"
+					"\tprint(\"Done\")\n"
+					"\n"
+					"func _extracted_method(player_name: String, score: int) -> void:\n"
+					"\tvar message := \"Player %s scored %d points\" % [player_name, score]\n"
+					"\tprint(message)\n"
+					"\tprint(\"Score length: \", str(score).length())\n");
+		}
 		SUBCASE("allows requested method name matching export group label") {
 			const String source =
 					"@export_group(\"helper\")\n"
@@ -943,6 +964,15 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
+
+		const Vector<String> lines = source.split("\n");
+		Vector<RefactorAvailability> text_selection_available = GDScriptRefactoring::get_available_refactors(
+				ctx,
+				selection(1, 1, 1, lines[1].length()));
+		REQUIRE_EQ(text_selection_available.size(), 5);
+		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
+		CHECK(text_selection_available[2].enabled);
+		CHECK(text_selection_available[2].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Extract method rejects unsafe or unprovable selections") {

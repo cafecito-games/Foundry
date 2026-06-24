@@ -496,6 +496,14 @@ String get_leading_whitespace(const String &p_line) {
 	return p_line.substr(0, end);
 }
 
+int get_trailing_whitespace_start_column(const String &p_line) {
+	int start = p_line.length();
+	while (start > 0 && is_whitespace(p_line[start - 1])) {
+		start--;
+	}
+	return start;
+}
+
 bool string_name_vector_has(const Vector<StringName> &p_names, const StringName &p_name) {
 	for (const StringName &name : p_names) {
 		if (name == p_name) {
@@ -1416,10 +1424,34 @@ void collect_extract_method_external_assigns_in_suite(
 
 bool find_extract_method_range(
 		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
 		const GDScriptParser::SuiteNode *p_suite,
+		RefactorLocation &r_normalized_location,
 		int &r_first_statement,
 		int &r_last_statement) {
-	if (p_suite == nullptr || !p_location.has_selection() || p_location.start_column != 0 || p_location.end_column != 0) {
+	if (p_suite == nullptr || !p_location.has_selection() || p_location.start_line < 0 ||
+			p_location.start_line >= p_lines.size() || p_location.end_line < 0 ||
+			p_location.end_line > p_lines.size() || p_location.start_column < 0 ||
+			p_location.end_column < 0) {
+		return false;
+	}
+
+	const int start_line_first_text_column = get_leading_whitespace(p_lines[p_location.start_line]).length();
+	if (p_location.start_column > start_line_first_text_column) {
+		return false;
+	}
+
+	int end_line_exclusive = p_location.end_line;
+	if (p_location.end_column != 0) {
+		if (p_location.end_line >= p_lines.size() ||
+				p_location.end_column > p_lines[p_location.end_line].length() ||
+				p_location.end_column < get_trailing_whitespace_start_column(p_lines[p_location.end_line])) {
+			return false;
+		}
+		end_line_exclusive = p_location.end_line + 1;
+	}
+
+	if (end_line_exclusive <= p_location.start_line) {
 		return false;
 	}
 
@@ -1433,12 +1465,20 @@ bool find_extract_method_range(
 		if (get_node_start_line_0(statement) == p_location.start_line) {
 			r_first_statement = i;
 		}
-		if (get_node_end_line_exclusive_0(statement) == p_location.end_line) {
+		if (get_node_end_line_exclusive_0(statement) == end_line_exclusive) {
 			r_last_statement = i;
 		}
 	}
 
-	return r_first_statement >= 0 && r_last_statement >= r_first_statement;
+	if (r_first_statement < 0 || r_last_statement < r_first_statement) {
+		return false;
+	}
+
+	r_normalized_location = p_location;
+	r_normalized_location.start_column = 0;
+	r_normalized_location.end_line = end_line_exclusive;
+	r_normalized_location.end_column = 0;
+	return true;
 }
 
 String make_unique_method_name(const GDScriptParser::ClassNode *p_class) {
@@ -1804,9 +1844,10 @@ bool find_extract_method_in_suite(
 
 	int first_statement = -1;
 	int last_statement = -1;
-	if (find_extract_method_range(p_location, p_suite, first_statement, last_statement)) {
+	RefactorLocation normalized_location;
+	if (find_extract_method_range(p_location, p_lines, p_suite, normalized_location, first_statement, last_statement)) {
 		r_candidate = build_extract_method_candidate(
-				p_location,
+				normalized_location,
 				p_lines,
 				p_source_has_final_newline,
 				p_class,
