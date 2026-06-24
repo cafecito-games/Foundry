@@ -420,6 +420,12 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 					}
 					method_doc.qualifiers += "abstract";
 				}
+				if (m_func->is_noreturn) {
+					if (!method_doc.qualifiers.is_empty()) {
+						method_doc.qualifiers += " ";
+					}
+					method_doc.qualifiers += "noreturn";
+				}
 				if (m_func->is_static) {
 					if (!method_doc.qualifiers.is_empty()) {
 						method_doc.qualifiers += " ";

@@ -976,6 +976,8 @@
 				[/csharp]
 				[/codeblocks]
 				Termination happens gracefully at the end of the current frame, so any remaining synchronous code in the calling function still runs before the project quits.
+				For GDScript static analysis, [method push_fatal] is treated as a [annotation @GDScript.@noreturn] call.
+				This means it can satisfy typed return paths.
 				Unlike [code]assert()[/code], [method push_fatal] is not compiled out of release builds; it terminates in both debug and exported builds by default.
 				[b]Note:[/b] When called from a [code]@tool[/code] script running inside the editor, it only logs the message and does [b]not[/b] terminate, so it cannot close the editor.
 				[b]Note:[/b] Set the [member ProjectSettings.application/run/push_fatal_terminates] project setting to [code]false[/code] to downgrade [method push_fatal] to plain [method push_error] behavior (log only, no termination).

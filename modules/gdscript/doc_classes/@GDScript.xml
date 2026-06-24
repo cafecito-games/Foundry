@@ -333,6 +333,25 @@
 				[/codeblock]
 			</description>
 		</annotation>
+		<annotation name="@noreturn">
+			<return type="void" />
+			<description>
+				Marks a method as never returning to its caller.
+				A typed method can call a [annotation @noreturn] method instead of returning a value.
+				Code after a [annotation @noreturn] call is considered unreachable.
+				A [annotation @noreturn] method must not use a [code]return[/code] statement and must not complete normally.
+				[codeblock]
+				@noreturn func fail(message: String) -> void:
+					push_fatal(message)
+
+				func load_required(path: String) -> Resource:
+					var resource := load(path)
+					if resource == null:
+						fail("Required resource failed to load: " + path)
+					return resource
+				[/codeblock]
+			</description>
+		</annotation>
 		<annotation name="@export">
 			<return type="void" />
 			<description>
