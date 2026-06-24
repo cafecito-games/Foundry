@@ -41,14 +41,24 @@ Purely a display/documentation improvement; no runtime behavior change.
 
 ## Approach
 
-### Surface 1 — port PR #115958 verbatim
+### Surface 1 — port PR #115958, extended to hint-based properties
 
 `DocData::get_default_value_string()` gains a `const PropertyInfo &` parameter.
 When the property usage flags mark an enum/bitfield, it resolves the integer to
 constant names via `ClassDB` (or `CoreConstants` for global enums). All
 prerequisite APIs (`CoreConstants::is_global_enum`, `get_enum_values`) already
-exist in the fork. Three code files change; ~40 `doc/classes/*.xml` files are
-regenerated to match.
+exist in the fork.
+
+**Extension beyond upstream:** PR #115958 only converts values whose
+`PropertyInfo` already carries `PROPERTY_USAGE_CLASS_IS_ENUM/BITFIELD` — method
+arguments, return values, and enum-typed properties. Registered properties
+declared with `PROPERTY_HINT_ENUM`/`PROPERTY_HINT_FLAGS` (e.g.
+`Control.size_flags_horizontal`) do *not* set that usage flag, so upstream
+leaves them as raw integers. This fork additionally forwards the enum the doc
+generator already derives from the property's getter (`doc_tools.cpp`,
+`prop.enumeration`/`prop.is_bitfield`) into the resolver, so those properties
+also render constant names. This widens the regenerated diff to ~240
+`doc/classes/*.xml` files but makes the engine reference fully consistent.
 
 ### Surfaces 2 & 3 — resolve against `DataType.enum_values`
 
