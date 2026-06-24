@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: The function "compute()" cannot be async because it implements synchronous trait method "Computable.compute()".
