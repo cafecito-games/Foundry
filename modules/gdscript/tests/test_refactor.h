@@ -170,6 +170,18 @@ inline String implement_abstract_reason(const String &p_source, int p_line, int 
 	return entry != nullptr ? entry->disabled_reason : String();
 }
 
+inline RefactorResult run_implement_abstract(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 #ifndef GDSCRIPT_NO_LSP
 struct TemporaryScriptFile {
 	String path;
@@ -284,6 +296,168 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\tvar tag := 1\n";
 		// Leaf still owes name() but not area().
 		CHECK(GDScriptTests::implement_abstract_enabled(source, 7, 1));
+	}
+
+	TEST_CASE("Implement abstract: renders typed stub with push_error and default return") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("push_error(\"Not implemented: area\")"));
+		CHECK(out.contains("return 0.0"));
+	}
+
+	TEST_CASE("Implement abstract: void method has no return") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func tick() -> void\n"
+				"class Clock extends Base:\n"
+				"\tvar t := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func tick() -> void:"));
+		CHECK(out.contains("push_error(\"Not implemented: tick\")"));
+		CHECK_FALSE(out.contains("return"));
+	}
+
+	TEST_CASE("Implement abstract: object return type uses pass") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func make() -> Node\n"
+				"class Factory extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func make() -> Node:"));
+		CHECK(out.contains("push_error(\"Not implemented: make\")"));
+		CHECK(out.contains("pass"));
+		CHECK_FALSE(out.contains("return"));
+	}
+
+	TEST_CASE("Implement abstract: preserves params and annotated types") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func combine(a: int, b: int) -> int\n"
+				"class Math extends Base:\n"
+				"\tvar seed := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func combine(a: int, b: int) -> int:"));
+		CHECK(out.contains("return 0"));
+	}
+
+	TEST_CASE("Implement abstract: generates all owed methods at once") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"\t@abstract func name() -> String\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 4, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("func name() -> String:"));
+		CHECK(out.contains("return \"\""));
+	}
+
+	TEST_CASE("Implement abstract: inner class stub is indented one level deeper") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\tfunc area() -> float:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: area\")\n"));
+		CHECK(out.contains("\t\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: reproduces parameter default values") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func scaled(factor: float = 1.0) -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func scaled(factor: float = 1.0) -> float:"));
+	}
+
+	TEST_CASE("Implement abstract: Array return defaults to empty array") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func items() -> Array\n"
+				"class Bag extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func items() -> Array:"));
+		CHECK(out.contains("return []"));
+	}
+
+	TEST_CASE("Implement abstract: Dictionary return defaults to empty dictionary") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func lookup() -> Dictionary\n"
+				"class Store extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func lookup() -> Dictionary:"));
+		CHECK(out.contains("return {}"));
+	}
+
+	TEST_CASE("Implement abstract: StringName return defaults to empty string name") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func tag() -> StringName\n"
+				"class Label extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func tag() -> StringName:"));
+		CHECK(out.contains("return &\"\""));
+	}
+
+	TEST_CASE("Implement abstract: top-level class stub has no indentation") {
+		const String source =
+				"extends Base\n"
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"var radius := 1.0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 0, 0, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\nfunc area() -> float:\n"));
+		CHECK(out.contains("\n\tpush_error(\"Not implemented: area\")\n"));
+		CHECK(out.contains("\n\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: top-level class with no members has no indentation") {
+		const String source =
+				"extends Base\n"
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 0, 0, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\nfunc area() -> float:\n"));
+		CHECK(out.contains("\n\treturn 0.0\n"));
 	}
 
 	TEST_CASE("Edit application") {
