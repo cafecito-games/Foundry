@@ -6,6 +6,22 @@
 	<description>
 		A list of utility functions and annotations accessible from any script written in GDScript.
 		For the list of global functions and constants that can be accessed in any scripting language, see [@GlobalScope].
+		GDScript files can declare a namespace with [code]namespace a.b.c[/code] at the top of the file. The declaration applies to the root script class defined by that file and must appear before [code]import[/code], [code]class_name[/code], [code]extends[/code], annotations that describe the script class, and body declarations. Scripts without a [code]namespace[/code] declaration remain in the global namespace.
+		When a script declares both [code]namespace[/code] and [code]class_name[/code], the canonical script class name is fully qualified. For example:
+		[codeblock]
+		namespace game.characters
+		class_name Player
+		extends Node
+		[/codeblock]
+		The global script class is registered as [code]game.characters.Player[/code]. Code in the same namespace can refer to it as [code]Player[/code], while code outside the namespace can use the fully qualified name.
+		Use [code]import a.b[/code] to make a namespace visible inside the current file. Imports are file-local and non-recursive: importing [code]game.characters[/code] lets bare names resolve to classes declared directly in that namespace, but it does not import descendant classes as bare names. Classes in child namespaces can still be referenced by qualifying the remaining namespace path.
+		[codeblock]
+		import game.characters
+
+		var player: Player # Direct class from game.characters.
+		var controller: controllers.PlayerController # Child namespace game.characters.controllers.
+		[/codeblock]
+		Current namespace restrictions: aliases, wildcards, relative imports, and namespace blocks are not supported. Namespace declarations apply only at file level, and [code]class_name[/code] can only define the root script class. In debug builds, GDScript warns when global script classes in the same directory use mixed namespaces, including a mix of namespaced and global-namespace classes.
 	</description>
 	<tutorials>
 		<link title="GDScript exports">$DOCS_URL/tutorials/scripting/gdscript/gdscript_exports.html</link>
