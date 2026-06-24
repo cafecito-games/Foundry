@@ -167,6 +167,11 @@ String GDScriptWarning::get_message() const {
 			return vformat(R"*(The default value uses "%s" which won't return nodes in the scene tree before "_ready()" is called. Use the "@onready" annotation to solve this.)*", symbols[0]);
 		case ONREADY_WITH_EXPORT:
 			return R"("@onready" will set the default value after "@export" takes effect and will override it.)";
+		case NON_EXHAUSTIVE_MATCH:
+			CHECK_SYMBOLS(2);
+			return vformat(R"(The "match" statement does not cover all values of "%s". Unhandled: %s. Add the missing patterns or a "_" wildcard branch.)", symbols[0], symbols[1]);
+		case MATCH_WITHOUT_DEFAULT:
+			return R"(The "match" statement has no "_" wildcard branch; some values may go unhandled.)";
 #ifndef DISABLE_DEPRECATED
 		// Never produced. These warnings migrated from 3.x by mistake.
 		case PROPERTY_USED_AS_FUNCTION: // There is already an error.
@@ -245,6 +250,8 @@ String GDScriptWarning::get_name_from_code(Code p_code) {
 		PNAME("NATIVE_METHOD_OVERRIDE"),
 		PNAME("GET_NODE_DEFAULT_WITHOUT_ONREADY"),
 		PNAME("ONREADY_WITH_EXPORT"),
+		PNAME("NON_EXHAUSTIVE_MATCH"),
+		PNAME("MATCH_WITHOUT_DEFAULT"),
 #ifndef DISABLE_DEPRECATED
 		"PROPERTY_USED_AS_FUNCTION",
 		"CONSTANT_USED_AS_FUNCTION",
