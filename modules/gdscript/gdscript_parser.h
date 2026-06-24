@@ -521,6 +521,7 @@ public:
 		StringName function_name;
 		bool is_super = false;
 		bool is_static = false;
+		bool is_noreturn = false;
 
 		CallNode() {
 			type = CALL;
@@ -911,6 +912,7 @@ public:
 		TypeNode *return_type = nullptr;
 		SuiteNode *body = nullptr;
 		bool is_abstract = false;
+		bool is_noreturn = false;
 		bool is_static = false; // For lambdas it's determined in the analyzer.
 		bool is_declared_async = false;
 		bool is_coroutine = false;
@@ -1621,6 +1623,7 @@ private:
 	bool icon_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool static_unload_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool abstract_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
+	bool noreturn_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool onready_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	template <PropertyHint t_hint, Variant::Type t_type>
 	bool export_annotations(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);

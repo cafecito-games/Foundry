@@ -2171,17 +2171,211 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 		flow_narrowing_captured_sources = previous_flow_narrowing_captured_sources;
 	}
 
+	const SuiteExitState body_exit = get_suite_exit_state(p_function->body);
+	warn_unreachable_after_noreturn(p_function->body);
+
+	if (p_function->is_noreturn) {
+		if (body_exit.has_return) {
+			push_error(R"(A "@noreturn" function cannot return.)", p_function);
+		} else if (!body_exit.always_terminates) {
+			push_error(R"(A "@noreturn" function cannot complete normally.)", p_function);
+		}
+	}
+
 	if (!p_function->get_datatype().is_hard_type() && p_function->body->get_datatype().is_set()) {
 		// Use the suite inferred type if return isn't explicitly set.
 		p_function->set_datatype(p_function->body->get_datatype());
 	} else if (p_function->get_datatype().is_hard_type() && (p_function->get_datatype().kind != GDScriptParser::DataType::BUILTIN || p_function->get_datatype().builtin_type != Variant::NIL)) {
-		if (!p_function->body->has_return && (p_is_lambda || p_function->identifier->name != GDScriptLanguage::get_singleton()->strings._init)) {
+		if (!body_exit.always_terminates && (p_is_lambda || p_function->identifier->name != GDScriptLanguage::get_singleton()->strings._init)) {
 			push_error(R"(Not all code paths return a value.)", p_function);
 		}
 	}
 
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
+}
+
+GDScriptAnalyzer::SuiteExitState GDScriptAnalyzer::get_suite_exit_state(const GDScriptParser::SuiteNode *p_suite) const {
+	SuiteExitState result;
+	if (p_suite == nullptr) {
+		return result;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		const SuiteExitState statement_exit = get_statement_exit_state(statement);
+		result.has_return = result.has_return || statement_exit.has_return;
+		result.has_noreturn = result.has_noreturn || statement_exit.has_noreturn;
+
+		if (statement_exit.always_terminates) {
+			result.always_terminates = true;
+			return result;
+		}
+	}
+
+	return result;
+}
+
+GDScriptAnalyzer::SuiteExitState GDScriptAnalyzer::get_statement_exit_state(const GDScriptParser::Node *p_statement) const {
+	SuiteExitState result;
+	if (p_statement == nullptr) {
+		return result;
+	}
+
+	switch (p_statement->type) {
+		case GDScriptParser::Node::RETURN:
+			result.always_terminates = true;
+			result.has_return = true;
+			break;
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_statement);
+			if (call->is_noreturn) {
+				result.always_terminates = true;
+				result.has_noreturn = true;
+			}
+		} break;
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_statement);
+			const SuiteExitState true_exit = get_suite_exit_state(if_node->true_block);
+			const SuiteExitState false_exit = get_suite_exit_state(if_node->false_block);
+
+			result.has_return = true_exit.has_return || false_exit.has_return;
+			result.has_noreturn = true_exit.has_noreturn || false_exit.has_noreturn;
+			result.always_terminates = if_node->false_block != nullptr && true_exit.always_terminates && false_exit.always_terminates;
+		} break;
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
+			bool all_branches_terminate = !match_node->branches.is_empty();
+			bool has_wildcard = false;
+			for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+				const SuiteExitState branch_exit = get_suite_exit_state(branch->block);
+				result.has_return = result.has_return || branch_exit.has_return;
+				result.has_noreturn = result.has_noreturn || branch_exit.has_noreturn;
+				all_branches_terminate = all_branches_terminate && branch_exit.always_terminates;
+				has_wildcard = has_wildcard || branch->has_wildcard;
+			}
+			result.always_terminates = has_wildcard && all_branches_terminate;
+		} break;
+		case GDScriptParser::Node::WHILE: {
+			const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(p_statement);
+			const SuiteExitState loop_exit = get_suite_exit_state(while_node->loop);
+			result.has_return = loop_exit.has_return;
+			result.has_noreturn = loop_exit.has_noreturn;
+			result.always_terminates = while_node->condition != nullptr && while_node->condition->is_constant &&
+					while_node->condition->reduced_value.booleanize() && !suite_has_reachable_break(while_node->loop);
+		} break;
+		case GDScriptParser::Node::SUITE:
+			result = get_suite_exit_state(static_cast<const GDScriptParser::SuiteNode *>(p_statement));
+			break;
+		default:
+			break;
+	}
+
+	return result;
+}
+
+bool GDScriptAnalyzer::suite_has_reachable_break(const GDScriptParser::SuiteNode *p_suite) const {
+	if (p_suite == nullptr) {
+		return false;
+	}
+
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement_has_reachable_break(statement)) {
+			return true;
+		}
+		if (get_statement_exit_state(statement).always_terminates) {
+			return false;
+		}
+	}
+	return false;
+}
+
+bool GDScriptAnalyzer::statement_has_reachable_break(const GDScriptParser::Node *p_statement) const {
+	if (p_statement == nullptr) {
+		return false;
+	}
+
+	switch (p_statement->type) {
+		case GDScriptParser::Node::BREAK:
+			return true;
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_statement);
+			return suite_has_reachable_break(if_node->true_block) || suite_has_reachable_break(if_node->false_block);
+		}
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
+			for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+				if (suite_has_reachable_break(branch->block)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		case GDScriptParser::Node::SUITE:
+			return suite_has_reachable_break(static_cast<const GDScriptParser::SuiteNode *>(p_statement));
+		default:
+			return false;
+	}
+}
+
+void GDScriptAnalyzer::warn_unreachable_after_noreturn(const GDScriptParser::SuiteNode *p_suite) {
+#ifdef DEBUG_ENABLED
+	if (p_suite == nullptr) {
+		return;
+	}
+
+	for (int i = 0; i < p_suite->statements.size(); i++) {
+		const GDScriptParser::Node *statement = p_suite->statements[i];
+		warn_unreachable_after_noreturn_in_statement(statement);
+
+		const SuiteExitState statement_exit = get_statement_exit_state(statement);
+		if (statement_exit.always_terminates) {
+			if (statement_exit.has_noreturn && i + 1 < p_suite->statements.size()) {
+				const StringName function_name = parser->current_function && parser->current_function->identifier ? parser->current_function->identifier->name : StringName("<anonymous lambda>");
+				parser->push_warning(p_suite->statements[i + 1], GDScriptWarning::UNREACHABLE_CODE, function_name);
+			}
+			return;
+		}
+	}
+#else
+	(void)p_suite;
+#endif // DEBUG_ENABLED
+}
+
+void GDScriptAnalyzer::warn_unreachable_after_noreturn_in_statement(const GDScriptParser::Node *p_statement) {
+#ifdef DEBUG_ENABLED
+	if (p_statement == nullptr) {
+		return;
+	}
+
+	switch (p_statement->type) {
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_statement);
+			warn_unreachable_after_noreturn(if_node->true_block);
+			warn_unreachable_after_noreturn(if_node->false_block);
+		} break;
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
+			for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+				warn_unreachable_after_noreturn(branch->block);
+			}
+		} break;
+		case GDScriptParser::Node::WHILE: {
+			const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(p_statement);
+			warn_unreachable_after_noreturn(while_node->loop);
+		} break;
+		case GDScriptParser::Node::FOR: {
+			const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_statement);
+			warn_unreachable_after_noreturn(for_node->loop);
+		} break;
+		case GDScriptParser::Node::SUITE:
+			warn_unreachable_after_noreturn(static_cast<const GDScriptParser::SuiteNode *>(p_statement));
+			break;
+		default:
+			break;
+	}
+#else
+	(void)p_statement;
+#endif // DEBUG_ENABLED
 }
 
 void GDScriptAnalyzer::decide_suite_type(GDScriptParser::Node *p_suite, GDScriptParser::Node *p_statement) {
@@ -4183,6 +4377,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			} else {
 				validate_call_arg(function_info, p_call);
 			}
+			p_call->is_noreturn = function_name == SNAME("push_fatal");
 			p_call->set_datatype(type_from_property(function_info.return_val));
 			return;
 		}
@@ -4249,6 +4444,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	BitField<MethodFlags> method_flags = {};
 	GDScriptParser::DataType return_type;
 	List<GDScriptParser::DataType> par_types;
+	bool is_noreturn = false;
 
 	bool is_constructor = (base_type.is_meta_type || (p_call->callee && p_call->callee->type == GDScriptParser::Node::IDENTIFIER)) && p_call->function_name == SNAME("new");
 
@@ -4270,8 +4466,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 	}
 
-	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types, default_arg_count, method_flags)) {
+	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types,
+				default_arg_count, method_flags, nullptr, &is_noreturn)) {
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
+		p_call->is_noreturn = is_noreturn;
 		// If the method is implemented in the class hierarchy, the virtual/abstract flag will not be set for that `MethodInfo` and the search stops there.
 		// Virtual/abstract check only possible for super calls because class hierarchy is known. Objects may have scripts attached we don't know of at compile-time.
 		if (p_call->is_super) {
@@ -7387,11 +7585,18 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 	return result;
 }
 
-bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType p_base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class) {
+bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor,
+		GDScriptParser::DataType p_base_type, const StringName &p_function,
+		GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types,
+		int &r_default_arg_count, BitField<MethodFlags> &r_method_flags,
+		StringName *r_native_class, bool *r_is_noreturn) {
 	r_method_flags = METHOD_FLAGS_DEFAULT;
 	r_default_arg_count = 0;
 	if (r_native_class) {
 		*r_native_class = StringName();
+	}
+	if (r_is_noreturn) {
+		*r_is_noreturn = false;
 	}
 	StringName function_name = p_function;
 
@@ -7807,6 +8012,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (found_function->is_abstract) {
 			r_method_flags.set_flag(METHOD_FLAG_VIRTUAL_REQUIRED);
 		}
+		if (r_is_noreturn) {
+			*r_is_noreturn = found_function->is_noreturn;
+		}
 		if (p_is_constructor || found_function->is_static) {
 			r_method_flags.set_flag(METHOD_FLAG_STATIC);
 		}
@@ -8044,6 +8252,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		bool valid = function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
 		if (valid && Engine::get_singleton()->has_singleton(base_native)) {
 			r_method_flags.set_flag(METHOD_FLAG_STATIC);
+		}
+		if (valid && r_is_noreturn && base_native == SNAME("OS") && function_name == SNAME("crash")) {
+			*r_is_noreturn = true;
 		}
 #ifdef DEBUG_ENABLED
 		MethodBind *native_method = ClassDB::get_method(base_native, function_name);

@@ -69,6 +69,12 @@ class GDScriptAnalyzer {
 	bool strict_null_checks = false;
 	bool strict_dynamic_checks = false;
 
+	struct SuiteExitState {
+		bool always_terminates = false;
+		bool has_return = false;
+		bool has_noreturn = false;
+	};
+
 	// Tests for detecting invalid overloading of script members
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_script_class(const StringName &p_name, const GDScriptParser::ClassNode *p_current_class_node, const GDScriptParser::Node *p_member);
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_native_type(const StringName &p_name, const StringName &p_native_type_string);
@@ -98,6 +104,12 @@ class GDScriptAnalyzer {
 	void resolve_function_body(GDScriptParser::FunctionNode *p_function, bool p_is_lambda = false);
 	void resolve_node(GDScriptParser::Node *p_node, bool p_is_root = true);
 	void resolve_suite(GDScriptParser::SuiteNode *p_suite, bool p_is_root = true);
+	SuiteExitState get_suite_exit_state(const GDScriptParser::SuiteNode *p_suite) const;
+	SuiteExitState get_statement_exit_state(const GDScriptParser::Node *p_statement) const;
+	bool suite_has_reachable_break(const GDScriptParser::SuiteNode *p_suite) const;
+	bool statement_has_reachable_break(const GDScriptParser::Node *p_statement) const;
+	void warn_unreachable_after_noreturn(const GDScriptParser::SuiteNode *p_suite);
+	void warn_unreachable_after_noreturn_in_statement(const GDScriptParser::Node *p_statement);
 	void resolve_assignable(GDScriptParser::AssignableNode *p_assignable, const char *p_kind);
 	void resolve_variable(GDScriptParser::VariableNode *p_variable, bool p_is_local);
 	void resolve_constant(GDScriptParser::ConstantNode *p_constant, bool p_is_local);
@@ -175,7 +187,11 @@ class GDScriptAnalyzer {
 #ifdef DEBUG_ENABLED
 	void validate_mixed_namespace_directory();
 #endif // DEBUG_ENABLED
-	bool get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class = nullptr);
+	bool get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor,
+			GDScriptParser::DataType base_type, const StringName &p_function,
+			GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types,
+			int &r_default_arg_count, BitField<MethodFlags> &r_method_flags,
+			StringName *r_native_class = nullptr, bool *r_is_noreturn = nullptr);
 	bool function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
 	bool callable_signature_from_type(const GDScriptParser::DataType &p_callable_type, Vector<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
 	GDScriptParser::DataType plain_callable_type() const;
