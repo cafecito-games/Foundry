@@ -89,8 +89,6 @@ class ScriptTextEditor : public ScriptEditorBase {
 	PopupMenu *breakpoints_menu = nullptr;
 	PopupMenu *highlighter_menu = nullptr;
 	PopupMenu *context_menu = nullptr;
-
-	PopupMenu *refactor_submenu = nullptr;
 	ConfirmationDialog *rename_dialog = nullptr;
 	LineEdit *rename_line_edit = nullptr;
 	Label *rename_error_label = nullptr;
@@ -277,7 +275,7 @@ protected:
 	void _edit_option_toggle_inline_comment();
 	void _make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos);
 
-	void _populate_refactor_submenu();
+	void _populate_refactor_submenu(PopupMenu *p_refactor_submenu);
 	void _run_refactor(int p_kind);
 	bool _collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const;
 	void _apply_refactor_result(const RefactorResult &p_result, const String &p_source);

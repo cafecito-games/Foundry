@@ -2886,18 +2886,19 @@ RefactorLocation ScriptTextEditor::_make_refactor_location() const {
 	return loc;
 }
 
-void ScriptTextEditor::_populate_refactor_submenu() {
-	refactor_submenu->clear();
+void ScriptTextEditor::_populate_refactor_submenu(PopupMenu *p_refactor_submenu) {
+	ERR_FAIL_NULL(p_refactor_submenu);
+	p_refactor_submenu->clear();
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, loc);
 	for (const RefactorAvailability &availability : available) {
 		const int id = EDIT_REFACTOR_RENAME + (int)availability.kind;
-		refactor_submenu->add_item(availability.title, id);
-		const int index = refactor_submenu->get_item_index(id);
+		p_refactor_submenu->add_item(availability.title, id);
+		const int index = p_refactor_submenu->get_item_index(id);
 		if (!availability.enabled) {
-			refactor_submenu->set_item_disabled(index, true);
-			refactor_submenu->set_item_tooltip(index, availability.disabled_reason);
+			p_refactor_submenu->set_item_disabled(index, true);
+			p_refactor_submenu->set_item_tooltip(index, availability.disabled_reason);
 		}
 	}
 }
@@ -3502,10 +3503,14 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 
 	// Refactors are GDScript-specific; only offer them when editing a GDScript file.
 	if (script.is_valid() && script->get_language() && script->get_language()->get_name() == "GDScript") {
-		_populate_refactor_submenu();
+		PopupMenu *refactor_submenu = memnew(PopupMenu);
+		refactor_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
+		_populate_refactor_submenu(refactor_submenu);
 		if (refactor_submenu->get_item_count() > 0) {
 			context_menu->add_separator();
 			context_menu->add_submenu_node_item(TTRC("Refactor"), refactor_submenu);
+		} else {
+			memdelete(refactor_submenu);
 		}
 	}
 
@@ -3553,10 +3558,6 @@ void ScriptTextEditor::_enable_code_editor() {
 
 	add_child(context_menu);
 	context_menu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
-
-	refactor_submenu = memnew(PopupMenu);
-	refactor_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
-	context_menu->add_child(refactor_submenu);
 
 	rename_dialog = memnew(ConfirmationDialog);
 	rename_dialog->set_title(TTRC("Rename Symbol"));
