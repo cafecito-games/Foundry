@@ -4965,6 +4965,14 @@ bool Main::iteration() {
 	}
 	message_queue->flush();
 
+	// A component may have requested a graceful shutdown during process()
+	// (e.g. via push_fatal()). Honor it here so this iteration ends the loop;
+	// this sits before the `fixed_fps` early-return below so both return paths
+	// observe it.
+	if (OS::get_singleton()->is_exit_requested()) {
+		exit = true;
+	}
+
 #ifndef NAVIGATION_2D_DISABLED
 	GodotProfileZoneGrouped(_profile_zone, "process 2D navigation");
 	NavigationServer2D::get_singleton()->process(process_step * time_scale);
