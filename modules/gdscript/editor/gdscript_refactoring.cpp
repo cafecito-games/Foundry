@@ -42,6 +42,9 @@
 #include "core/string/char_utils.h"
 
 #ifndef GDSCRIPT_NO_LSP
+#include "core/object/class_db.h"
+#include "core/object/script_language.h"
+
 #include "../language_server/gdscript_extend_parser.h"
 #include "../language_server/gdscript_language_protocol.h"
 #include "../language_server/gdscript_workspace.h"
@@ -862,7 +865,7 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	// The parser does not expose the assignment operator token, so this refactor
 	// intentionally handles declarations whose assignment delimiter is on the
 	// declaration line.
-	const int equal_index = line.find("=", name_end);
+	const int equal_index = p_assignable->initializer != nullptr ? line.find("=", name_end) : -1;
 	const int declaration_end = equal_index >= 0 ? equal_index : name_end;
 
 	r_candidate.matched = true;
@@ -938,6 +941,460 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	r_candidate.enabled = true;
 	return true;
 }
+
+#ifndef GDSCRIPT_NO_LSP
+struct CallsiteParameterTypeState {
+	bool has_call = false;
+	bool failed = false;
+	String rendered_type;
+};
+
+const GDScriptParser::IdentifierNode *get_call_identifier(const GDScriptParser::CallNode *p_call) {
+	if (p_call == nullptr || p_call->callee == nullptr) {
+		return nullptr;
+	}
+
+	switch (p_call->callee->type) {
+		case GDScriptParser::Node::IDENTIFIER:
+			return static_cast<const GDScriptParser::IdentifierNode *>(p_call->callee);
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			return subscript->is_attribute ? subscript->attribute : nullptr;
+		}
+		default:
+			break;
+	}
+
+	return nullptr;
+}
+
+bool call_resolves_to_symbol(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::CallNode *p_call,
+		const LSP::DocumentSymbol *p_target_symbol,
+		const GDScriptParseResultProvider *p_parse_results) {
+	ERR_FAIL_COND_V(p_workspace.is_null(), false);
+	ERR_FAIL_NULL_V(p_parser, false);
+	ERR_FAIL_NULL_V(p_call, false);
+	ERR_FAIL_NULL_V(p_target_symbol, false);
+
+	const GDScriptParser::IdentifierNode *identifier = get_call_identifier(p_call);
+	if (identifier == nullptr || identifier->name != p_call->function_name) {
+		return false;
+	}
+
+	LSP::TextDocumentPositionParams doc_position;
+	doc_position.textDocument.uri = p_workspace->get_file_uri(p_path);
+	doc_position.position = GodotPosition(identifier->start_line, identifier->start_column).to_lsp(p_parser->get_lines());
+	return p_workspace->resolve_symbol(doc_position, String(), true, p_parse_results) == p_target_symbol;
+}
+
+void collect_callsite_parameter_type_in_expression(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::ExpressionNode *p_expression,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state);
+
+void collect_callsite_parameter_type_in_suite(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::SuiteNode *p_suite,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state);
+
+void collect_callsite_parameter_type_in_variable(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::VariableNode *p_variable,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state) {
+	if (p_variable == nullptr || r_state.failed) {
+		return;
+	}
+
+	collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, p_variable->initializer, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+	if (p_variable->property != GDScriptParser::VariableNode::PROP_INLINE) {
+		return;
+	}
+	if (p_variable->setter != nullptr) {
+		collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, p_variable->setter->body, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+	}
+	if (p_variable->getter != nullptr) {
+		collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, p_variable->getter->body, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+	}
+}
+
+void collect_callsite_parameter_type_from_call(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::CallNode *p_call,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state) {
+	if (r_state.failed || !call_resolves_to_symbol(p_workspace, p_path, p_parser, p_call, p_target_symbol, p_parse_results)) {
+		return;
+	}
+
+	r_state.has_call = true;
+	if (p_parameter_index < 0 || p_parameter_index >= p_call->arguments.size()) {
+		r_state.failed = true;
+		return;
+	}
+
+	String rendered_type;
+	if (!GDScriptRefactorTypes::render_annotatable_type(p_call->arguments[p_parameter_index]->get_datatype(), rendered_type)) {
+		r_state.failed = true;
+		return;
+	}
+
+	if (r_state.rendered_type.is_empty()) {
+		r_state.rendered_type = rendered_type;
+	} else if (r_state.rendered_type != rendered_type) {
+		r_state.failed = true;
+	}
+}
+
+void collect_callsite_parameter_type_in_expression(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::ExpressionNode *p_expression,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state) {
+	if (p_expression == nullptr || r_state.failed) {
+		return;
+	}
+
+	switch (p_expression->type) {
+		case GDScriptParser::Node::ARRAY: {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, element, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, assignment->assignee, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, assignment->assigned_value, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		} break;
+		case GDScriptParser::Node::AWAIT:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::AwaitNode *>(p_expression)->to_await, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, binary->left_operand, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, binary->right_operand, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		} break;
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
+			collect_callsite_parameter_type_from_call(p_workspace, p_path, p_parser, call, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, call->callee, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
+				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, argument, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::CAST:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::CastNode *>(p_expression)->operand, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		case GDScriptParser::Node::DICTIONARY: {
+			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
+			for (const GDScriptParser::DictionaryNode::Pair &pair : dictionary->elements) {
+				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, pair.key, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, pair.value, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::LAMBDA:
+			if (static_cast<const GDScriptParser::LambdaNode *>(p_expression)->function != nullptr) {
+				collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::LambdaNode *>(p_expression)->function->body, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			}
+			break;
+		case GDScriptParser::Node::PRELOAD:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::PreloadNode *>(p_expression)->path, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, subscript->base, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			if (!subscript->is_attribute) {
+				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, subscript->index, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, ternary->condition, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, ternary->true_expr, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, ternary->false_expr, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		} break;
+		case GDScriptParser::Node::TYPE_TEST:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::TypeTestNode *>(p_expression)->operand, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::UnaryOpNode *>(p_expression)->operand, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		default:
+			break;
+	}
+}
+
+void collect_callsite_parameter_type_in_node(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::Node *p_node,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state) {
+	if (p_node == nullptr || r_state.failed) {
+		return;
+	}
+	if (p_node->is_expression()) {
+		collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::ExpressionNode *>(p_node), p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		return;
+	}
+
+	switch (p_node->type) {
+		case GDScriptParser::Node::ASSERT: {
+			const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(p_node);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, assert_node->condition, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, assert_node->message, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		} break;
+		case GDScriptParser::Node::CONSTANT:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::ConstantNode *>(p_node)->initializer, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		case GDScriptParser::Node::FOR: {
+			const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_node);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, for_node->list, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, for_node->loop, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		} break;
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_node);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, if_node->condition, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, if_node->true_block, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, if_node->false_block, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		} break;
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_node);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, match_node->test, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+				collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, branch->guard_body, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+				collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, branch->block, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			}
+		} break;
+		case GDScriptParser::Node::RETURN:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::ReturnNode *>(p_node)->return_value, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		case GDScriptParser::Node::VARIABLE:
+			collect_callsite_parameter_type_in_variable(p_workspace, p_path, p_parser, static_cast<const GDScriptParser::VariableNode *>(p_node), p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
+		case GDScriptParser::Node::WHILE: {
+			const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(p_node);
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, while_node->condition, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, while_node->loop, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+		} break;
+		default:
+			break;
+	}
+}
+
+void collect_callsite_parameter_type_in_suite(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::SuiteNode *p_suite,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state) {
+	if (p_suite == nullptr || r_state.failed) {
+		return;
+	}
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		collect_callsite_parameter_type_in_node(p_workspace, p_path, p_parser, statement, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+	}
+}
+
+void collect_callsite_parameter_type_in_class(
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const String &p_path,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParser::ClassNode *p_class,
+		const LSP::DocumentSymbol *p_target_symbol,
+		int p_parameter_index,
+		const GDScriptParseResultProvider *p_parse_results,
+		CallsiteParameterTypeState &r_state) {
+	if (p_class == nullptr || r_state.failed) {
+		return;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (member.function != nullptr) {
+					collect_callsite_parameter_type_in_suite(p_workspace, p_path, p_parser, member.function->body, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				collect_callsite_parameter_type_in_class(p_workspace, p_path, p_parser, member.m_class, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+				break;
+			case GDScriptParser::ClassNode::Member::CONSTANT:
+				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, member.constant->initializer, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+				break;
+			case GDScriptParser::ClassNode::Member::VARIABLE:
+				collect_callsite_parameter_type_in_variable(p_workspace, p_path, p_parser, member.variable, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+bool class_hierarchy_has_function(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
+	ERR_FAIL_NULL_V(p_class, false);
+
+	const GDScriptParser::ClassNode *base_class = p_class->base_type.class_type;
+	while (base_class != nullptr) {
+		if (base_class->has_member(p_function_name) &&
+				base_class->get_member(p_function_name).type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			return true;
+		}
+		base_class = base_class->base_type.class_type;
+	}
+
+	Ref<Script> base_script = p_class->base_type.script_type;
+	while (base_script.is_valid()) {
+		if (base_script->has_method(p_function_name)) {
+			return true;
+		}
+		base_script = base_script->get_base_script();
+	}
+
+	StringName native_base = p_class->base_type.native_type;
+	while (native_base != StringName()) {
+		if (ClassDB::has_method(native_base, p_function_name, true)) {
+			return true;
+		}
+		native_base = ClassDB::get_parent_class(native_base);
+	}
+
+	return false;
+}
+
+bool infer_parameter_type_from_call_sites(
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		int p_parameter_index,
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const ExtendGDScriptParser *p_target_parser,
+		const GDScriptParseResultProvider *p_parse_results,
+		String &r_rendered_type) {
+	ERR_FAIL_COND_V(p_workspace.is_null(), false);
+	ERR_FAIL_NULL_V(p_class, false);
+	ERR_FAIL_NULL_V(p_function, false);
+	ERR_FAIL_NULL_V(p_target_parser, false);
+	ERR_FAIL_NULL_V(p_parse_results, false);
+
+	if (p_function->identifier == nullptr || p_function->identifier->name == StringName()) {
+		return false;
+	}
+	const String function_name = String(p_function->identifier->name);
+	if (function_name.begins_with("_")) {
+		return false;
+	}
+	if (class_hierarchy_has_function(p_class, p_function->identifier->name)) {
+		return false;
+	}
+
+	const LSP::DocumentSymbol *target_symbol = p_target_parser->get_symbol_defined_at_line(
+			LINE_NUMBER_TO_INDEX(p_function->start_line),
+			function_name);
+	if (target_symbol == nullptr || !target_symbol->native_class.is_empty()) {
+		return false;
+	}
+
+	CallsiteParameterTypeState state;
+	List<String> paths;
+	p_workspace->list_project_script_files(paths);
+	for (const String &path : paths) {
+		const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(path);
+		if (parser == nullptr || parser->parse_result != OK) {
+			continue;
+		}
+
+		const GDScriptParser::ClassNode *tree = parser->get_tree();
+		if (tree == nullptr) {
+			continue;
+		}
+
+		const Vector<String> &lines = parser->get_lines();
+		for (int i = 0; i < lines.size(); i++) {
+			if (find_dynamic_string_reference_column(lines[i], function_name) >= 0) {
+				return false;
+			}
+		}
+
+		collect_callsite_parameter_type_in_class(p_workspace, path, parser, tree, target_symbol, p_parameter_index, p_parse_results, state);
+
+		if (state.failed) {
+			return false;
+		}
+	}
+
+	if (!state.has_call || state.rendered_type.is_empty()) {
+		return false;
+	}
+
+	r_rendered_type = state.rendered_type;
+	return true;
+}
+
+void apply_callsite_parameter_type_annotation(
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		const GDScriptParser::ParameterNode *p_parameter,
+		int p_parameter_index,
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const ExtendGDScriptParser *p_target_parser,
+		const GDScriptParseResultProvider *p_parse_results,
+		TypeAnnotationCandidate &r_candidate) {
+	if (!r_candidate.matched || r_candidate.enabled || p_parameter == nullptr ||
+			p_parameter->datatype_specifier != nullptr || p_parameter->initializer != nullptr) {
+		return;
+	}
+	if (p_workspace.is_null() || p_target_parser == nullptr || p_parse_results == nullptr) {
+		return;
+	}
+
+	String rendered_type;
+	if (!infer_parameter_type_from_call_sites(p_class, p_function, p_parameter_index, p_workspace, p_target_parser, p_parse_results, rendered_type)) {
+		r_candidate.disabled_reason = "Cannot infer a type for this parameter from resolved call sites.";
+		return;
+	}
+
+	r_candidate.edit.start_line = r_candidate.line;
+	r_candidate.edit.start_column = r_candidate.caret_span_end;
+	r_candidate.edit.end_line = r_candidate.line;
+	r_candidate.edit.end_column = r_candidate.caret_span_end;
+	r_candidate.edit.new_text = ": " + rendered_type;
+	r_candidate.enabled = true;
+	r_candidate.disabled_reason = String();
+}
+#endif // GDSCRIPT_NO_LSP
 
 bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, ExtractVariableCandidate &r_candidate);
 
@@ -2876,14 +3333,37 @@ void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptP
 	}
 }
 
-void collect_type_annotation_in_function(const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, Vector<TypeAnnotationCandidate> &r_candidates) {
+void collect_type_annotation_in_function(
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function,
+		const RefactorLocation *p_location,
+		Vector<TypeAnnotationCandidate> &r_candidates
+#ifndef GDSCRIPT_NO_LSP
+		,
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParseResultProvider *p_parse_results
+#endif // GDSCRIPT_NO_LSP
+) {
 	if (p_function == nullptr) {
 		return;
 	}
-	for (const GDScriptParser::ParameterNode *parameter : p_function->parameters) {
-		collect_assignable_candidate(p_lines, parameter, "parameter", false, r_candidates);
+	for (int i = 0; i < p_function->parameters.size(); i++) {
+		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
+		TypeAnnotationCandidate candidate;
+		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate) && candidate.matched) {
+#ifndef GDSCRIPT_NO_LSP
+			if (p_location == nullptr || caret_on_segment(*p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
+				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate);
+			}
+#endif // GDSCRIPT_NO_LSP
+			r_candidates.push_back(candidate);
+		}
 	}
 	if (p_function->rest_parameter != nullptr) {
+		// A vararg tail does not map cleanly to one call-site argument index, so
+		// keep rest parameters on the existing declaration-local inference path.
 		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates);
 	}
 	TypeAnnotationCandidate return_candidate;
@@ -2893,7 +3373,18 @@ void collect_type_annotation_in_function(const Vector<String> &p_lines, const GD
 	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates);
 }
 
-void collect_type_annotation_in_class(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, Vector<TypeAnnotationCandidate> &r_candidates) {
+void collect_type_annotation_in_class(
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_class,
+		const RefactorLocation *p_location,
+		Vector<TypeAnnotationCandidate> &r_candidates
+#ifndef GDSCRIPT_NO_LSP
+		,
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParseResultProvider *p_parse_results
+#endif // GDSCRIPT_NO_LSP
+) {
 	if (p_class == nullptr) {
 		return;
 	}
@@ -2906,10 +3397,20 @@ void collect_type_annotation_in_class(const Vector<String> &p_lines, const GDScr
 				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
-				collect_type_annotation_in_function(p_lines, member.function, r_candidates);
+				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates
+#ifndef GDSCRIPT_NO_LSP
+						,
+						p_workspace, p_parser, p_parse_results
+#endif // GDSCRIPT_NO_LSP
+				);
 				break;
 			case GDScriptParser::ClassNode::Member::CLASS:
-				collect_type_annotation_in_class(p_lines, member.m_class, r_candidates);
+				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates
+#ifndef GDSCRIPT_NO_LSP
+						,
+						p_workspace, p_parser, p_parse_results
+#endif // GDSCRIPT_NO_LSP
+				);
 				break;
 			default:
 				break;
@@ -2959,14 +3460,44 @@ void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScr
 	}
 }
 
-Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
+Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_tree,
+		const RefactorLocation *p_location = nullptr
+#ifndef GDSCRIPT_NO_LSP
+		,
+		const Ref<GDScriptWorkspace> &p_workspace = Ref<GDScriptWorkspace>(),
+		const ExtendGDScriptParser *p_parser = nullptr,
+		const GDScriptParseResultProvider *p_parse_results = nullptr
+#endif // GDSCRIPT_NO_LSP
+) {
 	Vector<TypeAnnotationCandidate> candidates;
-	collect_type_annotation_in_class(p_lines, p_tree, candidates);
+	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates
+#ifndef GDSCRIPT_NO_LSP
+			,
+			p_workspace, p_parser, p_parse_results
+#endif // GDSCRIPT_NO_LSP
+	);
 	return candidates;
 }
 
-TypeAnnotationCandidate find_type_annotation_candidate_in_tree(const RefactorLocation &p_location, const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_tree) {
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree);
+TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_tree
+#ifndef GDSCRIPT_NO_LSP
+		,
+		const Ref<GDScriptWorkspace> &p_workspace = Ref<GDScriptWorkspace>(),
+		const ExtendGDScriptParser *p_parser = nullptr,
+		const GDScriptParseResultProvider *p_parse_results = nullptr
+#endif // GDSCRIPT_NO_LSP
+) {
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location
+#ifndef GDSCRIPT_NO_LSP
+			,
+			p_workspace, p_parser, p_parse_results
+#endif // GDSCRIPT_NO_LSP
+	);
 	for (const TypeAnnotationCandidate &candidate : candidates) {
 		if (caret_on_segment(p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
 			return candidate;
@@ -3291,7 +3822,9 @@ TypeAnnotationCandidate find_type_annotation_candidate_uncached(
 				candidate.disabled_reason = "Cannot analyze this script.";
 				return candidate;
 			}
-			return find_type_annotation_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
+			GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+			Ref<GDScriptWorkspace> workspace = protocol ? protocol->get_workspace() : Ref<GDScriptWorkspace>();
+			return find_type_annotation_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree(), workspace, lsp_parser, p_parse_results);
 		}
 	}
 #endif // GDSCRIPT_NO_LSP
@@ -3383,7 +3916,22 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 		tree = parser.get_tree();
 	}
 
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree);
+#ifndef GDSCRIPT_NO_LSP
+	Ref<GDScriptWorkspace> workspace;
+	const ExtendGDScriptParser *lsp_parser = nullptr;
+	if (p_parse_results != nullptr) {
+		GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+		workspace = protocol ? protocol->get_workspace() : Ref<GDScriptWorkspace>();
+		lsp_parser = p_parse_results->get_parse_result(p_context.path);
+	}
+#endif // GDSCRIPT_NO_LSP
+
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr
+#ifndef GDSCRIPT_NO_LSP
+			,
+			workspace, lsp_parser, p_parse_results
+#endif // GDSCRIPT_NO_LSP
+	);
 	for (const TypeAnnotationCandidate &candidate : candidates) {
 		RefactorCandidate public_candidate;
 		public_candidate.kind = RefactorKind::ADD_TYPE_ANNOTATION;
