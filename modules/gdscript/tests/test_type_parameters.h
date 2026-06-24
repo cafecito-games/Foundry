@@ -70,13 +70,13 @@ TEST_CASE("[Modules][GDScript] Type parameters parse on class_name declarations"
 	const Error error = parser.parse("class_name Pair[K, V]\n", "user://test.gd", false);
 	REQUIRE(error == OK);
 
-	const GDScriptParser::ClassNode *root = parser.get_tree();
-	REQUIRE(root != nullptr);
-	REQUIRE(root->type_parameters.size() == 2);
-	CHECK(root->type_parameters[0]->identifier->name == StringName("K"));
-	CHECK(root->type_parameters[0]->bound == nullptr);
-	CHECK(root->type_parameters[1]->identifier->name == StringName("V"));
-	CHECK(root->type_parameters[1]->bound == nullptr);
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->type_parameters.size() == 2);
+	CHECK(root_class->type_parameters[0]->identifier->name == StringName("K"));
+	CHECK(root_class->type_parameters[0]->bound == nullptr);
+	CHECK(root_class->type_parameters[1]->identifier->name == StringName("V"));
+	CHECK(root_class->type_parameters[1]->bound == nullptr);
 }
 
 TEST_CASE("[Modules][GDScript] Type parameters parse on inner classes with bounds") {
@@ -84,16 +84,16 @@ TEST_CASE("[Modules][GDScript] Type parameters parse on inner classes with bound
 	const Error error = parser.parse("class Box[T]:\n\tpass\nclass Bounded[K, V: RefCounted]:\n\tpass\n", "user://test.gd", false);
 	REQUIRE(error == OK);
 
-	const GDScriptParser::ClassNode *root = parser.get_tree();
-	REQUIRE(root != nullptr);
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
 
-	const GDScriptParser::ClassNode *box = find_inner_class(root, "Box");
+	const GDScriptParser::ClassNode *box = find_inner_class(root_class, "Box");
 	REQUIRE(box != nullptr);
 	REQUIRE(box->type_parameters.size() == 1);
 	CHECK(box->type_parameters[0]->identifier->name == StringName("T"));
 	CHECK(box->type_parameters[0]->bound == nullptr);
 
-	const GDScriptParser::ClassNode *bounded = find_inner_class(root, "Bounded");
+	const GDScriptParser::ClassNode *bounded = find_inner_class(root_class, "Bounded");
 	REQUIRE(bounded != nullptr);
 	REQUIRE(bounded->type_parameters.size() == 2);
 	CHECK(bounded->type_parameters[0]->identifier->name == StringName("K"));
@@ -107,16 +107,16 @@ TEST_CASE("[Modules][GDScript] Type parameters parse on generic methods") {
 	const Error error = parser.parse("func swap[T]():\n\tpass\nfunc constrained[T: RefCounted]():\n\tpass\n", "user://test.gd", false);
 	REQUIRE(error == OK);
 
-	const GDScriptParser::ClassNode *root = parser.get_tree();
-	REQUIRE(root != nullptr);
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
 
-	const GDScriptParser::FunctionNode *swap = find_function(root, "swap");
+	const GDScriptParser::FunctionNode *swap = find_function(root_class, "swap");
 	REQUIRE(swap != nullptr);
 	REQUIRE(swap->type_parameters.size() == 1);
 	CHECK(swap->type_parameters[0]->identifier->name == StringName("T"));
 	CHECK(swap->type_parameters[0]->bound == nullptr);
 
-	const GDScriptParser::FunctionNode *constrained = find_function(root, "constrained");
+	const GDScriptParser::FunctionNode *constrained = find_function(root_class, "constrained");
 	REQUIRE(constrained != nullptr);
 	REQUIRE(constrained->type_parameters.size() == 1);
 	CHECK(constrained->type_parameters[0]->identifier->name == StringName("T"));
