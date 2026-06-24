@@ -40,6 +40,7 @@
 
 #include "core/os/mutex.h"
 #include "core/string/char_utils.h"
+#include "core/templates/hash_set.h"
 
 #ifndef GDSCRIPT_NO_LSP
 #include "core/object/class_db.h"
@@ -3913,6 +3914,160 @@ TypeAnnotationCandidate find_type_annotation_candidate(
 	return candidate;
 }
 
+// Deepest class whose [start_line, end_line] span contains the caret line.
+// Node line numbers are 1-based; RefactorLocation lines are 0-based.
+const GDScriptParser::ClassNode *find_enclosing_class(const GDScriptParser::ClassNode *p_class, int p_caret_line_0based) {
+	if (p_class == nullptr) {
+		return nullptr;
+	}
+	const int line_1based = p_caret_line_0based + 1;
+	const GDScriptParser::ClassNode *best = p_class;
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::CLASS) {
+			continue;
+		}
+		const GDScriptParser::ClassNode *inner = member.m_class;
+		if (inner == nullptr) {
+			continue;
+		}
+		if (line_1based >= inner->start_line && line_1based <= inner->end_line) {
+			const GDScriptParser::ClassNode *deeper = find_enclosing_class(inner, p_caret_line_0based);
+			if (deeper != nullptr) {
+				best = deeper;
+			}
+		}
+	}
+	return best;
+}
+
+// Next GDScript class up the inheritance chain, or nullptr when the base is not a
+// resolved GDScript class reachable in-tree (native bases / unresolved). Cross-file
+// resolution is added separately.
+const GDScriptParser::ClassNode *resolve_base_class(const GDScriptParser::ClassNode *p_class) {
+	if (p_class == nullptr) {
+		return nullptr;
+	}
+	const GDScriptParser::DataType &base = p_class->base_type;
+	if (base.kind == GDScriptParser::DataType::CLASS) {
+		return base.class_type;
+	}
+	return nullptr;
+}
+
+// Collect abstract methods the target class still owes, most-derived-first.
+// Walks {target, base, base-of-base, ...}; for each method name the FIRST
+// declaration encountered (the most-derived) decides its fate: if that
+// declaration is abstract and lives in an ancestor (not the target), it is owed.
+void collect_owed_abstract_methods(
+		const GDScriptParser::ClassNode *p_target,
+		Vector<const GDScriptParser::FunctionNode *> &r_owed) {
+	HashSet<StringName> decided;
+	// Detection runs even when the analyzer reported errors, so the inheritance chain
+	// may be malformed or self-referential; track visited classes to avoid looping.
+	HashSet<const GDScriptParser::ClassNode *> visited;
+	const GDScriptParser::ClassNode *current = p_target;
+	bool is_target = true;
+	while (current != nullptr) {
+		if (visited.has(current)) {
+			break;
+		}
+		visited.insert(current);
+		for (const GDScriptParser::ClassNode::Member &member : current->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const GDScriptParser::FunctionNode *function = member.function;
+			if (function == nullptr || function->identifier == nullptr) {
+				continue;
+			}
+			const StringName name = function->identifier->name;
+			if (decided.has(name)) {
+				// A more-derived declaration already decided this name.
+				continue;
+			}
+			decided.insert(name);
+			if (function->is_abstract && !is_target) {
+				r_owed.push_back(function);
+			}
+		}
+		current = resolve_base_class(current);
+		is_target = false;
+	}
+}
+
+ImplementAbstractCandidate find_implement_abstract_in_tree(
+		const RefactorLocation &p_location,
+		const GDScriptParser::ClassNode *p_tree) {
+	ImplementAbstractCandidate candidate;
+
+	const GDScriptParser::ClassNode *target = find_enclosing_class(p_tree, p_location.start_line);
+	if (target == nullptr) {
+		candidate.disabled_reason = "No unimplemented abstract methods.";
+		return candidate;
+	}
+
+	if (target->is_abstract) {
+		candidate.disabled_reason = "Abstract classes don't need to implement abstract methods.";
+		return candidate;
+	}
+
+	collect_owed_abstract_methods(target, candidate.abstract_methods);
+	if (candidate.abstract_methods.is_empty()) {
+		candidate.disabled_reason = "No unimplemented abstract methods.";
+		return candidate;
+	}
+
+	// Rendering and the precise insertion column are finalized separately; detection
+	// only needs to report availability and a coarse insertion line.
+	candidate.insertion_line = target->end_line;
+	candidate.matched = true;
+	candidate.enabled = true;
+	return candidate;
+}
+
+ImplementAbstractCandidate find_implement_abstract_candidate_uncached(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const GDScriptParseResultProvider *p_parse_results) {
+#ifndef GDSCRIPT_NO_LSP
+	if (p_parse_results != nullptr) {
+		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+			// A class that still owes abstract methods makes the analyzer report an
+			// error, so `parse_result` is not OK even though the tree is fully built
+			// and base types are resolved. Detect from the tree whenever one exists;
+			// only a hard parse failure leaves no usable tree.
+			const GDScriptParser::ClassNode *tree = lsp_parser->get_tree();
+			if (tree == nullptr) {
+				ImplementAbstractCandidate candidate;
+				candidate.disabled_reason = "Cannot analyze this script.";
+				return candidate;
+			}
+			return find_implement_abstract_in_tree(p_location, tree);
+		}
+	}
+#endif // GDSCRIPT_NO_LSP
+
+	GDScriptParser parser;
+	Error err = parser.parse(p_context.source, p_context.path, false);
+	if (err != OK) {
+		ImplementAbstractCandidate candidate;
+		candidate.disabled_reason = "Cannot analyze this script.";
+		return candidate;
+	}
+
+	// A class that still owes abstract methods makes the analyzer report an error
+	// ("must implement ... abstract methods") — that is precisely the situation this
+	// refactor resolves. The analyzer still resolves base types and builds the tree
+	// before flagging that error, so detection must run regardless of the analyze
+	// result; only a hard parse failure (handled above) leaves no usable tree.
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	return find_implement_abstract_in_tree(p_location, parser.get_tree());
+}
+
 ImplementAbstractCandidate find_implement_abstract_candidate(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
@@ -3922,9 +4077,8 @@ ImplementAbstractCandidate find_implement_abstract_candidate(
 		return candidate;
 	}
 
-	// Detection is added separately; until then this stub reports the refactor as unavailable.
-	candidate.disabled_reason = "No unimplemented abstract methods.";
-
+	const Vector<String> lines = p_context.source.split("\n");
+	candidate = find_implement_abstract_candidate_uncached(p_context, p_location, lines, p_parse_results);
 	cache_implement_abstract_candidate(p_context, p_location, candidate);
 	return candidate;
 }
@@ -3941,7 +4095,8 @@ RefactorResult prepare_implement_abstract(
 		return result;
 	}
 
-	// Edit production is added separately; the candidate is never enabled yet, so this is unreachable.
+	// Edit production is added separately; until then an enabled candidate falls
+	// through to the not-implemented result.
 	result.ok = false;
 	result.error_message = "Implement Abstract Methods is not implemented yet.";
 	return result;

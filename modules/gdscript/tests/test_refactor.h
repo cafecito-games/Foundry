@@ -143,6 +143,33 @@ inline const RefactorFileEdit *find_file_edit(const RefactorResult &p_result, co
 	return nullptr;
 }
 
+inline const RefactorAvailability *find_availability(const Vector<RefactorAvailability> &p_available, RefactorKind p_kind) {
+	for (const RefactorAvailability &a : p_available) {
+		if (a.kind == p_kind) {
+			return &a;
+		}
+	}
+	return nullptr;
+}
+
+inline bool implement_abstract_enabled(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+	return entry != nullptr && entry->enabled;
+}
+
+inline String implement_abstract_reason(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+	return entry != nullptr ? entry->disabled_reason : String();
+}
+
 #ifndef GDSCRIPT_NO_LSP
 struct TemporaryScriptFile {
 	String path;
@@ -199,6 +226,64 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(entry->title, String("Implement Abstract Methods"));
 		CHECK_FALSE(entry->enabled);
 		CHECK_FALSE(entry->disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Implement abstract: enabled when a derived class owes an abstract method") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		CHECK(GDScriptTests::implement_abstract_enabled(source, 3, 1));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the method is already overridden") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tfunc area() -> float:\n"
+				"\t\treturn 3.14\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 2, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 2, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled for an abstract derived class") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"@abstract class Shape extends Base:\n"
+				"\tvar name := \"\"\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 3, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 3, 1), String("Abstract classes don't need to implement abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the script cannot be parsed") {
+		const String source =
+				"class Circle extends:\n" // Malformed extends -> parse error.
+				"\tfunc\n";
+		RefactorContext ctx;
+		ctx.path = "user://implement_abstract_refactor.gd";
+		ctx.source = source;
+		const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, GDScriptTests::caret(0, 0));
+		const RefactorAvailability *entry = GDScriptTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		REQUIRE(entry != nullptr);
+		CHECK_FALSE(entry->enabled);
+		CHECK_EQ(entry->disabled_reason, String("Cannot analyze this script."));
+	}
+
+	TEST_CASE("Implement abstract: intermediate concrete override satisfies the contract") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"\t@abstract func name() -> String\n"
+				"@abstract class Mid extends Base:\n"
+				"\tfunc area() -> float:\n"
+				"\t\treturn 0.0\n"
+				"class Leaf extends Mid:\n"
+				"\tvar tag := 1\n";
+		// Leaf still owes name() but not area().
+		CHECK(GDScriptTests::implement_abstract_enabled(source, 7, 1));
 	}
 
 	TEST_CASE("Edit application") {
