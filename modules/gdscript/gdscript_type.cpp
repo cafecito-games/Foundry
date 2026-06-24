@@ -31,6 +31,7 @@
 #include "gdscript_type.h"
 
 #include "gdscript.h"
+#include "gdscript_trait_utils.h"
 
 #include "core/object/class_db.h"
 
@@ -84,6 +85,36 @@ static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_l
 		return true;
 	}
 	return _method_signature_equal(p_left.method_info, p_right.method_info);
+}
+
+static bool _class_has_trait(const GDScriptParser::ClassNode *p_class, const GDScriptParser::ClassNode *p_trait) {
+	if (p_class == nullptr || p_trait == nullptr) {
+		return false;
+	}
+
+	if (p_class == p_trait || p_class->fqcn == p_trait->fqcn) {
+		return true;
+	}
+
+	const StringName trait_name = gdscript_trait_identity_name(p_trait);
+	const GDScriptParser::ClassNode *current = p_class;
+	while (current != nullptr) {
+		for (const GDScriptParser::ClassNode *trait : current->resolved_traits) {
+			if (trait == p_trait || trait->fqcn == p_trait->fqcn) {
+				return true;
+			}
+		}
+
+		if (current->base_type.kind == GDScriptParser::DataType::CLASS) {
+			current = current->base_type.class_type;
+		} else if (current->base_type.kind == GDScriptParser::DataType::SCRIPT && current->base_type.script_type.is_valid()) {
+			return current->base_type.script_type->has_script_trait(trait_name);
+		} else {
+			break;
+		}
+	}
+
+	return false;
 }
 
 GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source) {
@@ -181,6 +212,19 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 	if (p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL) {
 		// null is acceptable in object types in the legacy compatibility rules.
 		result.compatible = !p_options.strict_null || p_target.is_nullable;
+		return result;
+	}
+
+	if (p_target.kind == GDScriptParser::DataType::CLASS && p_target.class_type != nullptr &&
+			p_target.class_type->is_trait && !p_target.is_meta_type) {
+		if (p_source.kind == GDScriptParser::DataType::CLASS && !p_source.is_meta_type) {
+			result.compatible = _class_has_trait(p_source.class_type, p_target.class_type);
+			return result;
+		}
+		if (p_source.kind == GDScriptParser::DataType::SCRIPT && p_source.script_type.is_valid() && !p_source.is_meta_type) {
+			result.compatible = p_source.script_type->has_script_trait(gdscript_trait_identity_name(p_target.class_type));
+			return result;
+		}
 		return result;
 	}
 

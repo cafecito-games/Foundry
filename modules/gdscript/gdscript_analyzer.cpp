@@ -1059,11 +1059,6 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		}
 	}
 
-	if (result.kind == GDScriptParser::DataType::CLASS && result.class_type != nullptr && result.class_type->is_trait) {
-		push_error(vformat(R"(Trait "%s" cannot be used as a static type.)", _class_or_trait_name(result.class_type)), p_type);
-		return bad_type;
-	}
-
 	if (!p_type->container_types.is_empty()) {
 		if (result.builtin_type == Variant::ARRAY) {
 			if (p_type->container_types.size() != 1) {
@@ -1695,6 +1690,7 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 		}
 	}
 
+	validate_trait_conflicts(p_class);
 	validate_trait_requirements(p_class);
 
 	parser->current_class = previous_class;
@@ -5564,6 +5560,127 @@ bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::Clas
 	return true;
 }
 
+static bool _trait_member_is_state(const GDScriptParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+		case GDScriptParser::ClassNode::Member::ENUM:
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			return true;
+		default:
+			return false;
+	}
+}
+
+struct TraitMemberSource {
+	GDScriptParser::ClassNode *trait = nullptr;
+	GDScriptParser::ClassNode::Member member;
+};
+
+void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_class) {
+	if (p_class == nullptr || p_class->resolved_traits.is_empty()) {
+		return;
+	}
+
+	HashMap<StringName, TraitMemberSource> trait_methods;
+	HashMap<StringName, TraitMemberSource> trait_state;
+
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		resolve_class_interface(trait, p_class);
+
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION && !_trait_member_is_state(member)) {
+				continue;
+			}
+
+			const StringName member_name = StringName(member.get_name());
+			if (member_name == StringName()) {
+				continue;
+			}
+
+			if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+				if (member.function == nullptr) {
+					continue;
+				}
+
+				if (p_class->has_member(member_name)) {
+					const GDScriptParser::ClassNode::Member class_member = p_class->get_member(member_name);
+					if (class_member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+						push_error(vformat(R"*(Class "%s" redeclares trait method "%s()" from "%s" with a %s member.)*",
+										   _class_or_trait_name(p_class), member_name, _class_or_trait_name(trait),
+										   class_member.get_type_name()),
+								class_member.get_source_node());
+						continue;
+					}
+
+					if (!member.function->is_abstract) {
+						TraitMethodImplementation implementation;
+						implementation.function = class_member.function;
+						implementation.owner_class = p_class;
+						validate_trait_method_signature(trait, member.function, implementation);
+					}
+					continue;
+				}
+
+				if (member.function->is_abstract) {
+					continue;
+				}
+
+				HashMap<StringName, TraitMemberSource>::Iterator previous = trait_methods.find(member_name);
+				if (previous) {
+					push_error(vformat(R"*(Trait method "%s()" from "%s" conflicts with trait method "%s()" from "%s"; override it in "%s" to disambiguate.)*",
+									   member_name, _class_or_trait_name(previous->value.trait), member_name,
+									   _class_or_trait_name(trait), _class_or_trait_name(p_class)),
+							_trait_requirement_source(p_class, trait));
+					continue;
+				}
+
+				TraitMemberSource source;
+				source.trait = trait;
+				source.member = member;
+				trait_methods.insert(member_name, source);
+				continue;
+			}
+
+			if (p_class->has_member(member_name)) {
+				const GDScriptParser::ClassNode::Member class_member = p_class->get_member(member_name);
+				if (class_member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+					push_error(vformat(R"(Class "%s" redeclares trait member "%s" from "%s" with a function.)",
+									   _class_or_trait_name(p_class), member_name, _class_or_trait_name(trait)),
+							class_member.get_source_node());
+					continue;
+				}
+
+				const GDScriptParser::DataType trait_type = member.get_datatype();
+				const GDScriptParser::DataType class_type = class_member.get_datatype();
+				if (class_type != trait_type) {
+					push_error(vformat(R"(Class "%s" redeclares trait member "%s" from "%s" with incompatible type. Expected "%s", got "%s".)",
+									   _class_or_trait_name(p_class), member_name, _class_or_trait_name(trait),
+									   trait_type.to_string(), class_type.to_string()),
+							class_member.get_source_node());
+				}
+				continue;
+			}
+
+			HashMap<StringName, TraitMemberSource>::Iterator previous = trait_state.find(member_name);
+			if (previous) {
+				push_error(vformat(R"(Trait member "%s" from "%s" conflicts with trait member "%s" from "%s"; redeclare it in "%s" with type "%s" to disambiguate.)",
+								   member_name, _class_or_trait_name(previous->value.trait), member_name,
+								   _class_or_trait_name(trait), _class_or_trait_name(p_class),
+								   previous->value.member.get_datatype().to_string()),
+						_trait_requirement_source(p_class, trait));
+				continue;
+			}
+
+			TraitMemberSource source;
+			source.trait = trait;
+			source.member = member;
+			trait_state.insert(member_name, source);
+		}
+	}
+}
+
 void GDScriptAnalyzer::validate_trait_requirements(GDScriptParser::ClassNode *p_class) {
 	if (p_class->is_trait || p_class->is_abstract) {
 		return;
@@ -5575,8 +5692,8 @@ void GDScriptAnalyzer::validate_trait_requirements(GDScriptParser::ClassNode *p_
 	// This pass validates trait requirements only. Concrete trait methods are not merged
 	// into the using class, so a concrete method on one used trait does not implement
 	// an abstract method required by another used trait.
+	HashSet<StringName> missing_trait_methods;
 	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
-		resolve_class_interface(trait, p_class);
 		for (GDScriptParser::ClassNode::Member member : trait->members) {
 			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION ||
 					member.function == nullptr || !member.function->is_abstract) {
@@ -5585,10 +5702,14 @@ void GDScriptAnalyzer::validate_trait_requirements(GDScriptParser::ClassNode *p_
 
 			TraitMethodImplementation implementation;
 			if (!find_trait_implementation(p_class, member.function->identifier->name, implementation)) {
-				push_error(vformat(R"*(Class "%s" must implement trait method "%s.%s()".)*",
-								   _class_or_trait_name(p_class), _class_or_trait_name(trait),
-								   member.function->identifier->name),
-						_trait_requirement_source(p_class, trait));
+				const StringName function_name = member.function->identifier->name;
+				if (!missing_trait_methods.has(function_name)) {
+					missing_trait_methods.insert(function_name);
+					push_error(vformat(R"*(Class "%s" must implement trait method "%s.%s()".)*",
+									   _class_or_trait_name(p_class), _class_or_trait_name(trait),
+									   function_name),
+							_trait_requirement_source(p_class, trait));
+				}
 				continue;
 			}
 
@@ -5917,15 +6038,28 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 	GDScriptParser::ClassNode *base_class = base.class_type;
 	List<GDScriptParser::ClassNode *> script_classes;
+	HashSet<GDScriptParser::ClassNode *> trait_interface_classes;
 	bool is_base = true;
 
 	if (base_class != nullptr) {
 		get_class_node_current_scope_classes(base_class, &script_classes, p_identifier);
+		if (base_class->is_trait) {
+			resolve_trait_uses(base_class, p_identifier);
+			for (GDScriptParser::ClassNode *trait : base_class->resolved_traits) {
+				if (script_classes.find(trait) == nullptr) {
+					script_classes.push_back(trait);
+				}
+				trait_interface_classes.insert(trait);
+			}
+		}
 	}
 
 	bool is_constructor = base.is_meta_type && p_identifier->name == SNAME("new");
 
 	for (GDScriptParser::ClassNode *script_class : script_classes) {
+		const bool is_trait_interface_class = trait_interface_classes.has(script_class);
+		const bool can_access_instance_member = is_base || is_trait_interface_class;
+
 		if (p_base == nullptr && script_class->identifier && script_class->identifier->name == name) {
 			reduce_identifier_from_base_set_class(p_identifier, script_class->get_datatype());
 			if (script_class->outer != nullptr) {
@@ -5969,7 +6103,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 				}
 
 				case GDScriptParser::ClassNode::Member::VARIABLE: {
-					if (is_base && (!base.is_meta_type || member.variable->is_static)) {
+					if (can_access_instance_member && (!base.is_meta_type || member.variable->is_static)) {
 						p_identifier->set_datatype(member.get_datatype());
 						p_identifier->source = member.variable->is_static ? GDScriptParser::IdentifierNode::STATIC_VARIABLE : GDScriptParser::IdentifierNode::MEMBER_VARIABLE;
 						p_identifier->variable_source = member.variable;
@@ -5979,7 +6113,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 				} break;
 
 				case GDScriptParser::ClassNode::Member::SIGNAL: {
-					if (is_base && !base.is_meta_type) {
+					if (can_access_instance_member && !base.is_meta_type) {
 						p_identifier->set_datatype(p_base == nullptr ? member.get_datatype() : explicit_signal_type_from_node(member.signal));
 						p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
 						p_identifier->signal_source = member.signal;
@@ -5989,7 +6123,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 				} break;
 
 				case GDScriptParser::ClassNode::Member::FUNCTION: {
-					if (is_base && (!base.is_meta_type || member.function->is_static || is_constructor)) {
+					if (can_access_instance_member && (!base.is_meta_type || member.function->is_static || is_constructor)) {
 						GDScriptParser::DataType callable_type = make_callable_type(member.function->info, member.function);
 						if (p_base != nullptr) {
 							callable_type.has_explicit_method_signature = true;
@@ -6016,7 +6150,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 		if (is_base) {
 			is_base = script_class->base_type.class_type != nullptr;
-			if (!is_base && p_base != nullptr) {
+			if (!is_base && p_base != nullptr && trait_interface_classes.is_empty()) {
 				break;
 			}
 		}
@@ -8010,6 +8144,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	}
 
 	GDScriptParser::ClassNode *base_class = p_base_type.class_type;
+	GDScriptParser::ClassNode *original_base_class = base_class;
 	GDScriptParser::FunctionNode *found_function = nullptr;
 
 	while (found_function == nullptr && base_class != nullptr) {
@@ -8026,6 +8161,24 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 		resolve_class_inheritance(base_class, p_source);
 		base_class = base_class->base_type.class_type;
+	}
+
+	if (found_function == nullptr && original_base_class != nullptr && original_base_class->is_trait) {
+		resolve_trait_uses(original_base_class, p_source);
+		for (GDScriptParser::ClassNode *trait : original_base_class->resolved_traits) {
+			if (trait == nullptr || !trait->has_member(function_name)) {
+				continue;
+			}
+
+			if (trait->get_member(function_name).type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				push_error(vformat(R"(Member "%s" is not a function.)", function_name), p_source);
+				return false;
+			}
+
+			resolve_class_member(trait, function_name, p_source);
+			found_function = trait->get_member(function_name).function;
+			break;
+		}
 	}
 
 	if (found_function != nullptr) {

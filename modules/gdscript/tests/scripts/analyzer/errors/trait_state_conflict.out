@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Trait member "health" from "TraitA" conflicts with trait member "health" from "TraitB"; redeclare it in "trait_state_conflict.gd" with type "int" to disambiguate.

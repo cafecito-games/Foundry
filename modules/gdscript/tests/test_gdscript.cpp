@@ -919,7 +919,7 @@ func test() -> void:
 	CHECK(has_parser_error(new_parser, R"(Cannot construct trait "Damageable".)"));
 }
 
-TEST_CASE("[Modules][GDScript] Analyzer rejects traits as static value types") {
+TEST_CASE("[Modules][GDScript] Analyzer accepts traits as static value types") {
 	GDScriptParser annotation_parser;
 	Error err = analyze_source(annotation_parser, R"(
 class_name Player
@@ -929,10 +929,10 @@ trait Damageable:
 
 var _damageable: Damageable
 )",
-			"user://trait_type_annotation_error.gd");
+			"user://trait_type_annotation.gd");
 
-	CHECK_EQ(err, ERR_PARSE_ERROR);
-	CHECK(has_parser_error(annotation_parser, R"(Trait "Damageable" cannot be used as a static type.)"));
+	INFO(first_parser_error_message(annotation_parser));
+	CHECK_EQ(err, OK);
 
 	GDScriptParser type_test_parser;
 	err = analyze_source(type_test_parser, R"(
@@ -944,10 +944,10 @@ trait Damageable:
 func test(value: Variant) -> void:
 	var _result = value is Damageable
 )",
-			"user://trait_type_test_error.gd");
+			"user://trait_type_test.gd");
 
-	CHECK_EQ(err, ERR_PARSE_ERROR);
-	CHECK(has_parser_error(type_test_parser, R"(Trait "Damageable" cannot be used as a static type.)"));
+	INFO(first_parser_error_message(type_test_parser));
+	CHECK_EQ(err, OK);
 
 	GDScriptParser cast_parser;
 	err = analyze_source(cast_parser, R"(
@@ -959,10 +959,10 @@ trait Damageable:
 func test(value: Variant) -> void:
 	var _result = value as Damageable
 )",
-			"user://trait_cast_error.gd");
+			"user://trait_cast.gd");
 
-	CHECK_EQ(err, ERR_PARSE_ERROR);
-	CHECK(has_parser_error(cast_parser, R"(Trait "Damageable" cannot be used as a static type.)"));
+	INFO(first_parser_error_message(cast_parser));
+	CHECK_EQ(err, OK);
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer resolves trait signatures in trait scope") {
