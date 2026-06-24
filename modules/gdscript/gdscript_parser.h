@@ -94,6 +94,7 @@ public:
 	struct TernaryOpNode;
 	struct TraitNode;
 	struct TypeNode;
+	struct TypeParameterNode;
 	struct TypeTestNode;
 	struct UnaryOpNode;
 	struct VariableNode;
@@ -348,6 +349,7 @@ public:
 			SUITE,
 			TERNARY_OPERATOR,
 			TYPE,
+			TYPE_PARAMETER,
 			TYPE_TEST,
 			UNARY_OPERATOR,
 			VARIABLE,
@@ -792,6 +794,7 @@ public:
 		bool uses_used = false;
 		String extends_path;
 		Vector<IdentifierNode *> extends; // List for indexing: extends A.B.C
+		Vector<TypeParameterNode *> type_parameters; // Generic parameters: class Box[T], class_name Pair[K, V].
 		Vector<TraitUse> used_traits;
 		Vector<ClassNode *> resolved_traits;
 		DataType base_type;
@@ -906,6 +909,7 @@ public:
 
 	struct FunctionNode : public Node {
 		IdentifierNode *identifier = nullptr;
+		Vector<TypeParameterNode *> type_parameters; // Generic parameters: func swap[T]().
 		Vector<ParameterNode *> parameters;
 		HashMap<StringName, int> parameters_indices;
 		ParameterNode *rest_parameter = nullptr;
@@ -1276,6 +1280,15 @@ public:
 		}
 	};
 
+	struct TypeParameterNode : public Node {
+		IdentifierNode *identifier = nullptr;
+		TypeNode *bound = nullptr; // Optional upper bound: [T: Resource].
+
+		TypeParameterNode() {
+			type = TYPE_PARAMETER;
+		}
+	};
+
 	struct TypeTestNode : public ExpressionNode {
 		ExpressionNode *operand = nullptr;
 		TypeNode *test_type = nullptr;
@@ -1601,6 +1614,7 @@ private:
 	void parse_trait_name();
 	void parse_extends();
 	void parse_uses();
+	void parse_type_parameters(Vector<TypeParameterNode *> &r_type_parameters);
 	void parse_class_body(bool p_is_multiline);
 	List<AnnotationNode *> parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind);
 	template <typename T>
@@ -1776,6 +1790,7 @@ public:
 		void print_suite(SuiteNode *p_suite);
 		void print_ternary_op(TernaryOpNode *p_ternary_op);
 		void print_type(TypeNode *p_type);
+		void print_type_parameters(const Vector<TypeParameterNode *> &p_type_parameters);
 		void print_type_test(TypeTestNode *p_type_test);
 		void print_unary_op(UnaryOpNode *p_unary_op);
 		void print_variable(VariableNode *p_variable);

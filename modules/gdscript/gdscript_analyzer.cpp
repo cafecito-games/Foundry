@@ -1791,6 +1791,7 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 		case GDScriptParser::Node::FUNCTION:
 		case GDScriptParser::Node::PASS:
 		case GDScriptParser::Node::SIGNAL:
+		case GDScriptParser::Node::TYPE_PARAMETER:
 			// Nothing to do.
 			break;
 	}
@@ -3382,6 +3383,7 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 		case GDScriptParser::Node::SIGNAL:
 		case GDScriptParser::Node::SUITE:
 		case GDScriptParser::Node::TYPE:
+		case GDScriptParser::Node::TYPE_PARAMETER:
 		case GDScriptParser::Node::VARIABLE:
 		case GDScriptParser::Node::WHILE:
 			ERR_FAIL_MSG("Reaching unreachable case");

@@ -1067,6 +1067,8 @@ GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 		}
 	}
 
+	parse_type_parameters(n_class->type_parameters);
+
 	if (match(GDScriptTokenizer::Token::EXTENDS)) {
 		parse_extends();
 	}
@@ -1184,6 +1186,8 @@ void GDScriptParser::parse_class_name() {
 		current_class->fqcn = current_class->qualified_global_name;
 	}
 
+	parse_type_parameters(current_class->type_parameters);
+
 	if (match(GDScriptTokenizer::Token::EXTENDS)) {
 		// Allow extends on the same line.
 		parse_extends();
@@ -1281,6 +1285,44 @@ void GDScriptParser::parse_uses() {
 
 		current_class->used_traits.push_back(trait_use);
 	} while (match(GDScriptTokenizer::Token::COMMA));
+}
+
+void GDScriptParser::parse_type_parameters(Vector<TypeParameterNode *> &r_type_parameters) {
+	if (!match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		return;
+	}
+
+	if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+		push_error(R"(Expected type parameter name after "[".)");
+	} else {
+		do {
+			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				// Allow for trailing comma.
+				break;
+			}
+
+			TypeParameterNode *type_parameter = alloc_node<TypeParameterNode>();
+			if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected type parameter name.)")) {
+				type_parameter->identifier = parse_identifier();
+				for (const TypeParameterNode *previous_parameter : r_type_parameters) {
+					if (previous_parameter->identifier != nullptr && previous_parameter->identifier->name == type_parameter->identifier->name) {
+						push_error(vformat(R"(Type parameter with name "%s" was already declared.)", type_parameter->identifier->name), type_parameter->identifier);
+						break;
+					}
+				}
+				if (match(GDScriptTokenizer::Token::COLON)) {
+					type_parameter->bound = parse_type();
+					if (type_parameter->bound == nullptr) {
+						push_error(R"(Expected type parameter bound after ":".)");
+					}
+				}
+			}
+			complete_extents(type_parameter);
+			r_type_parameters.push_back(type_parameter);
+		} while (match(GDScriptTokenizer::Token::COMMA));
+	}
+
+	consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type parameters.)");
 }
 
 List<GDScriptParser::AnnotationNode *> GDScriptParser::parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind) {
@@ -2101,6 +2143,8 @@ GDScriptParser::FunctionNode *GDScriptParser::parse_function_declaration(bool p_
 		push_error(R"("async" must appear before "func" when used as a function modifier.)", function->identifier);
 		advance();
 	}
+
+	parse_type_parameters(function->type_parameters);
 
 	SuiteNode *body = alloc_node<SuiteNode>();
 
@@ -6305,6 +6349,8 @@ void GDScriptParser::TreePrinter::print_class(ClassNode *p_class) {
 		print_identifier(p_class->identifier);
 	}
 
+	print_type_parameters(p_class->type_parameters);
+
 	if (p_class->extends_used) {
 		bool first = true;
 		push_text(" Extends ");
@@ -6520,6 +6566,7 @@ void GDScriptParser::TreePrinter::print_function(FunctionNode *p_function, const
 	} else {
 		push_text("<anonymous>");
 	}
+	print_type_parameters(p_function->type_parameters);
 	push_text("( ");
 	for (int i = 0; i < p_function->parameters.size(); i++) {
 		if (i > 0) {
@@ -6825,6 +6872,29 @@ void GDScriptParser::TreePrinter::print_type(TypeNode *p_type) {
 	if (p_type->is_nullable) {
 		push_text("?");
 	}
+}
+
+void GDScriptParser::TreePrinter::print_type_parameters(const Vector<TypeParameterNode *> &p_type_parameters) {
+	if (p_type_parameters.is_empty()) {
+		return;
+	}
+	push_text("[");
+	for (int i = 0; i < p_type_parameters.size(); i++) {
+		if (i > 0) {
+			push_text(", ");
+		}
+		const TypeParameterNode *type_parameter = p_type_parameters[i];
+		if (type_parameter->identifier != nullptr) {
+			push_text(type_parameter->identifier->name);
+		} else {
+			push_text("<unnamed>");
+		}
+		if (type_parameter->bound != nullptr) {
+			push_text(": ");
+			print_type(type_parameter->bound);
+		}
+	}
+	push_text("]");
 }
 
 void GDScriptParser::TreePrinter::print_type_test(TypeTestNode *p_test) {
