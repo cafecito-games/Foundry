@@ -59,8 +59,12 @@ struct FixpointSkipped {
 };
 
 struct FixpointInferenceResult {
+	// True only means the run completed without a fatal error; it does not imply any
+	// annotations were applied. Consult changed_files and skipped for actual results.
 	bool ok = false;
 	String error_message; // Set only on a fatal, no-op failure (e.g. unreadable file).
+	// Counts every pass, including the final confirming pass that applies nothing and
+	// detects the fixpoint, so a chain of depth N typically reports N+1.
 	int iterations = 0;
 	int total_annotations_applied = 0;
 	Vector<FixpointFileChange> changed_files;
