@@ -2116,6 +2116,45 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Sort members by style guide rejects standalone warning annotations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"var speed := 1\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		const bool mentions_annotation_or_warning =
+				r.error_message.to_lower().contains("annotation") || r.error_message.to_lower().contains("warning");
+		CHECK_MESSAGE(mentions_annotation_or_warning, r.error_message);
+	}
+
+	TEST_CASE("Sort members by style guide preserves missing final newline") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"signal changed";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+		CHECK_FALSE(out.ends_with("\n"));
+	}
+
 	TEST_CASE("Inline variable rejects unsafe or unsupported targets") {
 		SUBCASE("multi-use side-effecting initializer") {
 			const String source =

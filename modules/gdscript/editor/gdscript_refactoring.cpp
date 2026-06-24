@@ -3424,13 +3424,24 @@ bool source_lines_match(const Vector<String> &p_left, const Vector<String> &p_ri
 	return true;
 }
 
+int get_effective_line_span_end_line(const Vector<String> &p_lines, int p_end_line) {
+	if (p_end_line <= p_lines.size()) {
+		return p_end_line;
+	}
+	if (p_end_line == p_lines.size() + 1 && !p_lines.is_empty() && !p_lines[p_lines.size() - 1].is_empty()) {
+		return p_lines.size();
+	}
+	return -1;
+}
+
 bool get_line_span_text(const Vector<String> &p_lines, int p_start_line, int p_end_line, String &r_text) {
-	if (p_start_line < 0 || p_end_line < p_start_line || p_start_line >= p_lines.size() || p_end_line > p_lines.size()) {
+	const int effective_end_line = get_effective_line_span_end_line(p_lines, p_end_line);
+	if (p_start_line < 0 || effective_end_line < p_start_line || p_start_line >= p_lines.size()) {
 		return false;
 	}
 
 	String text;
-	for (int i = p_start_line; i < p_end_line; i++) {
+	for (int i = p_start_line; i < effective_end_line; i++) {
 		text += p_lines[i];
 		if (i + 1 < p_lines.size()) {
 			text += "\n";
@@ -3447,14 +3458,15 @@ bool make_line_span_edit(
 		const String &p_expected_text,
 		const String &p_new_text,
 		RefactorTextEdit &r_edit) {
-	if (p_start_line < 0 || p_end_line < p_start_line || p_start_line >= p_lines.size() || p_end_line > p_lines.size()) {
+	const int effective_end_line = get_effective_line_span_end_line(p_lines, p_end_line);
+	if (p_start_line < 0 || effective_end_line < p_start_line || p_start_line >= p_lines.size()) {
 		return false;
 	}
 
 	r_edit.start_line = p_start_line;
 	r_edit.start_column = 0;
-	if (p_end_line < p_lines.size()) {
-		r_edit.end_line = p_end_line;
+	if (effective_end_line < p_lines.size()) {
+		r_edit.end_line = effective_end_line;
 		r_edit.end_column = 0;
 	} else if (!p_lines.is_empty()) {
 		r_edit.end_line = p_lines.size() - 1;
@@ -3466,6 +3478,21 @@ bool make_line_span_edit(
 	r_edit.expected_text = p_expected_text;
 	r_edit.new_text = p_new_text;
 	return true;
+}
+
+bool line_span_has_standalone_warning_annotation(const Vector<String> &p_lines, int p_start_line, int p_end_line) {
+	const int effective_end_line = get_effective_line_span_end_line(p_lines, p_end_line);
+	if (p_start_line < 0 || effective_end_line < p_start_line || p_start_line >= p_lines.size()) {
+		return false;
+	}
+
+	for (int i = p_start_line; i < effective_end_line; i++) {
+		const String stripped_line = p_lines[i].strip_edges();
+		if (stripped_line.begins_with("@warning_ignore_start") || stripped_line.begins_with("@warning_ignore_restore")) {
+			return true;
+		}
+	}
+	return false;
 }
 
 String normalize_block_text(const String &p_text) {
@@ -3505,6 +3532,18 @@ String join_style_order_blocks(const Vector<StyleOrderBlock> &p_blocks) {
 			}
 		}
 		text += p_blocks[i].text;
+	}
+	return text;
+}
+
+String match_style_order_span_final_newline(const String &p_text, bool p_should_end_with_newline) {
+	if (p_should_end_with_newline) {
+		return p_text.ends_with("\n") ? p_text : p_text + "\n";
+	}
+
+	String text = p_text;
+	while (text.ends_with("\n")) {
+		text = text.substr(0, text.length() - 1);
 	}
 	return text;
 }
@@ -3668,6 +3707,14 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 		candidate.disabled_reason = "Cannot map a member declaration back to source text.";
 		return candidate;
 	}
+	if (line_span_has_standalone_warning_annotation(p_lines, blocks[0].start_line, blocks[blocks.size() - 1].end_line)) {
+		candidate.disabled_reason = "Cannot sort members while standalone warning annotations are present.";
+		return candidate;
+	}
+
+	const String replacement_text = match_style_order_span_final_newline(
+			join_style_order_blocks(sorted_blocks),
+			expected_text.ends_with("\n"));
 
 	RefactorTextEdit edit;
 	if (!make_line_span_edit(
@@ -3675,7 +3722,7 @@ StyleOrderCandidate find_style_order_candidate_in_root_class(
 				blocks[0].start_line,
 				blocks[blocks.size() - 1].end_line,
 				expected_text,
-				join_style_order_blocks(sorted_blocks),
+				replacement_text,
 				edit)) {
 		candidate.disabled_reason = "Cannot map a member declaration back to source text.";
 		return candidate;
