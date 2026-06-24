@@ -17,7 +17,7 @@
     {
       "id": 3,
       "subject": "Task 3: Stub rendering + edit production",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [2],
       "description": "Render concrete stubs (signature + push_error body) and emit one insertion edit at end of class.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_refactoring.cpp\", \"modules/gdscript/tests/test_refactor.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-suite=\\\"*Refactor*\\\" --force-colors\", \"acceptanceCriteria\": [\"Typed->literal, void->no return, object->pass\", \"Preserves static/params/types/defaults\", \"All owed methods at end of class, separated\", \"Applied source matches\"]}\n```"
     },
