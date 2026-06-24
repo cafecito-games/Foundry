@@ -157,22 +157,28 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 			verify_options.strict_null_checks = p_options.strict_null_checks;
 			verify_options.strict_dynamic_checks = p_options.strict_dynamic_checks;
 			VerificationResult verified = GDScriptVerificationHarness::verify(candidates, paths, verify_options);
-			if (verified.ok) {
-				// Group accepted candidates' edits per file and apply over the snapshot.
-				HashMap<String, Vector<RefactorTextEdit>> accepted_edits;
-				for (const VerificationCandidate &candidate : verified.accepted) {
-					for (const RefactorTextEdit &edit : candidate.edits) {
-						accepted_edits[candidate.path].push_back(edit);
-					}
-					pending_count[candidate.path] += 1;
+			if (!verified.ok) {
+				// A fatal harness failure (unreadable file, failed disk restore) must not be
+				// silently treated as convergence. Surface it immediately so the caller knows
+				// the result is unreliable rather than a false ok/converged=true.
+				result.ok = false;
+				result.error_message = verified.error_message;
+				return result;
+			}
+			// Group accepted candidates' edits per file and apply over the snapshot.
+			HashMap<String, Vector<RefactorTextEdit>> accepted_edits;
+			for (const VerificationCandidate &candidate : verified.accepted) {
+				for (const RefactorTextEdit &edit : candidate.edits) {
+					accepted_edits[candidate.path].push_back(edit);
 				}
-				for (const KeyValue<String, Vector<RefactorTextEdit>> &entry : accepted_edits) {
-					String new_source;
-					if (GDScriptRefactorEdits::apply(snapshot[entry.key], entry.value, new_source)) {
-						pending_source[entry.key] = new_source;
-					} else {
-						pending_count.erase(entry.key); // Could not apply this file's accepted set.
-					}
+				pending_count[candidate.path] += 1;
+			}
+			for (const KeyValue<String, Vector<RefactorTextEdit>> &entry : accepted_edits) {
+				String new_source;
+				if (GDScriptRefactorEdits::apply(snapshot[entry.key], entry.value, new_source)) {
+					pending_source[entry.key] = new_source;
+				} else {
+					pending_count.erase(entry.key); // Could not apply this file's accepted set.
 				}
 			}
 		}
