@@ -145,6 +145,21 @@ TEST_CASE("[Modules][GDScript][GenericTypeModel] specialized handles differ by t
 	CHECK(box_of_int == another_box_of_int);
 }
 
+TEST_CASE("[Modules][GDScript][GenericTypeModel] type parameters compare by name, scope, index, and bound") {
+	const DataType t_class_zero = make_type_parameter("T", 0, DataType::TYPE_PARAMETER_CLASS);
+
+	CHECK(t_class_zero == make_type_parameter("T", 0, DataType::TYPE_PARAMETER_CLASS));
+	// A different ordinal position is a different parameter.
+	CHECK(t_class_zero != make_type_parameter("T", 1, DataType::TYPE_PARAMETER_CLASS));
+	// A class-level T and a method-level T are distinct.
+	CHECK(t_class_zero != make_type_parameter("T", 0, DataType::TYPE_PARAMETER_METHOD));
+
+	// A bound participates in identity, e.g. unconstrained `T` differs from `T: String`.
+	DataType bounded = make_type_parameter("T", 0, DataType::TYPE_PARAMETER_CLASS);
+	bounded.type_parameter_bound.push_back(make_builtin(Variant::STRING));
+	CHECK(t_class_zero != bounded);
+}
+
 TEST_CASE("[Modules][GDScript][GenericTypeModel] to_string renders parameters and specializations") {
 	CHECK(make_type_parameter("T").to_string() == "T");
 

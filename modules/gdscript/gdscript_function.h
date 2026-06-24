@@ -260,6 +260,7 @@ public:
 				container_element_types == p_other.container_element_types &&
 				type_parameter_name == p_other.type_parameter_name &&
 				type_parameter_scope == p_other.type_parameter_scope &&
+				type_parameter_index == p_other.type_parameter_index &&
 				type_arguments == p_other.type_arguments;
 	}
 

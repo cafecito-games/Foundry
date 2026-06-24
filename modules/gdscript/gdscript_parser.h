@@ -169,6 +169,10 @@ public:
 
 		// Returns a copy of p_type with every TYPE_PARAMETER replaced by its bound argument from p_bindings,
 		// recursing through container elements, type arguments, and method signatures. Unbound parameters are left intact.
+		//
+		// p_bindings is keyed by type-parameter name and must hold the parameters of a single declaration scope, since a
+		// name uniquely identifies a parameter within its own scope. For nested generics (e.g. a generic method on a
+		// generic class), substitute outermost scope first so an inner parameter that shadows an outer name wins.
 		static DataType substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings);
 
 		_FORCE_INLINE_ bool is_set() const { return kind != RESOLVING && kind != UNRESOLVED; }
@@ -261,7 +265,10 @@ public:
 					equal = class_type == p_other.class_type || class_type->fqcn == p_other.class_type->fqcn;
 					break;
 				case TYPE_PARAMETER:
-					equal = type_parameter_name == p_other.type_parameter_name && type_parameter_scope == p_other.type_parameter_scope;
+					equal = type_parameter_name == p_other.type_parameter_name &&
+							type_parameter_scope == p_other.type_parameter_scope &&
+							type_parameter_index == p_other.type_parameter_index &&
+							type_parameter_bound == p_other.type_parameter_bound;
 					break;
 				case RESOLVING:
 				case UNRESOLVED:

@@ -223,6 +223,11 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 		result.set_container_element_type(i, element_type);
 	}
 
+	// Preserve specialized type arguments (e.g. the `int` in `Box[int]`) so runtime metadata is not lost.
+	for (int i = 0; i < p_datatype.type_arguments.size(); i++) {
+		result.type_arguments.push_back(_gdtype_from_datatype(p_datatype.type_arguments[i], p_owner, false));
+	}
+
 	return result;
 }
 
