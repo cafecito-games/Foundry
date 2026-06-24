@@ -377,6 +377,44 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects a Variant-bounded type parameter
 	CHECK(analyzer.analyze() != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rejects a dependent bound against the wrong sibling argument") {
+	GDScriptParser parser;
+	// `T: U` requires the second argument to derive from whatever `U` is bound to. `U` is given
+	// `Resource`, and `RefCounted` does not derive from `Resource`, so this must be rejected.
+	const String source =
+			"class Box[U: Resource, T: U]:\n"
+			"\tvar value: T\n"
+			"var bad: Box[Resource, RefCounted]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer accepts a dependent bound against a satisfying sibling argument") {
+	GDScriptParser parser;
+	// `U` is given `Resource`; `Resource` derives from `Resource`, so `T: U` is satisfied.
+	const String source =
+			"class Box[U: Resource, T: U]:\n"
+			"\tvar value: T\n"
+			"var ok: Box[Resource, Resource]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer resolves a class bound ignoring shadowing method parameters") {
 	GDScriptParser parser;
 	// The method type parameter `Real` must not shadow the class `Real` named by `Box`'s bound;

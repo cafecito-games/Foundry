@@ -1127,8 +1127,18 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				if (!bound.is_set() || bound.is_variant()) {
 					continue;
 				}
-				if (!type_argument_satisfies_bound(argument, bound)) {
-					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", argument.to_string(), bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
+				// Substitute the arguments bound to earlier parameters so a dependent bound like
+				// `[U: Resource, T: U]` is checked against the concrete argument supplied for `U`.
+				HashMap<StringName, GDScriptParser::DataType> bindings;
+				for (int j = 0; j < result.type_arguments.size(); j++) {
+					const GDScriptParser::TypeParameterNode *bound_parameter = type_parameters[j];
+					if (bound_parameter != nullptr && bound_parameter->identifier != nullptr) {
+						bindings.insert(bound_parameter->identifier->name, result.type_arguments[j]);
+					}
+				}
+				const GDScriptParser::DataType effective_bound = bindings.is_empty() ? bound : GDScriptParser::DataType::substitute(bound, bindings);
+				if (!type_argument_satisfies_bound(argument, effective_bound)) {
+					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", argument.to_string(), effective_bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
 					bound_violation = true;
 				}
 			}
@@ -5448,6 +5458,15 @@ bool GDScriptAnalyzer::type_argument_satisfies_bound(const GDScriptParser::DataT
 	// A `Variant` bound imposes no requirement; any argument satisfies it.
 	if (p_bound.is_variant()) {
 		return true;
+	}
+	// A bound that is itself an (unsubstituted) type parameter — e.g. an outer-scope parameter the
+	// caller could not bind — constrains the argument only by its own upper bound; an unbounded one
+	// imposes nothing. Never fall through to the permissive general compatibility check below.
+	if (p_bound.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		if (p_bound.type_parameter_bound.is_empty()) {
+			return true;
+		}
+		return type_argument_satisfies_bound(p_argument, p_bound.type_parameter_bound[0]);
 	}
 	if (p_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
 		// A bare type parameter is erased to `Variant` at runtime, so it satisfies a concrete bound
