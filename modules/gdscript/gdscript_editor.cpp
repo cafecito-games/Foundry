@@ -5160,25 +5160,38 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 		} break;
 		case GDScriptParser::COMPLETION_USES: {
 			// Resolve a trait reference in a `uses` clause through the analyzer-resolved
-			// trait, so references from an inner scope reach an outer or sibling inline
-			// trait declared in this file. Global `trait_name` traits (which may live in
-			// another file) are left to the global-class resolution below.
+			// trait. This reaches inline traits in outer, sibling, and base scopes as
+			// well as traits (possibly nested) declared in other files.
 			if (context.current_class != nullptr) {
+				const String identifier_chain = _get_lookup_identifier_chain(p_code, p_symbol);
+				const GDScriptParser::ClassNode::TraitUse *match = nullptr;
 				for (const GDScriptParser::ClassNode::TraitUse &trait_use : context.current_class->used_traits) {
 					if (trait_use.name.is_empty() || trait_use.resolved_trait == nullptr) {
 						continue;
 					}
-					if (trait_use.name[trait_use.name.size() - 1]->name != p_symbol) {
-						continue;
-					}
-					const GDScriptParser::ClassNode *trait = trait_use.resolved_trait;
-					if (trait->trait_name_used) {
-						// Globally registered trait; resolve it as a global class.
+					if (trait_use.to_string() == identifier_chain) {
+						// Exact match on the qualified name under the cursor.
+						match = &trait_use;
 						break;
 					}
+					if (match == nullptr && trait_use.name[trait_use.name.size() - 1]->name == p_symbol) {
+						// Fallback: first trait whose leaf name matches the symbol.
+						match = &trait_use;
+					}
+				}
+				if (match != nullptr) {
+					const GDScriptParser::ClassNode *trait = match->resolved_trait;
 					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 					r_result.class_name = trait->identifier != nullptr ? String(trait->identifier->name) : String();
 					r_result.location = trait->start_line;
+					// A trait declared in another file needs its own script path so the
+					// definition resolves against that file rather than this one.
+					const String trait_path = trait->get_datatype().script_path;
+					if (!trait_path.is_empty() && trait_path != p_path) {
+						Error err = OK;
+						r_result.script = GDScriptCache::get_shallow_script(trait_path, err);
+						r_result.script_path = trait_path;
+					}
 					return OK;
 				}
 			}
