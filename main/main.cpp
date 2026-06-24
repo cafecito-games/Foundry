@@ -2214,6 +2214,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			GLOBAL_DEF(PropertyInfo(Variant::INT, "application/run/low_processor_mode_sleep_usec", PROPERTY_HINT_RANGE, "0,33200,1,or_greater"), 6900)); // Roughly 144 FPS
 
 	GLOBAL_DEF("application/run/delta_smoothing", true);
+	GLOBAL_DEF("application/run/push_fatal_terminates", true);
 	if (!delta_smoothing_override) {
 		OS::get_singleton()->set_delta_smoothing(GLOBAL_GET("application/run/delta_smoothing"));
 	}
@@ -4964,6 +4965,14 @@ bool Main::iteration() {
 		exit = true;
 	}
 	message_queue->flush();
+
+	// A component may have requested a graceful shutdown during process()
+	// (e.g. via push_fatal()). Honor it here so this iteration ends the loop;
+	// this sits before the `fixed_fps` early-return below so both return paths
+	// observe it.
+	if (OS::get_singleton()->is_exit_requested()) {
+		exit = true;
+	}
 
 #ifndef NAVIGATION_2D_DISABLED
 	GodotProfileZoneGrouped(_profile_zone, "process 2D navigation");

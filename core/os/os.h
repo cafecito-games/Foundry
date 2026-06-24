@@ -36,6 +36,7 @@
 #include "core/os/time_enums.h"
 #include "core/string/ustring.h"
 #include "core/templates/list.h"
+#include "core/templates/safe_refcount.h"
 #include "core/templates/vector.h"
 
 #include <cstdlib>
@@ -57,6 +58,7 @@ class OS {
 	String _local_clipboard;
 	// Assume success by default, all failure cases need to set EXIT_FAILURE explicitly.
 	int _exit_code = EXIT_SUCCESS;
+	SafeFlag _exit_requested;
 	bool _allow_hidpi = false;
 	bool _allow_layered = false;
 	bool _stdout_enabled = true;
@@ -329,6 +331,13 @@ public:
 	// level, e.g. from the `Main::start` if leaving without creating a `SceneTree`).
 	// For other components, `SceneTree.quit()` should be used instead.
 	virtual void set_exit_code(int p_code);
+
+	// Requests a graceful shutdown of the main loop with the given exit code.
+	// Unlike `set_exit_code`, this can be called from anywhere (including from
+	// utility functions like `push_fatal`); `Main::iteration()` observes the
+	// request and ends the loop at the next frame boundary.
+	void request_exit(int p_exit_code = EXIT_FAILURE);
+	bool is_exit_requested() const;
 
 	virtual int get_processor_count() const;
 	virtual String get_processor_name() const;

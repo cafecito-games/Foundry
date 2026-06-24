@@ -225,6 +225,15 @@ void OS::set_exit_code(int p_code) {
 	_exit_code = p_code;
 }
 
+void OS::request_exit(int p_exit_code) {
+	_exit_code = p_exit_code;
+	_exit_requested.set();
+}
+
+bool OS::is_exit_requested() const {
+	return _exit_requested.is_set();
+}
+
 String OS::get_locale() const {
 	return "en";
 }

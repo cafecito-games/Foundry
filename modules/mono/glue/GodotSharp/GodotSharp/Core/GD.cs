@@ -411,6 +411,54 @@ namespace Godot
         }
 
         /// <summary>
+        /// Pushes an error message to Godot's built-in debugger and to the OS terminal (like
+        /// <see cref="PushError(string)"/>), then gracefully terminates the running project with a
+        /// non-zero exit code. Use this for unrecoverable conditions the project should never
+        /// continue past, such as a required asset failing to load.
+        ///
+        /// Note: Termination happens gracefully at the end of the current frame, so any remaining
+        /// code in the calling method still runs before the project quits. When called from a
+        /// <c>[Tool]</c> script inside the editor, the message is logged but the project is not
+        /// terminated. Setting the <c>application/run/push_fatal_terminates</c> project setting to
+        /// <see langword="false"/> downgrades this to <see cref="PushError(string)"/> behavior.
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// GD.PushFatal("Failed to load required asset."); // Logs the error, then quits the project.
+        /// </code>
+        /// </example>
+        /// <param name="message">Error message.</param>
+        public static void PushFatal(string message)
+        {
+            ErrPrintError(message);
+            NativeFuncs.godotsharp_request_fatal_termination();
+        }
+
+        /// <summary>
+        /// Pushes an error message to Godot's built-in debugger and to the OS terminal (like
+        /// <see cref="PushError(object[])"/>), then gracefully terminates the running project with a
+        /// non-zero exit code. Use this for unrecoverable conditions the project should never
+        /// continue past, such as a required asset failing to load.
+        ///
+        /// Note: Termination happens gracefully at the end of the current frame, so any remaining
+        /// code in the calling method still runs before the project quits. When called from a
+        /// <c>[Tool]</c> script inside the editor, the message is logged but the project is not
+        /// terminated. Setting the <c>application/run/push_fatal_terminates</c> project setting to
+        /// <see langword="false"/> downgrades this to <see cref="PushError(object[])"/> behavior.
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// GD.PushFatal("Failed to load required asset."); // Logs the error, then quits the project.
+        /// </code>
+        /// </example>
+        /// <param name="what">Arguments that form the error message.</param>
+        public static void PushFatal(params object[] what)
+        {
+            ErrPrintError(AppendPrintParams(what));
+            NativeFuncs.godotsharp_request_fatal_termination();
+        }
+
+        /// <summary>
         /// Returns a random floating point value between <c>0.0</c> and <c>1.0</c> (inclusive).
         /// </summary>
         /// <example>

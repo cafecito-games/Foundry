@@ -30,6 +30,8 @@
 
 #include "variant_utility.h"
 
+#include "core/config/engine.h"
+#include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
@@ -1035,6 +1037,35 @@ void VariantUtilityFunctions::push_warning(const Variant **p_args, int p_arg_cou
 	r_error.error = Callable::CallError::CALL_OK;
 }
 
+void VariantUtilityFunctions::push_fatal(const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
+	if (p_arg_count < 1) {
+		r_error.error = Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS;
+		r_error.expected = 1;
+		// Do not terminate on a malformed call.
+		return;
+	}
+
+	ERR_PRINT(join_string(p_args, p_arg_count));
+	r_error.error = Callable::CallError::CALL_OK;
+
+	request_fatal_termination();
+}
+
+void VariantUtilityFunctions::request_fatal_termination() {
+	// Never terminate the editor process itself (e.g. when called from a
+	// @tool script). Termination only applies to the running project.
+	if (Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+
+	// A project setting can downgrade push_fatal to plain push_error behavior.
+	if (!GLOBAL_GET_CACHED(bool, "application/run/push_fatal_terminates")) {
+		return;
+	}
+
+	OS::get_singleton()->request_exit(EXIT_FAILURE);
+}
+
 String VariantUtilityFunctions::var_to_str(const Variant &p_var) {
 	String vars;
 	VariantWriter::write_to_string(p_var, vars);
@@ -1760,6 +1791,7 @@ void Variant::_register_variant_utility_functions() {
 	FUNCBINDVARARGV_CNAME(print_verbose, _print_verbose, sarray(), Variant::UTILITY_FUNC_TYPE_GENERAL);
 	FUNCBINDVARARGV(push_error, sarray(), Variant::UTILITY_FUNC_TYPE_GENERAL);
 	FUNCBINDVARARGV(push_warning, sarray(), Variant::UTILITY_FUNC_TYPE_GENERAL);
+	FUNCBINDVARARGV(push_fatal, sarray(), Variant::UTILITY_FUNC_TYPE_GENERAL);
 
 	FUNCBINDR(var_to_str, sarray("variable"), Variant::UTILITY_FUNC_TYPE_GENERAL);
 	FUNCBINDR(str_to_var, sarray("string"), Variant::UTILITY_FUNC_TYPE_GENERAL);

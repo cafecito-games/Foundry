@@ -632,5 +632,7 @@ namespace Godot.NativeInterop
         public static partial long godotsharp_packed_color_array_size(in godot_packed_color_array p_self);
 
         public static partial long godotsharp_array_size(in godot_array p_self);
+
+        internal static partial void godotsharp_request_fatal_termination();
     }
 }
