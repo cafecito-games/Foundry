@@ -349,20 +349,20 @@ TEST_CASE("[Modules][GDScript] Parser resolves nullable type annotations") {
 	err = analyzer.analyze();
 	REQUIRE(err == OK);
 
-	const GDScriptParser::ClassNode *root = parser.get_tree();
-	REQUIRE(root != nullptr);
-	REQUIRE(root->members.size() == 2);
-	REQUIRE(root->members[0].type == GDScriptParser::ClassNode::Member::VARIABLE);
-	REQUIRE(root->members[1].type == GDScriptParser::ClassNode::Member::VARIABLE);
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->members.size() == 2);
+	REQUIRE(root_class->members[0].type == GDScriptParser::ClassNode::Member::VARIABLE);
+	REQUIRE(root_class->members[1].type == GDScriptParser::ClassNode::Member::VARIABLE);
 
-	const GDScriptParser::VariableNode *variable = root->members[0].variable;
+	const GDScriptParser::VariableNode *variable = root_class->members[0].variable;
 	REQUIRE(variable != nullptr);
 	const GDScriptParser::DataType variable_type = variable->get_datatype();
 
 	CHECK(variable_type.is_nullable);
 	CHECK(variable_type.to_string() == "Node?");
 
-	const GDScriptParser::VariableNode *array_variable = root->members[1].variable;
+	const GDScriptParser::VariableNode *array_variable = root_class->members[1].variable;
 	REQUIRE(array_variable != nullptr);
 	const GDScriptParser::DataType array_type = array_variable->get_datatype();
 
@@ -386,24 +386,24 @@ TEST_CASE("[Modules][GDScript] Parser resolves callable and signal signature ann
 		return;
 	}
 
-	const GDScriptParser::ClassNode *root = parser.get_tree();
-	CHECK(root != nullptr);
-	if (root == nullptr) {
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	CHECK(root_class != nullptr);
+	if (root_class == nullptr) {
 		return;
 	}
-	CHECK(root->members.size() == 4);
-	if (root->members.size() != 4) {
+	CHECK(root_class->members.size() == 4);
+	if (root_class->members.size() != 4) {
 		return;
 	}
-	CHECK(root->members[0].type == GDScriptParser::ClassNode::Member::VARIABLE);
-	CHECK(root->members[1].type == GDScriptParser::ClassNode::Member::VARIABLE);
-	CHECK(root->members[2].type == GDScriptParser::ClassNode::Member::VARIABLE);
-	CHECK(root->members[3].type == GDScriptParser::ClassNode::Member::VARIABLE);
-	if (root->members[0].type != GDScriptParser::ClassNode::Member::VARIABLE || root->members[1].type != GDScriptParser::ClassNode::Member::VARIABLE || root->members[2].type != GDScriptParser::ClassNode::Member::VARIABLE || root->members[3].type != GDScriptParser::ClassNode::Member::VARIABLE) {
+	CHECK(root_class->members[0].type == GDScriptParser::ClassNode::Member::VARIABLE);
+	CHECK(root_class->members[1].type == GDScriptParser::ClassNode::Member::VARIABLE);
+	CHECK(root_class->members[2].type == GDScriptParser::ClassNode::Member::VARIABLE);
+	CHECK(root_class->members[3].type == GDScriptParser::ClassNode::Member::VARIABLE);
+	if (root_class->members[0].type != GDScriptParser::ClassNode::Member::VARIABLE || root_class->members[1].type != GDScriptParser::ClassNode::Member::VARIABLE || root_class->members[2].type != GDScriptParser::ClassNode::Member::VARIABLE || root_class->members[3].type != GDScriptParser::ClassNode::Member::VARIABLE) {
 		return;
 	}
 
-	const GDScriptParser::DataType callable_type = root->members[0].variable->get_datatype();
+	const GDScriptParser::DataType callable_type = root_class->members[0].variable->get_datatype();
 	CHECK(callable_type.kind == GDScriptParser::DataType::BUILTIN);
 	CHECK(callable_type.builtin_type == Variant::CALLABLE);
 	CHECK(callable_type.has_method_signature);
@@ -416,7 +416,7 @@ TEST_CASE("[Modules][GDScript] Parser resolves callable and signal signature ann
 	CHECK(callable_type.method_info.return_val.type == Variant::BOOL);
 	CHECK(callable_type.to_string() == "Callable[[int], bool]");
 
-	const GDScriptParser::DataType signal_type = root->members[1].variable->get_datatype();
+	const GDScriptParser::DataType signal_type = root_class->members[1].variable->get_datatype();
 	CHECK(signal_type.kind == GDScriptParser::DataType::BUILTIN);
 	CHECK(signal_type.builtin_type == Variant::SIGNAL);
 	CHECK(signal_type.has_method_signature);
@@ -429,9 +429,9 @@ TEST_CASE("[Modules][GDScript] Parser resolves callable and signal signature ann
 	CHECK(signal_type.method_info.return_val.type == Variant::NIL);
 	CHECK(signal_type.to_string() == "Signal[[String]]");
 
-	const GDScriptParser::DataType nullable_callable_type = root->members[2].variable->get_datatype();
+	const GDScriptParser::DataType nullable_callable_type = root_class->members[2].variable->get_datatype();
 	CHECK(nullable_callable_type.to_string() == "Callable[[Node?], void]");
-	const GDScriptParser::DataType nullable_signal_type = root->members[3].variable->get_datatype();
+	const GDScriptParser::DataType nullable_signal_type = root_class->members[3].variable->get_datatype();
 	CHECK(nullable_signal_type.to_string() == "Signal[[Node?]]");
 }
 
@@ -444,12 +444,12 @@ TEST_CASE("[Modules][GDScript] Docgen displays nested typed container values") {
 	err = analyzer.analyze();
 	REQUIRE(err == OK);
 
-	const GDScriptParser::ClassNode *root = parser.get_tree();
-	REQUIRE(root != nullptr);
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
 
 	Ref<GDScript> script;
 	script.instantiate();
-	GDScriptDocGen::generate_docs(script.ptr(), root);
+	GDScriptDocGen::generate_docs(script.ptr(), root_class);
 
 	const Vector<DocData::ClassDoc> docs = script->get_documentation();
 	REQUIRE(docs.size() == 1);
