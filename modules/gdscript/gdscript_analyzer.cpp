@@ -5578,8 +5578,44 @@ struct TraitMemberSource {
 	GDScriptParser::ClassNode::Member member;
 };
 
+// Compares the declared types of a class member and a trait member it redeclares, ignoring
+// `type_source`. DataType::operator== treats INFERRED/UNDETECTED operands as equal for parsing
+// purposes, which would let an inferred-but-incompatible redeclaration (e.g. `var health = "x"`
+// against a trait's `var health: int`) slip through, so the structural identity is compared here.
+static bool _trait_state_type_is_compatible(const GDScriptParser::DataType &p_trait_type, const GDScriptParser::DataType &p_class_type) {
+	// A genuinely untyped redeclaration can hold the trait's value, so it is not a conflict.
+	if (p_trait_type.kind == GDScriptParser::DataType::VARIANT || p_class_type.kind == GDScriptParser::DataType::VARIANT) {
+		return true;
+	}
+	if (p_trait_type.kind != p_class_type.kind) {
+		return false;
+	}
+	switch (p_class_type.kind) {
+		case GDScriptParser::DataType::BUILTIN:
+			return p_trait_type.builtin_type == p_class_type.builtin_type &&
+					p_trait_type.container_element_types == p_class_type.container_element_types;
+		case GDScriptParser::DataType::NATIVE:
+		case GDScriptParser::DataType::ENUM:
+			return p_trait_type.native_type == p_class_type.native_type;
+		case GDScriptParser::DataType::SCRIPT:
+			return p_trait_type.script_type == p_class_type.script_type;
+		case GDScriptParser::DataType::CLASS:
+			return p_trait_type.class_type == p_class_type.class_type ||
+					(p_trait_type.class_type != nullptr && p_class_type.class_type != nullptr &&
+							p_trait_type.class_type->fqcn == p_class_type.class_type->fqcn);
+		default:
+			return true;
+	}
+}
+
 void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_class) {
 	if (p_class == nullptr || p_class->resolved_traits.is_empty()) {
+		return;
+	}
+
+	// Traits and abstract classes are allowed to defer implementation and disambiguation to a
+	// concrete subclass, mirroring validate_trait_requirements, so they must not raise conflicts.
+	if (p_class->is_trait || p_class->is_abstract) {
 		return;
 	}
 
@@ -5654,7 +5690,7 @@ void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_cla
 
 				const GDScriptParser::DataType trait_type = member.get_datatype();
 				const GDScriptParser::DataType class_type = class_member.get_datatype();
-				if (class_type != trait_type) {
+				if (!_trait_state_type_is_compatible(trait_type, class_type)) {
 					push_error(vformat(R"(Class "%s" redeclares trait member "%s" from "%s" with incompatible type. Expected "%s", got "%s".)",
 									   _class_or_trait_name(p_class), member_name, _class_or_trait_name(trait),
 									   trait_type.to_string(), class_type.to_string()),

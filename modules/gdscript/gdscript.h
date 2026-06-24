@@ -287,8 +287,8 @@ public:
 
 	bool is_tool() const override { return tool; }
 	bool is_abstract() const override { return _is_abstract; }
-	bool is_trait_type() const { return _is_trait_type; }
-	StringName get_trait_type_name() const { return trait_type_name; }
+	bool is_trait_type() const override { return _is_trait_type; }
+	StringName get_trait_type_name() const override { return trait_type_name; }
 	Ref<GDScript> get_base() const;
 
 	const HashMap<StringName, MemberInfo> &debug_get_member_indices() const { return member_indices; }
