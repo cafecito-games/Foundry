@@ -73,7 +73,20 @@ static bool _is_contextual_uses_keyword(const String &p_text, int p_word_end) {
 	while (next_column < p_text.length() && is_whitespace(p_text[next_column])) {
 		next_column++;
 	}
-	return next_column < p_text.length() && is_unicode_identifier_start(p_text[next_column]);
+	if (next_column >= p_text.length() || !is_unicode_identifier_start(p_text[next_column])) {
+		return false;
+	}
+	// A trait name is never a reserved word. When `uses` is followed by an operator
+	// or control keyword (e.g. `uses is Foo`, `uses if a else b`), it is being used
+	// as an identifier, so it must not be highlighted as a keyword.
+	int next_word_end = next_column;
+	while (next_word_end < p_text.length() && is_unicode_identifier_continue(p_text[next_word_end])) {
+		next_word_end++;
+	}
+	const String next_word = p_text.substr(next_column, next_word_end - next_column);
+	return next_word != "is" && next_word != "as" && next_word != "in" &&
+			next_word != "and" && next_word != "or" && next_word != "not" &&
+			next_word != "if" && next_word != "else" && next_word != "when";
 }
 
 Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_line) {

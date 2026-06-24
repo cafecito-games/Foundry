@@ -1423,19 +1423,35 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 // Lists the traits that can appear after `uses`: inline trait declarations from the
 // surrounding class hierarchy plus globally registered `trait_name` traits.
 static void _list_available_traits(GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
-	// Inline trait declarations visible from the current class and its outer classes.
-	const GDScriptParser::ClassNode *current = p_context.current_class;
-	int location_offset = 0;
-	while (current) {
+	// Inline trait declarations visible from the current class: its own members, the
+	// members of its outer (lexically enclosing) classes, and the members it inherits
+	// from local base classes. This mirrors the scopes the analyzer searches when it
+	// resolves a `uses` reference.
+	HashSet<const GDScriptParser::ClassNode *> visited;
+	List<const GDScriptParser::ClassNode *> to_visit;
+	for (const GDScriptParser::ClassNode *outer = p_context.current_class; outer != nullptr; outer = outer->outer) {
+		to_visit.push_back(outer);
+	}
+	while (!to_visit.is_empty()) {
+		const GDScriptParser::ClassNode *current = to_visit.front()->get();
+		to_visit.pop_front();
+		if (current == nullptr || visited.has(current)) {
+			continue;
+		}
+		visited.insert(current);
+
 		for (int i = 0; i < current->members.size(); i++) {
 			const GDScriptParser::ClassNode::Member &member = current->members[i];
 			if (member.type == GDScriptParser::ClassNode::Member::CLASS && member.m_class->is_trait) {
-				ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+				ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL);
 				r_result.insert(option.display, option);
 			}
 		}
-		location_offset += 1;
-		current = current->outer;
+
+		// Inline traits declared in a local base class are inherited.
+		if (current->base_type.kind == GDScriptParser::DataType::CLASS && current->base_type.class_type != nullptr) {
+			to_visit.push_back(current->base_type.class_type);
+		}
 	}
 
 	// Global `trait_name` traits. Only GDScript globals can be traits; a lightweight
@@ -3871,11 +3887,15 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_USES: {
-			// Globally registered traits are listed under their fully-qualified names
-			// (e.g. `characters.Damageable`), so namespace-qualified traits are covered
-			// without suggesting non-trait classes.
-			_list_available_traits(completion_context, options);
-			r_forced = true;
+			// Only complete the leading name. Globally registered traits are listed
+			// under their fully-qualified names (e.g. `characters.Damageable`), so
+			// namespace-qualified traits are covered without suggesting non-trait
+			// classes. Completing after a `.` is skipped to avoid duplicating the
+			// already-typed namespace prefix.
+			if (completion_context.current_argument <= 0) {
+				_list_available_traits(completion_context, options);
+				r_forced = true;
+			}
 		} break;
 		case GDScriptParser::COMPLETION_IMPORT_NAMESPACE: {
 			_list_importable_namespaces(namespace_cache, options);
@@ -5141,7 +5161,8 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 		case GDScriptParser::COMPLETION_USES: {
 			// Resolve a trait reference in a `uses` clause through the analyzer-resolved
 			// trait, so references from an inner scope reach an outer or sibling inline
-			// trait. Global `trait_name` traits are resolved earlier as global classes.
+			// trait declared in this file. Global `trait_name` traits (which may live in
+			// another file) are left to the global-class resolution below.
 			if (context.current_class != nullptr) {
 				for (const GDScriptParser::ClassNode::TraitUse &trait_use : context.current_class->used_traits) {
 					if (trait_use.name.is_empty() || trait_use.resolved_trait == nullptr) {
@@ -5151,9 +5172,12 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 						continue;
 					}
 					const GDScriptParser::ClassNode *trait = trait_use.resolved_trait;
+					if (trait->trait_name_used) {
+						// Globally registered trait; resolve it as a global class.
+						break;
+					}
 					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 					r_result.class_name = trait->identifier != nullptr ? String(trait->identifier->name) : String();
-					// A non-global trait reachable through `uses` is declared in this file.
 					r_result.location = trait->start_line;
 					return OK;
 				}
