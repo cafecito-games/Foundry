@@ -1101,21 +1101,44 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			}
 			result.type_arguments.clear();
 			const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = result.class_type->type_parameters;
+			// A type argument satisfies an upper bound when it derives from it. A bare type
+			// parameter argument is only acceptable when its own declared bound already satisfies the
+			// required one, and a concrete `Variant` never satisfies a non-`Variant` bound.
+			auto argument_satisfies_bound = [&](const GDScriptParser::DataType &p_argument, const GDScriptParser::DataType &p_bound) -> bool {
+				if (p_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+					if (p_argument.type_parameter_bound.is_empty()) {
+						return false;
+					}
+					return datatype_derives_from_datatype(p_argument.type_parameter_bound[0], p_bound);
+				}
+				if (p_argument.is_variant()) {
+					return false;
+				}
+				return datatype_derives_from_datatype(p_argument, p_bound);
+			};
 			bool bound_violation = false;
 			for (int i = 0; i < p_type->container_types.size(); i++) {
+				const int errors_before = parser->get_errors().size();
 				const GDScriptParser::DataType argument = type_from_metatype(resolve_datatype(p_type->container_types[i]));
+				const bool argument_resolution_failed = parser->get_errors().size() > errors_before;
 				result.type_arguments.push_back(argument);
 
 				const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
-				if (parameter == nullptr || parameter->bound == nullptr) {
+				if (parameter == nullptr || parameter->bound == nullptr || argument_resolution_failed) {
 					continue;
 				}
+				// Resolve the bound in the generic class's own scope so relative bound names bind to the
+				// declaring class rather than the (possibly unrelated) use site.
+				GDScriptParser::ClassNode *previous_class = parser->current_class;
+				parser->current_class = result.class_type;
 				const GDScriptParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
-				// Skip checking when either side failed to resolve; that error is reported elsewhere.
-				if (!bound.is_set() || bound.is_variant() || !argument.is_set() || argument.is_variant()) {
+				parser->current_class = previous_class;
+
+				// An unresolved or unconstrained (`Variant`) bound imposes no requirement.
+				if (!bound.is_set() || bound.is_variant()) {
 					continue;
 				}
-				if (!datatype_derives_from_datatype(argument, bound)) {
+				if (!argument_satisfies_bound(argument, bound)) {
 					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", argument.to_string(), bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
 					bound_violation = true;
 				}

@@ -300,6 +300,68 @@ TEST_CASE("[Modules][GDScript] Analyzer accepts a user-class type argument satis
 	CHECK(analyzer.analyze() == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rejects a concrete Variant type argument against a class bound") {
+	GDScriptParser parser;
+	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar bad: Box[Variant]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects a weakly-bounded type parameter as a type argument") {
+	GDScriptParser parser;
+	// `U` is only bounded by `Object`, so it cannot satisfy `Box`'s `RefCounted` bound.
+	const String source =
+			"class Box[T: RefCounted]:\n"
+			"\tvar value: T\n"
+			"class Wrapper[U: Object]:\n"
+			"\tvar bad: Box[U]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer accepts a compatibly-bounded type parameter as a type argument") {
+	GDScriptParser parser;
+	// `U` is bounded by `Resource`, which derives from `RefCounted`, so it satisfies the bound.
+	const String source =
+			"class Box[T: RefCounted]:\n"
+			"\tvar value: T\n"
+			"class Wrapper[U: Resource]:\n"
+			"\tvar ok: Box[U]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects an unbounded type parameter as a type argument") {
+	GDScriptParser parser;
+	const String source =
+			"class Box[T: RefCounted]:\n"
+			"\tvar value: T\n"
+			"class Wrapper[U]:\n"
+			"\tvar bad: Box[U]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer exposes bound members on a type-parameter value") {
 	GDScriptParser parser;
 	// `value` has the type parameter type `T` bound by `RefCounted`, so calling a
