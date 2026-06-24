@@ -362,6 +362,48 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects an unbounded type parameter as a
 	CHECK(analyzer.analyze() != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rejects a Variant-bounded type parameter as a type argument") {
+	GDScriptParser parser;
+	// `U` is bounded only by `Variant`, so it cannot satisfy `Box`'s `RefCounted` bound.
+	const String source =
+			"class Box[T: RefCounted]:\n"
+			"\tvar value: T\n"
+			"class Wrapper[U: Variant]:\n"
+			"\tvar bad: Box[U]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer resolves a class bound ignoring shadowing method parameters") {
+	GDScriptParser parser;
+	// The method type parameter `Real` must not shadow the class `Real` named by `Box`'s bound;
+	// `Object` does not derive from the class `Real`, so the specialization must be rejected.
+	const String source =
+			"class Real:\n"
+			"\tpass\n"
+			"class Box[T: Real]:\n"
+			"\tvar value: T\n"
+			"func shadowing[Real]() -> void:\n"
+			"\tvar bad: Box[Object]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer exposes bound members on a type-parameter value") {
 	GDScriptParser parser;
 	// `value` has the type parameter type `T` bound by `RefCounted`, so calling a

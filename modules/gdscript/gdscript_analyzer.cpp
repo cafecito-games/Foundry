@@ -1101,21 +1101,6 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			}
 			result.type_arguments.clear();
 			const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = result.class_type->type_parameters;
-			// A type argument satisfies an upper bound when it derives from it. A bare type
-			// parameter argument is only acceptable when its own declared bound already satisfies the
-			// required one, and a concrete `Variant` never satisfies a non-`Variant` bound.
-			auto argument_satisfies_bound = [&](const GDScriptParser::DataType &p_argument, const GDScriptParser::DataType &p_bound) -> bool {
-				if (p_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
-					if (p_argument.type_parameter_bound.is_empty()) {
-						return false;
-					}
-					return datatype_derives_from_datatype(p_argument.type_parameter_bound[0], p_bound);
-				}
-				if (p_argument.is_variant()) {
-					return false;
-				}
-				return datatype_derives_from_datatype(p_argument, p_bound);
-			};
 			bool bound_violation = false;
 			for (int i = 0; i < p_type->container_types.size(); i++) {
 				const int errors_before = parser->get_errors().size();
@@ -1128,17 +1113,21 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					continue;
 				}
 				// Resolve the bound in the generic class's own scope so relative bound names bind to the
-				// declaring class rather than the (possibly unrelated) use site.
+				// declaring class rather than the (possibly unrelated) use site, where an enclosing
+				// class or method type parameter could otherwise shadow them.
 				GDScriptParser::ClassNode *previous_class = parser->current_class;
+				GDScriptParser::FunctionNode *previous_function = parser->current_function;
 				parser->current_class = result.class_type;
+				parser->current_function = nullptr;
 				const GDScriptParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
 				parser->current_class = previous_class;
+				parser->current_function = previous_function;
 
 				// An unresolved or unconstrained (`Variant`) bound imposes no requirement.
 				if (!bound.is_set() || bound.is_variant()) {
 					continue;
 				}
-				if (!argument_satisfies_bound(argument, bound)) {
+				if (!type_argument_satisfies_bound(argument, bound)) {
 					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", argument.to_string(), bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
 					bound_violation = true;
 				}
@@ -5453,6 +5442,27 @@ bool GDScriptAnalyzer::datatype_derives_from_datatype(GDScriptParser::DataType p
 	}
 
 	return false;
+}
+
+bool GDScriptAnalyzer::type_argument_satisfies_bound(const GDScriptParser::DataType &p_argument, const GDScriptParser::DataType &p_bound) {
+	// A `Variant` bound imposes no requirement; any argument satisfies it.
+	if (p_bound.is_variant()) {
+		return true;
+	}
+	if (p_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		// A bare type parameter is erased to `Variant` at runtime, so it satisfies a concrete bound
+		// only when its own declared upper bound provably does. The same strict rules apply to that
+		// bound, so recurse rather than fall back to the permissive general compatibility check.
+		if (p_argument.type_parameter_bound.is_empty()) {
+			return false;
+		}
+		return type_argument_satisfies_bound(p_argument.type_parameter_bound[0], p_bound);
+	}
+	// A concrete `Variant` argument never satisfies a non-`Variant` bound.
+	if (p_argument.is_variant()) {
+		return false;
+	}
+	return datatype_derives_from_datatype(p_argument, p_bound);
 }
 
 bool GDScriptAnalyzer::class_satisfies_trait_base(GDScriptParser::ClassNode *p_class, GDScriptParser::ClassNode *p_trait) {
