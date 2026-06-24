@@ -278,6 +278,45 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 			CHECK(FileAccess::get_file_as_string(path_good).contains("static func value() -> int:"));
 		}
 
+		SUBCASE("an unprovable declaration is reported once in skipped") {
+			const String path_unprovable = "res://refactor/fixpoint_unprovable.gd";
+			const String path_good = "res://refactor/fixpoint_skip_good_leaf.gd";
+
+			// A bare `var` with no initializer is matched but cannot have a type
+			// inferred, so it yields a disabled Add-Type-Annotation candidate that
+			// never gets applied. The leaf is independently typeable.
+			const String source_unprovable = "var unprovable\n";
+			const String source_good = "static func value():\n\treturn 42\n";
+
+			TemporaryScriptFile file_unprovable(path_unprovable, source_unprovable);
+			TemporaryScriptFile file_good(path_good, source_good);
+
+			Vector<String> paths;
+			paths.push_back(path_unprovable);
+			paths.push_back(path_good);
+
+			FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
+			REQUIRE(result.ok);
+
+			// The typeable leaf is resolved.
+			CHECK(FileAccess::get_file_as_string(path_good).contains("static func value() -> int:"));
+
+			// The unprovable file is reported, exactly once, and the good leaf is not
+			// listed because it was successfully applied.
+			int unprovable_skips = 0;
+			int good_skips = 0;
+			for (const FixpointSkipped &skipped : result.skipped) {
+				if (skipped.path == path_unprovable) {
+					unprovable_skips++;
+				} else if (skipped.path == path_good) {
+					good_skips++;
+				}
+			}
+			CHECK_FALSE(result.skipped.is_empty());
+			CHECK_EQ(unprovable_skips, 1);
+			CHECK_EQ(good_skips, 0);
+		}
+
 		memdelete(protocol);
 		memdelete(editor_file_system);
 		GDScriptTests::finish_language();

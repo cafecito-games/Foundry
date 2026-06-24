@@ -39,9 +39,9 @@
 #include "../gdscript_cache.h"
 #include "../gdscript_parser.h"
 
-#include "core/io/dir_access.h"
+#include "editor/script/script_refactor_apply.h"
+
 #include "core/io/file_access.h"
-#include "core/os/os.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 
@@ -52,50 +52,6 @@ String read_source(const String &p_path, bool &r_ok) {
 	const String source = FileAccess::get_file_as_string(p_path, &err);
 	r_ok = (err == OK);
 	return source;
-}
-
-String make_temp_path(const String &p_path) {
-	const String base = p_path + ".tmp";
-	uint64_t suffix = OS::get_singleton()->get_ticks_usec();
-	while (true) {
-		const String candidate = base + "." + itos(suffix++);
-		if (!FileAccess::exists(candidate) && !DirAccess::exists(candidate)) {
-			return candidate;
-		}
-	}
-}
-
-// Write atomically: stage to a temp file, flush, verify no I/O error, then rename
-// the temp file over p_path. A partial or failed write never replaces the original.
-bool write_source(const String &p_path, const String &p_source) {
-	const String temp_path = make_temp_path(p_path);
-
-	Error err = OK;
-	Ref<FileAccess> file = FileAccess::open(temp_path, FileAccess::WRITE, &err);
-	if (file.is_null() || err != OK) {
-		return false;
-	}
-
-	const bool stored = file->store_string(p_source);
-	file->flush();
-	const Error store_error = file->get_error();
-	file->close();
-
-	if (!stored || (store_error != OK && store_error != ERR_FILE_EOF)) {
-		DirAccess::remove_absolute(temp_path);
-		return false;
-	}
-
-	if (FileAccess::exists(p_path)) {
-		FileAccess::set_unix_permissions(temp_path, FileAccess::get_unix_permissions(p_path));
-	}
-
-	err = DirAccess::rename_absolute(temp_path, p_path);
-	if (err != OK) {
-		DirAccess::remove_absolute(temp_path);
-		return false;
-	}
-	return true;
 }
 
 // Drop cached parse/script state so a later analysis re-reads p_path from disk.
@@ -221,37 +177,40 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 				continue; // Overlapping/out-of-range edits; skip this file this pass.
 			}
 			if (!verify_source(path, new_source)) {
-				result.skipped.push_back({ path, -1, "verification rejected the applied annotations" });
-				continue;
+				continue; // Rejected this pass; the final-state scan reports what remains.
 			}
 			pending_source[path] = new_source;
 			pending_count[path] = enabled;
 		}
 
+		// Whether this pass found anything worth applying, independent of whether the
+		// writes themselves succeed, so a fixpoint is not falsely declared on write failure.
+		const bool had_pending = !pending_source.is_empty();
+
 		// Commit at pass end so each iteration advances exactly one dependency layer.
-		int applied_this_pass = 0;
 		for (const KeyValue<String, String> &entry : pending_source) {
-			if (!write_source(entry.key, entry.value)) {
-				result.skipped.push_back({ entry.key, -1, "could not write file" });
-				continue;
+			String write_error;
+			if (!ScriptRefactorApply::write_file(entry.key, entry.value, write_error)) {
+				continue; // Write failed; the final-state scan reports what remains.
 			}
 			invalidate_cache(entry.key);
 			const int count = pending_count[entry.key];
-			applied_this_pass += count;
 			applied_per_file[entry.key] += count;
 		}
 
-		if (applied_this_pass == 0) {
+		if (!had_pending) {
 			result.converged = true;
-			break; // Fixpoint reached.
+			break; // Fixpoint reached: no file produced an accepted rewrite this pass.
 		}
 	}
 
 	result.iterations = iteration;
 
-	// Report candidates that remain found-but-not-applicable so the run gives an honest
-	// account of annotations it could not resolve. Verification rejections are already
-	// recorded during passes, so only disabled candidates are added here.
+	// Report what remains untyped from the final on-disk state only, so skips are an
+	// honest, duplicate-free snapshot. A successfully applied annotation is no longer a
+	// candidate, so it never reappears. Disabled candidates were never inferable;
+	// still-enabled ones were inferable but never landed (verification rejected them or
+	// the iteration bound was hit).
 	for (const String &path : paths) {
 		RefactorContext ctx;
 		ctx.path = path;
@@ -266,6 +225,13 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 		}
 		for (const RefactorCandidate &candidate : candidates.candidates) {
 			if (candidate.enabled) {
+				// Inferable but never landed: verification rejected it or the bound was hit.
+				result.skipped.push_back({ path, candidate.line, "unresolved after fixpoint (verification rejected or iteration bound reached)" });
+				continue;
+			}
+			// A declaration that already carries an annotation (pre-existing or applied by
+			// this run) is not a genuine skip, so it is excluded from the report.
+			if (candidate.disabled_reason.contains("already")) {
 				continue;
 			}
 			result.skipped.push_back({ path, candidate.line, candidate.disabled_reason });
