@@ -842,6 +842,9 @@ public:
 	bool operator<(const Variant &p_variant) const;
 	uint32_t hash() const;
 	uint32_t recursive_hash(int recursion_count) const;
+	static bool object_has_custom_hash_compare(const Object *p_object);
+	static uint32_t object_hash(const Object *p_object);
+	static bool object_hash_compare(const Object *p_lhs, const Object *p_rhs);
 
 	// By default, performs a semantic comparison. Otherwise, numeric/binary comparison (if appropriate).
 	bool hash_compare(const Variant &p_variant, int recursion_count = 0, bool semantic_comparison = true) const;

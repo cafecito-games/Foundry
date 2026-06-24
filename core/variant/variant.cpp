@@ -32,6 +32,7 @@
 
 #include "core/debugger/engine_debugger.h"
 #include "core/io/json.h"
+#include "core/object/object.h"
 #include "core/io/resource.h"
 #include "core/math/math_funcs.h"
 #include "core/variant/variant_parser.h"
@@ -2802,6 +2803,51 @@ uint32_t Variant::hash() const {
 	return recursive_hash(0);
 }
 
+bool Variant::object_has_custom_hash_compare(const Object *p_object) {
+	return p_object != nullptr &&
+			p_object->has_method(CoreStringName(_equals)) &&
+			p_object->has_method(CoreStringName(_hash_code));
+}
+
+uint32_t Variant::object_hash(const Object *p_object) {
+	if (p_object == nullptr) {
+		return hash_one_uint64(0);
+	}
+	if (!object_has_custom_hash_compare(p_object)) {
+		return hash_one_uint64(reinterpret_cast<uint64_t>(p_object));
+	}
+
+	Callable::CallError call_error;
+	Variant ret = const_cast<Object *>(p_object)->callp(CoreStringName(_hash_code), nullptr, 0, call_error);
+	if (call_error.error == Callable::CallError::CALL_OK && ret.get_type() == Variant::INT) {
+		return uint32_t(int64_t(ret));
+	}
+
+	return hash_one_uint64(reinterpret_cast<uint64_t>(p_object));
+}
+
+bool Variant::object_hash_compare(const Object *p_lhs, const Object *p_rhs) {
+	if (p_lhs == p_rhs) {
+		return true;
+	}
+	if (p_lhs == nullptr || p_rhs == nullptr) {
+		return false;
+	}
+	if (!object_has_custom_hash_compare(p_lhs) || !object_has_custom_hash_compare(p_rhs)) {
+		return false;
+	}
+
+	Variant other = const_cast<Object *>(p_rhs);
+	const Variant *args[1] = { &other };
+	Callable::CallError call_error;
+	Variant ret = const_cast<Object *>(p_lhs)->callp(CoreStringName(_equals), args, 1, call_error);
+	if (call_error.error == Callable::CallError::CALL_OK && ret.get_type() == Variant::BOOL) {
+		return bool(ret);
+	}
+
+	return false;
+}
+
 uint32_t Variant::recursive_hash(int recursion_count) const {
 	switch (type) {
 		case NIL: {
@@ -2944,6 +2990,10 @@ uint32_t Variant::recursive_hash(int recursion_count) const {
 			return hash_one_uint64(reinterpret_cast<const ::RID *>(_data._mem)->get_id());
 		} break;
 		case OBJECT: {
+			Object *object = get_validated_object();
+			if (object != nullptr && object_has_custom_hash_compare(object)) {
+				return object_hash(object);
+			}
 			return hash_one_uint64(reinterpret_cast<uint64_t>(_get_obj().obj));
 		} break;
 		case STRING_NAME: {
@@ -3295,6 +3345,10 @@ bool Variant::hash_compare(const Variant &p_variant, int recursion_count, bool s
 			const Color *r = reinterpret_cast<const Color *>(p_variant._data._mem);
 
 			return hash_compare_color(*l, *r);
+		} break;
+
+		case OBJECT: {
+			return object_hash_compare(get_validated_object(), p_variant.get_validated_object());
 		} break;
 
 		case ARRAY: {

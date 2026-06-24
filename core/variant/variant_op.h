@@ -474,10 +474,10 @@ public:
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
 		const Object *a = left->get_validated_object();
 		const Object *b = right->get_validated_object();
-		VariantInternalAccessor<bool>::get(r_ret) = a == b;
+		VariantInternalAccessor<bool>::get(r_ret) = Variant::object_hash_compare(a, b);
 	}
 	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<bool>::encode(PtrToArg<Object *>::convert(left) == PtrToArg<Object *>::convert(right), r_ret);
+		PtrToArg<bool>::encode(Variant::object_hash_compare(PtrToArg<Object *>::convert(left), PtrToArg<Object *>::convert(right)), r_ret);
 	}
 	using ReturnType = bool;
 };
@@ -523,10 +523,10 @@ public:
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
 		Object *a = left->get_validated_object();
 		Object *b = right->get_validated_object();
-		VariantInternalAccessor<bool>::get(r_ret) = a != b;
+		VariantInternalAccessor<bool>::get(r_ret) = !Variant::object_hash_compare(a, b);
 	}
 	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<bool>::encode(PtrToArg<Object *>::convert(left) != PtrToArg<Object *>::convert(right), r_ret);
+		PtrToArg<bool>::encode(!Variant::object_hash_compare(PtrToArg<Object *>::convert(left), PtrToArg<Object *>::convert(right)), r_ret);
 	}
 	using ReturnType = bool;
 };
