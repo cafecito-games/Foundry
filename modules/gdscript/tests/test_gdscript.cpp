@@ -2370,6 +2370,30 @@ extends Node
 		CHECK(has_parser_warning(class_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY, expected_warning));
 	}
 
+	// A trait sharing a namespace with a peer class in the same directory must NOT warn.
+	ScriptServer::global_classes_clear();
+	TempScriptFile same_namespace_peer("mixed_same_ns_peer.gd", R"(
+namespace combat
+class_name MixedSameNamespacePeer
+extends Node
+)");
+	ScriptServer::add_global_class("combat.MixedDeclTrait", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), namespaced_trait.path, false, false);
+	ScriptServer::add_global_class("combat.MixedSameNamespacePeer", "Node", GDScriptLanguage::get_singleton()->get_name(), same_namespace_peer.path, false, false);
+
+	GDScriptParser same_namespace_parser;
+	err = same_namespace_parser.parse(R"(
+namespace combat
+trait_name MixedDeclTrait
+)",
+			namespaced_trait.path, false);
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&same_namespace_parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		CHECK_EQ(count_parser_warnings(same_namespace_parser, GDScriptWarning::MIXED_NAMESPACE_DIRECTORY), 0);
+	}
+
 	ProjectSettings::get_singleton()->set_setting(warning_setting, original_warning_setting);
 	GDScriptParser::update_project_settings();
 }
