@@ -124,6 +124,24 @@ existing exit-code plumbing.
   - the editor exemption (log-only inside the editor),
   - the `application/run/push_fatal_terminates` project setting.
 
+### C# parity (`GD.PushFatal`)
+
+`GD.PushError` / `GD.PushWarning` are hand-written C# wrappers that log directly;
+they are not auto-generated from the Variant utility functions. To give C# the
+same behavior, the terminate-decision tail of `push_fatal` is extracted into
+`VariantUtilityFunctions::request_fatal_termination()` (editor exemption +
+project-setting check + `OS::request_exit`). The C# `GD.PushFatal` overloads log
+via the existing `ErrPrintError` path (preserving C# caller context) and then
+call a new no-argument native interop function
+`godotsharp_request_fatal_termination()`, which simply invokes
+`request_fatal_termination()`. This shares the termination policy between the
+GDScript and C# entry points so they cannot diverge.
+
+The interop function is appended as the **last** entry of both the
+`unmanaged_callbacks[]` table in `modules/mono/glue/runtime_interop.cpp` and the
+declaration list in `NativeFuncs.cs` (the two are index-matched and must stay in
+the same order).
+
 ## Edge cases
 
 - **Zero arguments:** `CALL_ERROR_TOO_FEW_ARGUMENTS`, like `push_error`.
@@ -161,4 +179,21 @@ Actually quitting would terminate the test runner, so tests assert the
 - Project setting registration (`GLOBAL_DEF` for
   `application/run/push_fatal_terminates`).
 - `doc/classes/@GlobalScope.xml` — documentation.
+- `doc/classes/ProjectSettings.xml` — document the project setting.
 - `tests/` — C++ tests for the OS flag and `push_fatal` decision logic.
+
+### C# parity files
+
+- `core/variant/variant_utility.{h,cpp}` — extract `request_fatal_termination()`.
+- `modules/mono/glue/runtime_interop.cpp` — `godotsharp_request_fatal_termination`
+  function + table entry.
+- `modules/mono/glue/GodotSharp/GodotSharp/Core/NativeInterop/NativeFuncs.cs` —
+  matching interop declaration.
+- `modules/mono/glue/GodotSharp/GodotSharp/Core/GD.cs` — `GD.PushFatal` overloads.
+
+> **Verification note:** the mono module is not enabled in the standard dev build
+> and no dotnet SDK is present in the authoring environment, so the managed
+> (`GodotSharp`) assembly cannot be compiled or run here. The C++ glue compiles
+> under `module_mono_enabled=yes`; the C# changes follow the existing
+> `PushError`/`PushWarning` patterns and must be validated by a mono + dotnet
+> build before merge.

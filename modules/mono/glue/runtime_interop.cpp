@@ -46,6 +46,7 @@
 #include "core/object/method_bind.h"
 #include "core/os/os.h"
 #include "core/string/string_name.h"
+#include "core/variant/variant_utility.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_file_system.h"
@@ -1616,6 +1617,10 @@ int64_t godotsharp_array_size(const Array *p_self) {
 	return p_self->size();
 }
 
+void godotsharp_request_fatal_termination() {
+	VariantUtilityFunctions::request_fatal_termination();
+}
+
 // The order in this array must match the declaration order of
 // the methods in 'GodotSharp/Core/NativeInterop/NativeFuncs.cs'.
 static const void *unmanaged_callbacks[]{
@@ -1856,6 +1861,7 @@ static const void *unmanaged_callbacks[]{
 	(void *)godotsharp_packed_vector4_array_size,
 	(void *)godotsharp_packed_color_array_size,
 	(void *)godotsharp_array_size,
+	(void *)godotsharp_request_fatal_termination,
 };
 
 const void **godotsharp::get_runtime_interop_funcs(int32_t &r_size) {

@@ -140,6 +140,11 @@ struct VariantUtilityFunctions {
 	static void push_error(const Variant **p_args, int p_arg_count, Callable::CallError &r_error);
 	static void push_warning(const Variant **p_args, int p_arg_count, Callable::CallError &r_error);
 	static void push_fatal(const Variant **p_args, int p_arg_count, Callable::CallError &r_error);
+	// Shared tail of `push_fatal`: applies the editor exemption and the
+	// `application/run/push_fatal_terminates` setting, then requests a graceful
+	// exit. Exposed so other language bindings (e.g. C#'s `GD.PushFatal`) can
+	// reuse the same termination policy after logging in their own style.
+	static void request_fatal_termination();
 	static String var_to_str(const Variant &p_var);
 	static Variant str_to_var(const String &p_var);
 	static PackedByteArray var_to_bytes(const Variant &p_var);

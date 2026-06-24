@@ -1048,6 +1048,10 @@ void VariantUtilityFunctions::push_fatal(const Variant **p_args, int p_arg_count
 	ERR_PRINT(join_string(p_args, p_arg_count));
 	r_error.error = Callable::CallError::CALL_OK;
 
+	request_fatal_termination();
+}
+
+void VariantUtilityFunctions::request_fatal_termination() {
 	// Never terminate the editor process itself (e.g. when called from a
 	// @tool script). Termination only applies to the running project.
 	if (Engine::get_singleton()->is_editor_hint()) {
