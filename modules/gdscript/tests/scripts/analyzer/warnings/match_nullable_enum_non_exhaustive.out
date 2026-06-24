@@ -1,0 +1,4 @@
+GDTEST_OK
+~~ WARNING at line 5: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Direction". Unhandled: null. Add the missing patterns or a "_" wildcard branch.
+north
+ok

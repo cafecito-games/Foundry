@@ -3028,7 +3028,13 @@ void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_m
 	// cover a value at runtime: INT for enums, BOOL for the bool domain.
 	const Variant::Type expected_type = match_type.kind == GDScriptParser::DataType::ENUM ? Variant::INT : Variant::BOOL;
 
+	// For nullable types, `null` (`Variant::NIL`) is a valid runtime value that
+	// no enum integer or bool constant can cover, so it must be handled by an
+	// explicit `null` pattern (or a wildcard) to be exhaustive.
+	const bool domain_includes_null = match_type.is_nullable;
+
 	// Collect values covered by unguarded, statically-constant patterns.
+	bool null_covered = false;
 	HashSet<int64_t> covered_values;
 	for (GDScriptParser::MatchBranchNode *branch : p_match->branches) {
 		if (branch->guard_body != nullptr) {
@@ -3048,6 +3054,10 @@ void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_m
 				return; // Non-constant pattern: cannot prove coverage; bail out.
 			}
 			if (value_node->reduced_value.get_type() != expected_type) {
+				// A `null` pattern covers the nullable domain's `null` value.
+				if (domain_includes_null && value_node->reduced_value.get_type() == Variant::NIL) {
+					null_covered = true;
+				}
 				// A different-typed constant can never match this domain at
 				// runtime (match compares typeof() first), so it covers nothing.
 				// Skip it — do NOT bail out, the value stays unhandled.
@@ -3063,6 +3073,9 @@ void GDScriptAnalyzer::check_match_exhaustiveness(GDScriptParser::MatchNode *p_m
 		if (!covered_values.has(E.value)) {
 			unhandled.push_back(String(E.key));
 		}
+	}
+	if (domain_includes_null && !null_covered) {
+		unhandled.push_back("null");
 	}
 
 	if (!unhandled.is_empty()) {
