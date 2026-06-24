@@ -32,6 +32,10 @@
 
 #include "core/variant/variant_utility.h"
 
+#include "core/config/engine.h"
+#include "core/config/project_settings.h"
+#include "core/os/os.h"
+
 #include "tests/test_macros.h"
 
 namespace TestVariantUtility {
@@ -126,6 +130,64 @@ TEST_CASE("[VariantUtility] Type conversion") {
 		CHECK(converted.get_type() == Variant::Type::INT);
 		CHECK(converted == Variant(123));
 	}
+}
+
+TEST_CASE("[VariantUtility] push_fatal decision logic") {
+	OS *os = OS::get_singleton();
+	Engine *engine = Engine::get_singleton();
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+
+	// Save state we will mutate so the test does not leak.
+	const int saved_exit_code = os->get_exit_code();
+	const bool saved_editor_hint = engine->is_editor_hint();
+	settings->set_setting("application/run/push_fatal_terminates", true);
+
+	Variant message = "fatal!";
+	const Variant *args[1] = { &message };
+	Variant ret;
+	Callable::CallError call_error;
+
+	// Case 1: too few arguments -> error, no exit request.
+	{
+		const bool before = os->is_exit_requested();
+		Variant::call_utility_function("push_fatal", &ret, nullptr, 0, call_error);
+		CHECK(call_error.error == Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS);
+		CHECK(os->is_exit_requested() == before);
+	}
+
+	// Case 2: editor hint on -> log only, no exit request.
+	{
+		engine->set_editor_hint(true);
+		settings->set_setting("application/run/push_fatal_terminates", true);
+		const bool before = os->is_exit_requested();
+		Variant::call_utility_function("push_fatal", &ret, args, 1, call_error);
+		CHECK(call_error.error == Callable::CallError::CALL_OK);
+		CHECK(os->is_exit_requested() == before);
+		engine->set_editor_hint(false);
+	}
+
+	// Case 3: setting disabled -> log only, no exit request.
+	{
+		settings->set_setting("application/run/push_fatal_terminates", false);
+		const bool before = os->is_exit_requested();
+		Variant::call_utility_function("push_fatal", &ret, args, 1, call_error);
+		CHECK(call_error.error == Callable::CallError::CALL_OK);
+		CHECK(os->is_exit_requested() == before);
+	}
+
+	// Case 4: not editor, setting enabled -> request exit with EXIT_FAILURE.
+	{
+		settings->set_setting("application/run/push_fatal_terminates", true);
+		Variant::call_utility_function("push_fatal", &ret, args, 1, call_error);
+		CHECK(call_error.error == Callable::CallError::CALL_OK);
+		CHECK(os->is_exit_requested());
+		CHECK(os->get_exit_code() == EXIT_FAILURE);
+	}
+
+	// Restore mutated state.
+	engine->set_editor_hint(saved_editor_hint);
+	settings->set_setting("application/run/push_fatal_terminates", true);
+	os->set_exit_code(saved_exit_code);
 }
 
 } // namespace TestVariantUtility
