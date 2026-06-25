@@ -8962,9 +8962,25 @@ bool GDScriptAnalyzer::call_argument_can_be_string_name(const GDScriptParser::Ca
 
 bool GDScriptAnalyzer::merge_inferred_type_argument(const GDScriptParser::DataType &p_existing, const GDScriptParser::DataType &p_candidate, GDScriptParser::DataType &r_merged) {
 	// Type parameters are invariant (epic #125 design): a parameter solved from several arguments
-	// must resolve to the same type each time. Mutual assignability without implicit conversion is
-	// the invariant equality test, tolerating incidental DataType field differences between two
-	// arguments of the same type. Differing types conflict and require explicit application.
+	// must resolve to the same type each time. Differing types conflict and require explicit
+	// application.
+	const bool existing_is_parameter = p_existing.kind == GDScriptParser::DataType::TYPE_PARAMETER;
+	const bool candidate_is_parameter = p_candidate.kind == GDScriptParser::DataType::TYPE_PARAMETER;
+	if (existing_is_parameter || candidate_is_parameter) {
+		// A type-parameter argument (e.g. an outer `U` forwarded into this call) unifies only with
+		// the identical parameter. `is_type_compatible()` treats an erased parameter as Variant-like
+		// and would otherwise merge `U` with an unrelated concrete type without flagging a conflict.
+		if (existing_is_parameter && candidate_is_parameter &&
+				p_existing.type_parameter_name == p_candidate.type_parameter_name &&
+				p_existing.type_parameter_scope == p_candidate.type_parameter_scope) {
+			r_merged = p_existing;
+			return true;
+		}
+		return false;
+	}
+
+	// Concrete types: mutual assignability without implicit conversion is the invariant equality
+	// test, tolerating incidental DataType field differences between two arguments of the same type.
 	if (is_type_compatible(p_existing, p_candidate) && is_type_compatible(p_candidate, p_existing)) {
 		r_merged = p_existing;
 		return true;
@@ -9185,13 +9201,23 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 		return;
 	}
 
-	// A solved type argument (inferred or explicit) must satisfy its parameter's upper bound. The
-	// bound travels on the resolved parameter datatype, gathered from the signature it appears in.
+	// A solved type argument (inferred or explicit) must satisfy its parameter's upper bound. A
+	// bound's resolved datatype is cached on its declaration once the parameter is used anywhere
+	// (signature or body); the signature traversal is a fallback for bounds reached only there.
 	HashMap<StringName, GDScriptParser::DataType> parameter_bounds;
 	for (const GDScriptParser::DataType &parameter_type : r_par_types) {
 		collect_method_type_parameter_bounds(parameter_type, parameter_bounds);
 	}
 	collect_method_type_parameter_bounds(r_return_type, parameter_bounds);
+	for (const GDScriptParser::TypeParameterNode *parameter : type_parameters) {
+		if (parameter == nullptr || parameter->identifier == nullptr || parameter->bound == nullptr) {
+			continue;
+		}
+		const GDScriptParser::DataType bound_type = parameter->bound->get_datatype();
+		if (bound_type.is_set() && bound_type.kind != GDScriptParser::DataType::UNRESOLVED && bound_type.kind != GDScriptParser::DataType::RESOLVING) {
+			parameter_bounds[parameter->identifier->name] = type_from_metatype(bound_type);
+		}
+	}
 
 	for (const GDScriptParser::TypeParameterNode *parameter : type_parameters) {
 		if (parameter == nullptr || parameter->identifier == nullptr) {
@@ -9206,8 +9232,11 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 		if (binding == nullptr || bound == nullptr || bound->kind == GDScriptParser::DataType::UNRESOLVED) {
 			continue;
 		}
-		if (!type_argument_satisfies_bound(*binding, *bound)) {
-			push_error(vformat(R"*(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s" of generic method "%s()".)*", binding->to_string(), bound->to_string(), name, p_function->identifier->name), p_call);
+		// A dependent bound (`[U: Resource, T: U]`) is resolved against the sibling's solved type,
+		// so substitute the collected bindings into the bound before checking.
+		const GDScriptParser::DataType effective_bound = GDScriptParser::DataType::substitute(*bound, bindings);
+		if (!type_argument_satisfies_bound(*binding, effective_bound)) {
+			push_error(vformat(R"*(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s" of generic method "%s()".)*", binding->to_string(), effective_bound.to_string(), name, p_function->identifier->name), p_call);
 		}
 	}
 
