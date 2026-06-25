@@ -286,8 +286,8 @@ HashMap<String, int> baseline_diagnostic_counts(const String &p_path, const Stri
 // site in the analyzer is gated by exactly one of the two strict flags, so isolating one
 // flag per pass attributes every strict-only diagnostic to its fix category without
 // depending on the wording of the analyzer's error messages.
-void collect_strict_violations_for_flag(const String &p_path, const String &p_source, bool p_strict_null, bool p_strict_dynamic, StrictViolationCategory p_category, Vector<StrictViolation> &r_violations) {
-	HashMap<String, int> baseline_counts = baseline_diagnostic_counts(p_path, p_source);
+void collect_strict_violations_for_flag(const String &p_path, const String &p_source, bool p_strict_null, bool p_strict_dynamic, StrictViolationCategory p_category, const HashMap<String, int> &p_baseline_counts, Vector<StrictViolation> &r_violations) {
+	HashMap<String, int> baseline_counts = p_baseline_counts; // Local copy: the diff consumes counts.
 
 	GDScriptParser parser;
 	parser.parse(p_source, p_path, false);
@@ -316,11 +316,16 @@ void collect_strict_violations_for_flag(const String &p_path, const String &p_so
 // category of the strict flag that produced it. Runs one isolated pass per requested flag
 // so a combined null+dynamic request still attributes every violation to its category.
 void collect_strict_violations(const String &p_path, const String &p_source, const VerificationOptions &p_options, Vector<StrictViolation> &r_violations) {
+	if (!p_options.strict_null_checks && !p_options.strict_dynamic_checks) {
+		return;
+	}
+	// One shared non-strict baseline drives every per-flag diff.
+	const HashMap<String, int> baseline_counts = baseline_diagnostic_counts(p_path, p_source);
 	if (p_options.strict_null_checks) {
-		collect_strict_violations_for_flag(p_path, p_source, true, false, StrictViolationCategory::NULLABLE, r_violations);
+		collect_strict_violations_for_flag(p_path, p_source, true, false, StrictViolationCategory::NULLABLE, baseline_counts, r_violations);
 	}
 	if (p_options.strict_dynamic_checks) {
-		collect_strict_violations_for_flag(p_path, p_source, false, true, StrictViolationCategory::VARIANT_BOUNDARY, r_violations);
+		collect_strict_violations_for_flag(p_path, p_source, false, true, StrictViolationCategory::VARIANT_BOUNDARY, baseline_counts, r_violations);
 	}
 }
 

@@ -2088,6 +2088,23 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"\tvar x: int = value as int\n";
 			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
 		}
+		SUBCASE("does not fire on a trailing statement sharing the line") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value; print(value)\n";
+			// The caret is on `print`, past the declaration's span, so the cast must not
+			// target the earlier declaration.
+			CHECK_FALSE(insert_cast_enabled(source, 1, 22));
+		}
+		SUBCASE("does not corrupt a grouped postfix expression") {
+			// `(value)[0]` parses to a subscript whose source range omits the leading `(`,
+			// so a naive rewrite would emit `value)[0] as int`. The refactor must refuse.
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = (value)[0]\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
+			CHECK(insert_cast_reason(source, 1, 6).to_lower().contains("safely"));
+		}
 	}
 
 #ifndef GDSCRIPT_NO_LSP

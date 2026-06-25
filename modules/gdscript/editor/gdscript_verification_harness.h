@@ -121,9 +121,10 @@ public:
 			const Vector<String> &p_universe,
 			const VerificationOptions &p_options = VerificationOptions());
 
-	// Read-only. Reports diagnostics present only under the requested strict mode.
-	// Analyzes each file twice (a non-strict baseline and a strict pass) and returns the
-	// strict-only difference; writes nothing to disk.
+	// Read-only. Reports diagnostics present only under the requested strict mode, each
+	// tagged with its fix category. Analyzes each file once for a non-strict baseline plus
+	// once per requested strict flag, returning the strict-only difference; writes nothing
+	// to disk.
 	static StrictPreviewResult preview_strict(
 			const Vector<String> &p_paths,
 			const VerificationOptions &p_options);

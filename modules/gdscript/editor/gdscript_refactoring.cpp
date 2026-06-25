@@ -4577,7 +4577,62 @@ bool cast_expression_needs_parentheses(const GDScriptParser::ExpressionNode *p_e
 }
 
 bool caret_within_range(const RefactorLocation &p_location, const RefactorLocation &p_range) {
+	if (p_location.has_selection()) {
+		return false;
+	}
+	// caret_in_multiline_span only checks the lower column bound on its start line, which
+	// for a single-line range would match a caret anywhere to the right of the statement
+	// (e.g. a trailing `; other_statement`). Bound a single-line range on both ends so the
+	// cast site is selected only when the caret is actually inside it.
+	if (p_range.start_line == p_range.end_line) {
+		return p_location.start_line == p_range.start_line &&
+				p_location.start_column >= p_range.start_column &&
+				p_location.start_column <= p_range.end_column;
+	}
 	return caret_in_multiline_span(p_location, p_range.start_line, p_range.start_column, p_range.end_line, p_range.end_column);
+}
+
+// Whether p_text has balanced (), [], and {} delimiters, ignoring any inside string
+// literals. A complete single-line expression is always balanced; an unbalanced
+// reconstruction means the node's source range dropped a surrounding grouping delimiter
+// (parser grouping nodes do not include their own parentheses), so wrapping that text in a
+// cast would emit syntactically invalid code.
+bool expression_text_is_balanced(const String &p_text) {
+	int depth = 0;
+	char32_t string_quote = 0;
+	for (int i = 0; i < p_text.length(); i++) {
+		const char32_t c = p_text[i];
+		if (string_quote != 0) {
+			if (c == '\\') {
+				i++; // Skip the escaped character.
+			} else if (c == string_quote) {
+				string_quote = 0;
+			}
+			continue;
+		}
+		switch (c) {
+			case '"':
+			case '\'':
+				string_quote = c;
+				break;
+			case '(':
+			case '[':
+			case '{':
+				depth++;
+				break;
+			case ')':
+			case ']':
+			case '}':
+				depth--;
+				if (depth < 0) {
+					return false;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return depth == 0 && string_quote == 0;
 }
 
 // Build a cast candidate for `p_value`, the value expression of `p_statement`, targeting
@@ -4613,7 +4668,11 @@ void build_explicit_cast_candidate(
 		r_candidate.disabled_reason = "Cannot insert a cast without a known target type.";
 		return;
 	}
-	if (!p_value->get_datatype().is_variant()) {
+	const GDScriptParser::DataType value_type = p_value->get_datatype();
+	if (!value_type.is_set() || value_type.kind != GDScriptParser::DataType::VARIANT) {
+		// Only a resolved Variant is a genuine dynamic boundary. Unresolved/resolving
+		// types (also reported by is_variant()) are skipped so a parse gap never enables a
+		// speculative cast.
 		r_candidate.disabled_reason = "This value is already statically typed; no cast is needed.";
 		return;
 	}
@@ -4621,6 +4680,12 @@ void build_explicit_cast_candidate(
 	RefactorLocation expression_range;
 	if (!get_single_line_node_text(p_lines, p_value, expression_text, &expression_range)) {
 		r_candidate.disabled_reason = "Cannot cast a value that spans multiple lines.";
+		return;
+	}
+	if (!expression_text_is_balanced(expression_text)) {
+		// The recovered source dropped a surrounding grouping delimiter (e.g. `(value)[0]`),
+		// so wrapping it would produce invalid code. Skip rather than corrupt the source.
+		r_candidate.disabled_reason = "Cannot cast this value safely.";
 		return;
 	}
 	const String wrapped = cast_expression_needs_parentheses(p_value)
