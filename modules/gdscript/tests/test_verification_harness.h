@@ -245,6 +245,58 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("A batch above the bisection ceiling still drops only the offending candidates") {
+		// Above the per-pass bisection ceiling the harness must not fall back to rejecting the
+		// whole batch. It partitions the batch into ceiling-sized chunks and attributes each
+		// chunk independently, so a single offender among many candidates is isolated and the
+		// rest are retained, at a bounded per-chunk cost.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Provider with enough getters to exceed the ceiling (64). Each returns an int, so each
+		// gets an Add Type Annotation candidate. get_value_0() is consumed as a String, so typing
+		// it `-> int` regresses the consumer; every other getter is unconsumed and safe to type.
+		const int getter_count = 70;
+		String provider_source;
+		for (int i = 0; i < getter_count; i++) {
+			provider_source += vformat("func get_value_%d():\n\treturn 42\n", i);
+		}
+		const String provider_path = "res://refactor/verify_ceiling_provider.gd";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_ceiling_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_ceiling_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar bad: String = p.get_value_0()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 64);
+
+		Vector<String> universe = { provider_path, consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+
+		// Exactly one candidate is dropped (get_value_0()'s return-type edit on line 0), and it
+		// is attributed a diagnostic. The whole batch is NOT rejected as a unit.
+		CHECK_EQ(result.rejected.size(), 1);
+		CHECK_EQ(result.rejected[0].line, 0);
+		CHECK_GT(result.rejected[0].diagnostics.size(), 0);
+		CHECK_EQ(result.accepted.size(), candidates.size() - 1);
+		CHECK_LE(result.accepted_error_count, result.baseline_error_count);
+
+		// Files untouched on disk.
+		CHECK_EQ(FileAccess::get_file_as_string(provider_path), provider_source);
+		CHECK_EQ(FileAccess::get_file_as_string(consumer_path), consumer_source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Dependent-break rejection is stable across repeated verify calls") {
 		// Regression guard for inverse-dependency edge loss: after the first verify() call
 		// invalidates caches, a second call must still discover the consumer as a dependent
