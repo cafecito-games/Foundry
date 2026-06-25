@@ -87,7 +87,7 @@ class GDScriptAnalyzer {
 	Error resolve_class_inheritance(GDScriptParser::ClassNode *p_class, bool p_recursive);
 	GDScriptParser::DataType resolve_datatype(GDScriptParser::TypeNode *p_type);
 	bool resolve_type_parameter(const StringName &p_name, GDScriptParser::DataType &r_type);
-	GDScriptParser::DataType substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base);
+	GDScriptParser::DataType substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base, const GDScriptParser::FunctionNode *p_shadowing_method = nullptr);
 	bool apply_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::TypeNode *> &p_argument_nodes, const GDScriptParser::Node *p_source);
 	GDScriptParser::DataType specialize_ancestor_type(const GDScriptParser::DataType &p_base, const GDScriptParser::ClassNode *p_target);
 

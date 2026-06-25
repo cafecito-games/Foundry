@@ -1214,6 +1214,35 @@ TEST_CASE("[Modules][GDScript] Analyzer substitutes a method parameter on a spec
 	CHECK(analyzer.analyze() != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer keeps a method type parameter shadowing a class one") {
+	GDScriptParser parser;
+	// The method's own `T` shadows the class `T`, so a `Box[int]` receiver must not lock the
+	// method's `T` to `int`; `echo("ok")` infers the method `T` as `String`.
+	const String source =
+			"class Box[T]:\n"
+			"\tvar value: T\n"
+			"\tfunc relabel[T](item: T) -> T:\n"
+			"\t\treturn item\n"
+			"func test() -> void:\n"
+			"\tvar box: Box[int]\n"
+			"\tvar text := box.relabel(\"ok\")\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *text = generic_find_local_variable(test, "text");
+	REQUIRE(text != nullptr);
+
+	// The method `T` resolves to the argument type `String`, not the class binding `int`.
+	const GDScriptParser::DataType type = text->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::STRING);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer rejects empty type-argument brackets in an extends clause") {
 	GDScriptParser parser;
 	const String source =

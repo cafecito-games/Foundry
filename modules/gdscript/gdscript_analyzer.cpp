@@ -1175,7 +1175,7 @@ bool GDScriptAnalyzer::resolve_type_parameter(const StringName &p_name, GDScript
 	return true;
 }
 
-GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base) {
+GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base, const GDScriptParser::FunctionNode *p_shadowing_method) {
 	if (!p_base.has_type_arguments() || p_base.class_type == nullptr) {
 		return p_member_type;
 	}
@@ -1187,6 +1187,15 @@ GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScript
 		const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
 		if (parameter != nullptr && parameter->identifier != nullptr) {
 			bindings.insert(parameter->identifier->name, p_base.type_arguments[i]);
+		}
+	}
+	// A method's own type parameters shadow same-named class parameters within its signature, so the
+	// class specialization must not rewrite them (e.g. `func echo[T](v: T)` on a `Box[int]`).
+	if (p_shadowing_method != nullptr) {
+		for (const GDScriptParser::TypeParameterNode *parameter : p_shadowing_method->type_parameters) {
+			if (parameter != nullptr && parameter->identifier != nullptr) {
+				bindings.erase(parameter->identifier->name);
+			}
 		}
 	}
 	if (bindings.is_empty()) {
@@ -6555,8 +6564,9 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 					if (can_access_instance_member && (!base.is_meta_type || member.function->is_static || is_constructor)) {
 						GDScriptParser::DataType callable_type = make_callable_type(member.function->info, member.function);
 						// Substitute the method's `T`-typed parameters and return through the inheritance
-						// chain, so `IntList extends List[int]` sees `func get() -> T` as `-> int`.
-						callable_type = substitute_member_type(callable_type, specialize_ancestor_type(base, script_class));
+						// chain, so `IntList extends List[int]` sees `func get() -> T` as `-> int`. The
+						// method's own type parameters shadow same-named class ones and are left intact.
+						callable_type = substitute_member_type(callable_type, specialize_ancestor_type(base, script_class), member.function);
 						if (p_base != nullptr) {
 							callable_type.has_explicit_method_signature = true;
 						}
@@ -8661,7 +8671,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		// arguments substitute `T`-typed parameters and return into concrete types.
 		const GDScriptParser::DataType specialized_base = specialize_ancestor_type(p_base_type, found_in_class);
 		for (int i = 0; i < found_function->parameters.size(); i++) {
-			r_par_types.push_back(substitute_member_type(found_function->parameters[i]->get_datatype(), specialized_base));
+			r_par_types.push_back(substitute_member_type(found_function->parameters[i]->get_datatype(), specialized_base, found_function));
 			if (found_function->parameters[i]->initializer != nullptr) {
 				r_default_arg_count++;
 			}
@@ -8669,7 +8679,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (found_function->is_vararg()) {
 			r_method_flags.set_flag(METHOD_FLAG_VARARG);
 		}
-		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base);
+		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function);
 		r_return_type.is_meta_type = false;
 		r_return_type.is_coroutine = found_function->is_coroutine;
 
