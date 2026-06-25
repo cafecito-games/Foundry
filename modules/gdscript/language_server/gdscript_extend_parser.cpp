@@ -461,6 +461,32 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 	if (is_named) {
 		r_symbol.detail += " " + String(p_func->identifier->name);
 	}
+	// Show the generic type-parameter list (`[T, U: Bound]`) for a generic method.
+	if (!p_func->type_parameters.is_empty()) {
+		r_symbol.detail += "[";
+		bool first_type_parameter = true;
+		for (const GDScriptParser::TypeParameterNode *type_parameter : p_func->type_parameters) {
+			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+				continue;
+			}
+			if (!first_type_parameter) {
+				r_symbol.detail += ", ";
+			}
+			first_type_parameter = false;
+			r_symbol.detail += type_parameter->identifier->name;
+			// Method type parameters do not get an eager `resolved_bound`, so fall back to the bound
+			// TypeNode's datatype (a metatype handle in type position, hence the meta strip).
+			GDScriptParser::DataType bound_type = type_parameter->resolved_bound;
+			if ((!bound_type.is_set() || bound_type.is_variant()) && type_parameter->bound != nullptr) {
+				bound_type = type_parameter->bound->get_datatype();
+				bound_type.is_meta_type = false;
+			}
+			if (bound_type.is_set() && !bound_type.is_variant()) {
+				r_symbol.detail += ": " + bound_type.to_string();
+			}
+		}
+		r_symbol.detail += "]";
+	}
 	r_symbol.detail += "(";
 	r_symbol.deprecated = false;
 	r_symbol.range = range_of_node(p_func);
