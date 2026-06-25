@@ -100,7 +100,16 @@ void GDScriptProxyInstance::_init_property_store() {
 		const GDScriptDataType &data_type = proxy_script->get_member_type(property.name);
 		property_store.insert(property.name, _default_for_data_type(data_type));
 		property_types.insert(property.name, property.type);
-		property_data_types.insert(property.name, data_type);
+
+		// The cached data type outlives this call and is later dereferenced by `set`'s
+		// `is_type` validation. Pin strong references to any script types so it stays
+		// self-contained if the proxied script reloads and frees its subclasses — the
+		// same reload hazard the return-type snapshot in `callp` guards against. Builtin
+		// types (including typed containers of builtins) carry no script type, so this is
+		// a no-op for them.
+		GDScriptDataType validation_type = data_type;
+		_pin_script_type_refs(validation_type);
+		property_data_types.insert(property.name, validation_type);
 	}
 }
 
