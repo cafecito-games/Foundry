@@ -364,4 +364,116 @@ TEST_CASE("[Modules][GDScript][Proxy] Non-RefCounted native bases are rejected")
 	CHECK_FALSE(error_message.is_empty());
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Auto-backing property store") {
+	ScopedProxyLanguage language;
+
+	const char *source =
+			"trait Bag:\n"
+			"\tvar label: String\n"
+			"\tvar count: int\n"
+			"\tvar ratio: float\n"
+			"\tvar items: Array\n"
+			"\tvar tags: Array[int]\n"
+			"\tvar scores: Dictionary[String, int]\n"
+			"\t@abstract func use() -> void\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar calls: Array = []\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\tcalls.append(str(method_name))\n"
+			"\t\treturn null\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> bag = get_subclass(script, "Bag");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(bag.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(bag, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+	ScriptInstance *instance = proxy->get_script_instance();
+
+	// Declared vars default to the zero value of their declared type.
+	{
+		Variant value;
+		CHECK(instance->get("label", value));
+		CHECK(value == Variant(String()));
+		CHECK(instance->get("count", value));
+		CHECK(value == Variant(0));
+		CHECK(instance->get("ratio", value));
+		CHECK(value == Variant(0.0));
+		CHECK(instance->get("items", value));
+		CHECK(value.get_type() == Variant::ARRAY);
+
+		// Typed containers default to a correctly-typed empty value.
+		CHECK(instance->get("tags", value));
+		REQUIRE(value.get_type() == Variant::ARRAY);
+		Array tags = value;
+		CHECK(tags.is_typed());
+		CHECK(tags.get_typed_builtin() == Variant::INT);
+
+		CHECK(instance->get("scores", value));
+		REQUIRE(value.get_type() == Variant::DICTIONARY);
+		Dictionary scores = value;
+		CHECK(scores.is_typed_key());
+		CHECK(scores.get_typed_key_builtin() == Variant::STRING);
+		CHECK(scores.get_typed_value_builtin() == Variant::INT);
+	}
+
+	// set()/get() round-trip through the backing store.
+	{
+		Variant value;
+		CHECK(instance->set("count", 7));
+		CHECK(instance->get("count", value));
+		CHECK(value == Variant(7));
+		CHECK(instance->set("label", "hi"));
+		CHECK(instance->get("label", value));
+		CHECK(value == Variant("hi"));
+	}
+
+	// Names that are not declared vars are not handled by the store.
+	{
+		Variant value;
+		CHECK_FALSE(instance->set("missing", 1));
+		CHECK_FALSE(instance->get("missing", value));
+	}
+
+	// Property access never reaches the handler.
+	{
+		Array calls = recorder->get("calls");
+		CHECK(calls.is_empty());
+	}
+
+	// get_property_type reports declared types.
+	{
+		bool is_valid = false;
+		CHECK(instance->get_property_type("count", &is_valid) == Variant::INT);
+		CHECK(is_valid);
+		CHECK(instance->get_property_type("label", &is_valid) == Variant::STRING);
+		CHECK(is_valid);
+		instance->get_property_type("missing", &is_valid);
+		CHECK_FALSE(is_valid);
+	}
+
+	// get_property_list exposes the declared vars (no user-written accessors).
+	{
+		List<PropertyInfo> properties;
+		instance->get_property_list(&properties);
+		HashSet<StringName> script_variables;
+		for (const PropertyInfo &property : properties) {
+			if (property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE) {
+				script_variables.insert(property.name);
+			}
+		}
+		CHECK(script_variables.has("label"));
+		CHECK(script_variables.has("count"));
+		CHECK(script_variables.has("ratio"));
+		CHECK(script_variables.has("items"));
+	}
+}
+
 } // namespace GDScriptTests
