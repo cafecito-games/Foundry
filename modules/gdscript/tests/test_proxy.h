@@ -902,6 +902,25 @@ TEST_CASE("[Modules][GDScript][Proxy] Delegating proxy advises and forwards") {
 		CHECK(bad.is_null());
 		CHECK_FALSE(message.is_empty());
 	}
+
+	// A target that does not implement the proxied type is rejected.
+	{
+		String message;
+		Ref<RefCounted> bad = GDScriptProxy::create_delegating_proxy(service, advisor_ref, interceptor, message);
+		CHECK(bad.is_null());
+		CHECK_FALSE(message.is_empty());
+	}
+
+	// The target's own argument errors are surfaced, not collapsed to a default.
+	{
+		Variant only_one = 2; // add() requires two arguments.
+		const Variant *args[1] = { &only_one };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		instance->callp("add", args, 1, error);
+		ERR_PRINT_ON;
+		CHECK(error.error == Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS);
+	}
 }
 
 } // namespace GDScriptTests

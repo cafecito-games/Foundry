@@ -239,16 +239,38 @@ Variant GDScriptProxyInstance::_delegate_call(const GDScriptDataType &p_return_t
 		const Variant *advice_args[3] = { &method_name_arg, &args_arg, &target_arg };
 		const Callable advice = delegate_interceptor[p_method];
 		advice.callp(advice_args, 3, ret, call_error);
+
+		// The advice is user code whose CallError describes the advice's own
+		// `(method_name, args, target)` signature, not `p_method`. As in handler
+		// mode (#187), report and substitute a default rather than forward it.
+		if (call_error.error != Callable::CallError::CALL_OK) {
+			ERR_PRINT(vformat(R"(Delegating proxy advice for "%s" could not be invoked (call error %d); returning the default for its declared return type.)",
+					String(p_method), int(call_error.error)));
+			return _default_for_data_type(p_return_type);
+		}
 	} else {
-		// Not advised: forward straight to the target.
+		// Not advised: forward straight to the target, which implements `T`'s
+		// contract (enforced at construction).
 		ret = target->callp(p_method, p_args, p_argcount, call_error);
+
+		if (call_error.error != Callable::CallError::CALL_OK) {
+			// The target's argument/const errors describe the same signature as the
+			// contract method, so they are informative and safe to surface (none of
+			// these are `Object::callp` fallthrough signals). The two fallthrough
+			// sentinels (a dead target, or a method the target unexpectedly lacks)
+			// must not be forwarded — they would trigger native dispatch on the
+			// proxy — so report and substitute a default instead.
+			if (call_error.error == Callable::CallError::CALL_ERROR_INVALID_METHOD ||
+					call_error.error == Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL) {
+				ERR_PRINT(vformat(R"(Delegating proxy for "%s" could not complete the call on its target (call error %d); returning the default for its declared return type.)",
+						String(p_method), int(call_error.error)));
+				return _default_for_data_type(p_return_type);
+			}
+			r_error = call_error;
+			return _default_for_data_type(p_return_type);
+		}
 	}
 
-	if (call_error.error != Callable::CallError::CALL_OK) {
-		ERR_PRINT(vformat(R"(Delegating proxy for "%s" could not complete the call (call error %d); returning the default for its declared return type.)",
-				String(p_method), int(call_error.error)));
-		return _default_for_data_type(p_return_type);
-	}
 	return _coerce_handler_return(p_return_type, p_method, ret);
 }
 
@@ -400,13 +422,44 @@ Ref<RefCounted> GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Cal
 	return Ref<RefCounted>(proxy_owner);
 }
 
+// True when `p_target`'s script conforms to `p_gdscript` (the proxied type):
+// trait targets must declare the trait identity, abstract/class targets must
+// have `p_gdscript` in their script base chain. Mirrors OPCODE_TYPE_TEST_SCRIPT,
+// so it agrees with `target is T`.
+static bool _target_conforms_to(const Ref<GDScript> &p_gdscript, Object *p_target) {
+	ScriptInstance *target_instance = p_target->get_script_instance();
+	if (target_instance == nullptr) {
+		return false;
+	}
+	Ref<Script> target_script = target_instance->get_script();
+	if (target_script.is_null()) {
+		return false;
+	}
+	if (p_gdscript->is_trait_type()) {
+		return target_script->has_script_trait(p_gdscript->get_trait_type_name());
+	}
+	Script *current = target_script.ptr();
+	while (current != nullptr) {
+		if (current == p_gdscript.ptr()) {
+			return true;
+		}
+		current = current->get_base_script().ptr();
+	}
+	return false;
+}
+
 Ref<RefCounted> GDScriptProxy::create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor, String &r_error_message) {
 	Ref<GDScript> gdscript = p_type;
 	if (!_validate_proxy_target(gdscript, r_error_message)) {
 		return Ref<RefCounted>();
 	}
-	if (p_target.get_type() != Variant::OBJECT || p_target.get_validated_object() == nullptr) {
+	Object *target_object = (p_target.get_type() == Variant::OBJECT) ? p_target.get_validated_object() : nullptr;
+	if (target_object == nullptr) {
 		r_error_message = RTR("Delegating proxy target must be a valid object.");
+		return Ref<RefCounted>();
+	}
+	if (!_target_conforms_to(gdscript, target_object)) {
+		r_error_message = RTR("Delegating proxy target must implement the proxied trait/abstract type.");
 		return Ref<RefCounted>();
 	}
 
