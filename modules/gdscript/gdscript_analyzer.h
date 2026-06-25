@@ -178,6 +178,7 @@ class GDScriptAnalyzer {
 			const GDScriptParser::Node *p_source);
 	bool class_satisfies_trait_base(GDScriptParser::ClassNode *p_class, GDScriptParser::ClassNode *p_trait);
 	bool datatype_derives_from_datatype(GDScriptParser::DataType p_type, const GDScriptParser::DataType &p_base);
+	bool type_argument_satisfies_bound(const GDScriptParser::DataType &p_argument, const GDScriptParser::DataType &p_bound);
 	void validate_trait_conflicts(GDScriptParser::ClassNode *p_class);
 	void validate_trait_requirements(GDScriptParser::ClassNode *p_class);
 	bool find_trait_implementation(GDScriptParser::ClassNode *p_class, const StringName &p_function_name,
