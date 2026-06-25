@@ -442,9 +442,17 @@ private:
 		if (assignee != nullptr && assignee->type == Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(assignee);
 			if (!subscript->is_attribute && is_our_var(subscript->base)) {
-				// `our_var[index] = value` (plain or compound): the value becomes an element.
-				if (p_assignment->assigned_value != nullptr) {
-					contribute_element(p_assignment->assigned_value->get_datatype());
+				if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
+					// `our_var[index] = value`: the value's type is stored verbatim.
+					if (p_assignment->assigned_value != nullptr) {
+						contribute_element(p_assignment->assigned_value->get_datatype());
+					}
+				} else {
+					// `our_var[index] op= value` stores `typeof(old_element op value)`,
+					// which can differ from `typeof(value)` even when the value matches
+					// the element type (e.g. `**=` can widen int to float), so the
+					// result type is not safely knowable here. Skip conservatively.
+					bail(GDScriptContainerInference::UNPROVABLE, "an array element is mutated by a compound assignment");
 				}
 				scan_value(subscript->index);
 				scan_value(p_assignment->assigned_value);

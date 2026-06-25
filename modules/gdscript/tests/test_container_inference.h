@@ -164,6 +164,14 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
 
+	TEST_CASE("A compound indexed write forces a conservative skip") {
+		// `slots[0] **= -1` stores typeof(int ** int), which can be a float, not
+		// the typeof(-1) the value alone suggests, so the element type is unknown.
+		InferenceFixture fixture("func f():\n\tvar slots = [2, 3]\n\tslots[0] **= -1\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "slots");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+	}
+
 	TEST_CASE("append_array merges the element type of the other array literal") {
 		InferenceFixture fixture("func f():\n\tvar nums = []\n\tnums.append_array([1, 2])\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
