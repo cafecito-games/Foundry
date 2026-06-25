@@ -345,7 +345,7 @@ void GDScriptParser::override_completion_context(const Node *p_for_node, Complet
 	completion_context = context;
 }
 
-void GDScriptParser::make_completion_context(CompletionType p_type, Node *p_node, int p_argument, bool p_force) {
+void GDScriptParser::make_completion_context(CompletionType p_type, Node *p_node, int p_argument, bool p_force, const Vector<IdentifierNode *> *p_chain) {
 	if (!for_completion || (!p_force && completion_context.type != COMPLETION_NONE)) {
 		return;
 	}
@@ -361,6 +361,9 @@ void GDScriptParser::make_completion_context(CompletionType p_type, Node *p_node
 	context.current_argument = p_argument;
 	context.node = p_node;
 	context.parser = this;
+	if (p_chain != nullptr) {
+		context.chain = *p_chain;
+	}
 	if (!completion_call_stack.is_empty()) {
 		context.call = completion_call_stack.back()->get();
 	}
@@ -1289,14 +1292,14 @@ void GDScriptParser::parse_uses() {
 	do {
 		ClassNode::TraitUse trait_use;
 		int chain_index = 0;
-		make_completion_context(COMPLETION_USES, current_class, chain_index++);
+		make_completion_context(COMPLETION_USES, current_class, chain_index++, true, &trait_use.name);
 		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected trait name after "uses".)")) {
 			return;
 		}
 		trait_use.name.push_back(parse_identifier());
 
 		while (match(GDScriptTokenizer::Token::PERIOD)) {
-			make_completion_context(COMPLETION_USES, current_class, chain_index++);
+			make_completion_context(COMPLETION_USES, current_class, chain_index++, true, &trait_use.name);
 			if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected trait name after ".".)")) {
 				return;
 			}
