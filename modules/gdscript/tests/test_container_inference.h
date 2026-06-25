@@ -828,6 +828,30 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("Referencing self.set as a callable escapes the member") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak() -> void:\n"
+				"\tvar setter := self.set\n"
+				"\tsetter.call(\"_items\", [\"x\"])\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("A member dictionary with an overridable self call escapes") {
+		InferenceFixture fixture(
+				"var _by_name = {}\n"
+				"func put(key: String, value: int) -> void:\n"
+				"\t_by_name[key] = value\n"
+				"\tafter_put()\n"
+				"func after_put() -> void:\n"
+				"\tpass\n");
+		GDScriptContainerInference::Result result = infer_member_dict_in(fixture, "_by_name");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("An unused member array yields no evidence") {
 		InferenceFixture fixture("var _items = []\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");

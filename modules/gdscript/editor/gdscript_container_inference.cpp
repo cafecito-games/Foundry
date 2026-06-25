@@ -469,25 +469,35 @@ private:
 		return false;
 	}
 
-	// True when `p_value` is a bare reference to a reflection method (e.g. `set`),
-	// which is a callable bound to this instance that could mutate the member by
-	// name later. A reference shadowed by a local/parameter of the same name is not
-	// the bound method, so it is excluded.
+	// True when `p_value` is a reference to a reflection method bound to this
+	// instance, either bare (`set`) or `self`-qualified (`self.set`). The resulting
+	// callable could mutate the member by name later (`s.call("_m", ..)`). A bare
+	// reference shadowed by a local/parameter of the same name is not the bound
+	// method, so it is excluded.
 	static bool is_self_reflection_reference(const GDScriptParser::ExpressionNode *p_value) {
-		if (p_value == nullptr || p_value->type != Node::IDENTIFIER) {
+		if (p_value == nullptr) {
 			return false;
 		}
-		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
-		switch (identifier->source) {
-			case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
-			case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
-			case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
-			case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
-			case GDScriptParser::IdentifierNode::LOCAL_BIND:
-				return false;
-			default:
-				return is_dynamic_reflection_method(identifier->name);
+		if (p_value->type == Node::IDENTIFIER) {
+			const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
+			switch (identifier->source) {
+				case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+				case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+				case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+				case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+				case GDScriptParser::IdentifierNode::LOCAL_BIND:
+					return false;
+				default:
+					return is_dynamic_reflection_method(identifier->name);
+			}
 		}
+		if (p_value->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+			if (subscript->is_attribute && subscript->base != nullptr && subscript->base->type == Node::SELF && subscript->attribute != nullptr) {
+				return is_dynamic_reflection_method(subscript->attribute->name);
+			}
+		}
+		return false;
 	}
 
 	// True when `p_call` invokes a non-static *script* method on this instance,
@@ -1112,25 +1122,35 @@ private:
 		return false;
 	}
 
-	// True when `p_value` is a bare reference to a reflection method (e.g. `set`),
-	// which is a callable bound to this instance that could mutate the member by
-	// name later. A reference shadowed by a local/parameter of the same name is not
-	// the bound method, so it is excluded.
+	// True when `p_value` is a reference to a reflection method bound to this
+	// instance, either bare (`set`) or `self`-qualified (`self.set`). The resulting
+	// callable could mutate the member by name later (`s.call("_m", ..)`). A bare
+	// reference shadowed by a local/parameter of the same name is not the bound
+	// method, so it is excluded.
 	static bool is_self_reflection_reference(const GDScriptParser::ExpressionNode *p_value) {
-		if (p_value == nullptr || p_value->type != Node::IDENTIFIER) {
+		if (p_value == nullptr) {
 			return false;
 		}
-		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
-		switch (identifier->source) {
-			case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
-			case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
-			case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
-			case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
-			case GDScriptParser::IdentifierNode::LOCAL_BIND:
-				return false;
-			default:
-				return is_dynamic_reflection_method(identifier->name);
+		if (p_value->type == Node::IDENTIFIER) {
+			const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
+			switch (identifier->source) {
+				case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+				case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+				case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+				case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+				case GDScriptParser::IdentifierNode::LOCAL_BIND:
+					return false;
+				default:
+					return is_dynamic_reflection_method(identifier->name);
+			}
 		}
+		if (p_value->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+			if (subscript->is_attribute && subscript->base != nullptr && subscript->base->type == Node::SELF && subscript->attribute != nullptr) {
+				return is_dynamic_reflection_method(subscript->attribute->name);
+			}
+		}
+		return false;
 	}
 
 	// True when `p_call` invokes a non-static *script* method on this instance,
@@ -1219,6 +1239,13 @@ private:
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
 				if (member_mode && is_self_reflection_call(call)) {
 					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
+					return;
+				}
+				if (member_mode && is_overrideable_self_method_call(call)) {
+					// A script method on this instance can be overridden by an external
+					// subclass whose override mutates the inherited member with another
+					// key/value type, which the single-file scan cannot see.
+					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden method");
 					return;
 				}
 				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
