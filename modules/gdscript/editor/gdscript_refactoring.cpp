@@ -345,38 +345,48 @@ bool is_column_inside_string_literal(const String &p_line, int p_column) {
 	return false;
 }
 
-// Locates the colon that terminates a single-line function signature: the first
-// top-level ':' that is not inside the parameter list, a bracketed/braced type or
-// default value, a string literal, or a trailing comment. Returns -1 when none is
-// found on the line (e.g. a multi-line signature). Scanning from the signature
-// start and stopping at the first '#' keeps the return-type edit off comment and
-// string colons.
-int find_function_signature_colon(const String &p_line, int p_search_start) {
+// Locates the colon that terminates a function signature: the first top-level
+// ':' that is not inside the parameter list, a bracketed/braced type or default
+// value, a string literal, or a trailing comment. The scan starts at
+// p_search_start on p_start_line and continues across the following lines up to
+// and including p_last_line, so wrapped (multi-line) signatures are handled the
+// same way as single-line ones. Bracket depth carries across line breaks, so a
+// colon is only treated as the body colon when every parameter-list and
+// container delimiter opened so far has been closed. Returns true and writes the
+// colon position when found; '#' ends the scan of the current line at a comment.
+bool find_function_signature_colon(const Vector<String> &p_lines, int p_start_line, int p_search_start, int p_last_line, int &r_line, int &r_column) {
 	int depth = 0;
-	for (int i = p_search_start < 0 ? 0 : p_search_start; i < p_line.length(); i++) {
-		const char32_t c = p_line[i];
-		if (c == '#') {
-			break;
-		}
-		if (c == '"' || c == '\'') {
-			i = skip_string_literal(p_line, i) - 1;
-			continue;
-		}
-		if (c == '(' || c == '[' || c == '{') {
-			depth++;
-			continue;
-		}
-		if (c == ')' || c == ']' || c == '}') {
-			if (depth > 0) {
-				depth--;
+	const int last_line = MIN(p_last_line, p_lines.size() - 1);
+	for (int line_index = p_start_line; line_index <= last_line; line_index++) {
+		const String &line = p_lines[line_index];
+		int i = line_index == p_start_line ? (p_search_start < 0 ? 0 : p_search_start) : 0;
+		for (; i < line.length(); i++) {
+			const char32_t c = line[i];
+			if (c == '#') {
+				break;
 			}
-			continue;
-		}
-		if (c == ':' && depth == 0) {
-			return i;
+			if (c == '"' || c == '\'') {
+				i = skip_string_literal(line, i) - 1;
+				continue;
+			}
+			if (c == '(' || c == '[' || c == '{') {
+				depth++;
+				continue;
+			}
+			if (c == ')' || c == ']' || c == '}') {
+				if (depth > 0) {
+					depth--;
+				}
+				continue;
+			}
+			if (c == ':' && depth == 0) {
+				r_line = line_index;
+				r_column = i;
+				return true;
+			}
 		}
 	}
-	return -1;
+	return false;
 }
 
 int find_first_string_argument_column(
@@ -932,8 +942,16 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		r_candidate.disabled_reason = "This declaration already has a type annotation.";
 		return true;
 	}
-	if (p_assignable->initializer == nullptr || equal_index < 0) {
+	if (p_assignable->initializer == nullptr) {
 		r_candidate.disabled_reason = vformat("Cannot infer a type for this %s.", p_kind);
+		return true;
+	}
+	if (equal_index < 0) {
+		// The initializer resolved, but the assignment operator is not on the
+		// declaration line (a wrapped declaration). The edit logic only places an
+		// annotation when the assignment delimiter is on the line, so report the
+		// site as skipped rather than dropping it silently.
+		r_candidate.disabled_reason = vformat("Cannot annotate this %s because its assignment spans multiple lines.", p_kind);
 		return true;
 	}
 
@@ -965,20 +983,31 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	const String line = p_lines[line_index];
 	int function_start = 0;
 	if (!get_node_text_start(p_lines, line_index, p_function, "func", function_start)) {
+		// An `async func` places the async keyword before `func`, so the node may
+		// start at `async`; fall back to locating the `func` keyword on the line.
 		function_start = line.find("func");
 	}
-	// The parser does not expose the body-colon token for the signature, so this
-	// refactor intentionally handles single-line function signatures. Scan for the
-	// first top-level colon so a trailing comment or string colon is never targeted.
-	const int body_colon = find_function_signature_colon(line, function_start);
-	if (function_start < 0 || body_colon < 0) {
+	if (function_start < 0) {
+		return false;
+	}
+	// The parser does not expose the body-colon token for the signature, so scan
+	// for the first top-level colon, following the signature across wrapped lines.
+	// The body always begins at or after the signature colon, so bounding the scan
+	// at the first body statement keeps it off a later declaration's colon when a
+	// signature has no colon at all (e.g. an abstract declaration with no body).
+	const int last_signature_line = p_function->body != nullptr ? p_function->body->start_line - 1 : line_index;
+	int body_colon_line = line_index;
+	int body_colon = -1;
+	if (!find_function_signature_colon(p_lines, line_index, function_start, last_signature_line, body_colon_line, body_colon)) {
 		return false;
 	}
 
 	r_candidate.matched = true;
 	r_candidate.line = line_index;
 	r_candidate.caret_span_start = function_start;
-	r_candidate.caret_span_end = body_colon;
+	// A wrapped signature keeps its colon on a later line; anchor caret hit-testing
+	// to the rest of the `func` line so clicking the declaration still matches.
+	r_candidate.caret_span_end = body_colon_line == line_index ? body_colon : line.length();
 	if (p_function->return_type != nullptr) {
 		r_candidate.disabled_reason = "This function already has a return type annotation.";
 		return true;
@@ -989,9 +1018,9 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 		return true;
 	}
 
-	r_candidate.edit.start_line = line_index;
+	r_candidate.edit.start_line = body_colon_line;
 	r_candidate.edit.start_column = body_colon;
-	r_candidate.edit.end_line = line_index;
+	r_candidate.edit.end_line = body_colon_line;
 	r_candidate.edit.end_column = body_colon + 1;
 	r_candidate.edit.new_text = " -> " + rendered_type + ":";
 	r_candidate.enabled = true;
