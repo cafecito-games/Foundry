@@ -557,6 +557,7 @@ void RefactorDiffPreviewDialog::_set_file_accepted(int p_index, bool p_accepted)
 		model.reject_file(p_index);
 	}
 	_rebuild_file_tree();
+	_refresh_diff();
 	_refresh_footer();
 }
 
@@ -590,9 +591,13 @@ void RefactorDiffPreviewDialog::_edit_toggled() {
 
 	// The toggled edit's file drives the preview so its diff reflects the change.
 	model.select_file(meta.x);
-	_rebuild_file_tree();
 	_refresh_diff();
 	_refresh_footer();
+	// This runs from Tree::item_edited while the Tree is still dispatching the
+	// checkbox click (blocked > 0), where clear()/create_item() are rejected.
+	// Defer the rebuild so the parent file row's accepted styling refreshes once
+	// the Tree is no longer blocked.
+	callable_mp(this, &RefactorDiffPreviewDialog::_rebuild_file_tree).call_deferred();
 }
 
 void RefactorDiffPreviewDialog::_accept_current_file() {
