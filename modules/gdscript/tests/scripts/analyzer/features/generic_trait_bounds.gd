@@ -19,6 +19,11 @@ class Shield:
 		pass
 
 
+# `BroadSword` does not use `Damageable` itself, but inherits the use from `Sword`.
+class BroadSword extends Sword:
+	pass
+
+
 class Box[T: Damageable]:
 	var value: T
 
@@ -27,12 +32,19 @@ class Box[T: Damageable]:
 		value.take_damage(5)
 
 
-# `Sword` and `Shield` both use `Damageable`, so both satisfy the trait bound.
+# `Sword` and `Shield` use `Damageable` directly; `BroadSword` satisfies the bound through
+# its ancestor. A bound check resolved while building an inheriting class still sees the use.
 var sword_box: Box[Sword]
 var shield_box: Box[Shield]
+var broadsword_box: Box[BroadSword]
+
+
+class SwordBoxHolder extends Box[BroadSword]:
+	pass
 
 
 func test():
 	print(sword_box)
 	print(shield_box)
+	print(broadsword_box)
 	print("generic trait bounds ok")

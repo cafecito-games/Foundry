@@ -5669,10 +5669,19 @@ bool GDScriptAnalyzer::class_satisfies_trait_base(GDScriptParser::ClassNode *p_c
 }
 
 bool GDScriptAnalyzer::type_satisfies_trait(const GDScriptParser::DataType &p_argument, const GDScriptParser::DataType &p_trait_bound) {
-	// Trait conformance is nominal: the argument must declare the trait via `uses`, so `resolved_traits`
-	// must be populated before the check. Resolving is idempotent and a no-op once already solved.
-	if (p_argument.kind == GDScriptParser::DataType::CLASS && p_argument.class_type != nullptr) {
-		resolve_trait_uses(p_argument.class_type);
+	// Trait conformance is nominal: the argument (or any ancestor) must declare the trait via `uses`,
+	// so every class along the inheritance chain needs its `resolved_traits` populated before the shared
+	// conformance walk inspects it. This check can run mid-inheritance-resolution (e.g. a subclass that
+	// `extends Box[Sword]`), before the trait-use pass has reached each ancestor, so resolve each one
+	// here. Resolving is idempotent; a class already mid-resolution is skipped to avoid a spurious cyclic
+	// error and gets populated by the in-flight pass anyway.
+	HashSet<GDScriptParser::ClassNode *> visited;
+	for (GDScriptParser::ClassNode *ancestor = p_argument.class_type; ancestor != nullptr && !visited.has(ancestor);) {
+		visited.insert(ancestor);
+		if (!ancestor->resolving_trait_uses) {
+			resolve_trait_uses(ancestor);
+		}
+		ancestor = ancestor->base_type.kind == GDScriptParser::DataType::CLASS ? ancestor->base_type.class_type : nullptr;
 	}
 	// Reuse the shared conformance machinery (`_class_has_trait`, reached through `is_type_compatible`),
 	// which walks the inheritance chain and also accounts for externally scripted trait uses.
