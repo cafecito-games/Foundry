@@ -4810,6 +4810,37 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				}
 			}
 
+			// A `receiver.method[...](...)` call applies an explicit type-argument list to a generic
+			// method resolved on the receiver rather than self-dispatching. Only a generic method
+			// (which only user GDScript classes declare) accepts the bracket list on an instance
+			// receiver; a non-generic method keeps erroring like an index call.
+			bool dispatched_on_receiver = false;
+			if (!is_proxy_builtin && generic_method == nullptr && subscript->base->type == GDScriptParser::Node::SUBSCRIPT) {
+				GDScriptParser::SubscriptNode *receiver_access = static_cast<GDScriptParser::SubscriptNode *>(subscript->base);
+				if (receiver_access->is_attribute && receiver_access->attribute != nullptr && receiver_access->base != nullptr) {
+					reduce_expression(receiver_access->base);
+					GDScriptParser::DataType receiver_type = receiver_access->base->get_datatype();
+					const StringName &method_name = receiver_access->attribute->name;
+					for (GDScriptParser::ClassNode *lookup_class = receiver_type.class_type; lookup_class != nullptr && generic_method == nullptr; lookup_class = lookup_class->base_type.class_type) {
+						if (lookup_class->has_member(method_name)) {
+							const GDScriptParser::ClassNode::Member &member = lookup_class->get_member(method_name);
+							if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
+								generic_method = member.function;
+							}
+							break;
+						}
+					}
+					if (generic_method != nullptr) {
+						base_type = receiver_type;
+						is_self = receiver_access->base->type == GDScriptParser::Node::SELF;
+						if (p_call->function_name == StringName()) {
+							p_call->function_name = method_name;
+						}
+						dispatched_on_receiver = true;
+					}
+				}
+			}
+
 			if (is_proxy_builtin) {
 				reduce_call_create_proxy(p_call, subscript);
 				return;
@@ -4822,9 +4853,11 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				return;
 			}
 
-			base_type = parser->current_class->get_datatype();
-			base_type.is_meta_type = false;
-			is_self = true;
+			if (!dispatched_on_receiver) {
+				base_type = parser->current_class->get_datatype();
+				base_type.is_meta_type = false;
+				is_self = true;
+			}
 		} else {
 			if (subscript->attribute == nullptr) {
 				// Invalid call. Error already sent in parser.
