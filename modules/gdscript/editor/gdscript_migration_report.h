@@ -68,6 +68,11 @@ struct MigrationStrictCounts {
 	String error; // Set if the strict preview failed; counts stay zero and the rest of the report is still valid.
 	int total = 0;
 	int nullable = 0; // strict_null_checks violations.
+	// Nullable violations the widen-to-nullable satisfier can prove behavior-preserving: it
+	// produces an edit (widening the boundary type to `T?`) that the verification harness
+	// confirms introduces no new diagnostics. A subset of `nullable`; the remainder stay
+	// report-only. Counted only when strict_null_checks is requested.
+	int nullable_satisfiable = 0;
 	int variant_boundary = 0; // strict_dynamic_checks violations.
 	int unknown = 0; // Uncategorized strict-only diagnostics.
 };
