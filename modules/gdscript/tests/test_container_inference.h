@@ -377,6 +377,21 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
 		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
 	}
 
+	TEST_CASE("A subscript read with a coercible mismatched key forces a conservative skip") {
+		// `{1: "x"}[1.2]` misses on the untyped dictionary but would coerce 1.2 to 1
+		// and hit after typing as `Dictionary[int, String]`, so typing changes behavior.
+		InferenceFixture fixture("func f():\n\tvar d = {1: \"x\"}\n\tvar v = d[1.2]\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::MIXED);
+	}
+
+	TEST_CASE("A subscript read with a matching key type does not block inference") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
+	}
+
 	TEST_CASE("A returned dictionary escapes and is not inferred") {
 		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\treturn d\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");

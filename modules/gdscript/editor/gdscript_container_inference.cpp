@@ -782,7 +782,15 @@ private:
 					}
 					scan_value(subscript->base);
 				} else if (is_our_var(subscript->base)) {
-					// `our_var[key]` read: safe; the key may still reference the variable.
+					// `our_var[key]` read. A typed dictionary coerces the key during
+					// lookup (`{1: "x"}[1.2]` misses on the untyped dictionary but hits
+					// after typing as `Dictionary[int, String]`), so the key type is a
+					// constraint: it must match the inferred key type for the read to
+					// behave identically. Feeding it through the key accumulator yields a
+					// conservative MIXED skip whenever it would diverge.
+					if (subscript->index != nullptr) {
+						contribute_key(subscript->index->get_datatype());
+					}
 					scan_value(subscript->index);
 				} else {
 					scan_value(subscript->base);
