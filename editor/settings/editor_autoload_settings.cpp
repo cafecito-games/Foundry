@@ -459,13 +459,17 @@ void EditorAutoloadSettings::init_autoloads() {
 			info.node->set_name(info.name);
 		}
 
-		// Skip registering a singleton that would shadow a reserved engine namespace so
-		// the language's own global (e.g. `godot.reflection`) stays reachable. The
-		// collision is surfaced to the user once, when the cache is built (see the
-		// constructor).
-		if (info.is_singleton && !_autoload_name_shadows_reserved_global(info.name)) {
+		// Skip registering a singleton for a language that reserves its name, so that
+		// language's own global (e.g. `godot.reflection`) stays reachable. Done per
+		// language to match main.cpp and the test runner. The collision is surfaced to the
+		// user once, when the cache is built (see the constructor).
+		if (info.is_singleton) {
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-				ScriptServer::get_language(i)->add_named_global_constant(info.name, info.node);
+				ScriptLanguage *language = ScriptServer::get_language(i);
+				if (language->get_reserved_global_names().has(info.name)) {
+					continue;
+				}
+				language->add_named_global_constant(info.name, info.node);
 			}
 		}
 
@@ -575,11 +579,15 @@ void EditorAutoloadSettings::update_autoload() {
 	// Remove deleted/changed autoloads
 	for (KeyValue<String, AutoloadInfo> &E : to_remove) {
 		AutoloadInfo &info = E.value;
-		// A reserved-namespace singleton was never registered as a global (see above), so
-		// there is nothing to remove for it.
-		if (info.is_singleton && !_autoload_name_shadows_reserved_global(info.name)) {
+		// A singleton was not registered for any language that reserves its name (see
+		// above), so there is nothing to remove for those; mirror the per-language skip.
+		if (info.is_singleton) {
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-				ScriptServer::get_language(i)->remove_named_global_constant(info.name);
+				ScriptLanguage *language = ScriptServer::get_language(i);
+				if (language->get_reserved_global_names().has(info.name)) {
+					continue;
+				}
+				language->remove_named_global_constant(info.name);
 			}
 		}
 		if (info.in_editor) {
@@ -609,11 +617,15 @@ void EditorAutoloadSettings::update_autoload() {
 			nodes_to_add.push_back(info->node);
 		}
 
-		// See init_autoloads: a singleton shadowing a reserved engine namespace is not
-		// registered as a global so the language's own global stays reachable.
-		if (info->is_singleton && !_autoload_name_shadows_reserved_global(info->name)) {
+		// See init_autoloads: skip per language whose reserved global the name would
+		// shadow, so that language's own global stays reachable.
+		if (info->is_singleton) {
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-				ScriptServer::get_language(i)->add_named_global_constant(info->name, info->node);
+				ScriptLanguage *language = ScriptServer::get_language(i);
+				if (language->get_reserved_global_names().has(info->name)) {
+					continue;
+				}
+				language->add_named_global_constant(info->name, info->node);
 			}
 		}
 
@@ -911,16 +923,22 @@ EditorAutoloadSettings::EditorAutoloadSettings() {
 		info.path = ResourceUID::get_singleton()->path_to_uid(scr_path);
 		info.order = ProjectSettings::get_singleton()->get_order(pi.name);
 
-		if (info.is_singleton && _autoload_name_shadows_reserved_global(info.name)) {
+		if (info.is_singleton) {
 			// A project autoload (possibly hand-edited into project.godot) that shadows a
-			// reserved engine namespace is not registered as a global, so the language's
-			// own global (e.g. `godot.reflection`) stays reachable. Surface it once here,
-			// where the cache is first built from project settings.
-			WARN_PRINT(vformat("Autoload \"%s\" shadows a reserved engine namespace of the same name; it is not registered as a global constant. Rename the autoload to use it.", info.name));
-		} else if (info.is_singleton) {
-			// Make sure name references work before parsing scripts
+			// language's reserved engine namespace is not registered as that language's
+			// global, so its own global (e.g. `godot.reflection`) stays reachable. Skip per
+			// language to match main.cpp; surface the collision once here, where the cache
+			// is first built from project settings.
+			if (_autoload_name_shadows_reserved_global(info.name)) {
+				WARN_PRINT(vformat("Autoload \"%s\" shadows a reserved engine namespace of the same name; it is not registered as that language's global constant. Rename the autoload to use it.", info.name));
+			}
+			// Make sure name references work before parsing scripts.
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-				ScriptServer::get_language(i)->add_named_global_constant(info.name, Variant());
+				ScriptLanguage *language = ScriptServer::get_language(i);
+				if (language->get_reserved_global_names().has(info.name)) {
+					continue;
+				}
+				language->add_named_global_constant(info.name, Variant());
 			}
 		}
 
