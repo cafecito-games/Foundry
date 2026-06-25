@@ -63,9 +63,12 @@ class GDScriptProxyInstance : public ScriptInstance {
 
 	// Auto-backing property store: every `var` declared in `T`'s contract becomes a
 	// plain data slot, initialized to the zero value of its declared type. Property
-	// access is not routed through the handler (delegation is the helper's job).
+	// access is not routed through the handler (delegation is the helper's job). The
+	// full declared `GDScriptDataType` is kept (not just a coarse `Variant::Type`) so
+	// writes can be validated/coerced exactly as `GDScriptInstance::set` does, including
+	// typed `Array[T]` / `Dictionary[K, V]` element types.
 	HashMap<StringName, Variant> property_store;
-	HashMap<StringName, Variant::Type> property_types;
+	HashMap<StringName, GDScriptDataType> property_types;
 
 	// Populates `property_store`/`property_types` from `T`'s declared member vars.
 	void _init_property_store();

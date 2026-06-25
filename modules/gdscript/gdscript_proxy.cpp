@@ -99,7 +99,7 @@ void GDScriptProxyInstance::_init_property_store() {
 
 		const GDScriptDataType &data_type = proxy_script->get_member_type(property.name);
 		property_store.insert(property.name, _default_for_data_type(data_type));
-		property_types.insert(property.name, property.type);
+		property_types.insert(property.name, data_type);
 	}
 }
 
@@ -393,7 +393,26 @@ bool GDScriptProxyInstance::set(const StringName &p_name, const Variant &p_value
 	if (!element) {
 		return false;
 	}
-	element->value = p_value;
+
+	// Validate/coerce the write against the declared type, mirroring
+	// `GDScriptInstance::set`: an exactly-typed value (including typed containers) is
+	// stored as-is; otherwise an implicit builtin conversion is attempted, and a value
+	// that cannot be converted to the declared type is rejected (the slot is unchanged).
+	HashMap<StringName, GDScriptDataType>::ConstIterator type_element = property_types.find(p_name);
+	Variant value = p_value;
+	if (type_element) {
+		const GDScriptDataType &data_type = type_element->value;
+		if (!data_type.is_type(value)) {
+			const Variant *args = &p_value;
+			Callable::CallError convert_error;
+			Variant::construct(data_type.builtin_type, value, &args, 1, convert_error);
+			if (convert_error.error != Callable::CallError::CALL_OK || !data_type.is_type(value)) {
+				return false;
+			}
+		}
+	}
+
+	element->value = value;
 	return true;
 }
 
@@ -426,12 +445,14 @@ void GDScriptProxyInstance::get_property_list(List<PropertyInfo> *p_properties) 
 }
 
 Variant::Type GDScriptProxyInstance::get_property_type(const StringName &p_name, bool *r_is_valid) const {
-	HashMap<StringName, Variant::Type>::ConstIterator element = property_types.find(p_name);
+	HashMap<StringName, GDScriptDataType>::ConstIterator element = property_types.find(p_name);
 	if (element) {
 		if (r_is_valid) {
 			*r_is_valid = true;
 		}
-		return element->value;
+		// `builtin_type` is the value type for builtins (and `OBJECT` for native/script
+		// types); an untyped (`Variant`) member reports `NIL`, as before.
+		return element->value.has_type() ? element->value.builtin_type : Variant::NIL;
 	}
 	if (r_is_valid) {
 		*r_is_valid = false;
