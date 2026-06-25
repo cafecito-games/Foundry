@@ -1200,6 +1200,14 @@ public:
 
 		bool is_attribute = false;
 
+		// Use-site type-argument list for generics, e.g. `Pair[int, String]` or `id[Node?]`.
+		// Populated only when the subscript brackets carry more than one comma-separated argument
+		// and/or a `?` nullable marker; `index` always aliases the first element. Empty for an
+		// ordinary single-index subscript so existing consumers keep reading `index` directly.
+		Vector<ExpressionNode *> type_arguments;
+		// Parallel to `type_arguments`: whether each argument carried a trailing `?` (e.g. `Node?`).
+		Vector<bool> type_argument_is_nullable;
+
 		SubscriptNode() {
 			type = SUBSCRIPT;
 		}

@@ -3823,6 +3823,24 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_subscript(ExpressionNode *
 
 	if (subscript->index == nullptr) {
 		push_error(R"(Expected expression after "[".)");
+	} else if (check(GDScriptTokenizer::Token::QUESTION_MARK) || check(GDScriptTokenizer::Token::COMMA)) {
+		// A use-site type-argument list such as `Pair[int, String]`, `id[Node?]`, or a Callable
+		// signature argument. Ordinary indexing never uses commas or a trailing `?`, so this shape
+		// is unambiguous here. Capture the full comma-separated list (with optional `?` markers) so
+		// generic-class specialization and explicit generic-method application can read every
+		// argument; `index` keeps aliasing the first element. Whether such a list is valid for the
+		// subscripted base is decided during analysis, mirroring how `Box[int]` is interpreted.
+		subscript->type_arguments.push_back(subscript->index);
+		subscript->type_argument_is_nullable.push_back(match(GDScriptTokenizer::Token::QUESTION_MARK));
+		while (match(GDScriptTokenizer::Token::COMMA) && !check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+			ExpressionNode *type_argument = parse_expression(false);
+			if (type_argument == nullptr) {
+				push_error(R"(Expected type argument after ",".)");
+				break;
+			}
+			subscript->type_arguments.push_back(type_argument);
+			subscript->type_argument_is_nullable.push_back(match(GDScriptTokenizer::Token::QUESTION_MARK));
+		}
 	}
 
 	pop_multiline();
