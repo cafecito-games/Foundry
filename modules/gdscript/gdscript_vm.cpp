@@ -1728,21 +1728,39 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(src, 1);
 
-				int type_parameter_index = _code_ptr[ip + 3];
+				int member_index = _code_ptr[ip + 3];
 
 				// A `T`-typed member is erased to a plain Variant slot at compile time, so a direct member
 				// store (e.g. `value = v` inside `class Box[T]`) bypasses the `set()` validation used for
-				// external writes. Validate here against the argument reified onto this instance (the `int`
-				// in `Box[int]`), mirroring that path. Instances created without explicit type arguments
-				// carry no bindings, leaving the slot effectively untyped.
-				if (p_instance != nullptr && type_parameter_index >= 0 && type_parameter_index < p_instance->type_arguments.size()) {
+				// external writes. Resolve the binding the leaf script precomputed for this member slot:
+				// FIXED to a concrete argument by an `extends Base[int]` specialization, or OPEN against the
+				// argument reified onto this instance. An OPEN member on an instance without explicit
+				// arguments carries no binding, leaving the slot effectively untyped.
+				bool has_expected_type = false;
+				ContainerType expected_type;
+				if (p_instance != nullptr && p_instance->script.is_valid()) {
+					const Vector<GDScript::TypeArgumentBinding> &bindings = p_instance->script->member_type_argument_bindings;
+					if (member_index >= 0 && member_index < bindings.size()) {
+						const GDScript::TypeArgumentBinding &binding = bindings[member_index];
+						if (binding.kind == GDScript::TypeArgumentBinding::FIXED) {
+							expected_type = binding.fixed.to_container_type();
+							has_expected_type = true;
+						} else if (binding.kind == GDScript::TypeArgumentBinding::OPEN &&
+								binding.leaf_ordinal >= 0 && binding.leaf_ordinal < p_instance->type_arguments.size()) {
+							expected_type = p_instance->type_arguments[binding.leaf_ordinal];
+							has_expected_type = true;
+						}
+					}
+				}
+
+				if (has_expected_type) {
 					Variant value = *src;
-					ContainerTypeValidate validator(p_instance->type_arguments[type_parameter_index]);
+					ContainerTypeValidate validator(expected_type);
 					validator.where = "member";
 					if (!validator.validate(value, "assign")) {
 #ifdef DEBUG_ENABLED
 						err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "%s".)",
-								_get_var_type(src), _get_element_type(p_instance->type_arguments[type_parameter_index]));
+								_get_var_type(src), _get_element_type(expected_type));
 #endif // DEBUG_ENABLED
 						OPCODE_BREAK;
 					}

@@ -1,0 +1,4 @@
+GDTEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a variable of type 'String' into a member of type 'int'.
+>> SCRIPT ERROR at runtime/errors/generic_inherited_fixed_base_wrong_type.gd:18 on test(): Invalid assignment of property or key 'a_value' with value of type 'String' on a base object of type 'RefCounted (C)'.

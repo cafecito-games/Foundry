@@ -118,7 +118,7 @@ public:
 	virtual void write_assign_with_conversion(const Address &p_target, const Address &p_source) = 0;
 	// Store into a member typed as a class type parameter (`value: T`), validating the value against the
 	// instance's reified type argument at runtime.
-	virtual void write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_type_parameter_index) = 0;
+	virtual void write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_member_index) = 0;
 	virtual void write_assign_null(const Address &p_target) = 0;
 	virtual void write_assign_true(const Address &p_target) = 0;
 	virtual void write_assign_false(const Address &p_target) = 0;
