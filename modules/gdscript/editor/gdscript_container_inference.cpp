@@ -154,6 +154,16 @@ bool is_dynamic_reflection_method(const StringName &p_name) {
 	return false;
 }
 
+// True when a `$path` node reference resolves to the current instance, i.e. the
+// path is `.` or empty. Any other path targets a different node.
+bool get_node_is_self(const GDScriptParser::GetNodeNode *p_get_node) {
+	if (p_get_node == nullptr) {
+		return false;
+	}
+	const String path = p_get_node->full_path;
+	return path.is_empty() || path == ".";
+}
+
 bool is_expression_node(Node::Type p_type) {
 	switch (p_type) {
 		case Node::ARRAY:
@@ -791,9 +801,16 @@ private:
 				const GDScriptParser::PreloadNode *preload = static_cast<const GDScriptParser::PreloadNode *>(p_value);
 				scan_value(preload->path);
 			} break;
+			case Node::GET_NODE:
+				// `$"."` / `$""` resolves to the instance, so consuming it leaks `self`
+				// (e.g. `return $"."`). Other paths reach a different node.
+				if (member_mode && get_node_is_self(static_cast<const GDScriptParser::GetNodeNode *>(p_value))) {
+					bail(GDScriptContainerInference::ESCAPES, "the instance escapes through a `$\".\"` node reference");
+				}
+				break;
 			default:
-				// Remaining expression kinds (literals, `self`, `$node`, plain
-				// identifiers that are not our variable) cannot reference it.
+				// Remaining expression kinds (literals, `self`, plain identifiers that
+				// are not our variable) cannot reference it.
 				break;
 		}
 	}
@@ -1626,6 +1643,12 @@ private:
 				const GDScriptParser::PreloadNode *preload = static_cast<const GDScriptParser::PreloadNode *>(p_value);
 				scan_value(preload->path);
 			} break;
+			case Node::GET_NODE:
+				// `$"."` / `$""` resolves to the instance, so consuming it leaks `self`.
+				if (member_mode && get_node_is_self(static_cast<const GDScriptParser::GetNodeNode *>(p_value))) {
+					bail(GDScriptContainerInference::ESCAPES, "the instance escapes through a `$\".\"` node reference");
+				}
+				break;
 			default:
 				break;
 		}

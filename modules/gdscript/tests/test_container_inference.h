@@ -1005,6 +1005,30 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("Leaking self through a $\".\" node reference escapes the member") {
+		InferenceFixture fixture(
+				"extends Node\n"
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func expose() -> Node:\n"
+				"\treturn $\".\"\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("A $child node reference for a different node does not block inference") {
+		InferenceFixture fixture(
+				"extends Node\n"
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"\tvar n = $Child\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
 	TEST_CASE("An unused member array yields no evidence") {
 		InferenceFixture fixture("var _items = []\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
