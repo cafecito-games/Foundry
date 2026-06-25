@@ -231,6 +231,17 @@ bool RefactorDiffPreviewModel::is_file_accepted(int p_index) const {
 	return has_accepted_edit(p_index);
 }
 
+bool RefactorDiffPreviewModel::is_file_fully_accepted(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, accepted_edits.size(), false);
+	const Vector<uint8_t> &slots = accepted_edits[p_index];
+	for (int i = 0; i < slots.size(); i++) {
+		if (!slots[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
 int RefactorDiffPreviewModel::get_edit_count(int p_file_index) const {
 	ERR_FAIL_INDEX_V(p_file_index, files.size(), 0);
 	return files[p_file_index].edits.size();
@@ -545,7 +556,7 @@ void RefactorDiffPreviewDialog::_refresh_footer() {
 
 	const int selected = model.get_selected_index();
 	const bool has_selected = selected >= 0;
-	accept_file_button->set_disabled(!has_selected || model.is_file_accepted(selected));
+	accept_file_button->set_disabled(!has_selected || model.is_file_fully_accepted(selected));
 	reject_file_button->set_disabled(!has_selected || !model.is_file_accepted(selected));
 	get_ok_button()->set_disabled(accepted_count == 0);
 }

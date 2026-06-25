@@ -216,6 +216,23 @@ TEST_CASE("[Editor][RefactorDiffPreview] Rejecting every edit drops the file") {
 	CHECK_EQ(model.get_effective_after_source(0), "var a = 1\nvar b: int = 2\n");
 }
 
+TEST_CASE("[Editor][RefactorDiffPreview] Partial selection stays distinct from full acceptance") {
+	RefactorDiffPreviewModel model;
+	model.set_apply_plan(make_two_edit_plan());
+
+	CHECK(model.is_file_accepted(0));
+	CHECK(model.is_file_fully_accepted(0));
+
+	// Rejecting one edit keeps the file accepted but no longer fully accepted, so
+	// the file-level Accept control stays actionable.
+	model.reject_edit(0, 1);
+	CHECK(model.is_file_accepted(0));
+	CHECK_FALSE(model.is_file_fully_accepted(0));
+
+	model.accept_file(0);
+	CHECK(model.is_file_fully_accepted(0));
+}
+
 TEST_CASE("[Editor][RefactorDiffPreview] Whole-file accept and reject toggle every edit") {
 	RefactorDiffPreviewModel model;
 	model.set_apply_plan(make_two_edit_plan());

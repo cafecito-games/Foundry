@@ -88,7 +88,11 @@ public:
 
 	bool accept_file(int p_index);
 	bool reject_file(int p_index);
+	// Accepted when at least one of the file's edits is accepted; fully accepted
+	// only when every edit is. The two differ once an edit is individually
+	// rejected, which the file-level controls use to stay actionable.
 	bool is_file_accepted(int p_index) const;
+	bool is_file_fully_accepted(int p_index) const;
 
 	int get_edit_count(int p_file_index) const;
 	bool accept_edit(int p_file_index, int p_edit_index);
