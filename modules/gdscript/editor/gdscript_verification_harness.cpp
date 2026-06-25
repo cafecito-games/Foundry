@@ -265,29 +265,35 @@ Vector<int> ddmin_offending(
 	return current;
 }
 
-// Analyze p_source twice (non-strict baseline, then with p_options' strict flags) and
-// append violations present only under strict mode to r_violations.
-void collect_strict_violations(const String &p_path, const String &p_source, const VerificationOptions &p_options, Vector<StrictViolation> &r_violations) {
-	// Non-strict baseline: count diagnostics keyed by line:column:message. The message is
-	// part of the key so a null-mode and a dynamic-mode diagnostic at the same position
-	// stay distinct. Counts (rather than set membership) so a strict pass that emits a
-	// shared diagnostic more times than the baseline surfaces only the extra occurrences.
-	HashMap<String, int> baseline_counts;
-	{
-		GDScriptParser parser;
-		parser.parse(p_source, p_path, false);
-		GDScriptAnalyzer analyzer(&parser);
-		analyzer.analyze();
-		for (const GDScriptParser::ParserError &error : parser.get_errors()) {
-			baseline_counts[vformat("%d:%d:%s", error.line, error.column, error.message)] += 1;
-		}
-	}
-	// Strict pass.
+// Count the non-strict diagnostics of p_source keyed by line:column:message. The message
+// is part of the key so a null-mode and a dynamic-mode diagnostic at the same position
+// stay distinct. Counts (rather than set membership) so a strict pass that emits a shared
+// diagnostic more times than the baseline surfaces only the extra occurrences.
+HashMap<String, int> baseline_diagnostic_counts(const String &p_path, const String &p_source) {
+	HashMap<String, int> counts;
 	GDScriptParser parser;
 	parser.parse(p_source, p_path, false);
 	GDScriptAnalyzer analyzer(&parser);
-	analyzer.set_strict_null_checks(p_options.strict_null_checks);
-	analyzer.set_strict_dynamic_checks(p_options.strict_dynamic_checks);
+	analyzer.analyze();
+	for (const GDScriptParser::ParserError &error : parser.get_errors()) {
+		counts[vformat("%d:%d:%s", error.line, error.column, error.message)] += 1;
+	}
+	return counts;
+}
+
+// Analyze p_source under a single strict flag and append the diagnostics it introduces
+// over the non-strict baseline to r_violations, tagged with p_category. Each strict check
+// site in the analyzer is gated by exactly one of the two strict flags, so isolating one
+// flag per pass attributes every strict-only diagnostic to its fix category without
+// depending on the wording of the analyzer's error messages.
+void collect_strict_violations_for_flag(const String &p_path, const String &p_source, bool p_strict_null, bool p_strict_dynamic, StrictViolationCategory p_category, const HashMap<String, int> &p_baseline_counts, Vector<StrictViolation> &r_violations) {
+	HashMap<String, int> baseline_counts = p_baseline_counts; // Local copy: the diff consumes counts.
+
+	GDScriptParser parser;
+	parser.parse(p_source, p_path, false);
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(p_strict_null);
+	analyzer.set_strict_dynamic_checks(p_strict_dynamic);
 	analyzer.analyze();
 	for (const GDScriptParser::ParserError &error : parser.get_errors()) {
 		const String key = vformat("%d:%d:%s", error.line, error.column, error.message);
@@ -301,7 +307,25 @@ void collect_strict_violations(const String &p_path, const String &p_source, con
 		violation.line = error.line;
 		violation.column = error.column;
 		violation.message = error.message;
+		violation.category = p_category;
 		r_violations.push_back(violation);
+	}
+}
+
+// Append the strict-only violations of p_source to r_violations, each tagged with the fix
+// category of the strict flag that produced it. Runs one isolated pass per requested flag
+// so a combined null+dynamic request still attributes every violation to its category.
+void collect_strict_violations(const String &p_path, const String &p_source, const VerificationOptions &p_options, Vector<StrictViolation> &r_violations) {
+	if (!p_options.strict_null_checks && !p_options.strict_dynamic_checks) {
+		return;
+	}
+	// One shared non-strict baseline drives every per-flag diff.
+	const HashMap<String, int> baseline_counts = baseline_diagnostic_counts(p_path, p_source);
+	if (p_options.strict_null_checks) {
+		collect_strict_violations_for_flag(p_path, p_source, true, false, StrictViolationCategory::NULLABLE, baseline_counts, r_violations);
+	}
+	if (p_options.strict_dynamic_checks) {
+		collect_strict_violations_for_flag(p_path, p_source, false, true, StrictViolationCategory::VARIANT_BOUNDARY, baseline_counts, r_violations);
 	}
 }
 

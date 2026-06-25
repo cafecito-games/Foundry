@@ -67,6 +67,7 @@ enum class RefactorKind {
 	ADD_TYPE_ANNOTATION,
 	INLINE_VARIABLE,
 	IMPLEMENT_ABSTRACT_METHODS,
+	INSERT_EXPLICIT_CAST,
 };
 
 struct RefactorAvailability {
