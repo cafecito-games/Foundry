@@ -6177,6 +6177,248 @@ RefactorResult prepare_explicit_cast(const RefactorContext &p_context, const Ref
 	return result;
 }
 
+// A located widen-to-nullable opportunity, the phase-2 satisfier for strict-null
+// boundaries. `caret_span` is the source range a caret must fall within for the
+// candidate to apply (the whole declaration or return statement), while `edit` is a
+// zero-width insertion of `?` immediately after the boundary's type specifier, turning
+// `T` into `T?`.
+struct WidenToNullableCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	int line = -1;
+	RefactorLocation caret_span;
+	RefactorTextEdit edit;
+};
+
+// Whether p_target is the `void` / no-value return type, which has no nullable form.
+bool is_void_type(const GDScriptParser::DataType &p_target) {
+	return p_target.kind == GDScriptParser::DataType::BUILTIN && p_target.builtin_type == Variant::NIL;
+}
+
+// Build a widen-to-nullable candidate for a non-nullable type specifier `p_type_node`
+// that is fed a nullable `p_value`. Reports the site as matched-but-disabled (with a
+// reason) when the widening cannot be produced, so the editor can explain why the action
+// is unavailable here. The widening is the dual of the explicit cast: it leaves the value
+// expression untouched and only makes the declared type admit the null the strict-null
+// analyzer proved can already reach it.
+//
+// It is enabled only when the value's underlying (non-nullable) type is exactly the
+// target type, i.e. the boundary differs solely in nullability. That is the only shape
+// the analyzer reports as a nullable mismatch (an underlying-type mismatch is a separate,
+// unrelated error that widening would not fix), so the restriction keeps the action from
+// emitting code that is still wrong or, for `void` returns, syntactically invalid.
+void build_widen_to_nullable_candidate(
+		const Vector<String> &p_lines,
+		const GDScriptParser::Node *p_statement,
+		const GDScriptParser::ExpressionNode *p_value,
+		const GDScriptParser::TypeNode *p_type_node,
+		const GDScriptParser::DataType &p_target_type,
+		WidenToNullableCandidate &r_candidate) {
+	RefactorLocation statement_range;
+	if (p_statement == nullptr || !get_node_text_range(p_lines, p_statement, statement_range)) {
+		return;
+	}
+	r_candidate.matched = true;
+	r_candidate.line = statement_range.start_line;
+	r_candidate.caret_span = statement_range;
+
+	if (p_value == nullptr) {
+		r_candidate.disabled_reason = "There is no value here to widen for.";
+		return;
+	}
+	if (p_target_type.is_nullable) {
+		r_candidate.disabled_reason = "This type is already nullable.";
+		return;
+	}
+	if (!p_target_type.is_set() || p_target_type.is_variant()) {
+		// A Variant boundary already admits null; widening to `Variant?` is meaningless.
+		r_candidate.disabled_reason = "This type already accepts null.";
+		return;
+	}
+	if (is_void_type(p_target_type)) {
+		// `void` has no nullable form; `void?` is not valid syntax.
+		r_candidate.disabled_reason = "A void return type cannot be made nullable.";
+		return;
+	}
+	const GDScriptParser::DataType value_type = p_value->get_datatype();
+	if (!value_type.is_set() || !value_type.is_nullable) {
+		// Only a resolved nullable value is a genuine strict-null boundary. Unresolved
+		// types are skipped so a parse gap never enables a speculative widening.
+		r_candidate.disabled_reason = "This value is not nullable; no widening is needed.";
+		return;
+	}
+	// Require the value's underlying type to match the target exactly so the only
+	// difference is nullability. A different underlying type (e.g. a `String?` value at an
+	// `int` boundary) is a separate type error that widening would leave unfixed.
+	GDScriptParser::DataType value_underlying = value_type;
+	value_underlying.is_nullable = false;
+	if (value_underlying != p_target_type) {
+		r_candidate.disabled_reason = "This value's type does not match the target; widening would not fix the error.";
+		return;
+	}
+	// Insert `?` at the end of the type specifier, a zero-width edit. The type node's end
+	// must be single-line and within bounds for the insertion point to be well defined.
+	RefactorLocation type_range;
+	if (!get_node_text_range(p_lines, p_type_node, type_range) || type_range.start_line != type_range.end_line) {
+		r_candidate.disabled_reason = "Cannot widen a type that spans multiple lines.";
+		return;
+	}
+	r_candidate.edit.start_line = type_range.end_line;
+	r_candidate.edit.start_column = type_range.end_column;
+	r_candidate.edit.end_line = type_range.end_line;
+	r_candidate.edit.end_column = type_range.end_column;
+	r_candidate.edit.new_text = "?";
+	r_candidate.enabled = true;
+}
+
+// Widen site for a typed `var x: T = value` declaration whose initializer is nullable.
+bool find_declaration_widen_candidate(const Vector<String> &p_lines, const GDScriptParser::VariableNode *p_variable, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_variable == nullptr || p_variable->datatype_specifier == nullptr || p_variable->initializer == nullptr) {
+		return false;
+	}
+	WidenToNullableCandidate candidate;
+	build_widen_to_nullable_candidate(p_lines, p_variable, p_variable->initializer, p_variable->datatype_specifier, p_variable->get_datatype(), candidate);
+	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
+		return false;
+	}
+	r_candidate = candidate;
+	return true;
+}
+
+// Widen site for a `return value` whose value is nullable in a function with an explicit
+// non-nullable return type.
+bool find_return_widen_candidate(const Vector<String> &p_lines, const GDScriptParser::ReturnNode *p_return, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_return == nullptr || p_return->return_value == nullptr || p_function == nullptr || p_function->return_type == nullptr) {
+		return false;
+	}
+	WidenToNullableCandidate candidate;
+	build_widen_to_nullable_candidate(p_lines, p_return, p_return->return_value, p_function->return_type, p_function->get_datatype(), candidate);
+	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
+		return false;
+	}
+	r_candidate = candidate;
+	return true;
+}
+
+bool find_widen_candidate_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_suite == nullptr) {
+		return false;
+	}
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::VARIABLE:
+				if (find_declaration_widen_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::Node::RETURN:
+				if (find_return_widen_candidate(p_lines, static_cast<const GDScriptParser::ReturnNode *>(statement), p_function, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				if (find_widen_candidate_in_suite(p_lines, if_node->true_block, p_function, p_location, r_candidate) ||
+						find_widen_candidate_in_suite(p_lines, if_node->false_block, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
+				if (find_widen_candidate_in_suite(p_lines, for_node->loop, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
+				if (find_widen_candidate_in_suite(p_lines, while_node->loop, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+					if (branch != nullptr && find_widen_candidate_in_suite(p_lines, branch->block, p_function, p_location, r_candidate)) {
+						return true;
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+bool find_widen_candidate_in_class(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_class == nullptr) {
+		return false;
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::VARIABLE:
+				if (find_declaration_widen_candidate(p_lines, member.variable, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (member.function != nullptr && find_widen_candidate_in_suite(p_lines, member.function->body, member.function, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				if (find_widen_candidate_in_class(p_lines, member.m_class, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+WidenToNullableCandidate find_widen_to_nullable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	WidenToNullableCandidate candidate;
+	if (p_location.has_selection()) {
+		candidate.disabled_reason = "Place the caret on a typed declaration or return that receives a nullable value.";
+		return candidate;
+	}
+
+	GDScriptParser parser;
+	parser.parse(p_context.source, p_context.path, false);
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<String> lines = p_context.source.split("\n");
+	const GDScriptParser::ClassNode *tree = parser.get_tree();
+	if (tree == nullptr || !find_widen_candidate_in_class(lines, tree, p_location, candidate)) {
+		candidate.matched = false;
+		candidate.enabled = false;
+		candidate.disabled_reason = "Place the caret on a typed declaration or return that receives a nullable value.";
+	}
+	return candidate;
+}
+
+RefactorResult prepare_widen_to_nullable(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	RefactorResult result;
+	const WidenToNullableCandidate candidate = find_widen_to_nullable_candidate(p_context, p_location);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason.is_empty()
+				? "Widen to nullable is not available here."
+				: candidate.disabled_reason;
+		return result;
+	}
+	result.ok = true;
+	result.edits.push_back(candidate.edit);
+	return result;
+}
+
 } // namespace
 
 bool GDScriptRefactoring::validate_extract_method_name(
@@ -6599,6 +6841,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	}
 	result.push_back(insert_cast);
 
+	RefactorAvailability widen_nullable;
+	widen_nullable.kind = RefactorKind::WIDEN_TO_NULLABLE;
+	widen_nullable.title = "Widen to Nullable";
+	const WidenToNullableCandidate widen_candidate = find_widen_to_nullable_candidate(p_context, p_location);
+	widen_nullable.enabled = widen_candidate.enabled;
+	if (!widen_nullable.enabled) {
+		widen_nullable.disabled_reason = widen_candidate.disabled_reason;
+	}
+	result.push_back(widen_nullable);
+
 	RefactorAvailability sort_members;
 	sort_members.kind = RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE;
 	sort_members.title = "Sort Members by Style Guide";
@@ -6635,6 +6887,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 			return prepare_explicit_cast(p_context, p_location);
+		case RefactorKind::WIDEN_TO_NULLABLE:
+			return prepare_widen_to_nullable(p_context, p_location);
 		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
 			return prepare_sort_members_by_style_guide(p_context);
 		default:

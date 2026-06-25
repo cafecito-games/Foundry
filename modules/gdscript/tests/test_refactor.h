@@ -225,6 +225,36 @@ inline String insert_cast_reason(const String &p_source, int p_line, int p_colum
 	return entry != nullptr ? entry->disabled_reason : String();
 }
 
+inline RefactorResult run_widen_nullable(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://widen_nullable_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::WIDEN_TO_NULLABLE, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline bool widen_nullable_enabled(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://widen_nullable_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::WIDEN_TO_NULLABLE);
+	return entry != nullptr && entry->enabled;
+}
+
+inline String widen_nullable_reason(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://widen_nullable_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::WIDEN_TO_NULLABLE);
+	return entry != nullptr ? entry->disabled_reason : String();
+}
+
 #ifndef GDSCRIPT_NO_LSP
 struct TemporaryScriptFile {
 	String path;
@@ -246,8 +276,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 8);
-		if (available.size() < 8) {
+		CHECK_EQ(available.size(), 9);
+		if (available.size() < 9) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -271,9 +301,12 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(available[6].kind, RefactorKind::INSERT_EXPLICIT_CAST);
 		CHECK_FALSE(available[6].enabled);
 		CHECK_FALSE(available[6].disabled_reason.is_empty());
-		CHECK_EQ(available[7].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_EQ(available[7].kind, RefactorKind::WIDEN_TO_NULLABLE);
 		CHECK_FALSE(available[7].enabled);
 		CHECK_FALSE(available[7].disabled_reason.is_empty());
+		CHECK_EQ(available[8].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_FALSE(available[8].enabled);
+		CHECK_FALSE(available[8].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
@@ -1402,7 +1435,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 8);
+		REQUIRE_EQ(available.size(), 9);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -1755,7 +1788,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 8);
+		REQUIRE_EQ(available.size(), 9);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -1764,7 +1797,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = GDScriptRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 8);
+		REQUIRE_EQ(text_selection_available.size(), 9);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -2074,7 +2107,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 8);
+		REQUIRE_EQ(available.size(), 9);
 		if (available.size() >= 5) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
@@ -3211,6 +3244,106 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Widen to nullable") {
+		// `maybe()` returns `int?`, so its result is a nullable value reaching a
+		// non-nullable boundary: the strict-null satisfier widens the boundary type to `T?`.
+		SUBCASE("widens a declared type fed a nullable initializer") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: int = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int? = maybe()"));
+		}
+		SUBCASE("widens a function return type fed a nullable value") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> int:\n"
+					"\treturn maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 4, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func use() -> int?:"));
+		}
+		SUBCASE("widens a class-level member declaration") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"var m: int = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 2, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var m: int? = maybe()"));
+		}
+		SUBCASE("widens a declared object type fed a nullable value") {
+			const String source =
+					"func maybe() -> Node?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar n: Node = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var n: Node? = maybe()"));
+		}
+		SUBCASE("is disabled when the value is not nullable") {
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: int = 5\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 1, 6));
+			CHECK(widen_nullable_reason(source, 1, 6).to_lower().contains("not nullable"));
+		}
+		SUBCASE("is disabled when the declared type is already nullable") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: int? = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("already nullable"));
+		}
+		SUBCASE("is disabled when the declaration has no target type") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+		}
+		SUBCASE("is disabled away from any boundary site") {
+			const String source =
+					"func use() -> void:\n"
+					"\tpass\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 1, 2));
+			CHECK(widen_nullable_reason(source, 1, 2).to_lower().contains("caret"));
+		}
+		SUBCASE("is disabled when the value's type does not match the target") {
+			// `String?` reaching an `int` boundary is an underlying-type error, not a pure
+			// nullability mismatch; widening to `int?` would not fix it.
+			const String source =
+					"func maybe() -> String?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: int = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
+		}
+		SUBCASE("is disabled for a void return type") {
+			// `void?` is not valid syntax, so a nullable value at a void return is not widened.
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\treturn maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 4));
+			CHECK(widen_nullable_reason(source, 3, 4).to_lower().contains("void"));
+		}
+	}
+
 #ifndef GDSCRIPT_NO_LSP
 	TEST_CASE("Rename file-local symbols") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
@@ -3340,7 +3473,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 8);
+			REQUIRE_EQ(available.size(), 9);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -3368,7 +3501,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 8);
+			REQUIRE_EQ(available.size(), 9);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}

@@ -36,9 +36,63 @@
 #include "gdscript_refactoring.h"
 #include "gdscript_verification_harness.h"
 
+#include "../gdscript_position.h"
+
+#include "core/io/file_access.h"
 #include "core/string/string_builder.h"
 
 namespace {
+
+// Attempts the widen-to-nullable satisfier at a single nullable violation, then gates the
+// resulting edit through the verification harness. Returns true only when the satisfier
+// produces an edit AND the harness accepts it as introducing no new diagnostics, so a
+// counted "satisfiable" violation is always one with a proven, previewable fix.
+bool nullable_violation_is_satisfiable(const StrictViolation &p_violation, const Vector<String> &p_universe) {
+	Error err = OK;
+	const String source = FileAccess::get_file_as_string(p_violation.path, &err);
+	if (err != OK) {
+		return false;
+	}
+
+	RefactorContext context;
+	context.path = p_violation.path;
+	context.source = source;
+
+	// A violation's line/column come from the parser as a 1-based line and a 1-based Godot
+	// column; the refactor API takes a 0-based line and a 0-based text column. Convert so the
+	// caret lands on the offending value, which sits inside the declaration/return statement
+	// the satisfier anchors on.
+	const Vector<String> lines = source.split("\n");
+	const int caret_line = p_violation.line - 1;
+	if (caret_line < 0 || caret_line >= lines.size()) {
+		return false;
+	}
+	const int caret_column = GDScriptTextPosition::godot_column_to_text_column(lines[caret_line], p_violation.column);
+	if (caret_column < 0) {
+		return false;
+	}
+
+	RefactorLocation location;
+	location.start_line = caret_line;
+	location.start_column = caret_column;
+	location.end_line = caret_line;
+	location.end_column = caret_column;
+
+	const RefactorResult fix = GDScriptRefactoring::prepare(context, location, RefactorKind::WIDEN_TO_NULLABLE, RefactorParams());
+	if (!fix.ok || fix.edits.is_empty()) {
+		return false;
+	}
+
+	VerificationCandidate candidate;
+	candidate.path = p_violation.path;
+	candidate.line = caret_line;
+	candidate.edits = fix.edits;
+
+	VerificationOptions options;
+	options.strict_null_checks = true;
+	const VerificationResult verified = GDScriptVerificationHarness::verify({ candidate }, p_universe, options);
+	return verified.ok && verified.accepted.size() == 1;
+}
 
 // Buckets a disabled Add Type Annotation reason into one of the report's skip categories.
 // The matched phrases are the stable parts of the reasons GDScriptRefactoring emits (the
@@ -141,6 +195,9 @@ MigrationReportResult GDScriptMigrationReport::generate(const String &p_root, co
 				switch (violation.category) {
 					case StrictViolationCategory::NULLABLE:
 						result.strict.nullable++;
+						if (nullable_violation_is_satisfiable(violation, scan.files)) {
+							result.strict.nullable_satisfiable++;
+						}
 						break;
 					case StrictViolationCategory::VARIANT_BOUNDARY:
 						result.strict.variant_boundary++;
@@ -203,6 +260,7 @@ String MigrationReportResult::format() const {
 	} else {
 		builder.append(vformat("Projected strict-mode violations: %d\n", strict.total));
 		builder.append(vformat("  nullable:         %d\n", strict.nullable));
+		builder.append(vformat("    auto-fixable:   %d\n", strict.nullable_satisfiable));
 		builder.append(vformat("  variant boundary: %d\n", strict.variant_boundary));
 		builder.append(vformat("  unknown:          %d\n", strict.unknown));
 	}
