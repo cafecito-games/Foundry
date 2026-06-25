@@ -681,6 +681,85 @@ int find_assignment_rhs_start(const String &p_line, int p_equal_index) {
 	return rhs_start;
 }
 
+// Locates a declaration's assignment operator (`=` or the `=` of `:=`) starting
+// at p_search_start on p_start_line and following continuation lines. A line
+// continues onto the next either through an explicit trailing backslash or while
+// a bracket/brace/parenthesis remains open. The scan is string/comment/bracket-
+// aware so an `=` inside a string, comment, or nested container is never mistaken
+// for the assignment operator. Returns true and writes the `=` position when
+// found, along with whether it is the `=` of an inferred `:=` declaration.
+bool find_declaration_assignment_operator(const Vector<String> &p_lines, int p_start_line, int p_search_start, int &r_line, int &r_column, bool &r_is_inferred) {
+	int depth = 0;
+	bool in_multiline_string = false;
+	char32_t multiline_string_quote = 0; // The quote character that opened the active triple-quoted string.
+	for (int line_index = p_start_line; line_index < p_lines.size(); line_index++) {
+		const String &line = p_lines[line_index];
+		int i = line_index == p_start_line ? (p_search_start < 0 ? 0 : p_search_start) : 0;
+		bool explicit_continuation = false;
+		for (; i < line.length(); i++) {
+			const char32_t c = line[i];
+			if (in_multiline_string) {
+				if (c == '\\') {
+					i++; // Skip the escaped character so an escaped quote never closes the string.
+					continue;
+				}
+				if (c == multiline_string_quote && i + 2 < line.length() && line[i + 1] == multiline_string_quote && line[i + 2] == multiline_string_quote) {
+					in_multiline_string = false;
+					i += 2; // Skip the closing triple quote.
+				}
+				continue;
+			}
+			if (c == '#') {
+				break;
+			}
+			if (c == '"' || c == '\'') {
+				if (i + 2 < line.length() && line[i + 1] == c && line[i + 2] == c) {
+					// A triple-quoted string may stay open past the end of the line.
+					in_multiline_string = true;
+					multiline_string_quote = c;
+					i += 2; // Skip the opening triple quote; the body is consumed in string state.
+					continue;
+				}
+				i = skip_string_literal(line, i) - 1;
+				continue;
+			}
+			if (c == '(' || c == '[' || c == '{') {
+				depth++;
+				continue;
+			}
+			if (c == ')' || c == ']' || c == '}') {
+				if (depth > 0) {
+					depth--;
+				}
+				continue;
+			}
+			if (c == '\\' && i == line.length() - 1) {
+				// A trailing backslash continues the declaration onto the next line.
+				explicit_continuation = true;
+				continue;
+			}
+			if (c == '=' && depth == 0) {
+				// Compound assignment operators (`==`, `<=`, etc.) cannot open a
+				// declaration's initializer, so the first top-level `=` is the
+				// assignment operator. `:=` is reported as inferred.
+				r_line = line_index;
+				r_column = i;
+				r_is_inferred = i > 0 && line[i - 1] == ':';
+				return true;
+			}
+		}
+		if (in_multiline_string) {
+			continue; // A triple-quoted string carries the declaration onto the next line.
+		}
+		if (!explicit_continuation && depth == 0) {
+			// No continuation: the declaration ends on this line without an
+			// assignment operator beyond the search start.
+			return false;
+		}
+	}
+	return false;
+}
+
 bool is_location_ordered(const RefactorLocation &p_location) {
 	if (p_location.start_line < p_location.end_line) {
 		return true;
@@ -1050,16 +1129,26 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	}
 
 	// The parser does not expose the assignment operator token, so this refactor
-	// intentionally handles declarations whose assignment delimiter is on the
-	// declaration line.
-	const int equal_index = p_assignable->initializer != nullptr ? line.find("=", name_end) : -1;
-	const int declaration_end = equal_index >= 0 ? equal_index : name_end;
+	// locates it by scanning the declaration text, following continuation lines
+	// when the assignment operator wraps onto a later line.
+	int equal_line = -1;
+	int equal_column = -1;
+	bool is_inferred = false;
+	const bool found_equal = p_assignable->initializer != nullptr &&
+			find_declaration_assignment_operator(p_lines, line_index, name_end, equal_line, equal_column, is_inferred);
+	const int declaration_end = found_equal && equal_line == line_index ? equal_column : name_end;
 
 	r_candidate.matched = true;
 	r_candidate.kind = p_kind;
 	r_candidate.line = line_index;
 	r_candidate.caret_span_start = declaration_start;
 	r_candidate.caret_span_end = declaration_end;
+	if (found_equal && equal_line != line_index) {
+		// A wrapped assignment closes its caret span on the operator line so the
+		// caret selects the annotation anywhere from the name through the `=`.
+		r_candidate.caret_span_end = equal_column;
+		r_candidate.caret_span_end_line = equal_line;
+	}
 	if (p_assignable->datatype_specifier != nullptr) {
 		r_candidate.disabled_reason = "This declaration already has a type annotation.";
 		return true;
@@ -1068,11 +1157,10 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		r_candidate.disabled_reason = vformat("Cannot infer a type for this %s.", p_kind);
 		return true;
 	}
-	if (equal_index < 0) {
-		// The initializer resolved, but the assignment operator is not on the
-		// declaration line (a wrapped declaration). The edit logic only places an
-		// annotation when the assignment delimiter is on the line, so report the
-		// site as skipped rather than dropping it silently.
+	if (!found_equal) {
+		// The initializer resolved, but the assignment operator could not be
+		// located (an unusual wrapped form). Report the site as a counted skip
+		// rather than producing an unsafe edit.
 		r_candidate.disabled_reason = vformat("Cannot annotate this %s because its assignment spans multiple lines.", p_kind);
 		return true;
 	}
@@ -1095,12 +1183,33 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		return true;
 	}
 
-	const int rhs_start = find_assignment_rhs_start(line, equal_index);
+	if (equal_line == line_index) {
+		const int rhs_start = find_assignment_rhs_start(line, equal_column);
+		r_candidate.edit.start_line = line_index;
+		r_candidate.edit.start_column = name_end;
+		r_candidate.edit.end_line = line_index;
+		r_candidate.edit.end_column = rhs_start;
+		r_candidate.edit.new_text = ": " + rendered_type + " = ";
+		r_candidate.enabled = true;
+		return true;
+	}
+
+	// The assignment operator wraps onto a continuation line. Insert the
+	// annotation after the name and replace through the `=`, preserving the
+	// continuation text verbatim. An inferred `:=` drops its colon because the
+	// explicit annotation now carries the type. The replacement reproduces the
+	// original line breaks so the recovered declaration parses identically.
+	const int inferred_offset = is_inferred ? 1 : 0;
+	String continuation = line.substr(name_end, line.length() - name_end);
+	for (int wrapped = line_index + 1; wrapped < equal_line; wrapped++) {
+		continuation += "\n" + p_lines[wrapped];
+	}
+	continuation += "\n" + p_lines[equal_line].substr(0, equal_column - inferred_offset);
 	r_candidate.edit.start_line = line_index;
 	r_candidate.edit.start_column = name_end;
-	r_candidate.edit.end_line = line_index;
-	r_candidate.edit.end_column = rhs_start;
-	r_candidate.edit.new_text = ": " + rendered_type + " = ";
+	r_candidate.edit.end_line = equal_line;
+	r_candidate.edit.end_column = equal_column + 1;
+	r_candidate.edit.new_text = ": " + rendered_type + continuation + "=";
 	r_candidate.enabled = true;
 	return true;
 }
