@@ -36,6 +36,7 @@
 #include "core/os/safe_binary_mutex.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
+#include "core/templates/vector.h"
 
 class GDScriptAnalyzer;
 class GDScriptParser;
@@ -94,6 +95,11 @@ class GDScriptCache {
 	HashMap<String, HashSet<String>> dependencies;
 	HashMap<String, HashSet<String>> parser_inverse_dependencies;
 
+	// In-memory source overrides keyed by path. When present, get_source_code() (and the
+	// script loaders) return the overridden source instead of reading disk, so the analyzer
+	// resolves cross-file references against edited-but-unsaved buffers with no disk writes.
+	HashMap<String, String> source_overrides;
+
 	friend class GDScript;
 	friend class GDScriptParserRef;
 	friend class GDScriptInstance;
@@ -119,6 +125,17 @@ public:
 	static bool has_parser(const String &p_path);
 	static void remove_parser(const String &p_path);
 	static String get_source_code(const String &p_path);
+
+	// In-memory source-override map. While an override is set for a path, get_source_code()
+	// and the shallow/full script loaders return the overridden source instead of reading
+	// disk, so cross-file resolution sees edited-but-unsaved buffers. Setting or clearing an
+	// override does not by itself invalidate parsers or scripts already built from the old
+	// source; callers must invalidate the affected paths (e.g. remove_parser/remove_script)
+	// around a change for it to take effect. Thread-safe (guarded by the cache mutex).
+	static void set_source_override(const String &p_path, const String &p_source);
+	static bool has_source_override(const String &p_path);
+	static void clear_source_override(const String &p_path);
+	static void clear_source_overrides();
 	// Returns a snapshot of the set of files that directly depend on p_path (its
 	// inverse dependencies), as recorded during compilation. Empty if none are known.
 	// Snapshot-by-value so callers are safe against concurrent cache mutation.
@@ -140,4 +157,30 @@ public:
 
 	GDScriptCache();
 	~GDScriptCache();
+};
+
+// RAII guard that installs a set of source overrides on construction and clears exactly
+// those paths on destruction, restoring the cache's override state. It does NOT invalidate
+// parsers/scripts; the caller is responsible for invalidating affected paths after
+// construction (so the overrides are seen) and again after destruction (so disk content is
+// seen again). Overrides for paths it did not install are left untouched.
+class GDScriptCacheSourceOverrideGuard {
+	Vector<String> paths;
+
+public:
+	explicit GDScriptCacheSourceOverrideGuard(const HashMap<String, String> &p_overrides) {
+		for (const KeyValue<String, String> &entry : p_overrides) {
+			GDScriptCache::set_source_override(entry.key, entry.value);
+			paths.push_back(entry.key);
+		}
+	}
+
+	~GDScriptCacheSourceOverrideGuard() {
+		for (const String &path : paths) {
+			GDScriptCache::clear_source_override(path);
+		}
+	}
+
+	GDScriptCacheSourceOverrideGuard(const GDScriptCacheSourceOverrideGuard &) = delete;
+	GDScriptCacheSourceOverrideGuard &operator=(const GDScriptCacheSourceOverrideGuard &) = delete;
 };

@@ -36,6 +36,7 @@
 
 #include "../editor/gdscript_batch_candidates.h"
 #include "../editor/gdscript_verification_harness.h"
+#include "../gdscript_cache.h"
 
 #include "core/io/file_access.h"
 
@@ -91,6 +92,54 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		// verify() must not modify files on disk.
 		CHECK_EQ(FileAccess::get_file_as_string(path), source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Cross-file verification runs purely in memory and leaves no residual override or disk state") {
+		// A clean provider edit must be accepted, which is only possible if the consumer's
+		// analysis resolved the provider through the in-memory override map (the provider's
+		// edited source is never written to disk). After the run, no override may remain in
+		// the cache and both files must be byte-identical to their original on-disk content.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// provider.gd: untyped getter whose inferred return type is String.
+		const String provider_path = "res://refactor/verify_inmem_provider.gd";
+		const String provider_source =
+				"func get_label():\n"
+				"\treturn \"hi\"\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		// consumer.gd: consumes the getter as a String, so typing the provider's getter
+		// `-> String` keeps the consumer clean and the candidate must be accepted.
+		const String consumer_path = "res://refactor/verify_inmem_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_inmem_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_label()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 0);
+
+		Vector<String> universe = { provider_path, consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+		CHECK_EQ(result.rejected.size(), 0);
+		CHECK_EQ(result.accepted.size(), candidates.size());
+
+		// No disk writes: both files are byte-identical to the originals.
+		CHECK_EQ(FileAccess::get_file_as_string(provider_path), provider_source);
+		CHECK_EQ(FileAccess::get_file_as_string(consumer_path), consumer_source);
+
+		// No residual override state: rollback is a full clear of the map.
+		CHECK_FALSE(GDScriptCache::has_source_override(provider_path));
+		CHECK_FALSE(GDScriptCache::has_source_override(consumer_path));
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

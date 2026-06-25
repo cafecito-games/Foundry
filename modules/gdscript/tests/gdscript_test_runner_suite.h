@@ -105,6 +105,59 @@ TEST_CASE("[Modules][GDScript] Loading keeps ResourceCache and GDScriptCache in 
 	CHECK(TestGDScriptCacheAccessor::has_full(path));
 }
 
+TEST_CASE("[Modules][GDScript] Source override map shadows disk in get_source_code") {
+	GDScriptLanguage::get_singleton()->init();
+
+	const String path = TestUtils::get_temp_path("gdscript_source_override.gd");
+	{
+		Ref<FileAccess> fa = FileAccess::open(path, FileAccess::ModeFlags::WRITE);
+		fa->store_string("extends Node\n# on disk\n");
+		fa->close();
+	}
+
+	// With no override, get_source_code reads the on-disk content.
+	CHECK(!GDScriptCache::has_source_override(path));
+	CHECK_EQ(GDScriptCache::get_source_code(path), "extends Node\n# on disk\n");
+
+	// An override shadows the disk content for that path only.
+	const String overridden = "extends Node\n# in memory\n";
+	GDScriptCache::set_source_override(path, overridden);
+	CHECK(GDScriptCache::has_source_override(path));
+	CHECK_EQ(GDScriptCache::get_source_code(path), overridden);
+
+	// The disk file is never written by the override.
+	CHECK_EQ(FileAccess::get_file_as_string(path), "extends Node\n# on disk\n");
+
+	// Clearing the override falls back to disk again.
+	GDScriptCache::clear_source_override(path);
+	CHECK(!GDScriptCache::has_source_override(path));
+	CHECK_EQ(GDScriptCache::get_source_code(path), "extends Node\n# on disk\n");
+}
+
+TEST_CASE("[Modules][GDScript] Source override guard installs and rolls back overrides") {
+	GDScriptLanguage::get_singleton()->init();
+
+	const String path = TestUtils::get_temp_path("gdscript_override_guard.gd");
+	{
+		Ref<FileAccess> fa = FileAccess::open(path, FileAccess::ModeFlags::WRITE);
+		fa->store_string("extends Node\n");
+		fa->close();
+	}
+
+	HashMap<String, String> overrides;
+	overrides[path] = "extends RefCounted\n";
+
+	{
+		GDScriptCacheSourceOverrideGuard guard(overrides);
+		CHECK(GDScriptCache::has_source_override(path));
+		CHECK_EQ(GDScriptCache::get_source_code(path), "extends RefCounted\n");
+	}
+
+	// On scope exit the guard clears exactly the paths it installed.
+	CHECK(!GDScriptCache::has_source_override(path));
+	CHECK_EQ(GDScriptCache::get_source_code(path), "extends Node\n");
+}
+
 TEST_CASE("[Modules][GDScript] Validate built-in API") {
 	GDScriptLanguage *lang = GDScriptLanguage::get_singleton();
 
