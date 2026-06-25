@@ -6093,32 +6093,30 @@ bool caret_within_range(const RefactorLocation &p_location, const RefactorLocati
 // reconstruction means the node's source range dropped a surrounding grouping delimiter
 // (parser grouping nodes do not include their own parentheses), so wrapping that text in a
 // cast would emit syntactically invalid code.
+// Whether `p_text` (a single source line's expression) opens and closes every grouping
+// delimiter it contains. Used to refuse a cast whose recovered source dropped a surrounding
+// delimiter (e.g. `(value)[0]` recovers as `value)[0]`), since wrapping it would emit invalid
+// code. Tokenizing rather than hand-scanning means every GDScript string form -- single-line
+// triple-quoted (`"""..."""`) and prefixed (`r"..."`, `&"..."`, `^"..."`) -- collapses to one
+// LITERAL token, so quotes or brackets embedded in a string can never be mistaken for grouping.
 bool expression_text_is_balanced(const String &p_text) {
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code(p_text);
 	int depth = 0;
-	char32_t string_quote = 0;
-	for (int i = 0; i < p_text.length(); i++) {
-		const char32_t c = p_text[i];
-		if (string_quote != 0) {
-			if (c == '\\') {
-				i++; // Skip the escaped character.
-			} else if (c == string_quote) {
-				string_quote = 0;
-			}
-			continue;
-		}
-		switch (c) {
-			case '"':
-			case '\'':
-				string_quote = c;
-				break;
-			case '(':
-			case '[':
-			case '{':
+	GDScriptTokenizer::Token token = tokenizer.scan();
+	while (token.type != GDScriptTokenizer::Token::TK_EOF) {
+		switch (token.type) {
+			case GDScriptTokenizer::Token::ERROR:
+				// An unterminated string or otherwise unscannable text can't be safely wrapped.
+				return false;
+			case GDScriptTokenizer::Token::PARENTHESIS_OPEN:
+			case GDScriptTokenizer::Token::BRACKET_OPEN:
+			case GDScriptTokenizer::Token::BRACE_OPEN:
 				depth++;
 				break;
-			case ')':
-			case ']':
-			case '}':
+			case GDScriptTokenizer::Token::PARENTHESIS_CLOSE:
+			case GDScriptTokenizer::Token::BRACKET_CLOSE:
+			case GDScriptTokenizer::Token::BRACE_CLOSE:
 				depth--;
 				if (depth < 0) {
 					return false;
@@ -6127,8 +6125,9 @@ bool expression_text_is_balanced(const String &p_text) {
 			default:
 				break;
 		}
+		token = tokenizer.scan();
 	}
-	return depth == 0 && string_quote == 0;
+	return depth == 0;
 }
 
 // Build a cast candidate for `p_value`, the value expression of `p_statement`, targeting
