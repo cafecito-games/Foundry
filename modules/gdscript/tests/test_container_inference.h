@@ -747,6 +747,28 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::NO_EVIDENCE);
 	}
 
+	TEST_CASE("A lambda body that mutates the member through another reference escapes it") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func make(other) -> Callable:\n"
+				"\treturn func(): other._items.append(\"x\")\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("The member's own initializer leaking self escapes it") {
+		InferenceFixture fixture(
+				"func register(o) -> int:\n"
+				"\treturn 0\n"
+				"var _items = [register(self)]\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("An unused member array yields no evidence") {
 		InferenceFixture fixture("var _items = []\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");

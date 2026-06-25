@@ -596,11 +596,19 @@ private:
 				return;
 			}
 		}
-		// In member mode a member is reached through `self`, not a capture, so a
-		// lambda that uses `self` could mutate the member through a callable that may
-		// be stored or invoked later in ways the analysis cannot bound.
-		if (member_mode && p_lambda->use_self) {
-			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+		if (member_mode) {
+			// In member mode a member is reached through `self`, not a capture, so a
+			// lambda that uses `self` could mutate the member through a callable that
+			// may be stored or invoked later in ways the analysis cannot bound.
+			if (p_lambda->use_self) {
+				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+				return;
+			}
+			// The lambda body can also reach the member through another reference
+			// (`func(): other._member.append(x)`); scan it for such foreign writes.
+			if (p_lambda->function != nullptr) {
+				scan_suite(p_lambda->function->body);
+			}
 		}
 	}
 
@@ -1169,11 +1177,19 @@ private:
 				return;
 			}
 		}
-		// In member mode a member is reached through `self`, not a capture, so a
-		// lambda that uses `self` could mutate the member through a callable that may
-		// be stored or invoked later in ways the analysis cannot bound.
-		if (member_mode && p_lambda->use_self) {
-			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+		if (member_mode) {
+			// In member mode a member is reached through `self`, not a capture, so a
+			// lambda that uses `self` could mutate the member through a callable that
+			// may be stored or invoked later in ways the analysis cannot bound.
+			if (p_lambda->use_self) {
+				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+				return;
+			}
+			// The lambda body can also reach the member through another reference
+			// (`func(): other._member[k] = v`); scan it for such foreign writes.
+			if (p_lambda->function != nullptr) {
+				scan_suite(p_lambda->function->body);
+			}
 		}
 	}
 
@@ -1498,6 +1514,9 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_arra
 
 	ElementInferenceWalker walker(p_member, /* member_mode */ true);
 	walker.contribute_from_array_value(p_member->initializer);
+	// The literal's contents are contributed above, but its sub-expressions can
+	// still leak the instance (e.g. `[register(self)]`); scan them for escapes.
+	walker.scan_initializer(p_member->initializer);
 	walk_class_methods(walker, p_class, p_member);
 
 	if (walker.bailed) {
@@ -1546,6 +1565,9 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dict
 
 	DictionaryInferenceWalker walker(p_member, /* member_mode */ true);
 	walker.contribute_from_dictionary_value(p_member->initializer);
+	// The literal's contents are contributed above, but its sub-expressions can
+	// still leak the instance (e.g. `{0: register(self)}`); scan them for escapes.
+	walker.scan_initializer(p_member->initializer);
 	walk_class_methods(walker, p_class, p_member);
 
 	if (walker.bailed) {
