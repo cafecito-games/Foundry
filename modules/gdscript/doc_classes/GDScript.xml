@@ -63,7 +63,7 @@
 				# class Box[T]: ...
 				var Box = load("box.gd")
 				for parameter in Box.get_type_parameter_list():
-					print(parameter.name) # Prints &"T"
+					print(parameter.name) # Prints &amp;"T"
 				[/codeblock]
 			</description>
 		</method>

@@ -738,6 +738,13 @@ TEST_CASE("[Modules][GDScript][Reflection] Read-only introspection API") {
 			"trait Unrelated:\n"
 			"\t@abstract func z() -> void\n"
 			"\n"
+			"@abstract class Base:\n"
+			"\tfunc base_method() -> int:\n"
+			"\t\treturn 1\n"
+			"\n"
+			"@abstract class Derived extends Base:\n"
+			"\t@abstract func own_method() -> void\n"
+			"\n"
 			"class Recorder:\n"
 			"\tfunc handle(method_name, args):\n"
 			"\t\treturn null\n";
@@ -746,6 +753,7 @@ TEST_CASE("[Modules][GDScript][Reflection] Read-only introspection API") {
 	Ref<GDScript> sprite = get_subclass(script, "Sprite");
 	Ref<GDScript> drawable = get_subclass(script, "Drawable");
 	Ref<GDScript> unrelated = get_subclass(script, "Unrelated");
+	Ref<GDScript> derived = get_subclass(script, "Derived");
 	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
 	REQUIRE(sprite.is_valid());
 
@@ -763,6 +771,11 @@ TEST_CASE("[Modules][GDScript][Reflection] Read-only introspection API") {
 		Dictionary render_info = reflection->get_method_info(sprite, "render");
 		CHECK(render_info.get("name", "") == Variant("render"));
 		CHECK(reflection->get_method_info(sprite, "does_not_exist").is_empty());
+
+		// Inherited methods resolve through the base chain (like get_methods).
+		REQUIRE(derived.is_valid());
+		Dictionary base_info = reflection->get_method_info(derived, "base_method");
+		CHECK(base_info.get("name", "") == Variant("base_method"));
 	}
 
 	// get_properties returns the declared vars (no category headers).

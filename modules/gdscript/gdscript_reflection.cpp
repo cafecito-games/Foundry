@@ -89,11 +89,19 @@ TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) 
 }
 
 Dictionary GDScriptReflection::get_method_info(const Variant &p_target, const StringName &p_method) const {
+	// Walk the script base chain so an inherited method resolves, matching
+	// get_methods() (which uses get_script_method_list, base chain included). The
+	// visited set guards against a malformed cyclic base chain.
 	Ref<Script> script = _resolve_script(p_target);
-	if (script.is_null() || !script->has_method(p_method)) {
-		return Dictionary();
+	HashSet<const Script *> visited;
+	while (script.is_valid() && !visited.has(script.ptr())) {
+		visited.insert(script.ptr());
+		if (script->has_method(p_method)) {
+			return Dictionary(script->get_method_info(p_method));
+		}
+		script = script->get_base_script();
 	}
-	return Dictionary(script->get_method_info(p_method));
+	return Dictionary();
 }
 
 TypedArray<Dictionary> GDScriptReflection::get_properties(const Variant &p_target) const {
