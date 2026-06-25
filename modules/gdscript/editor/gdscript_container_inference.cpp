@@ -377,6 +377,11 @@ private:
 			case Node::BREAKPOINT:
 			case Node::ANNOTATION:
 				break;
+			case Node::CALL:
+				// A statement-level call discards its result, so a returned `self` does
+				// not escape; only its arguments and dangerous dispatch are scanned.
+				scan_call(static_cast<const GDScriptParser::CallNode *>(p_statement), /* result_consumed */ false);
+				break;
 			default:
 				if (is_expression_node(p_statement->type)) {
 					scan_value(static_cast<const GDScriptParser::ExpressionNode *>(p_statement));
@@ -733,54 +738,9 @@ private:
 					bail(GDScriptContainerInference::ESCAPES, "the instance escapes through `self`");
 				}
 				break;
-			case Node::CALL: {
-				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
-				// A modeled method on the tracked container (`_member.append(x)` /
-				// `self._member.set(k, v)`) is handled first: its receiver is the member
-				// itself, so the dynamic-reflection/override guards below (which assume the
-				// receiver may be `self`) do not apply to it.
-				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
-					const GDScriptParser::SubscriptNode *member_callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-					if (member_callee->is_attribute && (is_our_var(member_callee->base) || is_self_member_subscript(member_callee->base))) {
-						scan_method_on_var(call, member_callee->attribute != nullptr ? member_callee->attribute->name : StringName());
-						return;
-					}
-				}
-				if (member_mode && (is_self_reflection_call(call) || reflection_call_names_member(call))) {
-					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
-					return;
-				}
-				if (member_mode && (is_super_call(call) || is_overrideable_self_method_call(call))) {
-					// A script method on this instance (or a base method via `super`) can
-					// be overridden/extended by code outside the file that mutates the
-					// inherited member with another type, which the scan cannot see.
-					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
-					return;
-				}
-				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
-					const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-					if (callee->is_attribute && (is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
-						scan_method_on_var(call, callee->attribute != nullptr ? callee->attribute->name : StringName());
-						return;
-					}
-					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SUBSCRIPT &&
-							is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(callee->base))) {
-						return; // `other.member.append(x)`.
-					}
-					// `self.method(...)` is a call on this instance, not an escape of it;
-					// scan only the arguments for leaks (handled below), not the `self` base.
-					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF) {
-						for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
-							scan_value(argument);
-						}
-						return;
-					}
-				}
-				scan_value(call->callee);
-				for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
-					scan_value(argument);
-				}
-			} break;
+			case Node::CALL:
+				scan_call(static_cast<const GDScriptParser::CallNode *>(p_value), /* result_consumed */ true);
+				break;
 			case Node::ASSIGNMENT:
 				scan_assignment(static_cast<const GDScriptParser::AssignmentNode *>(p_value));
 				break;
@@ -835,6 +795,62 @@ private:
 				// Remaining expression kinds (literals, `self`, `$node`, plain
 				// identifiers that are not our variable) cannot reference it.
 				break;
+		}
+	}
+
+	// Scans a call expression. `p_result_consumed` is true when the call's return
+	// value is used as a value (so a result that may be `self` would escape) and
+	// false when it is a statement whose result is discarded.
+	void scan_call(const GDScriptParser::CallNode *p_call, bool p_result_consumed) {
+		if (bailed || p_call == nullptr) {
+			return;
+		}
+		// A modeled method on the tracked container (`_member.append(x)` /
+		// `self._member.set(k, v)`) is handled first: its receiver is the member
+		// itself, so the dynamic-reflection/override guards below (which assume the
+		// receiver may be `self`) do not apply to it.
+		if (p_call->callee != nullptr && p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && (is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
+				scan_method_on_var(p_call, callee->attribute != nullptr ? callee->attribute->name : StringName());
+				return;
+			}
+		}
+		if (member_mode && (is_self_reflection_call(p_call) || reflection_call_names_member(p_call))) {
+			bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
+			return;
+		}
+		if (member_mode && (is_super_call(p_call) || is_overrideable_self_method_call(p_call))) {
+			// A script method on this instance (or a base method via `super`) can be
+			// overridden/extended by code outside the file that mutates the inherited
+			// member with another type, which the scan cannot see.
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
+			return;
+		}
+		if (p_call->callee != nullptr && p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SUBSCRIPT &&
+					is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(callee->base))) {
+				return; // `other.member.append(x)`.
+			}
+			// `self.method(...)` is a call on this instance (a native method, since a
+			// script method already bailed above). Its arguments are scanned for leaks,
+			// but if its result is consumed it may itself be `self` (e.g.
+			// `self.get_node(".")`), which would escape; bail in that case.
+			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF) {
+				if (member_mode && p_result_consumed) {
+					bail(GDScriptContainerInference::ESCAPES, "a call on `self` may return the instance");
+					return;
+				}
+				for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
+					scan_value(argument);
+				}
+				return;
+			}
+		}
+		scan_value(p_call->callee);
+		for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
+			scan_value(argument);
 		}
 	}
 
@@ -1210,6 +1226,11 @@ private:
 			case Node::BREAKPOINT:
 			case Node::ANNOTATION:
 				break;
+			case Node::CALL:
+				// A statement-level call discards its result, so a returned `self` does
+				// not escape; only its arguments and dangerous dispatch are scanned.
+				scan_call(static_cast<const GDScriptParser::CallNode *>(p_statement), /* result_consumed */ false);
+				break;
 			default:
 				if (is_expression_node(p_statement->type)) {
 					scan_value(static_cast<const GDScriptParser::ExpressionNode *>(p_statement));
@@ -1552,54 +1573,9 @@ private:
 					bail(GDScriptContainerInference::ESCAPES, "the instance escapes through `self`");
 				}
 				break;
-			case Node::CALL: {
-				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
-				// A modeled method on the tracked container (`self._member.set(k, v)`) is
-				// handled first: its receiver is the member itself, so the
-				// dynamic-reflection/override guards below (which assume the receiver may
-				// be `self`) do not apply to it.
-				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
-					const GDScriptParser::SubscriptNode *member_callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-					if (member_callee->is_attribute && (is_our_var(member_callee->base) || is_self_member_subscript(member_callee->base))) {
-						scan_method_on_var(call, member_callee->attribute != nullptr ? member_callee->attribute->name : StringName());
-						return;
-					}
-				}
-				if (member_mode && (is_self_reflection_call(call) || reflection_call_names_member(call))) {
-					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
-					return;
-				}
-				if (member_mode && (is_super_call(call) || is_overrideable_self_method_call(call))) {
-					// A script method on this instance (or a base method via `super`) can
-					// be overridden/extended by code outside the file that mutates the
-					// inherited member with another key/value type, which the scan cannot see.
-					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
-					return;
-				}
-				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
-					const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-					if (callee->is_attribute && (is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
-						scan_method_on_var(call, callee->attribute != nullptr ? callee->attribute->name : StringName());
-						return;
-					}
-					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SUBSCRIPT &&
-							is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(callee->base))) {
-						return; // `other.member.set(k, v)`.
-					}
-					// `self.method(...)` is a call on this instance, not an escape of it;
-					// scan only the arguments for leaks, not the `self` base.
-					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF) {
-						for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
-							scan_value(argument);
-						}
-						return;
-					}
-				}
-				scan_value(call->callee);
-				for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
-					scan_value(argument);
-				}
-			} break;
+			case Node::CALL:
+				scan_call(static_cast<const GDScriptParser::CallNode *>(p_value), /* result_consumed */ true);
+				break;
 			case Node::ASSIGNMENT:
 				scan_assignment(static_cast<const GDScriptParser::AssignmentNode *>(p_value));
 				break;
@@ -1652,6 +1628,62 @@ private:
 			} break;
 			default:
 				break;
+		}
+	}
+
+	// Scans a call expression. `p_result_consumed` is true when the call's return
+	// value is used as a value (so a result that may be `self` would escape) and
+	// false when it is a statement whose result is discarded.
+	void scan_call(const GDScriptParser::CallNode *p_call, bool p_result_consumed) {
+		if (bailed || p_call == nullptr) {
+			return;
+		}
+		// A modeled method on the tracked container (`self._member.set(k, v)`) is
+		// handled first: its receiver is the member itself, so the
+		// dynamic-reflection/override guards below (which assume the receiver may be
+		// `self`) do not apply to it.
+		if (p_call->callee != nullptr && p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && (is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
+				scan_method_on_var(p_call, callee->attribute != nullptr ? callee->attribute->name : StringName());
+				return;
+			}
+		}
+		if (member_mode && (is_self_reflection_call(p_call) || reflection_call_names_member(p_call))) {
+			bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
+			return;
+		}
+		if (member_mode && (is_super_call(p_call) || is_overrideable_self_method_call(p_call))) {
+			// A script method on this instance (or a base method via `super`) can be
+			// overridden/extended by code outside the file that mutates the inherited
+			// member with another key/value type, which the scan cannot see.
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
+			return;
+		}
+		if (p_call->callee != nullptr && p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SUBSCRIPT &&
+					is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(callee->base))) {
+				return; // `other.member.set(k, v)`.
+			}
+			// `self.method(...)` is a call on this instance (a native method, since a
+			// script method already bailed above). Its arguments are scanned for leaks,
+			// but if its result is consumed it may itself be `self` (e.g.
+			// `self.get_node(".")`), which would escape; bail in that case.
+			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF) {
+				if (member_mode && p_result_consumed) {
+					bail(GDScriptContainerInference::ESCAPES, "a call on `self` may return the instance");
+					return;
+				}
+				for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
+					scan_value(argument);
+				}
+				return;
+			}
+		}
+		scan_value(p_call->callee);
+		for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
+			scan_value(argument);
 		}
 	}
 
