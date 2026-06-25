@@ -65,6 +65,30 @@ static bool _is_contextual_async_modifier(const String &p_text, int p_word_end) 
 	return _is_word_at(p_text, next_column, "func");
 }
 
+static bool _is_contextual_uses_keyword(const String &p_text, int p_word_end) {
+	// `uses` is contextual and remains a valid identifier; it only acts as the
+	// trait-application keyword when followed by a trait name, which is the only
+	// position where two bare identifiers appear in a row.
+	int next_column = p_word_end;
+	while (next_column < p_text.length() && is_whitespace(p_text[next_column])) {
+		next_column++;
+	}
+	if (next_column >= p_text.length() || !is_unicode_identifier_start(p_text[next_column])) {
+		return false;
+	}
+	// A trait name is never a reserved word. When `uses` is followed by an operator
+	// or control keyword (e.g. `uses is Foo`, `uses if a else b`), it is being used
+	// as an identifier, so it must not be highlighted as a keyword.
+	int next_word_end = next_column;
+	while (next_word_end < p_text.length() && is_unicode_identifier_continue(p_text[next_word_end])) {
+		next_word_end++;
+	}
+	const String next_word = p_text.substr(next_column, next_word_end - next_column);
+	return next_word != "is" && next_word != "as" && next_word != "in" &&
+			next_word != "and" && next_word != "or" && next_word != "not" &&
+			next_word != "if" && next_word != "else" && next_word != "when";
+}
+
 Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_line) {
 	Dictionary color_map;
 
@@ -507,6 +531,9 @@ Dictionary GDScriptSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_l
 			} else if (word == "async" && _is_contextual_async_modifier(str, to)) {
 				// `async` is contextual and remains a valid identifier outside declaration modifiers.
 				col = reserved_keywords[GDScriptTokenizer::get_token_name(GDScriptTokenizer::Token::FUNC)];
+			} else if (word == "uses" && _is_contextual_uses_keyword(str, to)) {
+				// `uses` is contextual and remains a valid identifier outside trait application.
+				col = reserved_keywords[GDScriptTokenizer::get_token_name(GDScriptTokenizer::Token::EXTENDS)];
 			} else if (member_keywords.has(word)) {
 				col = member_keywords[word];
 				in_member_variable = true;

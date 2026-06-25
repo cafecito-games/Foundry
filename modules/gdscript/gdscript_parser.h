@@ -1433,6 +1433,7 @@ public:
 		COMPLETION_TYPE_ATTRIBUTE, // Attribute in type name (Type.|).
 		COMPLETION_TYPE_NAME, // Name of type (after :).
 		COMPLETION_TYPE_NAME_OR_VOID, // Same as TYPE_NAME, but allows void (in function return type).
+		COMPLETION_USES, // Trait name after uses. Only traits are viable.
 	};
 
 	struct CompletionCall {

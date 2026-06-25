@@ -1823,6 +1823,61 @@ func legacy_wait(done: Signal) -> void:
 	CHECK_EQ(legacy_wait_qualifiers, "async");
 }
 
+TEST_CASE("[Modules][GDScript] Docgen marks traits") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+trait InnerTrait:
+	func helper() -> void:
+		pass
+
+class PlainInner:
+	pass
+)",
+			"user://trait_docgen.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptCompiler::make_scripts(script.ptr(), root, false);
+	GDScriptDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+
+	bool found_trait = false;
+	bool found_plain_inner = false;
+	bool found_root = false;
+	for (const DocData::ClassDoc &class_doc : docs) {
+		if (class_doc.name.ends_with("InnerTrait")) {
+			found_trait = true;
+			CHECK(class_doc.is_trait);
+		} else if (class_doc.name.ends_with("PlainInner")) {
+			found_plain_inner = true;
+			CHECK_FALSE(class_doc.is_trait);
+		} else {
+			found_root = true;
+			CHECK_FALSE(class_doc.is_trait);
+		}
+	}
+	CHECK(found_trait);
+	CHECK(found_plain_inner);
+	CHECK(found_root);
+
+	// The trait marker survives a dictionary round-trip.
+	DocData::ClassDoc trait_doc;
+	trait_doc.is_trait = true;
+	const DocData::ClassDoc restored = DocData::ClassDoc::from_dict(DocData::ClassDoc::to_dict(trait_doc));
+	CHECK(restored.is_trait);
+}
+
 TEST_CASE("[Modules][GDScript] Namespaced global classes can share a local name") {
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();

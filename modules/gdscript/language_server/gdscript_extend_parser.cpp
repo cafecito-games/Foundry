@@ -144,8 +144,8 @@ void ExtendGDScriptParser::update_symbols() {
 			const LSP::DocumentSymbol &symbol = class_symbol.children[i];
 			members.insert(symbol.name, &symbol);
 
-			// Cache level one inner classes.
-			if (symbol.kind == LSP::SymbolKind::Class) {
+			// Cache level one inner classes and traits.
+			if (symbol.kind == LSP::SymbolKind::Class || symbol.kind == LSP::SymbolKind::Interface) {
 				ClassMembers inner_class;
 				for (int j = 0; j < symbol.children.size(); j++) {
 					const LSP::DocumentSymbol &s = symbol.children[j];
@@ -204,7 +204,8 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 	if (r_symbol.name.is_empty()) {
 		r_symbol.name = path.get_file();
 	}
-	r_symbol.kind = LSP::SymbolKind::Class;
+	// Traits have no dedicated LSP symbol kind; Interface is the closest analog.
+	r_symbol.kind = p_class->is_trait ? LSP::SymbolKind::Interface : LSP::SymbolKind::Class;
 	r_symbol.deprecated = false;
 	r_symbol.range = range_of_node(p_class);
 	if (p_class->identifier) {
@@ -214,7 +215,7 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 		r_symbol.selectionRange.start = r_symbol.range.start;
 		r_symbol.selectionRange.end = r_symbol.range.start;
 	}
-	r_symbol.detail = "class " + r_symbol.name;
+	r_symbol.detail = (p_class->is_trait ? "trait " : "class ") + r_symbol.name;
 	{
 		String doc = p_class->doc_data.brief;
 		if (!p_class->doc_data.description.is_empty()) {

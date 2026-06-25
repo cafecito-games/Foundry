@@ -717,6 +717,7 @@ public:
 		bool is_experimental = false;
 		String experimental_message;
 		bool is_script_doc = false;
+		bool is_trait = false;
 		String script_path;
 		bool operator<(const ClassDoc &p_class) const {
 			return name < p_class.name;
@@ -848,6 +849,10 @@ public:
 				doc.is_script_doc = p_dict["is_script_doc"];
 			}
 
+			if (p_dict.has("is_trait")) {
+				doc.is_trait = p_dict["is_trait"];
+			}
+
 			if (p_dict.has("script_path")) {
 				doc.script_path = p_dict["script_path"];
 			}
@@ -962,6 +967,10 @@ public:
 			}
 
 			dict["is_script_doc"] = p_doc.is_script_doc;
+
+			if (p_doc.is_trait) {
+				dict["is_trait"] = p_doc.is_trait;
+			}
 
 			if (!p_doc.script_path.is_empty()) {
 				dict["script_path"] = p_doc.script_path;
