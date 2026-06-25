@@ -36,6 +36,7 @@
 
 #include "../gdscript_utility_functions.h"
 
+#include "core/string/node_path.h"
 #include "core/variant/variant.h"
 
 namespace {
@@ -551,16 +552,33 @@ private:
 				!identifier->function_source_is_static;
 	}
 
-	// True when a constant string expression equals the tracked member's name. The
-	// analyzer folds a constant reference (`const P = "_m"`) into `reduced_value`,
-	// so a constant identifier is matched as well as a raw string literal.
+	// True when a constant expression names the tracked member: a String/StringName
+	// equal to its name, or a NodePath any of whose components is its name (covering
+	// `set_indexed(^"_m", v)`). The analyzer folds a constant reference
+	// (`const P = "_m"`) into `reduced_value`, so a constant identifier is matched
+	// as well as a raw literal.
 	bool is_constant_member_name(const GDScriptParser::ExpressionNode *p_expr) const {
 		if (p_expr == nullptr || decl->identifier == nullptr || !p_expr->is_constant) {
 			return false;
 		}
 		const Variant &value = p_expr->reduced_value;
-		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-				StringName(value) == decl->identifier->name;
+		if (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) {
+			return StringName(value) == decl->identifier->name;
+		}
+		if (value.get_type() == Variant::NODE_PATH) {
+			const NodePath path = value;
+			for (int i = 0; i < path.get_name_count(); i++) {
+				if (path.get_name(i) == decl->identifier->name) {
+					return true;
+				}
+			}
+			for (int i = 0; i < path.get_subname_count(); i++) {
+				if (path.get_subname(i) == decl->identifier->name) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	// True when a constant string expression equals the tracked member's name,
@@ -1321,16 +1339,33 @@ private:
 				!identifier->function_source_is_static;
 	}
 
-	// True when a constant string expression equals the tracked member's name. The
-	// analyzer folds a constant reference (`const P = "_m"`) into `reduced_value`,
-	// so a constant identifier is matched as well as a raw string literal.
+	// True when a constant expression names the tracked member: a String/StringName
+	// equal to its name, or a NodePath any of whose components is its name (covering
+	// `set_indexed(^"_m", v)`). The analyzer folds a constant reference
+	// (`const P = "_m"`) into `reduced_value`, so a constant identifier is matched
+	// as well as a raw literal.
 	bool is_constant_member_name(const GDScriptParser::ExpressionNode *p_expr) const {
 		if (p_expr == nullptr || decl->identifier == nullptr || !p_expr->is_constant) {
 			return false;
 		}
 		const Variant &value = p_expr->reduced_value;
-		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-				StringName(value) == decl->identifier->name;
+		if (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) {
+			return StringName(value) == decl->identifier->name;
+		}
+		if (value.get_type() == Variant::NODE_PATH) {
+			const NodePath path = value;
+			for (int i = 0; i < path.get_name_count(); i++) {
+				if (path.get_name(i) == decl->identifier->name) {
+					return true;
+				}
+			}
+			for (int i = 0; i < path.get_subname_count(); i++) {
+				if (path.get_subname(i) == decl->identifier->name) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	// True when a constant string expression equals the tracked member's name,
