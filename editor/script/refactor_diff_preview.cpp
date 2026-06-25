@@ -34,6 +34,7 @@
 
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
+#include "modules/gdscript/editor/gdscript_refactoring_edits.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
@@ -111,13 +112,34 @@ String format_diff_side(int p_line, int p_width, bool p_changed, bool p_added, c
 	return left_pad_number(p_line, p_width) + " " + marker + " " + p_text;
 }
 
+String summarize_edit(const RefactorTextEdit &p_edit) {
+	String replacement = p_edit.new_text.replace("\n", "⏎").replace("\t", " ").strip_edges();
+	const int max_length = 48;
+	if (replacement.length() > max_length) {
+		replacement = replacement.left(max_length - 1) + "…";
+	}
+	const String location = vformat(TTR("Line %d"), p_edit.start_line + 1);
+	if (replacement.is_empty()) {
+		return location;
+	}
+	return vformat("%s: %s", location, replacement);
+}
+
 } // namespace
 
 void RefactorDiffPreviewModel::set_files(const Vector<RefactorDiffPreviewFile> &p_files) {
 	files = p_files;
-	accepted_files.resize(files.size());
-	for (int i = 0; i < accepted_files.size(); i++) {
-		accepted_files.write[i] = true;
+	accepted_edits.resize(files.size());
+	for (int i = 0; i < files.size(); i++) {
+		// Files without tracked edits keep a single implicit acceptance slot so
+		// whole-file accept/reject still toggles them as one unit.
+		const int slot_count = MAX(1, files[i].edits.size());
+		Vector<uint8_t> slots;
+		slots.resize(slot_count);
+		for (int j = 0; j < slot_count; j++) {
+			slots.write[j] = true;
+		}
+		accepted_edits.write[i] = slots;
 	}
 	selected_index = files.is_empty() ? -1 : 0;
 }
@@ -131,9 +153,33 @@ void RefactorDiffPreviewModel::set_apply_plan(const ScriptRefactorApplyPlan &p_p
 		preview_file.after_source = file_plan.after_source;
 		preview_file.edit_count = file_plan.edit_count;
 		preview_file.before_source_is_saved_version = file_plan.before_source_is_saved_version;
+		preview_file.edits = file_plan.edits;
 		preview_files.push_back(preview_file);
 	}
 	set_files(preview_files);
+}
+
+bool RefactorDiffPreviewModel::has_accepted_edit(int p_file_index) const {
+	ERR_FAIL_INDEX_V(p_file_index, accepted_edits.size(), false);
+	const Vector<uint8_t> &slots = accepted_edits[p_file_index];
+	for (int i = 0; i < slots.size(); i++) {
+		if (slots[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Vector<RefactorTextEdit> RefactorDiffPreviewModel::collect_accepted_edits(int p_file_index) const {
+	Vector<RefactorTextEdit> accepted;
+	const Vector<RefactorTextEdit> &edits = files[p_file_index].edits;
+	const Vector<uint8_t> &slots = accepted_edits[p_file_index];
+	for (int i = 0; i < edits.size(); i++) {
+		if (i < slots.size() && slots[i]) {
+			accepted.push_back(edits[i]);
+		}
+	}
+	return accepted;
 }
 
 int RefactorDiffPreviewModel::get_file_count() const {
@@ -163,26 +209,76 @@ RefactorDiffPreviewFile RefactorDiffPreviewModel::get_selected_file() const {
 }
 
 bool RefactorDiffPreviewModel::accept_file(int p_index) {
-	ERR_FAIL_INDEX_V(p_index, accepted_files.size(), false);
-	accepted_files.write[p_index] = true;
+	ERR_FAIL_INDEX_V(p_index, accepted_edits.size(), false);
+	Vector<uint8_t> &slots = accepted_edits.write[p_index];
+	for (int i = 0; i < slots.size(); i++) {
+		slots.write[i] = true;
+	}
 	return true;
 }
 
 bool RefactorDiffPreviewModel::reject_file(int p_index) {
-	ERR_FAIL_INDEX_V(p_index, accepted_files.size(), false);
-	accepted_files.write[p_index] = false;
+	ERR_FAIL_INDEX_V(p_index, accepted_edits.size(), false);
+	Vector<uint8_t> &slots = accepted_edits.write[p_index];
+	for (int i = 0; i < slots.size(); i++) {
+		slots.write[i] = false;
+	}
 	return true;
 }
 
 bool RefactorDiffPreviewModel::is_file_accepted(int p_index) const {
-	ERR_FAIL_INDEX_V(p_index, accepted_files.size(), false);
-	return accepted_files[p_index];
+	ERR_FAIL_INDEX_V(p_index, accepted_edits.size(), false);
+	return has_accepted_edit(p_index);
+}
+
+int RefactorDiffPreviewModel::get_edit_count(int p_file_index) const {
+	ERR_FAIL_INDEX_V(p_file_index, files.size(), 0);
+	return files[p_file_index].edits.size();
+}
+
+bool RefactorDiffPreviewModel::accept_edit(int p_file_index, int p_edit_index) {
+	ERR_FAIL_INDEX_V(p_file_index, files.size(), false);
+	ERR_FAIL_INDEX_V(p_edit_index, files[p_file_index].edits.size(), false);
+	accepted_edits.write[p_file_index].write[p_edit_index] = true;
+	return true;
+}
+
+bool RefactorDiffPreviewModel::reject_edit(int p_file_index, int p_edit_index) {
+	ERR_FAIL_INDEX_V(p_file_index, files.size(), false);
+	ERR_FAIL_INDEX_V(p_edit_index, files[p_file_index].edits.size(), false);
+	accepted_edits.write[p_file_index].write[p_edit_index] = false;
+	return true;
+}
+
+bool RefactorDiffPreviewModel::is_edit_accepted(int p_file_index, int p_edit_index) const {
+	ERR_FAIL_INDEX_V(p_file_index, files.size(), false);
+	ERR_FAIL_INDEX_V(p_edit_index, files[p_file_index].edits.size(), false);
+	return accepted_edits[p_file_index][p_edit_index];
+}
+
+String RefactorDiffPreviewModel::get_effective_after_source(int p_file_index) const {
+	ERR_FAIL_INDEX_V(p_file_index, files.size(), String());
+	const RefactorDiffPreviewFile &file = files[p_file_index];
+	if (file.edits.is_empty()) {
+		return is_file_accepted(p_file_index) ? file.after_source : file.before_source;
+	}
+
+	const Vector<RefactorTextEdit> accepted = collect_accepted_edits(p_file_index);
+	if (accepted.is_empty()) {
+		return file.before_source;
+	}
+
+	String after_source;
+	if (!GDScriptRefactorEdits::apply(file.before_source, accepted, after_source)) {
+		return file.before_source;
+	}
+	return after_source;
 }
 
 int RefactorDiffPreviewModel::get_accepted_file_count() const {
 	int count = 0;
-	for (int i = 0; i < accepted_files.size(); i++) {
-		if (accepted_files[i]) {
+	for (int i = 0; i < files.size(); i++) {
+		if (is_file_accepted(i)) {
 			count++;
 		}
 	}
@@ -192,7 +288,7 @@ int RefactorDiffPreviewModel::get_accepted_file_count() const {
 Vector<String> RefactorDiffPreviewModel::get_accepted_paths() const {
 	Vector<String> paths;
 	for (int i = 0; i < files.size(); i++) {
-		if (accepted_files[i]) {
+		if (is_file_accepted(i)) {
 			paths.push_back(files[i].path);
 		}
 	}
@@ -202,17 +298,33 @@ Vector<String> RefactorDiffPreviewModel::get_accepted_paths() const {
 ScriptRefactorApplyPlan RefactorDiffPreviewModel::get_accepted_apply_plan() const {
 	ScriptRefactorApplyPlan plan;
 	for (int i = 0; i < files.size(); i++) {
-		if (!accepted_files[i]) {
-			continue;
-		}
-
 		const RefactorDiffPreviewFile &file = files[i];
+
 		ScriptRefactorFilePlan file_plan;
 		file_plan.path = file.path;
 		file_plan.before_source = file.before_source;
-		file_plan.after_source = file.after_source;
-		file_plan.edit_count = file.edit_count;
 		file_plan.before_source_is_saved_version = file.before_source_is_saved_version;
+
+		if (file.edits.is_empty()) {
+			if (!is_file_accepted(i)) {
+				continue;
+			}
+			file_plan.after_source = file.after_source;
+			file_plan.edit_count = file.edit_count;
+		} else {
+			const Vector<RefactorTextEdit> accepted = collect_accepted_edits(i);
+			if (accepted.is_empty()) {
+				continue;
+			}
+			String after_source;
+			if (!GDScriptRefactorEdits::apply(file.before_source, accepted, after_source)) {
+				continue;
+			}
+			file_plan.after_source = after_source;
+			file_plan.edit_count = accepted.size();
+			file_plan.edits = accepted;
+		}
+
 		plan.files.push_back(file_plan);
 	}
 	return plan;
@@ -298,20 +410,35 @@ Vector<RefactorDiffPreviewLine> RefactorDiffPreviewModel::make_diff_lines(
 void RefactorDiffPreviewDialog::_rebuild_file_tree() {
 	file_tree->clear();
 	TreeItem *root = file_tree->create_item();
+	const Color disabled_font_color = get_theme_color(SNAME("disabled_font_color"), EditorStringName(Editor));
 
 	for (int i = 0; i < model.get_file_count(); i++) {
 		const RefactorDiffPreviewFile &file = model.get_file(i);
 		TreeItem *item = file_tree->create_item(root);
 		item->set_text(COLUMN_FILE, file.path);
 		item->set_tooltip_text(COLUMN_FILE, file.path);
-		item->set_metadata(COLUMN_FILE, i);
+		item->set_metadata(COLUMN_FILE, Vector2i(i, -1));
 		item->set_text(COLUMN_EDITS, vformat(TTRN("%d edit", "%d edits", file.edit_count), file.edit_count));
 		item->set_selectable(COLUMN_EDITS, false);
-		if (!model.is_file_accepted(i)) {
-			const Color disabled_font_color = get_theme_color(SNAME("disabled_font_color"), EditorStringName(Editor));
+		const bool file_accepted = model.is_file_accepted(i);
+		if (!file_accepted) {
 			item->set_custom_color(COLUMN_FILE, disabled_font_color);
 			item->set_custom_color(COLUMN_EDITS, disabled_font_color);
 		}
+
+		const int edit_count = model.get_edit_count(i);
+		for (int j = 0; j < edit_count; j++) {
+			TreeItem *edit_item = file_tree->create_item(item);
+			edit_item->set_cell_mode(COLUMN_FILE, TreeItem::CELL_MODE_CHECK);
+			edit_item->set_editable(COLUMN_FILE, true);
+			edit_item->set_checked(COLUMN_FILE, model.is_edit_accepted(i, j));
+			const String summary = summarize_edit(file.edits[j]);
+			edit_item->set_text(COLUMN_FILE, summary);
+			edit_item->set_tooltip_text(COLUMN_FILE, summary);
+			edit_item->set_metadata(COLUMN_FILE, Vector2i(i, j));
+			edit_item->set_selectable(COLUMN_EDITS, false);
+		}
+
 		if (i == model.get_selected_index()) {
 			item->select(COLUMN_FILE);
 		}
@@ -336,8 +463,9 @@ void RefactorDiffPreviewDialog::_refresh_diff() {
 	}
 
 	const RefactorDiffPreviewFile file = model.get_selected_file();
+	const String after_source = model.get_effective_after_source(model.get_selected_index());
 	const Vector<RefactorDiffPreviewLine> rows =
-			RefactorDiffPreviewModel::make_diff_lines(file.before_source, file.after_source);
+			RefactorDiffPreviewModel::make_diff_lines(file.before_source, after_source);
 	const Color unchanged_color = get_theme_color(SNAME("font_color"), EditorStringName(Editor));
 	const Color removed_color = get_theme_color(SNAME("error_color"), EditorStringName(Editor));
 	const Color added_color = get_theme_color(SNAME("success_color"), EditorStringName(Editor));
@@ -438,8 +566,33 @@ void RefactorDiffPreviewDialog::_file_selected() {
 		return;
 	}
 
-	const int index = selected->get_metadata(COLUMN_FILE);
-	_select_file(index);
+	// Selecting either a file row or one of its edit rows previews that file.
+	const Vector2i meta = selected->get_metadata(COLUMN_FILE);
+	_select_file(meta.x);
+}
+
+void RefactorDiffPreviewDialog::_edit_toggled() {
+	TreeItem *edited = file_tree->get_edited();
+	if (edited == nullptr) {
+		return;
+	}
+
+	const Vector2i meta = edited->get_metadata(COLUMN_FILE);
+	if (meta.y < 0) {
+		return;
+	}
+
+	if (edited->is_checked(COLUMN_FILE)) {
+		model.accept_edit(meta.x, meta.y);
+	} else {
+		model.reject_edit(meta.x, meta.y);
+	}
+
+	// The toggled edit's file drives the preview so its diff reflects the change.
+	model.select_file(meta.x);
+	_rebuild_file_tree();
+	_refresh_diff();
+	_refresh_footer();
 }
 
 void RefactorDiffPreviewDialog::_accept_current_file() {
@@ -495,6 +648,7 @@ RefactorDiffPreviewDialog::RefactorDiffPreviewDialog() {
 	file_tree->set_select_mode(Tree::SELECT_ROW);
 	file_tree->set_custom_minimum_size(Size2(240, 260) * EDSCALE);
 	file_tree->connect(SNAME("cell_selected"), callable_mp(this, &RefactorDiffPreviewDialog::_file_selected));
+	file_tree->connect(SNAME("item_edited"), callable_mp(this, &RefactorDiffPreviewDialog::_edit_toggled));
 	split->add_child(file_tree);
 
 	diff_view = memnew(RichTextLabel);

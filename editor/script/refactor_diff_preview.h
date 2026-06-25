@@ -49,6 +49,10 @@ struct RefactorDiffPreviewFile {
 	String after_source;
 	int edit_count = 0;
 	bool before_source_is_saved_version = true;
+	// Individual edits that produced after_source. When present the user can
+	// accept or reject each one independently; an empty list keeps the file as a
+	// single all-or-nothing unit driven by the stored after_source.
+	Vector<RefactorTextEdit> edits;
 };
 
 struct RefactorDiffPreviewLine {
@@ -63,8 +67,13 @@ struct RefactorDiffPreviewLine {
 
 class RefactorDiffPreviewModel {
 	Vector<RefactorDiffPreviewFile> files;
-	Vector<uint8_t> accepted_files;
+	// Per-file, per-edit acceptance flags. A file without tracked edits keeps a
+	// single implicit slot so whole-file accept/reject still works.
+	Vector<Vector<uint8_t>> accepted_edits;
 	int selected_index = -1;
+
+	bool has_accepted_edit(int p_file_index) const;
+	Vector<RefactorTextEdit> collect_accepted_edits(int p_file_index) const;
 
 public:
 	void set_files(const Vector<RefactorDiffPreviewFile> &p_files);
@@ -80,6 +89,15 @@ public:
 	bool accept_file(int p_index);
 	bool reject_file(int p_index);
 	bool is_file_accepted(int p_index) const;
+
+	int get_edit_count(int p_file_index) const;
+	bool accept_edit(int p_file_index, int p_edit_index);
+	bool reject_edit(int p_file_index, int p_edit_index);
+	bool is_edit_accepted(int p_file_index, int p_edit_index) const;
+
+	// Source after applying only the currently-accepted edits of a file. Used to
+	// keep the diff preview in sync as individual edits are toggled.
+	String get_effective_after_source(int p_file_index) const;
 
 	int get_accepted_file_count() const;
 	Vector<String> get_accepted_paths() const;
@@ -114,6 +132,7 @@ class RefactorDiffPreviewDialog : public ConfirmationDialog {
 	void _set_file_accepted(int p_index, bool p_accepted);
 
 	void _file_selected();
+	void _edit_toggled();
 	void _accept_current_file();
 	void _reject_current_file();
 

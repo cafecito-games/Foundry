@@ -111,6 +111,13 @@ TEST_CASE("[Editor][ScriptRefactorApply] Builds grouped before and after plan") 
 	CHECK_EQ(plan.files[1].before_source, "target.speed += 1\n");
 	CHECK_EQ(plan.files[1].after_source, "target.move_speed += 1\n");
 	CHECK_EQ(plan.files[1].edit_count, 1);
+
+	// The individual edits are retained so the preview can re-apply a subset.
+	REQUIRE_EQ(plan.files[0].edits.size(), 2);
+	CHECK_EQ(plan.files[0].edits[0].start_line, 0);
+	CHECK_EQ(plan.files[0].edits[0].new_text, "move_speed");
+	REQUIRE_EQ(plan.files[1].edits.size(), 1);
+	CHECK_EQ(plan.files[1].edits[0].new_text, "move_speed");
 }
 
 TEST_CASE("[Editor][ScriptRefactorApply] Missing source fails before producing a partial plan") {

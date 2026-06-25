@@ -142,6 +142,108 @@ TEST_CASE("[Editor][RefactorDiffPreview] Accepted files produce filtered apply p
 	CHECK_EQ(filtered.files[0].path, "res://player.gd");
 }
 
+namespace {
+
+RefactorTextEdit make_insert_edit(int p_line, int p_column, const String &p_new_text) {
+	RefactorTextEdit edit;
+	edit.start_line = p_line;
+	edit.start_column = p_column;
+	edit.end_line = p_line;
+	edit.end_column = p_column;
+	edit.new_text = p_new_text;
+	return edit;
+}
+
+// A two-edit annotation plan over "var a = 1\nvar b = 2\n": each edit inserts a
+// ": int" annotation after the respective variable name.
+ScriptRefactorApplyPlan make_two_edit_plan() {
+	ScriptRefactorApplyPlan plan;
+	ScriptRefactorFilePlan file;
+	file.path = "res://player.gd";
+	file.before_source = "var a = 1\nvar b = 2\n";
+	file.after_source = "var a: int = 1\nvar b: int = 2\n";
+	file.edit_count = 2;
+	file.edits.push_back(make_insert_edit(0, 5, ": int"));
+	file.edits.push_back(make_insert_edit(1, 5, ": int"));
+	plan.files.push_back(file);
+	return plan;
+}
+
+} // namespace
+
+TEST_CASE("[Editor][RefactorDiffPreview] Individual edits start accepted") {
+	RefactorDiffPreviewModel model;
+	model.set_apply_plan(make_two_edit_plan());
+
+	CHECK_EQ(model.get_edit_count(0), 2);
+	CHECK(model.is_edit_accepted(0, 0));
+	CHECK(model.is_edit_accepted(0, 1));
+	CHECK(model.is_file_accepted(0));
+	CHECK_EQ(model.get_effective_after_source(0), "var a: int = 1\nvar b: int = 2\n");
+}
+
+TEST_CASE("[Editor][RefactorDiffPreview] Rejecting one edit applies only the rest") {
+	RefactorDiffPreviewModel model;
+	model.set_apply_plan(make_two_edit_plan());
+
+	model.reject_edit(0, 1);
+	CHECK(model.is_edit_accepted(0, 0));
+	CHECK_FALSE(model.is_edit_accepted(0, 1));
+	CHECK(model.is_file_accepted(0));
+	CHECK_EQ(model.get_effective_after_source(0), "var a: int = 1\nvar b = 2\n");
+
+	const ScriptRefactorApplyPlan accepted = model.get_accepted_apply_plan();
+	REQUIRE_EQ(accepted.files.size(), 1);
+	CHECK_EQ(accepted.files[0].after_source, "var a: int = 1\nvar b = 2\n");
+	CHECK_EQ(accepted.files[0].edit_count, 1);
+	REQUIRE_EQ(accepted.files[0].edits.size(), 1);
+	CHECK_EQ(accepted.files[0].edits[0].start_line, 0);
+}
+
+TEST_CASE("[Editor][RefactorDiffPreview] Rejecting every edit drops the file") {
+	RefactorDiffPreviewModel model;
+	model.set_apply_plan(make_two_edit_plan());
+
+	model.reject_edit(0, 0);
+	model.reject_edit(0, 1);
+	CHECK_FALSE(model.is_file_accepted(0));
+	CHECK_EQ(model.get_accepted_file_count(), 0);
+	CHECK_EQ(model.get_effective_after_source(0), "var a = 1\nvar b = 2\n");
+	CHECK(model.get_accepted_apply_plan().files.is_empty());
+
+	model.accept_edit(0, 1);
+	CHECK(model.is_file_accepted(0));
+	CHECK_EQ(model.get_effective_after_source(0), "var a = 1\nvar b: int = 2\n");
+}
+
+TEST_CASE("[Editor][RefactorDiffPreview] Whole-file accept and reject toggle every edit") {
+	RefactorDiffPreviewModel model;
+	model.set_apply_plan(make_two_edit_plan());
+
+	model.reject_file(0);
+	CHECK_FALSE(model.is_edit_accepted(0, 0));
+	CHECK_FALSE(model.is_edit_accepted(0, 1));
+	CHECK_FALSE(model.is_file_accepted(0));
+
+	model.accept_file(0);
+	CHECK(model.is_edit_accepted(0, 0));
+	CHECK(model.is_edit_accepted(0, 1));
+	CHECK(model.is_file_accepted(0));
+}
+
+TEST_CASE("[Editor][RefactorDiffPreview] Per-edit access rejects out-of-range indexes") {
+	RefactorDiffPreviewModel model;
+	model.set_apply_plan(make_two_edit_plan());
+
+	ERR_PRINT_OFF;
+	CHECK_FALSE(model.accept_edit(0, 2));
+	CHECK_FALSE(model.reject_edit(1, 0));
+	CHECK_FALSE(model.is_edit_accepted(0, -1));
+	ERR_PRINT_ON;
+	CHECK(model.is_edit_accepted(0, 0));
+	CHECK(model.is_edit_accepted(0, 1));
+}
+
 TEST_CASE("[Editor][RefactorDiffPreview] Side-by-side diff rows") {
 	SUBCASE("empty sources produce no rows") {
 		const Vector<RefactorDiffPreviewLine> lines = RefactorDiffPreviewModel::make_diff_lines("", "");
