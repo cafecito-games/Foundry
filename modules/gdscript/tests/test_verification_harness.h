@@ -401,6 +401,45 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Dependent rejection holds when the touched provider is outside the universe") {
+		// A candidate may touch a provider that is not itself listed in the universe, while an
+		// in-universe consumer depends on it. The universe bounds which dependents are
+		// re-analyzed, not which providers can be edited, so the consumer must still be
+		// discovered and the breaking candidate rejected. A graph cache that only recorded edges
+		// keyed on universe providers would miss the consumer here and wrongly accept.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/verify_outside_provider.gd";
+		const String provider_source =
+				"func get_value():\n"
+				"\treturn 42\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_outside_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_outside_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 0);
+
+		// Universe lists only the consumer; the touched provider is outside it.
+		Vector<String> universe = { consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+		CHECK_GT(result.rejected.size(), 0);
+		CHECK_GT(result.rejected[0].diagnostics.size(), 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("A candidate with an out-of-range edit is rejected with 'could not be applied'") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

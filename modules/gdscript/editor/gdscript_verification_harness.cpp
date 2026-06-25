@@ -121,12 +121,16 @@ struct VerifyDependencyGraphCache {
 	}
 };
 
-// Order-independent signature of a universe path set: the sum of per-path 64-bit hashes. The
-// commutative combine makes it insensitive to ordering and duplicates are already collapsed by
-// the caller, so two calls with the same set of paths produce the same signature.
-uint64_t universe_signature_of(const Vector<String> &p_universe) {
+// Order-independent signature of the path set the cached edges are scoped to: the sum of each
+// path's 64-bit hash. The commutative combine is insensitive to ordering, and the entries are a
+// set, so two calls over the same set of paths produce the same signature. The scope is the
+// universe plus any touched path that lies outside it: an in-universe consumer's edge to such an
+// out-of-universe provider is only captured while that provider is in scope, so a change in the
+// out-of-universe touched set must rebuild the index. In normal use every touched path is in the
+// universe, so this set is just the universe and the signature is stable across a fixpoint run.
+uint64_t edge_scope_signature_of(const HashSet<String> &p_scope) {
 	uint64_t signature = 0;
-	for (const String &path : p_universe) {
+	for (const String &path : p_scope) {
 		signature += path.hash64();
 	}
 	return signature;
@@ -438,16 +442,24 @@ VerificationResult GDScriptVerificationHarness::verify(
 		universe_set.insert(path);
 	}
 
+	// The scope the cached edges are valid for: the universe plus any touched provider outside it
+	// (whose edges to in-universe consumers are captured only while it is in scope). Used both to
+	// gate cache reuse and as the provider scan when recording edges, so the two always agree.
+	HashSet<String> edge_scope = universe_set;
+	for (const String &path : touched) {
+		edge_scope.insert(path);
+	}
+
 	// Read every universe path's current on-disk source once. Reading files is cheap relative
 	// to a full parse+analyze, and the source is needed both to validate the cached dependency
 	// edges (by hash) and to prime the files whose content changed.
 	VerifyDependencyGraphCache &graph_cache = verify_dependency_graph_cache();
 
-	// A cached entry's recorded edges are only complete relative to the universe it was primed
-	// against, so drop the whole index when the universe changes. This rebuilds every path on
-	// the first call under a new universe (identical to the from-scratch behavior) while leaving
-	// the optimization fully active across the repeated, fixed-universe calls of a fixpoint run.
-	const uint64_t signature = universe_signature_of(universe);
+	// A cached entry's recorded edges are only complete relative to the edge scope they were
+	// primed against, so drop the whole index when that scope changes. This rebuilds every path
+	// on the first call under a new scope (identical to the from-scratch behavior) while leaving
+	// the optimization fully active across the repeated, fixed-scope calls of a fixpoint run.
+	const uint64_t signature = edge_scope_signature_of(edge_scope);
 	if (!graph_cache.universe_signature_set || graph_cache.universe_signature != signature) {
 		graph_cache.clear();
 		graph_cache.universe_signature = signature;
@@ -515,15 +527,19 @@ VerificationResult GDScriptVerificationHarness::verify(
 		// forward-dependency capture below finds no edges for it.
 	}
 
-	// Capture each reprimed path's forward dependencies against the whole universe. Repriming a
-	// path records cache-level inverse edges from every provider it touches to it, including
-	// unchanged providers that were not themselves reprimed, so the provider scan must span the
-	// entire universe rather than only the reprimed set.
+	// Capture each reprimed path's forward dependencies. Repriming a path records cache-level
+	// inverse edges from every provider it touches to it, including unchanged providers that were
+	// not themselves reprimed. The provider scan spans the universe plus the touched paths: a
+	// candidate may touch a provider that is not itself in the universe, yet an in-universe
+	// consumer can depend on it, and that consumer must still be discovered as affected (the
+	// universe bounds which dependents are re-analyzed, not which providers can be edited). The
+	// affected-set BFS below filters dependents by universe membership, so recording an edge keyed
+	// on an out-of-universe provider is safe.
 	{
 		HashMap<String, HashSet<String>> forward_for_reprimed;
-		for (const String &provider : universe) {
+		for (const String &provider : edge_scope) {
 			for (const String &dependent : GDScriptCache::get_inverse_dependencies(provider)) {
-				if (reprime_set.has(dependent) && universe_set.has(provider)) {
+				if (reprime_set.has(dependent)) {
 					forward_for_reprimed[dependent].insert(provider);
 				}
 			}
