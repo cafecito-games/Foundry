@@ -574,6 +574,11 @@ public:
 		bool is_super = false;
 		bool is_static = false;
 		bool is_noreturn = false;
+		// Set by the analyzer when this is the built-in generic proxy constructor
+		// `create_proxy[T](handler)`. The compiler lowers it to a
+		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script
+		// from the `[T]` type argument.
+		bool is_proxy_construct = false;
 
 		CallNode() {
 			type = CALL;

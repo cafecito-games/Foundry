@@ -660,7 +660,26 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				arguments.push_back(arg);
 			}
 
-			if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
+			if (call->is_proxy_construct) {
+				// `create_proxy[T](handler)` lowers to `create_proxy_dynamic(T, handler)`. The
+				// type argument T (a trait/abstract type) is compiled as a value to obtain its
+				// script, which the runtime uses to scan the proxied contract. T is statically
+				// resolved here; the result is typed as T by the analyzer.
+				const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+				GDScriptCodeGenerator::Address type_arg = _parse_expression(codegen, r_error, subscript->index);
+				if (r_error) {
+					return GDScriptCodeGenerator::Address();
+				}
+				Vector<GDScriptCodeGenerator::Address> proxy_arguments;
+				proxy_arguments.push_back(type_arg);
+				for (int i = 0; i < arguments.size(); i++) {
+					proxy_arguments.push_back(arguments[i]);
+				}
+				gen->write_call_gdscript_utility(result, SNAME("create_proxy_dynamic"), proxy_arguments);
+				if (type_arg.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+			} else if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
 				gen->write_construct(result, GDScriptParser::get_builtin_type(call->function_name), arguments);
 			} else if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && Variant::has_utility_function(call->function_name)) {
 				// Variant utility function.
