@@ -81,11 +81,11 @@ public:
 	}
 
 	const GDScriptParser::VariableNode *member(const StringName &p_name) const {
-		const GDScriptParser::ClassNode *root = parser.get_tree();
-		if (root == nullptr || !root->has_member(p_name)) {
+		const GDScriptParser::ClassNode *class_root = parser.get_tree();
+		if (class_root == nullptr || !class_root->has_member(p_name)) {
 			return nullptr;
 		}
-		const GDScriptParser::ClassNode::Member &found = root->get_member(p_name);
+		const GDScriptParser::ClassNode::Member &found = class_root->get_member(p_name);
 		return found.type == GDScriptParser::ClassNode::Member::VARIABLE ? found.variable : nullptr;
 	}
 
