@@ -11,8 +11,8 @@ class Player extends Base:
 	pass
 
 trait ShadowDamageable:
-	func describe_shadow(amount: int, label: String) -> String:
-		return label
+	func describe_shadow(amount: int) -> int:
+		return amount
 
 class ShadowBase:
 	func describe_shadow(amount: int) -> int:

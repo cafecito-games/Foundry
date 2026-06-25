@@ -6213,6 +6213,33 @@ void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_cla
 					continue;
 				}
 
+				bool inherited_method_shadows_trait = false;
+				for (GDScriptParser::DataType *base_type = &p_class->base_type;
+						base_type != nullptr && base_type->kind == GDScriptParser::DataType::CLASS;) {
+					GDScriptParser::ClassNode *base_class = base_type->class_type;
+					if (base_class == nullptr) {
+						break;
+					}
+
+					if (base_class->has_function(member_name)) {
+						GDScriptParser::ClassNode::Member base_member = base_class->get_member(member_name);
+						if (base_member.function != nullptr && !base_member.function->is_abstract) {
+							TraitMethodImplementation implementation;
+							implementation.function = base_member.function;
+							implementation.owner_class = base_class;
+							validate_trait_method_signature(trait, member.function, implementation);
+							inherited_method_shadows_trait = true;
+							break;
+						}
+					}
+
+					resolve_class_inheritance(base_class);
+					base_type = &base_class->base_type;
+				}
+				if (inherited_method_shadows_trait) {
+					continue;
+				}
+
 				HashMap<StringName, TraitMemberSource>::Iterator previous = trait_methods.find(member_name);
 				if (previous) {
 					push_error(vformat(R"*(Trait method "%s()" from "%s" conflicts with trait method "%s()" from "%s"; override it in "%s" to disambiguate.)*",
