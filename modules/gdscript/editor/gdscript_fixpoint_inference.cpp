@@ -217,10 +217,18 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 		bool ok = false;
 		ctx.source = read_source(path, ok);
 		if (!ok) {
+			// The file became unreadable since the run started (it was readable at snapshot
+			// time, or this is the final pass). Surface it rather than dropping it silently.
+			result.unanalyzed_files.push_back({ path, vformat("Cannot read '%s'.", path) });
 			continue;
 		}
 		RefactorCandidatesResult candidates = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 		if (!candidates.ok) {
+			// The file could not be analyzed (parse/analyze error, unresolved dependency), so
+			// none of its declarations are visible. Report it explicitly so an unanalyzable
+			// file is not mistaken for a clean, fully-typed one (epic #29: honest reporting).
+			const String reason = candidates.error_message.is_empty() ? String("Cannot analyze this script.") : candidates.error_message;
+			result.unanalyzed_files.push_back({ path, reason });
 			continue;
 		}
 		for (const RefactorCandidate &candidate : candidates.candidates) {

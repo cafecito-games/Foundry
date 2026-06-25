@@ -65,6 +65,7 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 		result.converged = inference.converged;
 		result.changed_files = inference.changed_files;
 		result.skipped = inference.skipped;
+		result.unanalyzed_files = inference.unanalyzed_files;
 		return result;
 	}
 
@@ -73,6 +74,7 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 	result.converged = inference.converged;
 	result.changed_files = inference.changed_files;
 	result.skipped = inference.skipped;
+	result.unanalyzed_files = inference.unanalyzed_files;
 	result.ok = true;
 	return result;
 }

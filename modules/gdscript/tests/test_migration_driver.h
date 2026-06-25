@@ -219,6 +219,50 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Driver reports a scanned file it cannot analyze instead of dropping it") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_driver_unanalyzable");
+
+		// A typeable leaf alongside a file with a malformed signature that fails to parse, so
+		// analysis never succeeds. An all-zero edit set on such a project must not read as a
+		// clean run: the unanalyzable file is reported explicitly (epic #29: honest reporting).
+		const String path_good = tree.write_file("good.gd",
+				"static func value():\n"
+				"\treturn 1\n");
+		const String path_broken = tree.write_file("broken.gd",
+				"func broken( ->:\n"
+				"\tpass\n");
+
+		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_unanalyzable");
+		REQUIRE(result.ok);
+
+		// The analyzable leaf is still typed despite the broken sibling.
+		CHECK(FileAccess::get_file_as_string(path_good).contains("static func value() -> int:"));
+
+		// The broken file is scanned and reported as unanalyzed, exactly once, with a reason;
+		// the good leaf is analyzable and absent from the list.
+		CHECK(result_contains_file(result.scanned_files, path_broken));
+		int broken_unanalyzed = 0;
+		int good_unanalyzed = 0;
+		for (const FixpointUnanalyzed &unanalyzed : result.unanalyzed_files) {
+			if (unanalyzed.path == path_broken) {
+				broken_unanalyzed++;
+				CHECK_FALSE(unanalyzed.reason.is_empty());
+			} else if (unanalyzed.path == path_good) {
+				good_unanalyzed++;
+			}
+		}
+		CHECK_EQ(broken_unanalyzed, 1);
+		CHECK_EQ(good_unanalyzed, 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Driver does not commit an edit that would break a dependent and reports the skip") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

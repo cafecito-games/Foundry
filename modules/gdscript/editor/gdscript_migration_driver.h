@@ -67,6 +67,10 @@ struct MigrationDriverResult {
 	bool converged = false;
 	Vector<FixpointFileChange> changed_files; // One entry per file the run rewrote.
 	Vector<FixpointSkipped> skipped; // Declarations left untyped, each with a reason.
+	// Files the driver scanned but could not analyze (parse/analyze error, unresolved
+	// dependency), each with a reason. Counted distinctly from changed and skipped so an
+	// all-zero edit set on an unanalyzable project is not mistaken for a clean run.
+	Vector<FixpointUnanalyzed> unanalyzed_files;
 };
 
 // The dependency-ordered migration driver: the single pipeline that turns a project root into a

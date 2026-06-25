@@ -330,6 +330,22 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 			// The valid leaf is still typed despite the broken sibling.
 			CHECK(FileAccess::get_file_as_string(path_good).contains("static func value() -> int:"));
+
+			// The broken file is reported explicitly, exactly once, with a reason, rather than
+			// vanishing from the report (epic #29: honest reporting). The good leaf, which was
+			// analyzable, is not in the unanalyzed list.
+			int broken_unanalyzed = 0;
+			int good_unanalyzed = 0;
+			for (const FixpointUnanalyzed &unanalyzed : result.unanalyzed_files) {
+				if (unanalyzed.path == path_broken) {
+					broken_unanalyzed++;
+					CHECK_FALSE(unanalyzed.reason.is_empty());
+				} else if (unanalyzed.path == path_good) {
+					good_unanalyzed++;
+				}
+			}
+			CHECK_EQ(broken_unanalyzed, 1);
+			CHECK_EQ(good_unanalyzed, 0);
 		}
 
 		SUBCASE("an unprovable declaration is reported once in skipped") {
