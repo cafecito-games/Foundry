@@ -1528,7 +1528,7 @@ TEST_CASE("[Modules][GDScript] Scripts reflect declared generic type parameters"
 
 		Variant bound_variant = script->call(SNAME("get_type_parameter_list"));
 		CHECK_EQ(bound_variant.get_type(), Variant::ARRAY);
-		TypedArray<Dictionary> bound_parameters = bound_variant;
+		TypedArray<GDScriptTypeParameter> bound_parameters = bound_variant;
 		CHECK(bound_parameters.is_empty());
 		CHECK_FALSE(bool(script->call(SNAME("is_generic"))));
 	}
@@ -1558,27 +1558,37 @@ TEST_CASE("[Modules][GDScript] Scripts reflect declared generic type parameters"
 
 		Variant bound_variant = script->call(SNAME("get_type_parameter_list"));
 		CHECK_EQ(bound_variant.get_type(), Variant::ARRAY);
-		TypedArray<Dictionary> bound_parameters = bound_variant;
+		TypedArray<GDScriptTypeParameter> bound_parameters = bound_variant;
 		CHECK_EQ(bound_parameters.size(), 2);
 		if (bound_parameters.size() != 2) {
 			return;
 		}
 
-		const Dictionary key_entry = bound_parameters[0];
-		CHECK_EQ(StringName(key_entry["name"]), SNAME("K"));
-		CHECK_EQ(int(key_entry["index"]), 0);
-		CHECK_EQ(StringName(key_entry["scope"]), SNAME("class"));
-		CHECK_FALSE(bool(key_entry["has_bound"]));
-		CHECK_FALSE(key_entry.has("bound"));
+		Ref<GDScriptTypeParameter> key_entry = bound_parameters[0];
+		CHECK(key_entry.is_valid());
+		Ref<GDScriptTypeParameter> value_entry = bound_parameters[1];
+		CHECK(value_entry.is_valid());
+		if (key_entry.is_null() || value_entry.is_null()) {
+			return;
+		}
 
-		const Dictionary value_entry = bound_parameters[1];
-		CHECK_EQ(StringName(value_entry["name"]), SNAME("V"));
-		CHECK_EQ(int(value_entry["index"]), 1);
-		CHECK(bool(value_entry["has_bound"]));
-		CHECK(value_entry.has("bound"));
-		const Dictionary bound_info = value_entry["bound"];
+		CHECK_EQ(key_entry->get_parameter_name(), SNAME("K"));
+		CHECK_EQ(key_entry->get_index(), 0);
+		CHECK_EQ(key_entry->get_scope(), SNAME("class"));
+		CHECK_FALSE(key_entry->has_bound());
+		CHECK(key_entry->get_bound().is_empty());
+
+		CHECK_EQ(value_entry->get_parameter_name(), SNAME("V"));
+		CHECK_EQ(value_entry->get_index(), 1);
+		CHECK(value_entry->has_bound());
+		const Dictionary bound_info = value_entry->get_bound();
 		CHECK_EQ(int(bound_info["type"]), int(Variant::OBJECT));
 		CHECK_EQ(StringName(bound_info["class_name"]), SNAME("RefCounted"));
+
+		// The descriptors are also accessible through the bound property surface.
+		CHECK_EQ(StringName(key_entry->get(SNAME("name"))), SNAME("K"));
+		CHECK_EQ(int(value_entry->get(SNAME("index"))), 1);
+		CHECK(bool(value_entry->get(SNAME("has_bound"))));
 	}
 
 	SUBCASE("compiled generic classes carry their parameters") {

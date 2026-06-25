@@ -88,6 +88,20 @@ void GDScriptNativeClass::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("new"), &GDScriptNativeClass::_new);
 }
 
+void GDScriptTypeParameter::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_parameter_name"), &GDScriptTypeParameter::get_parameter_name);
+	ClassDB::bind_method(D_METHOD("get_index"), &GDScriptTypeParameter::get_index);
+	ClassDB::bind_method(D_METHOD("get_scope"), &GDScriptTypeParameter::get_scope);
+	ClassDB::bind_method(D_METHOD("has_bound"), &GDScriptTypeParameter::has_bound);
+	ClassDB::bind_method(D_METHOD("get_bound"), &GDScriptTypeParameter::get_bound);
+
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_parameter_name");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "index", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_index");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "scope", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_scope");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "has_bound", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "has_bound");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bound", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_bound");
+}
+
 Variant GDScriptNativeClass::_new() {
 	Object *o = instantiate();
 	ERR_FAIL_NULL_V_MSG(o, Variant(), "Class type: '" + String(name) + "' is not instantiable.");
@@ -1347,18 +1361,19 @@ bool GDScript::has_script_trait(const StringName &p_trait) const {
 	return false;
 }
 
-TypedArray<Dictionary> GDScript::_get_type_parameter_list() const {
-	TypedArray<Dictionary> ret;
+TypedArray<GDScriptTypeParameter> GDScript::_get_type_parameter_list() const {
+	TypedArray<GDScriptTypeParameter> ret;
 	for (const TypeParameter &parameter : type_parameters) {
-		Dictionary entry;
-		entry["name"] = parameter.name;
-		entry["index"] = parameter.index;
+		Ref<GDScriptTypeParameter> entry;
+		entry.instantiate();
+		entry->name = parameter.name;
+		entry->index = parameter.index;
 		// Class-declared parameters are the only kind reachable from a compiled script; method type
 		// parameters live on functions and are not reflected here.
-		entry["scope"] = StringName("class");
-		entry["has_bound"] = parameter.has_bound;
+		entry->scope = StringName("class");
+		entry->_has_bound = parameter.has_bound;
 		if (parameter.has_bound) {
-			entry["bound"] = parameter.bound.operator Dictionary();
+			entry->bound = parameter.bound.operator Dictionary();
 		}
 		ret.push_back(entry);
 	}
