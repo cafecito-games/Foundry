@@ -87,7 +87,7 @@ jobs:
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/misc/error_suppressions/lsan.txt
           TSAN_OPTIONS: halt_on_error=1:suppressions=${{ github.workspace }}/misc/error_suppressions/tsan.txt
         run: |
-          GODOT_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev.san.*' | head -n 1)"
+          GODOT_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*.san*' -perm -111 | head -n 1)"
           if [ -z "${GODOT_BIN}" ]; then
             echo "Could not find sanitizer-enabled Godot binary in bin/." >&2
             ls -l bin/
