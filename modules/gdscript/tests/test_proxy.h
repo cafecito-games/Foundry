@@ -653,6 +653,58 @@ TEST_CASE("[Modules][GDScript][Proxy] Transitive abstract trait requirements are
 	check_intercepts(wide, { "wide_required", "left_required", "right_required", "base_required" });
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Inherited requirement return matches a direct proxy") {
+	ScopedProxyLanguage language;
+
+	// An unannotated abstract method (`ping()`) compiles to a `void` return (no
+	// declared type and no body that returns), so the handler's value is ignored —
+	// not passed through as `Variant`. A proxy that reaches `ping` transitively
+	// (through `Sub uses Pinger`) must coerce its return exactly as a direct proxy of
+	// `Pinger` does, rather than upgrading it to a pass-through `Variant`. A
+	// typed-but-void method (`reset() -> void`) is covered too.
+	const char *source =
+			"trait Pinger:\n"
+			"\t@abstract func ping()\n"
+			"\t@abstract func reset() -> void\n"
+			"\n"
+			"trait Sub uses Pinger:\n"
+			"\t@abstract func extra() -> int\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn \"value\"\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> pinger = get_subclass(script, "Pinger");
+	Ref<GDScript> sub = get_subclass(script, "Sub");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(pinger.is_valid());
+	REQUIRE(sub.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	const auto call_method = [&](const Ref<GDScript> &p_type, const char *p_method) {
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(p_type, Callable(recorder, "handle"), error_message);
+		REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+		Callable::CallError error;
+		Variant result = proxy->get_script_instance()->callp(p_method, nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		return result;
+	};
+
+	// `ping` (unannotated -> void): the direct proxy ignores the handler value and
+	// returns null, and the transitive proxy must do the same.
+	CHECK(call_method(pinger, "ping").get_type() == Variant::NIL);
+	CHECK(call_method(sub, "ping") == call_method(pinger, "ping"));
+
+	// `reset` (void): the handler value is ignored on both paths.
+	CHECK(call_method(pinger, "reset").get_type() == Variant::NIL);
+	CHECK(call_method(sub, "reset").get_type() == Variant::NIL);
+}
+
 TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 	ScopedProxyLanguage language;
 

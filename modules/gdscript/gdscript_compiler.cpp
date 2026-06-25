@@ -2476,12 +2476,11 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 			}
 
 			GDScript::AbstractTraitRequirement requirement;
-			requirement.return_type = _gdtype_from_datatype(function->get_datatype(), p_script);
 
-			// Build the enumerable signature so the proxy's `get_method_list` stays
-			// consistent with `has_method`/`callp`. Mirrors how `_parse_function`
-			// fills a method's `MethodInfo` (arguments, return, abstract/static/async
-			// flags) from the same parser node.
+			// Build the enumerable signature, mirroring how `_parse_function` fills a
+			// compiled method's `MethodInfo` and return type from the same parser node,
+			// so the proxy's contract resolution and `get_method_list` agree with what a
+			// direct proxy of the declaring trait sees.
 			MethodInfo &method_info = requirement.method_info;
 			method_info.name = name;
 			method_info.flags |= METHOD_FLAG_VIRTUAL_REQUIRED;
@@ -2499,7 +2498,18 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 				method_info.flags |= METHOD_FLAG_VARARG;
 			}
 			method_info.default_arguments.append_array(function->default_arg_values);
-			method_info.return_val = function->get_datatype().to_property_info(String());
+
+			// Same rule `_parse_function` applies: an abstract method contributes a
+			// return type only when it declares one explicitly (or, defensively, has a
+			// returning body); an unannotated requirement is `void`, not `Variant`, so
+			// the handler's value is ignored just as for the compiled function.
+			if ((function->is_abstract && function->return_type != nullptr) || function->body->has_return) {
+				requirement.return_type = _gdtype_from_datatype(function->get_datatype(), p_script);
+				method_info.return_val = function->get_datatype().to_property_info(String());
+			} else {
+				requirement.return_type.kind = GDScriptDataType::BUILTIN;
+				requirement.return_type.builtin_type = Variant::NIL;
+			}
 
 			p_script->abstract_trait_requirements.insert(name, requirement);
 		}
