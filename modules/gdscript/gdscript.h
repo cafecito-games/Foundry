@@ -103,6 +103,10 @@ class GDScript : public Script {
 		StringName getter;
 		GDScriptDataType data_type;
 		PropertyInfo property_info;
+		// When this member is typed as a class generic parameter (e.g. `value: T` in `class Box[T]`),
+		// the ordinal position of that parameter, used to resolve the reified argument bound on the
+		// instance and validate writes at runtime. `-1` for ordinary, non-parameter members.
+		int type_parameter_index = -1;
 	};
 
 public:

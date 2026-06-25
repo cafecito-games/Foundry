@@ -3105,6 +3105,16 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				}
 				minfo.data_type = _gdtype_from_datatype(variable->get_datatype(), p_script);
 
+				const GDScriptParser::DataType member_datatype = variable->get_datatype();
+				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
+						member_datatype.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
+						member_datatype.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
+					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record which class
+					// type parameter it stands for so writes can validate against the instance's reified
+					// argument at runtime (e.g. rejecting `box.value = "x"` on a `Box[int]`).
+					minfo.type_parameter_index = member_datatype.type_parameter_index;
+				}
+
 				PropertyInfo prop_info = variable->get_datatype().to_property_info(name);
 				PropertyInfo export_info = variable->export_info;
 

@@ -984,6 +984,13 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 			append(p_source);
 			append(idx);
 		} break;
+		case GDScriptDataType::VARIANT: {
+			// Converting into an untyped slot (including a generic parameter erased to Variant) is an
+			// identity assignment, so emit a plain assign instead of the bug-catcher below.
+			append_opcode(GDScriptFunction::OPCODE_ASSIGN);
+			append(p_target);
+			append(p_source);
+		} break;
 		default: {
 			ERR_PRINT("Compiler bug: unresolved assign.");
 
