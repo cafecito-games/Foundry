@@ -29,4 +29,8 @@ func test() -> void:
 	print(first)
 	print(numbers.total())
 
+	# A matching specialization upcasts: `IntList` is a `List[int]`, and the inherited `head` stays `int`.
+	var as_base: List[int] = numbers
+	print(as_base.head)
+
 	print("generic inheritance ok")
