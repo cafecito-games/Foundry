@@ -274,6 +274,71 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects a type argument that violates a 
 	CHECK(found_bound_error);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rejects a nullable type argument against a non-nullable bound under strict null checks") {
+	GDScriptParser parser;
+	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar bad: Box[RefCounted?]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(true);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer accepts a nullable type argument against a non-nullable bound when strict null checks are off") {
+	GDScriptParser parser;
+	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar ok: Box[RefCounted?]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	// strict_null_checks defaults to off; the nullable argument still satisfies the bound nominally.
+	CHECK(analyzer.analyze() == OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects a nullable type-parameter argument against a non-nullable bound under strict null checks") {
+	GDScriptParser parser;
+	// The argument is a nullable type-parameter handle (`U?`); its nullability must survive the
+	// unwrapping to `U`'s bound so the strict-null guard still rejects it against `T: RefCounted`.
+	const String source =
+			"class Box[T: RefCounted]:\n"
+			"\tvar value: T\n"
+			"class Outer[U: RefCounted]:\n"
+			"\tvar bad: Box[U?]\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(true);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer accepts a non-nullable type argument against a non-nullable bound under strict null checks") {
+	GDScriptParser parser;
+	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar ok: Box[RefCounted]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(true);
+	CHECK(analyzer.analyze() == OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer rejects a builtin type argument against a class bound") {
 	GDScriptParser parser;
 	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar bad: Box[int]\n", "user://test.gd", false);

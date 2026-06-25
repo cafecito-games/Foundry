@@ -5726,7 +5726,11 @@ bool GDScriptAnalyzer::type_argument_satisfies_bound(const GDScriptParser::DataT
 		if (p_bound.type_parameter_bound.is_empty()) {
 			return true;
 		}
-		return type_argument_satisfies_bound(p_argument, p_bound.type_parameter_bound[0]);
+		// A nullable marker on the parameter handle itself (`U?`) widens its effective bound, so
+		// carry it onto the unwrapped bound before recursing.
+		GDScriptParser::DataType bound = p_bound.type_parameter_bound[0];
+		bound.is_nullable = bound.is_nullable || p_bound.is_nullable;
+		return type_argument_satisfies_bound(p_argument, bound);
 	}
 	if (p_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
 		// A bare type parameter is erased to `Variant` at runtime, so it satisfies a concrete bound
@@ -5735,10 +5739,22 @@ bool GDScriptAnalyzer::type_argument_satisfies_bound(const GDScriptParser::DataT
 		if (p_argument.type_parameter_bound.is_empty()) {
 			return false;
 		}
-		return type_argument_satisfies_bound(p_argument.type_parameter_bound[0], p_bound);
+		// A nullable type-parameter argument (`U?`) stays nullable through the unwrapping, so the
+		// strict-null guard below still sees it.
+		GDScriptParser::DataType argument = p_argument.type_parameter_bound[0];
+		argument.is_nullable = argument.is_nullable || p_argument.is_nullable;
+		return type_argument_satisfies_bound(argument, p_bound);
 	}
 	// A concrete `Variant` argument never satisfies a non-`Variant` bound.
 	if (p_argument.is_variant()) {
+		return false;
+	}
+	// Under strict null checks a nullable argument cannot satisfy a non-nullable bound: the bound
+	// promises a non-null value while the argument admits null. This runs after the type-parameter
+	// cases above so it compares fully-unwrapped concrete handles (a type-parameter bound that is
+	// itself nullable, e.g. `T: U` with `U: RefCounted?`, has already been recursed into), and before
+	// the trait/generic/derivation walks, which ignore `is_nullable`.
+	if (strict_null_checks && p_argument.is_nullable && !p_bound.is_nullable) {
 		return false;
 	}
 	// A trait bound is satisfied nominally: the argument must `use` the trait (directly, transitively,
