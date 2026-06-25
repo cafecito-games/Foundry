@@ -52,6 +52,15 @@ class GDScriptProxyInstance : public ScriptInstance {
 	Ref<GDScript> proxy_script;
 	Callable handler;
 
+	// Auto-backing property store: every `var` declared in `T`'s contract becomes a
+	// plain data slot, initialized to the zero value of its declared type. Property
+	// access is not routed through the handler (delegation is the helper's job).
+	HashMap<StringName, Variant> property_store;
+	HashMap<StringName, Variant::Type> property_types;
+
+	// Populates `property_store`/`property_types` from `T`'s declared member vars.
+	void _init_property_store();
+
 	// True when `p_method` is declared somewhere in `proxy_script`'s class/trait/
 	// abstract chain. Mirrors how `GDScriptInstance::callp` walks the base chain,
 	// but treats every contract method as intercepted instead of executed.

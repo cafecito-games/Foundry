@@ -34,6 +34,35 @@
 
 GDScriptProxyInstance::GDScriptProxyInstance(Object *p_owner, const Ref<GDScript> &p_script, const Callable &p_handler) :
 		owner(p_owner), proxy_script(p_script), handler(p_handler) {
+	_init_property_store();
+}
+
+void GDScriptProxyInstance::_init_property_store() {
+	if (proxy_script.is_null()) {
+		return;
+	}
+
+	// `T`'s declared `var`s carry PROPERTY_USAGE_SCRIPT_VARIABLE; category/group
+	// headers and other entries do not, so they are skipped. Each slot defaults to
+	// the zero value of its declared type.
+	List<PropertyInfo> properties;
+	proxy_script->get_script_property_list(&properties);
+	for (const PropertyInfo &property : properties) {
+		if (!(property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE)) {
+			continue;
+		}
+		if (property_store.has(property.name)) {
+			continue;
+		}
+
+		Variant default_value;
+		if (property.type != Variant::NIL && property.type != Variant::OBJECT) {
+			Callable::CallError construct_error;
+			Variant::construct(property.type, default_value, nullptr, 0, construct_error);
+		}
+		property_store.insert(property.name, default_value);
+		property_types.insert(property.name, property.type);
+	}
 }
 
 GDScriptProxyInstance::~GDScriptProxyInstance() {
@@ -90,20 +119,41 @@ void GDScriptProxyInstance::get_method_list(List<MethodInfo> *p_list) const {
 	}
 }
 
-// Property handling is intentionally inert here; the auto-backing store that
-// synthesizes slots from `T`'s declared `var`s is added in #185.
+// Property access reads and writes the auto-backing store directly; it is never
+// routed through the handler. Names outside `T`'s declared vars are not handled
+// here so native/`Object` property paths still apply.
 bool GDScriptProxyInstance::set(const StringName &p_name, const Variant &p_value) {
-	return false;
+	HashMap<StringName, Variant>::Iterator element = property_store.find(p_name);
+	if (!element) {
+		return false;
+	}
+	element->value = p_value;
+	return true;
 }
 
 bool GDScriptProxyInstance::get(const StringName &p_name, Variant &r_ret) const {
-	return false;
+	HashMap<StringName, Variant>::ConstIterator element = property_store.find(p_name);
+	if (!element) {
+		return false;
+	}
+	r_ret = element->value;
+	return true;
 }
 
 void GDScriptProxyInstance::get_property_list(List<PropertyInfo> *p_properties) const {
+	if (proxy_script.is_valid()) {
+		proxy_script->get_script_property_list(p_properties);
+	}
 }
 
 Variant::Type GDScriptProxyInstance::get_property_type(const StringName &p_name, bool *r_is_valid) const {
+	HashMap<StringName, Variant::Type>::ConstIterator element = property_types.find(p_name);
+	if (element) {
+		if (r_is_valid) {
+			*r_is_valid = true;
+		}
+		return element->value;
+	}
 	if (r_is_valid) {
 		*r_is_valid = false;
 	}
