@@ -618,6 +618,31 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK(out.contains("func middle_required() -> void:"));
 	}
 
+	TEST_CASE("Implement abstract: a native base method satisfies a trait requirement") {
+		// Object exposes get_class(); a class implicitly extends RefCounted, so the native
+		// base already implements the trait method and nothing is owed.
+		const String source =
+				"trait Named:\n"
+				"\t@abstract func get_class() -> String\n"
+				"class Player:\n"
+				"\tuses Named\n"
+				"\tvar hp := 10\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 4, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 4, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled inside a trait that uses another trait") {
+		const String source =
+				"trait Damageable:\n"
+				"\t@abstract func take_damage(amount: int) -> void\n"
+				"trait Combatant:\n"
+				"\tuses Damageable\n"
+				"\tfunc fight() -> void:\n"
+				"\t\tpass\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 4, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 4, 1), String("Traits don't need to implement abstract methods."));
+	}
+
 	TEST_CASE("Implement abstract: a concrete base implementation satisfies a trait requirement") {
 		const String source =
 				"trait Damageable:\n"
@@ -3525,6 +3550,37 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		String out;
 		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
 		CHECK(out.contains("func scaled(factor: float = 1.0) -> float:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Implement abstract recovers a cross-file trait default from the trait file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+		LSPGlobalScriptClassBackup global_class_backup;
+		const StringName language = GDScriptLanguage::get_singleton()->get_name();
+		ScriptServer::add_global_class("RefactorXfileDamageable", "RefCounted", language,
+				"res://refactor/implement_abstract_xfile_trait.gd", false, false, true);
+
+		// The user class applies a global trait whose abstract method carries a default
+		// value. The default's source span points into the trait file; the stub must
+		// recover it from there rather than dropping it (which would change the minimum
+		// argument count and not satisfy the trait). Caret on `var marker`.
+		const String user_path = "res://refactor/implement_abstract_xfile_trait_user.gd";
+		RefactorContext ctx;
+		ctx.path = user_path;
+		ctx.source = FileAccess::get_file_as_string(user_path);
+
+		RefactorParams params;
+		RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(3, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func take_damage(amount: int = 1) -> void:"));
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
