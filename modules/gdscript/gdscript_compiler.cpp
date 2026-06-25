@@ -2474,7 +2474,33 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 			if (name == StringName() || provided.has(name) || p_script->abstract_trait_requirements.has(name)) {
 				continue;
 			}
-			p_script->abstract_trait_requirements.insert(name, _gdtype_from_datatype(function->get_datatype(), p_script));
+
+			GDScript::AbstractTraitRequirement requirement;
+			requirement.return_type = _gdtype_from_datatype(function->get_datatype(), p_script);
+
+			// Build the enumerable signature so the proxy's `get_method_list` stays
+			// consistent with `has_method`/`callp`. Mirrors how `_parse_function`
+			// fills a method's `MethodInfo` (arguments, return, abstract/static/async
+			// flags) from the same parser node.
+			MethodInfo &method_info = requirement.method_info;
+			method_info.name = name;
+			method_info.flags |= METHOD_FLAG_VIRTUAL_REQUIRED;
+			if (function->is_static) {
+				method_info.flags |= METHOD_FLAG_STATIC;
+			}
+			if (function->is_coroutine) {
+				method_info.flags |= METHOD_FLAG_ASYNC;
+			}
+			for (int i = 0; i < function->parameters.size(); i++) {
+				const GDScriptParser::ParameterNode *parameter = function->parameters[i];
+				method_info.arguments.push_back(parameter->get_datatype().to_property_info(parameter->identifier->name));
+				if (parameter->initializer != nullptr) {
+					method_info.default_arguments.push_back(Variant());
+				}
+			}
+			method_info.return_val = function->get_datatype().to_property_info(String());
+
+			p_script->abstract_trait_requirements.insert(name, requirement);
 		}
 	}
 }

@@ -132,9 +132,9 @@ bool GDScriptProxyInstance::_resolve_contract_return_type(const StringName &p_me
 	// requirements, so walk the chain exactly as `_find_contract_function` does.
 	const GDScript *script = proxy_script.ptr();
 	while (script) {
-		HashMap<StringName, GDScriptDataType>::ConstIterator element = script->get_abstract_trait_requirements().find(p_method);
+		HashMap<StringName, GDScript::AbstractTraitRequirement>::ConstIterator element = script->get_abstract_trait_requirements().find(p_method);
 		if (element) {
-			r_return_type = element->value;
+			r_return_type = element->value.return_type;
 			return true;
 		}
 		script = script->get_base().ptr();
@@ -308,8 +308,30 @@ bool GDScriptProxyInstance::has_method(const StringName &p_method) const {
 }
 
 void GDScriptProxyInstance::get_method_list(List<MethodInfo> *p_list) const {
-	if (proxy_script.is_valid()) {
-		proxy_script->get_script_method_list(p_list);
+	if (proxy_script.is_null()) {
+		return;
+	}
+	proxy_script->get_script_method_list(p_list);
+
+	// The script's method list is backed by compiled `member_functions`, so it omits
+	// the abstract requirements inherited through `uses`-ed traits. Those are part of
+	// the proxy's callable contract (`has_method`/`callp` honor them), so enumerate
+	// them too, keeping the listing consistent. Names the script already reported are
+	// skipped so a satisfied requirement is not listed twice.
+	HashSet<StringName> listed;
+	for (const MethodInfo &method : *p_list) {
+		listed.insert(method.name);
+	}
+	const GDScript *script = proxy_script.ptr();
+	while (script) {
+		for (const KeyValue<StringName, GDScript::AbstractTraitRequirement> &requirement : script->get_abstract_trait_requirements()) {
+			if (listed.has(requirement.key)) {
+				continue;
+			}
+			listed.insert(requirement.key);
+			p_list->push_back(requirement.value.method_info);
+		}
+		script = script->get_base().ptr();
 	}
 }
 

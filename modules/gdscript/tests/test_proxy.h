@@ -592,9 +592,19 @@ TEST_CASE("[Modules][GDScript][Proxy] Transitive abstract trait requirements are
 		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(p_type, Callable(recorder, "handle"), error_message);
 		REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
 		ScriptInstance *instance = proxy->get_script_instance();
+
+		List<MethodInfo> methods;
+		instance->get_method_list(&methods);
+		HashSet<StringName> listed;
+		for (const MethodInfo &method : methods) {
+			listed.insert(method.name);
+		}
+
 		for (const String &method : p_methods) {
 			const StringName method_name = method;
 			CHECK(instance->has_method(method_name));
+			// Enumeration is consistent with dispatch: every contract method is listed.
+			CHECK_MESSAGE(listed.has(method_name), method.utf8().get_data());
 			Callable::CallError error;
 			Variant result = instance->callp(method_name, nullptr, 0, error);
 			CHECK_MESSAGE(error.error == Callable::CallError::CALL_OK, method.utf8().get_data());

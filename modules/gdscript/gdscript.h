@@ -115,6 +115,15 @@ public:
 		PropertyInfo bound; // Upper bound type; only meaningful when `has_bound` is true.
 	};
 
+	// An abstract method requirement a class inherits through the traits it (transitively)
+	// `uses` but does not flatten into its own `member_functions`. Surfaced so a dynamic
+	// proxy of the type can intercept the method (`return_type` drives return coercion) and
+	// enumerate it (`method_info`).
+	struct AbstractTraitRequirement {
+		GDScriptDataType return_type;
+		MethodInfo method_info;
+	};
+
 private:
 	struct ClearData {
 		RBSet<GDScriptFunction *> functions;
@@ -159,11 +168,11 @@ private:
 	Vector<StringName> script_trait_list;
 	// Abstract requirements contributed by the traits this class (transitively) uses but does not
 	// flatten into `member_functions` (abstract trait members are contracts, not bodies). Keyed by
-	// method name, valued by the declared return type, so a dynamic proxy can intercept every method
-	// in `T`'s contract — including requirements inherited through a `uses` chain — and coerce the
-	// handler's return. Names also defined as a real `member_function` (concrete or own abstract) are
-	// excluded, so a compiled function always takes precedence.
-	HashMap<StringName, GDScriptDataType> abstract_trait_requirements;
+	// method name, so a dynamic proxy can intercept every method in `T`'s contract — including
+	// requirements inherited through a `uses` chain — coerce the handler's return (`return_type`),
+	// and enumerate them (`method_info`). Names also defined as a real `member_function` (concrete or
+	// own abstract) are excluded, so a compiled function always takes precedence.
+	HashMap<StringName, AbstractTraitRequirement> abstract_trait_requirements;
 	// Generic type parameters declared directly on this class (`class Box[T]`). Empty for non-generic classes.
 	Vector<TypeParameter> type_parameters;
 	Dictionary rpc_config;
@@ -320,7 +329,7 @@ public:
 	const Ref<GDScriptNativeClass> &get_native() const { return native; }
 
 	_FORCE_INLINE_ const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
-	_FORCE_INLINE_ const HashMap<StringName, GDScriptDataType> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
+	_FORCE_INLINE_ const HashMap<StringName, AbstractTraitRequirement> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
 	_FORCE_INLINE_ const HashMap<GDScriptFunction *, LambdaInfo> &get_lambda_info() const { return lambda_info; }
 
 	_FORCE_INLINE_ const GDScriptFunction *get_implicit_initializer() const { return implicit_initializer; }
