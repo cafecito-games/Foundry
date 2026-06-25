@@ -7038,7 +7038,11 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 
 	// Try singletons.
 	// Do this before globals because this might be a singleton loading another one before it's compiled.
-	if (ProjectSettings::get_singleton()->has_autoload(name)) {
+	// A language-reserved named global (e.g. the `godot` reflection namespace) wins over a
+	// project autoload of the same name, so resolution falls through to the named-global
+	// constant below and `godot.reflection` stays reachable even if project.godot defines a
+	// shadowing autoload.
+	if (ProjectSettings::get_singleton()->has_autoload(name) && !GDScriptLanguage::get_singleton()->is_reserved_global_name(name)) {
 		const ProjectSettings::AutoloadInfo &autoload = ProjectSettings::get_singleton()->get_autoload(name);
 		if (autoload.is_singleton) {
 			// Singleton exists, so it's at least a Node.

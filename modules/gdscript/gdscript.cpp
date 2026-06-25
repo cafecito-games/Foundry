@@ -2790,6 +2790,10 @@ Vector<String> GDScriptLanguage::get_reserved_global_names() const {
 	return ret;
 }
 
+bool GDScriptLanguage::is_reserved_global_name(const StringName &p_name) const {
+	return p_name == StringName(GDSCRIPT_REFLECTION_NAMESPACE);
+}
+
 bool GDScriptLanguage::is_control_flow_keyword(const String &p_keyword) const {
 	// Please keep alphabetical order.
 	return p_keyword == "break" ||

@@ -4456,7 +4456,16 @@ int Main::start() {
 
 					if (info.is_singleton) {
 						for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-							ScriptServer::get_language(i)->add_global_constant(info.name, n);
+							ScriptLanguage *language = ScriptServer::get_language(i);
+							// A language-reserved name (e.g. the `godot` reflection namespace)
+							// wins over a project autoload of the same name, so do not register
+							// the autoload as that language's global. Mirrors the editor and the
+							// analyzer; surfaces the misconfiguration instead of silently shadowing.
+							if (language->get_reserved_global_names().has(String(info.name))) {
+								WARN_PRINT(vformat("Autoload \"%s\" shadows a reserved engine namespace of the same name and was not registered as a global constant. Rename the autoload to use it.", String(info.name)));
+								continue;
+							}
+							language->add_global_constant(info.name, n);
 						}
 					}
 				}
