@@ -430,7 +430,7 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 			} break;
 			case ClassNode::Member::FUNCTION: {
 				LSP::DocumentSymbol symbol;
-				parse_function_symbol(m.function, symbol);
+				parse_function_symbol(m.function, symbol, p_class);
 				r_symbol.children.push_back(symbol);
 			} break;
 			case ClassNode::Member::CLASS: {
@@ -446,7 +446,7 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 	}
 }
 
-void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionNode *p_func, LSP::DocumentSymbol &r_symbol) {
+void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionNode *p_func, LSP::DocumentSymbol &r_symbol, const GDScriptParser::ClassNode *p_owner_class) {
 	const String uri = get_uri();
 
 	bool is_named = p_func->identifier != nullptr;
@@ -472,6 +472,9 @@ void ExtendGDScriptParser::parse_function_symbol(const GDScriptParser::FunctionN
 	r_symbol.documentation = p_func->doc_data.description;
 	r_symbol.uri = uri;
 	r_symbol.script_path = path;
+	if (p_owner_class != nullptr && p_owner_class->is_trait && p_owner_class->identifier != nullptr) {
+		r_symbol.trait_source = p_owner_class->identifier->name;
+	}
 
 	String parameters;
 	for (int i = 0; i < p_func->parameters.size(); i++) {

@@ -31,6 +31,7 @@
 #include "gdscript_docgen.h"
 
 #include "../gdscript.h"
+#include "../gdscript_analyzer.h"
 
 #include "core/config/project_settings.h"
 #include "core/variant/container_type_validate.h"
@@ -327,6 +328,18 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 
 	doc.is_script_doc = true;
 	doc.is_trait = p_class->is_trait;
+	for (const GDP::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		if (trait_use.resolved_trait != nullptr) {
+			String trait_type;
+			String trait_enum;
+			_doctype_from_gdtype(GDScriptAnalyzer::type_from_metatype(trait_use.resolved_trait->get_datatype()), trait_type, trait_enum);
+			if (!trait_type.is_empty()) {
+				doc.used_traits.push_back(trait_type);
+				continue;
+			}
+		}
+		doc.used_traits.push_back(trait_use.to_string());
+	}
 
 	if (p_script->local_name == StringName()) {
 		// This is an outer unnamed class.

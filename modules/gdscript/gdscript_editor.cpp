@@ -4366,8 +4366,92 @@ void GDScriptLanguage::auto_indent_code(String &p_code, int p_from_line, int p_t
 
 #ifdef TOOLS_ENABLED
 
+static Error _set_lookup_result_from_class_member(const GDScriptParser::DataType &p_base_type, const String &p_name, const GDScriptParser::ClassNode::Member &p_member, GDScriptLanguage::LookupResult &r_result) {
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::UNDEFINED:
+		case GDScriptParser::ClassNode::Member::GROUP:
+			return ERR_BUG;
+		case GDScriptParser::ClassNode::Member::CLASS: {
+			String doc_type_name;
+			String doc_enum_name;
+			GDScriptDocGen::doctype_from_gdtype(GDScriptAnalyzer::type_from_metatype(p_member.get_datatype()), doc_type_name, doc_enum_name);
+
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+			r_result.class_name = doc_type_name;
+		} break;
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+			break;
+		case GDScriptParser::ClassNode::Member::FUNCTION:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+			break;
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_SIGNAL;
+			break;
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_PROPERTY;
+			break;
+		case GDScriptParser::ClassNode::Member::ENUM:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+			break;
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+			break;
+	}
+
+	if (p_member.type != GDScriptParser::ClassNode::Member::CLASS) {
+		String doc_type_name;
+		String doc_enum_name;
+		GDScriptDocGen::doctype_from_gdtype(GDScriptAnalyzer::type_from_metatype(p_base_type), doc_type_name, doc_enum_name);
+
+		r_result.class_name = doc_type_name;
+		r_result.class_member = p_name;
+	}
+
+	Error err = OK;
+	r_result.script = GDScriptCache::get_shallow_script(p_base_type.script_path, err);
+	r_result.script_path = p_base_type.script_path;
+	r_result.location = p_member.get_line();
+	return err;
+}
+
+static Error _lookup_symbol_from_traits(const GDScriptParser::DataType &p_base_type, const String &p_symbol, GDScriptLanguage::LookupResult &r_result) {
+	if (p_base_type.kind != GDScriptParser::DataType::CLASS || p_base_type.class_type == nullptr) {
+		return ERR_CANT_RESOLVE;
+	}
+
+	const String name = p_symbol == "new" ? String("_init") : p_symbol;
+	for (GDScriptParser::ClassNode *trait : p_base_type.class_type->resolved_traits) {
+		if (trait == nullptr || !trait->has_member(name)) {
+			continue;
+		}
+
+		const GDScriptParser::ClassNode::Member &member = trait->get_member(name);
+		GDScriptParser::DataType trait_type = trait->get_datatype();
+		return _set_lookup_result_from_class_member(trait_type, name, member, r_result);
+	}
+
+	return ERR_CANT_RESOLVE;
+}
+
+static Error _lookup_symbol_from_traits_in_class_hierarchy(const GDScriptParser::DataType &p_base_type, const String &p_symbol, GDScriptLanguage::LookupResult &r_result) {
+	if (p_base_type.kind != GDScriptParser::DataType::CLASS || p_base_type.class_type == nullptr) {
+		return ERR_CANT_RESOLVE;
+	}
+
+	for (GDScriptParser::ClassNode *script_class = p_base_type.class_type; script_class != nullptr; script_class = script_class->base_type.class_type) {
+		GDScriptParser::DataType script_class_type = script_class->get_datatype();
+		if (_lookup_symbol_from_traits(script_class_type, p_symbol, r_result) == OK) {
+			return OK;
+		}
+	}
+
+	return ERR_CANT_RESOLVE;
+}
+
 static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, const String &p_symbol, GDScriptLanguage::LookupResult &r_result) {
 	GDScriptParser::DataType base_type = p_base;
+	const GDScriptParser::DataType original_base_type = p_base;
 
 	while (true) {
 		switch (base_type.kind) {
@@ -4380,58 +4464,18 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 				}
 
 				if (!base_type.class_type->has_member(name)) {
+					if (base_type.class_type->base_type.kind != GDScriptParser::DataType::CLASS) {
+						if (_lookup_symbol_from_traits_in_class_hierarchy(original_base_type, name, r_result) == OK) {
+							return OK;
+						}
+					}
 					base_type = base_type.class_type->base_type;
 					break;
 				}
 
 				const GDScriptParser::ClassNode::Member &member = base_type.class_type->get_member(name);
 
-				switch (member.type) {
-					case GDScriptParser::ClassNode::Member::UNDEFINED:
-					case GDScriptParser::ClassNode::Member::GROUP:
-						return ERR_BUG;
-					case GDScriptParser::ClassNode::Member::CLASS: {
-						String doc_type_name;
-						String doc_enum_name;
-						GDScriptDocGen::doctype_from_gdtype(GDScriptAnalyzer::type_from_metatype(member.get_datatype()), doc_type_name, doc_enum_name);
-
-						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
-						r_result.class_name = doc_type_name;
-					} break;
-					case GDScriptParser::ClassNode::Member::CONSTANT:
-						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
-						break;
-					case GDScriptParser::ClassNode::Member::FUNCTION:
-						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
-						break;
-					case GDScriptParser::ClassNode::Member::SIGNAL:
-						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_SIGNAL;
-						break;
-					case GDScriptParser::ClassNode::Member::VARIABLE:
-						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_PROPERTY;
-						break;
-					case GDScriptParser::ClassNode::Member::ENUM:
-						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
-						break;
-					case GDScriptParser::ClassNode::Member::ENUM_VALUE:
-						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
-						break;
-				}
-
-				if (member.type != GDScriptParser::ClassNode::Member::CLASS) {
-					String doc_type_name;
-					String doc_enum_name;
-					GDScriptDocGen::doctype_from_gdtype(GDScriptAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name);
-
-					r_result.class_name = doc_type_name;
-					r_result.class_member = name;
-				}
-
-				Error err = OK;
-				r_result.script = GDScriptCache::get_shallow_script(base_type.script_path, err);
-				r_result.script_path = base_type.script_path;
-				r_result.location = member.get_line();
-				return err;
+				return _set_lookup_result_from_class_member(base_type, name, member, r_result);
 			} break;
 			case GDScriptParser::DataType::SCRIPT: {
 				const Ref<Script> scr = base_type.script_type;
