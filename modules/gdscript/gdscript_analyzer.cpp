@@ -95,6 +95,34 @@ static String _class_or_trait_name(const GDScriptParser::ClassNode *p_class) {
 	return p_class->fqcn.get_file();
 }
 
+static String _localize_script_path(const String &p_path) {
+	if (ProjectSettings::get_singleton() == nullptr || p_path.is_empty()) {
+		return p_path;
+	}
+	return ProjectSettings::get_singleton()->localize_path(p_path);
+}
+
+static String _trait_method_info_source(const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::FunctionNode *p_function) {
+	if (p_class == nullptr) {
+		return String();
+	}
+
+	String script_path = p_class->get_datatype().script_path;
+	if (script_path.is_empty()) {
+		script_path = p_class->fqcn;
+	}
+	if (script_path.is_empty()) {
+		return String();
+	}
+	script_path = _localize_script_path(script_path);
+
+	if (p_function != nullptr) {
+		return vformat(R"(Implementation comes from "%s" line %d.)", script_path, p_function->start_line);
+	}
+	return vformat(R"(Implementation comes from "%s".)", script_path);
+}
+
 static MethodInfo info_from_utility_func(const StringName &p_function) {
 	ERR_FAIL_COND_V(!Variant::has_utility_function(p_function), MethodInfo());
 
@@ -5813,6 +5841,7 @@ bool GDScriptAnalyzer::find_trait_implementation(GDScriptParser::ClassNode *p_cl
 					r_implementation.owner_class = current_class;
 				} else {
 					r_implementation.method_info = function->info;
+					r_implementation.method_info_source = _trait_method_info_source(current_class, function);
 					r_implementation.has_method_info = true;
 				}
 				return true;
@@ -5836,6 +5865,10 @@ bool GDScriptAnalyzer::find_trait_implementation(GDScriptParser::ClassNode *p_cl
 				MethodInfo info = script->get_method_info(p_function_name);
 				if (info.name == p_function_name) {
 					r_implementation.method_info = info;
+					if (!script->get_path().is_empty()) {
+						r_implementation.method_info_source = vformat(R"(Implementation comes from "%s".)",
+								_localize_script_path(script->get_path()));
+					}
 					r_implementation.has_method_info = true;
 					return true;
 				}
@@ -5846,6 +5879,7 @@ bool GDScriptAnalyzer::find_trait_implementation(GDScriptParser::ClassNode *p_cl
 			MethodInfo info;
 			if (ClassDB::get_method_info(current_class->base_type.native_type, p_function_name, &info)) {
 				r_implementation.method_info = info;
+				r_implementation.method_info_source = vformat(R"(Implementation comes from native class "%s".)", current_class->base_type.native_type);
 				r_implementation.has_method_info = true;
 				return true;
 			}
@@ -5939,15 +5973,18 @@ bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::Clas
 	const bool required_is_coroutine = p_required_function->is_coroutine;
 	const bool implementation_is_coroutine = (p_implementation.method_info.flags & METHOD_FLAG_ASYNC) != 0;
 	if (required_is_coroutine != implementation_is_coroutine) {
+		String message;
 		if (required_is_coroutine) {
-			push_error(vformat(R"*(The function "%s()" must be async because it implements async trait method "%s".)*",
-							   function_name, trait_method_name),
-					p_required_function);
+			message = vformat(R"*(The function "%s()" must be async because it implements async trait method "%s".)*",
+					function_name, trait_method_name);
 		} else {
-			push_error(vformat(R"*(The function "%s()" cannot be async because it implements synchronous trait method "%s".)*",
-							   function_name, trait_method_name),
-					p_required_function);
+			message = vformat(R"*(The function "%s()" cannot be async because it implements synchronous trait method "%s".)*",
+					function_name, trait_method_name);
 		}
+		if (!p_implementation.method_info_source.is_empty()) {
+			message += " " + p_implementation.method_info_source;
+		}
+		push_error(message, p_required_function);
 		return false;
 	}
 
@@ -5982,9 +6019,12 @@ bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::Clas
 	}
 
 	if (!valid) {
-		push_error(vformat(R"*(The native function "%s()" signature does not match required trait method "%s".)*",
-						   function_name, trait_method_name),
-				p_required_function);
+		String message = vformat(R"*(The native function "%s()" signature does not match required trait method "%s".)*",
+				function_name, trait_method_name);
+		if (!p_implementation.method_info_source.is_empty()) {
+			message += " " + p_implementation.method_info_source;
+		}
+		push_error(message, p_required_function);
 		return false;
 	}
 
