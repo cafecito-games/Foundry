@@ -9677,6 +9677,11 @@ void GDScriptAnalyzer::reduce_call_create_proxy(GDScriptParser::CallNode *p_call
 			return;
 		}
 
+		// The compiler materializes T from the instance's reified bindings, so this call
+		// needs `self`. Inside a lambda that does not otherwise touch `self`, mark it as
+		// using self so it is invoked with the instance rather than a null one.
+		mark_lambda_use_self();
+
 		type_argument.is_meta_type = false;
 		type_argument.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 		p_call->is_proxy_construct = true;

@@ -1413,8 +1413,14 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					err_text = "Cannot resolve a type parameter without an instance.";
 					OPCODE_BREAK;
 				}
+				// The index is a type-parameter ordinal in the class that declares this
+				// function. The instance's reified `type_arguments` line up with that ordinal
+				// only when the instance is directly an instance of that class. For a derived
+				// instance the base's parameters are not (yet) remapped onto its reified
+				// arguments, so resolve to null there and let the proxy constructor's guard
+				// report it, rather than reading an unrelated slot.
 				const Vector<ContainerType> &reified = p_instance->get_type_arguments();
-				if (type_parameter_index >= 0 && type_parameter_index < reified.size()) {
+				if (p_instance->script.ptr() == _script && type_parameter_index >= 0 && type_parameter_index < reified.size()) {
 					*dst = reified[type_parameter_index].script;
 				} else {
 					*dst = Variant();
