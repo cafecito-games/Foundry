@@ -190,10 +190,13 @@ class GDScriptAnalyzer {
 	void validate_trait_requirements(GDScriptParser::ClassNode *p_class);
 	bool find_trait_implementation(GDScriptParser::ClassNode *p_class, const StringName &p_function_name,
 			TraitMethodImplementation &r_implementation);
+	HashMap<StringName, GDScriptParser::DataType> trait_type_argument_substitution(GDScriptParser::ClassNode *p_class, GDScriptParser::ClassNode *p_trait);
 	bool validate_trait_method_signature(GDScriptParser::ClassNode *p_trait,
-			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation);
+			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
+			const HashMap<StringName, GDScriptParser::DataType> &p_trait_substitution = HashMap<StringName, GDScriptParser::DataType>());
 	bool validate_trait_method_info_signature(GDScriptParser::ClassNode *p_trait,
-			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation);
+			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
+			const HashMap<StringName, GDScriptParser::DataType> &p_trait_substitution = HashMap<StringName, GDScriptParser::DataType>());
 	Error validate_imports();
 #ifdef DEBUG_ENABLED
 	void validate_mixed_namespace_directory();

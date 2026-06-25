@@ -5862,6 +5862,8 @@ bool GDScriptAnalyzer::type_satisfies_trait(const GDScriptParser::DataType &p_ar
 	return is_type_compatible(p_trait_bound, p_argument, false);
 }
 
+static bool _datatype_alpha_equal(const GDScriptParser::DataType &p_a, const GDScriptParser::DataType &p_b);
+
 Error GDScriptAnalyzer::resolve_trait_uses(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source) {
 	if (p_source == nullptr && parser->has_class(p_class)) {
 		p_source = p_class;
@@ -5908,6 +5910,32 @@ Error GDScriptAnalyzer::resolve_trait_uses(GDScriptParser::ClassNode *p_class, c
 	p_class->resolving_trait_uses = true;
 	p_class->resolved_traits.clear();
 
+	// A generic trait reached through more than one path must be bound to the same type arguments on
+	// every path; otherwise the class would carry contradictory requirements (e.g. `Storage[int]` via
+	// one supertrait and `Storage[String]` via another). Record each generic trait's binding the first
+	// time it is seen and reject a later path that disagrees.
+	HashMap<const GDScriptParser::ClassNode *, HashMap<StringName, GDScriptParser::DataType>> seen_trait_bindings;
+	auto record_trait_binding = [&](const GDScriptParser::ClassNode *p_seen_trait, const HashMap<StringName, GDScriptParser::DataType> &p_binding, const GDScriptParser::Node *p_binding_source) -> bool {
+		if (p_binding.is_empty()) {
+			return true;
+		}
+		const HashMap<StringName, GDScriptParser::DataType> *previous = seen_trait_bindings.getptr(p_seen_trait);
+		if (previous == nullptr) {
+			seen_trait_bindings.insert(p_seen_trait, p_binding);
+			return true;
+		}
+		for (const KeyValue<StringName, GDScriptParser::DataType> &entry : p_binding) {
+			const GDScriptParser::DataType *previous_argument = previous->getptr(entry.key);
+			if (previous_argument != nullptr && !_datatype_alpha_equal(entry.value, *previous_argument)) {
+				push_error(vformat(R"(Trait "%s" is applied with conflicting type arguments ("%s" and "%s") through different traits used by "%s".)",
+								   _class_or_trait_name(p_seen_trait), previous_argument->to_string(), entry.value.to_string(), _class_or_trait_name(p_class)),
+						p_binding_source);
+				return false;
+			}
+		}
+		return true;
+	};
+
 	for (GDScriptParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
 		const GDScriptParser::Node *source = _trait_use_source(trait_use, p_class);
 		GDScriptParser::ClassNode *trait = resolve_trait_reference(p_class, trait_use, source);
@@ -5928,13 +5956,61 @@ Error GDScriptAnalyzer::resolve_trait_uses(GDScriptParser::ClassNode *p_class, c
 			return fail();
 		}
 
+		// Specialize a generic trait at the use site: `uses Container[int]`. The arguments are resolved
+		// in this class's scope, validated against the trait's parameter arity and bounds, and stored so
+		// trait-requirement conformance can substitute them into the trait's `T`-typed members.
+		if (!trait_use.type_arguments.is_empty()) {
+			if (trait->type_parameters.is_empty()) {
+				push_error(vformat(R"(Trait "%s" is not generic and cannot take type arguments.)", _class_or_trait_name(trait)), trait_use.type_arguments[0]);
+				return fail();
+			}
+			GDScriptParser::DataType trait_handle = type_from_metatype(trait->get_datatype());
+			trait_handle.is_meta_type = false;
+			// Resolve the type arguments in `p_class`'s scope so a generic trait can forward its own
+			// type parameter into a generic supertrait (`trait Wrapper[T] uses Storage[T]`).
+			GDScriptParser::ClassNode *previous_class = parser->current_class;
+			parser->current_class = p_class;
+			const bool applied = apply_class_type_arguments(trait_handle, trait_use.type_arguments, trait_use.type_arguments[0]);
+			parser->current_class = previous_class;
+			if (!applied) {
+				return fail();
+			}
+			trait_use.resolved_type_arguments = trait_handle.type_arguments;
+		}
+
 		_append_trait_unique(p_class->resolved_traits, trait);
+
+		// The use-site binding of the directly-applied trait's own parameters, used to re-specialize
+		// the bindings its supertraits carry into this class's frame.
+		HashMap<StringName, GDScriptParser::DataType> direct_substitution;
+		if (!trait->type_parameters.is_empty() && !trait_use.resolved_type_arguments.is_empty()) {
+			const int count = MIN(trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
+			for (int i = 0; i < count; i++) {
+				const GDScriptParser::TypeParameterNode *type_parameter = trait->type_parameters[i];
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					direct_substitution.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
+				}
+			}
+		}
+		if (!record_trait_binding(trait, direct_substitution, source)) {
+			return fail();
+		}
+
 		for (GDScriptParser::ClassNode *transitive_trait : trait->resolved_traits) {
 			if (!class_satisfies_trait_base(p_class, transitive_trait)) {
 				push_error(vformat(R"(Class "%s" cannot use trait "%s" because it does not inherit from "%s".)",
 								   _class_or_trait_name(p_class), _class_or_trait_name(transitive_trait),
 								   transitive_trait->base_type.to_string()),
 						source);
+				return fail();
+			}
+			// Re-specialize how `trait` binds this supertrait into the class's frame, then check it
+			// against any binding the supertrait already received through another path.
+			HashMap<StringName, GDScriptParser::DataType> transitive_binding;
+			for (const KeyValue<StringName, GDScriptParser::DataType> &entry : trait_type_argument_substitution(trait, transitive_trait)) {
+				transitive_binding.insert(entry.key, GDScriptParser::DataType::substitute(entry.value, direct_substitution));
+			}
+			if (!record_trait_binding(transitive_trait, transitive_binding, source)) {
 				return fail();
 			}
 			_append_trait_unique(p_class->resolved_traits, transitive_trait);
@@ -6111,12 +6187,58 @@ static bool _datatype_alpha_equal(const GDScriptParser::DataType &p_a, const GDS
 	return true;
 }
 
+HashMap<StringName, GDScriptParser::DataType> GDScriptAnalyzer::trait_type_argument_substitution(GDScriptParser::ClassNode *p_class, GDScriptParser::ClassNode *p_trait) {
+	HashMap<StringName, GDScriptParser::DataType> bindings;
+	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
+		return bindings;
+	}
+	// Resolve `p_trait`'s use-site type arguments as seen from `p_class`. A directly-applied generic
+	// trait (`uses Container[int]`) binds its parameters here; a transitive generic supertrait
+	// (`uses Wrapper` where `Wrapper uses Storage[int]`) is bound by the intermediate trait that
+	// applies it, so we recurse through the intermediate and compose the two substitutions.
+	for (const GDScriptParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		GDScriptParser::ClassNode *used_trait = trait_use.resolved_trait;
+		if (used_trait == nullptr) {
+			continue;
+		}
+		if (used_trait == p_trait) {
+			if (trait_use.resolved_type_arguments.is_empty()) {
+				continue;
+			}
+			const int count = MIN(p_trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
+			for (int i = 0; i < count; i++) {
+				const GDScriptParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					bindings.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
+				}
+			}
+			return bindings;
+		}
+		if (used_trait->resolved_traits.has(p_trait)) {
+			// `used_trait` (transitively) applies `p_trait`. First find how `used_trait` binds
+			// `p_trait`, then re-specialize those arguments with `p_class`'s binding of
+			// `used_trait`'s own parameters (`uses Wrapper[int]` forwarding `T` into `Storage[T]`).
+			HashMap<StringName, GDScriptParser::DataType> inner = trait_type_argument_substitution(used_trait, p_trait);
+			if (inner.is_empty()) {
+				continue;
+			}
+			const HashMap<StringName, GDScriptParser::DataType> outer = trait_type_argument_substitution(p_class, used_trait);
+			for (const KeyValue<StringName, GDScriptParser::DataType> &binding : inner) {
+				bindings.insert(binding.key, GDScriptParser::DataType::substitute(binding.value, outer));
+			}
+			return bindings;
+		}
+	}
+	return bindings;
+}
+
 bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode *p_trait,
 		GDScriptParser::FunctionNode *p_required_function,
-		const TraitMethodImplementation &p_implementation) {
+		const TraitMethodImplementation &p_implementation,
+		const HashMap<StringName, GDScriptParser::DataType> &p_trait_substitution) {
 	resolve_function_signature_in_class(p_required_function, p_trait, p_required_function);
 	if (p_implementation.has_method_info) {
-		return validate_trait_method_info_signature(p_trait, p_required_function, p_implementation);
+		return validate_trait_method_info_signature(p_trait, p_required_function, p_implementation, p_trait_substitution);
 	}
 
 	GDScriptParser::FunctionNode *implementation_function = p_implementation.function;
@@ -6140,6 +6262,16 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 	}
 
 	bool valid = p_required_function->is_static == implementation_function->is_static;
+
+	// The trait's use-site bindings (`T := int`) specialize the required signature. A generic required
+	// method may declare a type parameter that shadows a trait parameter by name; that method-scoped
+	// parameter keeps its own identity, so drop any shadowed names before substituting.
+	HashMap<StringName, GDScriptParser::DataType> method_trait_substitution = p_trait_substitution;
+	for (const GDScriptParser::TypeParameterNode *required_type_parameter : p_required_function->type_parameters) {
+		if (required_type_parameter != nullptr && required_type_parameter->identifier != nullptr) {
+			method_trait_substitution.erase(required_type_parameter->identifier->name);
+		}
+	}
 
 	// A trait may require a generic method; an implementation satisfies it up to type-parameter
 	// renaming (alpha-equivalence by ordinal position). The lists must share arity, the bound at each
@@ -6179,7 +6311,7 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 				required_handle.type_parameter_name = required_type_parameter->identifier->name;
 				required_handle.type_parameter_scope = GDScriptParser::DataType::TYPE_PARAMETER_METHOD;
 				required_handle.type_parameter_index = i;
-				const GDScriptParser::DataType required_bound = bound_of(required_type_parameter);
+				const GDScriptParser::DataType required_bound = GDScriptParser::DataType::substitute(bound_of(required_type_parameter), method_trait_substitution);
 				if (required_bound.is_set() && !required_bound.is_variant()) {
 					required_handle.type_parameter_bound.push_back(required_bound);
 				}
@@ -6190,7 +6322,7 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 			// parameter is compared by alpha-equivalence (structural equality after renaming); a
 			// concrete bound by ordinary mutual compatibility.
 			for (int i = 0; i < required_type_parameters.size(); i++) {
-				const GDScriptParser::DataType required_bound = bound_of(required_type_parameters[i]);
+				const GDScriptParser::DataType required_bound = GDScriptParser::DataType::substitute(bound_of(required_type_parameters[i]), method_trait_substitution);
 				const GDScriptParser::DataType implementation_bound = GDScriptParser::DataType::substitute(bound_of(implementation_type_parameters[i]), type_parameter_renaming);
 				const bool required_has_bound = required_bound.is_set() && !required_bound.is_variant();
 				const bool implementation_has_bound = implementation_bound.is_set() && !implementation_bound.is_variant();
@@ -6211,7 +6343,9 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 	const bool is_generic_method = !p_required_function->type_parameters.is_empty() || !implementation_function->type_parameters.is_empty();
 
 	if (p_required_function->return_type != nullptr) {
-		const GDScriptParser::DataType required_return_type = p_required_function->get_datatype();
+		// Specialize the required signature with the generic trait's use-site arguments (`T := int`)
+		// before comparing it to the implementation.
+		const GDScriptParser::DataType required_return_type = GDScriptParser::DataType::substitute(p_required_function->get_datatype(), method_trait_substitution);
 		const GDScriptParser::DataType implementation_return_type = GDScriptParser::DataType::substitute(implementation_function->get_datatype(), type_parameter_renaming);
 		if (is_generic_method && (_signature_type_involves_type_parameter(required_return_type) || _signature_type_involves_type_parameter(implementation_return_type))) {
 			// A type-parameter-involving return must match by alpha-equivalence (so `-> V` does not
@@ -6239,7 +6373,7 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 
 	if (valid) {
 		for (int i = 0; i < p_required_function->parameters.size() && i < implementation_function->parameters.size(); i++) {
-			const GDScriptParser::DataType &required_parameter_type = p_required_function->parameters[i]->datatype;
+			const GDScriptParser::DataType required_parameter_type = GDScriptParser::DataType::substitute(p_required_function->parameters[i]->datatype, method_trait_substitution);
 			const GDScriptParser::DataType implementation_parameter_type = GDScriptParser::DataType::substitute(implementation_function->parameters[i]->datatype, type_parameter_renaming);
 			if (is_generic_method && (_signature_type_involves_type_parameter(required_parameter_type) || _signature_type_involves_type_parameter(implementation_parameter_type))) {
 				// A type-parameter-involving parameter must match by alpha-equivalence; concrete
@@ -6264,7 +6398,8 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 }
 
 bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::ClassNode *p_trait,
-		GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation) {
+		GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
+		const HashMap<StringName, GDScriptParser::DataType> &p_trait_substitution) {
 	const StringName function_name = p_required_function->identifier->name;
 	const String trait_method_name = _class_or_trait_name(p_trait) + "." + String(function_name) + "()";
 
@@ -6300,7 +6435,7 @@ bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::Clas
 	bool valid = (p_required_function->is_static == ((p_implementation.method_info.flags & METHOD_FLAG_STATIC) != 0));
 
 	if (p_required_function->return_type != nullptr) {
-		const GDScriptParser::DataType required_return_type = p_required_function->get_datatype();
+		const GDScriptParser::DataType required_return_type = GDScriptParser::DataType::substitute(p_required_function->get_datatype(), p_trait_substitution);
 		GDScriptParser::DataType implementation_return_type = type_from_property(p_implementation.method_info.return_val);
 		if (implementation_return_type.is_variant()) {
 			valid = valid && required_return_type.is_variant();
@@ -6317,7 +6452,7 @@ bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::Clas
 
 	if (valid) {
 		for (int i = 0; i < p_required_function->parameters.size() && i < p_implementation.method_info.arguments.size(); i++) {
-			const GDScriptParser::DataType &required_parameter_type = p_required_function->parameters[i]->datatype;
+			const GDScriptParser::DataType required_parameter_type = GDScriptParser::DataType::substitute(p_required_function->parameters[i]->datatype, p_trait_substitution);
 			const GDScriptParser::DataType implementation_parameter_type = type_from_property(p_implementation.method_info.arguments[i], true);
 			if (required_parameter_type.is_variant() && required_parameter_type.is_hard_type()) {
 				valid = valid && implementation_parameter_type.is_variant();
@@ -6443,7 +6578,7 @@ void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_cla
 						TraitMethodImplementation implementation;
 						implementation.function = class_member.function;
 						implementation.owner_class = p_class;
-						validate_trait_method_signature(trait, member.function, implementation);
+						validate_trait_method_signature(trait, member.function, implementation, trait_type_argument_substitution(p_class, trait));
 					}
 					continue;
 				}
@@ -6466,7 +6601,7 @@ void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_cla
 							TraitMethodImplementation implementation;
 							implementation.function = base_member.function;
 							implementation.owner_class = base_class;
-							validate_trait_method_signature(trait, member.function, implementation);
+							validate_trait_method_signature(trait, member.function, implementation, trait_type_argument_substitution(p_class, trait));
 							inherited_method_shadows_trait = true;
 							break;
 						}
@@ -6565,7 +6700,7 @@ void GDScriptAnalyzer::validate_trait_requirements(GDScriptParser::ClassNode *p_
 				continue;
 			}
 
-			validate_trait_method_signature(trait, member.function, implementation);
+			validate_trait_method_signature(trait, member.function, implementation, trait_type_argument_substitution(p_class, trait));
 		}
 	}
 }

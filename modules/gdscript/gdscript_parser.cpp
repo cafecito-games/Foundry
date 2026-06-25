@@ -1137,6 +1137,9 @@ GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
 		}
 	}
 
+	// A trait may be generic (`trait Container[T]`), mirroring `class Box[T]`.
+	parse_type_parameters(trait->type_parameters);
+
 	if (match(GDScriptTokenizer::Token::EXTENDS)) {
 		parse_extends();
 	}
@@ -1216,6 +1219,9 @@ void GDScriptParser::parse_trait_name() {
 		current_class->qualified_global_name = current_class->namespace_name.is_empty() ? String(current_class->identifier->name) : current_class->namespace_name + "." + String(current_class->identifier->name);
 		current_class->fqcn = current_class->qualified_global_name;
 	}
+
+	// A global trait may be generic (`trait_name Container[T]`), mirroring `class_name Box[T]`.
+	parse_type_parameters(current_class->type_parameters);
 
 	if (match(GDScriptTokenizer::Token::EXTENDS)) {
 		// Allow extends on the same line.
@@ -1311,6 +1317,23 @@ void GDScriptParser::parse_uses() {
 				return;
 			}
 			trait_use.name.push_back(parse_identifier());
+		}
+
+		// Type arguments specializing a generic trait: `uses Container[int]`.
+		if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				push_error(R"(Expected at least one type argument after "[".)");
+			} else {
+				do {
+					TypeNode *type_argument = parse_type();
+					if (type_argument == nullptr) {
+						push_error(R"(Expected type argument after "[".)");
+						break;
+					}
+					trait_use.type_arguments.push_back(type_argument);
+				} while (match(GDScriptTokenizer::Token::COMMA));
+			}
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type arguments.)");
 		}
 
 		current_class->used_traits.push_back(trait_use);
