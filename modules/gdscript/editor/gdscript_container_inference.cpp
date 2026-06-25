@@ -551,16 +551,26 @@ private:
 				!identifier->function_source_is_static;
 	}
 
-	// True when a string-literal expression equals the tracked member's name,
+	// True when a constant string expression equals the tracked member's name. The
+	// analyzer folds a constant reference (`const P = "_m"`) into `reduced_value`,
+	// so a constant identifier is matched as well as a raw string literal.
+	bool is_constant_member_name(const GDScriptParser::ExpressionNode *p_expr) const {
+		if (p_expr == nullptr || decl->identifier == nullptr || !p_expr->is_constant) {
+			return false;
+		}
+		const Variant &value = p_expr->reduced_value;
+		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+				StringName(value) == decl->identifier->name;
+	}
+
+	// True when a constant string expression equals the tracked member's name,
 	// recursing into array literals so `callv("set", ["_m", v])` is also matched.
 	bool literal_mentions_member(const GDScriptParser::ExpressionNode *p_expr) const {
 		if (p_expr == nullptr || decl->identifier == nullptr) {
 			return false;
 		}
-		if (p_expr->type == Node::LITERAL) {
-			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
-			return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-					StringName(value) == decl->identifier->name;
+		if (is_constant_member_name(p_expr)) {
+			return true;
 		}
 		if (p_expr->type == Node::ARRAY) {
 			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expr);
@@ -613,17 +623,7 @@ private:
 		if (is_our_var(p_subscript->base) || is_self_member_subscript(p_subscript->base)) {
 			return false; // Indexing into the member container itself, not the instance.
 		}
-		return literal_mentions_member_scalar(p_subscript->index);
-	}
-
-	// Non-recursive variant of `literal_mentions_member` for a single index value.
-	bool literal_mentions_member_scalar(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr || p_expr->type != Node::LITERAL || decl->identifier == nullptr) {
-			return false;
-		}
-		const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
-		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-				StringName(value) == decl->identifier->name;
+		return is_constant_member_name(p_subscript->index);
 	}
 
 	// Treats `p_value` as a value that is consumed by the surrounding context. If
@@ -1321,16 +1321,26 @@ private:
 				!identifier->function_source_is_static;
 	}
 
-	// True when a string-literal expression equals the tracked member's name,
+	// True when a constant string expression equals the tracked member's name. The
+	// analyzer folds a constant reference (`const P = "_m"`) into `reduced_value`,
+	// so a constant identifier is matched as well as a raw string literal.
+	bool is_constant_member_name(const GDScriptParser::ExpressionNode *p_expr) const {
+		if (p_expr == nullptr || decl->identifier == nullptr || !p_expr->is_constant) {
+			return false;
+		}
+		const Variant &value = p_expr->reduced_value;
+		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+				StringName(value) == decl->identifier->name;
+	}
+
+	// True when a constant string expression equals the tracked member's name,
 	// recursing into array literals so `callv("set", ["_m", v])` is also matched.
 	bool literal_mentions_member(const GDScriptParser::ExpressionNode *p_expr) const {
 		if (p_expr == nullptr || decl->identifier == nullptr) {
 			return false;
 		}
-		if (p_expr->type == Node::LITERAL) {
-			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
-			return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-					StringName(value) == decl->identifier->name;
+		if (is_constant_member_name(p_expr)) {
+			return true;
 		}
 		if (p_expr->type == Node::ARRAY) {
 			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expr);
@@ -1383,17 +1393,7 @@ private:
 		if (is_our_var(p_subscript->base) || is_self_member_subscript(p_subscript->base)) {
 			return false; // Indexing into the member container itself, not the instance.
 		}
-		return literal_mentions_member_scalar(p_subscript->index);
-	}
-
-	// Non-recursive variant of `literal_mentions_member` for a single index value.
-	bool literal_mentions_member_scalar(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr || p_expr->type != Node::LITERAL || decl->identifier == nullptr) {
-			return false;
-		}
-		const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
-		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-				StringName(value) == decl->identifier->name;
+		return is_constant_member_name(p_subscript->index);
 	}
 
 	void scan_value(const GDScriptParser::ExpressionNode *p_value) {
