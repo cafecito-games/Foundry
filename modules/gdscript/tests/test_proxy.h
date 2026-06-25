@@ -682,6 +682,31 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 		CHECK(defaulted_scores.is_typed_key());
 		CHECK(defaulted_scores.is_empty());
 	}
+
+	// If the handler becomes uninvocable (its target is freed), a contract call
+	// must surface a non-fallthrough error rather than letting Object::callp try
+	// native dispatch (INVALID_METHOD / INSTANCE_IS_NULL are fallthrough signals).
+	{
+		Callable::CallError throwaway_error;
+		Variant throwaway_recorder = recorder_script->_new(nullptr, -1, throwaway_error);
+		Object *throwaway = throwaway_recorder;
+
+		String message;
+		Ref<RefCounted> broken_proxy = GDScriptProxy::create_proxy(service, Callable(throwaway, "handle"), message);
+		REQUIRE(broken_proxy.is_valid());
+
+		// Drop the only reference to the handler's target; the Callable holds it
+		// weakly, so the next call cannot reach the handler.
+		throwaway_recorder = Variant();
+
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		broken_proxy->get_script_instance()->callp("get_count", nullptr, 0, error);
+		ERR_PRINT_ON;
+		CHECK(error.error != Callable::CallError::CALL_OK);
+		CHECK(error.error != Callable::CallError::CALL_ERROR_INVALID_METHOD);
+		CHECK(error.error != Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL);
+	}
 }
 
 } // namespace GDScriptTests
