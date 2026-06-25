@@ -223,6 +223,14 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
+	TEST_CASE("Observing the array's typedness forces a conservative skip") {
+		// `is_typed()` returns false on the bare array but would return true once
+		// typed, so upgrading would change behavior; inference must not.
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar typed = items.is_typed()\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+	}
+
 	TEST_CASE("An unused empty literal yields no evidence") {
 		InferenceFixture fixture("func f():\n\tvar items = []\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");

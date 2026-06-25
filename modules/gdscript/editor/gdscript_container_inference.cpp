@@ -40,17 +40,25 @@ using DataType = GDScriptParser::DataType;
 using Node = GDScriptParser::Node;
 
 // Array methods that are read-only or only remove/reorder existing elements, so
-// they never introduce a new element type and are safe to ignore. Methods that
-// take a `Callable` (e.g. `sort_custom`, `map`) are listed here because their
-// callable argument is still scanned for escapes of the variable.
+// they never introduce a new element type and leave the program's behavior
+// unchanged once the array is typed. Methods that take a `Callable` (e.g.
+// `sort_custom`, `map`) are listed here because their callable argument is still
+// scanned for escapes of the variable.
+//
+// Two families are deliberately excluded so the walker bails instead:
+//   - `resize` grows the array with the element type's default (null on an
+//     untyped array, but e.g. 0 on `Array[int]`), so typing would change values.
+//   - the typedness observers (`is_typed`, `get_typed_builtin`,
+//     `get_typed_class_name`, `get_typed_script`, `is_same_typed`) report
+//     whether the array carries a type; typing it would flip their results.
 bool is_safe_readonly_array_method(const StringName &p_name) {
 	static const char *safe_methods[] = {
 		"size", "is_empty", "clear", "sort", "sort_custom", "reverse", "shuffle",
 		"pop_back", "pop_front", "pop_at", "remove_at", "erase",
-		"has", "find", "rfind", "count", "back", "front", "max", "min", "hash",
-		"is_read_only", "make_read_only", "get", "slice", "duplicate", "duplicate_deep",
-		"map", "filter", "reduce", "any", "all", "bsearch", "bsearch_custom", "find_custom",
-		"is_typed", "get_typed_builtin", "get_typed_class_name", "get_typed_script", "is_same_typed",
+		"has", "find", "rfind", "rfind_custom", "find_custom", "count", "back", "front",
+		"max", "min", "hash", "pick_random", "is_read_only", "make_read_only",
+		"get", "slice", "duplicate", "duplicate_deep",
+		"map", "filter", "reduce", "any", "all", "bsearch", "bsearch_custom",
 		nullptr
 	};
 	for (int i = 0; safe_methods[i] != nullptr; i++) {
