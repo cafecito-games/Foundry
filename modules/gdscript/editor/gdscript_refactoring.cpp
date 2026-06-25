@@ -3829,7 +3829,9 @@ bool class_has_native_base_virtual_method(const GDScriptParser::ClassNode *p_cla
 		switch (base_type.kind) {
 			case GDScriptParser::DataType::CLASS: {
 				const GDScriptParser::ClassNode *base_class = base_type.class_type;
-				while (base_class != nullptr) {
+				int depth = 0;
+				while (base_class != nullptr && depth < STYLE_ORDER_MAX_BASE_CHAIN_DEPTH) {
+					depth++;
 					base_type = base_class->base_type;
 					if (base_type.kind != GDScriptParser::DataType::CLASS) {
 						break;
@@ -3876,7 +3878,9 @@ bool class_has_base_function(const GDScriptParser::ClassNode *p_class, const Str
 		switch (base_type.kind) {
 			case GDScriptParser::DataType::CLASS: {
 				const GDScriptParser::ClassNode *base_class = base_type.class_type;
-				while (base_class != nullptr) {
+				int depth = 0;
+				while (base_class != nullptr && depth < STYLE_ORDER_MAX_BASE_CHAIN_DEPTH) {
+					depth++;
 					if (base_class->has_member(p_function_name) &&
 							base_class->get_member(p_function_name).type == GDScriptParser::ClassNode::Member::FUNCTION) {
 						return true;
