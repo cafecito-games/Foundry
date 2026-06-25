@@ -307,21 +307,56 @@ bool GDScriptProxyInstance::has_method(const StringName &p_method) const {
 	return _resolve_contract_return_type(p_method, return_type);
 }
 
+int GDScriptProxyInstance::get_method_argument_count(const StringName &p_method, bool *r_is_valid) const {
+	// A compiled function reports its own argument count; a transitive abstract
+	// requirement reports the fixed-parameter count from its recorded signature. Both
+	// must agree with what `has_method`/`callp` accept, so the default `ScriptInstance`
+	// path (which only consults compiled `member_functions`) is not enough.
+	const GDScriptFunction *contract_function = _find_contract_function(p_method);
+	if (contract_function != nullptr) {
+		if (r_is_valid) {
+			*r_is_valid = true;
+		}
+		return contract_function->get_argument_count();
+	}
+
+	const GDScript *script = proxy_script.ptr();
+	while (script) {
+		HashMap<StringName, GDScript::AbstractTraitRequirement>::ConstIterator element = script->get_abstract_trait_requirements().find(p_method);
+		if (element) {
+			if (r_is_valid) {
+				*r_is_valid = true;
+			}
+			return element->value.method_info.arguments.size();
+		}
+		script = script->get_base().ptr();
+	}
+
+	if (r_is_valid) {
+		*r_is_valid = false;
+	}
+	return 0;
+}
+
 void GDScriptProxyInstance::get_method_list(List<MethodInfo> *p_list) const {
 	if (proxy_script.is_null()) {
 		return;
 	}
-	proxy_script->get_script_method_list(p_list);
 
 	// The script's method list is backed by compiled `member_functions`, so it omits
 	// the abstract requirements inherited through `uses`-ed traits. Those are part of
-	// the proxy's callable contract (`has_method`/`callp` honor them), so enumerate
-	// them too, keeping the listing consistent. Names the script already reported are
-	// skipped so a satisfied requirement is not listed twice.
+	// the proxy's callable contract (`has_method`/`callp` honor them), so enumerate them
+	// too. Dedup only against the script's own methods: `p_list` may already hold the
+	// host's native `Object`/`RefCounted` methods (Object::get_method_list prepopulates
+	// it), and a contract method that shadows a native one must still be listed.
 	HashSet<StringName> listed;
-	for (const MethodInfo &method : *p_list) {
+	List<MethodInfo> script_methods;
+	proxy_script->get_script_method_list(&script_methods);
+	for (const MethodInfo &method : script_methods) {
 		listed.insert(method.name);
+		p_list->push_back(method);
 	}
+
 	const GDScript *script = proxy_script.ptr();
 	while (script) {
 		for (const KeyValue<StringName, GDScript::AbstractTraitRequirement> &requirement : script->get_abstract_trait_requirements()) {

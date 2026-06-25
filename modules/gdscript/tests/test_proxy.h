@@ -646,6 +646,35 @@ TEST_CASE("[Modules][GDScript][Proxy] Transitive abstract trait requirements are
 		}
 		CHECK(checked_defaulted);
 		CHECK(checked_variadic);
+
+		// Argument-count metadata is reported for inherited requirements too, matching
+		// their fixed-parameter count (the `...rest` is not counted).
+		ScriptInstance *instance = proxy->get_script_instance();
+		bool is_valid = false;
+		CHECK(instance->get_method_argument_count("base_required", &is_valid) == 0);
+		CHECK(is_valid);
+		CHECK(instance->get_method_argument_count("base_defaulted", &is_valid) == 1);
+		CHECK(is_valid);
+		CHECK(instance->get_method_argument_count("base_variadic", &is_valid) == 1);
+		CHECK(is_valid);
+		instance->get_method_argument_count("not_a_method", &is_valid);
+		CHECK_FALSE(is_valid);
+
+		// A pre-populated list (as `Object::get_method_list` hands over, holding the
+		// host's native methods) must not cause an identically-named contract method to
+		// be dropped: the requirement is still appended.
+		List<MethodInfo> seeded;
+		MethodInfo native_lookalike;
+		native_lookalike.name = "base_required";
+		seeded.push_back(native_lookalike);
+		instance->get_method_list(&seeded);
+		int base_required_entries = 0;
+		for (const MethodInfo &method : seeded) {
+			if (method.name == StringName("base_required")) {
+				base_required_entries++;
+			}
+		}
+		CHECK(base_required_entries == 2); // the seeded look-alike plus the contract entry.
 	}
 
 	// Diamond: `base_required` is reached through both `Left` and `Right` and is
@@ -757,6 +786,48 @@ TEST_CASE("[Modules][GDScript][Proxy] A same-named property does not hide an inh
 		CHECK(instance->set("tag", 7));
 		CHECK(instance->get("tag", value));
 		CHECK(value == Variant(7));
+	}
+
+	// A concrete trait method dropped by flattening (its name claimed by the earlier
+	// `var tag`) is not a callable either, so it must not suppress the abstract `tag()`
+	// requirement contributed by a third trait. The requirement is still intercepted.
+	const char *shadowed_source =
+			"trait WithField:\n"
+			"\tvar tag: int\n"
+			"\n"
+			"trait WithConcrete:\n"
+			"\tfunc tag() -> int:\n"
+			"\t\treturn 1\n"
+			"\n"
+			"trait WithAbstract:\n"
+			"\t@abstract func tag() -> int\n"
+			"\n"
+			"trait Mixed uses WithField, WithConcrete, WithAbstract:\n"
+			"\tpass\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn 42\n";
+
+	Ref<GDScript> shadowed_script = compile_proxy_source(shadowed_source);
+	Ref<GDScript> mixed = get_subclass(shadowed_script, "Mixed");
+	Ref<GDScript> shadowed_recorder = get_subclass(shadowed_script, "Recorder");
+	REQUIRE(mixed.is_valid());
+
+	Variant shadowed_recorder_ref = shadowed_recorder->_new(nullptr, -1, construct_error);
+	Object *shadowed_recorder_object = shadowed_recorder_ref;
+
+	String shadowed_error;
+	Ref<RefCounted> mixed_proxy = GDScriptProxy::create_proxy(mixed, Callable(shadowed_recorder_object, "handle"), shadowed_error);
+	REQUIRE_MESSAGE(mixed_proxy.is_valid(), shadowed_error.utf8().get_data());
+	ScriptInstance *mixed_instance = mixed_proxy->get_script_instance();
+
+	CHECK(mixed_instance->has_method("tag"));
+	{
+		Callable::CallError error;
+		Variant result = mixed_instance->callp("tag", nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant(42));
 	}
 }
 

@@ -2435,13 +2435,14 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 		return;
 	}
 
-	// Only a callable of the same name satisfies an abstract method requirement and is
-	// reachable by the proxy's `_find_contract_function`. A non-function member (var,
-	// constant, enum, enum value, or signal) of the same name does not, so it must not
-	// suppress recording the requirement — otherwise the method half of the contract is
-	// lost. Hence `provided` tracks function names only: the implementer's and bases'
-	// own methods (concrete or abstract, both compiled into `member_functions`) and the
-	// concrete trait methods flattened in.
+	// A requirement is already satisfied only when a same-named *callable* will live in
+	// `member_functions`, where the proxy's `_find_contract_function` can reach it. That
+	// is exactly the implementer's and bases' own methods plus the concrete trait
+	// methods that are actually flattened in. A non-function member (var, constant,
+	// enum, signal) does not satisfy a method contract, and a concrete trait method that
+	// flattening drops because an earlier member already claimed the name never becomes a
+	// callable — so neither may suppress the requirement. `_collect_flattened_trait_members`
+	// applies the same shadowing the compiler uses, so reuse it rather than re-deriving.
 	HashSet<StringName> provided;
 	for (const GDScriptParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
 		for (const GDScriptParser::ClassNode::Member &member : owner->members) {
@@ -2454,20 +2455,15 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 			}
 		}
 	}
-	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
-		if (trait == nullptr) {
+	Vector<const GDScriptParser::ClassNode::Member *> flattened;
+	_collect_flattened_trait_members(p_class, flattened);
+	for (const GDScriptParser::ClassNode::Member *member : flattened) {
+		if (member->type != GDScriptParser::ClassNode::Member::FUNCTION || member->function == nullptr || member->function->is_abstract) {
 			continue;
 		}
-		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
-			// A flattened concrete trait method satisfies a same-named requirement;
-			// abstract trait functions are themselves requirements, not providers.
-			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION || member.function == nullptr || member.function->is_abstract) {
-				continue;
-			}
-			const StringName name = member.get_name();
-			if (name != StringName()) {
-				provided.insert(name);
-			}
+		const StringName name = member->get_name();
+		if (name != StringName()) {
+			provided.insert(name);
 		}
 	}
 
