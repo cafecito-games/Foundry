@@ -1454,20 +1454,16 @@ static void _list_available_traits(GDScriptParser::CompletionContext &p_context,
 		}
 	}
 
-	// Global `trait_name` traits. Only GDScript globals can be traits; a lightweight
-	// parse per global tells traits apart from ordinary `class_name` globals.
-	GDScriptLanguage *gdscript_language = GDScriptLanguage::get_singleton();
-	const StringName gdscript_name = gdscript_language->get_name();
+	// Global `trait_name` traits. Only GDScript globals can be traits; the trait flag
+	// is cached in the global-class registry, so no per-global parse is needed here.
+	const StringName gdscript_name = GDScriptLanguage::get_singleton()->get_name();
 	LocalVector<StringName> global_classes;
 	ScriptServer::get_global_class_list(global_classes);
 	for (const StringName &global_class : global_classes) {
 		if (ScriptServer::get_global_class_language(global_class) != gdscript_name) {
 			continue;
 		}
-		const String path = ScriptServer::get_global_class_path(global_class);
-		bool is_trait = false;
-		_ALLOW_DISCARD_ gdscript_language->get_global_class_name(path, nullptr, nullptr, nullptr, nullptr, &is_trait);
-		if (!is_trait) {
+		if (!ScriptServer::is_global_class_trait(global_class)) {
 			continue;
 		}
 		ScriptLanguage::CodeCompletionOption option(global_class, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);

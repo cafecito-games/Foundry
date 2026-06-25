@@ -467,7 +467,8 @@ static void restore_lsp_global_script_classes(const Array &p_classes) {
 				!c.has("is_abstract") || !c.has("is_tool")) {
 			continue;
 		}
-		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
+		const bool is_trait = c.has("is_trait") && c["is_trait"];
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
 	}
 	ProjectSettings::get_singleton()->store_global_class_list(p_classes);
 }
@@ -488,12 +489,12 @@ void register_lsp_namespace_global_classes() {
 	// The global registry is test-scoped; construct LSPGlobalScriptClassBackup before calling this helper.
 	ScriptServer::global_classes_clear();
 	const StringName language = GDScriptLanguage::get_singleton()->get_name();
-	ScriptServer::add_global_class("lsp.characters.LspBaseCharacter", "Node", language, "res://lsp/namespace_lsp_base.gd", false, false);
-	ScriptServer::add_global_class("lsp.characters.controllers.LspMyCharacterController", "Node", language, "res://lsp/namespace_lsp_controller.gd", false, false);
-	ScriptServer::add_global_class("lsp.characters.LspNamespaceUser", "Node", language, "res://lsp/namespace_lsp_user.gd", false, false);
-	ScriptServer::add_global_class("lsp.ambiguous.first.LspAmbiguousClass", "Node", language, "res://lsp/namespace_lsp_ambiguous_first.gd", false, false);
-	ScriptServer::add_global_class("lsp.ambiguous.second.LspAmbiguousClass", "Node", language, "res://lsp/namespace_lsp_ambiguous_second.gd", false, false);
-	ScriptServer::add_global_class("lsp.ambiguous.LspAmbiguousNamespaceUser", "Node", language, "res://lsp/namespace_lsp_ambiguous_user.gd", false, false);
+	ScriptServer::add_global_class("lsp.characters.LspBaseCharacter", "Node", language, "res://lsp/namespace_lsp_base.gd", false, false, false);
+	ScriptServer::add_global_class("lsp.characters.controllers.LspMyCharacterController", "Node", language, "res://lsp/namespace_lsp_controller.gd", false, false, false);
+	ScriptServer::add_global_class("lsp.characters.LspNamespaceUser", "Node", language, "res://lsp/namespace_lsp_user.gd", false, false, false);
+	ScriptServer::add_global_class("lsp.ambiguous.first.LspAmbiguousClass", "Node", language, "res://lsp/namespace_lsp_ambiguous_first.gd", false, false, false);
+	ScriptServer::add_global_class("lsp.ambiguous.second.LspAmbiguousClass", "Node", language, "res://lsp/namespace_lsp_ambiguous_second.gd", false, false, false);
+	ScriptServer::add_global_class("lsp.ambiguous.LspAmbiguousNamespaceUser", "Node", language, "res://lsp/namespace_lsp_ambiguous_user.gd", false, false, false);
 }
 
 inline LSP::Position lsp_pos(int line, int character) {

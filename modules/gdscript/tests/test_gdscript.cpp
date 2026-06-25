@@ -288,7 +288,8 @@ static void restore_global_script_classes(const Array &p_classes) {
 				!c.has("is_abstract") || !c.has("is_tool")) {
 			continue;
 		}
-		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
+		const bool is_trait = c.has("is_trait") && c["is_trait"];
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
 	}
 	ProjectSettings::get_singleton()->store_global_class_list(p_classes);
 }
@@ -328,12 +329,13 @@ static String register_global_script_class(const TempScriptFile &p_script) {
 	String base_type;
 	bool is_abstract = false;
 	bool is_tool = false;
+	bool is_trait = false;
 	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(p_script.path, &base_type, nullptr,
-			&is_abstract, &is_tool);
+			&is_abstract, &is_tool, &is_trait);
 	CHECK_FALSE(class_name.is_empty());
 	if (!class_name.is_empty()) {
 		ScriptServer::add_global_class(class_name, base_type, GDScriptLanguage::get_singleton()->get_name(), p_script.path,
-				is_abstract, is_tool);
+				is_abstract, is_tool, is_trait);
 	}
 	return class_name;
 }
@@ -668,18 +670,20 @@ extends RefCounted
 	String base_type;
 	bool is_abstract = true;
 	bool is_tool = true;
+	bool is_trait = false;
 	String trait_name = GDScriptLanguage::get_singleton()->get_global_class_name(trait.path, &base_type, nullptr,
-			&is_abstract, &is_tool);
+			&is_abstract, &is_tool, &is_trait);
 	CHECK_EQ(trait_name, "characters.Damageable");
 	CHECK_EQ(base_type, "RefCounted");
 	CHECK_FALSE(is_abstract);
 	CHECK_FALSE(is_tool);
+	CHECK(is_trait);
 	if (trait_name.is_empty()) {
 		return;
 	}
 
 	ScriptServer::add_global_class(trait_name, base_type, GDScriptLanguage::get_singleton()->get_name(), trait.path,
-			is_abstract, is_tool);
+			is_abstract, is_tool, is_trait);
 
 	GDScriptParser imported_parser;
 	Error err = analyze_source(imported_parser, R"(
@@ -1835,7 +1839,7 @@ class_name RuntimeCharacter
 	compiled.instantiate();
 	GDScriptCompiler::make_scripts(compiled.ptr(), parser.get_tree(), false);
 	ScriptServer::add_global_class("characters.RuntimeCharacter", "RefCounted",
-			GDScriptLanguage::get_singleton()->get_name(), "user://qualified_runtime_global_name.gd", false, false);
+			GDScriptLanguage::get_singleton()->get_name(), "user://qualified_runtime_global_name.gd", false, false, false);
 
 	CHECK_EQ(compiled->get_global_name(), "characters.RuntimeCharacter");
 	CHECK(ScriptServer::is_global_class(compiled->get_global_name()));
@@ -2033,8 +2037,8 @@ TEST_CASE("[Modules][GDScript] Namespaced global classes can share a local name"
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
 
-	ScriptServer::add_global_class("characters.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), "res://characters/controller.gd", false, false);
-	ScriptServer::add_global_class("ui.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), "res://ui/controller.gd", false, false);
+	ScriptServer::add_global_class("characters.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), "res://characters/controller.gd", false, false, false);
+	ScriptServer::add_global_class("ui.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), "res://ui/controller.gd", false, false, false);
 
 	CHECK(ScriptServer::is_global_class("characters.Controller"));
 	CHECK(ScriptServer::is_global_class("ui.Controller"));
@@ -2048,7 +2052,7 @@ TEST_CASE("[Modules][GDScript] Global script class cache saves qualified class n
 	ProjectSettings::get_singleton()->store_global_class_list(Array());
 
 	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
-			"res://characters/base_character.gd", true, false);
+			"res://characters/base_character.gd", true, false, false);
 	ScriptServer::save_global_classes();
 
 	TypedArray<Dictionary> script_classes = ProjectSettings::get_singleton()->get_global_class_list();
@@ -2081,6 +2085,49 @@ TEST_CASE("[Modules][GDScript] Old global script class cache entries still load"
 
 	CHECK(ScriptServer::is_global_class("LegacyCharacter"));
 	CHECK_EQ(ScriptServer::get_global_class_path("LegacyCharacter"), "res://legacy_character.gd");
+	// Caches written before the `is_trait` flag existed default to not-a-trait.
+	CHECK_FALSE(ScriptServer::is_global_class_trait("LegacyCharacter"));
+}
+
+TEST_CASE("[Modules][GDScript] Global class registry tracks the trait flag") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	ScriptServer::add_global_class("combat.Damageable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(),
+			"res://combat/damageable.gd", false, false, true);
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/base_character.gd", false, false, false);
+
+	CHECK(ScriptServer::is_global_class_trait("combat.Damageable"));
+	CHECK_FALSE(ScriptServer::is_global_class_trait("characters.BaseCharacter"));
+
+	// Re-registering with a different flag updates the cached bit.
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/base_character.gd", false, false, true);
+	CHECK(ScriptServer::is_global_class_trait("characters.BaseCharacter"));
+}
+
+TEST_CASE("[Modules][GDScript] Global script class cache round-trips the trait flag") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+	ProjectSettings::get_singleton()->store_global_class_list(Array());
+
+	ScriptServer::add_global_class("combat.Damageable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(),
+			"res://combat/damageable.gd", false, false, true);
+	ScriptServer::save_global_classes();
+
+	TypedArray<Dictionary> script_classes = ProjectSettings::get_singleton()->get_global_class_list();
+	CHECK_EQ(script_classes.size(), 1);
+	if (script_classes.size() == 1) {
+		Dictionary script_class = script_classes[0];
+		CHECK(script_class.has("is_trait"));
+		CHECK(bool(script_class["is_trait"]));
+	}
+
+	// Reloading the serialized cache restores the trait flag.
+	ScriptServer::global_classes_clear();
+	ProjectSettings::get_singleton()->refresh_global_class_list();
+	CHECK(ScriptServer::is_global_class_trait("combat.Damageable"));
 }
 
 TEST_CASE("[Modules][GDScript] Fully qualified global class collisions keep both paths visible") {
@@ -2088,7 +2135,7 @@ TEST_CASE("[Modules][GDScript] Fully qualified global class collisions keep both
 	ScriptServer::global_classes_clear();
 
 	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
-			"res://characters/base_character.gd", false, false);
+			"res://characters/base_character.gd", false, false, false);
 
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
@@ -2121,9 +2168,9 @@ TEST_CASE("[Modules][GDScript] Global class re-registration can update the scrip
 	ScriptServer::global_classes_clear();
 
 	ScriptServer::add_global_class("characters.MovedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
-			"res://characters/old_path.gd", false, false);
+			"res://characters/old_path.gd", false, false, false);
 	ScriptServer::add_global_class("characters.MovedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
-			"res://characters/new_path.gd", false, false);
+			"res://characters/new_path.gd", false, false, false);
 
 	CHECK_EQ(ScriptServer::get_global_class_path("characters.MovedCharacter"), "res://characters/new_path.gd");
 }
@@ -2134,16 +2181,16 @@ TEST_CASE("[Modules][GDScript] Global class cache version tracks mutations") {
 
 	const uint64_t empty_version = ScriptServer::get_global_class_cache_version();
 	ScriptServer::add_global_class("characters.VersionedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
-			"res://characters/versioned_character.gd", false, false);
+			"res://characters/versioned_character.gd", false, false, false);
 	const uint64_t added_version = ScriptServer::get_global_class_cache_version();
 	CHECK_NE(added_version, empty_version);
 
 	ScriptServer::add_global_class("characters.VersionedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
-			"res://characters/versioned_character.gd", false, false);
+			"res://characters/versioned_character.gd", false, false, false);
 	CHECK_EQ(ScriptServer::get_global_class_cache_version(), added_version);
 
 	ScriptServer::add_global_class("characters.VersionedCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
-			"res://characters/renamed_character.gd", false, false);
+			"res://characters/renamed_character.gd", false, false, false);
 	const uint64_t updated_version = ScriptServer::get_global_class_cache_version();
 	CHECK_NE(updated_version, added_version);
 
@@ -2178,9 +2225,9 @@ class_name MixedUiScript
 extends Node
 )");
 
-	ScriptServer::add_global_class("MixedGlobalScript", "Node", GDScriptLanguage::get_singleton()->get_name(), global_script.path, false, false);
-	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false);
-	ScriptServer::add_global_class("ui.MixedUiScript", "Node", GDScriptLanguage::get_singleton()->get_name(), ui_script.path, false, false);
+	ScriptServer::add_global_class("MixedGlobalScript", "Node", GDScriptLanguage::get_singleton()->get_name(), global_script.path, false, false, false);
+	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false, false);
+	ScriptServer::add_global_class("ui.MixedUiScript", "Node", GDScriptLanguage::get_singleton()->get_name(), ui_script.path, false, false, false);
 
 	const String expected_directory = GDScript::canonicalize_path(namespaced_script.path).get_base_dir();
 	const String expected_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "<global>", "characters", and "ui".)", expected_directory);
@@ -2252,8 +2299,8 @@ extends Node
 	}
 
 	ScriptServer::global_classes_clear();
-	ScriptServer::add_global_class("MixedGlobalScript", "Node", GDScriptLanguage::get_singleton()->get_name(), global_script.path, false, false);
-	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false);
+	ScriptServer::add_global_class("MixedGlobalScript", "Node", GDScriptLanguage::get_singleton()->get_name(), global_script.path, false, false, false);
+	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false, false);
 
 	const String expected_two_namespace_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "<global>" and "characters".)", expected_directory);
 	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::WARN);
@@ -2279,8 +2326,8 @@ namespace characters
 class_name SameNamespacePeer
 extends Node
 )");
-	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false);
-	ScriptServer::add_global_class("characters.SameNamespacePeer", "Node", GDScriptLanguage::get_singleton()->get_name(), same_namespace_peer.path, false, false);
+	ScriptServer::add_global_class("characters.MixedNamespacedScript", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_script.path, false, false, false);
+	ScriptServer::add_global_class("characters.SameNamespacePeer", "Node", GDScriptLanguage::get_singleton()->get_name(), same_namespace_peer.path, false, false, false);
 
 	ProjectSettings::get_singleton()->set_setting(warning_setting, (int)GDScriptWarning::WARN);
 	GDScriptParser::update_project_settings();
@@ -2336,11 +2383,11 @@ class_name StatBlock
 extends Node
 )");
 
-	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(), base_character.path, false, false);
-	ScriptServer::add_global_class("characters.controllers.MyCharacterController", "Node", GDScriptLanguage::get_singleton()->get_name(), controller.path, false, false);
-	ScriptServer::add_global_class("shared.StatBlock", "Resource", GDScriptLanguage::get_singleton()->get_name(), stat_block.path, false, false);
-	ScriptServer::add_global_class("BaseCharacter", "Resource", GDScriptLanguage::get_singleton()->get_name(), global_base_character.path, false, false);
-	ScriptServer::add_global_class("StatBlock", "Node", GDScriptLanguage::get_singleton()->get_name(), global_stat_block.path, false, false);
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(), base_character.path, false, false, false);
+	ScriptServer::add_global_class("characters.controllers.MyCharacterController", "Node", GDScriptLanguage::get_singleton()->get_name(), controller.path, false, false, false);
+	ScriptServer::add_global_class("shared.StatBlock", "Resource", GDScriptLanguage::get_singleton()->get_name(), stat_block.path, false, false, false);
+	ScriptServer::add_global_class("BaseCharacter", "Resource", GDScriptLanguage::get_singleton()->get_name(), global_base_character.path, false, false, false);
+	ScriptServer::add_global_class("StatBlock", "Node", GDScriptLanguage::get_singleton()->get_name(), global_stat_block.path, false, false, false);
 
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
@@ -2445,9 +2492,9 @@ trait_name Trackable
 var tracked: bool = false
 )");
 
-	ScriptServer::add_global_class("combat.Damageable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), damageable.path, false, false);
-	ScriptServer::add_global_class("shared.Loggable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), loggable.path, false, false);
-	ScriptServer::add_global_class("combat.controllers.Trackable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), trackable.path, false, false);
+	ScriptServer::add_global_class("combat.Damageable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), damageable.path, false, false, false);
+	ScriptServer::add_global_class("shared.Loggable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), loggable.path, false, false, false);
+	ScriptServer::add_global_class("combat.controllers.Trackable", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), trackable.path, false, false, false);
 
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
@@ -2536,8 +2583,8 @@ namespace combat
 trait_name MixedDeclTrait
 )");
 
-	ScriptServer::add_global_class("characters.MixedTraitClass", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_class.path, false, false);
-	ScriptServer::add_global_class("combat.MixedDeclTrait", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), namespaced_trait.path, false, false);
+	ScriptServer::add_global_class("characters.MixedTraitClass", "Node", GDScriptLanguage::get_singleton()->get_name(), namespaced_class.path, false, false, false);
+	ScriptServer::add_global_class("combat.MixedDeclTrait", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), namespaced_trait.path, false, false, true);
 
 	const String expected_directory = GDScript::canonicalize_path(namespaced_trait.path).get_base_dir();
 	const String expected_warning = vformat(R"(Directory "%s" contains global script classes from mixed namespaces: "characters" and "combat".)", expected_directory);
@@ -2583,8 +2630,8 @@ namespace combat
 class_name MixedSameNamespacePeer
 extends Node
 )");
-	ScriptServer::add_global_class("combat.MixedDeclTrait", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), namespaced_trait.path, false, false);
-	ScriptServer::add_global_class("combat.MixedSameNamespacePeer", "Node", GDScriptLanguage::get_singleton()->get_name(), same_namespace_peer.path, false, false);
+	ScriptServer::add_global_class("combat.MixedDeclTrait", "RefCounted", GDScriptLanguage::get_singleton()->get_name(), namespaced_trait.path, false, false, true);
+	ScriptServer::add_global_class("combat.MixedSameNamespacePeer", "Node", GDScriptLanguage::get_singleton()->get_name(), same_namespace_peer.path, false, false, false);
 
 	GDScriptParser same_namespace_parser;
 	err = same_namespace_parser.parse(R"(
@@ -2625,9 +2672,9 @@ class_name MyCharacterController
 extends Resource
 )");
 
-	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(), imported_base.path, false, false);
-	ScriptServer::add_global_class("characters.Node", "Resource", GDScriptLanguage::get_singleton()->get_name(), imported_node.path, false, false);
-	ScriptServer::add_global_class("characters.controllers.MyCharacterController", "Resource", GDScriptLanguage::get_singleton()->get_name(), imported_controller.path, false, false);
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(), imported_base.path, false, false, false);
+	ScriptServer::add_global_class("characters.Node", "Resource", GDScriptLanguage::get_singleton()->get_name(), imported_node.path, false, false, false);
+	ScriptServer::add_global_class("characters.controllers.MyCharacterController", "Resource", GDScriptLanguage::get_singleton()->get_name(), imported_controller.path, false, false, false);
 
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
@@ -2691,8 +2738,8 @@ class_name Controller
 extends Node
 )");
 
-	ScriptServer::add_global_class("characters.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), characters_controller.path, false, false);
-	ScriptServer::add_global_class("ui.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), ui_controller.path, false, false);
+	ScriptServer::add_global_class("characters.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), characters_controller.path, false, false, false);
+	ScriptServer::add_global_class("ui.Controller", "Node", GDScriptLanguage::get_singleton()->get_name(), ui_controller.path, false, false, false);
 
 	GDScriptParser missing_import_parser;
 	Error err = missing_import_parser.parse(R"(
@@ -3017,7 +3064,8 @@ void test(TestType p_type) {
 		if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
 			continue;
 		}
-		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
+		const bool is_trait = c.has("is_trait") && c["is_trait"];
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
 	}
 
 	Vector<uint8_t> buf;
