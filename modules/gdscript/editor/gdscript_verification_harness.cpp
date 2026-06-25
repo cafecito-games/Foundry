@@ -805,49 +805,52 @@ VerificationResult GDScriptVerificationHarness::verify(
 	// Regression. Attribution via delta debugging is bounded per chunk: each oracle/probe call
 	// stages sources and re-analyzes the affected set, and ddmin needs roughly O(k log k) oracle
 	// calls plus one confirmation probe per rejected candidate, where k is the chunk's candidate
-	// count. To bound that cost at scale the batch is partitioned into chunks no larger than the
-	// ceiling and each chunk is attributed independently, so a large regressing batch still drops
-	// only its genuine offenders instead of falling back to all-or-nothing rejection.
-	//
-	// Chunks never share a file, but candidates from different files can still interact through a
-	// common dependent: two provider edits each clean in isolation can together break a shared
-	// consumer. So after attributing every chunk, the accepted union is re-confirmed; if it
-	// regresses, the union is re-partitioned and attributed again. Each non-converged pass drops at
-	// least one cross-chunk offender, so the loop terminates, and every pass stays within the
-	// ceiling because each chunk is ceiling-bounded. The common case converges in one pass.
+	// count. To bound that cost in the common case the batch is partitioned into chunks no larger
+	// than the ceiling and each chunk is attributed independently, so a large regressing batch
+	// drops only its genuine offenders instead of falling back to all-or-nothing rejection.
 	const int max_bisection_candidates = 64;
 
-	Vector<VerificationCandidate> accepted_candidates = applicable_candidates;
-	AffectedAnalysis accepted_analysis = combined;
-	while (true) {
-		const int previous_size = accepted_candidates.size();
-		Vector<VerificationCandidate> pass_accepted;
-		for (const Vector<VerificationCandidate> &chunk : partition_into_chunks(accepted_candidates, max_bisection_candidates)) {
-			attribute_chunk(chunk, affected, original, p_options, baseline, pass_accepted, result.rejected, fatal);
-			if (fatal) {
-				result.ok = false;
-				result.error_message = "Verification aborted during attribution.";
-				return result;
-			}
-		}
-
-		const HashMap<String, String> pass_staged = stage_candidates(pass_accepted, original);
-		const AffectedAnalysis pass_analysis = analyze_affected(affected, original, pass_staged, p_options, fatal);
+	Vector<VerificationCandidate> accepted_candidates;
+	for (const Vector<VerificationCandidate> &chunk : partition_into_chunks(applicable_candidates, max_bisection_candidates)) {
+		attribute_chunk(chunk, affected, original, p_options, baseline, accepted_candidates, result.rejected, fatal);
 		if (fatal) {
 			result.ok = false;
-			result.error_message = "Verification aborted confirming accepted set.";
+			result.error_message = "Verification aborted during attribution.";
 			return result;
 		}
+	}
 
-		accepted_candidates = pass_accepted;
-		accepted_analysis = pass_analysis;
+	HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
+	AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+	if (fatal) {
+		result.ok = false;
+		result.error_message = "Verification aborted confirming accepted set.";
+		return result;
+	}
 
-		// Converged once the accepted union is clean. A regressing union after a pass means a
-		// cross-chunk offender survived (each chunk's own attribution leaves it non-regressing), so
-		// re-partition and attribute again. Each such pass drops at least one candidate, bounding the
-		// loop; break defensively if a pass dropped nothing yet still regresses to avoid spinning.
-		if (!regresses(baseline, accepted_analysis) || accepted_candidates.size() == previous_size) {
-			break;
+	// Chunks never share a file, but candidates from different files can still interact through a
+	// common dependent: two provider edits each clean in isolation can together break a shared
+	// consumer. File-grouped chunking can never co-locate such a pair, so re-chunking the union
+	// would make no progress. When the accepted union regresses, fall back to one delta-debugging
+	// pass over the whole union, which is guaranteed to isolate the cross-chunk offenders and leave
+	// a clean accepted set. This raises the worst-case cost to a single O(k log k) ddmin over the
+	// accepted set (k = accepted candidate count) for the rare cross-chunk case; the common case
+	// stays within the per-chunk bound. This never accepts a regressing set.
+	if (regresses(baseline, accepted_analysis)) {
+		Vector<VerificationCandidate> reconciled;
+		attribute_chunk(accepted_candidates, affected, original, p_options, baseline, reconciled, result.rejected, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted reconciling cross-chunk regressions.";
+			return result;
+		}
+		accepted_candidates = reconciled;
+		accepted_staged = stage_candidates(accepted_candidates, original);
+		accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted confirming reconciled accepted set.";
+			return result;
 		}
 	}
 
