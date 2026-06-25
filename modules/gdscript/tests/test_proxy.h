@@ -511,6 +511,7 @@ TEST_CASE("[Modules][GDScript][Proxy] Property writes validate against declared 
 			"\tvar label: String\n"
 			"\tvar tags: Array[int]\n"
 			"\tvar scores: Dictionary[String, int]\n"
+			"\t@export var flagged = 7\n"
 			"\t@abstract func use() -> void\n"
 			"\n"
 			"class RealBag:\n"
@@ -519,6 +520,7 @@ TEST_CASE("[Modules][GDScript][Proxy] Property writes validate against declared 
 			"\tvar label: String\n"
 			"\tvar tags: Array[int]\n"
 			"\tvar scores: Dictionary[String, int]\n"
+			"\t@export var flagged = 7\n"
 			"\n"
 			"class Recorder:\n"
 			"\tfunc handle(method_name, args):\n"
@@ -605,6 +607,20 @@ TEST_CASE("[Modules][GDScript][Proxy] Property writes validate against declared 
 		proxy_instance->get("count", value);
 		CHECK(value.get_type() == Variant::INT);
 		CHECK(value != Variant("oops"));
+	}
+
+	// get_property_type still reports the export-inferred type for an otherwise-untyped
+	// member (the validation type is Variant, but the reflected type is INT), matching
+	// a real GDScriptInstance.
+	{
+		bool proxy_valid = false;
+		bool real_valid = false;
+		const Variant::Type proxy_type = proxy_instance->get_property_type("flagged", &proxy_valid);
+		const Variant::Type real_type = real_instance->get_property_type("flagged", &real_valid);
+		CHECK(proxy_valid);
+		CHECK(proxy_valid == real_valid);
+		CHECK(proxy_type == real_type);
+		CHECK(proxy_type == Variant::INT);
 	}
 }
 

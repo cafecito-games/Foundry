@@ -99,7 +99,8 @@ void GDScriptProxyInstance::_init_property_store() {
 
 		const GDScriptDataType &data_type = proxy_script->get_member_type(property.name);
 		property_store.insert(property.name, _default_for_data_type(data_type));
-		property_types.insert(property.name, data_type);
+		property_types.insert(property.name, property.type);
+		property_data_types.insert(property.name, data_type);
 	}
 }
 
@@ -398,7 +399,7 @@ bool GDScriptProxyInstance::set(const StringName &p_name, const Variant &p_value
 	// `GDScriptInstance::set`: an exactly-typed value (including typed containers) is
 	// stored as-is; otherwise an implicit builtin conversion is attempted, and a value
 	// that cannot be converted to the declared type is rejected (the slot is unchanged).
-	HashMap<StringName, GDScriptDataType>::ConstIterator type_element = property_types.find(p_name);
+	HashMap<StringName, GDScriptDataType>::ConstIterator type_element = property_data_types.find(p_name);
 	Variant value = p_value;
 	if (type_element) {
 		const GDScriptDataType &data_type = type_element->value;
@@ -445,14 +446,12 @@ void GDScriptProxyInstance::get_property_list(List<PropertyInfo> *p_properties) 
 }
 
 Variant::Type GDScriptProxyInstance::get_property_type(const StringName &p_name, bool *r_is_valid) const {
-	HashMap<StringName, GDScriptDataType>::ConstIterator element = property_types.find(p_name);
+	HashMap<StringName, Variant::Type>::ConstIterator element = property_types.find(p_name);
 	if (element) {
 		if (r_is_valid) {
 			*r_is_valid = true;
 		}
-		// `builtin_type` is the value type for builtins (and `OBJECT` for native/script
-		// types); an untyped (`Variant`) member reports `NIL`, as before.
-		return element->value.has_type() ? element->value.builtin_type : Variant::NIL;
+		return element->value;
 	}
 	if (r_is_valid) {
 		*r_is_valid = false;
