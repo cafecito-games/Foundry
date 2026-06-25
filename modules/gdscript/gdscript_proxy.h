@@ -75,11 +75,13 @@ class GDScriptProxyInstance : public ScriptInstance {
 	// requirement set is tracked alongside trait conformance (#186).
 	GDScriptFunction *_find_contract_function(const StringName &p_method) const;
 
-	// Coerces the handler's return value to `p_function`'s declared return type:
-	// ignored for `void`, passed through for untyped/`Variant`, and otherwise
-	// coerced (with implicit builtin conversions) or — on a mismatch — reported in
-	// debug builds and replaced with the type's default.
-	Variant _coerce_handler_return(GDScriptFunction *p_function, const Variant &p_value) const;
+	// Coerces the handler's return value to the intercepted method's declared
+	// return type: ignored for `void`, passed through for untyped/`Variant`, and
+	// otherwise coerced (with implicit builtin conversions) or — on a mismatch —
+	// reported in debug builds and replaced with the type's default. The return
+	// type is passed by value because it is snapshotted before the handler runs
+	// (handler code could reload `T` and free the live GDScriptFunction).
+	Variant _coerce_handler_return(const GDScriptDataType &p_return_type, const StringName &p_method_name, const Variant &p_value) const;
 
 public:
 	// ScriptInstance interface.

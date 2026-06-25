@@ -550,6 +550,7 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 			"\t@abstract func get_label() -> String\n"
 			"\t@abstract func do_nothing() -> void\n"
 			"\t@abstract func get_anything() -> Variant\n"
+			"\t@abstract func get_tags() -> Array[int]\n"
 			"\n"
 			"class Recorder:\n"
 			"\tvar stub_return: Variant = null\n"
@@ -608,6 +609,36 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 		ERR_PRINT_ON;
 		CHECK(coerced.get_type() == Variant::INT);
 		CHECK(coerced == Variant(0));
+	}
+
+	// A correctly-typed container passes through.
+	{
+		Array typed_tags;
+		typed_tags.set_typed(Variant::INT, StringName(), Variant());
+		typed_tags.push_back(1);
+		typed_tags.push_back(2);
+		recorder->set("stub_return", typed_tags);
+		Variant result = call("get_tags");
+		REQUIRE(result.get_type() == Variant::ARRAY);
+		Array result_tags = result;
+		CHECK(result_tags.is_typed());
+		CHECK(result_tags.size() == 2);
+	}
+
+	// An untyped container for a typed-container return is a mismatch (the VM
+	// requires an exactly-typed Array on return), so it falls back to the typed
+	// empty default rather than silently passing an untyped array.
+	{
+		Array untyped_tags;
+		untyped_tags.push_back(1);
+		recorder->set("stub_return", untyped_tags);
+		ERR_PRINT_OFF;
+		Variant result = call("get_tags");
+		ERR_PRINT_ON;
+		REQUIRE(result.get_type() == Variant::ARRAY);
+		Array result_tags = result;
+		CHECK(result_tags.is_typed());
+		CHECK(result_tags.is_empty());
 	}
 }
 
