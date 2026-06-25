@@ -245,6 +245,133 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("A batch above the bisection ceiling still drops only the offending candidates") {
+		// Above the per-pass bisection ceiling the harness must not fall back to rejecting the
+		// whole batch. It partitions the batch into ceiling-sized chunks and attributes each
+		// chunk independently, so a single offender among many candidates is isolated and the
+		// rest are retained, at a bounded per-chunk cost.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Provider with enough getters to exceed the ceiling (64). Each returns an int, so each
+		// gets an Add Type Annotation candidate. get_value_0() is consumed as a String, so typing
+		// it `-> int` regresses the consumer; every other getter is unconsumed and safe to type.
+		const int getter_count = 70;
+		String provider_source;
+		for (int i = 0; i < getter_count; i++) {
+			provider_source += vformat("func get_value_%d():\n\treturn 42\n", i);
+		}
+		const String provider_path = "res://refactor/verify_ceiling_provider.gd";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_ceiling_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_ceiling_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar bad: String = p.get_value_0()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 64);
+
+		Vector<String> universe = { provider_path, consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+
+		// Exactly one candidate is dropped (get_value_0()'s return-type edit on line 0), and it
+		// is attributed a diagnostic. The whole batch is NOT rejected as a unit.
+		CHECK_EQ(result.rejected.size(), 1);
+		CHECK_EQ(result.rejected[0].line, 0);
+		CHECK_GT(result.rejected[0].diagnostics.size(), 0);
+		CHECK_EQ(result.accepted.size(), candidates.size() - 1);
+		CHECK_LE(result.accepted_error_count, result.baseline_error_count);
+
+		// Files untouched on disk.
+		CHECK_EQ(FileAccess::get_file_as_string(provider_path), provider_source);
+		CHECK_EQ(FileAccess::get_file_as_string(consumer_path), consumer_source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Offenders are isolated independently across multiple file chunks") {
+		// A batch large enough to span multiple chunks must attribute each chunk on its own.
+		// The first provider alone fills a chunk (its candidate count reaches the ceiling), so
+		// the second provider's candidates land in a separate chunk. Each provider has exactly
+		// one getter consumed wrongly; both offenders must be dropped and every other candidate
+		// across both files retained.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const int first_getter_count = 64; // Fills the first chunk on its own.
+		String first_source;
+		for (int i = 0; i < first_getter_count; i++) {
+			first_source += vformat("func get_a_%d():\n\treturn 42\n", i);
+		}
+		const String first_path = "res://refactor/verify_chunk_a.gd";
+		TemporaryScriptFile first_provider(first_path, first_source);
+
+		const int second_getter_count = 5;
+		String second_source;
+		for (int i = 0; i < second_getter_count; i++) {
+			second_source += vformat("func get_b_%d():\n\treturn 7\n", i);
+		}
+		const String second_path = "res://refactor/verify_chunk_b.gd";
+		TemporaryScriptFile second_provider(second_path, second_source);
+
+		// One consumer per provider, each misusing get_*_0() as a String.
+		const String consumer_path = "res://refactor/verify_chunk_consumer.gd";
+		const String consumer_source =
+				"const A = preload(\"res://refactor/verify_chunk_a.gd\")\n"
+				"const B = preload(\"res://refactor/verify_chunk_b.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar a: A = A.new()\n"
+				"\tvar b: B = B.new()\n"
+				"\tvar bad_a: String = a.get_a_0()\n"
+				"\tvar bad_b: String = b.get_b_0()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(first_path);
+		candidates.append_array(enabled_candidates_for(second_path));
+		const int total = candidates.size();
+		REQUIRE_GT(total, 64);
+
+		Vector<String> universe = { first_path, second_path, consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+
+		// Exactly the two offenders are dropped (get_a_0 on first file line 0, get_b_0 on
+		// second file line 0); everything else is retained.
+		CHECK_EQ(result.rejected.size(), 2);
+		CHECK_EQ(result.accepted.size(), total - 2);
+		bool dropped_a = false;
+		bool dropped_b = false;
+		for (const VerificationRejected &rejected : result.rejected) {
+			CHECK_GT(rejected.diagnostics.size(), 0);
+			if (rejected.path == first_path && rejected.line == 0) {
+				dropped_a = true;
+			}
+			if (rejected.path == second_path && rejected.line == 0) {
+				dropped_b = true;
+			}
+		}
+		CHECK(dropped_a);
+		CHECK(dropped_b);
+		CHECK_LE(result.accepted_error_count, result.baseline_error_count);
+
+		CHECK_EQ(FileAccess::get_file_as_string(first_path), first_source);
+		CHECK_EQ(FileAccess::get_file_as_string(second_path), second_source);
+		CHECK_EQ(FileAccess::get_file_as_string(consumer_path), consumer_source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Dependent-break rejection is stable across repeated verify calls") {
 		// Regression guard for inverse-dependency edge loss: after the first verify() call
 		// invalidates caches, a second call must still discover the consumer as a dependent

@@ -351,6 +351,146 @@ Vector<int> ddmin_offending(
 	return current;
 }
 
+// Isolate the offending candidates within p_chunk via delta debugging and partition the
+// chunk into accepted and rejected. Each rejected candidate is attributed the new diagnostic
+// keys it alone introduces over the chunk's accepted base. p_chunk must be small enough to
+// bound ddmin's cost (callers split larger batches into ceiling-sized chunks first). The
+// returned VerificationRejected entries are not yet attributed against the global accepted
+// base; callers that recombine multiple chunks re-confirm the union afterward.
+void attribute_chunk(
+		const Vector<VerificationCandidate> &p_chunk,
+		const Vector<String> &p_affected,
+		const HashMap<String, String> &p_original,
+		const VerificationOptions &p_options,
+		const AffectedAnalysis &p_baseline,
+		Vector<VerificationCandidate> &r_accepted,
+		Vector<VerificationRejected> &r_rejected,
+		bool &r_fatal) {
+	r_fatal = false;
+
+	Vector<int> remaining;
+	for (int i = 0; i < p_chunk.size(); i++) {
+		remaining.push_back(i);
+	}
+	HashSet<int> rejected_indices;
+
+	// Repeatedly carve out a minimal offending subset until the remainder is clean.
+	while (true) {
+		const AffectedAnalysis analysis = analyze_subset(subset_of(p_chunk, remaining), p_affected, p_original, p_options, r_fatal);
+		if (r_fatal) {
+			return;
+		}
+		if (!regresses(p_baseline, analysis)) {
+			break;
+		}
+		const Vector<int> offending = ddmin_offending(remaining, p_chunk, p_affected, p_original, p_options, p_baseline, r_fatal);
+		if (r_fatal) {
+			return;
+		}
+		HashSet<int> offending_set;
+		for (int index : offending) {
+			offending_set.insert(index);
+			rejected_indices.insert(index);
+		}
+		Vector<int> next;
+		for (int index : remaining) {
+			if (!offending_set.has(index)) {
+				next.push_back(index);
+			}
+		}
+		// Safety: if ddmin failed to shrink (shouldn't happen with a monotonic predicate),
+		// drop the whole remainder to guarantee termination.
+		if (next.size() == remaining.size()) {
+			for (int index : remaining) {
+				rejected_indices.insert(index);
+			}
+			remaining.clear();
+			break;
+		}
+		remaining = next;
+	}
+
+	// The chunk's accepted base, used both as the result and as the attribution baseline.
+	Vector<VerificationCandidate> accepted_candidates;
+	for (int i = 0; i < p_chunk.size(); i++) {
+		if (!rejected_indices.has(i)) {
+			accepted_candidates.push_back(p_chunk[i]);
+		}
+	}
+	const AffectedAnalysis accepted_analysis = analyze_subset(accepted_candidates, p_affected, p_original, p_options, r_fatal);
+	if (r_fatal) {
+		return;
+	}
+	r_accepted.append_array(accepted_candidates);
+
+	// Attribute diagnostics to each rejected candidate: the new diagnostic keys it alone
+	// introduces over the chunk's accepted base.
+	for (int i = 0; i < p_chunk.size(); i++) {
+		if (!rejected_indices.has(i)) {
+			continue;
+		}
+		Vector<VerificationCandidate> probe = accepted_candidates;
+		probe.push_back(p_chunk[i]);
+		const AffectedAnalysis probe_analysis = analyze_subset(probe, p_affected, p_original, p_options, r_fatal);
+		if (r_fatal) {
+			return;
+		}
+		VerificationRejected rejected;
+		rejected.path = p_chunk[i].path;
+		rejected.line = p_chunk[i].line;
+		rejected.reason = "introduces new analyzer error(s) in the affected set";
+		HashMap<String, int> accepted_counts;
+		for (const String &message : accepted_analysis.messages) {
+			accepted_counts[message] += 1;
+		}
+		for (const String &message : probe_analysis.messages) {
+			HashMap<String, int>::Iterator it = accepted_counts.find(message);
+			if (it && it->value > 0) {
+				it->value -= 1;
+			} else {
+				rejected.diagnostics.push_back(message);
+			}
+		}
+		r_rejected.push_back(rejected);
+	}
+}
+
+// Partition p_candidates into chunks no larger than p_ceiling, never splitting a single file's
+// candidates across chunks. Candidates within a file interact (one can mask another's
+// diagnostic), so per-chunk attribution is only coherent when each file is wholly inside one
+// chunk. File groups are packed greedily up to the ceiling; a single file with more candidates
+// than the ceiling forms one oversized chunk (ddmin still terminates, only its cost is higher).
+Vector<Vector<VerificationCandidate>> partition_into_chunks(const Vector<VerificationCandidate> &p_candidates, int p_ceiling) {
+	Vector<Vector<VerificationCandidate>> file_groups;
+	HashMap<String, int> group_index;
+	for (const VerificationCandidate &candidate : p_candidates) {
+		HashMap<String, int>::ConstIterator it = group_index.find(candidate.path);
+		int index;
+		if (it) {
+			index = it->value;
+		} else {
+			index = file_groups.size();
+			group_index[candidate.path] = index;
+			file_groups.push_back(Vector<VerificationCandidate>());
+		}
+		file_groups.write[index].push_back(candidate);
+	}
+
+	Vector<Vector<VerificationCandidate>> chunks;
+	Vector<VerificationCandidate> current;
+	for (const Vector<VerificationCandidate> &group : file_groups) {
+		if (!current.is_empty() && current.size() + group.size() > p_ceiling) {
+			chunks.push_back(current);
+			current = Vector<VerificationCandidate>();
+		}
+		current.append_array(group);
+	}
+	if (!current.is_empty()) {
+		chunks.push_back(current);
+	}
+	return chunks;
+}
+
 // Count the non-strict diagnostics of p_source keyed by line:column:message. The message
 // is part of the key so a null-mode and a dynamic-mode diagnostic at the same position
 // stay distinct. Counts (rather than set membership) so a strict pass that emits a shared
@@ -662,145 +802,60 @@ VerificationResult GDScriptVerificationHarness::verify(
 		return result;
 	}
 
-	// Bound the cost of attribution. Each oracle/probe call stages sources to disk and
-	// re-analyzes the entire affected set, so it is far from free. ddmin needs roughly
-	// O(k log k) oracle calls to isolate offending clusters, plus one confirmation probe
-	// per rejected candidate, where k is the candidate count. Above this ceiling we skip
-	// delta debugging and reject the whole batch to keep verification cost bounded; the
-	// common case (no regression, or small batches) keeps precise per-candidate ddmin.
+	// Regression. Attribution via delta debugging is bounded per chunk: each oracle/probe call
+	// stages sources and re-analyzes the affected set, and ddmin needs roughly O(k log k) oracle
+	// calls plus one confirmation probe per rejected candidate, where k is the chunk's candidate
+	// count. To bound that cost in the common case the batch is partitioned into chunks no larger
+	// than the ceiling and each chunk is attributed independently, so a large regressing batch
+	// drops only its genuine offenders instead of falling back to all-or-nothing rejection.
 	const int max_bisection_candidates = 64;
-	if (applicable_candidates.size() > max_bisection_candidates) {
-		ERR_PRINT(vformat(
-				"Verification: %d candidates exceed the bisection ceiling of %d; rejecting the batch as a whole to bound cost.",
-				applicable_candidates.size(), max_bisection_candidates));
-		// New diagnostic keys = combined multiset minus baseline multiset.
-		Vector<String> new_messages;
-		{
-			HashMap<String, int> baseline_counts;
-			for (const String &message : baseline.messages) {
-				baseline_counts[message] += 1;
-			}
-			for (const String &message : combined.messages) {
-				HashMap<String, int>::Iterator it = baseline_counts.find(message);
-				if (it && it->value > 0) {
-					it->value -= 1;
-				} else {
-					new_messages.push_back(message);
-				}
-			}
-		}
-		for (const VerificationCandidate &candidate : applicable_candidates) {
-			VerificationRejected rejected;
-			rejected.path = candidate.path;
-			rejected.line = candidate.line;
-			rejected.reason = "batch exceeds bisection ceiling; rejected as a whole to bound verification cost";
-			rejected.diagnostics = new_messages;
-			result.rejected.push_back(rejected);
-		}
-		result.accepted_error_count = baseline.error_count;
-		result.ok = true;
-		return result;
-	}
 
-	// Regression: isolate offending candidates via delta debugging, keep the rest.
-	Vector<int> remaining;
-	for (int i = 0; i < applicable_candidates.size(); i++) {
-		remaining.push_back(i);
-	}
-	HashSet<int> rejected_indices;
-
-	// Repeatedly carve out a minimal offending subset until the remainder is clean.
-	while (true) {
-		const AffectedAnalysis analysis = analyze_subset(subset_of(applicable_candidates, remaining), affected, original, p_options, fatal);
-		if (fatal) {
-			result.ok = false;
-			result.error_message = "Verification aborted during attribution.";
-			return result;
-		}
-		if (!regresses(baseline, analysis)) {
-			break;
-		}
-		const Vector<int> offending = ddmin_offending(remaining, applicable_candidates, affected, original, p_options, baseline, fatal);
-		if (fatal) {
-			result.ok = false;
-			result.error_message = "Verification aborted during attribution.";
-			return result;
-		}
-		HashSet<int> offending_set;
-		for (int index : offending) {
-			offending_set.insert(index);
-			rejected_indices.insert(index);
-		}
-		Vector<int> next;
-		for (int index : remaining) {
-			if (!offending_set.has(index)) {
-				next.push_back(index);
-			}
-		}
-		// Safety: if ddmin failed to shrink (shouldn't happen with a monotonic predicate),
-		// drop the whole remainder to guarantee termination.
-		if (next.size() == remaining.size()) {
-			for (int index : remaining) {
-				rejected_indices.insert(index);
-			}
-			remaining.clear();
-			break;
-		}
-		remaining = next;
-	}
-
-	// Build the accepted list and re-verify it as a final confirmation.
 	Vector<VerificationCandidate> accepted_candidates;
-	for (int i = 0; i < applicable_candidates.size(); i++) {
-		if (!rejected_indices.has(i)) {
-			accepted_candidates.push_back(applicable_candidates[i]);
+	for (const Vector<VerificationCandidate> &chunk : partition_into_chunks(applicable_candidates, max_bisection_candidates)) {
+		attribute_chunk(chunk, affected, original, p_options, baseline, accepted_candidates, result.rejected, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted during attribution.";
+			return result;
 		}
 	}
-	const HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
-	const AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+
+	HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
+	AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
 	if (fatal) {
 		result.ok = false;
 		result.error_message = "Verification aborted confirming accepted set.";
 		return result;
 	}
-	result.accepted = accepted_candidates;
-	result.accepted_error_count = accepted_analysis.error_count;
 
-	// Attribute diagnostics to each rejected applicable candidate: new diagnostic keys
-	// it alone introduces over the accepted base.
-	for (int i = 0; i < applicable_candidates.size(); i++) {
-		if (!rejected_indices.has(i)) {
-			continue;
-		}
-		// Re-analyze the accepted set plus this one candidate to find the diagnostics
-		// it uniquely introduces.
-		Vector<VerificationCandidate> probe = accepted_candidates;
-		probe.push_back(applicable_candidates[i]);
-		const AffectedAnalysis probe_analysis = analyze_subset(probe, affected, original, p_options, fatal);
+	// Chunks never share a file, but candidates from different files can still interact through a
+	// common dependent: two provider edits each clean in isolation can together break a shared
+	// consumer. File-grouped chunking can never co-locate such a pair, so re-chunking the union
+	// would make no progress. When the accepted union regresses, fall back to one delta-debugging
+	// pass over the whole union, which is guaranteed to isolate the cross-chunk offenders and leave
+	// a clean accepted set. This raises the worst-case cost to a single O(k log k) ddmin over the
+	// accepted set (k = accepted candidate count) for the rare cross-chunk case; the common case
+	// stays within the per-chunk bound. This never accepts a regressing set.
+	if (regresses(baseline, accepted_analysis)) {
+		Vector<VerificationCandidate> reconciled;
+		attribute_chunk(accepted_candidates, affected, original, p_options, baseline, reconciled, result.rejected, fatal);
 		if (fatal) {
 			result.ok = false;
-			result.error_message = "Verification aborted attributing diagnostics; files may be left modified on disk.";
+			result.error_message = "Verification aborted reconciling cross-chunk regressions.";
 			return result;
 		}
-		VerificationRejected rejected;
-		rejected.path = applicable_candidates[i].path;
-		rejected.line = applicable_candidates[i].line;
-		rejected.reason = "introduces new analyzer error(s) in the affected set";
-		// Attribute only the new diagnostic keys (multiset difference).
-		HashMap<String, int> accepted_counts;
-		for (const String &message : accepted_analysis.messages) {
-			accepted_counts[message] += 1;
+		accepted_candidates = reconciled;
+		accepted_staged = stage_candidates(accepted_candidates, original);
+		accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted confirming reconciled accepted set.";
+			return result;
 		}
-		for (const String &message : probe_analysis.messages) {
-			HashMap<String, int>::Iterator it = accepted_counts.find(message);
-			if (it && it->value > 0) {
-				it->value -= 1;
-			} else {
-				rejected.diagnostics.push_back(message);
-			}
-		}
-		result.rejected.push_back(rejected);
 	}
+
+	result.accepted = accepted_candidates;
+	result.accepted_error_count = accepted_analysis.error_count;
 
 	result.ok = true;
 	return result;
