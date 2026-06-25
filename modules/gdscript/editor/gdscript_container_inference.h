@@ -96,6 +96,27 @@ public:
 	static Result infer_local_dictionary_element_type(
 			const GDScriptParser::VariableNode *p_decl,
 			const GDScriptParser::SuiteNode *p_function_body);
+
+	// Infers the element type of a bare `Array` member variable from how it is used
+	// across the whole declaring class. Unlike a local, a member is reachable from
+	// every method of the class (and its nested subclasses), so the union is taken
+	// over all of those bodies rather than one function. The soundness boundary is
+	// also wider: a member can be mutated through any reference to its instance, so
+	// the inference bails conservatively unless the member is provably private to
+	// the class. It is skipped (with an explanation) when it is `@export`ed, has a
+	// custom setter/getter, is `static`, is accessed through a base other than
+	// `self`, or the instance escapes in a way external code could exploit to
+	// mutate it. `p_class` is the class that declares `p_member`.
+	static Result infer_member_array_element_type(
+			const GDScriptParser::VariableNode *p_member,
+			const GDScriptParser::ClassNode *p_class);
+
+	// Infers the key and value types of a bare `Dictionary` member variable across
+	// the whole declaring class, with the same widened soundness boundary as
+	// `infer_member_array_element_type`.
+	static Result infer_member_dictionary_element_type(
+			const GDScriptParser::VariableNode *p_member,
+			const GDScriptParser::ClassNode *p_class);
 };
 
 #endif // TOOLS_ENABLED

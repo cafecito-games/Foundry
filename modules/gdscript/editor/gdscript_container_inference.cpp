@@ -77,6 +77,37 @@ bool is_safe_readonly_array_method(const StringName &p_name) {
 	return false;
 }
 
+// True when `p_expr` is a plain identifier that resolves to `p_decl`, whether as
+// a local variable or, in member mode, as a member variable accessed through
+// implicit `self` (a bare `member` reference).
+bool identifier_refers_to(const GDScriptParser::ExpressionNode *p_expr, const GDScriptParser::VariableNode *p_decl, bool p_member_mode) {
+	if (p_expr == nullptr || p_expr->type != Node::IDENTIFIER) {
+		return false;
+	}
+	const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expr);
+	if (p_member_mode) {
+		return identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE && identifier->variable_source == p_decl;
+	}
+	return identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE && identifier->variable_source == p_decl;
+}
+
+// In member mode, true when `p_subscript` is `self.<member>` for the tracked
+// member, i.e. an explicit access through `self` that is equivalent to the bare
+// member reference. Access through any other base (`other.<member>`) is *not*
+// matched here so the walker can treat it as an unbounded foreign mutation.
+bool self_attribute_refers_to(const GDScriptParser::SubscriptNode *p_subscript, const GDScriptParser::VariableNode *p_decl, bool p_member_mode) {
+	if (!p_member_mode || p_subscript == nullptr || !p_subscript->is_attribute) {
+		return false;
+	}
+	if (p_subscript->base == nullptr || p_subscript->base->type != Node::SELF) {
+		return false;
+	}
+	if (p_subscript->attribute == nullptr || p_decl->identifier == nullptr) {
+		return false;
+	}
+	return p_subscript->attribute->name == p_decl->identifier->name;
+}
+
 bool is_expression_node(Node::Type p_type) {
 	switch (p_type) {
 		case Node::ARRAY:
@@ -114,8 +145,8 @@ bool is_expression_node(Node::Type p_type) {
 // forces a skip.
 class ElementInferenceWalker {
 public:
-	explicit ElementInferenceWalker(const GDScriptParser::VariableNode *p_decl) :
-			decl(p_decl) {}
+	explicit ElementInferenceWalker(const GDScriptParser::VariableNode *p_decl, bool p_member_mode = false) :
+			decl(p_decl), member_mode(p_member_mode) {}
 
 	bool bailed = false;
 	GDScriptContainerInference::Outcome bail_outcome = GDScriptContainerInference::NOT_APPLICABLE;
@@ -162,14 +193,43 @@ public:
 
 private:
 	const GDScriptParser::VariableNode *decl = nullptr;
+	bool member_mode = false;
 	String element_rendered;
 
 	bool is_our_var(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr || p_expr->type != Node::IDENTIFIER) {
+		return identifier_refers_to(p_expr, decl, member_mode);
+	}
+
+	bool is_self_member(const GDScriptParser::SubscriptNode *p_subscript) const {
+		return self_attribute_refers_to(p_subscript, decl, member_mode);
+	}
+
+	// `is_self_member` for an expression that is expected to be a `self.<member>`
+	// subscript, e.g. the base of `self.member[index]` or `self.member.append(x)`.
+	bool is_self_member_subscript(const GDScriptParser::ExpressionNode *p_expr) const {
+		return p_expr != nullptr && p_expr->type == Node::SUBSCRIPT &&
+				is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(p_expr));
+	}
+
+	// In member mode, detects an attribute access that names the tracked member
+	// through a base that is not `self` (e.g. `other.member`). The analysis cannot
+	// bound how that other reference mutates the member, so it bails. Returns true
+	// (and bails) when the access is a foreign reference to the member.
+	bool is_foreign_member_access(const GDScriptParser::SubscriptNode *p_subscript) {
+		if (!member_mode || p_subscript == nullptr || !p_subscript->is_attribute) {
 			return false;
 		}
-		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expr);
-		return identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE && identifier->variable_source == decl;
+		if (p_subscript->attribute == nullptr || decl->identifier == nullptr) {
+			return false;
+		}
+		if (p_subscript->attribute->name != decl->identifier->name) {
+			return false;
+		}
+		if (p_subscript->base != nullptr && p_subscript->base->type == Node::SELF) {
+			return false; // `self.member`, handled elsewhere.
+		}
+		bail(GDScriptContainerInference::ESCAPES, "the member is accessed through another reference the inference cannot bound");
+		return true;
 	}
 
 	void bail(GDScriptContainerInference::Outcome p_outcome, const String &p_detail) {
@@ -230,7 +290,7 @@ private:
 			case Node::FOR: {
 				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_statement);
 				// `for element in our_var:` is a safe read of the variable.
-				if (!is_our_var(for_node->list)) {
+				if (!is_our_var_read_list(for_node->list)) {
 					scan_value(for_node->list);
 				}
 				scan_suite(for_node->loop);
@@ -271,6 +331,16 @@ private:
 				}
 				break;
 		}
+	}
+
+	// True when `p_list` is a safe iteration over the tracked variable, covering
+	// both a bare reference and (in member mode) `self.<member>`.
+	bool is_our_var_read_list(const GDScriptParser::ExpressionNode *p_list) const {
+		if (is_our_var(p_list)) {
+			return true;
+		}
+		return p_list != nullptr && p_list->type == Node::SUBSCRIPT &&
+				is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(p_list));
 	}
 
 	void scan_match_branch(const GDScriptParser::MatchBranchNode *p_branch) {
@@ -317,6 +387,16 @@ private:
 		}
 	}
 
+	// Scans the base of an attribute access (`base.attr`). A `self` base is a
+	// harmless read of another field/method on this instance, not an escape, so it
+	// is not forwarded to `scan_value` (which would treat a bare `self` as escape).
+	void scan_attribute_base(const GDScriptParser::ExpressionNode *p_base) {
+		if (p_base != nullptr && p_base->type == Node::SELF) {
+			return;
+		}
+		scan_value(p_base);
+	}
+
 	// Treats `p_value` as a value that is consumed by the surrounding context. If
 	// the variable itself appears here (other than in one of the recognized safe
 	// read positions handled below) it has escaped and inference must stop.
@@ -331,26 +411,56 @@ private:
 		switch (p_value->type) {
 			case Node::SUBSCRIPT: {
 				const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+				if (is_self_member(subscript)) {
+					// `self.member` used directly in a value position leaks a reference,
+					// exactly like a bare reference to the variable.
+					bail(GDScriptContainerInference::ESCAPES, "the member is used in a position the inference cannot bound");
+					return;
+				}
+				if (is_foreign_member_access(subscript)) {
+					return;
+				}
 				if (subscript->is_attribute) {
 					if (is_our_var(subscript->base)) {
 						bail(GDScriptContainerInference::ESCAPES, "the variable is accessed through an unsupported member reference");
 						return;
 					}
-					scan_value(subscript->base);
-				} else if (is_our_var(subscript->base)) {
-					// `our_var[index]` read: safe; the index may still reference the variable.
+					scan_attribute_base(subscript->base);
+				} else if (is_our_var(subscript->base) || is_self_member_subscript(subscript->base)) {
+					// `our_var[index]` / `self.member[index]` read: safe; the index may
+					// still reference the variable.
 					scan_value(subscript->index);
 				} else {
 					scan_value(subscript->base);
 					scan_value(subscript->index);
 				}
 			} break;
+			case Node::SELF:
+				// A bare `self` value (not the base of a `self.member` access, which is
+				// handled above) hands out a reference to the instance, through which
+				// external code could mutate the member; the analysis cannot bound that.
+				if (member_mode) {
+					bail(GDScriptContainerInference::ESCAPES, "the instance escapes through `self`");
+				}
+				break;
 			case Node::CALL: {
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
 				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
 					const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-					if (callee->is_attribute && is_our_var(callee->base)) {
+					if (callee->is_attribute && (is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
 						scan_method_on_var(call, callee->attribute != nullptr ? callee->attribute->name : StringName());
+						return;
+					}
+					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SUBSCRIPT &&
+							is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(callee->base))) {
+						return; // `other.member.append(x)`.
+					}
+					// `self.method(...)` is a call on this instance, not an escape of it;
+					// scan only the arguments for leaks (handled below), not the `self` base.
+					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF) {
+						for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
+							scan_value(argument);
+						}
 						return;
 					}
 				}
@@ -427,11 +537,14 @@ private:
 			return;
 		}
 		const GDScriptParser::ExpressionNode *assignee = p_assignment->assignee;
-		if (is_our_var(assignee)) {
+		const bool whole_var_assignee = is_our_var(assignee) ||
+				(assignee != nullptr && assignee->type == Node::SUBSCRIPT &&
+						is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(assignee)));
+		if (whole_var_assignee) {
 			// Whole-variable (re)assignment.
 			if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE ||
 					p_assignment->operation == GDScriptParser::AssignmentNode::OP_ADDITION) {
-				// `our_var = [..]` or `our_var += [..]`.
+				// `our_var = [..]` or `our_var += [..]` (also `self.member = [..]`).
 				contribute_from_array_value(p_assignment->assigned_value);
 			} else {
 				bail(GDScriptContainerInference::UNPROVABLE, "the array is mutated by an unsupported compound assignment");
@@ -441,7 +554,16 @@ private:
 		}
 		if (assignee != nullptr && assignee->type == Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(assignee);
-			if (!subscript->is_attribute && is_our_var(subscript->base)) {
+			// `other.member = value` foreign whole-member assignment.
+			if (is_foreign_member_access(subscript)) {
+				return;
+			}
+			// `other.member[index] = value` foreign element write.
+			if (!subscript->is_attribute && subscript->base != nullptr && subscript->base->type == Node::SUBSCRIPT &&
+					is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(subscript->base))) {
+				return;
+			}
+			if (!subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base))) {
 				if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
 					// `our_var[index] = value`: the value's type is stored verbatim.
 					if (p_assignment->assigned_value != nullptr) {
@@ -544,8 +666,8 @@ bool is_safe_readonly_dictionary_method(const StringName &p_name) {
 // dictionary can hold is `K -> V`, so `Dictionary[K, V]` is correct.
 class DictionaryInferenceWalker {
 public:
-	explicit DictionaryInferenceWalker(const GDScriptParser::VariableNode *p_decl) :
-			decl(p_decl) {}
+	explicit DictionaryInferenceWalker(const GDScriptParser::VariableNode *p_decl, bool p_member_mode = false) :
+			decl(p_decl), member_mode(p_member_mode) {}
 
 	bool bailed = false;
 	GDScriptContainerInference::Outcome bail_outcome = GDScriptContainerInference::NOT_APPLICABLE;
@@ -599,15 +721,48 @@ public:
 
 private:
 	const GDScriptParser::VariableNode *decl = nullptr;
+	bool member_mode = false;
 	String key_rendered;
 	String value_rendered;
 
 	bool is_our_var(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr || p_expr->type != Node::IDENTIFIER) {
+		return identifier_refers_to(p_expr, decl, member_mode);
+	}
+
+	bool is_self_member(const GDScriptParser::SubscriptNode *p_subscript) const {
+		return self_attribute_refers_to(p_subscript, decl, member_mode);
+	}
+
+	bool is_self_member_subscript(const GDScriptParser::ExpressionNode *p_expr) const {
+		return p_expr != nullptr && p_expr->type == Node::SUBSCRIPT &&
+				is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(p_expr));
+	}
+
+	bool is_our_var_read_list(const GDScriptParser::ExpressionNode *p_list) const {
+		if (is_our_var(p_list)) {
+			return true;
+		}
+		return p_list != nullptr && p_list->type == Node::SUBSCRIPT &&
+				is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(p_list));
+	}
+
+	// In member mode, detects and bails on an attribute access that names the
+	// tracked member through a base other than `self` (e.g. `other.member`).
+	bool is_foreign_member_access(const GDScriptParser::SubscriptNode *p_subscript) {
+		if (!member_mode || p_subscript == nullptr || !p_subscript->is_attribute) {
 			return false;
 		}
-		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expr);
-		return identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE && identifier->variable_source == decl;
+		if (p_subscript->attribute == nullptr || decl->identifier == nullptr) {
+			return false;
+		}
+		if (p_subscript->attribute->name != decl->identifier->name) {
+			return false;
+		}
+		if (p_subscript->base != nullptr && p_subscript->base->type == Node::SELF) {
+			return false; // `self.member`, handled elsewhere.
+		}
+		bail(GDScriptContainerInference::ESCAPES, "the member is accessed through another reference the inference cannot bound");
+		return true;
 	}
 
 	void bail(GDScriptContainerInference::Outcome p_outcome, const String &p_detail) {
@@ -677,7 +832,7 @@ private:
 			case Node::FOR: {
 				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_statement);
 				// `for key in our_var:` is a safe read of the variable.
-				if (!is_our_var(for_node->list)) {
+				if (!is_our_var_read_list(for_node->list)) {
 					scan_value(for_node->list);
 				}
 				scan_suite(for_node->loop);
@@ -764,6 +919,15 @@ private:
 		}
 	}
 
+	// Scans the base of an attribute access; a `self` base is a harmless read on
+	// this instance, not an escape, so it is not forwarded to `scan_value`.
+	void scan_attribute_base(const GDScriptParser::ExpressionNode *p_base) {
+		if (p_base != nullptr && p_base->type == Node::SELF) {
+			return;
+		}
+		scan_value(p_base);
+	}
+
 	void scan_value(const GDScriptParser::ExpressionNode *p_value) {
 		if (bailed || p_value == nullptr) {
 			return;
@@ -775,19 +939,27 @@ private:
 		switch (p_value->type) {
 			case Node::SUBSCRIPT: {
 				const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+				if (is_self_member(subscript)) {
+					// `self.member` used directly in a value position leaks a reference.
+					bail(GDScriptContainerInference::ESCAPES, "the member is used in a position the inference cannot bound");
+					return;
+				}
+				if (is_foreign_member_access(subscript)) {
+					return;
+				}
 				if (subscript->is_attribute) {
 					if (is_our_var(subscript->base)) {
 						bail(GDScriptContainerInference::ESCAPES, "the variable is accessed through an unsupported member reference");
 						return;
 					}
-					scan_value(subscript->base);
-				} else if (is_our_var(subscript->base)) {
-					// `our_var[key]` read. A typed dictionary coerces the key during
-					// lookup (`{1: "x"}[1.2]` misses on the untyped dictionary but hits
-					// after typing as `Dictionary[int, String]`), so the key type is a
-					// constraint: it must match the inferred key type for the read to
-					// behave identically. Feeding it through the key accumulator yields a
-					// conservative MIXED skip whenever it would diverge.
+					scan_attribute_base(subscript->base);
+				} else if (is_our_var(subscript->base) || is_self_member_subscript(subscript->base)) {
+					// `our_var[key]` / `self.member[key]` read. A typed dictionary coerces
+					// the key during lookup (`{1: "x"}[1.2]` misses on the untyped
+					// dictionary but hits after typing as `Dictionary[int, String]`), so
+					// the key type is a constraint: it must match the inferred key type for
+					// the read to behave identically. Feeding it through the key accumulator
+					// yields a conservative MIXED skip whenever it would diverge.
 					if (subscript->index != nullptr) {
 						contribute_key(subscript->index->get_datatype());
 					}
@@ -797,12 +969,31 @@ private:
 					scan_value(subscript->index);
 				}
 			} break;
+			case Node::SELF:
+				// A bare `self` value hands out a reference to the instance, through
+				// which external code could mutate the member; cannot be bounded.
+				if (member_mode) {
+					bail(GDScriptContainerInference::ESCAPES, "the instance escapes through `self`");
+				}
+				break;
 			case Node::CALL: {
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
 				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
 					const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-					if (callee->is_attribute && is_our_var(callee->base)) {
+					if (callee->is_attribute && (is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
 						scan_method_on_var(call, callee->attribute != nullptr ? callee->attribute->name : StringName());
+						return;
+					}
+					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SUBSCRIPT &&
+							is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(callee->base))) {
+						return; // `other.member.set(k, v)`.
+					}
+					// `self.method(...)` is a call on this instance, not an escape of it;
+					// scan only the arguments for leaks, not the `self` base.
+					if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF) {
+						for (const GDScriptParser::ExpressionNode *argument : call->arguments) {
+							scan_value(argument);
+						}
 						return;
 					}
 				}
@@ -877,10 +1068,13 @@ private:
 			return;
 		}
 		const GDScriptParser::ExpressionNode *assignee = p_assignment->assignee;
-		if (is_our_var(assignee)) {
+		const bool whole_var_assignee = is_our_var(assignee) ||
+				(assignee != nullptr && assignee->type == Node::SUBSCRIPT &&
+						is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(assignee)));
+		if (whole_var_assignee) {
 			// Whole-variable (re)assignment.
 			if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
-				// `our_var = {..}`.
+				// `our_var = {..}` (also `self.member = {..}`).
 				contribute_from_dictionary_value(p_assignment->assigned_value);
 			} else {
 				bail(GDScriptContainerInference::UNPROVABLE, "the dictionary is mutated by an unsupported compound assignment");
@@ -890,7 +1084,16 @@ private:
 		}
 		if (assignee != nullptr && assignee->type == Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(assignee);
-			if (!subscript->is_attribute && is_our_var(subscript->base)) {
+			// `other.member = value` foreign whole-member assignment.
+			if (is_foreign_member_access(subscript)) {
+				return;
+			}
+			// `other.member[key] = value` foreign element write.
+			if (!subscript->is_attribute && subscript->base != nullptr && subscript->base->type == Node::SUBSCRIPT &&
+					is_foreign_member_access(static_cast<const GDScriptParser::SubscriptNode *>(subscript->base))) {
+				return;
+			}
+			if (!subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base))) {
 				if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
 					// `our_var[key] = value`: both the key and the value types are stored verbatim.
 					if (subscript->index != nullptr) {
@@ -968,6 +1171,53 @@ private:
 		}
 	}
 };
+
+// Reports why a member variable is not a safe candidate for class-wide element
+// inference, or an empty string when it is eligible. A member is only considered
+// when its mutation surface is bounded by the class: it must not be `@export`ed
+// (the editor and external code can assign it), must not be `static` (shared and
+// assignable through the class), and must not have a custom setter/getter (writes
+// flow through user code the inference does not model).
+String member_disqualifier(const GDScriptParser::VariableNode *p_member) {
+	if (p_member->exported) {
+		return "the member is `@export`ed, so external code can assign it";
+	}
+	if (p_member->is_static) {
+		return "the member is `static`, so it can be assigned through the class";
+	}
+	if (p_member->property != GDScriptParser::VariableNode::PROP_NONE) {
+		return "the member has a custom setter or getter";
+	}
+	return String();
+}
+
+// Drives `p_walker` over every function body in `p_class` and, recursively, its
+// nested classes. A member declared on `p_class` is reachable from any of these
+// methods (and a nested subclass may mutate an inherited member), so the union
+// must span all of them for the inference to be sound.
+template <typename Walker>
+void walk_class_methods(Walker &p_walker, const GDScriptParser::ClassNode *p_class) {
+	if (p_class == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (p_walker.bailed) {
+			return;
+		}
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (member.function != nullptr) {
+					p_walker.scan_suite(member.function->body);
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				walk_class_methods(p_walker, member.m_class);
+				break;
+			default:
+				break;
+		}
+	}
+}
 
 } // namespace
 
@@ -1053,6 +1303,108 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_local_dicti
 	}
 	// Both the key and the value type must be pinned to render `Dictionary[K, V]`;
 	// partial evidence is left as a bare `Dictionary`.
+	if (!walker.has_key || !walker.has_value) {
+		result.outcome = NO_EVIDENCE;
+		return result;
+	}
+
+	GDScriptParser::DataType inferred = declared;
+	inferred.set_container_element_type(0, walker.key_type);
+	inferred.set_container_element_type(1, walker.value_type);
+	result.outcome = INFERRED;
+	result.element_type = inferred;
+	return result;
+}
+
+GDScriptContainerInference::Result GDScriptContainerInference::infer_member_array_element_type(
+		const GDScriptParser::VariableNode *p_member,
+		const GDScriptParser::ClassNode *p_class) {
+	Result result;
+	if (p_member == nullptr || p_class == nullptr) {
+		return result; // NOT_APPLICABLE
+	}
+	// Only untyped declarations are candidates; an explicit annotation is left alone.
+	if (p_member->datatype_specifier != nullptr) {
+		return result;
+	}
+	// The initializer must be an array literal so the full initial contents are known.
+	if (p_member->initializer == nullptr || p_member->initializer->type != GDScriptParser::Node::ARRAY) {
+		return result;
+	}
+	const GDScriptParser::DataType declared = p_member->get_datatype();
+	if (declared.has_no_type() || declared.kind != GDScriptParser::DataType::BUILTIN || declared.builtin_type != Variant::ARRAY) {
+		return result;
+	}
+	// Already a typed `Array[T]`: the existing rendering path is sufficient.
+	if (declared.has_container_element_type(0)) {
+		return result;
+	}
+	// A member whose mutation surface is not bounded by the class is reported as
+	// skipped rather than guessed.
+	const String disqualifier = member_disqualifier(p_member);
+	if (!disqualifier.is_empty()) {
+		result.outcome = ESCAPES;
+		result.detail = disqualifier;
+		return result;
+	}
+
+	ElementInferenceWalker walker(p_member, /* member_mode */ true);
+	walker.contribute_from_array_value(p_member->initializer);
+	walk_class_methods(walker, p_class);
+
+	if (walker.bailed) {
+		result.outcome = walker.bail_outcome;
+		result.detail = walker.bail_detail;
+		return result;
+	}
+	if (!walker.has_element) {
+		result.outcome = NO_EVIDENCE;
+		return result;
+	}
+
+	GDScriptParser::DataType inferred = declared;
+	inferred.set_container_element_type(0, walker.element_type);
+	result.outcome = INFERRED;
+	result.element_type = inferred;
+	return result;
+}
+
+GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dictionary_element_type(
+		const GDScriptParser::VariableNode *p_member,
+		const GDScriptParser::ClassNode *p_class) {
+	Result result;
+	if (p_member == nullptr || p_class == nullptr) {
+		return result; // NOT_APPLICABLE
+	}
+	if (p_member->datatype_specifier != nullptr) {
+		return result;
+	}
+	if (p_member->initializer == nullptr || p_member->initializer->type != GDScriptParser::Node::DICTIONARY) {
+		return result;
+	}
+	const GDScriptParser::DataType declared = p_member->get_datatype();
+	if (declared.has_no_type() || declared.kind != GDScriptParser::DataType::BUILTIN || declared.builtin_type != Variant::DICTIONARY) {
+		return result;
+	}
+	if (declared.has_container_element_type(0) && declared.has_container_element_type(1)) {
+		return result;
+	}
+	const String disqualifier = member_disqualifier(p_member);
+	if (!disqualifier.is_empty()) {
+		result.outcome = ESCAPES;
+		result.detail = disqualifier;
+		return result;
+	}
+
+	DictionaryInferenceWalker walker(p_member, /* member_mode */ true);
+	walker.contribute_from_dictionary_value(p_member->initializer);
+	walk_class_methods(walker, p_class);
+
+	if (walker.bailed) {
+		result.outcome = walker.bail_outcome;
+		result.detail = walker.bail_detail;
+		return result;
+	}
 	if (!walker.has_key || !walker.has_value) {
 		result.outcome = NO_EVIDENCE;
 		return result;

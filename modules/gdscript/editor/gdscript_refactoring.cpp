@@ -1018,7 +1018,7 @@ bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignme
 			is_self_attribute(p_assignment->assignee);
 }
 
-bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr) {
+bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr) {
 	if (p_assignable == nullptr || p_assignable->identifier == nullptr) {
 		return false;
 	}
@@ -1083,15 +1083,18 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	// inference cannot prove falls back to the analyzer's own type, so this never
 	// narrows a declaration unsafely.
 	GDScriptParser::DataType effective_type = p_assignable->get_datatype();
-	if (p_function_body != nullptr && p_assignable->type == GDScriptParser::Node::VARIABLE) {
+	if (p_assignable->type == GDScriptParser::Node::VARIABLE && (p_function_body != nullptr || p_member_class != nullptr)) {
 		const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_assignable);
-		const GDScriptContainerInference::Result array_inference = GDScriptContainerInference::infer_local_array_element_type(
-				variable, p_function_body);
+		// A member variable is analyzed class-wide; a local against its function body.
+		const GDScriptContainerInference::Result array_inference = p_member_class != nullptr
+				? GDScriptContainerInference::infer_member_array_element_type(variable, p_member_class)
+				: GDScriptContainerInference::infer_local_array_element_type(variable, p_function_body);
 		if (array_inference.outcome == GDScriptContainerInference::INFERRED) {
 			effective_type = array_inference.element_type;
 		} else {
-			const GDScriptContainerInference::Result dictionary_inference = GDScriptContainerInference::infer_local_dictionary_element_type(
-					variable, p_function_body);
+			const GDScriptContainerInference::Result dictionary_inference = p_member_class != nullptr
+					? GDScriptContainerInference::infer_member_dictionary_element_type(variable, p_member_class)
+					: GDScriptContainerInference::infer_local_dictionary_element_type(variable, p_function_body);
 			if (dictionary_inference.outcome == GDScriptContainerInference::INFERRED) {
 				effective_type = dictionary_inference.element_type;
 			}
@@ -4570,9 +4573,9 @@ void cache_style_order_candidate(const RefactorContext &p_context, const StyleOr
 	style_order_cache.candidate = p_candidate;
 }
 
-void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr) {
+void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr) {
 	TypeAnnotationCandidate candidate;
-	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body) && candidate.matched) {
+	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body, p_member_class) && candidate.matched) {
 		r_candidates.push_back(candidate);
 	}
 }
@@ -4638,7 +4641,7 @@ void collect_type_annotation_in_class(
 				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates);
 				break;
 			case GDScriptParser::ClassNode::Member::VARIABLE:
-				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates);
+				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates, nullptr, p_class);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
 				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates
