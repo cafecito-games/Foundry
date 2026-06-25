@@ -455,6 +455,42 @@ void attribute_chunk(
 	}
 }
 
+// Partition p_candidates into chunks no larger than p_ceiling, never splitting a single file's
+// candidates across chunks. Candidates within a file interact (one can mask another's
+// diagnostic), so per-chunk attribution is only coherent when each file is wholly inside one
+// chunk. File groups are packed greedily up to the ceiling; a single file with more candidates
+// than the ceiling forms one oversized chunk (ddmin still terminates, only its cost is higher).
+Vector<Vector<VerificationCandidate>> partition_into_chunks(const Vector<VerificationCandidate> &p_candidates, int p_ceiling) {
+	Vector<Vector<VerificationCandidate>> file_groups;
+	HashMap<String, int> group_index;
+	for (const VerificationCandidate &candidate : p_candidates) {
+		HashMap<String, int>::ConstIterator it = group_index.find(candidate.path);
+		int index;
+		if (it) {
+			index = it->value;
+		} else {
+			index = file_groups.size();
+			group_index[candidate.path] = index;
+			file_groups.push_back(Vector<VerificationCandidate>());
+		}
+		file_groups.write[index].push_back(candidate);
+	}
+
+	Vector<Vector<VerificationCandidate>> chunks;
+	Vector<VerificationCandidate> current;
+	for (const Vector<VerificationCandidate> &group : file_groups) {
+		if (!current.is_empty() && current.size() + group.size() > p_ceiling) {
+			chunks.push_back(current);
+			current = Vector<VerificationCandidate>();
+		}
+		current.append_array(group);
+	}
+	if (!current.is_empty()) {
+		chunks.push_back(current);
+	}
+	return chunks;
+}
+
 // Count the non-strict diagnostics of p_source keyed by line:column:message. The message
 // is part of the key so a null-mode and a dynamic-mode diagnostic at the same position
 // stay distinct. Counts (rather than set membership) so a strict pass that emits a shared
@@ -773,86 +809,48 @@ VerificationResult GDScriptVerificationHarness::verify(
 	// ceiling and each chunk is attributed independently, so a large regressing batch still drops
 	// only its genuine offenders instead of falling back to all-or-nothing rejection.
 	//
-	// Chunks respect file boundaries: a single file's candidates are never split across chunks,
-	// because candidates within a file interact (one can mask another's diagnostic) and per-chunk
-	// attribution would otherwise be incoherent. File groups are packed greedily up to the
-	// ceiling; a single file with more candidates than the ceiling forms one oversized chunk
-	// (ddmin still terminates, only the cost for that pathological file is higher).
+	// Chunks never share a file, but candidates from different files can still interact through a
+	// common dependent: two provider edits each clean in isolation can together break a shared
+	// consumer. So after attributing every chunk, the accepted union is re-confirmed; if it
+	// regresses, the union is re-partitioned and attributed again. Each non-converged pass drops at
+	// least one cross-chunk offender, so the loop terminates, and every pass stays within the
+	// ceiling because each chunk is ceiling-bounded. The common case converges in one pass.
 	const int max_bisection_candidates = 64;
 
-	Vector<Vector<VerificationCandidate>> file_groups;
-	{
-		HashMap<String, int> group_index;
-		for (const VerificationCandidate &candidate : applicable_candidates) {
-			HashMap<String, int>::ConstIterator it = group_index.find(candidate.path);
-			int index;
-			if (it) {
-				index = it->value;
-			} else {
-				index = file_groups.size();
-				group_index[candidate.path] = index;
-				file_groups.push_back(Vector<VerificationCandidate>());
+	Vector<VerificationCandidate> accepted_candidates = applicable_candidates;
+	AffectedAnalysis accepted_analysis = combined;
+	while (true) {
+		const int previous_size = accepted_candidates.size();
+		Vector<VerificationCandidate> pass_accepted;
+		for (const Vector<VerificationCandidate> &chunk : partition_into_chunks(accepted_candidates, max_bisection_candidates)) {
+			attribute_chunk(chunk, affected, original, p_options, baseline, pass_accepted, result.rejected, fatal);
+			if (fatal) {
+				result.ok = false;
+				result.error_message = "Verification aborted during attribution.";
+				return result;
 			}
-			file_groups.write[index].push_back(candidate);
+		}
+
+		const HashMap<String, String> pass_staged = stage_candidates(pass_accepted, original);
+		const AffectedAnalysis pass_analysis = analyze_affected(affected, original, pass_staged, p_options, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted confirming accepted set.";
+			return result;
+		}
+
+		accepted_candidates = pass_accepted;
+		accepted_analysis = pass_analysis;
+
+		// Converged once the accepted union is clean. A regressing union after a pass means a
+		// cross-chunk offender survived (each chunk's own attribution leaves it non-regressing), so
+		// re-partition and attribute again. Each such pass drops at least one candidate, bounding the
+		// loop; break defensively if a pass dropped nothing yet still regresses to avoid spinning.
+		if (!regresses(baseline, accepted_analysis) || accepted_candidates.size() == previous_size) {
+			break;
 		}
 	}
 
-	Vector<Vector<VerificationCandidate>> chunks;
-	{
-		Vector<VerificationCandidate> current;
-		for (const Vector<VerificationCandidate> &group : file_groups) {
-			// Keep a file's candidates together: flush before adding a group that would overflow
-			// the ceiling, unless the current chunk is empty (an oversized single file stands alone).
-			if (!current.is_empty() && current.size() + group.size() > max_bisection_candidates) {
-				chunks.push_back(current);
-				current = Vector<VerificationCandidate>();
-			}
-			current.append_array(group);
-		}
-		if (!current.is_empty()) {
-			chunks.push_back(current);
-		}
-	}
-
-	Vector<VerificationCandidate> accepted_candidates;
-	for (const Vector<VerificationCandidate> &chunk : chunks) {
-		attribute_chunk(chunk, affected, original, p_options, baseline, accepted_candidates, result.rejected, fatal);
-		if (fatal) {
-			result.ok = false;
-			result.error_message = "Verification aborted during attribution.";
-			return result;
-		}
-	}
-
-	// Re-confirm the union of every chunk's accepted candidates. Chunks never share a file, but
-	// candidates from different files can still interact through a common dependent: two provider
-	// edits each clean in isolation can together break a shared consumer in the affected set. When
-	// that happens the union regresses even though every chunk was clean, so the combined set must
-	// be re-attributed as one to isolate the cross-chunk offenders before it can be accepted.
-	HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
-	AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
-	if (fatal) {
-		result.ok = false;
-		result.error_message = "Verification aborted confirming accepted set.";
-		return result;
-	}
-	if (regresses(baseline, accepted_analysis)) {
-		Vector<VerificationCandidate> reconciled_accepted;
-		attribute_chunk(accepted_candidates, affected, original, p_options, baseline, reconciled_accepted, result.rejected, fatal);
-		if (fatal) {
-			result.ok = false;
-			result.error_message = "Verification aborted reconciling cross-chunk regressions.";
-			return result;
-		}
-		accepted_candidates = reconciled_accepted;
-		accepted_staged = stage_candidates(accepted_candidates, original);
-		accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
-		if (fatal) {
-			result.ok = false;
-			result.error_message = "Verification aborted confirming reconciled accepted set.";
-			return result;
-		}
-	}
 	result.accepted = accepted_candidates;
 	result.accepted_error_count = accepted_analysis.error_count;
 
