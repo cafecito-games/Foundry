@@ -683,19 +683,27 @@ int find_assignment_rhs_start(const String &p_line, int p_equal_index) {
 
 // Locates a declaration's assignment operator (`=` or the `=` of `:=`) starting
 // at p_search_start on p_start_line and following continuation lines. A line
-// continues onto the next either through an explicit trailing backslash or while
-// a bracket/brace/parenthesis remains open. The scan is string/comment/bracket-
-// aware so an `=` inside a string, comment, or nested container is never mistaken
-// for the assignment operator. Returns true and writes the `=` position when
-// found, along with whether it is the `=` of an inferred `:=` declaration.
-bool find_declaration_assignment_operator(const Vector<String> &p_lines, int p_start_line, int p_search_start, int &r_line, int &r_column, bool &r_is_inferred) {
+// continues onto the next through an explicit trailing backslash, while a
+// bracket/brace/parenthesis remains open, or inside a multi-line string; after a
+// backslash the tokenizer also skips whitespace- and comment-only lines, so this
+// scan does too. The scan is string/comment/bracket-aware so an `=` inside a
+// string, comment, or nested container is never mistaken for the assignment
+// operator. Returns true and writes the `=` position when found, along with
+// whether it is the `=` of an inferred declaration (`:=`, where the colon may be
+// separated from the `=` by whitespace or a line break, e.g. `: =`).
+bool find_declaration_assignment_operator(const Vector<String> &p_lines, int p_start_line, int p_search_start, int &r_line, int &r_column, bool &r_is_inferred, int &r_colon_line, int &r_colon_column) {
 	int depth = 0;
 	bool in_multiline_string = false;
 	char32_t multiline_string_quote = 0; // The quote character that opened the active triple-quoted string.
+	bool backslash_continuation = false; // A prior line ended with `\`, so blank/comment lines keep the declaration open.
+	int colon_line = -1; // Position of the most recent colon, so an inferred `: =` can drop it.
+	int colon_column = -1;
+	bool last_meaningful_was_colon = false; // The last non-whitespace token character before the cursor was a colon.
 	for (int line_index = p_start_line; line_index < p_lines.size(); line_index++) {
 		const String &line = p_lines[line_index];
 		int i = line_index == p_start_line ? (p_search_start < 0 ? 0 : p_search_start) : 0;
 		bool explicit_continuation = false;
+		bool saw_token = false; // This physical line carried a real token (not just whitespace or a comment).
 		for (; i < line.length(); i++) {
 			const char32_t c = line[i];
 			if (in_multiline_string) {
@@ -712,25 +720,7 @@ bool find_declaration_assignment_operator(const Vector<String> &p_lines, int p_s
 			if (c == '#') {
 				break;
 			}
-			if (c == '"' || c == '\'') {
-				if (i + 2 < line.length() && line[i + 1] == c && line[i + 2] == c) {
-					// A triple-quoted string may stay open past the end of the line.
-					in_multiline_string = true;
-					multiline_string_quote = c;
-					i += 2; // Skip the opening triple quote; the body is consumed in string state.
-					continue;
-				}
-				i = skip_string_literal(line, i) - 1;
-				continue;
-			}
-			if (c == '(' || c == '[' || c == '{') {
-				depth++;
-				continue;
-			}
-			if (c == ')' || c == ']' || c == '}') {
-				if (depth > 0) {
-					depth--;
-				}
+			if (is_whitespace(c)) {
 				continue;
 			}
 			if (c == '\\' && i == line.length() - 1) {
@@ -738,22 +728,63 @@ bool find_declaration_assignment_operator(const Vector<String> &p_lines, int p_s
 				explicit_continuation = true;
 				continue;
 			}
+			saw_token = true;
+			if (c == '"' || c == '\'') {
+				if (i + 2 < line.length() && line[i + 1] == c && line[i + 2] == c) {
+					// A triple-quoted string may stay open past the end of the line.
+					in_multiline_string = true;
+					multiline_string_quote = c;
+					i += 2; // Skip the opening triple quote; the body is consumed in string state.
+					last_meaningful_was_colon = false;
+					continue;
+				}
+				i = skip_string_literal(line, i) - 1;
+				last_meaningful_was_colon = false;
+				continue;
+			}
+			if (c == '(' || c == '[' || c == '{') {
+				depth++;
+				last_meaningful_was_colon = false;
+				continue;
+			}
+			if (c == ')' || c == ']' || c == '}') {
+				if (depth > 0) {
+					depth--;
+				}
+				last_meaningful_was_colon = false;
+				continue;
+			}
 			if (c == '=' && depth == 0) {
 				// Compound assignment operators (`==`, `<=`, etc.) cannot open a
 				// declaration's initializer, so the first top-level `=` is the
-				// assignment operator. `:=` is reported as inferred.
+				// assignment operator. A preceding colon (`:=` or `: =`) marks an
+				// inferred declaration.
 				r_line = line_index;
 				r_column = i;
-				r_is_inferred = i > 0 && line[i - 1] == ':';
+				r_is_inferred = last_meaningful_was_colon;
+				r_colon_line = colon_line;
+				r_colon_column = colon_column;
 				return true;
+			}
+			last_meaningful_was_colon = c == ':';
+			if (last_meaningful_was_colon) {
+				colon_line = line_index;
+				colon_column = i;
 			}
 		}
 		if (in_multiline_string) {
 			continue; // A triple-quoted string carries the declaration onto the next line.
 		}
-		if (!explicit_continuation && depth == 0) {
-			// No continuation: the declaration ends on this line without an
-			// assignment operator beyond the search start.
+		if (explicit_continuation) {
+			backslash_continuation = true;
+		} else if (saw_token) {
+			// A physical line with a real token but no trailing backslash only
+			// continues while a bracket pair is still open.
+			backslash_continuation = false;
+		}
+		if (!backslash_continuation && depth == 0) {
+			// No continuation: the declaration ends without an assignment operator
+			// beyond the search start.
 			return false;
 		}
 	}
@@ -1134,8 +1165,10 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	int equal_line = -1;
 	int equal_column = -1;
 	bool is_inferred = false;
+	int colon_line = -1;
+	int colon_column = -1;
 	const bool found_equal = p_assignable->initializer != nullptr &&
-			find_declaration_assignment_operator(p_lines, line_index, name_end, equal_line, equal_column, is_inferred);
+			find_declaration_assignment_operator(p_lines, line_index, name_end, equal_line, equal_column, is_inferred, colon_line, colon_column);
 	const int declaration_end = found_equal && equal_line == line_index ? equal_column : name_end;
 
 	r_candidate.matched = true;
@@ -1196,15 +1229,28 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 
 	// The assignment operator wraps onto a continuation line. Insert the
 	// annotation after the name and replace through the `=`, preserving the
-	// continuation text verbatim. An inferred `:=` drops its colon because the
-	// explicit annotation now carries the type. The replacement reproduces the
-	// original line breaks so the recovered declaration parses identically.
-	const int inferred_offset = is_inferred ? 1 : 0;
-	String continuation = line.substr(name_end, line.length() - name_end);
-	for (int wrapped = line_index + 1; wrapped < equal_line; wrapped++) {
-		continuation += "\n" + p_lines[wrapped];
+	// continuation text verbatim. An inferred declaration (`:=` or `: =`) drops
+	// its colon because the explicit annotation now carries the type. The
+	// replacement reproduces the original line breaks so the recovered
+	// declaration parses identically.
+	//
+	// Reconstruct the span [name_end on line_index, equal_column on equal_line),
+	// omitting the inferred colon at (colon_line, colon_column) when present.
+	String continuation;
+	for (int wrapped = line_index; wrapped <= equal_line; wrapped++) {
+		if (wrapped != line_index) {
+			continuation += "\n";
+		}
+		const String &wrapped_line = p_lines[wrapped];
+		const int slice_start = wrapped == line_index ? name_end : 0;
+		const int slice_end = wrapped == equal_line ? equal_column : wrapped_line.length();
+		if (is_inferred && colon_line == wrapped && colon_column >= slice_start && colon_column < slice_end) {
+			continuation += wrapped_line.substr(slice_start, colon_column - slice_start);
+			continuation += wrapped_line.substr(colon_column + 1, slice_end - (colon_column + 1));
+		} else {
+			continuation += wrapped_line.substr(slice_start, slice_end - slice_start);
+		}
 	}
-	continuation += "\n" + p_lines[equal_line].substr(0, equal_column - inferred_offset);
 	r_candidate.edit.start_line = line_index;
 	r_candidate.edit.start_column = name_end;
 	r_candidate.edit.end_line = equal_line;

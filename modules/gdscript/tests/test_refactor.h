@@ -1248,6 +1248,41 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"var total: int \\\n"
 					"\t= 1 + 2\n");
 		}
+		SUBCASE("spaced inferred `: =` wrapped onto a continuation line drops the colon") {
+			const String source =
+					"var total \\\n"
+					"\t: = 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t = 1 + 2\n");
+		}
+		SUBCASE("spaced inferred `:` then wrapped `=` drops the colon") {
+			const String source =
+					"var total : \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int  \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("comment-only line between the backslash and the wrapped `=`") {
+			const String source =
+					"var total \\\n"
+					"\t# a note\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t# a note\n"
+					"\t= 1 + 2\n");
+		}
 	}
 
 	TEST_CASE("find_candidates annotates a wrapped declaration") {
