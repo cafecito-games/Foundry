@@ -284,6 +284,13 @@ TEST_CASE("[String] Concatenation") {
 	CHECK(s == "Have a Nice Day");
 }
 
+TEST_CASE("[String] Concatenating empty String") {
+	String s = "res://";
+	s += String();
+
+	CHECK(s == "res://");
+}
+
 TEST_CASE("[String] Testing size and length of string") {
 	// todo: expand this test to do more tests on size() as it is complicated under the hood.
 	CHECK(String("Mellon").size() == 7);
