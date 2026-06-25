@@ -1218,6 +1218,40 @@ bool GDScriptAnalyzer::resolve_type_parameter(const StringName &p_name, GDScript
 	return true;
 }
 
+GDScriptParser::FunctionNode *GDScriptAnalyzer::find_generic_method(GDScriptParser::ClassNode *p_class, const StringName &p_name, bool &r_found_member) {
+	// Find a generic method named `p_name` reachable from `p_class`, matching get_function_signature's
+	// resolution order: the entire class/base chain is searched for an own member first, and only if
+	// none is found are the starting class's applied traits consulted (base-class traits are already
+	// flattened into the base members walked above). `r_found_member` reports whether any member of
+	// that name exists, so callers can tell a missing method from a non-generic one.
+	r_found_member = false;
+	for (GDScriptParser::ClassNode *lookup_class = p_class; lookup_class != nullptr; lookup_class = lookup_class->base_type.class_type) {
+		if (lookup_class->has_member(p_name)) {
+			r_found_member = true;
+			const GDScriptParser::ClassNode::Member &member = lookup_class->get_member(p_name);
+			if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
+				return member.function;
+			}
+			return nullptr;
+		}
+	}
+	if (p_class != nullptr && (p_class->is_trait || !p_class->used_traits.is_empty())) {
+		resolve_trait_uses(p_class);
+		for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+			if (trait == nullptr || !trait->has_member(p_name)) {
+				continue;
+			}
+			r_found_member = true;
+			const GDScriptParser::ClassNode::Member &member = trait->get_member(p_name);
+			if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
+				return member.function;
+			}
+			return nullptr;
+		}
+	}
+	return nullptr;
+}
+
 GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base, const GDScriptParser::FunctionNode *p_shadowing_method) {
 	if (!p_base.has_type_arguments() || p_base.class_type == nullptr) {
 		return p_member_type;
@@ -4807,16 +4841,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				}
 				bool resolved_to_member = false;
 				if (!shadowed_by_local) {
-					for (GDScriptParser::ClassNode *lookup_class = parser->current_class; lookup_class != nullptr && generic_method == nullptr; lookup_class = lookup_class->base_type.class_type) {
-						if (lookup_class->has_member(base_name)) {
-							resolved_to_member = true;
-							const GDScriptParser::ClassNode::Member &member = lookup_class->get_member(base_name);
-							if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
-								generic_method = member.function;
-							}
-							break;
-						}
-					}
+					generic_method = find_generic_method(parser->current_class, base_name, resolved_to_member);
 				}
 				// `create_proxy[T](handler)` is the built-in generic proxy constructor when it is not
 				// shadowed by a local or a user-declared member of the same name.
@@ -4836,15 +4861,8 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					reduce_expression(receiver_access->base);
 					GDScriptParser::DataType receiver_type = receiver_access->base->get_datatype();
 					const StringName &method_name = receiver_access->attribute->name;
-					for (GDScriptParser::ClassNode *lookup_class = receiver_type.class_type; lookup_class != nullptr && generic_method == nullptr; lookup_class = lookup_class->base_type.class_type) {
-						if (lookup_class->has_member(method_name)) {
-							const GDScriptParser::ClassNode::Member &member = lookup_class->get_member(method_name);
-							if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
-								generic_method = member.function;
-							}
-							break;
-						}
-					}
+					bool receiver_found_member = false;
+					generic_method = find_generic_method(receiver_type.class_type, method_name, receiver_found_member);
 					if (generic_method != nullptr) {
 						base_type = receiver_type;
 						is_self = receiver_access->base->type == GDScriptParser::Node::SELF;
