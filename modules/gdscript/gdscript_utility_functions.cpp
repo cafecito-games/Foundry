@@ -31,6 +31,7 @@
 #include "gdscript_utility_functions.h"
 
 #include "gdscript.h"
+#include "gdscript_proxy.h"
 
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
@@ -254,7 +255,7 @@ struct GDScriptUtilityFunctionsDefinitions {
 		}
 
 		VALIDATE_ARG_CUSTOM(0, Variant::OBJECT,
-				!obj->get_script_instance() || obj->get_script_instance()->get_language() != GDScriptLanguage::get_singleton(),
+				!obj->get_script_instance() || obj->get_script_instance()->get_language() != GDScriptLanguage::get_singleton() || obj->get_script_instance()->is_synthetic(),
 				RTR("Not a script with an instance."));
 
 		GDScriptInstance *inst = static_cast<GDScriptInstance *>(obj->get_script_instance());
@@ -504,6 +505,30 @@ struct GDScriptUtilityFunctionsDefinitions {
 		r_error.argument = 1;
 		r_error.expected = Variant::NIL;
 	}
+
+	static inline void create_proxy_dynamic(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
+		DEBUG_VALIDATE_ARG_COUNT(2, 2);
+		DEBUG_VALIDATE_ARG_TYPE(0, Variant::OBJECT);
+		DEBUG_VALIDATE_ARG_TYPE(1, Variant::CALLABLE);
+
+		Ref<Script> type = *p_args[0];
+		VALIDATE_ARG_CUSTOM(0, Variant::OBJECT, type.is_null(), RTR("Proxy target must be a GDScript trait or abstract type."));
+
+		const Callable handler = *p_args[1];
+		VALIDATE_ARG_CUSTOM(1, Variant::CALLABLE, !handler.is_valid(), RTR("Proxy handler must be a valid Callable."));
+
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(type, handler, error_message);
+		if (proxy.is_null()) {
+			*r_ret = error_message;
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_error.argument = 0;
+			r_error.expected = Variant::OBJECT;
+			return;
+		}
+
+		*r_ret = proxy;
+	}
 };
 
 struct GDScriptUtilityFunctionInfo {
@@ -588,6 +613,7 @@ void GDScriptUtilityFunctions::register_functions() {
 	REGISTER_FUNC( get_stack,      false, RET(ARRAY),         NOARGS,                                  false, varray(     ));
 	REGISTER_FUNC( len,            true,  RET(INT),           ARGS( ARGVAR("var")                   ), false, varray(     ));
 	REGISTER_FUNC( is_instance_of, true,  RET(BOOL),          ARGS( ARGVAR("value"), ARGVAR("type") ), false, varray(     ));
+	REGISTER_FUNC( create_proxy_dynamic, false, RET(OBJECT),  ARGS( ARG("type", OBJECT), ARG("handler", CALLABLE) ), false, varray( ));
 	/* clang-format on */
 }
 
