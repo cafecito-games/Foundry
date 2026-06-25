@@ -5876,8 +5876,14 @@ GDScriptParser::DataType GDScriptParser::DataType::substitute(const DataType &p_
 		if (binding != nullptr) {
 			return *binding;
 		}
-		// Unbound parameter: leave it intact so an outer scope can substitute it later.
-		return p_type;
+		// Unbound parameter: leave it intact so an outer scope can substitute it later, but specialize
+		// its bound so a bound referencing a substituted parameter (e.g. `[U: T]` with `T := int`)
+		// reflects the binding.
+		DataType result = p_type;
+		for (int i = 0; i < result.type_parameter_bound.size(); i++) {
+			result.type_parameter_bound.write[i] = substitute(result.type_parameter_bound[i], p_bindings);
+		}
+		return result;
 	}
 
 	DataType result = p_type;

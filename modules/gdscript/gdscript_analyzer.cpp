@@ -9318,6 +9318,12 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 		if (parameter == nullptr || parameter->identifier == nullptr || parameter->bound == nullptr) {
 			continue;
 		}
+		// The bound collected from the (already receiver-specialized) signature wins; the raw
+		// declaration is only a fallback for a parameter whose bound is reached nowhere in the
+		// signature, so it must not overwrite the specialized one (e.g. `[U: T]` with `T := PackedScene`).
+		if (parameter_bounds.has(parameter->identifier->name)) {
+			continue;
+		}
 		const GDScriptParser::DataType bound_type = parameter->bound->get_datatype();
 		if (bound_type.is_set() && bound_type.kind != GDScriptParser::DataType::UNRESOLVED && bound_type.kind != GDScriptParser::DataType::RESOLVING) {
 			parameter_bounds[parameter->identifier->name] = type_from_metatype(bound_type);
