@@ -270,6 +270,28 @@ TEST_SUITE("[Modules][GDScript][ProjectScan]") {
 		CHECK_EQ(result.files.size(), 2);
 		CHECK(skipped_contains(result, "loop", tree.root));
 	}
+
+	TEST_CASE("Does not collect symlinked script files") {
+		TemporaryProjectTree tree("gdscript_project_scan_file_symlink");
+		tree.write_file("real/lib.gd", "var lib = true\n");
+
+		// A symlinked `.gd` whose target lives elsewhere must not enter the work list: its real
+		// location is migrated where it actually lives, and following the link could escape the root.
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		const String link_path = tree.root.path_join("alias.gd");
+		if (dir->create_link(tree.root.path_join("real/lib.gd"), link_path) != OK) {
+			// Some filesystems forbid symlink creation; the behavior under test is unavailable here.
+			return;
+		}
+
+		const ProjectScanResult result = GDScriptProjectScan::scan(tree.root);
+		REQUIRE(result.ok);
+
+		// Only the real file is collected; the symlink is not.
+		CHECK(scan_contains(result, "real/lib.gd", tree.root));
+		CHECK_FALSE(scan_contains(result, "alias.gd", tree.root));
+		CHECK_EQ(result.files.size(), 1);
+	}
 }
 
 } // namespace GDScriptTests
