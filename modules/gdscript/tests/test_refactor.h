@@ -618,6 +618,21 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK(out.contains("func middle_required() -> void:"));
 	}
 
+	TEST_CASE("Implement abstract: preserves static on a trait-required abstract method") {
+		// A trait may declare an @abstract static func (unlike an abstract class method),
+		// and the implementation's static flag must match, so the stub keeps `static`.
+		const String source =
+				"trait Fetcher:\n"
+				"\t@abstract static func fetch() -> String\n"
+				"class Player:\n"
+				"\tuses Fetcher\n"
+				"\tvar hp := 10\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 4, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("static func fetch() -> String:"));
+	}
+
 	TEST_CASE("Implement abstract: a native base method satisfies a trait requirement") {
 		// Object exposes get_class(); a class implicitly extends RefCounted, so the native
 		// base already implements the trait method and nothing is owed.

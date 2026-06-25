@@ -5440,9 +5440,13 @@ String render_abstract_stub(
 	const String body_indent = p_class_indent + "\t";
 	const String name = String(p_function->identifier->name);
 
-	// Abstract methods cannot be static in GDScript, so no static modifier is rendered.
-	// The async modifier, when present, precedes `func`.
+	// An abstract method on a class cannot be static, but a trait may declare an
+	// `@abstract static func`, and the implementation's static flag must match it. The
+	// modifiers precede `func` in declaration order: `static`, then `async`.
 	String signature = p_class_indent;
+	if (p_function->is_static) {
+		signature += "static ";
+	}
 	if (p_function->is_declared_async) {
 		signature += "async ";
 	}
