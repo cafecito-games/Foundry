@@ -3414,6 +3414,39 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			REQUIRE(r.ok);
 			CHECK(out.contains("takes(value as int)"));
 		}
+		SUBCASE("casts a Variant declaration initializer inside a lambda body") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar f = func(): var x: int = value\n";
+			String out;
+			// Caret on the inner declaration's value.
+			RefactorResult r = run_insert_cast(source, 1, 31, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = value as int"));
+		}
+		SUBCASE("offers a cast on a value holding a triple-quoted string") {
+			// The triple-quoted argument embeds quotes and brackets; a quote-counting
+			// balance check misreads it and over-blocks. The tokenizer collapses the
+			// whole string to one literal, so the cast stays available.
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: Dictionary = JSON.parse_string(\"\"\"{}\"\"\")\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 22, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("JSON.parse_string(\"\"\"{}\"\"\") as Dictionary"));
+		}
+		SUBCASE("offers a cast on a value holding a prefixed string") {
+			// A raw-string prefix (`r"..."`) with an embedded bracket likewise must not
+			// confuse the balance check; the value stays a Variant from parse_string.
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: Array = JSON.parse_string(r\"[]\")\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 18, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("JSON.parse_string(r\"[]\") as Array"));
+		}
 	}
 
 	TEST_CASE("find_candidates collects insert-cast opportunities") {
