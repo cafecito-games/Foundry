@@ -1344,6 +1344,13 @@ void GDScript::get_script_trait_list(List<StringName> *r_traits) const {
 }
 
 bool GDScript::has_script_trait(const StringName &p_trait) const {
+	// A trait conforms to its own identity. This is normally unobservable because
+	// traits cannot be instantiated, but a dynamic proxy whose `get_script()` is the
+	// trait itself must satisfy `proxy is ThatTrait`.
+	if (_is_trait_type && trait_type_name == p_trait) {
+		return true;
+	}
+
 	for (const StringName &trait : script_trait_list) {
 		if (trait == p_trait) {
 			return true;

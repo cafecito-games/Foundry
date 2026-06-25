@@ -476,4 +476,68 @@ TEST_CASE("[Modules][GDScript][Proxy] Auto-backing property store") {
 	}
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] is / trait conformance") {
+	ScopedProxyLanguage language;
+
+	const char *source =
+			"trait Drawable:\n"
+			"\t@abstract func draw_self() -> void\n"
+			"\n"
+			"trait Sprite uses Drawable:\n"
+			"\t@abstract func render() -> void\n"
+			"\n"
+			"trait Unrelated:\n"
+			"\t@abstract func z() -> void\n"
+			"\n"
+			"@abstract class Base:\n"
+			"\t@abstract func a() -> void\n"
+			"\n"
+			"@abstract class Derived extends Base:\n"
+			"\t@abstract func b() -> void\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn null\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> sprite = get_subclass(script, "Sprite");
+	Ref<GDScript> drawable = get_subclass(script, "Drawable");
+	Ref<GDScript> unrelated = get_subclass(script, "Unrelated");
+	Ref<GDScript> base = get_subclass(script, "Base");
+	Ref<GDScript> derived = get_subclass(script, "Derived");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(sprite.is_valid());
+	REQUIRE(sprite->is_trait_type());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	// A trait conforms to its own identity, to traits it uses, but not to others.
+	CHECK(sprite->has_script_trait(sprite->get_trait_type_name()));
+	CHECK(sprite->has_script_trait(drawable->get_trait_type_name()));
+	CHECK_FALSE(sprite->has_script_trait(unrelated->get_trait_type_name()));
+
+	// A trait proxy reports the trait as its script, satisfying the runtime `is`
+	// type test (which reads get_script() then walks the script/trait chain).
+	String error_message;
+	Ref<RefCounted> sprite_proxy = GDScriptProxy::create_proxy(sprite, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(sprite_proxy.is_valid(), error_message.utf8().get_data());
+	CHECK(sprite_proxy->get_script_instance()->get_script() == sprite);
+
+	// An abstract-class proxy's script chain contains the class and its bases.
+	Ref<RefCounted> derived_proxy = GDScriptProxy::create_proxy(derived, Callable(recorder, "handle"), error_message);
+	REQUIRE(derived_proxy.is_valid());
+	Script *script_ptr = derived_proxy->get_script_instance()->get_script().ptr();
+	bool reaches_base = false;
+	while (script_ptr) {
+		if (script_ptr == base.ptr()) {
+			reaches_base = true;
+			break;
+		}
+		script_ptr = script_ptr->get_base_script().ptr();
+	}
+	CHECK(reaches_base);
+}
+
 } // namespace GDScriptTests
