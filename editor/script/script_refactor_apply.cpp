@@ -100,6 +100,7 @@ bool ScriptRefactorApply::build_plan(
 		file_plan.after_source = after_source;
 		file_plan.edit_count = file_edit.edits.size();
 		file_plan.before_source_is_saved_version = source.source_is_saved_version;
+		file_plan.edits = file_edit.edits;
 		plan.files.push_back(file_plan);
 	}
 

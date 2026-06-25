@@ -50,6 +50,9 @@ struct ScriptRefactorFilePlan {
 	String after_source;
 	int edit_count = 0;
 	bool before_source_is_saved_version = true;
+	// Individual edits that produced after_source, retained so the preview can
+	// recompute the result from a user-selected subset of edits.
+	Vector<RefactorTextEdit> edits;
 };
 
 struct ScriptRefactorApplyPlan {
