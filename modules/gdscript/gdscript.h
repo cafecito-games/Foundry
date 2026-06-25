@@ -60,6 +60,7 @@ public:
 #ifdef TESTS_ENABLED
 namespace GDScriptTests {
 class TestGDScriptTraitReflectionAccessor;
+class TestGDScriptGenericReflectionAccessor;
 }
 #endif // TESTS_ENABLED
 
@@ -79,6 +80,18 @@ class GDScript : public Script {
 		GDScriptDataType data_type;
 		PropertyInfo property_info;
 	};
+
+public:
+	// A generic type parameter declared on this class, e.g. `T` in `class Box[T]` or
+	// `K`/`V` in `class_name Pair[K, V: RefCounted]`. Surfaced through runtime reflection.
+	struct TypeParameter {
+		StringName name;
+		int index = -1;
+		bool has_bound = false;
+		PropertyInfo bound; // Upper bound type; only meaningful when `has_bound` is true.
+	};
+
+private:
 
 	struct ClearData {
 		RBSet<GDScriptFunction *> functions;
@@ -100,6 +113,7 @@ class GDScript : public Script {
 	friend struct GDScriptUtilityFunctionsDefinitions;
 #ifdef TESTS_ENABLED
 	friend class GDScriptTests::TestGDScriptTraitReflectionAccessor;
+	friend class GDScriptTests::TestGDScriptGenericReflectionAccessor;
 #endif // TESTS_ENABLED
 
 	Ref<GDScriptNativeClass> native;
@@ -120,6 +134,8 @@ class GDScript : public Script {
 	HashMap<StringName, MethodInfo> _signals;
 	// Direct trait identities recorded for this script. Transitive script-inheritance traits are computed at query time.
 	Vector<StringName> script_trait_list;
+	// Generic type parameters declared directly on this class (`class Box[T]`). Empty for non-generic classes.
+	Vector<TypeParameter> type_parameters;
 	Dictionary rpc_config;
 
 public:
@@ -284,6 +300,11 @@ public:
 	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const override;
 	virtual bool has_script_trait(const StringName &p_trait) const override;
 	virtual void get_script_trait_list(List<StringName> *r_traits) const override;
+
+	// Generic reflection: declared type parameters of this class and their optional bounds.
+	const Vector<TypeParameter> &get_type_parameters() const { return type_parameters; }
+	bool is_generic() const { return !type_parameters.is_empty(); }
+	TypedArray<Dictionary> _get_type_parameter_list() const;
 
 	bool is_tool() const override { return tool; }
 	bool is_abstract() const override { return _is_abstract; }

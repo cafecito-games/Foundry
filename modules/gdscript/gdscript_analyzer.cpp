@@ -1595,6 +1595,23 @@ void GDScriptAnalyzer::resolve_class_interface(GDScriptParser::ClassNode *p_clas
 			return;
 		}
 
+		// Resolve declared type-parameter bounds eagerly so runtime reflection can report them even
+		// when a parameter is never referenced inside the class body. A class parameter's bound is
+		// resolved in its declaring class scope, mirroring `resolve_type_parameter`.
+		if (!p_class->type_parameters.is_empty()) {
+			GDScriptParser::ClassNode *previous_class = parser->current_class;
+			GDScriptParser::FunctionNode *previous_function = parser->current_function;
+			parser->current_class = p_class;
+			parser->current_function = nullptr;
+			for (GDScriptParser::TypeParameterNode *parameter : p_class->type_parameters) {
+				if (parameter != nullptr && parameter->bound != nullptr) {
+					parameter->resolved_bound = type_from_metatype(resolve_datatype(parameter->bound));
+				}
+			}
+			parser->current_class = previous_class;
+			parser->current_function = previous_function;
+		}
+
 		GDScriptParser::DataType base_type = p_class->base_type;
 		if (base_type.kind == GDScriptParser::DataType::CLASS) {
 			GDScriptParser::ClassNode *base_class = base_type.class_type;
