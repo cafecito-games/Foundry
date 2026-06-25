@@ -88,6 +88,23 @@ void GDScriptCompiler::_set_error(const String &p_error, const GDScriptParser::N
 	}
 }
 
+static bool _datatype_contains_type_parameter(const GDScriptParser::DataType &p_datatype) {
+	if (p_datatype.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		return true;
+	}
+	for (const GDScriptParser::DataType &element : p_datatype.container_element_types) {
+		if (_datatype_contains_type_parameter(element)) {
+			return true;
+		}
+	}
+	for (const GDScriptParser::DataType &argument : p_datatype.type_arguments) {
+		if (_datatype_contains_type_parameter(argument)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::DataType &p_datatype, GDScript *p_owner, bool p_handle_metatype) {
 	if (!p_datatype.is_set() || !p_datatype.is_hard_type() || p_datatype.is_coroutine) {
 		return GDScriptDataType();
@@ -213,14 +230,29 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	// A nullable value type must accept null at runtime. Metatypes are never nullable.
 	result.is_nullable = p_datatype.is_nullable && !(p_handle_metatype && p_datatype.is_meta_type);
 
+	// A container whose element type (transitively) involves an erased type parameter — `Array[T]`,
+	// `Dictionary[K, int]`, `Array[Array[T]]` — leaves all of its element types unset so the runtime
+	// treats it as a fully untyped container. The VM compares typed-container element metadata
+	// exactly (and a partially-set typed container backfills the missing slot with Variant), so a
+	// typed-but-erased element would still reject a concrete argument like `Array[int]`. The analyzer
+	// still enforces element types statically.
+	bool erases_container_element = false;
 	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
-		GDScriptDataType element_type = _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false);
-		if (element_type.is_nullable) {
-			// Core typed containers cannot hold null elements, so a nullable element type becomes an
-			// untyped element. The analyzer still enforces element types statically.
-			element_type = GDScriptDataType();
+		if (_datatype_contains_type_parameter(p_datatype.get_container_element_type_or_variant(i))) {
+			erases_container_element = true;
+			break;
 		}
-		result.set_container_element_type(i, element_type);
+	}
+	if (!erases_container_element) {
+		for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
+			GDScriptDataType element_type = _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false);
+			if (element_type.is_nullable) {
+				// Core typed containers cannot hold null elements, so a nullable element type becomes an
+				// untyped element. The analyzer still enforces element types statically.
+				element_type = GDScriptDataType();
+			}
+			result.set_container_element_type(i, element_type);
+		}
 	}
 
 	// Preserve specialized type arguments (e.g. the `int` in `Box[int]`) so runtime metadata is not lost.
