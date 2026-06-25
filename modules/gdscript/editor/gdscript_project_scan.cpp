@@ -37,30 +37,37 @@
 
 namespace {
 
-// Recursively collects `.gd` files under p_dir_path. Pruned directories are recorded in
-// p_skipped so the caller can report excluded code. Order is irrelevant here: the caller sorts
-// the flat results, so the output is deterministic regardless of filesystem enumeration order.
-void scan_directory(const String &p_dir_path, const ProjectScanOptions &p_options, Vector<String> &r_files, Vector<String> &r_skipped) {
+// Recursively collects `.gd` files under p_dir_path. p_at_root is true only for the scan root,
+// so root-only rules (the project add-ons folder) apply where they should. Pruned directories are
+// recorded in p_skipped so the caller can report excluded code. Order is irrelevant here: the
+// caller sorts the flat results, so the output is deterministic regardless of enumeration order.
+void scan_directory(const String &p_dir_path, bool p_at_root, const ProjectScanOptions &p_options, Vector<String> &r_files, Vector<String> &r_skipped) {
 	Ref<DirAccess> dir = DirAccess::open(p_dir_path);
-	if (dir.is_null()) {
-		// An unreadable subdirectory is recorded and skipped; the rest of the walk continues.
+	if (dir.is_null() || dir->list_dir_begin() != OK) {
+		// A directory that cannot be entered or listed (e.g. unreadable permissions) is recorded
+		// and skipped rather than silently reported as empty; the rest of the walk continues.
 		r_skipped.push_back(p_dir_path);
 		return;
 	}
 
 	Vector<String> subdirectories;
 
-	dir->list_dir_begin();
 	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
-		// Hidden entries (names beginning with `.`, plus `.` and `..`) are never migrated: this
-		// covers `.godot`, `.git`, `.import`, and similar tooling directories.
-		if (entry.begins_with(".")) {
+		// Hidden entries are never migrated: names beginning with `.` (covering `.godot`, `.git`,
+		// `.import`, and `.` / `..`) plus filesystem-hidden entries (the Windows hidden attribute).
+		if (entry.begins_with(".") || dir->current_is_hidden()) {
 			continue;
 		}
 
 		const String child_path = p_dir_path.path_join(entry);
 
 		if (dir->current_is_dir()) {
+			// A directory symlink can point outside the project or back into an ancestor, which
+			// would let the walk escape the project or loop forever. Record it and never follow it.
+			if (dir->is_link(child_path)) {
+				r_skipped.push_back(child_path);
+				continue;
+			}
 			subdirectories.push_back(child_path);
 		} else if (entry.get_extension().to_lower() == "gd") {
 			r_files.push_back(child_path);
@@ -69,8 +76,10 @@ void scan_directory(const String &p_dir_path, const ProjectScanOptions &p_option
 	dir->list_dir_end();
 
 	for (const String &subdirectory : subdirectories) {
-		// addons/ holds third-party editor plugins; pruned unless the caller opts in.
-		if (!p_options.include_addons && subdirectory.get_file() == "addons") {
+		// The project add-ons folder (res://addons) holds third-party editor plugins; pruned
+		// unless the caller opts in. Only the root-level folder is third-party by convention, so a
+		// first-party directory that merely happens to be named `addons` deeper in the tree is kept.
+		if (p_at_root && !p_options.include_addons && subdirectory.get_file() == "addons") {
 			r_skipped.push_back(subdirectory);
 			continue;
 		}
@@ -87,7 +96,7 @@ void scan_directory(const String &p_dir_path, const ProjectScanOptions &p_option
 			continue;
 		}
 
-		scan_directory(subdirectory, p_options, r_files, r_skipped);
+		scan_directory(subdirectory, false, p_options, r_files, r_skipped);
 	}
 }
 
@@ -103,7 +112,7 @@ ProjectScanResult GDScriptProjectScan::scan(const String &p_root, const ProjectS
 		return result;
 	}
 
-	scan_directory(p_root, p_options, result.files, result.skipped_directories);
+	scan_directory(p_root, true, p_options, result.files, result.skipped_directories);
 
 	// Sort so the same project always yields the same ordered work list, independent of the
 	// filesystem's enumeration order.

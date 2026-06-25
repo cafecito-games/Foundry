@@ -63,9 +63,11 @@ struct ProjectScanResult {
 class GDScriptProjectScan {
 public:
 	// Enumerates `.gd` scripts under p_root. p_root may be a `res://` path or any path DirAccess
-	// can open; discovered files keep that root's prefix. Hidden entries (names beginning with
-	// `.`) are always skipped. The call fails (ok=false, empty files) only when p_root itself
-	// cannot be opened; an unreadable subdirectory is recorded and skipped without aborting.
+	// can open; discovered files keep that root's prefix. Hidden entries (names beginning with `.`
+	// or carrying the filesystem hidden attribute) are always skipped, and directory symlinks are
+	// never followed so the walk cannot escape the project or loop. The call fails (ok=false, empty
+	// files) only when p_root itself cannot be opened or listed; an unreadable subdirectory is
+	// recorded in skipped_directories and skipped without aborting the rest of the scan.
 	static ProjectScanResult scan(const String &p_root, const ProjectScanOptions &p_options = ProjectScanOptions());
 };
 

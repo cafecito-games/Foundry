@@ -81,7 +81,9 @@ struct TemporaryProjectTree {
 				continue;
 			}
 			const String child = p_path.path_join(entry);
-			if (dir->current_is_dir()) {
+			// Remove a symlink as a leaf; never descend through it, or a link back into the tree
+			// would make cleanup recurse forever (and could delete files outside the tree).
+			if (dir->current_is_dir() && !dir->is_link(child)) {
 				remove_recursive(child);
 			} else {
 				DirAccess::remove_absolute(child);
@@ -224,6 +226,49 @@ TEST_SUITE("[Modules][GDScript][ProjectScan]") {
 		const ProjectScanResult result = GDScriptProjectScan::scan(tree.root);
 		REQUIRE(result.ok);
 		CHECK(result.files.is_empty());
+	}
+
+	TEST_CASE("Only the project-root addons folder is treated as third-party") {
+		TemporaryProjectTree tree("gdscript_project_scan_nested_addons");
+		tree.write_file("main.gd", "var value = 1\n");
+		// Root-level addons holds third-party plugins and is excluded by default.
+		tree.write_file("addons/plugin/tool.gd", "var plugin = true\n");
+		// A first-party directory deeper in the tree that merely shares the name is kept.
+		tree.write_file("gameplay/addons/mod.gd", "var mod = true\n");
+
+		const ProjectScanResult result = GDScriptProjectScan::scan(tree.root);
+		REQUIRE(result.ok);
+
+		CHECK(scan_contains(result, "main.gd", tree.root));
+		CHECK(scan_contains(result, "gameplay/addons/mod.gd", tree.root));
+		CHECK_FALSE(scan_contains(result, "addons/plugin/tool.gd", tree.root));
+
+		CHECK(skipped_contains(result, "addons", tree.root));
+		CHECK_FALSE(skipped_contains(result, "gameplay/addons", tree.root));
+	}
+
+	TEST_CASE("Does not follow directory symlinks") {
+		TemporaryProjectTree tree("gdscript_project_scan_symlink");
+		tree.write_file("main.gd", "var value = 1\n");
+		tree.write_file("real/lib.gd", "var lib = true\n");
+
+		// A symlink pointing back at the project root would make a naive walk recurse forever and
+		// re-collect everything through the link; the scan must record it and never descend.
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		const String link_path = tree.root.path_join("loop");
+		if (dir->create_link(tree.root, link_path) != OK) {
+			// Some filesystems forbid symlink creation; the behavior under test is unavailable here.
+			return;
+		}
+
+		const ProjectScanResult result = GDScriptProjectScan::scan(tree.root);
+		REQUIRE(result.ok); // Terminates: the loop did not run forever.
+
+		// Real scripts are found exactly once; nothing is reached through the link.
+		CHECK(scan_contains(result, "main.gd", tree.root));
+		CHECK(scan_contains(result, "real/lib.gd", tree.root));
+		CHECK_EQ(result.files.size(), 2);
+		CHECK(skipped_contains(result, "loop", tree.root));
 	}
 }
 
