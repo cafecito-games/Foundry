@@ -1304,12 +1304,20 @@ TEST_CASE("[Modules][GDScript][Reflection] godot namespace is a reserved autoloa
 	// name. Editor autoload validation iterates this list exactly like
 	// get_reserved_words and rejects an autoload that would shadow `godot.reflection`.
 	// The registration and this reservation share a single source constant, so they
-	// cannot drift.
+	// cannot drift. The reservation is scoped to tools builds, where the compiler can
+	// resolve named globals; an exported runtime does not reserve the name.
 	const Vector<String> reserved = gdscript_language->get_reserved_global_names();
+#ifdef TOOLS_ENABLED
 	CHECK(reserved.has("godot"));
+	CHECK(gdscript_language->is_reserved_global_name("godot"));
+#else
+	CHECK_FALSE(reserved.has("godot"));
+	CHECK_FALSE(gdscript_language->is_reserved_global_name("godot"));
+#endif
 
-	// A normal identifier is not reserved by this mechanism.
+	// A normal identifier is never reserved by this mechanism.
 	CHECK_FALSE(reserved.has("my_autoload"));
+	CHECK_FALSE(gdscript_language->is_reserved_global_name("my_autoload"));
 }
 
 } // namespace GDScriptTests
