@@ -800,6 +800,17 @@ TEST_CASE("[Modules][GDScript][Reflection] Read-only introspection API") {
 		CHECK_FALSE(reflection->implements_trait(Variant(), drawable));
 	}
 
+	// A freed object is handled via the validated object, not dereferenced.
+	{
+		Object *freed = memnew(Object);
+		Variant freed_target = freed;
+		memdelete(freed);
+		CHECK(reflection->get_methods(freed_target).is_empty());
+		CHECK(reflection->get_properties(freed_target).is_empty());
+		CHECK(reflection->get_method_info(freed_target, "x").is_empty());
+		CHECK_FALSE(reflection->implements_trait(freed_target, drawable));
+	}
+
 	memdelete(reflection);
 }
 

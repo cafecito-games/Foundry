@@ -2315,10 +2315,14 @@ void GDScriptLanguage::finish() {
 	script_list.clear();
 	function_list.clear();
 
-	// Tear down the reflection singletons exposed via the `godot` global. Releasing
-	// the member refs (and the named-global entry) drops the last references.
-	if (named_globals.has(SNAME("godot"))) {
-		remove_named_global_constant(SNAME("godot"));
+	// Tear down the reflection singletons exposed via the `godot` global. Only
+	// remove the named global if it still points to our singleton: a project
+	// autoload could have overwritten the `godot` entry, and we must not clobber it.
+	if (godot_namespace_singleton.is_valid() && named_globals.has(SNAME("godot"))) {
+		const Object *registered = named_globals[SNAME("godot")].get_validated_object();
+		if (registered == godot_namespace_singleton.ptr()) {
+			remove_named_global_constant(SNAME("godot"));
+		}
 	}
 	godot_namespace_singleton.unref();
 	reflection_singleton.unref();

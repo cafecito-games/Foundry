@@ -34,7 +34,9 @@ Ref<Script> GDScriptReflection::_resolve_script(const Variant &p_target) {
 	if (p_target.get_type() != Variant::OBJECT) {
 		return Ref<Script>();
 	}
-	Object *object = p_target;
+	// Use the validated object so a freed target yields null instead of a stale
+	// pointer that would be dereferenced below.
+	Object *object = p_target.get_validated_object();
 	if (object == nullptr) {
 		return Ref<Script>();
 	}
