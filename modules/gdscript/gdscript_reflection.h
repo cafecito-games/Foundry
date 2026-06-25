@@ -57,6 +57,11 @@ public:
 	TypedArray<Dictionary> get_properties(const Variant &p_target) const;
 	bool implements_trait(const Variant &p_target, const Variant &p_trait) const;
 
+	// The reified generic type arguments bound onto an instance (e.g. the `int` in `Box[int].new()`),
+	// as container-type descriptor Dictionaries. Empty for a non-generic instance, an instance
+	// created without explicit type arguments, or a non-GDScript / non-instance target.
+	TypedArray<Dictionary> get_type_arguments(const Variant &p_target) const;
+
 	// Builds a dynamic proxy of trait/abstract type `p_type` whose every contract call
 	// is routed through `p_handler` (invoked as `handler.call(method_name, args)`).
 	// Returns a null Ref (with an error printed) on invalid input. This is the public
