@@ -5643,6 +5643,12 @@ bool GDScriptAnalyzer::type_argument_satisfies_bound(const GDScriptParser::DataT
 	if (p_argument.is_variant()) {
 		return false;
 	}
+	// A trait bound is satisfied nominally: the argument must `use` the trait (directly, transitively,
+	// or through an ancestor), never reach it by inheritance. Route to the dedicated trait check rather
+	// than the derivation walk below, which would always reject a conforming `uses` class.
+	if (p_bound.kind == GDScriptParser::DataType::CLASS && p_bound.class_type != nullptr && p_bound.class_type->is_trait) {
+		return type_satisfies_trait(p_argument, p_bound);
+	}
 	// A generic bound (e.g. `List[int]`) must be matched invariantly in its type arguments, which the
 	// general compatibility walk enforces along the inheritance chain; nominal derivation alone would
 	// wrongly accept a `Stack[String]`. Plain (unspecialized) bounds keep the cheaper derivation check.
@@ -5660,6 +5666,26 @@ bool GDScriptAnalyzer::class_satisfies_trait_base(GDScriptParser::ClassNode *p_c
 		return true;
 	}
 	return datatype_derives_from_datatype(p_class->base_type, p_trait->base_type);
+}
+
+bool GDScriptAnalyzer::type_satisfies_trait(const GDScriptParser::DataType &p_argument, const GDScriptParser::DataType &p_trait_bound) {
+	// Trait conformance is nominal: the argument (or any ancestor) must declare the trait via `uses`,
+	// so every class along the inheritance chain needs its `resolved_traits` populated before the shared
+	// conformance walk inspects it. This check can run mid-inheritance-resolution (e.g. a subclass that
+	// `extends Box[Sword]`), before the trait-use pass has reached each ancestor, so resolve each one
+	// here. Resolving is idempotent; a class already mid-resolution is skipped to avoid a spurious cyclic
+	// error and gets populated by the in-flight pass anyway.
+	HashSet<GDScriptParser::ClassNode *> visited;
+	for (GDScriptParser::ClassNode *ancestor = p_argument.class_type; ancestor != nullptr && !visited.has(ancestor);) {
+		visited.insert(ancestor);
+		if (!ancestor->resolving_trait_uses) {
+			resolve_trait_uses(ancestor);
+		}
+		ancestor = ancestor->base_type.kind == GDScriptParser::DataType::CLASS ? ancestor->base_type.class_type : nullptr;
+	}
+	// Reuse the shared conformance machinery (`_class_has_trait`, reached through `is_type_compatible`),
+	// which walks the inheritance chain and also accounts for externally scripted trait uses.
+	return is_type_compatible(p_trait_bound, p_argument, false);
 }
 
 Error GDScriptAnalyzer::resolve_trait_uses(GDScriptParser::ClassNode *p_class, const GDScriptParser::Node *p_source) {
