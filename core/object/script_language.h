@@ -275,6 +275,11 @@ public:
 
 	void get_core_type_words(List<String> *p_core_type_words) const;
 	virtual Vector<String> get_reserved_words() const = 0;
+	// Names this language registers as built-in named global constants (e.g. an engine
+	// namespace) that must not be shadowed by a user autoload. Distinct from reserved
+	// words: these are valid identifiers, but reserving them keeps the language's own
+	// globals reachable. Editor autoload validation rejects names reported here.
+	virtual Vector<String> get_reserved_global_names() const { return Vector<String>(); }
 	virtual bool is_control_flow_keyword(const String &p_string) const = 0;
 	virtual Vector<String> get_comment_delimiters() const = 0;
 	virtual Vector<String> get_doc_comment_delimiters() const = 0;

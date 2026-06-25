@@ -692,6 +692,7 @@ public:
 
 	/* EDITOR FUNCTIONS */
 	virtual Vector<String> get_reserved_words() const override;
+	virtual Vector<String> get_reserved_global_names() const override;
 	virtual bool is_control_flow_keyword(const String &p_keywords) const override;
 	virtual Vector<String> get_comment_delimiters() const override;
 	virtual Vector<String> get_doc_comment_delimiters() const override;

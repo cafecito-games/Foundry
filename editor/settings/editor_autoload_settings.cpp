@@ -145,6 +145,17 @@ bool EditorAutoloadSettings::_autoload_name_is_valid(const String &p_name, Strin
 				return false;
 			}
 		}
+		// A language may register built-in named global constants (e.g. the `godot`
+		// reflection namespace) that an autoload of the same name would silently shadow.
+		for (const String &reserved : ScriptServer::get_language(i)->get_reserved_global_names()) {
+			if (reserved == p_name) {
+				if (r_error) {
+					*r_error = TTR("Must not collide with a reserved engine namespace name.");
+				}
+
+				return false;
+			}
+		}
 	}
 
 	return true;
