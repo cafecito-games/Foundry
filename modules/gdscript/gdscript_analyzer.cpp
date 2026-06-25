@@ -4654,8 +4654,21 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				GDScriptParser::IdentifierNode *base_identifier = static_cast<GDScriptParser::IdentifierNode *>(subscript->base);
 				const StringName &base_name = base_identifier->name;
 				// A local variable or parameter named like the method shadows it, so `name[...]()` is
-				// an index call, not a generic application. The identifier carries its enclosing suite.
-				const bool shadowed_by_local = base_identifier->suite != nullptr && base_identifier->suite->has_local(base_name);
+				// an index call, not a generic application. The parser records the binding the name
+				// resolved to at this position, so this stays correctly scoped (a local declared later
+				// in the block does not shadow an earlier call).
+				bool shadowed_by_local = false;
+				switch (base_identifier->source) {
+					case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+					case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+					case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+					case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+					case GDScriptParser::IdentifierNode::LOCAL_BIND:
+						shadowed_by_local = true;
+						break;
+					default:
+						break;
+				}
 				if (!shadowed_by_local) {
 					for (GDScriptParser::ClassNode *lookup_class = parser->current_class; lookup_class != nullptr && generic_method == nullptr; lookup_class = lookup_class->base_type.class_type) {
 						if (lookup_class->has_member(base_name)) {

@@ -933,6 +933,31 @@ TEST_CASE("[Modules][GDScript] Analyzer treats a shadowed generic-method name as
 	CHECK(found_expression_error);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer applies a generic method before a later same-named local") {
+	GDScriptParser parser;
+	// `gen[int](1)` precedes the local `gen`, so the name still resolves to the generic method at
+	// that position; a local declared later in the block must not shadow it retroactively.
+	const String source =
+			"func gen[T](v: T) -> T:\n"
+			"\treturn v\n"
+			"func test() -> void:\n"
+			"\tvar a := gen[int](1)\n"
+			"\tprint(a)\n"
+			"\tvar gen := [10]\n"
+			"\tprint(gen)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *a = generic_find_local_variable(test, "a");
+	REQUIRE(a != nullptr);
+	CHECK(a->get_datatype().builtin_type == Variant::INT);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer enforces a body-only method bound regardless of source order") {
 	GDScriptParser parser;
 	// `T: RefCounted` appears only in the body of `use_t`, which is declared after its caller. The
