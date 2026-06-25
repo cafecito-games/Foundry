@@ -51,6 +51,27 @@ bool is_global_utility_call(const StringName &p_name) {
 using DataType = GDScriptParser::DataType;
 using Node = GDScriptParser::Node;
 
+// Array methods that validate a value argument against the element type: on a
+// typed array the argument is coerced to the element type before the comparison
+// (`Array[int].has(1.2)` coerces `1.2` to `1`), so the call is only
+// behavior-preserving when the argument already has the element type. The value
+// being validated is always the first argument.
+//
+// `bsearch_custom` is excluded: it takes a `Callable` comparator and a value, and
+// its semantics under typing are not modeled here, so it keeps bailing.
+bool is_value_validating_array_method(const StringName &p_name) {
+	static const char *methods[] = {
+		"has", "find", "rfind", "count", "erase", "bsearch",
+		nullptr
+	};
+	for (int i = 0; methods[i] != nullptr; i++) {
+		if (p_name == StringName(methods[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // Array methods that are read-only or only remove/reorder existing elements, so
 // they never introduce a new element type and leave the program's observable
 // behavior unchanged once the array is typed. Methods that take a `Callable`
@@ -65,9 +86,11 @@ using Node = GDScriptParser::Node;
 //   - typedness observers (`is_typed`, `get_typed_builtin`, `get_typed_class_name`,
 //     `get_typed_script`, `is_same_typed`) report whether the array carries a
 //     type; typing it would flip their results.
-//   - value-validating reads (`has`, `find`, `rfind`, `count`, `erase`,
-//     `bsearch`, `bsearch_custom`) coerce their value argument to the element
-//     type on a typed array, so e.g. `[1].has(1.2)` flips from false to true.
+//   - `bsearch_custom` takes a `Callable` comparator alongside the value; its
+//     behavior under typing is not modeled, so it bails. The plain
+//     value-validating reads (`has`, `find`, `rfind`, `count`, `erase`,
+//     `bsearch`) are instead handled precisely via `is_value_validating_array_method`,
+//     which validates the coerced argument against the element type.
 //   - copy-returning methods (`duplicate`, `duplicate_deep`, `slice`, `filter`)
 //     carry the typed flag onto the returned array; an alias of that copy would
 //     reject a later mismatched element after typing. `map`/`reduce` return an
@@ -87,6 +110,46 @@ bool is_safe_readonly_array_method(const StringName &p_name) {
 		}
 	}
 	return false;
+}
+
+// Computes the builtin type a compound indexed write `container[key] op= value`
+// stores back, modeling the runtime: the stored type is the result of the
+// `Variant` operator applied to the current element type and the value type, not
+// merely the value's type (e.g. `int *= float` stores a float). Both operands
+// must be concrete builtin types and the operator must have a defined result for
+// that pair; otherwise the result is unknowable and inference must bail.
+//
+// `r_resolved` is set false when the result cannot be determined (a non-builtin
+// operand or an operator with no defined return type for the pair), in which case
+// the returned `DataType` is meaningless and the caller must skip conservatively.
+DataType compound_write_result_type(Variant::Operator p_op, const DataType &p_element, const DataType &p_value, bool &r_resolved) {
+	r_resolved = false;
+	DataType result;
+	if (p_op == Variant::OP_MAX) {
+		return result;
+	}
+	if (p_element.kind != DataType::BUILTIN || p_value.kind != DataType::BUILTIN) {
+		return result;
+	}
+	const Variant::Type element_builtin = p_element.builtin_type;
+	const Variant::Type value_builtin = p_value.builtin_type;
+	if (element_builtin == Variant::NIL || value_builtin == Variant::NIL) {
+		return result;
+	}
+	// A valid operator evaluator must exist for the pair; otherwise the operation
+	// would error at runtime and its result type is undefined.
+	if (Variant::get_validated_operator_evaluator(p_op, element_builtin, value_builtin) == nullptr) {
+		return result;
+	}
+	const Variant::Type return_builtin = Variant::get_operator_return_type(p_op, element_builtin, value_builtin);
+	if (return_builtin == Variant::NIL) {
+		return result;
+	}
+	result.type_source = DataType::ANNOTATED_INFERRED;
+	result.kind = DataType::BUILTIN;
+	result.builtin_type = return_builtin;
+	r_resolved = true;
+	return result;
 }
 
 // True when `p_expr` is a plain identifier that resolves to `p_decl`, whether as
@@ -214,6 +277,61 @@ public:
 
 	bool has_element = false;
 	DataType element_type;
+
+	// Reads that coerce a value argument to the element type, and compound element
+	// writes whose stored type depends on the element type, can only be validated
+	// once the element type is known. Because the scan is flow-insensitive they are
+	// recorded here and checked against the final accumulated element type in
+	// `finalize()`, after the whole body has been walked.
+	struct PendingValidation {
+		DataType argument; // The value coerced to the element type by the read.
+	};
+	struct PendingCompoundWrite {
+		Variant::Operator op = Variant::OP_MAX;
+		DataType value; // The right-hand operand of `element op= value`.
+	};
+	Vector<PendingValidation> pending_validations;
+	Vector<PendingCompoundWrite> pending_compound_writes;
+
+	// Resolves the deferred validations and compound writes against the final
+	// element type. Must be called once after the whole body has been scanned and
+	// before the result is read. When no element type was accumulated the container
+	// is never typed, so the deferred operations run on a Variant element exactly as
+	// before and need no validation.
+	void finalize() {
+		if (bailed || !has_element) {
+			return;
+		}
+		for (const PendingValidation &validation : pending_validations) {
+			DataType argument = validation.argument;
+			argument.is_constant = false;
+			String rendered;
+			if (!GDScriptRefactorTypes::render_annotatable_type(argument, rendered)) {
+				bail(GDScriptContainerInference::UNPROVABLE,
+						"a value-validating read coerces an argument whose type cannot be proven to match the element type");
+				return;
+			}
+			if (rendered != element_rendered) {
+				bail(GDScriptContainerInference::UNPROVABLE,
+						vformat("a value-validating read coerces a %s argument to the %s element type", rendered, element_rendered));
+				return;
+			}
+		}
+		for (const PendingCompoundWrite &write : pending_compound_writes) {
+			bool resolved = false;
+			const DataType stored = compound_write_result_type(write.op, element_type, write.value, resolved);
+			if (!resolved) {
+				bail(GDScriptContainerInference::UNPROVABLE, "a compound element write stores a value whose type cannot be proven");
+				return;
+			}
+			// The stored type is fed through the element accumulator: it either matches
+			// (behavior-preserving) or diverges into a MIXED skip.
+			contribute_element(stored);
+			if (bailed) {
+				return;
+			}
+		}
+	}
 
 	void contribute_from_array_value(const GDScriptParser::ExpressionNode *p_value) {
 		if (bailed || p_value == nullptr) {
@@ -976,10 +1094,13 @@ private:
 					}
 				} else {
 					// `our_var[index] op= value` stores `typeof(old_element op value)`,
-					// which can differ from `typeof(value)` even when the value matches
-					// the element type (e.g. `**=` can widen int to float), so the
-					// result type is not safely knowable here. Skip conservatively.
-					bail(GDScriptContainerInference::UNPROVABLE, "an array element is mutated by a compound assignment");
+					// which can differ from `typeof(value)` (e.g. `int *= float` stores a
+					// float). The stored type depends on the element type, so the check is
+					// deferred to `finalize()` once the element type is known.
+					PendingCompoundWrite write;
+					write.op = p_assignment->variant_op;
+					write.value = p_assignment->assigned_value != nullptr ? p_assignment->assigned_value->get_datatype() : DataType();
+					pending_compound_writes.push_back(write);
 				}
 				scan_value(subscript->index);
 				scan_value(p_assignment->assigned_value);
@@ -1005,6 +1126,16 @@ private:
 				contribute_from_array_value(p_call->arguments[0]);
 			} else {
 				bail(GDScriptContainerInference::UNPROVABLE, vformat("'%s' is called with an unexpected number of arguments", String(p_method)));
+			}
+		} else if (is_value_validating_array_method(p_method)) {
+			// `has`/`find`/`erase`/... coerce their value argument to the element type
+			// on a typed array, so the call is behavior-preserving only when that
+			// argument already has the element type. Defer the check to `finalize()`,
+			// where the accumulated element type is known.
+			if (p_call->arguments.size() >= 1 && p_call->arguments[0] != nullptr) {
+				PendingValidation validation;
+				validation.argument = p_call->arguments[0]->get_datatype();
+				pending_validations.push_back(validation);
 			}
 		} else if (!is_safe_readonly_array_method(p_method)) {
 			bail(GDScriptContainerInference::UNPROVABLE, vformat("the array is used through an unmodelled method '%s'", String(p_method)));
@@ -1042,9 +1173,11 @@ private:
 //   - typedness observers (`is_typed`, `is_typed_key`, `is_typed_value`,
 //     `get_typed_*`, `is_same_typed*`) report whether the dictionary carries a
 //     type; typing it would flip their results.
-//   - value-validating reads (`has`, `has_all`, `erase`, `get`, `find_key`,
+//   - value-validating reads on the value side (`has_all`, `get`, `find_key`,
 //     `recursive_equal`) coerce their key/value argument to the dictionary's
 //     type on a typed dictionary, so e.g. `{1: 0}.has(1.2)` flips false to true.
+//     The key-validating reads `has`/`erase` are instead handled precisely in
+//     `scan_method_on_var`, which validates the coerced key against the key type.
 //   - copy-returning methods (`duplicate`, `duplicate_deep`, `merged`) carry the
 //     typed flag onto the returned dictionary; an alias of that copy would reject
 //     a later mismatched entry after typing. `keys`/`values` likewise return a
@@ -1082,6 +1215,59 @@ public:
 	bool has_value = false;
 	DataType key_type;
 	DataType value_type;
+
+	// Deferred key validations (from `has`/`erase`) and compound value writes, each
+	// checked against the final key/value type in `finalize()`. See the array
+	// walker for the flow-insensitive rationale.
+	struct PendingKeyValidation {
+		DataType argument; // The key coerced to the key type by the read.
+	};
+	struct PendingCompoundWrite {
+		Variant::Operator op = Variant::OP_MAX;
+		DataType value; // The right-hand operand of `value op= operand`.
+	};
+	Vector<PendingKeyValidation> pending_key_validations;
+	Vector<PendingCompoundWrite> pending_compound_writes;
+
+	// Resolves the deferred key validations and compound writes once both element
+	// types are known. When either type was never accumulated the dictionary is left
+	// bare, so the deferred operations run on a Variant entry exactly as before.
+	void finalize() {
+		if (bailed) {
+			return;
+		}
+		if (has_key) {
+			for (const PendingKeyValidation &validation : pending_key_validations) {
+				DataType argument = validation.argument;
+				argument.is_constant = false;
+				String rendered;
+				if (!GDScriptRefactorTypes::render_annotatable_type(argument, rendered)) {
+					bail(GDScriptContainerInference::UNPROVABLE,
+							"a value-validating read coerces a key whose type cannot be proven to match the key type");
+					return;
+				}
+				if (rendered != key_rendered) {
+					bail(GDScriptContainerInference::UNPROVABLE,
+							vformat("a value-validating read coerces a %s key to the %s key type", rendered, key_rendered));
+					return;
+				}
+			}
+		}
+		if (has_value) {
+			for (const PendingCompoundWrite &write : pending_compound_writes) {
+				bool resolved = false;
+				const DataType stored = compound_write_result_type(write.op, value_type, write.value, resolved);
+				if (!resolved) {
+					bail(GDScriptContainerInference::UNPROVABLE, "a compound value write stores a value whose type cannot be proven");
+					return;
+				}
+				contribute_value(stored);
+				if (bailed) {
+					return;
+				}
+			}
+		}
+	}
 
 	void contribute_from_dictionary_value(const GDScriptParser::ExpressionNode *p_value) {
 		if (bailed || p_value == nullptr) {
@@ -1847,10 +2033,17 @@ private:
 						contribute_value(p_assignment->assigned_value->get_datatype());
 					}
 				} else {
-					// `our_var[key] op= value` stores `typeof(old_value op value)`, which
-					// can differ from `typeof(value)` even when types match (e.g. `**=`
-					// can widen int to float), so the value type is not safely knowable.
-					bail(GDScriptContainerInference::UNPROVABLE, "a dictionary value is mutated by a compound assignment");
+					// `our_var[key] op= value` writes key `typeof(key)` and stores value
+					// `typeof(old_value op value)`. The key is contributed verbatim; the
+					// stored value type depends on the existing value type, so it is
+					// deferred to `finalize()` once that type is known.
+					if (subscript->index != nullptr) {
+						contribute_key(subscript->index->get_datatype());
+					}
+					PendingCompoundWrite write;
+					write.op = p_assignment->variant_op;
+					write.value = p_assignment->assigned_value != nullptr ? p_assignment->assigned_value->get_datatype() : DataType();
+					pending_compound_writes.push_back(write);
 				}
 				scan_value(subscript->index);
 				scan_value(p_assignment->assigned_value);
@@ -1877,6 +2070,15 @@ private:
 				contribute_from_dictionary_value(p_call->arguments[0]);
 			} else {
 				bail(GDScriptContainerInference::UNPROVABLE, vformat("'%s' is called with an unexpected number of arguments", String(p_method)));
+			}
+		} else if (p_method == StringName("has") || p_method == StringName("erase")) {
+			// `has(key)`/`erase(key)` coerce their key argument to the key type on a
+			// typed dictionary, so the call is behavior-preserving only when that key
+			// already has the key type. Defer the check to `finalize()`.
+			if (p_call->arguments.size() >= 1 && p_call->arguments[0] != nullptr) {
+				PendingKeyValidation validation;
+				validation.argument = p_call->arguments[0]->get_datatype();
+				pending_key_validations.push_back(validation);
 			}
 		} else if (!is_safe_readonly_dictionary_method(p_method)) {
 			bail(GDScriptContainerInference::UNPROVABLE, vformat("the dictionary is used through an unmodelled method '%s'", String(p_method)));
@@ -2043,6 +2245,7 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_local_array
 	ElementInferenceWalker walker(p_decl);
 	walker.contribute_from_array_value(p_decl->initializer);
 	walker.scan_suite(p_function_body);
+	walker.finalize();
 
 	if (walker.bailed) {
 		result.outcome = walker.bail_outcome;
@@ -2089,6 +2292,7 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_local_dicti
 	DictionaryInferenceWalker walker(p_decl);
 	walker.contribute_from_dictionary_value(p_decl->initializer);
 	walker.scan_suite(p_function_body);
+	walker.finalize();
 
 	if (walker.bailed) {
 		result.outcome = walker.bail_outcome;
@@ -2148,6 +2352,7 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_arra
 	// still leak the instance (e.g. `[register(self)]`); scan them for escapes.
 	walker.scan_initializer(p_member->initializer);
 	walk_class_methods(walker, p_class, p_member);
+	walker.finalize();
 
 	if (walker.bailed) {
 		result.outcome = walker.bail_outcome;
@@ -2199,6 +2404,7 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dict
 	// still leak the instance (e.g. `{0: register(self)}`); scan them for escapes.
 	walker.scan_initializer(p_member->initializer);
 	walk_class_methods(walker, p_class, p_member);
+	walker.finalize();
 
 	if (walker.bailed) {
 		result.outcome = walker.bail_outcome;

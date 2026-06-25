@@ -206,12 +206,29 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
 
-	TEST_CASE("A compound indexed write forces a conservative skip") {
-		// `slots[0] **= -1` stores typeof(int ** int), which can be a float, not
-		// the typeof(-1) the value alone suggests, so the element type is unknown.
-		InferenceFixture fixture("func f():\n\tvar slots = [2, 3]\n\tslots[0] **= -1\n");
+	TEST_CASE("A type-preserving compound indexed write contributes its element type") {
+		// `total[0] += 5` stores typeof(int + int) == int, the same as the existing
+		// element type, so the operation is behavior-preserving once typed.
+		InferenceFixture fixture("func f():\n\tvar total = [2, 3]\n\ttotal[0] += 5\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "total");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("A widening compound indexed write forces a conservative skip") {
+		// `slots[0] *= 1.5` stores typeof(int * float) == float, which is not the
+		// int element type, so typing as Array[int] would change the stored type.
+		InferenceFixture fixture("func f():\n\tvar slots = [2, 3]\n\tslots[0] *= 1.5\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "slots");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+		CHECK_EQ(result.outcome, GDScriptContainerInference::MIXED);
+	}
+
+	TEST_CASE("A compound indexed write on an empty array yields no evidence") {
+		// With no stored element the array is never typed, so the compound write runs
+		// on a Variant element exactly as before; there is nothing to validate.
+		InferenceFixture fixture("func f():\n\tvar slots = []\n\tslots[0] += 1\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "slots");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::NO_EVIDENCE);
 	}
 
 	TEST_CASE("append_array merges the element type of the other array literal") {
@@ -281,10 +298,42 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
 	}
 
-	TEST_CASE("A value-validating read forces a conservative skip") {
+	TEST_CASE("A value-validating read with a coercible argument forces a conservative skip") {
 		// `[1].has(1.2)` is false, but `Array[int].has(1.2)` coerces 1.2 to 1 and
 		// returns true, so typing would change behavior; inference must not.
 		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar found = items.has(1.2)\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+	}
+
+	TEST_CASE("A value-validating read whose argument matches the element type does not block inference") {
+		// `Array[int].has(2)` coerces 2 to 2 (identity), so the read behaves
+		// identically before and after typing.
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar found = items.has(2)\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("find and erase with a matching argument do not block inference") {
+		InferenceFixture fixture("func f():\n\tvar items = [1, 2]\n\tvar i = items.find(2)\n\titems.erase(1)\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("A value-validating read on an empty array yields no evidence") {
+		// With no stored element the array is never typed, so the read coerces against
+		// no element type; there is nothing to validate and nothing to infer.
+		InferenceFixture fixture("func f():\n\tvar items = []\n\tvar found = items.has(1)\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::NO_EVIDENCE);
+	}
+
+	TEST_CASE("A value-validating read validated before the element is stored still skips on mismatch") {
+		// Flow-insensitive: the float argument must be validated against the int
+		// element even though the read textually precedes the append.
+		InferenceFixture fixture("func f():\n\tvar items = []\n\tvar found = items.has(1.2)\n\titems.append(1)\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
 	}
@@ -366,18 +415,38 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
-	TEST_CASE("A compound indexed write forces a conservative skip") {
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 2}\n\td[\"a\"] **= -1\n");
+	TEST_CASE("A type-preserving compound indexed write contributes its value type") {
+		// `d["a"] += 5` stores typeof(int + int) == int, matching the existing value
+		// type, so the operation is behavior-preserving once typed.
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 2}\n\td[\"a\"] += 5\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
 	}
 
-	TEST_CASE("A value-validating read forces a conservative skip") {
+	TEST_CASE("A widening compound indexed write forces a conservative skip") {
+		// `d["a"] *= 1.5` stores typeof(int * float) == float, not the int value
+		// type, so typing as Dictionary[String, int] would change the stored type.
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 2}\n\td[\"a\"] *= 1.5\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::MIXED);
+	}
+
+	TEST_CASE("A value-validating read with a coercible argument forces a conservative skip") {
 		// `{1: 0}.has(1.2)` is false, but `Dictionary[int, int].has(1.2)` coerces
 		// 1.2 to 1 and returns true, so typing would change behavior.
 		InferenceFixture fixture("func f():\n\tvar d = {1: 0}\n\tvar found = d.has(1.2)\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+	}
+
+	TEST_CASE("has and erase with a matching key do not block inference") {
+		// The key arguments coerce to themselves on a Dictionary[int, int], so these
+		// validating reads behave identically before and after typing.
+		InferenceFixture fixture("func f():\n\tvar d = {1: 0}\n\tvar found = d.has(2)\n\td.erase(3)\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[int, int]");
 	}
 
 	TEST_CASE("Observing the dictionary's typedness forces a conservative skip") {
