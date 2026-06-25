@@ -44,7 +44,8 @@ void GDScriptProxyInstance::_init_property_store() {
 
 	// `T`'s declared `var`s carry PROPERTY_USAGE_SCRIPT_VARIABLE; category/group
 	// headers and other entries do not, so they are skipped. Each slot defaults to
-	// the zero value of its declared type.
+	// the zero value of its declared type, matching how GDScript initializes
+	// members (typed containers get a correctly-typed empty value).
 	List<PropertyInfo> properties;
 	proxy_script->get_script_property_list(&properties);
 	for (const PropertyInfo &property : properties) {
@@ -55,10 +56,25 @@ void GDScriptProxyInstance::_init_property_store() {
 			continue;
 		}
 
+		const GDScriptDataType &data_type = proxy_script->get_member_type(property.name);
 		Variant default_value;
-		if (property.type != Variant::NIL && property.type != Variant::OBJECT) {
-			Callable::CallError construct_error;
-			Variant::construct(property.type, default_value, nullptr, 0, construct_error);
+		// Non-builtin types (objects, etc.) default to `null`; builtins to their
+		// zero value. Mirrors GDScript::_static_default_init.
+		if (data_type.kind == GDScriptDataType::BUILTIN) {
+			if (data_type.builtin_type == Variant::ARRAY && data_type.has_container_element_type(0)) {
+				Array typed_array;
+				typed_array.set_typed(data_type.get_container_element_type(0).to_container_type());
+				default_value = typed_array;
+			} else if (data_type.builtin_type == Variant::DICTIONARY && data_type.has_container_element_types()) {
+				Dictionary typed_dictionary;
+				typed_dictionary.set_typed(
+						data_type.get_container_element_type_or_variant(0).to_container_type(),
+						data_type.get_container_element_type_or_variant(1).to_container_type());
+				default_value = typed_dictionary;
+			} else if (data_type.builtin_type != Variant::NIL) {
+				Callable::CallError construct_error;
+				Variant::construct(data_type.builtin_type, default_value, nullptr, 0, construct_error);
+			}
 		}
 		property_store.insert(property.name, default_value);
 		property_types.insert(property.name, property.type);

@@ -373,6 +373,8 @@ TEST_CASE("[Modules][GDScript][Proxy] Auto-backing property store") {
 			"\tvar count: int\n"
 			"\tvar ratio: float\n"
 			"\tvar items: Array\n"
+			"\tvar tags: Array[int]\n"
+			"\tvar scores: Dictionary[String, int]\n"
 			"\t@abstract func use() -> void\n"
 			"\n"
 			"class Recorder:\n"
@@ -406,6 +408,20 @@ TEST_CASE("[Modules][GDScript][Proxy] Auto-backing property store") {
 		CHECK(value == Variant(0.0));
 		CHECK(instance->get("items", value));
 		CHECK(value.get_type() == Variant::ARRAY);
+
+		// Typed containers default to a correctly-typed empty value.
+		CHECK(instance->get("tags", value));
+		REQUIRE(value.get_type() == Variant::ARRAY);
+		Array tags = value;
+		CHECK(tags.is_typed());
+		CHECK(tags.get_typed_builtin() == Variant::INT);
+
+		CHECK(instance->get("scores", value));
+		REQUIRE(value.get_type() == Variant::DICTIONARY);
+		Dictionary scores = value;
+		CHECK(scores.is_typed_key());
+		CHECK(scores.get_typed_key_builtin() == Variant::STRING);
+		CHECK(scores.get_typed_value_builtin() == Variant::INT);
 	}
 
 	// set()/get() round-trip through the backing store.
