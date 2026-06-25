@@ -540,4 +540,75 @@ TEST_CASE("[Modules][GDScript][Proxy] is / trait conformance") {
 	CHECK(reaches_base);
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
+	ScopedProxyLanguage language;
+
+	const char *source =
+			"@abstract class Service:\n"
+			"\t@abstract func get_count() -> int\n"
+			"\t@abstract func get_ratio() -> float\n"
+			"\t@abstract func get_label() -> String\n"
+			"\t@abstract func do_nothing() -> void\n"
+			"\t@abstract func get_anything() -> Variant\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar stub_return: Variant = null\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn stub_return\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> service = get_subclass(script, "Service");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(service.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(service, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+	ScriptInstance *instance = proxy->get_script_instance();
+
+	const auto call = [&](const char *p_method) {
+		Callable::CallError error;
+		Variant result = instance->callp(p_method, nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		return result;
+	};
+
+	// Exact-typed return passes through.
+	recorder->set("stub_return", 7);
+	CHECK(call("get_count") == Variant(7));
+
+	// int -> float implicit coercion.
+	recorder->set("stub_return", 3);
+	Variant ratio = call("get_ratio");
+	CHECK(ratio.get_type() == Variant::FLOAT);
+	CHECK(ratio == Variant(3.0));
+
+	// String return.
+	recorder->set("stub_return", "hi");
+	CHECK(call("get_label") == Variant("hi"));
+
+	// void method ignores whatever the handler returns.
+	recorder->set("stub_return", 999);
+	CHECK(call("do_nothing").get_type() == Variant::NIL);
+
+	// Untyped (Variant) return passes any value through unchanged.
+	recorder->set("stub_return", Vector2(1, 2));
+	CHECK(call("get_anything") == Variant(Vector2(1, 2)));
+
+	// Hard mismatch: a non-convertible value is reported (suppressed here) and
+	// replaced with the declared type's default.
+	recorder->set("stub_return", "not a number");
+	{
+		ERR_PRINT_OFF;
+		Variant coerced = call("get_count");
+		ERR_PRINT_ON;
+		CHECK(coerced.get_type() == Variant::INT);
+		CHECK(coerced == Variant(0));
+	}
+}
+
 } // namespace GDScriptTests
