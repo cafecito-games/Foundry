@@ -1536,9 +1536,15 @@ void GDScript::clear() {
 		// release it to break cross-script reference cycles, mirroring the data_type handling above.
 		E.value.type_argument_binding.fixed.script_type_ref = Ref<Script>();
 	}
+	for (KeyValue<GDScript *, Vector<TypeArgumentBinding>> &E : type_parameter_bindings_by_ancestor) {
+		for (TypeArgumentBinding &binding : E.value) {
+			binding.fixed.script_type_ref = Ref<Script>();
+		}
+	}
 
 	member_indices.clear();
 	member_type_argument_bindings.clear();
+	type_parameter_bindings_by_ancestor.clear();
 	static_variables.clear();
 	static_variables_indices.clear();
 	script_trait_list.clear();
@@ -2349,7 +2355,13 @@ void GDScriptLanguage::finish() {
 				// argument; release it here to break cross-script cycles, mirroring data_type above.
 				E.value.type_argument_binding.fixed.script_type_ref = Ref<Script>();
 			}
+			for (KeyValue<GDScript *, Vector<GDScript::TypeArgumentBinding>> &E : scr->type_parameter_bindings_by_ancestor) {
+				for (GDScript::TypeArgumentBinding &binding : E.value) {
+					binding.fixed.script_type_ref = Ref<Script>();
+				}
+			}
 			scr->member_type_argument_bindings.clear();
+			scr->type_parameter_bindings_by_ancestor.clear();
 
 			// Clear backup for scripts that could slip out of the cyclic reference
 			// check

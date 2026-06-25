@@ -3103,6 +3103,25 @@ Error GDScriptCompiler::_parse_setter_getter(GDScript *p_script, const GDScriptP
 // initializes method RPC info for its base classes first, then for itself, then for inner classes.
 // WARNING: This function cannot initiate compilation of other classes, or it will result in
 // cyclic dependency issues.
+void GDScriptCompiler::_specialize_type_argument_binding(GDScript::TypeArgumentBinding &r_binding, const Vector<GDScriptParser::DataType> &p_base_specialization, GDScript *p_owner) {
+	if (r_binding.kind != GDScript::TypeArgumentBinding::OPEN) {
+		return; // FIXED stays fixed; NONE is not a type-parameter binding.
+	}
+	const int base_ordinal = r_binding.leaf_ordinal; // Open relative to the base's parameters.
+	if (base_ordinal < 0 || base_ordinal >= p_base_specialization.size()) {
+		return; // Base not specialized at this ordinal (e.g. raw `extends Base`); leave open.
+	}
+	const GDScriptParser::DataType &argument = p_base_specialization[base_ordinal];
+	if (argument.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
+			argument.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
+		r_binding.leaf_ordinal = argument.type_parameter_index; // Forwarded to this class's parameter.
+	} else {
+		r_binding.kind = GDScript::TypeArgumentBinding::FIXED;
+		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, false);
+		r_binding.leaf_ordinal = -1;
+	}
+}
+
 Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptParser::ClassNode *p_class, bool p_keep_state) {
 	if (parsed_classes.has(p_script)) {
 		return OK;
@@ -3246,22 +3265,16 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 			// reifies against the correct argument rather than blindly indexing the leaf's own.
 			const Vector<GDScriptParser::DataType> &base_specialization = p_class->base_type.type_arguments;
 			for (KeyValue<StringName, GDScript::MemberInfo> &E : p_script->member_indices) {
-				GDScript::TypeArgumentBinding &binding = E.value.type_argument_binding;
-				if (binding.kind != GDScript::TypeArgumentBinding::OPEN) {
-					continue; // FIXED stays fixed; NONE is not a type-parameter member.
-				}
-				const int base_ordinal = binding.leaf_ordinal; // Open relative to the base's parameters.
-				if (base_ordinal < 0 || base_ordinal >= base_specialization.size()) {
-					continue; // Base not specialized at this ordinal (e.g. raw `extends Base`); leave open.
-				}
-				const GDScriptParser::DataType &argument = base_specialization[base_ordinal];
-				if (argument.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
-						argument.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
-					binding.leaf_ordinal = argument.type_parameter_index; // Forwarded to this class's parameter.
-				} else {
-					binding.kind = GDScript::TypeArgumentBinding::FIXED;
-					binding.fixed = _gdtype_from_datatype(argument, p_script, false);
-					binding.leaf_ordinal = -1;
+				_specialize_type_argument_binding(E.value.type_argument_binding, base_specialization, p_script);
+			}
+
+			// Re-specialize the base's per-ancestor type-parameter table one level through this class's
+			// `extends Base[args]` as well, so `create_proxy[T]` (compiled once in an ancestor) can
+			// resolve that ancestor's `T` for a derived instance whose base was specialized.
+			p_script->type_parameter_bindings_by_ancestor = base->type_parameter_bindings_by_ancestor;
+			for (KeyValue<GDScript *, Vector<GDScript::TypeArgumentBinding>> &ancestor_entry : p_script->type_parameter_bindings_by_ancestor) {
+				for (GDScript::TypeArgumentBinding &binding : ancestor_entry.value) {
+					_specialize_type_argument_binding(binding, base_specialization, p_script);
 				}
 			}
 		} break;
@@ -3303,6 +3316,19 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 			type_parameter.bound = parameter->resolved_bound.to_property_info(String());
 		}
 		p_script->type_parameters.push_back(type_parameter);
+	}
+
+	// This class's own type parameters resolve directly against its instances' reified arguments
+	// (identity OPEN bindings), completing the per-ancestor table so `create_proxy[T]` works both on a
+	// directly-specialized instance (`Mock[Greeter]`) and through an inherited specialization.
+	if (!p_class->type_parameters.is_empty()) {
+		Vector<GDScript::TypeArgumentBinding> own_bindings;
+		own_bindings.resize(p_class->type_parameters.size());
+		for (int i = 0; i < own_bindings.size(); i++) {
+			own_bindings.write[i].kind = GDScript::TypeArgumentBinding::OPEN;
+			own_bindings.write[i].leaf_ordinal = i;
+		}
+		p_script->type_parameter_bindings_by_ancestor[p_script] = own_bindings;
 	}
 
 	// Flatten the applied traits' members into this script alongside the class's own

@@ -148,6 +148,10 @@ class GDScriptCompiler {
 	void _set_error(const String &p_error, const GDScriptParser::Node *p_node);
 
 	GDScriptDataType _gdtype_from_datatype(const GDScriptParser::DataType &p_datatype, GDScript *p_owner, bool p_handle_metatype = true);
+	// Re-resolve a still-open type-argument binding one level through a subclass's `extends Base[args]`
+	// specialization: a forwarded class parameter stays OPEN (remapped ordinal), a concrete argument
+	// becomes FIXED. Used when a subclass inherits a base's member and per-ancestor parameter bindings.
+	void _specialize_type_argument_binding(GDScript::TypeArgumentBinding &r_binding, const Vector<GDScriptParser::DataType> &p_base_specialization, GDScript *p_owner);
 
 	GDScriptCodeGenerator::Address _parse_expression(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression, bool p_root = false, bool p_initializer = false);
 	GDScriptCodeGenerator::Address _parse_match_pattern(CodeGen &codegen, Error &r_error, const GDScriptParser::PatternNode *p_pattern, const GDScriptCodeGenerator::Address &p_value_addr, const GDScriptCodeGenerator::Address &p_type_addr, const GDScriptCodeGenerator::Address &p_previous_test, bool p_is_first, bool p_is_nested);
