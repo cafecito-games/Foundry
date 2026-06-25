@@ -87,6 +87,12 @@ public:
 
 	virtual bool is_placeholder() const { return false; }
 
+	// A synthetic instance reports a script language (and script) but does not
+	// share that language's normal instance memory layout. Code that performs a
+	// language-keyed `static_cast` to the language's concrete instance type (e.g.
+	// "language == GDScript, so this is a GDScriptInstance") must exclude these.
+	virtual bool is_synthetic() const { return false; }
+
 	virtual void property_set_fallback(const StringName &p_name, const Variant &p_value, bool *r_valid);
 	virtual Variant property_get_fallback(const StringName &p_name, bool *r_valid);
 

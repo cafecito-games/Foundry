@@ -208,6 +208,9 @@ TEST_CASE("[Modules][GDScript][Proxy] get_script identity and method list") {
 	REQUIRE(proxy.is_valid());
 
 	CHECK(proxy->get_script_instance()->get_script() == greeter);
+	// Synthetic flag keeps language-keyed casts (e.g. inst_to_dict) from treating
+	// the proxy as a GDScriptInstance.
+	CHECK(proxy->get_script_instance()->is_synthetic());
 
 	List<MethodInfo> methods;
 	proxy->get_script_instance()->get_method_list(&methods);

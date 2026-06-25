@@ -87,6 +87,10 @@ public:
 	virtual Ref<Script> get_script() const override { return proxy_script; }
 	virtual ScriptLanguage *get_language() override;
 
+	// The proxy reports the GDScript language but is not a GDScriptInstance, so
+	// language-keyed casts to GDScriptInstance must skip it (see is_synthetic).
+	virtual bool is_synthetic() const override { return true; }
+
 	GDScriptProxyInstance(Object *p_owner, const Ref<GDScript> &p_script, const Callable &p_handler);
 	virtual ~GDScriptProxyInstance() override;
 };

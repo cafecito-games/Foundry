@@ -255,7 +255,7 @@ struct GDScriptUtilityFunctionsDefinitions {
 		}
 
 		VALIDATE_ARG_CUSTOM(0, Variant::OBJECT,
-				!obj->get_script_instance() || obj->get_script_instance()->get_language() != GDScriptLanguage::get_singleton(),
+				!obj->get_script_instance() || obj->get_script_instance()->get_language() != GDScriptLanguage::get_singleton() || obj->get_script_instance()->is_synthetic(),
 				RTR("Not a script with an instance."));
 
 		GDScriptInstance *inst = static_cast<GDScriptInstance *>(obj->get_script_instance());
