@@ -1236,7 +1236,89 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
-	TEST_CASE("find_candidates reports a wrapped declaration as a counted skip") {
+	TEST_CASE("Add type annotation handles assignment operators on continuation lines") {
+		SUBCASE("var with the `=` on a backslash continuation line") {
+			const String source =
+					"var total \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("const with the `=` on a backslash continuation line") {
+			const String source =
+					"const TOTAL \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 7, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"const TOTAL: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("inferred `:=` on a backslash continuation line drops the colon") {
+			const String source =
+					"var total \\\n"
+					"\t:= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("caret on the continuation line selects the wrapped declaration") {
+			const String source =
+					"var total \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 1, 1, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("spaced inferred `: =` wrapped onto a continuation line drops the colon") {
+			const String source =
+					"var total \\\n"
+					"\t: = 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t = 1 + 2\n");
+		}
+		SUBCASE("spaced inferred `:` then wrapped `=` drops the colon") {
+			const String source =
+					"var total : \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int  \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("comment-only line between the backslash and the wrapped `=`") {
+			const String source =
+					"var total \\\n"
+					"\t# a note\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t# a note\n"
+					"\t= 1 + 2\n");
+		}
+	}
+
+	TEST_CASE("find_candidates annotates a wrapped declaration") {
 		RefactorContext ctx;
 		ctx.path = "user://type_annotation_wrapped_declaration.gd";
 		ctx.source =
@@ -1245,8 +1327,9 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 		REQUIRE_EQ(result.candidates.size(), 1);
-		CHECK_FALSE(result.candidates[0].enabled);
-		CHECK(result.candidates[0].disabled_reason.contains("spans multiple lines"));
+		CHECK(result.candidates[0].enabled);
+		REQUIRE_EQ(result.candidates[0].edits.size(), 1);
+		CHECK_EQ(result.candidates[0].edits[0].new_text, ": int \\\n\t=");
 	}
 
 	TEST_CASE("find_candidates does not scan a bodyless abstract signature into a following member") {
