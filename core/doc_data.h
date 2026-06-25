@@ -718,6 +718,7 @@ public:
 		String experimental_message;
 		bool is_script_doc = false;
 		bool is_trait = false;
+		Vector<String> used_traits;
 		String script_path;
 		bool operator<(const ClassDoc &p_class) const {
 			return name < p_class.name;
@@ -853,6 +854,14 @@ public:
 				doc.is_trait = p_dict["is_trait"];
 			}
 
+			Array used_traits;
+			if (p_dict.has("used_traits")) {
+				used_traits = p_dict["used_traits"];
+			}
+			for (int i = 0; i < used_traits.size(); i++) {
+				doc.used_traits.push_back(used_traits[i]);
+			}
+
 			if (p_dict.has("script_path")) {
 				doc.script_path = p_dict["script_path"];
 			}
@@ -970,6 +979,14 @@ public:
 
 			if (p_doc.is_trait) {
 				dict["is_trait"] = p_doc.is_trait;
+			}
+
+			if (!p_doc.used_traits.is_empty()) {
+				Array used_traits;
+				for (int i = 0; i < p_doc.used_traits.size(); i++) {
+					used_traits.push_back(p_doc.used_traits[i]);
+				}
+				dict["used_traits"] = used_traits;
 			}
 
 			if (!p_doc.script_path.is_empty()) {

@@ -979,7 +979,7 @@ void EditorHelp::_update_doc() {
 
 	_push_title_font();
 
-	class_desc->add_text(TTR("Class:") + " ");
+	class_desc->add_text((cd.is_trait ? TTR("Trait:") : TTR("Class:")) + " ");
 	_add_type_icon(edited_class, theme_cache.doc_title_font_size, "");
 	class_desc->add_text(nbsp);
 
@@ -1022,6 +1022,29 @@ void EditorHelp::_update_doc() {
 			if (!inherits.is_empty()) {
 				class_desc->add_text(" < ");
 			}
+		}
+
+		class_desc->pop(); // color
+		_pop_normal_font();
+	}
+
+	// Direct trait uses.
+	if (!cd.used_traits.is_empty()) {
+		class_desc->add_newline();
+
+		_push_normal_font();
+		class_desc->push_color(theme_cache.title_color);
+		class_desc->add_text(TTR("Uses:") + " ");
+
+		for (int i = 0; i < cd.used_traits.size(); i++) {
+			if (i > 0) {
+				class_desc->add_text(" , ");
+			}
+
+			const String &trait = cd.used_traits[i];
+			_add_type_icon(trait, theme_cache.doc_font_size, "ArrowRight");
+			class_desc->add_text(nbsp); // Otherwise icon borrows hyperlink from `_add_type()`.
+			_add_type(trait);
 		}
 
 		class_desc->pop(); // color

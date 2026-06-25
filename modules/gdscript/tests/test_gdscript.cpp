@@ -2033,6 +2033,73 @@ class PlainInner:
 	CHECK(restored.is_trait);
 }
 
+TEST_CASE("[Modules][GDScript] Docgen records trait uses") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+trait Identified:
+	func id() -> int:
+		return 1
+
+trait Damageable uses Identified:
+	func describe() -> String:
+		return "damage"
+
+class Player:
+	uses Damageable
+)",
+			"user://trait_uses_docgen.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptCompiler::make_scripts(script.ptr(), root, false);
+	GDScriptDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+
+	DocData::ClassDoc damageable_doc;
+	DocData::ClassDoc player_doc;
+	for (const DocData::ClassDoc &class_doc : docs) {
+		if (class_doc.name.ends_with(".Damageable")) {
+			damageable_doc = class_doc;
+		} else if (class_doc.name.ends_with(".Player")) {
+			player_doc = class_doc;
+		}
+	}
+
+	CHECK(!damageable_doc.name.is_empty());
+	CHECK(!player_doc.name.is_empty());
+	if (damageable_doc.name.is_empty() || player_doc.name.is_empty()) {
+		return;
+	}
+	CHECK_EQ(damageable_doc.used_traits.size(), 1);
+	if (damageable_doc.used_traits.is_empty()) {
+		return;
+	}
+	CHECK(damageable_doc.used_traits[0].ends_with(".Identified"));
+	CHECK_EQ(player_doc.used_traits.size(), 1);
+	if (player_doc.used_traits.is_empty()) {
+		return;
+	}
+	CHECK(player_doc.used_traits[0].ends_with(".Damageable"));
+
+	const DocData::ClassDoc restored = DocData::ClassDoc::from_dict(DocData::ClassDoc::to_dict(player_doc));
+	CHECK_EQ(restored.used_traits.size(), 1);
+	if (restored.used_traits.is_empty()) {
+		return;
+	}
+	CHECK(restored.used_traits[0].ends_with(".Damageable"));
+}
+
 TEST_CASE("[Modules][GDScript] Namespaced global classes can share a local name") {
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();

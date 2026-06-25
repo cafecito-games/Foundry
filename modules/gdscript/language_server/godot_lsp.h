@@ -1327,6 +1327,7 @@ struct DocumentSymbol {
 
 	DocumentUri uri;
 	String script_path;
+	String trait_source;
 
 	/**
 	 * Children of this symbol, e.g. properties of a class.
@@ -1367,6 +1368,9 @@ struct DocumentSymbol {
 		}
 		if (documentation.length()) {
 			markdown.value += marked_documentation(documentation) + "\n\n";
+		}
+		if (trait_source.length()) {
+			markdown.value += "From trait " + trait_source + "\n\n";
 		}
 		if (script_path.length()) {
 			markdown.value += "Defined in [" + script_path + "](" + uri + ")";

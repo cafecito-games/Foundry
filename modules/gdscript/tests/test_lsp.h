@@ -725,6 +725,46 @@ func f():
 			CHECK_EQ(cls.detail, "trait LspGlobalTrait");
 		}
 
+		SUBCASE("Signature help documents inherited flattened trait method provenance") {
+			String path = "res://lsp/trait_signature_help.gd";
+			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
+
+			LSP::SignatureHelp signature_help;
+			Error err = workspace->resolve_signature(pos_in(uri, pos(24, 19)), signature_help);
+			CHECK_EQ(err, OK);
+			if (err != OK) {
+				return;
+			}
+			REQUIRE(signature_help.signatures.size() == 1);
+			if (signature_help.signatures.is_empty()) {
+				return;
+			}
+			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			CHECK_EQ(signature.label, "func describe(amount: int, label: String) -> String");
+			CHECK(signature.documentation.value.contains("From trait Damageable"));
+		}
+
+		SUBCASE("Signature help keeps base members ahead of subclass traits") {
+			String path = "res://lsp/trait_signature_help.gd";
+			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
+
+			LSP::SignatureHelp signature_help;
+			Error err = workspace->resolve_signature(pos_in(uri, pos(25, 31)), signature_help);
+			CHECK_EQ(err, OK);
+			if (err != OK) {
+				return;
+			}
+			REQUIRE(signature_help.signatures.size() == 1);
+			if (signature_help.signatures.is_empty()) {
+				return;
+			}
+			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			CHECK_EQ(signature.label, "func describe_shadow(amount: int) -> int");
+			CHECK_FALSE(signature.documentation.value.contains("From trait ShadowDamageable"));
+		}
+
 		SUBCASE("Documentation is correctly set") {
 			String path = "res://lsp/doc_comments.gd";
 			assert_no_errors_in(path);
