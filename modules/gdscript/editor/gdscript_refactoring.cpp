@@ -65,10 +65,14 @@ struct TypeAnnotationCandidate {
 	RefactorTextEdit edit;
 	// Caret-test span of the declaration this candidate was found at. Used by the
 	// caret-driven path to select the candidate under the caret; the headless
-	// collector ignores it.
+	// collector ignores it. The span opens at (line, caret_span_start). It closes
+	// at (caret_span_end_line, caret_span_end) when caret_span_end_line is set, so
+	// a wrapped (multi-line) signature stays selectable across its lines;
+	// otherwise it closes at (line, caret_span_end).
 	int line = -1;
 	int caret_span_start = -1;
 	int caret_span_end = -1;
+	int caret_span_end_line = -1;
 };
 
 struct ExtractVariableCandidate {
@@ -272,6 +276,28 @@ bool caret_on_segment(const RefactorLocation &p_location, int p_line, int p_star
 	return p_location.start_column >= p_start_column && p_location.start_column <= p_end_column;
 }
 
+// Multi-line counterpart of caret_on_segment for a span that opens at
+// (p_start_line, p_start_column) and closes on a later (p_end_line,
+// p_end_column). A caret on an interior line matches at any column; on the
+// boundary lines it must be at or past the opening column / at or before the
+// closing column.
+bool caret_in_multiline_span(const RefactorLocation &p_location, int p_start_line, int p_start_column, int p_end_line, int p_end_column) {
+	if (p_location.has_selection()) {
+		return false;
+	}
+	const int caret_line = p_location.start_line;
+	if (caret_line < p_start_line || caret_line > p_end_line) {
+		return false;
+	}
+	if (caret_line == p_start_line) {
+		return p_location.start_column >= p_start_column;
+	}
+	if (caret_line == p_end_line) {
+		return p_location.start_column <= p_end_column;
+	}
+	return true;
+}
+
 RefactorFileEdit *find_or_add_file_edit(Vector<RefactorFileEdit> &r_file_edits, const String &p_path) {
 	for (RefactorFileEdit &file_edit : r_file_edits) {
 		if (file_edit.path == p_path) {
@@ -345,38 +371,69 @@ bool is_column_inside_string_literal(const String &p_line, int p_column) {
 	return false;
 }
 
-// Locates the colon that terminates a single-line function signature: the first
-// top-level ':' that is not inside the parameter list, a bracketed/braced type or
-// default value, a string literal, or a trailing comment. Returns -1 when none is
-// found on the line (e.g. a multi-line signature). Scanning from the signature
-// start and stopping at the first '#' keeps the return-type edit off comment and
-// string colons.
-int find_function_signature_colon(const String &p_line, int p_search_start) {
+// Locates the colon that terminates a function signature: the first top-level
+// ':' that is not inside the parameter list, a bracketed/braced type or default
+// value, a string literal, or a trailing comment. The scan starts at
+// p_search_start on p_start_line and continues across the following lines up to
+// and including p_last_line, so wrapped (multi-line) signatures are handled the
+// same way as single-line ones. Bracket depth and triple-quoted (multi-line)
+// string state both carry across line breaks, so a colon is only treated as the
+// body colon when every parameter-list and container delimiter opened so far has
+// been closed and the scan is outside any string. Returns true and writes the
+// colon position when found; '#' ends the scan of the current line at a comment.
+bool find_function_signature_colon(const Vector<String> &p_lines, int p_start_line, int p_search_start, int p_last_line, int &r_line, int &r_column) {
 	int depth = 0;
-	for (int i = p_search_start < 0 ? 0 : p_search_start; i < p_line.length(); i++) {
-		const char32_t c = p_line[i];
-		if (c == '#') {
-			break;
-		}
-		if (c == '"' || c == '\'') {
-			i = skip_string_literal(p_line, i) - 1;
-			continue;
-		}
-		if (c == '(' || c == '[' || c == '{') {
-			depth++;
-			continue;
-		}
-		if (c == ')' || c == ']' || c == '}') {
-			if (depth > 0) {
-				depth--;
+	bool in_multiline_string = false;
+	char32_t multiline_string_quote = 0; // The quote character that opened the active triple-quoted string.
+	const int last_line = MIN(p_last_line, p_lines.size() - 1);
+	for (int line_index = p_start_line; line_index <= last_line; line_index++) {
+		const String &line = p_lines[line_index];
+		int i = line_index == p_start_line ? (p_search_start < 0 ? 0 : p_search_start) : 0;
+		for (; i < line.length(); i++) {
+			const char32_t c = line[i];
+			if (in_multiline_string) {
+				if (c == '\\') {
+					i++; // Skip the escaped character so an escaped quote never closes the string.
+					continue;
+				}
+				if (c == multiline_string_quote && i + 2 < line.length() && line[i + 1] == multiline_string_quote && line[i + 2] == multiline_string_quote) {
+					in_multiline_string = false;
+					i += 2; // Skip the closing triple quote.
+				}
+				continue;
 			}
-			continue;
-		}
-		if (c == ':' && depth == 0) {
-			return i;
+			if (c == '#') {
+				break;
+			}
+			if (c == '"' || c == '\'') {
+				if (i + 2 < line.length() && line[i + 1] == c && line[i + 2] == c) {
+					// A triple-quoted string may stay open past the end of the line.
+					in_multiline_string = true;
+					multiline_string_quote = c;
+					i += 2; // Skip the opening triple quote; the body is consumed in string state.
+					continue;
+				}
+				i = skip_string_literal(line, i) - 1;
+				continue;
+			}
+			if (c == '(' || c == '[' || c == '{') {
+				depth++;
+				continue;
+			}
+			if (c == ')' || c == ']' || c == '}') {
+				if (depth > 0) {
+					depth--;
+				}
+				continue;
+			}
+			if (c == ':' && depth == 0) {
+				r_line = line_index;
+				r_column = i;
+				return true;
+			}
 		}
 	}
-	return -1;
+	return false;
 }
 
 int find_first_string_argument_column(
@@ -932,8 +989,16 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		r_candidate.disabled_reason = "This declaration already has a type annotation.";
 		return true;
 	}
-	if (p_assignable->initializer == nullptr || equal_index < 0) {
+	if (p_assignable->initializer == nullptr) {
 		r_candidate.disabled_reason = vformat("Cannot infer a type for this %s.", p_kind);
+		return true;
+	}
+	if (equal_index < 0) {
+		// The initializer resolved, but the assignment operator is not on the
+		// declaration line (a wrapped declaration). The edit logic only places an
+		// annotation when the assignment delimiter is on the line, so report the
+		// site as skipped rather than dropping it silently.
+		r_candidate.disabled_reason = vformat("Cannot annotate this %s because its assignment spans multiple lines.", p_kind);
 		return true;
 	}
 
@@ -965,20 +1030,38 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	const String line = p_lines[line_index];
 	int function_start = 0;
 	if (!get_node_text_start(p_lines, line_index, p_function, "func", function_start)) {
+		// An `async func` places the async keyword before `func`, so the node may
+		// start at `async`; fall back to locating the `func` keyword on the line.
 		function_start = line.find("func");
 	}
-	// The parser does not expose the body-colon token for the signature, so this
-	// refactor intentionally handles single-line function signatures. Scan for the
-	// first top-level colon so a trailing comment or string colon is never targeted.
-	const int body_colon = find_function_signature_colon(line, function_start);
-	if (function_start < 0 || body_colon < 0) {
+	if (function_start < 0) {
+		return false;
+	}
+	if (p_function->is_abstract) {
+		// A bodyless abstract declaration has no body colon, and the parser points
+		// its synthetic body suite at the next member, so scanning for a colon would
+		// run into the following declaration. Abstract functions also cannot infer a
+		// return type from a body, so leave them out of return-type collection.
+		return false;
+	}
+	// The parser does not expose the body-colon token for the signature, so scan
+	// for the first top-level colon, following the signature across wrapped lines.
+	// A non-abstract function always has a body, so its first body statement bounds
+	// the scan and keeps it off a later declaration's colon.
+	const int last_signature_line = p_function->body != nullptr ? p_function->body->start_line - 1 : line_index;
+	int body_colon_line = line_index;
+	int body_colon = -1;
+	if (!find_function_signature_colon(p_lines, line_index, function_start, last_signature_line, body_colon_line, body_colon)) {
 		return false;
 	}
 
 	r_candidate.matched = true;
 	r_candidate.line = line_index;
 	r_candidate.caret_span_start = function_start;
+	// A wrapped signature closes its caret span on the body-colon line so the caret
+	// selects the return-type annotation anywhere from `func` through that colon.
 	r_candidate.caret_span_end = body_colon;
+	r_candidate.caret_span_end_line = body_colon_line;
 	if (p_function->return_type != nullptr) {
 		r_candidate.disabled_reason = "This function already has a return type annotation.";
 		return true;
@@ -989,9 +1072,9 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 		return true;
 	}
 
-	r_candidate.edit.start_line = line_index;
+	r_candidate.edit.start_line = body_colon_line;
 	r_candidate.edit.start_column = body_colon;
-	r_candidate.edit.end_line = line_index;
+	r_candidate.edit.end_line = body_colon_line;
 	r_candidate.edit.end_column = body_colon + 1;
 	r_candidate.edit.new_text = " -> " + rendered_type + ":";
 	r_candidate.enabled = true;
@@ -3580,7 +3663,11 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
 #endif // GDSCRIPT_NO_LSP
 	);
 	for (const TypeAnnotationCandidate &candidate : candidates) {
-		if (caret_on_segment(p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
+		const int caret_span_end_line = candidate.caret_span_end_line < 0 ? candidate.line : candidate.caret_span_end_line;
+		const bool matched = caret_span_end_line == candidate.line
+				? caret_on_segment(p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)
+				: caret_in_multiline_span(p_location, candidate.line, candidate.caret_span_start, caret_span_end_line, candidate.caret_span_end);
+		if (matched) {
 			return candidate;
 		}
 	}

@@ -917,6 +917,130 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(result.candidates.size(), 6);
 	}
 
+	TEST_CASE("Add type annotation handles multi-line function signatures") {
+		SUBCASE("wrapped parameter list") {
+			const String source =
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					"):\n"
+					"\treturn base\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					") -> int:\n"
+					"\treturn base\n");
+		}
+		SUBCASE("parameter type colon is not mistaken for the body colon") {
+			const String source =
+					"func combine(\n"
+					"\t\tfirst: int,\n"
+					"\t\tsecond: int):\n"
+					"\treturn first + second\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func combine(\n"
+					"\t\tfirst: int,\n"
+					"\t\tsecond: int) -> int:\n"
+					"\treturn first + second\n");
+		}
+		SUBCASE("colon inside a multi-line string default is not mistaken for the body colon") {
+			const String source =
+					"func describe(text = \"\"\"\n"
+					")  :\n"
+					"\"\"\"):\n"
+					"\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func describe(text = \"\"\"\n"
+					")  :\n"
+					"\"\"\") -> int:\n"
+					"\treturn 1\n");
+		}
+		SUBCASE("caret on the closing colon line selects the wrapped return type") {
+			const String source =
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					"):\n"
+					"\treturn base\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 0, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					") -> int:\n"
+					"\treturn base\n");
+		}
+	}
+
+	TEST_CASE("Add type annotation preserves the async modifier") {
+		SUBCASE("single-line async function") {
+			const String source = "async func fetch():\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "async func fetch() -> int:\n\treturn 1\n");
+		}
+		SUBCASE("multi-line async function") {
+			const String source =
+					"async func fetch(\n"
+					"\t\tbase: int\n"
+					"):\n"
+					"\treturn base\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"async func fetch(\n"
+					"\t\tbase: int\n"
+					") -> int:\n"
+					"\treturn base\n");
+		}
+	}
+
+	TEST_CASE("find_candidates reports a wrapped declaration as a counted skip") {
+		RefactorContext ctx;
+		ctx.path = "user://type_annotation_wrapped_declaration.gd";
+		ctx.source =
+				"var total \\\n"
+				"\t= 1 + 2\n";
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+		REQUIRE_EQ(result.candidates.size(), 1);
+		CHECK_FALSE(result.candidates[0].enabled);
+		CHECK(result.candidates[0].disabled_reason.contains("spans multiple lines"));
+	}
+
+	TEST_CASE("find_candidates does not scan a bodyless abstract signature into a following member") {
+		RefactorContext ctx;
+		ctx.path = "user://type_annotation_abstract.gd";
+		ctx.source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"\tvar radius := 1.0\n";
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		bool saw_radius = false;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			// The bodyless abstract signature on line 1 has no body colon; the scan
+			// must not borrow the `:=` colon from the following member declaration.
+			CHECK_NE(candidate.line, 1);
+			if (candidate.line == 2) {
+				saw_radius = true;
+				CHECK(candidate.enabled);
+			}
+		}
+		CHECK(saw_radius);
+	}
+
 	TEST_CASE("find_candidates rejects unsupported refactor kinds") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd");
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::RENAME);
