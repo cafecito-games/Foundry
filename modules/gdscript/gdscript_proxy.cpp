@@ -191,21 +191,19 @@ Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant *
 	handler.callp(handler_args, 2, ret, handler_error);
 
 	// `p_method` is part of `T`'s contract, so the call must never fall through to
-	// native dispatch. If the handler itself could not be invoked, report the
-	// failure and surface a non-fallthrough error: `Object::callp` treats both
-	// CALL_ERROR_INVALID_METHOD and CALL_ERROR_INSTANCE_IS_NULL as "try native
-	// next", which would silently run a native method that shadows the contract.
+	// native dispatch. If the handler itself could not be invoked, report it and
+	// return the declared type's default with CALL_OK — mirroring how the VM
+	// handles a runtime error inside a function body (the error is surfaced out of
+	// band, a default is substituted, and the call still reports CALL_OK).
+	// Forwarding the handler's CallError would be wrong here: its argument indices
+	// describe the handler's own `(StringName, Array)` signature, not `p_method`,
+	// and the CALL_ERROR_INVALID_METHOD / CALL_ERROR_INSTANCE_IS_NULL codes are
+	// the exact signals `Object::callp` uses to try native dispatch instead.
 	if (handler_error.error != Callable::CallError::CALL_OK) {
-		ERR_PRINT(vformat(R"(Dynamic proxy handler for "%s" could not be invoked (call error %d).)",
+		ERR_PRINT(vformat(R"(Dynamic proxy handler for "%s" could not be invoked (call error %d); returning the default for its declared return type.)",
 				String(p_method), int(handler_error.error)));
-		r_error = handler_error;
-		if (r_error.error == Callable::CallError::CALL_ERROR_INVALID_METHOD ||
-				r_error.error == Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL) {
-			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
-			r_error.argument = 0;
-			r_error.expected = Variant::CALLABLE;
-		}
-		return Variant();
+		r_error.error = Callable::CallError::CALL_OK;
+		return _default_for_data_type(return_type);
 	}
 
 	r_error.error = Callable::CallError::CALL_OK;

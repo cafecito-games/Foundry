@@ -684,8 +684,10 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 	}
 
 	// If the handler becomes uninvocable (its target is freed), a contract call
-	// must surface a non-fallthrough error rather than letting Object::callp try
-	// native dispatch (INVALID_METHOD / INSTANCE_IS_NULL are fallthrough signals).
+	// must not fall through to native dispatch. It reports the failure and returns
+	// the declared type's default with CALL_OK (mirroring the VM's handling of a
+	// runtime error in a function body), never a CALL_ERROR_INVALID_METHOD /
+	// CALL_ERROR_INSTANCE_IS_NULL that Object::callp would treat as "try native".
 	{
 		Callable::CallError throwaway_error;
 		Variant throwaway_recorder = recorder_script->_new(nullptr, -1, throwaway_error);
@@ -701,11 +703,11 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 
 		Callable::CallError error;
 		ERR_PRINT_OFF;
-		broken_proxy->get_script_instance()->callp("get_count", nullptr, 0, error);
+		Variant result = broken_proxy->get_script_instance()->callp("get_count", nullptr, 0, error);
 		ERR_PRINT_ON;
-		CHECK(error.error != Callable::CallError::CALL_OK);
-		CHECK(error.error != Callable::CallError::CALL_ERROR_INVALID_METHOD);
-		CHECK(error.error != Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result.get_type() == Variant::INT);
+		CHECK(result == Variant(0));
 	}
 }
 
