@@ -1141,6 +1141,46 @@ TEST_CASE("[Modules][GDScript] Analyzer substitutes an inherited member across m
 	CHECK(type.builtin_type == Variant::INT);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer substitutes an inherited method return through inheritance") {
+	GDScriptParser parser;
+	// `IntList extends List[int]` makes the inherited `get_head() -> T` resolve to `-> int`.
+	const String source =
+			"class List[T]:\n"
+			"\tvar head: T\n"
+			"\tfunc get_head() -> T:\n"
+			"\t\treturn head\n"
+			"class IntList extends List[int]:\n"
+			"\tpass\n"
+			"func test() -> void:\n"
+			"\tvar list: IntList\n"
+			"\tvar got := list.get_head()\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const GDScriptParser::DataType type = got->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects empty type-argument brackets in an extends clause") {
+	GDScriptParser parser;
+	const String source =
+			"class List[T]:\n"
+			"\tvar head: T\n"
+			"class Bad extends List[]:\n"
+			"\tpass\n";
+	// Empty brackets are a parse error, not a silent unspecialized inheritance.
+	CHECK(parser.parse(source, "user://test.gd", false) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer rejects a wrong arity in a generic extends clause") {
 	GDScriptParser parser;
 	const String source =

@@ -1264,7 +1264,9 @@ void GDScriptParser::parse_extends() {
 
 	// Type arguments specializing a generic base: `extends List[T]`, `extends List[int]`.
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		if (!check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+		if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+			push_error(R"(Expected at least one type argument after "[".)");
+		} else {
 			do {
 				TypeNode *type_argument = parse_type();
 				if (type_argument == nullptr) {

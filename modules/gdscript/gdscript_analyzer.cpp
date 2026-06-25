@@ -6554,6 +6554,9 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 				case GDScriptParser::ClassNode::Member::FUNCTION: {
 					if (can_access_instance_member && (!base.is_meta_type || member.function->is_static || is_constructor)) {
 						GDScriptParser::DataType callable_type = make_callable_type(member.function->info, member.function);
+						// Substitute the method's `T`-typed parameters and return through the inheritance
+						// chain, so `IntList extends List[int]` sees `func get() -> T` as `-> int`.
+						callable_type = substitute_member_type(callable_type, specialize_ancestor_type(base, script_class));
 						if (p_base != nullptr) {
 							callable_type.has_explicit_method_signature = true;
 						}
