@@ -540,4 +540,175 @@ TEST_CASE("[Modules][GDScript][Proxy] is / trait conformance") {
 	CHECK(reaches_base);
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
+	ScopedProxyLanguage language;
+
+	const char *source =
+			"@abstract class Service:\n"
+			"\t@abstract func get_count() -> int\n"
+			"\t@abstract func get_ratio() -> float\n"
+			"\t@abstract func get_label() -> String\n"
+			"\t@abstract func do_nothing() -> void\n"
+			"\t@abstract func get_anything() -> Variant\n"
+			"\t@abstract func get_tags() -> Array[int]\n"
+			"\t@abstract func get_scores() -> Dictionary[String, int]\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar stub_return: Variant = null\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn stub_return\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> service = get_subclass(script, "Service");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(service.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(service, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+	ScriptInstance *instance = proxy->get_script_instance();
+
+	const auto call = [&](const char *p_method) {
+		Callable::CallError error;
+		Variant result = instance->callp(p_method, nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		return result;
+	};
+
+	// Exact-typed return passes through.
+	recorder->set("stub_return", 7);
+	CHECK(call("get_count") == Variant(7));
+
+	// int -> float implicit coercion.
+	recorder->set("stub_return", 3);
+	Variant ratio = call("get_ratio");
+	CHECK(ratio.get_type() == Variant::FLOAT);
+	CHECK(ratio == Variant(3.0));
+
+	// String return.
+	recorder->set("stub_return", "hi");
+	CHECK(call("get_label") == Variant("hi"));
+
+	// void method ignores whatever the handler returns.
+	recorder->set("stub_return", 999);
+	CHECK(call("do_nothing").get_type() == Variant::NIL);
+
+	// Untyped (Variant) return passes any value through unchanged.
+	recorder->set("stub_return", Vector2(1, 2));
+	CHECK(call("get_anything") == Variant(Vector2(1, 2)));
+
+	// Hard mismatch: a non-convertible value is reported (suppressed here) and
+	// replaced with the declared type's default.
+	recorder->set("stub_return", "not a number");
+	{
+		ERR_PRINT_OFF;
+		Variant coerced = call("get_count");
+		ERR_PRINT_ON;
+		CHECK(coerced.get_type() == Variant::INT);
+		CHECK(coerced == Variant(0));
+	}
+
+	// A correctly-typed container passes through.
+	{
+		Array typed_tags;
+		typed_tags.set_typed(Variant::INT, StringName(), Variant());
+		typed_tags.push_back(1);
+		typed_tags.push_back(2);
+		recorder->set("stub_return", typed_tags);
+		Variant result = call("get_tags");
+		REQUIRE(result.get_type() == Variant::ARRAY);
+		Array result_tags = result;
+		CHECK(result_tags.is_typed());
+		CHECK(result_tags.size() == 2);
+	}
+
+	// An untyped container for a typed-container return is a mismatch (the VM
+	// requires an exactly-typed Array on return), so it falls back to the typed
+	// empty default rather than silently passing an untyped array.
+	{
+		Array untyped_tags;
+		untyped_tags.push_back(1);
+		recorder->set("stub_return", untyped_tags);
+		ERR_PRINT_OFF;
+		Variant result = call("get_tags");
+		ERR_PRINT_ON;
+		REQUIRE(result.get_type() == Variant::ARRAY);
+		Array result_tags = result;
+		CHECK(result_tags.is_typed());
+		CHECK(result_tags.is_empty());
+	}
+
+	// A wrong-element-typed container (Array[String] for Array[int]) is also a
+	// mismatch, not silently accepted via builtin conversion.
+	{
+		Array wrong_tags;
+		wrong_tags.set_typed(Variant::STRING, StringName(), Variant());
+		wrong_tags.push_back("x");
+		recorder->set("stub_return", wrong_tags);
+		ERR_PRINT_OFF;
+		Variant result = call("get_tags");
+		ERR_PRINT_ON;
+		REQUIRE(result.get_type() == Variant::ARRAY);
+		Array result_tags = result;
+		CHECK(result_tags.is_typed());
+		CHECK(result_tags.get_typed_builtin() == Variant::INT);
+		CHECK(result_tags.is_empty());
+	}
+
+	// A correctly-typed Dictionary passes through; a wrong-typed one defaults.
+	{
+		Dictionary typed_scores;
+		typed_scores.set_typed(Variant::STRING, StringName(), Variant(), Variant::INT, StringName(), Variant());
+		typed_scores["a"] = 1;
+		recorder->set("stub_return", typed_scores);
+		Variant result = call("get_scores");
+		REQUIRE(result.get_type() == Variant::DICTIONARY);
+		Dictionary result_scores = result;
+		CHECK(result_scores.is_typed_key());
+		CHECK(result_scores.size() == 1);
+
+		Dictionary untyped_scores;
+		untyped_scores["a"] = 1;
+		recorder->set("stub_return", untyped_scores);
+		ERR_PRINT_OFF;
+		Variant defaulted = call("get_scores");
+		ERR_PRINT_ON;
+		REQUIRE(defaulted.get_type() == Variant::DICTIONARY);
+		Dictionary defaulted_scores = defaulted;
+		CHECK(defaulted_scores.is_typed_key());
+		CHECK(defaulted_scores.is_empty());
+	}
+
+	// If the handler becomes uninvocable (its target is freed), a contract call
+	// must not fall through to native dispatch. It reports the failure and returns
+	// the declared type's default with CALL_OK (mirroring the VM's handling of a
+	// runtime error in a function body), never a CALL_ERROR_INVALID_METHOD /
+	// CALL_ERROR_INSTANCE_IS_NULL that Object::callp would treat as "try native".
+	{
+		Callable::CallError throwaway_error;
+		Variant throwaway_recorder = recorder_script->_new(nullptr, -1, throwaway_error);
+		Object *throwaway = throwaway_recorder;
+
+		String message;
+		Ref<RefCounted> broken_proxy = GDScriptProxy::create_proxy(service, Callable(throwaway, "handle"), message);
+		REQUIRE(broken_proxy.is_valid());
+
+		// Drop the only reference to the handler's target; the Callable holds it
+		// weakly, so the next call cannot reach the handler.
+		throwaway_recorder = Variant();
+
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		Variant result = broken_proxy->get_script_instance()->callp("get_count", nullptr, 0, error);
+		ERR_PRINT_ON;
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result.get_type() == Variant::INT);
+		CHECK(result == Variant(0));
+	}
+}
+
 } // namespace GDScriptTests

@@ -61,9 +61,11 @@ class GDScriptProxyInstance : public ScriptInstance {
 	// Populates `property_store`/`property_types` from `T`'s declared member vars.
 	void _init_property_store();
 
-	// True when `p_method` is declared somewhere in `proxy_script`'s class/trait/
-	// abstract chain. Mirrors how `GDScriptInstance::callp` walks the base chain,
-	// but treats every contract method as intercepted instead of executed.
+	// Returns the GDScriptFunction declared for `p_method` somewhere in
+	// `proxy_script`'s class/trait/abstract chain, or nullptr if `p_method` is not
+	// part of `T`'s contract. Mirrors how `GDScriptInstance::callp` walks the base
+	// chain, but the function is used only for its declared signature (return type)
+	// — its body is never executed.
 	//
 	// Covers the target's own declared methods (abstract + concrete), methods
 	// inherited through the GDScript base chain, and concrete methods flattened in
@@ -71,7 +73,15 @@ class GDScriptProxyInstance : public ScriptInstance {
 	// trait the target itself `uses` are not flattened into `member_functions` and
 	// are therefore not yet part of the scanned contract; resolving the full trait
 	// requirement set is tracked alongside trait conformance (#186).
-	bool _is_contract_method(const StringName &p_method) const;
+	GDScriptFunction *_find_contract_function(const StringName &p_method) const;
+
+	// Coerces the handler's return value to the intercepted method's declared
+	// return type: ignored for `void`, passed through for untyped/`Variant`, and
+	// otherwise coerced (with implicit builtin conversions) or — on a mismatch —
+	// reported in debug builds and replaced with the type's default. The return
+	// type is passed by value because it is snapshotted before the handler runs
+	// (handler code could reload `T` and free the live GDScriptFunction).
+	Variant _coerce_handler_return(const GDScriptDataType &p_return_type, const StringName &p_method_name, const Variant &p_value) const;
 
 public:
 	// ScriptInstance interface.

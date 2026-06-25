@@ -32,6 +32,46 @@
 
 #include "core/object/ref_counted.h"
 
+// Pins a strong reference to every script type reachable in `p_type` (including
+// nested container element types). The compiler leaves `script_type_ref` null
+// for local subclasses to avoid reference cycles, so a by-value snapshot would
+// otherwise dangle if the handler reloads the proxied script mid-call. Pinning
+// is scoped to the snapshot's lifetime, so it introduces no persistent cycle.
+static void _pin_script_type_refs(GDScriptDataType &p_type) {
+	if (p_type.script_type != nullptr && p_type.script_type_ref.is_null()) {
+		p_type.script_type_ref = Ref<Script>(p_type.script_type);
+	}
+	for (int i = 0; i < p_type.container_element_types.size(); i++) {
+		_pin_script_type_refs(p_type.container_element_types.write[i]);
+	}
+}
+
+// The zero value of a declared GDScript type: typed containers get a correctly
+// typed empty value, builtins their constructed default, and everything else
+// (objects, scripts) `null`. Mirrors GDScript::_static_default_init and the VM's
+// default-on-invalid-return behavior.
+static Variant _default_for_data_type(const GDScriptDataType &p_type) {
+	if (p_type.kind != GDScriptDataType::BUILTIN || p_type.builtin_type == Variant::NIL) {
+		return Variant();
+	}
+	if (p_type.builtin_type == Variant::ARRAY && p_type.has_container_element_type(0)) {
+		Array typed_array;
+		typed_array.set_typed(p_type.get_container_element_type(0).to_container_type());
+		return typed_array;
+	}
+	if (p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
+		Dictionary typed_dictionary;
+		typed_dictionary.set_typed(
+				p_type.get_container_element_type_or_variant(0).to_container_type(),
+				p_type.get_container_element_type_or_variant(1).to_container_type());
+		return typed_dictionary;
+	}
+	Variant default_value;
+	Callable::CallError construct_error;
+	Variant::construct(p_type.builtin_type, default_value, nullptr, 0, construct_error);
+	return default_value;
+}
+
 GDScriptProxyInstance::GDScriptProxyInstance(Object *p_owner, const Ref<GDScript> &p_script, const Callable &p_handler) :
 		owner(p_owner), proxy_script(p_script), handler(p_handler) {
 	_init_property_store();
@@ -57,26 +97,7 @@ void GDScriptProxyInstance::_init_property_store() {
 		}
 
 		const GDScriptDataType &data_type = proxy_script->get_member_type(property.name);
-		Variant default_value;
-		// Non-builtin types (objects, etc.) default to `null`; builtins to their
-		// zero value. Mirrors GDScript::_static_default_init.
-		if (data_type.kind == GDScriptDataType::BUILTIN) {
-			if (data_type.builtin_type == Variant::ARRAY && data_type.has_container_element_type(0)) {
-				Array typed_array;
-				typed_array.set_typed(data_type.get_container_element_type(0).to_container_type());
-				default_value = typed_array;
-			} else if (data_type.builtin_type == Variant::DICTIONARY && data_type.has_container_element_types()) {
-				Dictionary typed_dictionary;
-				typed_dictionary.set_typed(
-						data_type.get_container_element_type_or_variant(0).to_container_type(),
-						data_type.get_container_element_type_or_variant(1).to_container_type());
-				default_value = typed_dictionary;
-			} else if (data_type.builtin_type != Variant::NIL) {
-				Callable::CallError construct_error;
-				Variant::construct(data_type.builtin_type, default_value, nullptr, 0, construct_error);
-			}
-		}
-		property_store.insert(property.name, default_value);
+		property_store.insert(property.name, _default_for_data_type(data_type));
 		property_types.insert(property.name, property.type);
 	}
 }
@@ -84,24 +105,76 @@ void GDScriptProxyInstance::_init_property_store() {
 GDScriptProxyInstance::~GDScriptProxyInstance() {
 }
 
-bool GDScriptProxyInstance::_is_contract_method(const StringName &p_method) const {
+GDScriptFunction *GDScriptProxyInstance::_find_contract_function(const StringName &p_method) const {
 	const GDScript *script = proxy_script.ptr();
 	while (script) {
-		if (script->get_member_functions().has(p_method)) {
-			return true;
+		HashMap<StringName, GDScriptFunction *>::ConstIterator element = script->get_member_functions().find(p_method);
+		if (element) {
+			return element->value;
 		}
 		script = script->get_base().ptr();
 	}
-	return false;
+	return nullptr;
+}
+
+Variant GDScriptProxyInstance::_coerce_handler_return(const GDScriptDataType &p_return_type, const StringName &p_method_name, const Variant &p_value) const {
+	// `void`: the declared return is `null`, so the handler's value is ignored.
+	if (p_return_type.kind == GDScriptDataType::BUILTIN && p_return_type.builtin_type == Variant::NIL) {
+		return Variant();
+	}
+
+	// Untyped / `Variant` return: pass the handler's value through unchanged.
+	if (!p_return_type.has_type()) {
+		return p_value;
+	}
+
+	// Already an acceptable value for the declared type (covers exact builtins,
+	// typed containers, and `null`/instances for native/script types).
+	if (p_return_type.is_type(p_value)) {
+		return p_value;
+	}
+
+	// Implicit builtin conversion (e.g. int -> float), mirroring the VM's
+	// OPCODE_RETURN_TYPED_BUILTIN coercion. Typed containers are excluded: the VM
+	// requires an exactly-typed Array/Dictionary on return, and converting would
+	// silently produce an untyped/mistyped container, so those route to the
+	// mismatch path below.
+	const bool is_typed_container =
+			(p_return_type.builtin_type == Variant::ARRAY && p_return_type.has_container_element_type(0)) ||
+			(p_return_type.builtin_type == Variant::DICTIONARY && p_return_type.has_container_element_types());
+	if (p_return_type.kind == GDScriptDataType::BUILTIN && !is_typed_container && p_value.get_type() != Variant::NIL &&
+			Variant::can_convert_strict(p_value.get_type(), p_return_type.builtin_type)) {
+		Variant coerced;
+		Callable::CallError convert_error;
+		const Variant *convert_args[1] = { &p_value };
+		Variant::construct(p_return_type.builtin_type, coerced, convert_args, 1, convert_error);
+		if (convert_error.error == Callable::CallError::CALL_OK) {
+			return coerced;
+		}
+	}
+
+	// Hard mismatch: report in debug builds and fall back to the type's default,
+	// matching how the VM substitutes a default on an invalid typed return.
+	ERR_PRINT(vformat(R"(Dynamic proxy handler for "%s" returned a value of type "%s" that is not compatible with the method's declared return type.)",
+			String(p_method_name), Variant::get_type_name(p_value.get_type())));
+	return _default_for_data_type(p_return_type);
 }
 
 Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
-	if (!_is_contract_method(p_method)) {
+	GDScriptFunction *contract_function = _find_contract_function(p_method);
+	if (contract_function == nullptr) {
 		// Not part of `T`'s contract: defer to native `Object`/`RefCounted`
 		// built-ins so `get_instance_id`, `connect`, refcounting, etc. work.
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
+
+	// Snapshot the declared return type before running the handler: handler code
+	// is arbitrary and could reload `T`, freeing the live GDScriptFunction. Pin
+	// strong references to any script types in the copy so it stays self-contained
+	// even if the originating script is reloaded mid-call.
+	GDScriptDataType return_type = contract_function->get_return_type();
+	_pin_script_type_refs(return_type);
 
 	Array call_args;
 	call_args.resize(p_argcount);
@@ -117,16 +190,28 @@ Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant *
 	Callable::CallError handler_error;
 	handler.callp(handler_args, 2, ret, handler_error);
 
-	// The call reached the handler, so it is never an "invalid method"; reporting
-	// it as such would wrongly fall through to a native built-in. Surface the
-	// handler's own call error verbatim. Return-value coercion and the richer
-	// error contract are layered on in #187.
-	r_error = handler_error;
-	return ret;
+	// `p_method` is part of `T`'s contract, so the call must never fall through to
+	// native dispatch. If the handler itself could not be invoked, report it and
+	// return the declared type's default with CALL_OK — mirroring how the VM
+	// handles a runtime error inside a function body (the error is surfaced out of
+	// band, a default is substituted, and the call still reports CALL_OK).
+	// Forwarding the handler's CallError would be wrong here: its argument indices
+	// describe the handler's own `(StringName, Array)` signature, not `p_method`,
+	// and the CALL_ERROR_INVALID_METHOD / CALL_ERROR_INSTANCE_IS_NULL codes are
+	// the exact signals `Object::callp` uses to try native dispatch instead.
+	if (handler_error.error != Callable::CallError::CALL_OK) {
+		ERR_PRINT(vformat(R"(Dynamic proxy handler for "%s" could not be invoked (call error %d); returning the default for its declared return type.)",
+				String(p_method), int(handler_error.error)));
+		r_error.error = Callable::CallError::CALL_OK;
+		return _default_for_data_type(return_type);
+	}
+
+	r_error.error = Callable::CallError::CALL_OK;
+	return _coerce_handler_return(return_type, p_method, ret);
 }
 
 bool GDScriptProxyInstance::has_method(const StringName &p_method) const {
-	return _is_contract_method(p_method);
+	return _find_contract_function(p_method) != nullptr;
 }
 
 void GDScriptProxyInstance::get_method_list(List<MethodInfo> *p_list) const {
