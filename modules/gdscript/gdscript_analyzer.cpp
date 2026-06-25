@@ -4735,6 +4735,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			// an explicit type-argument list and the call is dispatched on `self`. Otherwise this
 			// is a genuine call on an index expression and stays an error.
 			GDScriptParser::FunctionNode *generic_method = nullptr;
+			bool is_proxy_builtin = false;
 			if (subscript->base->type == GDScriptParser::Node::IDENTIFIER) {
 				GDScriptParser::IdentifierNode *base_identifier = static_cast<GDScriptParser::IdentifierNode *>(subscript->base);
 				const StringName &base_name = base_identifier->name;
@@ -4754,9 +4755,11 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					default:
 						break;
 				}
+				bool resolved_to_member = false;
 				if (!shadowed_by_local) {
 					for (GDScriptParser::ClassNode *lookup_class = parser->current_class; lookup_class != nullptr && generic_method == nullptr; lookup_class = lookup_class->base_type.class_type) {
 						if (lookup_class->has_member(base_name)) {
+							resolved_to_member = true;
 							const GDScriptParser::ClassNode::Member &member = lookup_class->get_member(base_name);
 							if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
 								generic_method = member.function;
@@ -4765,6 +4768,16 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 						}
 					}
 				}
+				// `create_proxy[T](handler)` is the built-in generic proxy constructor when it is not
+				// shadowed by a local or a user-declared member of the same name.
+				if (!shadowed_by_local && !resolved_to_member && generic_method == nullptr && base_name == SNAME("create_proxy")) {
+					is_proxy_builtin = true;
+				}
+			}
+
+			if (is_proxy_builtin) {
+				reduce_call_create_proxy(p_call, subscript);
+				return;
 			}
 
 			if (generic_method == nullptr) {
@@ -9378,6 +9391,113 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 		parameter_type = GDScriptParser::DataType::substitute(parameter_type, bindings);
 	}
 	r_return_type = GDScriptParser::DataType::substitute(r_return_type, bindings);
+}
+
+void GDScriptAnalyzer::reduce_call_create_proxy(GDScriptParser::CallNode *p_call, GDScriptParser::SubscriptNode *p_callee) {
+	// The built-in `create_proxy[T](handler) -> T`: a typed layer over the
+	// `create_proxy_dynamic` runtime. The analyzer types the result as T and flags
+	// the node; the compiler lowers it to `create_proxy_dynamic(T, handler)` by
+	// materializing T's script from the `[T]` type argument.
+	GDScriptParser::DataType error_type;
+	error_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	error_type.kind = GDScriptParser::DataType::VARIANT;
+
+	// Resolve the `[T]` type argument. This also reduces a class-name index as a value,
+	// which the compiler later compiles into T's script reference.
+	GDScriptParser::DataType type_argument;
+	if (p_callee->index == nullptr || !resolve_explicit_type_argument(p_callee->index, type_argument)) {
+		push_error(R"*(Could not resolve the type argument for "create_proxy[T]()".)*", p_callee->index != nullptr ? static_cast<GDScriptParser::Node *>(p_callee->index) : static_cast<GDScriptParser::Node *>(p_call));
+		p_call->set_datatype(error_type);
+		mark_node_unsafe(p_call);
+		return;
+	}
+
+	// A forwarded, still-unresolved type parameter cannot be reified at runtime yet, so the
+	// proxy would have no concrete script to scan. Reject it with a pointer to the dynamic
+	// fallback rather than emitting code that cannot recover T.
+	if (type_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		push_error(vformat(R"*(create_proxy[T]() cannot forward the unresolved type parameter "%s" because reified runtime type bindings are not available yet. Use create_proxy_dynamic() with an explicit type instead.)*", type_argument.to_string()), p_call);
+		p_call->set_datatype(error_type);
+		mark_node_unsafe(p_call);
+		return;
+	}
+
+	// The target must be a trait or abstract type (mirrors the runtime guard in
+	// GDScriptProxy::create_proxy): only those define a contract to intercept. When the
+	// type cannot be classified statically (e.g. an external script not yet compiled), the
+	// runtime guard still applies, so this only hard-rejects the cases known to be invalid.
+	bool target_invalid = false;
+	switch (type_argument.kind) {
+		case GDScriptParser::DataType::CLASS:
+			if (type_argument.class_type != nullptr) {
+				target_invalid = !(type_argument.class_type->is_trait || type_argument.class_type->is_abstract);
+			}
+			break;
+		case GDScriptParser::DataType::SCRIPT: {
+			Ref<GDScript> gdscript = type_argument.script_type;
+			if (gdscript.is_valid() && gdscript->is_valid()) {
+				target_invalid = !(gdscript->is_trait_type() || gdscript->is_abstract());
+			}
+		} break;
+		case GDScriptParser::DataType::BUILTIN:
+		case GDScriptParser::DataType::NATIVE:
+		case GDScriptParser::DataType::ENUM:
+			target_invalid = true;
+			break;
+		default:
+			break;
+	}
+	if (target_invalid) {
+		push_error(vformat(R"*(create_proxy[T]() requires a trait or abstract type as its type argument, but "%s" is neither.)*", type_argument.to_string()), p_call);
+		p_call->set_datatype(error_type);
+		mark_node_unsafe(p_call);
+		return;
+	}
+
+	// Mirror the runtime guard in GDScriptProxy::_validate_proxy_target: the proxy host is a
+	// RefCounted, so a contract rooted on any other native base (Node, Resource, ...) cannot be
+	// represented soundly. Resolve the native base the same way is_node_compatible_type does; if
+	// it cannot be determined statically, defer to the runtime guard rather than false-reject.
+	StringName native_base = type_argument.native_type;
+	if (native_base == StringName() && type_argument.kind == GDScriptParser::DataType::CLASS) {
+		const GDScriptParser::ClassNode *class_node = type_argument.class_type;
+		while (class_node != nullptr) {
+			if (class_node->base_type.kind == GDScriptParser::DataType::CLASS) {
+				class_node = class_node->base_type.class_type;
+				continue;
+			}
+			if (class_node->base_type.native_type != StringName()) {
+				native_base = class_node->base_type.native_type;
+			} else if (class_node->base_type.script_type.is_valid()) {
+				native_base = class_node->base_type.script_type->get_instance_base_type();
+			}
+			break;
+		}
+	}
+	// The runtime guard requires the base to be exactly RefCounted (not merely a descendant such
+	// as Resource), since proxying other native bases is not supported yet. Match that exactly.
+	if (native_base != StringName() && native_base != SNAME("RefCounted") && class_exists(native_base)) {
+		push_error(vformat(R"*(create_proxy[T]() requires a trait or abstract type rooted on RefCounted, but "%s" has native base "%s".)*", type_argument.to_string(), native_base), p_call);
+		p_call->set_datatype(error_type);
+		mark_node_unsafe(p_call);
+		return;
+	}
+
+	// Exactly one handler argument, which must be callable.
+	if (p_call->arguments.size() != 1) {
+		push_error(vformat(R"*(create_proxy[T]() expects a single handler argument, but %d %s given.)*", p_call->arguments.size(), p_call->arguments.size() == 1 ? "was" : "were"), p_call);
+	} else {
+		const GDScriptParser::DataType handler_type = p_call->arguments[0]->get_datatype();
+		if (handler_type.is_hard_type() && !handler_type.is_variant() && !(handler_type.kind == GDScriptParser::DataType::BUILTIN && handler_type.builtin_type == Variant::CALLABLE)) {
+			push_error(vformat(R"*(create_proxy[T]() expects a Callable handler, but the argument is of type "%s".)*", handler_type.to_string()), p_call->arguments[0]);
+		}
+	}
+
+	// The result is an instance of T.
+	type_argument.is_meta_type = false;
+	type_argument.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	p_call->is_proxy_construct = true;
+	p_call->set_datatype(type_argument);
 }
 
 bool GDScriptAnalyzer::callable_type_from_method(const GDScriptParser::DataType &p_receiver_type, const StringName &p_method_name, GDScriptParser::Node *p_source, GDScriptParser::DataType &r_callable_type) {

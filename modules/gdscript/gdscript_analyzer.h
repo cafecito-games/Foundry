@@ -205,6 +205,7 @@ class GDScriptAnalyzer {
 	bool resolve_explicit_type_argument(GDScriptParser::ExpressionNode *p_expression, GDScriptParser::DataType &r_type_argument);
 	void apply_generic_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_function,
 			List<GDScriptParser::DataType> &r_par_types, GDScriptParser::DataType &r_return_type);
+	void reduce_call_create_proxy(GDScriptParser::CallNode *p_call, GDScriptParser::SubscriptNode *p_callee);
 	bool function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
 	bool callable_signature_from_type(const GDScriptParser::DataType &p_callable_type, Vector<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
 	GDScriptParser::DataType plain_callable_type() const;
