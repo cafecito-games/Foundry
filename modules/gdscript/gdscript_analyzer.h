@@ -165,8 +165,8 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false) const;
 	GDScriptParser::DataType make_global_class_meta_type(const StringName &p_class_name, const GDScriptParser::Node *p_source);
 	bool get_global_class_in_namespace(const String &p_namespace, const StringName &p_class_name, StringName &r_global_class_name) const;
-	bool get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error, const String &p_symbol_kind = "class");
-	bool get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error, const String &p_symbol_kind = "class");
+	bool get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error, const String &p_symbol_kind = "type");
+	bool get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error, const String &p_symbol_kind = "type");
 	bool is_namespace_chain_root_shadowed(GDScriptParser::IdentifierNode *p_identifier);
 	GDScriptParser::ClassNode *resolve_trait_reference(GDScriptParser::ClassNode *p_owner,
 			GDScriptParser::ClassNode::TraitUse &r_trait_use, const GDScriptParser::Node *p_source);
