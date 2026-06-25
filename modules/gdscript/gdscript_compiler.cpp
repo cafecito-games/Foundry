@@ -2466,6 +2466,112 @@ void GDScriptCompiler::_collect_flattened_trait_members(const GDScriptParser::Cl
 	}
 }
 
+// Records the abstract method requirements contributed by the traits `p_class`
+// (transitively) uses but does not flatten into its own members. Abstract trait
+// members are contracts the implementer satisfies, not bodies that are copied in,
+// and at runtime a class retains only trait identity names — so without this a
+// dynamic proxy of a sub-trait would miss requirements inherited through a `uses`
+// chain and let those calls fall through to native dispatch. A requirement is
+// skipped when a concrete member (declared by the implementer or a base, or a
+// concrete trait member flattened in) already provides it, matching the shadowing
+// rules in `_collect_flattened_trait_members`. Diamond-reached requirements are
+// recorded once; they share the same declared signature, so the first writer wins.
+void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser::ClassNode *p_class, GDScript *p_script) {
+	p_script->abstract_trait_requirements.clear();
+	if (p_class->resolved_traits.is_empty()) {
+		return;
+	}
+
+	// A requirement is already satisfied only when a same-named *callable* will live in
+	// `member_functions`, where the proxy's `_find_contract_function` can reach it. That
+	// is exactly the implementer's and bases' own methods plus the concrete trait
+	// methods that are actually flattened in. A non-function member (var, constant,
+	// enum, signal) does not satisfy a method contract, and a concrete trait method that
+	// flattening drops because an earlier member already claimed the name never becomes a
+	// callable — so neither may suppress the requirement. `_collect_flattened_trait_members`
+	// applies the same shadowing the compiler uses, so reuse it rather than re-deriving.
+	HashSet<StringName> provided;
+	for (const GDScriptParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
+		for (const GDScriptParser::ClassNode::Member &member : owner->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const StringName name = member.get_name();
+			if (name != StringName()) {
+				provided.insert(name);
+			}
+		}
+	}
+	Vector<const GDScriptParser::ClassNode::Member *> flattened;
+	_collect_flattened_trait_members(p_class, flattened);
+	for (const GDScriptParser::ClassNode::Member *member : flattened) {
+		if (member->type != GDScriptParser::ClassNode::Member::FUNCTION || member->function == nullptr || member->function->is_abstract) {
+			continue;
+		}
+		const StringName name = member->get_name();
+		if (name != StringName()) {
+			provided.insert(name);
+		}
+	}
+
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const GDScriptParser::FunctionNode *function = member.function;
+			if (function == nullptr || !function->is_abstract) {
+				continue;
+			}
+			const StringName name = member.get_name();
+			if (name == StringName() || provided.has(name) || p_script->abstract_trait_requirements.has(name)) {
+				continue;
+			}
+
+			GDScript::AbstractTraitRequirement requirement;
+
+			// Build the enumerable signature, mirroring how `_parse_function` fills a
+			// compiled method's `MethodInfo` and return type from the same parser node,
+			// so the proxy's contract resolution and `get_method_list` agree with what a
+			// direct proxy of the declaring trait sees.
+			MethodInfo &method_info = requirement.method_info;
+			method_info.name = name;
+			method_info.flags |= METHOD_FLAG_VIRTUAL_REQUIRED;
+			if (function->is_static) {
+				method_info.flags |= METHOD_FLAG_STATIC;
+			}
+			if (function->is_coroutine) {
+				method_info.flags |= METHOD_FLAG_ASYNC;
+			}
+			for (int i = 0; i < function->parameters.size(); i++) {
+				const GDScriptParser::ParameterNode *parameter = function->parameters[i];
+				method_info.arguments.push_back(parameter->get_datatype().to_property_info(parameter->identifier->name));
+			}
+			if (function->is_vararg()) {
+				method_info.flags |= METHOD_FLAG_VARARG;
+			}
+			method_info.default_arguments.append_array(function->default_arg_values);
+
+			// Same rule `_parse_function` applies: an abstract method contributes a
+			// return type only when it declares one explicitly (or, defensively, has a
+			// returning body); an unannotated requirement is `void`, not `Variant`, so
+			// the handler's value is ignored just as for the compiled function.
+			if ((function->is_abstract && function->return_type != nullptr) || function->body->has_return) {
+				requirement.return_type = _gdtype_from_datatype(function->get_datatype(), p_script);
+				method_info.return_val = function->get_datatype().to_property_info(String());
+			} else {
+				requirement.return_type.kind = GDScriptDataType::BUILTIN;
+				requirement.return_type.builtin_type = Variant::NIL;
+			}
+
+			p_script->abstract_trait_requirements.insert(name, requirement);
+		}
+	}
+}
+
 GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class, const GDScriptParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda) {
 	r_error = OK;
 	CodeGen codegen;
@@ -2916,6 +3022,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->base = Ref<GDScript>();
 	p_script->members.clear();
 	p_script->script_trait_list.clear();
+	p_script->abstract_trait_requirements.clear();
 	p_script->type_parameters.clear();
 
 	// This makes possible to clear script constants and member_functions without heap-use-after-free errors.
@@ -3048,6 +3155,10 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 			p_script->script_trait_list.push_back(trait_name);
 		}
 	}
+
+	// Record abstract requirements inherited through `uses` so a dynamic proxy of
+	// this type intercepts them instead of falling through to native dispatch.
+	_collect_trait_abstract_requirements(p_class, p_script);
 
 	// Record the class's declared generic type parameters so they survive to runtime reflection.
 	p_script->type_parameters.clear();

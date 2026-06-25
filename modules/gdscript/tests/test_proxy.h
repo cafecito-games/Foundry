@@ -541,6 +541,296 @@ TEST_CASE("[Modules][GDScript][Proxy] is / trait conformance") {
 	CHECK(reaches_base);
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Transitive abstract trait requirements are intercepted") {
+	ScopedProxyLanguage language;
+
+	// `Child` flattens nothing abstract from the traits it (transitively) uses, and
+	// at runtime only retains trait identity names. A proxy of `Child` must still
+	// intercept the abstract requirements contributed by `Middle` and `Base`, not
+	// just `Child`'s own `child_required`. A diamond (`Wide uses Left, Right`, both
+	// of which `use Base`) must reach the shared requirement exactly once.
+	const char *source =
+			"trait Base:\n"
+			"\t@abstract func base_required() -> int\n"
+			"\t@abstract func base_defaulted(scale: int = 3) -> int\n"
+			"\t@abstract func base_variadic(first: int, ...rest) -> int\n"
+			"\n"
+			"trait Middle uses Base:\n"
+			"\t@abstract func middle_required() -> int\n"
+			"\n"
+			"trait Child uses Middle:\n"
+			"\t@abstract func child_required() -> int\n"
+			"\n"
+			"trait Left uses Base:\n"
+			"\t@abstract func left_required() -> int\n"
+			"\n"
+			"trait Right uses Base:\n"
+			"\t@abstract func right_required() -> int\n"
+			"\n"
+			"trait Wide uses Left, Right:\n"
+			"\t@abstract func wide_required() -> int\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar calls: Array = []\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\tcalls.append(str(method_name))\n"
+			"\t\treturn 7\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> child = get_subclass(script, "Child");
+	Ref<GDScript> wide = get_subclass(script, "Wide");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(child.is_valid());
+	REQUIRE(child->is_trait_type());
+	REQUIRE(wide.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	REQUIRE(construct_error.error == Callable::CallError::CALL_OK);
+	Object *recorder = recorder_ref;
+
+	const auto check_intercepts = [&](const Ref<GDScript> &p_type, const Vector<String> &p_methods) {
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(p_type, Callable(recorder, "handle"), error_message);
+		REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+		ScriptInstance *instance = proxy->get_script_instance();
+
+		List<MethodInfo> methods;
+		instance->get_method_list(&methods);
+		HashSet<StringName> listed;
+		for (const MethodInfo &method : methods) {
+			listed.insert(method.name);
+		}
+
+		for (const String &method : p_methods) {
+			const StringName method_name = method;
+			CHECK(instance->has_method(method_name));
+			// Enumeration is consistent with dispatch: every contract method is listed.
+			CHECK_MESSAGE(listed.has(method_name), method.utf8().get_data());
+			Callable::CallError error;
+			Variant result = instance->callp(method_name, nullptr, 0, error);
+			CHECK_MESSAGE(error.error == Callable::CallError::CALL_OK, method.utf8().get_data());
+			CHECK(result == Variant(7));
+		}
+	};
+
+	// Chain: a proxy of `Child` intercepts requirements transitively from `Middle`
+	// and `Base`, with `int` returns coerced through the handler. `base_defaulted`
+	// is callable with no arguments because its sole parameter has a default.
+	check_intercepts(child, { "child_required", "middle_required", "base_required", "base_defaulted" });
+
+	// Enumerated metadata for inherited requirements matches the compiled-function
+	// convention: real defaults are preserved and `...rest` sets the vararg flag.
+	{
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(child, Callable(recorder, "handle"), error_message);
+		REQUIRE(proxy.is_valid());
+		List<MethodInfo> methods;
+		proxy->get_script_instance()->get_method_list(&methods);
+
+		bool checked_defaulted = false;
+		bool checked_variadic = false;
+		for (const MethodInfo &method : methods) {
+			if (method.name == StringName("base_defaulted")) {
+				checked_defaulted = true;
+				REQUIRE(method.arguments.size() == 1);
+				REQUIRE(method.default_arguments.size() == 1);
+				CHECK(method.default_arguments[0] == Variant(3));
+				CHECK((method.flags & METHOD_FLAG_VARARG) == 0);
+			} else if (method.name == StringName("base_variadic")) {
+				checked_variadic = true;
+				// The fixed parameter is listed; the `...rest` is conveyed by the flag.
+				CHECK(method.arguments.size() == 1);
+				CHECK((method.flags & METHOD_FLAG_VARARG) != 0);
+			}
+		}
+		CHECK(checked_defaulted);
+		CHECK(checked_variadic);
+
+		// Argument-count metadata is reported for inherited requirements too, matching
+		// their fixed-parameter count (the `...rest` is not counted).
+		ScriptInstance *instance = proxy->get_script_instance();
+		bool is_valid = false;
+		CHECK(instance->get_method_argument_count("base_required", &is_valid) == 0);
+		CHECK(is_valid);
+		CHECK(instance->get_method_argument_count("base_defaulted", &is_valid) == 1);
+		CHECK(is_valid);
+		CHECK(instance->get_method_argument_count("base_variadic", &is_valid) == 1);
+		CHECK(is_valid);
+		instance->get_method_argument_count("not_a_method", &is_valid);
+		CHECK_FALSE(is_valid);
+
+		// A pre-populated list (as `Object::get_method_list` hands over, holding the
+		// host's native methods) must not cause an identically-named contract method to
+		// be dropped: the requirement is still appended.
+		List<MethodInfo> seeded;
+		MethodInfo native_lookalike;
+		native_lookalike.name = "base_required";
+		seeded.push_back(native_lookalike);
+		instance->get_method_list(&seeded);
+		int base_required_entries = 0;
+		for (const MethodInfo &method : seeded) {
+			if (method.name == StringName("base_required")) {
+				base_required_entries++;
+			}
+		}
+		CHECK(base_required_entries == 2); // the seeded look-alike plus the contract entry.
+	}
+
+	// Diamond: `base_required` is reached through both `Left` and `Right` and is
+	// intercepted exactly once (no double-dispatch, no fallthrough).
+	check_intercepts(wide, { "wide_required", "left_required", "right_required", "base_required" });
+}
+
+TEST_CASE("[Modules][GDScript][Proxy] Inherited requirement return matches a direct proxy") {
+	ScopedProxyLanguage language;
+
+	// An unannotated abstract method (`ping()`) compiles to a `void` return (no
+	// declared type and no body that returns), so the handler's value is ignored —
+	// not passed through as `Variant`. A proxy that reaches `ping` transitively
+	// (through `Sub uses Pinger`) must coerce its return exactly as a direct proxy of
+	// `Pinger` does, rather than upgrading it to a pass-through `Variant`. A
+	// typed-but-void method (`reset() -> void`) is covered too.
+	const char *source =
+			"trait Pinger:\n"
+			"\t@abstract func ping()\n"
+			"\t@abstract func reset() -> void\n"
+			"\n"
+			"trait Sub uses Pinger:\n"
+			"\t@abstract func extra() -> int\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn \"value\"\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> pinger = get_subclass(script, "Pinger");
+	Ref<GDScript> sub = get_subclass(script, "Sub");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(pinger.is_valid());
+	REQUIRE(sub.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	const auto call_method = [&](const Ref<GDScript> &p_type, const char *p_method) {
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(p_type, Callable(recorder, "handle"), error_message);
+		REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+		Callable::CallError error;
+		Variant result = proxy->get_script_instance()->callp(p_method, nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		return result;
+	};
+
+	// `ping` (unannotated -> void): the direct proxy ignores the handler value and
+	// returns null, and the transitive proxy must do the same.
+	CHECK(call_method(pinger, "ping").get_type() == Variant::NIL);
+	CHECK(call_method(sub, "ping") == call_method(pinger, "ping"));
+
+	// `reset` (void): the handler value is ignored on both paths.
+	CHECK(call_method(pinger, "reset").get_type() == Variant::NIL);
+	CHECK(call_method(sub, "reset").get_type() == Variant::NIL);
+}
+
+TEST_CASE("[Modules][GDScript][Proxy] A same-named property does not hide an inherited requirement") {
+	ScopedProxyLanguage language;
+
+	// `Combined` flattens a `tag` var from one trait and inherits an abstract `tag()`
+	// method requirement from another. The property and the method occupy different
+	// namespaces on the proxy, so both must survive: the var feeds the auto-backing
+	// store, and the method is intercepted — the var must not suppress recording the
+	// requirement.
+	const char *source =
+			"trait WithField:\n"
+			"\tvar tag: int\n"
+			"\n"
+			"trait WithMethod:\n"
+			"\t@abstract func tag() -> int\n"
+			"\n"
+			"trait Combined uses WithField, WithMethod:\n"
+			"\tpass\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn 42\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> combined = get_subclass(script, "Combined");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(combined.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(combined, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+	ScriptInstance *instance = proxy->get_script_instance();
+
+	// The inherited `tag()` method is part of the contract and reaches the handler.
+	CHECK(instance->has_method("tag"));
+	{
+		Callable::CallError error;
+		Variant result = instance->callp("tag", nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant(42));
+	}
+
+	// The `tag` var still round-trips through the auto-backing property store,
+	// independently of the method, and never reaches the handler.
+	{
+		Variant value;
+		CHECK(instance->set("tag", 7));
+		CHECK(instance->get("tag", value));
+		CHECK(value == Variant(7));
+	}
+
+	// A concrete trait method dropped by flattening (its name claimed by the earlier
+	// `var tag`) is not a callable either, so it must not suppress the abstract `tag()`
+	// requirement contributed by a third trait. The requirement is still intercepted.
+	const char *shadowed_source =
+			"trait WithField:\n"
+			"\tvar tag: int\n"
+			"\n"
+			"trait WithConcrete:\n"
+			"\tfunc tag() -> int:\n"
+			"\t\treturn 1\n"
+			"\n"
+			"trait WithAbstract:\n"
+			"\t@abstract func tag() -> int\n"
+			"\n"
+			"trait Mixed uses WithField, WithConcrete, WithAbstract:\n"
+			"\tpass\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn 42\n";
+
+	Ref<GDScript> shadowed_script = compile_proxy_source(shadowed_source);
+	Ref<GDScript> mixed = get_subclass(shadowed_script, "Mixed");
+	Ref<GDScript> shadowed_recorder = get_subclass(shadowed_script, "Recorder");
+	REQUIRE(mixed.is_valid());
+
+	Variant shadowed_recorder_ref = shadowed_recorder->_new(nullptr, -1, construct_error);
+	Object *shadowed_recorder_object = shadowed_recorder_ref;
+
+	String shadowed_error;
+	Ref<RefCounted> mixed_proxy = GDScriptProxy::create_proxy(mixed, Callable(shadowed_recorder_object, "handle"), shadowed_error);
+	REQUIRE_MESSAGE(mixed_proxy.is_valid(), shadowed_error.utf8().get_data());
+	ScriptInstance *mixed_instance = mixed_proxy->get_script_instance();
+
+	CHECK(mixed_instance->has_method("tag"));
+	{
+		Callable::CallError error;
+		Variant result = mixed_instance->callp("tag", nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant(42));
+	}
+}
+
 TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 	ScopedProxyLanguage language;
 

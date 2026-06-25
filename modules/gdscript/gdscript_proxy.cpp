@@ -117,6 +117,31 @@ GDScriptFunction *GDScriptProxyInstance::_find_contract_function(const StringNam
 	return nullptr;
 }
 
+bool GDScriptProxyInstance::_resolve_contract_return_type(const StringName &p_method, GDScriptDataType &r_return_type) const {
+	// A compiled function always wins: it covers the target's own methods, inherited
+	// methods, and concrete trait methods flattened in (the latter satisfy any
+	// same-named abstract requirement, so they take precedence over it).
+	const GDScriptFunction *contract_function = _find_contract_function(p_method);
+	if (contract_function != nullptr) {
+		r_return_type = contract_function->get_return_type();
+		return true;
+	}
+
+	// Otherwise this may be an abstract requirement contributed by a `uses`-ed trait
+	// (possibly transitively). Each class along the base chain records its own such
+	// requirements, so walk the chain exactly as `_find_contract_function` does.
+	const GDScript *script = proxy_script.ptr();
+	while (script) {
+		HashMap<StringName, GDScript::AbstractTraitRequirement>::ConstIterator element = script->get_abstract_trait_requirements().find(p_method);
+		if (element) {
+			r_return_type = element->value.return_type;
+			return true;
+		}
+		script = script->get_base().ptr();
+	}
+	return false;
+}
+
 Variant GDScriptProxyInstance::_coerce_handler_return(const GDScriptDataType &p_return_type, const StringName &p_method_name, const Variant &p_value) const {
 	// `void`: the declared return is `null`, so the handler's value is ignored.
 	if (p_return_type.kind == GDScriptDataType::BUILTIN && p_return_type.builtin_type == Variant::NIL) {
@@ -161,19 +186,17 @@ Variant GDScriptProxyInstance::_coerce_handler_return(const GDScriptDataType &p_
 }
 
 Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
-	GDScriptFunction *contract_function = _find_contract_function(p_method);
-	if (contract_function == nullptr) {
+	// Snapshot the declared return type before running the handler: handler code
+	// is arbitrary and could reload `T`, freeing the live GDScriptFunction. Pin
+	// strong references to any script types in the copy so it stays self-contained
+	// even if the originating script is reloaded mid-call.
+	GDScriptDataType return_type;
+	if (!_resolve_contract_return_type(p_method, return_type)) {
 		// Not part of `T`'s contract: defer to native `Object`/`RefCounted`
 		// built-ins so `get_instance_id`, `connect`, refcounting, etc. work.
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
-
-	// Snapshot the declared return type before running the handler: handler code
-	// is arbitrary and could reload `T`, freeing the live GDScriptFunction. Pin
-	// strong references to any script types in the copy so it stays self-contained
-	// even if the originating script is reloaded mid-call.
-	GDScriptDataType return_type = contract_function->get_return_type();
 	_pin_script_type_refs(return_type);
 
 	if (_is_delegating()) {
@@ -280,12 +303,70 @@ void GDScriptProxyInstance::_configure_delegation(const Variant &p_target, const
 }
 
 bool GDScriptProxyInstance::has_method(const StringName &p_method) const {
-	return _find_contract_function(p_method) != nullptr;
+	GDScriptDataType return_type;
+	return _resolve_contract_return_type(p_method, return_type);
+}
+
+int GDScriptProxyInstance::get_method_argument_count(const StringName &p_method, bool *r_is_valid) const {
+	// A compiled function reports its own argument count; a transitive abstract
+	// requirement reports the fixed-parameter count from its recorded signature. Both
+	// must agree with what `has_method`/`callp` accept, so the default `ScriptInstance`
+	// path (which only consults compiled `member_functions`) is not enough.
+	const GDScriptFunction *contract_function = _find_contract_function(p_method);
+	if (contract_function != nullptr) {
+		if (r_is_valid) {
+			*r_is_valid = true;
+		}
+		return contract_function->get_argument_count();
+	}
+
+	const GDScript *script = proxy_script.ptr();
+	while (script) {
+		HashMap<StringName, GDScript::AbstractTraitRequirement>::ConstIterator element = script->get_abstract_trait_requirements().find(p_method);
+		if (element) {
+			if (r_is_valid) {
+				*r_is_valid = true;
+			}
+			return element->value.method_info.arguments.size();
+		}
+		script = script->get_base().ptr();
+	}
+
+	if (r_is_valid) {
+		*r_is_valid = false;
+	}
+	return 0;
 }
 
 void GDScriptProxyInstance::get_method_list(List<MethodInfo> *p_list) const {
-	if (proxy_script.is_valid()) {
-		proxy_script->get_script_method_list(p_list);
+	if (proxy_script.is_null()) {
+		return;
+	}
+
+	// The script's method list is backed by compiled `member_functions`, so it omits
+	// the abstract requirements inherited through `uses`-ed traits. Those are part of
+	// the proxy's callable contract (`has_method`/`callp` honor them), so enumerate them
+	// too. Dedup only against the script's own methods: `p_list` may already hold the
+	// host's native `Object`/`RefCounted` methods (Object::get_method_list prepopulates
+	// it), and a contract method that shadows a native one must still be listed.
+	HashSet<StringName> listed;
+	List<MethodInfo> script_methods;
+	proxy_script->get_script_method_list(&script_methods);
+	for (const MethodInfo &method : script_methods) {
+		listed.insert(method.name);
+		p_list->push_back(method);
+	}
+
+	const GDScript *script = proxy_script.ptr();
+	while (script) {
+		for (const KeyValue<StringName, GDScript::AbstractTraitRequirement> &requirement : script->get_abstract_trait_requirements()) {
+			if (listed.has(requirement.key)) {
+				continue;
+			}
+			listed.insert(requirement.key);
+			p_list->push_back(requirement.value.method_info);
+		}
+		script = script->get_base().ptr();
 	}
 }
 
