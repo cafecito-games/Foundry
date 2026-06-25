@@ -231,6 +231,22 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
 	}
 
+	TEST_CASE("A value-validating read forces a conservative skip") {
+		// `[1].has(1.2)` is false, but `Array[int].has(1.2)` coerces 1.2 to 1 and
+		// returns true, so typing would change behavior; inference must not.
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar found = items.has(1.2)\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+	}
+
+	TEST_CASE("A copy-returning method forces a conservative skip") {
+		// `duplicate()` carries the typed flag onto the copy, so an alias of it
+		// would reject a later mismatched element after typing.
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar copy = items.duplicate()\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::UNPROVABLE);
+	}
+
 	TEST_CASE("An unused empty literal yields no evidence") {
 		InferenceFixture fixture("func f():\n\tvar items = []\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "items");
