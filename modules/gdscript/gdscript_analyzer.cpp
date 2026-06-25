@@ -9668,6 +9668,15 @@ void GDScriptAnalyzer::reduce_call_create_proxy(GDScriptParser::CallNode *p_call
 	// they are enforced by the runtime guard in `GDScriptProxy::create_proxy` against the
 	// actual binding. Type the result as T and let the compiler emit the reified lookup.
 	if (type_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		// Class type parameters are reified per instance, so they are only recoverable from a
+		// non-static function. A static function has no instance to read the binding from.
+		if (static_context) {
+			push_error(vformat(R"*(create_proxy[T]() cannot forward the class type parameter "%s" from a static function because it is reified per instance. Use create_proxy_dynamic() with an explicit type instead.)*", type_argument.to_string()), p_call);
+			p_call->set_datatype(error_type);
+			mark_node_unsafe(p_call);
+			return;
+		}
+
 		type_argument.is_meta_type = false;
 		type_argument.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 		p_call->is_proxy_construct = true;
