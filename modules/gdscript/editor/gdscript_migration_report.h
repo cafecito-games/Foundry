@@ -81,10 +81,19 @@ struct MigrationReportOptions {
 	bool strict_dynamic_checks = false;
 };
 
-// The dry-run report: an honest, read-only account of what a migration would do to a project
-// before any edit is made. It joins the scan stage's coverage (scripts considered, directories
-// pruned) with a per-site tally of what the Add Type Annotation refactor could and could not
-// type, plus an optional projection of strict-mode violations.
+// The dry-run report: an honest, read-only snapshot of a project's migration coverage and
+// friction before any edit is made. It joins the scan stage's coverage (scripts considered,
+// directories pruned) with a per-site tally of what the Add Type Annotation refactor can and
+// cannot type, plus an optional projection of strict-mode violations.
+//
+// The tally is a single, independent pass: each site is "inferable" when the analyzer resolves
+// a concrete, renderable type for it as the project stands today, and "skipped" (with a reason)
+// otherwise. It is intentionally NOT a simulation of a full migration run: it does not iterate
+// the dependency-ordered fixpoint (so a site that would only become inferable after a dependency
+// is typed is reported as skipped here), and it does not run post-edit verification (so a site
+// the verification harness would later reject for breaking a dependent is still counted as
+// inferable). The numbers are an upper bound on per-pass coverage and a map of immediate
+// friction, which is what surfacing migration viability before the first edit calls for.
 struct MigrationReportResult {
 	// True only means the report completed without a fatal error; an empty project is a
 	// successful report with zero counts.

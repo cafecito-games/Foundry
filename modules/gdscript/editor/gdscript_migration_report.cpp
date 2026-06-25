@@ -167,6 +167,7 @@ String MigrationReportResult::format() const {
 	StringBuilder builder;
 	builder.append("GDScript migration dry-run report\n");
 	builder.append("=================================\n");
+	builder.append("Single-pass coverage snapshot; no fixpoint iteration or verification is run.\n");
 	builder.append(vformat("Scripts scanned: %d\n", total_scripts_scanned));
 
 	builder.append(vformat("Directories skipped: %d\n", skipped_directories.size()));
