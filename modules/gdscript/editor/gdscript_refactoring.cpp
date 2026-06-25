@@ -5223,12 +5223,59 @@ const GDScriptParser::ClassNode *resolve_base_class(
 	return nullptr;
 }
 
+// Collect the abstract methods required by the traits the target class uses but does
+// not implement, mirroring the analyzer's `validate_trait_requirements`. `resolved_traits`
+// is the flattened set of directly and transitively used traits, so the same `decided`
+// set the base-chain walk built lets a concrete implementation anywhere in the class
+// hierarchy (or an already-owed base abstract) satisfy a trait requirement.
+void collect_owed_trait_abstract_methods(
+		const GDScriptParser::ClassNode *p_target,
+		const GDScriptParser::ClassNode *p_root,
+		const Vector<String> &p_target_lines,
+		HashSet<StringName> &r_decided,
+		Vector<OwedAbstractMethod> &r_owed) {
+	for (const GDScriptParser::ClassNode *trait : p_target->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		// A same-file trait shares the target file's lines, so a method's default-value
+		// spans align with them. A cross-file trait's declaring lines are unknown here, so
+		// report none and omit any default rather than slice it out of the wrong file
+		// (the same graceful degradation used for a cross-file abstract base).
+		const bool same_file = find_class_node_by_fqcn(p_root, trait->fqcn) == trait;
+		const Vector<String> *trait_lines = same_file ? &p_target_lines : nullptr;
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const GDScriptParser::FunctionNode *function = member.function;
+			if (function == nullptr || function->identifier == nullptr || !function->is_abstract) {
+				continue;
+			}
+			const StringName name = function->identifier->name;
+			// A name already decided by the base chain is implemented (skip) or already
+			// owed there (dedup); a name decided by an earlier trait dedups too, matching
+			// the analyzer reporting one missing-implementation diagnostic per name.
+			if (r_decided.has(name)) {
+				continue;
+			}
+			r_decided.insert(name);
+			OwedAbstractMethod owed;
+			owed.function = function;
+			owed.declaring_lines = trait_lines;
+			r_owed.push_back(owed);
+		}
+	}
+}
+
 // Collect abstract methods the target class still owes, most-derived-first.
 // Walks {target, base, base-of-base, ...}; for each method name the FIRST
 // declaration encountered (the most-derived) decides its fate: if that
 // declaration is abstract and lives in an ancestor (not the target), it is owed.
+// After the base chain, the abstract methods required by used traits are added.
 void collect_owed_abstract_methods(
 		const GDScriptParser::ClassNode *p_target,
+		const GDScriptParser::ClassNode *p_root,
 		const String &p_target_path,
 		const Vector<String> &p_target_lines,
 		Vector<OwedAbstractMethod> &r_owed,
@@ -5274,6 +5321,8 @@ void collect_owed_abstract_methods(
 		current_lines = base_lines;
 		is_target = false;
 	}
+
+	collect_owed_trait_abstract_methods(p_target, p_root, p_target_lines, decided, r_owed);
 }
 
 // Returns the GDScript literal default for a return type, or false when the type
@@ -5444,7 +5493,7 @@ ImplementAbstractCandidate find_implement_abstract_in_tree(
 		return candidate;
 	}
 
-	collect_owed_abstract_methods(target, p_path, p_lines, candidate.abstract_methods, p_parse_results);
+	collect_owed_abstract_methods(target, p_tree, p_path, p_lines, candidate.abstract_methods, p_parse_results);
 	if (candidate.abstract_methods.is_empty()) {
 		candidate.disabled_reason = "No unimplemented abstract methods.";
 		return candidate;

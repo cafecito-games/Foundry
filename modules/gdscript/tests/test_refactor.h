@@ -565,6 +565,73 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK(out.contains("options"));
 	}
 
+	TEST_CASE("Implement abstract: enabled when a class uses a trait with an abstract method") {
+		const String source =
+				"trait Damageable:\n"
+				"\t@abstract func take_damage(amount: int) -> void\n"
+				"class Player:\n"
+				"\tuses Damageable\n"
+				"\tvar hp := 10\n";
+		CHECK(GDScriptTests::implement_abstract_enabled(source, 4, 1));
+	}
+
+	TEST_CASE("Implement abstract: renders a stub for a trait-required abstract method") {
+		const String source =
+				"trait Damageable:\n"
+				"\t@abstract func take_damage(amount: int) -> void\n"
+				"class Player:\n"
+				"\tuses Damageable\n"
+				"\tvar hp := 10\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 4, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func take_damage(amount: int) -> void:"));
+		CHECK(out.contains("push_error(\"Not implemented: take_damage\")"));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the class implements the trait method") {
+		const String source =
+				"trait Damageable:\n"
+				"\t@abstract func take_damage(amount: int) -> void\n"
+				"class Player:\n"
+				"\tuses Damageable\n"
+				"\tfunc take_damage(amount: int) -> void:\n"
+				"\t\tpass\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 4, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 4, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: collects transitively-used trait abstract methods") {
+		const String source =
+				"trait Base:\n"
+				"\t@abstract func base_required() -> void\n"
+				"trait Middle:\n"
+				"\tuses Base\n"
+				"\t@abstract func middle_required() -> void\n"
+				"class Player:\n"
+				"\tuses Middle\n"
+				"\tvar hp := 10\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 7, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func base_required() -> void:"));
+		CHECK(out.contains("func middle_required() -> void:"));
+	}
+
+	TEST_CASE("Implement abstract: a concrete base implementation satisfies a trait requirement") {
+		const String source =
+				"trait Damageable:\n"
+				"\t@abstract func take_damage(amount: int) -> void\n"
+				"class Living:\n"
+				"\tfunc take_damage(amount: int) -> void:\n"
+				"\t\tpass\n"
+				"class Player extends Living:\n"
+				"\tuses Damageable\n"
+				"\tvar hp := 10\n";
+		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 7, 1));
+		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 7, 1), String("No unimplemented abstract methods."));
+	}
+
 	TEST_CASE("Edit application") {
 		auto edit = [](int sl, int sc, int el, int ec, const String &t) {
 			RefactorTextEdit e;
