@@ -320,6 +320,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_GET_NAMED_VALIDATED,                    \
 		&&OPCODE_SET_MEMBER,                             \
 		&&OPCODE_GET_MEMBER,                             \
+		&&OPCODE_GET_TYPE_PARAMETER,                     \
 		&&OPCODE_SET_STATIC_VARIABLE,                    \
 		&&OPCODE_GET_STATIC_VARIABLE,                    \
 		&&OPCODE_ASSIGN,                                 \
@@ -1394,6 +1395,36 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					OPCODE_BREAK;
 				}
 #endif
+				ip += 3;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_GET_TYPE_PARAMETER) {
+				CHECK_SPACE(3);
+				GET_VARIANT_PTR(dst, 0);
+				int type_parameter_index = _code_ptr[ip + 2];
+
+				// Materialize the script bound to the enclosing class's i-th type parameter
+				// from this instance's reified type arguments (e.g. `Greeter` in
+				// `Mock[Greeter].new()`). Used to forward a type parameter into
+				// `create_proxy[T]`. The result is the bound `Script` (null when the
+				// argument is a builtin or unbound), which the proxy constructor validates.
+				if (unlikely(p_instance == nullptr)) {
+					err_text = "Cannot resolve a type parameter without an instance.";
+					OPCODE_BREAK;
+				}
+				// The index is a type-parameter ordinal in the class that declares this
+				// function. The instance's reified `type_arguments` line up with that ordinal
+				// only when the instance is directly an instance of that class. For a derived
+				// instance the base's parameters are not (yet) remapped onto its reified
+				// arguments, so resolve to null there and let the proxy constructor's guard
+				// report it, rather than reading an unrelated slot.
+				const Vector<ContainerType> &reified = p_instance->get_type_arguments();
+				if (p_instance->script.ptr() == _script && type_parameter_index >= 0 && type_parameter_index < reified.size()) {
+					*dst = reified[type_parameter_index].script;
+				} else {
+					*dst = Variant();
+				}
 				ip += 3;
 			}
 			DISPATCH_OPCODE;

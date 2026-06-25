@@ -921,6 +921,12 @@ void GDScriptByteCodeGenerator::write_get_member(const Address &p_target, const 
 	append(p_name);
 }
 
+void GDScriptByteCodeGenerator::write_get_type_parameter(const Address &p_target, int p_type_parameter_index) {
+	append_opcode(GDScriptFunction::OPCODE_GET_TYPE_PARAMETER);
+	append(p_target);
+	append(p_type_parameter_index);
+}
+
 void GDScriptByteCodeGenerator::write_set_static_variable(const Address &p_value, const Address &p_class, int p_index) {
 	append_opcode(GDScriptFunction::OPCODE_SET_STATIC_VARIABLE);
 	append(p_value);

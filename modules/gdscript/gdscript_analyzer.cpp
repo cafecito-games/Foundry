@@ -9711,13 +9711,51 @@ void GDScriptAnalyzer::reduce_call_create_proxy(GDScriptParser::CallNode *p_call
 		return;
 	}
 
-	// A forwarded, still-unresolved type parameter cannot be reified at runtime yet, so the
-	// proxy would have no concrete script to scan. Reject it with a pointer to the dynamic
-	// fallback rather than emitting code that cannot recover T.
-	if (type_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
-		push_error(vformat(R"*(create_proxy[T]() cannot forward the unresolved type parameter "%s" because reified runtime type bindings are not available yet. Use create_proxy_dynamic() with an explicit type instead.)*", type_argument.to_string()), p_call);
+	// A forwarded class type parameter is reified onto the instance at construction
+	// (e.g. `Mock[Greeter].new()` binds T = Greeter), so the compiler can materialize its
+	// bound script at runtime and the runtime guard validates the actual binding. A method
+	// type parameter is not reified onto the instance, so it still has no concrete script
+	// to recover; reject only that case, pointing at the dynamic fallback.
+	if (type_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
+			type_argument.type_parameter_scope != GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
+		push_error(vformat(R"*(create_proxy[T]() cannot forward the method type parameter "%s" because method type arguments are not reified at runtime. Use create_proxy_dynamic() with an explicit type instead.)*", type_argument.to_string()), p_call);
 		p_call->set_datatype(error_type);
 		mark_node_unsafe(p_call);
+		return;
+	}
+
+	// A forwarded class type parameter resolves to its bound script only at runtime, so the
+	// remaining static checks (trait/abstract and RefCounted-base guards) cannot run here;
+	// they are enforced by the runtime guard in `GDScriptProxy::create_proxy` against the
+	// actual binding. Type the result as T and let the compiler emit the reified lookup.
+	if (type_argument.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		// Class type parameters are reified per instance, so they are only recoverable from a
+		// non-static function. A static function has no instance to read the binding from.
+		if (static_context) {
+			push_error(vformat(R"*(create_proxy[T]() cannot forward the class type parameter "%s" from a static function because it is reified per instance. Use create_proxy_dynamic() with an explicit type instead.)*", type_argument.to_string()), p_call);
+			p_call->set_datatype(error_type);
+			mark_node_unsafe(p_call);
+			return;
+		}
+
+		// The compiler materializes T from the instance's reified bindings, so this call
+		// needs `self`. Inside a lambda that does not otherwise touch `self`, mark it as
+		// using self so it is invoked with the instance rather than a null one.
+		mark_lambda_use_self();
+
+		type_argument.is_meta_type = false;
+		type_argument.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		p_call->is_proxy_construct = true;
+		p_call->set_datatype(type_argument);
+
+		if (p_call->arguments.size() != 1) {
+			push_error(vformat(R"*(create_proxy[T]() expects a single handler argument, but %d %s given.)*", p_call->arguments.size(), p_call->arguments.size() == 1 ? "was" : "were"), p_call);
+		} else {
+			const GDScriptParser::DataType handler_type = p_call->arguments[0]->get_datatype();
+			if (handler_type.is_hard_type() && !handler_type.is_variant() && !(handler_type.kind == GDScriptParser::DataType::BUILTIN && handler_type.builtin_type == Variant::CALLABLE)) {
+				push_error(vformat(R"*(create_proxy[T]() expects a Callable handler, but the argument is of type "%s".)*", handler_type.to_string()), p_call->arguments[0]);
+			}
+		}
 		return;
 	}
 
