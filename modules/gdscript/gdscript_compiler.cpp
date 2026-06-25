@@ -2435,9 +2435,19 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 		return;
 	}
 
+	// Only a callable of the same name satisfies an abstract method requirement and is
+	// reachable by the proxy's `_find_contract_function`. A non-function member (var,
+	// constant, enum, enum value, or signal) of the same name does not, so it must not
+	// suppress recording the requirement — otherwise the method half of the contract is
+	// lost. Hence `provided` tracks function names only: the implementer's and bases'
+	// own methods (concrete or abstract, both compiled into `member_functions`) and the
+	// concrete trait methods flattened in.
 	HashSet<StringName> provided;
 	for (const GDScriptParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
 		for (const GDScriptParser::ClassNode::Member &member : owner->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
 			const StringName name = member.get_name();
 			if (name != StringName()) {
 				provided.insert(name);
@@ -2449,11 +2459,14 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 			continue;
 		}
 		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
-			if (_is_flattenable_trait_member(member)) {
-				const StringName name = member.get_name();
-				if (name != StringName()) {
-					provided.insert(name);
-				}
+			// A flattened concrete trait method satisfies a same-named requirement;
+			// abstract trait functions are themselves requirements, not providers.
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION || member.function == nullptr || member.function->is_abstract) {
+				continue;
+			}
+			const StringName name = member.get_name();
+			if (name != StringName()) {
+				provided.insert(name);
 			}
 		}
 	}

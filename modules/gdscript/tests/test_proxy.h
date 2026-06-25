@@ -705,6 +705,61 @@ TEST_CASE("[Modules][GDScript][Proxy] Inherited requirement return matches a dir
 	CHECK(call_method(sub, "reset").get_type() == Variant::NIL);
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] A same-named property does not hide an inherited requirement") {
+	ScopedProxyLanguage language;
+
+	// `Combined` flattens a `tag` var from one trait and inherits an abstract `tag()`
+	// method requirement from another. The property and the method occupy different
+	// namespaces on the proxy, so both must survive: the var feeds the auto-backing
+	// store, and the method is intercepted — the var must not suppress recording the
+	// requirement.
+	const char *source =
+			"trait WithField:\n"
+			"\tvar tag: int\n"
+			"\n"
+			"trait WithMethod:\n"
+			"\t@abstract func tag() -> int\n"
+			"\n"
+			"trait Combined uses WithField, WithMethod:\n"
+			"\tpass\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn 42\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> combined = get_subclass(script, "Combined");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(combined.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(combined, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+	ScriptInstance *instance = proxy->get_script_instance();
+
+	// The inherited `tag()` method is part of the contract and reaches the handler.
+	CHECK(instance->has_method("tag"));
+	{
+		Callable::CallError error;
+		Variant result = instance->callp("tag", nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant(42));
+	}
+
+	// The `tag` var still round-trips through the auto-backing property store,
+	// independently of the method, and never reaches the handler.
+	{
+		Variant value;
+		CHECK(instance->set("tag", 7));
+		CHECK(instance->get("tag", value));
+		CHECK(value == Variant(7));
+	}
+}
+
 TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 	ScopedProxyLanguage language;
 
