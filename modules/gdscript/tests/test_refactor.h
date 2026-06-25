@@ -378,6 +378,45 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_FALSE(out.contains("return"));
 	}
 
+	TEST_CASE("Implement abstract: generic method preserves its type-parameter list") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func id[T](value: T) -> T\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func id[T](value: T) -> T:"));
+		CHECK(out.contains("push_error(\"Not implemented: id\")"));
+	}
+
+	TEST_CASE("Implement abstract: generic method preserves bounded type parameters") {
+		const String source =
+				"@abstract class Base:\n"
+				"\t@abstract func first[T: RefCounted](value: T) -> T\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func first[T: RefCounted](value: T) -> T:"));
+	}
+
+	TEST_CASE("Implement abstract: generic method preserves a user-class bound") {
+		const String source =
+				"class Animal:\n"
+				"\tpass\n"
+				"@abstract class Base:\n"
+				"\t@abstract func pick[T: Animal](value: T) -> T\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		String out;
+		RefactorResult r = GDScriptTests::run_implement_abstract(source, 5, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func pick[T: Animal](value: T) -> T:"));
+	}
+
 	TEST_CASE("Implement abstract: object return type uses pass") {
 		const String source =
 				"@abstract class Base:\n"

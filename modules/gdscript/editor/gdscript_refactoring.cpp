@@ -5461,7 +5461,46 @@ String render_abstract_stub(
 	if (p_function->is_declared_async) {
 		signature += "async ";
 	}
-	signature += "func " + name + "(";
+	signature += "func " + name;
+
+	// Render the generic type-parameter list (`[T, U: Bound]`) so a generic abstract method's
+	// declaration is reproduced. Each parameter's optional upper bound is rendered from its eagerly
+	// resolved datatype.
+	if (!p_function->type_parameters.is_empty()) {
+		signature += "[";
+		bool first_type_parameter = true;
+		for (int i = 0; i < p_function->type_parameters.size(); i++) {
+			const GDScriptParser::TypeParameterNode *type_parameter = p_function->type_parameters[i];
+			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+				continue;
+			}
+			if (!first_type_parameter) {
+				signature += ", ";
+			}
+			first_type_parameter = false;
+			signature += String(type_parameter->identifier->name);
+
+			if (type_parameter->bound != nullptr) {
+				String rendered_bound;
+				// Prefer the eagerly-resolved (non-meta) bound. Otherwise fall back to the bound
+				// TypeNode's own datatype, which is populated even when the eager pass has not run in
+				// this analysis context — but in type position it is a metatype handle (especially for
+				// a user-class bound like `T: MyClass`), so strip the meta flag to render the instance
+				// type rather than have render_annotatable_type reject it and silently drop the bound.
+				if (!GDScriptRefactorTypes::render_annotatable_type(type_parameter->resolved_bound, rendered_bound)) {
+					GDScriptParser::DataType bound_type = type_parameter->bound->get_datatype();
+					bound_type.is_meta_type = false;
+					GDScriptRefactorTypes::render_annotatable_type(bound_type, rendered_bound);
+				}
+				if (!rendered_bound.is_empty()) {
+					signature += ": " + rendered_bound;
+				}
+			}
+		}
+		signature += "]";
+	}
+
+	signature += "(";
 
 	bool first_parameter = true;
 	for (int i = 0; i < p_function->parameters.size(); i++) {
