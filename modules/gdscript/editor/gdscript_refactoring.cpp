@@ -105,6 +105,17 @@ struct TypeAnnotationRenderContext {
 // `import` line; when the file has neither, it goes at the very top, before any
 // leading class annotations. Returns a 0-based line index; the import is inserted
 // at the start of that line.
+// True when `p_stripped` begins with the keyword `p_keyword` followed by
+// whitespace (a space or tab). `namespace\tgame` is as valid as `namespace game`.
+bool line_starts_with_keyword(const String &p_stripped, const char *p_keyword) {
+	const String keyword = p_keyword;
+	if (!p_stripped.begins_with(keyword) || p_stripped.length() <= keyword.length()) {
+		return false;
+	}
+	const char32_t next = p_stripped[keyword.length()];
+	return next == ' ' || next == '\t';
+}
+
 int find_import_insertion_line(const Vector<String> &p_lines) {
 	int insertion_line = 0;
 	for (int i = 0; i < p_lines.size(); i++) {
@@ -112,7 +123,7 @@ int find_import_insertion_line(const Vector<String> &p_lines) {
 		if (stripped.is_empty() || stripped.begins_with("#")) {
 			continue;
 		}
-		if (stripped.begins_with("namespace ") || stripped.begins_with("import ")) {
+		if (line_starts_with_keyword(stripped, "namespace") || line_starts_with_keyword(stripped, "import")) {
 			insertion_line = i + 1;
 			continue;
 		}

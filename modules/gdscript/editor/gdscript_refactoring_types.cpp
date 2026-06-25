@@ -32,7 +32,9 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "core/object/class_db.h"
 #include "core/object/script_language.h"
+#include "core/variant/variant.h"
 
 namespace {
 
@@ -100,38 +102,80 @@ bool namespace_defines_class(const String &p_namespace, const String &p_class_na
 	return ScriptServer::is_global_class(p_namespace + "." + p_class_name);
 }
 
-// Returns true when the bare `p_class_name` resolves unambiguously to
-// `p_target_namespace.p_class_name` at the annotation site. GDScript resolves a
-// bare global class name against the current namespace first, then imported
-// namespaces (an ambiguous match across imports is an error). The bare spelling
-// is only safe when it provably names the target and nothing else; otherwise the
-// caller must qualify, which always resolves.
-bool bare_name_resolves_to_target(const String &p_target_namespace, const String &p_class_name, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
-	// A class in the current namespace always resolves bare to itself, and the
-	// current namespace wins first, shadowing imports of the same bare name. (A
-	// same-named class declared elsewhere in the current namespace would be a
-	// project-level conflict regardless of this refactor.)
-	if (p_target_namespace == p_scope.current_namespace) {
+// True when a bare `p_class_name` would bind to something other than a namespaced
+// global class: a builtin type, a native class, or a global-namespace global
+// class. These all win over (or collide with) a namespaced import, so the bare
+// spelling cannot be made to name the target by importing.
+bool bare_name_is_globally_shadowed(const String &p_class_name) {
+	if (Variant::get_type_by_name(p_class_name) != Variant::VARIANT_MAX) {
 		return true;
 	}
-	if (namespace_defines_class(p_scope.current_namespace, p_class_name)) {
-		// The current namespace shadows the import with a different class.
-		return false;
+	if (ClassDB::class_exists(p_class_name)) {
+		return true;
 	}
-	// Otherwise the name must come from exactly one imported namespace, and that
-	// one must be the target.
-	int matching_imports = 0;
-	bool target_imported = false;
+	// A global class with no namespace is referred to by its bare name.
+	return ScriptServer::is_global_class(p_class_name);
+}
+
+// Counts in-scope namespaces (current + imports) other than the target that also
+// define `p_class_name`. Any such namespace makes a bare reference ambiguous or
+// shadowed, so a bare spelling cannot safely name the target.
+int count_conflicting_in_scope_definitions(const String &p_target_namespace, const String &p_class_name, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
+	int conflicts = 0;
+	if (p_scope.current_namespace != p_target_namespace && namespace_defines_class(p_scope.current_namespace, p_class_name)) {
+		conflicts++;
+	}
 	for (const String &imported : p_scope.imported_namespaces) {
-		if (!namespace_defines_class(imported, p_class_name)) {
-			continue;
-		}
-		matching_imports++;
-		if (imported == p_target_namespace) {
-			target_imported = true;
+		if (imported != p_target_namespace && namespace_defines_class(imported, p_class_name)) {
+			conflicts++;
 		}
 	}
-	return matching_imports == 1 && target_imported;
+	return conflicts;
+}
+
+bool namespace_is_in_scope(const String &p_namespace, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
+	if (p_namespace == p_scope.current_namespace) {
+		return true;
+	}
+	for (const String &imported : p_scope.imported_namespaces) {
+		if (imported == p_namespace) {
+			return true;
+		}
+	}
+	return false;
+}
+
+enum class ClassSpelling {
+	BARE_NO_IMPORT, // Bare name already resolves to the target.
+	BARE_WITH_IMPORT, // Bare name resolves to the target once the namespace is imported.
+	QUALIFIED, // Use the fully-qualified `namespace.Class`, which resolves on its own.
+};
+
+// Chooses the minimal class spelling that resolves to `p_target_namespace`'s
+// `p_class_name` at the annotation site. Prefers the bare name (optionally adding
+// an import), and falls back to the always-resolvable qualified spelling when a
+// bare reference would be shadowed or ambiguous.
+ClassSpelling choose_class_spelling(const String &p_target_namespace, const String &p_class_name, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
+	// A class in the current namespace resolves bare to itself; the current
+	// namespace wins first. (A same-named class elsewhere in the current namespace
+	// is a project-level conflict regardless of this refactor.)
+	if (p_target_namespace == p_scope.current_namespace) {
+		return ClassSpelling::BARE_NO_IMPORT;
+	}
+	// A bare name colliding with a builtin/native/global-namespace class can never
+	// name a namespaced class, and importing cannot change that.
+	if (bare_name_is_globally_shadowed(p_class_name)) {
+		return ClassSpelling::QUALIFIED;
+	}
+	// Another in-scope namespace defining the same name makes a bare reference
+	// ambiguous; importing the target would not help.
+	if (count_conflicting_in_scope_definitions(p_target_namespace, p_class_name, p_scope) > 0) {
+		return ClassSpelling::QUALIFIED;
+	}
+	if (namespace_is_in_scope(p_target_namespace, p_scope)) {
+		return ClassSpelling::BARE_NO_IMPORT;
+	}
+	return ClassSpelling::BARE_WITH_IMPORT;
 }
 
 // Mirrors DataType::to_string() for the container/type-argument structure, but
@@ -141,13 +185,20 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 	String target_namespace;
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
-		String spelling = class_name;
-		if (!bare_name_resolves_to_target(target_namespace, class_name, p_scope)) {
-			spelling = target_namespace + "." + class_name;
-			// A qualified spelling resolves on its own only when the head of the
-			// dotted path is in scope. The leading namespace segment must be
-			// imported (or be the current namespace) for `namespace.Class` to bind.
-			r_required_imports.insert(target_namespace);
+		String spelling;
+		switch (choose_class_spelling(target_namespace, class_name, p_scope)) {
+			case ClassSpelling::BARE_NO_IMPORT:
+				spelling = class_name;
+				break;
+			case ClassSpelling::BARE_WITH_IMPORT:
+				spelling = class_name;
+				r_required_imports.insert(target_namespace);
+				break;
+			case ClassSpelling::QUALIFIED:
+				// A fully-qualified `namespace.Class` resolves on its own, so it needs
+				// no import.
+				spelling = target_namespace + "." + class_name;
+				break;
 		}
 		// Specialized type arguments on a namespaced class still need scoping.
 		if (!p_type.type_arguments.is_empty()) {

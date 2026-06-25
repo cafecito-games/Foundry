@@ -56,13 +56,15 @@ bool render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_r
 // Namespace-aware rendering: chooses the minimal class spelling that resolves at
 // the insertion site described by p_scope, and reports every namespace that must
 // be imported for the spelling to resolve. A global class is rendered bare when
-// it is already in scope (same namespace or already imported) and qualified
-// (`namespace.ClassName`) otherwise, collecting its namespace into
-// r_required_imports. Container element types and type arguments are rendered the
-// same way, so a nested cross-namespace class also contributes its import.
-// Behaves identically to render_annotatable_type for global (non-namespaced)
-// classes, leaving r_required_imports empty. Returns false in the same cases as
-// render_annotatable_type.
+// it already resolves in scope, bare plus a required import when importing its
+// namespace makes the bare name resolve, and fully-qualified (`namespace.Class`,
+// which resolves without an import) when a bare reference would be shadowed by a
+// builtin/native/global class or be ambiguous with another in-scope namespace.
+// Required namespaces are collected into r_required_imports. Container element
+// types and type arguments are rendered the same way, so a nested cross-namespace
+// class also contributes its import. Behaves identically to render_annotatable_type
+// for global (non-namespaced) classes, leaving r_required_imports empty. Returns
+// false in the same cases as render_annotatable_type.
 bool render_annotatable_type_in_scope(const GDScriptParser::DataType &p_type, const AnnotationScope &p_scope, String &r_rendered, HashSet<String> &r_required_imports);
 
 } // namespace GDScriptRefactorTypes
