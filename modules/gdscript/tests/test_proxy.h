@@ -814,4 +814,113 @@ TEST_CASE("[Modules][GDScript][Reflection] Read-only introspection API") {
 	memdelete(reflection);
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Delegating proxy advises and forwards") {
+	ScopedProxyLanguage language;
+
+	const char *source =
+			"@abstract class Service:\n"
+			"\tvar label: String\n"
+			"\t@abstract func greet(subject: String) -> String\n"
+			"\t@abstract func add(a: int, b: int) -> int\n"
+			"\n"
+			"class RealService extends Service:\n"
+			"\tfunc greet(subject: String) -> String:\n"
+			"\t\treturn \"hello \" + subject\n"
+			"\tfunc add(a: int, b: int) -> int:\n"
+			"\t\treturn a + b\n"
+			"\n"
+			"class Advisor:\n"
+			"\tvar advised: Array = []\n"
+			"\tfunc advise(method_name, args, target):\n"
+			"\t\tadvised.append(str(method_name))\n"
+			"\t\treturn \"wrapped:\" + str(target.callv(method_name, args))\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> service = get_subclass(script, "Service");
+	Ref<GDScript> real_service_script = get_subclass(script, "RealService");
+	Ref<GDScript> advisor_script = get_subclass(script, "Advisor");
+	REQUIRE(service.is_valid());
+
+	Callable::CallError construct_error;
+	Variant real_ref = real_service_script->_new(nullptr, 0, construct_error);
+	REQUIRE(construct_error.error == Callable::CallError::CALL_OK);
+	Object *real = real_ref;
+	real->set("label", "real-label");
+
+	Variant advisor_ref = advisor_script->_new(nullptr, 0, construct_error);
+	Object *advisor = advisor_ref;
+
+	Dictionary interceptor;
+	interceptor["greet"] = Callable(advisor, "advise");
+
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_delegating_proxy(service, real_ref, interceptor, error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+	ScriptInstance *instance = proxy->get_script_instance();
+
+	// Advised method: the advice runs and proceeds to the target.
+	{
+		Variant subject = "world";
+		const Variant *args[1] = { &subject };
+		Callable::CallError error;
+		Variant result = instance->callp("greet", args, 1, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant("wrapped:hello world"));
+	}
+
+	// Unadvised method: forwarded straight to the target.
+	{
+		Variant a = 2;
+		Variant b = 3;
+		const Variant *args[2] = { &a, &b };
+		Callable::CallError error;
+		Variant result = instance->callp("add", args, 2, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant(5));
+	}
+
+	// Property read/write forwards to the target.
+	{
+		Variant value;
+		CHECK(instance->get("label", value));
+		CHECK(value == Variant("real-label"));
+		CHECK(instance->set("label", "changed"));
+		CHECK(real->get("label") == Variant("changed"));
+	}
+
+	// Only the advised method reached the interceptor.
+	{
+		Array advised = advisor->get("advised");
+		REQUIRE(advised.size() == 1);
+		CHECK(advised[0] == Variant("greet"));
+	}
+
+	// A null target is rejected at construction.
+	{
+		String message;
+		Ref<RefCounted> bad = GDScriptProxy::create_delegating_proxy(service, Variant(), interceptor, message);
+		CHECK(bad.is_null());
+		CHECK_FALSE(message.is_empty());
+	}
+
+	// A target that does not implement the proxied type is rejected.
+	{
+		String message;
+		Ref<RefCounted> bad = GDScriptProxy::create_delegating_proxy(service, advisor_ref, interceptor, message);
+		CHECK(bad.is_null());
+		CHECK_FALSE(message.is_empty());
+	}
+
+	// The target's own argument errors are surfaced, not collapsed to a default.
+	{
+		Variant only_one = 2; // add() requires two arguments.
+		const Variant *args[1] = { &only_one };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		instance->callp("add", args, 1, error);
+		ERR_PRINT_ON;
+		CHECK(error.error == Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS);
+	}
+}
+
 } // namespace GDScriptTests

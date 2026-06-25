@@ -52,6 +52,15 @@ class GDScriptProxyInstance : public ScriptInstance {
 	Ref<GDScript> proxy_script;
 	Callable handler;
 
+	// Delegation mode (the `create_delegating_proxy` helper): when `delegate_target`
+	// holds an object, contract methods route to an advice in `delegate_interceptor`
+	// (keyed by method name) if present, otherwise to `target.callv(...)`, and
+	// property access forwards to the target. In this mode `handler` is unused.
+	Variant delegate_target;
+	Dictionary delegate_interceptor;
+	bool _is_delegating() const { return delegate_target.get_type() == Variant::OBJECT; }
+	Variant _delegate_call(const GDScriptDataType &p_return_type, const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) const;
+
 	// Auto-backing property store: every `var` declared in `T`'s contract becomes a
 	// plain data slot, initialized to the zero value of its declared type. Property
 	// access is not routed through the handler (delegation is the helper's job).
@@ -110,6 +119,10 @@ public:
 	// language-keyed casts to GDScriptInstance must skip it (see is_synthetic).
 	virtual bool is_synthetic() const override { return true; }
 
+	// Switches this instance to delegation mode (see the fields above). Called only
+	// during construction by `GDScriptProxy::create_delegating_proxy`.
+	void _configure_delegation(const Variant &p_target, const Dictionary &p_interceptor);
+
 	GDScriptProxyInstance(Object *p_owner, const Ref<GDScript> &p_script, const Callable &p_handler);
 	virtual ~GDScriptProxyInstance() override;
 };
@@ -121,4 +134,10 @@ public:
 	// `RefCounted` host, or a null `Ref` (with `r_error_message` filled) on invalid
 	// input. The target must extend `RefCounted`, since the host is a `RefCounted`.
 	static Ref<RefCounted> create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message);
+
+	// Builds a delegating proxy for `p_type`: contract methods whose name is a key
+	// in `p_interceptor` route to that advice `Callable` (invoked as
+	// `advice.call(method_name, args, target)`); all other contract methods and all
+	// property access forward to `p_target`. `p_target` must be a valid object.
+	static Ref<RefCounted> create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor, String &r_error_message);
 };

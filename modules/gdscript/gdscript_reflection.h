@@ -56,6 +56,11 @@ public:
 	Dictionary get_method_info(const Variant &p_target, const StringName &p_method) const;
 	TypedArray<Dictionary> get_properties(const Variant &p_target) const;
 	bool implements_trait(const Variant &p_target, const Variant &p_trait) const;
+
+	// "Intercept some, delegate the rest": contract methods named in `p_interceptor`
+	// route to that advice; all other methods and property access forward to
+	// `p_target`. Returns a null Ref (with an error printed) on invalid input.
+	Ref<RefCounted> create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor) const;
 };
 
 // The `godot` global namespace object. Currently it only exposes the read-only
