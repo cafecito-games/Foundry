@@ -240,6 +240,9 @@ public:
 		for (const GDScriptDataType &element_type : container_element_types) {
 			type.element_types.push_back(element_type.to_container_type());
 		}
+		for (const GDScriptDataType &argument_type : type_arguments) {
+			type.type_arguments.push_back(argument_type.to_container_type());
+		}
 		return type;
 	}
 
@@ -338,6 +341,7 @@ public:
 		OPCODE_CONSTRUCT_TYPED_ARRAY,
 		OPCODE_CONSTRUCT_DICTIONARY,
 		OPCODE_CONSTRUCT_TYPED_DICTIONARY,
+		OPCODE_CONSTRUCT_SPECIALIZED, // Instantiate a generic script with reified type arguments.
 		OPCODE_CALL,
 		OPCODE_CALL_RETURN,
 		OPCODE_CALL_ASYNC,

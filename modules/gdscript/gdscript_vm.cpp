@@ -144,6 +144,11 @@ static ContainerType _container_type_from_descriptor(const Variant &p_descriptor
 	for (int i = 0; i < element_types.size(); i++) {
 		type.element_types.push_back(_container_type_from_descriptor(element_types[i]));
 	}
+
+	Array type_arguments = descriptor.get("type_arguments", Array());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		type.type_arguments.push_back(_container_type_from_descriptor(type_arguments[i]));
+	}
 	return type;
 }
 
@@ -335,6 +340,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CONSTRUCT_TYPED_ARRAY,                  \
 		&&OPCODE_CONSTRUCT_DICTIONARY,                   \
 		&&OPCODE_CONSTRUCT_TYPED_DICTIONARY,             \
+		&&OPCODE_CONSTRUCT_SPECIALIZED,                  \
 		&&OPCODE_CALL,                                   \
 		&&OPCODE_CALL_RETURN,                            \
 		&&OPCODE_CALL_ASYNC,                             \
@@ -1974,6 +1980,48 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				*dst = dict;
 
 				ip += 6;
+			}
+			DISPATCH_OPCODE;
+			OPCODE(OPCODE_CONSTRUCT_SPECIALIZED) {
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(2 + instr_arg_count);
+				ip += instr_arg_count;
+
+				int argc = _code_ptr[ip + 1];
+				GD_ERR_BREAK(argc < 0);
+				int type_argument_count = _code_ptr[ip + 2];
+				GD_ERR_BREAK(type_argument_count < 0);
+
+				// Instruction args: [ctor args..., type-argument descriptors..., base script, target].
+				GET_INSTRUCTION_ARG(base, argc + type_argument_count);
+				GET_INSTRUCTION_ARG(dst, argc + type_argument_count + 1);
+
+				Ref<GDScript> gdscript = *base;
+				if (gdscript.is_null()) {
+					err_text = "Cannot instantiate a specialized type whose base is not a GDScript.";
+					OPCODE_BREAK;
+				}
+
+				Vector<ContainerType> type_arguments;
+				for (int i = 0; i < type_argument_count; i++) {
+					GET_INSTRUCTION_ARG(type_info, argc + i);
+					type_arguments.push_back(_container_type_from_type_info(*type_info, Variant::NIL, StringName()));
+				}
+
+				Variant **argptrs = instruction_args;
+				Callable::CallError err;
+				Variant result = gdscript->_new_specialized((const Variant **)argptrs, argc, type_arguments, err);
+
+#ifdef DEBUG_ENABLED
+				if (err.error != Callable::CallError::CALL_OK) {
+					err_text = _get_call_error("constructor 'new'", (const Variant **)argptrs, argc, result, err);
+					OPCODE_BREAK;
+				}
+#endif
+
+				*dst = result;
+
+				ip += 3;
 			}
 			DISPATCH_OPCODE;
 

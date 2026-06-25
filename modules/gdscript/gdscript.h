@@ -244,7 +244,7 @@ private:
 
 	GDScriptFunction *_super_constructor(GDScript *p_script);
 	void _super_implicit_constructor(GDScript *p_script, GDScriptInstance *p_instance, Callable::CallError &r_error);
-	GDScriptInstance *_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error);
+	GDScriptInstance *_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error, const Vector<ContainerType> *p_type_arguments = nullptr);
 
 	String _get_debug_path() const;
 
@@ -341,6 +341,9 @@ public:
 	StringName debug_get_static_var_by_index(int p_idx) const;
 
 	Variant _new(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
+	// Like `_new`, but binds reified type arguments (e.g. the `int` in `Box[int].new()`) onto the
+	// created instance so generic instances carry their concrete type arguments at runtime.
+	Variant _new_specialized(const Variant **p_args, int p_argcount, const Vector<ContainerType> &p_type_arguments, Callable::CallError &r_error);
 	virtual bool can_instantiate() const override;
 
 	virtual Ref<Script> get_base_script() const override;
@@ -427,6 +430,9 @@ class GDScriptInstance : public ScriptInstance {
 	HashMap<StringName, int> member_indices_cache; //used only for hot script reloading
 #endif
 	Vector<Variant> members;
+	// Reified type arguments bound at construction (e.g. the `int` in `Box[int].new()`). Empty for
+	// instances of non-generic classes or generic classes instantiated without explicit arguments.
+	Vector<ContainerType> type_arguments;
 
 	SelfList<GDScriptFunctionState>::List pending_func_states;
 
@@ -434,6 +440,8 @@ class GDScriptInstance : public ScriptInstance {
 
 public:
 	virtual Object *get_owner() { return owner; }
+
+	const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
 
 	virtual bool set(const StringName &p_name, const Variant &p_value);
 	virtual bool get(const StringName &p_name, Variant &r_ret) const;

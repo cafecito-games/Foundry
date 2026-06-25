@@ -40,7 +40,8 @@ bool ContainerType::operator==(const ContainerType &p_type) const {
 	return builtin_type == p_type.builtin_type &&
 			class_name == p_type.class_name &&
 			script == p_type.script &&
-			element_types == p_type.element_types;
+			element_types == p_type.element_types &&
+			type_arguments == p_type.type_arguments;
 }
 
 bool ContainerType::operator!=(const ContainerType &p_type) const {
@@ -49,7 +50,18 @@ bool ContainerType::operator!=(const ContainerType &p_type) const {
 
 String ContainerType::get_type_name() const {
 	ContainerTypeValidate validate(*this);
-	return validate.get_type_name();
+	String name = validate.get_type_name();
+	if (!type_arguments.is_empty()) {
+		String arguments;
+		for (int i = 0; i < type_arguments.size(); i++) {
+			if (i > 0) {
+				arguments += ", ";
+			}
+			arguments += type_arguments[i].get_type_name();
+		}
+		name += "[" + arguments + "]";
+	}
+	return name;
 }
 
 ContainerTypeValidate::ContainerTypeValidate(const ContainerType &p_type) {
@@ -436,6 +448,21 @@ bool from_variant(const Variant &p_descriptor, ContainerType &r_type, String *r_
 		type.element_types.push_back(child_type);
 	}
 
+	if (descriptor.has("type_arguments")) {
+		const Variant type_arguments_value = descriptor["type_arguments"];
+		if (type_arguments_value.get_type() != Variant::ARRAY) {
+			return _fail(r_error, R"(Container type descriptor "type_arguments" must be an Array.)");
+		}
+		const Array type_arguments = type_arguments_value;
+		for (int i = 0; i < type_arguments.size(); i++) {
+			ContainerType argument_type;
+			if (!from_variant(type_arguments[i], argument_type, r_error)) {
+				return false;
+			}
+			type.type_arguments.push_back(argument_type);
+		}
+	}
+
 	r_type = type;
 	return true;
 }
@@ -455,6 +482,13 @@ Variant to_variant(const ContainerType &p_type) {
 			element_types.push_back(to_variant(element_type));
 		}
 		descriptor["element_types"] = element_types;
+	}
+	if (!p_type.type_arguments.is_empty()) {
+		Array type_arguments;
+		for (const ContainerType &argument_type : p_type.type_arguments) {
+			type_arguments.push_back(to_variant(argument_type));
+		}
+		descriptor["type_arguments"] = type_arguments;
 	}
 	return descriptor;
 }

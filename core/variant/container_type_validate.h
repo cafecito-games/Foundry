@@ -39,6 +39,10 @@ struct ContainerType {
 	StringName class_name;
 	Ref<Script> script;
 	Vector<ContainerType> element_types;
+	// Reified type arguments of a specialized script type, e.g. the `int` in `Box[int]`. Empty for
+	// unspecialized types. Unlike `element_types` (which describes typed Array/Dictionary contents),
+	// these carry the bound generic arguments of a script handle.
+	Vector<ContainerType> type_arguments;
 
 	bool operator==(const ContainerType &p_type) const;
 	bool operator!=(const ContainerType &p_type) const;
