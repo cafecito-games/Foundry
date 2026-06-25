@@ -824,15 +824,34 @@ VerificationResult GDScriptVerificationHarness::verify(
 		}
 	}
 
-	// Re-confirm the union of every chunk's accepted candidates. Chunks are attributed against the
-	// same baseline and never share a file, so their accepted sets do not interact; this final
-	// analysis only records the authoritative post-edit error count for the combined set.
-	const HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
-	const AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+	// Re-confirm the union of every chunk's accepted candidates. Chunks never share a file, but
+	// candidates from different files can still interact through a common dependent: two provider
+	// edits each clean in isolation can together break a shared consumer in the affected set. When
+	// that happens the union regresses even though every chunk was clean, so the combined set must
+	// be re-attributed as one to isolate the cross-chunk offenders before it can be accepted.
+	HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
+	AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
 	if (fatal) {
 		result.ok = false;
 		result.error_message = "Verification aborted confirming accepted set.";
 		return result;
+	}
+	if (regresses(baseline, accepted_analysis)) {
+		Vector<VerificationCandidate> reconciled_accepted;
+		attribute_chunk(accepted_candidates, affected, original, p_options, baseline, reconciled_accepted, result.rejected, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted reconciling cross-chunk regressions.";
+			return result;
+		}
+		accepted_candidates = reconciled_accepted;
+		accepted_staged = stage_candidates(accepted_candidates, original);
+		accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted confirming reconciled accepted set.";
+			return result;
+		}
 	}
 	result.accepted = accepted_candidates;
 	result.accepted_error_count = accepted_analysis.error_count;
