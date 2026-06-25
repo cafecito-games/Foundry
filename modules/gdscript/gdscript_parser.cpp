@@ -4917,7 +4917,7 @@ bool GDScriptParser::abstract_annotation(AnnotationNode *p_annotation, Node *p_t
 	}
 	if (p_target->type == Node::FUNCTION) {
 		FunctionNode *function_node = static_cast<FunctionNode *>(p_target);
-		if (function_node->is_static) {
+		if (function_node->is_static && (p_class == nullptr || !p_class->is_trait)) {
 			push_error(R"("@abstract" annotation cannot be applied to static functions.)", p_annotation);
 			return false;
 		}
