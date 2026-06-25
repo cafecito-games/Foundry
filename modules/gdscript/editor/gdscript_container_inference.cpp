@@ -458,6 +458,27 @@ private:
 		return false;
 	}
 
+	// True when `p_value` is a bare reference to a reflection method (e.g. `set`),
+	// which is a callable bound to this instance that could mutate the member by
+	// name later. A reference shadowed by a local/parameter of the same name is not
+	// the bound method, so it is excluded.
+	static bool is_self_reflection_reference(const GDScriptParser::ExpressionNode *p_value) {
+		if (p_value == nullptr || p_value->type != Node::IDENTIFIER) {
+			return false;
+		}
+		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
+		switch (identifier->source) {
+			case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+			case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+			case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+			case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+			case GDScriptParser::IdentifierNode::LOCAL_BIND:
+				return false;
+			default:
+				return is_dynamic_reflection_method(identifier->name);
+		}
+	}
+
 	// Treats `p_value` as a value that is consumed by the surrounding context. If
 	// the variable itself appears here (other than in one of the recognized safe
 	// read positions handled below) it has escaped and inference must stop.
@@ -467,6 +488,13 @@ private:
 		}
 		if (is_our_var(p_value)) {
 			bail(GDScriptContainerInference::ESCAPES, "the variable is used in a position the inference cannot bound");
+			return;
+		}
+		if (member_mode && is_self_reflection_reference(p_value)) {
+			// Taking a bound reference to a reflection method (`var s := set`) yields a
+			// callable that can later mutate the member by name (`s.call("_m", ..)`),
+			// which the scan cannot follow.
+			bail(GDScriptContainerInference::ESCAPES, "a reflection method is referenced as a callable");
 			return;
 		}
 		switch (p_value->type) {
@@ -1039,12 +1067,40 @@ private:
 		return false;
 	}
 
+	// True when `p_value` is a bare reference to a reflection method (e.g. `set`),
+	// which is a callable bound to this instance that could mutate the member by
+	// name later. A reference shadowed by a local/parameter of the same name is not
+	// the bound method, so it is excluded.
+	static bool is_self_reflection_reference(const GDScriptParser::ExpressionNode *p_value) {
+		if (p_value == nullptr || p_value->type != Node::IDENTIFIER) {
+			return false;
+		}
+		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
+		switch (identifier->source) {
+			case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+			case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+			case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+			case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+			case GDScriptParser::IdentifierNode::LOCAL_BIND:
+				return false;
+			default:
+				return is_dynamic_reflection_method(identifier->name);
+		}
+	}
+
 	void scan_value(const GDScriptParser::ExpressionNode *p_value) {
 		if (bailed || p_value == nullptr) {
 			return;
 		}
 		if (is_our_var(p_value)) {
 			bail(GDScriptContainerInference::ESCAPES, "the variable is used in a position the inference cannot bound");
+			return;
+		}
+		if (member_mode && is_self_reflection_reference(p_value)) {
+			// Taking a bound reference to a reflection method (`var s := set`) yields a
+			// callable that can later mutate the member by name (`s.call("_m", ..)`),
+			// which the scan cannot follow.
+			bail(GDScriptContainerInference::ESCAPES, "a reflection method is referenced as a callable");
 			return;
 		}
 		switch (p_value->type) {
@@ -1355,6 +1411,12 @@ void walk_class_methods(Walker &p_walker, const GDScriptParser::ClassNode *p_cla
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::FUNCTION:
 				if (member.function != nullptr) {
+					// A parameter default can alias the member (`func f(a = _items):`).
+					for (const GDScriptParser::ParameterNode *parameter : member.function->parameters) {
+						if (parameter != nullptr) {
+							p_walker.scan_initializer(parameter->initializer);
+						}
+					}
 					p_walker.scan_suite(member.function->body);
 				}
 				break;
