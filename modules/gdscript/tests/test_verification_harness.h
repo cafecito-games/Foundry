@@ -292,6 +292,68 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Dependent rejection survives a provider edited on disk between verify calls") {
+		// The cross-call dependency-graph cache keys edges by source hash. When a provider's
+		// on-disk content changes between two verify() calls, the cached edges for it (and its
+		// dependents) must be reprimed, so the consumer is still discovered as a dependent and
+		// the type-narrowing candidate is still rejected. A stale cache that reused the first
+		// call's edges would silently miss the consumer and wrongly accept.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/verify_edited_provider.gd";
+		// First version: getter returns an int, plus a second untyped getter.
+		const String provider_v1 =
+				"func get_value():\n"
+				"\treturn 42\n"
+				"func get_other():\n"
+				"\treturn 7\n";
+		TemporaryScriptFile provider(provider_path, provider_v1);
+
+		const String consumer_path = "res://refactor/verify_edited_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_edited_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<String> universe = { provider_path, consumer_path };
+
+		// First call primes the graph cache with the provider's v1 edges.
+		Vector<VerificationCandidate> first_candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(first_candidates.size(), 0);
+		VerificationResult first = GDScriptVerificationHarness::verify(first_candidates, universe);
+		REQUIRE(first.ok);
+		CHECK_GT(first.rejected.size(), 0);
+
+		// Rewrite the provider on disk: reorder the getters so the candidate anchors differ
+		// from the cached call, while the consumer still narrows get_value() to String.
+		{
+			Ref<FileAccess> file = FileAccess::open(provider_path, FileAccess::WRITE);
+			REQUIRE(file.is_valid());
+			file->store_string(
+					"func get_other():\n"
+					"\treturn 7\n"
+					"func get_value():\n"
+					"\treturn 42\n");
+		}
+
+		// Second call must reprime against the edited provider and still reject the candidate
+		// that narrows get_value() to a String the consumer cannot accept.
+		Vector<VerificationCandidate> second_candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(second_candidates.size(), 0);
+		VerificationResult second = GDScriptVerificationHarness::verify(second_candidates, universe);
+		REQUIRE(second.ok);
+		CHECK_GT(second.rejected.size(), 0);
+		CHECK_GT(second.rejected[0].diagnostics.size(), 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("A candidate with an out-of-range edit is rejected with 'could not be applied'") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
