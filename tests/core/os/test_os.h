@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/os/os.h"
+#include "tests/test_utils.h"
 
 #include "thirdparty/doctest/doctest.h"
 
@@ -156,6 +157,15 @@ TEST_CASE("[OS] Process ID") {
 	CHECK_MESSAGE(
 			OS::get_singleton()->get_process_id() >= 1,
 			"The returned process ID should be greater than zero.");
+}
+
+TEST_CASE("[OS][TestUtils] Temp path is isolated by process") {
+	const String expected_temp_root = OS::get_singleton()->get_cache_path().path_join("godot_test");
+	const String expected_process_dir = "process_" + itos(OS::get_singleton()->get_process_id());
+	const String expected_temp_base = expected_temp_root.path_join(expected_process_dir);
+
+	CHECK_EQ(TestUtils::get_temp_path(""), expected_temp_base.path_join(""));
+	CHECK_EQ(TestUtils::get_temp_path("test.file"), expected_temp_base.path_join("test.file"));
 }
 
 TEST_CASE("[OS] Processor count and memory information") {

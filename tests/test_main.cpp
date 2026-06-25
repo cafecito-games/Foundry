@@ -236,6 +236,18 @@
 
 #include "servers/rendering/rendering_server_default.h"
 
+static Error cleanup_test_temp_path() {
+	const String test_path = TestUtils::get_temp_path("").trim_suffix("/");
+	Ref<DirAccess> da = DirAccess::open(test_path); // get_temp_path() automatically creates the folder.
+	ERR_FAIL_COND_V(da.is_null(), ERR_CANT_OPEN);
+	Error err = da->erase_contents_recursive();
+	ERR_FAIL_COND_V_MSG(err != OK, err, "Failed to delete files");
+	da.unref();
+	err = DirAccess::remove_absolute(test_path);
+	ERR_FAIL_COND_V_MSG(err != OK, err, "Failed to delete test temp directory");
+	return OK;
+}
+
 int test_main(int argc, char *argv[]) {
 	bool run_tests = true;
 
@@ -250,12 +262,7 @@ int test_main(int argc, char *argv[]) {
 
 	WorkerThreadPool::get_singleton()->init();
 
-	{
-		const String test_path = TestUtils::get_temp_path("");
-		Ref<DirAccess> da = DirAccess::open(test_path); // get_temp_path() automatically creates the folder.
-		ERR_FAIL_COND_V(da.is_null(), 0);
-		ERR_FAIL_COND_V_MSG(da->erase_contents_recursive() != OK, 0, "Failed to delete files");
-	}
+	ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, 1, "Failed to clean test temp path");
 
 	// Run custom test tools.
 	if (test_commands) {
@@ -268,7 +275,9 @@ int test_main(int argc, char *argv[]) {
 			}
 		}
 		if (!run_tests) {
+			Error err = cleanup_test_temp_path();
 			delete test_commands;
+			ERR_FAIL_COND_V_MSG(err != OK, 1, "Failed to clean test temp path");
 			return 0;
 		}
 	}
@@ -305,7 +314,9 @@ int test_main(int argc, char *argv[]) {
 		delete[] doctest_args;
 	}
 
-	return test_context.run();
+	const int result = test_context.run();
+	ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, result != 0 ? result : 1, "Failed to clean test temp path");
+	return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
