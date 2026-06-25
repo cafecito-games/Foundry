@@ -4408,7 +4408,14 @@ int Main::start() {
 
 					if (info.is_singleton) {
 						for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-							ScriptServer::get_language(i)->add_global_constant(info.name, Variant());
+							ScriptLanguage *language = ScriptServer::get_language(i);
+							// A reserved name (e.g. the `godot` reflection namespace) wins over the
+							// autoload, so don't even seed a placeholder global for it; that would
+							// leave a stale Nil entry shadowing the reserved global.
+							if (language->get_reserved_global_names().has(String(info.name))) {
+								continue;
+							}
+							language->add_global_constant(info.name, Variant());
 						}
 					}
 				}
