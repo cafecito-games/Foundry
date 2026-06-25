@@ -667,6 +667,65 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("A dynamic self.set defeats the scan and escapes the member") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak() -> void:\n"
+				"\tself.set(\"_items\", [\"x\"])\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("An implicit-self dynamic set escapes the member") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak() -> void:\n"
+				"\tset(\"_items\", [\"x\"])\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("A dynamic get that returns the member escapes it") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak() -> void:\n"
+				"\tget(\"_items\").append(\"x\")\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Another member's inline setter mutating the member escapes it") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"var trigger = 0:\n"
+				"\tset(value):\n"
+				"\t\ttrigger = value\n"
+				"\t\t_items.append(\"x\")\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::MIXED);
+	}
+
+	TEST_CASE("A nested class member with the same name is not counted as evidence") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"class Inner:\n"
+				"\tvar _items = []\n"
+				"\tfunc fill() -> void:\n"
+				"\t\t_items.append(1)\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		// The outer member has no writes of its own; the inner same-named member's
+		// writes must not be attributed to it.
+		CHECK_EQ(result.outcome, GDScriptContainerInference::NO_EVIDENCE);
+	}
+
 	TEST_CASE("An unused member array yields no evidence") {
 		InferenceFixture fixture("var _items = []\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
