@@ -2371,6 +2371,28 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Implement abstract recovers a cross-file base default from the base file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// The child extends a default-bearing abstract method declared in another
+		// script. The default's source span points into the base file; slicing the
+		// child file with it would omit or corrupt the default. Caret on `var marker`.
+		RefactorContext ctx = make_context("res://refactor/implement_abstract_xfile_child.gd");
+		RefactorParams params;
+		RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(3, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+
+		String out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func scaled(factor: float = 1.0) -> float:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Add type annotation infers parameters from resolved call sites") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

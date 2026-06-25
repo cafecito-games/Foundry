@@ -121,12 +121,22 @@ struct InlineVariableCandidate {
 	Vector<RefactorTextEdit> replacement_edits;
 };
 
+// An abstract method the target class owes, paired with the source lines of the
+// file that declares it. The declaring lines are required to recover verbatim
+// parameter-default text: a default's source span points into the file that
+// declares the method, which is not the target file when the abstract method is
+// inherited from a base class in another script.
+struct OwedAbstractMethod {
+	const GDScriptParser::FunctionNode *function = nullptr;
+	const Vector<String> *declaring_lines = nullptr;
+};
+
 struct ImplementAbstractCandidate {
 	bool matched = false;
 	bool enabled = false;
 	String disabled_reason;
 	// Owed abstract methods, most-derived-first.
-	Vector<const GDScriptParser::FunctionNode *> abstract_methods;
+	Vector<OwedAbstractMethod> abstract_methods;
 	// Insertion point: the line AFTER the last member of the target class (1-based,
 	// matching FunctionNode::end_line semantics used by extract method).
 	int insertion_line = -1;
@@ -4063,22 +4073,41 @@ const GDScriptParser::ClassNode *find_enclosing_class(const GDScriptParser::Clas
 // resolved GDScript class reachable in-tree (native bases / unresolved). A base resolved
 // as a separate script (SCRIPT kind, or a CLASS without an in-tree class_type) is
 // followed through the parse-result provider when one is available.
+// Resolves the direct base class and reports the source lines of the file that
+// declares it. An inner base class shares the current file's lines; a cross-file
+// base brings its own, parsed fresh from disk via the parse-result provider.
 const GDScriptParser::ClassNode *resolve_base_class(
 		const GDScriptParser::ClassNode *p_class,
-		const GDScriptParseResultProvider *p_parse_results) {
+		const GDScriptParseResultProvider *p_parse_results,
+		const Vector<String> *p_current_lines,
+		const Vector<String> **r_base_lines) {
 	if (p_class == nullptr) {
 		return nullptr;
 	}
 	const GDScriptParser::DataType &base = p_class->base_type;
 	if (base.kind == GDScriptParser::DataType::CLASS && base.class_type != nullptr) {
+		// Default to the current file's lines for an inner base class. When the
+		// resolved class lives in another script (script_path set), its nodes carry
+		// spans into that file, so recover the declaring file's lines via the
+		// provider; the freshly parsed source is identical, so the spans still align.
+		*r_base_lines = p_current_lines;
+#ifndef GDSCRIPT_NO_LSP
+		if (p_parse_results != nullptr && !base.script_path.is_empty()) {
+			const ExtendGDScriptParser *base_parser = p_parse_results->get_parse_result(base.script_path);
+			if (base_parser != nullptr) {
+				*r_base_lines = &base_parser->get_lines();
+			}
+		}
+#endif // GDSCRIPT_NO_LSP
 		return base.class_type;
 	}
 
 #ifndef GDSCRIPT_NO_LSP
 	if (p_parse_results != nullptr && !base.script_path.is_empty() &&
-			(base.kind == GDScriptParser::DataType::SCRIPT || base.kind == GDScriptParser::DataType::CLASS)) {
+			base.kind == GDScriptParser::DataType::SCRIPT) {
 		const ExtendGDScriptParser *base_parser = p_parse_results->get_parse_result(base.script_path);
 		if (base_parser != nullptr) {
+			*r_base_lines = &base_parser->get_lines();
 			return base_parser->get_tree();
 		}
 	}
@@ -4095,13 +4124,15 @@ const GDScriptParser::ClassNode *resolve_base_class(
 // declaration is abstract and lives in an ancestor (not the target), it is owed.
 void collect_owed_abstract_methods(
 		const GDScriptParser::ClassNode *p_target,
-		Vector<const GDScriptParser::FunctionNode *> &r_owed,
+		const Vector<String> &p_target_lines,
+		Vector<OwedAbstractMethod> &r_owed,
 		const GDScriptParseResultProvider *p_parse_results) {
 	HashSet<StringName> decided;
 	// Detection runs even when the analyzer reported errors, so the inheritance chain
 	// may be malformed or self-referential; track visited classes to avoid looping.
 	HashSet<const GDScriptParser::ClassNode *> visited;
 	const GDScriptParser::ClassNode *current = p_target;
+	const Vector<String> *current_lines = &p_target_lines;
 	bool is_target = true;
 	while (current != nullptr) {
 		if (visited.has(current)) {
@@ -4123,10 +4154,15 @@ void collect_owed_abstract_methods(
 			}
 			decided.insert(name);
 			if (function->is_abstract && !is_target) {
-				r_owed.push_back(function);
+				OwedAbstractMethod owed;
+				owed.function = function;
+				owed.declaring_lines = current_lines;
+				r_owed.push_back(owed);
 			}
 		}
-		current = resolve_base_class(current, p_parse_results);
+		const Vector<String> *base_lines = nullptr;
+		current = resolve_base_class(current, p_parse_results, current_lines, &base_lines);
+		current_lines = base_lines;
 		is_target = false;
 	}
 }
@@ -4298,7 +4334,7 @@ ImplementAbstractCandidate find_implement_abstract_in_tree(
 		return candidate;
 	}
 
-	collect_owed_abstract_methods(target, candidate.abstract_methods, p_parse_results);
+	collect_owed_abstract_methods(target, p_lines, candidate.abstract_methods, p_parse_results);
 	if (candidate.abstract_methods.is_empty()) {
 		candidate.disabled_reason = "No unimplemented abstract methods.";
 		return candidate;
@@ -4312,7 +4348,11 @@ ImplementAbstractCandidate find_implement_abstract_in_tree(
 		if (i > 0) {
 			block += "\n";
 		}
-		block += render_abstract_stub(candidate.abstract_methods[i], p_lines, class_indent);
+		const OwedAbstractMethod &owed = candidate.abstract_methods[i];
+		// Recover default-value text from the file that declares the method (the base
+		// file for a cross-file abstract base), not unconditionally from the target.
+		const Vector<String> &method_lines = owed.declaring_lines != nullptr ? *owed.declaring_lines : p_lines;
+		block += render_abstract_stub(owed.function, method_lines, class_indent);
 	}
 	candidate.rendered_block = block;
 	// The class end_line overshoots the buffer for a whole-file root class, so derive
