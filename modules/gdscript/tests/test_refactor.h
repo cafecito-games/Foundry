@@ -3369,6 +3369,31 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"\ttakes(value)\n";
 			CHECK_FALSE(insert_cast_enabled(source, 3, 8));
 		}
+		SUBCASE("casts a call argument nested inside a typed declaration") {
+			// The declaration spans the whole line and the argument spans only `value`; a caret
+			// on the argument must target the argument, not the enclosing declaration.
+			const String source =
+					"func takes(amount: int) -> int:\n"
+					"\treturn amount\n"
+					"func use(value) -> void:\n"
+					"\tvar x: int = takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 20, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = takes(value as int)"));
+		}
+		SUBCASE("casts a call argument inside an assignment value") {
+			const String source =
+					"func takes(amount: int) -> int:\n"
+					"\treturn amount\n"
+					"func use(value) -> void:\n"
+					"\tvar x := 0\n"
+					"\tx = takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 4, 12, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("x = takes(value as int)"));
+		}
 	}
 
 	TEST_CASE("find_candidates collects insert-cast opportunities") {

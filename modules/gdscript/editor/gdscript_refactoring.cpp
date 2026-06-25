@@ -6265,6 +6265,11 @@ void collect_cast_candidates_in_expression(const Vector<String> &p_lines, const 
 		case GDScriptParser::Node::CALL:
 			collect_cast_candidates_in_call(p_lines, static_cast<const GDScriptParser::CallNode *>(p_expression), r_candidates);
 			break;
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
+			collect_cast_candidates_in_expression(p_lines, assignment->assignee, r_candidates);
+			collect_cast_candidates_in_expression(p_lines, assignment->assigned_value, r_candidates);
+		} break;
 		case GDScriptParser::Node::ARRAY: {
 			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
 			for (const GDScriptParser::ExpressionNode *element : array->elements) {
@@ -6426,10 +6431,26 @@ ExplicitCastCandidate find_explicit_cast_candidate(const RefactorContext &p_cont
 	const GDScriptParser::ClassNode *tree = parser.get_tree();
 	Vector<ExplicitCastCandidate> candidates;
 	collect_cast_candidates_in_class(lines, tree, candidates);
+	// A typed declaration/return statement spans its whole line, while a call argument inside it
+	// spans only the argument; both can contain the caret. Pick the narrowest matching span so a
+	// caret on a nested argument targets that argument rather than the enclosing statement.
+	const ExplicitCastCandidate *best = nullptr;
+	int best_span_width = 0;
 	for (const ExplicitCastCandidate &found : candidates) {
-		if (caret_within_range(p_location, found.caret_span)) {
-			return found;
+		if (!caret_within_range(p_location, found.caret_span)) {
+			continue;
 		}
+		const RefactorLocation &span = found.caret_span;
+		const int width = span.start_line == span.end_line
+				? span.end_column - span.start_column
+				: (span.end_line - span.start_line) * INT16_MAX + span.end_column;
+		if (best == nullptr || width < best_span_width) {
+			best = &found;
+			best_span_width = width;
+		}
+	}
+	if (best != nullptr) {
+		return *best;
 	}
 
 	candidate.matched = false;
