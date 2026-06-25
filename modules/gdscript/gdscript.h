@@ -85,7 +85,7 @@ public:
 namespace GDScriptTests {
 class TestGDScriptTraitReflectionAccessor;
 class TestGDScriptGenericReflectionAccessor;
-}
+} //namespace GDScriptTests
 #endif // TESTS_ENABLED
 
 class GDScript : public Script {
@@ -116,7 +116,6 @@ public:
 	};
 
 private:
-
 	struct ClearData {
 		RBSet<GDScriptFunction *> functions;
 		RBSet<Ref<Script>> scripts;
@@ -471,6 +470,9 @@ public:
 	~GDScriptInstance();
 };
 
+class GDScriptReflection;
+class GDScriptGodotNamespace;
+
 class GDScriptLanguage : public ScriptLanguage {
 	friend class GDScriptFunctionState;
 
@@ -483,6 +485,12 @@ class GDScriptLanguage : public ScriptLanguage {
 	HashMap<StringName, int> globals;
 	HashMap<StringName, Variant> named_globals;
 	Vector<int> global_array_empty_indexes;
+
+	// Read-only reflection singletons exposed as the `godot.reflection` surface.
+	// Held by `named_globals`; these member refs keep them addressable and are
+	// cleared in finish().
+	Ref<GDScriptReflection> reflection_singleton;
+	Ref<GDScriptGodotNamespace> godot_namespace_singleton;
 
 	struct CallLevel {
 		Variant *stack = nullptr;
