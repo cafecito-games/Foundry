@@ -57,7 +57,13 @@ void init_autoloads() {
 
 		if (info.is_singleton) {
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-				ScriptServer::get_language(i)->add_global_constant(info.name, Variant());
+				ScriptLanguage *language = ScriptServer::get_language(i);
+				// A reserved named global (e.g. the `godot` reflection namespace) wins over
+				// an autoload of the same name, mirroring main.cpp.
+				if (language->get_reserved_global_names().has(String(info.name))) {
+					continue;
+				}
+				language->add_global_constant(info.name, Variant());
 			}
 		}
 	}
@@ -105,7 +111,11 @@ void init_autoloads() {
 		n->set_name(info.name);
 
 		for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-			ScriptServer::get_language(i)->add_global_constant(info.name, n);
+			ScriptLanguage *language = ScriptServer::get_language(i);
+			if (language->get_reserved_global_names().has(String(info.name))) {
+				continue;
+			}
+			language->add_global_constant(info.name, n);
 		}
 	}
 }
