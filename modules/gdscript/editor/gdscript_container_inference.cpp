@@ -1288,10 +1288,16 @@ private:
 
 // Reports why a member variable is not a safe candidate for class-wide element
 // inference, or an empty string when it is eligible. A member is only considered
-// when its mutation surface is bounded by the class: it must not be `@export`ed
-// (the editor and external code can assign it), must not be `static` (shared and
-// assignable through the class), and must not have a custom setter/getter (writes
-// flow through user code the inference does not model).
+// when its mutation surface is bounded by the class.
+//
+// GDScript has no enforced access modifiers, so an ordinary member is part of the
+// public API: another script holding a reference can do `obj.items.append(x)`,
+// which the single-file analysis cannot see. The strongest "private" signal the
+// language offers is the leading-underscore naming convention, so inference is
+// limited to underscore-prefixed members. On top of that the member must not be
+// `@export`ed (the editor and external code can assign it), must not be `static`
+// (shared and assignable through the class), and must not have a custom
+// setter/getter (writes flow through user code the inference does not model).
 String member_disqualifier(const GDScriptParser::VariableNode *p_member) {
 	if (p_member->exported) {
 		return "the member is `@export`ed, so external code can assign it";
@@ -1301,6 +1307,9 @@ String member_disqualifier(const GDScriptParser::VariableNode *p_member) {
 	}
 	if (p_member->property != GDScriptParser::VariableNode::PROP_NONE) {
 		return "the member has a custom setter or getter";
+	}
+	if (p_member->identifier == nullptr || !String(p_member->identifier->name).begins_with("_")) {
+		return "the member is part of the public API (no leading underscore), so external code can mutate it";
 	}
 	return String();
 }

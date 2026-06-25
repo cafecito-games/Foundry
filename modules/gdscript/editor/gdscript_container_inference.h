@@ -103,10 +103,12 @@ public:
 	// over all of those bodies rather than one function. The soundness boundary is
 	// also wider: a member can be mutated through any reference to its instance, so
 	// the inference bails conservatively unless the member is provably private to
-	// the class. It is skipped (with an explanation) when it is `@export`ed, has a
-	// custom setter/getter, is `static`, is accessed through a base other than
-	// `self`, or the instance escapes in a way external code could exploit to
-	// mutate it. `p_class` is the class that declares `p_member`.
+	// the class. Since GDScript has no enforced access modifiers, only members that
+	// follow the leading-underscore "private" convention are considered. It is
+	// skipped (with an explanation) when it is part of the public API (no leading
+	// underscore), `@export`ed, has a custom setter/getter, is `static`, is
+	// accessed through a base other than `self`, or the instance escapes in a way
+	// external code could exploit to mutate it. `p_class` declares `p_member`.
 	static Result infer_member_array_element_type(
 			const GDScriptParser::VariableNode *p_member,
 			const GDScriptParser::ClassNode *p_class);

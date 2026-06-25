@@ -521,6 +521,27 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
 
+	TEST_CASE("A public (non-underscore) member is skipped and reported") {
+		// Without a leading underscore the member is part of the public API and can
+		// be mutated by another script, which the single-file analysis cannot see.
+		InferenceFixture fixture(
+				"var items = []\n"
+				"func add(n: int) -> void:\n"
+				"\titems.append(n)\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+		CHECK_FALSE(result.detail.is_empty());
+	}
+
+	TEST_CASE("A public member dictionary is skipped") {
+		InferenceFixture fixture(
+				"var by_name = {}\n"
+				"func put(key: String, value: int) -> void:\n"
+				"\tby_name[key] = value\n");
+		GDScriptContainerInference::Result result = infer_member_dict_in(fixture, "by_name");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("An exported member is skipped and reported") {
 		InferenceFixture fixture(
 				"@export var items = []\n"
