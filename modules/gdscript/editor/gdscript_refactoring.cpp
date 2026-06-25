@@ -65,10 +65,14 @@ struct TypeAnnotationCandidate {
 	RefactorTextEdit edit;
 	// Caret-test span of the declaration this candidate was found at. Used by the
 	// caret-driven path to select the candidate under the caret; the headless
-	// collector ignores it.
+	// collector ignores it. The span opens at (line, caret_span_start). It closes
+	// at (caret_span_end_line, caret_span_end) when caret_span_end_line is set, so
+	// a wrapped (multi-line) signature stays selectable across its lines;
+	// otherwise it closes at (line, caret_span_end).
 	int line = -1;
 	int caret_span_start = -1;
 	int caret_span_end = -1;
+	int caret_span_end_line = -1;
 };
 
 struct ExtractVariableCandidate {
@@ -270,6 +274,28 @@ bool caret_on_segment(const RefactorLocation &p_location, int p_line, int p_star
 		p_end_column = p_start_column;
 	}
 	return p_location.start_column >= p_start_column && p_location.start_column <= p_end_column;
+}
+
+// Multi-line counterpart of caret_on_segment for a span that opens at
+// (p_start_line, p_start_column) and closes on a later (p_end_line,
+// p_end_column). A caret on an interior line matches at any column; on the
+// boundary lines it must be at or past the opening column / at or before the
+// closing column.
+bool caret_in_multiline_span(const RefactorLocation &p_location, int p_start_line, int p_start_column, int p_end_line, int p_end_column) {
+	if (p_location.has_selection()) {
+		return false;
+	}
+	const int caret_line = p_location.start_line;
+	if (caret_line < p_start_line || caret_line > p_end_line) {
+		return false;
+	}
+	if (caret_line == p_start_line) {
+		return p_location.start_column >= p_start_column;
+	}
+	if (caret_line == p_end_line) {
+		return p_location.start_column <= p_end_column;
+	}
+	return true;
 }
 
 RefactorFileEdit *find_or_add_file_edit(Vector<RefactorFileEdit> &r_file_edits, const String &p_path) {
@@ -1011,11 +1037,17 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	if (function_start < 0) {
 		return false;
 	}
+	if (p_function->is_abstract) {
+		// A bodyless abstract declaration has no body colon, and the parser points
+		// its synthetic body suite at the next member, so scanning for a colon would
+		// run into the following declaration. Abstract functions also cannot infer a
+		// return type from a body, so leave them out of return-type collection.
+		return false;
+	}
 	// The parser does not expose the body-colon token for the signature, so scan
 	// for the first top-level colon, following the signature across wrapped lines.
-	// The body always begins at or after the signature colon, so bounding the scan
-	// at the first body statement keeps it off a later declaration's colon when a
-	// signature has no colon at all (e.g. an abstract declaration with no body).
+	// A non-abstract function always has a body, so its first body statement bounds
+	// the scan and keeps it off a later declaration's colon.
 	const int last_signature_line = p_function->body != nullptr ? p_function->body->start_line - 1 : line_index;
 	int body_colon_line = line_index;
 	int body_colon = -1;
@@ -1026,9 +1058,10 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	r_candidate.matched = true;
 	r_candidate.line = line_index;
 	r_candidate.caret_span_start = function_start;
-	// A wrapped signature keeps its colon on a later line; anchor caret hit-testing
-	// to the rest of the `func` line so clicking the declaration still matches.
-	r_candidate.caret_span_end = body_colon_line == line_index ? body_colon : line.length();
+	// A wrapped signature closes its caret span on the body-colon line so the caret
+	// selects the return-type annotation anywhere from `func` through that colon.
+	r_candidate.caret_span_end = body_colon;
+	r_candidate.caret_span_end_line = body_colon_line;
 	if (p_function->return_type != nullptr) {
 		r_candidate.disabled_reason = "This function already has a return type annotation.";
 		return true;
@@ -3630,7 +3663,11 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
 #endif // GDSCRIPT_NO_LSP
 	);
 	for (const TypeAnnotationCandidate &candidate : candidates) {
-		if (caret_on_segment(p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
+		const int caret_span_end_line = candidate.caret_span_end_line < 0 ? candidate.line : candidate.caret_span_end_line;
+		const bool matched = caret_span_end_line == candidate.line
+				? caret_on_segment(p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)
+				: caret_in_multiline_span(p_location, candidate.line, candidate.caret_span_start, caret_span_end_line, candidate.caret_span_end);
+		if (matched) {
 			return candidate;
 		}
 	}

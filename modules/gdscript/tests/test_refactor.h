@@ -963,6 +963,21 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"\"\"\") -> int:\n"
 					"\treturn 1\n");
 		}
+		SUBCASE("caret on the closing colon line selects the wrapped return type") {
+			const String source =
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					"):\n"
+					"\treturn base\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 0, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					") -> int:\n"
+					"\treturn base\n");
+		}
 	}
 
 	TEST_CASE("Add type annotation preserves the async modifier") {
@@ -1001,6 +1016,29 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		REQUIRE_EQ(result.candidates.size(), 1);
 		CHECK_FALSE(result.candidates[0].enabled);
 		CHECK(result.candidates[0].disabled_reason.contains("spans multiple lines"));
+	}
+
+	TEST_CASE("find_candidates does not scan a bodyless abstract signature into a following member") {
+		RefactorContext ctx;
+		ctx.path = "user://type_annotation_abstract.gd";
+		ctx.source =
+				"@abstract class Base:\n"
+				"\t@abstract func area() -> float\n"
+				"\tvar radius := 1.0\n";
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		bool saw_radius = false;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			// The bodyless abstract signature on line 1 has no body colon; the scan
+			// must not borrow the `:=` colon from the following member declaration.
+			CHECK_NE(candidate.line, 1);
+			if (candidate.line == 2) {
+				saw_radius = true;
+				CHECK(candidate.enabled);
+			}
+		}
+		CHECK(saw_radius);
 	}
 
 	TEST_CASE("find_candidates rejects unsupported refactor kinds") {
