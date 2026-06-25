@@ -39,7 +39,9 @@
 #include "../gdscript_cache.h"
 #include "../gdscript_parser.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
+#include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/list.h"
@@ -51,6 +53,101 @@ String read_source(const String &p_path, bool &r_ok) {
 	const String source = FileAccess::get_file_as_string(p_path, &err);
 	r_ok = (err == OK);
 	return source;
+}
+
+// Cross-call inverse-dependency index for verify(). The dependency edges of a file are a
+// pure function of its source, so caching them keyed by source hash lets repeated verify()
+// calls within a run reprime only the files whose content actually changed (plus the
+// dependents the cache invalidation cascades through), instead of reparsing the entire
+// universe on every call. This is a performance cache only: it never changes which files
+// land in the affected set versus rebuilding from scratch, because any path whose source
+// differs from its recorded hash (or that is unknown) is always reprimed.
+//
+// The index is process-static and self-correcting: a stale entry left by a previous run or
+// test is only reused when both the path and its exact source match, so an entry that no
+// longer reflects disk is reprimed before it can affect a result.
+struct VerifyDependencyGraphCache {
+	// Order-independent signature of the universe the cached edges were primed against. A path's
+	// recorded forward edges are only complete relative to the universe present when it was
+	// primed (edges to files outside that universe are not captured), so an entry is reusable
+	// only while the universe is unchanged. When the universe differs the whole index is dropped
+	// and rebuilt, which keeps results identical to a from-scratch run; within a fixpoint run the
+	// universe is fixed, so the signature is constant and the optimization stays fully active.
+	uint64_t universe_signature = 0;
+	bool universe_signature_set = false;
+	// Global dependency-resolution state the edges were primed under. Dependency edges can change
+	// without any universe source change: a class_name registration (tracked by the ScriptServer
+	// global-class cache version) or an autoload/project setting (tracked by the ProjectSettings
+	// version) can make a consumer resolve a name to a different provider. A bump in either must
+	// rebuild the index so a newly resolvable dependent is never missed.
+	uint64_t global_class_version = 0;
+	uint32_t project_settings_version = 0;
+
+	// Source hash recorded the last time this path's edges were primed.
+	HashMap<String, uint64_t> source_hashes;
+	// Forward dependencies (within the universe) recorded for this path, used to derive the
+	// inverse index. Kept so a reprime can drop a path's old edges before recording new ones.
+	HashMap<String, HashSet<String>> forward_dependencies;
+	// Inverse dependencies: for each path, the set of universe files that directly depend on
+	// it. Maintained incrementally so it survives the cache's staged-file invalidation.
+	HashMap<String, HashSet<String>> inverse_dependencies;
+
+	void forget(const String &p_path) {
+		if (HashMap<String, HashSet<String>>::Iterator forward = forward_dependencies.find(p_path)) {
+			for (const String &dependency : forward->value) {
+				if (HashMap<String, HashSet<String>>::Iterator inverse = inverse_dependencies.find(dependency)) {
+					inverse->value.erase(p_path);
+					if (inverse->value.is_empty()) {
+						inverse_dependencies.erase(dependency);
+					}
+				}
+			}
+			forward_dependencies.erase(p_path);
+		}
+		source_hashes.erase(p_path);
+	}
+
+	void record(const String &p_path, uint64_t p_source_hash, const HashSet<String> &p_dependencies) {
+		forget(p_path);
+		source_hashes[p_path] = p_source_hash;
+		forward_dependencies[p_path] = p_dependencies;
+		for (const String &dependency : p_dependencies) {
+			inverse_dependencies[dependency].insert(p_path);
+		}
+	}
+
+	HashSet<String> get_inverse(const String &p_path) const {
+		if (HashMap<String, HashSet<String>>::ConstIterator it = inverse_dependencies.find(p_path)) {
+			return it->value;
+		}
+		return HashSet<String>();
+	}
+
+	void clear() {
+		source_hashes.clear();
+		forward_dependencies.clear();
+		inverse_dependencies.clear();
+	}
+};
+
+// Order-independent signature of the path set the cached edges are scoped to: the sum of each
+// path's 64-bit hash. The commutative combine is insensitive to ordering, and the entries are a
+// set, so two calls over the same set of paths produce the same signature. The scope is the
+// universe plus any touched path that lies outside it: an in-universe consumer's edge to such an
+// out-of-universe provider is only captured while that provider is in scope, so a change in the
+// out-of-universe touched set must rebuild the index. In normal use every touched path is in the
+// universe, so this set is just the universe and the signature is stable across a fixpoint run.
+uint64_t edge_scope_signature_of(const HashSet<String> &p_scope) {
+	uint64_t signature = 0;
+	for (const String &path : p_scope) {
+		signature += path.hash64();
+	}
+	return signature;
+}
+
+VerifyDependencyGraphCache &verify_dependency_graph_cache() {
+	static VerifyDependencyGraphCache cache;
+	return cache;
 }
 
 void invalidate_cache(const String &p_path) {
@@ -349,26 +446,133 @@ VerificationResult GDScriptVerificationHarness::verify(
 		touched.insert(candidate.path);
 	}
 
-	// Rebuild the dependency graph from disk for every universe path so inverse-dependency
-	// edges are always accurate on this call, regardless of what a previous call may have
-	// invalidated. Flush each path first so get_full_script re-resolves dependencies and
-	// repopulates parser_inverse_dependencies rather than returning a cached script.
-	for (const String &path : universe) {
-		GDScriptCache::remove_parser(path);
-		GDScriptCache::remove_script(path);
-	}
-	for (const String &path : universe) {
-		Error err = OK;
-		GDScriptCache::get_full_script(path, err, String(), true);
-		// A load error on one path means its edges are absent, but other paths are
-		// still primed correctly — the BFS will simply miss dependents of this path.
-	}
-
-	// Affected set = touched ∪ transitive inverse-dependents(touched) ∩ universe.
 	HashSet<String> universe_set;
 	for (const String &path : universe) {
 		universe_set.insert(path);
 	}
+
+	// The scope the cached edges are valid for: the universe plus any touched provider outside it
+	// (whose edges to in-universe consumers are captured only while it is in scope). Used both to
+	// gate cache reuse and as the provider scan when recording edges, so the two always agree.
+	HashSet<String> edge_scope = universe_set;
+	for (const String &path : touched) {
+		edge_scope.insert(path);
+	}
+
+	// Read every universe path's current on-disk source once. Reading files is cheap relative
+	// to a full parse+analyze, and the source is needed both to validate the cached dependency
+	// edges (by hash) and to prime the files whose content changed.
+	VerifyDependencyGraphCache &graph_cache = verify_dependency_graph_cache();
+
+	// A cached entry's recorded edges are only complete relative to the edge scope and the global
+	// dependency-resolution state they were primed against, so drop the whole index when either
+	// changes. The edge scope guards against a changed path set; the ScriptServer global-class
+	// cache version guards against a class_name registration, and the ProjectSettings version
+	// guards against an autoload or other setting changing how a consumer resolves a name, all
+	// of which can shift dependency edges without any universe source change. This rebuilds every
+	// path on the first call under a new key (identical to the from-scratch behavior) while
+	// leaving the optimization fully active across the repeated, fixed-key calls of a fixpoint
+	// run, where none of these inputs change.
+	const uint64_t signature = edge_scope_signature_of(edge_scope);
+	const uint64_t global_class_version = ScriptServer::get_global_class_cache_version();
+	const uint32_t project_settings_version = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->get_version() : 0;
+	if (!graph_cache.universe_signature_set ||
+			graph_cache.universe_signature != signature ||
+			graph_cache.global_class_version != global_class_version ||
+			graph_cache.project_settings_version != project_settings_version) {
+		graph_cache.clear();
+		graph_cache.universe_signature = signature;
+		graph_cache.global_class_version = global_class_version;
+		graph_cache.project_settings_version = project_settings_version;
+		graph_cache.universe_signature_set = true;
+	}
+
+	HashMap<String, String> universe_source;
+	HashMap<String, uint64_t> universe_hash;
+	for (const String &path : universe) {
+		bool ok = false;
+		const String source = read_source(path, ok);
+		if (!ok) {
+			// Unreadable now: forget any stale edges so the cache cannot reuse them, and treat
+			// the path as having no recorded edges (matching the from-scratch behavior where a
+			// failed load simply contributes no edges).
+			graph_cache.forget(path);
+			continue;
+		}
+		universe_source[path] = source;
+		universe_hash[path] = source.hash64();
+	}
+
+	// A universe path must be reprimed when its source differs from the recorded hash (or is
+	// unknown). Repriming a path through GDScriptCache invalidates its parser, which cascades
+	// to every dependent and erases their cache-level inverse edges, so the dependent closure
+	// of the changed set must be reprimed too. The harness-owned inverse index drives that
+	// closure so the work scales with the changed set rather than the whole universe.
+	HashSet<String> reprime_set;
+	List<String> reprime_frontier;
+	for (const String &path : universe) {
+		if (!universe_source.has(path)) {
+			continue;
+		}
+		HashMap<String, uint64_t>::ConstIterator recorded = graph_cache.source_hashes.find(path);
+		if (!recorded || recorded->value != universe_hash[path]) {
+			if (!reprime_set.has(path)) {
+				reprime_set.insert(path);
+				reprime_frontier.push_back(path);
+			}
+		}
+	}
+	while (!reprime_frontier.is_empty()) {
+		const String path = reprime_frontier.front()->get();
+		reprime_frontier.pop_front();
+		for (const String &dependent : graph_cache.get_inverse(path)) {
+			if (!universe_set.has(dependent) || reprime_set.has(dependent) || !universe_source.has(dependent)) {
+				continue;
+			}
+			reprime_set.insert(dependent);
+			reprime_frontier.push_back(dependent);
+		}
+	}
+
+	// Reprime the changed set and its dependent closure: flush each first so get_full_script
+	// re-resolves dependencies and repopulates the cache's inverse edges from disk content.
+	for (const String &path : reprime_set) {
+		GDScriptCache::remove_parser(path);
+		GDScriptCache::remove_script(path);
+	}
+	for (const String &path : reprime_set) {
+		Error err = OK;
+		GDScriptCache::get_full_script(path, err, String(), true);
+		// A load error on one path means its edges are absent for this call; the from-scratch
+		// behavior (the BFS simply misses dependents of this path) is preserved because the
+		// forward-dependency capture below finds no edges for it.
+	}
+
+	// Capture each reprimed path's forward dependencies. Repriming a path records cache-level
+	// inverse edges from every provider it touches to it, including unchanged providers that were
+	// not themselves reprimed. The provider scan spans the universe plus the touched paths: a
+	// candidate may touch a provider that is not itself in the universe, yet an in-universe
+	// consumer can depend on it, and that consumer must still be discovered as affected (the
+	// universe bounds which dependents are re-analyzed, not which providers can be edited). The
+	// affected-set BFS below filters dependents by universe membership, so recording an edge keyed
+	// on an out-of-universe provider is safe.
+	{
+		HashMap<String, HashSet<String>> forward_for_reprimed;
+		for (const String &provider : edge_scope) {
+			for (const String &dependent : GDScriptCache::get_inverse_dependencies(provider)) {
+				if (reprime_set.has(dependent)) {
+					forward_for_reprimed[dependent].insert(provider);
+				}
+			}
+		}
+		for (const String &path : reprime_set) {
+			HashMap<String, HashSet<String>>::ConstIterator edges = forward_for_reprimed.find(path);
+			graph_cache.record(path, universe_hash[path], edges ? edges->value : HashSet<String>());
+		}
+	}
+
+	// Affected set = touched ∪ transitive inverse-dependents(touched) ∩ universe, discovered
+	// against the harness-owned inverse index, which now reflects every changed file's edges.
 	HashSet<String> affected_set = touched;
 	List<String> frontier;
 	for (const String &path : touched) {
@@ -377,7 +581,7 @@ VerificationResult GDScriptVerificationHarness::verify(
 	while (!frontier.is_empty()) {
 		const String path = frontier.front()->get();
 		frontier.pop_front();
-		for (const String &dependent : GDScriptCache::get_inverse_dependencies(path)) {
+		for (const String &dependent : graph_cache.get_inverse(path)) {
 			if (!universe_set.has(dependent) || affected_set.has(dependent)) {
 				continue;
 			}

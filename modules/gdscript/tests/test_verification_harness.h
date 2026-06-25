@@ -292,6 +292,154 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Dependent rejection survives a provider edited on disk between verify calls") {
+		// The cross-call dependency-graph cache keys edges by source hash. When a provider's
+		// on-disk content changes between two verify() calls, the cached edges for it (and its
+		// dependents) must be reprimed, so the consumer is still discovered as a dependent and
+		// the type-narrowing candidate is still rejected. A stale cache that reused the first
+		// call's edges would silently miss the consumer and wrongly accept.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/verify_edited_provider.gd";
+		// First version: getter returns an int, plus a second untyped getter.
+		const String provider_v1 =
+				"func get_value():\n"
+				"\treturn 42\n"
+				"func get_other():\n"
+				"\treturn 7\n";
+		TemporaryScriptFile provider(provider_path, provider_v1);
+
+		const String consumer_path = "res://refactor/verify_edited_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_edited_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<String> universe = { provider_path, consumer_path };
+
+		// First call primes the graph cache with the provider's v1 edges.
+		Vector<VerificationCandidate> first_candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(first_candidates.size(), 0);
+		VerificationResult first = GDScriptVerificationHarness::verify(first_candidates, universe);
+		REQUIRE(first.ok);
+		CHECK_GT(first.rejected.size(), 0);
+
+		// Rewrite the provider on disk: reorder the getters so the candidate anchors differ
+		// from the cached call, while the consumer still narrows get_value() to String.
+		{
+			Ref<FileAccess> file = FileAccess::open(provider_path, FileAccess::WRITE);
+			REQUIRE(file.is_valid());
+			file->store_string(
+					"func get_other():\n"
+					"\treturn 7\n"
+					"func get_value():\n"
+					"\treturn 42\n");
+		}
+
+		// Second call must reprime against the edited provider and still reject the candidate
+		// that narrows get_value() to a String the consumer cannot accept.
+		Vector<VerificationCandidate> second_candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(second_candidates.size(), 0);
+		VerificationResult second = GDScriptVerificationHarness::verify(second_candidates, universe);
+		REQUIRE(second.ok);
+		CHECK_GT(second.rejected.size(), 0);
+		CHECK_GT(second.rejected[0].diagnostics.size(), 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Dependent rejection survives a universe expanded between verify calls") {
+		// The dependency-graph cache records a path's edges only relative to the universe it was
+		// primed against. If a first verify() runs with a narrow universe that omits a consumer,
+		// the provider is cached without the edge to that consumer. A second verify() that adds
+		// the consumer to the universe must still discover it as a dependent and reject the
+		// breaking candidate, rather than reusing the narrow-universe edges and wrongly accepting.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/verify_expand_provider.gd";
+		const String provider_source =
+				"func get_value():\n"
+				"\treturn 42\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_expand_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_expand_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 0);
+
+		// First call: universe is the provider alone, so the consumer is not in scope and the
+		// candidate is accepted (no dependent observes the narrowed return type).
+		Vector<String> narrow_universe = { provider_path };
+		VerificationResult narrow = GDScriptVerificationHarness::verify(candidates, narrow_universe);
+		REQUIRE(narrow.ok);
+		CHECK_EQ(narrow.rejected.size(), 0);
+
+		// Second call: universe now includes the consumer. The cache must rebuild against the new
+		// universe and detect the consumer as a dependent, rejecting the breaking candidate.
+		Vector<String> wide_universe = { provider_path, consumer_path };
+		VerificationResult wide = GDScriptVerificationHarness::verify(candidates, wide_universe);
+		REQUIRE(wide.ok);
+		CHECK_GT(wide.rejected.size(), 0);
+		CHECK_GT(wide.rejected[0].diagnostics.size(), 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Dependent rejection holds when the touched provider is outside the universe") {
+		// A candidate may touch a provider that is not itself listed in the universe, while an
+		// in-universe consumer depends on it. The universe bounds which dependents are
+		// re-analyzed, not which providers can be edited, so the consumer must still be
+		// discovered and the breaking candidate rejected. A graph cache that only recorded edges
+		// keyed on universe providers would miss the consumer here and wrongly accept.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/verify_outside_provider.gd";
+		const String provider_source =
+				"func get_value():\n"
+				"\treturn 42\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_outside_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_outside_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 0);
+
+		// Universe lists only the consumer; the touched provider is outside it.
+		Vector<String> universe = { consumer_path };
+		VerificationResult result = GDScriptVerificationHarness::verify(candidates, universe);
+		REQUIRE(result.ok);
+		CHECK_GT(result.rejected.size(), 0);
+		CHECK_GT(result.rejected[0].diagnostics.size(), 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("A candidate with an out-of-range edit is rejected with 'could not be applied'") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
