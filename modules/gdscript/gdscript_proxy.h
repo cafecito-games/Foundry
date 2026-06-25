@@ -55,6 +55,13 @@ class GDScriptProxyInstance : public ScriptInstance {
 	// True when `p_method` is declared somewhere in `proxy_script`'s class/trait/
 	// abstract chain. Mirrors how `GDScriptInstance::callp` walks the base chain,
 	// but treats every contract method as intercepted instead of executed.
+	//
+	// Covers the target's own declared methods (abstract + concrete), methods
+	// inherited through the GDScript base chain, and concrete methods flattened in
+	// from applied traits. Abstract requirements contributed transitively by a
+	// trait the target itself `uses` are not flattened into `member_functions` and
+	// are therefore not yet part of the scanned contract; resolving the full trait
+	// requirement set is tracked alongside trait conformance (#186).
 	bool _is_contract_method(const StringName &p_method) const;
 
 public:
@@ -87,8 +94,8 @@ public:
 class GDScriptProxy {
 public:
 	// Builds a proxy that satisfies trait/abstract type `p_type` and routes its
-	// contract through `p_handler`. The returned object is a freshly created,
-	// unreferenced `RefCounted`; callers wrap it in a `Ref` to own it. Returns
-	// `nullptr` and fills `r_error_message` on invalid input.
-	static Object *create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message);
+	// contract through `p_handler`. Returns a `Ref` owning a freshly created
+	// `RefCounted` host, or a null `Ref` (with `r_error_message` filled) on invalid
+	// input. The target must extend `RefCounted`, since the host is a `RefCounted`.
+	static Ref<RefCounted> create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message);
 };

@@ -515,10 +515,11 @@ struct GDScriptUtilityFunctionsDefinitions {
 		VALIDATE_ARG_CUSTOM(0, Variant::OBJECT, type.is_null(), RTR("Proxy target must be a GDScript trait or abstract type."));
 
 		const Callable handler = *p_args[1];
+		VALIDATE_ARG_CUSTOM(1, Variant::CALLABLE, !handler.is_valid(), RTR("Proxy handler must be a valid Callable."));
 
 		String error_message;
-		Object *proxy = GDScriptProxy::create_proxy(type, handler, error_message);
-		if (proxy == nullptr) {
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(type, handler, error_message);
+		if (proxy.is_null()) {
 			*r_ret = error_message;
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 			r_error.argument = 0;
@@ -526,7 +527,7 @@ struct GDScriptUtilityFunctionsDefinitions {
 			return;
 		}
 
-		*r_ret = Ref<RefCounted>(Object::cast_to<RefCounted>(proxy));
+		*r_ret = proxy;
 	}
 };
 

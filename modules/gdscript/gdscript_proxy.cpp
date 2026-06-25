@@ -128,31 +128,39 @@ ScriptLanguage *GDScriptProxyInstance::get_language() {
 	return GDScriptLanguage::get_singleton();
 }
 
-Object *GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message) {
+Ref<RefCounted> GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message) {
 	Ref<GDScript> gdscript = p_type;
 	if (gdscript.is_null()) {
 		r_error_message = RTR("Proxy target must be a GDScript trait or abstract type.");
-		return nullptr;
+		return Ref<RefCounted>();
 	}
 	if (!gdscript->is_valid()) {
 		r_error_message = RTR("Proxy target script is not compiled/valid.");
-		return nullptr;
+		return Ref<RefCounted>();
 	}
 	if (!gdscript->is_trait_type() && !gdscript->is_abstract()) {
 		r_error_message = RTR("Proxy target must be a trait or an abstract type.");
-		return nullptr;
+		return Ref<RefCounted>();
+	}
+	// The host is a `RefCounted`, so a target rooted on any other native base
+	// (Node, Resource, Object, ...) cannot be soundly represented yet: its native
+	// methods and `is`-checks against the native base would not hold. Proxying
+	// those bases is tracked as a follow-up.
+	if (gdscript->get_instance_base_type() != SNAME("RefCounted")) {
+		r_error_message = vformat(RTR("Proxy target must extend RefCounted; native base \"%s\" is not supported yet."), String(gdscript->get_instance_base_type()));
+		return Ref<RefCounted>();
 	}
 	if (!p_handler.is_valid()) {
 		r_error_message = RTR("Proxy handler must be a valid Callable.");
-		return nullptr;
+		return Ref<RefCounted>();
 	}
 
 	// Dedicated construction path: hosts the synthetic instance on a fresh
 	// `RefCounted` and bypasses the abstract/trait instantiation guard that
 	// `GDScript::_new`/`instance_create` enforce. The Object owns and frees the
-	// `ScriptInstance`.
+	// `ScriptInstance`; the returned `Ref` owns the host.
 	RefCounted *proxy_owner = memnew(RefCounted);
 	GDScriptProxyInstance *instance = memnew(GDScriptProxyInstance(proxy_owner, gdscript, p_handler));
 	proxy_owner->set_script_instance(instance);
-	return proxy_owner;
+	return Ref<RefCounted>(proxy_owner);
 }

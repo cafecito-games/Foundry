@@ -57,9 +57,14 @@ static Ref<GDScript> get_subclass(const Ref<GDScript> &p_script, const StringNam
 }
 
 static Ref<GDScript> compile_proxy_source(const String &p_source) {
+	// A unique path per compile avoids "resource already loaded from path"
+	// collisions when a single test keeps more than one script alive at once.
+	static int unique_index = 0;
+	const String path = vformat("user://test_proxy_%d.gd", unique_index++);
+
 	Ref<GDScript> script;
 	script.instantiate();
-	script->set_path("user://test_proxy.gd");
+	script->set_path(path);
 	script->set_source_code(p_source);
 
 	GDScriptParser parser;
@@ -113,9 +118,8 @@ TEST_CASE("[Modules][GDScript][Proxy] Contract methods route to the handler") {
 	REQUIRE(recorder != nullptr);
 
 	String error_message;
-	Object *proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
-	REQUIRE_MESSAGE(proxy != nullptr, error_message.utf8().get_data());
-	Ref<RefCounted> proxy_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(proxy));
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
 
 	// A required (abstract) method reaches the handler and returns its stub.
 	{
@@ -160,9 +164,8 @@ TEST_CASE("[Modules][GDScript][Proxy] Native built-ins are not intercepted") {
 	Object *recorder = recorder_ref;
 
 	String error_message;
-	Object *proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
-	REQUIRE(proxy != nullptr);
-	Ref<RefCounted> proxy_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(proxy));
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
+	REQUIRE(proxy.is_valid());
 
 	// The script instance reports a non-contract method as "invalid" so
 	// `Object::callp` falls through to the native implementation.
@@ -176,7 +179,7 @@ TEST_CASE("[Modules][GDScript][Proxy] Native built-ins are not intercepted") {
 	}
 
 	// Going through the Object, the native call resolves and refcounting works.
-	CHECK(proxy->get_instance_id() == proxy_ref->get_instance_id());
+	CHECK(ObjectDB::get_instance(proxy->get_instance_id()) == proxy.ptr());
 	{
 		Callable::CallError error;
 		Variant id = proxy->callp("get_instance_id", nullptr, 0, error);
@@ -201,9 +204,8 @@ TEST_CASE("[Modules][GDScript][Proxy] get_script identity and method list") {
 	Object *recorder = recorder_ref;
 
 	String error_message;
-	Object *proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
-	REQUIRE(proxy != nullptr);
-	Ref<RefCounted> proxy_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(proxy));
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
+	REQUIRE(proxy.is_valid());
 
 	CHECK(proxy->get_script_instance()->get_script() == greeter);
 
@@ -246,9 +248,8 @@ TEST_CASE("[Modules][GDScript][Proxy] Abstract types can be proxied") {
 	Object *recorder = recorder_ref;
 
 	String error_message;
-	Object *proxy = GDScriptProxy::create_proxy(service, Callable(recorder, "handle"), error_message);
-	REQUIRE_MESSAGE(proxy != nullptr, error_message.utf8().get_data());
-	Ref<RefCounted> proxy_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(proxy));
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(service, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
 
 	Variant value = 7;
 	const Variant *args[1] = { &value };
@@ -262,6 +263,9 @@ TEST_CASE("[Modules][GDScript][Proxy] Invalid construction is rejected") {
 	ScopedProxyLanguage language;
 
 	const char *source =
+			"trait Greeter:\n"
+			"\t@abstract func greet(subject: String) -> String\n"
+			"\n"
 			"class Concrete:\n"
 			"\tfunc run() -> void:\n"
 			"\t\tpass\n"
@@ -271,8 +275,10 @@ TEST_CASE("[Modules][GDScript][Proxy] Invalid construction is rejected") {
 			"\t\treturn null\n";
 
 	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> greeter = get_subclass(script, "Greeter");
 	Ref<GDScript> concrete = get_subclass(script, "Concrete");
 	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(greeter.is_valid());
 	REQUIRE(concrete.is_valid());
 
 	Callable::CallError construct_error;
@@ -282,16 +288,24 @@ TEST_CASE("[Modules][GDScript][Proxy] Invalid construction is rejected") {
 	// A concrete class (no trait/abstract supertype) cannot be proxied.
 	{
 		String error_message;
-		Object *proxy = GDScriptProxy::create_proxy(concrete, Callable(recorder, "handle"), error_message);
-		CHECK(proxy == nullptr);
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(concrete, Callable(recorder, "handle"), error_message);
+		CHECK(proxy.is_null());
 		CHECK_FALSE(error_message.is_empty());
 	}
 
 	// A null script is rejected.
 	{
 		String error_message;
-		Object *proxy = GDScriptProxy::create_proxy(Ref<Script>(), Callable(recorder, "handle"), error_message);
-		CHECK(proxy == nullptr);
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(Ref<Script>(), Callable(recorder, "handle"), error_message);
+		CHECK(proxy.is_null());
+		CHECK_FALSE(error_message.is_empty());
+	}
+
+	// An invalid (null) handler is rejected.
+	{
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(greeter, Callable(), error_message);
+		CHECK(proxy.is_null());
 		CHECK_FALSE(error_message.is_empty());
 	}
 }
@@ -310,14 +324,41 @@ TEST_CASE("[Modules][GDScript][Proxy] Lifetime is managed by refcounting") {
 	ObjectID proxy_id;
 	{
 		String error_message;
-		Object *proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
-		REQUIRE(proxy != nullptr);
-		Ref<RefCounted> proxy_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(proxy));
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(greeter, Callable(recorder, "handle"), error_message);
+		REQUIRE(proxy.is_valid());
 		proxy_id = proxy->get_instance_id();
 		CHECK(ObjectDB::get_instance(proxy_id) != nullptr);
 	}
 	// Dropping the last reference frees the proxy (and its ScriptInstance).
 	CHECK(ObjectDB::get_instance(proxy_id) == nullptr);
+}
+
+TEST_CASE("[Modules][GDScript][Proxy] Non-RefCounted native bases are rejected") {
+	ScopedProxyLanguage language;
+
+	const char *source =
+			"@abstract class NodeService extends Node:\n"
+			"\t@abstract func ping() -> void\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn null\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> node_service = get_subclass(script, "NodeService");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(node_service.is_valid());
+	REQUIRE(node_service->get_instance_base_type() == StringName("Node"));
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	// The host is a RefCounted, so a Node-rooted target cannot be proxied yet.
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(node_service, Callable(recorder, "handle"), error_message);
+	CHECK(proxy.is_null());
+	CHECK_FALSE(error_message.is_empty());
 }
 
 } // namespace GDScriptTests
