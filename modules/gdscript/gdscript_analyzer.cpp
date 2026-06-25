@@ -7456,14 +7456,22 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				argument_expressions = p_subscript->type_arguments;
 			}
 			for (GDScriptParser::ExpressionNode *argument_expression : argument_expressions) {
+				// Resolve positionally: a failed argument keeps its slot (filled with the Variant
+				// fallback and flagged) so the arity check sees the count the user wrote and a later
+				// argument is never shifted into an earlier type parameter.
 				GDScriptParser::DataType type_argument;
 				if (resolve_explicit_type_argument(argument_expression, type_argument)) {
 					resolved_arguments.push_back(type_argument);
 					argument_failed.push_back(false);
-					argument_sources.push_back(argument_expression);
 				} else {
 					push_error(vformat(R"(Could not resolve the type argument for generic class "%s".)", specialized.to_string()), argument_expression);
+					GDScriptParser::DataType fallback;
+					fallback.kind = GDScriptParser::DataType::VARIANT;
+					fallback.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+					resolved_arguments.push_back(fallback);
+					argument_failed.push_back(true);
 				}
+				argument_sources.push_back(argument_expression);
 			}
 
 			const int expected_argument_count = specialized.class_type->type_parameters.size();
@@ -9437,19 +9445,27 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 				argument_expressions = subscript->type_arguments;
 			}
 
+			// Resolve positionally: a failed argument keeps its slot (filled with the Variant
+			// fallback and flagged) so a later argument is never shifted into an earlier type
+			// parameter, and the arity check sees the count the user actually wrote.
 			Vector<GDScriptParser::DataType> explicit_arguments;
+			Vector<bool> explicit_argument_failed;
 			for (GDScriptParser::ExpressionNode *argument_expression : argument_expressions) {
 				GDScriptParser::DataType type_argument;
 				if (resolve_explicit_type_argument(argument_expression, type_argument)) {
 					explicit_arguments.push_back(type_argument);
+					explicit_argument_failed.push_back(false);
 				} else {
 					push_error(vformat(R"*(Could not resolve the explicit type argument for generic method "%s()".)*", p_function->identifier->name), argument_expression);
+					explicit_arguments.push_back(unresolved_fallback);
+					explicit_argument_failed.push_back(true);
 				}
 			}
 
-			if (!explicit_arguments.is_empty() && explicit_arguments.size() != type_parameters.size()) {
+			if (explicit_arguments.size() != type_parameters.size()) {
 				push_error(vformat(R"*(Generic method "%s()" expects %d type argument(s), but %d %s given.)*", p_function->identifier->name, type_parameters.size(), explicit_arguments.size(), explicit_arguments.size() == 1 ? "was" : "were"), subscript);
 				explicit_arguments.clear();
+				explicit_argument_failed.clear();
 			}
 
 			const int binding_count = MIN(explicit_arguments.size(), type_parameters.size());
@@ -9459,6 +9475,11 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 					continue;
 				}
 				bindings.insert(parameter->identifier->name, explicit_arguments[i]);
+				if (explicit_argument_failed[i]) {
+					// Resolution already failed and was reported; keep the slot bound to Variant and
+					// skip its bound check rather than re-diagnosing.
+					failed_parameters.insert(parameter->identifier->name);
+				}
 			}
 		}
 	}
