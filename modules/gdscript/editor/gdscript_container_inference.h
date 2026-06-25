@@ -1,0 +1,90 @@
+/**************************************************************************/
+/*  gdscript_container_inference.h                                        */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#pragma once
+
+#ifdef TOOLS_ENABLED
+
+#include "../gdscript_parser.h"
+
+#include "core/string/ustring.h"
+
+// Infers the element type of a bare `Array` local variable from how it is used
+// inside its declaring function, so the migration wizard can upgrade
+// `var items = []` to `var items: Array[int]` when (and only when) that is
+// provably correct.
+//
+// Soundness model: Arrays are reference types, so the inference is only
+// attempted for a local variable whose initializer is an array *literal* (the
+// full initial contents are then known) and which never escapes the function
+// (it is never passed as an argument, returned, aliased, stored, or captured by
+// a lambda). Every mutation observed on the variable must come from a modeled,
+// monomorphic operation; anything unmodelled forces a conservative skip. The
+// post-edit verification harness is a second line of defense, not the first.
+class GDScriptContainerInference {
+public:
+	enum Outcome {
+		// The declaration is not a bare-`Array` local literal, so element
+		// inference does not apply. The caller keeps the analyzer's own type.
+		NOT_APPLICABLE,
+		// A bare `Array` literal with no usage that pins an element type. The
+		// declaration is left as `Array` rather than guessing.
+		NO_EVIDENCE,
+		// A single concrete element type was proven. `element_type` carries the
+		// upgraded `Array[T]` type, ready to render.
+		INFERRED,
+		// Usage pushes more than one concrete element type. Skipped and reported.
+		MIXED,
+		// The variable escapes the function, so its contents cannot be bounded.
+		ESCAPES,
+		// A modeled mutation supplies an element whose type the analyzer could
+		// not resolve to a concrete, renderable type. Skipped and reported.
+		UNPROVABLE,
+	};
+
+	struct Result {
+		Outcome outcome = NOT_APPLICABLE;
+		// Valid only when `outcome == INFERRED`: the bare `Array` type augmented
+		// with the inferred element, e.g. `Array[int]`.
+		GDScriptParser::DataType element_type;
+		// Human-readable explanation for the skipped outcomes (MIXED / ESCAPES /
+		// UNPROVABLE), suitable for the wizard's "skipped and reported" surface.
+		String detail;
+	};
+
+	// Infers the element type of `p_decl` from its usages within
+	// `p_function_body` (the declaring function's top-level suite). `p_decl`
+	// must be a local variable declared somewhere inside that body.
+	static Result infer_local_array_element_type(
+			const GDScriptParser::VariableNode *p_decl,
+			const GDScriptParser::SuiteNode *p_function_body);
+};
+
+#endif // TOOLS_ENABLED
