@@ -57,6 +57,30 @@ public:
 	GDScriptNativeClass(const StringName &p_name);
 };
 
+// Read-only descriptor for a single generic type parameter declared on a class, returned by
+// `GDScript.get_type_parameter_list()`. Each instance is an immutable snapshot of the reflected data.
+class GDScriptTypeParameter : public RefCounted {
+	GDCLASS(GDScriptTypeParameter, RefCounted);
+
+	friend class GDScript;
+
+	StringName name;
+	int index = -1;
+	StringName scope = StringName("class");
+	bool _has_bound = false;
+	Dictionary bound;
+
+protected:
+	static void _bind_methods();
+
+public:
+	StringName get_parameter_name() const { return name; }
+	int get_index() const { return index; }
+	StringName get_scope() const { return scope; }
+	bool is_bounded() const { return _has_bound; }
+	Dictionary get_bound() const { return bound; }
+};
+
 #ifdef TESTS_ENABLED
 namespace GDScriptTests {
 class TestGDScriptTraitReflectionAccessor;
@@ -304,7 +328,7 @@ public:
 	// Generic reflection: declared type parameters of this class and their optional bounds.
 	const Vector<TypeParameter> &get_type_parameters() const { return type_parameters; }
 	bool is_generic() const { return !type_parameters.is_empty(); }
-	TypedArray<Dictionary> _get_type_parameter_list() const;
+	TypedArray<GDScriptTypeParameter> _get_type_parameter_list() const;
 
 	bool is_tool() const override { return tool; }
 	bool is_abstract() const override { return _is_abstract; }

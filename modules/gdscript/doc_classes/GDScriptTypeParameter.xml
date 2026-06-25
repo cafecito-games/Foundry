@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GDScriptTypeParameter" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A read-only description of a generic type parameter declared on a [GDScript] class.
+	</brief_description>
+	<description>
+		Describes a single generic type parameter declared directly on a class, such as [code]T[/code] in [code]class Box[T][/code] or [code]K[/code]/[code]V[/code] in [code]class_name Pair[K, V: RefCounted][/code]. Instances are produced by [method GDScript.get_type_parameter_list] and are immutable snapshots of the reflected data.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="bound" type="Dictionary" setter="" getter="get_bound">
+			The declared upper bound of the parameter, in the same shape as the entries returned by [method Script.get_script_property_list]. Empty when [member has_bound] is [code]false[/code].
+		</member>
+		<member name="has_bound" type="bool" setter="" getter="is_bounded">
+			Whether the parameter declares an upper bound (for example [code]T: Resource[/code]). See [member bound].
+		</member>
+		<member name="index" type="int" setter="" getter="get_index">
+			The ordinal position of the parameter in its class's declaration, starting at [code]0[/code].
+		</member>
+		<member name="name" type="StringName" setter="" getter="get_parameter_name">
+			The parameter's name (for example [code]&amp;"T"[/code]).
+		</member>
+		<member name="scope" type="StringName" setter="" getter="get_scope">
+			Where the parameter was declared. Currently always [code]&amp;"class"[/code], as only class-declared parameters are reflected.
+		</member>
+	</members>
+</class>
