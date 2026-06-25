@@ -39,14 +39,46 @@ namespace TestLogger {
 
 constexpr int sleep_duration = 1200000;
 
+String get_logs_dir_name() {
+	return "process_" + itos(OS::get_singleton()->get_process_id());
+}
+
+String get_logs_dir() {
+	return String("user://logs").path_join(get_logs_dir_name());
+}
+
+String get_logs_dir_absolute() {
+	return OS::get_singleton()->get_user_data_dir().path_join("logs").path_join(get_logs_dir_name());
+}
+
+String get_log_file_path(const String &p_file_name) {
+	return get_logs_dir().path_join(p_file_name);
+}
+
+String get_peer_log_file_name() {
+	return "peer_process_" + itos(OS::get_singleton()->get_process_id()) + ".log";
+}
+
+String get_peer_log_file_path() {
+	return String("user://logs").path_join(get_peer_log_file_name());
+}
+
+String get_peer_log_file_path_absolute() {
+	return OS::get_singleton()->get_user_data_dir().path_join("logs").path_join(get_peer_log_file_name());
+}
+
 void initialize_logs() {
 	ProjectSettings::get_singleton()->set_setting("application/config/name", "godot_tests");
-	DirAccess::make_dir_recursive_absolute(OS::get_singleton()->get_user_data_dir().path_join("logs"));
+	DirAccess::make_dir_recursive_absolute(get_logs_dir_absolute());
 }
 
 void cleanup_logs() {
 	ProjectSettings::get_singleton()->set_setting("application/config/name", "godot_tests");
-	Ref<DirAccess> dir = DirAccess::open("user://logs");
+	Ref<DirAccess> dir = DirAccess::open(get_logs_dir());
+	if (dir.is_null()) {
+		return;
+	}
+
 	dir->list_dir_begin();
 	String file = dir->get_next();
 	while (file != "") {
@@ -55,19 +87,35 @@ void cleanup_logs() {
 		}
 		file = dir->get_next();
 	}
-	DirAccess::remove_absolute(OS::get_singleton()->get_user_data_dir().path_join("logs"));
-	DirAccess::remove_absolute(OS::get_singleton()->get_user_data_dir());
+	dir->list_dir_end();
+	DirAccess::remove_absolute(get_logs_dir_absolute());
+}
+
+TEST_CASE("[Logger][RotatedFileLogger] Cleanup leaves unrelated log files intact") {
+	initialize_logs();
+
+	const String unrelated_file_path = get_peer_log_file_path();
+	Error err = Error::OK;
+	Ref<FileAccess> unrelated_file = FileAccess::open(unrelated_file_path, FileAccess::WRITE, &err);
+	REQUIRE_EQ(err, Error::OK);
+	unrelated_file->store_string("preserved");
+	unrelated_file.unref();
+
+	cleanup_logs();
+
+	CHECK(FileAccess::exists(unrelated_file_path));
+	DirAccess::remove_absolute(get_peer_log_file_path_absolute());
 }
 
 TEST_CASE("[Logger][RotatedFileLogger] Creates the first log file and logs on it") {
 	initialize_logs();
 
 	String waiting_for_godot = "Waiting for Godot";
-	RotatedFileLogger logger("user://logs/godot.log");
+	RotatedFileLogger logger(get_log_file_path("godot.log"));
 	logger.logf("%s", "Waiting for Godot");
 
 	Error err = Error::OK;
-	Ref<FileAccess> log = FileAccess::open("user://logs/godot.log", FileAccess::READ, &err);
+	Ref<FileAccess> log = FileAccess::open(get_log_file_path("godot.log"), FileAccess::READ, &err);
 	CHECK_EQ(err, Error::OK);
 	CHECK_EQ(log->get_as_text(), waiting_for_godot);
 
@@ -75,7 +123,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Creates the first log file and logs on it
 }
 
 void get_log_files(Vector<String> &log_files) {
-	Ref<DirAccess> dir = DirAccess::open("user://logs");
+	Ref<DirAccess> dir = DirAccess::open(get_logs_dir());
 	dir->list_dir_begin();
 	String file = dir->get_next();
 	while (file != "") {
@@ -85,7 +133,7 @@ void get_log_files(Vector<String> &log_files) {
 		}
 		file = dir->get_next();
 	}
-	if (FileAccess::exists("user://logs/godot.log")) {
+	if (FileAccess::exists(get_log_file_path("godot.log"))) {
 		log_files.push_back("godot.log");
 	}
 }
@@ -99,7 +147,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Rotates logs files") {
 	const int number_of_files = 3;
 	for (int i = 0; i < number_of_files; i++) {
 		String waiting_for_godot = "Waiting for Godot " + itos(i);
-		RotatedFileLogger logger("user://logs/godot.log", number_of_files);
+		RotatedFileLogger logger(get_log_file_path("godot.log"), number_of_files);
 		logger.logf("%s", waiting_for_godot.ascii().get_data());
 		all_waiting_for_godot.push_back(waiting_for_godot);
 
@@ -113,7 +161,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Rotates logs files") {
 
 	for (int i = 0; i < log_files.size(); i++) {
 		Error err = Error::OK;
-		Ref<FileAccess> log_file = FileAccess::open("user://logs/" + log_files[i], FileAccess::READ, &err);
+		Ref<FileAccess> log_file = FileAccess::open(get_log_file_path(log_files[i]), FileAccess::READ, &err);
 		REQUIRE_EQ(err, Error::OK);
 		CHECK_EQ(log_file->get_as_text(), all_waiting_for_godot[i]);
 	}
@@ -125,7 +173,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Rotates logs files") {
 	String new_waiting_for_godot = "Waiting for Godot " + itos(number_of_files);
 	all_waiting_for_godot = all_waiting_for_godot.slice(1, all_waiting_for_godot.size());
 	all_waiting_for_godot.push_back(new_waiting_for_godot);
-	RotatedFileLogger logger("user://logs/godot.log", number_of_files);
+	RotatedFileLogger logger(get_log_file_path("godot.log"), number_of_files);
 	logger.logf("%s", new_waiting_for_godot.ascii().get_data());
 
 	log_files.clear();
@@ -134,7 +182,7 @@ TEST_CASE("[Logger][RotatedFileLogger] Rotates logs files") {
 
 	for (int i = 0; i < log_files.size(); i++) {
 		Error err = Error::OK;
-		Ref<FileAccess> log_file = FileAccess::open("user://logs/" + log_files[i], FileAccess::READ, &err);
+		Ref<FileAccess> log_file = FileAccess::open(get_log_file_path(log_files[i]), FileAccess::READ, &err);
 		REQUIRE_EQ(err, Error::OK);
 		CHECK_EQ(log_file->get_as_text(), all_waiting_for_godot[i]);
 	}
@@ -146,18 +194,18 @@ TEST_CASE("[Logger][CompositeLogger] Logs the same into multiple loggers") {
 	initialize_logs();
 
 	Vector<Logger *> all_loggers;
-	all_loggers.push_back(memnew(RotatedFileLogger("user://logs/godot_logger_1.log", 1)));
-	all_loggers.push_back(memnew(RotatedFileLogger("user://logs/godot_logger_2.log", 1)));
+	all_loggers.push_back(memnew(RotatedFileLogger(get_log_file_path("godot_logger_1.log"), 1)));
+	all_loggers.push_back(memnew(RotatedFileLogger(get_log_file_path("godot_logger_2.log"), 1)));
 
 	String waiting_for_godot = "Waiting for Godot";
 	CompositeLogger logger(all_loggers);
 	logger.logf("%s", "Waiting for Godot");
 
 	Error err = Error::OK;
-	Ref<FileAccess> log = FileAccess::open("user://logs/godot_logger_1.log", FileAccess::READ, &err);
+	Ref<FileAccess> log = FileAccess::open(get_log_file_path("godot_logger_1.log"), FileAccess::READ, &err);
 	CHECK_EQ(err, Error::OK);
 	CHECK_EQ(log->get_as_text(), waiting_for_godot);
-	log = FileAccess::open("user://logs/godot_logger_2.log", FileAccess::READ, &err);
+	log = FileAccess::open(get_log_file_path("godot_logger_2.log"), FileAccess::READ, &err);
 	CHECK_EQ(err, Error::OK);
 	CHECK_EQ(log->get_as_text(), waiting_for_godot);
 
