@@ -263,6 +263,13 @@ void GDScriptCache::remove_parser(const String &p_path) {
 }
 
 String GDScriptCache::get_source_code(const String &p_path) {
+	if (singleton != nullptr) {
+		MutexLock lock(singleton->mutex);
+		if (HashMap<String, String>::ConstIterator override = singleton->source_overrides.find(p_path)) {
+			return override->value;
+		}
+	}
+
 	Vector<uint8_t> source_file;
 	Error err;
 	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ, &err);
@@ -279,6 +286,38 @@ String GDScriptCache::get_source_code(const String &p_path) {
 		ERR_FAIL_V_MSG("", "Script '" + p_path + "' contains invalid unicode (UTF-8), so it was not loaded. Please ensure that scripts are saved in valid UTF-8 unicode.");
 	}
 	return source;
+}
+
+void GDScriptCache::set_source_override(const String &p_path, const String &p_source) {
+	if (singleton == nullptr) {
+		return;
+	}
+	MutexLock lock(singleton->mutex);
+	singleton->source_overrides[p_path] = p_source;
+}
+
+bool GDScriptCache::has_source_override(const String &p_path) {
+	if (singleton == nullptr) {
+		return false;
+	}
+	MutexLock lock(singleton->mutex);
+	return singleton->source_overrides.has(p_path);
+}
+
+void GDScriptCache::clear_source_override(const String &p_path) {
+	if (singleton == nullptr) {
+		return;
+	}
+	MutexLock lock(singleton->mutex);
+	singleton->source_overrides.erase(p_path);
+}
+
+void GDScriptCache::clear_source_overrides() {
+	if (singleton == nullptr) {
+		return;
+	}
+	MutexLock lock(singleton->mutex);
+	singleton->source_overrides.clear();
 }
 
 HashSet<String> GDScriptCache::get_inverse_dependencies(const String &p_path) {
@@ -337,6 +376,9 @@ Ref<GDScript> GDScriptCache::get_shallow_script(const String &p_path, Error &r_e
 			r_error = ERR_FILE_CANT_READ;
 		}
 		script->set_binary_tokens_source(buffer);
+	} else if (singleton->source_overrides.has(remapped_path)) {
+		script->set_source_code(singleton->source_overrides[remapped_path]);
+		script->set_path_cache(p_path);
 	} else {
 		r_error = script->load_source_code(remapped_path);
 	}
@@ -389,6 +431,8 @@ Ref<GDScript> GDScriptCache::get_full_script(const String &p_path, Error &r_erro
 				goto finish;
 			}
 			script->set_binary_tokens_source(buffer);
+		} else if (singleton->source_overrides.has(remapped_path)) {
+			script->set_source_code(singleton->source_overrides[remapped_path]);
 		} else {
 			r_error = script->load_source_code(remapped_path);
 			if (r_error) {
@@ -507,6 +551,7 @@ void GDScriptCache::clear() {
 	}
 
 	parser_map_refs.clear();
+	singleton->source_overrides.clear();
 	singleton->shallow_gdscript_cache.clear();
 	singleton->full_gdscript_cache.clear();
 	singleton->static_gdscript_cache.clear();

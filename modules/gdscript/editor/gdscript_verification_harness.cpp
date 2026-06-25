@@ -39,8 +39,6 @@
 #include "../gdscript_cache.h"
 #include "../gdscript_parser.h"
 
-#include "editor/script/script_refactor_apply.h"
-
 #include "core/io/file_access.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
@@ -109,10 +107,12 @@ bool regresses(const AffectedAnalysis &p_baseline, const AffectedAnalysis &p_can
 	return false;
 }
 
-// Stages p_staged (path -> source) to disk for the edited files, invalidates affected
-// caches, analyzes every affected file, then restores originals. Always restores.
-// r_fatal is set true (and the run should abort) on a staged-write failure or if any
-// original could not be restored, since the latter may leave edited source on disk.
+// Primes p_staged (path -> source) as in-memory source overrides for the edited files,
+// invalidates affected caches so cross-file resolution re-reads the overridden buffers,
+// analyzes every affected file, then clears the overrides and invalidates again so later
+// runs see disk content. No disk writes occur; rollback is just clearing the overrides.
+// r_fatal is retained for signature compatibility with the ddmin oracle and is never set,
+// because there is no staged-write or restore step that can fail.
 AffectedAnalysis analyze_affected(
 		const Vector<String> &p_affected,
 		const HashMap<String, String> &p_original, // current on-disk source for every affected file
@@ -122,47 +122,36 @@ AffectedAnalysis analyze_affected(
 	r_fatal = false;
 	AffectedAnalysis analysis;
 
-	// Stage: write only files whose staged source differs from the original.
-	Vector<String> written;
+	// Override only files whose staged source differs from the original. Differing-only
+	// keeps the invalidation set minimal so unrelated cached parsers survive.
+	HashMap<String, String> overrides;
 	for (const KeyValue<String, String> &entry : p_staged) {
 		const String &path = entry.key;
 		if (!p_original.has(path) || p_original[path] == entry.value) {
 			continue;
 		}
-		String write_error;
-		if (!ScriptRefactorApply::write_file(path, entry.value, write_error)) {
-			r_fatal = true;
-			break;
-		}
-		written.push_back(path);
+		overrides[path] = entry.value;
 	}
 
-	if (!r_fatal) {
-		for (const String &path : written) {
-			invalidate_cache(path);
+	{
+		// Install overrides; the guard clears exactly these paths when this scope exits,
+		// which is the rollback. Invalidate first so dependents re-resolve against them.
+		GDScriptCacheSourceOverrideGuard override_guard(overrides);
+		for (const KeyValue<String, String> &entry : overrides) {
+			invalidate_cache(entry.key);
 		}
-		// Analyze the full affected set against the staged disk state.
+
+		// Analyze the full affected set against the overridden in-memory state.
 		for (const String &path : p_affected) {
 			const String source = p_staged.has(path) ? p_staged[path] : (p_original.has(path) ? p_original[path] : String());
 			analysis.error_count += analyze_one(path, source, p_options, analysis.messages);
 		}
 	}
 
-	// Restore: rewrite originals for every file we wrote, then invalidate again. A
-	// failed restore leaves edited source on disk, defeating the harness's guarantee of
-	// leaving the tree as found, so surface it and abort. Restore the rest regardless so
-	// a single failure does not strand additional files.
-	bool restore_failed = false;
-	for (const String &path : written) {
-		String write_error;
-		if (!ScriptRefactorApply::write_file(path, p_original[path], write_error)) {
-			ERR_PRINT(vformat("Verification harness failed to restore '%s'; it may be left modified on disk: %s", path, write_error));
-			restore_failed = true;
-		}
-		invalidate_cache(path);
-	}
-	if (restore_failed) {
-		r_fatal = true;
+	// Overrides are now cleared; invalidate again so the next analysis re-reads disk content
+	// rather than reusing a stale parser/script that was built from the override.
+	for (const KeyValue<String, String> &entry : overrides) {
+		invalidate_cache(entry.key);
 	}
 
 	return analysis;

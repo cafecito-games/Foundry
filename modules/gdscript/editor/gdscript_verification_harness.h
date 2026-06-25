@@ -108,9 +108,11 @@ struct StrictPreviewResult {
 	Vector<StrictViolation> violations; // Sites failing only under strict mode.
 };
 
-// Headless, caret-independent post-edit verification. Verification stages candidate
-// sources to disk and restores originals, so it is NOT safe to call concurrently with
-// a live editing session or another run.
+// Headless, caret-independent post-edit verification. Verification primes candidate
+// sources into GDScriptCache's in-memory source-override map and analyzes against them
+// with no disk writes, so it leaves the tree untouched. It mutates shared cache state
+// (overrides plus parser/script invalidation), so it is still NOT safe to call
+// concurrently with a live editing session or another run.
 class GDScriptVerificationHarness {
 public:
 	// Verifies p_candidates against the dependency closure of the files they touch.
