@@ -191,6 +191,12 @@ public:
 		}
 	}
 
+	// Scans a class-member initializer expression for references that would alias
+	// or mutate the tracked variable (used in member mode).
+	void scan_initializer(const GDScriptParser::ExpressionNode *p_initializer) {
+		scan_value(p_initializer);
+	}
+
 private:
 	const GDScriptParser::VariableNode *decl = nullptr;
 	bool member_mode = false;
@@ -485,15 +491,9 @@ private:
 					scan_value(pair.value);
 				}
 			} break;
-			case Node::LAMBDA: {
-				const GDScriptParser::LambdaNode *lambda = static_cast<const GDScriptParser::LambdaNode *>(p_value);
-				for (const GDScriptParser::IdentifierNode *capture : lambda->captures) {
-					if (capture != nullptr && (is_our_var(capture) || (decl->identifier != nullptr && capture->name == decl->identifier->name))) {
-						bail(GDScriptContainerInference::ESCAPES, "the variable is captured by a lambda");
-						return;
-					}
-				}
-			} break;
+			case Node::LAMBDA:
+				scan_lambda(static_cast<const GDScriptParser::LambdaNode *>(p_value));
+				break;
 			case Node::BINARY_OPERATOR: {
 				const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_value);
 				scan_value(binary->left_operand);
@@ -529,6 +529,24 @@ private:
 				// Remaining expression kinds (literals, `self`, `$node`, plain
 				// identifiers that are not our variable) cannot reference it.
 				break;
+		}
+	}
+
+	void scan_lambda(const GDScriptParser::LambdaNode *p_lambda) {
+		if (bailed || p_lambda == nullptr) {
+			return;
+		}
+		for (const GDScriptParser::IdentifierNode *capture : p_lambda->captures) {
+			if (capture != nullptr && (is_our_var(capture) || (decl->identifier != nullptr && capture->name == decl->identifier->name))) {
+				bail(GDScriptContainerInference::ESCAPES, "the variable is captured by a lambda");
+				return;
+			}
+		}
+		// In member mode a member is reached through `self`, not a capture, so a
+		// lambda that uses `self` could mutate the member through a callable that may
+		// be stored or invoked later in ways the analysis cannot bound.
+		if (member_mode && p_lambda->use_self) {
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
 		}
 	}
 
@@ -717,6 +735,12 @@ public:
 				return;
 			}
 		}
+	}
+
+	// Scans a class-member initializer expression for references that would alias
+	// or mutate the tracked variable (used in member mode).
+	void scan_initializer(const GDScriptParser::ExpressionNode *p_initializer) {
+		scan_value(p_initializer);
 	}
 
 private:
@@ -1018,15 +1042,9 @@ private:
 					scan_value(pair.value);
 				}
 			} break;
-			case Node::LAMBDA: {
-				const GDScriptParser::LambdaNode *lambda = static_cast<const GDScriptParser::LambdaNode *>(p_value);
-				for (const GDScriptParser::IdentifierNode *capture : lambda->captures) {
-					if (capture != nullptr && (is_our_var(capture) || (decl->identifier != nullptr && capture->name == decl->identifier->name))) {
-						bail(GDScriptContainerInference::ESCAPES, "the variable is captured by a lambda");
-						return;
-					}
-				}
-			} break;
+			case Node::LAMBDA:
+				scan_lambda(static_cast<const GDScriptParser::LambdaNode *>(p_value));
+				break;
 			case Node::BINARY_OPERATOR: {
 				const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_value);
 				scan_value(binary->left_operand);
@@ -1060,6 +1078,24 @@ private:
 			} break;
 			default:
 				break;
+		}
+	}
+
+	void scan_lambda(const GDScriptParser::LambdaNode *p_lambda) {
+		if (bailed || p_lambda == nullptr) {
+			return;
+		}
+		for (const GDScriptParser::IdentifierNode *capture : p_lambda->captures) {
+			if (capture != nullptr && (is_our_var(capture) || (decl->identifier != nullptr && capture->name == decl->identifier->name))) {
+				bail(GDScriptContainerInference::ESCAPES, "the variable is captured by a lambda");
+				return;
+			}
+		}
+		// In member mode a member is reached through `self`, not a capture, so a
+		// lambda that uses `self` could mutate the member through a callable that may
+		// be stored or invoked later in ways the analysis cannot bound.
+		if (member_mode && p_lambda->use_self) {
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
 		}
 	}
 
@@ -1194,9 +1230,12 @@ String member_disqualifier(const GDScriptParser::VariableNode *p_member) {
 // Drives `p_walker` over every function body in `p_class` and, recursively, its
 // nested classes. A member declared on `p_class` is reachable from any of these
 // methods (and a nested subclass may mutate an inherited member), so the union
-// must span all of them for the inference to be sound.
+// must span all of them for the inference to be sound. Other members' initializer
+// expressions are scanned too, since one can alias or mutate the tracked member
+// (e.g. `var _alias = _items`); the tracked member's own initializer is skipped
+// because it is contributed separately as the literal contents.
 template <typename Walker>
-void walk_class_methods(Walker &p_walker, const GDScriptParser::ClassNode *p_class) {
+void walk_class_methods(Walker &p_walker, const GDScriptParser::ClassNode *p_class, const GDScriptParser::VariableNode *p_tracked) {
 	if (p_class == nullptr) {
 		return;
 	}
@@ -1210,8 +1249,18 @@ void walk_class_methods(Walker &p_walker, const GDScriptParser::ClassNode *p_cla
 					p_walker.scan_suite(member.function->body);
 				}
 				break;
+			case GDScriptParser::ClassNode::Member::VARIABLE:
+				if (member.variable != nullptr && member.variable != p_tracked) {
+					p_walker.scan_initializer(member.variable->initializer);
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CONSTANT:
+				if (member.constant != nullptr) {
+					p_walker.scan_initializer(member.constant->initializer);
+				}
+				break;
 			case GDScriptParser::ClassNode::Member::CLASS:
-				walk_class_methods(p_walker, member.m_class);
+				walk_class_methods(p_walker, member.m_class, p_tracked);
 				break;
 			default:
 				break;
@@ -1350,7 +1399,7 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_arra
 
 	ElementInferenceWalker walker(p_member, /* member_mode */ true);
 	walker.contribute_from_array_value(p_member->initializer);
-	walk_class_methods(walker, p_class);
+	walk_class_methods(walker, p_class, p_member);
 
 	if (walker.bailed) {
 		result.outcome = walker.bail_outcome;
@@ -1398,7 +1447,7 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dict
 
 	DictionaryInferenceWalker walker(p_member, /* member_mode */ true);
 	walker.contribute_from_dictionary_value(p_member->initializer);
-	walk_class_methods(walker, p_class);
+	walk_class_methods(walker, p_class, p_member);
 
 	if (walker.bailed) {
 		result.outcome = walker.bail_outcome;
