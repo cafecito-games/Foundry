@@ -1,0 +1,100 @@
+name: Sanitizer Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      sanitizer:
+        description: Sanitizer suite to run
+        required: true
+        default: asan_ubsan
+        type: choice
+        options:
+          - asan_ubsan
+          - tsan
+      test_args:
+        description: Extra arguments appended to the Godot test command
+        required: false
+        default: ""
+        type: string
+  schedule:
+    # Weekly ASan+UBSan run on the default branch. TSan stays manual because it is slower and noisier.
+    - cron: "0 8 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}|${{ github.ref_name }}|${{ github.event.inputs.sanitizer || 'asan_ubsan' }}
+  cancel-in-progress: true
+
+env:
+  SANITIZER_SUITE: ${{ github.event.inputs.sanitizer == 'tsan' && 'tsan' || 'asan_ubsan' }}
+  SCONS_FLAGS: >-
+    dev_build=yes
+    tests=yes
+    use_llvm=yes
+    module_text_server_fb_enabled=yes
+  SCONS_SANITIZER_FLAGS: ${{ github.event.inputs.sanitizer == 'tsan' && 'use_tsan=yes' || 'use_asan=yes use_ubsan=yes' }}
+  TEST_ARGS: ${{ github.event.inputs.test_args || '' }}
+
+jobs:
+  sanitizer-tests:
+    runs-on: ubuntu-22.04
+    name: ${{ github.event.inputs.sanitizer || 'ASan+UBSan' }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwayland-bin
+
+      - name: Free disk space on runner
+        run: |
+          echo "Disk usage before:" && df -h
+          sudo rm -rf /usr/local/lib/android
+          echo "Disk usage after:" && df -h
+
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: linux-sanitizer-${{ env.SANITIZER_SUITE }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Compilation
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ env.SCONS_SANITIZER_FLAGS }}
+          platform: linuxbsd
+          target: editor
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: linux-sanitizer-${{ env.SANITIZER_SUITE }}
+        continue-on-error: true
+
+      - name: Unit tests
+        shell: bash
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:suppressions=${{ github.workspace }}/misc/error_suppressions/asan.txt
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:suppressions=${{ github.workspace }}/misc/error_suppressions/ubsan.txt
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/misc/error_suppressions/lsan.txt
+          TSAN_OPTIONS: halt_on_error=1:suppressions=${{ github.workspace }}/misc/error_suppressions/tsan.txt
+        run: |
+          GODOT_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev.san.*' | head -n 1)"
+          if [ -z "${GODOT_BIN}" ]; then
+            echo "Could not find sanitizer-enabled Godot binary in bin/." >&2
+            ls -l bin/
+            exit 1
+          fi
+
+          "${GODOT_BIN}" --version
+          "${GODOT_BIN}" --help
+          # shellcheck disable=SC2086 # TEST_ARGS is an optional operator-supplied argument string.
+          "${GODOT_BIN}" --headless --test --force-colors ${TEST_ARGS}
