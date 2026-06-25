@@ -182,6 +182,36 @@ inline RefactorResult run_implement_abstract(const String &p_source, int p_line,
 	return r;
 }
 
+inline RefactorResult run_insert_cast(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://insert_cast_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::INSERT_EXPLICIT_CAST, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline bool insert_cast_enabled(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://insert_cast_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::INSERT_EXPLICIT_CAST);
+	return entry != nullptr && entry->enabled;
+}
+
+inline String insert_cast_reason(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://insert_cast_refactor.gd";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::INSERT_EXPLICIT_CAST);
+	return entry != nullptr ? entry->disabled_reason : String();
+}
+
 #ifndef GDSCRIPT_NO_LSP
 struct TemporaryScriptFile {
 	String path;
@@ -203,7 +233,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 6);
+		CHECK_EQ(available.size(), 7);
 		if (available.size() < 6) {
 			return;
 		}
@@ -1204,7 +1234,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 6);
+		REQUIRE_EQ(available.size(), 7);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -1557,7 +1587,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 6);
+		REQUIRE_EQ(available.size(), 7);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -1566,7 +1596,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = GDScriptRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 6);
+		REQUIRE_EQ(text_selection_available.size(), 7);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -1876,7 +1906,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 6);
+		REQUIRE_EQ(available.size(), 7);
 		if (available.size() >= 6) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
@@ -1990,6 +2020,73 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			RefactorResult r = run_inline_variable(source, 1, 6, out);
 			CHECK_FALSE(r.ok);
 			CHECK_MESSAGE(r.error_message.to_lower().contains("trailing"), r.error_message);
+		}
+	}
+
+	TEST_CASE("Insert explicit cast") {
+		// An untyped parameter is a Variant, so `value` is the dynamic-boundary source.
+		SUBCASE("casts a Variant initializer to the declared type") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = value as int"));
+		}
+		SUBCASE("casts a Variant return value to the function return type") {
+			const String source =
+					"func use(value) -> int:\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 4, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("return value as int"));
+		}
+		SUBCASE("parenthesizes a compound expression before the cast") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value if true else value\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = (value if true else value) as int"));
+		}
+		SUBCASE("is available on a member declaration") {
+			const String source =
+					"func passthru(value):\n"
+					"\treturn value\n"
+					"var m: int = passthru(0)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 2, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var m: int = passthru(0) as int"));
+		}
+		SUBCASE("is disabled when the value is already statically typed") {
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: int = 5\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
+			CHECK(insert_cast_reason(source, 1, 6).to_lower().contains("already"));
+		}
+		SUBCASE("is disabled when the declaration has no target type") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x = value\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
+		}
+		SUBCASE("is disabled away from any cast site") {
+			const String source =
+					"func use() -> void:\n"
+					"\tpass\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 2));
+			CHECK(insert_cast_reason(source, 1, 2).to_lower().contains("caret"));
+		}
+		SUBCASE("does not double-cast an existing cast") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value as int\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
 		}
 	}
 
@@ -2122,7 +2219,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 6);
+			REQUIRE_EQ(available.size(), 7);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -2150,7 +2247,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 6);
+			REQUIRE_EQ(available.size(), 7);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}

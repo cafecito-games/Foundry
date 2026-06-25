@@ -4543,6 +4543,245 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 	return result;
 }
 
+// A located insert-explicit-cast opportunity. `caret_span` is the source range a caret
+// must fall within for the candidate to apply (the whole declaration or return statement),
+// while `edit` rewrites just the value expression into `value as TargetType`.
+struct ExplicitCastCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	int line = -1;
+	RefactorLocation caret_span;
+	RefactorTextEdit edit;
+};
+
+// Whether appending ` as T` to the expression text would re-associate against an operator
+// of lower precedence than the cast, requiring the value to be wrapped in parentheses
+// first. Primary expressions bind tighter than `as` and need none; anything else (binary,
+// unary, ternary, await, type-test, lambda) is parenthesized to preserve meaning.
+bool cast_expression_needs_parentheses(const GDScriptParser::ExpressionNode *p_expression) {
+	switch (p_expression->type) {
+		case GDScriptParser::Node::ARRAY:
+		case GDScriptParser::Node::CALL:
+		case GDScriptParser::Node::DICTIONARY:
+		case GDScriptParser::Node::GET_NODE:
+		case GDScriptParser::Node::IDENTIFIER:
+		case GDScriptParser::Node::LITERAL:
+		case GDScriptParser::Node::PRELOAD:
+		case GDScriptParser::Node::SELF:
+		case GDScriptParser::Node::SUBSCRIPT:
+			return false;
+		default:
+			return true;
+	}
+}
+
+bool caret_within_range(const RefactorLocation &p_location, const RefactorLocation &p_range) {
+	return caret_in_multiline_span(p_location, p_range.start_line, p_range.start_column, p_range.end_line, p_range.end_column);
+}
+
+// Build a cast candidate for `p_value`, the value expression of `p_statement`, targeting
+// `p_target_type`. Reports the site as matched-but-disabled (with a reason) when the cast
+// cannot be produced, so the editor can explain why the action is unavailable here. The
+// cast is enabled only at a genuine dynamic boundary: a Variant value flowing into a known,
+// renderable concrete type. Same-typed values are left alone so the edit never adds a
+// redundant cast.
+void build_explicit_cast_candidate(
+		const Vector<String> &p_lines,
+		const GDScriptParser::Node *p_statement,
+		const GDScriptParser::ExpressionNode *p_value,
+		const GDScriptParser::DataType &p_target_type,
+		ExplicitCastCandidate &r_candidate) {
+	RefactorLocation statement_range;
+	if (p_statement == nullptr || !get_node_text_range(p_lines, p_statement, statement_range)) {
+		return;
+	}
+	r_candidate.matched = true;
+	r_candidate.line = statement_range.start_line;
+	r_candidate.caret_span = statement_range;
+
+	if (p_value == nullptr) {
+		r_candidate.disabled_reason = "There is no value here to cast.";
+		return;
+	}
+	if (p_value->type == GDScriptParser::Node::CAST) {
+		r_candidate.disabled_reason = "This value is already cast.";
+		return;
+	}
+	String rendered_type;
+	if (!GDScriptRefactorTypes::render_annotatable_type(p_target_type, rendered_type)) {
+		r_candidate.disabled_reason = "Cannot insert a cast without a known target type.";
+		return;
+	}
+	if (!p_value->get_datatype().is_variant()) {
+		r_candidate.disabled_reason = "This value is already statically typed; no cast is needed.";
+		return;
+	}
+	String expression_text;
+	RefactorLocation expression_range;
+	if (!get_single_line_node_text(p_lines, p_value, expression_text, &expression_range)) {
+		r_candidate.disabled_reason = "Cannot cast a value that spans multiple lines.";
+		return;
+	}
+	const String wrapped = cast_expression_needs_parentheses(p_value)
+			? "(" + expression_text + ") as " + rendered_type
+			: expression_text + " as " + rendered_type;
+	r_candidate.edit.start_line = expression_range.start_line;
+	r_candidate.edit.start_column = expression_range.start_column;
+	r_candidate.edit.end_line = expression_range.end_line;
+	r_candidate.edit.end_column = expression_range.end_column;
+	r_candidate.edit.new_text = wrapped;
+	r_candidate.enabled = true;
+}
+
+// Cast site for a typed `var x: T = value` declaration. Only explicitly annotated
+// declarations carry a known cast target, so untyped ones are not surfaced here.
+bool find_declaration_cast_candidate(const Vector<String> &p_lines, const GDScriptParser::VariableNode *p_variable, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
+	if (p_variable == nullptr || p_variable->datatype_specifier == nullptr || p_variable->initializer == nullptr) {
+		return false;
+	}
+	ExplicitCastCandidate candidate;
+	build_explicit_cast_candidate(p_lines, p_variable, p_variable->initializer, p_variable->get_datatype(), candidate);
+	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
+		return false;
+	}
+	r_candidate = candidate;
+	return true;
+}
+
+// Cast site for a `return value` in a function with an explicit return type, which supplies
+// the cast target.
+bool find_return_cast_candidate(const Vector<String> &p_lines, const GDScriptParser::ReturnNode *p_return, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
+	if (p_return == nullptr || p_return->return_value == nullptr || p_function == nullptr || p_function->return_type == nullptr) {
+		return false;
+	}
+	ExplicitCastCandidate candidate;
+	build_explicit_cast_candidate(p_lines, p_return, p_return->return_value, p_function->get_datatype(), candidate);
+	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
+		return false;
+	}
+	r_candidate = candidate;
+	return true;
+}
+
+bool find_cast_candidate_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
+	if (p_suite == nullptr) {
+		return false;
+	}
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::VARIABLE:
+				if (find_declaration_cast_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::Node::RETURN:
+				if (find_return_cast_candidate(p_lines, static_cast<const GDScriptParser::ReturnNode *>(statement), p_function, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				if (find_cast_candidate_in_suite(p_lines, if_node->true_block, p_function, p_location, r_candidate) ||
+						find_cast_candidate_in_suite(p_lines, if_node->false_block, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
+				if (find_cast_candidate_in_suite(p_lines, for_node->loop, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
+				if (find_cast_candidate_in_suite(p_lines, while_node->loop, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+					if (branch != nullptr && find_cast_candidate_in_suite(p_lines, branch->block, p_function, p_location, r_candidate)) {
+						return true;
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+bool find_cast_candidate_in_class(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
+	if (p_class == nullptr) {
+		return false;
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::VARIABLE:
+				if (find_declaration_cast_candidate(p_lines, member.variable, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (member.function != nullptr && find_cast_candidate_in_suite(p_lines, member.function->body, member.function, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				if (find_cast_candidate_in_class(p_lines, member.m_class, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+ExplicitCastCandidate find_explicit_cast_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	ExplicitCastCandidate candidate;
+	if (p_location.has_selection()) {
+		candidate.disabled_reason = "Place the caret on a typed declaration's value or a return value.";
+		return candidate;
+	}
+
+	GDScriptParser parser;
+	parser.parse(p_context.source, p_context.path, false);
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<String> lines = p_context.source.split("\n");
+	const GDScriptParser::ClassNode *tree = parser.get_tree();
+	if (tree == nullptr || !find_cast_candidate_in_class(lines, tree, p_location, candidate)) {
+		candidate.matched = false;
+		candidate.enabled = false;
+		candidate.disabled_reason = "Place the caret on a typed declaration's value or a return value.";
+	}
+	return candidate;
+}
+
+RefactorResult prepare_explicit_cast(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	RefactorResult result;
+	const ExplicitCastCandidate candidate = find_explicit_cast_candidate(p_context, p_location);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason.is_empty()
+				? "Insert explicit cast is not available here."
+				: candidate.disabled_reason;
+		return result;
+	}
+	result.ok = true;
+	result.edits.push_back(candidate.edit);
+	return result;
+}
+
 } // namespace
 
 bool GDScriptRefactoring::validate_extract_method_name(
@@ -4888,6 +5127,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 		implement_abstract.disabled_reason = implement_abstract_candidate.disabled_reason;
 	}
 	result.push_back(implement_abstract);
+
+	RefactorAvailability insert_cast;
+	insert_cast.kind = RefactorKind::INSERT_EXPLICIT_CAST;
+	insert_cast.title = "Insert Explicit Cast";
+	const ExplicitCastCandidate cast_candidate = find_explicit_cast_candidate(p_context, p_location);
+	insert_cast.enabled = cast_candidate.enabled;
+	if (!insert_cast.enabled) {
+		insert_cast.disabled_reason = cast_candidate.disabled_reason;
+	}
+	result.push_back(insert_cast);
 	return result;
 }
 
@@ -4912,6 +5161,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_inline_variable(p_context, p_location, parse_result_provider);
 		case RefactorKind::IMPLEMENT_ABSTRACT_METHODS:
 			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
+		case RefactorKind::INSERT_EXPLICIT_CAST:
+			return prepare_explicit_cast(p_context, p_location);
 		default:
 			break;
 	}
