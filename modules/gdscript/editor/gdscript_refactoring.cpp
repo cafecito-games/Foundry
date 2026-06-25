@@ -6183,13 +6183,23 @@ struct WidenToNullableCandidate {
 	RefactorTextEdit edit;
 };
 
+// Whether p_target is the `void` / no-value return type, which has no nullable form.
+bool is_void_type(const GDScriptParser::DataType &p_target) {
+	return p_target.kind == GDScriptParser::DataType::BUILTIN && p_target.builtin_type == Variant::NIL;
+}
+
 // Build a widen-to-nullable candidate for a non-nullable type specifier `p_type_node`
 // that is fed a nullable `p_value`. Reports the site as matched-but-disabled (with a
 // reason) when the widening cannot be produced, so the editor can explain why the action
-// is unavailable here. The widening is the dual of the explicit cast: it leaves the
-// runtime value untouched and only makes the declared type honest about the null it
-// already admits, so it preserves behavior. It is enabled only at a genuine nullable
-// boundary: a nullable value flowing into a known, non-nullable, non-Variant type.
+// is unavailable here. The widening is the dual of the explicit cast: it leaves the value
+// expression untouched and only makes the declared type admit the null the strict-null
+// analyzer proved can already reach it.
+//
+// It is enabled only when the value's underlying (non-nullable) type is exactly the
+// target type, i.e. the boundary differs solely in nullability. That is the only shape
+// the analyzer reports as a nullable mismatch (an underlying-type mismatch is a separate,
+// unrelated error that widening would not fix), so the restriction keeps the action from
+// emitting code that is still wrong or, for `void` returns, syntactically invalid.
 void build_widen_to_nullable_candidate(
 		const Vector<String> &p_lines,
 		const GDScriptParser::Node *p_statement,
@@ -6218,11 +6228,25 @@ void build_widen_to_nullable_candidate(
 		r_candidate.disabled_reason = "This type already accepts null.";
 		return;
 	}
+	if (is_void_type(p_target_type)) {
+		// `void` has no nullable form; `void?` is not valid syntax.
+		r_candidate.disabled_reason = "A void return type cannot be made nullable.";
+		return;
+	}
 	const GDScriptParser::DataType value_type = p_value->get_datatype();
 	if (!value_type.is_set() || !value_type.is_nullable) {
 		// Only a resolved nullable value is a genuine strict-null boundary. Unresolved
 		// types are skipped so a parse gap never enables a speculative widening.
 		r_candidate.disabled_reason = "This value is not nullable; no widening is needed.";
+		return;
+	}
+	// Require the value's underlying type to match the target exactly so the only
+	// difference is nullability. A different underlying type (e.g. a `String?` value at an
+	// `int` boundary) is a separate type error that widening would leave unfixed.
+	GDScriptParser::DataType value_underlying = value_type;
+	value_underlying.is_nullable = false;
+	if (value_underlying != p_target_type) {
+		r_candidate.disabled_reason = "This value's type does not match the target; widening would not fix the error.";
 		return;
 	}
 	// Insert `?` at the end of the type specifier, a zero-width edit. The type node's end

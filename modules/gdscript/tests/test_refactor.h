@@ -3321,6 +3321,27 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(widen_nullable_enabled(source, 1, 2));
 			CHECK(widen_nullable_reason(source, 1, 2).to_lower().contains("caret"));
 		}
+		SUBCASE("is disabled when the value's type does not match the target") {
+			// `String?` reaching an `int` boundary is an underlying-type error, not a pure
+			// nullability mismatch; widening to `int?` would not fix it.
+			const String source =
+					"func maybe() -> String?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: int = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
+		}
+		SUBCASE("is disabled for a void return type") {
+			// `void?` is not valid syntax, so a nullable value at a void return is not widened.
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\treturn maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 4));
+			CHECK(widen_nullable_reason(source, 3, 4).to_lower().contains("void"));
+		}
 	}
 
 #ifndef GDSCRIPT_NO_LSP
