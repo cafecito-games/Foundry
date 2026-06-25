@@ -1102,6 +1102,63 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			REQUIRE_EQ(imports.size(), 1);
 			CHECK(imports.has("characters"));
 		}
+		SUBCASE("two same-named classes from different namespaces keep one bare and qualify the other") {
+			// Importing both namespaces under the same bare name would be ambiguous, so
+			// the first leaf is rendered bare+import and the colliding second leaf is
+			// qualified.
+			GDScriptParser::IdentifierNode first_identifier;
+			first_identifier.name = "Controller";
+			GDScriptParser::ClassNode first_node;
+			first_node.identifier = &first_identifier;
+			first_node.namespace_name = "characters";
+			GDScriptParser::DataType first_type;
+			first_type.kind = GDScriptParser::DataType::CLASS;
+			first_type.type_source = GDScriptParser::DataType::INFERRED;
+			first_type.class_type = &first_node;
+
+			GDScriptParser::IdentifierNode second_identifier;
+			second_identifier.name = "Controller";
+			GDScriptParser::ClassNode second_node;
+			second_node.identifier = &second_identifier;
+			second_node.namespace_name = "ui";
+			GDScriptParser::DataType second_type;
+			second_type.kind = GDScriptParser::DataType::CLASS;
+			second_type.type_source = GDScriptParser::DataType::INFERRED;
+			second_type.class_type = &second_node;
+
+			GDScriptParser::DataType dictionary_type;
+			dictionary_type.kind = GDScriptParser::DataType::BUILTIN;
+			dictionary_type.builtin_type = Variant::DICTIONARY;
+			dictionary_type.type_source = GDScriptParser::DataType::INFERRED;
+			dictionary_type.set_container_element_type(0, first_type);
+			dictionary_type.set_container_element_type(1, second_type);
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(dictionary_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Dictionary[Controller, ui.Controller]");
+			REQUIRE_EQ(imports.size(), 1);
+			CHECK(imports.has("characters"));
+		}
+		SUBCASE("callable signature scopes a namespaced parameter type") {
+			GDScriptParser::DataType callable_type;
+			callable_type.kind = GDScriptParser::DataType::BUILTIN;
+			callable_type.builtin_type = Variant::CALLABLE;
+			callable_type.type_source = GDScriptParser::DataType::INFERRED;
+			callable_type.has_explicit_method_signature = true;
+			callable_type.method_parameter_types.push_back(class_type);
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(callable_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Callable[[BaseCharacter], void]");
+			REQUIRE_EQ(imports.size(), 1);
+			CHECK(imports.has("characters"));
+		}
 	}
 
 	TEST_CASE("Add type annotation inserts concrete inferred types") {

@@ -34,6 +34,7 @@
 
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
+#include "core/templates/hash_map.h"
 #include "core/variant/variant.h"
 
 namespace {
@@ -180,21 +181,40 @@ ClassSpelling choose_class_spelling(const String &p_target_namespace, const Stri
 	return ClassSpelling::BARE_WITH_IMPORT;
 }
 
-// Mirrors DataType::to_string() for the container/type-argument structure, but
-// renders each CLASS/SCRIPT leaf with the minimal in-scope spelling and records
-// the namespaces that must be imported for the spelling to resolve.
-bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefactorTypes::AnnotationScope &p_scope, String &r_rendered, HashSet<String> &r_required_imports) {
+// Mutable state shared across one annotation's leaves so import decisions stay
+// consistent: required imports accumulate here, and bare-imported class names are
+// recorded so a second leaf cannot import a *different* namespace under the same
+// bare name (which GDScript would then report as ambiguous).
+struct RenderState {
+	HashSet<String> required_imports;
+	HashMap<String, String> bare_imported_namespace_by_class; // class name -> namespace committed to a bare-with-import spelling.
+};
+
+// Mirrors DataType::to_string() for the container/type-argument/signature
+// structure, but renders each CLASS/SCRIPT leaf with the minimal in-scope
+// spelling and records the namespaces that must be imported.
+bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefactorTypes::AnnotationScope &p_scope, String &r_rendered, RenderState &r_state) {
 	String target_namespace;
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
+		ClassSpelling spelling_kind = choose_class_spelling(target_namespace, class_name, p_scope);
+		// A bare-with-import leaf must not collide with another namespace already
+		// imported under the same bare name in this annotation; qualify instead.
+		if (spelling_kind == ClassSpelling::BARE_WITH_IMPORT) {
+			const String *committed = r_state.bare_imported_namespace_by_class.getptr(class_name);
+			if (committed != nullptr && *committed != target_namespace) {
+				spelling_kind = ClassSpelling::QUALIFIED;
+			}
+		}
 		String spelling;
-		switch (choose_class_spelling(target_namespace, class_name, p_scope)) {
+		switch (spelling_kind) {
 			case ClassSpelling::BARE_NO_IMPORT:
 				spelling = class_name;
 				break;
 			case ClassSpelling::BARE_WITH_IMPORT:
 				spelling = class_name;
-				r_required_imports.insert(target_namespace);
+				r_state.required_imports.insert(target_namespace);
+				r_state.bare_imported_namespace_by_class[class_name] = target_namespace;
 				break;
 			case ClassSpelling::QUALIFIED:
 				// A fully-qualified `namespace.Class` resolves on its own, so it needs
@@ -210,7 +230,7 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 					arguments += ", ";
 				}
 				String argument_rendered;
-				if (!render_scoped(p_type.type_arguments[i], p_scope, argument_rendered, r_required_imports)) {
+				if (!render_scoped(p_type.type_arguments[i], p_scope, argument_rendered, r_state)) {
 					return false;
 				}
 				arguments += argument_rendered;
@@ -231,7 +251,7 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
 		if (p_type.builtin_type == Variant::ARRAY && p_type.has_container_element_type(0)) {
 			String element_rendered;
-			if (!render_scoped(p_type.get_container_element_type(0), p_scope, element_rendered, r_required_imports)) {
+			if (!render_scoped(p_type.get_container_element_type(0), p_scope, element_rendered, r_state)) {
 				return false;
 			}
 			r_rendered = vformat("Array[%s]%s", element_rendered, nullable_suffix);
@@ -240,11 +260,45 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 		if (p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
 			String key_rendered;
 			String value_rendered;
-			if (!render_scoped(p_type.get_container_element_type_or_variant(0), p_scope, key_rendered, r_required_imports) ||
-					!render_scoped(p_type.get_container_element_type_or_variant(1), p_scope, value_rendered, r_required_imports)) {
+			if (!render_scoped(p_type.get_container_element_type_or_variant(0), p_scope, key_rendered, r_state) ||
+					!render_scoped(p_type.get_container_element_type_or_variant(1), p_scope, value_rendered, r_state)) {
 				return false;
 			}
 			r_rendered = vformat("Dictionary[%s, %s]%s", key_rendered, value_rendered, nullable_suffix);
+			return true;
+		}
+		// A Callable/Signal with an explicit signature can carry namespaced classes
+		// in its parameter and return types, so scope those too.
+		if ((p_type.builtin_type == Variant::CALLABLE || p_type.builtin_type == Variant::SIGNAL) && p_type.has_explicit_method_signature) {
+			const bool has_return = p_type.builtin_type == Variant::CALLABLE;
+			String parameters;
+			for (int i = 0; i < p_type.method_parameter_types.size(); i++) {
+				if (i > 0) {
+					parameters += ", ";
+				}
+				String parameter_rendered;
+				if (!render_scoped(p_type.method_parameter_types[i], p_scope, parameter_rendered, r_state)) {
+					return false;
+				}
+				parameters += parameter_rendered;
+			}
+			String signature;
+			if (has_return) {
+				String return_rendered = "void";
+				if (!p_type.method_return_type.is_empty()) {
+					const GDScriptParser::DataType &return_type = p_type.method_return_type[0];
+					const bool return_is_void = return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL;
+					if (!return_is_void && !render_scoped(return_type, p_scope, return_rendered, r_state)) {
+						return false;
+					} else if (return_is_void) {
+						return_rendered = "void";
+					}
+				}
+				signature = vformat("[[%s], %s]", parameters, return_rendered);
+			} else {
+				signature = vformat("[[%s]]", parameters);
+			}
+			r_rendered = vformat("%s%s%s", has_return ? "Callable" : "Signal", signature, nullable_suffix);
 			return true;
 		}
 	}
@@ -267,7 +321,7 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 				arguments += ", ";
 			}
 			String argument_rendered;
-			if (!render_scoped(p_type.type_arguments[i], p_scope, argument_rendered, r_required_imports)) {
+			if (!render_scoped(p_type.type_arguments[i], p_scope, argument_rendered, r_state)) {
 				return false;
 			}
 			arguments += argument_rendered;
@@ -308,15 +362,15 @@ bool GDScriptRefactorTypes::render_annotatable_type_in_scope(const GDScriptParse
 		return false;
 	}
 	String rendered;
-	HashSet<String> required_imports;
-	if (!render_scoped(p_type, p_scope, rendered, required_imports)) {
+	RenderState state;
+	if (!render_scoped(p_type, p_scope, rendered, state)) {
 		return false;
 	}
 	if (!is_usable_spelling(rendered)) {
 		return false;
 	}
 	r_rendered = rendered;
-	r_required_imports = required_imports;
+	r_required_imports = state.required_imports;
 	return true;
 }
 
