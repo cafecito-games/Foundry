@@ -57,6 +57,13 @@ public:
 	TypedArray<Dictionary> get_properties(const Variant &p_target) const;
 	bool implements_trait(const Variant &p_target, const Variant &p_trait) const;
 
+	// Builds a dynamic proxy of trait/abstract type `p_type` whose every contract call
+	// is routed through `p_handler` (invoked as `handler.call(method_name, args)`).
+	// Returns a null Ref (with an error printed) on invalid input. This is the public
+	// surface for the bare `create_proxy_dynamic` utility, which remains as the
+	// `create_proxy[T]` codegen lowering target.
+	Ref<RefCounted> create_proxy_dynamic(const Ref<Script> &p_type, const Callable &p_handler) const;
+
 	// "Intercept some, delegate the rest": contract methods named in `p_interceptor`
 	// route to that advice; all other methods and property access forward to
 	// `p_target`. Returns a null Ref (with an error printed) on invalid input.

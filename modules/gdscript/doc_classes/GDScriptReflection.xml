@@ -10,13 +10,13 @@
 		[gdscript]
 		# Mocking: a handler records calls and returns stubbed values.
 		var stub: Dictionary = {"find": "stubbed"}
-		var repo := create_proxy_dynamic(Repository, func(method: StringName, args: Array):
+		var repo := godot.reflection.create_proxy_dynamic(Repository, func(method: StringName, args: Array):
 		    return stub.get(method, null)
 		) as Repository
 
 		# Interception/AOP: a handler logs a call and proceeds to a real target.
 		var real := UserService.new()
-		var logged := create_proxy_dynamic(UserService, func(method: StringName, args: Array):
+		var logged := godot.reflection.create_proxy_dynamic(UserService, func(method: StringName, args: Array):
 		    print("calling ", method)
 		    return real.callv(method, args)
 		) as UserService
@@ -27,6 +27,14 @@
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="create_proxy_dynamic" qualifiers="const">
+			<return type="RefCounted" />
+			<param index="0" name="type" type="Script" />
+			<param index="1" name="handler" type="Callable" />
+			<description>
+				Builds a dynamic proxy of the trait or abstract type [param type] whose every contract call is routed through [param handler], invoked as [code]handler.call(method_name, args)[/code]. [param type] must be a trait or abstract type whose native base is [RefCounted] or a [RefCounted]-derived type such as [Resource]. The returned object satisfies [code]is type[/code], so it can be assigned to a variable of that type; [code]null[/code] is returned and an error is printed on invalid input.
+			</description>
+		</method>
 		<method name="create_delegating_proxy" qualifiers="const">
 			<return type="RefCounted" />
 			<param index="0" name="type" type="Script" />

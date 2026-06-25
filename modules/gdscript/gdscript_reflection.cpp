@@ -134,6 +134,15 @@ bool GDScriptReflection::implements_trait(const Variant &p_target, const Variant
 	return script->has_script_trait(trait_name);
 }
 
+Ref<RefCounted> GDScriptReflection::create_proxy_dynamic(const Ref<Script> &p_type, const Callable &p_handler) const {
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(p_type, p_handler, error_message);
+	if (proxy.is_null()) {
+		ERR_PRINT(error_message);
+	}
+	return proxy;
+}
+
 Ref<RefCounted> GDScriptReflection::create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor) const {
 	String error_message;
 	Ref<RefCounted> proxy = GDScriptProxy::create_delegating_proxy(p_type, p_target, p_interceptor, error_message);
@@ -148,6 +157,7 @@ void GDScriptReflection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_method_info", "target", "method"), &GDScriptReflection::get_method_info);
 	ClassDB::bind_method(D_METHOD("get_properties", "target"), &GDScriptReflection::get_properties);
 	ClassDB::bind_method(D_METHOD("implements_trait", "target", "trait"), &GDScriptReflection::implements_trait);
+	ClassDB::bind_method(D_METHOD("create_proxy_dynamic", "type", "handler"), &GDScriptReflection::create_proxy_dynamic);
 	ClassDB::bind_method(D_METHOD("create_delegating_proxy", "type", "target", "interceptor"), &GDScriptReflection::create_delegating_proxy);
 }
 

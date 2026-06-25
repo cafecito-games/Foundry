@@ -1249,6 +1249,66 @@ TEST_CASE("[Modules][GDScript][Reflection] Read-only introspection API") {
 	memdelete(reflection);
 }
 
+TEST_CASE("[Modules][GDScript][Reflection] create_proxy_dynamic builds a handler proxy") {
+	ScopedProxyLanguage language;
+
+	// `godot.reflection.create_proxy_dynamic(type, handler)` is the namespaced surface
+	// for building a dynamic proxy; it mirrors the bare `create_proxy_dynamic` utility
+	// (which remains the `create_proxy[T]` codegen lowering target).
+	const char *source =
+			"trait Greeter:\n"
+			"\t@abstract func greet(subject: String) -> String\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar calls: Array = []\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\tcalls.append(str(method_name))\n"
+			"\t\treturn \"stub:\" + str(method_name)\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> greeter = get_subclass(script, "Greeter");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(greeter.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	GDScriptReflection *reflection = memnew(GDScriptReflection);
+
+	// A valid type + handler produces a working proxy that routes through the handler.
+	{
+		Ref<RefCounted> proxy = reflection->create_proxy_dynamic(greeter, Callable(recorder, "handle"));
+		REQUIRE(proxy.is_valid());
+		CHECK(proxy->get_script_instance()->get_script() == greeter);
+
+		Variant subject = "World";
+		const Variant *args[1] = { &subject };
+		Callable::CallError error;
+		Variant result = proxy->get_script_instance()->callp("greet", args, 1, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant("stub:greet"));
+
+		Array calls = recorder->get("calls");
+		REQUIRE(calls.size() == 1);
+		CHECK(calls[0] == Variant("greet"));
+	}
+
+	// Invalid input (a concrete class, or an invalid handler) returns a null Ref; the
+	// error is reported rather than crashing.
+	{
+		Ref<GDScript> recorder_as_type = recorder_script;
+		ERR_PRINT_OFF;
+		Ref<RefCounted> bad_type = reflection->create_proxy_dynamic(recorder_as_type, Callable(recorder, "handle"));
+		Ref<RefCounted> bad_handler = reflection->create_proxy_dynamic(greeter, Callable());
+		ERR_PRINT_ON;
+		CHECK(bad_type.is_null());
+		CHECK(bad_handler.is_null());
+	}
+
+	memdelete(reflection);
+}
+
 TEST_CASE("[Modules][GDScript][Proxy] Delegating proxy advises and forwards") {
 	ScopedProxyLanguage language;
 
