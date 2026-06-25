@@ -30,7 +30,10 @@
 
 #include "gdscript_reflection.h"
 
+#include "gdscript.h"
 #include "gdscript_proxy.h"
+
+#include "core/variant/container_type_validate.h"
 
 Ref<Script> GDScriptReflection::_resolve_script(const Variant &p_target) {
 	if (p_target.get_type() != Variant::OBJECT) {
@@ -134,6 +137,30 @@ bool GDScriptReflection::implements_trait(const Variant &p_target, const Variant
 	return script->has_script_trait(trait_name);
 }
 
+TypedArray<Dictionary> GDScriptReflection::get_type_arguments(const Variant &p_target) const {
+	TypedArray<Dictionary> result;
+	if (p_target.get_type() != Variant::OBJECT) {
+		return result;
+	}
+	Object *object = p_target.get_validated_object();
+	if (object == nullptr) {
+		return result;
+	}
+	ScriptInstance *instance = object->get_script_instance();
+	// Only a real GDScriptInstance carries reified type arguments. A proxy instance
+	// (is_synthetic) and a placeholder instance also report the GDScript language but are not
+	// GDScriptInstance, so they must be excluded before the cast.
+	if (instance == nullptr || instance->get_language() != GDScriptLanguage::get_singleton() ||
+			instance->is_synthetic() || instance->is_placeholder()) {
+		return result;
+	}
+	const GDScriptInstance *gdscript_instance = static_cast<const GDScriptInstance *>(instance);
+	for (const ContainerType &type_argument : gdscript_instance->get_type_arguments()) {
+		result.push_back(ContainerTypeDescriptor::to_variant(type_argument));
+	}
+	return result;
+}
+
 Ref<RefCounted> GDScriptReflection::create_proxy_dynamic(const Ref<Script> &p_type, const Callable &p_handler) const {
 	String error_message;
 	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(p_type, p_handler, error_message);
@@ -157,6 +184,7 @@ void GDScriptReflection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_method_info", "target", "method"), &GDScriptReflection::get_method_info);
 	ClassDB::bind_method(D_METHOD("get_properties", "target"), &GDScriptReflection::get_properties);
 	ClassDB::bind_method(D_METHOD("implements_trait", "target", "trait"), &GDScriptReflection::implements_trait);
+	ClassDB::bind_method(D_METHOD("get_type_arguments", "target"), &GDScriptReflection::get_type_arguments);
 	ClassDB::bind_method(D_METHOD("create_proxy_dynamic", "type", "handler"), &GDScriptReflection::create_proxy_dynamic);
 	ClassDB::bind_method(D_METHOD("create_delegating_proxy", "type", "target", "interceptor"), &GDScriptReflection::create_delegating_proxy);
 }

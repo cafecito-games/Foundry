@@ -191,6 +191,45 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Report counts nullable violations the satisfier can prove as auto-fixable") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_report_nullable");
+
+		// `maybe()` returns `int?`; landing it in a non-nullable `int` local is a strict-null
+		// violation whose widen-to-nullable fix (`int` -> `int?`) the harness can verify.
+		const String source =
+				"func maybe() -> int?:\n"
+				"\treturn null\n"
+				"func use() -> void:\n"
+				"\tvar x: int = maybe()\n";
+		const String path = tree.write_file("nullable.gd", source);
+
+		MigrationReportOptions options;
+		options.strict_null_checks = true;
+		const MigrationReportResult strict = GDScriptMigrationReport::generate("res://migration_report_nullable", options);
+		REQUIRE(strict.ok);
+		CHECK(strict.strict.requested);
+		CHECK(strict.strict.error.is_empty());
+		CHECK_GT(strict.strict.nullable, 0);
+		// The single nullable boundary is provably satisfiable, so it is also counted as such.
+		CHECK_EQ(strict.strict.nullable_satisfiable, strict.strict.nullable);
+		CHECK_EQ(strict.strict.variant_boundary, 0);
+
+		// The rendered report surfaces the auto-fixable subset.
+		const String text = strict.format();
+		CHECK(text.contains("auto-fixable:"));
+
+		// The projection is read-only.
+		CHECK_EQ(FileAccess::get_file_as_string(path), source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Report records an unanalyzable file without aborting the rest") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

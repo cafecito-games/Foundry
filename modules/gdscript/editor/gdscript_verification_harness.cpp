@@ -39,7 +39,9 @@
 #include "../gdscript_cache.h"
 #include "../gdscript_parser.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
+#include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/list.h"
@@ -51,6 +53,101 @@ String read_source(const String &p_path, bool &r_ok) {
 	const String source = FileAccess::get_file_as_string(p_path, &err);
 	r_ok = (err == OK);
 	return source;
+}
+
+// Cross-call inverse-dependency index for verify(). The dependency edges of a file are a
+// pure function of its source, so caching them keyed by source hash lets repeated verify()
+// calls within a run reprime only the files whose content actually changed (plus the
+// dependents the cache invalidation cascades through), instead of reparsing the entire
+// universe on every call. This is a performance cache only: it never changes which files
+// land in the affected set versus rebuilding from scratch, because any path whose source
+// differs from its recorded hash (or that is unknown) is always reprimed.
+//
+// The index is process-static and self-correcting: a stale entry left by a previous run or
+// test is only reused when both the path and its exact source match, so an entry that no
+// longer reflects disk is reprimed before it can affect a result.
+struct VerifyDependencyGraphCache {
+	// Order-independent signature of the universe the cached edges were primed against. A path's
+	// recorded forward edges are only complete relative to the universe present when it was
+	// primed (edges to files outside that universe are not captured), so an entry is reusable
+	// only while the universe is unchanged. When the universe differs the whole index is dropped
+	// and rebuilt, which keeps results identical to a from-scratch run; within a fixpoint run the
+	// universe is fixed, so the signature is constant and the optimization stays fully active.
+	uint64_t universe_signature = 0;
+	bool universe_signature_set = false;
+	// Global dependency-resolution state the edges were primed under. Dependency edges can change
+	// without any universe source change: a class_name registration (tracked by the ScriptServer
+	// global-class cache version) or an autoload/project setting (tracked by the ProjectSettings
+	// version) can make a consumer resolve a name to a different provider. A bump in either must
+	// rebuild the index so a newly resolvable dependent is never missed.
+	uint64_t global_class_version = 0;
+	uint32_t project_settings_version = 0;
+
+	// Source hash recorded the last time this path's edges were primed.
+	HashMap<String, uint64_t> source_hashes;
+	// Forward dependencies (within the universe) recorded for this path, used to derive the
+	// inverse index. Kept so a reprime can drop a path's old edges before recording new ones.
+	HashMap<String, HashSet<String>> forward_dependencies;
+	// Inverse dependencies: for each path, the set of universe files that directly depend on
+	// it. Maintained incrementally so it survives the cache's staged-file invalidation.
+	HashMap<String, HashSet<String>> inverse_dependencies;
+
+	void forget(const String &p_path) {
+		if (HashMap<String, HashSet<String>>::Iterator forward = forward_dependencies.find(p_path)) {
+			for (const String &dependency : forward->value) {
+				if (HashMap<String, HashSet<String>>::Iterator inverse = inverse_dependencies.find(dependency)) {
+					inverse->value.erase(p_path);
+					if (inverse->value.is_empty()) {
+						inverse_dependencies.erase(dependency);
+					}
+				}
+			}
+			forward_dependencies.erase(p_path);
+		}
+		source_hashes.erase(p_path);
+	}
+
+	void record(const String &p_path, uint64_t p_source_hash, const HashSet<String> &p_dependencies) {
+		forget(p_path);
+		source_hashes[p_path] = p_source_hash;
+		forward_dependencies[p_path] = p_dependencies;
+		for (const String &dependency : p_dependencies) {
+			inverse_dependencies[dependency].insert(p_path);
+		}
+	}
+
+	HashSet<String> get_inverse(const String &p_path) const {
+		if (HashMap<String, HashSet<String>>::ConstIterator it = inverse_dependencies.find(p_path)) {
+			return it->value;
+		}
+		return HashSet<String>();
+	}
+
+	void clear() {
+		source_hashes.clear();
+		forward_dependencies.clear();
+		inverse_dependencies.clear();
+	}
+};
+
+// Order-independent signature of the path set the cached edges are scoped to: the sum of each
+// path's 64-bit hash. The commutative combine is insensitive to ordering, and the entries are a
+// set, so two calls over the same set of paths produce the same signature. The scope is the
+// universe plus any touched path that lies outside it: an in-universe consumer's edge to such an
+// out-of-universe provider is only captured while that provider is in scope, so a change in the
+// out-of-universe touched set must rebuild the index. In normal use every touched path is in the
+// universe, so this set is just the universe and the signature is stable across a fixpoint run.
+uint64_t edge_scope_signature_of(const HashSet<String> &p_scope) {
+	uint64_t signature = 0;
+	for (const String &path : p_scope) {
+		signature += path.hash64();
+	}
+	return signature;
+}
+
+VerifyDependencyGraphCache &verify_dependency_graph_cache() {
+	static VerifyDependencyGraphCache cache;
+	return cache;
 }
 
 void invalidate_cache(const String &p_path) {
@@ -254,6 +351,146 @@ Vector<int> ddmin_offending(
 	return current;
 }
 
+// Isolate the offending candidates within p_chunk via delta debugging and partition the
+// chunk into accepted and rejected. Each rejected candidate is attributed the new diagnostic
+// keys it alone introduces over the chunk's accepted base. p_chunk must be small enough to
+// bound ddmin's cost (callers split larger batches into ceiling-sized chunks first). The
+// returned VerificationRejected entries are not yet attributed against the global accepted
+// base; callers that recombine multiple chunks re-confirm the union afterward.
+void attribute_chunk(
+		const Vector<VerificationCandidate> &p_chunk,
+		const Vector<String> &p_affected,
+		const HashMap<String, String> &p_original,
+		const VerificationOptions &p_options,
+		const AffectedAnalysis &p_baseline,
+		Vector<VerificationCandidate> &r_accepted,
+		Vector<VerificationRejected> &r_rejected,
+		bool &r_fatal) {
+	r_fatal = false;
+
+	Vector<int> remaining;
+	for (int i = 0; i < p_chunk.size(); i++) {
+		remaining.push_back(i);
+	}
+	HashSet<int> rejected_indices;
+
+	// Repeatedly carve out a minimal offending subset until the remainder is clean.
+	while (true) {
+		const AffectedAnalysis analysis = analyze_subset(subset_of(p_chunk, remaining), p_affected, p_original, p_options, r_fatal);
+		if (r_fatal) {
+			return;
+		}
+		if (!regresses(p_baseline, analysis)) {
+			break;
+		}
+		const Vector<int> offending = ddmin_offending(remaining, p_chunk, p_affected, p_original, p_options, p_baseline, r_fatal);
+		if (r_fatal) {
+			return;
+		}
+		HashSet<int> offending_set;
+		for (int index : offending) {
+			offending_set.insert(index);
+			rejected_indices.insert(index);
+		}
+		Vector<int> next;
+		for (int index : remaining) {
+			if (!offending_set.has(index)) {
+				next.push_back(index);
+			}
+		}
+		// Safety: if ddmin failed to shrink (shouldn't happen with a monotonic predicate),
+		// drop the whole remainder to guarantee termination.
+		if (next.size() == remaining.size()) {
+			for (int index : remaining) {
+				rejected_indices.insert(index);
+			}
+			remaining.clear();
+			break;
+		}
+		remaining = next;
+	}
+
+	// The chunk's accepted base, used both as the result and as the attribution baseline.
+	Vector<VerificationCandidate> accepted_candidates;
+	for (int i = 0; i < p_chunk.size(); i++) {
+		if (!rejected_indices.has(i)) {
+			accepted_candidates.push_back(p_chunk[i]);
+		}
+	}
+	const AffectedAnalysis accepted_analysis = analyze_subset(accepted_candidates, p_affected, p_original, p_options, r_fatal);
+	if (r_fatal) {
+		return;
+	}
+	r_accepted.append_array(accepted_candidates);
+
+	// Attribute diagnostics to each rejected candidate: the new diagnostic keys it alone
+	// introduces over the chunk's accepted base.
+	for (int i = 0; i < p_chunk.size(); i++) {
+		if (!rejected_indices.has(i)) {
+			continue;
+		}
+		Vector<VerificationCandidate> probe = accepted_candidates;
+		probe.push_back(p_chunk[i]);
+		const AffectedAnalysis probe_analysis = analyze_subset(probe, p_affected, p_original, p_options, r_fatal);
+		if (r_fatal) {
+			return;
+		}
+		VerificationRejected rejected;
+		rejected.path = p_chunk[i].path;
+		rejected.line = p_chunk[i].line;
+		rejected.reason = "introduces new analyzer error(s) in the affected set";
+		HashMap<String, int> accepted_counts;
+		for (const String &message : accepted_analysis.messages) {
+			accepted_counts[message] += 1;
+		}
+		for (const String &message : probe_analysis.messages) {
+			HashMap<String, int>::Iterator it = accepted_counts.find(message);
+			if (it && it->value > 0) {
+				it->value -= 1;
+			} else {
+				rejected.diagnostics.push_back(message);
+			}
+		}
+		r_rejected.push_back(rejected);
+	}
+}
+
+// Partition p_candidates into chunks no larger than p_ceiling, never splitting a single file's
+// candidates across chunks. Candidates within a file interact (one can mask another's
+// diagnostic), so per-chunk attribution is only coherent when each file is wholly inside one
+// chunk. File groups are packed greedily up to the ceiling; a single file with more candidates
+// than the ceiling forms one oversized chunk (ddmin still terminates, only its cost is higher).
+Vector<Vector<VerificationCandidate>> partition_into_chunks(const Vector<VerificationCandidate> &p_candidates, int p_ceiling) {
+	Vector<Vector<VerificationCandidate>> file_groups;
+	HashMap<String, int> group_index;
+	for (const VerificationCandidate &candidate : p_candidates) {
+		HashMap<String, int>::ConstIterator it = group_index.find(candidate.path);
+		int index;
+		if (it) {
+			index = it->value;
+		} else {
+			index = file_groups.size();
+			group_index[candidate.path] = index;
+			file_groups.push_back(Vector<VerificationCandidate>());
+		}
+		file_groups.write[index].push_back(candidate);
+	}
+
+	Vector<Vector<VerificationCandidate>> chunks;
+	Vector<VerificationCandidate> current;
+	for (const Vector<VerificationCandidate> &group : file_groups) {
+		if (!current.is_empty() && current.size() + group.size() > p_ceiling) {
+			chunks.push_back(current);
+			current = Vector<VerificationCandidate>();
+		}
+		current.append_array(group);
+	}
+	if (!current.is_empty()) {
+		chunks.push_back(current);
+	}
+	return chunks;
+}
+
 // Count the non-strict diagnostics of p_source keyed by line:column:message. The message
 // is part of the key so a null-mode and a dynamic-mode diagnostic at the same position
 // stay distinct. Counts (rather than set membership) so a strict pass that emits a shared
@@ -349,26 +586,133 @@ VerificationResult GDScriptVerificationHarness::verify(
 		touched.insert(candidate.path);
 	}
 
-	// Rebuild the dependency graph from disk for every universe path so inverse-dependency
-	// edges are always accurate on this call, regardless of what a previous call may have
-	// invalidated. Flush each path first so get_full_script re-resolves dependencies and
-	// repopulates parser_inverse_dependencies rather than returning a cached script.
-	for (const String &path : universe) {
-		GDScriptCache::remove_parser(path);
-		GDScriptCache::remove_script(path);
-	}
-	for (const String &path : universe) {
-		Error err = OK;
-		GDScriptCache::get_full_script(path, err, String(), true);
-		// A load error on one path means its edges are absent, but other paths are
-		// still primed correctly — the BFS will simply miss dependents of this path.
-	}
-
-	// Affected set = touched ∪ transitive inverse-dependents(touched) ∩ universe.
 	HashSet<String> universe_set;
 	for (const String &path : universe) {
 		universe_set.insert(path);
 	}
+
+	// The scope the cached edges are valid for: the universe plus any touched provider outside it
+	// (whose edges to in-universe consumers are captured only while it is in scope). Used both to
+	// gate cache reuse and as the provider scan when recording edges, so the two always agree.
+	HashSet<String> edge_scope = universe_set;
+	for (const String &path : touched) {
+		edge_scope.insert(path);
+	}
+
+	// Read every universe path's current on-disk source once. Reading files is cheap relative
+	// to a full parse+analyze, and the source is needed both to validate the cached dependency
+	// edges (by hash) and to prime the files whose content changed.
+	VerifyDependencyGraphCache &graph_cache = verify_dependency_graph_cache();
+
+	// A cached entry's recorded edges are only complete relative to the edge scope and the global
+	// dependency-resolution state they were primed against, so drop the whole index when either
+	// changes. The edge scope guards against a changed path set; the ScriptServer global-class
+	// cache version guards against a class_name registration, and the ProjectSettings version
+	// guards against an autoload or other setting changing how a consumer resolves a name, all
+	// of which can shift dependency edges without any universe source change. This rebuilds every
+	// path on the first call under a new key (identical to the from-scratch behavior) while
+	// leaving the optimization fully active across the repeated, fixed-key calls of a fixpoint
+	// run, where none of these inputs change.
+	const uint64_t signature = edge_scope_signature_of(edge_scope);
+	const uint64_t global_class_version = ScriptServer::get_global_class_cache_version();
+	const uint32_t project_settings_version = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->get_version() : 0;
+	if (!graph_cache.universe_signature_set ||
+			graph_cache.universe_signature != signature ||
+			graph_cache.global_class_version != global_class_version ||
+			graph_cache.project_settings_version != project_settings_version) {
+		graph_cache.clear();
+		graph_cache.universe_signature = signature;
+		graph_cache.global_class_version = global_class_version;
+		graph_cache.project_settings_version = project_settings_version;
+		graph_cache.universe_signature_set = true;
+	}
+
+	HashMap<String, String> universe_source;
+	HashMap<String, uint64_t> universe_hash;
+	for (const String &path : universe) {
+		bool ok = false;
+		const String source = read_source(path, ok);
+		if (!ok) {
+			// Unreadable now: forget any stale edges so the cache cannot reuse them, and treat
+			// the path as having no recorded edges (matching the from-scratch behavior where a
+			// failed load simply contributes no edges).
+			graph_cache.forget(path);
+			continue;
+		}
+		universe_source[path] = source;
+		universe_hash[path] = source.hash64();
+	}
+
+	// A universe path must be reprimed when its source differs from the recorded hash (or is
+	// unknown). Repriming a path through GDScriptCache invalidates its parser, which cascades
+	// to every dependent and erases their cache-level inverse edges, so the dependent closure
+	// of the changed set must be reprimed too. The harness-owned inverse index drives that
+	// closure so the work scales with the changed set rather than the whole universe.
+	HashSet<String> reprime_set;
+	List<String> reprime_frontier;
+	for (const String &path : universe) {
+		if (!universe_source.has(path)) {
+			continue;
+		}
+		HashMap<String, uint64_t>::ConstIterator recorded = graph_cache.source_hashes.find(path);
+		if (!recorded || recorded->value != universe_hash[path]) {
+			if (!reprime_set.has(path)) {
+				reprime_set.insert(path);
+				reprime_frontier.push_back(path);
+			}
+		}
+	}
+	while (!reprime_frontier.is_empty()) {
+		const String path = reprime_frontier.front()->get();
+		reprime_frontier.pop_front();
+		for (const String &dependent : graph_cache.get_inverse(path)) {
+			if (!universe_set.has(dependent) || reprime_set.has(dependent) || !universe_source.has(dependent)) {
+				continue;
+			}
+			reprime_set.insert(dependent);
+			reprime_frontier.push_back(dependent);
+		}
+	}
+
+	// Reprime the changed set and its dependent closure: flush each first so get_full_script
+	// re-resolves dependencies and repopulates the cache's inverse edges from disk content.
+	for (const String &path : reprime_set) {
+		GDScriptCache::remove_parser(path);
+		GDScriptCache::remove_script(path);
+	}
+	for (const String &path : reprime_set) {
+		Error err = OK;
+		GDScriptCache::get_full_script(path, err, String(), true);
+		// A load error on one path means its edges are absent for this call; the from-scratch
+		// behavior (the BFS simply misses dependents of this path) is preserved because the
+		// forward-dependency capture below finds no edges for it.
+	}
+
+	// Capture each reprimed path's forward dependencies. Repriming a path records cache-level
+	// inverse edges from every provider it touches to it, including unchanged providers that were
+	// not themselves reprimed. The provider scan spans the universe plus the touched paths: a
+	// candidate may touch a provider that is not itself in the universe, yet an in-universe
+	// consumer can depend on it, and that consumer must still be discovered as affected (the
+	// universe bounds which dependents are re-analyzed, not which providers can be edited). The
+	// affected-set BFS below filters dependents by universe membership, so recording an edge keyed
+	// on an out-of-universe provider is safe.
+	{
+		HashMap<String, HashSet<String>> forward_for_reprimed;
+		for (const String &provider : edge_scope) {
+			for (const String &dependent : GDScriptCache::get_inverse_dependencies(provider)) {
+				if (reprime_set.has(dependent)) {
+					forward_for_reprimed[dependent].insert(provider);
+				}
+			}
+		}
+		for (const String &path : reprime_set) {
+			HashMap<String, HashSet<String>>::ConstIterator edges = forward_for_reprimed.find(path);
+			graph_cache.record(path, universe_hash[path], edges ? edges->value : HashSet<String>());
+		}
+	}
+
+	// Affected set = touched ∪ transitive inverse-dependents(touched) ∩ universe, discovered
+	// against the harness-owned inverse index, which now reflects every changed file's edges.
 	HashSet<String> affected_set = touched;
 	List<String> frontier;
 	for (const String &path : touched) {
@@ -377,7 +721,7 @@ VerificationResult GDScriptVerificationHarness::verify(
 	while (!frontier.is_empty()) {
 		const String path = frontier.front()->get();
 		frontier.pop_front();
-		for (const String &dependent : GDScriptCache::get_inverse_dependencies(path)) {
+		for (const String &dependent : graph_cache.get_inverse(path)) {
 			if (!universe_set.has(dependent) || affected_set.has(dependent)) {
 				continue;
 			}
@@ -458,145 +802,60 @@ VerificationResult GDScriptVerificationHarness::verify(
 		return result;
 	}
 
-	// Bound the cost of attribution. Each oracle/probe call stages sources to disk and
-	// re-analyzes the entire affected set, so it is far from free. ddmin needs roughly
-	// O(k log k) oracle calls to isolate offending clusters, plus one confirmation probe
-	// per rejected candidate, where k is the candidate count. Above this ceiling we skip
-	// delta debugging and reject the whole batch to keep verification cost bounded; the
-	// common case (no regression, or small batches) keeps precise per-candidate ddmin.
+	// Regression. Attribution via delta debugging is bounded per chunk: each oracle/probe call
+	// stages sources and re-analyzes the affected set, and ddmin needs roughly O(k log k) oracle
+	// calls plus one confirmation probe per rejected candidate, where k is the chunk's candidate
+	// count. To bound that cost in the common case the batch is partitioned into chunks no larger
+	// than the ceiling and each chunk is attributed independently, so a large regressing batch
+	// drops only its genuine offenders instead of falling back to all-or-nothing rejection.
 	const int max_bisection_candidates = 64;
-	if (applicable_candidates.size() > max_bisection_candidates) {
-		ERR_PRINT(vformat(
-				"Verification: %d candidates exceed the bisection ceiling of %d; rejecting the batch as a whole to bound cost.",
-				applicable_candidates.size(), max_bisection_candidates));
-		// New diagnostic keys = combined multiset minus baseline multiset.
-		Vector<String> new_messages;
-		{
-			HashMap<String, int> baseline_counts;
-			for (const String &message : baseline.messages) {
-				baseline_counts[message] += 1;
-			}
-			for (const String &message : combined.messages) {
-				HashMap<String, int>::Iterator it = baseline_counts.find(message);
-				if (it && it->value > 0) {
-					it->value -= 1;
-				} else {
-					new_messages.push_back(message);
-				}
-			}
-		}
-		for (const VerificationCandidate &candidate : applicable_candidates) {
-			VerificationRejected rejected;
-			rejected.path = candidate.path;
-			rejected.line = candidate.line;
-			rejected.reason = "batch exceeds bisection ceiling; rejected as a whole to bound verification cost";
-			rejected.diagnostics = new_messages;
-			result.rejected.push_back(rejected);
-		}
-		result.accepted_error_count = baseline.error_count;
-		result.ok = true;
-		return result;
-	}
 
-	// Regression: isolate offending candidates via delta debugging, keep the rest.
-	Vector<int> remaining;
-	for (int i = 0; i < applicable_candidates.size(); i++) {
-		remaining.push_back(i);
-	}
-	HashSet<int> rejected_indices;
-
-	// Repeatedly carve out a minimal offending subset until the remainder is clean.
-	while (true) {
-		const AffectedAnalysis analysis = analyze_subset(subset_of(applicable_candidates, remaining), affected, original, p_options, fatal);
-		if (fatal) {
-			result.ok = false;
-			result.error_message = "Verification aborted during attribution.";
-			return result;
-		}
-		if (!regresses(baseline, analysis)) {
-			break;
-		}
-		const Vector<int> offending = ddmin_offending(remaining, applicable_candidates, affected, original, p_options, baseline, fatal);
-		if (fatal) {
-			result.ok = false;
-			result.error_message = "Verification aborted during attribution.";
-			return result;
-		}
-		HashSet<int> offending_set;
-		for (int index : offending) {
-			offending_set.insert(index);
-			rejected_indices.insert(index);
-		}
-		Vector<int> next;
-		for (int index : remaining) {
-			if (!offending_set.has(index)) {
-				next.push_back(index);
-			}
-		}
-		// Safety: if ddmin failed to shrink (shouldn't happen with a monotonic predicate),
-		// drop the whole remainder to guarantee termination.
-		if (next.size() == remaining.size()) {
-			for (int index : remaining) {
-				rejected_indices.insert(index);
-			}
-			remaining.clear();
-			break;
-		}
-		remaining = next;
-	}
-
-	// Build the accepted list and re-verify it as a final confirmation.
 	Vector<VerificationCandidate> accepted_candidates;
-	for (int i = 0; i < applicable_candidates.size(); i++) {
-		if (!rejected_indices.has(i)) {
-			accepted_candidates.push_back(applicable_candidates[i]);
+	for (const Vector<VerificationCandidate> &chunk : partition_into_chunks(applicable_candidates, max_bisection_candidates)) {
+		attribute_chunk(chunk, affected, original, p_options, baseline, accepted_candidates, result.rejected, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted during attribution.";
+			return result;
 		}
 	}
-	const HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
-	const AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+
+	HashMap<String, String> accepted_staged = stage_candidates(accepted_candidates, original);
+	AffectedAnalysis accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
 	if (fatal) {
 		result.ok = false;
 		result.error_message = "Verification aborted confirming accepted set.";
 		return result;
 	}
-	result.accepted = accepted_candidates;
-	result.accepted_error_count = accepted_analysis.error_count;
 
-	// Attribute diagnostics to each rejected applicable candidate: new diagnostic keys
-	// it alone introduces over the accepted base.
-	for (int i = 0; i < applicable_candidates.size(); i++) {
-		if (!rejected_indices.has(i)) {
-			continue;
-		}
-		// Re-analyze the accepted set plus this one candidate to find the diagnostics
-		// it uniquely introduces.
-		Vector<VerificationCandidate> probe = accepted_candidates;
-		probe.push_back(applicable_candidates[i]);
-		const AffectedAnalysis probe_analysis = analyze_subset(probe, affected, original, p_options, fatal);
+	// Chunks never share a file, but candidates from different files can still interact through a
+	// common dependent: two provider edits each clean in isolation can together break a shared
+	// consumer. File-grouped chunking can never co-locate such a pair, so re-chunking the union
+	// would make no progress. When the accepted union regresses, fall back to one delta-debugging
+	// pass over the whole union, which is guaranteed to isolate the cross-chunk offenders and leave
+	// a clean accepted set. This raises the worst-case cost to a single O(k log k) ddmin over the
+	// accepted set (k = accepted candidate count) for the rare cross-chunk case; the common case
+	// stays within the per-chunk bound. This never accepts a regressing set.
+	if (regresses(baseline, accepted_analysis)) {
+		Vector<VerificationCandidate> reconciled;
+		attribute_chunk(accepted_candidates, affected, original, p_options, baseline, reconciled, result.rejected, fatal);
 		if (fatal) {
 			result.ok = false;
-			result.error_message = "Verification aborted attributing diagnostics; files may be left modified on disk.";
+			result.error_message = "Verification aborted reconciling cross-chunk regressions.";
 			return result;
 		}
-		VerificationRejected rejected;
-		rejected.path = applicable_candidates[i].path;
-		rejected.line = applicable_candidates[i].line;
-		rejected.reason = "introduces new analyzer error(s) in the affected set";
-		// Attribute only the new diagnostic keys (multiset difference).
-		HashMap<String, int> accepted_counts;
-		for (const String &message : accepted_analysis.messages) {
-			accepted_counts[message] += 1;
+		accepted_candidates = reconciled;
+		accepted_staged = stage_candidates(accepted_candidates, original);
+		accepted_analysis = analyze_affected(affected, original, accepted_staged, p_options, fatal);
+		if (fatal) {
+			result.ok = false;
+			result.error_message = "Verification aborted confirming reconciled accepted set.";
+			return result;
 		}
-		for (const String &message : probe_analysis.messages) {
-			HashMap<String, int>::Iterator it = accepted_counts.find(message);
-			if (it && it->value > 0) {
-				it->value -= 1;
-			} else {
-				rejected.diagnostics.push_back(message);
-			}
-		}
-		result.rejected.push_back(rejected);
 	}
+
+	result.accepted = accepted_candidates;
+	result.accepted_error_count = accepted_analysis.error_count;
 
 	result.ok = true;
 	return result;

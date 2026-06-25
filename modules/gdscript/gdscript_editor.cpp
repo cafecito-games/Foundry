@@ -805,11 +805,43 @@ static String _make_arguments_hint(const GDScriptParser::FunctionNode *p_functio
 		if (p_function->is_coroutine) {
 			arghint += "async ";
 		}
-		if (p_function->get_datatype().builtin_type == Variant::NIL) {
-			arghint += "void " + p_function->identifier->name + "(";
+		const GDScriptParser::DataType return_type = p_function->get_datatype();
+		// Only a genuine `void` (a NIL builtin) renders as "void". A type-parameter return type
+		// (`func swap[T](...) -> T`) also has builtin_type NIL because it is not a builtin, so render
+		// it through to_string() (e.g. "T") instead of mislabelling it "void".
+		if (return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+			arghint += "void ";
 		} else {
-			arghint += p_function->get_datatype().to_string() + " " + p_function->identifier->name + "(";
+			arghint += return_type.to_string() + " ";
 		}
+		arghint += p_function->identifier->name;
+		// Show the generic type-parameter list (`[T, U: Bound]`) for a generic method.
+		if (!p_function->type_parameters.is_empty()) {
+			arghint += "[";
+			bool first_type_parameter = true;
+			for (const GDScriptParser::TypeParameterNode *type_parameter : p_function->type_parameters) {
+				if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+					continue;
+				}
+				if (!first_type_parameter) {
+					arghint += ", ";
+				}
+				first_type_parameter = false;
+				arghint += type_parameter->identifier->name;
+				// Method type parameters do not get an eager `resolved_bound`, so fall back to the
+				// bound TypeNode's datatype (a metatype handle in type position, hence the meta strip).
+				GDScriptParser::DataType bound_type = type_parameter->resolved_bound;
+				if ((!bound_type.is_set() || bound_type.is_variant()) && type_parameter->bound != nullptr) {
+					bound_type = type_parameter->bound->get_datatype();
+					bound_type.is_meta_type = false;
+				}
+				if (bound_type.is_set() && !bound_type.is_variant()) {
+					arghint += ": " + bound_type.to_string();
+				}
+			}
+			arghint += "]";
+		}
+		arghint += "(";
 	}
 
 	for (int i = 0; i < p_function->parameters.size(); i++) {

@@ -681,6 +681,116 @@ int find_assignment_rhs_start(const String &p_line, int p_equal_index) {
 	return rhs_start;
 }
 
+// Locates a declaration's assignment operator (`=` or the `=` of `:=`) starting
+// at p_search_start on p_start_line and following continuation lines. A line
+// continues onto the next through an explicit trailing backslash, while a
+// bracket/brace/parenthesis remains open, or inside a multi-line string; after a
+// backslash the tokenizer also skips whitespace- and comment-only lines, so this
+// scan does too. The scan is string/comment/bracket-aware so an `=` inside a
+// string, comment, or nested container is never mistaken for the assignment
+// operator. Returns true and writes the `=` position when found, along with
+// whether it is the `=` of an inferred declaration (`:=`, where the colon may be
+// separated from the `=` by whitespace or a line break, e.g. `: =`).
+bool find_declaration_assignment_operator(const Vector<String> &p_lines, int p_start_line, int p_search_start, int &r_line, int &r_column, bool &r_is_inferred, int &r_colon_line, int &r_colon_column) {
+	int depth = 0;
+	bool in_multiline_string = false;
+	char32_t multiline_string_quote = 0; // The quote character that opened the active triple-quoted string.
+	bool backslash_continuation = false; // A prior line ended with `\`, so blank/comment lines keep the declaration open.
+	int colon_line = -1; // Position of the most recent colon, so an inferred `: =` can drop it.
+	int colon_column = -1;
+	bool last_meaningful_was_colon = false; // The last non-whitespace token character before the cursor was a colon.
+	for (int line_index = p_start_line; line_index < p_lines.size(); line_index++) {
+		const String &line = p_lines[line_index];
+		int i = line_index == p_start_line ? (p_search_start < 0 ? 0 : p_search_start) : 0;
+		bool explicit_continuation = false;
+		bool saw_token = false; // This physical line carried a real token (not just whitespace or a comment).
+		for (; i < line.length(); i++) {
+			const char32_t c = line[i];
+			if (in_multiline_string) {
+				if (c == '\\') {
+					i++; // Skip the escaped character so an escaped quote never closes the string.
+					continue;
+				}
+				if (c == multiline_string_quote && i + 2 < line.length() && line[i + 1] == multiline_string_quote && line[i + 2] == multiline_string_quote) {
+					in_multiline_string = false;
+					i += 2; // Skip the closing triple quote.
+				}
+				continue;
+			}
+			if (c == '#') {
+				break;
+			}
+			if (is_whitespace(c)) {
+				continue;
+			}
+			if (c == '\\' && i == line.length() - 1) {
+				// A trailing backslash continues the declaration onto the next line.
+				explicit_continuation = true;
+				continue;
+			}
+			saw_token = true;
+			if (c == '"' || c == '\'') {
+				if (i + 2 < line.length() && line[i + 1] == c && line[i + 2] == c) {
+					// A triple-quoted string may stay open past the end of the line.
+					in_multiline_string = true;
+					multiline_string_quote = c;
+					i += 2; // Skip the opening triple quote; the body is consumed in string state.
+					last_meaningful_was_colon = false;
+					continue;
+				}
+				i = skip_string_literal(line, i) - 1;
+				last_meaningful_was_colon = false;
+				continue;
+			}
+			if (c == '(' || c == '[' || c == '{') {
+				depth++;
+				last_meaningful_was_colon = false;
+				continue;
+			}
+			if (c == ')' || c == ']' || c == '}') {
+				if (depth > 0) {
+					depth--;
+				}
+				last_meaningful_was_colon = false;
+				continue;
+			}
+			if (c == '=' && depth == 0) {
+				// Compound assignment operators (`==`, `<=`, etc.) cannot open a
+				// declaration's initializer, so the first top-level `=` is the
+				// assignment operator. A preceding colon (`:=` or `: =`) marks an
+				// inferred declaration.
+				r_line = line_index;
+				r_column = i;
+				r_is_inferred = last_meaningful_was_colon;
+				r_colon_line = colon_line;
+				r_colon_column = colon_column;
+				return true;
+			}
+			last_meaningful_was_colon = c == ':';
+			if (last_meaningful_was_colon) {
+				colon_line = line_index;
+				colon_column = i;
+			}
+		}
+		if (in_multiline_string) {
+			continue; // A triple-quoted string carries the declaration onto the next line.
+		}
+		if (explicit_continuation) {
+			backslash_continuation = true;
+		} else if (saw_token) {
+			// A physical line with a real token but no trailing backslash only
+			// continues while a bracket pair is still open.
+			backslash_continuation = false;
+		}
+		if (!backslash_continuation && depth == 0) {
+			// No continuation: the declaration ends without an assignment operator
+			// beyond the search start.
+			return false;
+		}
+	}
+	return false;
+}
+
 bool is_location_ordered(const RefactorLocation &p_location) {
 	if (p_location.start_line < p_location.end_line) {
 		return true;
@@ -1050,16 +1160,28 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	}
 
 	// The parser does not expose the assignment operator token, so this refactor
-	// intentionally handles declarations whose assignment delimiter is on the
-	// declaration line.
-	const int equal_index = p_assignable->initializer != nullptr ? line.find("=", name_end) : -1;
-	const int declaration_end = equal_index >= 0 ? equal_index : name_end;
+	// locates it by scanning the declaration text, following continuation lines
+	// when the assignment operator wraps onto a later line.
+	int equal_line = -1;
+	int equal_column = -1;
+	bool is_inferred = false;
+	int colon_line = -1;
+	int colon_column = -1;
+	const bool found_equal = p_assignable->initializer != nullptr &&
+			find_declaration_assignment_operator(p_lines, line_index, name_end, equal_line, equal_column, is_inferred, colon_line, colon_column);
+	const int declaration_end = found_equal && equal_line == line_index ? equal_column : name_end;
 
 	r_candidate.matched = true;
 	r_candidate.kind = p_kind;
 	r_candidate.line = line_index;
 	r_candidate.caret_span_start = declaration_start;
 	r_candidate.caret_span_end = declaration_end;
+	if (found_equal && equal_line != line_index) {
+		// A wrapped assignment closes its caret span on the operator line so the
+		// caret selects the annotation anywhere from the name through the `=`.
+		r_candidate.caret_span_end = equal_column;
+		r_candidate.caret_span_end_line = equal_line;
+	}
 	if (p_assignable->datatype_specifier != nullptr) {
 		r_candidate.disabled_reason = "This declaration already has a type annotation.";
 		return true;
@@ -1068,11 +1190,10 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		r_candidate.disabled_reason = vformat("Cannot infer a type for this %s.", p_kind);
 		return true;
 	}
-	if (equal_index < 0) {
-		// The initializer resolved, but the assignment operator is not on the
-		// declaration line (a wrapped declaration). The edit logic only places an
-		// annotation when the assignment delimiter is on the line, so report the
-		// site as skipped rather than dropping it silently.
+	if (!found_equal) {
+		// The initializer resolved, but the assignment operator could not be
+		// located (an unusual wrapped form). Report the site as a counted skip
+		// rather than producing an unsafe edit.
 		r_candidate.disabled_reason = vformat("Cannot annotate this %s because its assignment spans multiple lines.", p_kind);
 		return true;
 	}
@@ -1106,12 +1227,46 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		return true;
 	}
 
-	const int rhs_start = find_assignment_rhs_start(line, equal_index);
+	if (equal_line == line_index) {
+		const int rhs_start = find_assignment_rhs_start(line, equal_column);
+		r_candidate.edit.start_line = line_index;
+		r_candidate.edit.start_column = name_end;
+		r_candidate.edit.end_line = line_index;
+		r_candidate.edit.end_column = rhs_start;
+		r_candidate.edit.new_text = ": " + rendered_type + " = ";
+		r_candidate.enabled = true;
+		return true;
+	}
+
+	// The assignment operator wraps onto a continuation line. Insert the
+	// annotation after the name and replace through the `=`, preserving the
+	// continuation text verbatim. An inferred declaration (`:=` or `: =`) drops
+	// its colon because the explicit annotation now carries the type. The
+	// replacement reproduces the original line breaks so the recovered
+	// declaration parses identically.
+	//
+	// Reconstruct the span [name_end on line_index, equal_column on equal_line),
+	// omitting the inferred colon at (colon_line, colon_column) when present.
+	String continuation;
+	for (int wrapped = line_index; wrapped <= equal_line; wrapped++) {
+		if (wrapped != line_index) {
+			continuation += "\n";
+		}
+		const String &wrapped_line = p_lines[wrapped];
+		const int slice_start = wrapped == line_index ? name_end : 0;
+		const int slice_end = wrapped == equal_line ? equal_column : wrapped_line.length();
+		if (is_inferred && colon_line == wrapped && colon_column >= slice_start && colon_column < slice_end) {
+			continuation += wrapped_line.substr(slice_start, colon_column - slice_start);
+			continuation += wrapped_line.substr(colon_column + 1, slice_end - (colon_column + 1));
+		} else {
+			continuation += wrapped_line.substr(slice_start, slice_end - slice_start);
+		}
+	}
 	r_candidate.edit.start_line = line_index;
 	r_candidate.edit.start_column = name_end;
-	r_candidate.edit.end_line = line_index;
-	r_candidate.edit.end_column = rhs_start;
-	r_candidate.edit.new_text = ": " + rendered_type + " = ";
+	r_candidate.edit.end_line = equal_line;
+	r_candidate.edit.end_column = equal_column + 1;
+	r_candidate.edit.new_text = ": " + rendered_type + continuation + "=";
 	r_candidate.enabled = true;
 	return true;
 }
@@ -6188,6 +6343,248 @@ RefactorResult prepare_explicit_cast(const RefactorContext &p_context, const Ref
 	return result;
 }
 
+// A located widen-to-nullable opportunity, the phase-2 satisfier for strict-null
+// boundaries. `caret_span` is the source range a caret must fall within for the
+// candidate to apply (the whole declaration or return statement), while `edit` is a
+// zero-width insertion of `?` immediately after the boundary's type specifier, turning
+// `T` into `T?`.
+struct WidenToNullableCandidate {
+	bool matched = false;
+	bool enabled = false;
+	String disabled_reason;
+	int line = -1;
+	RefactorLocation caret_span;
+	RefactorTextEdit edit;
+};
+
+// Whether p_target is the `void` / no-value return type, which has no nullable form.
+bool is_void_type(const GDScriptParser::DataType &p_target) {
+	return p_target.kind == GDScriptParser::DataType::BUILTIN && p_target.builtin_type == Variant::NIL;
+}
+
+// Build a widen-to-nullable candidate for a non-nullable type specifier `p_type_node`
+// that is fed a nullable `p_value`. Reports the site as matched-but-disabled (with a
+// reason) when the widening cannot be produced, so the editor can explain why the action
+// is unavailable here. The widening is the dual of the explicit cast: it leaves the value
+// expression untouched and only makes the declared type admit the null the strict-null
+// analyzer proved can already reach it.
+//
+// It is enabled only when the value's underlying (non-nullable) type is exactly the
+// target type, i.e. the boundary differs solely in nullability. That is the only shape
+// the analyzer reports as a nullable mismatch (an underlying-type mismatch is a separate,
+// unrelated error that widening would not fix), so the restriction keeps the action from
+// emitting code that is still wrong or, for `void` returns, syntactically invalid.
+void build_widen_to_nullable_candidate(
+		const Vector<String> &p_lines,
+		const GDScriptParser::Node *p_statement,
+		const GDScriptParser::ExpressionNode *p_value,
+		const GDScriptParser::TypeNode *p_type_node,
+		const GDScriptParser::DataType &p_target_type,
+		WidenToNullableCandidate &r_candidate) {
+	RefactorLocation statement_range;
+	if (p_statement == nullptr || !get_node_text_range(p_lines, p_statement, statement_range)) {
+		return;
+	}
+	r_candidate.matched = true;
+	r_candidate.line = statement_range.start_line;
+	r_candidate.caret_span = statement_range;
+
+	if (p_value == nullptr) {
+		r_candidate.disabled_reason = "There is no value here to widen for.";
+		return;
+	}
+	if (p_target_type.is_nullable) {
+		r_candidate.disabled_reason = "This type is already nullable.";
+		return;
+	}
+	if (!p_target_type.is_set() || p_target_type.is_variant()) {
+		// A Variant boundary already admits null; widening to `Variant?` is meaningless.
+		r_candidate.disabled_reason = "This type already accepts null.";
+		return;
+	}
+	if (is_void_type(p_target_type)) {
+		// `void` has no nullable form; `void?` is not valid syntax.
+		r_candidate.disabled_reason = "A void return type cannot be made nullable.";
+		return;
+	}
+	const GDScriptParser::DataType value_type = p_value->get_datatype();
+	if (!value_type.is_set() || !value_type.is_nullable) {
+		// Only a resolved nullable value is a genuine strict-null boundary. Unresolved
+		// types are skipped so a parse gap never enables a speculative widening.
+		r_candidate.disabled_reason = "This value is not nullable; no widening is needed.";
+		return;
+	}
+	// Require the value's underlying type to match the target exactly so the only
+	// difference is nullability. A different underlying type (e.g. a `String?` value at an
+	// `int` boundary) is a separate type error that widening would leave unfixed.
+	GDScriptParser::DataType value_underlying = value_type;
+	value_underlying.is_nullable = false;
+	if (value_underlying != p_target_type) {
+		r_candidate.disabled_reason = "This value's type does not match the target; widening would not fix the error.";
+		return;
+	}
+	// Insert `?` at the end of the type specifier, a zero-width edit. The type node's end
+	// must be single-line and within bounds for the insertion point to be well defined.
+	RefactorLocation type_range;
+	if (!get_node_text_range(p_lines, p_type_node, type_range) || type_range.start_line != type_range.end_line) {
+		r_candidate.disabled_reason = "Cannot widen a type that spans multiple lines.";
+		return;
+	}
+	r_candidate.edit.start_line = type_range.end_line;
+	r_candidate.edit.start_column = type_range.end_column;
+	r_candidate.edit.end_line = type_range.end_line;
+	r_candidate.edit.end_column = type_range.end_column;
+	r_candidate.edit.new_text = "?";
+	r_candidate.enabled = true;
+}
+
+// Widen site for a typed `var x: T = value` declaration whose initializer is nullable.
+bool find_declaration_widen_candidate(const Vector<String> &p_lines, const GDScriptParser::VariableNode *p_variable, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_variable == nullptr || p_variable->datatype_specifier == nullptr || p_variable->initializer == nullptr) {
+		return false;
+	}
+	WidenToNullableCandidate candidate;
+	build_widen_to_nullable_candidate(p_lines, p_variable, p_variable->initializer, p_variable->datatype_specifier, p_variable->get_datatype(), candidate);
+	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
+		return false;
+	}
+	r_candidate = candidate;
+	return true;
+}
+
+// Widen site for a `return value` whose value is nullable in a function with an explicit
+// non-nullable return type.
+bool find_return_widen_candidate(const Vector<String> &p_lines, const GDScriptParser::ReturnNode *p_return, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_return == nullptr || p_return->return_value == nullptr || p_function == nullptr || p_function->return_type == nullptr) {
+		return false;
+	}
+	WidenToNullableCandidate candidate;
+	build_widen_to_nullable_candidate(p_lines, p_return, p_return->return_value, p_function->return_type, p_function->get_datatype(), candidate);
+	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
+		return false;
+	}
+	r_candidate = candidate;
+	return true;
+}
+
+bool find_widen_candidate_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_suite == nullptr) {
+		return false;
+	}
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::VARIABLE:
+				if (find_declaration_widen_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::Node::RETURN:
+				if (find_return_widen_candidate(p_lines, static_cast<const GDScriptParser::ReturnNode *>(statement), p_function, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				if (find_widen_candidate_in_suite(p_lines, if_node->true_block, p_function, p_location, r_candidate) ||
+						find_widen_candidate_in_suite(p_lines, if_node->false_block, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
+				if (find_widen_candidate_in_suite(p_lines, for_node->loop, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
+				if (find_widen_candidate_in_suite(p_lines, while_node->loop, p_function, p_location, r_candidate)) {
+					return true;
+				}
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
+					if (branch != nullptr && find_widen_candidate_in_suite(p_lines, branch->block, p_function, p_location, r_candidate)) {
+						return true;
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+bool find_widen_candidate_in_class(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, const RefactorLocation &p_location, WidenToNullableCandidate &r_candidate) {
+	if (p_class == nullptr) {
+		return false;
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::VARIABLE:
+				if (find_declaration_widen_candidate(p_lines, member.variable, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				if (member.function != nullptr && find_widen_candidate_in_suite(p_lines, member.function->body, member.function, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			case GDScriptParser::ClassNode::Member::CLASS:
+				if (find_widen_candidate_in_class(p_lines, member.m_class, p_location, r_candidate)) {
+					return true;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
+}
+
+WidenToNullableCandidate find_widen_to_nullable_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	WidenToNullableCandidate candidate;
+	if (p_location.has_selection()) {
+		candidate.disabled_reason = "Place the caret on a typed declaration or return that receives a nullable value.";
+		return candidate;
+	}
+
+	GDScriptParser parser;
+	parser.parse(p_context.source, p_context.path, false);
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const Vector<String> lines = p_context.source.split("\n");
+	const GDScriptParser::ClassNode *tree = parser.get_tree();
+	if (tree == nullptr || !find_widen_candidate_in_class(lines, tree, p_location, candidate)) {
+		candidate.matched = false;
+		candidate.enabled = false;
+		candidate.disabled_reason = "Place the caret on a typed declaration or return that receives a nullable value.";
+	}
+	return candidate;
+}
+
+RefactorResult prepare_widen_to_nullable(const RefactorContext &p_context, const RefactorLocation &p_location) {
+	RefactorResult result;
+	const WidenToNullableCandidate candidate = find_widen_to_nullable_candidate(p_context, p_location);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason.is_empty()
+				? "Widen to nullable is not available here."
+				: candidate.disabled_reason;
+		return result;
+	}
+	result.ok = true;
+	result.edits.push_back(candidate.edit);
+	return result;
+}
+
 } // namespace
 
 bool GDScriptRefactoring::validate_extract_method_name(
@@ -6610,6 +7007,16 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 	}
 	result.push_back(insert_cast);
 
+	RefactorAvailability widen_nullable;
+	widen_nullable.kind = RefactorKind::WIDEN_TO_NULLABLE;
+	widen_nullable.title = "Widen to Nullable";
+	const WidenToNullableCandidate widen_candidate = find_widen_to_nullable_candidate(p_context, p_location);
+	widen_nullable.enabled = widen_candidate.enabled;
+	if (!widen_nullable.enabled) {
+		widen_nullable.disabled_reason = widen_candidate.disabled_reason;
+	}
+	result.push_back(widen_nullable);
+
 	RefactorAvailability sort_members;
 	sort_members.kind = RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE;
 	sort_members.title = "Sort Members by Style Guide";
@@ -6646,6 +7053,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 			return prepare_explicit_cast(p_context, p_location);
+		case RefactorKind::WIDEN_TO_NULLABLE:
+			return prepare_widen_to_nullable(p_context, p_location);
 		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
 			return prepare_sort_members_by_style_guide(p_context);
 		default:

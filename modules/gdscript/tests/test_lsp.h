@@ -895,6 +895,25 @@ func f():
 			CHECK_EQ(String(values_argument["type"]), "Dictionary[String, Array[int]]");
 		}
 
+		SUBCASE("Generic method symbols show the type-parameter list and unsubstituted return") {
+			String path = "res://lsp/generic_presentation.gd";
+			assert_no_errors_in(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			const LSP::DocumentSymbol *swap = parser->get_member_symbol("swap");
+			REQUIRE(swap);
+			CHECK_EQ(swap->detail, "func swap[T](first: T, second: T) -> T");
+
+			const LSP::DocumentSymbol *clamp_within = parser->get_member_symbol("clamp_within");
+			REQUIRE(clamp_within);
+			CHECK_EQ(clamp_within->detail, "func clamp_within[U: RefCounted](value: U) -> U");
+
+			const LSP::DocumentSymbol *tag = parser->get_member_symbol("tag");
+			REQUIRE(tag);
+			CHECK_EQ(tag->detail, "func tag[A: Animal](value: A) -> A");
+		}
+
 		SUBCASE("Enum default values are shown as constant names") {
 			String path = "res://lsp/enum_default_values.gd";
 			assert_no_errors_in(path);
