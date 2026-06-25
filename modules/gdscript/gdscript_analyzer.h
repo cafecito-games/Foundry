@@ -90,8 +90,9 @@ class GDScriptAnalyzer {
 	bool resolve_type_parameter(const StringName &p_name, GDScriptParser::DataType &r_type);
 	GDScriptParser::FunctionNode *find_generic_method(GDScriptParser::ClassNode *p_class, const StringName &p_name, bool &r_found_member);
 	GDScriptParser::DataType substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base, const GDScriptParser::FunctionNode *p_shadowing_method = nullptr);
-	bool apply_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::TypeNode *> &p_argument_nodes, const GDScriptParser::Node *p_source);
-	bool bind_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources, const GDScriptParser::Node *p_source);
+	bool apply_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::TypeNode *> &p_argument_nodes, const GDScriptParser::Node *p_source, bool p_check_bounds = true, Vector<bool> *r_argument_failed = nullptr);
+	bool bind_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources, const GDScriptParser::Node *p_source, bool p_check_bounds = true);
+	bool check_class_type_argument_bounds(GDScriptParser::DataType &r_type, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources);
 	GDScriptParser::DataType specialize_ancestor_type(const GDScriptParser::DataType &p_base, const GDScriptParser::ClassNode *p_target);
 
 	void decide_suite_type(GDScriptParser::Node *p_suite, GDScriptParser::Node *p_statement);

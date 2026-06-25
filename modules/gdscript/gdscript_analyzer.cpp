@@ -503,6 +503,9 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	p_class->set_datatype(class_type);
 
 	GDScriptParser::DataType result;
+	// Tracks which extends type arguments failed to resolve, so the deferred bound check below skips
+	// them and does not emit a second diagnostic for an already-reported argument.
+	Vector<bool> extends_argument_failed;
 	if (!p_class->extends_used) {
 		result.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
 		result.kind = GDScriptParser::DataType::NATIVE;
@@ -689,7 +692,13 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 				push_error(vformat(R"(Type "%s" is not a generic class and cannot take type arguments.)", result.to_string()), p_class->extends_type_arguments[0]);
 				return ERR_PARSE_ERROR;
 			}
-			if (!apply_class_type_arguments(result, p_class->extends_type_arguments, p_class->extends_type_arguments[0])) {
+			// Bind the type arguments now but defer their bound validation until the specialized base
+			// is installed below. A self-referential argument (`class Sword extends Box[Sword]`, the
+			// F-bounded/CRTP pattern) must be checked against the base's bound by walking
+			// `Sword -> Box -> ...`; doing that while the base is unset re-enters Sword's still
+			// in-progress inheritance resolution and reports a spurious cyclic reference. Deferring also
+			// avoids any reentrant check observing a half-resolved (unspecialized) base.
+			if (!apply_class_type_arguments(result, p_class->extends_type_arguments, p_class->extends_type_arguments[0], /* check_bounds */ false, &extends_argument_failed)) {
 				return ERR_PARSE_ERROR;
 			}
 		}
@@ -722,6 +731,19 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	p_class->base_type = result;
 	class_type.native_type = result.native_type;
 	p_class->set_datatype(class_type);
+
+	// Validate the deferred type-argument bounds now that the specialized base is installed, so a
+	// self-referential argument (`class Sword extends Box[Sword]`) is checked against the real,
+	// fully-resolved inheritance chain rather than re-entering this class's own resolution.
+	if (!p_class->extends_type_arguments.is_empty()) {
+		Vector<const GDScriptParser::Node *> argument_sources;
+		for (GDScriptParser::TypeNode *argument_node : p_class->extends_type_arguments) {
+			argument_sources.push_back(argument_node);
+		}
+		if (!check_class_type_argument_bounds(p_class->base_type, extends_argument_failed, argument_sources)) {
+			return ERR_PARSE_ERROR;
+		}
+	}
 
 	// Apply annotations.
 	for (GDScriptParser::AnnotationNode *&E : p_class->annotations) {
@@ -1281,7 +1303,7 @@ GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScript
 	return GDScriptParser::DataType::substitute(p_member_type, bindings);
 }
 
-bool GDScriptAnalyzer::apply_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::TypeNode *> &p_argument_nodes, const GDScriptParser::Node *p_source) {
+bool GDScriptAnalyzer::apply_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::TypeNode *> &p_argument_nodes, const GDScriptParser::Node *p_source, bool p_check_bounds, Vector<bool> *r_argument_failed) {
 	const int expected_argument_count = r_type.class_type->type_parameters.size();
 	if (expected_argument_count == 0) {
 		push_error(vformat(R"(Class "%s" is not generic and cannot take type arguments.)", r_type.to_string()), p_source);
@@ -1305,11 +1327,24 @@ bool GDScriptAnalyzer::apply_class_type_arguments(GDScriptParser::DataType &r_ty
 		argument_sources.push_back(p_argument_nodes[i]);
 	}
 
-	return bind_class_type_arguments(r_type, resolved_arguments, argument_failed, argument_sources, p_source);
+	if (r_argument_failed != nullptr) {
+		*r_argument_failed = argument_failed;
+	}
+
+	return bind_class_type_arguments(r_type, resolved_arguments, argument_failed, argument_sources, p_source, p_check_bounds);
 }
 
-bool GDScriptAnalyzer::bind_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources, const GDScriptParser::Node *p_source) {
+bool GDScriptAnalyzer::bind_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources, const GDScriptParser::Node *p_source, bool p_check_bounds) {
 	r_type.type_arguments = p_arguments;
+	if (!p_check_bounds) {
+		// The caller will validate the bounds later (e.g. after a class's specialized base is fully
+		// installed, so a self-referential argument is checked against the real chain).
+		return true;
+	}
+	return check_class_type_argument_bounds(r_type, p_argument_failed, p_argument_sources);
+}
+
+bool GDScriptAnalyzer::check_class_type_argument_bounds(GDScriptParser::DataType &r_type, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources) {
 	const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = r_type.class_type->type_parameters;
 
 	// Bind every parameter to its argument so a dependent bound like `[U: Resource, T: U]` (or its
@@ -1326,6 +1361,9 @@ bool GDScriptAnalyzer::bind_class_type_arguments(GDScriptParser::DataType &r_typ
 	bool bound_violation = false;
 	for (int i = 0; i < r_type.type_arguments.size(); i++) {
 		const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+		// An argument that failed to resolve already reported an error; skip it to avoid a second
+		// diagnostic (a failed resolve yields a `Variant` placeholder that would otherwise be checked
+		// against the bound and re-rejected).
 		if (parameter == nullptr || parameter->bound == nullptr || p_argument_failed[i]) {
 			continue;
 		}
