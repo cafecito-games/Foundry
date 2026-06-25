@@ -65,9 +65,16 @@ class GDScriptProxyInstance : public ScriptInstance {
 	// plain data slot, initialized to the zero value of its declared type. Property
 	// access is not routed through the handler (delegation is the helper's job).
 	HashMap<StringName, Variant> property_store;
+	// The reflected `Variant::Type` reported by `get_property_type`, taken from the
+	// declared property's `PropertyInfo` so it preserves export-inferred types for
+	// otherwise-untyped members (e.g. `@export var n = 1` reports `INT`).
 	HashMap<StringName, Variant::Type> property_types;
+	// The full declared `GDScriptDataType` per property, used to validate/coerce writes
+	// exactly as `GDScriptInstance::set` does — including typed `Array[T]` /
+	// `Dictionary[K, V]` element types, which a coarse `Variant::Type` cannot express.
+	HashMap<StringName, GDScriptDataType> property_data_types;
 
-	// Populates `property_store`/`property_types` from `T`'s declared member vars.
+	// Populates the property maps from `T`'s declared member vars.
 	void _init_property_store();
 
 	// Returns the GDScriptFunction declared for `p_method` somewhere in

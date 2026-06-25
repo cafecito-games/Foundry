@@ -497,6 +497,133 @@ TEST_CASE("[Modules][GDScript][Proxy] RefCounted-derived native bases are proxie
 	}
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Property writes validate against declared types") {
+	ScopedProxyLanguage language;
+
+	// A proxy's auto-backing store must validate/coerce writes exactly as a real
+	// GDScriptInstance does, including typed containers. `RealBag` mirrors `Bag`'s
+	// declared vars, so the proxy of `Bag` is compared against a concrete instance for
+	// each write: both must agree on the accepted/rejected result and the stored value.
+	const char *source =
+			"trait Bag:\n"
+			"\tvar count: int\n"
+			"\tvar ratio: float\n"
+			"\tvar label: String\n"
+			"\tvar tags: Array[int]\n"
+			"\tvar scores: Dictionary[String, int]\n"
+			"\t@export var flagged = 7\n"
+			"\t@abstract func use() -> void\n"
+			"\n"
+			"class RealBag:\n"
+			"\tvar count: int\n"
+			"\tvar ratio: float\n"
+			"\tvar label: String\n"
+			"\tvar tags: Array[int]\n"
+			"\tvar scores: Dictionary[String, int]\n"
+			"\t@export var flagged = 7\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn null\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> bag = get_subclass(script, "Bag");
+	Ref<GDScript> real_bag_script = get_subclass(script, "RealBag");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(bag.is_valid());
+	REQUIRE(real_bag_script.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	Variant real_bag_ref = real_bag_script->_new(nullptr, -1, construct_error);
+	REQUIRE(construct_error.error == Callable::CallError::CALL_OK);
+	Object *real_bag = real_bag_ref;
+	ScriptInstance *real_instance = real_bag->get_script_instance();
+	REQUIRE(real_instance != nullptr);
+
+	String error_message;
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(bag, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+	ScriptInstance *proxy_instance = proxy->get_script_instance();
+
+	Array typed_tags;
+	typed_tags.set_typed(Variant::INT, StringName(), Variant());
+	typed_tags.push_back(1);
+	typed_tags.push_back(2);
+
+	Array wrong_tags;
+	wrong_tags.set_typed(Variant::STRING, StringName(), Variant());
+	wrong_tags.push_back("x");
+
+	Dictionary typed_scores;
+	typed_scores.set_typed(Variant::STRING, StringName(), Variant(), Variant::INT, StringName(), Variant());
+	typed_scores["a"] = 1;
+
+	Dictionary untyped_scores;
+	untyped_scores["a"] = 1;
+
+	struct Write {
+		const char *name;
+		Variant value;
+	};
+	const Write writes[] = {
+		{ "count", 5 }, // exact int.
+		{ "count", 5.0 }, // float -> int coercion.
+		{ "count", "oops" }, // non-numeric string.
+		{ "ratio", 3 }, // int -> float coercion.
+		{ "label", 42 }, // int -> String.
+		{ "tags", typed_tags }, // correctly-typed Array[int].
+		{ "tags", Array() }, // untyped Array.
+		{ "tags", wrong_tags }, // wrong-element Array[String].
+		{ "scores", typed_scores }, // correctly-typed Dictionary.
+		{ "scores", untyped_scores }, // untyped Dictionary.
+	};
+
+	for (const Write &write : writes) {
+		const StringName name = write.name;
+
+		const bool proxy_set = proxy_instance->set(name, write.value);
+		const bool real_set = real_instance->set(name, write.value);
+		CHECK_MESSAGE(proxy_set == real_set, vformat("set(\"%s\") accept/reject mismatch", String(name)).utf8().get_data());
+
+		Variant proxy_value;
+		Variant real_value;
+		proxy_instance->get(name, proxy_value);
+		real_instance->get(name, real_value);
+		// Both must hold the same value after the write (rejected writes leave both
+		// slots unchanged; accepted writes coerce to the same stored value).
+		CHECK_MESSAGE(proxy_value == real_value, vformat("get(\"%s\") value mismatch after write", String(name)).utf8().get_data());
+	}
+
+	// The reproduction from the issue: a wrong primitive write is no longer silently
+	// accepted-and-stored as the foreign value.
+	{
+		ERR_PRINT_OFF;
+		proxy_instance->set("count", "oops");
+		ERR_PRINT_ON;
+		Variant value;
+		proxy_instance->get("count", value);
+		CHECK(value.get_type() == Variant::INT);
+		CHECK(value != Variant("oops"));
+	}
+
+	// get_property_type still reports the export-inferred type for an otherwise-untyped
+	// member (the validation type is Variant, but the reflected type is INT), matching
+	// a real GDScriptInstance.
+	{
+		bool proxy_valid = false;
+		bool real_valid = false;
+		const Variant::Type proxy_type = proxy_instance->get_property_type("flagged", &proxy_valid);
+		const Variant::Type real_type = real_instance->get_property_type("flagged", &real_valid);
+		CHECK(proxy_valid);
+		CHECK(proxy_valid == real_valid);
+		CHECK(proxy_type == real_type);
+		CHECK(proxy_type == Variant::INT);
+	}
+}
+
 TEST_CASE("[Modules][GDScript][Proxy] Auto-backing property store") {
 	ScopedProxyLanguage language;
 
