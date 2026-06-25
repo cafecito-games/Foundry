@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GDScriptGodotNamespace" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		The [code]godot[/code] namespace object exposed to GDScript.
+	</brief_description>
+	<description>
+		Backs the [code]godot[/code] global in GDScript. It is a singleton you do not construct; access its members through [code]godot.[/code], for example [code]godot.reflection.get_methods(...)[/code]. Currently it exposes only the read-only [member reflection] member.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="reflection" type="GDScriptReflection" setter="" getter="get_reflection">
+			The read-only reflection and dynamic-proxy API. See [GDScriptReflection].
+		</member>
+	</members>
+</class>

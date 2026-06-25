@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GDScriptReflection" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Read-only GDScript reflection and dynamic-proxy API, reached through [code]godot.reflection[/code].
+	</brief_description>
+	<description>
+		Provides read-only introspection over GDScript types and the helpers used to build dynamic proxies. It is exposed as the [code]reflection[/code] member of the [code]godot[/code] namespace, so it is called as [code]godot.reflection.method(...)[/code]; you never construct it yourself.
+		A [i]dynamic proxy[/i] is a synthetic object that statically satisfies a trait or abstract type and routes every call in that type's contract through a handler [Callable]. The proxied type must be a trait or abstract type that extends [RefCounted]. The same primitive serves mocking (the handler records calls and returns stubbed values) and Spring-style interception/AOP (the handler logs or times a call and then "proceeds" to a real target).
+		[codeblocks]
+		[gdscript]
+		# Mocking: a handler records calls and returns stubbed values.
+		var stub: Dictionary = {"find": "stubbed"}
+		var repo := create_proxy_dynamic(Repository, func(method: StringName, args: Array):
+		    return stub.get(method, null)
+		) as Repository
+
+		# Interception/AOP: a handler logs a call and proceeds to a real target.
+		var real := UserService.new()
+		var logged := create_proxy_dynamic(UserService, func(method: StringName, args: Array):
+		    print("calling ", method)
+		    return real.callv(method, args)
+		) as UserService
+		[/gdscript]
+		[/codeblocks]
+		Reflection introspection accepts either a script type (a [Script]) or an instance, whose script is used. The descriptors it returns use the same [Dictionary] shapes as [method Object.get_method_list] and [method Object.get_property_list].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="create_delegating_proxy" qualifiers="const">
+			<return type="RefCounted" />
+			<param index="0" name="type" type="Script" />
+			<param index="1" name="target" type="Variant" />
+			<param index="2" name="interceptor" type="Dictionary" />
+			<description>
+				Builds a delegating proxy for the trait or abstract type [param type] in the "intercept some, pass the rest through" style. [param type] must be a trait or abstract type that extends [RefCounted]. Every contract method whose name is a key in [param interceptor] routes to that advice [Callable], invoked as [code]advice.call(method_name, args, target)[/code] so the advice can "proceed" by calling [code]target.callv(method_name, args)[/code]. All other contract methods, and all contract property reads and writes, forward to [param target].
+				[param target] must implement [param type] (that is, [code]target is type[/code] must hold); otherwise [code]null[/code] is returned and an error is printed. The returned object satisfies [code]is type[/code], so it can be assigned to a variable of that type.
+			</description>
+		</method>
+		<method name="get_method_info" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="target" type="Variant" />
+			<param index="1" name="method" type="StringName" />
+			<description>
+				Returns the descriptor for the method named [param method] declared by [param target]'s script or one of its base scripts, in the same shape as the entries of [method Object.get_method_list]. [param target] may be a [Script] type or an instance. Returns an empty [Dictionary] if the method is not declared.
+			</description>
+		</method>
+		<method name="get_methods" qualifiers="const">
+			<return type="Dictionary[]" />
+			<param index="0" name="target" type="Variant" />
+			<description>
+				Returns the descriptors of every method declared by [param target]'s script and its base scripts, in the same shape as [method Object.get_method_list]. [param target] may be a [Script] type or an instance. Returns an empty array if [param target] has no script.
+			</description>
+		</method>
+		<method name="get_properties" qualifiers="const">
+			<return type="Dictionary[]" />
+			<param index="0" name="target" type="Variant" />
+			<description>
+				Returns the descriptors of the variables declared by [param target]'s script and its base scripts, in the same shape as [method Object.get_property_list]. Only declared [code]var[/code]s are returned (category and group headers are omitted). [param target] may be a [Script] type or an instance.
+			</description>
+		</method>
+		<method name="implements_trait" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="target" type="Variant" />
+			<param index="1" name="trait" type="Variant" />
+			<description>
+				Returns [code]true[/code] if [param target] conforms to [param trait]. [param target] may be a [Script] type or an instance; [param trait] may be a trait type (resolved to its identity) or a trait identity name ([String] or [StringName]). A trait conforms to itself and to every trait it uses.
+			</description>
+		</method>
+	</methods>
+</class>
