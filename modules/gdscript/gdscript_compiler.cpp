@@ -1481,7 +1481,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				bool has_setter = false;
 				bool is_in_setter = false;
 				bool is_static = false;
-				int member_type_parameter_index = -1;
+				int member_type_parameter_slot = -1;
 				GDScriptCodeGenerator::Address static_var_class;
 				int static_var_index = 0;
 				GDScriptDataType static_var_data_type;
@@ -1499,7 +1499,9 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 						member.mode = GDScriptCodeGenerator::Address::MEMBER;
 						member.address = minfo.index;
 						member.type = minfo.data_type;
-						member_type_parameter_index = minfo.type_parameter_index;
+						if (minfo.type_argument_binding.kind != GDScript::TypeArgumentBinding::NONE) {
+							member_type_parameter_slot = minfo.index;
+						}
 					} else {
 						// Try static variables.
 						GDScript *scr = codegen.script;
@@ -1567,10 +1569,11 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					}
 					gen->write_set_static_variable(temp, static_var_class, static_var_index);
 					gen->pop_temporary();
-				} else if (member_type_parameter_index >= 0) {
+				} else if (member_type_parameter_slot >= 0) {
 					// Direct store into a `T`-typed member bypasses the setter/`set()` validation, so emit a
-					// store that validates the value against the instance's reified type argument.
-					gen->write_assign_typed_parameter(target, to_assign, member_type_parameter_index);
+					// store that validates the value against the binding the leaf script resolved for this
+					// member slot (fixed by an `extends Base[int]` specialization, or open on the instance).
+					gen->write_assign_typed_parameter(target, to_assign, member_type_parameter_slot);
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -2821,10 +2824,10 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 				GDScriptDataType field_type = _gdtype_from_datatype(field->get_datatype(), codegen.script);
 				GDScriptCodeGenerator::Address dst_address(GDScriptCodeGenerator::Address::MEMBER, field_minfo.index, field_type);
 
-				if (field_minfo.type_parameter_index >= 0) {
+				if (field_minfo.type_argument_binding.kind != GDScript::TypeArgumentBinding::NONE) {
 					// A `T`-typed field initializer stores directly into the erased member slot; validate
-					// it against the instance's reified type argument at runtime.
-					codegen.generator->write_assign_typed_parameter(dst_address, src_address, field_minfo.type_parameter_index);
+					// it against the binding the leaf script resolved for this member slot at runtime.
+					codegen.generator->write_assign_typed_parameter(dst_address, src_address, field_minfo.index);
 				} else if (field->use_conversion_assign) {
 					codegen.generator->write_assign_with_conversion(dst_address, src_address);
 				} else {
@@ -3235,6 +3238,32 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 
 			p_script->base = base;
 			p_script->member_indices = base->member_indices;
+
+			// Re-resolve each inherited type-parameter member's binding through this class's
+			// `extends Base[args]` specialization. A base member still open relative to the base's
+			// parameters is either fixed to a concrete argument (`extends Base[int]` → FIXED) or
+			// forwarded to one of this class's own parameters (`extends Base[T]` → remapped OPEN), so it
+			// reifies against the correct argument rather than blindly indexing the leaf's own.
+			const Vector<GDScriptParser::DataType> &base_specialization = p_class->base_type.type_arguments;
+			for (KeyValue<StringName, GDScript::MemberInfo> &E : p_script->member_indices) {
+				GDScript::TypeArgumentBinding &binding = E.value.type_argument_binding;
+				if (binding.kind != GDScript::TypeArgumentBinding::OPEN) {
+					continue; // FIXED stays fixed; NONE is not a type-parameter member.
+				}
+				const int base_ordinal = binding.leaf_ordinal; // Open relative to the base's parameters.
+				if (base_ordinal < 0 || base_ordinal >= base_specialization.size()) {
+					continue; // Base not specialized at this ordinal (e.g. raw `extends Base`); leave open.
+				}
+				const GDScriptParser::DataType &argument = base_specialization[base_ordinal];
+				if (argument.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
+						argument.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
+					binding.leaf_ordinal = argument.type_parameter_index; // Forwarded to this class's parameter.
+				} else {
+					binding.kind = GDScript::TypeArgumentBinding::FIXED;
+					binding.fixed = _gdtype_from_datatype(argument, p_script, false);
+					binding.leaf_ordinal = -1;
+				}
+			}
 		} break;
 		default: {
 			_set_error("Parser bug (please report): invalid inheritance.", nullptr);
@@ -3319,10 +3348,13 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
 						member_datatype.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
 						member_datatype.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
-					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record which class
-					// type parameter it stands for so writes can validate against the instance's reified
-					// argument at runtime (e.g. rejecting `box.value = "x"` on a `Box[int]`).
-					minfo.type_parameter_index = member_datatype.type_parameter_index;
+					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record that it stands
+					// for one of this class's own type parameters so writes can validate against the
+					// instance's reified argument at runtime (e.g. rejecting `box.value = "x"` on a `Box[int]`).
+					// Open at this declaring level; a subclass that fixes it via `extends` re-resolves the
+					// binding when it inherits the member.
+					minfo.type_argument_binding.kind = GDScript::TypeArgumentBinding::OPEN;
+					minfo.type_argument_binding.leaf_ordinal = member_datatype.type_parameter_index;
 				}
 
 				PropertyInfo prop_info = variable->get_datatype().to_property_info(name);
@@ -3420,6 +3452,15 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	}
 
 	p_script->static_variables.resize(p_script->static_variables_indices.size());
+
+	// Finalize the slot-indexed type-argument bindings (parallel to instance `members`) so a direct
+	// member-store opcode can resolve a `T`-typed member from the leaf script by slot.
+	p_script->member_type_argument_bindings.resize(p_script->member_indices.size());
+	for (const KeyValue<StringName, GDScript::MemberInfo> &E : p_script->member_indices) {
+		if (E.value.index >= 0 && E.value.index < p_script->member_type_argument_bindings.size()) {
+			p_script->member_type_argument_bindings.write[E.value.index] = E.value.type_argument_binding;
+		}
+	}
 
 	parsed_classes.insert(p_script);
 	parsing_classes.erase(p_script);

@@ -1042,11 +1042,11 @@ void GDScriptByteCodeGenerator::write_assign(const Address &p_target, const Addr
 	}
 }
 
-void GDScriptByteCodeGenerator::write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_type_parameter_index) {
+void GDScriptByteCodeGenerator::write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_member_index) {
 	append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_PARAMETER);
 	append(p_target);
 	append(p_source);
-	append(p_type_parameter_index);
+	append(p_member_index);
 }
 
 void GDScriptByteCodeGenerator::write_assign_null(const Address &p_target) {

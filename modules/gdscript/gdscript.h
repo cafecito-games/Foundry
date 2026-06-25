@@ -97,6 +97,24 @@ class GDScript : public Script {
 	bool _is_trait_type = false;
 	StringName trait_type_name;
 
+	// How a class-type-parameter member resolves its reified type argument, precomputed at compile time
+	// by mapping the member's declaring-class parameter down the `extends`/specialization chain to the
+	// leaf class (see docs/superpowers/specs/2026-06-25-reified-type-argument-bindings-design.md).
+	struct TypeArgumentBinding {
+		enum Kind {
+			NONE, // Not a type-parameter member.
+			FIXED, // Bound to a concrete argument by an `extends Base[int]` specialization in the chain.
+			OPEN, // Still open at the leaf; resolved against the instance's reified `type_arguments`.
+		};
+		Kind kind = NONE;
+		// Valid when kind == FIXED. Stored as a GDScriptDataType (not a baked ContainerType) so it follows
+		// the same local-class handling as member `data_type` — a local class is held by raw pointer, not a
+		// strong Ref — avoiding reference cycles (e.g. CRTP `class Node extends Box[Node]`). A temporary
+		// ContainerType is materialized only at validation time.
+		GDScriptDataType fixed;
+		int leaf_ordinal = -1; // Index into the leaf instance's `type_arguments`; valid when kind == OPEN.
+	};
+
 	struct MemberInfo {
 		int index = 0;
 		StringName setter;
@@ -104,9 +122,10 @@ class GDScript : public Script {
 		GDScriptDataType data_type;
 		PropertyInfo property_info;
 		// When this member is typed as a class generic parameter (e.g. `value: T` in `class Box[T]`),
-		// the ordinal position of that parameter, used to resolve the reified argument bound on the
-		// instance and validate writes at runtime. `-1` for ordinary, non-parameter members.
-		int type_parameter_index = -1;
+		// how its reified type argument resolves for instances of the owning (leaf) class. `NONE` for
+		// ordinary, non-parameter members. Re-resolved through the `extends` chain when a subclass
+		// inherits the member, so a base member fixed by `extends Base[int]` validates as `int`.
+		TypeArgumentBinding type_argument_binding;
 	};
 
 public:
@@ -159,6 +178,10 @@ private:
 	// Members are just indices to the instantiated script.
 	HashMap<StringName, MemberInfo> member_indices; // Includes member info of all base GDScript classes.
 	HashSet<StringName> members; // Only members of the current class.
+	// Type-argument bindings indexed by member slot (parallel to instance `members`), so a direct
+	// member-store opcode can resolve a `T`-typed member's reified argument from the leaf script
+	// without a name lookup. Populated after `member_indices` is finalized.
+	Vector<TypeArgumentBinding> member_type_argument_bindings;
 
 	// Only static variables of the current class.
 	HashMap<StringName, MemberInfo> static_variables_indices;

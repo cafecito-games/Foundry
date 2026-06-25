@@ -1532,9 +1532,13 @@ void GDScript::clear() {
 
 	for (KeyValue<StringName, MemberInfo> &E : member_indices) {
 		E.value.data_type.script_type_ref = Ref<Script>();
+		// A FIXED type-argument binding can hold a Ref<Script> to an external specialization argument;
+		// release it to break cross-script reference cycles, mirroring the data_type handling above.
+		E.value.type_argument_binding.fixed.script_type_ref = Ref<Script>();
 	}
 
 	member_indices.clear();
+	member_type_argument_bindings.clear();
 	static_variables.clear();
 	static_variables_indices.clear();
 	script_trait_list.clear();
@@ -1629,13 +1633,24 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 		if (E) {
 			const GDScript::MemberInfo *member = &E->value;
 			Variant value = p_value;
-			if (member->type_parameter_index >= 0) {
-				// The member is typed as a class generic parameter. Its declared type was erased to a
-				// Variant slot, so validate the write against the argument reified onto this instance
-				// (e.g. the `int` in `Box[int]`). Instances created without explicit arguments carry no
-				// bindings, leaving the slot effectively untyped.
-				if (member->type_parameter_index < type_arguments.size()) {
-					ContainerTypeValidate validator(type_arguments[member->type_parameter_index]);
+			if (member->type_argument_binding.kind != GDScript::TypeArgumentBinding::NONE) {
+				// The member is typed as a class generic parameter, erased to a Variant slot. Validate the
+				// write against the argument the binding resolves to: a concrete type fixed by an
+				// `extends Base[int]` specialization in the chain (FIXED), or the argument reified onto this
+				// instance (OPEN). An OPEN member on an instance created without explicit arguments carries
+				// no binding, leaving the slot effectively untyped.
+				bool has_expected_type = false;
+				ContainerType expected_type;
+				if (member->type_argument_binding.kind == GDScript::TypeArgumentBinding::FIXED) {
+					expected_type = member->type_argument_binding.fixed.to_container_type();
+					has_expected_type = true;
+				} else if (member->type_argument_binding.leaf_ordinal >= 0 &&
+						member->type_argument_binding.leaf_ordinal < type_arguments.size()) {
+					expected_type = type_arguments[member->type_argument_binding.leaf_ordinal];
+					has_expected_type = true;
+				}
+				if (has_expected_type) {
+					ContainerTypeValidate validator(expected_type);
 					validator.where = "member";
 					if (!validator.validate(value, "assign")) {
 						return false;
@@ -2330,7 +2345,11 @@ void GDScriptLanguage::finish() {
 			}
 			for (KeyValue<StringName, GDScript::MemberInfo> &E : scr->member_indices) {
 				E.value.data_type.script_type_ref = Ref<Script>();
+				// A FIXED type-argument binding can hold a Ref<Script> to an external specialization
+				// argument; release it here to break cross-script cycles, mirroring data_type above.
+				E.value.type_argument_binding.fixed.script_type_ref = Ref<Script>();
 			}
+			scr->member_type_argument_bindings.clear();
 
 			// Clear backup for scripts that could slip out of the cyclic reference
 			// check
