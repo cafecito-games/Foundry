@@ -3924,14 +3924,22 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_call(ExpressionNode *p_pre
 				}
 				make_completion_context(COMPLETION_ATTRIBUTE_METHOD, call->callee);
 			} else {
-				// `expr[...](...)`: either a generic method application (`name[TypeArgs](...)`,
-				// where the brackets are a use-site type-argument list) or an invalid call on an
-				// index. The parser cannot tell them apart, so it builds the call and lets call
-				// reduction decide and diagnose (mirroring how `Array[int]` is read during
-				// analysis). For an identifier base, record the method name for the analyzer.
+				// `expr[...](...)`: either a generic method application (`name[TypeArgs](...)` or
+				// `receiver.method[TypeArgs](...)`, where the brackets are a use-site type-argument
+				// list) or an invalid call on an index. The parser cannot tell them apart, so it
+				// builds the call and lets call reduction decide and diagnose (mirroring how
+				// `Array[int]` is read during analysis). Record the method name for the analyzer.
 				if (attribute->base != nullptr && attribute->base->type == Node::IDENTIFIER) {
 					call->function_name = static_cast<IdentifierNode *>(attribute->base)->name;
 					make_completion_context(COMPLETION_METHOD, attribute->base);
+				} else if (attribute->base != nullptr && attribute->base->type == Node::SUBSCRIPT) {
+					// `receiver.method[TypeArgs](...)`: the type-argument list is applied to a method
+					// accessed as an attribute on a receiver.
+					SubscriptNode *receiver_access = static_cast<SubscriptNode *>(attribute->base);
+					if (receiver_access->is_attribute && receiver_access->attribute != nullptr) {
+						call->function_name = receiver_access->attribute->name;
+						make_completion_context(COMPLETION_ATTRIBUTE_METHOD, receiver_access);
+					}
 				}
 			}
 		} else {

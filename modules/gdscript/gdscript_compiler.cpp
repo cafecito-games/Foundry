@@ -809,11 +809,52 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 								}
 							}
 						} else if (!call->function_name.is_empty()) {
-							// A validated generic-method application: `name[TypeArgs](...)`. Type arguments
-							// are erased at runtime, so this compiles as an ordinary self call. The analyzer
-							// rejects a genuine call on an index before codegen, so a non-attribute subscript
-							// callee that names a function here is always a generic method on `self`.
-							if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static)) {
+							// A validated generic-method application: `name[TypeArgs](...)` (dispatched on
+							// `self`) or `receiver.method[TypeArgs](...)` (dispatched on the receiver). Type
+							// arguments are erased at runtime, so this compiles as an ordinary call. The
+							// analyzer rejects a genuine call on an index before codegen.
+							const GDScriptParser::SubscriptNode *receiver_access = nullptr;
+							if (subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SUBSCRIPT) {
+								const GDScriptParser::SubscriptNode *candidate = static_cast<const GDScriptParser::SubscriptNode *>(subscript->base);
+								if (candidate->is_attribute) {
+									receiver_access = candidate;
+								}
+							}
+							if (receiver_access != nullptr) {
+								// Dispatch on the receiver, mirroring an ordinary `receiver.method(...)` call.
+								GDScriptCodeGenerator::Address base = _parse_expression(codegen, r_error, receiver_access->base);
+								if (r_error) {
+									return GDScriptCodeGenerator::Address();
+								}
+								if (is_awaited) {
+									gen->write_call_async(result, base, call->function_name, arguments);
+								} else if (base.type.kind != GDScriptDataType::VARIANT && base.type.kind != GDScriptDataType::BUILTIN) {
+									// Native method, use faster path.
+									StringName class_name;
+									if (base.type.kind == GDScriptDataType::NATIVE) {
+										class_name = base.type.native_type;
+									} else {
+										class_name = base.type.native_type == StringName() ? base.type.script_type->get_instance_base_type() : base.type.native_type;
+									}
+									if (GDScriptAnalyzer::class_exists(class_name) && ClassDB::has_method(class_name, call->function_name)) {
+										MethodBind *method = ClassDB::get_method(class_name, call->function_name);
+										if (_can_use_validate_call(method, arguments)) {
+											gen->write_call_method_bind_validated(result, base, method, arguments);
+										} else {
+											gen->write_call_method_bind(result, base, method, arguments);
+										}
+									} else {
+										gen->write_call(result, base, call->function_name, arguments);
+									}
+								} else if (base.type.kind == GDScriptDataType::BUILTIN) {
+									gen->write_call_builtin_type(result, base, base.type.builtin_type, call->function_name, arguments);
+								} else {
+									gen->write_call(result, base, call->function_name, arguments);
+								}
+								if (base.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+									gen->pop_temporary();
+								}
+							} else if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static)) {
 								GDScriptCodeGenerator::Address self;
 								self.mode = GDScriptCodeGenerator::Address::CLASS;
 								if (is_awaited) {
