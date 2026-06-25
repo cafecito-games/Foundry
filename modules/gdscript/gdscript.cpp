@@ -1628,7 +1628,19 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 		if (E) {
 			const GDScript::MemberInfo *member = &E->value;
 			Variant value = p_value;
-			if (!member->data_type.is_type(value)) {
+			if (member->type_parameter_index >= 0) {
+				// The member is typed as a class generic parameter. Its declared type was erased to a
+				// Variant slot, so validate the write against the argument reified onto this instance
+				// (e.g. the `int` in `Box[int]`). Instances created without explicit arguments carry no
+				// bindings, leaving the slot effectively untyped.
+				if (member->type_parameter_index < type_arguments.size()) {
+					ContainerTypeValidate validator(type_arguments[member->type_parameter_index]);
+					validator.where = "member";
+					if (!validator.validate(value, "assign")) {
+						return false;
+					}
+				}
+			} else if (!member->data_type.is_type(value)) {
 				const Variant *args = &p_value;
 				Callable::CallError err;
 				Variant::construct(member->data_type.builtin_type, value, &args, 1, err);

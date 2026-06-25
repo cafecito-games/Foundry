@@ -173,6 +173,64 @@ TEST_CASE("[Modules][GDScript][Generics] Specialized construction binds reified 
 	}
 }
 
+TEST_CASE("[Modules][GDScript][Generics] Reified member writes validate against the bound argument") {
+	ScopedGenericRuntimeLanguage language;
+
+	const char *source =
+			"class Box[T]:\n"
+			"\tvar value: T\n"
+			"\tfunc _init(initial = null):\n"
+			"\t\tvalue = initial\n";
+
+	Ref<GDScript> script = compile_generic_runtime_source(source);
+	Ref<GDScript> box = get_generic_subclass(script, "Box");
+	REQUIRE(box.is_valid());
+
+	ContainerType int_type;
+	int_type.builtin_type = Variant::INT;
+	Vector<ContainerType> type_arguments;
+	type_arguments.push_back(int_type);
+
+	Variant initial = 1;
+	const Variant *args[1] = { &initial };
+	Callable::CallError error;
+	Variant box_instance = box->_new_specialized(args, 1, type_arguments, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+
+	GDScriptInstance *instance = gdscript_instance_of(box_instance);
+	REQUIRE(instance != nullptr);
+
+	Variant stored;
+
+	// A value of the reified type is accepted.
+	CHECK(instance->set(SNAME("value"), Variant(42)));
+	REQUIRE(instance->get(SNAME("value"), stored));
+	CHECK(stored == Variant(42));
+
+	// A convertible value is coerced to the bound type.
+	CHECK(instance->set(SNAME("value"), Variant(7.0)));
+	REQUIRE(instance->get(SNAME("value"), stored));
+	CHECK(stored == Variant(7));
+
+	// A value that cannot be the bound type is rejected and leaves the slot unchanged.
+	ERR_PRINT_OFF;
+	CHECK_FALSE(instance->set(SNAME("value"), Variant("not an int")));
+	ERR_PRINT_ON;
+	REQUIRE(instance->get(SNAME("value"), stored));
+	CHECK(stored == Variant(7));
+
+	// Without reified arguments the slot stays untyped and accepts anything.
+	Callable::CallError plain_error;
+	Variant plain_instance_value = box->_new(nullptr, -1, plain_error);
+	REQUIRE(plain_error.error == Callable::CallError::CALL_OK);
+	GDScriptInstance *plain_instance = gdscript_instance_of(plain_instance_value);
+	REQUIRE(plain_instance != nullptr);
+	REQUIRE(plain_instance->get_type_arguments().is_empty());
+	CHECK(plain_instance->set(SNAME("value"), Variant("anything")));
+	REQUIRE(plain_instance->get(SNAME("value"), stored));
+	CHECK(stored == Variant("anything"));
+}
+
 TEST_CASE("[Modules][GDScript][Generics] ContainerType carries and serializes type arguments") {
 	// A specialized script handle described as a ContainerType round-trips through the public
 	// descriptor format, type arguments included.
