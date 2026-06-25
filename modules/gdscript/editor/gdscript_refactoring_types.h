@@ -35,12 +35,35 @@
 #include "../gdscript_parser.h"
 
 #include "core/string/ustring.h"
+#include "core/templates/hash_set.h"
+#include "core/templates/vector.h"
 
 namespace GDScriptRefactorTypes {
+
+// The namespace scope an annotation is being inserted into, used to pick the
+// minimal class spelling that resolves at the insertion site. Empty namespace
+// plus empty imports describes a global (non-namespaced) file, where every
+// global class is in scope by its bare name.
+struct AnnotationScope {
+	String current_namespace; // The file's `namespace` declaration; empty for the global namespace.
+	Vector<String> imported_namespaces; // The file's `import` declarations.
+};
 
 // Renders p_type to its GDScript source spelling when it is worth annotating.
 // Returns false for Variant / non-hard / empty types, leaving r_rendered unset.
 bool render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_rendered);
+
+// Namespace-aware rendering: chooses the minimal class spelling that resolves at
+// the insertion site described by p_scope, and reports every namespace that must
+// be imported for the spelling to resolve. A global class is rendered bare when
+// it is already in scope (same namespace or already imported) and qualified
+// (`namespace.ClassName`) otherwise, collecting its namespace into
+// r_required_imports. Container element types and type arguments are rendered the
+// same way, so a nested cross-namespace class also contributes its import.
+// Behaves identically to render_annotatable_type for global (non-namespaced)
+// classes, leaving r_required_imports empty. Returns false in the same cases as
+// render_annotatable_type.
+bool render_annotatable_type_in_scope(const GDScriptParser::DataType &p_type, const AnnotationScope &p_scope, String &r_rendered, HashSet<String> &r_required_imports);
 
 } // namespace GDScriptRefactorTypes
 

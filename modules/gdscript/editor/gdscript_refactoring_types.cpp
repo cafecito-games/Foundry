@@ -32,7 +32,11 @@
 
 #ifdef TOOLS_ENABLED
 
-bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_rendered) {
+#include "core/object/script_language.h"
+
+namespace {
+
+bool is_renderable_type(const GDScriptParser::DataType &p_type) {
 	if (!p_type.is_set() || p_type.is_variant()) {
 		return false;
 	}
@@ -42,13 +46,159 @@ bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataTy
 	if (p_type.is_meta_type || p_type.is_pseudo_type) {
 		return false;
 	}
-	String rendered = p_type.to_string();
+	return true;
+}
+
+bool is_usable_spelling(const String &p_rendered) {
 	// A concrete, non-Variant type can still stringify to empty or placeholder
 	// text (e.g. an invalid script reference), which is not a usable annotation.
-	if (rendered.is_empty() || rendered == "null" || rendered.contains("<unresolved type>")) {
+	return !p_rendered.is_empty() && p_rendered != "null" && !p_rendered.contains("<unresolved type>");
+}
+
+// Returns the namespace and bare class name of a CLASS/SCRIPT type that refers to
+// a namespaced global class, or false when the type is not a namespaced global
+// class (a builtin, a local/inner class, or a class in the global namespace).
+bool get_global_class_namespace(const GDScriptParser::DataType &p_type, String &r_namespace, String &r_class_name) {
+	if (p_type.kind == GDScriptParser::DataType::CLASS) {
+		const GDScriptParser::ClassNode *class_node = p_type.class_type;
+		if (class_node == nullptr || class_node->outer != nullptr) {
+			// Inner classes are not global; only a root class carries a namespace.
+			return false;
+		}
+		if (class_node->namespace_name.is_empty() || class_node->identifier == nullptr) {
+			return false;
+		}
+		r_namespace = class_node->namespace_name;
+		r_class_name = class_node->identifier->name;
+		return true;
+	}
+	if (p_type.kind == GDScriptParser::DataType::SCRIPT) {
+		if (p_type.script_type.is_null()) {
+			return false;
+		}
+		const StringName global_name = p_type.script_type->get_global_name();
+		if (global_name == StringName()) {
+			return false;
+		}
+		StringName class_name;
+		String namespace_name;
+		ScriptServer::get_global_class_name_parts(global_name, &class_name, &namespace_name);
+		if (namespace_name.is_empty()) {
+			return false;
+		}
+		r_namespace = namespace_name;
+		r_class_name = class_name;
+		return true;
+	}
+	return false;
+}
+
+bool namespace_in_scope(const String &p_namespace, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
+	if (p_namespace == p_scope.current_namespace) {
+		return true;
+	}
+	for (const String &imported : p_scope.imported_namespaces) {
+		if (imported == p_namespace) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Mirrors DataType::to_string() for the container/type-argument structure, but
+// renders each CLASS/SCRIPT leaf with the minimal in-scope spelling and records
+// the namespaces that must be imported for the spelling to resolve.
+bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefactorTypes::AnnotationScope &p_scope, String &r_rendered, HashSet<String> &r_required_imports) {
+	String target_namespace;
+	String class_name;
+	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
+		String spelling = class_name;
+		if (!namespace_in_scope(target_namespace, p_scope)) {
+			spelling = target_namespace + "." + class_name;
+			r_required_imports.insert(target_namespace);
+		}
+		// Specialized type arguments on a namespaced class still need scoping.
+		if (!p_type.type_arguments.is_empty()) {
+			String arguments;
+			for (int i = 0; i < p_type.type_arguments.size(); i++) {
+				if (i > 0) {
+					arguments += ", ";
+				}
+				String argument_rendered;
+				if (!render_scoped(p_type.type_arguments[i], p_scope, argument_rendered, r_required_imports)) {
+					return false;
+				}
+				arguments += argument_rendered;
+			}
+			spelling += vformat("[%s]", arguments);
+		}
+		if (p_type.is_nullable) {
+			spelling += "?";
+		}
+		r_rendered = spelling;
+		return true;
+	}
+
+	// Recurse into container element types so a cross-namespace class nested in an
+	// Array/Dictionary still contributes its import and qualified spelling.
+	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
+		if (p_type.builtin_type == Variant::ARRAY && p_type.has_container_element_type(0)) {
+			String element_rendered;
+			if (!render_scoped(p_type.get_container_element_type(0), p_scope, element_rendered, r_required_imports)) {
+				return false;
+			}
+			r_rendered = vformat("Array[%s]", element_rendered);
+			return true;
+		}
+		if (p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
+			String key_rendered;
+			String value_rendered;
+			if (!render_scoped(p_type.get_container_element_type_or_variant(0), p_scope, key_rendered, r_required_imports) ||
+					!render_scoped(p_type.get_container_element_type_or_variant(1), p_scope, value_rendered, r_required_imports)) {
+				return false;
+			}
+			r_rendered = vformat("Dictionary[%s, %s]", key_rendered, value_rendered);
+			return true;
+		}
+	}
+
+	// Non-namespaced leaf: defer to the engine's own spelling.
+	const String rendered = p_type.to_string();
+	if (!is_usable_spelling(rendered)) {
 		return false;
 	}
 	r_rendered = rendered;
+	return true;
+}
+
+} // namespace
+
+bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_rendered) {
+	if (!is_renderable_type(p_type)) {
+		return false;
+	}
+	const String rendered = p_type.to_string();
+	if (!is_usable_spelling(rendered)) {
+		return false;
+	}
+	r_rendered = rendered;
+	return true;
+}
+
+bool GDScriptRefactorTypes::render_annotatable_type_in_scope(const GDScriptParser::DataType &p_type, const AnnotationScope &p_scope, String &r_rendered, HashSet<String> &r_required_imports) {
+	if (!is_renderable_type(p_type)) {
+		return false;
+	}
+	String rendered;
+	HashSet<String> required_imports;
+	if (!render_scoped(p_type, p_scope, rendered, required_imports)) {
+		return false;
+	}
+	if (!is_usable_spelling(rendered)) {
+		return false;
+	}
+	r_rendered = rendered;
+	r_required_imports = required_imports;
 	return true;
 }
 

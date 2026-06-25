@@ -924,6 +924,100 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Namespace-aware type annotation rendering") {
+		// A root class node standing in for a namespaced global class
+		// `characters.BaseCharacter`.
+		GDScriptParser::IdentifierNode class_identifier;
+		class_identifier.name = "BaseCharacter";
+		GDScriptParser::ClassNode class_node;
+		class_node.identifier = &class_identifier;
+		class_node.namespace_name = "characters";
+		class_node.qualified_global_name = "characters.BaseCharacter";
+
+		GDScriptParser::DataType class_type;
+		class_type.kind = GDScriptParser::DataType::CLASS;
+		class_type.type_source = GDScriptParser::DataType::INFERRED;
+		class_type.class_type = &class_node;
+
+		SUBCASE("builtin in any scope renders bare with no imports") {
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::INT;
+			dt.type_source = GDScriptParser::DataType::INFERRED;
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(dt, scope, rendered, imports));
+			CHECK_EQ(rendered, "int");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("same-namespace class renders bare with no import") {
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "characters";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "BaseCharacter");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("already-imported cross-namespace class renders bare with no import") {
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			scope.imported_namespaces.push_back("characters");
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "BaseCharacter");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("unimported cross-namespace class renders qualified and requires the import") {
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "characters.BaseCharacter");
+			REQUIRE_EQ(imports.size(), 1);
+			CHECK(imports.has("characters"));
+		}
+		SUBCASE("global-namespace project renders bare exactly as today") {
+			// No `namespace`/`import` context: a global file leaves rendering and
+			// imports unchanged.
+			GDScriptParser::IdentifierNode global_identifier;
+			global_identifier.name = "GlobalClass";
+			GDScriptParser::ClassNode global_node;
+			global_node.identifier = &global_identifier;
+			GDScriptParser::DataType global_type;
+			global_type.kind = GDScriptParser::DataType::CLASS;
+			global_type.type_source = GDScriptParser::DataType::INFERRED;
+			global_type.class_type = &global_node;
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(global_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "GlobalClass");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("array of an unimported cross-namespace class qualifies the element and requires the import") {
+			GDScriptParser::DataType array_type;
+			array_type.kind = GDScriptParser::DataType::BUILTIN;
+			array_type.builtin_type = Variant::ARRAY;
+			array_type.type_source = GDScriptParser::DataType::INFERRED;
+			array_type.set_container_element_type(0, class_type);
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(array_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Array[characters.BaseCharacter]");
+			REQUIRE_EQ(imports.size(), 1);
+			CHECK(imports.has("characters"));
+		}
+	}
+
 	TEST_CASE("Add type annotation inserts concrete inferred types") {
 		SUBCASE("variable") {
 			const String source = "var score = 1\n";
@@ -3908,6 +4002,66 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		String out;
 		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
 		CHECK(out.contains("func take_damage(amount: int = 1) -> void:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Add type annotation renders namespaced classes with the minimal in-scope spelling") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+		LSPGlobalScriptClassBackup global_class_backup;
+		const StringName language = GDScriptLanguage::get_singleton()->get_name();
+		ScriptServer::add_global_class("refactor.characters.RefactorNsBaseCharacter", "Node", language,
+				"res://refactor/namespace_annotation_base.gd", false, false, false);
+
+		// Returns the applied source for the lone local-variable annotation candidate
+		// in the file (the `var character := ...` site).
+		auto annotate_local = [](const String &p_path, String &r_out) -> bool {
+			GDScriptTests::assert_no_errors_in(p_path);
+			RefactorContext ctx;
+			ctx.path = p_path;
+			ctx.source = FileAccess::get_file_as_string(p_path);
+			const RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			if (!result.ok) {
+				return false;
+			}
+			for (const RefactorCandidate &candidate : result.candidates) {
+				if (candidate.enabled && candidate.declaration_kind == "variable") {
+					return GDScriptRefactorEdits::apply(ctx.source, candidate.edits, r_out);
+				}
+			}
+			return false;
+		};
+
+		SUBCASE("same-namespace reference renders bare without an import") {
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_same.gd", out));
+			CHECK(out.contains("var character: RefactorNsBaseCharacter = RefactorNsBaseCharacter.new()"));
+			CHECK_FALSE(out.contains("import refactor.characters"));
+		}
+		SUBCASE("already-imported cross-namespace reference renders bare without a new import") {
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_imported.gd", out));
+			CHECK(out.contains("var character: RefactorNsBaseCharacter = RefactorNsBaseCharacter.new()"));
+			// The single existing import is preserved; no duplicate is inserted.
+			CHECK_EQ(out.count("import refactor.characters"), 1);
+		}
+		SUBCASE("unimported cross-namespace reference renders qualified and inserts the import") {
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_unimported.gd", out));
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			CHECK(out.contains("import refactor.characters"));
+			// The new import lands after the namespace line and before the body.
+			const int import_pos = out.find("import refactor.characters");
+			const int namespace_pos = out.find("namespace refactor.gameplay");
+			const int func_pos = out.find("func make");
+			CHECK(namespace_pos >= 0);
+			CHECK(import_pos > namespace_pos);
+			CHECK(import_pos < func_pos);
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

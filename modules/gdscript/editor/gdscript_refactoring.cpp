@@ -70,6 +70,11 @@ struct TypeAnnotationCandidate {
 	// can bucket sites by kind.
 	String kind;
 	RefactorTextEdit edit;
+	// A namespaced annotation may need an `import` declaration so the qualified or
+	// in-scope spelling resolves. When set, this edit inserts the required
+	// `import` line(s) at the top of the file and applies alongside `edit`.
+	bool has_import_edit = false;
+	RefactorTextEdit import_edit;
 	// Caret-test span of the declaration this candidate was found at. Used by the
 	// caret-driven path to select the candidate under the caret; the headless
 	// collector ignores it. The span opens at (line, caret_span_start). It closes
@@ -81,6 +86,84 @@ struct TypeAnnotationCandidate {
 	int caret_span_end = -1;
 	int caret_span_end_line = -1;
 };
+
+// Namespace context for rendering type annotations in a file that declares a
+// `namespace` and/or `import`s. Carries the scope used to pick the minimal class
+// spelling, the file's already-imported namespaces (so a required import is only
+// added once), and the line at which a new `import` declaration is inserted.
+// A null context (or a file in the global namespace with no imports) renders
+// annotations exactly as before, with no import edits.
+struct TypeAnnotationRenderContext {
+	GDScriptRefactorTypes::AnnotationScope scope;
+	int import_insert_line = 0; // 0-based line where a new `import` line is inserted.
+};
+
+// Computes the line after which a new `import` declaration can be inserted so it
+// lands after any `namespace`/`import` lines but before `class_name`/`extends`
+// and the class body. Returns a 0-based line index; the import is inserted at the
+// start of that line.
+int find_import_insertion_line(const Vector<String> &p_lines) {
+	int insertion_line = 0;
+	for (int i = 0; i < p_lines.size(); i++) {
+		const String stripped = p_lines[i].strip_edges();
+		if (stripped.is_empty() || stripped.begins_with("#")) {
+			continue;
+		}
+		if (stripped == "@tool" || stripped.begins_with("@")) {
+			// A leading annotation (e.g. @tool) precedes namespace/import; keep the
+			// insertion point after it.
+			insertion_line = i + 1;
+			continue;
+		}
+		if (stripped.begins_with("namespace ") || stripped.begins_with("import ")) {
+			insertion_line = i + 1;
+			continue;
+		}
+		// First class_name/extends/body line: imports must go before it.
+		break;
+	}
+	return insertion_line;
+}
+
+// Builds the namespace render context for the root class of the edited file.
+TypeAnnotationRenderContext make_type_annotation_render_context(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_root) {
+	TypeAnnotationRenderContext context;
+	if (p_root != nullptr) {
+		context.scope.current_namespace = p_root->namespace_name;
+		context.scope.imported_namespaces = p_root->imports;
+	}
+	context.import_insert_line = find_import_insertion_line(p_lines);
+	return context;
+}
+
+// Turns the set of namespaces an annotation needs into a single import edit that
+// inserts one `import <namespace>` line per namespace at the file's import
+// insertion point. Namespaces already imported by the file are skipped. Returns
+// false when nothing needs importing.
+bool build_import_edit(const TypeAnnotationRenderContext &p_context, const HashSet<String> &p_required_imports, RefactorTextEdit &r_edit) {
+	Vector<String> to_add;
+	for (const String &required : p_required_imports) {
+		if (p_context.scope.imported_namespaces.has(required)) {
+			continue;
+		}
+		to_add.push_back(required);
+	}
+	if (to_add.is_empty()) {
+		return false;
+	}
+	// Deterministic order keeps the inserted imports stable across runs.
+	to_add.sort();
+	String inserted;
+	for (const String &namespace_name : to_add) {
+		inserted += "import " + namespace_name + "\n";
+	}
+	r_edit.start_line = p_context.import_insert_line;
+	r_edit.start_column = 0;
+	r_edit.end_line = p_context.import_insert_line;
+	r_edit.end_column = 0;
+	r_edit.new_text = inserted;
+	return true;
+}
 
 struct ExtractVariableCandidate {
 	bool matched = false;
@@ -595,10 +678,29 @@ int find_dynamic_string_reference_column(const String &p_line, const String &p_i
 	return -1;
 }
 
-bool render_annotation_or_disable(const GDScriptParser::DataType &p_type, TypeAnnotationCandidate &r_candidate, String &r_rendered) {
-	if (!GDScriptRefactorTypes::render_annotatable_type(p_type, r_rendered)) {
+bool render_annotation_or_disable(const GDScriptParser::DataType &p_type, TypeAnnotationCandidate &r_candidate, String &r_rendered, const TypeAnnotationRenderContext *p_render_context = nullptr) {
+	if (p_render_context == nullptr) {
+		if (!GDScriptRefactorTypes::render_annotatable_type(p_type, r_rendered)) {
+			r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
+			return false;
+		}
+		return true;
+	}
+
+	// Namespace-aware rendering: a cross-namespace class is spelled qualified and
+	// carries the `import` it needs, so the annotation resolves at the insertion
+	// site rather than being dropped by the verification harness.
+	HashSet<String> required_imports;
+	if (!GDScriptRefactorTypes::render_annotatable_type_in_scope(p_type, p_render_context->scope, r_rendered, required_imports)) {
 		r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
 		return false;
+	}
+	if (!required_imports.is_empty()) {
+		RefactorTextEdit import_edit;
+		if (build_import_edit(*p_render_context, required_imports, import_edit)) {
+			r_candidate.import_edit = import_edit;
+			r_candidate.has_import_edit = true;
+		}
 	}
 	return true;
 }
@@ -1128,7 +1230,7 @@ bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignme
 			is_self_attribute(p_assignment->assignee);
 }
 
-bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr) {
+bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr) {
 	if (p_assignable == nullptr || p_assignable->identifier == nullptr) {
 		return false;
 	}
@@ -1223,7 +1325,7 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	}
 
 	String rendered_type;
-	if (!render_annotation_or_disable(effective_type, r_candidate, rendered_type)) {
+	if (!render_annotation_or_disable(effective_type, r_candidate, rendered_type, p_render_context)) {
 		return true;
 	}
 
@@ -1271,7 +1373,7 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	return true;
 }
 
-bool find_function_return_type_annotation(const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, TypeAnnotationCandidate &r_candidate) {
+bool find_function_return_type_annotation(const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, TypeAnnotationCandidate &r_candidate, const TypeAnnotationRenderContext *p_render_context = nullptr) {
 	if (p_function == nullptr || p_function->identifier == nullptr) {
 		return false;
 	}
@@ -1323,7 +1425,7 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	}
 
 	String rendered_type;
-	if (!render_annotation_or_disable(p_function->get_datatype(), r_candidate, rendered_type)) {
+	if (!render_annotation_or_disable(p_function->get_datatype(), r_candidate, rendered_type, p_render_context)) {
 		return true;
 	}
 
@@ -1341,6 +1443,10 @@ struct CallsiteParameterTypeState {
 	bool has_call = false;
 	bool failed = false;
 	String rendered_type;
+	// The DataType backing rendered_type, kept so the parameter annotation can be
+	// re-rendered namespace-aware (qualified + import) at the target file's scope.
+	GDScriptParser::DataType datatype;
+	bool has_datatype = false;
 };
 
 const GDScriptParser::IdentifierNode *get_call_identifier(const GDScriptParser::CallNode *p_call) {
@@ -1449,14 +1555,17 @@ void collect_callsite_parameter_type_from_call(
 		return;
 	}
 
+	const GDScriptParser::DataType argument_type = p_call->arguments[p_parameter_index]->get_datatype();
 	String rendered_type;
-	if (!GDScriptRefactorTypes::render_annotatable_type(p_call->arguments[p_parameter_index]->get_datatype(), rendered_type)) {
+	if (!GDScriptRefactorTypes::render_annotatable_type(argument_type, rendered_type)) {
 		r_state.failed = true;
 		return;
 	}
 
 	if (r_state.rendered_type.is_empty()) {
 		r_state.rendered_type = rendered_type;
+		r_state.datatype = argument_type;
+		r_state.has_datatype = true;
 	} else if (r_state.rendered_type != rendered_type) {
 		r_state.failed = true;
 	}
@@ -1696,7 +1805,9 @@ bool infer_parameter_type_from_call_sites(
 		const Ref<GDScriptWorkspace> &p_workspace,
 		const ExtendGDScriptParser *p_target_parser,
 		const GDScriptParseResultProvider *p_parse_results,
-		String &r_rendered_type) {
+		String &r_rendered_type,
+		GDScriptParser::DataType &r_datatype,
+		bool &r_has_datatype) {
 	ERR_FAIL_COND_V(p_workspace.is_null(), false);
 	ERR_FAIL_NULL_V(p_class, false);
 	ERR_FAIL_NULL_V(p_function, false);
@@ -1754,6 +1865,8 @@ bool infer_parameter_type_from_call_sites(
 	}
 
 	r_rendered_type = state.rendered_type;
+	r_datatype = state.datatype;
+	r_has_datatype = state.has_datatype;
 	return true;
 }
 
@@ -1765,7 +1878,8 @@ void apply_callsite_parameter_type_annotation(
 		const Ref<GDScriptWorkspace> &p_workspace,
 		const ExtendGDScriptParser *p_target_parser,
 		const GDScriptParseResultProvider *p_parse_results,
-		TypeAnnotationCandidate &r_candidate) {
+		TypeAnnotationCandidate &r_candidate,
+		const TypeAnnotationRenderContext *p_render_context) {
 	if (!r_candidate.matched || r_candidate.enabled || p_parameter == nullptr ||
 			p_parameter->datatype_specifier != nullptr || p_parameter->initializer != nullptr) {
 		return;
@@ -1775,9 +1889,26 @@ void apply_callsite_parameter_type_annotation(
 	}
 
 	String rendered_type;
-	if (!infer_parameter_type_from_call_sites(p_class, p_function, p_parameter_index, p_workspace, p_target_parser, p_parse_results, rendered_type)) {
+	GDScriptParser::DataType inferred_type;
+	bool has_inferred_type = false;
+	if (!infer_parameter_type_from_call_sites(p_class, p_function, p_parameter_index, p_workspace, p_target_parser, p_parse_results, rendered_type, inferred_type, has_inferred_type)) {
 		r_candidate.disabled_reason = "Cannot infer a type for this parameter from resolved call sites.";
 		return;
+	}
+
+	// Render namespace-aware so a cross-namespace parameter type is qualified and
+	// carries the `import` it needs, matching the other annotation sites.
+	if (p_render_context != nullptr && has_inferred_type) {
+		String scoped_rendered;
+		HashSet<String> required_imports;
+		if (GDScriptRefactorTypes::render_annotatable_type_in_scope(inferred_type, p_render_context->scope, scoped_rendered, required_imports)) {
+			rendered_type = scoped_rendered;
+			RefactorTextEdit import_edit;
+			if (!required_imports.is_empty() && build_import_edit(*p_render_context, required_imports, import_edit)) {
+				r_candidate.import_edit = import_edit;
+				r_candidate.has_import_edit = true;
+			}
+		}
 	}
 
 	r_candidate.edit.start_line = r_candidate.line;
@@ -4678,7 +4809,7 @@ void cache_inline_variable_candidate(const RefactorContext &p_context, const Ref
 	inline_variable_cache.candidate = p_candidate;
 }
 
-void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr);
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr);
 
 bool get_cached_implement_abstract_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, ImplementAbstractCandidate &r_candidate) {
 	MutexLock lock(refactor_candidate_cache_mutex);
@@ -4728,9 +4859,9 @@ void cache_style_order_candidate(const RefactorContext &p_context, const StyleOr
 	style_order_cache.candidate = p_candidate;
 }
 
-void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr) {
+void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr) {
 	TypeAnnotationCandidate candidate;
-	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body, p_member_class) && candidate.matched) {
+	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body, p_member_class, p_render_context) && candidate.matched) {
 		r_candidates.push_back(candidate);
 	}
 }
@@ -4740,7 +4871,8 @@ void collect_type_annotation_in_function(
 		const GDScriptParser::ClassNode *p_class,
 		const GDScriptParser::FunctionNode *p_function,
 		const RefactorLocation *p_location,
-		Vector<TypeAnnotationCandidate> &r_candidates
+		Vector<TypeAnnotationCandidate> &r_candidates,
+		const TypeAnnotationRenderContext *p_render_context
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace,
@@ -4754,10 +4886,10 @@ void collect_type_annotation_in_function(
 	for (int i = 0; i < p_function->parameters.size(); i++) {
 		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
 		TypeAnnotationCandidate candidate;
-		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate) && candidate.matched) {
+		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate, nullptr, nullptr, p_render_context) && candidate.matched) {
 #ifndef GDSCRIPT_NO_LSP
 			if (p_location == nullptr || caret_on_segment(*p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
-				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate);
+				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate, p_render_context);
 			}
 #endif // GDSCRIPT_NO_LSP
 			r_candidates.push_back(candidate);
@@ -4766,13 +4898,13 @@ void collect_type_annotation_in_function(
 	if (p_function->rest_parameter != nullptr) {
 		// A vararg tail does not map cleanly to one call-site argument index, so
 		// keep rest parameters on the existing declaration-local inference path.
-		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates);
+		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates, nullptr, nullptr, p_render_context);
 	}
 	TypeAnnotationCandidate return_candidate;
-	if (find_function_return_type_annotation(p_lines, p_function, return_candidate) && return_candidate.matched) {
+	if (find_function_return_type_annotation(p_lines, p_function, return_candidate, p_render_context) && return_candidate.matched) {
 		r_candidates.push_back(return_candidate);
 	}
-	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body);
+	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body, p_render_context);
 }
 
 void collect_type_annotation_in_class(
@@ -4780,7 +4912,8 @@ void collect_type_annotation_in_class(
 		const GDScriptParser::ClassNode *p_class,
 		const RefactorLocation *p_location,
 		Vector<TypeAnnotationCandidate> &r_candidates,
-		bool p_allow_member_inference
+		bool p_allow_member_inference,
+		const TypeAnnotationRenderContext *p_render_context
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace,
@@ -4794,17 +4927,17 @@ void collect_type_annotation_in_class(
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::CONSTANT:
-				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates);
+				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates, nullptr, nullptr, p_render_context);
 				break;
 			case GDScriptParser::ClassNode::Member::VARIABLE:
 				// Member container element inference is open-world-unsound on its own, so
 				// it is enabled only for the verified migration path; otherwise members
 				// keep the analyzer's bare container type.
 				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates, nullptr,
-						p_allow_member_inference ? p_class : nullptr);
+						p_allow_member_inference ? p_class : nullptr, p_render_context);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
-				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates
+				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates, p_render_context
 #ifndef GDSCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
@@ -4812,7 +4945,7 @@ void collect_type_annotation_in_class(
 				);
 				break;
 			case GDScriptParser::ClassNode::Member::CLASS:
-				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference
+				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference, p_render_context
 #ifndef GDSCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
@@ -4825,7 +4958,7 @@ void collect_type_annotation_in_class(
 	}
 }
 
-void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body) {
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body, const TypeAnnotationRenderContext *p_render_context) {
 	if (p_suite == nullptr) {
 		return;
 	}
@@ -4835,29 +4968,29 @@ void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScr
 		}
 		switch (statement->type) {
 			case GDScriptParser::Node::VARIABLE:
-				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates, p_function_body);
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates, p_function_body, nullptr, p_render_context);
 				break;
 			case GDScriptParser::Node::CONSTANT:
-				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates);
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates, nullptr, nullptr, p_render_context);
 				break;
 			case GDScriptParser::Node::IF: {
 				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates, p_function_body);
-				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates, p_function_body);
+				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates, p_function_body, p_render_context);
+				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates, p_function_body, p_render_context);
 			} break;
 			case GDScriptParser::Node::FOR: {
 				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates, p_function_body);
+				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates, p_function_body, p_render_context);
 			} break;
 			case GDScriptParser::Node::WHILE: {
 				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates, p_function_body);
+				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates, p_function_body, p_render_context);
 			} break;
 			case GDScriptParser::Node::MATCH: {
 				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
 				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
 					if (branch != nullptr) {
-						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates, p_function_body);
+						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates, p_function_body, p_render_context);
 					}
 				}
 			} break;
@@ -4871,7 +5004,8 @@ Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_tree,
 		const RefactorLocation *p_location = nullptr,
-		bool p_allow_member_inference = false
+		bool p_allow_member_inference = false,
+		const TypeAnnotationRenderContext *p_render_context = nullptr
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace = Ref<GDScriptWorkspace>(),
@@ -4880,7 +5014,7 @@ Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
 #endif // GDSCRIPT_NO_LSP
 ) {
 	Vector<TypeAnnotationCandidate> candidates;
-	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates, p_allow_member_inference
+	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates, p_allow_member_inference, p_render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
@@ -4902,7 +5036,8 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
 ) {
 	// The interactive caret-located refactor applies edits directly without the
 	// verification harness, so member container inference is left disabled here.
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location, /* allow_member_inference */ false
+	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(p_lines, p_tree);
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location, /* allow_member_inference */ false, &render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
@@ -5968,6 +6103,11 @@ RefactorResult prepare_type_annotation(
 	}
 
 	result.ok = true;
+	// Insert the import before the annotation so a top-to-bottom applier adds the
+	// `import` line without shifting the annotation's columns.
+	if (candidate.has_import_edit) {
+		result.edits.push_back(candidate.import_edit);
+	}
 	result.edits.push_back(candidate.edit);
 	return result;
 }
@@ -6016,7 +6156,8 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 	}
 #endif // GDSCRIPT_NO_LSP
 
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr, p_context.allow_member_container_inference
+	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(lines, tree);
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr, p_context.allow_member_container_inference, &render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
 			workspace, lsp_parser, p_parse_results
@@ -6031,6 +6172,12 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 		public_candidate.line = candidate.line;
 		public_candidate.column = candidate.caret_span_start; // Anchor at the start of the declaration span.
 		if (candidate.enabled) {
+			// The import edit sorts before the annotation edit so a batch applier that
+			// edits top-to-bottom inserts the `import` line without shifting the
+			// later annotation's columns.
+			if (candidate.has_import_edit) {
+				public_candidate.edits.push_back(candidate.import_edit);
+			}
 			public_candidate.edits.push_back(candidate.edit);
 		}
 		result.candidates.push_back(public_candidate);
