@@ -699,6 +699,18 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("A thread-safe dynamic set escapes the member") {
+		InferenceFixture fixture(
+				"extends Node\n"
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak() -> void:\n"
+				"\tset_thread_safe(\"_items\", [\"x\"])\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("An implicit-self dynamic set escapes the member") {
 		InferenceFixture fixture(
 				"var _items = []\n"

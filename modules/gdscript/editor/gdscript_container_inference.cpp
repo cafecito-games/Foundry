@@ -127,6 +127,11 @@ bool is_dynamic_reflection_method(const StringName &p_name) {
 		"set", "get", "set_deferred", "set_indexed", "get_indexed",
 		"call", "callv", "call_deferred", "set_block_signals",
 		"get_property_list", "property_get_revert",
+		// Node-derived scripts expose thread-safe/deferred property and call
+		// variants that can set a property or invoke a method by name.
+		"set_thread_safe", "call_thread_safe",
+		"set_deferred_thread_group", "call_deferred_thread_group",
+		"set_thread_group",
 		nullptr
 	};
 	for (int i = 0; methods[i] != nullptr; i++) {
