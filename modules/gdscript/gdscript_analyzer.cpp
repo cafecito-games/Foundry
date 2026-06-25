@@ -5626,6 +5626,12 @@ bool GDScriptAnalyzer::type_argument_satisfies_bound(const GDScriptParser::DataT
 	if (p_argument.is_variant()) {
 		return false;
 	}
+	// A generic bound (e.g. `List[int]`) must be matched invariantly in its type arguments, which the
+	// general compatibility walk enforces along the inheritance chain; nominal derivation alone would
+	// wrongly accept a `Stack[String]`. Plain (unspecialized) bounds keep the cheaper derivation check.
+	if (p_bound.has_type_arguments()) {
+		return is_type_compatible(p_bound, p_argument, false);
+	}
 	return datatype_derives_from_datatype(p_argument, p_bound);
 }
 
