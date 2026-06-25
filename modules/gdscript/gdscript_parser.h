@@ -633,6 +633,10 @@ public:
 	struct ClassNode : public Node {
 		struct TraitUse {
 			Vector<IdentifierNode *> name;
+			// Type arguments specializing a generic trait at the use site: `uses Container[int]`.
+			Vector<TypeNode *> type_arguments;
+			// The resolved (and validated) type arguments, bound to the trait's type parameters.
+			Vector<DataType> resolved_type_arguments;
 			ClassNode *resolved_trait = nullptr;
 
 			String to_string() const {
