@@ -32,6 +32,7 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "gdscript_container_inference.h"
 #include "gdscript_refactoring_names.h"
 #include "gdscript_refactoring_types.h"
 
@@ -944,7 +945,7 @@ bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignme
 			is_self_attribute(p_assignment->assignee);
 }
 
-bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate) {
+bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr) {
 	if (p_assignable == nullptr || p_assignable->identifier == nullptr) {
 		return false;
 	}
@@ -1002,8 +1003,21 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		return true;
 	}
 
+	// For a bare local `Array` literal, try to recover a concrete element type
+	// from how the variable is used in its function, upgrading `Array` to
+	// `Array[T]`. Anything the inference cannot prove falls back to the
+	// analyzer's own type, so this never narrows a declaration unsafely.
+	GDScriptParser::DataType effective_type = p_assignable->get_datatype();
+	if (p_function_body != nullptr && p_assignable->type == GDScriptParser::Node::VARIABLE) {
+		const GDScriptContainerInference::Result inference = GDScriptContainerInference::infer_local_array_element_type(
+				static_cast<const GDScriptParser::VariableNode *>(p_assignable), p_function_body);
+		if (inference.outcome == GDScriptContainerInference::INFERRED) {
+			effective_type = inference.element_type;
+		}
+	}
+
 	String rendered_type;
-	if (!render_annotation_or_disable(p_assignable->get_datatype(), r_candidate, rendered_type)) {
+	if (!render_annotation_or_disable(effective_type, r_candidate, rendered_type)) {
 		return true;
 	}
 
@@ -3463,7 +3477,7 @@ void cache_inline_variable_candidate(const RefactorContext &p_context, const Ref
 	inline_variable_cache.candidate = p_candidate;
 }
 
-void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates);
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr);
 
 bool get_cached_implement_abstract_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, ImplementAbstractCandidate &r_candidate) {
 	MutexLock lock(refactor_candidate_cache_mutex);
@@ -3490,9 +3504,9 @@ void cache_implement_abstract_candidate(const RefactorContext &p_context, const 
 	implement_abstract_cache.candidate = p_candidate;
 }
 
-void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates) {
+void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr) {
 	TypeAnnotationCandidate candidate;
-	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate) && candidate.matched) {
+	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body) && candidate.matched) {
 		r_candidates.push_back(candidate);
 	}
 }
@@ -3534,7 +3548,7 @@ void collect_type_annotation_in_function(
 	if (find_function_return_type_annotation(p_lines, p_function, return_candidate) && return_candidate.matched) {
 		r_candidates.push_back(return_candidate);
 	}
-	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates);
+	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body);
 }
 
 void collect_type_annotation_in_class(
@@ -3582,7 +3596,7 @@ void collect_type_annotation_in_class(
 	}
 }
 
-void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates) {
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body) {
 	if (p_suite == nullptr) {
 		return;
 	}
@@ -3592,29 +3606,29 @@ void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScr
 		}
 		switch (statement->type) {
 			case GDScriptParser::Node::VARIABLE:
-				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates);
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates, p_function_body);
 				break;
 			case GDScriptParser::Node::CONSTANT:
 				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates);
 				break;
 			case GDScriptParser::Node::IF: {
 				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates);
-				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates);
+				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates, p_function_body);
+				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates, p_function_body);
 			} break;
 			case GDScriptParser::Node::FOR: {
 				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates);
+				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates, p_function_body);
 			} break;
 			case GDScriptParser::Node::WHILE: {
 				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates);
+				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates, p_function_body);
 			} break;
 			case GDScriptParser::Node::MATCH: {
 				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
 				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
 					if (branch != nullptr) {
-						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates);
+						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates, p_function_body);
 					}
 				}
 			} break;
