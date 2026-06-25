@@ -119,6 +119,11 @@ public:
 
 	virtual void notification(int p_notification, bool p_reversed = false) override;
 
+	// `Object::to_string()` (and implicit Variant stringification) dispatches through
+	// this virtual rather than `callp`, so route it through the handler when `T`'s
+	// contract declares `_to_string`. Mirrors `GDScriptInstance::to_string`.
+	virtual String to_string(bool *r_valid) override;
+
 	virtual Ref<Script> get_script() const override { return proxy_script; }
 	virtual ScriptLanguage *get_language() override;
 

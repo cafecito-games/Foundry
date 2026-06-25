@@ -263,6 +263,70 @@ TEST_CASE("[Modules][GDScript][Proxy] Abstract types can be proxied") {
 	CHECK(result == Variant(42));
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Stringification routes _to_string through the handler") {
+	ScopedProxyLanguage language;
+
+	// `Object::to_string()` invokes the `ScriptInstance::to_string()` virtual rather
+	// than `callp`, so a proxy whose contract declares `_to_string` must override that
+	// virtual to reach the handler — otherwise implicit stringification silently skips
+	// it. A trait that does not declare `_to_string` must not invoke the handler.
+	const char *source =
+			"@abstract class Describable:\n"
+			"\t@abstract func _to_string() -> String\n"
+			"\n"
+			"trait Plain:\n"
+			"\t@abstract func work() -> void\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar calls: Array = []\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\tcalls.append(str(method_name))\n"
+			"\t\treturn \"stubbed-string\"\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> describable = get_subclass(script, "Describable");
+	Ref<GDScript> plain = get_subclass(script, "Plain");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(describable.is_valid());
+	REQUIRE(plain.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
+	// Contract declares `_to_string`: implicit stringification reaches the handler and
+	// returns its (coerced) value.
+	{
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(describable, Callable(recorder, "handle"), error_message);
+		REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+
+		// `Object::to_string` dispatches through the script instance's `to_string`.
+		CHECK(proxy->to_string() == String("stubbed-string"));
+
+		// The same value is produced when a Variant stringifies the object implicitly.
+		CHECK(String(Variant(proxy)) == String("stubbed-string"));
+
+		Array calls = recorder->get("calls");
+		REQUIRE(calls.size() >= 1);
+		CHECK(calls.has("_to_string"));
+	}
+
+	// Contract does not declare `_to_string`: the handler is not invoked, and the
+	// object falls back to the engine's default stringification.
+	{
+		recorder->set("calls", Array());
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(plain, Callable(recorder, "handle"), error_message);
+		REQUIRE(proxy.is_valid());
+
+		String result = proxy->to_string();
+		Array calls = recorder->get("calls");
+		CHECK(calls.is_empty());
+		CHECK_FALSE(result == String("stubbed-string"));
+	}
+}
+
 TEST_CASE("[Modules][GDScript][Proxy] Invalid construction is rejected") {
 	ScopedProxyLanguage language;
 

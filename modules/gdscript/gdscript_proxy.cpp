@@ -453,6 +453,34 @@ bool GDScriptProxyInstance::property_get_revert(const StringName &p_name, Varian
 void GDScriptProxyInstance::notification(int p_notification, bool p_reversed) {
 }
 
+String GDScriptProxyInstance::to_string(bool *r_valid) {
+	// `_to_string` is only routed when `T`'s contract declares it; otherwise the call
+	// must fall through to the engine's default stringification. `callp` runs it through
+	// the handler and coerces the result to the declared return type, so a non-String
+	// return here means the contract declared `_to_string` with the wrong type. Mirrors
+	// `GDScriptInstance::to_string`.
+	if (has_method(CoreStringName(_to_string))) {
+		Callable::CallError call_error;
+		Variant ret = callp(CoreStringName(_to_string), nullptr, 0, call_error);
+		if (call_error.error == Callable::CallError::CALL_OK) {
+			if (ret.get_type() != Variant::STRING) {
+				if (r_valid) {
+					*r_valid = false;
+				}
+				ERR_FAIL_V_MSG(String(), "Wrong type for " + CoreStringName(_to_string) + ", must be a String.");
+			}
+			if (r_valid) {
+				*r_valid = true;
+			}
+			return ret.operator String();
+		}
+	}
+	if (r_valid) {
+		*r_valid = false;
+	}
+	return String();
+}
+
 ScriptLanguage *GDScriptProxyInstance::get_language() {
 	return GDScriptLanguage::get_singleton();
 }
