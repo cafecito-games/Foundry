@@ -354,6 +354,53 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Dependent rejection survives a universe expanded between verify calls") {
+		// The dependency-graph cache records a path's edges only relative to the universe it was
+		// primed against. If a first verify() runs with a narrow universe that omits a consumer,
+		// the provider is cached without the edge to that consumer. A second verify() that adds
+		// the consumer to the universe must still discover it as a dependent and reject the
+		// breaking candidate, rather than reusing the narrow-universe edges and wrongly accepting.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String provider_path = "res://refactor/verify_expand_provider.gd";
+		const String provider_source =
+				"func get_value():\n"
+				"\treturn 42\n";
+		TemporaryScriptFile provider(provider_path, provider_source);
+
+		const String consumer_path = "res://refactor/verify_expand_consumer.gd";
+		const String consumer_source =
+				"const Provider = preload(\"res://refactor/verify_expand_provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n";
+		TemporaryScriptFile consumer(consumer_path, consumer_source);
+
+		Vector<VerificationCandidate> candidates = enabled_candidates_for(provider_path);
+		REQUIRE_GT(candidates.size(), 0);
+
+		// First call: universe is the provider alone, so the consumer is not in scope and the
+		// candidate is accepted (no dependent observes the narrowed return type).
+		Vector<String> narrow_universe = { provider_path };
+		VerificationResult narrow = GDScriptVerificationHarness::verify(candidates, narrow_universe);
+		REQUIRE(narrow.ok);
+		CHECK_EQ(narrow.rejected.size(), 0);
+
+		// Second call: universe now includes the consumer. The cache must rebuild against the new
+		// universe and detect the consumer as a dependent, rejecting the breaking candidate.
+		Vector<String> wide_universe = { provider_path, consumer_path };
+		VerificationResult wide = GDScriptVerificationHarness::verify(candidates, wide_universe);
+		REQUIRE(wide.ok);
+		CHECK_GT(wide.rejected.size(), 0);
+		CHECK_GT(wide.rejected[0].diagnostics.size(), 0);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("A candidate with an out-of-range edit is rejected with 'could not be applied'") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

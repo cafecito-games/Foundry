@@ -65,6 +65,15 @@ String read_source(const String &p_path, bool &r_ok) {
 // test is only reused when both the path and its exact source match, so an entry that no
 // longer reflects disk is reprimed before it can affect a result.
 struct VerifyDependencyGraphCache {
+	// Order-independent signature of the universe the cached edges were primed against. A path's
+	// recorded forward edges are only complete relative to the universe present when it was
+	// primed (edges to files outside that universe are not captured), so an entry is reusable
+	// only while the universe is unchanged. When the universe differs the whole index is dropped
+	// and rebuilt, which keeps results identical to a from-scratch run; within a fixpoint run the
+	// universe is fixed, so the signature is constant and the optimization stays fully active.
+	uint64_t universe_signature = 0;
+	bool universe_signature_set = false;
+
 	// Source hash recorded the last time this path's edges were primed.
 	HashMap<String, uint64_t> source_hashes;
 	// Forward dependencies (within the universe) recorded for this path, used to derive the
@@ -104,7 +113,24 @@ struct VerifyDependencyGraphCache {
 		}
 		return HashSet<String>();
 	}
+
+	void clear() {
+		source_hashes.clear();
+		forward_dependencies.clear();
+		inverse_dependencies.clear();
+	}
 };
+
+// Order-independent signature of a universe path set: the sum of per-path 64-bit hashes. The
+// commutative combine makes it insensitive to ordering and duplicates are already collapsed by
+// the caller, so two calls with the same set of paths produce the same signature.
+uint64_t universe_signature_of(const Vector<String> &p_universe) {
+	uint64_t signature = 0;
+	for (const String &path : p_universe) {
+		signature += path.hash64();
+	}
+	return signature;
+}
 
 VerifyDependencyGraphCache &verify_dependency_graph_cache() {
 	static VerifyDependencyGraphCache cache;
@@ -416,6 +442,18 @@ VerificationResult GDScriptVerificationHarness::verify(
 	// to a full parse+analyze, and the source is needed both to validate the cached dependency
 	// edges (by hash) and to prime the files whose content changed.
 	VerifyDependencyGraphCache &graph_cache = verify_dependency_graph_cache();
+
+	// A cached entry's recorded edges are only complete relative to the universe it was primed
+	// against, so drop the whole index when the universe changes. This rebuilds every path on
+	// the first call under a new universe (identical to the from-scratch behavior) while leaving
+	// the optimization fully active across the repeated, fixed-universe calls of a fixpoint run.
+	const uint64_t signature = universe_signature_of(universe);
+	if (!graph_cache.universe_signature_set || graph_cache.universe_signature != signature) {
+		graph_cache.clear();
+		graph_cache.universe_signature = signature;
+		graph_cache.universe_signature_set = true;
+	}
+
 	HashMap<String, String> universe_source;
 	HashMap<String, uint64_t> universe_hash;
 	for (const String &path : universe) {
@@ -430,20 +468,6 @@ VerificationResult GDScriptVerificationHarness::verify(
 		}
 		universe_source[path] = source;
 		universe_hash[path] = source.hash64();
-	}
-
-	// Drop cached entries for paths no longer in this universe so the index stays bounded and
-	// never carries edges that could leak into an unrelated run's affected set.
-	{
-		Vector<String> stale_paths;
-		for (const KeyValue<String, uint64_t> &entry : graph_cache.source_hashes) {
-			if (!universe_set.has(entry.key)) {
-				stale_paths.push_back(entry.key);
-			}
-		}
-		for (const String &path : stale_paths) {
-			graph_cache.forget(path);
-		}
 	}
 
 	// A universe path must be reprimed when its source differs from the recorded hash (or is
