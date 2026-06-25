@@ -6036,6 +6036,81 @@ bool GDScriptAnalyzer::find_trait_implementation(GDScriptParser::ClassNode *p_cl
 	return false;
 }
 
+static bool _signature_type_involves_type_parameter(const GDScriptParser::DataType &p_type) {
+	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		return true;
+	}
+	for (const GDScriptParser::DataType &element : p_type.container_element_types) {
+		if (_signature_type_involves_type_parameter(element)) {
+			return true;
+		}
+	}
+	for (const GDScriptParser::DataType &argument : p_type.type_arguments) {
+		if (_signature_type_involves_type_parameter(argument)) {
+			return true;
+		}
+	}
+	// A Callable/Signal signature can hide a type parameter in its parameter or return types
+	// (e.g. `Callable[[U], void]`).
+	for (const GDScriptParser::DataType &parameter_type : p_type.method_parameter_types) {
+		if (_signature_type_involves_type_parameter(parameter_type)) {
+			return true;
+		}
+	}
+	for (const GDScriptParser::DataType &return_type : p_type.method_return_type) {
+		if (_signature_type_involves_type_parameter(return_type)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Deep structural (alpha-)equality of two resolved types. DataType::operator== ignores Callable/Signal
+// method signatures (and compares nested container/type-argument elements via operator== too, so the
+// blind spot is recursive), which would let `Callable[[U], void]` match `Callable[[int], int]`. This
+// recurses through every sub-type so a trait-required generic signature is matched exactly.
+static bool _datatype_alpha_equal(const GDScriptParser::DataType &p_a, const GDScriptParser::DataType &p_b) {
+	if (!(p_a == p_b)) {
+		return false;
+	}
+	if (p_a.has_method_signature != p_b.has_method_signature) {
+		return false;
+	}
+	if (p_a.container_element_types.size() != p_b.container_element_types.size() ||
+			p_a.type_arguments.size() != p_b.type_arguments.size() ||
+			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
+			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_a.type_parameter_bound.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.type_parameter_bound[i], p_b.type_parameter_bound[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.container_element_types.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.container_element_types[i], p_b.container_element_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.type_arguments.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.type_arguments[i], p_b.type_arguments[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_parameter_types.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.method_parameter_types[i], p_b.method_parameter_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_return_type.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode *p_trait,
 		GDScriptParser::FunctionNode *p_required_function,
 		const TraitMethodImplementation &p_implementation) {
@@ -6066,10 +6141,83 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 
 	bool valid = p_required_function->is_static == implementation_function->is_static;
 
+	// A trait may require a generic method; an implementation satisfies it up to type-parameter
+	// renaming (alpha-equivalence by ordinal position). The lists must share arity, the bound at each
+	// position must align, and the implementation's type parameters are renamed onto the required ones
+	// so `map[V](...) -> Array[V]` matches required `map[U](...) -> Array[U]`. The renaming is applied
+	// to the implementation's parameter/return types before the per-type compatibility checks below.
+	HashMap<StringName, GDScriptParser::DataType> type_parameter_renaming;
+	{
+		const Vector<GDScriptParser::TypeParameterNode *> &required_type_parameters = p_required_function->type_parameters;
+		const Vector<GDScriptParser::TypeParameterNode *> &implementation_type_parameters = implementation_function->type_parameters;
+		if (required_type_parameters.size() != implementation_type_parameters.size()) {
+			valid = false;
+		} else {
+			// Method type parameters carry no eager resolved_bound, so read the bound TypeNode's
+			// (meta-stripped) datatype.
+			auto bound_of = [](const GDScriptParser::TypeParameterNode *p_type_parameter) -> GDScriptParser::DataType {
+				GDScriptParser::DataType bound;
+				if (p_type_parameter != nullptr && p_type_parameter->bound != nullptr) {
+					bound = p_type_parameter->bound->get_datatype();
+					bound.is_meta_type = false;
+				}
+				return bound;
+			};
+			// Pass 1: build the renaming of the implementation's type parameters onto the required ones
+			// (same method scope and ordinal index), carrying the required bound so the structural
+			// equality used below — which compares type_parameter_bound — aligns after substitution.
+			for (int i = 0; i < required_type_parameters.size(); i++) {
+				const GDScriptParser::TypeParameterNode *required_type_parameter = required_type_parameters[i];
+				const GDScriptParser::TypeParameterNode *implementation_type_parameter = implementation_type_parameters[i];
+				if (required_type_parameter == nullptr || required_type_parameter->identifier == nullptr ||
+						implementation_type_parameter == nullptr || implementation_type_parameter->identifier == nullptr) {
+					continue;
+				}
+				GDScriptParser::DataType required_handle;
+				required_handle.kind = GDScriptParser::DataType::TYPE_PARAMETER;
+				required_handle.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+				required_handle.type_parameter_name = required_type_parameter->identifier->name;
+				required_handle.type_parameter_scope = GDScriptParser::DataType::TYPE_PARAMETER_METHOD;
+				required_handle.type_parameter_index = i;
+				const GDScriptParser::DataType required_bound = bound_of(required_type_parameter);
+				if (required_bound.is_set() && !required_bound.is_variant()) {
+					required_handle.type_parameter_bound.push_back(required_bound);
+				}
+				type_parameter_renaming.insert(implementation_type_parameter->identifier->name, required_handle);
+			}
+			// Pass 2: each position's bound must align after renaming, so a dependent bound like
+			// `[U: Resource, T: U]` matches `[V: Resource, W: V]`. A bound that involves a type
+			// parameter is compared by alpha-equivalence (structural equality after renaming); a
+			// concrete bound by ordinary mutual compatibility.
+			for (int i = 0; i < required_type_parameters.size(); i++) {
+				const GDScriptParser::DataType required_bound = bound_of(required_type_parameters[i]);
+				const GDScriptParser::DataType implementation_bound = GDScriptParser::DataType::substitute(bound_of(implementation_type_parameters[i]), type_parameter_renaming);
+				const bool required_has_bound = required_bound.is_set() && !required_bound.is_variant();
+				const bool implementation_has_bound = implementation_bound.is_set() && !implementation_bound.is_variant();
+				if (required_has_bound != implementation_has_bound) {
+					valid = false;
+				} else if (required_has_bound) {
+					// Bounds must be the same after renaming — compared by deep structural equality so a
+					// difference hidden in a Callable/Signal bound signature is not lost.
+					valid = valid && _datatype_alpha_equal(required_bound, implementation_bound);
+				}
+			}
+		}
+	}
+
+	// A generic method's signature is matched by alpha-equivalence (exact structural match after
+	// renaming), not the lenient subtype compatibility used for ordinary methods — otherwise a bare
+	// type-parameter return (`-> U`) would be leniently accepted against `-> Array[U]`.
+	const bool is_generic_method = !p_required_function->type_parameters.is_empty() || !implementation_function->type_parameters.is_empty();
+
 	if (p_required_function->return_type != nullptr) {
 		const GDScriptParser::DataType required_return_type = p_required_function->get_datatype();
-		const GDScriptParser::DataType implementation_return_type = implementation_function->get_datatype();
-		if (implementation_return_type.is_variant()) {
+		const GDScriptParser::DataType implementation_return_type = GDScriptParser::DataType::substitute(implementation_function->get_datatype(), type_parameter_renaming);
+		if (is_generic_method && (_signature_type_involves_type_parameter(required_return_type) || _signature_type_involves_type_parameter(implementation_return_type))) {
+			// A type-parameter-involving return must match by alpha-equivalence (so `-> V` does not
+			// leniently satisfy `-> Array[U]`); concrete returns keep their covariant matching below.
+			valid = valid && _datatype_alpha_equal(required_return_type, implementation_return_type);
+		} else if (implementation_return_type.is_variant()) {
 			valid = valid && required_return_type.is_variant();
 		} else if (implementation_return_type.kind == GDScriptParser::DataType::BUILTIN &&
 				implementation_return_type.builtin_type == Variant::NIL) {
@@ -6092,8 +6240,12 @@ bool GDScriptAnalyzer::validate_trait_method_signature(GDScriptParser::ClassNode
 	if (valid) {
 		for (int i = 0; i < p_required_function->parameters.size() && i < implementation_function->parameters.size(); i++) {
 			const GDScriptParser::DataType &required_parameter_type = p_required_function->parameters[i]->datatype;
-			const GDScriptParser::DataType &implementation_parameter_type = implementation_function->parameters[i]->datatype;
-			if (required_parameter_type.is_variant() && required_parameter_type.is_hard_type()) {
+			const GDScriptParser::DataType implementation_parameter_type = GDScriptParser::DataType::substitute(implementation_function->parameters[i]->datatype, type_parameter_renaming);
+			if (is_generic_method && (_signature_type_involves_type_parameter(required_parameter_type) || _signature_type_involves_type_parameter(implementation_parameter_type))) {
+				// A type-parameter-involving parameter must match by alpha-equivalence; concrete
+				// parameters keep their contravariant matching below.
+				valid = valid && _datatype_alpha_equal(required_parameter_type, implementation_parameter_type);
+			} else if (required_parameter_type.is_variant() && required_parameter_type.is_hard_type()) {
 				valid = valid && implementation_parameter_type.is_variant();
 			} else if (implementation_parameter_type.is_set() && required_parameter_type.is_set()) {
 				valid = valid && is_type_compatible(implementation_parameter_type, required_parameter_type);
@@ -6115,6 +6267,17 @@ bool GDScriptAnalyzer::validate_trait_method_info_signature(GDScriptParser::Clas
 		GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation) {
 	const StringName function_name = p_required_function->identifier->name;
 	const String trait_method_name = _class_or_trait_name(p_trait) + "." + String(function_name) + "()";
+
+	// A MethodInfo carries no generic type-parameter information, so a generic trait requirement
+	// cannot be verified up to renaming through this path and is therefore not satisfiable by it.
+	if (!p_required_function->type_parameters.is_empty()) {
+		String message = vformat(R"*(The function "%s()" signature does not match required generic trait method "%s".)*", function_name, trait_method_name);
+		if (!p_implementation.method_info_source.is_empty()) {
+			message += " " + p_implementation.method_info_source;
+		}
+		push_error(message, p_required_function);
+		return false;
+	}
 
 	const bool required_is_coroutine = p_required_function->is_coroutine;
 	const bool implementation_is_coroutine = (p_implementation.method_info.flags & METHOD_FLAG_ASYNC) != 0;
