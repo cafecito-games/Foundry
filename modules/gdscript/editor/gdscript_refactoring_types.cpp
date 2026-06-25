@@ -93,16 +93,45 @@ bool get_global_class_namespace(const GDScriptParser::DataType &p_type, String &
 	return false;
 }
 
-bool namespace_in_scope(const String &p_namespace, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
-	if (p_namespace == p_scope.current_namespace) {
+bool namespace_defines_class(const String &p_namespace, const String &p_class_name) {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+	return ScriptServer::is_global_class(p_namespace + "." + p_class_name);
+}
+
+// Returns true when the bare `p_class_name` resolves unambiguously to
+// `p_target_namespace.p_class_name` at the annotation site. GDScript resolves a
+// bare global class name against the current namespace first, then imported
+// namespaces (an ambiguous match across imports is an error). The bare spelling
+// is only safe when it provably names the target and nothing else; otherwise the
+// caller must qualify, which always resolves.
+bool bare_name_resolves_to_target(const String &p_target_namespace, const String &p_class_name, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
+	// A class in the current namespace always resolves bare to itself, and the
+	// current namespace wins first, shadowing imports of the same bare name. (A
+	// same-named class declared elsewhere in the current namespace would be a
+	// project-level conflict regardless of this refactor.)
+	if (p_target_namespace == p_scope.current_namespace) {
 		return true;
 	}
+	if (namespace_defines_class(p_scope.current_namespace, p_class_name)) {
+		// The current namespace shadows the import with a different class.
+		return false;
+	}
+	// Otherwise the name must come from exactly one imported namespace, and that
+	// one must be the target.
+	int matching_imports = 0;
+	bool target_imported = false;
 	for (const String &imported : p_scope.imported_namespaces) {
-		if (imported == p_namespace) {
-			return true;
+		if (!namespace_defines_class(imported, p_class_name)) {
+			continue;
+		}
+		matching_imports++;
+		if (imported == p_target_namespace) {
+			target_imported = true;
 		}
 	}
-	return false;
+	return matching_imports == 1 && target_imported;
 }
 
 // Mirrors DataType::to_string() for the container/type-argument structure, but
@@ -113,8 +142,11 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
 		String spelling = class_name;
-		if (!namespace_in_scope(target_namespace, p_scope)) {
+		if (!bare_name_resolves_to_target(target_namespace, class_name, p_scope)) {
 			spelling = target_namespace + "." + class_name;
+			// A qualified spelling resolves on its own only when the head of the
+			// dotted path is in scope. The leading namespace segment must be
+			// imported (or be the current namespace) for `namespace.Class` to bind.
 			r_required_imports.insert(target_namespace);
 		}
 		// Specialized type arguments on a namespaced class still need scoping.
@@ -160,6 +192,37 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 			r_rendered = vformat("Dictionary[%s, %s]", key_rendered, value_rendered);
 			return true;
 		}
+	}
+
+	// A generic whose head is not itself a namespaced class (e.g. a global-namespace
+	// `Box[T]`) can still carry namespaced type arguments. Render the head via the
+	// engine's spelling (with the arguments stripped) and recurse so a nested
+	// cross-namespace class contributes its qualified spelling and import.
+	if (!p_type.type_arguments.is_empty()) {
+		GDScriptParser::DataType head = p_type;
+		head.type_arguments.clear();
+		head.is_nullable = false;
+		const String head_rendered = head.to_string();
+		if (!is_usable_spelling(head_rendered)) {
+			return false;
+		}
+		String arguments;
+		for (int i = 0; i < p_type.type_arguments.size(); i++) {
+			if (i > 0) {
+				arguments += ", ";
+			}
+			String argument_rendered;
+			if (!render_scoped(p_type.type_arguments[i], p_scope, argument_rendered, r_required_imports)) {
+				return false;
+			}
+			arguments += argument_rendered;
+		}
+		String rendered = vformat("%s[%s]", head_rendered, arguments);
+		if (p_type.is_nullable) {
+			rendered += "?";
+		}
+		r_rendered = rendered;
+		return true;
 	}
 
 	// Non-namespaced leaf: defer to the engine's own spelling.

@@ -961,15 +961,20 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_EQ(rendered, "BaseCharacter");
 			CHECK(imports.is_empty());
 		}
-		SUBCASE("already-imported cross-namespace class renders bare with no import") {
+		SUBCASE("imported cross-namespace class qualifies when the registry cannot confirm the bare name") {
+			// Without the class registered in ScriptServer, the renderer cannot prove
+			// the bare name resolves unambiguously through the import, so it
+			// conservatively qualifies. The registry-backed bare rendering is covered
+			// by the integration test on namespace_annotation_imported.gd.
 			GDScriptRefactorTypes::AnnotationScope scope;
 			scope.current_namespace = "game";
 			scope.imported_namespaces.push_back("characters");
 			String rendered;
 			HashSet<String> imports;
 			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
-			CHECK_EQ(rendered, "BaseCharacter");
-			CHECK(imports.is_empty());
+			CHECK_EQ(rendered, "characters.BaseCharacter");
+			REQUIRE_EQ(imports.size(), 1);
+			CHECK(imports.has("characters"));
 		}
 		SUBCASE("unimported cross-namespace class renders qualified and requires the import") {
 			GDScriptRefactorTypes::AnnotationScope scope;
@@ -1013,6 +1018,29 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			HashSet<String> imports;
 			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(array_type, scope, rendered, imports));
 			CHECK_EQ(rendered, "Array[characters.BaseCharacter]");
+			REQUIRE_EQ(imports.size(), 1);
+			CHECK(imports.has("characters"));
+		}
+		SUBCASE("global-namespace generic qualifies its namespaced type argument") {
+			// A global-namespace generic `Box[T]` whose argument is a cross-namespace
+			// class must qualify the argument and require its import, even though the
+			// generic head itself is in scope.
+			GDScriptParser::IdentifierNode box_identifier;
+			box_identifier.name = "Box";
+			GDScriptParser::ClassNode box_node;
+			box_node.identifier = &box_identifier;
+			GDScriptParser::DataType box_type;
+			box_type.kind = GDScriptParser::DataType::CLASS;
+			box_type.type_source = GDScriptParser::DataType::INFERRED;
+			box_type.class_type = &box_node;
+			box_type.type_arguments.push_back(class_type);
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(box_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Box[characters.BaseCharacter]");
 			REQUIRE_EQ(imports.size(), 1);
 			CHECK(imports.has("characters"));
 		}
