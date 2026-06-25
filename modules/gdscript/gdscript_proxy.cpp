@@ -30,6 +30,7 @@
 
 #include "gdscript_proxy.h"
 
+#include "core/object/class_db.h"
 #include "core/object/ref_counted.h"
 
 // Pins a strong reference to every script type reachable in `p_type` (including
@@ -472,15 +473,39 @@ static bool _validate_proxy_target(const Ref<GDScript> &p_gdscript, String &r_er
 		r_error_message = RTR("Proxy target must be a trait or an abstract type.");
 		return false;
 	}
-	// The host is a `RefCounted`, so a target rooted on any other native base
-	// (Node, Resource, Object, ...) cannot be soundly represented yet: its native
-	// methods and `is`-checks against the native base would not hold. Proxying
-	// those bases is tracked as a follow-up.
-	if (p_gdscript->get_instance_base_type() != SNAME("RefCounted")) {
-		r_error_message = vformat(RTR("Proxy target must extend RefCounted; native base \"%s\" is not supported yet."), String(p_gdscript->get_instance_base_type()));
+	// The proxy host is owned through a `Ref` and freed by reference counting, so the
+	// target's native base must be `RefCounted` or a descendant (e.g. `Resource`). The
+	// host is instantiated as that exact native base, so `is`-checks and native-method
+	// dispatch against it hold. Non-reference-counted bases (`Object`, `Node`, ...) have
+	// manual lifetimes the `Ref`-returning API cannot manage and remain unsupported.
+	const StringName native_base = p_gdscript->get_instance_base_type();
+	if (!ClassDB::is_parent_class(native_base, SNAME("RefCounted"))) {
+		r_error_message = vformat(RTR("Proxy target's native base \"%s\" is not supported; only RefCounted-derived bases (such as Resource) can be proxied, because the proxy host is reference-counted."), String(native_base));
+		return false;
+	}
+	if (!ClassDB::can_instantiate(native_base)) {
+		r_error_message = vformat(RTR("Proxy target's native base \"%s\" cannot be instantiated."), String(native_base));
 		return false;
 	}
 	return true;
+}
+
+// Instantiates the proxy host as the target's native base (validated RefCounted-derived
+// and instantiable by `_validate_proxy_target`). Both construction paths host the
+// synthetic instance on this object, so a `Resource`-rooted proxy is a real `Resource`,
+// etc. Returns null with a filled message if instantiation unexpectedly fails.
+static RefCounted *_instantiate_proxy_host(const Ref<GDScript> &p_gdscript, String &r_error_message) {
+	const StringName native_base = p_gdscript->get_instance_base_type();
+	Object *host_object = ClassDB::instantiate_no_placeholders(native_base);
+	RefCounted *host = Object::cast_to<RefCounted>(host_object);
+	if (host == nullptr) {
+		if (host_object != nullptr) {
+			memdelete(host_object);
+		}
+		r_error_message = vformat(RTR("Could not instantiate native base \"%s\" for the proxy host."), String(native_base));
+		return nullptr;
+	}
+	return host;
 }
 
 Ref<RefCounted> GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message) {
@@ -493,11 +518,14 @@ Ref<RefCounted> GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Cal
 		return Ref<RefCounted>();
 	}
 
-	// Dedicated construction path: hosts the synthetic instance on a fresh
-	// `RefCounted` and bypasses the abstract/trait instantiation guard that
+	// Dedicated construction path: hosts the synthetic instance on a fresh instance of
+	// the target's native base and bypasses the abstract/trait instantiation guard that
 	// `GDScript::_new`/`instance_create` enforce. The Object owns and frees the
 	// `ScriptInstance`; the returned `Ref` owns the host.
-	RefCounted *proxy_owner = memnew(RefCounted);
+	RefCounted *proxy_owner = _instantiate_proxy_host(gdscript, r_error_message);
+	if (proxy_owner == nullptr) {
+		return Ref<RefCounted>();
+	}
 	GDScriptProxyInstance *instance = memnew(GDScriptProxyInstance(proxy_owner, gdscript, p_handler));
 	proxy_owner->set_script_instance(instance);
 	return Ref<RefCounted>(proxy_owner);
@@ -544,7 +572,10 @@ Ref<RefCounted> GDScriptProxy::create_delegating_proxy(const Ref<Script> &p_type
 		return Ref<RefCounted>();
 	}
 
-	RefCounted *proxy_owner = memnew(RefCounted);
+	RefCounted *proxy_owner = _instantiate_proxy_host(gdscript, r_error_message);
+	if (proxy_owner == nullptr) {
+		return Ref<RefCounted>();
+	}
 	// Delegation mode does not use a handler; methods/properties route to the
 	// target (and advice) via `_configure_delegation`.
 	GDScriptProxyInstance *instance = memnew(GDScriptProxyInstance(proxy_owner, gdscript, Callable()));
