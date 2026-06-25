@@ -1481,6 +1481,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				bool has_setter = false;
 				bool is_in_setter = false;
 				bool is_static = false;
+				int member_type_parameter_index = -1;
 				GDScriptCodeGenerator::Address static_var_class;
 				int static_var_index = 0;
 				GDScriptDataType static_var_data_type;
@@ -1498,6 +1499,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 						member.mode = GDScriptCodeGenerator::Address::MEMBER;
 						member.address = minfo.index;
 						member.type = minfo.data_type;
+						member_type_parameter_index = minfo.type_parameter_index;
 					} else {
 						// Try static variables.
 						GDScript *scr = codegen.script;
@@ -1565,6 +1567,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					}
 					gen->write_set_static_variable(temp, static_var_class, static_var_index);
 					gen->pop_temporary();
+				} else if (member_type_parameter_index >= 0) {
+					// Direct store into a `T`-typed member bypasses the setter/`set()` validation, so emit a
+					// store that validates the value against the instance's reified type argument.
+					gen->write_assign_typed_parameter(target, to_assign, member_type_parameter_index);
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -2811,10 +2817,15 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 					return nullptr;
 				}
 
+				const GDScript::MemberInfo &field_minfo = codegen.script->member_indices[field->identifier->name];
 				GDScriptDataType field_type = _gdtype_from_datatype(field->get_datatype(), codegen.script);
-				GDScriptCodeGenerator::Address dst_address(GDScriptCodeGenerator::Address::MEMBER, codegen.script->member_indices[field->identifier->name].index, field_type);
+				GDScriptCodeGenerator::Address dst_address(GDScriptCodeGenerator::Address::MEMBER, field_minfo.index, field_type);
 
-				if (field->use_conversion_assign) {
+				if (field_minfo.type_parameter_index >= 0) {
+					// A `T`-typed field initializer stores directly into the erased member slot; validate
+					// it against the instance's reified type argument at runtime.
+					codegen.generator->write_assign_typed_parameter(dst_address, src_address, field_minfo.type_parameter_index);
+				} else if (field->use_conversion_assign) {
 					codegen.generator->write_assign_with_conversion(dst_address, src_address);
 				} else {
 					codegen.generator->write_assign(dst_address, src_address);

@@ -332,6 +332,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_DICTIONARY,                \
 		&&OPCODE_ASSIGN_TYPED_NATIVE,                    \
 		&&OPCODE_ASSIGN_TYPED_SCRIPT,                    \
+		&&OPCODE_ASSIGN_TYPED_PARAMETER,                 \
 		&&OPCODE_CAST_TO_BUILTIN,                        \
 		&&OPCODE_CAST_TO_NATIVE,                         \
 		&&OPCODE_CAST_TO_SCRIPT,                         \
@@ -1717,6 +1718,38 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #endif // DEBUG_ENABLED
 
 				*dst = *src;
+
+				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_ASSIGN_TYPED_PARAMETER) {
+				CHECK_SPACE(4);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+
+				int type_parameter_index = _code_ptr[ip + 3];
+
+				// A `T`-typed member is erased to a plain Variant slot at compile time, so a direct member
+				// store (e.g. `value = v` inside `class Box[T]`) bypasses the `set()` validation used for
+				// external writes. Validate here against the argument reified onto this instance (the `int`
+				// in `Box[int]`), mirroring that path. Instances created without explicit type arguments
+				// carry no bindings, leaving the slot effectively untyped.
+				if (p_instance != nullptr && type_parameter_index >= 0 && type_parameter_index < p_instance->type_arguments.size()) {
+					Variant value = *src;
+					ContainerTypeValidate validator(p_instance->type_arguments[type_parameter_index]);
+					validator.where = "member";
+					if (!validator.validate(value, "assign")) {
+#ifdef DEBUG_ENABLED
+						err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "%s".)",
+								_get_var_type(src), _get_element_type(p_instance->type_arguments[type_parameter_index]));
+#endif // DEBUG_ENABLED
+						OPCODE_BREAK;
+					}
+					*dst = value;
+				} else {
+					*dst = *src;
+				}
 
 				ip += 4;
 			}
