@@ -844,6 +844,7 @@ public:
 		bool uses_used = false;
 		String extends_path;
 		Vector<IdentifierNode *> extends; // List for indexing: extends A.B.C
+		Vector<TypeNode *> extends_type_arguments; // Type arguments on a generic base: extends List[T], extends List[int].
 		Vector<TypeParameterNode *> type_parameters; // Generic parameters: class Box[T], class_name Pair[K, V].
 		Vector<TraitUse> used_traits;
 		Vector<ClassNode *> resolved_traits;

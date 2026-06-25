@@ -1261,6 +1261,21 @@ void GDScriptParser::parse_extends() {
 		}
 		current_class->extends.push_back(parse_identifier());
 	}
+
+	// Type arguments specializing a generic base: `extends List[T]`, `extends List[int]`.
+	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		if (!check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+			do {
+				TypeNode *type_argument = parse_type();
+				if (type_argument == nullptr) {
+					push_error(R"(Expected type argument after "[".)");
+					break;
+				}
+				current_class->extends_type_arguments.push_back(type_argument);
+			} while (match(GDScriptTokenizer::Token::COMMA));
+		}
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type arguments.)");
+	}
 }
 
 void GDScriptParser::parse_uses() {

@@ -1009,4 +1009,173 @@ TEST_CASE("[Modules][GDScript] Analyzer keeps an unbounded type-parameter value 
 	CHECK(refs->get_datatype().is_variant());
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rebinds a parent type parameter through inheritance") {
+	GDScriptParser parser;
+	// `Stack[U] extends List[U]` rebinds `List`'s parameter to `Stack`'s own `U`.
+	const String source =
+			"class List[T]:\n"
+			"\tvar head: T\n"
+			"class Stack[U] extends List[U]:\n"
+			"\tpass\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::ClassNode *stack = generic_find_inner_class(parser.get_tree(), "Stack");
+	REQUIRE(stack != nullptr);
+
+	// The resolved base carries one type argument: the child's own parameter `U`.
+	const GDScriptParser::DataType base = stack->base_type;
+	CHECK(base.kind == GDScriptParser::DataType::CLASS);
+	REQUIRE(base.type_arguments.size() == 1);
+	CHECK(base.type_arguments[0].kind == GDScriptParser::DataType::TYPE_PARAMETER);
+	CHECK(base.type_arguments[0].type_parameter_name == StringName("U"));
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer binds a concrete type argument through inheritance") {
+	GDScriptParser parser;
+	// `IntList extends List[int]` binds `List`'s parameter to a concrete type.
+	const String source =
+			"class List[T]:\n"
+			"\tvar head: T\n"
+			"class IntList extends List[int]:\n"
+			"\tpass\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::ClassNode *int_list = generic_find_inner_class(parser.get_tree(), "IntList");
+	REQUIRE(int_list != nullptr);
+
+	const GDScriptParser::DataType base = int_list->base_type;
+	CHECK(base.kind == GDScriptParser::DataType::CLASS);
+	REQUIRE(base.type_arguments.size() == 1);
+	CHECK(base.type_arguments[0].kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(base.type_arguments[0].builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer substitutes an inherited member through a concrete base") {
+	GDScriptParser parser;
+	// Accessing the inherited `head` on an `IntList` substitutes `List`'s `T` to `int`.
+	const String source =
+			"class List[T]:\n"
+			"\tvar head: T\n"
+			"class IntList extends List[int]:\n"
+			"\tpass\n"
+			"func test() -> void:\n"
+			"\tvar list: IntList\n"
+			"\tvar got := list.head\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const GDScriptParser::DataType type = got->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer substitutes an inherited member through a specialized handle") {
+	GDScriptParser parser;
+	// A `Stack[int]` use site flows `int` up through `Stack[U] extends List[U]` to `List`'s `head`.
+	const String source =
+			"class List[T]:\n"
+			"\tvar head: T\n"
+			"class Stack[U] extends List[U]:\n"
+			"\tpass\n"
+			"func test() -> void:\n"
+			"\tvar stack: Stack[int]\n"
+			"\tvar got := stack.head\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const GDScriptParser::DataType type = got->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer substitutes an inherited member across multiple levels") {
+	GDScriptParser parser;
+	// Two levels of rebinding: `Grid extends Matrix[int]`, `Matrix[V] extends Cell[V]`.
+	const String source =
+			"class Cell[T]:\n"
+			"\tvar value: T\n"
+			"class Matrix[V] extends Cell[V]:\n"
+			"\tpass\n"
+			"class Grid extends Matrix[int]:\n"
+			"\tpass\n"
+			"func test() -> void:\n"
+			"\tvar grid: Grid\n"
+			"\tvar got := grid.value\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const GDScriptParser::DataType type = got->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects a wrong arity in a generic extends clause") {
+	GDScriptParser parser;
+	const String source =
+			"class List[T]:\n"
+			"\tvar head: T\n"
+			"class Bad extends List[int, String]:\n"
+			"\tpass\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_arity_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("type argument")) {
+			found_arity_error = true;
+			break;
+		}
+	}
+	CHECK(found_arity_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects type arguments on a non-generic extends clause") {
+	GDScriptParser parser;
+	const String source =
+			"class Plain:\n"
+			"\tpass\n"
+			"class Bad extends Plain[int]:\n"
+			"\tpass\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+}
+
 } // namespace GDScriptTests
