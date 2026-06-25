@@ -651,6 +651,18 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 		}
 
 		result = base;
+
+		// Specialize a generic base, e.g. `Stack[T] extends List[T]` or `extends List[int]`. The
+		// arguments are resolved in this class's scope so a child parameter like `T` binds here.
+		if (!p_class->extends_type_arguments.is_empty()) {
+			if (result.kind != GDScriptParser::DataType::CLASS || result.class_type == nullptr) {
+				push_error(vformat(R"(Type "%s" is not a generic class and cannot take type arguments.)", result.to_string()), p_class->extends_type_arguments[0]);
+				return ERR_PARSE_ERROR;
+			}
+			if (!apply_class_type_arguments(result, p_class->extends_type_arguments, p_class->extends_type_arguments[0])) {
+				return ERR_PARSE_ERROR;
+			}
+		}
 	}
 
 	if (!result.is_set() || result.has_no_type()) {
@@ -1090,67 +1102,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		} else if (result.kind == GDScriptParser::DataType::CLASS && result.class_type != nullptr) {
 			// Generic class specialization, e.g. `Box[int]`. The brackets carry type arguments
 			// rather than collection element types, so they must match the class's parameter list.
-			const int expected_argument_count = result.class_type->type_parameters.size();
-			if (expected_argument_count == 0) {
-				push_error(vformat(R"(Class "%s" is not generic and cannot take type arguments.)", result.to_string()), p_type);
-				return bad_type;
-			}
-			if (p_type->container_types.size() != expected_argument_count) {
-				push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)", result.to_string(), expected_argument_count, p_type->container_types.size()), p_type);
-				return bad_type;
-			}
-			result.type_arguments.clear();
-			const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = result.class_type->type_parameters;
-
-			// Resolve every argument first so that bound checking can substitute the concrete argument
-			// for any sibling parameter, regardless of declaration order. Arguments that fail to resolve
-			// already reported an error and are excluded from bound checking to avoid double diagnostics.
-			Vector<bool> argument_failed;
-			for (int i = 0; i < p_type->container_types.size(); i++) {
-				const int errors_before = parser->get_errors().size();
-				result.type_arguments.push_back(type_from_metatype(resolve_datatype(p_type->container_types[i])));
-				argument_failed.push_back(parser->get_errors().size() > errors_before);
-			}
-
-			// Bind every parameter to its argument so a dependent bound like `[U: Resource, T: U]` (or its
-			// forward-referencing form `[T: U, U: Resource]`) is checked against the concrete argument
-			// supplied for the referenced sibling.
-			HashMap<StringName, GDScriptParser::DataType> bindings;
-			for (int i = 0; i < result.type_arguments.size(); i++) {
-				const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
-				if (parameter != nullptr && parameter->identifier != nullptr) {
-					bindings.insert(parameter->identifier->name, result.type_arguments[i]);
-				}
-			}
-
-			bool bound_violation = false;
-			for (int i = 0; i < result.type_arguments.size(); i++) {
-				const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
-				if (parameter == nullptr || parameter->bound == nullptr || argument_failed[i]) {
-					continue;
-				}
-				// Resolve the bound in the generic class's own scope so relative bound names bind to the
-				// declaring class rather than the (possibly unrelated) use site, where an enclosing
-				// class or method type parameter could otherwise shadow them.
-				GDScriptParser::ClassNode *previous_class = parser->current_class;
-				GDScriptParser::FunctionNode *previous_function = parser->current_function;
-				parser->current_class = result.class_type;
-				parser->current_function = nullptr;
-				const GDScriptParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
-				parser->current_class = previous_class;
-				parser->current_function = previous_function;
-
-				// An unresolved or unconstrained (`Variant`) bound imposes no requirement.
-				if (!bound.is_set() || bound.is_variant()) {
-					continue;
-				}
-				const GDScriptParser::DataType effective_bound = bindings.is_empty() ? bound : GDScriptParser::DataType::substitute(bound, bindings);
-				if (!type_argument_satisfies_bound(result.type_arguments[i], effective_bound)) {
-					push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", result.type_arguments[i].to_string(), effective_bound.to_string(), parameter->identifier->name), p_type->container_types[i]);
-					bound_violation = true;
-				}
-			}
-			if (bound_violation) {
+			if (!apply_class_type_arguments(result, p_type->container_types, p_type)) {
 				return bad_type;
 			}
 		} else {
@@ -1223,7 +1175,7 @@ bool GDScriptAnalyzer::resolve_type_parameter(const StringName &p_name, GDScript
 	return true;
 }
 
-GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base) {
+GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base, const GDScriptParser::FunctionNode *p_shadowing_method) {
 	if (!p_base.has_type_arguments() || p_base.class_type == nullptr) {
 		return p_member_type;
 	}
@@ -1237,10 +1189,126 @@ GDScriptParser::DataType GDScriptAnalyzer::substitute_member_type(const GDScript
 			bindings.insert(parameter->identifier->name, p_base.type_arguments[i]);
 		}
 	}
+	// A method's own type parameters shadow same-named class parameters within its signature, so the
+	// class specialization must not rewrite them (e.g. `func echo[T](v: T)` on a `Box[int]`).
+	if (p_shadowing_method != nullptr) {
+		for (const GDScriptParser::TypeParameterNode *parameter : p_shadowing_method->type_parameters) {
+			if (parameter != nullptr && parameter->identifier != nullptr) {
+				bindings.erase(parameter->identifier->name);
+			}
+		}
+	}
 	if (bindings.is_empty()) {
 		return p_member_type;
 	}
 	return GDScriptParser::DataType::substitute(p_member_type, bindings);
+}
+
+bool GDScriptAnalyzer::apply_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::TypeNode *> &p_argument_nodes, const GDScriptParser::Node *p_source) {
+	const int expected_argument_count = r_type.class_type->type_parameters.size();
+	if (expected_argument_count == 0) {
+		push_error(vformat(R"(Class "%s" is not generic and cannot take type arguments.)", r_type.to_string()), p_source);
+		return false;
+	}
+	if (p_argument_nodes.size() != expected_argument_count) {
+		push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)", r_type.to_string(), expected_argument_count, p_argument_nodes.size()), p_source);
+		return false;
+	}
+
+	r_type.type_arguments.clear();
+	const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = r_type.class_type->type_parameters;
+
+	// Resolve every argument first so that bound checking can substitute the concrete argument
+	// for any sibling parameter, regardless of declaration order. Arguments that fail to resolve
+	// already reported an error and are excluded from bound checking to avoid double diagnostics.
+	Vector<bool> argument_failed;
+	for (int i = 0; i < p_argument_nodes.size(); i++) {
+		const int errors_before = parser->get_errors().size();
+		r_type.type_arguments.push_back(type_from_metatype(resolve_datatype(p_argument_nodes[i])));
+		argument_failed.push_back(parser->get_errors().size() > errors_before);
+	}
+
+	// Bind every parameter to its argument so a dependent bound like `[U: Resource, T: U]` (or its
+	// forward-referencing form `[T: U, U: Resource]`) is checked against the concrete argument
+	// supplied for the referenced sibling.
+	HashMap<StringName, GDScriptParser::DataType> bindings;
+	for (int i = 0; i < r_type.type_arguments.size(); i++) {
+		const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+		if (parameter != nullptr && parameter->identifier != nullptr) {
+			bindings.insert(parameter->identifier->name, r_type.type_arguments[i]);
+		}
+	}
+
+	bool bound_violation = false;
+	for (int i = 0; i < r_type.type_arguments.size(); i++) {
+		const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+		if (parameter == nullptr || parameter->bound == nullptr || argument_failed[i]) {
+			continue;
+		}
+		// Resolve the bound in the generic class's own scope so relative bound names bind to the
+		// declaring class rather than the (possibly unrelated) use site, where an enclosing
+		// class or method type parameter could otherwise shadow them.
+		GDScriptParser::ClassNode *previous_class = parser->current_class;
+		GDScriptParser::FunctionNode *previous_function = parser->current_function;
+		parser->current_class = r_type.class_type;
+		parser->current_function = nullptr;
+		const GDScriptParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
+		parser->current_class = previous_class;
+		parser->current_function = previous_function;
+
+		// An unresolved or unconstrained (`Variant`) bound imposes no requirement.
+		if (!bound.is_set() || bound.is_variant()) {
+			continue;
+		}
+		const GDScriptParser::DataType effective_bound = bindings.is_empty() ? bound : GDScriptParser::DataType::substitute(bound, bindings);
+		if (!type_argument_satisfies_bound(r_type.type_arguments[i], effective_bound)) {
+			push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", r_type.type_arguments[i].to_string(), effective_bound.to_string(), parameter->identifier->name), p_argument_nodes[i]);
+			bound_violation = true;
+		}
+	}
+	return !bound_violation;
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::specialize_ancestor_type(const GDScriptParser::DataType &p_base, const GDScriptParser::ClassNode *p_target) {
+	// Walks the inheritance chain from a specialized base down to `p_target`, applying each level's
+	// type arguments so a member declared in an ancestor sees the concrete arguments supplied at the
+	// most-derived use site. For `Stack[int] extends List[U]`, reaching `List` yields `List[int]`.
+	GDScriptParser::DataType current = p_base;
+	while (current.class_type != nullptr) {
+		if (current.class_type == p_target) {
+			return current;
+		}
+
+		GDScriptParser::DataType parent = current.class_type->base_type;
+		if (parent.class_type == nullptr) {
+			break;
+		}
+
+		// Rewrite the parent handle's type arguments (which reference `current`'s parameters) into
+		// the concrete arguments bound at this level.
+		if (current.has_type_arguments()) {
+			const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = current.class_type->type_parameters;
+			HashMap<StringName, GDScriptParser::DataType> bindings;
+			const int binding_count = MIN(type_parameters.size(), current.type_arguments.size());
+			for (int i = 0; i < binding_count; i++) {
+				const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+				if (parameter != nullptr && parameter->identifier != nullptr) {
+					bindings.insert(parameter->identifier->name, current.type_arguments[i]);
+				}
+			}
+			if (!bindings.is_empty()) {
+				parent = GDScriptParser::DataType::substitute(parent, bindings);
+			}
+		}
+
+		current = parent;
+	}
+
+	// `p_target` is not on the inheritance chain (e.g. an outer class or applied trait); return a
+	// non-specialized handle so member substitution is a no-op.
+	GDScriptParser::DataType fallback = p_base;
+	fallback.type_arguments.clear();
+	return fallback;
 }
 
 void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, const StringName &p_name, const GDScriptParser::Node *p_source) {
@@ -5575,6 +5643,12 @@ bool GDScriptAnalyzer::type_argument_satisfies_bound(const GDScriptParser::DataT
 	if (p_argument.is_variant()) {
 		return false;
 	}
+	// A generic bound (e.g. `List[int]`) must be matched invariantly in its type arguments, which the
+	// general compatibility walk enforces along the inheritance chain; nominal derivation alone would
+	// wrongly accept a `Stack[String]`. Plain (unspecialized) bounds keep the cheaper derivation check.
+	if (p_bound.has_type_arguments()) {
+		return is_type_compatible(p_bound, p_argument, false);
+	}
 	return datatype_derives_from_datatype(p_argument, p_bound);
 }
 
@@ -6491,7 +6565,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 				case GDScriptParser::ClassNode::Member::VARIABLE: {
 					if (can_access_instance_member && (!base.is_meta_type || member.variable->is_static)) {
-						p_identifier->set_datatype(substitute_member_type(member.get_datatype(), base));
+						p_identifier->set_datatype(substitute_member_type(member.get_datatype(), specialize_ancestor_type(base, script_class)));
 						p_identifier->source = member.variable->is_static ? GDScriptParser::IdentifierNode::STATIC_VARIABLE : GDScriptParser::IdentifierNode::MEMBER_VARIABLE;
 						p_identifier->variable_source = member.variable;
 						member.variable->usages += 1;
@@ -6512,6 +6586,10 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 				case GDScriptParser::ClassNode::Member::FUNCTION: {
 					if (can_access_instance_member && (!base.is_meta_type || member.function->is_static || is_constructor)) {
 						GDScriptParser::DataType callable_type = make_callable_type(member.function->info, member.function);
+						// Substitute the method's `T`-typed parameters and return through the inheritance
+						// chain, so `IntList extends List[int]` sees `func get() -> T` as `-> int`. The
+						// method's own type parameters shadow same-named class ones and are left intact.
+						callable_type = substitute_member_type(callable_type, specialize_ancestor_type(base, script_class), member.function);
 						if (p_base != nullptr) {
 							callable_type.has_explicit_method_signature = true;
 						}
@@ -8545,6 +8623,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	GDScriptParser::ClassNode *base_class = p_base_type.class_type;
 	GDScriptParser::ClassNode *original_base_class = base_class;
 	GDScriptParser::FunctionNode *found_function = nullptr;
+	// The class that declares `found_function`, used to specialize a generic signature against the
+	// (possibly more-derived) receiver type so inherited `T`-typed parameters/returns become concrete.
+	GDScriptParser::ClassNode *found_in_class = nullptr;
 
 	while (found_function == nullptr && base_class != nullptr) {
 		if (base_class->has_member(function_name)) {
@@ -8560,6 +8641,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 			resolve_class_member(base_class, function_name, p_source);
 			found_function = member.function;
+			found_in_class = base_class;
 		}
 
 		resolve_class_inheritance(base_class, p_source);
@@ -8587,6 +8669,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 			resolve_class_member(trait, function_name, p_source);
 			found_function = member.function;
+			found_in_class = trait;
 			break;
 		}
 	}
@@ -8607,8 +8690,11 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (found_function->is_coroutine) {
 			r_method_flags.set_flag(METHOD_FLAG_ASYNC);
 		}
+		// Specialize the signature against the receiver so inherited or directly-applied type
+		// arguments substitute `T`-typed parameters and return into concrete types.
+		const GDScriptParser::DataType specialized_base = specialize_ancestor_type(p_base_type, found_in_class);
 		for (int i = 0; i < found_function->parameters.size(); i++) {
-			r_par_types.push_back(found_function->parameters[i]->get_datatype());
+			r_par_types.push_back(substitute_member_type(found_function->parameters[i]->get_datatype(), specialized_base, found_function));
 			if (found_function->parameters[i]->initializer != nullptr) {
 				r_default_arg_count++;
 			}
@@ -8616,7 +8702,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (found_function->is_vararg()) {
 			r_method_flags.set_flag(METHOD_FLAG_VARARG);
 		}
-		r_return_type = p_is_constructor ? p_base_type : found_function->get_datatype();
+		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function);
 		r_return_type.is_meta_type = false;
 		r_return_type.is_coroutine = found_function->is_coroutine;
 
@@ -9253,6 +9339,12 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 	collect_method_type_parameter_bounds(r_return_type, parameter_bounds);
 	for (const GDScriptParser::TypeParameterNode *parameter : type_parameters) {
 		if (parameter == nullptr || parameter->identifier == nullptr || parameter->bound == nullptr) {
+			continue;
+		}
+		// The bound collected from the (already receiver-specialized) signature wins; the raw
+		// declaration is only a fallback for a parameter whose bound is reached nowhere in the
+		// signature, so it must not overwrite the specialized one (e.g. `[U: T]` with `T := PackedScene`).
+		if (parameter_bounds.has(parameter->identifier->name)) {
 			continue;
 		}
 		const GDScriptParser::DataType bound_type = parameter->bound->get_datatype();

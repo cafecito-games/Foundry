@@ -1261,6 +1261,23 @@ void GDScriptParser::parse_extends() {
 		}
 		current_class->extends.push_back(parse_identifier());
 	}
+
+	// Type arguments specializing a generic base: `extends List[T]`, `extends List[int]`.
+	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+			push_error(R"(Expected at least one type argument after "[".)");
+		} else {
+			do {
+				TypeNode *type_argument = parse_type();
+				if (type_argument == nullptr) {
+					push_error(R"(Expected type argument after "[".)");
+					break;
+				}
+				current_class->extends_type_arguments.push_back(type_argument);
+			} while (match(GDScriptTokenizer::Token::COMMA));
+		}
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type arguments.)");
+	}
 }
 
 void GDScriptParser::parse_uses() {
@@ -5859,8 +5876,14 @@ GDScriptParser::DataType GDScriptParser::DataType::substitute(const DataType &p_
 		if (binding != nullptr) {
 			return *binding;
 		}
-		// Unbound parameter: leave it intact so an outer scope can substitute it later.
-		return p_type;
+		// Unbound parameter: leave it intact so an outer scope can substitute it later, but specialize
+		// its bound so a bound referencing a substituted parameter (e.g. `[U: T]` with `T := int`)
+		// reflects the binding.
+		DataType result = p_type;
+		for (int i = 0; i < result.type_parameter_bound.size(); i++) {
+			result.type_parameter_bound.write[i] = substitute(result.type_parameter_bound[i], p_bindings);
+		}
+		return result;
 	}
 
 	DataType result = p_type;

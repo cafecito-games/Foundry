@@ -318,21 +318,44 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 				result.compatible = ClassDB::is_parent_class(src_native, GDScript::get_class_static());
 				return result;
 			}
-			while (src_class != nullptr) {
-				if (src_class == p_target.class_type || src_class->fqcn == p_target.class_type->fqcn) {
-					// Specialized generic handles are invariant in their type arguments: a `Box[int]`
-					// is not a `Box[String]`. Only enforce this on a direct (non-upcast) match of the same
-					// class; specialization through inheritance is tracked separately (see epic #125).
-					if (p_target.has_type_arguments() && p_source.has_type_arguments() && src_class == p_source.class_type) {
-						result.compatible = p_source.type_arguments == p_target.type_arguments;
-					} else {
-						result.compatible = true;
+			{
+				// Walk the source's inheritance chain, carrying its type arguments down each level so a
+				// specialized handle is compared invariantly against the target at the matching class:
+				// `Stack[String] extends List[U]` reaches `List` as `List[String]`, which is not `List[int]`.
+				GDScriptParser::DataType current = p_source;
+				while (current.class_type != nullptr) {
+					if (current.class_type == p_target.class_type || current.class_type->fqcn == p_target.class_type->fqcn) {
+						// Specialized generic handles are invariant in their type arguments: a `Box[int]`
+						// is not a `Box[String]`. A bare (unspecialized) source stays compatible.
+						if (p_target.has_type_arguments() && current.has_type_arguments()) {
+							result.compatible = current.type_arguments == p_target.type_arguments;
+						} else {
+							result.compatible = true;
+						}
+						return result;
 					}
-					return result;
+
+					// Step to the base, substituting this level's type arguments into the base handle so
+					// the next comparison sees concrete arguments.
+					GDScriptParser::DataType parent = current.class_type->base_type;
+					if (current.has_type_arguments() && !current.class_type->type_parameters.is_empty()) {
+						const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = current.class_type->type_parameters;
+						HashMap<StringName, GDScriptParser::DataType> bindings;
+						const int binding_count = MIN(type_parameters.size(), current.type_arguments.size());
+						for (int i = 0; i < binding_count; i++) {
+							const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
+							if (parameter != nullptr && parameter->identifier != nullptr) {
+								bindings.insert(parameter->identifier->name, current.type_arguments[i]);
+							}
+						}
+						if (!bindings.is_empty()) {
+							parent = GDScriptParser::DataType::substitute(parent, bindings);
+						}
+					}
+					current = parent;
 				}
-				src_class = src_class->base_type.class_type;
+				return result;
 			}
-			return result;
 		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::VARIANT:
 		case GDScriptParser::DataType::BUILTIN:
