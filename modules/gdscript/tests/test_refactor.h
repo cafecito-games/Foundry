@@ -1004,6 +1004,46 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_EQ(rendered, "characters.Node");
 			CHECK(imports.is_empty());
 		}
+		SUBCASE("same-namespace native collision still falls back to the qualified spelling") {
+			// Even in its own namespace, a class named like a native type must be
+			// qualified because the analyzer resolves the native `Node` first.
+			GDScriptParser::IdentifierNode node_identifier;
+			node_identifier.name = "Node";
+			GDScriptParser::ClassNode node_class;
+			node_class.identifier = &node_identifier;
+			node_class.namespace_name = "characters";
+			GDScriptParser::DataType node_type;
+			node_type.kind = GDScriptParser::DataType::CLASS;
+			node_type.type_source = GDScriptParser::DataType::INFERRED;
+			node_type.class_type = &node_class;
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "characters";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(node_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "characters.Node");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("nullable typed array keeps its nullable marker") {
+			GDScriptParser::DataType array_type;
+			array_type.kind = GDScriptParser::DataType::BUILTIN;
+			array_type.builtin_type = Variant::ARRAY;
+			array_type.type_source = GDScriptParser::DataType::INFERRED;
+			array_type.is_nullable = true;
+			GDScriptParser::DataType element_type;
+			element_type.kind = GDScriptParser::DataType::BUILTIN;
+			element_type.builtin_type = Variant::INT;
+			element_type.type_source = GDScriptParser::DataType::INFERRED;
+			array_type.set_container_element_type(0, element_type);
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(array_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Array[int]?");
+			CHECK(imports.is_empty());
+		}
 		SUBCASE("global-namespace project renders bare exactly as today") {
 			// No `namespace`/`import` context: a global file leaves rendering and
 			// imports unchanged.

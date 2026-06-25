@@ -156,16 +156,18 @@ enum class ClassSpelling {
 // an import), and falls back to the always-resolvable qualified spelling when a
 // bare reference would be shadowed or ambiguous.
 ClassSpelling choose_class_spelling(const String &p_target_namespace, const String &p_class_name, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
-	// A class in the current namespace resolves bare to itself; the current
-	// namespace wins first. (A same-named class elsewhere in the current namespace
-	// is a project-level conflict regardless of this refactor.)
-	if (p_target_namespace == p_scope.current_namespace) {
-		return ClassSpelling::BARE_NO_IMPORT;
-	}
 	// A bare name colliding with a builtin/native/global-namespace class can never
-	// name a namespaced class, and importing cannot change that.
+	// name a namespaced class (the analyzer resolves those first), and importing
+	// cannot change that. This holds even for a same-namespace class, so the check
+	// comes first.
 	if (bare_name_is_globally_shadowed(p_class_name)) {
 		return ClassSpelling::QUALIFIED;
+	}
+	// A class in the current namespace resolves bare to itself; the current
+	// namespace wins over imports. (A same-named class elsewhere in the current
+	// namespace is a project-level conflict regardless of this refactor.)
+	if (p_target_namespace == p_scope.current_namespace) {
+		return ClassSpelling::BARE_NO_IMPORT;
 	}
 	// Another in-scope namespace defining the same name makes a bare reference
 	// ambiguous; importing the target would not help.
@@ -223,14 +225,16 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 	}
 
 	// Recurse into container element types so a cross-namespace class nested in an
-	// Array/Dictionary still contributes its import and qualified spelling.
+	// Array/Dictionary still contributes its import and qualified spelling. The
+	// nullable marker is preserved so an inferred `Array[T]?` is not narrowed.
+	const String nullable_suffix = p_type.is_nullable ? "?" : "";
 	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
 		if (p_type.builtin_type == Variant::ARRAY && p_type.has_container_element_type(0)) {
 			String element_rendered;
 			if (!render_scoped(p_type.get_container_element_type(0), p_scope, element_rendered, r_required_imports)) {
 				return false;
 			}
-			r_rendered = vformat("Array[%s]", element_rendered);
+			r_rendered = vformat("Array[%s]%s", element_rendered, nullable_suffix);
 			return true;
 		}
 		if (p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
@@ -240,7 +244,7 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 					!render_scoped(p_type.get_container_element_type_or_variant(1), p_scope, value_rendered, r_required_imports)) {
 				return false;
 			}
-			r_rendered = vformat("Dictionary[%s, %s]", key_rendered, value_rendered);
+			r_rendered = vformat("Dictionary[%s, %s]%s", key_rendered, value_rendered, nullable_suffix);
 			return true;
 		}
 	}
