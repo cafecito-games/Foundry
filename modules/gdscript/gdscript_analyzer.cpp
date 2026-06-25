@@ -7442,20 +7442,36 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 		GDScriptParser::DataType base_meta_type = p_subscript->base->get_datatype();
 		if (base_meta_type.is_set() && base_meta_type.is_meta_type && base_meta_type.kind == GDScriptParser::DataType::CLASS &&
 				base_meta_type.class_type != nullptr && !base_meta_type.class_type->type_parameters.is_empty()) {
-			// Generic class specialization in value position, e.g. `Box[int]`. The brackets carry a
-			// type argument rather than an index. A single subscript index expresses at most one
-			// argument, mirroring the use-site type-argument limit on generic method applications.
+			// Generic class specialization in value position, e.g. `Box[int]` or `Pair[int, String]`.
+			// The brackets carry a type-argument list rather than an index. A multi-argument list is
+			// captured in `type_arguments`; a single argument keeps using `index`.
 			GDScriptParser::DataType specialized = base_meta_type;
 			Vector<GDScriptParser::DataType> resolved_arguments;
 			Vector<bool> argument_failed;
 			Vector<const GDScriptParser::Node *> argument_sources;
-			GDScriptParser::DataType type_argument;
-			if (resolve_explicit_type_argument(p_subscript->index, type_argument)) {
-				resolved_arguments.push_back(type_argument);
-				argument_failed.push_back(false);
-				argument_sources.push_back(p_subscript->index);
+			Vector<GDScriptParser::ExpressionNode *> argument_expressions;
+			if (p_subscript->type_arguments.is_empty()) {
+				argument_expressions.push_back(p_subscript->index);
 			} else {
-				push_error(vformat(R"(Could not resolve the type argument for generic class "%s".)", specialized.to_string()), p_subscript->index);
+				argument_expressions = p_subscript->type_arguments;
+			}
+			for (GDScriptParser::ExpressionNode *argument_expression : argument_expressions) {
+				// Resolve positionally: a failed argument keeps its slot (filled with the Variant
+				// fallback and flagged) so the arity check sees the count the user wrote and a later
+				// argument is never shifted into an earlier type parameter.
+				GDScriptParser::DataType type_argument;
+				if (resolve_explicit_type_argument(argument_expression, type_argument)) {
+					resolved_arguments.push_back(type_argument);
+					argument_failed.push_back(false);
+				} else {
+					push_error(vformat(R"(Could not resolve the type argument for generic class "%s".)", specialized.to_string()), argument_expression);
+					GDScriptParser::DataType fallback;
+					fallback.kind = GDScriptParser::DataType::VARIANT;
+					fallback.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+					resolved_arguments.push_back(fallback);
+					argument_failed.push_back(true);
+				}
+				argument_sources.push_back(argument_expression);
 			}
 
 			const int expected_argument_count = specialized.class_type->type_parameters.size();
@@ -7471,6 +7487,17 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				p_subscript->is_constant = p_subscript->base->is_constant;
 				p_subscript->reduced_value = p_subscript->base->reduced_value;
 			}
+			p_subscript->set_datatype(result_type);
+			return;
+		}
+
+		if (!p_subscript->type_arguments.is_empty()) {
+			// A comma-separated or `?`-marked type-argument list only makes sense as a generic
+			// specialization (handled above) or an explicit generic-method application (handled in
+			// call reduction). Reaching here means it was used as an ordinary subscript, which never
+			// accepts more than one index.
+			push_error(R"(Only a single index is allowed in the subscript operator.)", p_subscript);
+			result_type.kind = GDScriptParser::DataType::VARIANT;
 			p_subscript->set_datatype(result_type);
 			return;
 		}
@@ -9323,11 +9350,10 @@ bool GDScriptAnalyzer::resolve_explicit_type_argument(GDScriptParser::Expression
 	}
 
 	if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
-		// A nested type argument parsed as a subscript. The single subscript index can only express
-		// a one-element container, so this resolves `Array[Element]` (recursively). Other bases such
-		// as a generic class handle (`Box[int]`) or a non-container builtin would need a different
-		// shape (`type_arguments` / multiple indices) and are not representable here; reject them so
-		// an explicit application never silently builds a wrong type.
+		// A nested type argument parsed as a subscript, such as `Array[Element]` (single element) or
+		// `Dictionary[Key, Value]` (a two-argument container). A generic class handle (`Box[int]`)
+		// as a nested argument is not representable here yet, so reject it rather than silently
+		// building a wrong type.
 		GDScriptParser::SubscriptNode *subscript = static_cast<GDScriptParser::SubscriptNode *>(p_expression);
 		if (subscript->is_attribute || subscript->base == nullptr || subscript->index == nullptr) {
 			return false;
@@ -9336,14 +9362,36 @@ bool GDScriptAnalyzer::resolve_explicit_type_argument(GDScriptParser::Expression
 		if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
 			return false;
 		}
-		if (base_argument.kind != GDScriptParser::DataType::BUILTIN || base_argument.builtin_type != Variant::ARRAY) {
+		if (base_argument.kind != GDScriptParser::DataType::BUILTIN) {
 			return false;
 		}
-		GDScriptParser::DataType element_argument;
-		if (!resolve_explicit_type_argument(subscript->index, element_argument)) {
+
+		Vector<GDScriptParser::ExpressionNode *> element_expressions;
+		if (subscript->type_arguments.is_empty()) {
+			element_expressions.push_back(subscript->index);
+		} else {
+			element_expressions = subscript->type_arguments;
+		}
+
+		if (base_argument.builtin_type == Variant::ARRAY) {
+			if (element_expressions.size() != 1) {
+				return false;
+			}
+		} else if (base_argument.builtin_type == Variant::DICTIONARY) {
+			if (element_expressions.size() != 2) {
+				return false;
+			}
+		} else {
 			return false;
 		}
-		base_argument.set_container_element_type(0, element_argument);
+
+		for (int i = 0; i < element_expressions.size(); i++) {
+			GDScriptParser::DataType element_argument;
+			if (!resolve_explicit_type_argument(element_expressions[i], element_argument)) {
+				return false;
+			}
+			base_argument.set_container_element_type(i, element_argument);
+		}
 		r_type_argument = base_argument;
 		return true;
 	}
@@ -9390,17 +9438,34 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 		if (!subscript->is_attribute && subscript->index != nullptr) {
 			explicit_application = true;
 
-			Vector<GDScriptParser::DataType> explicit_arguments;
-			GDScriptParser::DataType type_argument;
-			if (resolve_explicit_type_argument(subscript->index, type_argument)) {
-				explicit_arguments.push_back(type_argument);
+			Vector<GDScriptParser::ExpressionNode *> argument_expressions;
+			if (subscript->type_arguments.is_empty()) {
+				argument_expressions.push_back(subscript->index);
 			} else {
-				push_error(vformat(R"*(Could not resolve the explicit type argument for generic method "%s()".)*", p_function->identifier->name), subscript->index);
+				argument_expressions = subscript->type_arguments;
 			}
 
-			if (!explicit_arguments.is_empty() && explicit_arguments.size() != type_parameters.size()) {
+			// Resolve positionally: a failed argument keeps its slot (filled with the Variant
+			// fallback and flagged) so a later argument is never shifted into an earlier type
+			// parameter, and the arity check sees the count the user actually wrote.
+			Vector<GDScriptParser::DataType> explicit_arguments;
+			Vector<bool> explicit_argument_failed;
+			for (GDScriptParser::ExpressionNode *argument_expression : argument_expressions) {
+				GDScriptParser::DataType type_argument;
+				if (resolve_explicit_type_argument(argument_expression, type_argument)) {
+					explicit_arguments.push_back(type_argument);
+					explicit_argument_failed.push_back(false);
+				} else {
+					push_error(vformat(R"*(Could not resolve the explicit type argument for generic method "%s()".)*", p_function->identifier->name), argument_expression);
+					explicit_arguments.push_back(unresolved_fallback);
+					explicit_argument_failed.push_back(true);
+				}
+			}
+
+			if (explicit_arguments.size() != type_parameters.size()) {
 				push_error(vformat(R"*(Generic method "%s()" expects %d type argument(s), but %d %s given.)*", p_function->identifier->name, type_parameters.size(), explicit_arguments.size(), explicit_arguments.size() == 1 ? "was" : "were"), subscript);
 				explicit_arguments.clear();
+				explicit_argument_failed.clear();
 			}
 
 			const int binding_count = MIN(explicit_arguments.size(), type_parameters.size());
@@ -9410,6 +9475,11 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 					continue;
 				}
 				bindings.insert(parameter->identifier->name, explicit_arguments[i]);
+				if (explicit_argument_failed[i]) {
+					// Resolution already failed and was reported; keep the slot bound to Variant and
+					// skip its bound check rather than re-diagnosing.
+					failed_parameters.insert(parameter->identifier->name);
+				}
 			}
 		}
 	}
