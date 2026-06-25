@@ -8961,18 +8961,12 @@ bool GDScriptAnalyzer::call_argument_can_be_string_name(const GDScriptParser::Ca
 }
 
 bool GDScriptAnalyzer::merge_inferred_type_argument(const GDScriptParser::DataType &p_existing, const GDScriptParser::DataType &p_candidate, GDScriptParser::DataType &r_merged) {
-	if (p_existing == p_candidate) {
+	// Type parameters are invariant (epic #125 design): a parameter solved from several arguments
+	// must resolve to the same type each time. Mutual assignability without implicit conversion is
+	// the invariant equality test, tolerating incidental DataType field differences between two
+	// arguments of the same type. Differing types conflict and require explicit application.
+	if (is_type_compatible(p_existing, p_candidate) && is_type_compatible(p_candidate, p_existing)) {
 		r_merged = p_existing;
-		return true;
-	}
-	// Allow a single parameter inferred from several arguments to widen to a common type
-	// (e.g. `int` and `float` settle on `float`). Invariant otherwise.
-	if (is_type_compatible(p_existing, p_candidate)) {
-		r_merged = p_existing;
-		return true;
-	}
-	if (is_type_compatible(p_candidate, p_existing)) {
-		r_merged = p_candidate;
 		return true;
 	}
 	return false;
@@ -9056,13 +9050,20 @@ bool GDScriptAnalyzer::resolve_explicit_type_argument(GDScriptParser::Expression
 	}
 
 	if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
-		// A nested type argument such as `Array[int]` or `Box[int]` parsed as a subscript.
+		// A nested type argument parsed as a subscript. The single subscript index can only express
+		// a one-element container, so this resolves `Array[Element]` (recursively). Other bases such
+		// as a generic class handle (`Box[int]`) or a non-container builtin would need a different
+		// shape (`type_arguments` / multiple indices) and are not representable here; reject them so
+		// an explicit application never silently builds a wrong type.
 		GDScriptParser::SubscriptNode *subscript = static_cast<GDScriptParser::SubscriptNode *>(p_expression);
 		if (subscript->is_attribute || subscript->base == nullptr || subscript->index == nullptr) {
 			return false;
 		}
 		GDScriptParser::DataType base_argument;
 		if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
+			return false;
+		}
+		if (base_argument.kind != GDScriptParser::DataType::BUILTIN || base_argument.builtin_type != Variant::ARRAY) {
 			return false;
 		}
 		GDScriptParser::DataType element_argument;
@@ -9075,6 +9076,20 @@ bool GDScriptAnalyzer::resolve_explicit_type_argument(GDScriptParser::Expression
 	}
 
 	return false;
+}
+
+static void collect_method_type_parameter_bounds(const GDScriptParser::DataType &p_type, HashMap<StringName, GDScriptParser::DataType> &r_bounds) {
+	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
+			p_type.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_METHOD &&
+			!p_type.type_parameter_bound.is_empty() && !r_bounds.has(p_type.type_parameter_name)) {
+		r_bounds.insert(p_type.type_parameter_name, p_type.type_parameter_bound[0]);
+	}
+	for (const GDScriptParser::DataType &element : p_type.container_element_types) {
+		collect_method_type_parameter_bounds(element, r_bounds);
+	}
+	for (const GDScriptParser::DataType &argument : p_type.type_arguments) {
+		collect_method_type_parameter_bounds(argument, r_bounds);
+	}
 }
 
 void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_function,
@@ -9091,6 +9106,9 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 	unresolved_fallback.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 
 	HashMap<StringName, GDScriptParser::DataType> bindings;
+	// Parameters that could not be solved (conflicting or unconstrained); their fallback Variant
+	// binding must not be re-reported as a bound violation.
+	HashSet<StringName> failed_parameters;
 
 	// Explicit type arguments (`swap[int](...)`) short-circuit inference.
 	bool explicit_application = false;
@@ -9142,6 +9160,7 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 			push_error(vformat(R"*(Could not infer type parameter "%s" of generic method "%s()" because its arguments have conflicting types. Apply the type arguments explicitly, e.g. "%s[...](...)".)*", conflicted, p_function->identifier->name, p_function->identifier->name), p_call);
 			// Keep the call type-checkable: an unresolved parameter falls back to Variant.
 			bindings.insert(conflicted, unresolved_fallback);
+			failed_parameters.insert(conflicted);
 		}
 	}
 
@@ -9158,11 +9177,38 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 				push_error(vformat(R"*(Could not infer type parameter "%s" of generic method "%s()" from its arguments. Apply the type arguments explicitly, e.g. "%s[...](...)".)*", parameter->identifier->name, p_function->identifier->name, p_function->identifier->name), p_call);
 			}
 			bindings.insert(parameter->identifier->name, unresolved_fallback);
+			failed_parameters.insert(parameter->identifier->name);
 		}
 	}
 
 	if (bindings.is_empty()) {
 		return;
+	}
+
+	// A solved type argument (inferred or explicit) must satisfy its parameter's upper bound. The
+	// bound travels on the resolved parameter datatype, gathered from the signature it appears in.
+	HashMap<StringName, GDScriptParser::DataType> parameter_bounds;
+	for (const GDScriptParser::DataType &parameter_type : r_par_types) {
+		collect_method_type_parameter_bounds(parameter_type, parameter_bounds);
+	}
+	collect_method_type_parameter_bounds(r_return_type, parameter_bounds);
+
+	for (const GDScriptParser::TypeParameterNode *parameter : type_parameters) {
+		if (parameter == nullptr || parameter->identifier == nullptr) {
+			continue;
+		}
+		const StringName &name = parameter->identifier->name;
+		if (failed_parameters.has(name)) {
+			continue;
+		}
+		const GDScriptParser::DataType *binding = bindings.getptr(name);
+		const GDScriptParser::DataType *bound = parameter_bounds.getptr(name);
+		if (binding == nullptr || bound == nullptr || bound->kind == GDScriptParser::DataType::UNRESOLVED) {
+			continue;
+		}
+		if (!type_argument_satisfies_bound(*binding, *bound)) {
+			push_error(vformat(R"*(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s" of generic method "%s()".)*", binding->to_string(), bound->to_string(), name, p_function->identifier->name), p_call);
+		}
 	}
 
 	for (GDScriptParser::DataType &parameter_type : r_par_types) {

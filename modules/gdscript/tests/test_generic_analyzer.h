@@ -712,6 +712,95 @@ TEST_CASE("[Modules][GDScript] Analyzer lets an explicit type argument override 
 	CHECK(type.get_container_element_type(0).builtin_type == Variant::FLOAT);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer rejects an inferred type argument that violates a method bound") {
+	GDScriptParser parser;
+	// `T` is bounded by `RefCounted`; inferring `T = int` from the argument violates that bound.
+	const String source =
+			"func keep[T: RefCounted](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test() -> void:\n"
+			"\tvar bad := keep(1)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer accepts an inferred type argument that satisfies a method bound") {
+	GDScriptParser parser;
+	// `Resource` derives from `RefCounted`, so inferring `T = Resource` satisfies the bound.
+	const String source =
+			"func keep[T: RefCounted](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test() -> void:\n"
+			"\tvar res := Resource.new()\n"
+			"\tvar ok := keep(res)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects an explicit type argument that violates a method bound") {
+	GDScriptParser parser;
+	// Explicit `[int]` is applied directly but must still satisfy the `RefCounted` bound.
+	const String source =
+			"func keep[T: RefCounted](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test() -> void:\n"
+			"\tvar bad := keep[int](null)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer treats inferred type parameters as invariant") {
+	GDScriptParser parser;
+	// `T` is solved from both arguments; `int` and `float` are different types, so they conflict
+	// rather than widening (type parameters are invariant).
+	const String source =
+			"func choose[T](a: T, _b: T) -> T:\n"
+			"\treturn a\n"
+			"func test() -> void:\n"
+			"\tvar bad := choose(1, 2.0)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_inference_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("infer")) {
+			found_inference_error = true;
+			break;
+		}
+	}
+	CHECK(found_inference_error);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer keeps an unbounded type-parameter value dynamic") {
 	GDScriptParser parser;
 	// Without a bound, `T` exposes no members, so member access stays dynamic rather than
