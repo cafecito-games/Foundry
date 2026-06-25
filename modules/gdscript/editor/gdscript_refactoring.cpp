@@ -5223,12 +5223,120 @@ const GDScriptParser::ClassNode *resolve_base_class(
 	return nullptr;
 }
 
+// Depth-first pointer search for a class node within a parse tree. Unlike
+// find_class_node_by_fqcn this compares node identity and is available in every build,
+// so it can detect a same-file trait without depending on the LSP-only helper.
+bool tree_contains_class(const GDScriptParser::ClassNode *p_root, const GDScriptParser::ClassNode *p_class) {
+	if (p_root == nullptr) {
+		return false;
+	}
+	if (p_root == p_class) {
+		return true;
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_root->members) {
+		if (member.type == GDScriptParser::ClassNode::Member::CLASS && member.m_class != nullptr &&
+				tree_contains_class(member.m_class, p_class)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Resolve the source lines that declare p_trait so a rendered stub can recover parameter
+// default text. A same-file trait shares the target file's lines. A cross-file trait's
+// lines come from its own parse, recovered through the parse-result provider; when that
+// is unavailable (no-LSP builds, or a path that cannot be re-resolved) the lines are
+// unknown, so defaults are omitted rather than sliced out of the wrong file — the same
+// graceful degradation used for a cross-file abstract base.
+const Vector<String> *resolve_trait_declaring_lines(
+		const GDScriptParser::ClassNode *p_trait,
+		const GDScriptParser::ClassNode *p_root,
+		const Vector<String> &p_root_lines,
+		const GDScriptParseResultProvider *p_parse_results) {
+	if (tree_contains_class(p_root, p_trait)) {
+		return &p_root_lines;
+	}
+#ifndef GDSCRIPT_NO_LSP
+	if (p_parse_results != nullptr) {
+		// An inline trait declared inside another file has the fqcn "<path>::Trait", so its
+		// path is the leading segment. A root trait declared with `trait_name` has the bare
+		// global name as its fqcn, so resolve that to a path through the script server.
+		String trait_path = p_trait->fqcn.get_slice("::", 0);
+		if (!trait_path.begins_with("res://")) {
+			const StringName global_name = p_trait->get_global_name();
+			trait_path = global_name != StringName() ? ScriptServer::get_global_class_path(global_name) : String();
+		}
+		if (trait_path.begins_with("res://")) {
+			const ExtendGDScriptParser *trait_parser = p_parse_results->get_parse_result(trait_path);
+			if (trait_parser != nullptr && find_class_node_by_fqcn(trait_parser->get_tree(), p_trait->fqcn) != nullptr) {
+				return &trait_parser->get_lines();
+			}
+		}
+	}
+#else
+	(void)p_parse_results;
+#endif // GDSCRIPT_NO_LSP
+	return nullptr;
+}
+
+// Collect the abstract methods required by the traits the target class uses but does
+// not implement, mirroring the analyzer's `validate_trait_requirements`. `resolved_traits`
+// is the flattened set of directly and transitively used traits, so the same `decided`
+// set the base-chain walk built lets a concrete implementation anywhere in the GDScript
+// class hierarchy (or an already-owed base abstract) satisfy a trait requirement; a
+// method provided by the native base (e.g. RefCounted) satisfies it too.
+void collect_owed_trait_abstract_methods(
+		const GDScriptParser::ClassNode *p_target,
+		const GDScriptParser::ClassNode *p_root,
+		const Vector<String> &p_target_lines,
+		const StringName &p_native_base,
+		HashSet<StringName> &r_decided,
+		Vector<OwedAbstractMethod> &r_owed,
+		const GDScriptParseResultProvider *p_parse_results) {
+	for (const GDScriptParser::ClassNode *trait : p_target->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		const Vector<String> *trait_lines = resolve_trait_declaring_lines(trait, p_root, p_target_lines, p_parse_results);
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const GDScriptParser::FunctionNode *function = member.function;
+			if (function == nullptr || function->identifier == nullptr || !function->is_abstract) {
+				continue;
+			}
+			const StringName name = function->identifier->name;
+			// A name already decided by the base chain is implemented (skip) or already
+			// owed there (dedup); a name decided by an earlier trait dedups too, matching
+			// the analyzer reporting one missing-implementation diagnostic per name.
+			if (r_decided.has(name)) {
+				continue;
+			}
+			// The native base can satisfy a trait requirement (e.g. a trait requiring
+			// get_class() applied to a RefCounted), matching find_trait_implementation's
+			// final ClassDB lookup. Mark it decided so it is not offered as owed.
+			if (p_native_base != StringName() && ClassDB::get_method_info(p_native_base, name, nullptr)) {
+				r_decided.insert(name);
+				continue;
+			}
+			r_decided.insert(name);
+			OwedAbstractMethod owed;
+			owed.function = function;
+			owed.declaring_lines = trait_lines;
+			r_owed.push_back(owed);
+		}
+	}
+}
+
 // Collect abstract methods the target class still owes, most-derived-first.
 // Walks {target, base, base-of-base, ...}; for each method name the FIRST
 // declaration encountered (the most-derived) decides its fate: if that
 // declaration is abstract and lives in an ancestor (not the target), it is owed.
+// After the base chain, the abstract methods required by used traits are added.
 void collect_owed_abstract_methods(
 		const GDScriptParser::ClassNode *p_target,
+		const GDScriptParser::ClassNode *p_root,
 		const String &p_target_path,
 		const Vector<String> &p_target_lines,
 		Vector<OwedAbstractMethod> &r_owed,
@@ -5241,11 +5349,18 @@ void collect_owed_abstract_methods(
 	String current_path = p_target_path;
 	const Vector<String> *current_lines = &p_target_lines;
 	bool is_target = true;
+	// The native class the GDScript chain ultimately extends (RefCounted, Node, ...). A
+	// trait requirement can be satisfied by a method on this native base, so record it for
+	// the trait pass below.
+	StringName native_base;
 	while (current != nullptr) {
 		if (visited.has(current)) {
 			break;
 		}
 		visited.insert(current);
+		if (current->base_type.kind == GDScriptParser::DataType::NATIVE) {
+			native_base = current->base_type.native_type;
+		}
 		for (const GDScriptParser::ClassNode::Member &member : current->members) {
 			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
 				continue;
@@ -5274,6 +5389,8 @@ void collect_owed_abstract_methods(
 		current_lines = base_lines;
 		is_target = false;
 	}
+
+	collect_owed_trait_abstract_methods(p_target, p_root, p_target_lines, native_base, decided, r_owed, p_parse_results);
 }
 
 // Returns the GDScript literal default for a return type, or false when the type
@@ -5323,9 +5440,13 @@ String render_abstract_stub(
 	const String body_indent = p_class_indent + "\t";
 	const String name = String(p_function->identifier->name);
 
-	// Abstract methods cannot be static in GDScript, so no static modifier is rendered.
-	// The async modifier, when present, precedes `func`.
+	// An abstract method on a class cannot be static, but a trait may declare an
+	// `@abstract static func`, and the implementation's static flag must match it. The
+	// modifiers precede `func` in declaration order: `static`, then `async`.
 	String signature = p_class_indent;
+	if (p_function->is_static) {
+		signature += "static ";
+	}
 	if (p_function->is_declared_async) {
 		signature += "async ";
 	}
@@ -5444,7 +5565,15 @@ ImplementAbstractCandidate find_implement_abstract_in_tree(
 		return candidate;
 	}
 
-	collect_owed_abstract_methods(target, p_path, p_lines, candidate.abstract_methods, p_parse_results);
+	// A trait may defer the abstract methods it inherits from a `uses`d trait to the
+	// concrete class that applies it, so the analyzer skips trait-requirement validation
+	// for traits; mirror that here rather than offering the action inside a trait.
+	if (target->is_trait) {
+		candidate.disabled_reason = "Traits don't need to implement abstract methods.";
+		return candidate;
+	}
+
+	collect_owed_abstract_methods(target, p_tree, p_path, p_lines, candidate.abstract_methods, p_parse_results);
 	if (candidate.abstract_methods.is_empty()) {
 		candidate.disabled_reason = "No unimplemented abstract methods.";
 		return candidate;
