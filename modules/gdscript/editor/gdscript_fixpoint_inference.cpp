@@ -34,10 +34,9 @@
 
 #include "gdscript_refactoring.h"
 #include "gdscript_refactoring_edits.h"
+#include "gdscript_verification_harness.h"
 
-#include "../gdscript_analyzer.h"
 #include "../gdscript_cache.h"
-#include "../gdscript_parser.h"
 
 #include "editor/script/script_refactor_apply.h"
 
@@ -58,35 +57,6 @@ String read_source(const String &p_path, bool &r_ok) {
 void invalidate_cache(const String &p_path) {
 	GDScriptCache::remove_parser(p_path);
 	GDScriptCache::remove_script(p_path);
-}
-
-// Re-parse and analyze p_source as if saved at p_path. True when analysis
-// succeeds, i.e. the applied annotations introduced no new errors.
-bool verify_source(const String &p_path, const String &p_source) {
-	GDScriptParser parser;
-	if (parser.parse(p_source, p_path, false) != OK) {
-		return false;
-	}
-	GDScriptAnalyzer analyzer(&parser);
-	return analyzer.analyze() == OK;
-}
-
-int count_enabled_edits(const RefactorContext &p_ctx, Vector<RefactorTextEdit> &r_edits) {
-	RefactorCandidatesResult candidates = GDScriptRefactoring::find_candidates(p_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
-	if (!candidates.ok) {
-		return 0;
-	}
-	int collected = 0;
-	for (const RefactorCandidate &candidate : candidates.candidates) {
-		if (!candidate.enabled) {
-			continue;
-		}
-		for (const RefactorTextEdit &edit : candidate.edits) {
-			r_edits.push_back(edit);
-		}
-		collected++;
-	}
-	return collected;
 }
 
 } // namespace
@@ -155,9 +125,8 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 			}
 		}
 
-		// Collect + verify accepted rewrites without committing yet.
-		HashMap<String, String> pending_source;
-		HashMap<String, int> pending_count;
+		// Collect every enabled candidate across the snapshot as a verification candidate.
+		Vector<VerificationCandidate> candidates;
 		for (const String &path : paths) {
 			if (!snapshot.has(path)) {
 				continue;
@@ -165,22 +134,53 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 			RefactorContext ctx;
 			ctx.path = path;
 			ctx.source = snapshot[path];
-
-			Vector<RefactorTextEdit> edits;
-			const int enabled = count_enabled_edits(ctx, edits);
-			if (enabled == 0 || edits.is_empty()) {
+			RefactorCandidatesResult found = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			if (!found.ok) {
 				continue;
 			}
+			for (const RefactorCandidate &candidate : found.candidates) {
+				if (!candidate.enabled || candidate.edits.is_empty()) {
+					continue;
+				}
+				VerificationCandidate vc;
+				vc.path = path;
+				vc.line = candidate.line;
+				vc.edits = candidate.edits;
+				candidates.push_back(vc);
+			}
+		}
 
-			String new_source;
-			if (!GDScriptRefactorEdits::apply(snapshot[path], edits, new_source)) {
-				continue; // Overlapping/out-of-range edits; skip this file this pass.
+		HashMap<String, String> pending_source;
+		HashMap<String, int> pending_count;
+		if (!candidates.is_empty()) {
+			VerificationOptions verify_options;
+			verify_options.strict_null_checks = p_options.strict_null_checks;
+			verify_options.strict_dynamic_checks = p_options.strict_dynamic_checks;
+			VerificationResult verified = GDScriptVerificationHarness::verify(candidates, paths, verify_options);
+			if (!verified.ok) {
+				// A fatal harness failure (unreadable file, failed disk restore) must not be
+				// silently treated as convergence. Surface it immediately so the caller knows
+				// the result is unreliable rather than a false ok/converged=true.
+				result.ok = false;
+				result.error_message = verified.error_message;
+				return result;
 			}
-			if (!verify_source(path, new_source)) {
-				continue; // Rejected this pass; the final-state scan reports what remains.
+			// Group accepted candidates' edits per file and apply over the snapshot.
+			HashMap<String, Vector<RefactorTextEdit>> accepted_edits;
+			for (const VerificationCandidate &candidate : verified.accepted) {
+				for (const RefactorTextEdit &edit : candidate.edits) {
+					accepted_edits[candidate.path].push_back(edit);
+				}
+				pending_count[candidate.path] += 1;
 			}
-			pending_source[path] = new_source;
-			pending_count[path] = enabled;
+			for (const KeyValue<String, Vector<RefactorTextEdit>> &entry : accepted_edits) {
+				String new_source;
+				if (GDScriptRefactorEdits::apply(snapshot[entry.key], entry.value, new_source)) {
+					pending_source[entry.key] = new_source;
+				} else {
+					pending_count.erase(entry.key); // Could not apply this file's accepted set.
+				}
+			}
 		}
 
 		// Whether this pass found anything worth applying, independent of whether the

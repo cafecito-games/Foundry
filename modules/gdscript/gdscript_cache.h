@@ -119,6 +119,10 @@ public:
 	static bool has_parser(const String &p_path);
 	static void remove_parser(const String &p_path);
 	static String get_source_code(const String &p_path);
+	// Returns a snapshot of the set of files that directly depend on p_path (its
+	// inverse dependencies), as recorded during compilation. Empty if none are known.
+	// Snapshot-by-value so callers are safe against concurrent cache mutation.
+	static HashSet<String> get_inverse_dependencies(const String &p_path);
 	static Vector<uint8_t> get_binary_tokens(const String &p_path);
 	static Ref<GDScript> get_shallow_script(const String &p_path, Error &r_error, const String &p_owner = String());
 	/**

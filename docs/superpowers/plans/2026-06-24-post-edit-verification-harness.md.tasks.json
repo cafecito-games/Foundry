@@ -1,0 +1,47 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-24-post-edit-verification-harness.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Inverse-dependency accessor on GDScriptCache",
+      "status": "pending",
+      "description": "Expose GDScriptCache::get_inverse_dependencies(path) returning a snapshot of direct inverse-dependents.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_cache.h\", \"modules/gdscript/gdscript_cache.cpp\"], \"verifyCommand\": \"scons platform=macos dev_build=yes tests=yes target=editor\", \"acceptanceCriteria\": [\"returns snapshot or empty\", \"takes mutex\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Verification harness — types, affected set, stage/restore, optimistic accept/reject",
+      "status": "pending",
+      "blockedBy": [1],
+      "description": "Header + core verify path: affected-set closure, stage/analyze/restore, accept-all on no regression, reject-all with diagnostics on regression.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_verification_harness.h\", \"modules/gdscript/editor/gdscript_verification_harness.cpp\", \"modules/gdscript/tests/test_verification_harness.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test --test-suite=\\\"*Verification*\\\" --force-colors\", \"acceptanceCriteria\": [\"accept all clean\", \"reject dependent-breaker with diagnostic\", \"files unchanged\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Delta-debugging attribution (keep good edits, drop minimal offending subset)",
+      "status": "pending",
+      "blockedBy": [2],
+      "description": "Replace all-or-nothing regression branch with ddmin so only minimal offending candidates drop and the rest are accepted + re-verified.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_verification_harness.cpp\", \"modules/gdscript/tests/test_verification_harness.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test --test-suite=\\\"*Verification*\\\" --force-colors\", \"acceptanceCriteria\": [\"isolate one offender\", \"attribute diagnostics\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Strict-mode preview",
+      "status": "pending",
+      "blockedBy": [2],
+      "description": "Implement preview_strict reporting diagnostics that appear only under strict mode, writing nothing.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_verification_harness.cpp\", \"modules/gdscript/tests/test_verification_harness.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test --test-suite=\\\"*Verification*\\\" --force-colors\", \"acceptanceCriteria\": [\"lists strict-only violations\", \"file unchanged\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Gate GDScriptFixpointInference through the harness",
+      "status": "pending",
+      "blockedBy": [3],
+      "description": "Fixpoint commits only harness-accepted edits (re-analyzing inverse-dependent closure); add strict flags. Closes #32 deferral.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_fixpoint_inference.h\", \"modules/gdscript/editor/gdscript_fixpoint_inference.cpp\", \"modules/gdscript/tests/test_fixpoint_inference.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test --test-suite=\\\"*Fixpoint*\\\" --force-colors\", \"acceptanceCriteria\": [\"no commit of breaking edit + skip reported\", \"strict options threaded\", \"existing tests pass\"]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: CI-parity build + full GDScript suite + docs",
+      "status": "pending",
+      "blockedBy": [4, 5],
+      "description": "Confirm warnings-as-errors build and full GDScript suite green; reconcile spec if behavior diverged.\n\n```json:metadata\n{\"files\": [\"docs/superpowers/specs/2026-06-24-post-edit-verification-harness-design.md\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.arm64 --headless --test \\\"[Modules][GDScript]\\\" --force-colors\", \"acceptanceCriteria\": [\"dev_mode build clean\", \"full suite green\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-24"
+}

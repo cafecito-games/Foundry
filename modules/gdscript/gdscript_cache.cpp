@@ -281,6 +281,23 @@ String GDScriptCache::get_source_code(const String &p_path) {
 	return source;
 }
 
+HashSet<String> GDScriptCache::get_inverse_dependencies(const String &p_path) {
+	if (singleton == nullptr) {
+		return HashSet<String>();
+	}
+
+	MutexLock lock(singleton->mutex);
+
+	if (singleton->cleared) {
+		return HashSet<String>();
+	}
+
+	if (singleton->parser_inverse_dependencies.has(p_path)) {
+		return singleton->parser_inverse_dependencies[p_path];
+	}
+	return HashSet<String>();
+}
+
 Vector<uint8_t> GDScriptCache::get_binary_tokens(const String &p_path) {
 	Vector<uint8_t> buffer;
 	Error err = OK;
