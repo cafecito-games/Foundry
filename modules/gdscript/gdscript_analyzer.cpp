@@ -1162,8 +1162,19 @@ bool GDScriptAnalyzer::resolve_type_parameter(const StringName &p_name, GDScript
 
 	GDScriptParser::ClassNode *declaring_class = nullptr;
 
-	// Method type parameters shadow class ones, and inner classes shadow their outer classes.
-	if (parser->current_function != nullptr && match_in(parser->current_function->type_parameters, GDScriptParser::DataType::TYPE_PARAMETER_METHOD)) {
+	// Method type parameters shadow class ones, and inner classes shadow their outer classes. A
+	// lambda body is analyzed with `current_function` set to the lambda's own function, which has no
+	// type parameters, so walk out through each enclosing lambda to its parent function to keep the
+	// surrounding generic method's parameters visible.
+	bool found_method_parameter = false;
+	for (GDScriptParser::FunctionNode *enclosing = parser->current_function; enclosing != nullptr;) {
+		if (match_in(enclosing->type_parameters, GDScriptParser::DataType::TYPE_PARAMETER_METHOD)) {
+			found_method_parameter = true;
+			break;
+		}
+		enclosing = enclosing->source_lambda != nullptr ? enclosing->source_lambda->parent_function : nullptr;
+	}
+	if (found_method_parameter) {
 		// Found a method type parameter.
 	} else {
 		for (GDScriptParser::ClassNode *script_class = parser->current_class; script_class != nullptr; script_class = script_class->outer) {
