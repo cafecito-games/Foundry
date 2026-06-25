@@ -43,7 +43,8 @@ String TestUtils::get_executable_dir() {
 }
 
 String TestUtils::get_temp_path(const String &p_suffix) {
-	const String temp_base = OS::get_singleton()->get_cache_path().path_join("godot_test");
-	DirAccess::make_dir_absolute(temp_base); // Ensure the directory exists.
-	return temp_base.path_join(p_suffix);
+	const String temp_root = OS::get_singleton()->get_cache_path().path_join("godot_test");
+	const String temp_process_root = temp_root.path_join("process_" + itos(OS::get_singleton()->get_process_id()));
+	DirAccess::make_dir_recursive_absolute(temp_process_root); // Ensure the directory exists.
+	return temp_process_root.path_join(p_suffix);
 }
