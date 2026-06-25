@@ -38,7 +38,4 @@ func test():
 	var _pair = Pair.new()
 	var _bounded = Bounded.new()
 	var _multi = MultiBounded.new()
-	generic_method()
-	bounded_method()
-	multi_method()
 	print("generic declarations parsed")

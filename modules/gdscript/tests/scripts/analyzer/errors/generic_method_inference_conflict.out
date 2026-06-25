@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Could not infer type parameter "T" of generic method "swap()" because its arguments have conflicting types. Apply the type arguments explicitly, e.g. "swap[...](...)".

@@ -537,6 +537,181 @@ TEST_CASE("[Modules][GDScript] Analyzer exposes bound members on a type-paramete
 	CHECK(type.builtin_type == Variant::INT);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer infers a method type parameter from an argument") {
+	GDScriptParser parser;
+	// `identity(42)` solves `T = int` by unifying the argument `42` against the declared
+	// parameter type `T`, so the call's result type is the substituted `int`.
+	const String source =
+			"func identity[T](value: T) -> T:\n"
+			"\treturn value\n"
+			"func test() -> void:\n"
+			"\tvar n := identity(42)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *n = generic_find_local_variable(test, "n");
+	REQUIRE(n != nullptr);
+
+	const GDScriptParser::DataType type = n->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer infers a type parameter through a container argument") {
+	GDScriptParser parser;
+	// Unifying `Array[int]` against the declared `Array[T]` solves `T = int`, so `first`
+	// returns `int`.
+	const String source =
+			"func first[T](items: Array[T]) -> T:\n"
+			"\treturn items[0]\n"
+			"func test() -> void:\n"
+			"\tvar values: Array[int] = [1, 2]\n"
+			"\tvar got := first(values)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const GDScriptParser::DataType type = got->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer substitutes a container return type from inference") {
+	GDScriptParser parser;
+	// `swap(1, 2)` solves `T = int`, so the declared `Array[T]` return becomes `Array[int]`.
+	const String source =
+			"func swap[T](a: T, b: T) -> Array[T]:\n"
+			"\treturn [b, a]\n"
+			"func test() -> void:\n"
+			"\tvar pair := swap(1, 2)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *pair = generic_find_local_variable(test, "pair");
+	REQUIRE(pair != nullptr);
+
+	const GDScriptParser::DataType type = pair->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::ARRAY);
+	REQUIRE(type.has_container_element_type(0));
+	CHECK(type.get_container_element_type(0).builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects conflicting inferred type parameters") {
+	GDScriptParser parser;
+	// `swap(1, "x")` binds `T` to both `int` and `String`, which conflict, so inference fails.
+	const String source =
+			"func swap[T](a: T, b: T) -> Array[T]:\n"
+			"\treturn [b, a]\n"
+			"func test() -> void:\n"
+			"\tvar pair := swap(1, \"x\")\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_inference_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("infer")) {
+			found_inference_error = true;
+			break;
+		}
+	}
+	CHECK(found_inference_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer rejects an unsolved type parameter") {
+	GDScriptParser parser;
+	// `T` appears only in the return type, so no argument constrains it and inference cannot solve it.
+	const String source =
+			"func make[T]() -> T:\n"
+			"\treturn null\n"
+			"func test() -> void:\n"
+			"\tvar value := make()\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_inference_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("infer")) {
+			found_inference_error = true;
+			break;
+		}
+	}
+	CHECK(found_inference_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer applies an explicit method type argument") {
+	GDScriptParser parser;
+	// Explicit `[int]` short-circuits inference, so `swap[int](1, 2)` returns `Array[int]`.
+	const String source =
+			"func swap[T](a: T, b: T) -> Array[T]:\n"
+			"\treturn [b, a]\n"
+			"func test() -> void:\n"
+			"\tvar pair := swap[int](1, 2)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *pair = generic_find_local_variable(test, "pair");
+	REQUIRE(pair != nullptr);
+
+	const GDScriptParser::DataType type = pair->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::ARRAY);
+	REQUIRE(type.has_container_element_type(0));
+	CHECK(type.get_container_element_type(0).builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer lets an explicit type argument override inference") {
+	GDScriptParser parser;
+	// The arguments would infer `int`, but `[float]` is applied explicitly instead.
+	const String source =
+			"func box[T](value: T) -> Array[T]:\n"
+			"\treturn [value]\n"
+			"func test() -> void:\n"
+			"\tvar boxed := box[float](1)\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *boxed = generic_find_local_variable(test, "boxed");
+	REQUIRE(boxed != nullptr);
+
+	const GDScriptParser::DataType type = boxed->get_datatype();
+	REQUIRE(type.has_container_element_type(0));
+	CHECK(type.get_container_element_type(0).builtin_type == Variant::FLOAT);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer keeps an unbounded type-parameter value dynamic") {
 	GDScriptParser parser;
 	// Without a bound, `T` exposes no members, so member access stays dynamic rather than
