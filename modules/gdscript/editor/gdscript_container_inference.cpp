@@ -507,6 +507,37 @@ private:
 		return false;
 	}
 
+	// True when `p_call` is a first-class signal emission on this instance, e.g.
+	// `changed.emit()` or `self.changed.emit()`. Emitting synchronously runs
+	// connected callbacks outside this AST, which may mutate the member, so it is an
+	// escape just like `emit_signal`. The signal is identified by its `.emit` method
+	// on a base resolved to a member signal (bare or `self`-qualified).
+	static bool is_signal_emit_call(const GDScriptParser::CallNode *p_call) {
+		if (p_call == nullptr || p_call->callee == nullptr || p_call->callee->type != Node::SUBSCRIPT) {
+			return false;
+		}
+		const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+		if (!callee->is_attribute || callee->attribute == nullptr || callee->attribute->name != StringName("emit")) {
+			return false;
+		}
+		const GDScriptParser::ExpressionNode *base = callee->base;
+		if (base == nullptr) {
+			return false;
+		}
+		// Bare `changed.emit()`: the base identifier resolves to a member signal.
+		if (base->type == Node::IDENTIFIER) {
+			return static_cast<const GDScriptParser::IdentifierNode *>(base)->source == GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
+		}
+		// `self.changed.emit()`: the base is a `self.<signal>` attribute.
+		if (base->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *signal_access = static_cast<const GDScriptParser::SubscriptNode *>(base);
+			if (signal_access->is_attribute && signal_access->base != nullptr && signal_access->base->type == Node::SELF && signal_access->attribute != nullptr) {
+				return signal_access->attribute->source == GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
+			}
+		}
+		return false;
+	}
+
 	// True when `p_value` is a reference to a reflection method bound to this
 	// instance, either bare (`set`) or `self`-qualified (`self.set`). The resulting
 	// callable could mutate the member by name later (`s.call("_m", ..)`). A bare
@@ -837,7 +868,7 @@ private:
 				return;
 			}
 		}
-		if (member_mode && (is_self_reflection_call(p_call) || reflection_call_names_member(p_call))) {
+		if (member_mode && (is_self_reflection_call(p_call) || is_signal_emit_call(p_call) || reflection_call_names_member(p_call))) {
 			bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 			return;
 		}
@@ -1347,6 +1378,37 @@ private:
 		return false;
 	}
 
+	// True when `p_call` is a first-class signal emission on this instance, e.g.
+	// `changed.emit()` or `self.changed.emit()`. Emitting synchronously runs
+	// connected callbacks outside this AST, which may mutate the member, so it is an
+	// escape just like `emit_signal`. The signal is identified by its `.emit` method
+	// on a base resolved to a member signal (bare or `self`-qualified).
+	static bool is_signal_emit_call(const GDScriptParser::CallNode *p_call) {
+		if (p_call == nullptr || p_call->callee == nullptr || p_call->callee->type != Node::SUBSCRIPT) {
+			return false;
+		}
+		const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+		if (!callee->is_attribute || callee->attribute == nullptr || callee->attribute->name != StringName("emit")) {
+			return false;
+		}
+		const GDScriptParser::ExpressionNode *base = callee->base;
+		if (base == nullptr) {
+			return false;
+		}
+		// Bare `changed.emit()`: the base identifier resolves to a member signal.
+		if (base->type == Node::IDENTIFIER) {
+			return static_cast<const GDScriptParser::IdentifierNode *>(base)->source == GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
+		}
+		// `self.changed.emit()`: the base is a `self.<signal>` attribute.
+		if (base->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *signal_access = static_cast<const GDScriptParser::SubscriptNode *>(base);
+			if (signal_access->is_attribute && signal_access->base != nullptr && signal_access->base->type == Node::SELF && signal_access->attribute != nullptr) {
+				return signal_access->attribute->source == GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
+			}
+		}
+		return false;
+	}
+
 	// True when `p_value` is a reference to a reflection method bound to this
 	// instance, either bare (`set`) or `self`-qualified (`self.set`). The resulting
 	// callable could mutate the member by name later (`s.call("_m", ..)`). A bare
@@ -1676,7 +1738,7 @@ private:
 				return;
 			}
 		}
-		if (member_mode && (is_self_reflection_call(p_call) || reflection_call_names_member(p_call))) {
+		if (member_mode && (is_self_reflection_call(p_call) || is_signal_emit_call(p_call) || reflection_call_names_member(p_call))) {
 			bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 			return;
 		}

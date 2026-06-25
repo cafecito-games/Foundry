@@ -663,6 +663,28 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("First-class signal emit on self escapes the member") {
+		InferenceFixture fixture(
+				"signal changed\n"
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"\tchanged.emit()\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Self-qualified first-class signal emit escapes the member") {
+		InferenceFixture fixture(
+				"signal changed\n"
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"\tself.changed.emit()\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("A statement-level native self call does not block inference") {
 		// The call result is discarded, so a returned `self` cannot escape.
 		InferenceFixture fixture(
