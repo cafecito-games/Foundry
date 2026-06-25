@@ -144,6 +144,14 @@ struct RefactorParams {
 struct RefactorContext {
 	String path; // res:// path of the edited script.
 	String source; // Current buffer contents.
+	// Class-wide member-variable container element inference (e.g. upgrading a
+	// private `var _items = []` to `Array[int]`) is only sound under the open-world
+	// assumption when a verifier re-checks the dependency closure afterward, since
+	// an external subclass could mutate the member with a different type. The
+	// fixpoint migration path sets this so member elements are upgraded only there;
+	// the interactive editor refactor leaves it false and keeps members at the
+	// analyzer's bare container type, which is always safe to apply directly.
+	bool allow_member_container_inference = false;
 };
 
 class GDScriptRefactoring {

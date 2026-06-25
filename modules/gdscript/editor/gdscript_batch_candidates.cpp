@@ -37,7 +37,7 @@
 #include "core/io/file_access.h"
 #include "core/templates/hash_set.h"
 
-BatchCandidatesResult GDScriptBatchCandidates::collect(const Vector<String> &p_paths, RefactorKind p_kind) {
+BatchCandidatesResult GDScriptBatchCandidates::collect(const Vector<String> &p_paths, RefactorKind p_kind, bool p_allow_member_container_inference) {
 	BatchCandidatesResult result;
 
 	// The only supported kind today mirrors find_candidates; reject others up front so the
@@ -70,6 +70,7 @@ BatchCandidatesResult GDScriptBatchCandidates::collect(const Vector<String> &p_p
 		RefactorContext context;
 		context.path = path;
 		context.source = source;
+		context.allow_member_container_inference = p_allow_member_container_inference;
 		const RefactorCandidatesResult candidates = GDScriptRefactoring::find_candidates(context, p_kind);
 		if (!candidates.ok) {
 			// A file the analyzer cannot process is reported and skipped, not fatal.
