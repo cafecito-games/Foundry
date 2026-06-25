@@ -340,9 +340,15 @@ TEST_CASE("[Modules][GDScript][Proxy] Lifetime is managed by refcounting") {
 TEST_CASE("[Modules][GDScript][Proxy] Non-RefCounted native bases are rejected") {
 	ScopedProxyLanguage language;
 
+	// `Object` and `Node` are not reference-counted, so a proxy — whose host is owned
+	// through a `Ref` and freed by refcounting — cannot soundly represent them. Both
+	// are rejected with a message; only RefCounted-derived bases are supported.
 	const char *source =
 			"@abstract class NodeService extends Node:\n"
 			"\t@abstract func ping() -> void\n"
+			"\n"
+			"@abstract class ObjectService extends Object:\n"
+			"\t@abstract func tick() -> void\n"
 			"\n"
 			"class Recorder:\n"
 			"\tfunc handle(method_name, args):\n"
@@ -350,19 +356,81 @@ TEST_CASE("[Modules][GDScript][Proxy] Non-RefCounted native bases are rejected")
 
 	Ref<GDScript> script = compile_proxy_source(source);
 	Ref<GDScript> node_service = get_subclass(script, "NodeService");
+	Ref<GDScript> object_service = get_subclass(script, "ObjectService");
 	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
 	REQUIRE(node_service.is_valid());
 	REQUIRE(node_service->get_instance_base_type() == StringName("Node"));
+	REQUIRE(object_service.is_valid());
+	REQUIRE(object_service->get_instance_base_type() == StringName("Object"));
 
 	Callable::CallError construct_error;
 	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
 	Object *recorder = recorder_ref;
 
-	// The host is a RefCounted, so a Node-rooted target cannot be proxied yet.
+	for (const Ref<GDScript> &target : { node_service, object_service }) {
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(target, Callable(recorder, "handle"), error_message);
+		CHECK(proxy.is_null());
+		CHECK_FALSE(error_message.is_empty());
+	}
+}
+
+TEST_CASE("[Modules][GDScript][Proxy] RefCounted-derived native bases are proxied") {
+	ScopedProxyLanguage language;
+
+	// `Resource` derives from `RefCounted`, so a proxy of a `Resource`-rooted type is
+	// hosted on a real `Resource`: it satisfies `is Resource`, its native methods and
+	// properties resolve, and its contract still routes through the handler.
+	const char *source =
+			"@abstract class ResourceService extends Resource:\n"
+			"\tvar slot: int\n"
+			"\t@abstract func compute() -> int\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar calls: Array = []\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\tcalls.append(str(method_name))\n"
+			"\t\treturn 42\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> service = get_subclass(script, "ResourceService");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(service.is_valid());
+	REQUIRE(service->get_instance_base_type() == StringName("Resource"));
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	Object *recorder = recorder_ref;
+
 	String error_message;
-	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(node_service, Callable(recorder, "handle"), error_message);
-	CHECK(proxy.is_null());
-	CHECK_FALSE(error_message.is_empty());
+	Ref<RefCounted> proxy = GDScriptProxy::create_proxy(service, Callable(recorder, "handle"), error_message);
+	REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+
+	// The host is a genuine Resource, not a bare RefCounted.
+	CHECK(proxy->get_class() == String("Resource"));
+	Resource *as_resource = Object::cast_to<Resource>(proxy.ptr());
+	CHECK(as_resource != nullptr);
+
+	// A native Resource property resolves through native dispatch (the proxy does not
+	// intercept it: `resource_name` is not part of `T`'s declared contract).
+	proxy->set("resource_name", "my-resource");
+	CHECK(proxy->get("resource_name") == Variant("my-resource"));
+
+	// The abstract contract method still routes to the handler.
+	{
+		Callable::CallError error;
+		Variant result = proxy->get_script_instance()->callp("compute", nullptr, 0, error);
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK(result == Variant(42));
+	}
+
+	// The declared `var slot` is still backed by the auto-backing store.
+	{
+		Variant value;
+		CHECK(proxy->get_script_instance()->set("slot", 5));
+		CHECK(proxy->get_script_instance()->get("slot", value));
+		CHECK(value == Variant(5));
+	}
 }
 
 TEST_CASE("[Modules][GDScript][Proxy] Auto-backing property store") {
