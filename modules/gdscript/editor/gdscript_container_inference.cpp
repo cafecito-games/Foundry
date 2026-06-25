@@ -1474,6 +1474,16 @@ private:
 // `@export`ed (the editor and external code can assign it), must not be `static`
 // (shared and assignable through the class), and must not have a custom
 // setter/getter (writes flow through user code the inference does not model).
+//
+// Soundness boundary: GDScript also has no `final`, so an external subclass can
+// `extends` this class and mutate the inherited member from its own methods with
+// a different element type, which this single-file scan cannot observe. That
+// open-world case is handled by the migration pipeline's second stage, not here:
+// the `GDScriptVerificationHarness` re-analyzes the dependency closure (including
+// inverse-dependent subclasses in the project) and rejects any element annotation
+// that breaks a dependent before it is committed. A subclass-aware *inference*
+// (so the proposal itself accounts for project-wide writers rather than relying
+// on the verifier to veto them) is deferred follow-up work.
 String member_disqualifier(const GDScriptParser::VariableNode *p_member) {
 	if (p_member->exported) {
 		return "the member is `@export`ed, so external code can assign it";
