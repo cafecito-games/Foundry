@@ -2207,6 +2207,11 @@ void GDScriptLanguage::remove_named_global_constant(const StringName &p_name) {
 	named_globals.erase(p_name);
 }
 
+// The reflection API is exposed as the `godot` named global (see `init`/`finish`).
+// `get_reserved_global_names` reports it so the editor rejects a project autoload that
+// would shadow it; reflection wins by construction. Single source for the three sites.
+static const char *GDSCRIPT_REFLECTION_NAMESPACE = "godot";
+
 void GDScriptLanguage::init() {
 	//populate global constants
 	int gcc = CoreConstants::get_global_constant_count();
@@ -2245,7 +2250,7 @@ void GDScriptLanguage::init() {
 	reflection_singleton.instantiate();
 	godot_namespace_singleton.instantiate();
 	godot_namespace_singleton->set_reflection(reflection_singleton);
-	add_named_global_constant(SNAME("godot"), godot_namespace_singleton);
+	add_named_global_constant(GDSCRIPT_REFLECTION_NAMESPACE, godot_namespace_singleton);
 
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
@@ -2339,10 +2344,10 @@ void GDScriptLanguage::finish() {
 	// Tear down the reflection singletons exposed via the `godot` global. Only
 	// remove the named global if it still points to our singleton: a project
 	// autoload could have overwritten the `godot` entry, and we must not clobber it.
-	if (godot_namespace_singleton.is_valid() && named_globals.has(SNAME("godot"))) {
-		const Object *registered = named_globals[SNAME("godot")].get_validated_object();
+	if (godot_namespace_singleton.is_valid() && named_globals.has(GDSCRIPT_REFLECTION_NAMESPACE)) {
+		const Object *registered = named_globals[GDSCRIPT_REFLECTION_NAMESPACE].get_validated_object();
 		if (registered == godot_namespace_singleton.ptr()) {
-			remove_named_global_constant(SNAME("godot"));
+			remove_named_global_constant(GDSCRIPT_REFLECTION_NAMESPACE);
 		}
 	}
 	godot_namespace_singleton.unref();
@@ -2776,6 +2781,30 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 	};
 
 	return ret;
+}
+
+Vector<String> GDScriptLanguage::get_reserved_global_names() const {
+	// `godot` is registered as a named global constant exposing `godot.reflection`
+	// (see `init`). Reserve it so a project autoload cannot silently shadow it.
+	//
+	// The reservation is scoped to editor/tools builds, where the compiler can resolve
+	// named globals (see the TOOLS_ENABLED guard in GDScriptCompiler). In an exported
+	// non-tools runtime the reflection namespace is not compiler-visible anyway, so
+	// reserving the name would only strip a project autoload of its sole binding.
+#ifdef TOOLS_ENABLED
+	static const Vector<String> ret = { GDSCRIPT_REFLECTION_NAMESPACE };
+	return ret;
+#else
+	return Vector<String>();
+#endif
+}
+
+bool GDScriptLanguage::is_reserved_global_name(const StringName &p_name) const {
+#ifdef TOOLS_ENABLED
+	return p_name == StringName(GDSCRIPT_REFLECTION_NAMESPACE);
+#else
+	return false;
+#endif
 }
 
 bool GDScriptLanguage::is_control_flow_keyword(const String &p_keyword) const {

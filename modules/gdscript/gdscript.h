@@ -692,6 +692,11 @@ public:
 
 	/* EDITOR FUNCTIONS */
 	virtual Vector<String> get_reserved_words() const override;
+	virtual Vector<String> get_reserved_global_names() const override;
+	// Whether `p_name` is one of this language's reserved built-in named globals (e.g.
+	// the `godot` reflection namespace). Such a name wins over a project autoload of the
+	// same name, so the global stays reachable even if project.godot defines one.
+	bool is_reserved_global_name(const StringName &p_name) const;
 	virtual bool is_control_flow_keyword(const String &p_keywords) const override;
 	virtual Vector<String> get_comment_delimiters() const override;
 	virtual Vector<String> get_doc_comment_delimiters() const override;

@@ -1452,6 +1452,12 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 		if (!info.is_singleton || !info.path.has_extension("gd")) {
 			continue;
 		}
+		// A reserved named global (e.g. the `godot` reflection namespace) is not usable as
+		// a type/base, and the analyzer refuses to resolve such an autoload there, so don't
+		// suggest it.
+		if (GDScriptLanguage::get_singleton()->is_reserved_global_name(info.name)) {
+			continue;
+		}
 		ScriptLanguage::CodeCompletionOption option(info.name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
 		r_result.insert(option.display, option);
 	}
@@ -1991,6 +1997,11 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 
 	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
 		if (!E.value.is_singleton) {
+			continue;
+		}
+		// A reserved named global (e.g. the `godot` reflection namespace) is not exposed
+		// as the autoload's global constant; the reserved global is suggested separately.
+		if (GDScriptLanguage::get_singleton()->is_reserved_global_name(E.key)) {
 			continue;
 		}
 		ScriptLanguage::CodeCompletionOption option(E.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
@@ -5109,7 +5120,9 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			}
 
 			if (!is_function) {
-				if (ProjectSettings::get_singleton()->has_autoload(p_symbol)) {
+				// A reserved named global (e.g. the `godot` reflection namespace) wins over a
+				// same-named autoload, so symbol lookup must not navigate to that autoload.
+				if (ProjectSettings::get_singleton()->has_autoload(p_symbol) && !GDScriptLanguage::get_singleton()->is_reserved_global_name(p_symbol)) {
 					const ProjectSettings::AutoloadInfo &autoload = ProjectSettings::get_singleton()->get_autoload(p_symbol);
 					if (autoload.is_singleton) {
 						String scr_path = autoload.path;

@@ -1358,4 +1358,30 @@ TEST_CASE("[Modules][GDScript][Proxy] Delegating proxy advises and forwards") {
 	}
 }
 
+TEST_CASE("[Modules][GDScript][Reflection] godot namespace is a reserved autoload name") {
+	ScopedProxyLanguage language;
+
+	GDScriptLanguage *gdscript_language = GDScriptLanguage::get_singleton();
+
+	// The reflection API is exposed as the `godot` named global constant (see
+	// GDScriptLanguage::init), so the language reports `godot` as a reserved global
+	// name. Editor autoload validation iterates this list exactly like
+	// get_reserved_words and rejects an autoload that would shadow `godot.reflection`.
+	// The registration and this reservation share a single source constant, so they
+	// cannot drift. The reservation is scoped to tools builds, where the compiler can
+	// resolve named globals; an exported runtime does not reserve the name.
+	const Vector<String> reserved = gdscript_language->get_reserved_global_names();
+#ifdef TOOLS_ENABLED
+	CHECK(reserved.has("godot"));
+	CHECK(gdscript_language->is_reserved_global_name("godot"));
+#else
+	CHECK_FALSE(reserved.has("godot"));
+	CHECK_FALSE(gdscript_language->is_reserved_global_name("godot"));
+#endif
+
+	// A normal identifier is never reserved by this mechanism.
+	CHECK_FALSE(reserved.has("my_autoload"));
+	CHECK_FALSE(gdscript_language->is_reserved_global_name("my_autoload"));
+}
+
 } // namespace GDScriptTests

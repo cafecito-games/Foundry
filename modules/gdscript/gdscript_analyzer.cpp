@@ -573,7 +573,9 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 
 					base = base_parser->get_parser()->head->get_datatype();
 				}
-			} else if (ProjectSettings::get_singleton()->has_autoload(name) && ProjectSettings::get_singleton()->get_autoload(name).is_singleton) {
+			} else if (ProjectSettings::get_singleton()->has_autoload(name) && ProjectSettings::get_singleton()->get_autoload(name).is_singleton && !GDScriptLanguage::get_singleton()->is_reserved_global_name(name)) {
+				// A reserved named global (e.g. the `godot` reflection namespace) is not a
+				// base type; an autoload of that name must not be used for `extends`.
 				const ProjectSettings::AutoloadInfo &info = ProjectSettings::get_singleton()->get_autoload(name);
 				if (!info.path.has_extension(GDScriptLanguage::get_singleton()->get_extension())) {
 					push_error(vformat(R"(Singleton %s is not a GDScript.)", info.name), id);
@@ -981,7 +983,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					result = make_script_meta_type(ResourceLoader::load(path, "Script"));
 				}
 			}
-		} else if (ProjectSettings::get_singleton()->has_autoload(first) && ProjectSettings::get_singleton()->get_autoload(first).is_singleton) {
+		} else if (ProjectSettings::get_singleton()->has_autoload(first) && ProjectSettings::get_singleton()->get_autoload(first).is_singleton && !GDScriptLanguage::get_singleton()->is_reserved_global_name(first)) {
+			// A reserved named global (e.g. the `godot` reflection namespace) is not a type;
+			// an autoload of that name must not be resolved as one in a type position.
 			const ProjectSettings::AutoloadInfo &autoload = ProjectSettings::get_singleton()->get_autoload(first);
 			String script_path;
 			if (ResourceLoader::get_resource_type(autoload.path) == "PackedScene") {
@@ -7082,7 +7086,11 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 
 	// Try singletons.
 	// Do this before globals because this might be a singleton loading another one before it's compiled.
-	if (ProjectSettings::get_singleton()->has_autoload(name)) {
+	// A language-reserved named global (e.g. the `godot` reflection namespace) wins over a
+	// project autoload of the same name, so resolution falls through to the named-global
+	// constant below and `godot.reflection` stays reachable even if project.godot defines a
+	// shadowing autoload.
+	if (ProjectSettings::get_singleton()->has_autoload(name) && !GDScriptLanguage::get_singleton()->is_reserved_global_name(name)) {
 		const ProjectSettings::AutoloadInfo &autoload = ProjectSettings::get_singleton()->get_autoload(name);
 		if (autoload.is_singleton) {
 			// Singleton exists, so it's at least a Node.

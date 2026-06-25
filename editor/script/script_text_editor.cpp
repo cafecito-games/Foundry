@@ -1387,8 +1387,10 @@ void ScriptTextEditor::_lookup_symbol(const String &p_symbol, int p_row, int p_c
 				goto_line_centered(result.location - 1);
 			}
 		}
-	} else if (ProjectSettings::get_singleton()->has_autoload(p_symbol)) {
-		// Check for Autoload scenes.
+	} else if (ProjectSettings::get_singleton()->has_autoload(p_symbol) && !script->get_language()->get_reserved_global_names().has(p_symbol)) {
+		// Check for Autoload scenes. A name the script's language reserves as a built-in
+		// global (e.g. the `godot` reflection namespace) wins over a same-named autoload,
+		// so symbol lookup must not navigate to that autoload's scene.
 		const ProjectSettings::AutoloadInfo &info = ProjectSettings::get_singleton()->get_autoload(p_symbol);
 		if (info.is_singleton) {
 			EditorNode::get_singleton()->load_scene(info.path);
@@ -1413,7 +1415,10 @@ void ScriptTextEditor::_validate_symbol(const String &p_symbol) {
 	ScriptLanguage::LookupResult result;
 	String lc_text = code_editor->get_text_editor()->get_text_for_symbol_lookup();
 	Error lc_error = script->get_language()->lookup_code(lc_text, p_symbol, script->get_path(), base, result);
-	bool is_singleton = ProjectSettings::get_singleton()->has_autoload(p_symbol) && ProjectSettings::get_singleton()->get_autoload(p_symbol).is_singleton;
+	// A name the script's language reserves as a built-in global (e.g. the `godot`
+	// reflection namespace) wins over a same-named autoload, so it is not treated as a
+	// navigable autoload symbol — matching the lookup guard above.
+	bool is_singleton = ProjectSettings::get_singleton()->has_autoload(p_symbol) && ProjectSettings::get_singleton()->get_autoload(p_symbol).is_singleton && !script->get_language()->get_reserved_global_names().has(p_symbol);
 	if (lc_error == OK || is_singleton || ScriptServer::is_global_class(p_symbol) || p_symbol.is_resource_file() || p_symbol.begins_with("uid://")) {
 		text_edit->set_symbol_lookup_word_as_valid(true);
 	} else if (p_symbol.is_relative_path()) {
