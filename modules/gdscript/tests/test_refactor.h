@@ -134,6 +134,18 @@ inline RefactorResult run_inline_variable(const String &p_source, int p_line, in
 	return r;
 }
 
+inline RefactorResult run_sort_members_by_style_guide(const String &p_source, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://style_order_refactor.gd";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(0, 0), RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE, params);
+	if (r.ok) {
+		GDScriptRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 inline const RefactorFileEdit *find_file_edit(const RefactorResult &p_result, const String &p_path) {
 	for (const RefactorFileEdit &file_edit : p_result.file_edits) {
 		if (file_edit.path == p_path) {
@@ -233,8 +245,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 7);
-		if (available.size() < 6) {
+		CHECK_EQ(available.size(), 8);
+		if (available.size() < 8) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -252,6 +264,15 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 		CHECK_FALSE(available[4].enabled);
 		CHECK_FALSE(available[4].disabled_reason.is_empty());
+		CHECK_EQ(available[5].kind, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		CHECK_FALSE(available[5].enabled);
+		CHECK_FALSE(available[5].disabled_reason.is_empty());
+		CHECK_EQ(available[6].kind, RefactorKind::INSERT_EXPLICIT_CAST);
+		CHECK_FALSE(available[6].enabled);
+		CHECK_FALSE(available[6].disabled_reason.is_empty());
+		CHECK_EQ(available[7].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_FALSE(available[7].enabled);
+		CHECK_FALSE(available[7].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
@@ -1234,7 +1255,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 7);
+		REQUIRE_EQ(available.size(), 8);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -1587,7 +1608,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 7);
+		REQUIRE_EQ(available.size(), 8);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -1596,7 +1617,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = GDScriptRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 7);
+		REQUIRE_EQ(text_selection_available.size(), 8);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -1906,12 +1927,948 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.gd";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 7);
-		if (available.size() >= 6) {
+		REQUIRE_EQ(available.size(), 8);
+		if (available.size() >= 5) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
 			CHECK(available[4].disabled_reason.is_empty());
 		}
+	}
+
+	TEST_CASE("Sort members by style guide reorders root members stably") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func beta() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"var second := 2\n"
+				"signal changed\n"
+				"var first := 1\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"func alpha() -> void:\n"
+				"\tpass\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"var second := 2\n"
+				"var first := 1\n"
+				"\n"
+				"func beta() -> void:\n"
+				"\tpass\n"
+				"func alpha() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps unnamed enums intact") {
+		SUBCASE("same-line unnamed enum") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"enum { IDLE, RUNNING }\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"enum { IDLE, RUNNING }\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("multiline unnamed enum") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"enum {\n"
+					"\tIDLE,\n"
+					"\tRUNNING,\n"
+					"}\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"enum {\n"
+					"\tIDLE,\n"
+					"\tRUNNING,\n"
+					"}\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
+	TEST_CASE("Sort members by style guide classifies all supported member buckets") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"class Inner:\n"
+				"\tpass\n"
+				"func public_method() -> void:\n"
+				"\tpass\n"
+				"func _private_method() -> void:\n"
+				"\tpass\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"static func helper() -> void:\n"
+				"\tpass\n"
+				"static func _static_init() -> void:\n"
+				"\tpass\n"
+				"@onready var node := Node.new()\n"
+				"var _private_value := 2\n"
+				"var public_value := 1\n"
+				"@export var exported_value := 3\n"
+				"static var shared_value := 4\n"
+				"const LIMIT := 10\n"
+				"enum State { IDLE, RUNNING }\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"enum State { IDLE, RUNNING }\n"
+				"\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"static var shared_value := 4\n"
+				"\n"
+				"@export var exported_value := 3\n"
+				"\n"
+				"var public_value := 1\n"
+				"\n"
+				"var _private_value := 2\n"
+				"\n"
+				"@onready var node := Node.new()\n"
+				"\n"
+				"static func _static_init() -> void:\n"
+				"\tpass\n"
+				"static func helper() -> void:\n"
+				"\tpass\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"func public_method() -> void:\n"
+				"\tpass\n"
+				"func _private_method() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"class Inner:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves attached comments and annotations with declarations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"## Handles the ready callback.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"## Health points shown in the inspector.\n"
+				"@export var health := 10\n"
+				"\n"
+				"# Emitted after health changes.\n"
+				"signal health_changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"# Emitted after health changes.\n"
+				"signal health_changed\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"## Health points shown in the inspector.\n"
+				"@export var health := 10\n"
+				"\n"
+				"## Handles the ready callback.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide leaves script annotations outside sorted span") {
+		const String source =
+				"@tool\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"signal changed\n";
+		const String expected =
+				"@tool\n"
+				"signal changed\n"
+				"\n"
+				"func _ready() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves member annotations across ordinary comments") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@export\n"
+				"# Inspector speed.\n"
+				"var speed := 1\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"@export\n"
+				"# Inspector speed.\n"
+				"var speed := 1\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps trailing comments with the previous member") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"# trailing note about value\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1\n"
+				"# trailing note about value\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves trailing comments with the last member") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"signal changed\n"
+				"# signal note\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"# signal note\n"
+				"\n"
+				"var value := 1\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide leaves leading ordinary comments outside sorted span") {
+		const String source =
+				"extends Node\n"
+				"# Header note.\n"
+				"var value := 1\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"# Header note.\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide declines ambiguous export groups") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func later() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"func unrelated() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK(r.error_message.to_lower().contains("export group"));
+	}
+
+	TEST_CASE("Sort members by style guide moves safe annotation blocks") {
+		SUBCASE("separate-line member annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@export\n"
+					"var speed := 1\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@export\n"
+					"var speed := 1\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("same-line member annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@export var health := 10\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@export var health := 10\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("same-line onready annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@onready var child := Node.new()\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@onready var child := Node.new()\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
+	TEST_CASE("Sort members by style guide moves export group annotations with exported variables") {
+		const String export_groups[] = {
+			"@export_category(\"Stats\")",
+			"@export_group(\"Stats\")",
+			"@export_subgroup(\"Movement\")",
+		};
+
+		for (const String &export_group : export_groups) {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n" +
+					export_group + "\n"
+								   "@export var speed := 1\n"
+								   "signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n" +
+					export_group + "\n"
+								   "@export var speed := 1\n"
+								   "\n"
+								   "func run() -> void:\n"
+								   "\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
+	TEST_CASE("Sort members by style guide declines export groups separated by blank lines") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@export_group(\"Stats\")\n"
+				"\n"
+				"@export var speed := 1\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK(r.error_message.to_lower().contains("export group"));
+	}
+
+	TEST_CASE("Sort members by style guide preserves fork headers and sorts nested types") {
+		const String source =
+				"@tool\n"
+				"namespace game.characters\n"
+				"import game.shared\n"
+				"import game.ui\n"
+				"class_name Player\n"
+				"extends Node\n"
+				"uses Damageable\n"
+				"\n"
+				"signal spawned\n"
+				"\n"
+				"func use_player() -> void:\n"
+				"\tpass\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"\tsignal changed\n"
+				"\n"
+				"trait Damageable:\n"
+				"\tfunc apply_damage() -> void:\n"
+				"\t\tpass\n"
+				"\tvar health := 10\n"
+				"\tsignal damaged\n"
+				"\n";
+		const String expected =
+				"@tool\n"
+				"namespace game.characters\n"
+				"import game.shared\n"
+				"import game.ui\n"
+				"class_name Player\n"
+				"extends Node\n"
+				"uses Damageable\n"
+				"\n"
+				"signal spawned\n"
+				"\n"
+				"func use_player() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"class Inventory:\n"
+				"\tsignal changed\n"
+				"\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"trait Damageable:\n"
+				"\tsignal damaged\n"
+				"\n"
+				"\tvar health := 10\n"
+				"\n"
+				"\tfunc apply_damage() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps builtin-like private methods after custom overrides on non-virtual bases") {
+		const String source =
+				"class Base extends RefCounted:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tvar value := 1\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _process(_delta: float) -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends RefCounted:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tvar value := 1\n"
+				"\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _process(_delta: float) -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide places resolved custom overrides before remaining methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only custom overrides when trait analysis fails") {
+		const String source =
+				"trait Marker:\n"
+				"\tpass\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"trait Marker:\n"
+				"\tpass\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only custom overrides when uses analysis fails") {
+		const String source =
+				"class_name Player\n"
+				"uses Damageable\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class_name Player\n"
+				"uses Damageable\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only implicit object callbacks") {
+		const String source =
+				"class_name ParserFallbackCallbacks\n"
+				"uses Damageable\n"
+				"\n"
+				"func helper() -> void:\n"
+				"\tpass\n"
+				"func _to_string() -> String:\n"
+				"\treturn \"\"\n";
+		const String expected =
+				"class_name ParserFallbackCallbacks\n"
+				"uses Damageable\n"
+				"\n"
+				"func _to_string() -> String:\n"
+				"\treturn \"\"\n"
+				"func helper() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide places native virtual callbacks before custom overrides") {
+		const String source =
+				"class Base extends Control:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _draw() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends Control:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc _draw() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide uses native virtual metadata before custom overrides") {
+		const String source =
+				"class Base extends BaseButton:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _pressed() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends BaseButton:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc _pressed() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide finishes repeated nested passes") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func root_method() -> void:\n"
+				"\tpass\n"
+				"class Outer:\n"
+				"\tfunc outer_method() -> void:\n"
+				"\t\tpass\n"
+				"\tclass Middle:\n"
+				"\t\tfunc middle_method() -> void:\n"
+				"\t\t\tpass\n"
+				"\t\tclass Inner:\n"
+				"\t\t\tfunc inner_method() -> void:\n"
+				"\t\t\t\tpass\n"
+				"\t\t\tvar inner_value := 1\n"
+				"\t\t\tsignal inner_signal\n"
+				"\t\tvar middle_value := 2\n"
+				"\t\tsignal middle_signal\n"
+				"\tvar outer_value := 3\n"
+				"\tsignal outer_signal\n"
+				"signal root_signal\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal root_signal\n"
+				"\n"
+				"func root_method() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"class Outer:\n"
+				"\tsignal outer_signal\n"
+				"\n"
+				"\tvar outer_value := 3\n"
+				"\n"
+				"\tfunc outer_method() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"\tclass Middle:\n"
+				"\t\tsignal middle_signal\n"
+				"\n"
+				"\t\tvar middle_value := 2\n"
+				"\n"
+				"\t\tfunc middle_method() -> void:\n"
+				"\t\t\tpass\n"
+				"\n"
+				"\t\tclass Inner:\n"
+				"\t\t\tsignal inner_signal\n"
+				"\n"
+				"\t\t\tvar inner_value := 1\n"
+				"\n"
+				"\t\t\tfunc inner_method() -> void:\n"
+				"\t\t\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps leading comments with unnamed enums") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var health := 10\n"
+				"enum {\n"
+				"\t## Idle state.\n"
+				"\tIDLE,\n"
+				"\tRUNNING,\n"
+				"}\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"enum {\n"
+				"\t## Idle state.\n"
+				"\tIDLE,\n"
+				"\tRUNNING,\n"
+				"}\n"
+				"\n"
+				"var health := 10\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide leaves dedented comments outside nested types") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"signal ready\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"# Parent-scope note.\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal ready\n"
+				"\n"
+				"class Inventory:\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"# Parent-scope note.\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide recurses into nested types when sorted parents contain warning annotations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"func run(_delta: float) -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"\tsignal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"func run(_delta: float) -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"\n"
+				"class Inventory:\n"
+				"\tsignal changed\n"
+				"\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide reports unfinished deep nesting") {
+		String source =
+				"func root_method() -> void:\n"
+				"\tpass\n";
+		const int depth = 18;
+		for (int level = 0; level < depth; level++) {
+			String indent;
+			for (int i = 0; i < level; i++) {
+				indent += "\t";
+			}
+			const String level_name = String::num_int64(level);
+			source += indent + "class Level" + level_name + ":\n";
+			source += indent + "\tfunc method_" + level_name + "() -> void:\n";
+			source += indent + "\t\tpass\n";
+		}
+		for (int level = depth - 1; level >= 0; level--) {
+			String indent;
+			for (int i = 0; i <= level; i++) {
+				indent += "\t";
+			}
+			const String level_name = String::num_int64(level);
+			source += indent + "var value_" + level_name + " := " + level_name + "\n";
+			source += indent + "signal signal_" + level_name + "\n";
+		}
+		source += "signal root_signal\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK_EQ(r.error_message, "Cannot finish style-order sorting for this script.");
+	}
+
+	TEST_CASE("Sort members by style guide rejects standalone warning annotations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"var speed := 1\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		const bool mentions_annotation_or_warning =
+				r.error_message.to_lower().contains("annotation") || r.error_message.to_lower().contains("warning");
+		CHECK_MESSAGE(mentions_annotation_or_warning, r.error_message);
+	}
+
+	TEST_CASE("Sort members by style guide preserves missing final newline") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"signal changed";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+		CHECK_FALSE(out.ends_with("\n"));
 	}
 
 	TEST_CASE("Inline variable rejects unsafe or unsupported targets") {
@@ -2236,7 +3193,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 7);
+			REQUIRE_EQ(available.size(), 8);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -2264,7 +3221,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.gd";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 7);
+			REQUIRE_EQ(available.size(), 8);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}

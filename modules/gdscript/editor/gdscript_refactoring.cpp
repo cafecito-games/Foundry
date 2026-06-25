@@ -33,12 +33,14 @@
 #ifdef TOOLS_ENABLED
 
 #include "gdscript_container_inference.h"
+#include "gdscript_refactoring_edits.h"
 #include "gdscript_refactoring_names.h"
 #include "gdscript_refactoring_types.h"
 
 #include "../gdscript_analyzer.h"
 #include "../gdscript_position.h"
 
+#include "core/object/class_db.h"
 #include "core/os/mutex.h"
 #include "core/string/char_utils.h"
 #include "core/templates/hash_set.h"
@@ -144,6 +146,50 @@ struct ImplementAbstractCandidate {
 	// Finalized stub text, rendered during detection while the parse tree is alive so
 	// no live FunctionNode pointer is ever cached.
 	String rendered_block;
+};
+
+enum class StyleOrderBucket {
+	SIGNAL,
+	ENUM,
+	CONSTANT,
+	STATIC_VARIABLE,
+	EXPORTED_VARIABLE,
+	PUBLIC_VARIABLE,
+	PRIVATE_VARIABLE,
+	ONREADY_PUBLIC_VARIABLE,
+	ONREADY_PRIVATE_VARIABLE,
+	STATIC_INIT,
+	STATIC_METHOD,
+	BUILTIN_VIRTUAL_METHOD,
+	CUSTOM_OVERRIDE_METHOD,
+	PUBLIC_METHOD,
+	PRIVATE_METHOD,
+	INNER_TYPE,
+};
+
+struct StyleOrderBlock {
+	int original_index = -1;
+	StyleOrderBucket bucket = StyleOrderBucket::PUBLIC_METHOD;
+	int start_line = -1;
+	int end_line = -1; // Exclusive.
+	String text;
+};
+
+struct StyleOrderCandidate {
+	bool enabled = false;
+	String disabled_reason;
+	Vector<RefactorTextEdit> edits;
+};
+
+struct StyleOrderBlockComparator {
+	bool operator()(const StyleOrderBlock &p_a, const StyleOrderBlock &p_b) const {
+		const int a_bucket = static_cast<int>(p_a.bucket);
+		const int b_bucket = static_cast<int>(p_b.bucket);
+		if (a_bucket != b_bucket) {
+			return a_bucket < b_bucket;
+		}
+		return p_a.original_index < p_b.original_index;
+	}
 };
 
 #ifndef GDSCRIPT_NO_LSP
@@ -267,6 +313,16 @@ struct ImplementAbstractCandidateCache {
 };
 
 ImplementAbstractCandidateCache implement_abstract_cache;
+
+struct StyleOrderCandidateCache {
+	bool valid = false;
+	String path;
+	uint64_t source_hash = 0;
+	int source_length = 0;
+	StyleOrderCandidate candidate;
+};
+
+StyleOrderCandidateCache style_order_cache;
 
 Mutex refactor_candidate_cache_mutex;
 
@@ -3380,6 +3436,966 @@ bool source_lines_match(const Vector<String> &p_left, const Vector<String> &p_ri
 	return true;
 }
 
+int get_effective_line_span_end_line(const Vector<String> &p_lines, int p_end_line) {
+	if (p_end_line <= p_lines.size()) {
+		return p_end_line;
+	}
+	if (p_end_line == p_lines.size() + 1 && !p_lines.is_empty() && !p_lines[p_lines.size() - 1].is_empty()) {
+		return p_lines.size();
+	}
+	return -1;
+}
+
+bool get_line_span_text(const Vector<String> &p_lines, int p_start_line, int p_end_line, String &r_text) {
+	const int effective_end_line = get_effective_line_span_end_line(p_lines, p_end_line);
+	if (p_start_line < 0 || effective_end_line < p_start_line || p_start_line >= p_lines.size()) {
+		return false;
+	}
+
+	String text;
+	for (int i = p_start_line; i < effective_end_line; i++) {
+		text += p_lines[i];
+		if (i + 1 < p_lines.size()) {
+			text += "\n";
+		}
+	}
+	r_text = text;
+	return true;
+}
+
+bool make_line_span_edit(
+		const Vector<String> &p_lines,
+		int p_start_line,
+		int p_end_line,
+		const String &p_expected_text,
+		const String &p_new_text,
+		RefactorTextEdit &r_edit) {
+	const int effective_end_line = get_effective_line_span_end_line(p_lines, p_end_line);
+	if (p_start_line < 0 || effective_end_line < p_start_line || p_start_line >= p_lines.size()) {
+		return false;
+	}
+
+	r_edit.start_line = p_start_line;
+	r_edit.start_column = 0;
+	if (effective_end_line < p_lines.size()) {
+		r_edit.end_line = effective_end_line;
+		r_edit.end_column = 0;
+	} else if (!p_lines.is_empty()) {
+		r_edit.end_line = p_lines.size() - 1;
+		r_edit.end_column = p_lines[p_lines.size() - 1].length();
+	} else {
+		return false;
+	}
+	r_edit.has_expected_text = true;
+	r_edit.expected_text = p_expected_text;
+	r_edit.new_text = p_new_text;
+	return true;
+}
+
+bool line_span_has_standalone_warning_annotation(const Vector<String> &p_lines, int p_start_line, int p_end_line) {
+	const int effective_end_line = get_effective_line_span_end_line(p_lines, p_end_line);
+	if (p_start_line < 0 || effective_end_line < p_start_line || p_start_line >= p_lines.size()) {
+		return false;
+	}
+
+	for (int i = p_start_line; i < effective_end_line; i++) {
+		const String stripped_line = p_lines[i].strip_edges();
+		if (stripped_line.begins_with("@warning_ignore_start") || stripped_line.begins_with("@warning_ignore_restore")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool line_span_has_blank_line(const Vector<String> &p_lines, int p_start_line, int p_end_line) {
+	if (p_start_line < 0 || p_end_line < p_start_line) {
+		return false;
+	}
+
+	const int end_line = MIN(p_end_line, p_lines.size());
+	for (int i = p_start_line; i < end_line; i++) {
+		if (p_lines[i].strip_edges().is_empty()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool is_doc_comment_line(const String &p_line) {
+	const String stripped_line = p_line.strip_edges();
+	return stripped_line.begins_with("##");
+}
+
+bool is_ordinary_comment_line(const String &p_line) {
+	const String stripped_line = p_line.strip_edges();
+	return stripped_line.begins_with("#") && !stripped_line.begins_with("##");
+}
+
+int find_attached_style_order_block_start(
+		const Vector<String> &p_lines,
+		int p_member_start_line,
+		int p_floor_line,
+		int p_member_annotation_start_line,
+		int p_export_group_start_line,
+		bool p_has_previous_member_block) {
+	if (p_member_start_line < 0 || p_member_start_line >= p_lines.size()) {
+		return p_member_start_line;
+	}
+
+	const int floor_line = p_floor_line < 0 ? 0 : p_floor_line;
+	int start_line = p_member_start_line;
+	if (p_member_annotation_start_line >= floor_line && p_member_annotation_start_line < start_line) {
+		start_line = p_member_annotation_start_line;
+	}
+	if (p_export_group_start_line >= floor_line && p_export_group_start_line < start_line) {
+		start_line = p_export_group_start_line;
+	}
+	while (start_line > floor_line && is_doc_comment_line(p_lines[start_line - 1])) {
+		start_line--;
+	}
+
+	int ordinary_comment_start_line = start_line;
+	while (ordinary_comment_start_line > floor_line &&
+			is_ordinary_comment_line(p_lines[ordinary_comment_start_line - 1])) {
+		ordinary_comment_start_line--;
+	}
+	const bool comment_has_blank_before = ordinary_comment_start_line > 0 &&
+			p_lines[ordinary_comment_start_line - 1].strip_edges().is_empty();
+	if (ordinary_comment_start_line < start_line &&
+			p_has_previous_member_block &&
+			comment_has_blank_before) {
+		start_line = ordinary_comment_start_line;
+	}
+
+	return start_line;
+}
+
+int find_attached_style_order_block_end(
+		const Vector<String> &p_lines,
+		int p_member_end_line,
+		const String &p_trailing_comment_indent) {
+	if (p_member_end_line < 0) {
+		return p_member_end_line;
+	}
+
+	int end_line = p_member_end_line;
+	while (end_line < p_lines.size() && is_ordinary_comment_line(p_lines[end_line])) {
+		if (!p_trailing_comment_indent.is_empty() &&
+				!get_leading_whitespace(p_lines[end_line]).begins_with(p_trailing_comment_indent)) {
+			break;
+		}
+		end_line++;
+	}
+	return end_line;
+}
+
+String normalize_block_text(const String &p_text) {
+	if (p_text.is_empty()) {
+		return p_text;
+	}
+
+	const bool had_trailing_newline = p_text.ends_with("\n");
+	const Vector<String> lines = p_text.split("\n");
+	int line_count = lines.size();
+	if (had_trailing_newline && line_count > 0) {
+		line_count--;
+	}
+	while (line_count > 0 && lines[line_count - 1].strip_edges().is_empty()) {
+		line_count--;
+	}
+
+	String normalized;
+	for (int i = 0; i < line_count; i++) {
+		normalized += lines[i];
+		if (i + 1 < line_count || had_trailing_newline) {
+			normalized += "\n";
+		}
+	}
+	return normalized;
+}
+
+bool style_order_bucket_is_callable(StyleOrderBucket p_bucket) {
+	switch (p_bucket) {
+		case StyleOrderBucket::STATIC_INIT:
+		case StyleOrderBucket::STATIC_METHOD:
+		case StyleOrderBucket::BUILTIN_VIRTUAL_METHOD:
+		case StyleOrderBucket::CUSTOM_OVERRIDE_METHOD:
+		case StyleOrderBucket::PUBLIC_METHOD:
+		case StyleOrderBucket::PRIVATE_METHOD:
+			return true;
+		case StyleOrderBucket::SIGNAL:
+		case StyleOrderBucket::ENUM:
+		case StyleOrderBucket::CONSTANT:
+		case StyleOrderBucket::STATIC_VARIABLE:
+		case StyleOrderBucket::EXPORTED_VARIABLE:
+		case StyleOrderBucket::PUBLIC_VARIABLE:
+		case StyleOrderBucket::PRIVATE_VARIABLE:
+		case StyleOrderBucket::ONREADY_PUBLIC_VARIABLE:
+		case StyleOrderBucket::ONREADY_PRIVATE_VARIABLE:
+		case StyleOrderBucket::INNER_TYPE:
+			return false;
+	}
+	return false;
+}
+
+bool style_order_buckets_need_blank_line_between(StyleOrderBucket p_previous, StyleOrderBucket p_current) {
+	if (p_previous == StyleOrderBucket::INNER_TYPE || p_current == StyleOrderBucket::INNER_TYPE) {
+		return true;
+	}
+	if (p_previous == p_current) {
+		return false;
+	}
+	return !style_order_bucket_is_callable(p_previous) ||
+			!style_order_bucket_is_callable(p_current);
+}
+
+String join_style_order_blocks(const Vector<StyleOrderBlock> &p_blocks) {
+	// Blocks are expected to be newline-normalized before joining.
+	String text;
+	for (int i = 0; i < p_blocks.size(); i++) {
+		if (i > 0) {
+			if (!text.ends_with("\n")) {
+				text += "\n";
+			}
+			if (style_order_buckets_need_blank_line_between(p_blocks[i - 1].bucket, p_blocks[i].bucket)) {
+				text += "\n";
+			}
+		}
+		text += p_blocks[i].text;
+	}
+	return text;
+}
+
+String match_style_order_span_final_newline(const String &p_text, bool p_should_end_with_newline) {
+	if (p_should_end_with_newline) {
+		return p_text.ends_with("\n") ? p_text : p_text + "\n";
+	}
+
+	String text = p_text;
+	while (text.ends_with("\n")) {
+		text = text.substr(0, text.length() - 1);
+	}
+	return text;
+}
+
+String style_order_member_name(const GDScriptParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::CLASS:
+			if (p_member.m_class == nullptr || p_member.m_class->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.m_class->identifier->name);
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+			if (p_member.constant == nullptr || p_member.constant->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.constant->identifier->name);
+		case GDScriptParser::ClassNode::Member::FUNCTION:
+			if (p_member.function == nullptr || p_member.function->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.function->identifier->name);
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			if (p_member.signal == nullptr || p_member.signal->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.signal->identifier->name);
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+			if (p_member.variable == nullptr || p_member.variable->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.variable->identifier->name);
+		case GDScriptParser::ClassNode::Member::ENUM:
+			if (p_member.m_enum == nullptr || p_member.m_enum->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.m_enum->identifier->name);
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+			return p_member.enum_value.identifier != nullptr ? String(p_member.enum_value.identifier->name) : String();
+		case GDScriptParser::ClassNode::Member::GROUP:
+			return p_member.annotation != nullptr ? String(p_member.annotation->export_info.name) : String();
+		case GDScriptParser::ClassNode::Member::UNDEFINED:
+			return String();
+	}
+	return String();
+}
+
+bool is_private_style_order_name(const String &p_name) {
+	return p_name.begins_with("_");
+}
+
+bool native_class_has_function(const StringName &p_class_name, const StringName &p_function_name) {
+	return p_class_name != StringName() &&
+			ClassDB::class_exists(p_class_name) &&
+			ClassDB::has_method(p_class_name, p_function_name);
+}
+
+bool native_class_has_virtual_method(const StringName &p_class_name, const StringName &p_function_name) {
+	if (p_class_name == StringName() || p_function_name == StringName() || !ClassDB::class_exists(p_class_name)) {
+		return false;
+	}
+
+	List<MethodInfo> virtual_methods;
+	ClassDB::get_virtual_methods(p_class_name, &virtual_methods);
+	for (const MethodInfo &method : virtual_methods) {
+		if (method.name == String(p_function_name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+const GDScriptParser::ClassNode *find_style_order_local_class(
+		const GDScriptParser::ClassNode *p_class,
+		const StringName &p_class_name) {
+	if (p_class == nullptr || p_class_name == StringName()) {
+		return nullptr;
+	}
+
+	for (const GDScriptParser::ClassNode *scope = p_class->outer; scope != nullptr; scope = scope->outer) {
+		for (const GDScriptParser::ClassNode::Member &member : scope->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::CLASS &&
+					member.m_class != nullptr &&
+					member.m_class->identifier != nullptr &&
+					member.m_class->identifier->name == p_class_name) {
+				return member.m_class;
+			}
+		}
+	}
+	return nullptr;
+}
+
+bool style_order_class_has_single_identifier_extends(const GDScriptParser::ClassNode *p_class) {
+	return p_class != nullptr &&
+			p_class->extends_path.is_empty() &&
+			p_class->extends.size() == 1 &&
+			p_class->extends[0] != nullptr;
+}
+
+const GDScriptParser::ClassNode *find_style_order_syntax_base_class(const GDScriptParser::ClassNode *p_class) {
+	if (!style_order_class_has_single_identifier_extends(p_class)) {
+		return nullptr;
+	}
+	return find_style_order_local_class(p_class, p_class->extends[0]->name);
+}
+
+constexpr int STYLE_ORDER_MAX_BASE_CHAIN_DEPTH = 64;
+
+bool class_has_syntax_base_function(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	const GDScriptParser::ClassNode *base_class = find_style_order_syntax_base_class(p_class);
+	for (int depth = 0; base_class != nullptr && depth < STYLE_ORDER_MAX_BASE_CHAIN_DEPTH; depth++) {
+		if (base_class->has_function(p_function_name)) {
+			return true;
+		}
+		base_class = find_style_order_syntax_base_class(base_class);
+	}
+	return false;
+}
+
+bool class_has_syntax_native_virtual_method(
+		const GDScriptParser::ClassNode *p_class,
+		const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	const GDScriptParser::ClassNode *current_class = p_class;
+	for (int depth = 0; current_class != nullptr && depth < STYLE_ORDER_MAX_BASE_CHAIN_DEPTH; depth++) {
+		if (!current_class->extends_used && native_class_has_virtual_method(SNAME("RefCounted"), p_function_name)) {
+			return true;
+		}
+		if (style_order_class_has_single_identifier_extends(current_class)) {
+			const StringName base_name = current_class->extends[0]->name;
+			if (native_class_has_virtual_method(base_name, p_function_name)) {
+				return true;
+			}
+		}
+		current_class = find_style_order_syntax_base_class(current_class);
+	}
+	return false;
+}
+
+bool class_has_native_base_virtual_method(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	GDScriptParser::DataType base_type = p_class->base_type;
+	while (true) {
+		switch (base_type.kind) {
+			case GDScriptParser::DataType::CLASS: {
+				const GDScriptParser::ClassNode *base_class = base_type.class_type;
+				int depth = 0;
+				while (base_class != nullptr && depth < STYLE_ORDER_MAX_BASE_CHAIN_DEPTH) {
+					depth++;
+					base_type = base_class->base_type;
+					if (base_type.kind != GDScriptParser::DataType::CLASS) {
+						break;
+					}
+					base_class = base_type.class_type;
+				}
+				if (base_type.kind == GDScriptParser::DataType::CLASS) {
+					return false;
+				}
+				continue;
+			}
+			case GDScriptParser::DataType::SCRIPT: {
+				Ref<Script> base_script = base_type.script_type;
+				StringName native_type = base_type.native_type;
+				while (base_script.is_valid()) {
+					if (native_type == StringName()) {
+						native_type = base_script->get_instance_base_type();
+					}
+					base_script = base_script->get_base_script();
+				}
+				return native_class_has_virtual_method(native_type, p_function_name);
+			}
+			case GDScriptParser::DataType::NATIVE:
+				return native_class_has_virtual_method(base_type.native_type, p_function_name);
+			case GDScriptParser::DataType::BUILTIN:
+			case GDScriptParser::DataType::ENUM:
+			case GDScriptParser::DataType::TYPE_PARAMETER:
+			case GDScriptParser::DataType::VARIANT:
+			case GDScriptParser::DataType::RESOLVING:
+			case GDScriptParser::DataType::UNRESOLVED:
+				return false;
+		}
+	}
+	return false;
+}
+
+bool class_has_base_function(const GDScriptParser::ClassNode *p_class, const StringName &p_function_name) {
+	if (p_class == nullptr || p_function_name == StringName()) {
+		return false;
+	}
+
+	GDScriptParser::DataType base_type = p_class->base_type;
+	while (true) {
+		switch (base_type.kind) {
+			case GDScriptParser::DataType::CLASS: {
+				const GDScriptParser::ClassNode *base_class = base_type.class_type;
+				int depth = 0;
+				while (base_class != nullptr && depth < STYLE_ORDER_MAX_BASE_CHAIN_DEPTH) {
+					depth++;
+					if (base_class->has_member(p_function_name) &&
+							base_class->get_member(p_function_name).type == GDScriptParser::ClassNode::Member::FUNCTION) {
+						return true;
+					}
+
+					base_type = base_class->base_type;
+					if (base_type.kind != GDScriptParser::DataType::CLASS) {
+						break;
+					}
+					base_class = base_type.class_type;
+				}
+				if (base_type.kind == GDScriptParser::DataType::CLASS) {
+					return false;
+				}
+				continue;
+			}
+			case GDScriptParser::DataType::SCRIPT: {
+				Ref<Script> base_script = base_type.script_type;
+				StringName native_type = base_type.native_type;
+				while (base_script.is_valid()) {
+					if (base_script->has_method(p_function_name)) {
+						return true;
+					}
+					if (native_type == StringName()) {
+						native_type = base_script->get_instance_base_type();
+					}
+					base_script = base_script->get_base_script();
+				}
+				return native_class_has_function(native_type, p_function_name);
+			}
+			case GDScriptParser::DataType::NATIVE:
+				return native_class_has_function(base_type.native_type, p_function_name);
+			case GDScriptParser::DataType::BUILTIN:
+			case GDScriptParser::DataType::ENUM:
+			case GDScriptParser::DataType::TYPE_PARAMETER:
+			case GDScriptParser::DataType::VARIANT:
+			case GDScriptParser::DataType::RESOLVING:
+			case GDScriptParser::DataType::UNRESOLVED:
+				return false;
+		}
+	}
+	return false;
+}
+
+bool style_order_variable_has_export_annotation(const GDScriptParser::VariableNode *p_variable) {
+	if (p_variable == nullptr) {
+		return false;
+	}
+	if (p_variable->exported) {
+		return true;
+	}
+
+	for (const GDScriptParser::AnnotationNode *annotation : p_variable->annotations) {
+		if (annotation != nullptr && String(annotation->name).begins_with("@export")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool style_order_export_group_has_variable_target(const GDScriptParser::ClassNode *p_class, int p_group_index) {
+	if (p_class == nullptr || p_group_index < 0 || p_group_index >= p_class->members.size()) {
+		return false;
+	}
+
+	for (int i = p_group_index + 1; i < p_class->members.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == GDScriptParser::ClassNode::Member::GROUP) {
+			continue;
+		}
+		return member.type == GDScriptParser::ClassNode::Member::VARIABLE &&
+				style_order_variable_has_export_annotation(member.variable);
+	}
+	return false;
+}
+
+bool style_order_variable_has_onready_annotation(const GDScriptParser::VariableNode *p_variable) {
+	if (p_variable == nullptr) {
+		return false;
+	}
+	if (p_variable->onready) {
+		return true;
+	}
+
+	for (const GDScriptParser::AnnotationNode *annotation : p_variable->annotations) {
+		if (annotation != nullptr && annotation->name == "@onready") {
+			return true;
+		}
+	}
+	return false;
+}
+
+StyleOrderBucket get_style_order_bucket(
+		const GDScriptParser::ClassNode *p_class,
+		const GDScriptParser::ClassNode::Member &p_member,
+		bool p_analysis_ok) {
+	const String member_name = style_order_member_name(p_member);
+
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			return StyleOrderBucket::SIGNAL;
+		case GDScriptParser::ClassNode::Member::ENUM:
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+			return StyleOrderBucket::ENUM;
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+			return StyleOrderBucket::CONSTANT;
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+			if (p_member.variable != nullptr && p_member.variable->is_static) {
+				return StyleOrderBucket::STATIC_VARIABLE;
+			}
+			if (style_order_variable_has_export_annotation(p_member.variable)) {
+				return StyleOrderBucket::EXPORTED_VARIABLE;
+			}
+			if (style_order_variable_has_onready_annotation(p_member.variable)) {
+				if (is_private_style_order_name(member_name)) {
+					return StyleOrderBucket::ONREADY_PRIVATE_VARIABLE;
+				}
+				return StyleOrderBucket::ONREADY_PUBLIC_VARIABLE;
+			}
+			if (is_private_style_order_name(member_name)) {
+				return StyleOrderBucket::PRIVATE_VARIABLE;
+			}
+			return StyleOrderBucket::PUBLIC_VARIABLE;
+		case GDScriptParser::ClassNode::Member::FUNCTION: {
+			if (p_member.function != nullptr && p_member.function->is_static) {
+				return member_name == "_static_init" ? StyleOrderBucket::STATIC_INIT : StyleOrderBucket::STATIC_METHOD;
+			}
+			const StringName function_name = p_member.function != nullptr && p_member.function->identifier != nullptr ? p_member.function->identifier->name : StringName();
+			const bool is_builtin_virtual = function_name != StringName() &&
+					(p_analysis_ok ? class_has_native_base_virtual_method(p_class, function_name) : class_has_syntax_native_virtual_method(p_class, function_name));
+			if (function_name == SNAME("_init") || is_builtin_virtual) {
+				return StyleOrderBucket::BUILTIN_VIRTUAL_METHOD;
+			}
+			const bool is_custom_override = function_name != StringName() &&
+					(p_analysis_ok ? class_has_base_function(p_class, function_name) : class_has_syntax_base_function(p_class, function_name));
+			if (function_name != StringName() &&
+					is_custom_override) {
+				return StyleOrderBucket::CUSTOM_OVERRIDE_METHOD;
+			}
+			return is_private_style_order_name(member_name) ? StyleOrderBucket::PRIVATE_METHOD : StyleOrderBucket::PUBLIC_METHOD;
+		}
+		case GDScriptParser::ClassNode::Member::CLASS:
+			return StyleOrderBucket::INNER_TYPE;
+		case GDScriptParser::ClassNode::Member::GROUP:
+			return StyleOrderBucket::EXPORTED_VARIABLE;
+		case GDScriptParser::ClassNode::Member::UNDEFINED:
+			return StyleOrderBucket::PUBLIC_METHOD;
+	}
+	return StyleOrderBucket::PUBLIC_METHOD;
+}
+
+const GDScriptParser::Node *get_style_order_member_source_node(const GDScriptParser::ClassNode::Member &p_member) {
+	if (p_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE) {
+		return p_member.enum_value.parent_enum;
+	}
+	return p_member.get_source_node();
+}
+
+int get_style_order_member_annotation_start_line(const GDScriptParser::ClassNode::Member &p_member) {
+	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
+	if (node == nullptr || node->start_line <= 0) {
+		return -1;
+	}
+
+	int annotation_start_line = -1;
+	for (const GDScriptParser::AnnotationNode *annotation : node->annotations) {
+		if (annotation == nullptr || annotation->start_line <= 0 || annotation->start_line >= node->start_line) {
+			continue;
+		}
+
+		const int line = annotation->start_line - 1;
+		if (annotation_start_line < 0 || line < annotation_start_line) {
+			annotation_start_line = line;
+		}
+	}
+	return annotation_start_line;
+}
+
+int get_style_order_member_start_line(const GDScriptParser::ClassNode::Member &p_member) {
+	if (p_member.type == GDScriptParser::ClassNode::Member::UNDEFINED) {
+		return -1;
+	}
+	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
+	return node != nullptr && node->start_line > 0 ? node->start_line - 1 : -1;
+}
+
+int get_style_order_member_end_line(const GDScriptParser::ClassNode::Member &p_member) {
+	const GDScriptParser::Node *node = get_style_order_member_source_node(p_member);
+	if (node != nullptr && node->end_line > 0) {
+		return node->end_line;
+	}
+	return -1;
+}
+
+bool is_style_order_unnamed_enum_continuation(const GDScriptParser::ClassNode *p_class, int p_member_index) {
+	if (p_class == nullptr || p_member_index <= 0 || p_member_index >= p_class->members.size()) {
+		return false;
+	}
+
+	const GDScriptParser::ClassNode::Member &member = p_class->members[p_member_index];
+	const GDScriptParser::ClassNode::Member &previous_member = p_class->members[p_member_index - 1];
+	return member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE &&
+			previous_member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE &&
+			member.enum_value.parent_enum != nullptr &&
+			member.enum_value.parent_enum == previous_member.enum_value.parent_enum;
+}
+
+StyleOrderCandidate find_style_order_candidate_in_class(
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_class,
+		bool p_is_root_class,
+		bool p_analysis_ok) {
+	StyleOrderCandidate candidate;
+	if (p_class == nullptr || p_class->members.size() < 2) {
+		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		return candidate;
+	}
+
+	Vector<StyleOrderBlock> blocks;
+	int block_floor_line = 0;
+	int pending_export_group_start_line = -1;
+	for (int i = 0; i < p_class->members.size(); i++) {
+		if (is_style_order_unnamed_enum_continuation(p_class, i)) {
+			continue;
+		}
+
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == GDScriptParser::ClassNode::Member::GROUP) {
+			if (!style_order_export_group_has_variable_target(p_class, i)) {
+				candidate.disabled_reason = "Cannot sort members because an export group is not followed by an exported variable.";
+				return candidate;
+			}
+			const int group_start_line = get_style_order_member_start_line(member);
+			if (group_start_line < 0) {
+				candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+				return candidate;
+			}
+			if (pending_export_group_start_line < 0 || group_start_line < pending_export_group_start_line) {
+				pending_export_group_start_line = group_start_line;
+			}
+			continue;
+		}
+
+		const int member_start_line = get_style_order_member_start_line(member);
+		const int member_annotation_start_line = get_style_order_member_annotation_start_line(member);
+		const int block_start_line = find_attached_style_order_block_start(
+				p_lines,
+				member_start_line,
+				block_floor_line,
+				member_annotation_start_line,
+				pending_export_group_start_line,
+				!blocks.is_empty());
+		const int member_end_line = get_style_order_member_end_line(member);
+		const String trailing_comment_indent = !p_is_root_class && member_start_line >= 0 && member_start_line < p_lines.size() ? get_leading_whitespace(p_lines[member_start_line]) : String();
+		const int block_end_line = find_attached_style_order_block_end(p_lines, member_end_line, trailing_comment_indent);
+		if (block_start_line < 0 || member_end_line <= block_start_line || block_end_line <= block_start_line) {
+			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+			return candidate;
+		}
+
+		if (pending_export_group_start_line >= 0) {
+			if (block_start_line > pending_export_group_start_line) {
+				candidate.disabled_reason = "Cannot sort members because an export group is not followed by an exported variable.";
+				return candidate;
+			}
+			if (line_span_has_blank_line(p_lines, pending_export_group_start_line + 1, member_start_line)) {
+				candidate.disabled_reason = "Cannot sort members because an export group is separated from its exported variable.";
+				return candidate;
+			}
+			pending_export_group_start_line = -1;
+		}
+
+		if (!blocks.is_empty()) {
+			blocks.write[blocks.size() - 1].end_line = block_start_line;
+		}
+
+		StyleOrderBlock block;
+		block.original_index = i;
+		block.bucket = get_style_order_bucket(p_class, member, p_analysis_ok);
+		block.start_line = block_start_line;
+		block.end_line = block_end_line;
+		blocks.push_back(block);
+		block_floor_line = member_end_line;
+	}
+
+	for (int i = 0; i < blocks.size(); i++) {
+		if (blocks[i].start_line < 0 || blocks[i].end_line <= blocks[i].start_line) {
+			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+			return candidate;
+		}
+
+		String text;
+		if (!get_line_span_text(p_lines, blocks[i].start_line, blocks[i].end_line, text)) {
+			candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+			return candidate;
+		}
+		blocks.write[i].text = normalize_block_text(text);
+	}
+
+	if (blocks.size() < 2) {
+		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		return candidate;
+	}
+
+	Vector<StyleOrderBlock> sorted_blocks = blocks;
+	sorted_blocks.sort_custom<StyleOrderBlockComparator>();
+
+	int edit_end_line = blocks[blocks.size() - 1].end_line;
+	if (!p_is_root_class) {
+		int trailing_blank_end_line = edit_end_line;
+		int effective_end_line = get_effective_line_span_end_line(p_lines, trailing_blank_end_line);
+		while (effective_end_line >= 0 && effective_end_line < p_lines.size() &&
+				p_lines[effective_end_line].strip_edges().is_empty()) {
+			trailing_blank_end_line = effective_end_line + 1;
+			effective_end_line = get_effective_line_span_end_line(p_lines, trailing_blank_end_line);
+		}
+		if (effective_end_line == p_lines.size()) {
+			edit_end_line = trailing_blank_end_line;
+		}
+	}
+
+	String expected_text;
+	if (!get_line_span_text(p_lines, blocks[0].start_line, edit_end_line, expected_text)) {
+		candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+		return candidate;
+	}
+
+	const String replacement_text = match_style_order_span_final_newline(
+			join_style_order_blocks(sorted_blocks),
+			expected_text.ends_with("\n"));
+	if (replacement_text == expected_text) {
+		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		return candidate;
+	}
+	if (line_span_has_standalone_warning_annotation(p_lines, blocks[0].start_line, edit_end_line)) {
+		candidate.disabled_reason = "Cannot sort members while standalone warning annotations are present.";
+		return candidate;
+	}
+
+	RefactorTextEdit edit;
+	if (!make_line_span_edit(
+				p_lines,
+				blocks[0].start_line,
+				edit_end_line,
+				expected_text,
+				replacement_text,
+				edit)) {
+		candidate.disabled_reason = "Cannot map a member declaration back to source text.";
+		return candidate;
+	}
+	candidate.enabled = true;
+	candidate.edits.push_back(edit);
+	return candidate;
+}
+
+bool is_style_order_already_sorted_reason(const String &p_reason) {
+	return p_reason == "Members are already sorted by the GDScript style guide.";
+}
+
+int compare_style_order_position(int p_a_line, int p_a_column, int p_b_line, int p_b_column) {
+	if (p_a_line != p_b_line) {
+		return p_a_line < p_b_line ? -1 : 1;
+	}
+	if (p_a_column == p_b_column) {
+		return 0;
+	}
+	return p_a_column < p_b_column ? -1 : 1;
+}
+
+bool style_order_edits_have_same_span(const RefactorTextEdit &p_a, const RefactorTextEdit &p_b) {
+	return compare_style_order_position(p_a.start_line, p_a.start_column, p_b.start_line, p_b.start_column) == 0 &&
+			compare_style_order_position(p_a.end_line, p_a.end_column, p_b.end_line, p_b.end_column) == 0;
+}
+
+bool style_order_edit_contains_span(const RefactorTextEdit &p_outer, const RefactorTextEdit &p_inner) {
+	const bool starts_before_or_at_inner =
+			compare_style_order_position(
+					p_outer.start_line,
+					p_outer.start_column,
+					p_inner.start_line,
+					p_inner.start_column) <= 0;
+	const bool ends_after_or_at_inner =
+			compare_style_order_position(
+					p_outer.end_line,
+					p_outer.end_column,
+					p_inner.end_line,
+					p_inner.end_column) >= 0;
+	return starts_before_or_at_inner && ends_after_or_at_inner && !style_order_edits_have_same_span(p_outer, p_inner);
+}
+
+void remove_nested_style_order_edits(Vector<RefactorTextEdit> &r_edits) {
+	Vector<RefactorTextEdit> filtered_edits;
+	for (int i = 0; i < r_edits.size(); i++) {
+		bool is_nested = false;
+		for (int j = 0; j < r_edits.size(); j++) {
+			if (i == j) {
+				continue;
+			}
+			if (style_order_edit_contains_span(r_edits[j], r_edits[i]) ||
+					(style_order_edits_have_same_span(r_edits[j], r_edits[i]) && j < i)) {
+				is_nested = true;
+				break;
+			}
+		}
+		if (!is_nested) {
+			filtered_edits.push_back(r_edits[i]);
+		}
+	}
+	r_edits = filtered_edits;
+}
+
+void collect_style_order_class_edits(
+		const Vector<String> &p_lines,
+		const GDScriptParser::ClassNode *p_class,
+		bool p_is_root_class,
+		bool p_analysis_ok,
+		Vector<RefactorTextEdit> &r_edits,
+		String &r_disabled_reason) {
+	if (p_class == nullptr || !r_disabled_reason.is_empty()) {
+		return;
+	}
+
+	const StyleOrderCandidate candidate = find_style_order_candidate_in_class(
+			p_lines,
+			p_class,
+			p_is_root_class,
+			p_analysis_ok);
+	if (candidate.enabled) {
+		for (const RefactorTextEdit &edit : candidate.edits) {
+			r_edits.push_back(edit);
+		}
+		return;
+	} else if (!is_style_order_already_sorted_reason(candidate.disabled_reason)) {
+		r_disabled_reason = candidate.disabled_reason;
+		return;
+	}
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::CLASS) {
+			continue;
+		}
+		collect_style_order_class_edits(p_lines, member.m_class, false, p_analysis_ok, r_edits, r_disabled_reason);
+		if (!r_disabled_reason.is_empty()) {
+			return;
+		}
+	}
+}
+
+void get_source_end_position(const String &p_source, int &r_line, int &r_column) {
+	r_line = 0;
+	r_column = 0;
+	for (int i = 0; i < p_source.length(); i++) {
+		if (p_source[i] == '\n') {
+			r_line++;
+			r_column = 0;
+		} else {
+			r_column++;
+		}
+	}
+}
+
+void make_whole_source_style_order_edit(
+		const String &p_source,
+		const String &p_transformed,
+		RefactorTextEdit &r_edit) {
+	// Sorting can touch multiple nested class spans, so expose it as one whole-source edit.
+	r_edit.start_line = 0;
+	r_edit.start_column = 0;
+	get_source_end_position(p_source, r_edit.end_line, r_edit.end_column);
+	r_edit.has_expected_text = true;
+	r_edit.expected_text = p_source;
+	r_edit.new_text = p_transformed;
+}
+
+bool apply_style_order_pass(
+		const String &p_source,
+		const String &p_path,
+		String &r_transformed,
+		String &r_disabled_reason) {
+	r_transformed = p_source;
+	r_disabled_reason = String();
+
+	GDScriptParser parser;
+	const Error err = parser.parse(p_source, p_path, false);
+	if (err != OK || parser.get_tree() == nullptr) {
+		r_disabled_reason = "Cannot parse this script.";
+		return false;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	const bool analysis_ok = analyzer.analyze() == OK;
+
+	const Vector<String> lines = p_source.split("\n");
+	Vector<RefactorTextEdit> edits;
+	collect_style_order_class_edits(lines, parser.get_tree(), true, analysis_ok, edits, r_disabled_reason);
+	if (!r_disabled_reason.is_empty()) {
+		return false;
+	}
+	if (edits.is_empty()) {
+		return true;
+	}
+
+	remove_nested_style_order_edits(edits);
+	if (edits.is_empty()) {
+		return true;
+	}
+
+	if (!GDScriptRefactorEdits::apply(p_source, edits, r_transformed)) {
+		r_transformed = p_source;
+		r_disabled_reason = "Cannot apply style-order edits to this script.";
+		return false;
+	}
+	return true;
+}
+
 // Cache locks only protect shared state. Concurrent misses may compute the same pure candidate twice.
 bool get_cached_type_annotation_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, TypeAnnotationCandidate &r_candidate) {
 	MutexLock lock(refactor_candidate_cache_mutex);
@@ -3512,6 +4528,29 @@ void cache_implement_abstract_candidate(const RefactorContext &p_context, const 
 	implement_abstract_cache.source_length = p_context.source.length();
 	implement_abstract_cache.location = p_location;
 	implement_abstract_cache.candidate = p_candidate;
+}
+
+bool get_cached_style_order_candidate(const RefactorContext &p_context, StyleOrderCandidate &r_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
+	if (!style_order_cache.valid ||
+			style_order_cache.path != p_context.path ||
+			style_order_cache.source_hash != p_context.source.hash64() ||
+			style_order_cache.source_length != p_context.source.length()) {
+		return false;
+	}
+	r_candidate = style_order_cache.candidate;
+	return true;
+}
+
+void cache_style_order_candidate(const RefactorContext &p_context, const StyleOrderCandidate &p_candidate) {
+	MutexLock lock(refactor_candidate_cache_mutex);
+
+	style_order_cache.valid = true;
+	style_order_cache.path = p_context.path;
+	style_order_cache.source_hash = p_context.source.hash64();
+	style_order_cache.source_length = p_context.source.length();
+	style_order_cache.candidate = p_candidate;
 }
 
 void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr) {
@@ -5199,6 +6238,72 @@ static RefactorResult prepare_rename(
 #endif // GDSCRIPT_NO_LSP
 }
 
+constexpr int STYLE_ORDER_MAX_CONVERGENCE_PASSES = 16;
+
+StyleOrderCandidate find_style_order_candidate_uncached(const RefactorContext &p_context) {
+	StyleOrderCandidate candidate;
+	const String original_source = p_context.source;
+	String transformed_source = original_source;
+	bool converged = false;
+
+	for (int pass = 0; pass < STYLE_ORDER_MAX_CONVERGENCE_PASSES; pass++) {
+		String pass_result;
+		String disabled_reason;
+		if (!apply_style_order_pass(transformed_source, p_context.path, pass_result, disabled_reason)) {
+			candidate.disabled_reason = disabled_reason;
+			return candidate;
+		}
+		if (pass_result == transformed_source) {
+			converged = true;
+			break;
+		}
+		transformed_source = pass_result;
+	}
+
+	if (!converged) {
+		candidate.disabled_reason = "Cannot finish style-order sorting for this script.";
+		return candidate;
+	}
+
+	if (transformed_source == original_source) {
+		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		return candidate;
+	}
+
+	RefactorTextEdit edit;
+	make_whole_source_style_order_edit(original_source, transformed_source, edit);
+	candidate.enabled = true;
+	candidate.edits.push_back(edit);
+	return candidate;
+}
+
+StyleOrderCandidate find_style_order_candidate(const RefactorContext &p_context) {
+	StyleOrderCandidate candidate;
+	if (get_cached_style_order_candidate(p_context, candidate)) {
+		return candidate;
+	}
+
+	candidate = find_style_order_candidate_uncached(p_context);
+	cache_style_order_candidate(p_context, candidate);
+	return candidate;
+}
+
+RefactorResult prepare_sort_members_by_style_guide(const RefactorContext &p_context) {
+	RefactorResult result;
+	const StyleOrderCandidate candidate = find_style_order_candidate(p_context);
+	if (!candidate.enabled) {
+		result.ok = false;
+		result.error_message = candidate.disabled_reason;
+		return result;
+	}
+
+	result.ok = true;
+	for (const RefactorTextEdit &edit : candidate.edits) {
+		result.edits.push_back(edit);
+	}
+	return result;
+}
+
 Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	Vector<RefactorAvailability> result;
 
@@ -5297,6 +6402,17 @@ Vector<RefactorAvailability> GDScriptRefactoring::get_available_refactors(const 
 		insert_cast.disabled_reason = cast_candidate.disabled_reason;
 	}
 	result.push_back(insert_cast);
+
+	RefactorAvailability sort_members;
+	sort_members.kind = RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE;
+	sort_members.title = "Sort Members by Style Guide";
+	const StyleOrderCandidate sort_candidate = find_style_order_candidate(p_context);
+	sort_members.enabled = sort_candidate.enabled;
+	if (!sort_members.enabled) {
+		sort_members.disabled_reason = sort_candidate.disabled_reason;
+	}
+	result.push_back(sort_members);
+
 	return result;
 }
 
@@ -5323,6 +6439,8 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 			return prepare_explicit_cast(p_context, p_location);
+		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
+			return prepare_sort_members_by_style_guide(p_context);
 		default:
 			break;
 	}
