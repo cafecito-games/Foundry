@@ -852,6 +852,42 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("A super call may mutate the inherited member and escapes it") {
+		InferenceFixture fixture(
+				"extends Node\n"
+				"var _items = []\n"
+				"func setup() -> void:\n"
+				"\t_items.append(1)\n"
+				"\tsuper.add_to_group(\"g\")\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Referencing an overridable method as a callable escapes the member") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak() -> void:\n"
+				"\tvar cb = after_add\n"
+				"\tcb.call()\n"
+				"func after_add() -> void:\n"
+				"\tpass\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("A reflection write through a foreign reference naming the member escapes it") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak(other: Object) -> void:\n"
+				"\tother.set(\"_items\", [\"x\"])\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("An unused member array yields no evidence") {
 		InferenceFixture fixture("var _items = []\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");

@@ -527,6 +527,63 @@ private:
 		return false;
 	}
 
+	// A `super(...)` / `super.method(...)` call dispatches to a base-class method in
+	// another file, which can mutate the inherited member; it cannot be bounded.
+	static bool is_super_call(const GDScriptParser::CallNode *p_call) {
+		return p_call != nullptr && p_call->is_super;
+	}
+
+	// True when `p_value` takes a bound reference to a non-static script method on
+	// this instance (`var cb = hook` or `var cb = self.hook`). The callable can
+	// later dispatch to a subclass override that mutates the inherited member.
+	static bool references_overrideable_method(const GDScriptParser::ExpressionNode *p_value) {
+		const GDScriptParser::IdentifierNode *identifier = nullptr;
+		if (p_value != nullptr && p_value->type == Node::IDENTIFIER) {
+			identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
+		} else if (p_value != nullptr && p_value->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+			if (subscript->is_attribute && subscript->base != nullptr && subscript->base->type == Node::SELF) {
+				identifier = subscript->attribute;
+			}
+		}
+		return identifier != nullptr &&
+				identifier->source == GDScriptParser::IdentifierNode::MEMBER_FUNCTION &&
+				!identifier->function_source_is_static;
+	}
+
+	// True when `p_call` is a dynamic reflection call (on any receiver) whose first
+	// string-literal argument names the tracked member, e.g. `other.set("_m", v)`
+	// where `other` may alias `self`. The receiver-agnostic check covers reflection
+	// writes routed through a reference the scan cannot prove distinct from `self`.
+	bool reflection_call_names_member(const GDScriptParser::CallNode *p_call) const {
+		if (p_call == nullptr || p_call->callee == nullptr || decl->identifier == nullptr) {
+			return false;
+		}
+		StringName method;
+		if (p_call->callee->type == Node::IDENTIFIER) {
+			method = static_cast<const GDScriptParser::IdentifierNode *>(p_call->callee)->name;
+		} else if (p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && callee->attribute != nullptr) {
+				method = callee->attribute->name;
+			}
+		}
+		if (method == StringName() || !is_dynamic_reflection_method(method)) {
+			return false;
+		}
+		for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
+			if (argument == nullptr || argument->type != Node::LITERAL) {
+				continue;
+			}
+			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(argument)->value;
+			if ((value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+					StringName(value) == decl->identifier->name) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// Treats `p_value` as a value that is consumed by the surrounding context. If
 	// the variable itself appears here (other than in one of the recognized safe
 	// read positions handled below) it has escaped and inference must stop.
@@ -543,6 +600,13 @@ private:
 			// callable that can later mutate the member by name (`s.call("_m", ..)`),
 			// which the scan cannot follow.
 			bail(GDScriptContainerInference::ESCAPES, "a reflection method is referenced as a callable");
+			return;
+		}
+		if (member_mode && references_overrideable_method(p_value)) {
+			// Taking a bound reference to a script method (`var cb = hook`) yields a
+			// callable that can later dispatch to a subclass override mutating the
+			// inherited member with another type.
+			bail(GDScriptContainerInference::ESCAPES, "an overridable method is referenced as a callable");
 			return;
 		}
 		switch (p_value->type) {
@@ -582,15 +646,15 @@ private:
 				break;
 			case Node::CALL: {
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
-				if (member_mode && is_self_reflection_call(call)) {
+				if (member_mode && (is_self_reflection_call(call) || reflection_call_names_member(call))) {
 					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 					return;
 				}
-				if (member_mode && is_overrideable_self_method_call(call)) {
-					// A script method on this instance can be overridden by an external
-					// subclass whose override mutates the inherited member with another
-					// type, which the single-file scan cannot see.
-					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden method");
+				if (member_mode && (is_super_call(call) || is_overrideable_self_method_call(call))) {
+					// A script method on this instance (or a base method via `super`) can
+					// be overridden/extended by code outside the file that mutates the
+					// inherited member with another type, which the scan cannot see.
+					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
 					return;
 				}
 				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
@@ -1180,6 +1244,63 @@ private:
 		return false;
 	}
 
+	// A `super(...)` / `super.method(...)` call dispatches to a base-class method in
+	// another file, which can mutate the inherited member; it cannot be bounded.
+	static bool is_super_call(const GDScriptParser::CallNode *p_call) {
+		return p_call != nullptr && p_call->is_super;
+	}
+
+	// True when `p_value` takes a bound reference to a non-static script method on
+	// this instance (`var cb = hook` or `var cb = self.hook`). The callable can
+	// later dispatch to a subclass override that mutates the inherited member.
+	static bool references_overrideable_method(const GDScriptParser::ExpressionNode *p_value) {
+		const GDScriptParser::IdentifierNode *identifier = nullptr;
+		if (p_value != nullptr && p_value->type == Node::IDENTIFIER) {
+			identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_value);
+		} else if (p_value != nullptr && p_value->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+			if (subscript->is_attribute && subscript->base != nullptr && subscript->base->type == Node::SELF) {
+				identifier = subscript->attribute;
+			}
+		}
+		return identifier != nullptr &&
+				identifier->source == GDScriptParser::IdentifierNode::MEMBER_FUNCTION &&
+				!identifier->function_source_is_static;
+	}
+
+	// True when `p_call` is a dynamic reflection call (on any receiver) whose first
+	// string-literal argument names the tracked member, e.g. `other.set("_m", v)`
+	// where `other` may alias `self`. The receiver-agnostic check covers reflection
+	// writes routed through a reference the scan cannot prove distinct from `self`.
+	bool reflection_call_names_member(const GDScriptParser::CallNode *p_call) const {
+		if (p_call == nullptr || p_call->callee == nullptr || decl->identifier == nullptr) {
+			return false;
+		}
+		StringName method;
+		if (p_call->callee->type == Node::IDENTIFIER) {
+			method = static_cast<const GDScriptParser::IdentifierNode *>(p_call->callee)->name;
+		} else if (p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && callee->attribute != nullptr) {
+				method = callee->attribute->name;
+			}
+		}
+		if (method == StringName() || !is_dynamic_reflection_method(method)) {
+			return false;
+		}
+		for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
+			if (argument == nullptr || argument->type != Node::LITERAL) {
+				continue;
+			}
+			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(argument)->value;
+			if ((value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+					StringName(value) == decl->identifier->name) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	void scan_value(const GDScriptParser::ExpressionNode *p_value) {
 		if (bailed || p_value == nullptr) {
 			return;
@@ -1193,6 +1314,13 @@ private:
 			// callable that can later mutate the member by name (`s.call("_m", ..)`),
 			// which the scan cannot follow.
 			bail(GDScriptContainerInference::ESCAPES, "a reflection method is referenced as a callable");
+			return;
+		}
+		if (member_mode && references_overrideable_method(p_value)) {
+			// Taking a bound reference to a script method (`var cb = hook`) yields a
+			// callable that can later dispatch to a subclass override mutating the
+			// inherited member with another type.
+			bail(GDScriptContainerInference::ESCAPES, "an overridable method is referenced as a callable");
 			return;
 		}
 		switch (p_value->type) {
@@ -1237,15 +1365,15 @@ private:
 				break;
 			case Node::CALL: {
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
-				if (member_mode && is_self_reflection_call(call)) {
+				if (member_mode && (is_self_reflection_call(call) || reflection_call_names_member(call))) {
 					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 					return;
 				}
-				if (member_mode && is_overrideable_self_method_call(call)) {
-					// A script method on this instance can be overridden by an external
-					// subclass whose override mutates the inherited member with another
-					// key/value type, which the single-file scan cannot see.
-					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden method");
+				if (member_mode && (is_super_call(call) || is_overrideable_self_method_call(call))) {
+					// A script method on this instance (or a base method via `super`) can
+					// be overridden/extended by code outside the file that mutates the
+					// inherited member with another key/value type, which the scan cannot see.
+					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
 					return;
 				}
 				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
