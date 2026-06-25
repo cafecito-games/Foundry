@@ -32,6 +32,20 @@
 
 #include "core/object/ref_counted.h"
 
+// Pins a strong reference to every script type reachable in `p_type` (including
+// nested container element types). The compiler leaves `script_type_ref` null
+// for local subclasses to avoid reference cycles, so a by-value snapshot would
+// otherwise dangle if the handler reloads the proxied script mid-call. Pinning
+// is scoped to the snapshot's lifetime, so it introduces no persistent cycle.
+static void _pin_script_type_refs(GDScriptDataType &p_type) {
+	if (p_type.script_type != nullptr && p_type.script_type_ref.is_null()) {
+		p_type.script_type_ref = Ref<Script>(p_type.script_type);
+	}
+	for (int i = 0; i < p_type.container_element_types.size(); i++) {
+		_pin_script_type_refs(p_type.container_element_types.write[i]);
+	}
+}
+
 // The zero value of a declared GDScript type: typed containers get a correctly
 // typed empty value, builtins their constructed default, and everything else
 // (objects, scripts) `null`. Mirrors GDScript::_static_default_init and the VM's
@@ -156,9 +170,11 @@ Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant *
 	}
 
 	// Snapshot the declared return type before running the handler: handler code
-	// is arbitrary and could reload `T`, freeing the live GDScriptFunction. The
-	// copy keeps any script type reference alive on its own.
-	const GDScriptDataType return_type = contract_function->get_return_type();
+	// is arbitrary and could reload `T`, freeing the live GDScriptFunction. Pin
+	// strong references to any script types in the copy so it stays self-contained
+	// even if the originating script is reloaded mid-call.
+	GDScriptDataType return_type = contract_function->get_return_type();
+	_pin_script_type_refs(return_type);
 
 	Array call_args;
 	call_args.resize(p_argcount);

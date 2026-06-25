@@ -551,6 +551,7 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 			"\t@abstract func do_nothing() -> void\n"
 			"\t@abstract func get_anything() -> Variant\n"
 			"\t@abstract func get_tags() -> Array[int]\n"
+			"\t@abstract func get_scores() -> Dictionary[String, int]\n"
 			"\n"
 			"class Recorder:\n"
 			"\tvar stub_return: Variant = null\n"
@@ -639,6 +640,47 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 		Array result_tags = result;
 		CHECK(result_tags.is_typed());
 		CHECK(result_tags.is_empty());
+	}
+
+	// A wrong-element-typed container (Array[String] for Array[int]) is also a
+	// mismatch, not silently accepted via builtin conversion.
+	{
+		Array wrong_tags;
+		wrong_tags.set_typed(Variant::STRING, StringName(), Variant());
+		wrong_tags.push_back("x");
+		recorder->set("stub_return", wrong_tags);
+		ERR_PRINT_OFF;
+		Variant result = call("get_tags");
+		ERR_PRINT_ON;
+		REQUIRE(result.get_type() == Variant::ARRAY);
+		Array result_tags = result;
+		CHECK(result_tags.is_typed());
+		CHECK(result_tags.get_typed_builtin() == Variant::INT);
+		CHECK(result_tags.is_empty());
+	}
+
+	// A correctly-typed Dictionary passes through; a wrong-typed one defaults.
+	{
+		Dictionary typed_scores;
+		typed_scores.set_typed(Variant::STRING, StringName(), Variant(), Variant::INT, StringName(), Variant());
+		typed_scores["a"] = 1;
+		recorder->set("stub_return", typed_scores);
+		Variant result = call("get_scores");
+		REQUIRE(result.get_type() == Variant::DICTIONARY);
+		Dictionary result_scores = result;
+		CHECK(result_scores.is_typed_key());
+		CHECK(result_scores.size() == 1);
+
+		Dictionary untyped_scores;
+		untyped_scores["a"] = 1;
+		recorder->set("stub_return", untyped_scores);
+		ERR_PRINT_OFF;
+		Variant defaulted = call("get_scores");
+		ERR_PRINT_ON;
+		REQUIRE(defaulted.get_type() == Variant::DICTIONARY);
+		Dictionary defaulted_scores = defaulted;
+		CHECK(defaulted_scores.is_typed_key());
+		CHECK(defaulted_scores.is_empty());
 	}
 }
 
