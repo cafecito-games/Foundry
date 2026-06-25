@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 13: Cannot assign a value of type Lookalike to variable "_damageable" with specified type Damageable.
