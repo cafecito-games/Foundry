@@ -176,6 +176,10 @@ Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant *
 	GDScriptDataType return_type = contract_function->get_return_type();
 	_pin_script_type_refs(return_type);
 
+	if (_is_delegating()) {
+		return _delegate_call(return_type, p_method, p_args, p_argcount, r_error);
+	}
+
 	Array call_args;
 	call_args.resize(p_argcount);
 	for (int i = 0; i < p_argcount; i++) {
@@ -210,6 +214,49 @@ Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant *
 	return _coerce_handler_return(return_type, p_method, ret);
 }
 
+Variant GDScriptProxyInstance::_delegate_call(const GDScriptDataType &p_return_type, const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) const {
+	r_error.error = Callable::CallError::CALL_OK;
+
+	Object *target = delegate_target.get_validated_object();
+	if (target == nullptr) {
+		ERR_PRINT(vformat(R"(Delegating proxy for "%s" has no live target; returning the default for its declared return type.)", String(p_method)));
+		return _default_for_data_type(p_return_type);
+	}
+
+	Variant ret;
+	Callable::CallError call_error;
+	if (delegate_interceptor.has(p_method)) {
+		// An advised method: invoke the advice as `advice(method_name, args, target)`.
+		// The advice may "proceed" by calling `target.callv(method_name, args)`.
+		Array call_args;
+		call_args.resize(p_argcount);
+		for (int i = 0; i < p_argcount; i++) {
+			call_args[i] = *p_args[i];
+		}
+		const Variant method_name_arg = p_method;
+		const Variant args_arg = call_args;
+		const Variant target_arg = delegate_target;
+		const Variant *advice_args[3] = { &method_name_arg, &args_arg, &target_arg };
+		const Callable advice = delegate_interceptor[p_method];
+		advice.callp(advice_args, 3, ret, call_error);
+	} else {
+		// Not advised: forward straight to the target.
+		ret = target->callp(p_method, p_args, p_argcount, call_error);
+	}
+
+	if (call_error.error != Callable::CallError::CALL_OK) {
+		ERR_PRINT(vformat(R"(Delegating proxy for "%s" could not complete the call (call error %d); returning the default for its declared return type.)",
+				String(p_method), int(call_error.error)));
+		return _default_for_data_type(p_return_type);
+	}
+	return _coerce_handler_return(p_return_type, p_method, ret);
+}
+
+void GDScriptProxyInstance::_configure_delegation(const Variant &p_target, const Dictionary &p_interceptor) {
+	delegate_target = p_target;
+	delegate_interceptor = p_interceptor;
+}
+
 bool GDScriptProxyInstance::has_method(const StringName &p_method) const {
 	return _find_contract_function(p_method) != nullptr;
 }
@@ -221,9 +268,23 @@ void GDScriptProxyInstance::get_method_list(List<MethodInfo> *p_list) const {
 }
 
 // Property access reads and writes the auto-backing store directly; it is never
-// routed through the handler. Names outside `T`'s declared vars are not handled
-// here so native/`Object` property paths still apply.
+// routed through the handler. In delegation mode, contract properties forward to
+// the target instead. Names outside `T`'s declared vars are not handled here so
+// native/`Object` property paths still apply.
 bool GDScriptProxyInstance::set(const StringName &p_name, const Variant &p_value) {
+	if (_is_delegating()) {
+		if (!property_types.has(p_name)) {
+			return false;
+		}
+		Object *target = delegate_target.get_validated_object();
+		if (target == nullptr) {
+			return false;
+		}
+		bool valid = false;
+		target->set(p_name, p_value, &valid);
+		return valid;
+	}
+
 	HashMap<StringName, Variant>::Iterator element = property_store.find(p_name);
 	if (!element) {
 		return false;
@@ -233,6 +294,19 @@ bool GDScriptProxyInstance::set(const StringName &p_name, const Variant &p_value
 }
 
 bool GDScriptProxyInstance::get(const StringName &p_name, Variant &r_ret) const {
+	if (_is_delegating()) {
+		if (!property_types.has(p_name)) {
+			return false;
+		}
+		Object *target = delegate_target.get_validated_object();
+		if (target == nullptr) {
+			return false;
+		}
+		bool valid = false;
+		r_ret = target->get(p_name, &valid);
+		return valid;
+	}
+
 	HashMap<StringName, Variant>::ConstIterator element = property_store.find(p_name);
 	if (!element) {
 		return false;
@@ -279,26 +353,36 @@ ScriptLanguage *GDScriptProxyInstance::get_language() {
 	return GDScriptLanguage::get_singleton();
 }
 
-Ref<RefCounted> GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message) {
-	Ref<GDScript> gdscript = p_type;
-	if (gdscript.is_null()) {
+// Validates that `p_gdscript` is a proxyable trait/abstract type rooted on
+// RefCounted (shared by both construction paths). Returns false with a filled
+// error message otherwise.
+static bool _validate_proxy_target(const Ref<GDScript> &p_gdscript, String &r_error_message) {
+	if (p_gdscript.is_null()) {
 		r_error_message = RTR("Proxy target must be a GDScript trait or abstract type.");
-		return Ref<RefCounted>();
+		return false;
 	}
-	if (!gdscript->is_valid()) {
+	if (!p_gdscript->is_valid()) {
 		r_error_message = RTR("Proxy target script is not compiled/valid.");
-		return Ref<RefCounted>();
+		return false;
 	}
-	if (!gdscript->is_trait_type() && !gdscript->is_abstract()) {
+	if (!p_gdscript->is_trait_type() && !p_gdscript->is_abstract()) {
 		r_error_message = RTR("Proxy target must be a trait or an abstract type.");
-		return Ref<RefCounted>();
+		return false;
 	}
 	// The host is a `RefCounted`, so a target rooted on any other native base
 	// (Node, Resource, Object, ...) cannot be soundly represented yet: its native
 	// methods and `is`-checks against the native base would not hold. Proxying
 	// those bases is tracked as a follow-up.
-	if (gdscript->get_instance_base_type() != SNAME("RefCounted")) {
-		r_error_message = vformat(RTR("Proxy target must extend RefCounted; native base \"%s\" is not supported yet."), String(gdscript->get_instance_base_type()));
+	if (p_gdscript->get_instance_base_type() != SNAME("RefCounted")) {
+		r_error_message = vformat(RTR("Proxy target must extend RefCounted; native base \"%s\" is not supported yet."), String(p_gdscript->get_instance_base_type()));
+		return false;
+	}
+	return true;
+}
+
+Ref<RefCounted> GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Callable &p_handler, String &r_error_message) {
+	Ref<GDScript> gdscript = p_type;
+	if (!_validate_proxy_target(gdscript, r_error_message)) {
 		return Ref<RefCounted>();
 	}
 	if (!p_handler.is_valid()) {
@@ -312,6 +396,25 @@ Ref<RefCounted> GDScriptProxy::create_proxy(const Ref<Script> &p_type, const Cal
 	// `ScriptInstance`; the returned `Ref` owns the host.
 	RefCounted *proxy_owner = memnew(RefCounted);
 	GDScriptProxyInstance *instance = memnew(GDScriptProxyInstance(proxy_owner, gdscript, p_handler));
+	proxy_owner->set_script_instance(instance);
+	return Ref<RefCounted>(proxy_owner);
+}
+
+Ref<RefCounted> GDScriptProxy::create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor, String &r_error_message) {
+	Ref<GDScript> gdscript = p_type;
+	if (!_validate_proxy_target(gdscript, r_error_message)) {
+		return Ref<RefCounted>();
+	}
+	if (p_target.get_type() != Variant::OBJECT || p_target.get_validated_object() == nullptr) {
+		r_error_message = RTR("Delegating proxy target must be a valid object.");
+		return Ref<RefCounted>();
+	}
+
+	RefCounted *proxy_owner = memnew(RefCounted);
+	// Delegation mode does not use a handler; methods/properties route to the
+	// target (and advice) via `_configure_delegation`.
+	GDScriptProxyInstance *instance = memnew(GDScriptProxyInstance(proxy_owner, gdscript, Callable()));
+	instance->_configure_delegation(p_target, p_interceptor);
 	proxy_owner->set_script_instance(instance);
 	return Ref<RefCounted>(proxy_owner);
 }
