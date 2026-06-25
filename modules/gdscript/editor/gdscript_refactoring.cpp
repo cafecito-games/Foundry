@@ -6215,6 +6215,7 @@ void record_explicit_cast_candidate(
 }
 
 void collect_cast_candidates_in_expression(const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression, Vector<ExplicitCastCandidate> &r_candidates);
+void collect_cast_candidates_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::FunctionNode *p_function, Vector<ExplicitCastCandidate> &r_candidates);
 
 // Walks a call's arguments, recording a cast candidate for each Variant argument flowing into
 // a known typed parameter. The analyzer records the resolved parameter types on the call right
@@ -6313,6 +6314,14 @@ void collect_cast_candidates_in_expression(const Vector<String> &p_lines, const 
 		case GDScriptParser::Node::TYPE_TEST:
 			collect_cast_candidates_in_expression(p_lines, static_cast<const GDScriptParser::TypeTestNode *>(p_expression)->operand, r_candidates);
 			break;
+		case GDScriptParser::Node::LAMBDA: {
+			// A lambda body is not a separate class member, so its boundaries are only reachable
+			// by descending here. The lambda's own function supplies the return-type cast target.
+			const GDScriptParser::LambdaNode *lambda = static_cast<const GDScriptParser::LambdaNode *>(p_expression);
+			if (lambda->function != nullptr) {
+				collect_cast_candidates_in_suite(p_lines, lambda->function->body, lambda->function, r_candidates);
+			}
+		} break;
 		default:
 			break;
 	}

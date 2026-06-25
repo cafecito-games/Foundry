@@ -10406,6 +10406,17 @@ void GDScriptAnalyzer::validate_call_arg(const MethodInfo &p_method, const GDScr
 		arg_types.push_back(type_from_property(E, true));
 	}
 
+#ifdef TOOLS_ENABLED
+	// Cache the resolved parameter types for editor refactors (e.g. insert-explicit-cast),
+	// matching the user-function call path. The analyzer owns the parsed tree, so writing
+	// through the const handle is sound; the runtime compiler never reads this back.
+	GDScriptParser::CallNode *mutable_call = const_cast<GDScriptParser::CallNode *>(p_call);
+	mutable_call->resolved_parameter_types.clear();
+	for (const GDScriptParser::DataType &arg_type : arg_types) {
+		mutable_call->resolved_parameter_types.push_back(arg_type);
+	}
+#endif // TOOLS_ENABLED
+
 	validate_call_arg(arg_types, p_method.default_arguments.size(), (p_method.flags & METHOD_FLAG_VARARG) != 0, p_call);
 }
 

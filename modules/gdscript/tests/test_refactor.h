@@ -3394,6 +3394,26 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			REQUIRE(r.ok);
 			CHECK(out.contains("x = takes(value as int)"));
 		}
+		SUBCASE("casts an argument to a built-in utility function parameter") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tabsi(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("absi(value as int)"));
+		}
+		SUBCASE("casts a call argument inside a lambda body") {
+			const String source =
+					"func takes(amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\tvar f = func(): takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 23, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("takes(value as int)"));
+		}
 	}
 
 	TEST_CASE("find_candidates collects insert-cast opportunities") {
