@@ -551,10 +551,33 @@ private:
 				!identifier->function_source_is_static;
 	}
 
-	// True when `p_call` is a dynamic reflection call (on any receiver) whose first
-	// string-literal argument names the tracked member, e.g. `other.set("_m", v)`
-	// where `other` may alias `self`. The receiver-agnostic check covers reflection
-	// writes routed through a reference the scan cannot prove distinct from `self`.
+	// True when a string-literal expression equals the tracked member's name,
+	// recursing into array literals so `callv("set", ["_m", v])` is also matched.
+	bool literal_mentions_member(const GDScriptParser::ExpressionNode *p_expr) const {
+		if (p_expr == nullptr || decl->identifier == nullptr) {
+			return false;
+		}
+		if (p_expr->type == Node::LITERAL) {
+			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
+			return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+					StringName(value) == decl->identifier->name;
+		}
+		if (p_expr->type == Node::ARRAY) {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expr);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				if (literal_mentions_member(element)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	// True when `p_call` is a dynamic reflection call (on any receiver) whose
+	// arguments mention the tracked member by name, e.g. `other.set("_m", v)` or
+	// `other.callv("set", ["_m", v])` where `other` may alias `self`. The
+	// receiver-agnostic check covers reflection writes routed through a reference
+	// the scan cannot prove distinct from `self`.
 	bool reflection_call_names_member(const GDScriptParser::CallNode *p_call) const {
 		if (p_call == nullptr || p_call->callee == nullptr || decl->identifier == nullptr) {
 			return false;
@@ -572,16 +595,35 @@ private:
 			return false;
 		}
 		for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
-			if (argument == nullptr || argument->type != Node::LITERAL) {
-				continue;
-			}
-			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(argument)->value;
-			if ((value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-					StringName(value) == decl->identifier->name) {
+			if (literal_mentions_member(argument)) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	// True when `p_subscript` is a non-attribute index by a string literal equal to
+	// the member name on a base that is not the tracked container itself, e.g.
+	// `self["_member"]` or `other["_member"]` (dynamic property access on a
+	// reference that may alias the instance).
+	bool indexes_member_by_name(const GDScriptParser::SubscriptNode *p_subscript) const {
+		if (p_subscript == nullptr || p_subscript->is_attribute || decl->identifier == nullptr) {
+			return false;
+		}
+		if (is_our_var(p_subscript->base) || is_self_member_subscript(p_subscript->base)) {
+			return false; // Indexing into the member container itself, not the instance.
+		}
+		return literal_mentions_member_scalar(p_subscript->index);
+	}
+
+	// Non-recursive variant of `literal_mentions_member` for a single index value.
+	bool literal_mentions_member_scalar(const GDScriptParser::ExpressionNode *p_expr) const {
+		if (p_expr == nullptr || p_expr->type != Node::LITERAL || decl->identifier == nullptr) {
+			return false;
+		}
+		const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
+		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+				StringName(value) == decl->identifier->name;
 	}
 
 	// Treats `p_value` as a value that is consumed by the surrounding context. If
@@ -619,6 +661,12 @@ private:
 					return;
 				}
 				if (is_foreign_member_access(subscript)) {
+					return;
+				}
+				if (indexes_member_by_name(subscript)) {
+					// `self["_member"]` / `other["_member"]`: dynamic property access that
+					// can read or write the member through a reference that may alias self.
+					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through dynamic property indexing");
 					return;
 				}
 				if (subscript->is_attribute) {
@@ -788,6 +836,11 @@ private:
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(assignee);
 			// `other.member = value` foreign whole-member assignment.
 			if (is_foreign_member_access(subscript)) {
+				return;
+			}
+			// `self["_member"] = value` / `other["_member"] = value` dynamic write.
+			if (indexes_member_by_name(subscript)) {
+				bail(GDScriptContainerInference::ESCAPES, "the member may be reached through dynamic property indexing");
 				return;
 			}
 			// `other.member[index] = value` foreign element write.
@@ -1268,10 +1321,33 @@ private:
 				!identifier->function_source_is_static;
 	}
 
-	// True when `p_call` is a dynamic reflection call (on any receiver) whose first
-	// string-literal argument names the tracked member, e.g. `other.set("_m", v)`
-	// where `other` may alias `self`. The receiver-agnostic check covers reflection
-	// writes routed through a reference the scan cannot prove distinct from `self`.
+	// True when a string-literal expression equals the tracked member's name,
+	// recursing into array literals so `callv("set", ["_m", v])` is also matched.
+	bool literal_mentions_member(const GDScriptParser::ExpressionNode *p_expr) const {
+		if (p_expr == nullptr || decl->identifier == nullptr) {
+			return false;
+		}
+		if (p_expr->type == Node::LITERAL) {
+			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
+			return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+					StringName(value) == decl->identifier->name;
+		}
+		if (p_expr->type == Node::ARRAY) {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expr);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				if (literal_mentions_member(element)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	// True when `p_call` is a dynamic reflection call (on any receiver) whose
+	// arguments mention the tracked member by name, e.g. `other.set("_m", v)` or
+	// `other.callv("set", ["_m", v])` where `other` may alias `self`. The
+	// receiver-agnostic check covers reflection writes routed through a reference
+	// the scan cannot prove distinct from `self`.
 	bool reflection_call_names_member(const GDScriptParser::CallNode *p_call) const {
 		if (p_call == nullptr || p_call->callee == nullptr || decl->identifier == nullptr) {
 			return false;
@@ -1289,16 +1365,35 @@ private:
 			return false;
 		}
 		for (const GDScriptParser::ExpressionNode *argument : p_call->arguments) {
-			if (argument == nullptr || argument->type != Node::LITERAL) {
-				continue;
-			}
-			const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(argument)->value;
-			if ((value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
-					StringName(value) == decl->identifier->name) {
+			if (literal_mentions_member(argument)) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	// True when `p_subscript` is a non-attribute index by a string literal equal to
+	// the member name on a base that is not the tracked container itself, e.g.
+	// `self["_member"]` or `other["_member"]` (dynamic property access on a
+	// reference that may alias the instance).
+	bool indexes_member_by_name(const GDScriptParser::SubscriptNode *p_subscript) const {
+		if (p_subscript == nullptr || p_subscript->is_attribute || decl->identifier == nullptr) {
+			return false;
+		}
+		if (is_our_var(p_subscript->base) || is_self_member_subscript(p_subscript->base)) {
+			return false; // Indexing into the member container itself, not the instance.
+		}
+		return literal_mentions_member_scalar(p_subscript->index);
+	}
+
+	// Non-recursive variant of `literal_mentions_member` for a single index value.
+	bool literal_mentions_member_scalar(const GDScriptParser::ExpressionNode *p_expr) const {
+		if (p_expr == nullptr || p_expr->type != Node::LITERAL || decl->identifier == nullptr) {
+			return false;
+		}
+		const Variant &value = static_cast<const GDScriptParser::LiteralNode *>(p_expr)->value;
+		return (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) &&
+				StringName(value) == decl->identifier->name;
 	}
 
 	void scan_value(const GDScriptParser::ExpressionNode *p_value) {
@@ -1332,6 +1427,12 @@ private:
 					return;
 				}
 				if (is_foreign_member_access(subscript)) {
+					return;
+				}
+				if (indexes_member_by_name(subscript)) {
+					// `self["_member"]` / `other["_member"]`: dynamic property access that
+					// can read or write the member through a reference that may alias self.
+					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through dynamic property indexing");
 					return;
 				}
 				if (subscript->is_attribute) {
@@ -1504,6 +1605,11 @@ private:
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(assignee);
 			// `other.member = value` foreign whole-member assignment.
 			if (is_foreign_member_access(subscript)) {
+				return;
+			}
+			// `self["_member"] = value` / `other["_member"] = value` dynamic write.
+			if (indexes_member_by_name(subscript)) {
+				bail(GDScriptContainerInference::ESCAPES, "the member may be reached through dynamic property indexing");
 				return;
 			}
 			// `other.member[key] = value` foreign element write.
