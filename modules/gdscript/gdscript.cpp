@@ -2786,12 +2786,25 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 Vector<String> GDScriptLanguage::get_reserved_global_names() const {
 	// `godot` is registered as a named global constant exposing `godot.reflection`
 	// (see `init`). Reserve it so a project autoload cannot silently shadow it.
+	//
+	// The reservation is scoped to editor/tools builds, where the compiler can resolve
+	// named globals (see the TOOLS_ENABLED guard in GDScriptCompiler). In an exported
+	// non-tools runtime the reflection namespace is not compiler-visible anyway, so
+	// reserving the name would only strip a project autoload of its sole binding.
+#ifdef TOOLS_ENABLED
 	static const Vector<String> ret = { GDSCRIPT_REFLECTION_NAMESPACE };
 	return ret;
+#else
+	return Vector<String>();
+#endif
 }
 
 bool GDScriptLanguage::is_reserved_global_name(const StringName &p_name) const {
+#ifdef TOOLS_ENABLED
 	return p_name == StringName(GDSCRIPT_REFLECTION_NAMESPACE);
+#else
+	return false;
+#endif
 }
 
 bool GDScriptLanguage::is_control_flow_keyword(const String &p_keyword) const {
