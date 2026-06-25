@@ -1072,6 +1072,8 @@ void GDScript::_get_property_list(List<PropertyInfo> *p_properties) const {
 
 void GDScript::_bind_methods() {
 	ClassDB::bind_vararg_method(METHOD_FLAGS_DEFAULT, "new", &GDScript::_new, MethodInfo("new"));
+	ClassDB::bind_method(D_METHOD("is_generic"), &GDScript::is_generic);
+	ClassDB::bind_method(D_METHOD("get_type_parameter_list"), &GDScript::_get_type_parameter_list);
 }
 
 void GDScript::set_path_cache(const String &p_path) {
@@ -1345,6 +1347,24 @@ bool GDScript::has_script_trait(const StringName &p_trait) const {
 	return false;
 }
 
+TypedArray<Dictionary> GDScript::_get_type_parameter_list() const {
+	TypedArray<Dictionary> ret;
+	for (const TypeParameter &parameter : type_parameters) {
+		Dictionary entry;
+		entry["name"] = parameter.name;
+		entry["index"] = parameter.index;
+		// Class-declared parameters are the only kind reachable from a compiled script; method type
+		// parameters live on functions and are not reflected here.
+		entry["scope"] = StringName("class");
+		entry["has_bound"] = parameter.has_bound;
+		if (parameter.has_bound) {
+			entry["bound"] = parameter.bound.operator Dictionary();
+		}
+		ret.push_back(entry);
+	}
+	return ret;
+}
+
 GDScript::GDScript() :
 		script_list(this) {
 	{
@@ -1487,6 +1507,7 @@ void GDScript::clear() {
 	static_variables.clear();
 	static_variables_indices.clear();
 	script_trait_list.clear();
+	type_parameters.clear();
 	_is_trait_type = false;
 	trait_type_name = StringName();
 

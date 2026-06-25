@@ -2851,6 +2851,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->base = Ref<GDScript>();
 	p_script->members.clear();
 	p_script->script_trait_list.clear();
+	p_script->type_parameters.clear();
 
 	// This makes possible to clear script constants and member_functions without heap-use-after-free errors.
 	HashMap<StringName, Variant> constants;
@@ -2981,6 +2982,23 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 		if (trait_name != StringName() && !p_script->script_trait_list.has(trait_name)) {
 			p_script->script_trait_list.push_back(trait_name);
 		}
+	}
+
+	// Record the class's declared generic type parameters so they survive to runtime reflection.
+	p_script->type_parameters.clear();
+	for (int i = 0; i < p_class->type_parameters.size(); i++) {
+		const GDScriptParser::TypeParameterNode *parameter = p_class->type_parameters[i];
+		if (parameter == nullptr || parameter->identifier == nullptr) {
+			continue;
+		}
+		GDScript::TypeParameter type_parameter;
+		type_parameter.name = parameter->identifier->name;
+		type_parameter.index = i;
+		if (parameter->bound != nullptr && !parameter->resolved_bound.has_no_type()) {
+			type_parameter.has_bound = true;
+			type_parameter.bound = parameter->resolved_bound.to_property_info(String());
+		}
+		p_script->type_parameters.push_back(type_parameter);
 	}
 
 	// Flatten the applied traits' members into this script alongside the class's own

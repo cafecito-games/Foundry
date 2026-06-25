@@ -1333,6 +1333,9 @@ public:
 	struct TypeParameterNode : public Node {
 		IdentifierNode *identifier = nullptr;
 		TypeNode *bound = nullptr; // Optional upper bound: [T: Resource].
+		// Resolved (non-meta) upper bound, populated eagerly during class-interface analysis so that
+		// runtime reflection can report a parameter's bound even when the parameter is never referenced.
+		DataType resolved_bound;
 
 		TypeParameterNode() {
 			type = TYPE_PARAMETER;

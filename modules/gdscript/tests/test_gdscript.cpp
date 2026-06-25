@@ -139,6 +139,13 @@ public:
 	}
 };
 
+class TestGDScriptGenericReflectionAccessor {
+public:
+	static void set_type_parameters(const Ref<GDScript> &p_script, const Vector<GDScript::TypeParameter> &p_parameters) {
+		p_script->type_parameters = p_parameters;
+	}
+};
+
 struct ScopedGDScriptNativeGlobals {
 	bool initialized = false;
 
@@ -1506,6 +1513,140 @@ TEST_CASE("[Modules][GDScript] Scripts reflect trait identities") {
 
 		CHECK(bool(script->call(SNAME("has_script_trait"), SNAME("Trackable"))));
 		CHECK_FALSE(bool(script->call(SNAME("has_script_trait"), SNAME("MissingTrait"))));
+	}
+}
+
+TEST_CASE("[Modules][GDScript] Scripts reflect declared generic type parameters") {
+	ScopedGDScriptNativeGlobals native_globals;
+
+	SUBCASE("non-generic script reports no parameters") {
+		Ref<GDScript> script;
+		script.instantiate();
+
+		CHECK_FALSE(script->is_generic());
+		CHECK(script->get_type_parameters().is_empty());
+
+		Variant bound_variant = script->call(SNAME("get_type_parameter_list"));
+		CHECK_EQ(bound_variant.get_type(), Variant::ARRAY);
+		TypedArray<Dictionary> bound_parameters = bound_variant;
+		CHECK(bound_parameters.is_empty());
+		CHECK_FALSE(bool(script->call(SNAME("is_generic"))));
+	}
+
+	SUBCASE("reflection accessor exposes parameter descriptors") {
+		Ref<GDScript> script;
+		script.instantiate();
+
+		Vector<GDScript::TypeParameter> parameters;
+
+		GDScript::TypeParameter key;
+		key.name = SNAME("K");
+		key.index = 0;
+		parameters.push_back(key);
+
+		GDScript::TypeParameter value;
+		value.name = SNAME("V");
+		value.index = 1;
+		value.has_bound = true;
+		value.bound = PropertyInfo(Variant::OBJECT, "", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE, "RefCounted");
+		parameters.push_back(value);
+
+		TestGDScriptGenericReflectionAccessor::set_type_parameters(script, parameters);
+
+		CHECK(script->is_generic());
+		CHECK_EQ(script->get_type_parameters().size(), 2);
+
+		Variant bound_variant = script->call(SNAME("get_type_parameter_list"));
+		CHECK_EQ(bound_variant.get_type(), Variant::ARRAY);
+		TypedArray<Dictionary> bound_parameters = bound_variant;
+		CHECK_EQ(bound_parameters.size(), 2);
+		if (bound_parameters.size() != 2) {
+			return;
+		}
+
+		const Dictionary key_entry = bound_parameters[0];
+		CHECK_EQ(StringName(key_entry["name"]), SNAME("K"));
+		CHECK_EQ(int(key_entry["index"]), 0);
+		CHECK_EQ(StringName(key_entry["scope"]), SNAME("class"));
+		CHECK_FALSE(bool(key_entry["has_bound"]));
+		CHECK_FALSE(key_entry.has("bound"));
+
+		const Dictionary value_entry = bound_parameters[1];
+		CHECK_EQ(StringName(value_entry["name"]), SNAME("V"));
+		CHECK_EQ(int(value_entry["index"]), 1);
+		CHECK(bool(value_entry["has_bound"]));
+		CHECK(value_entry.has("bound"));
+		const Dictionary bound_info = value_entry["bound"];
+		CHECK_EQ(int(bound_info["type"]), int(Variant::OBJECT));
+		CHECK_EQ(StringName(bound_info["class_name"]), SNAME("RefCounted"));
+	}
+
+	SUBCASE("compiled generic classes carry their parameters") {
+		GDScriptParser parser;
+		Error err = parser.parse(R"(
+class_name GenericReflectionRoot[T]
+extends RefCounted
+
+class Pair[K, V: RefCounted]:
+	var first
+	var second
+)",
+				"user://generic_reflection.gd", false);
+		CHECK_EQ(err, OK);
+		if (err != OK) {
+			return;
+		}
+
+		GDScriptAnalyzer analyzer(&parser);
+		err = analyzer.analyze();
+		CHECK_EQ(err, OK);
+		if (err != OK) {
+			return;
+		}
+
+		GDScriptCompiler compiler;
+		Ref<GDScript> script;
+		script.instantiate();
+		script->set_path("user://generic_reflection.gd");
+		err = compiler.compile(&parser, script.ptr(), false);
+		INFO(compiler.get_error());
+		CHECK_EQ(err, OK);
+		if (err != OK) {
+			return;
+		}
+
+		CHECK(script->is_generic());
+		const Vector<GDScript::TypeParameter> &root_parameters = script->get_type_parameters();
+		CHECK_EQ(root_parameters.size(), 1);
+		if (root_parameters.size() == 1) {
+			CHECK_EQ(root_parameters[0].name, SNAME("T"));
+			CHECK_EQ(root_parameters[0].index, 0);
+			CHECK_FALSE(root_parameters[0].has_bound);
+		}
+
+		const Ref<GDScript> *pair_ptr = script->get_subclasses().getptr(SNAME("Pair"));
+		CHECK(pair_ptr != nullptr);
+		if (pair_ptr == nullptr) {
+			return;
+		}
+		Ref<GDScript> pair = *pair_ptr;
+		CHECK(pair.is_valid());
+		if (pair.is_null()) {
+			return;
+		}
+		const Vector<GDScript::TypeParameter> &pair_parameters = pair->get_type_parameters();
+		CHECK_EQ(pair_parameters.size(), 2);
+		if (pair_parameters.size() != 2) {
+			return;
+		}
+		CHECK_EQ(pair_parameters[0].name, SNAME("K"));
+		CHECK_EQ(pair_parameters[0].index, 0);
+		CHECK_FALSE(pair_parameters[0].has_bound);
+		CHECK_EQ(pair_parameters[1].name, SNAME("V"));
+		CHECK_EQ(pair_parameters[1].index, 1);
+		CHECK(pair_parameters[1].has_bound);
+		CHECK_EQ(pair_parameters[1].bound.type, Variant::OBJECT);
+		CHECK_EQ(pair_parameters[1].bound.class_name, SNAME("RefCounted"));
 	}
 }
 

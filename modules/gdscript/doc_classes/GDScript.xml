@@ -55,6 +55,29 @@
 		<link title="GDScript documentation index">$DOCS_URL/tutorials/scripting/gdscript/index.html</link>
 	</tutorials>
 	<methods>
+		<method name="get_type_parameter_list" qualifiers="const">
+			<return type="Dictionary[]" />
+			<description>
+				Returns the generic type parameters declared directly on this script's class, in declaration order. Each entry is a [Dictionary] describing one parameter with the following keys:
+				- [code]name[/code]: the parameter's [StringName] (for example [code]&amp;"T"[/code]).
+				- [code]index[/code]: the parameter's ordinal position in the declaration.
+				- [code]scope[/code]: always [code]&amp;"class"[/code], as only class-declared parameters are reflected.
+				- [code]has_bound[/code]: [code]true[/code] when the parameter declares an upper bound (for example [code]T: Resource[/code]).
+				- [code]bound[/code]: present only when [code]has_bound[/code] is [code]true[/code]; a [Dictionary] in the same shape as the entries of [method Script.get_script_property_list], describing the bound type.
+				Returns an empty array for non-generic classes. This is part of the runtime reflection surface for GDScript generics.
+				[codeblock]
+				# class Box[T]: ...
+				var Box = load("box.gd")
+				print(Box.get_type_parameter_list()) # [{ "name": &"T", "index": 0, "scope": &"class", "has_bound": false }]
+				[/codeblock]
+			</description>
+		</method>
+		<method name="is_generic" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if this script's class declares one or more generic type parameters (for example [code]class Box[T][/code]). See [method get_type_parameter_list].
+			</description>
+		</method>
 		<method name="new" qualifiers="vararg">
 			<return type="Variant" />
 			<description>
