@@ -651,6 +651,18 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("Emitting a signal on self may run external callbacks and escapes") {
+		InferenceFixture fixture(
+				"extends Node\n"
+				"signal changed\n"
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"\tself.emit_signal(\"changed\")\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("A statement-level native self call does not block inference") {
 		// The call result is discarded, so a returned `self` cannot escape.
 		InferenceFixture fixture(

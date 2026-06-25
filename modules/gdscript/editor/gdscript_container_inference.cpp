@@ -132,8 +132,10 @@ bool self_attribute_refers_to(const GDScriptParser::SubscriptNode *p_subscript, 
 
 // Object's dynamic reflection APIs can read or write a member by name without any
 // AST reference to it, e.g. `set("_items", [..])`, `get("_items").append(..)`, or
-// `call("mutate")`. In member mode these defeat the static usage scan, so a call
-// to any of them on the instance forces a conservative skip.
+// `call("mutate")`. Signal/notification dispatchers (`emit_signal`, `notification`)
+// likewise synchronously run connected callbacks or `_notification` handlers that
+// the scan cannot see and that may mutate the member. In member mode any of these
+// on the instance forces a conservative skip.
 bool is_dynamic_reflection_method(const StringName &p_name) {
 	static const char *methods[] = {
 		"set", "get", "set_deferred", "set_indexed", "get_indexed",
@@ -144,6 +146,8 @@ bool is_dynamic_reflection_method(const StringName &p_name) {
 		"set_thread_safe", "call_thread_safe",
 		"set_deferred_thread_group", "call_deferred_thread_group",
 		"set_thread_group",
+		// Synchronously dispatch to callbacks/handlers outside this AST.
+		"emit_signal", "notification",
 		nullptr
 	};
 	for (int i = 0; methods[i] != nullptr; i++) {
