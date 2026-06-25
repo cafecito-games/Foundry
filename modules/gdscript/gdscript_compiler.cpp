@@ -2494,10 +2494,11 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 			for (int i = 0; i < function->parameters.size(); i++) {
 				const GDScriptParser::ParameterNode *parameter = function->parameters[i];
 				method_info.arguments.push_back(parameter->get_datatype().to_property_info(parameter->identifier->name));
-				if (parameter->initializer != nullptr) {
-					method_info.default_arguments.push_back(Variant());
-				}
 			}
+			if (function->is_vararg()) {
+				method_info.flags |= METHOD_FLAG_VARARG;
+			}
+			method_info.default_arguments.append_array(function->default_arg_values);
 			method_info.return_val = function->get_datatype().to_property_info(String());
 
 			p_script->abstract_trait_requirements.insert(name, requirement);

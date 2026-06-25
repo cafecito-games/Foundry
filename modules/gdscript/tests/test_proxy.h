@@ -552,6 +552,8 @@ TEST_CASE("[Modules][GDScript][Proxy] Transitive abstract trait requirements are
 	const char *source =
 			"trait Base:\n"
 			"\t@abstract func base_required() -> int\n"
+			"\t@abstract func base_defaulted(scale: int = 3) -> int\n"
+			"\t@abstract func base_variadic(first: int, ...rest) -> int\n"
 			"\n"
 			"trait Middle uses Base:\n"
 			"\t@abstract func middle_required() -> int\n"
@@ -613,8 +615,38 @@ TEST_CASE("[Modules][GDScript][Proxy] Transitive abstract trait requirements are
 	};
 
 	// Chain: a proxy of `Child` intercepts requirements transitively from `Middle`
-	// and `Base`, with `int` returns coerced through the handler.
-	check_intercepts(child, { "child_required", "middle_required", "base_required" });
+	// and `Base`, with `int` returns coerced through the handler. `base_defaulted`
+	// is callable with no arguments because its sole parameter has a default.
+	check_intercepts(child, { "child_required", "middle_required", "base_required", "base_defaulted" });
+
+	// Enumerated metadata for inherited requirements matches the compiled-function
+	// convention: real defaults are preserved and `...rest` sets the vararg flag.
+	{
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(child, Callable(recorder, "handle"), error_message);
+		REQUIRE(proxy.is_valid());
+		List<MethodInfo> methods;
+		proxy->get_script_instance()->get_method_list(&methods);
+
+		bool checked_defaulted = false;
+		bool checked_variadic = false;
+		for (const MethodInfo &method : methods) {
+			if (method.name == StringName("base_defaulted")) {
+				checked_defaulted = true;
+				REQUIRE(method.arguments.size() == 1);
+				REQUIRE(method.default_arguments.size() == 1);
+				CHECK(method.default_arguments[0] == Variant(3));
+				CHECK((method.flags & METHOD_FLAG_VARARG) == 0);
+			} else if (method.name == StringName("base_variadic")) {
+				checked_variadic = true;
+				// The fixed parameter is listed; the `...rest` is conveyed by the flag.
+				CHECK(method.arguments.size() == 1);
+				CHECK((method.flags & METHOD_FLAG_VARARG) != 0);
+			}
+		}
+		CHECK(checked_defaulted);
+		CHECK(checked_variadic);
+	}
 
 	// Diamond: `base_required` is reached through both `Left` and `Right` and is
 	// intercepted exactly once (no double-dispatch, no fallthrough).
