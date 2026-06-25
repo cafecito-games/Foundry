@@ -2740,7 +2740,7 @@ var controller: Controller
 		GDScriptAnalyzer analyzer(&ambiguous_parser);
 		err = analyzer.analyze();
 		CHECK_NE(err, OK);
-		CHECK(has_parser_error(ambiguous_parser, R"(Could not resolve class "Controller": imported namespaces "characters" and "ui" are ambiguous.)"));
+		CHECK(has_parser_error(ambiguous_parser, R"(Could not resolve type "Controller": imported namespaces "characters" and "ui" are ambiguous.)"));
 	}
 }
 
