@@ -5019,6 +5019,13 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				update_dictionary_literal_element_type(E.value, key, value);
 			}
 		}
+#ifdef TOOLS_ENABLED
+		p_call->resolved_parameter_types.clear();
+		for (const GDScriptParser::DataType &par_type : par_types) {
+			p_call->resolved_parameter_types.push_back(par_type);
+		}
+#endif // TOOLS_ENABLED
+
 		validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
 		validate_signal_connect_arg(base_type, p_call);
 		validate_local_object_signal_callable_arg(p_call, is_self);
@@ -10398,6 +10405,17 @@ void GDScriptAnalyzer::validate_call_arg(const MethodInfo &p_method, const GDScr
 	for (const PropertyInfo &E : p_method.arguments) {
 		arg_types.push_back(type_from_property(E, true));
 	}
+
+#ifdef TOOLS_ENABLED
+	// Cache the resolved parameter types for editor refactors (e.g. insert-explicit-cast),
+	// matching the user-function call path. The analyzer owns the parsed tree, so writing
+	// through the const handle is sound; the runtime compiler never reads this back.
+	GDScriptParser::CallNode *mutable_call = const_cast<GDScriptParser::CallNode *>(p_call);
+	mutable_call->resolved_parameter_types.clear();
+	for (const GDScriptParser::DataType &arg_type : arg_types) {
+		mutable_call->resolved_parameter_types.push_back(arg_type);
+	}
+#endif // TOOLS_ENABLED
 
 	validate_call_arg(arg_types, p_method.default_arguments.size(), (p_method.flags & METHOD_FLAG_VARARG) != 0, p_call);
 }

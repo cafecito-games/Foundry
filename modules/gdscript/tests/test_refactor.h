@@ -3325,6 +3325,139 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
 			CHECK(insert_cast_reason(source, 1, 6).to_lower().contains("safely"));
 		}
+		SUBCASE("casts a Variant call argument to the parameter type") {
+			const String source =
+					"func takes(amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\ttakes(value)\n";
+			String out;
+			// Caret on the `value` argument.
+			RefactorResult r = run_insert_cast(source, 3, 8, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("takes(value as int)"));
+		}
+		SUBCASE("casts a Variant signal emit argument to the parameter type") {
+			// An explicit receiver (`self.fired`) carries the signal's typed parameter list, so
+			// the Variant argument is a genuine emit boundary the analyzer resolves a target for.
+			const String source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\tself.fired.emit(value)\n";
+			String out;
+			// Caret on the `value` argument.
+			RefactorResult r = run_insert_cast(source, 2, 17, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("self.fired.emit(value as int)"));
+		}
+		SUBCASE("casts a single argument among several") {
+			const String source =
+					"func takes(label: String, amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\ttakes(\"hi\", value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 14, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("takes(\"hi\", value as int)"));
+		}
+		SUBCASE("is disabled for an argument flowing into a Variant parameter") {
+			const String source =
+					"func takes(anything) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\ttakes(value)\n";
+			CHECK_FALSE(insert_cast_enabled(source, 3, 8));
+		}
+		SUBCASE("casts a call argument nested inside a typed declaration") {
+			// The declaration spans the whole line and the argument spans only `value`; a caret
+			// on the argument must target the argument, not the enclosing declaration.
+			const String source =
+					"func takes(amount: int) -> int:\n"
+					"\treturn amount\n"
+					"func use(value) -> void:\n"
+					"\tvar x: int = takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 20, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = takes(value as int)"));
+		}
+		SUBCASE("casts a call argument inside an assignment value") {
+			const String source =
+					"func takes(amount: int) -> int:\n"
+					"\treturn amount\n"
+					"func use(value) -> void:\n"
+					"\tvar x := 0\n"
+					"\tx = takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 4, 12, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("x = takes(value as int)"));
+		}
+		SUBCASE("casts an argument to a built-in utility function parameter") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tabsi(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("absi(value as int)"));
+		}
+		SUBCASE("casts a call argument inside a lambda body") {
+			const String source =
+					"func takes(amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\tvar f = func(): takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 23, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("takes(value as int)"));
+		}
+	}
+
+	TEST_CASE("find_candidates collects insert-cast opportunities") {
+		SUBCASE("enumerates declaration, return, and call-argument boundaries") {
+			RefactorContext ctx;
+			ctx.path = "user://insert_cast_candidates.gd";
+			ctx.source =
+					"func takes(amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> int:\n"
+					"\tvar x: int = value\n"
+					"\ttakes(value)\n"
+					"\treturn value\n";
+			RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::INSERT_EXPLICIT_CAST);
+			REQUIRE(result.ok);
+
+			int enabled_count = 0;
+			bool saw_declaration = false;
+			bool saw_argument = false;
+			bool saw_return = false;
+			for (const RefactorCandidate &candidate : result.candidates) {
+				CHECK_EQ(candidate.kind, RefactorKind::INSERT_EXPLICIT_CAST);
+				if (!candidate.enabled) {
+					continue;
+				}
+				enabled_count++;
+				REQUIRE_FALSE(candidate.edits.is_empty());
+				const String &new_text = candidate.edits[0].new_text;
+				if (candidate.line == 3) {
+					saw_declaration = true;
+					CHECK_EQ(new_text, "value as int");
+				} else if (candidate.line == 4) {
+					saw_argument = true;
+					CHECK_EQ(new_text, "value as int");
+				} else if (candidate.line == 5) {
+					saw_return = true;
+					CHECK_EQ(new_text, "value as int");
+				}
+			}
+			CHECK(saw_declaration);
+			CHECK(saw_argument);
+			CHECK(saw_return);
+			CHECK_EQ(enabled_count, 3);
+		}
 	}
 
 	TEST_CASE("Widen to nullable") {
