@@ -83,6 +83,11 @@ struct RefactorCandidate {
 	RefactorKind kind = RefactorKind::ADD_TYPE_ANNOTATION;
 	bool enabled = false; // false => found but not applicable.
 	String disabled_reason; // Populated when !enabled.
+	// For ADD_TYPE_ANNOTATION, the kind of declaration this site annotates:
+	// "variable", "constant", "parameter", or "return". Empty for refactors that
+	// do not classify by declaration kind. Lets a batch caller (e.g. the migration
+	// report) bucket inferable sites without re-parsing the reason text.
+	String declaration_kind;
 	int line = -1; // 0-based anchor line of the declaration.
 	int column = -1; // 0-based anchor column.
 	Vector<RefactorTextEdit> edits; // Active-file edits (reuses RefactorTextEdit).

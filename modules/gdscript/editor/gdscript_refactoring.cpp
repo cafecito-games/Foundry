@@ -65,6 +65,10 @@ struct TypeAnnotationCandidate {
 	bool matched = false;
 	bool enabled = false;
 	String disabled_reason;
+	// Declaration kind this candidate annotates: "variable", "constant",
+	// "parameter", or "return". Surfaced through RefactorCandidate so batch callers
+	// can bucket sites by kind.
+	String kind;
 	RefactorTextEdit edit;
 	// Caret-test span of the declaration this candidate was found at. Used by the
 	// caret-driven path to select the candidate under the caret; the headless
@@ -1049,6 +1053,7 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	const int declaration_end = equal_index >= 0 ? equal_index : name_end;
 
 	r_candidate.matched = true;
+	r_candidate.kind = p_kind;
 	r_candidate.line = line_index;
 	r_candidate.caret_span_start = declaration_start;
 	r_candidate.caret_span_end = declaration_end;
@@ -1136,6 +1141,7 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	}
 
 	r_candidate.matched = true;
+	r_candidate.kind = "return";
 	r_candidate.line = line_index;
 	r_candidate.caret_span_start = function_start;
 	// A wrapped signature closes its caret span on the body-colon line so the caret
@@ -5666,6 +5672,7 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 		public_candidate.kind = RefactorKind::ADD_TYPE_ANNOTATION;
 		public_candidate.enabled = candidate.enabled;
 		public_candidate.disabled_reason = candidate.disabled_reason;
+		public_candidate.declaration_kind = candidate.kind;
 		public_candidate.line = candidate.line;
 		public_candidate.column = candidate.caret_span_start; // Anchor at the start of the declaration span.
 		if (candidate.enabled) {
