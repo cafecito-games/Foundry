@@ -1239,6 +1239,26 @@ void GDScriptParser::parse_extends() {
 
 	int chain_index = 0;
 
+	// Type arguments specializing a generic base: `extends List[T]`, `extends List[int]`, or on a
+	// path-based base, `extends "res://base.gd"[int]`.
+	auto parse_extends_type_arguments = [this]() {
+		if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				push_error(R"(Expected at least one type argument after "[".)");
+			} else {
+				do {
+					TypeNode *type_argument = parse_type();
+					if (type_argument == nullptr) {
+						push_error(R"(Expected type argument after "[".)");
+						break;
+					}
+					current_class->extends_type_arguments.push_back(type_argument);
+				} while (match(GDScriptTokenizer::Token::COMMA));
+			}
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type arguments.)");
+		}
+	};
+
 	if (match(GDScriptTokenizer::Token::LITERAL)) {
 		if (previous.literal.get_type() != Variant::STRING) {
 			push_error(vformat(R"(Only strings or identifiers can be used after "extends", found "%s" instead.)", Variant::get_type_name(previous.literal.get_type())));
@@ -1246,6 +1266,8 @@ void GDScriptParser::parse_extends() {
 		current_class->extends_path = previous.literal;
 
 		if (!match(GDScriptTokenizer::Token::PERIOD)) {
+			// A path-based base with no `.Inner` chain can still carry type arguments.
+			parse_extends_type_arguments();
 			return;
 		}
 	}
@@ -1265,22 +1287,7 @@ void GDScriptParser::parse_extends() {
 		current_class->extends.push_back(parse_identifier());
 	}
 
-	// Type arguments specializing a generic base: `extends List[T]`, `extends List[int]`.
-	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
-			push_error(R"(Expected at least one type argument after "[".)");
-		} else {
-			do {
-				TypeNode *type_argument = parse_type();
-				if (type_argument == nullptr) {
-					push_error(R"(Expected type argument after "[".)");
-					break;
-				}
-				current_class->extends_type_arguments.push_back(type_argument);
-			} while (match(GDScriptTokenizer::Token::COMMA));
-		}
-		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type arguments.)");
-	}
+	parse_extends_type_arguments();
 }
 
 void GDScriptParser::parse_uses() {

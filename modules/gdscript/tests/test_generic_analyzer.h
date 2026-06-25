@@ -274,6 +274,31 @@ TEST_CASE("[Modules][GDScript] Analyzer rejects a type argument that violates a 
 	CHECK(found_bound_error);
 }
 
+TEST_CASE("[Modules][GDScript] Parser captures type arguments on a path-based extends") {
+	GDScriptParser parser;
+	const Error parse_error = parser.parse("extends \"res://generic_base.gd\"[int]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	CHECK(root_class->extends_used);
+	CHECK(root_class->extends_path == String("res://generic_base.gd"));
+	REQUIRE(root_class->extends_type_arguments.size() == 1);
+	REQUIRE(root_class->extends_type_arguments[0] != nullptr);
+	REQUIRE(root_class->extends_type_arguments[0]->type_chain.size() == 1);
+	CHECK(root_class->extends_type_arguments[0]->type_chain[0]->name == StringName("int"));
+}
+
+TEST_CASE("[Modules][GDScript] Parser captures multiple type arguments on a path-based extends") {
+	GDScriptParser parser;
+	const Error parse_error = parser.parse("extends \"res://pair_base.gd\"[int, String]\n", "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->extends_type_arguments.size() == 2);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer rejects a nullable type argument against a non-nullable bound under strict null checks") {
 	GDScriptParser parser;
 	const Error parse_error = parser.parse("class Box[T: RefCounted]:\n\tvar value: T\nvar bad: Box[RefCounted?]\n", "user://test.gd", false);
