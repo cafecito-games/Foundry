@@ -195,7 +195,14 @@ class GDScriptAnalyzer {
 			GDScriptParser::DataType base_type, const StringName &p_function,
 			GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types,
 			int &r_default_arg_count, BitField<MethodFlags> &r_method_flags,
-			StringName *r_native_class = nullptr, bool *r_is_noreturn = nullptr);
+			StringName *r_native_class = nullptr, bool *r_is_noreturn = nullptr,
+			GDScriptParser::FunctionNode **r_found_function = nullptr);
+	void collect_type_parameter_bindings(const GDScriptParser::DataType &p_parameter_type, const GDScriptParser::DataType &p_argument_type,
+			HashMap<StringName, GDScriptParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts);
+	bool merge_inferred_type_argument(const GDScriptParser::DataType &p_existing, const GDScriptParser::DataType &p_candidate, GDScriptParser::DataType &r_merged);
+	bool resolve_explicit_type_argument(GDScriptParser::ExpressionNode *p_expression, GDScriptParser::DataType &r_type_argument);
+	void apply_generic_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_function,
+			List<GDScriptParser::DataType> &r_par_types, GDScriptParser::DataType &r_return_type);
 	bool function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
 	bool callable_signature_from_type(const GDScriptParser::DataType &p_callable_type, Vector<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
 	GDScriptParser::DataType plain_callable_type() const;

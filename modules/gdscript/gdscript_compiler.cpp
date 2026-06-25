@@ -761,6 +761,24 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 									gen->pop_temporary();
 								}
 							}
+						} else if (!call->function_name.is_empty()) {
+							// A validated generic-method application: `name[TypeArgs](...)`. Type arguments
+							// are erased at runtime, so this compiles as an ordinary self call. The analyzer
+							// rejects a genuine call on an index before codegen, so a non-attribute subscript
+							// callee that names a function here is always a generic method on `self`.
+							if (call->is_static || codegen.is_static || (codegen.function_node && codegen.function_node->is_static)) {
+								GDScriptCodeGenerator::Address self;
+								self.mode = GDScriptCodeGenerator::Address::CLASS;
+								if (is_awaited) {
+									gen->write_call_async(result, self, call->function_name, arguments);
+								} else {
+									gen->write_call(result, self, call->function_name, arguments);
+								}
+							} else if (is_awaited) {
+								gen->write_call_self_async(result, call->function_name, arguments);
+							} else {
+								gen->write_call_self(result, call->function_name, arguments);
+							}
 						} else {
 							_set_error("Cannot call something that isn't a function.", call->callee);
 							r_error = ERR_COMPILATION_FAILED;
