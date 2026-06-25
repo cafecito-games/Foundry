@@ -1966,7 +1966,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		String out;
 		RefactorResult r = run_sort_members_by_style_guide(source, out);
-		REQUIRE(r.ok);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
 		CHECK_EQ(out, expected);
 	}
 
@@ -2079,12 +2079,13 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\tpass\n"
 				"func _private_method() -> void:\n"
 				"\tpass\n"
+				"\n"
 				"class Inner:\n"
 				"\tpass\n";
 
 		String out;
 		RefactorResult r = run_sort_members_by_style_guide(source, out);
-		REQUIRE(r.ok);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
 		CHECK_EQ(out, expected);
 	}
 
@@ -2359,6 +2360,23 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		}
 	}
 
+	TEST_CASE("Sort members by style guide declines export groups separated by blank lines") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@export_group(\"Stats\")\n"
+				"\n"
+				"@export var speed := 1\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK(r.error_message.to_lower().contains("export group"));
+	}
+
 	TEST_CASE("Sort members by style guide preserves fork headers and sorts nested types") {
 		const String source =
 				"@tool\n"
@@ -2398,6 +2416,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\n"
 				"func use_player() -> void:\n"
 				"\tpass\n"
+				"\n"
 				"class Inventory:\n"
 				"\tsignal changed\n"
 				"\n"
@@ -2405,12 +2424,44 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\n"
 				"\tfunc build() -> void:\n"
 				"\t\tpass\n"
+				"\n"
 				"trait Damageable:\n"
 				"\tsignal damaged\n"
 				"\n"
 				"\tvar health := 10\n"
 				"\n"
 				"\tfunc apply_damage() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps builtin-like private methods after custom overrides on non-virtual bases") {
+		const String source =
+				"class Base extends RefCounted:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tvar value := 1\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _process(_delta: float) -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends RefCounted:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tvar value := 1\n"
+				"\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _process(_delta: float) -> void:\n"
 				"\t\tpass\n";
 
 		String out;
@@ -2515,6 +2566,30 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		CHECK_EQ(out, expected);
 	}
 
+	TEST_CASE("Sort members by style guide classifies parser-only implicit object callbacks") {
+		const String source =
+				"class_name ParserFallbackCallbacks\n"
+				"uses Damageable\n"
+				"\n"
+				"func helper() -> void:\n"
+				"\tpass\n"
+				"func _to_string() -> String:\n"
+				"\treturn \"\"\n";
+		const String expected =
+				"class_name ParserFallbackCallbacks\n"
+				"uses Damageable\n"
+				"\n"
+				"func _to_string() -> String:\n"
+				"\treturn \"\"\n"
+				"func helper() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
 	TEST_CASE("Sort members by style guide places native virtual callbacks before custom overrides") {
 		const String source =
 				"class Base extends Control:\n"
@@ -2600,6 +2675,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\n"
 				"func root_method() -> void:\n"
 				"\tpass\n"
+				"\n"
 				"class Outer:\n"
 				"\tsignal outer_signal\n"
 				"\n"
@@ -2607,6 +2683,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\n"
 				"\tfunc outer_method() -> void:\n"
 				"\t\tpass\n"
+				"\n"
 				"\tclass Middle:\n"
 				"\t\tsignal middle_signal\n"
 				"\n"
@@ -2614,6 +2691,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\n"
 				"\t\tfunc middle_method() -> void:\n"
 				"\t\t\tpass\n"
+				"\n"
 				"\t\tclass Inner:\n"
 				"\t\t\tsignal inner_signal\n"
 				"\n"
@@ -2621,6 +2699,36 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"\n"
 				"\t\t\tfunc inner_method() -> void:\n"
 				"\t\t\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps leading comments with unnamed enums") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var health := 10\n"
+				"enum {\n"
+				"\t## Idle state.\n"
+				"\tIDLE,\n"
+				"\tRUNNING,\n"
+				"}\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"enum {\n"
+				"\t## Idle state.\n"
+				"\tIDLE,\n"
+				"\tRUNNING,\n"
+				"}\n"
+				"\n"
+				"var health := 10\n";
 
 		String out;
 		RefactorResult r = run_sort_members_by_style_guide(source, out);
@@ -2642,6 +2750,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 				"extends Node\n"
 				"\n"
 				"signal ready\n"
+				"\n"
 				"class Inventory:\n"
 				"\tvar slots := 8\n"
 				"\n"
@@ -2652,6 +2761,42 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		String out;
 		RefactorResult r = run_sort_members_by_style_guide(source, out);
 		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide recurses into nested types when sorted parents contain warning annotations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"func run(_delta: float) -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"\tsignal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"func run(_delta: float) -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"\n"
+				"class Inventory:\n"
+				"\tsignal changed\n"
+				"\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
 		CHECK_EQ(out, expected);
 	}
 
