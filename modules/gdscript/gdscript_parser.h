@@ -579,6 +579,14 @@ public:
 		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script
 		// from the `[T]` type argument.
 		bool is_proxy_construct = false;
+#ifdef TOOLS_ENABLED
+		// Resolved parameter types for the called signature, in declaration order,
+		// recorded by the analyzer right before argument validation. Editor refactors
+		// (e.g. insert-explicit-cast at a call-argument boundary) read these to learn
+		// the type each argument flows into; the runtime compiler does not use them.
+		// Entries beyond the fixed parameter count (varargs) are not recorded.
+		Vector<DataType> resolved_parameter_types;
+#endif // TOOLS_ENABLED
 
 		CallNode() {
 			type = CALL;

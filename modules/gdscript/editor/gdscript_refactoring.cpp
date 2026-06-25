@@ -6195,39 +6195,152 @@ void build_explicit_cast_candidate(
 	r_candidate.enabled = true;
 }
 
-// Cast site for a typed `var x: T = value` declaration. Only explicitly annotated
-// declarations carry a known cast target, so untyped ones are not surfaced here.
-bool find_declaration_cast_candidate(const Vector<String> &p_lines, const GDScriptParser::VariableNode *p_variable, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
-	if (p_variable == nullptr || p_variable->datatype_specifier == nullptr || p_variable->initializer == nullptr) {
-		return false;
-	}
+// Records a cast candidate for `p_value` targeting `p_target_type`, anchored for caret
+// matching at `p_caret_anchor`'s source range. The declaration and return boundaries anchor
+// on the whole statement so a caret anywhere on the line applies; a call/emit argument anchors
+// on the argument expression itself so the right argument is targeted when several share a line.
+// Matched-but-disabled candidates are still recorded so the editor can explain why the action
+// is unavailable at that site.
+void record_explicit_cast_candidate(
+		const Vector<String> &p_lines,
+		const GDScriptParser::Node *p_caret_anchor,
+		const GDScriptParser::ExpressionNode *p_value,
+		const GDScriptParser::DataType &p_target_type,
+		Vector<ExplicitCastCandidate> &r_candidates) {
 	ExplicitCastCandidate candidate;
-	build_explicit_cast_candidate(p_lines, p_variable, p_variable->initializer, p_variable->get_datatype(), candidate);
-	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
-		return false;
+	build_explicit_cast_candidate(p_lines, p_caret_anchor, p_value, p_target_type, candidate);
+	if (candidate.matched) {
+		r_candidates.push_back(candidate);
 	}
-	r_candidate = candidate;
-	return true;
+}
+
+void collect_cast_candidates_in_expression(const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression, Vector<ExplicitCastCandidate> &r_candidates);
+
+// Walks a call's arguments, recording a cast candidate for each Variant argument flowing into
+// a known typed parameter. The analyzer records the resolved parameter types on the call right
+// before argument validation, so the same resolution that flags the boundary feeds the cast
+// target here. Nested expressions inside each argument are walked too, so a call argument that
+// is itself a call contributes its own boundaries.
+void collect_cast_candidates_in_call(const Vector<String> &p_lines, const GDScriptParser::CallNode *p_call, Vector<ExplicitCastCandidate> &r_candidates) {
+	if (p_call == nullptr) {
+		return;
+	}
+	collect_cast_candidates_in_expression(p_lines, p_call->callee, r_candidates);
+#ifdef TOOLS_ENABLED
+	const int resolved_count = p_call->resolved_parameter_types.size();
+#else
+	const int resolved_count = 0;
+#endif // TOOLS_ENABLED
+	for (int i = 0; i < p_call->arguments.size(); i++) {
+		GDScriptParser::ExpressionNode *argument = p_call->arguments[i];
+		if (argument == nullptr) {
+			continue;
+		}
+		collect_cast_candidates_in_expression(p_lines, argument, r_candidates);
+#ifdef TOOLS_ENABLED
+		if (i < resolved_count) {
+			// Only a genuine boundary is surfaced: a Variant argument flowing into a known,
+			// renderable parameter type. Variant-into-Variant and already-typed arguments are
+			// not boundaries, so they are skipped rather than recorded as disabled noise (unlike
+			// declaration/return sites, which the editor surfaces with an explanation).
+			ExplicitCastCandidate candidate;
+			build_explicit_cast_candidate(p_lines, argument, argument, p_call->resolved_parameter_types[i], candidate);
+			if (candidate.matched && candidate.enabled) {
+				r_candidates.push_back(candidate);
+			}
+		}
+#endif // TOOLS_ENABLED
+	}
+}
+
+// Recursively walks an expression, recording cast candidates at every call/emit argument
+// boundary nested within it (e.g. a call inside a ternary, an array element, or another call's
+// argument). Declaration initializers and return values are handled by their statement walkers;
+// this only adds the argument boundaries reachable from an expression.
+void collect_cast_candidates_in_expression(const Vector<String> &p_lines, const GDScriptParser::ExpressionNode *p_expression, Vector<ExplicitCastCandidate> &r_candidates) {
+	if (p_expression == nullptr) {
+		return;
+	}
+	switch (p_expression->type) {
+		case GDScriptParser::Node::CALL:
+			collect_cast_candidates_in_call(p_lines, static_cast<const GDScriptParser::CallNode *>(p_expression), r_candidates);
+			break;
+		case GDScriptParser::Node::ARRAY: {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
+			for (const GDScriptParser::ExpressionNode *element : array->elements) {
+				collect_cast_candidates_in_expression(p_lines, element, r_candidates);
+			}
+		} break;
+		case GDScriptParser::Node::DICTIONARY: {
+			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
+			for (const GDScriptParser::DictionaryNode::Pair &pair : dictionary->elements) {
+				collect_cast_candidates_in_expression(p_lines, pair.key, r_candidates);
+				collect_cast_candidates_in_expression(p_lines, pair.value, r_candidates);
+			}
+		} break;
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
+			collect_cast_candidates_in_expression(p_lines, binary->left_operand, r_candidates);
+			collect_cast_candidates_in_expression(p_lines, binary->right_operand, r_candidates);
+		} break;
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			collect_cast_candidates_in_expression(p_lines, static_cast<const GDScriptParser::UnaryOpNode *>(p_expression)->operand, r_candidates);
+			break;
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
+			collect_cast_candidates_in_expression(p_lines, ternary->condition, r_candidates);
+			collect_cast_candidates_in_expression(p_lines, ternary->true_expr, r_candidates);
+			collect_cast_candidates_in_expression(p_lines, ternary->false_expr, r_candidates);
+		} break;
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			collect_cast_candidates_in_expression(p_lines, subscript->base, r_candidates);
+			if (!subscript->is_attribute) {
+				collect_cast_candidates_in_expression(p_lines, subscript->index, r_candidates);
+			}
+		} break;
+		case GDScriptParser::Node::CAST:
+			collect_cast_candidates_in_expression(p_lines, static_cast<const GDScriptParser::CastNode *>(p_expression)->operand, r_candidates);
+			break;
+		case GDScriptParser::Node::AWAIT:
+			collect_cast_candidates_in_expression(p_lines, static_cast<const GDScriptParser::AwaitNode *>(p_expression)->to_await, r_candidates);
+			break;
+		case GDScriptParser::Node::TYPE_TEST:
+			collect_cast_candidates_in_expression(p_lines, static_cast<const GDScriptParser::TypeTestNode *>(p_expression)->operand, r_candidates);
+			break;
+		default:
+			break;
+	}
+}
+
+// Cast site for a typed `var x: T = value` declaration. Only explicitly annotated
+// declarations carry a known cast target, so untyped ones are not surfaced here. The
+// initializer expression is also walked for nested call-argument boundaries.
+void collect_declaration_cast_candidates(const Vector<String> &p_lines, const GDScriptParser::VariableNode *p_variable, Vector<ExplicitCastCandidate> &r_candidates) {
+	if (p_variable == nullptr || p_variable->initializer == nullptr) {
+		return;
+	}
+	if (p_variable->datatype_specifier != nullptr) {
+		record_explicit_cast_candidate(p_lines, p_variable, p_variable->initializer, p_variable->get_datatype(), r_candidates);
+	}
+	collect_cast_candidates_in_expression(p_lines, p_variable->initializer, r_candidates);
 }
 
 // Cast site for a `return value` in a function with an explicit return type, which supplies
-// the cast target.
-bool find_return_cast_candidate(const Vector<String> &p_lines, const GDScriptParser::ReturnNode *p_return, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
-	if (p_return == nullptr || p_return->return_value == nullptr || p_function == nullptr || p_function->return_type == nullptr) {
-		return false;
+// the cast target. The returned expression is also walked for nested call-argument boundaries.
+void collect_return_cast_candidates(const Vector<String> &p_lines, const GDScriptParser::ReturnNode *p_return, const GDScriptParser::FunctionNode *p_function, Vector<ExplicitCastCandidate> &r_candidates) {
+	if (p_return == nullptr || p_return->return_value == nullptr) {
+		return;
 	}
-	ExplicitCastCandidate candidate;
-	build_explicit_cast_candidate(p_lines, p_return, p_return->return_value, p_function->get_datatype(), candidate);
-	if (!candidate.matched || !caret_within_range(p_location, candidate.caret_span)) {
-		return false;
+	if (p_function != nullptr && p_function->return_type != nullptr) {
+		record_explicit_cast_candidate(p_lines, p_return, p_return->return_value, p_function->get_datatype(), r_candidates);
 	}
-	r_candidate = candidate;
-	return true;
+	collect_cast_candidates_in_expression(p_lines, p_return->return_value, r_candidates);
 }
 
-bool find_cast_candidate_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::FunctionNode *p_function, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
+void collect_cast_candidates_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, const GDScriptParser::FunctionNode *p_function, Vector<ExplicitCastCandidate> &r_candidates) {
 	if (p_suite == nullptr) {
-		return false;
+		return;
 	}
 	for (const GDScriptParser::Node *statement : p_suite->statements) {
 		if (statement == nullptr) {
@@ -6235,81 +6348,72 @@ bool find_cast_candidate_in_suite(const Vector<String> &p_lines, const GDScriptP
 		}
 		switch (statement->type) {
 			case GDScriptParser::Node::VARIABLE:
-				if (find_declaration_cast_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), p_location, r_candidate)) {
-					return true;
-				}
+				collect_declaration_cast_candidates(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), r_candidates);
 				break;
 			case GDScriptParser::Node::RETURN:
-				if (find_return_cast_candidate(p_lines, static_cast<const GDScriptParser::ReturnNode *>(statement), p_function, p_location, r_candidate)) {
-					return true;
-				}
+				collect_return_cast_candidates(p_lines, static_cast<const GDScriptParser::ReturnNode *>(statement), p_function, r_candidates);
 				break;
 			case GDScriptParser::Node::IF: {
 				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
-				if (find_cast_candidate_in_suite(p_lines, if_node->true_block, p_function, p_location, r_candidate) ||
-						find_cast_candidate_in_suite(p_lines, if_node->false_block, p_function, p_location, r_candidate)) {
-					return true;
-				}
+				collect_cast_candidates_in_expression(p_lines, if_node->condition, r_candidates);
+				collect_cast_candidates_in_suite(p_lines, if_node->true_block, p_function, r_candidates);
+				collect_cast_candidates_in_suite(p_lines, if_node->false_block, p_function, r_candidates);
 			} break;
 			case GDScriptParser::Node::FOR: {
 				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
-				if (find_cast_candidate_in_suite(p_lines, for_node->loop, p_function, p_location, r_candidate)) {
-					return true;
-				}
+				collect_cast_candidates_in_expression(p_lines, for_node->list, r_candidates);
+				collect_cast_candidates_in_suite(p_lines, for_node->loop, p_function, r_candidates);
 			} break;
 			case GDScriptParser::Node::WHILE: {
 				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
-				if (find_cast_candidate_in_suite(p_lines, while_node->loop, p_function, p_location, r_candidate)) {
-					return true;
-				}
+				collect_cast_candidates_in_expression(p_lines, while_node->condition, r_candidates);
+				collect_cast_candidates_in_suite(p_lines, while_node->loop, p_function, r_candidates);
 			} break;
 			case GDScriptParser::Node::MATCH: {
 				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
+				collect_cast_candidates_in_expression(p_lines, match_node->test, r_candidates);
 				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
-					if (branch != nullptr && find_cast_candidate_in_suite(p_lines, branch->block, p_function, p_location, r_candidate)) {
-						return true;
+					if (branch != nullptr) {
+						collect_cast_candidates_in_suite(p_lines, branch->block, p_function, r_candidates);
 					}
 				}
 			} break;
 			default:
+				if (statement->is_expression()) {
+					collect_cast_candidates_in_expression(p_lines, static_cast<const GDScriptParser::ExpressionNode *>(statement), r_candidates);
+				}
 				break;
 		}
 	}
-	return false;
 }
 
-bool find_cast_candidate_in_class(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, const RefactorLocation &p_location, ExplicitCastCandidate &r_candidate) {
+void collect_cast_candidates_in_class(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_class, Vector<ExplicitCastCandidate> &r_candidates) {
 	if (p_class == nullptr) {
-		return false;
+		return;
 	}
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::VARIABLE:
-				if (find_declaration_cast_candidate(p_lines, member.variable, p_location, r_candidate)) {
-					return true;
-				}
+				collect_declaration_cast_candidates(p_lines, member.variable, r_candidates);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
-				if (member.function != nullptr && find_cast_candidate_in_suite(p_lines, member.function->body, member.function, p_location, r_candidate)) {
-					return true;
+				if (member.function != nullptr) {
+					collect_cast_candidates_in_suite(p_lines, member.function->body, member.function, r_candidates);
 				}
 				break;
 			case GDScriptParser::ClassNode::Member::CLASS:
-				if (find_cast_candidate_in_class(p_lines, member.m_class, p_location, r_candidate)) {
-					return true;
-				}
+				collect_cast_candidates_in_class(p_lines, member.m_class, r_candidates);
 				break;
 			default:
 				break;
 		}
 	}
-	return false;
 }
 
 ExplicitCastCandidate find_explicit_cast_candidate(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	ExplicitCastCandidate candidate;
 	if (p_location.has_selection()) {
-		candidate.disabled_reason = "Place the caret on a typed declaration's value or a return value.";
+		candidate.disabled_reason = "Place the caret on a typed declaration's value, a return value, or a call argument.";
 		return candidate;
 	}
 
@@ -6320,11 +6424,17 @@ ExplicitCastCandidate find_explicit_cast_candidate(const RefactorContext &p_cont
 
 	const Vector<String> lines = p_context.source.split("\n");
 	const GDScriptParser::ClassNode *tree = parser.get_tree();
-	if (tree == nullptr || !find_cast_candidate_in_class(lines, tree, p_location, candidate)) {
-		candidate.matched = false;
-		candidate.enabled = false;
-		candidate.disabled_reason = "Place the caret on a typed declaration's value or a return value.";
+	Vector<ExplicitCastCandidate> candidates;
+	collect_cast_candidates_in_class(lines, tree, candidates);
+	for (const ExplicitCastCandidate &found : candidates) {
+		if (caret_within_range(p_location, found.caret_span)) {
+			return found;
+		}
 	}
+
+	candidate.matched = false;
+	candidate.enabled = false;
+	candidate.disabled_reason = "Place the caret on a typed declaration's value, a return value, or a call argument.";
 	return candidate;
 }
 
@@ -7067,7 +7177,48 @@ RefactorResult GDScriptRefactoring::prepare(const RefactorContext &p_context, co
 	return result;
 }
 
+// Headless, caret-independent collection of every insert-explicit-cast opportunity in the
+// file: one candidate per provable Variant boundary (typed declaration initializer, typed
+// return value, and call/emit argument flowing into a known parameter type). Mirrors the Add
+// Type Annotation collection path so the migration wizard can enumerate and batch-apply casts.
+RefactorCandidatesResult collect_explicit_cast_candidates(const RefactorContext &p_context) {
+	RefactorCandidatesResult result;
+
+	GDScriptParser parser;
+	Error err = parser.parse(p_context.source, p_context.path, false);
+	if (err == OK) {
+		GDScriptAnalyzer analyzer(&parser);
+		err = analyzer.analyze();
+	}
+	if (err != OK) {
+		result.error_message = "Cannot analyze this script.";
+		return result;
+	}
+
+	const Vector<String> lines = p_context.source.split("\n");
+	Vector<ExplicitCastCandidate> candidates;
+	collect_cast_candidates_in_class(lines, parser.get_tree(), candidates);
+	for (const ExplicitCastCandidate &candidate : candidates) {
+		RefactorCandidate public_candidate;
+		public_candidate.kind = RefactorKind::INSERT_EXPLICIT_CAST;
+		public_candidate.enabled = candidate.enabled;
+		public_candidate.disabled_reason = candidate.disabled_reason;
+		public_candidate.line = candidate.line;
+		public_candidate.column = candidate.caret_span.start_column;
+		if (candidate.enabled) {
+			public_candidate.edits.push_back(candidate.edit);
+		}
+		result.candidates.push_back(public_candidate);
+	}
+	result.ok = true;
+	return result;
+}
+
 RefactorCandidatesResult GDScriptRefactoring::find_candidates(const RefactorContext &p_context, RefactorKind p_kind) {
+	if (p_kind == RefactorKind::INSERT_EXPLICIT_CAST) {
+		return collect_explicit_cast_candidates(p_context);
+	}
+
 	if (p_kind != RefactorKind::ADD_TYPE_ANNOTATION) {
 		RefactorCandidatesResult result;
 		result.error_message = "Headless candidate collection is not implemented for this refactor.";

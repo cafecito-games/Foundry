@@ -5019,6 +5019,13 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				update_dictionary_literal_element_type(E.value, key, value);
 			}
 		}
+#ifdef TOOLS_ENABLED
+		p_call->resolved_parameter_types.clear();
+		for (const GDScriptParser::DataType &par_type : par_types) {
+			p_call->resolved_parameter_types.push_back(par_type);
+		}
+#endif // TOOLS_ENABLED
+
 		validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
 		validate_signal_connect_arg(base_type, p_call);
 		validate_local_object_signal_callable_arg(p_call, is_self);
