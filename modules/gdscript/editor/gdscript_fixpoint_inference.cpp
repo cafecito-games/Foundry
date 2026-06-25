@@ -98,6 +98,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 		for (const String &path : paths) {
 			RefactorContext ctx;
 			ctx.path = path;
+			ctx.allow_member_container_inference = true; // Verified migration path: the harness re-checks dependents.
 			ctx.source = original_source[path];
 			RefactorCandidatesResult candidates = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 			first_pass_candidates += candidates.candidates.size();
@@ -133,6 +134,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 			}
 			RefactorContext ctx;
 			ctx.path = path;
+			ctx.allow_member_container_inference = true; // Verified migration path: the harness re-checks dependents.
 			ctx.source = snapshot[path];
 			RefactorCandidatesResult found = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 			if (!found.ok) {
@@ -214,6 +216,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 	for (const String &path : paths) {
 		RefactorContext ctx;
 		ctx.path = path;
+		ctx.allow_member_container_inference = true; // Verified migration path: the harness re-checks dependents.
 		bool ok = false;
 		ctx.source = read_source(path, ok);
 		if (!ok) {

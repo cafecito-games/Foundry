@@ -72,7 +72,8 @@ public:
 	// this primitive operates on the explicit path list it is given.
 	static BatchCandidatesResult collect(
 			const Vector<String> &p_paths,
-			RefactorKind p_kind = RefactorKind::ADD_TYPE_ANNOTATION);
+			RefactorKind p_kind = RefactorKind::ADD_TYPE_ANNOTATION,
+			bool p_allow_member_container_inference = false);
 };
 
 #endif // TOOLS_ENABLED

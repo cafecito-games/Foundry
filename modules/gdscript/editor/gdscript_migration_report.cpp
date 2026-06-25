@@ -106,7 +106,9 @@ MigrationReportResult GDScriptMigrationReport::generate(const String &p_root, co
 	// Stage 2: collect every Add Type Annotation candidate across the discovered files without
 	// touching disk, then bucket each site by whether it is inferable (and its kind) or skipped
 	// (and why).
-	const BatchCandidatesResult batch = GDScriptBatchCandidates::collect(scan.files);
+	// The report mirrors the verified migration run, which re-checks the dependency
+	// closure, so member container element inference is enabled for the tally.
+	const BatchCandidatesResult batch = GDScriptBatchCandidates::collect(scan.files, RefactorKind::ADD_TYPE_ANNOTATION, /* allow_member_container_inference */ true);
 	if (!batch.ok) {
 		// Only reached if headless collection is unavailable for the refactor kind, which cannot
 		// happen for the fixed ADD_TYPE_ANNOTATION kind; surface it rather than report a half-run.

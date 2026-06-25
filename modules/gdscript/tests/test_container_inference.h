@@ -1184,6 +1184,7 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		RefactorContext context;
 		context.path = path;
 		context.source = source;
+		context.allow_member_container_inference = true; // Verified migration path.
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
@@ -1215,6 +1216,7 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		RefactorContext context;
 		context.path = path;
 		context.source = source;
+		context.allow_member_container_inference = true; // Verified migration path.
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
@@ -1244,6 +1246,7 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		RefactorContext context;
 		context.path = path;
 		context.source = source;
+		context.allow_member_container_inference = true; // Verified migration path.
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
@@ -1252,6 +1255,39 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK(d->enabled);
 		REQUIRE_FALSE(d->edits.is_empty());
 		CHECK_EQ(d->edits[0].new_text, ": Dictionary[String, int] = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Interactive collection keeps a member array bare without verification") {
+		// The default (interactive) path applies edits directly with no verifier, so
+		// the open-world member element upgrade is withheld and the analyzer's bare
+		// container type is offered instead.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String path = "res://refactor/container_member_interactive.gd";
+		const String source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n";
+		TemporaryScriptFile file(path, source);
+
+		RefactorContext context;
+		context.path = path;
+		context.source = source;
+		// allow_member_container_inference defaults to false (interactive path).
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array = ");
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

@@ -4624,7 +4624,8 @@ void collect_type_annotation_in_class(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_class,
 		const RefactorLocation *p_location,
-		Vector<TypeAnnotationCandidate> &r_candidates
+		Vector<TypeAnnotationCandidate> &r_candidates,
+		bool p_allow_member_inference
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace,
@@ -4641,7 +4642,11 @@ void collect_type_annotation_in_class(
 				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates);
 				break;
 			case GDScriptParser::ClassNode::Member::VARIABLE:
-				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates, nullptr, p_class);
+				// Member container element inference is open-world-unsound on its own, so
+				// it is enabled only for the verified migration path; otherwise members
+				// keep the analyzer's bare container type.
+				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates, nullptr,
+						p_allow_member_inference ? p_class : nullptr);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
 				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates
@@ -4652,7 +4657,7 @@ void collect_type_annotation_in_class(
 				);
 				break;
 			case GDScriptParser::ClassNode::Member::CLASS:
-				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates
+				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference
 #ifndef GDSCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
@@ -4710,7 +4715,8 @@ void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScr
 Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_tree,
-		const RefactorLocation *p_location = nullptr
+		const RefactorLocation *p_location = nullptr,
+		bool p_allow_member_inference = false
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace = Ref<GDScriptWorkspace>(),
@@ -4719,7 +4725,7 @@ Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
 #endif // GDSCRIPT_NO_LSP
 ) {
 	Vector<TypeAnnotationCandidate> candidates;
-	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates
+	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates, p_allow_member_inference
 #ifndef GDSCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
@@ -4739,7 +4745,9 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
 		const GDScriptParseResultProvider *p_parse_results = nullptr
 #endif // GDSCRIPT_NO_LSP
 ) {
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location
+	// The interactive caret-located refactor applies edits directly without the
+	// verification harness, so member container inference is left disabled here.
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location, /* allow_member_inference */ false
 #ifndef GDSCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
@@ -5853,7 +5861,7 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 	}
 #endif // GDSCRIPT_NO_LSP
 
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr, p_context.allow_member_container_inference
 #ifndef GDSCRIPT_NO_LSP
 			,
 			workspace, lsp_parser, p_parse_results
