@@ -1331,6 +1331,43 @@ static void _add_namespace_type_attribute_completion_options(GDScriptNamespaceCo
 	_add_direct_child_namespaces(r_cache, namespace_name, r_result);
 }
 
+static void _add_direct_traits_in_namespace(GDScriptNamespaceCompletionCache &r_cache, const String &p_namespace, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+	const LocalVector<StringName> *classes = r_cache.direct_classes_by_namespace.getptr(p_namespace);
+	if (classes == nullptr) {
+		return;
+	}
+
+	for (const StringName &class_name : *classes) {
+		// Only traits are valid in a `uses` clause; non-trait classes in the same
+		// namespace must not be suggested.
+		const String qualified_name = p_namespace + "." + String(class_name);
+		if (!ScriptServer::is_global_class_trait(qualified_name)) {
+			continue;
+		}
+		_insert_namespace_completion_option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, r_result);
+	}
+}
+
+// Completes the trailing segment of a namespace-qualified `uses` reference (e.g.
+// the part after the dot in `uses characters.`): only traits declared directly in
+// the resolved namespace, plus its child namespaces to allow drilling deeper.
+static void _add_namespace_uses_completion_options(GDScriptNamespaceCompletionCache &r_cache, const GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_context.current_argument <= 0 || p_context.current_argument > p_context.chain.size()) {
+		return;
+	}
+
+	const String prefix = _join_identifier_chain(p_context.chain, 0, p_context.current_argument);
+	const GDScriptParser::ClassNode *root = _get_completion_root_class(p_context);
+	String namespace_name;
+	if (!_resolve_namespace_from_prefix(r_cache, root, prefix, namespace_name)) {
+		return;
+	}
+
+	_add_direct_traits_in_namespace(r_cache, namespace_name, r_result);
+	_add_direct_child_namespaces(r_cache, namespace_name, r_result);
+}
+
 static void _list_available_types(bool p_inherit_only, GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	// Built-in Variant Types
 	_find_built_in_variants(r_result);
@@ -3883,15 +3920,17 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_USES: {
-			// Only complete the leading name. Globally registered traits are listed
-			// under their fully-qualified names (e.g. `characters.Damageable`), so
-			// namespace-qualified traits are covered without suggesting non-trait
-			// classes. Completing after a `.` is skipped to avoid duplicating the
-			// already-typed namespace prefix.
 			if (completion_context.current_argument <= 0) {
+				// Leading name: inline traits plus globally registered traits, which
+				// are listed under their fully-qualified names (e.g.
+				// `characters.Damageable`).
 				_list_available_traits(completion_context, options);
-				r_forced = true;
+			} else {
+				// Trailing segment after a `.`: resolve the typed namespace prefix and
+				// suggest only the traits (and child namespaces) within it.
+				_add_namespace_uses_completion_options(namespace_cache, completion_context, options);
 			}
+			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_IMPORT_NAMESPACE: {
 			_list_importable_namespaces(namespace_cache, options);
