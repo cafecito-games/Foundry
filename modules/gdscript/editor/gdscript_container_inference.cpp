@@ -449,9 +449,27 @@ private:
 		scan_value(p_base);
 	}
 
-	// True when `p_call` invokes one of Object's dynamic reflection APIs on this
-	// instance, either as `self.set(..)` or an implicit-self `set(..)`. Such a call
-	// can read or write the member by name with no AST reference the scan can see.
+	// A receiver expression "may be the instance" unless it is provably a value
+	// that cannot alias `self`. `self`/implicit-self obviously may; any other base
+	// may too unless its resolved type is a hard, non-Object builtin (e.g. a known
+	// `Array`/`Dictionary`/`int`), on which a `get`/`set`/`call` is the container's
+	// own method rather than Object reflection.
+	static bool receiver_may_be_self(const GDScriptParser::ExpressionNode *p_base) {
+		if (p_base == nullptr || p_base->type == Node::SELF) {
+			return true; // Implicit self (null base) or explicit `self`.
+		}
+		const DataType type = p_base->get_datatype();
+		if (type.is_hard_type() && type.kind == DataType::BUILTIN && type.builtin_type != Variant::OBJECT && type.builtin_type != Variant::NIL) {
+			return false; // A concrete non-Object builtin cannot be `self`.
+		}
+		return true; // Object/Variant/unknown: conservatively could be `self`.
+	}
+
+	// True when `p_call` invokes one of Object's dynamic reflection APIs on a
+	// receiver that may be this instance (`self.set(..)`, implicit-self `set(..)`,
+	// or `other.set(..)` where `other` may alias `self`). Such a call can read or
+	// write any property by name, including the tracked member, with no AST
+	// reference the scan can see, so the dynamic name need not be a constant.
 	static bool is_self_reflection_call(const GDScriptParser::CallNode *p_call) {
 		if (p_call == nullptr || p_call->callee == nullptr) {
 			return false;
@@ -463,8 +481,8 @@ private:
 		}
 		if (p_call->callee->type == Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
-			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF && callee->attribute != nullptr) {
-				return is_dynamic_reflection_method(callee->attribute->name);
+			if (callee->is_attribute && callee->attribute != nullptr && is_dynamic_reflection_method(callee->attribute->name)) {
+				return receiver_may_be_self(callee->base);
 			}
 		}
 		return false;
@@ -630,10 +648,13 @@ private:
 		return false;
 	}
 
-	// True when `p_subscript` is a non-attribute index by a string literal equal to
-	// the member name on a base that is not the tracked container itself, e.g.
-	// `self["_member"]` or `other["_member"]` (dynamic property access on a
-	// reference that may alias the instance).
+	// True when `p_subscript` is dynamic *property* indexing on a base that may be
+	// this instance, e.g. `self["_member"]`, `other["_member"]`, or `other[prop]`
+	// with a runtime key. Object subscripting indexes properties by name, so if the
+	// base may alias `self` the member can be read or written here regardless of
+	// whether the key is a compile-time constant. Indexing into the tracked
+	// container itself, or into a concrete non-Object builtin, is a normal element
+	// access and is not flagged.
 	bool indexes_member_by_name(const GDScriptParser::SubscriptNode *p_subscript) const {
 		if (p_subscript == nullptr || p_subscript->is_attribute || decl->identifier == nullptr) {
 			return false;
@@ -641,7 +662,9 @@ private:
 		if (is_our_var(p_subscript->base) || is_self_member_subscript(p_subscript->base)) {
 			return false; // Indexing into the member container itself, not the instance.
 		}
-		return is_constant_member_name(p_subscript->index);
+		// A constant key naming the member is unsafe on any base; otherwise the base
+		// must plausibly be the instance for property indexing to reach the member.
+		return is_constant_member_name(p_subscript->index) || receiver_may_be_self(p_subscript->base);
 	}
 
 	// Treats `p_value` as a value that is consumed by the surrounding context. If
@@ -712,6 +735,17 @@ private:
 				break;
 			case Node::CALL: {
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
+				// A modeled method on the tracked container (`_member.append(x)` /
+				// `self._member.set(k, v)`) is handled first: its receiver is the member
+				// itself, so the dynamic-reflection/override guards below (which assume the
+				// receiver may be `self`) do not apply to it.
+				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
+					const GDScriptParser::SubscriptNode *member_callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+					if (member_callee->is_attribute && (is_our_var(member_callee->base) || is_self_member_subscript(member_callee->base))) {
+						scan_method_on_var(call, member_callee->attribute != nullptr ? member_callee->attribute->name : StringName());
+						return;
+					}
+				}
 				if (member_mode && (is_self_reflection_call(call) || reflection_call_names_member(call))) {
 					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 					return;
@@ -1237,9 +1271,23 @@ private:
 		scan_value(p_base);
 	}
 
-	// True when `p_call` invokes one of Object's dynamic reflection APIs on this
-	// instance (`self.set(..)` or implicit-self `set(..)`), which can read or write
-	// the member by name without an AST reference the scan can see.
+	// A receiver expression "may be the instance" unless it is provably a value that
+	// cannot alias `self` (a hard, non-Object builtin like a known `Dictionary`).
+	static bool receiver_may_be_self(const GDScriptParser::ExpressionNode *p_base) {
+		if (p_base == nullptr || p_base->type == Node::SELF) {
+			return true;
+		}
+		const DataType type = p_base->get_datatype();
+		if (type.is_hard_type() && type.kind == DataType::BUILTIN && type.builtin_type != Variant::OBJECT && type.builtin_type != Variant::NIL) {
+			return false;
+		}
+		return true;
+	}
+
+	// True when `p_call` invokes one of Object's dynamic reflection APIs on a
+	// receiver that may be this instance, which can read or write any property by
+	// name (including the tracked member) with no AST reference the scan can see;
+	// the dynamic name need not be a constant.
 	static bool is_self_reflection_call(const GDScriptParser::CallNode *p_call) {
 		if (p_call == nullptr || p_call->callee == nullptr) {
 			return false;
@@ -1250,8 +1298,8 @@ private:
 		}
 		if (p_call->callee->type == Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
-			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF && callee->attribute != nullptr) {
-				return is_dynamic_reflection_method(callee->attribute->name);
+			if (callee->is_attribute && callee->attribute != nullptr && is_dynamic_reflection_method(callee->attribute->name)) {
+				return receiver_may_be_self(callee->base);
 			}
 		}
 		return false;
@@ -1417,10 +1465,13 @@ private:
 		return false;
 	}
 
-	// True when `p_subscript` is a non-attribute index by a string literal equal to
-	// the member name on a base that is not the tracked container itself, e.g.
-	// `self["_member"]` or `other["_member"]` (dynamic property access on a
-	// reference that may alias the instance).
+	// True when `p_subscript` is dynamic *property* indexing on a base that may be
+	// this instance, e.g. `self["_member"]`, `other["_member"]`, or `other[prop]`
+	// with a runtime key. Object subscripting indexes properties by name, so if the
+	// base may alias `self` the member can be read or written here regardless of
+	// whether the key is a compile-time constant. Indexing into the tracked
+	// container itself, or into a concrete non-Object builtin, is a normal element
+	// access and is not flagged.
 	bool indexes_member_by_name(const GDScriptParser::SubscriptNode *p_subscript) const {
 		if (p_subscript == nullptr || p_subscript->is_attribute || decl->identifier == nullptr) {
 			return false;
@@ -1428,7 +1479,9 @@ private:
 		if (is_our_var(p_subscript->base) || is_self_member_subscript(p_subscript->base)) {
 			return false; // Indexing into the member container itself, not the instance.
 		}
-		return is_constant_member_name(p_subscript->index);
+		// A constant key naming the member is unsafe on any base; otherwise the base
+		// must plausibly be the instance for property indexing to reach the member.
+		return is_constant_member_name(p_subscript->index) || receiver_may_be_self(p_subscript->base);
 	}
 
 	void scan_value(const GDScriptParser::ExpressionNode *p_value) {
@@ -1501,6 +1554,17 @@ private:
 				break;
 			case Node::CALL: {
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
+				// A modeled method on the tracked container (`self._member.set(k, v)`) is
+				// handled first: its receiver is the member itself, so the
+				// dynamic-reflection/override guards below (which assume the receiver may
+				// be `self`) do not apply to it.
+				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
+					const GDScriptParser::SubscriptNode *member_callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+					if (member_callee->is_attribute && (is_our_var(member_callee->base) || is_self_member_subscript(member_callee->base))) {
+						scan_method_on_var(call, member_callee->attribute != nullptr ? member_callee->attribute->name : StringName());
+						return;
+					}
+				}
 				if (member_mode && (is_self_reflection_call(call) || reflection_call_names_member(call))) {
 					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 					return;

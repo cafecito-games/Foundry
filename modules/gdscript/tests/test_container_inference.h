@@ -957,6 +957,29 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
+	TEST_CASE("A reflection get with a dynamic name on a possibly-self receiver escapes") {
+		InferenceFixture fixture(
+				"extends Node\n"
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak(other: Object, prop: String) -> void:\n"
+				"\tother.get(prop).append(\"x\")\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Dynamic indexing with a runtime key on a possibly-self receiver escapes") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add() -> void:\n"
+				"\t_items.append(1)\n"
+				"func sneak(other, prop) -> void:\n"
+				"\tother[prop].append(\"x\")\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("An unused member array yields no evidence") {
 		InferenceFixture fixture("var _items = []\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
