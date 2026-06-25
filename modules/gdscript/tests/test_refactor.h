@@ -948,6 +948,21 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"\t\tsecond: int) -> int:\n"
 					"\treturn first + second\n");
 		}
+		SUBCASE("colon inside a multi-line string default is not mistaken for the body colon") {
+			const String source =
+					"func describe(text = \"\"\"\n"
+					")  :\n"
+					"\"\"\"):\n"
+					"\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func describe(text = \"\"\"\n"
+					")  :\n"
+					"\"\"\") -> int:\n"
+					"\treturn 1\n");
+		}
 	}
 
 	TEST_CASE("Add type annotation preserves the async modifier") {
