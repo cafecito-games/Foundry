@@ -4062,6 +4062,26 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(import_pos > namespace_pos);
 			CHECK(import_pos < func_pos);
 		}
+		SUBCASE("import is inserted before a class-level annotation, not after it") {
+			// The parser requires imports to precede class-level annotations such as
+			// @abstract, so the inserted import must land between the namespace and
+			// the annotation rather than after it.
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_annotated.gd", out));
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			const int import_pos = out.find("import refactor.characters");
+			const int namespace_pos = out.find("namespace refactor.gameplay");
+			const int annotation_pos = out.find("@abstract");
+			CHECK(namespace_pos >= 0);
+			CHECK(import_pos > namespace_pos);
+			CHECK(import_pos < annotation_pos);
+			// The applied result must itself be valid GDScript.
+			RefactorContext applied_ctx;
+			applied_ctx.path = "res://refactor/namespace_annotation_annotated.gd";
+			applied_ctx.source = out;
+			const RefactorCandidatesResult reanalyzed = GDScriptRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			CHECK(reanalyzed.ok);
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

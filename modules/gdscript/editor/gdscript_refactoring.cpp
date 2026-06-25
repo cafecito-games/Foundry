@@ -98,10 +98,13 @@ struct TypeAnnotationRenderContext {
 	int import_insert_line = 0; // 0-based line where a new `import` line is inserted.
 };
 
-// Computes the line after which a new `import` declaration can be inserted so it
-// lands after any `namespace`/`import` lines but before `class_name`/`extends`
-// and the class body. Returns a 0-based line index; the import is inserted at the
-// start of that line.
+// Computes the line at which a new `import` declaration can be inserted. The
+// parser requires imports to follow any `namespace` declaration and precede
+// class-level annotations (`@tool`, `@abstract`, ...), `class_name`/`extends`,
+// and the body. So the import is inserted right after the last `namespace`/
+// `import` line; when the file has neither, it goes at the very top, before any
+// leading class annotations. Returns a 0-based line index; the import is inserted
+// at the start of that line.
 int find_import_insertion_line(const Vector<String> &p_lines) {
 	int insertion_line = 0;
 	for (int i = 0; i < p_lines.size(); i++) {
@@ -109,17 +112,14 @@ int find_import_insertion_line(const Vector<String> &p_lines) {
 		if (stripped.is_empty() || stripped.begins_with("#")) {
 			continue;
 		}
-		if (stripped == "@tool" || stripped.begins_with("@")) {
-			// A leading annotation (e.g. @tool) precedes namespace/import; keep the
-			// insertion point after it.
-			insertion_line = i + 1;
-			continue;
-		}
 		if (stripped.begins_with("namespace ") || stripped.begins_with("import ")) {
 			insertion_line = i + 1;
 			continue;
 		}
-		// First class_name/extends/body line: imports must go before it.
+		// The namespace/import prologue ends at the first class-level annotation,
+		// `class_name`/`extends`/body, etc. Imports must precede all of these, so
+		// stop scanning rather than risk matching `import`/`namespace` text deeper
+		// in the file.
 		break;
 	}
 	return insertion_line;
