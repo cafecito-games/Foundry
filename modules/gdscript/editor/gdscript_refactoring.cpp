@@ -144,6 +144,9 @@ struct ImplementAbstractCandidate {
 	String disabled_reason;
 	// Owed abstract methods, most-derived-first.
 	Vector<OwedAbstractMethod> abstract_methods;
+	// The rendered block depends on declarations parsed from files other than the
+	// active script. Such candidates cannot be cached by only active path/source/caret.
+	bool depends_on_external_declarations = false;
 	// Insertion point: the line AFTER the last member of the target class (1-based,
 	// matching FunctionNode::end_line semantics used by extract method).
 	int insertion_line = -1;
@@ -5292,10 +5295,14 @@ void collect_owed_trait_abstract_methods(
 		const StringName &p_native_base,
 		HashSet<StringName> &r_decided,
 		Vector<OwedAbstractMethod> &r_owed,
+		bool *r_depends_on_external_declarations,
 		const GDScriptParseResultProvider *p_parse_results) {
 	for (const GDScriptParser::ClassNode *trait : p_target->resolved_traits) {
 		if (trait == nullptr) {
 			continue;
+		}
+		if (!tree_contains_class(p_root, trait) && r_depends_on_external_declarations != nullptr) {
+			*r_depends_on_external_declarations = true;
 		}
 		const Vector<String> *trait_lines = resolve_trait_declaring_lines(trait, p_root, p_target_lines, p_parse_results);
 		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
@@ -5340,6 +5347,7 @@ void collect_owed_abstract_methods(
 		const String &p_target_path,
 		const Vector<String> &p_target_lines,
 		Vector<OwedAbstractMethod> &r_owed,
+		bool *r_depends_on_external_declarations,
 		const GDScriptParseResultProvider *p_parse_results) {
 	HashSet<StringName> decided;
 	// Detection runs even when the analyzer reported errors, so the inheritance chain
@@ -5385,12 +5393,15 @@ void collect_owed_abstract_methods(
 		String base_path;
 		const Vector<String> *base_lines = nullptr;
 		current = resolve_base_class(current, p_parse_results, current_path, current_lines, base_path, &base_lines);
+		if (!base_path.is_empty() && base_path != current_path && r_depends_on_external_declarations != nullptr) {
+			*r_depends_on_external_declarations = true;
+		}
 		current_path = base_path;
 		current_lines = base_lines;
 		is_target = false;
 	}
 
-	collect_owed_trait_abstract_methods(p_target, p_root, p_target_lines, native_base, decided, r_owed, p_parse_results);
+	collect_owed_trait_abstract_methods(p_target, p_root, p_target_lines, native_base, decided, r_owed, r_depends_on_external_declarations, p_parse_results);
 }
 
 // Returns the GDScript literal default for a return type, or false when the type
@@ -5573,7 +5584,7 @@ ImplementAbstractCandidate find_implement_abstract_in_tree(
 		return candidate;
 	}
 
-	collect_owed_abstract_methods(target, p_tree, p_path, p_lines, candidate.abstract_methods, p_parse_results);
+	collect_owed_abstract_methods(target, p_tree, p_path, p_lines, candidate.abstract_methods, &candidate.depends_on_external_declarations, p_parse_results);
 	if (candidate.abstract_methods.is_empty()) {
 		candidate.disabled_reason = "No unimplemented abstract methods.";
 		return candidate;
@@ -5687,7 +5698,9 @@ ImplementAbstractCandidate find_implement_abstract_candidate(
 
 	const Vector<String> lines = p_context.source.split("\n");
 	candidate = find_implement_abstract_candidate_uncached(p_context, p_location, lines, p_parse_results);
-	cache_implement_abstract_candidate(p_context, p_location, candidate);
+	if (!candidate.depends_on_external_declarations) {
+		cache_implement_abstract_candidate(p_context, p_location, candidate);
+	}
 	return candidate;
 }
 

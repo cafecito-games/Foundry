@@ -38,6 +38,7 @@
 #include "../editor/gdscript_refactoring_edits.h"
 #include "../editor/gdscript_refactoring_names.h"
 #include "../editor/gdscript_refactoring_types.h"
+#include "../gdscript_cache.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -3565,6 +3566,62 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		String out;
 		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
 		CHECK(out.contains("func scaled(factor: float = 1.0) -> float:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Implement abstract recomputes cross-file base stubs after the base changes") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/implement_abstract_cache_base.gd";
+		const String child_path = "res://refactor/implement_abstract_cache_child.gd";
+		const String base_v1 =
+				"@abstract\n"
+				"extends RefCounted\n"
+				"\n"
+				"@abstract func scaled(factor: float = 1.0) -> float\n";
+		const String base_v2 =
+				"@abstract\n"
+				"extends RefCounted\n"
+				"\n"
+				"@abstract func scaled(value: int = 2) -> int\n";
+		const String child_source =
+				"extends \"res://refactor/implement_abstract_cache_base.gd\"\n"
+				"\n"
+				"var marker := 0\n";
+		TemporaryScriptFile base_script(base_path, base_v1);
+		TemporaryScriptFile child_script(child_path, child_source);
+
+		GDScriptTests::assert_no_errors_in(base_path);
+
+		RefactorContext ctx;
+		ctx.path = child_path;
+		ctx.source = FileAccess::get_file_as_string(child_path);
+		RefactorParams params;
+
+		RefactorResult first = GDScriptRefactoring::prepare(ctx, caret(2, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(first.ok);
+		String first_out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, first.edits, first_out));
+		CHECK(first_out.contains("func scaled(factor: float = 1.0) -> float:"));
+
+		Ref<FileAccess> file = FileAccess::open(base_path, FileAccess::WRITE);
+		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", base_path));
+		file->store_string(base_v2);
+		file.unref();
+		GDScriptCache::remove_script(base_path);
+		GDScriptTests::assert_no_errors_in(base_path);
+
+		RefactorResult second = GDScriptRefactoring::prepare(ctx, caret(2, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(second.ok);
+		String second_out;
+		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, second.edits, second_out));
+		CHECK(second_out.contains("func scaled(value: int = 2) -> int:"));
+		CHECK_FALSE(second_out.contains("func scaled(factor: float = 1.0) -> float:"));
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
