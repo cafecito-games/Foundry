@@ -19,11 +19,17 @@ func test() -> void:
 	var sprite: Object = create_proxy_dynamic(Sprite, func(_method: StringName, _args: Array) -> Variant:
 		return null)
 	print(sprite is Sprite)
+	print(is_instance_of(sprite, Sprite))
 	print(sprite is Drawable)
+	print(is_instance_of(sprite, Drawable))
 	print(sprite is Unrelated)
+	print(is_instance_of(sprite, Unrelated))
 
 	var derived: Object = create_proxy_dynamic(Derived, func(_method: StringName, _args: Array) -> Variant:
 		return null)
 	print(derived is Derived)
+	print(is_instance_of(derived, Derived))
 	print(derived is Base)
+	print(is_instance_of(derived, Base))
 	print(derived is Sprite)
+	print(is_instance_of(derived, Sprite))
