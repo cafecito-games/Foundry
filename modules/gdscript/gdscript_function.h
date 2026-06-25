@@ -321,6 +321,7 @@ public:
 		OPCODE_GET_NAMED_VALIDATED,
 		OPCODE_SET_MEMBER,
 		OPCODE_GET_MEMBER,
+		OPCODE_GET_TYPE_PARAMETER, // Reified script bound to the enclosing class's i-th type parameter.
 		OPCODE_SET_STATIC_VARIABLE, // Only for GDScript.
 		OPCODE_GET_STATIC_VARIABLE, // Only for GDScript.
 		OPCODE_ASSIGN,

@@ -662,14 +662,29 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 			if (call->is_proxy_construct) {
 				// `create_proxy[T](handler)` lowers to `create_proxy_dynamic(T, handler)`. The
-				// type argument T (a trait/abstract type) is compiled as a value to obtain its
-				// script, which the runtime uses to scan the proxied contract. T is statically
-				// resolved here; the result is typed as T by the analyzer.
-				const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-				GDScriptCodeGenerator::Address type_arg = _parse_expression(codegen, r_error, subscript->index);
-				if (r_error) {
-					return GDScriptCodeGenerator::Address();
+				// type argument T (a trait/abstract type) yields the script the runtime uses to
+				// scan the proxied contract; the result is typed as T by the analyzer.
+				const GDScriptParser::DataType call_datatype = call->get_datatype();
+				const bool forwards_class_type_parameter = call_datatype.is_type_parameter() &&
+						call_datatype.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS;
+
+				GDScriptCodeGenerator::Address type_arg;
+				if (forwards_class_type_parameter) {
+					// T is the enclosing generic class's type parameter, reified onto this
+					// instance at construction (e.g. `Mock[Greeter].new()` binds T = Greeter).
+					// Materialize its bound script from the instance's reified type arguments.
+					type_arg = codegen.add_temporary();
+					gen->write_get_type_parameter(type_arg, call_datatype.type_parameter_index);
+				} else {
+					// T is statically resolved; compile the `[T]` type argument as a value to
+					// obtain its script.
+					const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+					type_arg = _parse_expression(codegen, r_error, subscript->index);
+					if (r_error) {
+						return GDScriptCodeGenerator::Address();
+					}
 				}
+
 				Vector<GDScriptCodeGenerator::Address> proxy_arguments;
 				proxy_arguments.push_back(type_arg);
 				for (int i = 0; i < arguments.size(); i++) {
