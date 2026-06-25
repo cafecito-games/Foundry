@@ -34,7 +34,18 @@
 
 #include "gdscript_refactoring_types.h"
 
+#include "../gdscript_utility_functions.h"
+
+#include "core/variant/variant.h"
+
 namespace {
+
+// A bare call name that is a built-in language/Variant utility (e.g. `print`,
+// `len`, `Color8`) dispatches to engine code, not an overridable script method,
+// so it cannot mutate a script-defined member.
+bool is_global_utility_call(const StringName &p_name) {
+	return GDScriptUtilityFunctions::function_exists(p_name) || Variant::has_utility_function(p_name);
+}
 
 using DataType = GDScriptParser::DataType;
 using Node = GDScriptParser::Node;
@@ -479,6 +490,33 @@ private:
 		}
 	}
 
+	// True when `p_call` invokes a non-static *script* method on this instance,
+	// either `self.hook()` or implicit-self `hook()`. Such a method can be
+	// overridden by a subclass outside the analyzed file, and the override may
+	// mutate the inherited member with a different element type. Built-in language
+	// and Variant utilities (`print`, `len`, ...) are excluded since they dispatch
+	// to engine code that cannot touch a script member.
+	static bool is_overrideable_self_method_call(const GDScriptParser::CallNode *p_call) {
+		if (p_call == nullptr || p_call->callee == nullptr) {
+			return false;
+		}
+		if (p_call->callee->type == Node::IDENTIFIER) {
+			// Implicit-self bare call, e.g. `hook()`. A name that is not a global
+			// utility resolves to a method on this instance (own, inherited, or a
+			// constructor), which a subclass can override.
+			const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_call->callee);
+			return !is_global_utility_call(identifier->name);
+		}
+		if (p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF && callee->attribute != nullptr) {
+				return callee->attribute->source == GDScriptParser::IdentifierNode::MEMBER_FUNCTION &&
+						!callee->attribute->function_source_is_static;
+			}
+		}
+		return false;
+	}
+
 	// Treats `p_value` as a value that is consumed by the surrounding context. If
 	// the variable itself appears here (other than in one of the recognized safe
 	// read positions handled below) it has escaped and inference must stop.
@@ -536,6 +574,13 @@ private:
 				const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
 				if (member_mode && is_self_reflection_call(call)) {
 					bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
+					return;
+				}
+				if (member_mode && is_overrideable_self_method_call(call)) {
+					// A script method on this instance can be overridden by an external
+					// subclass whose override mutates the inherited member with another
+					// type, which the single-file scan cannot see.
+					bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden method");
 					return;
 				}
 				if (call->callee != nullptr && call->callee->type == Node::SUBSCRIPT) {
@@ -1086,6 +1131,33 @@ private:
 			default:
 				return is_dynamic_reflection_method(identifier->name);
 		}
+	}
+
+	// True when `p_call` invokes a non-static *script* method on this instance,
+	// either `self.hook()` or implicit-self `hook()`. Such a method can be
+	// overridden by a subclass outside the analyzed file, and the override may
+	// mutate the inherited member with a different element type. Built-in language
+	// and Variant utilities (`print`, `len`, ...) are excluded since they dispatch
+	// to engine code that cannot touch a script member.
+	static bool is_overrideable_self_method_call(const GDScriptParser::CallNode *p_call) {
+		if (p_call == nullptr || p_call->callee == nullptr) {
+			return false;
+		}
+		if (p_call->callee->type == Node::IDENTIFIER) {
+			// Implicit-self bare call, e.g. `hook()`. A name that is not a global
+			// utility resolves to a method on this instance (own, inherited, or a
+			// constructor), which a subclass can override.
+			const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_call->callee);
+			return !is_global_utility_call(identifier->name);
+		}
+		if (p_call->callee->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
+			if (callee->is_attribute && callee->base != nullptr && callee->base->type == Node::SELF && callee->attribute != nullptr) {
+				return callee->attribute->source == GDScriptParser::IdentifierNode::MEMBER_FUNCTION &&
+						!callee->attribute->function_source_is_static;
+			}
+		}
+		return false;
 	}
 
 	void scan_value(const GDScriptParser::ExpressionNode *p_value) {

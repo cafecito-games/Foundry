@@ -612,14 +612,39 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
-	TEST_CASE("Calling a method on self that does not leak the member is fine") {
+	TEST_CASE("Calling an overridable script method on self escapes the member") {
+		// A subclass outside this file can override `notify()` and mutate the
+		// inherited `_items` with a different type, so the call is not bounded.
 		InferenceFixture fixture(
 				"var _items = []\n"
 				"func add(n: int) -> void:\n"
 				"\t_items.append(n)\n"
-				"\tnotify()\n"
-				"func notify() -> void:\n"
+				"\tafter_add()\n"
+				"func after_add() -> void:\n"
 				"\tpass\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Calling a native method via self does not block inference") {
+		// A native method cannot reach a script-defined member, so it is safe.
+		InferenceFixture fixture(
+				"extends Node\n"
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n"
+				"\tself.notify_property_list_changed()\n");
+		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("A global utility call does not block inference") {
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n"
+				"\tprint(n)\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
