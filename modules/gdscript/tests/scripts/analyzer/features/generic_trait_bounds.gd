@@ -37,6 +37,9 @@ class Box[T: Damageable]:
 var sword_box: Box[Sword]
 var shield_box: Box[Shield]
 var broadsword_box: Box[BroadSword]
+# The trait itself satisfies its own bound, consistent with using it as any other type
+# argument (e.g. `Array[Damageable]`): a `Damageable`-typed slot holds conforming values.
+var trait_box: Box[Damageable]
 
 
 class SwordBoxHolder extends Box[BroadSword]:
@@ -47,4 +50,5 @@ func test():
 	print(sword_box)
 	print(shield_box)
 	print(broadsword_box)
+	print(trait_box)
 	print("generic trait bounds ok")
