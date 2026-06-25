@@ -52,7 +52,7 @@ int EditorFileSystem::nb_files_total = 0;
 EditorFileSystem::ScannedDirectory *EditorFileSystem::first_scan_root_dir = nullptr;
 
 //the name is the version, to keep compatibility with different versions of Godot
-#define CACHE_FILE_NAME "filesystem_cache10"
+#define CACHE_FILE_NAME "filesystem_cache11"
 
 int EditorFileSystemDirectory::find_file_index(const String &p_file) const {
 	for (int i = 0; i < files.size(); i++) {
@@ -456,19 +456,20 @@ void EditorFileSystem::_scan_filesystem() {
 					fc.import_group_file = split[6].strip_edges();
 					{
 						const Vector<String> &slices = split[7].split("<>");
-						ERR_CONTINUE(slices.size() < 7);
+						ERR_CONTINUE(slices.size() < 8);
 						fc.class_info.name = slices[0];
 						fc.class_info.extends = slices[1];
 						fc.class_info.icon_path = slices[2];
 						fc.class_info.is_abstract = slices[3].to_int();
 						fc.class_info.is_tool = slices[4].to_int();
+						fc.class_info.is_trait = slices[5].to_int();
 						StringName local_class_name;
 						String namespace_name;
 						ScriptServer::get_global_class_name_parts(fc.class_info.name, &local_class_name, &namespace_name);
 						fc.class_info.class_name = local_class_name;
 						fc.class_info.namespace_name = namespace_name;
-						fc.import_md5 = slices[5];
-						fc.import_dest_paths = slices[6].split("<*>");
+						fc.import_md5 = slices[6];
+						fc.import_dest_paths = slices[7].split("<*>");
 					}
 					fc.deps = split[8].strip_edges().split("<>", false);
 
@@ -1862,7 +1863,8 @@ void EditorFileSystem::_save_filesystem_cache(EditorFileSystemDirectory *p_dir, 
 		cache_string.append(file_info->import_group_file);
 		cache_string.append(String("<>").join({ file_info->class_info.name, file_info->class_info.extends,
 				file_info->class_info.icon_path, itos(file_info->class_info.is_abstract),
-				itos(file_info->class_info.is_tool), file_info->import_md5, String("<*>").join(file_info->import_dest_paths) }));
+				itos(file_info->class_info.is_tool), itos(file_info->class_info.is_trait), file_info->import_md5,
+				String("<*>").join(file_info->import_dest_paths) }));
 		cache_string.append(String("<>").join(file_info->deps));
 
 		p_file->store_line(String("::").join(cache_string));
@@ -2095,7 +2097,7 @@ EditorFileSystem::ScriptClassInfo EditorFileSystem::_get_global_script_class(con
 	ScriptClassInfo info;
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 		if (ScriptServer::get_language(i)->handles_global_class_type(p_type)) {
-			info.name = ScriptServer::get_language(i)->get_global_class_name(p_path, &info.extends, &info.icon_path, &info.is_abstract, &info.is_tool);
+			info.name = ScriptServer::get_language(i)->get_global_class_name(p_path, &info.extends, &info.icon_path, &info.is_abstract, &info.is_tool, &info.is_trait);
 			StringName local_class_name;
 			String namespace_name;
 			ScriptServer::get_global_class_name_parts(info.name, &local_class_name, &namespace_name);
@@ -2591,7 +2593,7 @@ void EditorFileSystem::_register_global_class_script(const String &p_search_path
 		return; // No lang found that can handle this global class
 	}
 
-	ScriptServer::add_global_class(p_script_update.name, p_script_update.extends, lang, p_target_path, p_script_update.is_abstract, p_script_update.is_tool);
+	ScriptServer::add_global_class(p_script_update.name, p_script_update.extends, lang, p_target_path, p_script_update.is_abstract, p_script_update.is_tool, p_script_update.is_trait);
 	EditorNode::get_editor_data().script_class_set_icon_path(p_script_update.name, p_script_update.icon_path);
 	EditorNode::get_editor_data().script_class_set_name(p_target_path, p_script_update.name);
 }

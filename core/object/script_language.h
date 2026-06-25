@@ -64,6 +64,7 @@ class ScriptServer {
 		StringName base;
 		bool is_abstract = false;
 		bool is_tool = false;
+		bool is_trait = false;
 	};
 
 	static HashMap<StringName, GlobalScriptClass> global_classes;
@@ -89,7 +90,7 @@ public:
 	static void thread_exit();
 
 	static void global_classes_clear();
-	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool);
+	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait);
 	static void remove_global_class(const StringName &p_class);
 	static void remove_global_class_by_path(const String &p_path);
 	static void get_global_class_name_parts(const StringName &p_class, StringName *r_class_name,
@@ -102,6 +103,7 @@ public:
 	static StringName get_global_class_native_base(const String &p_class);
 	static bool is_global_class_abstract(const String &p_class);
 	static bool is_global_class_tool(const String &p_class);
+	static bool is_global_class_trait(const String &p_class);
 	static void get_global_class_list(LocalVector<StringName> &r_global_classes);
 	static void get_inheriters_list(const StringName &p_base_type, List<StringName> *r_classes);
 	static void get_indirect_inheriters_list(const StringName &p_base_type, List<StringName> *r_classes);

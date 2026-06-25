@@ -313,7 +313,9 @@ void ScriptServer::init_languages() {
 				if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
 					continue;
 				}
-				add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
+				// `is_trait` was added later, so it may be absent in older caches.
+				const bool is_trait = c.has("is_trait") && c["is_trait"];
+				add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
 			}
 			ProjectSettings::get_singleton()->clear("_global_script_classes");
 		}
@@ -325,7 +327,9 @@ void ScriptServer::init_languages() {
 			if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
 				continue;
 			}
-			add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
+			// `is_trait` was added later, so it may be absent in older caches.
+			const bool is_trait = c.has("is_trait") && c["is_trait"];
+			add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
 		}
 	}
 
@@ -459,7 +463,7 @@ void ScriptServer::get_global_class_name_parts(const StringName &p_class, String
 	}
 }
 
-void ScriptServer::add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool) {
+void ScriptServer::add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait) {
 	ERR_FAIL_COND_MSG(p_class == p_base || (global_classes.has(p_base) && get_global_class_native_base(p_base) == p_class), "Cyclic inheritance in script class.");
 
 	GlobalScriptClass *existing = global_classes.getptr(p_class);
@@ -469,12 +473,14 @@ void ScriptServer::add_global_class(const StringName &p_class, const StringName 
 				existing->path != p_path ||
 				existing->language != p_language ||
 				existing->is_abstract != p_is_abstract ||
-				existing->is_tool != p_is_tool) {
+				existing->is_tool != p_is_tool ||
+				existing->is_trait != p_is_trait) {
 			existing->base = p_base;
 			existing->path = p_path;
 			existing->language = p_language;
 			existing->is_abstract = p_is_abstract;
 			existing->is_tool = p_is_tool;
+			existing->is_trait = p_is_trait;
 			inheriters_cache_dirty = true;
 			global_classes_version++;
 		}
@@ -486,6 +492,7 @@ void ScriptServer::add_global_class(const StringName &p_class, const StringName 
 		g.base = p_base;
 		g.is_abstract = p_is_abstract;
 		g.is_tool = p_is_tool;
+		g.is_trait = p_is_trait;
 		global_classes[p_class] = g;
 		inheriters_cache_dirty = true;
 		global_classes_version++;
@@ -586,6 +593,11 @@ bool ScriptServer::is_global_class_tool(const String &p_class) {
 	return global_classes[p_class].is_tool;
 }
 
+bool ScriptServer::is_global_class_trait(const String &p_class) {
+	ERR_FAIL_COND_V(!global_classes.has(p_class), false);
+	return global_classes[p_class].is_trait;
+}
+
 // This function only sorts items added by this function.
 // If `r_global_classes` is not empty before calling and a global sort is needed, caller must handle that separately.
 void ScriptServer::get_global_class_list(LocalVector<StringName> &r_global_classes) {
@@ -625,6 +637,7 @@ void ScriptServer::save_global_classes() {
 		d["icon"] = class_icons.get(class_name, "");
 		d["is_abstract"] = global_class.is_abstract;
 		d["is_tool"] = global_class.is_tool;
+		d["is_trait"] = global_class.is_trait;
 		gcarr.push_back(d);
 	}
 	ProjectSettings::get_singleton()->store_global_class_list(gcarr);
