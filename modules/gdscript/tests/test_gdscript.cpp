@@ -1575,12 +1575,12 @@ TEST_CASE("[Modules][GDScript] Scripts reflect declared generic type parameters"
 		CHECK_EQ(key_entry->get_parameter_name(), SNAME("K"));
 		CHECK_EQ(key_entry->get_index(), 0);
 		CHECK_EQ(key_entry->get_scope(), SNAME("class"));
-		CHECK_FALSE(key_entry->has_bound());
+		CHECK_FALSE(key_entry->is_bounded());
 		CHECK(key_entry->get_bound().is_empty());
 
 		CHECK_EQ(value_entry->get_parameter_name(), SNAME("V"));
 		CHECK_EQ(value_entry->get_index(), 1);
-		CHECK(value_entry->has_bound());
+		CHECK(value_entry->is_bounded());
 		const Dictionary bound_info = value_entry->get_bound();
 		CHECK_EQ(int(bound_info["type"]), int(Variant::OBJECT));
 		CHECK_EQ(StringName(bound_info["class_name"]), SNAME("RefCounted"));

@@ -92,13 +92,13 @@ void GDScriptTypeParameter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_parameter_name"), &GDScriptTypeParameter::get_parameter_name);
 	ClassDB::bind_method(D_METHOD("get_index"), &GDScriptTypeParameter::get_index);
 	ClassDB::bind_method(D_METHOD("get_scope"), &GDScriptTypeParameter::get_scope);
-	ClassDB::bind_method(D_METHOD("has_bound"), &GDScriptTypeParameter::has_bound);
+	ClassDB::bind_method(D_METHOD("is_bounded"), &GDScriptTypeParameter::is_bounded);
 	ClassDB::bind_method(D_METHOD("get_bound"), &GDScriptTypeParameter::get_bound);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_parameter_name");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "index", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_index");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "scope", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_scope");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "has_bound", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "has_bound");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "has_bound", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "is_bounded");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bound", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_bound");
 }
 

@@ -77,7 +77,7 @@ public:
 	StringName get_parameter_name() const { return name; }
 	int get_index() const { return index; }
 	StringName get_scope() const { return scope; }
-	bool has_bound() const { return _has_bound; }
+	bool is_bounded() const { return _has_bound; }
 	Dictionary get_bound() const { return bound; }
 };
 

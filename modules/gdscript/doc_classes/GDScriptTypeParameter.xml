@@ -12,7 +12,7 @@
 		<member name="bound" type="Dictionary" setter="" getter="get_bound">
 			The declared upper bound of the parameter, in the same shape as the entries returned by [method Script.get_script_property_list]. Empty when [member has_bound] is [code]false[/code].
 		</member>
-		<member name="has_bound" type="bool" setter="" getter="has_bound">
+		<member name="has_bound" type="bool" setter="" getter="is_bounded">
 			Whether the parameter declares an upper bound (for example [code]T: Resource[/code]). See [member bound].
 		</member>
 		<member name="index" type="int" setter="" getter="get_index">
