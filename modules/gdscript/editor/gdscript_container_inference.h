@@ -71,8 +71,8 @@ public:
 
 	struct Result {
 		Outcome outcome = NOT_APPLICABLE;
-		// Valid only when `outcome == INFERRED`: the bare `Array` type augmented
-		// with the inferred element, e.g. `Array[int]`.
+		// Valid only when `outcome == INFERRED`: the bare container type augmented
+		// with the inferred element(s), e.g. `Array[int]` or `Dictionary[String, int]`.
 		GDScriptParser::DataType element_type;
 		// Human-readable explanation for the skipped outcomes (MIXED / ESCAPES /
 		// UNPROVABLE), suitable for the wizard's "skipped and reported" surface.
@@ -83,6 +83,17 @@ public:
 	// `p_function_body` (the declaring function's top-level suite). `p_decl`
 	// must be a local variable declared somewhere inside that body.
 	static Result infer_local_array_element_type(
+			const GDScriptParser::VariableNode *p_decl,
+			const GDScriptParser::SuiteNode *p_function_body);
+
+	// Infers the key and value types of a bare `Dictionary` local from its usages
+	// within `p_function_body`, mirroring the soundness model of the array path:
+	// the initializer must be a dictionary literal, the variable must never escape,
+	// and every observed mutation must contribute key/value types drawn from a
+	// directly-observed argument. On success, `Result::element_type` is the bare
+	// `Dictionary` augmented with both the key (index 0) and value (index 1) types,
+	// e.g. `Dictionary[String, int]`.
+	static Result infer_local_dictionary_element_type(
 			const GDScriptParser::VariableNode *p_decl,
 			const GDScriptParser::SuiteNode *p_function_body);
 };

@@ -1077,16 +1077,24 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		return true;
 	}
 
-	// For a bare local `Array` literal, try to recover a concrete element type
-	// from how the variable is used in its function, upgrading `Array` to
-	// `Array[T]`. Anything the inference cannot prove falls back to the
-	// analyzer's own type, so this never narrows a declaration unsafely.
+	// For a bare local `Array` or `Dictionary` literal, try to recover concrete
+	// element type(s) from how the variable is used in its function, upgrading
+	// `Array` to `Array[T]` or `Dictionary` to `Dictionary[K, V]`. Anything the
+	// inference cannot prove falls back to the analyzer's own type, so this never
+	// narrows a declaration unsafely.
 	GDScriptParser::DataType effective_type = p_assignable->get_datatype();
 	if (p_function_body != nullptr && p_assignable->type == GDScriptParser::Node::VARIABLE) {
-		const GDScriptContainerInference::Result inference = GDScriptContainerInference::infer_local_array_element_type(
-				static_cast<const GDScriptParser::VariableNode *>(p_assignable), p_function_body);
-		if (inference.outcome == GDScriptContainerInference::INFERRED) {
-			effective_type = inference.element_type;
+		const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_assignable);
+		const GDScriptContainerInference::Result array_inference = GDScriptContainerInference::infer_local_array_element_type(
+				variable, p_function_body);
+		if (array_inference.outcome == GDScriptContainerInference::INFERRED) {
+			effective_type = array_inference.element_type;
+		} else {
+			const GDScriptContainerInference::Result dictionary_inference = GDScriptContainerInference::infer_local_dictionary_element_type(
+					variable, p_function_body);
+			if (dictionary_inference.outcome == GDScriptContainerInference::INFERRED) {
+				effective_type = dictionary_inference.element_type;
+			}
 		}
 	}
 
