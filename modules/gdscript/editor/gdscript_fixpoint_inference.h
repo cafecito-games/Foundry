@@ -59,6 +59,14 @@ struct FixpointSkipped {
 	String reason;
 };
 
+// A file the run could not analyze (parse/analyze error, unresolved dependency), so its
+// declarations are invisible to candidate collection. Reported explicitly so an
+// unanalyzable file is never mistaken for a clean, fully-typed one.
+struct FixpointUnanalyzed {
+	String path;
+	String reason;
+};
+
 struct FixpointInferenceResult {
 	// True only means the run completed without a fatal error; it does not imply any
 	// annotations were applied. Consult changed_files and skipped for actual results.
@@ -74,6 +82,9 @@ struct FixpointInferenceResult {
 	bool converged = false;
 	Vector<FixpointFileChange> changed_files;
 	Vector<FixpointSkipped> skipped;
+	// Files whose analysis failed, so they contributed no candidates. Distinct from skipped
+	// (which are declarations the run could analyze but chose not to type).
+	Vector<FixpointUnanalyzed> unanalyzed_files;
 };
 
 // Each pass routes its accepted rewrites through GDScriptVerificationHarness::verify,
