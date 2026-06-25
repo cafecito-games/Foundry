@@ -8590,6 +8590,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	GDScriptParser::ClassNode *base_class = p_base_type.class_type;
 	GDScriptParser::ClassNode *original_base_class = base_class;
 	GDScriptParser::FunctionNode *found_function = nullptr;
+	// The class that declares `found_function`, used to specialize a generic signature against the
+	// (possibly more-derived) receiver type so inherited `T`-typed parameters/returns become concrete.
+	GDScriptParser::ClassNode *found_in_class = nullptr;
 
 	while (found_function == nullptr && base_class != nullptr) {
 		if (base_class->has_member(function_name)) {
@@ -8605,6 +8608,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 			resolve_class_member(base_class, function_name, p_source);
 			found_function = member.function;
+			found_in_class = base_class;
 		}
 
 		resolve_class_inheritance(base_class, p_source);
@@ -8632,6 +8636,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 			resolve_class_member(trait, function_name, p_source);
 			found_function = member.function;
+			found_in_class = trait;
 			break;
 		}
 	}
@@ -8652,8 +8657,11 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (found_function->is_coroutine) {
 			r_method_flags.set_flag(METHOD_FLAG_ASYNC);
 		}
+		// Specialize the signature against the receiver so inherited or directly-applied type
+		// arguments substitute `T`-typed parameters and return into concrete types.
+		const GDScriptParser::DataType specialized_base = specialize_ancestor_type(p_base_type, found_in_class);
 		for (int i = 0; i < found_function->parameters.size(); i++) {
-			r_par_types.push_back(found_function->parameters[i]->get_datatype());
+			r_par_types.push_back(substitute_member_type(found_function->parameters[i]->get_datatype(), specialized_base));
 			if (found_function->parameters[i]->initializer != nullptr) {
 				r_default_arg_count++;
 			}
@@ -8661,7 +8669,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (found_function->is_vararg()) {
 			r_method_flags.set_flag(METHOD_FLAG_VARARG);
 		}
-		r_return_type = p_is_constructor ? p_base_type : found_function->get_datatype();
+		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base);
 		r_return_type.is_meta_type = false;
 		r_return_type.is_coroutine = found_function->is_coroutine;
 

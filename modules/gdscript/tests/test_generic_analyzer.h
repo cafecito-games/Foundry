@@ -1170,6 +1170,50 @@ TEST_CASE("[Modules][GDScript] Analyzer substitutes an inherited method return t
 	CHECK(type.builtin_type == Variant::INT);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer substitutes a method return on a specialized receiver") {
+	GDScriptParser parser;
+	// A direct call on a `Box[int]` receiver returns the substituted concrete type.
+	const String source =
+			"class Box[T]:\n"
+			"\tvar value: T\n"
+			"\tfunc get_value() -> T:\n"
+			"\t\treturn value\n"
+			"func test() -> void:\n"
+			"\tvar box: Box[int]\n"
+			"\tvar got := box.get_value()\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const GDScriptParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const GDScriptParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const GDScriptParser::DataType type = got->get_datatype();
+	CHECK(type.kind == GDScriptParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer substitutes a method parameter on a specialized receiver") {
+	GDScriptParser parser;
+	// Passing a wrong-typed argument to a `T`-typed parameter of a `Box[int]` is rejected.
+	const String source =
+			"class Box[T]:\n"
+			"\tfunc put(v: T) -> void:\n"
+			"\t\tpass\n"
+			"func test() -> void:\n"
+			"\tvar box: Box[int]\n"
+			"\tbox.put(\"not an int\")\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer rejects empty type-argument brackets in an extends clause") {
 	GDScriptParser parser;
 	const String source =
