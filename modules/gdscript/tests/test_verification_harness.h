@@ -378,6 +378,41 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		REQUIRE(result.ok);
 		CHECK_GT(result.violations.size(), 0);
 		CHECK_EQ(result.violations[0].path, path);
+		// A Variant-boundary violation carries the category whose suggested fix is an
+		// explicit cast.
+		CHECK_EQ(result.violations[0].category, StrictViolationCategory::VARIANT_BOUNDARY);
+		CHECK_EQ(StrictViolation::category_name(result.violations[0].category), "variant-boundary");
+
+		// File untouched.
+		CHECK_EQ(FileAccess::get_file_as_string(path), source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Strict preview categorizes nullable violations") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// A function returning a nullable `int?` whose result lands in a non-nullable
+		// `int` local is allowed by default analysis but is a strict_null_checks error.
+		const String path = "res://refactor/verify_strict_null.gd";
+		const String source =
+				"func maybe() -> int?:\n"
+				"\treturn null\n"
+				"func use() -> void:\n"
+				"\tvar x: int = maybe()\n";
+		TemporaryScriptFile file(path, source);
+
+		VerificationOptions options;
+		options.strict_null_checks = true;
+		StrictPreviewResult result = GDScriptVerificationHarness::preview_strict({ path }, options);
+		REQUIRE(result.ok);
+		CHECK_GT(result.violations.size(), 0);
+		CHECK_EQ(result.violations[0].category, StrictViolationCategory::NULLABLE);
+		CHECK_EQ(StrictViolation::category_name(result.violations[0].category), "nullable");
 
 		// File untouched.
 		CHECK_EQ(FileAccess::get_file_as_string(path), source);

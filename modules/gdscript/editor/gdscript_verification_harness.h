@@ -70,11 +70,34 @@ struct VerificationResult {
 	int accepted_error_count = 0; // Total after applying all accepted edits.
 };
 
+// The kind of strict-mode rule a violation breaks, which determines the category of
+// fix the migration report suggests for it.
+enum class StrictViolationCategory {
+	UNKNOWN,
+	NULLABLE, // strict_null_checks: a nullable value reaches a non-nullable boundary.
+	VARIANT_BOUNDARY, // strict_dynamic_checks: a Variant value reaches a typed boundary.
+};
+
 struct StrictViolation {
 	String path;
 	int line = -1;
 	int column = -1;
 	String message;
+	StrictViolationCategory category = StrictViolationCategory::UNKNOWN;
+
+	// Stable, human-readable name of the suggested fix category for this violation.
+	// Variant-boundary violations are satisfiable by the insert-explicit-cast refactor;
+	// nullable violations need a null guard or a nullable annotation (manual for now).
+	static String category_name(StrictViolationCategory p_category) {
+		switch (p_category) {
+			case StrictViolationCategory::NULLABLE:
+				return "nullable";
+			case StrictViolationCategory::VARIANT_BOUNDARY:
+				return "variant-boundary";
+			default:
+				return "unknown";
+		}
+	}
 };
 
 struct StrictPreviewResult {
