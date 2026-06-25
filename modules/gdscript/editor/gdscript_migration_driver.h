@@ -1,0 +1,91 @@
+/**************************************************************************/
+/*  gdscript_migration_driver.h                                           */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#pragma once
+
+#ifdef TOOLS_ENABLED
+
+#include "gdscript_fixpoint_inference.h"
+#include "gdscript_project_scan.h"
+
+#include "core/string/ustring.h"
+#include "core/templates/vector.h"
+
+// Options for a full migration run: how the project is enumerated (scan stage) and how
+// annotations are inferred and verified (fixpoint stage). Defaults match the safe-by-default
+// stance of the wizard: third-party code is excluded and strict modes stay off.
+struct MigrationDriverOptions {
+	ProjectScanOptions scan;
+	FixpointInferenceOptions inference;
+};
+
+// The combined report of a single migration run, joining the scan stage's honest account of
+// what was considered with the fixpoint stage's account of what was changed and skipped. The
+// edit set (changed_files) is the stable, verified result the wizard previews and commits.
+struct MigrationDriverResult {
+	// True only means the run completed without a fatal error; it does not imply any
+	// annotations were applied. Consult changed_files and skipped for actual results.
+	bool ok = false;
+	String error_message; // Set only on a fatal, no-op failure (unreadable root or file).
+
+	// Scan stage.
+	Vector<String> scanned_files; // Every `.gd` the driver considered, deterministically ordered.
+	Vector<String> skipped_directories; // Directories pruned by scan (addons, .gdignore, nested), ordered.
+
+	// Inference stage (mirrors the fixpoint report so callers need not unpack two structs).
+	int iterations = 0; // Fixpoint passes, including the final confirming pass.
+	int total_annotations_applied = 0;
+	// True means the fixpoint reached a real stable point (a pass applied nothing). False means
+	// the iteration bound stopped the loop early, so the edit set may not yet be complete.
+	bool converged = false;
+	Vector<FixpointFileChange> changed_files; // One entry per file the run rewrote.
+	Vector<FixpointSkipped> skipped; // Declarations left untyped, each with a reason.
+};
+
+// The dependency-ordered migration driver: the single pipeline that turns a project root into a
+// stable, verified edit set. It enumerates the project with GDScriptProjectScan (excluding
+// third-party code unless opted in), then drives Add Type Annotation to a fixpoint over the
+// discovered files with GDScriptFixpointInference, which collects candidates per pass and routes
+// every accepted rewrite through the verification harness before committing it. Both stages are
+// deterministic (sorted scan, fixpoint ordering), so a given project yields the same edit set on
+// every run.
+class GDScriptMigrationDriver {
+public:
+	// Runs the full scan -> fixpoint pipeline rooted at p_root (a `res://` path or any path
+	// DirAccess can open). Mutates files on disk and global GDScriptCache state, so it is NOT
+	// safe to call concurrently with a live editing session or another run(). Returns a fatal
+	// error (ok=false) only when the root cannot be enumerated or a discovered file cannot be
+	// read; an empty project is a successful no-op.
+	static MigrationDriverResult run(
+			const String &p_root,
+			const MigrationDriverOptions &p_options = MigrationDriverOptions());
+};
+
+#endif // TOOLS_ENABLED
