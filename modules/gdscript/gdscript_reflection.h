@@ -71,5 +71,7 @@ protected:
 
 public:
 	void set_reflection(const Ref<GDScriptReflection> &p_reflection) { reflection = p_reflection; }
-	GDScriptReflection *get_reflection() const { return reflection.ptr(); }
+	// Returns a Ref (not a raw pointer) so the binding carries
+	// PROPERTY_HINT_RESOURCE_TYPE for the reference return, as ClassDB expects.
+	Ref<GDScriptReflection> get_reflection() const { return reflection; }
 };
