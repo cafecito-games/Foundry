@@ -487,13 +487,19 @@ struct GDScriptUtilityFunctionsDefinitions {
 		if (script_type) {
 			bool result = false;
 			if (value_object->get_script_instance()) {
-				Script *script_ptr = value_object->get_script_instance()->get_script().ptr();
-				while (script_ptr) {
-					if (script_ptr == script_type) {
-						result = true;
-						break;
+				Ref<Script> script_ref = value_object->get_script_instance()->get_script();
+				GDScript *gdscript_type = Object::cast_to<GDScript>(script_type);
+				if (gdscript_type != nullptr && gdscript_type->is_trait_type()) {
+					result = script_ref.is_valid() && script_ref->has_script_trait(gdscript_type->get_trait_type_name());
+				} else {
+					Script *script_ptr = script_ref.ptr();
+					while (script_ptr) {
+						if (script_ptr == script_type) {
+							result = true;
+							break;
+						}
+						script_ptr = script_ptr->get_base_script().ptr();
 					}
-					script_ptr = script_ptr->get_base_script().ptr();
 				}
 			}
 			*r_ret = result;
