@@ -2067,6 +2067,15 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		static_context = p_function->is_static;
 	}
 
+	// Resolve type-parameter bounds as part of the signature (in the function's own scope) so a call
+	// site can enforce a generic-method bound even when the bounded parameter appears only in the
+	// body, whose resolution may not have run yet.
+	for (GDScriptParser::TypeParameterNode *type_parameter : p_function->type_parameters) {
+		if (type_parameter != nullptr && type_parameter->bound != nullptr) {
+			resolve_datatype(type_parameter->bound);
+		}
+	}
+
 	MethodInfo method_info;
 	method_info.name = function_name;
 	if (p_function->is_static) {
@@ -4642,8 +4651,11 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			// is a genuine call on an index expression and stays an error.
 			GDScriptParser::FunctionNode *generic_method = nullptr;
 			if (subscript->base->type == GDScriptParser::Node::IDENTIFIER) {
-				const StringName &base_name = static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name;
-				const bool shadowed_by_local = parser->current_suite != nullptr && parser->current_suite->has_local(base_name);
+				GDScriptParser::IdentifierNode *base_identifier = static_cast<GDScriptParser::IdentifierNode *>(subscript->base);
+				const StringName &base_name = base_identifier->name;
+				// A local variable or parameter named like the method shadows it, so `name[...]()` is
+				// an index call, not a generic application. The identifier carries its enclosing suite.
+				const bool shadowed_by_local = base_identifier->suite != nullptr && base_identifier->suite->has_local(base_name);
 				if (!shadowed_by_local) {
 					for (GDScriptParser::ClassNode *lookup_class = parser->current_class; lookup_class != nullptr && generic_method == nullptr; lookup_class = lookup_class->base_type.class_type) {
 						if (lookup_class->has_member(base_name)) {

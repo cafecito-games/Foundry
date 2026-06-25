@@ -907,6 +907,57 @@ TEST_CASE("[Modules][GDScript] Analyzer unifies a type parameter with the same t
 	CHECK(analyzer.analyze() == OK);
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer treats a shadowed generic-method name as an index call") {
+	GDScriptParser parser;
+	// A local `gen` shadows the generic method `gen`, so `gen[0]()` is a call on an index of the
+	// local array, not a generic application.
+	const String source =
+			"func gen[T](v: T) -> T:\n"
+			"\treturn v\n"
+			"func test() -> void:\n"
+			"\tvar gen := [10, 20]\n"
+			"\tvar _x = gen[0]()\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_expression_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("Cannot call on an expression")) {
+			found_expression_error = true;
+			break;
+		}
+	}
+	CHECK(found_expression_error);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer enforces a body-only method bound regardless of source order") {
+	GDScriptParser parser;
+	// `T: RefCounted` appears only in the body of `use_t`, which is declared after its caller. The
+	// bound must still be enforced against the explicit `[int]`.
+	const String source =
+			"func test() -> void:\n"
+			"\tuse_t[int]()\n"
+			"func use_t[T: RefCounted]() -> void:\n"
+			"\tvar _x: T\n";
+	const Error parse_error = parser.parse(source, "user://test.gd", false);
+	REQUIRE(parse_error == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_bound_error = false;
+	for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("bound")) {
+			found_bound_error = true;
+			break;
+		}
+	}
+	CHECK(found_bound_error);
+}
+
 TEST_CASE("[Modules][GDScript] Analyzer keeps an unbounded type-parameter value dynamic") {
 	GDScriptParser parser;
 	// Without a bound, `T` exposes no members, so member access stays dynamic rather than
