@@ -2419,6 +2419,66 @@ void GDScriptCompiler::_collect_flattened_trait_members(const GDScriptParser::Cl
 	}
 }
 
+// Records the abstract method requirements contributed by the traits `p_class`
+// (transitively) uses but does not flatten into its own members. Abstract trait
+// members are contracts the implementer satisfies, not bodies that are copied in,
+// and at runtime a class retains only trait identity names — so without this a
+// dynamic proxy of a sub-trait would miss requirements inherited through a `uses`
+// chain and let those calls fall through to native dispatch. A requirement is
+// skipped when a concrete member (declared by the implementer or a base, or a
+// concrete trait member flattened in) already provides it, matching the shadowing
+// rules in `_collect_flattened_trait_members`. Diamond-reached requirements are
+// recorded once; they share the same declared signature, so the first writer wins.
+void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser::ClassNode *p_class, GDScript *p_script) {
+	p_script->abstract_trait_requirements.clear();
+	if (p_class->resolved_traits.is_empty()) {
+		return;
+	}
+
+	HashSet<StringName> provided;
+	for (const GDScriptParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
+		for (const GDScriptParser::ClassNode::Member &member : owner->members) {
+			const StringName name = member.get_name();
+			if (name != StringName()) {
+				provided.insert(name);
+			}
+		}
+	}
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (_is_flattenable_trait_member(member)) {
+				const StringName name = member.get_name();
+				if (name != StringName()) {
+					provided.insert(name);
+				}
+			}
+		}
+	}
+
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const GDScriptParser::FunctionNode *function = member.function;
+			if (function == nullptr || !function->is_abstract) {
+				continue;
+			}
+			const StringName name = member.get_name();
+			if (name == StringName() || provided.has(name) || p_script->abstract_trait_requirements.has(name)) {
+				continue;
+			}
+			p_script->abstract_trait_requirements.insert(name, _gdtype_from_datatype(function->get_datatype(), p_script));
+		}
+	}
+}
+
 GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class, const GDScriptParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda) {
 	r_error = OK;
 	CodeGen codegen;
@@ -2869,6 +2929,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->base = Ref<GDScript>();
 	p_script->members.clear();
 	p_script->script_trait_list.clear();
+	p_script->abstract_trait_requirements.clear();
 	p_script->type_parameters.clear();
 
 	// This makes possible to clear script constants and member_functions without heap-use-after-free errors.
@@ -3001,6 +3062,10 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 			p_script->script_trait_list.push_back(trait_name);
 		}
 	}
+
+	// Record abstract requirements inherited through `uses` so a dynamic proxy of
+	// this type intercepts them instead of falling through to native dispatch.
+	_collect_trait_abstract_requirements(p_class, p_script);
 
 	// Record the class's declared generic type parameters so they survive to runtime reflection.
 	p_script->type_parameters.clear();

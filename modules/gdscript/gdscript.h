@@ -157,6 +157,13 @@ private:
 	HashMap<StringName, MethodInfo> _signals;
 	// Direct trait identities recorded for this script. Transitive script-inheritance traits are computed at query time.
 	Vector<StringName> script_trait_list;
+	// Abstract requirements contributed by the traits this class (transitively) uses but does not
+	// flatten into `member_functions` (abstract trait members are contracts, not bodies). Keyed by
+	// method name, valued by the declared return type, so a dynamic proxy can intercept every method
+	// in `T`'s contract — including requirements inherited through a `uses` chain — and coerce the
+	// handler's return. Names also defined as a real `member_function` (concrete or own abstract) are
+	// excluded, so a compiled function always takes precedence.
+	HashMap<StringName, GDScriptDataType> abstract_trait_requirements;
 	// Generic type parameters declared directly on this class (`class Box[T]`). Empty for non-generic classes.
 	Vector<TypeParameter> type_parameters;
 	Dictionary rpc_config;
@@ -313,6 +320,7 @@ public:
 	const Ref<GDScriptNativeClass> &get_native() const { return native; }
 
 	_FORCE_INLINE_ const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
+	_FORCE_INLINE_ const HashMap<StringName, GDScriptDataType> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
 	_FORCE_INLINE_ const HashMap<GDScriptFunction *, LambdaInfo> &get_lambda_info() const { return lambda_info; }
 
 	_FORCE_INLINE_ const GDScriptFunction *get_implicit_initializer() const { return implicit_initializer; }

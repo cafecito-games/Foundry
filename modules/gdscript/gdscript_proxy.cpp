@@ -117,6 +117,31 @@ GDScriptFunction *GDScriptProxyInstance::_find_contract_function(const StringNam
 	return nullptr;
 }
 
+bool GDScriptProxyInstance::_resolve_contract_return_type(const StringName &p_method, GDScriptDataType &r_return_type) const {
+	// A compiled function always wins: it covers the target's own methods, inherited
+	// methods, and concrete trait methods flattened in (the latter satisfy any
+	// same-named abstract requirement, so they take precedence over it).
+	const GDScriptFunction *contract_function = _find_contract_function(p_method);
+	if (contract_function != nullptr) {
+		r_return_type = contract_function->get_return_type();
+		return true;
+	}
+
+	// Otherwise this may be an abstract requirement contributed by a `uses`-ed trait
+	// (possibly transitively). Each class along the base chain records its own such
+	// requirements, so walk the chain exactly as `_find_contract_function` does.
+	const GDScript *script = proxy_script.ptr();
+	while (script) {
+		HashMap<StringName, GDScriptDataType>::ConstIterator element = script->get_abstract_trait_requirements().find(p_method);
+		if (element) {
+			r_return_type = element->value;
+			return true;
+		}
+		script = script->get_base().ptr();
+	}
+	return false;
+}
+
 Variant GDScriptProxyInstance::_coerce_handler_return(const GDScriptDataType &p_return_type, const StringName &p_method_name, const Variant &p_value) const {
 	// `void`: the declared return is `null`, so the handler's value is ignored.
 	if (p_return_type.kind == GDScriptDataType::BUILTIN && p_return_type.builtin_type == Variant::NIL) {
@@ -161,19 +186,17 @@ Variant GDScriptProxyInstance::_coerce_handler_return(const GDScriptDataType &p_
 }
 
 Variant GDScriptProxyInstance::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
-	GDScriptFunction *contract_function = _find_contract_function(p_method);
-	if (contract_function == nullptr) {
+	// Snapshot the declared return type before running the handler: handler code
+	// is arbitrary and could reload `T`, freeing the live GDScriptFunction. Pin
+	// strong references to any script types in the copy so it stays self-contained
+	// even if the originating script is reloaded mid-call.
+	GDScriptDataType return_type;
+	if (!_resolve_contract_return_type(p_method, return_type)) {
 		// Not part of `T`'s contract: defer to native `Object`/`RefCounted`
 		// built-ins so `get_instance_id`, `connect`, refcounting, etc. work.
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
-
-	// Snapshot the declared return type before running the handler: handler code
-	// is arbitrary and could reload `T`, freeing the live GDScriptFunction. Pin
-	// strong references to any script types in the copy so it stays self-contained
-	// even if the originating script is reloaded mid-call.
-	GDScriptDataType return_type = contract_function->get_return_type();
 	_pin_script_type_refs(return_type);
 
 	if (_is_delegating()) {
@@ -280,7 +303,8 @@ void GDScriptProxyInstance::_configure_delegation(const Variant &p_target, const
 }
 
 bool GDScriptProxyInstance::has_method(const StringName &p_method) const {
-	return _find_contract_function(p_method) != nullptr;
+	GDScriptDataType return_type;
+	return _resolve_contract_return_type(p_method, return_type);
 }
 
 void GDScriptProxyInstance::get_method_list(List<MethodInfo> *p_list) const {

@@ -71,18 +71,24 @@ class GDScriptProxyInstance : public ScriptInstance {
 	void _init_property_store();
 
 	// Returns the GDScriptFunction declared for `p_method` somewhere in
-	// `proxy_script`'s class/trait/abstract chain, or nullptr if `p_method` is not
-	// part of `T`'s contract. Mirrors how `GDScriptInstance::callp` walks the base
-	// chain, but the function is used only for its declared signature (return type)
-	// — its body is never executed.
+	// `proxy_script`'s class/trait/abstract chain, or nullptr if no compiled function
+	// provides it. Mirrors how `GDScriptInstance::callp` walks the base chain, but the
+	// function is used only for its declared signature (return type) — its body is
+	// never executed.
 	//
 	// Covers the target's own declared methods (abstract + concrete), methods
 	// inherited through the GDScript base chain, and concrete methods flattened in
-	// from applied traits. Abstract requirements contributed transitively by a
-	// trait the target itself `uses` are not flattened into `member_functions` and
-	// are therefore not yet part of the scanned contract; resolving the full trait
-	// requirement set is tracked alongside trait conformance (#186).
+	// from applied traits. Abstract requirements contributed transitively by `uses`-ed
+	// traits are not flattened into `member_functions`; those are resolved separately
+	// via `_resolve_contract_return_type` reading `abstract_trait_requirements`.
 	GDScriptFunction *_find_contract_function(const StringName &p_method) const;
+
+	// Resolves whether `p_method` is part of `T`'s contract and, if so, its declared
+	// return type. A compiled member function (own/inherited/flattened-in concrete or
+	// own abstract) wins; otherwise the transitive abstract trait requirements are
+	// consulted. Returns false for names outside the contract, which then fall through
+	// to native `RefCounted`/`Object` dispatch.
+	bool _resolve_contract_return_type(const StringName &p_method, GDScriptDataType &r_return_type) const;
 
 	// Coerces the handler's return value to the intercepted method's declared
 	// return type: ignored for `void`, passed through for untyped/`Variant`, and

@@ -1530,6 +1530,7 @@ void GDScript::clear() {
 	static_variables.clear();
 	static_variables_indices.clear();
 	script_trait_list.clear();
+	abstract_trait_requirements.clear();
 	type_parameters.clear();
 	_is_trait_type = false;
 	trait_type_name = StringName();

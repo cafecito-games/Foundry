@@ -541,6 +541,76 @@ TEST_CASE("[Modules][GDScript][Proxy] is / trait conformance") {
 	CHECK(reaches_base);
 }
 
+TEST_CASE("[Modules][GDScript][Proxy] Transitive abstract trait requirements are intercepted") {
+	ScopedProxyLanguage language;
+
+	// `Child` flattens nothing abstract from the traits it (transitively) uses, and
+	// at runtime only retains trait identity names. A proxy of `Child` must still
+	// intercept the abstract requirements contributed by `Middle` and `Base`, not
+	// just `Child`'s own `child_required`. A diamond (`Wide uses Left, Right`, both
+	// of which `use Base`) must reach the shared requirement exactly once.
+	const char *source =
+			"trait Base:\n"
+			"\t@abstract func base_required() -> int\n"
+			"\n"
+			"trait Middle uses Base:\n"
+			"\t@abstract func middle_required() -> int\n"
+			"\n"
+			"trait Child uses Middle:\n"
+			"\t@abstract func child_required() -> int\n"
+			"\n"
+			"trait Left uses Base:\n"
+			"\t@abstract func left_required() -> int\n"
+			"\n"
+			"trait Right uses Base:\n"
+			"\t@abstract func right_required() -> int\n"
+			"\n"
+			"trait Wide uses Left, Right:\n"
+			"\t@abstract func wide_required() -> int\n"
+			"\n"
+			"class Recorder:\n"
+			"\tvar calls: Array = []\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\tcalls.append(str(method_name))\n"
+			"\t\treturn 7\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> child = get_subclass(script, "Child");
+	Ref<GDScript> wide = get_subclass(script, "Wide");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(child.is_valid());
+	REQUIRE(child->is_trait_type());
+	REQUIRE(wide.is_valid());
+
+	Callable::CallError construct_error;
+	Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+	REQUIRE(construct_error.error == Callable::CallError::CALL_OK);
+	Object *recorder = recorder_ref;
+
+	const auto check_intercepts = [&](const Ref<GDScript> &p_type, const Vector<String> &p_methods) {
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(p_type, Callable(recorder, "handle"), error_message);
+		REQUIRE_MESSAGE(proxy.is_valid(), error_message.utf8().get_data());
+		ScriptInstance *instance = proxy->get_script_instance();
+		for (const String &method : p_methods) {
+			const StringName method_name = method;
+			CHECK(instance->has_method(method_name));
+			Callable::CallError error;
+			Variant result = instance->callp(method_name, nullptr, 0, error);
+			CHECK_MESSAGE(error.error == Callable::CallError::CALL_OK, method.utf8().get_data());
+			CHECK(result == Variant(7));
+		}
+	};
+
+	// Chain: a proxy of `Child` intercepts requirements transitively from `Middle`
+	// and `Base`, with `int` returns coerced through the handler.
+	check_intercepts(child, { "child_required", "middle_required", "base_required" });
+
+	// Diamond: `base_required` is reached through both `Left` and `Right` and is
+	// intercepted exactly once (no double-dispatch, no fallthrough).
+	check_intercepts(wide, { "wide_required", "left_required", "right_required", "base_required" });
+}
+
 TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 	ScopedProxyLanguage language;
 
