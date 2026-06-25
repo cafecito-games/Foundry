@@ -729,8 +729,36 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 						const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
 
 						if (subscript->is_attribute) {
-							// May be static built-in method call.
-							if (!call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name) < Variant::VARIANT_MAX) {
+							// Specialized generic construction: `Box[int].new(...)`. The callee base is
+							// itself an index subscript (`Box[int]`) carrying reified type arguments, which
+							// must be bound onto the new instance instead of going through a plain call.
+							const GDScriptParser::SubscriptNode *specialization = nullptr;
+							if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SUBSCRIPT) {
+								const GDScriptParser::SubscriptNode *candidate = static_cast<const GDScriptParser::SubscriptNode *>(subscript->base);
+								// Only a specialized class meta-type (`Box[int]`) is a construction target. An indexed
+								// instance value (e.g. `array[0]` whose element type is `Box[int]`) also carries type
+								// arguments, but is not a class handle, so it must not be treated as one.
+								const GDScriptParser::DataType candidate_type = candidate->get_datatype();
+								if (!candidate->is_attribute && candidate_type.is_meta_type && candidate_type.kind == GDScriptParser::DataType::CLASS) {
+									specialization = candidate;
+								}
+							}
+							GDScriptDataType specialization_type;
+							if (specialization != nullptr) {
+								specialization_type = _gdtype_from_datatype(specialization->get_datatype(), codegen.script);
+							}
+
+							if (specialization != nullptr && !specialization_type.type_arguments.is_empty()) {
+								GDScriptCodeGenerator::Address base = _parse_expression(codegen, r_error, specialization->base);
+								if (r_error) {
+									return GDScriptCodeGenerator::Address();
+								}
+								gen->write_construct_specialized(result, base, specialization_type.type_arguments, arguments);
+								if (base.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+									gen->pop_temporary();
+								}
+							} else if (!call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name) < Variant::VARIANT_MAX) {
+								// May be static built-in method call.
 								gen->write_call_builtin_type_static(result, GDScriptParser::get_builtin_type(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
 							} else if (!call->is_super && subscript->base->type == GDScriptParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
 									static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->source == GDScriptParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<GDScriptParser::IdentifierNode *>(subscript->base)->name)) {

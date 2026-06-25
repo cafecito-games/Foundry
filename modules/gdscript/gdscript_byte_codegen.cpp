@@ -44,6 +44,14 @@ Variant GDScriptByteCodeGenerator::make_container_type_descriptor(const GDScript
 	}
 	descriptor["element_types"] = element_types;
 
+	if (!p_type.type_arguments.is_empty()) {
+		Array type_arguments;
+		for (const GDScriptDataType &argument_type : p_type.type_arguments) {
+			type_arguments.push_back(make_container_type_descriptor(argument_type));
+		}
+		descriptor["type_arguments"] = type_arguments;
+	}
+
 	return descriptor;
 }
 
@@ -1492,6 +1500,24 @@ void GDScriptByteCodeGenerator::write_construct_typed_array(const Address &p_tar
 	append(p_arguments.size());
 	append(p_element_type.builtin_type);
 	append(p_element_type.native_type);
+	ct.cleanup();
+}
+
+void GDScriptByteCodeGenerator::write_construct_specialized(const Address &p_target, const Address &p_base, const Vector<GDScriptDataType> &p_type_arguments, const Vector<Address> &p_arguments) {
+	// Instruction args: [ctor args..., type-argument descriptors..., base script, target].
+	// Inline operands: argument count, type-argument count.
+	append_opcode_and_argcount(GDScriptFunction::OPCODE_CONSTRUCT_SPECIALIZED, 2 + p_arguments.size() + p_type_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		append(p_arguments[i]);
+	}
+	for (int i = 0; i < p_type_arguments.size(); i++) {
+		append(get_constant_pos(make_container_type_descriptor(p_type_arguments[i])) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
+	}
+	append(p_base);
+	CallTarget ct = get_call_target(p_target);
+	append(ct.target);
+	append(p_arguments.size());
+	append(p_type_arguments.size());
 	ct.cleanup();
 }
 

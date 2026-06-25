@@ -163,7 +163,7 @@ void GDScript::_super_implicit_constructor(GDScript *p_script, GDScriptInstance 
 	}
 }
 
-GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error) {
+GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error, const Vector<ContainerType> *p_type_arguments) {
 	/* STEP 1, CREATE */
 
 	GDScriptInstance *instance = memnew(GDScriptInstance);
@@ -171,6 +171,9 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 	instance->script = Ref<GDScript>(this);
 	instance->owner = p_owner;
 	instance->owner_id = p_owner->get_instance_id();
+	if (p_type_arguments != nullptr) {
+		instance->type_arguments = *p_type_arguments;
+	}
 #ifdef DEBUG_ENABLED
 	//needed for hot reloading
 	for (const KeyValue<StringName, MemberInfo> &E : member_indices) {
@@ -220,6 +223,10 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 }
 
 Variant GDScript::_new(const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+	return _new_specialized(p_args, p_argcount, Vector<ContainerType>(), r_error);
+}
+
+Variant GDScript::_new_specialized(const Variant **p_args, int p_argcount, const Vector<ContainerType> &p_type_arguments, Callable::CallError &r_error) {
 	/* STEP 1, CREATE */
 
 	if (!valid) {
@@ -249,7 +256,8 @@ Variant GDScript::_new(const Variant **p_args, int p_argcount, Callable::CallErr
 		ref = Ref<RefCounted>(r);
 	}
 
-	GDScriptInstance *instance = _create_instance(p_args, p_argcount, owner, r_error);
+	const Vector<ContainerType> *type_arguments = p_type_arguments.is_empty() ? nullptr : &p_type_arguments;
+	GDScriptInstance *instance = _create_instance(p_args, p_argcount, owner, r_error, type_arguments);
 	if (!instance) {
 		if (ref.is_null()) {
 			memdelete(owner); //no owner, sorry

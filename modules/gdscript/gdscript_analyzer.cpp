@@ -1243,18 +1243,25 @@ bool GDScriptAnalyzer::apply_class_type_arguments(GDScriptParser::DataType &r_ty
 		return false;
 	}
 
-	r_type.type_arguments.clear();
-	const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = r_type.class_type->type_parameters;
-
 	// Resolve every argument first so that bound checking can substitute the concrete argument
 	// for any sibling parameter, regardless of declaration order. Arguments that fail to resolve
 	// already reported an error and are excluded from bound checking to avoid double diagnostics.
+	Vector<GDScriptParser::DataType> resolved_arguments;
 	Vector<bool> argument_failed;
+	Vector<const GDScriptParser::Node *> argument_sources;
 	for (int i = 0; i < p_argument_nodes.size(); i++) {
 		const int errors_before = parser->get_errors().size();
-		r_type.type_arguments.push_back(type_from_metatype(resolve_datatype(p_argument_nodes[i])));
+		resolved_arguments.push_back(type_from_metatype(resolve_datatype(p_argument_nodes[i])));
 		argument_failed.push_back(parser->get_errors().size() > errors_before);
+		argument_sources.push_back(p_argument_nodes[i]);
 	}
+
+	return bind_class_type_arguments(r_type, resolved_arguments, argument_failed, argument_sources, p_source);
+}
+
+bool GDScriptAnalyzer::bind_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources, const GDScriptParser::Node *p_source) {
+	r_type.type_arguments = p_arguments;
+	const Vector<GDScriptParser::TypeParameterNode *> &type_parameters = r_type.class_type->type_parameters;
 
 	// Bind every parameter to its argument so a dependent bound like `[U: Resource, T: U]` (or its
 	// forward-referencing form `[T: U, U: Resource]`) is checked against the concrete argument
@@ -1270,7 +1277,7 @@ bool GDScriptAnalyzer::apply_class_type_arguments(GDScriptParser::DataType &r_ty
 	bool bound_violation = false;
 	for (int i = 0; i < r_type.type_arguments.size(); i++) {
 		const GDScriptParser::TypeParameterNode *parameter = type_parameters[i];
-		if (parameter == nullptr || parameter->bound == nullptr || argument_failed[i]) {
+		if (parameter == nullptr || parameter->bound == nullptr || p_argument_failed[i]) {
 			continue;
 		}
 		// Resolve the bound in the generic class's own scope so relative bound names bind to the
@@ -1290,7 +1297,7 @@ bool GDScriptAnalyzer::apply_class_type_arguments(GDScriptParser::DataType &r_ty
 		}
 		const GDScriptParser::DataType effective_bound = bindings.is_empty() ? bound : GDScriptParser::DataType::substitute(bound, bindings);
 		if (!type_argument_satisfies_bound(r_type.type_arguments[i], effective_bound)) {
-			push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", r_type.type_arguments[i].to_string(), effective_bound.to_string(), parameter->identifier->name), p_argument_nodes[i]);
+			push_error(vformat(R"(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s".)", r_type.type_arguments[i].to_string(), effective_bound.to_string(), parameter->identifier->name), p_argument_sources[i]);
 			bound_violation = true;
 		}
 	}
@@ -4969,6 +4976,12 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 #endif // DEBUG_ENABLED
 
+		// Constructing a specialized generic class (`Box[int].new()`) yields a specialized instance,
+		// so the call's result carries the reified type arguments supplied at the base.
+		if (is_constructor && base_type.has_type_arguments()) {
+			return_type.type_arguments = base_type.type_arguments;
+		}
+
 		call_type = return_type;
 	} else {
 		bool found = false;
@@ -7425,6 +7438,43 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 		if (p_subscript->index == nullptr) {
 			return;
 		}
+
+		GDScriptParser::DataType base_meta_type = p_subscript->base->get_datatype();
+		if (base_meta_type.is_set() && base_meta_type.is_meta_type && base_meta_type.kind == GDScriptParser::DataType::CLASS &&
+				base_meta_type.class_type != nullptr && !base_meta_type.class_type->type_parameters.is_empty()) {
+			// Generic class specialization in value position, e.g. `Box[int]`. The brackets carry a
+			// type argument rather than an index. A single subscript index expresses at most one
+			// argument, mirroring the use-site type-argument limit on generic method applications.
+			GDScriptParser::DataType specialized = base_meta_type;
+			Vector<GDScriptParser::DataType> resolved_arguments;
+			Vector<bool> argument_failed;
+			Vector<const GDScriptParser::Node *> argument_sources;
+			GDScriptParser::DataType type_argument;
+			if (resolve_explicit_type_argument(p_subscript->index, type_argument)) {
+				resolved_arguments.push_back(type_argument);
+				argument_failed.push_back(false);
+				argument_sources.push_back(p_subscript->index);
+			} else {
+				push_error(vformat(R"(Could not resolve the type argument for generic class "%s".)", specialized.to_string()), p_subscript->index);
+			}
+
+			const int expected_argument_count = specialized.class_type->type_parameters.size();
+			if (resolved_arguments.size() != expected_argument_count) {
+				push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)", specialized.to_string(), expected_argument_count, resolved_arguments.size()), p_subscript);
+				result_type.kind = GDScriptParser::DataType::VARIANT;
+			} else {
+				bind_class_type_arguments(specialized, resolved_arguments, argument_failed, argument_sources, p_subscript);
+				specialized.is_meta_type = true;
+				result_type = specialized;
+				// The specialized handle still refers to the same class object at runtime; carry the
+				// base's constant value so `Box[int].new()` can recover the script to instantiate.
+				p_subscript->is_constant = p_subscript->base->is_constant;
+				p_subscript->reduced_value = p_subscript->base->reduced_value;
+			}
+			p_subscript->set_datatype(result_type);
+			return;
+		}
+
 		reduce_expression(p_subscript->index);
 
 		if (p_subscript->base->is_constant && p_subscript->index->is_constant) {
