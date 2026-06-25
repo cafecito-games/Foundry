@@ -34,6 +34,7 @@
 #include "gdscript_cache.h"
 #include "gdscript_compiler.h"
 #include "gdscript_parser.h"
+#include "gdscript_reflection.h"
 #include "gdscript_rpc_callable.h"
 #include "gdscript_tokenizer_buffer.h"
 #include "gdscript_warning.h"
@@ -2217,6 +2218,14 @@ void GDScriptLanguage::init() {
 		_add_global(E.name, E.ptr);
 	}
 
+	// Expose the read-only reflection API as the `godot.reflection` surface. A true
+	// language namespace is not available, so `godot` is a nested-singleton object
+	// whose `reflection` member is the introspection object.
+	reflection_singleton.instantiate();
+	godot_namespace_singleton.instantiate();
+	godot_namespace_singleton->set_reflection(reflection_singleton);
+	add_named_global_constant(SNAME("godot"), godot_namespace_singleton);
+
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
 		GDExtensionManager::get_singleton()->connect("extension_loaded", callable_mp(this, &GDScriptLanguage::_extension_loaded));
@@ -2305,6 +2314,14 @@ void GDScriptLanguage::finish() {
 	}
 	script_list.clear();
 	function_list.clear();
+
+	// Tear down the reflection singletons exposed via the `godot` global. Releasing
+	// the member refs (and the named-global entry) drops the last references.
+	if (named_globals.has(SNAME("godot"))) {
+		remove_named_global_constant(SNAME("godot"));
+	}
+	godot_namespace_singleton.unref();
+	reflection_singleton.unref();
 
 	finishing = false;
 }

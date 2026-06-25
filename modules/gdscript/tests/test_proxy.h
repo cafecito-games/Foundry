@@ -35,6 +35,7 @@
 #include "../gdscript_compiler.h"
 #include "../gdscript_parser.h"
 #include "../gdscript_proxy.h"
+#include "../gdscript_reflection.h"
 
 #include "tests/test_macros.h"
 
@@ -709,6 +710,97 @@ TEST_CASE("[Modules][GDScript][Proxy] Handler return coercion and validation") {
 		CHECK(result.get_type() == Variant::INT);
 		CHECK(result == Variant(0));
 	}
+}
+
+static HashSet<String> descriptor_names(const TypedArray<Dictionary> &p_descriptors) {
+	HashSet<String> names;
+	for (int i = 0; i < p_descriptors.size(); i++) {
+		const Dictionary descriptor = p_descriptors[i];
+		names.insert(descriptor.get("name", ""));
+	}
+	return names;
+}
+
+TEST_CASE("[Modules][GDScript][Reflection] Read-only introspection API") {
+	ScopedProxyLanguage language;
+
+	const char *source =
+			"trait Drawable:\n"
+			"\t@abstract func draw_self() -> void\n"
+			"\n"
+			"trait Sprite uses Drawable:\n"
+			"\tvar label: String\n"
+			"\tvar count: int\n"
+			"\t@abstract func render() -> void\n"
+			"\tfunc describe() -> String:\n"
+			"\t\treturn \"sprite\"\n"
+			"\n"
+			"trait Unrelated:\n"
+			"\t@abstract func z() -> void\n"
+			"\n"
+			"class Recorder:\n"
+			"\tfunc handle(method_name, args):\n"
+			"\t\treturn null\n";
+
+	Ref<GDScript> script = compile_proxy_source(source);
+	Ref<GDScript> sprite = get_subclass(script, "Sprite");
+	Ref<GDScript> drawable = get_subclass(script, "Drawable");
+	Ref<GDScript> unrelated = get_subclass(script, "Unrelated");
+	Ref<GDScript> recorder_script = get_subclass(script, "Recorder");
+	REQUIRE(sprite.is_valid());
+
+	GDScriptReflection *reflection = memnew(GDScriptReflection);
+
+	// get_methods returns the script's declared methods as descriptor dicts.
+	{
+		HashSet<String> names = descriptor_names(reflection->get_methods(sprite));
+		CHECK(names.has("render"));
+		CHECK(names.has("describe"));
+	}
+
+	// get_method_info returns a single descriptor (empty for unknown methods).
+	{
+		Dictionary render_info = reflection->get_method_info(sprite, "render");
+		CHECK(render_info.get("name", "") == Variant("render"));
+		CHECK(reflection->get_method_info(sprite, "does_not_exist").is_empty());
+	}
+
+	// get_properties returns the declared vars (no category headers).
+	{
+		HashSet<String> names = descriptor_names(reflection->get_properties(sprite));
+		CHECK(names.has("label"));
+		CHECK(names.has("count"));
+	}
+
+	// implements_trait accepts a trait type (robust) or its identity name.
+	{
+		CHECK(reflection->implements_trait(sprite, drawable)); // used trait
+		CHECK(reflection->implements_trait(sprite, sprite)); // self-conformance via type
+		CHECK_FALSE(reflection->implements_trait(sprite, unrelated));
+		CHECK_FALSE(reflection->implements_trait(sprite, "NotATrait"));
+	}
+
+	// Works on an instance too: the instance's script is introspected.
+	{
+		Callable::CallError construct_error;
+		Variant recorder_ref = recorder_script->_new(nullptr, -1, construct_error);
+		Object *recorder = recorder_ref;
+		String error_message;
+		Ref<RefCounted> proxy = GDScriptProxy::create_proxy(sprite, Callable(recorder, "handle"), error_message);
+		REQUIRE(proxy.is_valid());
+		HashSet<String> names = descriptor_names(reflection->get_methods(proxy));
+		CHECK(names.has("render"));
+		CHECK(reflection->implements_trait(proxy, drawable));
+	}
+
+	// Non-script targets yield empty results, not crashes.
+	{
+		CHECK(reflection->get_methods(Variant()).is_empty());
+		CHECK(reflection->get_properties(42).is_empty());
+		CHECK_FALSE(reflection->implements_trait(Variant(), drawable));
+	}
+
+	memdelete(reflection);
 }
 
 } // namespace GDScriptTests
