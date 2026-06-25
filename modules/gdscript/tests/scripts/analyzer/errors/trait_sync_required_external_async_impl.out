@@ -1,2 +1,2 @@
 GDTEST_ANALYZER_ERROR
->> ERROR at line 5: The function "compute()" cannot be async because it implements synchronous trait method "Computable.compute()".
+>> ERROR at line 5: The function "compute()" cannot be async because it implements synchronous trait method "Computable.compute()". Implementation comes from "res://analyzer/errors/trait_sync_required_external_async_impl_base.notest.gd" line 3.

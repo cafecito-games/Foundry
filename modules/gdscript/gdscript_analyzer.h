@@ -44,6 +44,7 @@ class GDScriptAnalyzer {
 		GDScriptParser::FunctionNode *function = nullptr;
 		GDScriptParser::ClassNode *owner_class = nullptr;
 		MethodInfo method_info;
+		String method_info_source;
 		bool has_method_info = false;
 	};
 
