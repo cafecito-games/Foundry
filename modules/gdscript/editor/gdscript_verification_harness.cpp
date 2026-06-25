@@ -39,6 +39,7 @@
 #include "../gdscript_cache.h"
 #include "../gdscript_parser.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
@@ -74,11 +75,13 @@ struct VerifyDependencyGraphCache {
 	// universe is fixed, so the signature is constant and the optimization stays fully active.
 	uint64_t universe_signature = 0;
 	bool universe_signature_set = false;
-	// ScriptServer global-class cache version the edges were primed under. Dependency edges can
-	// change without any universe source change when a class_name registration is added or
-	// removed (a consumer then resolves a global class to a different provider), so a bump in
-	// this version must rebuild the index too.
+	// Global dependency-resolution state the edges were primed under. Dependency edges can change
+	// without any universe source change: a class_name registration (tracked by the ScriptServer
+	// global-class cache version) or an autoload/project setting (tracked by the ProjectSettings
+	// version) can make a consumer resolve a name to a different provider. A bump in either must
+	// rebuild the index so a newly resolvable dependent is never missed.
 	uint64_t global_class_version = 0;
+	uint32_t project_settings_version = 0;
 
 	// Source hash recorded the last time this path's edges were primed.
 	HashMap<String, uint64_t> source_hashes;
@@ -464,16 +467,23 @@ VerificationResult GDScriptVerificationHarness::verify(
 	// A cached entry's recorded edges are only complete relative to the edge scope and the global
 	// dependency-resolution state they were primed against, so drop the whole index when either
 	// changes. The edge scope guards against a changed path set; the ScriptServer global-class
-	// cache version guards against a class_name registration changing how a consumer resolves a
-	// global class without any universe source change. This rebuilds every path on the first call
-	// under a new key (identical to the from-scratch behavior) while leaving the optimization
-	// fully active across the repeated, fixed-key calls of a fixpoint run.
+	// cache version guards against a class_name registration, and the ProjectSettings version
+	// guards against an autoload or other setting changing how a consumer resolves a name, all
+	// of which can shift dependency edges without any universe source change. This rebuilds every
+	// path on the first call under a new key (identical to the from-scratch behavior) while
+	// leaving the optimization fully active across the repeated, fixed-key calls of a fixpoint
+	// run, where none of these inputs change.
 	const uint64_t signature = edge_scope_signature_of(edge_scope);
 	const uint64_t global_class_version = ScriptServer::get_global_class_cache_version();
-	if (!graph_cache.universe_signature_set || graph_cache.universe_signature != signature || graph_cache.global_class_version != global_class_version) {
+	const uint32_t project_settings_version = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->get_version() : 0;
+	if (!graph_cache.universe_signature_set ||
+			graph_cache.universe_signature != signature ||
+			graph_cache.global_class_version != global_class_version ||
+			graph_cache.project_settings_version != project_settings_version) {
 		graph_cache.clear();
 		graph_cache.universe_signature = signature;
 		graph_cache.global_class_version = global_class_version;
+		graph_cache.project_settings_version = project_settings_version;
 		graph_cache.universe_signature_set = true;
 	}
 
