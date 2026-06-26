@@ -115,6 +115,15 @@ class CompareTest(unittest.TestCase):
         results = report.compare(old, new, tolerance_percent=10.0)
         self.assertFalse(results[0]["regressed"])
 
+    def test_compare_uses_exact_delta_not_rounded(self):
+        # 1000 -> 1100.4 is a 10.04% increase: over a 10% tolerance even though
+        # the displayed delta rounds to 10.0. The regression must still flag.
+        old = {"gdscript:a/feature": 1000.0}
+        new = {"gdscript:a/feature": 1100.4}
+        results = report.compare(old, new, tolerance_percent=10.0)
+        self.assertEqual(results[0]["delta_percent"], 10.0)
+        self.assertTrue(results[0]["regressed"])
+
 
 class CliTest(unittest.TestCase):
     def _write_json(self, payload):

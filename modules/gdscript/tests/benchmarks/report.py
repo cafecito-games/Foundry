@@ -96,14 +96,17 @@ def compare(old, new, tolerance_percent=10.0):
         old_usec = old.get(key)
         if old_usec is None or old_usec <= 0:
             continue
-        delta_percent = round(100.0 * (new_usec - old_usec) / old_usec, 1)
+        # Decide regression on the exact delta; only the reported value is
+        # rounded. Rounding first could pull a real over-tolerance increase
+        # (e.g. 10.04%) down to the tolerance and hide the regression.
+        exact_delta_percent = 100.0 * (new_usec - old_usec) / old_usec
         out.append(
             {
                 "key": key,
                 "old_us": round(old_usec, 1),
                 "new_us": round(new_usec, 1),
-                "delta_percent": delta_percent,
-                "regressed": delta_percent > tolerance_percent,
+                "delta_percent": round(exact_delta_percent, 1),
+                "regressed": exact_delta_percent > tolerance_percent,
             }
         )
     return out
