@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+Unknown annotation target "WIDGET". Expected "CLASS", "METHOD", or "VARIABLE".

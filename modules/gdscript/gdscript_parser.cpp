@@ -1497,6 +1497,141 @@ void GDScriptParser::parse_function_class_member(bool p_is_static, bool p_is_asy
 	finalize_class_member(member, annotations, "function");
 }
 
+GDScriptParser::AnnotationDeclarationNode *GDScriptParser::parse_annotation_declaration() {
+	AnnotationDeclarationNode *annotation_declaration = alloc_node<AnnotationDeclarationNode>();
+
+	// The current token is the contextual `annotation` identifier.
+	advance();
+
+	// An annotation declaration is not a runtime member, so no class-level annotation may
+	// apply to it. Consume any pending annotations here (erroring on each) so they cannot
+	// silently carry over onto the next real member.
+	parse_class_member_annotations(AnnotationInfo::NONE, "annotation declaration");
+
+	// Annotation declarations are root-only in v1. Inner classes, traits, functions, and
+	// local scopes never reach a valid declaration here.
+	const bool is_root_declaration = current_class->outer == nullptr && !current_class->is_trait;
+	if (!is_root_declaration) {
+		push_error(R"(Annotation declarations are only allowed at the root of a script.)");
+	}
+
+	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected annotation name after "annotation".)")) {
+		complete_extents(annotation_declaration);
+		return nullptr;
+	}
+	annotation_declaration->identifier = parse_identifier();
+
+	if (match(GDScriptTokenizer::Token::PARENTHESIS_OPEN)) {
+		push_multiline(true);
+		parse_annotation_declaration_parameters(annotation_declaration);
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after annotation parameters.)*");
+	}
+
+	if (current.type == GDScriptTokenizer::Token::IDENTIFIER && current.get_identifier() == StringName("targets")) {
+		advance();
+		parse_annotation_declaration_targets(annotation_declaration);
+	} else {
+		push_error(R"(Expected "targets" after the annotation name.)");
+	}
+
+	complete_extents(annotation_declaration);
+	end_statement("annotation declaration");
+
+	// Canonical identity uses the root namespace, which is parsed before the body.
+	const String &namespace_name = head != nullptr ? head->namespace_name : String();
+	annotation_declaration->qualified_name = namespace_name.is_empty()
+			? String(annotation_declaration->identifier->name)
+			: namespace_name + "." + String(annotation_declaration->identifier->name);
+
+	if (is_root_declaration) {
+		current_class->annotation_declarations.push_back(annotation_declaration);
+	}
+
+	return annotation_declaration;
+}
+
+void GDScriptParser::parse_annotation_declaration_parameters(AnnotationDeclarationNode *p_annotation_declaration) {
+	if (check(GDScriptTokenizer::Token::PARENTHESIS_CLOSE) || is_at_end()) {
+		return;
+	}
+
+	bool default_used = false;
+	do {
+		if (check(GDScriptTokenizer::Token::PARENTHESIS_CLOSE)) {
+			break; // Allow for trailing comma.
+		}
+
+		bool is_rest = false;
+		if (match(GDScriptTokenizer::Token::PERIOD_PERIOD_PERIOD)) {
+			is_rest = true;
+		}
+
+		ParameterNode *parameter = parse_parameter();
+		if (parameter == nullptr) {
+			break;
+		}
+
+		if (p_annotation_declaration->rest_parameter != nullptr) {
+			push_error("Cannot have parameters after the variadic parameter.");
+			continue;
+		}
+
+		if (parameter->initializer != nullptr) {
+			if (is_rest) {
+				push_error("The variadic parameter cannot have a default value.");
+				continue;
+			}
+			default_used = true;
+		} else if (default_used && !is_rest) {
+			push_error("Cannot have mandatory parameters after optional parameters.");
+			continue;
+		}
+
+		if (p_annotation_declaration->parameters_indices.has(parameter->identifier->name)) {
+			push_error(vformat(R"(Parameter with name "%s" was already declared for this annotation.)", parameter->identifier->name));
+		} else if (is_rest) {
+			p_annotation_declaration->rest_parameter = parameter;
+		} else {
+			p_annotation_declaration->parameters_indices[parameter->identifier->name] = p_annotation_declaration->parameters.size();
+			p_annotation_declaration->parameters.push_back(parameter);
+		}
+	} while (match(GDScriptTokenizer::Token::COMMA));
+}
+
+void GDScriptParser::parse_annotation_declaration_targets(AnnotationDeclarationNode *p_annotation_declaration) {
+	do {
+		uint32_t target_bit = AnnotationDeclarationNode::TARGET_NONE;
+		String target_name;
+
+		// Target names (`CLASS`, `METHOD`, `VARIABLE`) are uppercase, so they arrive as
+		// ordinary identifiers rather than the lowercase `class` keyword token.
+		if (match(GDScriptTokenizer::Token::IDENTIFIER)) {
+			target_name = previous.get_identifier();
+			if (target_name == "CLASS") {
+				target_bit = AnnotationDeclarationNode::TARGET_CLASS;
+			} else if (target_name == "METHOD") {
+				target_bit = AnnotationDeclarationNode::TARGET_METHOD;
+			} else if (target_name == "VARIABLE") {
+				target_bit = AnnotationDeclarationNode::TARGET_VARIABLE;
+			} else {
+				push_error(vformat(R"(Unknown annotation target "%s". Expected "CLASS", "METHOD", or "VARIABLE".)", target_name));
+			}
+		} else {
+			push_error(R"(Expected an annotation target name.)");
+			break;
+		}
+
+		if (target_bit != AnnotationDeclarationNode::TARGET_NONE) {
+			if (p_annotation_declaration->targets & target_bit) {
+				push_error(vformat(R"(Annotation target "%s" was already declared.)", target_name));
+			} else {
+				p_annotation_declaration->targets |= target_bit;
+			}
+		}
+	} while (match(GDScriptTokenizer::Token::COMMA));
+}
+
 void GDScriptParser::parse_class_body(bool p_is_multiline) {
 	bool class_end = false;
 	bool next_is_static = false;
@@ -1607,6 +1742,12 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				}
 				[[fallthrough]];
 			default:
+				if (token.type == GDScriptTokenizer::Token::IDENTIFIER && token.get_identifier() == StringName("annotation")) {
+					// `annotation` is contextual: it only starts a declaration where a root-body
+					// declaration is valid. Anywhere else it remains an ordinary identifier.
+					parse_annotation_declaration();
+					break;
+				}
 				if (token_is_async_identifier) {
 					advance();
 					if (match(GDScriptTokenizer::Token::STATIC)) {
@@ -6359,6 +6500,49 @@ void GDScriptParser::TreePrinter::print_annotation(const AnnotationNode *p_annot
 	push_line(")");
 }
 
+void GDScriptParser::TreePrinter::print_annotation_declaration(AnnotationDeclarationNode *p_annotation_declaration) {
+	push_text("Annotation ");
+	if (p_annotation_declaration->identifier == nullptr) {
+		push_text("<unnamed>");
+	} else {
+		print_identifier(p_annotation_declaration->identifier);
+	}
+
+	push_text("(");
+	for (int i = 0; i < p_annotation_declaration->parameters.size(); i++) {
+		if (i > 0) {
+			push_text(", ");
+		}
+		print_parameter(p_annotation_declaration->parameters[i]);
+	}
+	if (p_annotation_declaration->rest_parameter != nullptr) {
+		if (!p_annotation_declaration->parameters.is_empty()) {
+			push_text(", ");
+		}
+		push_text("...");
+		print_parameter(p_annotation_declaration->rest_parameter);
+	}
+	push_text(")");
+
+	push_text(" targets ");
+	bool first = true;
+	const uint32_t targets = p_annotation_declaration->targets;
+	if (targets & AnnotationDeclarationNode::TARGET_CLASS) {
+		push_text("CLASS");
+		first = false;
+	}
+	if (targets & AnnotationDeclarationNode::TARGET_METHOD) {
+		push_text(first ? "METHOD" : ", METHOD");
+		first = false;
+	}
+	if (targets & AnnotationDeclarationNode::TARGET_VARIABLE) {
+		push_text(first ? "VARIABLE" : ", VARIABLE");
+		first = false;
+	}
+
+	push_line(vformat(" [%s]", p_annotation_declaration->qualified_name));
+}
+
 void GDScriptParser::TreePrinter::print_array(ArrayNode *p_array) {
 	push_text("[ ");
 	for (int i = 0; i < p_array->elements.size(); i++) {
@@ -6576,6 +6760,10 @@ void GDScriptParser::TreePrinter::print_class(ClassNode *p_class) {
 	push_line(" :");
 
 	increase_indent();
+
+	for (AnnotationDeclarationNode *E : p_class->annotation_declarations) {
+		print_annotation_declaration(E);
+	}
 
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const ClassNode::Member &m = p_class->members[i];
