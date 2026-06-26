@@ -40,6 +40,7 @@
 #include "../gdscript_analyzer.h"
 #include "../gdscript_position.h"
 
+#include "core/io/file_access.h"
 #include "core/object/class_db.h"
 #include "core/os/mutex.h"
 #include "core/string/char_utils.h"
@@ -5040,12 +5041,21 @@ MemberSubclassClosure discover_member_subclasses(
 		return closure;
 	}
 
-	// Tokens by which another script could name this class in an `extends` clause:
-	// its global `class_name`, or its source file (for `extends "res://..."`).
+	// Tokens by which another script could name this class in an `extends` clause.
+	// The set is intentionally broad so the parse-failure heuristic over-approximates
+	// (it may flag an unrelated broken script, only forcing a conservative skip):
+	//   - the fully-qualified `class_name` (`extends My.Namespaced.Base`),
+	//   - the bare class identifier, which also appears in a same-namespace or
+	//     imported short spelling (`extends Base`) and in a nested-class chain
+	//     (`extends Outer.Inner`),
+	//   - the source file name (`extends "res://.../base.gd"`).
 	Vector<String> base_tokens;
 	const StringName global_name = p_class->get_global_name();
 	if (global_name != StringName()) {
 		base_tokens.push_back(String(global_name));
+	}
+	if (p_class->identifier != nullptr && p_class->identifier->name != StringName()) {
+		base_tokens.push_back(String(p_class->identifier->name));
 	}
 	if (p_parser != nullptr && !p_parser->get_path().is_empty()) {
 		base_tokens.push_back(p_parser->get_path().get_file());
@@ -5060,6 +5070,17 @@ MemberSubclassClosure discover_member_subclasses(
 	for (const String &path : paths) {
 		const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(path);
 		if (parser == nullptr) {
+			// The script is listed in the project but could not be read or parsed at
+			// all. Its contents are unknown, so fall back to reading the raw text; a
+			// hidden subclass is possible only if even that fails or it could spell an
+			// `extends` of this base.
+			Error read_error = OK;
+			const String contents = FileAccess::get_file_as_string(path, &read_error);
+			if (read_error != OK) {
+				closure.complete = false;
+			} else if (source_could_extend_base(contents.split("\n"), base_tokens)) {
+				closure.complete = false;
+			}
 			continue;
 		}
 		if (parser->parse_result != OK) {

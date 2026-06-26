@@ -1373,7 +1373,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		const String base_path = "res://refactor/container_member_subclass_base_ok.gd";
 		const String base_source =
-				"class_name ContainerMemberSubclassBaseOk\n"
 				"var _items = []\n"
 				"func add(n: int) -> void:\n"
 				"\t_items.append(n)\n";
@@ -1392,7 +1391,7 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
-		const RefactorCandidate *items = inference_candidate_at_line(result, 1);
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
 		REQUIRE(items != nullptr);
 		CHECK(items->enabled);
 		REQUIRE_FALSE(items->edits.is_empty());
@@ -1413,7 +1412,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		const String base_path = "res://refactor/container_member_subclass_base_conflict.gd";
 		const String base_source =
-				"class_name ContainerMemberSubclassBaseConflict\n"
 				"var _items = []\n"
 				"func add(n: int) -> void:\n"
 				"\t_items.append(n)\n";
@@ -1432,7 +1430,7 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
-		const RefactorCandidate *items = inference_candidate_at_line(result, 1);
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
 		REQUIRE(items != nullptr);
 		CHECK(items->enabled);
 		REQUIRE_FALSE(items->edits.is_empty());
@@ -1453,7 +1451,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		const String base_path = "res://refactor/container_member_subclass_base_escape.gd";
 		const String base_source =
-				"class_name ContainerMemberSubclassBaseEscape\n"
 				"var _items = []\n"
 				"func add(n: int) -> void:\n"
 				"\t_items.append(n)\n";
@@ -1472,7 +1469,49 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
-		const RefactorCandidate *items = inference_candidate_at_line(result, 1);
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("An unparsable plausible subclass keeps the member bare") {
+		// A project script that fails to parse but textually `extends` the base could
+		// hide a subclass that mutates the inherited member. The open world cannot be
+		// proven bounded, so the inference must withhold the upgrade conservatively.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_subclass_base_broken.gd";
+		const String base_source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n";
+		TemporaryScriptFile base_file(base_path, base_source);
+
+		// A deliberately broken subclass that still names the base file in its
+		// `extends`. Matching by path avoids registering a global class name that
+		// could leak into unrelated tests.
+		const String broken_path = "res://refactor/container_member_subclass_child_broken.gd";
+		TemporaryScriptFile broken_file(broken_path,
+				"extends \"res://refactor/container_member_subclass_base_broken.gd\"\n"
+				"func add_text(s: String) -> void:\n"
+				"\tvar broken: = =\n");
+
+		RefactorContext context;
+		context.path = base_path;
+		context.source = base_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
 		REQUIRE(items != nullptr);
 		CHECK(items->enabled);
 		REQUIRE_FALSE(items->edits.is_empty());
