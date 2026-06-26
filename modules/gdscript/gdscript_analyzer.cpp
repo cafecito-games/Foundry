@@ -246,13 +246,31 @@ static Vector<String> _split_signature_top_level(const String &p_text) {
 
 static GDScriptParser::DataType _decode_signature_type(const String &p_encoded);
 
-// Decodes a Callable/Signal signature suffix ("[[p0, p1], ret]" or "[[p0, p1]]") into r_type.
-static void _decode_method_signature_suffix(const String &p_suffix, bool p_has_return, GDScriptParser::DataType &r_type) {
-	r_type.has_method_signature = true;
-	r_type.has_explicit_method_signature = true;
+// Decodes a Callable/Signal signature suffix ("[[p0, p1], ret]" or "[[p0, p1]]") into r_type. Returns
+// false — leaving r_type untouched (a bare callable/signal) — when the suffix does not match the
+// expected grammar, so malformed external metadata degrades to gradual typing instead of a bogus
+// (e.g. zero-argument void) signature that would wrongly reject valid calls.
+static bool _decode_method_signature_suffix(const String &p_suffix, bool p_has_return, GDScriptParser::DataType &r_type) {
+	// Validate the wrapper shape first: a well-formed suffix opens with the outer bracket plus the
+	// params-block opener ("[["), closes on the outer bracket, and keeps brackets balanced throughout.
+	if (!p_suffix.begins_with("[[") || !p_suffix.ends_with("]")) {
+		return false;
+	}
+	int balance = 0;
+	for (int i = 0; i < p_suffix.length(); i++) {
+		if (p_suffix[i] == '[') {
+			balance++;
+		} else if (p_suffix[i] == ']') {
+			balance--;
+			if (balance < 0) {
+				return false;
+			}
+		}
+	}
+	if (balance != 0) {
+		return false;
+	}
 
-	// p_suffix is "[<params_block>], <ret>]" wrapped: full form "[[...], ret]" or "[[...]]".
-	// Strip the single outer pair of brackets first.
 	const String inner = p_suffix.substr(1, p_suffix.length() - 2); // "[<params>], <ret>" or "[<params>]"
 
 	// The parameter list is the first bracket-balanced "[...]" segment of `inner`.
@@ -269,25 +287,26 @@ static void _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 			}
 		}
 	}
-	if (params_end >= 1) {
-		const String params_block = inner.substr(1, params_end - 1); // between the inner brackets
-		const String trimmed_params = params_block.strip_edges();
-		if (!trimmed_params.is_empty()) {
-			for (const String &parameter : _split_signature_top_level(params_block)) {
-				if (parameter.is_empty()) {
-					continue;
-				}
-				r_type.method_parameter_types.push_back(_decode_signature_type(parameter));
+	if (params_end < 1) {
+		return false;
+	}
+
+	Vector<GDScriptParser::DataType> parameter_types;
+	const String params_block = inner.substr(1, params_end - 1); // between the inner brackets
+	const String trimmed_params = params_block.strip_edges();
+	if (!trimmed_params.is_empty()) {
+		for (const String &parameter : _split_signature_top_level(params_block)) {
+			if (parameter.is_empty()) {
+				continue;
 			}
+			parameter_types.push_back(_decode_signature_type(parameter));
 		}
 	}
 
+	Vector<GDScriptParser::DataType> return_types;
 	if (p_has_return) {
-		String return_name;
-		if (params_end >= 0) {
-			const String rest = inner.substr(params_end + 1).strip_edges(); // ", <ret>"
-			return_name = rest.begins_with(",") ? rest.substr(1).strip_edges() : rest;
-		}
+		const String rest = inner.substr(params_end + 1).strip_edges(); // ", <ret>"
+		const String return_name = rest.begins_with(",") ? rest.substr(1).strip_edges() : rest;
 		GDScriptParser::DataType return_type;
 		if (return_name.is_empty() || return_name == "void") {
 			return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -296,21 +315,27 @@ static void _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 		} else {
 			return_type = _decode_signature_type(return_name);
 		}
-		r_type.method_return_type.push_back(return_type);
+		return_types.push_back(return_type);
 	}
+
+	r_type.has_method_signature = true;
+	r_type.has_explicit_method_signature = true;
+	r_type.method_parameter_types = parameter_types;
+	r_type.method_return_type = return_types;
 
 	// Mirror the rich slots into method_info too. Callable compatibility falls back to a MethodInfo
 	// comparison when one side is MethodInfo-only (e.g. a utility-function reference like `sin` built by
 	// make_callable_type); without this mirror a decoded explicit callable would carry an empty
 	// MethodInfo and wrongly reject an otherwise-matching MethodInfo-only callable.
 	MethodInfo signature_info;
-	for (const GDScriptParser::DataType &parameter_type : r_type.method_parameter_types) {
+	for (const GDScriptParser::DataType &parameter_type : parameter_types) {
 		signature_info.arguments.push_back(parameter_type.to_property_info(""));
 	}
-	if (p_has_return && !r_type.method_return_type.is_empty()) {
-		signature_info.return_val = r_type.method_return_type[0].to_property_info("");
+	if (p_has_return && !return_types.is_empty()) {
+		signature_info.return_val = return_types[0].to_property_info("");
 	}
 	r_type.method_info = signature_info;
+	return true;
 }
 
 static GDScriptParser::DataType _decode_signature_type_base(const String &p_encoded) {
