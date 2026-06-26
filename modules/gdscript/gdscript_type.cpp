@@ -64,14 +64,11 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right);
 
-// DataType::operator== compares Callable/Signal builtins by their outer builtin type only and ignores
-// the nested method signature metadata. It also compares composite slots (typed-container element
-// types and generic type arguments) through that same shallow `operator==`, so a Callable/Signal
-// signature mismatch buried inside one of those slots is lost too. Compare two signature slot types
-// structurally so that a mismatch nested anywhere a Callable/Signal can appear — directly
-// (`Callable[[Callable[[int], void]], void]` vs `Callable[[Callable[[String], void]], void]`) or
-// through a container/generic slot (`Callable[[Array[Callable[[int], void]]], void]`,
-// `Box[Callable[[int], void]]`) — is still detected instead of being accepted shallowly.
+// Strict signature-slot comparison for the explicit `Callable[[...], ...]` / `Signal[[...]]` path.
+// `operator==` establishes matching outer structure (including is_nullable, generic type arguments, and
+// container element kinds) and then the composite slots it only compared shallowly are recursed into so a
+// nested Callable/Signal mismatch is still detected. This is the long-standing explicit-signature
+// behavior and is intentionally left untouched: only the non-explicit source path is broadened below.
 static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
 	if (p_left != p_right) {
 		return false;
@@ -93,9 +90,6 @@ static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_lef
 			}
 		}
 	}
-	// Only recurse into the method signature when both slots carry one. A typed-vs-untyped slot keeps
-	// the shallow result of `operator==`, mirroring how the top-level path leniently accepts an
-	// untyped source against a typed target rather than tightening the rules only at nested depth.
 	if (p_left.kind == GDScriptParser::DataType::BUILTIN && _is_signature_builtin_type(p_left.builtin_type) &&
 			p_left.has_method_signature && p_right.has_method_signature) {
 		return _datatype_method_signature_equal(p_left, p_right);
@@ -103,27 +97,77 @@ static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_lef
 	return true;
 }
 
-static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
-	if (p_left.has_explicit_method_signature && p_right.has_explicit_method_signature) {
-		if (p_left.method_parameter_types.size() != p_right.method_parameter_types.size()) {
+// Lenient signature-slot comparison for the non-explicit source path (a lambda, function reference, or
+// declared signal where at least one side has no explicit annotation). The historical `MethodInfo`
+// fallback compared such slots through `DataType::to_property_info`; reusing that serialization keeps
+// every slot byte-for-byte identical to the prior behavior, so type parameters, non-hard
+// (inferred/undetected) types, generic type arguments, nullability, and deep container nesting all
+// collapse exactly as they did before and nothing the old path accepted is newly tightened. The one
+// thing the property form cannot express is a Callable/Signal's nested method signature, so recurse to
+// recover exactly that — and because the recursion re-enters `_datatype_method_signature_equal`, a nested
+// slot that is itself an explicit Callable/Signal is dispatched to the strict comparison above.
+static bool _nonexplicit_signature_slot_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
+	if (!_property_signature_equal(p_left.to_property_info(""), p_right.to_property_info(""))) {
+		return false;
+	}
+	if (p_left.kind == GDScriptParser::DataType::BUILTIN && _is_signature_builtin_type(p_left.builtin_type) &&
+			p_left.has_method_signature && p_right.has_method_signature) {
+		return _datatype_method_signature_equal(p_left, p_right);
+	}
+	return true;
+}
+
+// Whether a Callable/Signal type carries the rich `method_parameter_types`/`method_return_type`
+// recursion data rather than only a `MethodInfo`. Explicit `Callable[[...], ...]` annotations set
+// `has_explicit_method_signature`, but lambdas and function references populate the rich vectors from
+// their FunctionNode without that flag (see `make_callable_type(MethodInfo, FunctionNode)` in the
+// analyzer). A native, MethodInfo-only callable records neither parameter nor return DataTypes, so it
+// is distinguished by both rich vectors being empty. A Callable always records its return type (even
+// `void`), and a zero-argument callable legitimately has an empty parameter vector, so the presence of
+// either rich vector signals that the structural recursion is available.
+static bool _has_rich_method_signature(const GDScriptParser::DataType &p_type) {
+	if (!p_type.has_method_signature) {
+		return false;
+	}
+	return p_type.has_explicit_method_signature ||
+			!p_type.method_parameter_types.is_empty() ||
+			!p_type.method_return_type.is_empty();
+}
+
+static bool _method_signature_slots_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right,
+		bool (*p_slot_equal)(const GDScriptParser::DataType &, const GDScriptParser::DataType &)) {
+	if (p_left.method_parameter_types.size() != p_right.method_parameter_types.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_left.method_parameter_types.size(); i++) {
+		if (!p_slot_equal(p_left.method_parameter_types[i], p_right.method_parameter_types[i])) {
 			return false;
 		}
-		for (int i = 0; i < p_left.method_parameter_types.size(); i++) {
-			if (!_datatype_signature_slot_equal(p_left.method_parameter_types[i], p_right.method_parameter_types[i])) {
+	}
+	if (p_left.builtin_type == Variant::CALLABLE) {
+		if (p_left.method_return_type.size() != p_right.method_return_type.size()) {
+			return false;
+		}
+		for (int i = 0; i < p_left.method_return_type.size(); i++) {
+			if (!p_slot_equal(p_left.method_return_type[i], p_right.method_return_type[i])) {
 				return false;
 			}
 		}
-		if (p_left.builtin_type == Variant::CALLABLE) {
-			if (p_left.method_return_type.size() != p_right.method_return_type.size()) {
-				return false;
-			}
-			for (int i = 0; i < p_left.method_return_type.size(); i++) {
-				if (!_datatype_signature_slot_equal(p_left.method_return_type[i], p_right.method_return_type[i])) {
-					return false;
-				}
-			}
-		}
-		return true;
+	}
+	return true;
+}
+
+static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
+	// Both sides written as explicit annotations: compare the rich slots strictly, exactly as the
+	// explicit Callable/Signal path always has.
+	if (p_left.has_explicit_method_signature && p_right.has_explicit_method_signature) {
+		return _method_signature_slots_equal(p_left, p_right, _datatype_signature_slot_equal);
+	}
+	// A lambda/function-reference Callable or a declared Signal carries rich slots without the explicit
+	// flag. Compare those slots the way the `MethodInfo` fallback did, but recurse to catch the nested
+	// Callable/Signal mismatches the fallback erased — the #382 fix for the non-explicit source path.
+	if (_has_rich_method_signature(p_left) && _has_rich_method_signature(p_right)) {
+		return _method_signature_slots_equal(p_left, p_right, _nonexplicit_signature_slot_equal);
 	}
 	return _method_signature_equal(p_left.method_info, p_right.method_info);
 }

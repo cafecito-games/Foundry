@@ -184,6 +184,14 @@ static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info) {
 	return type;
 }
 
+static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info, const GDScriptParser::SignalNode *p_signal) {
+	GDScriptParser::DataType type = make_signal_type(p_info);
+	for (const GDScriptParser::ParameterNode *parameter : p_signal->parameters) {
+		type.method_parameter_types.push_back(parameter->get_datatype());
+	}
+	return type;
+}
+
 static GDScriptParser::DataType make_native_meta_type(const StringName &p_class_name) {
 	GDScriptParser::DataType type;
 	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -1612,7 +1620,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 					mi.arguments.push_back(param_type.to_property_info(param->identifier->name));
 					// Signals do not support parameter default values.
 				}
-				member.signal->set_datatype(make_signal_type(mi));
+				member.signal->set_datatype(make_signal_type(mi, member.signal));
 				member.signal->method_info = mi;
 
 				// Apply annotations.
