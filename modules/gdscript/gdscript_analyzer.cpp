@@ -755,7 +755,7 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 
 	// Apply annotations.
 	for (GDScriptParser::AnnotationNode *&E : p_class->annotations) {
-		resolve_annotation(E);
+		resolve_annotation(E, GDScriptParser::AnnotationDeclarationNode::TARGET_CLASS);
 		E->apply(parser, p_class, p_class->outer);
 	}
 
@@ -1538,7 +1538,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 				// Apply annotations.
 				for (GDScriptParser::AnnotationNode *&E : member.variable->annotations) {
 					if (E->name != SNAME("@warning_ignore")) {
-						resolve_annotation(E);
+						resolve_annotation(E, GDScriptParser::AnnotationDeclarationNode::TARGET_VARIABLE);
 						E->apply(parser, member.variable, p_class);
 					}
 				}
@@ -1686,7 +1686,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 			} break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
 				for (GDScriptParser::AnnotationNode *&E : member.function->annotations) {
-					resolve_annotation(E);
+					resolve_annotation(E, GDScriptParser::AnnotationDeclarationNode::TARGET_METHOD);
 					E->apply(parser, member.function, p_class);
 				}
 				resolve_function_signature(member.function, p_source);
@@ -1934,7 +1934,7 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			// Apply annotations.
 			for (GDScriptParser::AnnotationNode *&E : member.function->annotations) {
-				resolve_annotation(E);
+				resolve_annotation(E, GDScriptParser::AnnotationDeclarationNode::TARGET_METHOD);
 				E->apply(parser, member.function, p_class);
 			}
 			resolve_function_body(member.function);
@@ -2199,11 +2199,11 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 	}
 }
 
-void GDScriptAnalyzer::resolve_annotation(GDScriptParser::AnnotationNode *p_annotation) {
+void GDScriptAnalyzer::resolve_annotation(GDScriptParser::AnnotationNode *p_annotation, uint32_t p_target_kind) {
 	if (p_annotation->is_custom) {
-		// Unresolved custom annotation usage. Import-aware resolution and validation of custom
-		// annotations land in a later analyzer change; until then the usage is preserved but
-		// neither applied as a built-in nor reported here.
+		// Unresolved custom annotation usage: resolve it against same-namespace or imported
+		// annotation declarations and validate its target and arguments.
+		resolve_custom_annotation(p_annotation, p_target_kind);
 		return;
 	}
 
@@ -2259,6 +2259,315 @@ void GDScriptAnalyzer::resolve_annotation(GDScriptParser::AnnotationNode *p_anno
 		}
 
 		p_annotation->resolved_arguments.push_back(value);
+	}
+}
+
+static String _annotation_target_name(uint32_t p_target_kind) {
+	switch (p_target_kind) {
+		case GDScriptParser::AnnotationDeclarationNode::TARGET_CLASS:
+			return "a class";
+		case GDScriptParser::AnnotationDeclarationNode::TARGET_METHOD:
+			return "a method";
+		case GDScriptParser::AnnotationDeclarationNode::TARGET_VARIABLE:
+			return "a member variable";
+		default:
+			return "this target";
+	}
+}
+
+bool GDScriptAnalyzer::coerce_annotation_argument(const GDScriptParser::DataType &p_parameter_type, Variant &r_value, const GDScriptParser::ExpressionNode *p_argument, const String &p_context) {
+	// Only concrete built-in parameter types drive a strict conversion. `Variant`, object, and
+	// enum-typed parameters accept any constant value in v1, mirroring the permissive handling of
+	// non-built-in built-in annotation arguments.
+	if (p_parameter_type.kind != GDScriptParser::DataType::BUILTIN) {
+		return true;
+	}
+	const Variant::Type expected_type = p_parameter_type.builtin_type;
+	if (expected_type == Variant::NIL || r_value.get_type() == expected_type) {
+		return true;
+	}
+
+#ifdef DEBUG_ENABLED
+	if (expected_type == Variant::INT && r_value.get_type() == Variant::FLOAT) {
+		parser->push_warning(p_argument, GDScriptWarning::NARROWING_CONVERSION);
+	}
+#endif // DEBUG_ENABLED
+
+	if (!Variant::can_convert_strict(r_value.get_type(), expected_type)) {
+		push_error(vformat(R"(Invalid %s: expected "%s" but got "%s".)", p_context, Variant::get_type_name(expected_type), Variant::get_type_name(r_value.get_type())), p_argument);
+		return false;
+	}
+
+	Variant converted_value;
+	const Variant *converted_from = &r_value;
+	Callable::CallError call_error;
+	Variant::construct(expected_type, converted_value, &converted_from, 1, call_error);
+	if (call_error.error != Callable::CallError::CALL_OK) {
+		push_error(vformat(R"(Cannot convert %s from "%s" to "%s".)", p_context, Variant::get_type_name(r_value.get_type()), Variant::get_type_name(expected_type)), p_argument);
+		return false;
+	}
+
+	r_value = converted_value;
+	return true;
+}
+
+void GDScriptAnalyzer::resolve_annotation_declaration(GDScriptParser::AnnotationDeclarationNode *p_declaration) {
+	if (p_declaration == nullptr || p_declaration->resolved_signature) {
+		return;
+	}
+	p_declaration->resolved_signature = true;
+
+	GDScriptParser::ClassNode *previous_class = parser->current_class;
+	parser->current_class = parser->head;
+
+	Vector<GDScriptParser::ParameterNode *> parameters = p_declaration->parameters;
+	if (p_declaration->rest_parameter != nullptr) {
+		parameters.push_back(p_declaration->rest_parameter);
+	}
+
+	for (GDScriptParser::ParameterNode *parameter : parameters) {
+		if (parameter == nullptr || parameter->identifier == nullptr) {
+			continue;
+		}
+
+		if (parameter->datatype_specifier == nullptr) {
+			push_error(vformat(R"(Annotation parameter "%s" must declare a type.)", parameter->identifier->name), parameter);
+			GDScriptParser::DataType variant_type;
+			variant_type.kind = GDScriptParser::DataType::VARIANT;
+			variant_type.type_source = GDScriptParser::DataType::INFERRED;
+			parameter->set_datatype(variant_type);
+		} else {
+			parameter->set_datatype(type_from_metatype(resolve_datatype(parameter->datatype_specifier)));
+		}
+
+		if (parameter->initializer != nullptr) {
+			reduce_expression(parameter->initializer);
+			if (!parameter->initializer->is_constant) {
+				push_error(vformat(R"(Default value for annotation parameter "%s" must be a constant expression.)", parameter->identifier->name), parameter->initializer);
+			} else {
+				Variant default_value = parameter->initializer->reduced_value;
+				const String context = vformat(R"(default value of annotation parameter "%s")", parameter->identifier->name);
+				coerce_annotation_argument(parameter->get_datatype(), default_value, parameter->initializer, context);
+			}
+		}
+	}
+
+	parser->current_class = previous_class;
+}
+
+void GDScriptAnalyzer::resolve_annotation_declaration_signatures() {
+	for (GDScriptParser::AnnotationDeclarationNode *declaration : parser->head->annotation_declarations) {
+		resolve_annotation_declaration(declaration);
+	}
+}
+
+GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::load_external_annotation_declaration(const String &p_qualified_name) {
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	if (language == nullptr) {
+		return nullptr;
+	}
+
+	const String path = language->get_global_annotation_path(StringName(p_qualified_name));
+	if (path.is_empty() || GDScript::is_canonically_equal_paths(path, parser->script_path)) {
+		// Either unknown or declared by this file, whose local declarations were already searched.
+		return nullptr;
+	}
+
+	Ref<GDScriptParserRef> ref = parser->get_depended_parser_for(path);
+	if (ref.is_null() || ref->raise_status(GDScriptParserRef::INTERFACE_SOLVED) != OK) {
+		return nullptr;
+	}
+
+	GDScriptParser *external_parser = ref->get_parser();
+	if (external_parser == nullptr || external_parser->head == nullptr) {
+		return nullptr;
+	}
+
+	// The external file resolved its own declaration signatures while raising to
+	// `INTERFACE_SOLVED`, so the returned node already carries resolved parameter types.
+	for (GDScriptParser::AnnotationDeclarationNode *declaration : external_parser->head->annotation_declarations) {
+		if (declaration->qualified_name == p_qualified_name) {
+			return declaration;
+		}
+	}
+	return nullptr;
+}
+
+GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_annotation_declaration(GDScriptParser::AnnotationNode *p_annotation) {
+	// Usage names keep the leading "@"; declarations are indexed by their bare short name.
+	const String usage_name = String(p_annotation->name);
+	const String short_name = usage_name.begins_with("@") ? usage_name.substr(1) : usage_name;
+
+	// 1. The current file's namespace. A declaration in this file is available directly with its
+	// resolved signature; the local search also takes precedence over imported namespaces.
+	for (GDScriptParser::AnnotationDeclarationNode *declaration : parser->head->annotation_declarations) {
+		if (declaration->identifier != nullptr && declaration->identifier->name == StringName(short_name)) {
+			resolve_annotation_declaration(declaration);
+			return declaration;
+		}
+	}
+
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	if (language == nullptr) {
+		push_error(vformat(R"(Unknown annotation "%s".)", p_annotation->name), p_annotation);
+		return nullptr;
+	}
+
+	// A sibling file in the same namespace can declare the annotation without an explicit import.
+	const String current_namespace = parser->head->namespace_name;
+	const String own_identity = current_namespace.is_empty() ? short_name : current_namespace + "." + short_name;
+	if (language->is_global_annotation(StringName(own_identity))) {
+		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(own_identity);
+		if (declaration != nullptr) {
+			return declaration;
+		}
+	}
+
+	// 2. Explicitly imported namespaces. A short name provided by two or more imports is ambiguous.
+	Vector<String> matching_namespaces;
+	String resolved_identity;
+	LocalVector<String> checked_imports;
+	for (const String &import : parser->head->imports) {
+		if (checked_imports.has(import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+		const String identity = import + "." + short_name;
+		if (language->is_global_annotation(StringName(identity))) {
+			matching_namespaces.push_back(import);
+			resolved_identity = identity;
+		}
+	}
+
+	if (matching_namespaces.size() > 1) {
+		matching_namespaces.sort();
+		String namespace_list;
+		for (int i = 0; i < matching_namespaces.size(); i++) {
+			if (i > 0) {
+				namespace_list += i == matching_namespaces.size() - 1 ? " and " : ", ";
+			}
+			namespace_list += "\"" + matching_namespaces[i] + "\"";
+		}
+		push_error(vformat(R"(Ambiguous annotation "%s": it is declared in imported namespaces %s.)", p_annotation->name, namespace_list), p_annotation);
+		return nullptr;
+	}
+
+	if (matching_namespaces.size() == 1) {
+		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(resolved_identity);
+		if (declaration != nullptr) {
+			return declaration;
+		}
+	}
+
+	// 3. No custom declaration is visible. Built-in annotations never reach here.
+	push_error(vformat(R"(Unknown annotation "%s". Custom annotations must be declared in the current namespace or an imported namespace.)", p_annotation->name), p_annotation);
+	return nullptr;
+}
+
+void GDScriptAnalyzer::resolve_custom_annotation(GDScriptParser::AnnotationNode *p_annotation, uint32_t p_target_kind) {
+	if (p_annotation->is_resolved) {
+		return;
+	}
+	p_annotation->is_resolved = true;
+
+	GDScriptParser::AnnotationDeclarationNode *declaration = resolve_custom_annotation_declaration(p_annotation);
+	if (declaration == nullptr) {
+		return;
+	}
+
+	p_annotation->resolved_qualified_name = declaration->qualified_name;
+
+	// Validate target. The parser already restricted custom usages to class/method/variable
+	// positions; here the declaration's own `targets` set is enforced.
+	if (p_target_kind == 0 || (declaration->targets & p_target_kind) == 0) {
+		push_error(vformat(R"(Annotation "%s" cannot be applied to %s.)", p_annotation->name, _annotation_target_name(p_target_kind)), p_annotation);
+	}
+
+	const int fixed_count = declaration->parameters.size();
+	const bool is_variadic = declaration->is_variadic();
+
+	// `0` unbound, `1` bound positionally, `2` bound by name.
+	LocalVector<int> binding;
+	binding.resize(fixed_count);
+	for (int i = 0; i < fixed_count; i++) {
+		binding[i] = 0;
+	}
+
+	int next_positional = 0;
+	bool seen_named = false;
+	bool reported_too_many = false;
+	bool argument_error = false;
+
+	for (int i = 0; i < p_annotation->arguments.size(); i++) {
+		GDScriptParser::ExpressionNode *argument = p_annotation->arguments[i];
+		const StringName argument_name = p_annotation->argument_names[i];
+
+		reduce_expression(argument);
+		if (!argument->is_constant) {
+			push_error(vformat(R"(Argument %d of annotation "%s" is not a constant expression.)", i + 1, p_annotation->name), argument);
+			argument_error = true;
+			continue;
+		}
+		Variant value = argument->reduced_value;
+
+		GDScriptParser::ParameterNode *parameter = nullptr;
+
+		if (argument_name == StringName()) {
+			if (seen_named) {
+				push_error(vformat(R"(Positional argument after named argument in annotation "%s".)", p_annotation->name), argument);
+				argument_error = true;
+				continue;
+			}
+			if (next_positional < fixed_count) {
+				binding[next_positional] = 1;
+				parameter = declaration->parameters[next_positional];
+			} else if (is_variadic) {
+				parameter = declaration->rest_parameter;
+			} else {
+				if (!reported_too_many) {
+					push_error(vformat(R"(Annotation "%s" takes at most %d argument(s), but %d were given.)", p_annotation->name, fixed_count, p_annotation->arguments.size()), argument);
+					reported_too_many = true;
+				}
+				argument_error = true;
+				continue;
+			}
+			next_positional++;
+		} else {
+			seen_named = true;
+			const int *parameter_index = declaration->parameters_indices.getptr(argument_name);
+			if (parameter_index == nullptr) {
+				push_error(vformat(R"(Annotation "%s" has no parameter named "%s".)", p_annotation->name, argument_name), argument);
+				argument_error = true;
+				continue;
+			}
+			if (binding[*parameter_index] != 0) {
+				push_error(vformat(R"(Parameter "%s" of annotation "%s" was specified more than once.)", argument_name, p_annotation->name), argument);
+				argument_error = true;
+				continue;
+			}
+			binding[*parameter_index] = 2;
+			parameter = declaration->parameters[*parameter_index];
+		}
+
+		if (parameter != nullptr) {
+			const String context = vformat(R"(argument %d of annotation "%s")", i + 1, p_annotation->name);
+			if (!coerce_annotation_argument(parameter->get_datatype(), value, argument, context)) {
+				argument_error = true;
+				continue;
+			}
+		}
+
+		p_annotation->resolved_arguments.push_back(value);
+	}
+
+	// Required parameters (no default value) must be supplied. Skip this when an argument was
+	// already rejected, since the missing binding is a cascade of the earlier diagnostic.
+	if (!argument_error) {
+		for (int i = 0; i < fixed_count; i++) {
+			if (binding[i] == 0 && declaration->parameters[i]->initializer == nullptr) {
+				push_error(vformat(R"(Annotation "%s" is missing required argument "%s".)", p_annotation->name, declaration->parameters[i]->identifier->name), p_annotation);
+			}
+		}
 	}
 }
 
@@ -11502,6 +11811,13 @@ Error GDScriptAnalyzer::resolve_interface() {
 	}
 
 	resolve_class_interface(parser->head, true);
+
+	// Validate custom annotation declaration signatures after the class interface so constant
+	// defaults can reference resolved members and constants. Running it here resolves declarations
+	// both for the head (via `analyze()`) and for imported files raised to `INTERFACE_SOLVED`,
+	// which lets import-aware usage resolution read another file's parameter types and defaults.
+	resolve_annotation_declaration_signatures();
+
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
 }
 

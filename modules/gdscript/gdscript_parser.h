@@ -453,6 +453,10 @@ public:
 		// preserves the node instead of rejecting the unknown name so the analyzer can perform
 		// import-aware resolution and validation. Such nodes have a null `info`.
 		bool is_custom = false;
+		// Canonical identity of the custom annotation declaration this usage resolved to, set by
+		// the analyzer ("<namespace>.<name>", or "<name>" in the global namespace). Empty until a
+		// custom usage resolves; the compiler reads it to persist passive annotation metadata.
+		String resolved_qualified_name;
 		PropertyInfo export_info;
 		bool is_resolved = false;
 		bool is_applied = false;
@@ -483,6 +487,10 @@ public:
 		uint32_t targets = TARGET_NONE; // Flags from `Target`.
 		// Canonical identity: "<namespace>.<name>", or just "<name>" in the global namespace.
 		String qualified_name;
+		// True once the analyzer has validated the declaration signature (parameter types and
+		// constant defaults). Guards the idempotent resolution shared by the local validation
+		// pass and import-aware usage resolution from other files.
+		bool resolved_signature = false;
 
 		bool is_variadic() const { return rest_parameter != nullptr; }
 
