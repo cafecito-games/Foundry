@@ -142,7 +142,7 @@ An unknown hint is inert everywhere it is not understood:
 
 - **Inspector / `EditorHelp`** — fall back to the plain `Callable`/`Signal` label. Verify rendering does not choke on the new hint value; default-case handling should already ignore unknown hints.
 - **Generated class-reference docs** — the doc generator ignores the hint; verify no spurious diffs in generated docs.
-- **Resource `.tres` / scene round-trip** — `hint_string` is preserved as an opaque string; existing untyped callables emit no hint and are unchanged.
+- **Resource `.tres` / scene round-trip** — `PropertyInfo.hint_string` is a plain `String` serialized verbatim by the resource format with no hint-specific parsing, so it is structurally opaque-passthrough. In practice typed callable signatures are method-local rather than `@export`ed properties saved to disk, so the path is rarely if ever exercised; existing untyped callables emit no hint and are unchanged. An encode↔decode round-trip unit test guards the format's stability directly.
 - **Other language bindings** — see Non-goals; the format is reserved canonical, no binding reads it yet.
 
 ## Ripple-review checklist
@@ -172,7 +172,7 @@ Regenerate `.out` fixtures after intentional behavior changes via `--gdscript-ge
 Deferred; capture as the format/encoding matures.
 
 1. **Arity flexibility — default-arg count & vararg flags.** The signature encodes a fixed parameter list. Callables compare with default/bound-argument tolerance (`transformed_callable_type` juggles default-arg counts locally), but the hint carries none of it, so a cross-script callable with optional params is compared more rigidly than a local one. A future trailing field (e.g. a default-count / vararg marker) would close the asymmetry.
-2. **Exact local-script identity.** Like the existing container hints, a non-global `preload`'d script leaf degrades to its native base name. A future resolver keyed on script path could preserve exact local-script identity, but embedding resource paths in hint strings is fragile, so it is deferred.
+2. **Enum and non-global script/class leaf fidelity (tracked: #446).** Like the existing container hints, an `ENUM`-typed leaf (encoded `Name.Member`) has no decoder branch and a non-global `preload`'d script/class leaf degrades to its native base name — so those nested slots decode to `Variant`/base across the boundary rather than round-tripping precisely. This is a fidelity limitation, not a soundness regression (mismatches on those slots are simply not caught cross-script; they are still caught within a single script). A future resolver shared with the `Array`/`Dictionary` hint paths would add an `ENUM` branch; a path-keyed resolver could preserve exact local-script identity, though embedding resource paths in hint strings is fragile.
 3. **Shared core decoder for binding parity.** The decoder lives in the GDScript module. When C#/GDExtension adopt the format (epic #144), lifting it into core avoids two implementations drifting.
 4. **Format versioning.** A reserved sentinel/marker would let the grammar gain fields (such as #1) later without ambiguity against the v1 form — cheap insurance for an engine-wide serialization surface.
 
