@@ -155,6 +155,13 @@ public:
 
 	static void clear();
 
+	// Drops every cached parser and analyzed-script entry so the next access re-parses and
+	// re-analyzes against the current project settings. Used when an analysis-affecting setting
+	// (e.g. the strict-mode flags read by GDScriptAnalyzer) changes mid-session, so a live editor
+	// session re-reports already-cached scripts under the new flags instead of the stale ones the
+	// entries were built with. Source overrides are preserved; only built artifacts are dropped.
+	static void invalidate_analysis();
+
 	GDScriptCache();
 	~GDScriptCache();
 };

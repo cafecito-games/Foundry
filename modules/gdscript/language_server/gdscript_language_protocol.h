@@ -150,6 +150,12 @@ public:
 	 */
 	ExtendGDScriptParser *get_parse_result(const String &p_path);
 
+	// Re-parses every open (client-managed) document from its in-memory buffer and re-publishes its
+	// diagnostics. Used when an analysis-affecting project setting (e.g. the strict-mode flags)
+	// changes, so already-open documents are re-reported under the new flags without waiting for an
+	// edit or reopen. Re-parsing reads the managed buffer, not disk, so unsaved edits are preserved.
+	void reparse_open_scripts();
+
 	GDScriptLanguageProtocol();
 	~GDScriptLanguageProtocol();
 };

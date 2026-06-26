@@ -31,6 +31,7 @@
 #include "gdscript_parser.h"
 
 #include "gdscript.h"
+#include "gdscript_cache.h"
 #include "gdscript_tokenizer_buffer.h"
 
 #include "core/config/project_settings.h"
@@ -139,6 +140,39 @@ void GDScriptParser::update_project_settings() {
 	};
 
 	warning_directory_rules.sort_custom<RuleSort>();
+}
+
+bool GDScriptParser::invalidate_analysis_on_strict_settings_change() {
+	// GDScriptAnalyzer snapshots these two flags through get_setting_with_override() (via
+	// GLOBAL_GET_CACHED), so track the effective, override-aware values to decide when a change
+	// actually alters analysis output. Seeded false on first call to match the analyzer defaults; a
+	// project that boots with strict mode already on resolves identically on first analysis, so no
+	// invalidation is needed until a value actually flips.
+	static bool last_strict_null = false;
+	static bool last_strict_dynamic = false;
+	static bool initialized = false;
+
+	const ProjectSettings *settings = ProjectSettings::get_singleton();
+	const bool strict_null = (bool)settings->get_setting_with_override("debug/gdscript/analysis/strict_null_checks");
+	const bool strict_dynamic = (bool)settings->get_setting_with_override("debug/gdscript/analysis/strict_dynamic_checks");
+
+	const bool changed = !initialized || strict_null != last_strict_null || strict_dynamic != last_strict_dynamic;
+	last_strict_null = strict_null;
+	last_strict_dynamic = strict_dynamic;
+
+	if (!initialized) {
+		// First observation establishes the baseline without invalidating anything.
+		initialized = true;
+		return false;
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	// Drop already-built parsers/scripts so the live session re-analyzes under the new flags.
+	GDScriptCache::invalidate_analysis();
+	return true;
 }
 #endif // DEBUG_ENABLED
 

@@ -767,6 +767,12 @@ public:
 
 	virtual void reload_all_scripts() override;
 	virtual void reload_scripts(const Array &p_scripts, bool p_soft_reload) override;
+#ifdef DEBUG_ENABLED
+	// Connected to ProjectSettings::settings_changed. When a strict analysis flag changes it
+	// invalidates the GDScript cache and reloads scripts so the live session re-reports them under
+	// the new flags. A no-op when no analysis-affecting setting changed.
+	static void _on_settings_changed();
+#endif // DEBUG_ENABLED
 	virtual void reload_tool_script(const Ref<Script> &p_script, bool p_soft_reload) override;
 
 	virtual void frame() override;

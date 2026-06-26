@@ -532,6 +532,33 @@ void GDScriptLanguageProtocol::resolve_related_symbols(const LSP::TextDocumentPo
 	}
 }
 
+void GDScriptLanguageProtocol::reparse_open_scripts() {
+	// parse_script() -> GDScriptWorkspace::publish_diagnostics() resolves and notifies through
+	// latest_client_id, so each client must be made the "latest" while its own documents are
+	// reparsed; otherwise a non-latest client's diagnostics would be computed for and sent to the
+	// latest client. Restore the original afterward so this side-effecting hook leaves the routing
+	// state as it found it.
+	const int previous_latest_client_id = latest_client_id;
+	for (KeyValue<int, Ref<LSPeer>> &client : clients) {
+		if (client.value.is_null()) {
+			continue;
+		}
+		latest_client_id = client.key;
+		// Snapshot the managed paths: parse_script() mutates parse_results/stale_parsers, so iterating
+		// the live managed_files map directly while re-parsing would be unsafe.
+		Vector<String> paths;
+		for (const KeyValue<String, LSP::TextDocumentItem> &document : client.value->managed_files) {
+			paths.push_back(document.key);
+		}
+		for (const String &path : paths) {
+			// Re-parses from the managed in-memory buffer and re-publishes diagnostics to this client
+			// under the now current strict flags.
+			client.value->parse_script(path);
+		}
+	}
+	latest_client_id = previous_latest_client_id;
+}
+
 GDScriptLanguageProtocol::LSPeer::~LSPeer() {
 	while (!parse_results.is_empty()) {
 		String path = parse_results.begin()->key;

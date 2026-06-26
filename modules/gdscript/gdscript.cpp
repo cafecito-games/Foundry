@@ -43,6 +43,10 @@
 #include "editor/gdscript_docgen.h"
 #endif
 
+#if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+#include "language_server/gdscript_language_protocol.h"
+#endif
+
 #ifdef TESTS_ENABLED
 #include "tests/gdscript_benchmark_runner.h"
 #include "tests/gdscript_test_runner.h"
@@ -2349,6 +2353,11 @@ void GDScriptLanguage::init() {
 	if (!ProjectSettings::get_singleton()->is_connected("settings_changed", callable_mp_static(&GDScriptParser::update_project_settings))) {
 		ProjectSettings::get_singleton()->connect("settings_changed", callable_mp_static(&GDScriptParser::update_project_settings));
 	}
+	// Seed the strict-settings baseline and react to later changes by re-analyzing the live session.
+	GDScriptParser::invalidate_analysis_on_strict_settings_change();
+	if (!ProjectSettings::get_singleton()->is_connected("settings_changed", callable_mp_static(&GDScriptLanguage::_on_settings_changed))) {
+		ProjectSettings::get_singleton()->connect("settings_changed", callable_mp_static(&GDScriptLanguage::_on_settings_changed));
+	}
 #endif // DEBUG_ENABLED
 
 #ifdef TESTS_ENABLED
@@ -2616,6 +2625,30 @@ struct GDScriptDepSort {
 		return false; //not a base
 	}
 };
+
+#ifdef DEBUG_ENABLED
+void GDScriptLanguage::_on_settings_changed() {
+	if (GDScriptParser::invalidate_analysis_on_strict_settings_change()) {
+		// A strict flag flipped: the cache's stale parser/script artifacts were just dropped, so the
+		// next analysis of any script reads the new flags. We deliberately do NOT reload script
+		// resources from disk here (e.g. reload_all_scripts(), whose path replaces in-memory source
+		// with the on-disk version): that would clobber unsaved edits in open script buffers. The
+		// editor re-validates open buffers from their own in-memory source on the next validation
+		// pass, which now resolves against the invalidated cache and reports under the new flags.
+		print_verbose("GDScript: Strict analysis settings changed; invalidated analysis cache.");
+
+#if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+		// The language server caches its own parsers per open document and would otherwise keep
+		// publishing diagnostics from the old strict mode until an edit/reopen. Re-parse the open
+		// documents from their in-memory buffers so the LSP re-publishes under the new flags too.
+		GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+		if (protocol != nullptr && protocol->is_initialized()) {
+			protocol->reparse_open_scripts();
+		}
+#endif
+	}
+}
+#endif // DEBUG_ENABLED
 
 void GDScriptLanguage::reload_all_scripts() {
 #ifdef DEBUG_ENABLED

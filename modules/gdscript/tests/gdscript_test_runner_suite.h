@@ -47,6 +47,10 @@ public:
 	static bool has_full(String p_path) {
 		return GDScriptCache::singleton->full_gdscript_cache.has(p_path);
 	}
+
+	static bool has_parser(String p_path) {
+		return GDScriptCache::singleton->parser_map.has(p_path);
+	}
 };
 
 // TODO: Handle some cases failing on release builds. See: https://github.com/godotengine/godot/pull/88452
