@@ -3175,4 +3175,204 @@ void test(TestType p_type) {
 
 	finish_language();
 }
+
+static const Vector<GDScript::AnnotationUsage> *find_annotation_usages(const HashMap<StringName, Vector<GDScript::AnnotationUsage>> &p_table, const StringName &p_name) {
+	const Vector<GDScript::AnnotationUsage> *usages = p_table.getptr(p_name);
+	return usages;
+}
+
+TEST_CASE("[Modules][GDScript] Compiled scripts persist custom annotation metadata") {
+	ScopedGDScriptNativeGlobals native_globals;
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace cafecito.persist_demo
+
+extends RefCounted
+uses Mixin
+
+annotation suite(name: String = "") targets CLASS
+annotation tags(...names: String) targets CLASS, METHOD
+annotation test targets METHOD
+annotation timeout(seconds: float) targets METHOD
+annotation cases(provider: String) targets METHOD
+annotation fixture targets VARIABLE
+annotation label(text: String) targets VARIABLE
+
+trait Mixin:
+	@fixture
+	@label("from_trait")
+	var helper: int
+
+	@test
+	@tags("trait")
+	func trait_method() -> void:
+		pass
+
+@fixture
+var world: int
+
+@export var exported_value: int = 0
+
+@test
+@timeout(10.0)
+@cases(provider = "crit_rows")
+@tags("a", "b")
+func crit_table() -> void:
+	pass
+
+@suite(name = "Combat")
+@tags("gameplay")
+class Inner:
+	@test
+	func inner_method() -> void:
+		pass
+)",
+			"user://annotation_metadata.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptCompiler compiler;
+	Ref<GDScript> script;
+	script.instantiate();
+	script->set_path("user://annotation_metadata.gd");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	// Root class carries no annotations of its own.
+	CHECK(script->get_class_annotations().is_empty());
+
+	// Root method annotations preserve source order and split positional/named arguments.
+	{
+		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_method_annotations(), SNAME("crit_table"));
+		CHECK(usages != nullptr);
+		if (usages != nullptr) {
+			CHECK_EQ(usages->size(), 4);
+			if (usages->size() == 4) {
+				CHECK_EQ((*usages)[0].name, SNAME("test"));
+				CHECK_EQ((*usages)[0].qualified_name, SNAME("cafecito.persist_demo.test"));
+				CHECK((*usages)[0].args.is_empty());
+				CHECK((*usages)[0].kwargs.is_empty());
+
+				CHECK_EQ((*usages)[1].name, SNAME("timeout"));
+				CHECK_EQ((*usages)[1].args.size(), 1);
+				if (!(*usages)[1].args.is_empty()) {
+					CHECK_EQ(double((*usages)[1].args[0]), doctest::Approx(10.0));
+				}
+				CHECK((*usages)[1].kwargs.is_empty());
+
+				CHECK_EQ((*usages)[2].name, SNAME("cases"));
+				CHECK((*usages)[2].args.is_empty());
+				CHECK_EQ((*usages)[2].kwargs.size(), 1);
+				CHECK_EQ(String((*usages)[2].kwargs[SNAME("provider")]), "crit_rows");
+
+				CHECK_EQ((*usages)[3].name, SNAME("tags"));
+				CHECK_EQ((*usages)[3].args.size(), 2);
+				if ((*usages)[3].args.size() == 2) {
+					CHECK_EQ(String((*usages)[3].args[0]), "a");
+					CHECK_EQ(String((*usages)[3].args[1]), "b");
+				}
+			}
+		}
+	}
+
+	// Root member-variable annotations; built-in annotations such as `@export` are excluded.
+	{
+		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_variable_annotations(), SNAME("world"));
+		CHECK(usages != nullptr);
+		if (usages != nullptr) {
+			CHECK_EQ(usages->size(), 1);
+			if (!usages->is_empty()) {
+				CHECK_EQ((*usages)[0].name, SNAME("fixture"));
+			}
+		}
+
+		CHECK(find_annotation_usages(script->get_variable_annotations(), SNAME("exported_value")) == nullptr);
+	}
+
+	// Concrete trait members flattened into the implementer carry their declaration annotations.
+	{
+		const Vector<GDScript::AnnotationUsage> *method_usages = find_annotation_usages(script->get_method_annotations(), SNAME("trait_method"));
+		CHECK(method_usages != nullptr);
+		if (method_usages != nullptr) {
+			CHECK_EQ(method_usages->size(), 2);
+			if (method_usages->size() == 2) {
+				CHECK_EQ((*method_usages)[0].name, SNAME("test"));
+				CHECK_EQ((*method_usages)[1].name, SNAME("tags"));
+				CHECK_EQ((*method_usages)[1].args.size(), 1);
+				if (!(*method_usages)[1].args.is_empty()) {
+					CHECK_EQ(String((*method_usages)[1].args[0]), "trait");
+				}
+			}
+		}
+
+		const Vector<GDScript::AnnotationUsage> *variable_usages = find_annotation_usages(script->get_variable_annotations(), SNAME("helper"));
+		CHECK(variable_usages != nullptr);
+		if (variable_usages != nullptr) {
+			CHECK_EQ(variable_usages->size(), 2);
+			if (variable_usages->size() == 2) {
+				CHECK_EQ((*variable_usages)[0].name, SNAME("fixture"));
+				CHECK_EQ((*variable_usages)[1].name, SNAME("label"));
+				CHECK_EQ((*variable_usages)[1].args.size(), 1);
+				if (!(*variable_usages)[1].args.is_empty()) {
+					CHECK_EQ(String((*variable_usages)[1].args[0]), "from_trait");
+				}
+			}
+		}
+	}
+
+	// Inner-class annotations live on the compiled subclass and are direct-only.
+	{
+		const HashMap<StringName, Ref<GDScript>> &subclasses = script->get_subclasses();
+		CHECK(subclasses.has(SNAME("Inner")));
+		if (subclasses.has(SNAME("Inner"))) {
+			Ref<GDScript> inner = subclasses[SNAME("Inner")];
+			CHECK(inner.is_valid());
+			if (inner.is_valid()) {
+				const Vector<GDScript::AnnotationUsage> &class_usages = inner->get_class_annotations();
+				CHECK_EQ(class_usages.size(), 2);
+				if (class_usages.size() == 2) {
+					CHECK_EQ(class_usages[0].name, SNAME("suite"));
+					CHECK_EQ(class_usages[0].qualified_name, SNAME("cafecito.persist_demo.suite"));
+					CHECK_EQ(class_usages[0].kwargs.size(), 1);
+					CHECK_EQ(String(class_usages[0].kwargs[SNAME("name")]), "Combat");
+					CHECK_EQ(class_usages[1].name, SNAME("tags"));
+					CHECK_EQ(class_usages[1].args.size(), 1);
+					if (!class_usages[1].args.is_empty()) {
+						CHECK_EQ(String(class_usages[1].args[0]), "gameplay");
+					}
+				}
+
+				const Vector<GDScript::AnnotationUsage> *inner_method = find_annotation_usages(inner->get_method_annotations(), SNAME("inner_method"));
+				CHECK(inner_method != nullptr);
+				if (inner_method != nullptr) {
+					CHECK_EQ(inner_method->size(), 1);
+					if (!inner_method->is_empty()) {
+						CHECK_EQ((*inner_method)[0].name, SNAME("test"));
+					}
+				}
+			}
+		}
+	}
+
+	// Clearing the compiled script wipes the persisted annotation metadata.
+	script->clear();
+	CHECK(script->get_class_annotations().is_empty());
+	CHECK(script->get_method_annotations().is_empty());
+	CHECK(script->get_variable_annotations().is_empty());
+}
 } // namespace GDScriptTests
