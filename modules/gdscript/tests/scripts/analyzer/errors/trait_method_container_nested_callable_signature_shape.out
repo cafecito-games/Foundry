@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 11: The function "on()" signature does not match required trait method "T.on()".

@@ -340,6 +340,61 @@ TEST_CASE("[Modules][GDScript] Type compatibility checks callable and signal sig
 	CHECK_FALSE(GDScriptTypeCompatibility::check(callable_array_target, callable_array_bad_source).compatible);
 }
 
+static GDScriptParser::DataType make_callable_with_parameter(const GDScriptParser::DataType &p_parameter_type) {
+	GDScriptParser::DataType type = make_builtin_type(Variant::CALLABLE);
+	type.has_method_signature = true;
+	type.has_explicit_method_signature = true;
+	type.method_parameter_types.push_back(p_parameter_type);
+	type.method_return_type.push_back(make_builtin_type(Variant::NIL));
+	type.method_info.return_val.type = Variant::NIL;
+	type.method_info.arguments.push_back(PropertyInfo(Variant::CALLABLE, "handler"));
+	return type;
+}
+
+static GDScriptParser::DataType make_callable_returning(const GDScriptParser::DataType &p_return_type) {
+	GDScriptParser::DataType type = make_builtin_type(Variant::CALLABLE);
+	type.has_method_signature = true;
+	type.has_explicit_method_signature = true;
+	type.method_return_type.push_back(p_return_type);
+	type.method_info.return_val.type = Variant::CALLABLE;
+	return type;
+}
+
+TEST_CASE("[Modules][GDScript] Type compatibility recurses through nested callable signatures") {
+	const GDScriptParser::DataType inner_int = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::NIL);
+	const GDScriptParser::DataType inner_string = make_signature_builtin_type(Variant::CALLABLE, Variant::STRING, Variant::NIL);
+
+	// A Callable nested inside another Callable's parameter signature must match deeply.
+	const GDScriptParser::DataType parameter_target = make_callable_with_parameter(inner_int);
+	const GDScriptParser::DataType parameter_matching_source = make_callable_with_parameter(inner_int);
+	const GDScriptParser::DataType parameter_mismatched_source = make_callable_with_parameter(inner_string);
+
+	CHECK(GDScriptTypeCompatibility::check(parameter_target, parameter_matching_source).compatible);
+	CHECK_FALSE(GDScriptTypeCompatibility::check(parameter_target, parameter_mismatched_source).compatible);
+
+	// A Callable nested inside another Callable's return signature must match deeply.
+	const GDScriptParser::DataType return_target = make_callable_returning(inner_int);
+	const GDScriptParser::DataType return_matching_source = make_callable_returning(inner_int);
+	const GDScriptParser::DataType return_mismatched_source = make_callable_returning(inner_string);
+
+	CHECK(GDScriptTypeCompatibility::check(return_target, return_matching_source).compatible);
+	CHECK_FALSE(GDScriptTypeCompatibility::check(return_target, return_mismatched_source).compatible);
+
+	// A Callable hidden inside a typed container slot of another Callable's signature must still
+	// match deeply: `Callable[[Array[Callable[[int], void]]], void]` differs from the String variant.
+	GDScriptParser::DataType array_of_int = make_builtin_type(Variant::ARRAY);
+	array_of_int.set_container_element_type(0, inner_int);
+	GDScriptParser::DataType array_of_string = make_builtin_type(Variant::ARRAY);
+	array_of_string.set_container_element_type(0, inner_string);
+
+	const GDScriptParser::DataType container_target = make_callable_with_parameter(array_of_int);
+	const GDScriptParser::DataType container_matching_source = make_callable_with_parameter(array_of_int);
+	const GDScriptParser::DataType container_mismatched_source = make_callable_with_parameter(array_of_string);
+
+	CHECK(GDScriptTypeCompatibility::check(container_target, container_matching_source).compatible);
+	CHECK_FALSE(GDScriptTypeCompatibility::check(container_target, container_mismatched_source).compatible);
+}
+
 TEST_CASE("[Modules][GDScript] Parser resolves nullable type annotations") {
 	GDScriptParser parser;
 	Error err = parser.parse("var maybe_node: Node?\nvar maybe_nodes: Array[Node?]\n", "user://nullable_type.gd", false);
