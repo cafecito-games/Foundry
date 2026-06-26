@@ -11267,14 +11267,26 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		slots.write[i] = nullptr;
 	}
 
+	// Track the source (written) position of the argument occupying each slot so the canonical call
+	// can carry a source-order evaluation list for codegen. A slot left at -1 holds either nothing or
+	// a synthesized constant gap-fill, neither of which has an observable evaluation position.
+	Vector<int> slot_source_index;
+	slot_source_index.resize(parameter_count);
+	for (int i = 0; i < parameter_count; i++) {
+		slot_source_index.write[i] = -1;
+	}
+
 	// Positional arguments fill the leading parameter slots in order. Arguments beyond the fixed
 	// parameter count belong to a rest parameter and keep their order after the fixed slots.
 	Vector<GDScriptParser::ExpressionNode *> rest_arguments;
+	Vector<int> rest_source_index;
 	for (int i = 0; i < positional_count; i++) {
 		if (i < parameter_count) {
 			slots.write[i] = p_call->arguments[i];
+			slot_source_index.write[i] = i;
 		} else {
 			rest_arguments.push_back(p_call->arguments[i]);
+			rest_source_index.push_back(i);
 		}
 	}
 
@@ -11297,6 +11309,7 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 			return false;
 		}
 		slots.write[*parameter_index] = p_call->arguments[i];
+		slot_source_index.write[*parameter_index] = i;
 	}
 
 	int max_filled_index = -1;
@@ -11371,15 +11384,51 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 	}
 
 	Vector<GDScriptParser::ExpressionNode *> canonical_arguments;
+	// Pair each canonical argument with the source position that determines its evaluation order.
+	// Real arguments use their written position; synthesized constant gap-fills carry no source
+	// position and are evaluated last (they have no side effects, so their order is irrelevant).
+	Vector<int> canonical_source_index;
 	for (int i = 0; i <= max_filled_index; i++) {
 		canonical_arguments.push_back(slots[i]);
+		canonical_source_index.push_back(slot_source_index[i]);
 	}
 	for (int i = 0; i < rest_arguments.size(); i++) {
 		canonical_arguments.push_back(rest_arguments[i]);
+		canonical_source_index.push_back(rest_source_index[i]);
+	}
+
+	// Build the source-order evaluation list: canonical indices sorted by written position, with the
+	// side-effect-free synthesized constants appended in canonical order. The compiler evaluates the
+	// argument expressions in this order while still binding them to parameters positionally, so a
+	// named call's side effects run left to right as written. Only record it when it differs from the
+	// canonical order; an identity permutation lets the compiler keep its default front-to-back walk.
+	Vector<int> evaluation_order;
+	bool reordered = false;
+	for (int source = 0; source < p_call->arguments.size(); source++) {
+		for (int canonical = 0; canonical < canonical_source_index.size(); canonical++) {
+			if (canonical_source_index[canonical] == source) {
+				if (canonical != evaluation_order.size()) {
+					reordered = true;
+				}
+				evaluation_order.push_back(canonical);
+				break;
+			}
+		}
+	}
+	for (int canonical = 0; canonical < canonical_source_index.size(); canonical++) {
+		if (canonical_source_index[canonical] == -1) {
+			if (canonical != evaluation_order.size()) {
+				reordered = true;
+			}
+			evaluation_order.push_back(canonical);
+		}
 	}
 
 	p_call->arguments = canonical_arguments;
 	p_call->argument_names.clear();
+	if (reordered) {
+		p_call->argument_evaluation_order = evaluation_order;
+	}
 	return true;
 }
 

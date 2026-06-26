@@ -639,6 +639,14 @@ public:
 		// from generic type-parameter inference and from post-substitution argument validation, so a
 		// baked default behaves exactly like a trailing omitted default the callee fills in at runtime.
 		HashSet<int> synthesized_argument_indices;
+		// Source (left-to-right written) evaluation order for a canonicalized named-argument call.
+		// Canonicalization rewrites `arguments` into parameter (positional) order so the callee binds
+		// by position, but the argument expressions must still be evaluated in the order they were
+		// written, like Python/C#/Kotlin. Each entry is an index into the canonical `arguments`,
+		// listed in the order the compiler should evaluate them; synthesized constant gap-fills are
+		// side-effect-free and ordered last. Empty for ordinary calls, where positional order already
+		// matches source order and the compiler evaluates `arguments` front to back.
+		Vector<int> argument_evaluation_order;
 #ifdef TOOLS_ENABLED
 		// Resolved parameter types for the called signature, in declaration order,
 		// recorded by the analyzer right before argument validation. Editor refactors

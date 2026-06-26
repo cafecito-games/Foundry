@@ -713,13 +713,21 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				result = codegen.add_temporary(type);
 			}
 
+			// Evaluate the argument expressions, then bind them to the callee positionally. A
+			// canonicalized named call records the source (written) evaluation order so its
+			// side-effectful arguments run left to right as written even though `arguments` is in
+			// parameter order; an ordinary call leaves it empty and evaluates front to back.
 			Vector<GDScriptCodeGenerator::Address> arguments;
-			for (int i = 0; i < call->arguments.size(); i++) {
+			arguments.resize(call->arguments.size());
+			const Vector<int> &evaluation_order = call->argument_evaluation_order;
+			const bool has_evaluation_order = !evaluation_order.is_empty();
+			for (int order = 0; order < call->arguments.size(); order++) {
+				const int i = has_evaluation_order ? evaluation_order[order] : order;
 				GDScriptCodeGenerator::Address arg = _parse_expression(codegen, r_error, call->arguments[i]);
 				if (r_error) {
 					return GDScriptCodeGenerator::Address();
 				}
-				arguments.push_back(arg);
+				arguments.write[i] = arg;
 			}
 
 			if (call->is_proxy_construct) {

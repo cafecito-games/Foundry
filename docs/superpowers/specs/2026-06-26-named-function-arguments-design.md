@@ -18,10 +18,13 @@ print_greeting(greeting = "Hello friend!", name = "Bob")
 
 The feature is resolved **entirely at compile time**. The parser learns to
 attach a name to a call argument; the analyzer maps names to parameter positions
-and rewrites each call into canonical positional order; codegen and the VM are
-untouched, because by the time bytecode is emitted every call is already
-positional. The runtime never learns that named arguments exist, so there is no
-bytecode-format or compiled-script binary-compatibility impact.
+and rewrites each call into canonical positional order; the VM is untouched,
+because by the time bytecode is emitted every call is already positional. Codegen
+emits the existing call opcodes unchanged, but evaluates the argument expressions
+in **source order** (see "Evaluation order") rather than the rewritten positional
+order, so side effects run left to right as written. The runtime never learns
+that named arguments exist, so there is no bytecode-format or compiled-script
+binary-compatibility impact.
 
 ## Goals
 
@@ -95,6 +98,24 @@ the call site.
    that constant. If its default is a non-constant expression, it is an error.
    Omitted *trailing* parameters are handled by the callee's existing default
    mechanism, regardless of default kind.
+8. **Evaluation order.** Argument *expressions* are evaluated in source
+   (left-to-right written) order, matching Python, C#, and Kotlin; the parameter
+   name only chooses which parameter each value *binds* to. `f(b = g(), a = h())`
+   evaluates `g()` before `h()` even though it binds `a = h()` first. Synthesized
+   constant gap-fills have no side effects and are immaterial to this order.
+
+### Evaluation order
+
+Canonicalization rewrites `arguments` into parameter order so the callee binds by
+position, which would otherwise make codegen evaluate the arguments in
+parameter-declaration order. To keep observable side effects in written order,
+the analyzer records a source-order evaluation list (`CallNode.argument_evaluation_order`,
+a permutation of the canonical argument indices) whenever the rewrite reorders the
+arguments. The compiler evaluates the argument expressions in that order into
+registers, then passes the register addresses to the existing call opcode in
+positional order. This needs no new opcode and no VM/ABI change: it only reorders
+which existing argument expression is evaluated first. An ordinary positional call
+leaves the list empty and is evaluated front to back as before.
 
 ### Worked examples
 
@@ -176,10 +197,18 @@ refactor surfaces see an ordinary positional call.
 
 ### Codegen / VM
 
-No changes. The `CallNode` reaching the compiler holds a pure positional
+No VM/ABI changes. The `CallNode` reaching the compiler holds a pure positional
 `arguments` vector (middle gaps materialized as constants, trailing omissions
 left to the callee). Existing call opcodes, the `OPCODE_JUMP_TO_DEF_ARGUMENT`
 jump table, and rest-parameter packing operate exactly as today.
+
+The one codegen refinement is evaluation order: when `CallNode.argument_evaluation_order`
+is set, the compiler evaluates the argument expressions in that source order
+(allocating each result into a temporary as usual) and then references the
+resulting addresses positionally in the call. Because every argument is already
+evaluated into a register before the call opcode is emitted, this is a pure
+reordering of the argument-evaluation loop — the emitted opcode, the argument
+register layout, and the temporary stack discipline are unchanged.
 
 Synthesized constant gap-fill arguments flow through the normal
 constant-argument path, so the callee's `use_conversion_assign` behavior for
