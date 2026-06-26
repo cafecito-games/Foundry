@@ -10058,11 +10058,32 @@ void GDScriptAnalyzer::reduce_call_create_proxy(GDScriptParser::CallNode *p_call
 	error_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	error_type.kind = GDScriptParser::DataType::VARIANT;
 
+	// Read the full use-site type-argument list positionally. A single argument is
+	// captured in `index`; a multi-argument list (`create_proxy[A, B]`) populates
+	// `type_arguments`, with `index` aliasing the first element. `create_proxy[T]`
+	// takes exactly one type parameter, so anything other than a single argument is an
+	// arity error rather than silently consuming only the first entry.
+	Vector<GDScriptParser::ExpressionNode *> argument_expressions;
+	if (p_callee->type_arguments.is_empty()) {
+		if (p_callee->index != nullptr) {
+			argument_expressions.push_back(p_callee->index);
+		}
+	} else {
+		argument_expressions = p_callee->type_arguments;
+	}
+
+	if (argument_expressions.size() != 1) {
+		push_error(vformat(R"*(create_proxy[T]() expects a single type argument, but %d %s given.)*", argument_expressions.size(), argument_expressions.size() == 1 ? "was" : "were"), p_callee->index != nullptr ? static_cast<GDScriptParser::Node *>(p_callee->index) : static_cast<GDScriptParser::Node *>(p_call));
+		p_call->set_datatype(error_type);
+		mark_node_unsafe(p_call);
+		return;
+	}
+
 	// Resolve the `[T]` type argument. This also reduces a class-name index as a value,
 	// which the compiler later compiles into T's script reference.
 	GDScriptParser::DataType type_argument;
-	if (p_callee->index == nullptr || !resolve_explicit_type_argument(p_callee->index, type_argument)) {
-		push_error(R"*(Could not resolve the type argument for "create_proxy[T]()".)*", p_callee->index != nullptr ? static_cast<GDScriptParser::Node *>(p_callee->index) : static_cast<GDScriptParser::Node *>(p_call));
+	if (!resolve_explicit_type_argument(argument_expressions[0], type_argument)) {
+		push_error(R"*(Could not resolve the type argument for "create_proxy[T]()".)*", argument_expressions[0]);
 		p_call->set_datatype(error_type);
 		mark_node_unsafe(p_call);
 		return;
