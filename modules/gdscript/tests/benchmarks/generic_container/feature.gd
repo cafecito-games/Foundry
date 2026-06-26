@@ -1,7 +1,8 @@
-# Feature side: a generic container `Box[T]` instantiated at a concrete type. The
-# member `Array[T]` and the `T`-typed method parameter exercise the fork's type
-# argument reification. Observable work matches baseline.gd exactly; the only
-# difference is the type parameter `[T]` vs the concrete `int`.
+# Feature side: a generic container `Box[T]` instantiated at a concrete type,
+# exercising the fork's generic-class machinery (specialized handle reification,
+# generic dispatch). Observable work matches baseline.gd: both append an int per
+# iteration and clear past a bound. The baseline mirrors this with a plain class
+# over an untyped array so the only measured difference is the generic class.
 extends RefCounted
 
 class Box[T]:
