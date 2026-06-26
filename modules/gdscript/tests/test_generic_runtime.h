@@ -259,6 +259,107 @@ TEST_CASE("[Modules][GDScript][Generics] ContainerType carries and serializes ty
 	CHECK(unspecialized != specialized);
 }
 
+TEST_CASE("[Modules][GDScript][Generics] Reified type arguments round-trip through instance storage") {
+	ScopedGenericRuntimeLanguage language;
+
+	const char *source =
+			"class Pair[K, V]:\n"
+			"\tvar first: K\n"
+			"\tvar second: V\n";
+
+	Ref<GDScript> script = compile_generic_runtime_source(source);
+	Ref<GDScript> pair = get_generic_subclass(script, "Pair");
+	REQUIRE(pair.is_valid());
+
+	// Stable serialized name of the hidden storage property persisted into `.tres`/scene files.
+	const StringName type_arguments_property = SNAME("__gdscript_type_arguments__");
+
+	// A nested container argument (`Array[int]`) and a script-typed argument (`Pair`) cover both
+	// descriptor branches: recursive element metadata and a Script resource reference.
+	ContainerType int_element;
+	int_element.builtin_type = Variant::INT;
+	ContainerType array_argument;
+	array_argument.builtin_type = Variant::ARRAY;
+	array_argument.element_types.push_back(int_element);
+
+	ContainerType script_argument;
+	script_argument.builtin_type = Variant::OBJECT;
+	script_argument.class_name = pair->get_instance_base_type();
+	script_argument.script = pair;
+
+	Vector<ContainerType> type_arguments;
+	type_arguments.push_back(array_argument);
+	type_arguments.push_back(script_argument);
+
+	Callable::CallError error;
+	Variant source_value = pair->_new_specialized(nullptr, 0, type_arguments, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	GDScriptInstance *source_instance = gdscript_instance_of(source_value);
+	REQUIRE(source_instance != nullptr);
+
+	// The hidden storage property is advertised (with STORAGE usage) only for specialized instances.
+	{
+		List<PropertyInfo> properties;
+		source_instance->get_property_list(&properties);
+		bool found = false;
+		for (const PropertyInfo &info : properties) {
+			if (info.name == type_arguments_property) {
+				found = true;
+				CHECK(info.type == Variant::ARRAY);
+				CHECK((info.usage & PROPERTY_USAGE_STORAGE) != 0);
+			}
+		}
+		CHECK(found);
+	}
+
+	// Serialize, then restore onto a fresh, plain instance — the same get/set storage path that
+	// duplication and `.tres`/scene save-load travel.
+	Variant serialized;
+	REQUIRE(source_instance->get(type_arguments_property, serialized));
+	REQUIRE(serialized.get_type() == Variant::ARRAY);
+
+	Callable::CallError plain_error;
+	Variant restored_value = pair->_new(nullptr, -1, plain_error);
+	REQUIRE(plain_error.error == Callable::CallError::CALL_OK);
+	GDScriptInstance *restored_instance = gdscript_instance_of(restored_value);
+	REQUIRE(restored_instance != nullptr);
+	REQUIRE(restored_instance->get_type_arguments().is_empty());
+
+	CHECK(restored_instance->set(type_arguments_property, serialized));
+
+	const Vector<ContainerType> &restored = restored_instance->get_type_arguments();
+	REQUIRE(restored.size() == 2);
+	CHECK(restored[0] == array_argument);
+	CHECK(restored[1] == script_argument);
+	REQUIRE(restored[0].element_types.size() == 1);
+	CHECK(restored[0].element_types[0].builtin_type == Variant::INT);
+	CHECK(restored[1].script == pair);
+
+	// A payload whose arity does not match the class's type parameters (here one argument for a
+	// two-parameter `Pair`) is rejected, leaving the previously restored vector untouched.
+	{
+		Array malformed;
+		malformed.push_back(ContainerTypeDescriptor::to_variant(array_argument));
+		ERR_PRINT_OFF;
+		CHECK(restored_instance->set(type_arguments_property, malformed));
+		ERR_PRINT_ON;
+		REQUIRE(restored_instance->get_type_arguments().size() == 2);
+	}
+
+	// An unspecialized instance carries no arguments and advertises no storage property, so
+	// non-generic resources serialize exactly as before.
+	Callable::CallError raw_error;
+	Variant raw_value = pair->_new(nullptr, -1, raw_error);
+	REQUIRE(raw_error.error == Callable::CallError::CALL_OK);
+	GDScriptInstance *raw_instance = gdscript_instance_of(raw_value);
+	REQUIRE(raw_instance != nullptr);
+	List<PropertyInfo> raw_properties;
+	raw_instance->get_property_list(&raw_properties);
+	for (const PropertyInfo &info : raw_properties) {
+		CHECK(info.name != type_arguments_property);
+	}
+}
+
 TEST_CASE("[Modules][GDScript][Generics] GDScriptDataType lowers type arguments to ContainerType") {
 	GDScriptDataType argument;
 	argument.kind = GDScriptDataType::BUILTIN;
