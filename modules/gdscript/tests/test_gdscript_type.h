@@ -379,6 +379,20 @@ TEST_CASE("[Modules][GDScript] Type compatibility recurses through nested callab
 
 	CHECK(GDScriptTypeCompatibility::check(return_target, return_matching_source).compatible);
 	CHECK_FALSE(GDScriptTypeCompatibility::check(return_target, return_mismatched_source).compatible);
+
+	// A Callable hidden inside a typed container slot of another Callable's signature must still
+	// match deeply: `Callable[[Array[Callable[[int], void]]], void]` differs from the String variant.
+	GDScriptParser::DataType array_of_int = make_builtin_type(Variant::ARRAY);
+	array_of_int.set_container_element_type(0, inner_int);
+	GDScriptParser::DataType array_of_string = make_builtin_type(Variant::ARRAY);
+	array_of_string.set_container_element_type(0, inner_string);
+
+	const GDScriptParser::DataType container_target = make_callable_with_parameter(array_of_int);
+	const GDScriptParser::DataType container_matching_source = make_callable_with_parameter(array_of_int);
+	const GDScriptParser::DataType container_mismatched_source = make_callable_with_parameter(array_of_string);
+
+	CHECK(GDScriptTypeCompatibility::check(container_target, container_matching_source).compatible);
+	CHECK_FALSE(GDScriptTypeCompatibility::check(container_target, container_mismatched_source).compatible);
 }
 
 TEST_CASE("[Modules][GDScript] Parser resolves nullable type annotations") {

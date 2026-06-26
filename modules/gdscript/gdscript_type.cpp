@@ -65,16 +65,37 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right);
 
 // DataType::operator== compares Callable/Signal builtins by their outer builtin type only and ignores
-// the nested method signature metadata. Compare two signature slot types so that a mismatch buried
-// inside another Callable/Signal signature (e.g. `Callable[[Callable[[int], void]], void]` vs
-// `Callable[[Callable[[String], void]], void]`) is still detected instead of being accepted shallowly.
+// the nested method signature metadata. It also compares composite slots (typed-container element
+// types and generic type arguments) through that same shallow `operator==`, so a Callable/Signal
+// signature mismatch buried inside one of those slots is lost too. Compare two signature slot types
+// structurally so that a mismatch nested anywhere a Callable/Signal can appear — directly
+// (`Callable[[Callable[[int], void]], void]` vs `Callable[[Callable[[String], void]], void]`) or
+// through a container/generic slot (`Callable[[Array[Callable[[int], void]]], void]`,
+// `Box[Callable[[int], void]]`) — is still detected instead of being accepted shallowly.
 static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
 	if (p_left != p_right) {
 		return false;
 	}
-	// Only recurse when both slots carry a signature. A typed-vs-untyped slot keeps the shallow
-	// result of `operator==` above, mirroring how the top-level path leniently accepts an untyped
-	// source against a typed target rather than tightening the rules only at nested depth.
+	// `operator==` above already established matching outer structure; recurse into the composite
+	// slots it only compared shallowly. The size guards keep the lenient outcome it returns for
+	// UNDETECTED/INFERRED operands (where the slot vectors may legitimately differ in length).
+	if (p_left.container_element_types.size() == p_right.container_element_types.size()) {
+		for (int i = 0; i < p_left.container_element_types.size(); i++) {
+			if (!_datatype_signature_slot_equal(p_left.container_element_types[i], p_right.container_element_types[i])) {
+				return false;
+			}
+		}
+	}
+	if (p_left.type_arguments.size() == p_right.type_arguments.size()) {
+		for (int i = 0; i < p_left.type_arguments.size(); i++) {
+			if (!_datatype_signature_slot_equal(p_left.type_arguments[i], p_right.type_arguments[i])) {
+				return false;
+			}
+		}
+	}
+	// Only recurse into the method signature when both slots carry one. A typed-vs-untyped slot keeps
+	// the shallow result of `operator==`, mirroring how the top-level path leniently accepts an
+	// untyped source against a typed target rather than tightening the rules only at nested depth.
 	if (p_left.kind == GDScriptParser::DataType::BUILTIN && _is_signature_builtin_type(p_left.builtin_type) &&
 			p_left.has_method_signature && p_right.has_method_signature) {
 		return _datatype_method_signature_equal(p_left, p_right);
