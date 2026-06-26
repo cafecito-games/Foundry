@@ -500,6 +500,12 @@ HashMap<String, int> baseline_diagnostic_counts(const String &p_path, const Stri
 	GDScriptParser parser;
 	parser.parse(p_source, p_path, false);
 	GDScriptAnalyzer analyzer(&parser);
+	// Pin the baseline to non-strict regardless of the live project settings: the analyzer reads
+	// the two strict flags from ProjectSettings on construction, so if a flag is already enabled
+	// the baseline would itself be strict and the strict-only diff would collapse to nothing. The
+	// preview is a flag-independent simulation, so its baseline must always be the non-strict one.
+	analyzer.set_strict_null_checks(false);
+	analyzer.set_strict_dynamic_checks(false);
 	analyzer.analyze();
 	for (const GDScriptParser::ParserError &error : parser.get_errors()) {
 		counts[vformat("%d:%d:%s", error.line, error.column, error.message)] += 1;
