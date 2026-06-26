@@ -1364,6 +1364,164 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("A subclass writing a matching element type keeps the member inferred") {
+		// An external subclass appends the same element type to the inherited member,
+		// so the project-wide union is still monomorphic and the upgrade is sound.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_subclass_base_ok.gd";
+		const String base_source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n";
+		TemporaryScriptFile base_file(base_path, base_source);
+
+		const String subclass_path = "res://refactor/container_member_subclass_child_ok.gd";
+		TemporaryScriptFile subclass_file(subclass_path,
+				"extends \"res://refactor/container_member_subclass_base_ok.gd\"\n"
+				"func add_more(n: int) -> void:\n"
+				"\t_items.append(n)\n");
+
+		RefactorContext context;
+		context.path = base_path;
+		context.source = base_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array[int] = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("A subclass writing a conflicting element type keeps the member bare") {
+		// The subclass mutates the inherited member with a different element type, so
+		// the project-wide union is no longer monomorphic. The inference itself must
+		// withhold the upgrade rather than leaving it to the verifier.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_subclass_base_conflict.gd";
+		const String base_source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n";
+		TemporaryScriptFile base_file(base_path, base_source);
+
+		const String subclass_path = "res://refactor/container_member_subclass_child_conflict.gd";
+		TemporaryScriptFile subclass_file(subclass_path,
+				"extends \"res://refactor/container_member_subclass_base_conflict.gd\"\n"
+				"func add_text(s: String) -> void:\n"
+				"\t_items.append(s)\n");
+
+		RefactorContext context;
+		context.path = base_path;
+		context.source = base_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("A subclass escaping the inherited member keeps it bare") {
+		// The subclass returns the inherited member, escaping it; even though every
+		// observed element is an int, an external holder could mutate it, so the
+		// inference must withhold the upgrade.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_subclass_base_escape.gd";
+		const String base_source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n";
+		TemporaryScriptFile base_file(base_path, base_source);
+
+		const String subclass_path = "res://refactor/container_member_subclass_child_escape.gd";
+		TemporaryScriptFile subclass_file(subclass_path,
+				"extends \"res://refactor/container_member_subclass_base_escape.gd\"\n"
+				"func leak() -> Array:\n"
+				"\treturn _items\n");
+
+		RefactorContext context;
+		context.path = base_path;
+		context.source = base_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("An unparsable plausible subclass keeps the member bare") {
+		// A project script that fails to parse but textually `extends` the base could
+		// hide a subclass that mutates the inherited member. The open world cannot be
+		// proven bounded, so the inference must withhold the upgrade conservatively.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_subclass_base_broken.gd";
+		const String base_source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n";
+		TemporaryScriptFile base_file(base_path, base_source);
+
+		// A deliberately broken subclass that still names the base file in its
+		// `extends`. Matching by path avoids registering a global class name that
+		// could leak into unrelated tests.
+		const String broken_path = "res://refactor/container_member_subclass_child_broken.gd";
+		TemporaryScriptFile broken_file(broken_path,
+				"extends \"res://refactor/container_member_subclass_base_broken.gd\"\n"
+				"func add_text(s: String) -> void:\n"
+				"\tvar broken: = =\n");
+
+		RefactorContext context;
+		context.path = base_path;
+		context.source = base_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Interactive collection keeps a member array bare without verification") {
 		// The default (interactive) path applies edits directly with no verifier, so
 		// the open-world member element upgrade is withheld and the analyzer's bare
