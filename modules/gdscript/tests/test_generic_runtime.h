@@ -335,6 +335,17 @@ TEST_CASE("[Modules][GDScript][Generics] Reified type arguments round-trip throu
 	CHECK(restored[0].element_types[0].builtin_type == Variant::INT);
 	CHECK(restored[1].script == pair);
 
+	// A payload whose arity does not match the class's type parameters (here one argument for a
+	// two-parameter `Pair`) is rejected, leaving the previously restored vector untouched.
+	{
+		Array malformed;
+		malformed.push_back(ContainerTypeDescriptor::to_variant(array_argument));
+		ERR_PRINT_OFF;
+		CHECK(restored_instance->set(type_arguments_property, malformed));
+		ERR_PRINT_ON;
+		REQUIRE(restored_instance->get_type_arguments().size() == 2);
+	}
+
 	// An unspecialized instance carries no arguments and advertises no storage property, so
 	// non-generic resources serialize exactly as before.
 	Callable::CallError raw_error;

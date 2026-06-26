@@ -1670,9 +1670,20 @@ static Vector<ContainerType> _deserialize_type_arguments(const Array &p_array) {
 }
 
 bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == _gdscript_type_arguments_property_name()) {
+	// Handle the hidden storage property only when it does not shadow a real member, so a user
+	// variable that happens to share the reserved name keeps its normal behavior.
+	if (p_name == _gdscript_type_arguments_property_name() && !script->member_indices.has(p_name)) {
 		if (p_value.get_type() == Variant::ARRAY) {
-			type_arguments = _deserialize_type_arguments(p_value);
+			const Vector<ContainerType> restored = _deserialize_type_arguments(p_value);
+			// Reject a payload whose arity does not match the class's type parameters (e.g. a
+			// hand-edited or stale `.tres`); binding a mismatched vector would silently misalign the
+			// per-member `leaf_ordinal` lookups. An empty vector is always valid (unspecialized).
+			const int arity = script->get_type_parameters().size();
+			if (!restored.is_empty() && restored.size() != arity) {
+				ERR_PRINT(vformat("Ignoring serialized generic type arguments: expected %d argument(s) but got %d.", arity, restored.size()));
+			} else {
+				type_arguments = restored;
+			}
 		}
 		return true;
 	}
@@ -1772,7 +1783,7 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 }
 
 bool GDScriptInstance::get(const StringName &p_name, Variant &r_ret) const {
-	if (p_name == _gdscript_type_arguments_property_name()) {
+	if (p_name == _gdscript_type_arguments_property_name() && !script->member_indices.has(p_name)) {
 		r_ret = _serialize_type_arguments(type_arguments);
 		return true;
 	}
@@ -1903,7 +1914,7 @@ void GDScriptInstance::get_property_list(List<PropertyInfo> *p_properties) const
 	// Persist reified generic type arguments so a specialized instance (`Box[int].new()`) round-trips
 	// through `.tres`/scene save-load and duplication. Only emitted when present, so non-generic or
 	// unspecialized instances serialize unchanged.
-	if (!type_arguments.is_empty()) {
+	if (!type_arguments.is_empty() && !script->member_indices.has(_gdscript_type_arguments_property_name())) {
 		p_properties->push_back(PropertyInfo(Variant::ARRAY, _gdscript_type_arguments_property_name(), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_NO_EDITOR));
 	}
 
