@@ -90,24 +90,37 @@ struct TypeAnnotationRenderContext {
 	GDScriptRefactorTypes::AnnotationScope scope;
 };
 
-// Builds the namespace render context for the root class of the edited file.
+// Adds names declared by p_class that the analyzer resolves before a namespace
+// chain (its own name, members, and type parameters) to r_scope's shadow set, so
+// a qualified spelling is never rooted at one of them.
+void add_class_scope_shadow_names(GDScriptRefactorTypes::AnnotationScope &r_scope, const GDScriptParser::ClassNode *p_class) {
+	if (p_class == nullptr) {
+		return;
+	}
+	if (p_class->identifier != nullptr) {
+		r_scope.shadowing_local_names.push_back(p_class->identifier->name);
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		const String member_name = member.get_name();
+		if (!member_name.is_empty()) {
+			r_scope.shadowing_local_names.push_back(member_name);
+		}
+	}
+	for (const GDScriptParser::TypeParameterNode *type_parameter : p_class->type_parameters) {
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			r_scope.shadowing_local_names.push_back(type_parameter->identifier->name);
+		}
+	}
+}
+
+// Builds the namespace render context for the root class of the edited file. Each
+// class's own scope names are added as the collector descends into it, so this
+// only carries the file-level namespace and imports.
 TypeAnnotationRenderContext make_type_annotation_render_context(const GDScriptParser::ClassNode *p_root) {
 	TypeAnnotationRenderContext context;
 	if (p_root != nullptr) {
 		context.scope.current_namespace = p_root->namespace_name;
 		context.scope.imported_namespaces = p_root->imports;
-		// Names in the file's class scope (the class itself plus its members and
-		// inner classes) shadow a namespace chain whose leading segment matches one
-		// of them, so a qualified spelling rooted at such a name must be avoided.
-		if (p_root->identifier != nullptr) {
-			context.scope.shadowing_local_names.push_back(p_root->identifier->name);
-		}
-		for (const GDScriptParser::ClassNode::Member &member : p_root->members) {
-			const String member_name = member.get_name();
-			if (!member_name.is_empty()) {
-				context.scope.shadowing_local_names.push_back(member_name);
-			}
-		}
 	}
 	return context;
 }
@@ -4893,6 +4906,11 @@ void collect_type_annotation_in_function(
 		if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr) {
 			function_context.scope.shadowing_local_names.push_back(p_function->rest_parameter->identifier->name);
 		}
+		for (const GDScriptParser::TypeParameterNode *type_parameter : p_function->type_parameters) {
+			if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+				function_context.scope.shadowing_local_names.push_back(type_parameter->identifier->name);
+			}
+		}
 		collect_suite_local_names(p_function->body, function_context.scope.shadowing_local_names);
 		render_context = &function_context;
 	}
@@ -4937,20 +4955,30 @@ void collect_type_annotation_in_class(
 	if (p_class == nullptr) {
 		return;
 	}
+	// Augment the scope with this class's own names (its members, type parameters,
+	// and the class name) so a qualified annotation in this class or a nested one
+	// is never rooted at a name the analyzer resolves as a member/type parameter.
+	TypeAnnotationRenderContext class_context;
+	const TypeAnnotationRenderContext *render_context = p_render_context;
+	if (p_render_context != nullptr) {
+		class_context = *p_render_context;
+		add_class_scope_shadow_names(class_context.scope, p_class);
+		render_context = &class_context;
+	}
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::CONSTANT:
-				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates, nullptr, nullptr, p_render_context);
+				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates, nullptr, nullptr, render_context);
 				break;
 			case GDScriptParser::ClassNode::Member::VARIABLE:
 				// Member container element inference is open-world-unsound on its own, so
 				// it is enabled only for the verified migration path; otherwise members
 				// keep the analyzer's bare container type.
 				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates, nullptr,
-						p_allow_member_inference ? p_class : nullptr, p_render_context);
+						p_allow_member_inference ? p_class : nullptr, render_context);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
-				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates, p_render_context
+				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates, render_context
 #ifndef GDSCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
@@ -4958,7 +4986,7 @@ void collect_type_annotation_in_class(
 				);
 				break;
 			case GDScriptParser::ClassNode::Member::CLASS:
-				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference, p_render_context
+				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference, render_context
 #ifndef GDSCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
