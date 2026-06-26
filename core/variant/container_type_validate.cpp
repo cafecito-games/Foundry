@@ -36,14 +36,14 @@
 #include "core/variant/dictionary.h"
 #include "core/variant/variant_internal.h"
 
-// Compares a value's projected type arguments against an expected specialization. A bound (non-empty)
-// projected argument that differs from the expected one is a definite invariance violation; an unbound
-// (empty) argument carries no evidence and is left to gradual acceptance, mirroring the unspecialized-leaf
-// behavior. `p_expected` is the expected element specialization (always fully bound here).
-static bool _projected_type_arguments_conflict(const Vector<ContainerType> &p_expected, const Vector<ContainerType> &p_projected) {
-	const ContainerType unbound;
+// Compares a value's projected type arguments against an expected specialization. A bound projected
+// argument that differs from the expected one is a definite invariance violation; an unbound argument
+// (an unspecialized-leaf open parameter, or a dependent/erased fixed argument) carries no evidence and
+// is left to gradual acceptance. `p_argument_bound` is parallel to `p_projected`; `p_expected` is the
+// expected element specialization (always fully bound here).
+static bool _projected_type_arguments_conflict(const Vector<ContainerType> &p_expected, const Vector<ContainerType> &p_projected, const Vector<bool> &p_argument_bound) {
 	for (int i = 0; i < p_projected.size() && i < p_expected.size(); i++) {
-		if (p_projected[i] == unbound) {
+		if (!p_argument_bound[i]) {
 			continue;
 		}
 		if (p_projected[i] != p_expected[i]) {
@@ -259,8 +259,9 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 			instance->get_reified_type_arguments(reified_type_arguments);
 		}
 		Vector<ContainerType> projected_type_arguments;
-		if (other_script->project_type_arguments_onto_base(script, reified_type_arguments, projected_type_arguments) &&
-				_projected_type_arguments_conflict(type_arguments, projected_type_arguments)) {
+		Vector<bool> projected_argument_bound;
+		if (other_script->project_type_arguments_onto_base(script, reified_type_arguments, projected_type_arguments, projected_argument_bound) &&
+				_projected_type_arguments_conflict(type_arguments, projected_type_arguments, projected_argument_bound)) {
 			if (p_output_errors) {
 				ContainerType expected;
 				expected.builtin_type = type;
@@ -406,8 +407,9 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 			// project its specialization onto this expected base's parameters before comparing. An unbound
 			// slot (unspecialized source) carries no evidence and is accepted by reference under gradual typing.
 			Vector<ContainerType> projected_type_arguments;
-			if (p_type.script->project_type_arguments_onto_base(script, p_type.type_arguments, projected_type_arguments) &&
-					_projected_type_arguments_conflict(type_arguments, projected_type_arguments)) {
+			Vector<bool> projected_argument_bound;
+			if (p_type.script->project_type_arguments_onto_base(script, p_type.type_arguments, projected_type_arguments, projected_argument_bound) &&
+					_projected_type_arguments_conflict(type_arguments, projected_type_arguments, projected_argument_bound)) {
 				return false;
 			}
 		}

@@ -112,6 +112,12 @@ class GDScript : public Script {
 		// strong Ref — avoiding reference cycles (e.g. CRTP `class Node extends Box[Node]`). A temporary
 		// ContainerType is materialized only at validation time.
 		GDScriptDataType fixed;
+		// Valid when kind == FIXED: the fixing argument still references an open type parameter
+		// (`extends Box[Array[T]]`), so `fixed` is the analyzer-erased container and does not carry the
+		// argument's concrete reification. The leaf-to-base projection treats such a slot as carrying no
+		// invariance evidence (it cannot validate the dependent argument soundly), keeping the existing
+		// gradual acceptance instead of a spurious rejection.
+		bool fixed_is_dependent = false;
 		int leaf_ordinal = -1; // Index into the leaf instance's `type_arguments`; valid when kind == OPEN.
 	};
 
@@ -383,7 +389,7 @@ public:
 	bool is_abstract() const override { return _is_abstract; }
 	bool is_trait_type() const override { return _is_trait_type; }
 	StringName get_trait_type_name() const override { return trait_type_name; }
-	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments) const override;
+	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments, Vector<bool> &r_argument_bound) const override;
 	Ref<GDScript> get_base() const;
 
 	const HashMap<StringName, MemberInfo> &debug_get_member_indices() const { return member_indices; }

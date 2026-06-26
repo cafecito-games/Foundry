@@ -1240,8 +1240,9 @@ bool GDScript::inherits_script(const Ref<Script> &p_script) const {
 	return false;
 }
 
-bool GDScript::project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments) const {
+bool GDScript::project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments, Vector<bool> &r_argument_bound) const {
 	r_type_arguments.clear();
+	r_argument_bound.clear();
 
 	const GDScript *base_script = Object::cast_to<GDScript>(p_base.ptr());
 	if (base_script == nullptr) {
@@ -1260,22 +1261,33 @@ bool GDScript::project_type_arguments_onto_base(const Ref<Script> &p_base, const
 	}
 
 	Vector<ContainerType> projected;
+	Vector<bool> bound;
 	projected.resize(bindings->size());
+	bound.resize(bindings->size());
 	for (int i = 0; i < bindings->size(); i++) {
 		const TypeArgumentBinding &binding = (*bindings)[i];
+		bound.write[i] = false;
 		if (binding.kind == TypeArgumentBinding::FIXED) {
-			// A temporary ContainerType is materialized here at validation time rather than persisted, so
-			// a local-class argument is not held by a strong Ref in member metadata (avoiding reference cycles).
-			projected.write[i] = binding.fixed.to_container_type();
+			if (!binding.fixed_is_dependent) {
+				// A temporary ContainerType is materialized here at validation time rather than persisted, so
+				// a local-class argument is not held by a strong Ref in member metadata (avoiding reference cycles).
+				projected.write[i] = binding.fixed.to_container_type();
+				bound.write[i] = true;
+			}
+			// A dependent (`extends Box[Array[T]]`) fixed argument was erased on baking, so it carries no
+			// sound invariance evidence: leave the slot unbound for gradual acceptance.
 		} else if (binding.kind == TypeArgumentBinding::OPEN &&
 				binding.leaf_ordinal >= 0 && binding.leaf_ordinal < p_leaf_type_arguments.size()) {
+			// The leaf was specialized at this ordinal, so the argument (even an explicit `Variant`) is
+			// definite evidence.
 			projected.write[i] = p_leaf_type_arguments[binding.leaf_ordinal];
+			bound.write[i] = true;
 		}
-		// Otherwise the parameter is still open at an unspecialized leaf: leave a default (empty)
-		// ContainerType so the caller treats the slot as carrying no argument evidence.
+		// Otherwise the parameter is still open at an unspecialized leaf: leave the slot unbound.
 	}
 
 	r_type_arguments = projected;
+	r_argument_bound = bound;
 	return true;
 }
 
