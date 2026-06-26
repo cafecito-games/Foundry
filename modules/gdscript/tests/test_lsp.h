@@ -1074,6 +1074,12 @@ func f():
 		assert_no_errors_in("res://lsp/annotation_library.gd");
 		test_resolve_symbol_at(library_uri, pos(2, 2), library_uri, "tag", range(pos(0, 11), pos(0, 14)));
 
+		// A custom annotation whose name collides with a class resolves to the declaration, not the
+		// class, because annotation names live in a separate symbol space.
+		const String collision_uri = workspace->get_file_uri("res://lsp/annotation_collision.gd");
+		assert_no_errors_in("res://lsp/annotation_collision.gd");
+		test_resolve_symbol_at(collision_uri, pos(4, 3), collision_uri, "Node", range(pos(2, 11), pos(2, 15)));
+
 		memdelete(proto);
 		memdelete(efs);
 		finish_language();

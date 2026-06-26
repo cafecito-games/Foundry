@@ -5239,7 +5239,31 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 }
 
 ::Error GDScriptLanguage::lookup_code(const String &p_code, const String &p_symbol, const String &p_path, Object *p_owner, LookupResult &r_result) {
-	// Before parsing, try the usual stuff.
+	GDScriptParser parser;
+	parser.parse(p_code, p_path, true);
+
+	GDScriptParser::CompletionContext context = parser.get_completion_context();
+	context.base = p_owner;
+
+	// A custom annotation usage resolves to its declaration before any global-symbol shortcut.
+	// Custom annotation names live in a separate symbol space and may legitimately collide with a
+	// class, builtin type, constant, or utility-function name (e.g. `@Node`, `@print`); the global
+	// shortcuts below would otherwise navigate to the colliding symbol instead of the declaration.
+	if (context.type == GDScriptParser::COMPLETION_ANNOTATION && context.node != nullptr && context.node->type == GDScriptParser::Node::ANNOTATION && static_cast<const GDScriptParser::AnnotationNode *>(context.node)->info == nullptr) {
+		List<Ref<GDScriptParserRef>> annotation_parser_refs;
+		HashMap<StringName, GDScriptVisibleAnnotation> visible_annotations;
+		_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
+		if (HashMap<StringName, GDScriptVisibleAnnotation>::ConstIterator E = visible_annotations.find(p_symbol); E && E->value.declaration != nullptr && E->value.declaration->identifier != nullptr) {
+			Error err = OK;
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_SCRIPT_LOCATION;
+			r_result.script = GDScriptCache::get_shallow_script(E->value.path, err);
+			r_result.script_path = E->value.path;
+			r_result.location = E->value.declaration->identifier->start_line;
+			return OK;
+		}
+	}
+
+	// Before further analysis, try the usual global symbols.
 	if (GDScriptAnalyzer::class_exists(p_symbol)) {
 		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 		r_result.class_name = p_symbol;
@@ -5264,12 +5288,6 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 		r_result.class_member = p_symbol;
 		return OK;
 	}
-
-	GDScriptParser parser;
-	parser.parse(p_code, p_path, true);
-
-	GDScriptParser::CompletionContext context = parser.get_completion_context();
-	context.base = p_owner;
 
 	// Allows class functions with the names like built-ins to be handled properly.
 	if (context.type != GDScriptParser::COMPLETION_ATTRIBUTE) {
@@ -5605,24 +5623,13 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			}
 		} break;
 		case GDScriptParser::COMPLETION_ANNOTATION: {
+			// Custom annotation usages are resolved to their declaration earlier, before the global
+			// symbol shortcuts. Only built-in annotations remain to be handled here.
 			const String annotation_symbol = "@" + p_symbol;
 			if (parser.annotation_exists(annotation_symbol)) {
 				r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ANNOTATION;
 				r_result.class_name = "@GDScript";
 				r_result.class_member = annotation_symbol;
-				return OK;
-			}
-
-			// Go-to-definition from a custom annotation usage (`@test`) to its declaration.
-			List<Ref<GDScriptParserRef>> annotation_parser_refs;
-			HashMap<StringName, GDScriptVisibleAnnotation> visible_annotations;
-			_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
-			if (HashMap<StringName, GDScriptVisibleAnnotation>::ConstIterator E = visible_annotations.find(p_symbol); E && E->value.declaration != nullptr && E->value.declaration->identifier != nullptr) {
-				Error err = OK;
-				r_result.type = ScriptLanguage::LOOKUP_RESULT_SCRIPT_LOCATION;
-				r_result.script = GDScriptCache::get_shallow_script(E->value.path, err);
-				r_result.script_path = E->value.path;
-				r_result.location = E->value.declaration->identifier->start_line;
 				return OK;
 			}
 		} break;
