@@ -134,6 +134,8 @@ Implement a small recursive-descent decoder:
 - For `Signal`, omit the return clause; for `Callable`, the final element after the inner `]` is the return type (`void` → `NIL`).
 - Reuse the leaf-resolution code shared with the `Array`/`Dictionary` branches (extract a helper rather than duplicating the four-way builtin/native/global-class/enum resolution).
 
+The decoder also rebuilds a `MethodInfo` mirror (`method_info.arguments` / `return_val`, via `to_property_info` on the decoded slots) so the decoded callable matches a locally-annotated `Callable[[...], ...]` exactly. Callable compatibility falls back to a `MethodInfo` comparison when one side is `MethodInfo`-only (e.g. a native method reference like `set_process`); without the mirror a decoded explicit callable would carry an empty `MethodInfo` and wrongly reject an otherwise-matching `MethodInfo`-only callable on argument count.
+
 Once `type_from_property` recovers nested signatures, `explicit_callable_type_from_info` and `explicit_signal_type_from_info` recover them **automatically** — both already route every argument and the return through `type_from_property` (`gdscript_analyzer.cpp:9664`, `:10619`). No change is needed there beyond what `type_from_property` now returns.
 
 ### 5. Comparison — no change

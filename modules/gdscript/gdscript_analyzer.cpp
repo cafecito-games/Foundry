@@ -298,6 +298,19 @@ static void _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 		}
 		r_type.method_return_type.push_back(return_type);
 	}
+
+	// Mirror the rich slots into method_info too. Callable compatibility falls back to a MethodInfo
+	// comparison when one side is MethodInfo-only (e.g. a utility-function reference like `sin` built by
+	// make_callable_type); without this mirror a decoded explicit callable would carry an empty
+	// MethodInfo and wrongly reject an otherwise-matching MethodInfo-only callable.
+	MethodInfo signature_info;
+	for (const GDScriptParser::DataType &parameter_type : r_type.method_parameter_types) {
+		signature_info.arguments.push_back(parameter_type.to_property_info(""));
+	}
+	if (p_has_return && !r_type.method_return_type.is_empty()) {
+		signature_info.return_val = r_type.method_return_type[0].to_property_info("");
+	}
+	r_type.method_info = signature_info;
 }
 
 static GDScriptParser::DataType _decode_signature_type_base(const String &p_encoded) {
@@ -8920,6 +8933,7 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 			result.has_explicit_method_signature = decoded.has_explicit_method_signature;
 			result.method_parameter_types = decoded.method_parameter_types;
 			result.method_return_type = decoded.method_return_type;
+			result.method_info = decoded.method_info;
 		} else if (p_property.type == Variant::ARRAY && p_property.hint == PROPERTY_HINT_ARRAY_TYPE) {
 			// Check element type.
 			StringName elem_type_name = p_property.hint_string;
