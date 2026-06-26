@@ -3385,6 +3385,8 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->class_annotations.clear();
 	p_script->method_annotations.clear();
 	p_script->variable_annotations.clear();
+	p_script->signal_annotations.clear();
+	p_script->constant_annotations.clear();
 
 	p_script->clearing = false;
 

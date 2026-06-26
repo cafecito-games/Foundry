@@ -1633,6 +1633,8 @@ void GDScript::clear() {
 	class_annotations.clear();
 	method_annotations.clear();
 	variable_annotations.clear();
+	signal_annotations.clear();
+	constant_annotations.clear();
 	_is_trait_type = false;
 	trait_type_name = StringName();
 
