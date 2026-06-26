@@ -449,13 +449,15 @@ public:
 			if (!p_slot_rendered(slot, slot_rendered)) {
 				continue;
 			}
-			// A position with no *hard*, renderable requirement accepts the narrowed
-			// type just as it accepted `Variant`, so it never breaks: an untyped
-			// parameter/return is `Variant`, and a weak (unannotated) assignment target
-			// has only an inferred type that downgrades on an incompatible store rather
-			// than rejecting it. Only a hard requirement actually rejects.
+			// A position that accepts `Variant` never breaks when the read narrows, so it
+			// is skipped: an untyped parameter/return is `Variant`; an *explicit* `Variant`
+			// annotation is hard but still accepts every type; and a weak (unannotated)
+			// assignment target has only an inferred type that downgrades on an
+			// incompatible store rather than rejecting it. Only a hard, non-`Variant`
+			// requirement actually rejects the narrowed type.
 			String required_rendered;
-			if (!use.required.is_hard_type() || !GDScriptRefactorTypes::render_annotatable_type(use.required, required_rendered)) {
+			if (use.required.is_variant() || !use.required.is_hard_type() ||
+					!GDScriptRefactorTypes::render_annotatable_type(use.required, required_rendered)) {
 				continue;
 			}
 			if (required_rendered == slot_rendered) {

@@ -555,6 +555,29 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
+
+	TEST_CASE("A read used in an explicit `Variant` position does not block inference") {
+		// An explicit `Variant` parameter is a hard type but still accepts every value,
+		// so narrowing the read from `Variant` to `int` cannot break it.
+		InferenceFixture fixture("func take_variant(v: Variant) -> void:\n\tpass\nfunc f():\n\tvar nums = [1]\n\tvar v = nums[0]\n\ttake_variant(v)\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("A direct read returned from a `Variant` function does not block inference") {
+		InferenceFixture fixture("func f() -> Variant:\n\tvar nums = [1]\n\treturn nums[0]\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("A read initializing an explicit `Variant` local does not block inference") {
+		InferenceFixture fixture("func f():\n\tvar nums = [1]\n\tvar v: Variant = nums[0]\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
 }
 
 TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
