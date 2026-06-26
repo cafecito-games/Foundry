@@ -72,17 +72,19 @@ void GDScriptMigrationWizardDialog::_option_toggled(bool p_pressed) {
 
 void GDScriptMigrationWizardDialog::_run_migration() {
 	const bool apply_requested = apply_checkbox->is_pressed();
+	const bool activate_requested = activate_strict_checkbox->is_pressed();
 
-	// The migration writes scripts directly on disk and is documented as unsafe to run alongside a
-	// live editing session: unsaved buffers in the script editor are invisible to it (so its edits
-	// could be lost when the user later saves) and would be clobbered on disk by the apply. So an
-	// apply is gated on a clean editor -- the user must save or discard open changes first. A
-	// preview writes nothing, so it needs no gate.
+	// Both destructive stages read and act on the on-disk sources while the script editor may hold
+	// unsaved buffers the migration cannot see: an apply would clobber those buffers and lose their
+	// edits, and a strict activation evaluates cleanliness from disk and could persist project.godot
+	// even though an open buffer still has strict violations. The migration is documented as unsafe
+	// to run alongside a live editing session, so any durable action is gated on a clean editor --
+	// the user must save or discard open changes first. A preview writes nothing, so it needs no gate.
 	ScriptEditor *script_editor = ScriptEditor::get_singleton();
-	if (apply_requested && script_editor) {
+	if ((apply_requested || activate_requested) && script_editor) {
 		const PackedStringArray unsaved = script_editor->get_unsaved_scripts();
 		if (!unsaved.is_empty()) {
-			status_label->set_text(vformat(TTR("Cannot apply: %d script(s) have unsaved changes in the editor. Save or discard them, then run again."), unsaved.size()));
+			status_label->set_text(vformat(TTR("Cannot run: %d script(s) have unsaved changes in the editor. Save or discard them, then run again."), unsaved.size()));
 			return;
 		}
 	}
@@ -94,8 +96,8 @@ void GDScriptMigrationWizardDialog::_run_migration() {
 	options.acknowledge_vcs_warning = acknowledge_vcs_checkbox->is_pressed();
 	// Activating from the editor is a single confirmed action: the user ticked the box and pressed
 	// the dialog's confirm button, which is the explicit confirmation the activation gate requires.
-	options.activate_strict = activate_strict_checkbox->is_pressed();
-	options.confirm_strict_activation = activate_strict_checkbox->is_pressed();
+	options.activate_strict = activate_requested;
+	options.confirm_strict_activation = activate_requested;
 
 	const MigrationWizardResult result = GDScriptMigrationWizard::run(MIGRATION_PROJECT_ROOT, options);
 	report_output->set_text(result.summary());
