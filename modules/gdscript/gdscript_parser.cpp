@@ -5110,11 +5110,13 @@ bool GDScriptParser::AnnotationNode::apply(GDScriptParser *p_this, Node *p_targe
 
 bool GDScriptParser::AnnotationNode::applies_to(uint32_t p_target_kinds) const {
 	if (info == nullptr) {
-		// Unresolved custom annotation usage. The parser does not know the declared targets
-		// yet, so it attaches to any declaration (class, variable, function, etc.) and defers
-		// target validation to the analyzer. Custom annotations are never script-level or
-		// standalone, so those structural queries must stay false to keep parser routing intact.
-		return (p_target_kinds & (AnnotationInfo::SCRIPT | AnnotationInfo::STANDALONE)) == 0;
+		// Unresolved custom annotation usage. The exact declaration is resolved by the analyzer
+		// later, but custom annotations only ever target the v1 surface (class, method, member
+		// variable), so the parser attaches to those positions and keeps the existing placement
+		// diagnostic for anything else (constants, signals, enums, statements, standalone slots,
+		// script level, or a pending annotation before an `annotation` declaration).
+		const uint32_t custom_targets = AnnotationInfo::CLASS | AnnotationInfo::VARIABLE | AnnotationInfo::FUNCTION;
+		return (p_target_kinds & custom_targets) != 0;
 	}
 	return (info->target_kind & p_target_kinds) > 0;
 }

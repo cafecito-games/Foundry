@@ -159,6 +159,17 @@ TEST_CASE("[Modules][GDScript] Doc-comment annotation names remain parse errors"
 	CHECK(error != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Custom annotations are rejected on unsupported targets") {
+	GDScriptParser constant_parser;
+	CHECK(constant_parser.parse("@marker\nconst SOME_CONSTANT = 1\n", "user://test.gd", false) != OK);
+
+	GDScriptParser enum_parser;
+	CHECK(enum_parser.parse("@marker\nenum Direction { UP, DOWN }\n", "user://test.gd", false) != OK);
+
+	GDScriptParser declaration_parser;
+	CHECK(declaration_parser.parse("@marker\nannotation test targets METHOD\n", "user://test.gd", false) != OK);
+}
+
 TEST_CASE("[Modules][GDScript] Built-in annotations still reject named arguments") {
 	GDScriptParser parser;
 	const Error error = parser.parse("@export_enum(names = \"A,B\")\nvar value: int\n", "user://test.gd", false);
