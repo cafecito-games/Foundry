@@ -337,6 +337,53 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("A feature override that masks the flipped setting is reported, not claimed live") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+		StrictSettingsGuard guard;
+
+		ProjectSettings *settings = ProjectSettings::get_singleton();
+		settings->set_setting("debug/gdscript/analysis/strict_dynamic_checks", false);
+
+		// Install a per-feature override that resolves the effective value to false for one of the
+		// project's active features, so writing the base key true does not make strict mode live.
+		const Vector<String> features = ProjectSettings::get_singleton()->get_setting("application/config/features", PackedStringArray());
+		String feature = "editor";
+		if (!features.is_empty()) {
+			feature = features[0];
+		}
+		const String override_key = "debug/gdscript/analysis/strict_dynamic_checks." + feature;
+		settings->set_setting(override_key, false);
+
+		const String path = "res://refactor/activation_override.gd";
+		const String source =
+				"func add(a: int, b: int) -> int:\n"
+				"\treturn a + b\n";
+		TemporaryScriptFile file(path, source);
+
+		StrictActivationRequest request;
+		request.strict_dynamic_checks = true;
+		request.confirmed = true;
+		StrictActivationResult result = GDScriptStrictActivation::activate({ path }, request);
+		REQUIRE(result.ok);
+		CHECK(result.activated); // The base key was written.
+
+		// Only assert the masking report when the override actually resolves the effective value to
+		// false; if this build's active features do not include the chosen one, the override is inert.
+		if (!(bool)settings->get_setting_with_override("debug/gdscript/analysis/strict_dynamic_checks")) {
+			CHECK(result.override_masked);
+			CHECK_FALSE(result.effective_warning.is_empty());
+		}
+
+		// Clean up the override so it does not leak into later tests.
+		settings->set_setting(override_key, Variant());
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("An empty request flips nothing and is reported as a no-op") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

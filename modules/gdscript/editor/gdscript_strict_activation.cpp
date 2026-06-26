@@ -119,6 +119,24 @@ StrictActivationResult GDScriptStrictActivation::activate(
 		} else {
 			result.persist_error = vformat("Failed to persist project settings (error %d).", save_error);
 		}
+
+		// The analyzer reads these flags through get_setting_with_override(), so a per-feature
+		// override can still resolve the effective value to false even after the base key is set
+		// true. Read back through the same override-aware path and warn if the flip did not actually
+		// take effect, rather than reporting strict mode as live when it is not.
+		Vector<String> masked;
+		if (result.strict_null_checks_set && !(bool)settings->get_setting_with_override(STRICT_NULL_SETTING)) {
+			masked.push_back("strict_null_checks");
+		}
+		if (result.strict_dynamic_checks_set && !(bool)settings->get_setting_with_override(STRICT_DYNAMIC_SETTING)) {
+			masked.push_back("strict_dynamic_checks");
+		}
+		if (!masked.is_empty()) {
+			result.override_masked = true;
+			result.effective_warning = vformat(
+					"A per-feature project-setting override still disables %s; the base setting was written but strict mode is not effective.",
+					String(", ").join(masked));
+		}
 	}
 
 	// Always report the strict violations for the requested flags. preview_strict simulates the

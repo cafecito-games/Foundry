@@ -89,6 +89,13 @@ struct StrictActivationResult {
 	bool persisted = false;
 	String persist_error; // The save failure message when activated && !persisted; empty otherwise.
 
+	// True when a flip went through but a per-feature project-setting override still masks the
+	// effective value the analyzer reads (e.g. `...strict_dynamic_checks.<feature>=false`), so the
+	// base key was written yet strict mode is not actually live. effective_warning describes which
+	// flag is masked; both stay empty/false when the effective value matches the request.
+	bool override_masked = false;
+	String effective_warning;
+
 	// The values the settings hold after the call. Each is true only if the request asked for it
 	// and the flip went through; an unrequested flag stays false here regardless of its prior value.
 	bool strict_null_checks_set = false;
