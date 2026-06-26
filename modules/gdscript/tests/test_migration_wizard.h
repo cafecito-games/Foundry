@@ -112,8 +112,10 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		const MigrationWizardResult result = GDScriptMigrationWizard::run("res://migration_wizard_apply", options);
 		REQUIRE(result.ok);
 		CHECK(result.applied);
-		// An apply run previews its exact edit set with the accurate projection.
-		CHECK(result.report.projection);
+		// The report stays the read-only single-pass snapshot even for an apply run; the
+		// ground-truth committed edit set comes from the guarded apply stage, not an unguarded
+		// projection.
+		CHECK_FALSE(result.report.projection);
 		CHECK(result.apply_result.ok);
 		CHECK_GT(result.apply_result.total_annotations_applied, 0);
 

@@ -63,10 +63,10 @@ struct MigrationWizardOptions {
 	// Whether the dry-run report uses the fixpoint+verification-accurate projection. Projection is
 	// exact (it matches what apply commits) but is NOT free of side effects: it drives the migration
 	// driver's dry-run path, which writes each pass to disk and restores the files before returning,
-	// and it runs without the apply VCS guard. So it is off by default -- a preview is then the truly
-	// read-only single-pass snapshot. The wizard forces it on whenever apply is requested (the tree
-	// is about to be written anyway, under the guard), so a committed run always previews its exact
-	// edit set; a caller wanting the accurate projection without applying can opt in here.
+	// and it does so WITHOUT the apply VCS guard. So it is off by default -- a preview is then the
+	// truly read-only single-pass snapshot -- and the wizard never forces it on, not even for an
+	// apply run (whose own guarded apply stage produces the ground-truth edit set in apply_result).
+	// A caller that accepts the write-then-restore side effects can opt in here.
 	bool projection = false;
 
 	// When false (default), the wizard stops after the report: a preview-only run that writes

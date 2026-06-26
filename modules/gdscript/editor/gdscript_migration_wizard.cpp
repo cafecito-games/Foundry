@@ -126,15 +126,17 @@ MigrationWizardResult GDScriptMigrationWizard::run(const String &p_root, const M
 	MigrationWizardResult result;
 
 	// Stage 1: the dry-run report. Always runs first and is what the user/CI sees before anything is
-	// committed. The accurate projection matches what apply commits but is not side-effect free
-	// (write-then-restore, no VCS guard), so it is used only when apply is requested -- the tree is
-	// about to be written under the guard anyway -- or when the caller explicitly opts in. A
-	// preview-only run uses the truly read-only single-pass snapshot.
+	// committed. By default it is the truly read-only single-pass snapshot. The accurate projection
+	// matches what apply commits but is NOT side-effect free -- it drives the migration driver's
+	// dry-run path, which writes each pass to disk and restores it while SKIPPING the VCS guard --
+	// so the wizard never forces it on (not even for an apply run, whose own guarded apply stage
+	// produces the ground-truth edit set in apply_result). It is used only when the caller has
+	// explicitly opted into those side effects.
 	MigrationReportOptions report_options;
 	report_options.scan = p_options.scan;
 	report_options.strict_null_checks = p_options.strict_null_checks;
 	report_options.strict_dynamic_checks = p_options.strict_dynamic_checks;
-	report_options.projection = p_options.projection || p_options.apply;
+	report_options.projection = p_options.projection;
 	result.report = GDScriptMigrationReport::generate(p_root, report_options);
 	if (!result.report.ok) {
 		result.ok = false;

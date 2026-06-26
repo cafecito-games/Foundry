@@ -1745,6 +1745,18 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing relative or absolute path to project for --gdscript-migrate, aborting.\n");
 				goto error;
 			}
+		} else if (arg == "--gdscript-migrate-follow-up") {
+			// Validate the required path argument here (where end-of-command-line is detectable);
+			// the value itself is read in start(). Consume the path so it is not reparsed as a
+			// standalone option.
+			if (N) {
+				main_args.push_back(arg);
+				main_args.push_back(N->get());
+				N = N->next();
+			} else {
+				OS::get_singleton()->print("Missing file path argument for --gdscript-migrate-follow-up, aborting.\n");
+				goto error;
+			}
 #endif // MODULE_GDSCRIPT_ENABLED
 #endif // TOOLS_ENABLED
 
@@ -4473,6 +4485,12 @@ int Main::start() {
 			// rewrite an unintended tree (and falsely report success).
 			ERR_FAIL_COND_V_MSG(!found_project, EXIT_FAILURE,
 					"--gdscript-migrate requires a valid project; none was found at the given path. Aborting.");
+
+			// --gdscript-migrate-follow-up takes a path; reject a missing one (the next token was
+			// another option, or the flag ended the command line) so the request is not silently
+			// dropped or made to consume an unrelated option as its path.
+			ERR_FAIL_COND_V_MSG(gdscript_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
+					"--gdscript-migrate-follow-up requires a file path argument. Aborting.");
 
 			MigrationWizardOptions options;
 			options.apply = gdscript_migrate_apply;
