@@ -4342,6 +4342,49 @@ int Main::start() {
 	}
 #endif
 
+#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+	if (!gdscript_migrate_path.is_empty()) {
+		// Headless strict-typing migration wizard. Reuses the same orchestrator the editor entry
+		// point drives (report -> apply -> gated strict activation), so a scripted or
+		// continuous-integration run produces the identical flow without a window. Handled here --
+		// before the project main loop is resolved/instantiated and before the game branch loads and
+		// instantiates project autoloads -- so it runs independently of the project's runtime
+		// main-loop setting and a dry-run preview never executes arbitrary project code before
+		// printing its report.
+
+		// Refuse to run unless a real project was loaded. Otherwise ProjectSettings::setup() may
+		// have left res:// bound to the process working directory, and an --apply run could rewrite
+		// an unintended tree (and falsely report success).
+		ERR_FAIL_COND_V_MSG(!found_project, EXIT_FAILURE,
+				"--gdscript-migrate requires a valid project; none was found at the given path. Aborting.");
+
+		// --gdscript-migrate-follow-up takes a path; reject a missing one (the next token was
+		// another option, or the flag ended the command line) so the request is not silently
+		// dropped or made to consume an unrelated option as its path.
+		ERR_FAIL_COND_V_MSG(gdscript_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
+				"--gdscript-migrate-follow-up requires a file path argument. Aborting.");
+
+		MigrationWizardOptions options;
+		options.apply = gdscript_migrate_apply;
+		options.strict_null_checks = gdscript_migrate_strict_null;
+		options.strict_dynamic_checks = gdscript_migrate_strict_dynamic;
+		options.activate_strict = gdscript_migrate_activate_strict;
+		options.confirm_strict_activation = gdscript_migrate_confirm;
+		options.allow_strict_with_violations = gdscript_migrate_allow_violations;
+		options.acknowledge_vcs_warning = gdscript_migrate_acknowledge_vcs;
+		options.follow_up_path = gdscript_migrate_follow_up_path;
+
+		// The migration path was loaded as the project (project_path), so res:// resolves to it; the
+		// wizard scans the whole project tree.
+		const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
+		OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
+		// succeeded() is stricter than ok: it also fails a gated strict activation and an activation
+		// that flipped but could not be persisted, so a scripted or CI run enforcing strict
+		// activation never mistakes a blocked or unsaved flip for success.
+		return migration_result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
+	}
+#endif // TOOLS_ENABLED && MODULE_GDSCRIPT_ENABLED
+
 	MainLoop *main_loop = nullptr;
 	if (editor) {
 		main_loop = memnew(SceneTree);
@@ -4478,49 +4521,6 @@ int Main::start() {
 
 		ResourceLoader::add_custom_loaders();
 		ResourceSaver::add_custom_savers();
-
-#ifdef TOOLS_ENABLED
-#ifdef MODULE_GDSCRIPT_ENABLED
-		if (!gdscript_migrate_path.is_empty()) {
-			// Headless strict-typing migration wizard. Reuses the same orchestrator the editor
-			// entry point drives (report -> apply -> gated strict activation), so a scripted or
-			// continuous-integration run produces the identical flow without a window. Handled here
-			// -- before the game branch loads and instantiates project autoloads -- so a dry-run
-			// preview never executes arbitrary project code before printing its report.
-
-			// Refuse to run unless a real project was loaded. Otherwise ProjectSettings::setup()
-			// may have left res:// bound to the process working directory, and an --apply run could
-			// rewrite an unintended tree (and falsely report success).
-			ERR_FAIL_COND_V_MSG(!found_project, EXIT_FAILURE,
-					"--gdscript-migrate requires a valid project; none was found at the given path. Aborting.");
-
-			// --gdscript-migrate-follow-up takes a path; reject a missing one (the next token was
-			// another option, or the flag ended the command line) so the request is not silently
-			// dropped or made to consume an unrelated option as its path.
-			ERR_FAIL_COND_V_MSG(gdscript_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
-					"--gdscript-migrate-follow-up requires a file path argument. Aborting.");
-
-			MigrationWizardOptions options;
-			options.apply = gdscript_migrate_apply;
-			options.strict_null_checks = gdscript_migrate_strict_null;
-			options.strict_dynamic_checks = gdscript_migrate_strict_dynamic;
-			options.activate_strict = gdscript_migrate_activate_strict;
-			options.confirm_strict_activation = gdscript_migrate_confirm;
-			options.allow_strict_with_violations = gdscript_migrate_allow_violations;
-			options.acknowledge_vcs_warning = gdscript_migrate_acknowledge_vcs;
-			options.follow_up_path = gdscript_migrate_follow_up_path;
-
-			// The migration path was loaded as the project (project_path), so res:// resolves to
-			// it; the wizard scans the whole project tree.
-			const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
-			OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
-			// succeeded() is stricter than ok: it also fails a gated strict activation and an
-			// activation that flipped but could not be persisted, so a scripted or CI run enforcing
-			// strict activation never mistakes a blocked or unsaved flip for success.
-			return migration_result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
-		}
-#endif // MODULE_GDSCRIPT_ENABLED
-#endif // TOOLS_ENABLED
 
 		if (!project_manager && !editor) { // game
 			if (!game_path.is_empty() || !script.is_empty()) {
