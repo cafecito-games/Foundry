@@ -1273,10 +1273,13 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	if (p_assignable->type == GDScriptParser::Node::VARIABLE && (p_function_body != nullptr || p_member_class != nullptr)) {
 		const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_assignable);
 		// A member variable is analyzed class-wide (including project-wide subclass
-		// writers); a local is analyzed against its function body.
+		// writers); a local is analyzed against its function body. Member inference
+		// requires the subclass closure to bound the open world: when it is absent
+		// (no workspace, or a GDSCRIPT_NO_LSP build that cannot scan the project),
+		// completeness cannot be proven, so the inference must bail conservatively.
 		const Vector<const GDScriptParser::ClassNode *> subclasses =
 				p_member_subclasses != nullptr ? p_member_subclasses->subclasses : Vector<const GDScriptParser::ClassNode *>();
-		const bool subclasses_complete = p_member_subclasses == nullptr || p_member_subclasses->complete;
+		const bool subclasses_complete = p_member_subclasses != nullptr && p_member_subclasses->complete;
 		const GDScriptContainerInference::Result array_inference = p_member_class != nullptr
 				? GDScriptContainerInference::infer_member_array_element_type(variable, p_member_class, subclasses, subclasses_complete)
 				: GDScriptContainerInference::infer_local_array_element_type(variable, p_function_body);
