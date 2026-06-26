@@ -1,0 +1,15 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-26-ios-run-targets.md",
+  "tasks": [
+    { "id": 0, "subject": "Task 0: RunTarget data model and run_targets.cfg persistence", "status": "pending", "description": "RunTarget value type round-tripping to run_targets.cfg via ConfigFile." },
+    { "id": 1, "subject": "Task 1: ReadinessStep contract and RunTargetPlatform adapter interface", "status": "pending", "blockedBy": [0], "description": "Adapter interface (probe_readiness/list_devices/run) + ReadinessStep contract + FakeRunTargetPlatform." },
+    { "id": 2, "subject": "Task 2: RunTargetManager — resolution and active-target selection", "status": "pending", "blockedBy": [1], "description": "Resolve target -> preset/device/flags; active target; adapter registry." },
+    { "id": 3, "subject": "Task 3: RunTargetReadiness Doctor — ladder and error vocabulary", "status": "pending", "blockedBy": [1], "description": "Ordered ladder eval over injected probe results + provisioning error mapping; fixture-driven tests." },
+    { "id": 4, "subject": "Task 4: iOS adapter — wrap existing enumeration and run()", "status": "pending", "blockedBy": [2, 3], "description": "IOSRunTargetPlatform reusing existing enumeration + run(); injectable CommandRunner; -allowProvisioningUpdates." },
+    { "id": 5, "subject": "Task 5: Run-bar target selector", "status": "pending", "blockedBy": [2, 3, 4], "description": "Upgrade editor_run_native deploy menu into the run-bar target selector with readiness badges." },
+    { "id": 6, "subject": "Task 6: Targets dock panel", "status": "pending", "blockedBy": [2, 3, 4], "description": "Dockable panel: targets list, signing & devices, live readiness ladder." },
+    { "id": 7, "subject": "Task 7: New-project Mobile (iOS) template", "status": "pending", "blockedBy": [0], "description": "Project Manager option seeding iOS export preset + default run target." },
+    { "id": 8, "subject": "Task 8: Manual QA checklist", "status": "pending", "blockedBy": [3], "description": "Real-device first-run + repeat-run + failure-path manual QA doc." }
+  ],
+  "lastUpdated": "2026-06-26"
+}
