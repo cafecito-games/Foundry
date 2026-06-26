@@ -2417,6 +2417,13 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_anno
 	const String current_namespace = parser->head->namespace_name;
 	const String own_identity = current_namespace.is_empty() ? short_name : current_namespace + "." + short_name;
 	if (language->is_global_annotation(StringName(own_identity))) {
+		// The declaring file enforces its own duplicate-identity error only when analyzed as a
+		// head. A usage resolving an externally-duplicated identity would otherwise bind to an
+		// arbitrary indexed file, so report the duplicate here instead.
+		if (language->is_duplicated_global_annotation(StringName(own_identity))) {
+			push_error(vformat(R"(Ambiguous annotation "%s": the canonical identity "%s" is declared in multiple files.)", p_annotation->name, own_identity), p_annotation);
+			return nullptr;
+		}
 		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(own_identity);
 		if (declaration != nullptr) {
 			return declaration;
@@ -2453,6 +2460,10 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_anno
 	}
 
 	if (matching_namespaces.size() == 1) {
+		if (language->is_duplicated_global_annotation(StringName(resolved_identity))) {
+			push_error(vformat(R"(Ambiguous annotation "%s": the canonical identity "%s" is declared in multiple files.)", p_annotation->name, resolved_identity), p_annotation);
+			return nullptr;
+		}
 		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(resolved_identity);
 		if (declaration != nullptr) {
 			return declaration;
