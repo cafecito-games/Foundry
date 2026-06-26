@@ -406,6 +406,54 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 	return _decode_signature_type_base(text);
 }
 
+// A signature slot is comparison-safe across the script-API boundary when its kind survives a
+// PropertyInfo round-trip unambiguously. A user script/class surfaces as SCRIPT when rebuilt from
+// PropertyInfo but may be a CLASS handle in a local annotation, and the strict rich-slot comparator
+// keys on kind; enums and type parameters are likewise ambiguous. A signature carrying such a slot is
+// kept non-explicit so the MethodInfo fallback — which compares object slots by class name — decides
+// compatibility instead (mirroring how the encoder side suppresses these hints).
+static bool _signature_slot_is_comparison_safe(const GDScriptParser::DataType &p_type) {
+	switch (p_type.kind) {
+		case GDScriptParser::DataType::SCRIPT:
+		case GDScriptParser::DataType::CLASS:
+		case GDScriptParser::DataType::ENUM:
+		case GDScriptParser::DataType::TYPE_PARAMETER:
+		case GDScriptParser::DataType::RESOLVING:
+		case GDScriptParser::DataType::UNRESOLVED:
+			return false;
+		case GDScriptParser::DataType::BUILTIN:
+			for (const GDScriptParser::DataType &element_type : p_type.container_element_types) {
+				if (!_signature_slot_is_comparison_safe(element_type)) {
+					return false;
+				}
+			}
+			for (const GDScriptParser::DataType &parameter_type : p_type.method_parameter_types) {
+				if (!_signature_slot_is_comparison_safe(parameter_type)) {
+					return false;
+				}
+			}
+			for (const GDScriptParser::DataType &return_type : p_type.method_return_type) {
+				if (!_signature_slot_is_comparison_safe(return_type)) {
+					return false;
+				}
+			}
+			return true;
+		case GDScriptParser::DataType::NATIVE:
+		case GDScriptParser::DataType::VARIANT:
+			return true;
+	}
+	return true;
+}
+
+static bool _signature_is_comparison_safe(const Vector<GDScriptParser::DataType> &p_parameter_types) {
+	for (const GDScriptParser::DataType &parameter_type : p_parameter_types) {
+		if (!_signature_slot_is_comparison_safe(parameter_type)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static GDScriptParser::DataType make_native_meta_type(const StringName &p_class_name) {
 	GDScriptParser::DataType type;
 	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -7427,7 +7475,13 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 			// directly-accessed external signal member keeps its parameter types — and any nested
 			// callable/signal hint — for emit()/connect() compatibility checks. Plain make_signal_type
 			// would leave the signature empty and erase it back to untyped at the script-API boundary.
-			const GDScriptParser::DataType signal_type = explicit_signal_type_from_info(signal_info);
+			GDScriptParser::DataType signal_type = explicit_signal_type_from_info(signal_info);
+			if (!_signature_is_comparison_safe(signal_type.method_parameter_types)) {
+				// A user-class/enum slot rebuilt from PropertyInfo cannot be compared reliably as a rich
+				// explicit signature (it surfaces as SCRIPT while a local annotation may be a CLASS handle).
+				// Fall back to the MethodInfo form so compatibility is decided by class name instead.
+				signal_type = make_signal_type(signal_info);
+			}
 
 			p_identifier->set_datatype(signal_type);
 			p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
