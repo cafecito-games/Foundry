@@ -2918,6 +2918,14 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 					// A `T`-typed field initializer stores directly into the erased member slot; validate
 					// it against the binding the leaf script resolved for this member slot at runtime.
 					codegen.generator->write_assign_typed_parameter(dst_address, src_address, field_minfo.index);
+				} else if (_is_erased_container_call_to_typed_array(field->initializer, field_type)) {
+					// The initializer is a generic method returning an erased `Array[T]`; retype the
+					// untyped runtime array into the concrete element type rather than strict-validating it.
+					codegen.generator->write_assign_typed_array_convert(dst_address, src_address);
+				} else if (_is_erased_container_call_to_typed_dictionary(field->initializer, field_type)) {
+					// The initializer is a generic method returning an erased `Dictionary[K, V]`; retype the
+					// untyped runtime dictionary into the concrete key/value types rather than strict-validating it.
+					codegen.generator->write_assign_typed_dictionary_convert(dst_address, src_address);
 				} else if (field->use_conversion_assign) {
 					codegen.generator->write_assign_with_conversion(dst_address, src_address);
 				} else {
@@ -3127,7 +3135,15 @@ GDScriptFunction *GDScriptCompiler::_make_static_initializer(Error &r_error, GDS
 			GDScriptDataType field_type = _gdtype_from_datatype(field->get_datatype(), codegen.script);
 			GDScriptCodeGenerator::Address temp = codegen.add_temporary(field_type);
 
-			if (field->use_conversion_assign) {
+			if (_is_erased_container_call_to_typed_array(field->initializer, field_type)) {
+				// The initializer is a generic method returning an erased `Array[T]`; retype the
+				// untyped runtime array into the concrete element type rather than strict-validating it.
+				codegen.generator->write_assign_typed_array_convert(temp, src_address);
+			} else if (_is_erased_container_call_to_typed_dictionary(field->initializer, field_type)) {
+				// The initializer is a generic method returning an erased `Dictionary[K, V]`; retype the
+				// untyped runtime dictionary into the concrete key/value types rather than strict-validating it.
+				codegen.generator->write_assign_typed_dictionary_convert(temp, src_address);
+			} else if (field->use_conversion_assign) {
 				codegen.generator->write_assign_with_conversion(temp, src_address);
 			} else {
 				codegen.generator->write_assign(temp, src_address);
