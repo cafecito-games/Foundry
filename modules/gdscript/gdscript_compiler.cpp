@@ -3216,6 +3216,10 @@ void GDScriptCompiler::_specialize_type_argument_binding(GDScript::TypeArgumentB
 	} else {
 		r_binding.kind = GDScript::TypeArgumentBinding::FIXED;
 		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, false);
+		// A composite argument that still mentions an open parameter (`extends Box[Array[T]]`) is erased
+		// by `_gdtype_from_datatype`, so the baked type no longer reflects the dependent reification. Flag
+		// it so the leaf-to-base projection refrains from validating that slot rather than rejecting it.
+		r_binding.fixed_is_dependent = _datatype_contains_type_parameter(argument);
 		r_binding.leaf_ordinal = -1;
 	}
 }

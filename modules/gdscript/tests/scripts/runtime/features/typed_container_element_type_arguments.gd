@@ -1,8 +1,9 @@
 # A typed container whose element is a specialized script handle (`Array[Box[int]]`) tracks the
 # element's reified type arguments at runtime. A correctly specialized element is accepted; an
-# unspecialized (raw) instance and a subclass whose specialization is not yet projectable onto the
-# base are accepted under gradual typing. A conflicting same-script specialization is covered by the
-# runtime/errors counterpart.
+# unspecialized (raw) instance carries no conflicting argument evidence and is accepted under gradual
+# typing. A subclass is projected onto the base before comparison, so a matching specialization is
+# accepted. Conflicting same-script and subclass specializations are covered by the runtime/errors
+# counterparts.
 class Box[T]:
 	var value: T
 
@@ -38,8 +39,8 @@ func test() -> void:
 	boxes.append(make_raw_box())
 	print(boxes.size())
 
-	# A generic subclass specialized as `PairBox[int, float]` is a `Box[int]`; projecting its
-	# specialization onto the base is deferred to epic #125, so it is accepted (not falsely rejected).
+	# A generic subclass specialized as `PairBox[int, float]` is a `Box[int]`; its specialization is
+	# projected onto the base (`Box[A]` with `A = int`), matches `Box[int]`, and is accepted.
 	@warning_ignore("unsafe_call_argument")
 	boxes.append(make_pair_box())
 	print(boxes.size())
