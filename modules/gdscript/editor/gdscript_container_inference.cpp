@@ -1232,19 +1232,21 @@ private:
 				return;
 			}
 		}
-		if (member_mode) {
+		if (member_mode && p_lambda->use_self) {
 			// In member mode a member is reached through `self`, not a capture, so a
 			// lambda that uses `self` could mutate the member through a callable that
 			// may be stored or invoked later in ways the analysis cannot bound.
-			if (p_lambda->use_self) {
-				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
-				return;
-			}
-			// The lambda body can also reach the member through another reference
-			// (`func(): other._member.append(x)`); scan it for such foreign writes.
-			if (p_lambda->function != nullptr) {
-				scan_suite(p_lambda->function->body);
-			}
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+			return;
+		}
+		// Scan the lambda body. In member mode it can reach the member through another
+		// reference (`func(): other._member.append(x)`); in either mode it can
+		// reassign a captured local bound to a narrowing read of the container
+		// (`var v = c[0]; var cb = func(): v = "x"`), which the read-narrowing tracker
+		// must see. The tracked variable itself never appears here -- capturing it
+		// already bailed above -- so scanning is safe.
+		if (p_lambda->function != nullptr) {
+			scan_suite(p_lambda->function->body);
 		}
 	}
 
@@ -2237,19 +2239,21 @@ private:
 				return;
 			}
 		}
-		if (member_mode) {
+		if (member_mode && p_lambda->use_self) {
 			// In member mode a member is reached through `self`, not a capture, so a
 			// lambda that uses `self` could mutate the member through a callable that
 			// may be stored or invoked later in ways the analysis cannot bound.
-			if (p_lambda->use_self) {
-				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
-				return;
-			}
-			// The lambda body can also reach the member through another reference
-			// (`func(): other._member[k] = v`); scan it for such foreign writes.
-			if (p_lambda->function != nullptr) {
-				scan_suite(p_lambda->function->body);
-			}
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+			return;
+		}
+		// Scan the lambda body. In member mode it can reach the member through another
+		// reference (`func(): other._member[k] = v`); in either mode it can reassign a
+		// captured local bound to a narrowing read of the dictionary
+		// (`var v = d["a"]; var cb = func(): v = "x"`), which the read-narrowing
+		// tracker must see. The tracked variable itself never appears here --
+		// capturing it already bailed above -- so scanning is safe.
+		if (p_lambda->function != nullptr) {
+			scan_suite(p_lambda->function->body);
 		}
 	}
 

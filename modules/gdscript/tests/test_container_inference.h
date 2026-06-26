@@ -435,6 +435,14 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 	}
+
+	TEST_CASE("A read binding reassigned inside a captured lambda forces a conservative skip") {
+		// The lambda captures `v` and reassigns it to a `String`; valid while `v` is
+		// `Variant`, rejected once `nums` becomes `Array[int]` and `v` narrows to int.
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tvar cb = func(): v = \"x\"\n\tcb.call()\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
 }
 
 TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
@@ -657,6 +665,12 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
 
 	TEST_CASE("A compound reassignment of a dictionary read binding forces a conservative skip") {
 		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tv += \"x\"\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A dictionary read binding reassigned inside a captured lambda forces a conservative skip") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tvar cb = func(): v = \"x\"\n\tcb.call()\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 	}
