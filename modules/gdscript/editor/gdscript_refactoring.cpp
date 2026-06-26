@@ -6729,14 +6729,24 @@ void build_widen_to_nullable_candidate(
 		return;
 	}
 	// Require the value's underlying type to be assignment-compatible with the target so the
-	// only thing the boundary rejects is the value's nullability. Allowing the implicit numeric
-	// conversion mirrors the analyzer's own assignment/return checks, so a boundary that the
-	// analyzer flagged solely for nullability (`Button?` -> `Node`, `int?` -> `float`) becomes
-	// fixable, while a genuine underlying-type mismatch (e.g. a `String?` value at an `int`
-	// boundary) is a separate type error that widening would leave unfixed and stays disabled.
+	// only thing the boundary rejects is the value's *top-level* nullability. Allowing the
+	// implicit numeric conversion mirrors the analyzer's own assignment/return checks, so a
+	// boundary the analyzer flagged solely for nullability (`Button?` -> `Node`, `int?` ->
+	// `float`) becomes fixable, while a genuine underlying-type mismatch (e.g. a `String?` value
+	// at an `int` boundary) is a separate type error that widening would leave unfixed and stays
+	// disabled.
+	//
+	// Only the source's outer nullability is cleared, and the check keeps strict-null enabled so
+	// a *nested* nullability mismatch still rejects the candidate: the edit only inserts a single
+	// `?` after the outer type, so e.g. `Array[int?]?` reaching `Array[int]` would widen to
+	// `Array[int]?` and leave the `int?` vs `int` element mismatch unfixed. That is not a boundary
+	// rejected solely by top-level nullability, so it must remain disabled.
 	GDScriptParser::DataType value_underlying = value_type;
 	value_underlying.is_nullable = false;
-	if (!GDScriptTypeCompatibility::is_compatible(p_target_type, value_underlying, /* p_allow_implicit_conversion= */ true)) {
+	GDScriptTypeCompatibility::Options compatibility_options;
+	compatibility_options.allow_implicit_conversion = true;
+	compatibility_options.strict_null = true;
+	if (!GDScriptTypeCompatibility::check(p_target_type, value_underlying, compatibility_options).compatible) {
 		r_candidate.disabled_reason = "This value's type does not match the target; widening would not fix the error.";
 		return;
 	}

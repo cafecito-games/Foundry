@@ -3997,6 +3997,19 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
 			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
 		}
+		SUBCASE("is disabled when only a nested element differs in nullability") {
+			// `Array[int?]?` reaching `Array[int]` is rejected by both the outer nullability and
+			// the `int?` vs `int` element. Widening inserts a single outer `?` (`Array[int]?`),
+			// which would leave the nested element mismatch unfixed, so the satisfier must stay
+			// disabled rather than offer a fix that produces still-wrong code.
+			const String source =
+					"func maybe() -> Array[int?]?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar a: Array[int] = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
+		}
 		SUBCASE("is disabled for a void return type") {
 			// `void?` is not valid syntax, so a nullable value at a void return is not widened.
 			const String source =
