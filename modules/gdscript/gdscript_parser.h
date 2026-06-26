@@ -634,6 +634,11 @@ public:
 		// is an untyped container even though the substituted static return type is concrete; an
 		// assignment to a concrete typed container must convert (retype) the result.
 		bool returns_erased_container = false;
+		// Canonical argument positions whose value the analyzer synthesized from a skipped middle
+		// parameter's constant default during named-argument gap fill. Such an argument is excluded
+		// from generic type-parameter inference and from post-substitution argument validation, so a
+		// baked default behaves exactly like a trailing omitted default the callee fills in at runtime.
+		HashSet<int> synthesized_argument_indices;
 #ifdef TOOLS_ENABLED
 		// Resolved parameter types for the called signature, in declaration order,
 		// recorded by the analyzer right before argument validation. Editor refactors
