@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 10: Cannot skip parameter "cls": its default value is a class type that cannot be inlined. Pass it explicitly.

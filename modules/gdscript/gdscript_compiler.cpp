@@ -579,6 +579,16 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			// Return constant.
 			const GDScriptParser::LiteralNode *cn = static_cast<const GDScriptParser::LiteralNode *>(p_expression);
 
+			const GDScriptParser::DataType &literal_type = cn->get_datatype();
+			if (literal_type.is_meta_type && literal_type.kind == GDScriptParser::DataType::CLASS) {
+				// A class-metatype literal is only ever synthesized for a named-call middle gap fill,
+				// which bakes the analyzer's reduced class object. That object can be a shallow,
+				// uncompiled same-unit class, so re-point it to the live compiled subclass here, the
+				// same resolution class-constant identifiers and `const` aliases use. An external class
+				// is already a compiled, valid class and is left untouched.
+				return codegen.add_constant(_resolve_aliased_class_constant(cn->value));
+			}
+
 			return codegen.add_constant(cn->value);
 		} break;
 		case GDScriptParser::Node::SELF: {
