@@ -4467,6 +4467,13 @@ int Main::start() {
 			// continuous-integration run produces the identical flow without a window. Handled here
 			// -- before the game branch loads and instantiates project autoloads -- so a dry-run
 			// preview never executes arbitrary project code before printing its report.
+
+			// Refuse to run unless a real project was loaded. Otherwise ProjectSettings::setup()
+			// may have left res:// bound to the process working directory, and an --apply run could
+			// rewrite an unintended tree (and falsely report success).
+			ERR_FAIL_COND_V_MSG(!found_project, EXIT_FAILURE,
+					"--gdscript-migrate requires a valid project; none was found at the given path. Aborting.");
+
 			MigrationWizardOptions options;
 			options.apply = gdscript_migrate_apply;
 			options.strict_null_checks = gdscript_migrate_strict_null;
