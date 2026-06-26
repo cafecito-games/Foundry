@@ -969,6 +969,14 @@ static void _collect_visible_custom_annotations(GDScriptParser &p_parser, const 
 		return;
 	}
 
+	// Count same-file declarations per short name so a duplicated canonical identity (which the
+	// analyzer rejects as ambiguous) is offered for completion but does not bind to an arbitrary one.
+	HashMap<StringName, int> local_counts;
+	for (const GDScriptParser::AnnotationDeclarationNode *declaration : head->annotation_declarations) {
+		if (declaration->identifier != nullptr && !declaration->qualified_name.is_empty()) {
+			local_counts[declaration->identifier->name]++;
+		}
+	}
 	for (const GDScriptParser::AnnotationDeclarationNode *declaration : head->annotation_declarations) {
 		if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
 			continue;
@@ -977,7 +985,7 @@ static void _collect_visible_custom_annotations(GDScriptParser &p_parser, const 
 		visible.short_name = declaration->identifier->name;
 		visible.qualified_name = declaration->qualified_name;
 		visible.path = p_path;
-		visible.declaration = declaration;
+		visible.declaration = local_counts[declaration->identifier->name] > 1 ? nullptr : declaration;
 		r_annotations[declaration->identifier->name] = visible;
 	}
 
@@ -1051,12 +1059,18 @@ static void _collect_visible_custom_annotations(GDScriptParser &p_parser, const 
 				if (ref.is_valid() && ref->raise_status(GDScriptParserRef::INTERFACE_SOLVED) == OK) {
 					GDScriptParser *external_parser = ref->get_parser();
 					if (external_parser != nullptr && external_parser->get_tree() != nullptr) {
+						// A same-file duplicate identity in the declaring file is ambiguous; do not bind.
+						const GDScriptParser::AnnotationDeclarationNode *found = nullptr;
 						for (const GDScriptParser::AnnotationDeclarationNode *declaration : external_parser->get_tree()->annotation_declarations) {
 							if (declaration->qualified_name == resolved_identity) {
-								entry.declaration = declaration;
-								break;
+								if (found != nullptr) {
+									found = nullptr;
+									break;
+								}
+								found = declaration;
 							}
 						}
+						entry.declaration = found;
 					}
 					r_parser_refs.push_back(ref);
 				}

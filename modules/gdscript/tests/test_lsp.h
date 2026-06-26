@@ -1068,6 +1068,12 @@ func f():
 		// Parameterized annotation usage resolves to its declaration.
 		test_resolve_symbol_at(uri, pos(6, 5), uri, "my_timeout", timeout_selection);
 
+		// An annotation-only file whose declaration is on the first line still resolves to the
+		// declaration symbol rather than the script root.
+		const String library_uri = workspace->get_file_uri("res://lsp/annotation_library.gd");
+		assert_no_errors_in("res://lsp/annotation_library.gd");
+		test_resolve_symbol_at(library_uri, pos(2, 2), library_uri, "tag", range(pos(0, 11), pos(0, 14)));
+
 		memdelete(proto);
 		memdelete(efs);
 		finish_language();

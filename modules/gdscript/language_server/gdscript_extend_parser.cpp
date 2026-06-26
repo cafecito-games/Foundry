@@ -140,20 +140,13 @@ void ExtendGDScriptParser::update_symbols() {
 	if (const GDScriptParser::ClassNode *gdclass = dynamic_cast<const GDScriptParser::ClassNode *>(get_tree())) {
 		parse_class_symbol(gdclass, class_symbol);
 
-		// Annotation declarations get a symbol for go-to-definition, but they are not class members
-		// and must not surface in member completion or `self.`-style member lookup. A method may
-		// legitimately share a name with an annotation, so match on the declaration line: each
-		// annotation declaration occupies its own line, so the line uniquely identifies its symbol.
-		HashSet<int> annotation_symbol_lines; // 0-based LSP line indices.
-		for (const GDScriptParser::AnnotationDeclarationNode *declaration : gdclass->annotation_declarations) {
-			if (declaration->identifier != nullptr) {
-				annotation_symbol_lines.insert(LINE_NUMBER_TO_INDEX(declaration->identifier->start_line));
-			}
-		}
-
 		for (int i = 0; i < class_symbol.children.size(); i++) {
 			const LSP::DocumentSymbol &symbol = class_symbol.children[i];
-			if (symbol.kind == LSP::SymbolKind::Function && annotation_symbol_lines.has(symbol.selectionRange.start.line)) {
+			// Annotation declarations get a symbol for go-to-definition, but they are not class
+			// members and must not surface in member completion or `self.`-style member lookup. They
+			// are the only children emitted with `Operator` kind, so they can be skipped reliably
+			// without colliding with a method that happens to share a source line.
+			if (symbol.kind == LSP::SymbolKind::Operator) {
 				continue;
 			}
 			members.insert(symbol.name, &symbol);
@@ -467,9 +460,9 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 		}
 		LSP::DocumentSymbol symbol;
 		symbol.name = declaration->identifier->name;
-		// No dedicated LSP symbol kind exists for annotations; Function is the closest analog for a
-		// callable-like, parameterized declaration.
-		symbol.kind = LSP::SymbolKind::Function;
+		// No dedicated LSP symbol kind exists for annotations. `Operator` is unused by any class
+		// member here, so it doubles as a marker that keeps these symbols out of the member cache.
+		symbol.kind = LSP::SymbolKind::Operator;
 		symbol.deprecated = false;
 		symbol.range = range_of_node(declaration);
 		symbol.selectionRange = range_of_node(declaration->identifier);
@@ -889,7 +882,11 @@ Error ExtendGDScriptParser::get_left_function_call(const LSP::Position &p_positi
 }
 
 const LSP::DocumentSymbol *ExtendGDScriptParser::get_symbol_defined_at_line(int p_line, const String &p_symbol_name) const {
-	if (p_line <= 0) {
+	// Line 0 (or an unset location) resolves to the script root, which also represents the root
+	// class symbol. When a different symbol is requested by name, search instead so a declaration on
+	// the first line (e.g. the opening `annotation` line of an annotation-only file) resolves to its
+	// own symbol rather than the root.
+	if (p_line <= 0 && (p_symbol_name.is_empty() || p_symbol_name == class_symbol.name)) {
 		return &class_symbol;
 	}
 	return search_symbol_defined_at_line(p_line, class_symbol, p_symbol_name);
