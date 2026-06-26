@@ -72,8 +72,27 @@ static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_l
 // happened to infer. Hard-typed slots keep their structure but are pinned to a concrete type source so
 // the comparison below is decided structurally instead of by DataType::operator=='s parser leniency
 // (which treats INFERRED/UNDETECTED operands as equal to anything).
+// Whether a slot would be recorded as Variant at the `MethodInfo` boundary the comparison historically
+// used. `DataType::to_property_info` erases to Variant both every non-hard slot and the hard kinds that
+// have no runtime type of their own — type parameters (erased outside the type checker), Variant, and
+// the transient resolving/unresolved kinds.
+static bool _signature_slot_erases_to_variant(const GDScriptParser::DataType &p_type) {
+	if (!p_type.is_hard_type()) {
+		return true;
+	}
+	switch (p_type.kind) {
+		case GDScriptParser::DataType::TYPE_PARAMETER:
+		case GDScriptParser::DataType::VARIANT:
+		case GDScriptParser::DataType::RESOLVING:
+		case GDScriptParser::DataType::UNRESOLVED:
+			return true;
+		default:
+			return false;
+	}
+}
+
 static GDScriptParser::DataType _erased_signature_slot(const GDScriptParser::DataType &p_type) {
-	if (p_type.is_hard_type()) {
+	if (!_signature_slot_erases_to_variant(p_type)) {
 		GDScriptParser::DataType hard = p_type;
 		hard.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 		return hard;
@@ -103,10 +122,10 @@ static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_lef
 	if (!_signature_slot_types_equal(p_left, p_right)) {
 		return false;
 	}
-	// Only recurse into the composite structure of hard-typed slots. A non-hard slot was erased to
-	// Variant for the equality above (mirroring the MethodInfo path), so its nested container, generic,
-	// or method-signature data must not be deep-compared as if it were a concrete type.
-	if (!p_left.is_hard_type() || !p_right.is_hard_type()) {
+	// Only recurse into the composite structure of slots that carry a concrete type. A slot erased to
+	// Variant above (mirroring the MethodInfo path) has no concrete nested container, generic, or
+	// method-signature data to deep-compare; the equality already accepted it as Variant.
+	if (_signature_slot_erases_to_variant(p_left) || _signature_slot_erases_to_variant(p_right)) {
 		return true;
 	}
 	// The strict equality above already established matching outer structure; recurse into the
