@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Named arguments are only allowed when calling a GDScript function.
