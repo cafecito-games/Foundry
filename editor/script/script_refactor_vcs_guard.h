@@ -104,9 +104,15 @@ Result inspect_project(const String &p_project_path = String());
 // deliberately ignores `.gitignore`d build artifacts to avoid false positives,
 // but a git-ignored file that is itself a migration target would be overwritten
 // with no version-control recovery; callers that know their concrete target set
-// use this to detect that case. Returns an empty vector when git is unavailable,
-// the project is outside a work tree, or no targets are ignored.
-Vector<String> find_ignored_targets(const String &p_project_path, const Vector<String> &p_target_paths);
+// use this to detect that case.
+//
+// r_check_succeeded reports whether the check ran to a reliable conclusion. It is
+// false when git could not be launched or returned an error (exit code > 1), in
+// which case the returned list is empty but MUST NOT be read as "nothing ignored"
+// — the caller should treat an unsuccessful check as indeterminate (UNKNOWN)
+// rather than safe. It is true on a clean determination, whether or not any
+// targets turned out to be ignored.
+Vector<String> find_ignored_targets(const String &p_project_path, const Vector<String> &p_target_paths, bool &r_check_succeeded);
 
 } // namespace ScriptRefactorVCSGuard
 

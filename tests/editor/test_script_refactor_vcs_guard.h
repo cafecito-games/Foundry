@@ -246,14 +246,29 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] find_ignored_targets reports only gi
 	targets.push_back(tracked);
 	targets.push_back(ignored);
 
-	const Vector<String> result = find_ignored_targets(dir, targets);
+	bool check_succeeded = false;
+	const Vector<String> result = find_ignored_targets(dir, targets, check_succeeded);
+	CHECK(check_succeeded);
 	REQUIRE_EQ(result.size(), 1);
 	CHECK(result[0].ends_with("generated.gd"));
 
-	// No ignored targets -> empty result.
+	// No ignored targets -> empty result, but the check still succeeded.
 	Vector<String> only_tracked;
 	only_tracked.push_back(tracked);
-	CHECK(find_ignored_targets(dir, only_tracked).is_empty());
+	bool only_tracked_succeeded = false;
+	CHECK(find_ignored_targets(dir, only_tracked, only_tracked_succeeded).is_empty());
+	CHECK(only_tracked_succeeded);
+
+	// A path outside any repository: git check-ignore errors (exit > 1), so the
+	// check is reported as unsuccessful rather than a false "nothing ignored".
+	const String outside_dir = OS::get_singleton()->get_cache_path().path_join("vcs_guard_outside_" + itos(OS::get_singleton()->get_ticks_usec()));
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(outside_dir), OK);
+	Vector<String> outside_targets;
+	outside_targets.push_back(outside_dir.path_join("x.gd"));
+	bool outside_succeeded = true;
+	find_ignored_targets(outside_dir, outside_targets, outside_succeeded);
+	CHECK_FALSE(outside_succeeded);
+	DirAccess::remove_absolute(outside_dir);
 
 	Ref<DirAccess> cleanup = DirAccess::open(dir);
 	if (cleanup.is_valid()) {

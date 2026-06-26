@@ -153,8 +153,9 @@ Result inspect_project(const String &p_project_path) {
 	return evaluate(state);
 }
 
-Vector<String> find_ignored_targets(const String &p_project_path, const Vector<String> &p_target_paths) {
+Vector<String> find_ignored_targets(const String &p_project_path, const Vector<String> &p_target_paths, bool &r_check_succeeded) {
 	Vector<String> ignored;
+	r_check_succeeded = true;
 	if (p_target_paths.is_empty()) {
 		return ignored;
 	}
@@ -165,31 +166,40 @@ Vector<String> find_ignored_targets(const String &p_project_path, const Vector<S
 	}
 	project_path = project_path.trim_suffix("/");
 
-	// `git check-ignore <paths...>` prints, one per line, the paths that match an
-	// ignore rule and exits 0 if any matched, 1 if none, and >1 on error. It is
-	// silent for paths outside the repository, so a clean run simply yields none.
-	Vector<String> args;
-	args.push_back("check-ignore");
-	for (const String &target : p_target_paths) {
-		args.push_back(target);
-	}
+	// `git check-ignore <paths...>` prints the matching paths, one per line, and
+	// exits 0 if any matched, 1 if none, and >1 on error. The target list is
+	// processed in bounded batches so a large project never exceeds the platform's
+	// argv length limit; any batch that fails to run or errors marks the whole
+	// check indeterminate rather than silently reporting "nothing ignored".
+	const int batch_size = 256;
+	for (int start = 0; start < p_target_paths.size(); start += batch_size) {
+		const int end = MIN(start + batch_size, p_target_paths.size());
 
-	int exit_code = 0;
-	String output;
-	if (!run_git(project_path, args, exit_code, output)) {
-		return ignored; // git unavailable: nothing to report here.
-	}
-	// Exit code 1 (nothing ignored) is normal; >1 indicates an error (e.g. not a
-	// repo), in which case there is nothing reliable to report.
-	if (exit_code > 1) {
-		return ignored;
-	}
+		Vector<String> args;
+		args.push_back("check-ignore");
+		for (int i = start; i < end; i++) {
+			args.push_back(p_target_paths[i]);
+		}
 
-	const PackedStringArray lines = output.split("\n", false);
-	for (const String &line : lines) {
-		const String trimmed = line.strip_edges();
-		if (!trimmed.is_empty()) {
-			ignored.push_back(trimmed);
+		int exit_code = 0;
+		String output;
+		if (!run_git(project_path, args, exit_code, output)) {
+			r_check_succeeded = false; // git could not be launched.
+			return Vector<String>();
+		}
+		// Exit code 1 means nothing matched (clean determination). >1 is an error
+		// (e.g. not a repo), which must not be read as "nothing ignored".
+		if (exit_code > 1) {
+			r_check_succeeded = false;
+			return Vector<String>();
+		}
+
+		const PackedStringArray lines = output.split("\n", false);
+		for (const String &line : lines) {
+			const String trimmed = line.strip_edges();
+			if (!trimmed.is_empty()) {
+				ignored.push_back(trimmed);
+			}
 		}
 	}
 	return ignored;

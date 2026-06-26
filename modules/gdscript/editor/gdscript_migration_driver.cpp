@@ -73,8 +73,14 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 			for (const String &file : scan.files) {
 				globalized_targets.push_back(ProjectSettings::get_singleton()->globalize_path(file));
 			}
-			result.ignored_targets = ScriptRefactorVCSGuard::find_ignored_targets(project_path, globalized_targets);
-			if (!result.ignored_targets.is_empty()) {
+			bool ignore_check_succeeded = true;
+			result.ignored_targets = ScriptRefactorVCSGuard::find_ignored_targets(project_path, globalized_targets, ignore_check_succeeded);
+			if (!ignore_check_succeeded) {
+				// The ignored-target check could not reach a reliable conclusion. Degrade to
+				// UNKNOWN rather than proceeding as safe, so an indeterminate check still warns.
+				result.vcs_guard.status = ScriptRefactorVCSGuard::Status::UNKNOWN;
+				result.vcs_guard.message = TTR("Could not determine whether any migration targets are excluded from version control. Make sure your working tree is committed or backed up before applying the migration.");
+			} else if (!result.ignored_targets.is_empty()) {
 				result.vcs_guard.status = ScriptRefactorVCSGuard::Status::IGNORED_TARGETS;
 				result.vcs_guard.message = vformat(
 						TTR("%d script(s) this migration would change are excluded from version control (.gitignore). They cannot be restored from git after the migration. Commit or un-ignore them, or back up before continuing."),
