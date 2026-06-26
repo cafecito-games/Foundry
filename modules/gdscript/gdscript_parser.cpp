@@ -1503,6 +1503,11 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptParser::parse_annotation_decl
 	// The current token is the contextual `annotation` identifier.
 	advance();
 
+	// An annotation declaration is not a runtime member, so no class-level annotation may
+	// apply to it. Consume any pending annotations here (erroring on each) so they cannot
+	// silently carry over onto the next real member.
+	parse_class_member_annotations(AnnotationInfo::NONE, "annotation declaration");
+
 	// Annotation declarations are root-only in v1. Inner classes, traits, functions, and
 	// local scopes never reach a valid declaration here.
 	const bool is_root_declaration = current_class->outer == nullptr && !current_class->is_trait;
