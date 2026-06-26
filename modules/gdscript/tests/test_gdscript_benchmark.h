@@ -45,7 +45,9 @@ TEST_CASE("[GDScriptBenchmark] Runs a case and reports a finite positive time") 
 	GDScriptLanguage::get_singleton()->init();
 
 	GDScriptBenchmarkRunner runner("modules/gdscript/tests/benchmarks/_baseline");
-	HashMap<String, double> results = runner.run_all();
+	HashMap<String, double> results;
+	const bool ok = runner.run_all(results);
+	CHECK(ok);
 	CHECK(results.size() >= 1);
 	for (const KeyValue<String, double> &entry : results) {
 		CHECK(entry.value > 0.0);

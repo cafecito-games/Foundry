@@ -32,18 +32,40 @@
 
 #include "../gdscript.h"
 
+#include "core/error/error_macros.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/json.h"
 #include "core/object/class_db.h"
 #include "core/os/os.h"
 #include "core/templates/list.h"
 #include "core/variant/callable.h"
+#include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
 
+#include <cstdio>
 #include <cstdlib>
 
 namespace GDScriptTests {
+
+namespace {
+
+// Tracks whether the engine emitted a runtime error while a workload was being
+// called. GDScript runtime failures surface through the error handler with type
+// ERR_HANDLER_SCRIPT (or ERR_HANDLER_ERROR) and leave the Callable::CallError as
+// CALL_OK, so the call-error check alone would not notice a broken workload.
+struct WorkloadErrorTracker {
+	bool errored = false;
+};
+
+void workload_error_handler(void *p_userdata, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
+	if (p_type == ERR_HANDLER_ERROR || p_type == ERR_HANDLER_SCRIPT) {
+		static_cast<WorkloadErrorTracker *>(p_userdata)->errored = true;
+	}
+}
+
+} // namespace
 
 GDScriptBenchmarkRunner::GDScriptBenchmarkRunner(const String &p_source_dir) {
 	source_dir = p_source_dir;
@@ -102,10 +124,11 @@ bool GDScriptBenchmarkRunner::collect_variants(const String &p_dir, Vector<Workl
 
 	// Sort subdirectories for deterministic discovery order.
 	subdirs.sort();
+	bool all_ok = true;
 	for (const String &sub : subdirs) {
-		collect_variants(sub, r_variants);
+		all_ok = collect_variants(sub, r_variants) && all_ok;
 	}
-	return true;
+	return all_ok;
 }
 
 double GDScriptBenchmarkRunner::run_variant(const WorkloadVariant &p_variant) const {
@@ -139,17 +162,29 @@ double GDScriptBenchmarkRunner::run_variant(const WorkloadVariant &p_variant) co
 
 	const StringName method = "run_benchmark";
 
+	// Catch GDScript runtime errors, which do not surface as Callable::CallError.
+	WorkloadErrorTracker tracker;
+	ErrorHandlerList error_handler;
+	error_handler.errfunc = workload_error_handler;
+	error_handler.userdata = &tracker;
+	add_error_handler(&error_handler);
+
+	const auto fail = [&](const String &p_message) -> double {
+		remove_error_handler(&error_handler);
+		if (obj_ref.is_null()) {
+			memdelete(obj);
+		}
+		ERR_FAIL_V_MSG(-1.0, p_message);
+	};
+
 	// Warmup (discarded).
 	for (int i = 0; i < p_variant.config.warmup; i++) {
 		Variant arg = p_variant.config.iterations;
 		const Variant *argp = &arg;
 		Callable::CallError err;
 		instance->callp(method, &argp, 1, err);
-		if (err.error != Callable::CallError::CALL_OK) {
-			if (obj_ref.is_null()) {
-				memdelete(obj);
-			}
-			ERR_FAIL_V_MSG(-1.0, "Workload call failed (warmup): " + p_variant.script_path);
+		if (err.error != Callable::CallError::CALL_OK || tracker.errored) {
+			return fail("Workload failed (warmup): " + p_variant.script_path);
 		}
 	}
 
@@ -163,30 +198,37 @@ double GDScriptBenchmarkRunner::run_variant(const WorkloadVariant &p_variant) co
 	instance->callp(method, &argp, 1, err);
 	OS::get_singleton()->benchmark_end_measure("gdscript", what);
 	const double elapsed_usec = (double)(OS::get_singleton()->get_ticks_usec() - from);
-	if (err.error != Callable::CallError::CALL_OK) {
-		if (obj_ref.is_null()) {
-			memdelete(obj);
-		}
-		ERR_FAIL_V_MSG(-1.0, "Workload call failed (measured): " + p_variant.script_path);
+	if (err.error != Callable::CallError::CALL_OK || tracker.errored) {
+		return fail("Workload failed (measured): " + p_variant.script_path);
 	}
 
+	remove_error_handler(&error_handler);
 	if (obj_ref.is_null()) {
 		memdelete(obj);
 	}
 	return elapsed_usec;
 }
 
-HashMap<String, double> GDScriptBenchmarkRunner::run_all() const {
-	HashMap<String, double> results;
+bool GDScriptBenchmarkRunner::run_all(HashMap<String, double> &r_results) const {
 	Vector<WorkloadVariant> variants;
-	collect_variants(source_dir, variants);
+	if (!collect_variants(source_dir, variants)) {
+		return false;
+	}
+	if (variants.is_empty()) {
+		ERR_PRINT("No benchmark variants found under: " + source_dir);
+		return false;
+	}
+
+	bool all_ok = true;
 	for (const WorkloadVariant &variant : variants) {
 		const double usec = run_variant(variant);
-		if (usec >= 0.0) {
-			results["gdscript:" + variant.case_name + "/" + variant.variant_name] = usec;
+		if (usec < 0.0) {
+			all_ok = false;
+			continue;
 		}
+		r_results["gdscript:" + variant.case_name + "/" + variant.variant_name] = usec;
 	}
-	return results;
+	return all_ok;
 }
 
 void GDScriptBenchmarkRunner::handle_cmdline() {
@@ -205,17 +247,39 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 	}
 
 	GDScriptBenchmarkRunner runner(dir);
-	HashMap<String, double> results = runner.run_all();
+	HashMap<String, double> results;
+	const bool ok = runner.run_all(results);
 
-	// Reuse the engine benchmark module's JSON serialization.
-	if (!output_path.is_empty()) {
-		OS::get_singleton()->set_use_benchmark(true);
-		OS::get_singleton()->set_benchmark_file(output_path);
+	// Emit the documented corpus format: a JSON object mapping
+	// "gdscript:<case>/<variant>" to the measured microseconds.
+	Dictionary json_map;
+	for (const KeyValue<String, double> &entry : results) {
+		json_map[entry.key] = entry.value;
 	}
-	OS::get_singleton()->benchmark_dump();
+	const String json = JSON::stringify(json_map, "\t", true, true);
+	bool wrote_output = true;
+	if (output_path.is_empty()) {
+		print_line(json);
+	} else {
+		Ref<FileAccess> file = FileAccess::open(output_path, FileAccess::WRITE);
+		if (file.is_null()) {
+			ERR_PRINT("Could not open benchmark output file: " + output_path);
+			wrote_output = false;
+		} else {
+			file->store_string(json);
+			file->close();
+		}
+	}
 
 	print_line(vformat("gdscript-benchmark: ran %d variant(s).", results.size()));
-	exit(0);
+
+	// Terminate immediately rather than returning into editor startup. `_Exit`
+	// is used instead of `exit()` because the engine is only partway through
+	// initialization here: running C++ static destructors on a half-built engine
+	// aborts on some platforms. The benchmark output file is already flushed and
+	// closed above, so nothing is lost.
+	fflush(nullptr);
+	std::_Exit(ok && wrote_output ? 0 : 1);
 }
 
 } // namespace GDScriptTests

@@ -64,8 +64,11 @@ class GDScriptBenchmarkRunner {
 public:
 	explicit GDScriptBenchmarkRunner(const String &p_source_dir);
 
-	// Runs every variant; key is "gdscript:<case>/<variant>", value is microseconds.
-	HashMap<String, double> run_all() const;
+	// Runs every discovered variant, filling r_results with a map whose key is
+	// "gdscript:<case>/<variant>" and whose value is the measured microseconds.
+	// Returns false if discovery failed, no variant was found, or any variant
+	// failed to compile/run.
+	bool run_all(HashMap<String, double> &r_results) const;
 
 	// CLI entry: scans for `--gdscript-benchmark <dir>`, runs, dumps JSON, exits.
 	static void handle_cmdline();
