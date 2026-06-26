@@ -67,6 +67,13 @@ bool render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_r
 // false in the same cases as render_annotatable_type.
 bool render_annotatable_type_in_scope(const GDScriptParser::DataType &p_type, const AnnotationScope &p_scope, String &r_rendered, HashSet<String> &r_required_imports);
 
+// Renders an annotatable type with every namespaced class fully qualified,
+// regardless of scope. Two types that render the same bare spelling but name
+// different classes (e.g. `alpha.Thing` vs `beta.Thing`) produce different
+// identities here, so callers comparing types across sites can tell them apart.
+// Returns false in the same cases as render_annotatable_type.
+bool render_qualified_identity(const GDScriptParser::DataType &p_type, String &r_identity);
+
 } // namespace GDScriptRefactorTypes
 
 #endif // TOOLS_ENABLED

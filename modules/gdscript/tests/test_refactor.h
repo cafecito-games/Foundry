@@ -1159,6 +1159,36 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			REQUIRE_EQ(imports.size(), 1);
 			CHECK(imports.has("characters"));
 		}
+		SUBCASE("qualified identity distinguishes same-named classes from different namespaces") {
+			// Used by call-site inference to tell apart types that share a bare name.
+			GDScriptParser::IdentifierNode alpha_identifier;
+			alpha_identifier.name = "Thing";
+			GDScriptParser::ClassNode alpha_node;
+			alpha_node.identifier = &alpha_identifier;
+			alpha_node.namespace_name = "alpha";
+			GDScriptParser::DataType alpha_type;
+			alpha_type.kind = GDScriptParser::DataType::CLASS;
+			alpha_type.type_source = GDScriptParser::DataType::INFERRED;
+			alpha_type.class_type = &alpha_node;
+
+			GDScriptParser::IdentifierNode beta_identifier;
+			beta_identifier.name = "Thing";
+			GDScriptParser::ClassNode beta_node;
+			beta_node.identifier = &beta_identifier;
+			beta_node.namespace_name = "beta";
+			GDScriptParser::DataType beta_type;
+			beta_type.kind = GDScriptParser::DataType::CLASS;
+			beta_type.type_source = GDScriptParser::DataType::INFERRED;
+			beta_type.class_type = &beta_node;
+
+			String alpha_identity;
+			String beta_identity;
+			CHECK(GDScriptRefactorTypes::render_qualified_identity(alpha_type, alpha_identity));
+			CHECK(GDScriptRefactorTypes::render_qualified_identity(beta_type, beta_identity));
+			CHECK_EQ(alpha_identity, "alpha.Thing");
+			CHECK_EQ(beta_identity, "beta.Thing");
+			CHECK_NE(alpha_identity, beta_identity);
+		}
 	}
 
 	TEST_CASE("Add type annotation inserts concrete inferred types") {

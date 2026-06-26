@@ -188,6 +188,10 @@ ClassSpelling choose_class_spelling(const String &p_target_namespace, const Stri
 struct RenderState {
 	HashSet<String> required_imports;
 	HashMap<String, String> bare_imported_namespace_by_class; // class name -> namespace committed to a bare-with-import spelling.
+	// When true, every namespaced class is rendered fully qualified and no imports
+	// are recorded. Used to build a scope-independent identity for comparing types
+	// across call sites.
+	bool force_qualified = false;
 };
 
 // Mirrors DataType::to_string() for the container/type-argument/signature
@@ -197,7 +201,7 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 	String target_namespace;
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
-		ClassSpelling spelling_kind = choose_class_spelling(target_namespace, class_name, p_scope);
+		ClassSpelling spelling_kind = r_state.force_qualified ? ClassSpelling::QUALIFIED : choose_class_spelling(target_namespace, class_name, p_scope);
 		// A bare-with-import leaf must not collide with another namespace already
 		// imported under the same bare name in this annotation; qualify instead.
 		if (spelling_kind == ClassSpelling::BARE_WITH_IMPORT) {
@@ -371,6 +375,23 @@ bool GDScriptRefactorTypes::render_annotatable_type_in_scope(const GDScriptParse
 	}
 	r_rendered = rendered;
 	r_required_imports = state.required_imports;
+	return true;
+}
+
+bool GDScriptRefactorTypes::render_qualified_identity(const GDScriptParser::DataType &p_type, String &r_identity) {
+	if (!is_renderable_type(p_type)) {
+		return false;
+	}
+	String rendered;
+	RenderState state;
+	state.force_qualified = true;
+	if (!render_scoped(p_type, AnnotationScope(), rendered, state)) {
+		return false;
+	}
+	if (!is_usable_spelling(rendered)) {
+		return false;
+	}
+	r_identity = rendered;
 	return true;
 }
 

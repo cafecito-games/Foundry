@@ -1454,6 +1454,11 @@ struct CallsiteParameterTypeState {
 	bool has_call = false;
 	bool failed = false;
 	String rendered_type;
+	// A scope-independent, fully-qualified identity used to decide whether call
+	// sites agree. Two classes that render the same bare name but live in different
+	// namespaces (e.g. alpha.Thing vs beta.Thing) have distinct identities, so they
+	// are treated as disagreeing rather than conflated.
+	String identity;
 	// The DataType backing rendered_type, kept so the parameter annotation can be
 	// re-rendered namespace-aware (qualified + import) at the target file's scope.
 	GDScriptParser::DataType datatype;
@@ -1572,12 +1577,20 @@ void collect_callsite_parameter_type_from_call(
 		r_state.failed = true;
 		return;
 	}
+	// Compare call sites by a scope-independent qualified identity, not the bare
+	// rendering, so two same-named classes from different namespaces disagree.
+	String identity;
+	if (!GDScriptRefactorTypes::render_qualified_identity(argument_type, identity)) {
+		r_state.failed = true;
+		return;
+	}
 
-	if (r_state.rendered_type.is_empty()) {
+	if (r_state.identity.is_empty()) {
 		r_state.rendered_type = rendered_type;
+		r_state.identity = identity;
 		r_state.datatype = argument_type;
 		r_state.has_datatype = true;
-	} else if (r_state.rendered_type != rendered_type) {
+	} else if (r_state.identity != identity) {
 		r_state.failed = true;
 	}
 }
