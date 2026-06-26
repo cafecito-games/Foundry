@@ -38,8 +38,10 @@
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/object/class_db.h"
+#include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "core/templates/list.h"
+#include "core/variant/array.h"
 #include "core/variant/callable.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
@@ -219,6 +221,123 @@ double GDScriptBenchmarkRunner::run_variant(const WorkloadVariant &p_variant) co
 	return elapsed_usec;
 }
 
+bool GDScriptBenchmarkRunner::profile_variant(const WorkloadVariant &p_variant, Array &r_functions) const {
+	// Compile (excluded from profiling).
+	Ref<GDScript> script;
+	script.instantiate();
+	if (script->load_source_code(p_variant.script_path) != OK) {
+		ERR_PRINT("Could not load: " + p_variant.script_path);
+		return false;
+	}
+	// Take over the path: the timing pass already loaded each workload under the
+	// same path, so claim it here instead of tripping the resource-cache collision
+	// warning. The path is set before reload() so compiled function signatures
+	// carry the script path.
+	script->set_path(p_variant.script_path, true);
+
+	// Mirror run_variant's error handling: GDScript runtime errors surface through
+	// the error handler rather than Callable::CallError, so failures during
+	// reload/init/call would otherwise go unnoticed.
+	WorkloadErrorTracker tracker;
+	ErrorHandlerList error_handler;
+	error_handler.errfunc = workload_error_handler;
+	error_handler.userdata = &tracker;
+	add_error_handler(&error_handler);
+
+	Object *obj = nullptr;
+	Ref<RefCounted> obj_ref;
+	const auto fail = [&](const String &p_message) -> bool {
+		remove_error_handler(&error_handler);
+		if (obj != nullptr && obj_ref.is_null()) {
+			memdelete(obj);
+		}
+		ERR_PRINT(p_message);
+		return false;
+	};
+
+	if (script->reload() != OK || tracker.errored) {
+		return fail("Could not reload: " + p_variant.script_path);
+	}
+
+	obj = ClassDB::instantiate(script->get_native()->get_name());
+	if (obj == nullptr) {
+		return fail("Could not instantiate native base for: " + p_variant.script_path);
+	}
+	if (obj->is_ref_counted()) {
+		obj_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(obj));
+	}
+	obj->set_script(script);
+	if (tracker.errored) {
+		return fail("Workload failed during initialization: " + p_variant.script_path);
+	}
+	ScriptInstance *instance = obj->get_script_instance();
+	if (instance == nullptr) {
+		return fail("Could not attach script instance for: " + p_variant.script_path);
+	}
+
+	const StringName method = "run_benchmark";
+	Variant arg = p_variant.config.iterations;
+	const Variant *argp = &arg;
+	Callable::CallError err;
+
+	// profiling_start() zeroes every loaded function's counters, so only the
+	// functions this workload actually calls end up with a non-zero call count.
+	ScriptLanguage *language = GDScriptLanguage::get_singleton();
+	language->profiling_start();
+	instance->callp(method, &argp, 1, err);
+	language->profiling_stop();
+	if (err.error != Callable::CallError::CALL_OK || tracker.errored) {
+		return fail("Workload failed (profiled): " + p_variant.script_path);
+	}
+
+	// Accumulated data spans every loaded GDScript function; keep only the rows
+	// the workload exercised this pass (call_count > 0) so the sidecar reflects
+	// just this variant rather than every script the runner has touched.
+	constexpr int max_rows = 4096;
+	ScriptLanguage::ProfilingInfo *info = memnew_arr(ScriptLanguage::ProfilingInfo, max_rows);
+	const int count = language->profiling_get_accumulated_data(info, max_rows);
+	for (int i = 0; i < count; i++) {
+		if (info[i].call_count == 0) {
+			continue;
+		}
+		Dictionary row;
+		row["signature"] = String(info[i].signature);
+		row["call_count"] = (int64_t)info[i].call_count;
+		row["self_time"] = (int64_t)info[i].self_time;
+		row["total_time"] = (int64_t)info[i].total_time;
+		r_functions.push_back(row);
+	}
+	memdelete_arr(info);
+
+	remove_error_handler(&error_handler);
+	if (obj_ref.is_null()) {
+		memdelete(obj);
+	}
+	return true;
+}
+
+bool GDScriptBenchmarkRunner::profile_all(Dictionary &r_profile) const {
+	Vector<WorkloadVariant> variants;
+	if (!collect_variants(source_dir, variants)) {
+		return false;
+	}
+	if (variants.is_empty()) {
+		ERR_PRINT("No benchmark variants found under: " + source_dir);
+		return false;
+	}
+
+	bool all_ok = true;
+	for (const WorkloadVariant &variant : variants) {
+		Array functions;
+		if (!profile_variant(variant, functions)) {
+			all_ok = false;
+			continue;
+		}
+		r_profile[variant.case_name + "/" + variant.variant_name] = functions;
+	}
+	return all_ok;
+}
+
 bool GDScriptBenchmarkRunner::run_all(HashMap<String, double> &r_results) const {
 	Vector<WorkloadVariant> variants;
 	if (!collect_variants(source_dir, variants)) {
@@ -245,7 +364,9 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 	List<String> args = OS::get_singleton()->get_cmdline_args();
 	String dir;
 	String output_path;
+	String profile_output_path;
 	bool benchmark_requested = false;
+	bool profile_requested = false;
 	bool malformed = false;
 	for (List<String>::Element *E = args.front(); E; E = E->next()) {
 		const String &arg = E->get();
@@ -265,14 +386,25 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 			} else {
 				malformed = true;
 			}
+		} else if (arg == "--gdscript-benchmark-profile") {
+			// Boolean opt-in for the separate profiling pass; takes no value.
+			profile_requested = true;
+		} else if (arg == "--gdscript-benchmark-profile-output") {
+			profile_requested = true;
+			if (has_value) {
+				profile_output_path = E->next()->get();
+			} else {
+				malformed = true;
+			}
 		}
 	}
-	if (!benchmark_requested) {
+	if (!benchmark_requested && !profile_requested) {
 		return; // Flag not present; normal startup continues.
 	}
 	if (malformed || dir.is_empty()) {
 		ERR_PRINT("--gdscript-benchmark requires a directory argument: "
-				  "--gdscript-benchmark <dir> [--gdscript-benchmark-output <file>]");
+				  "--gdscript-benchmark <dir> [--gdscript-benchmark-output <file>] "
+				  "[--gdscript-benchmark-profile [--gdscript-benchmark-profile-output <file>]]");
 		fflush(nullptr);
 		std::_Exit(2);
 	}
@@ -310,13 +442,40 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 		}
 	}
 
+	// Optional second pass: re-run each workload under the GDScript function
+	// profiler and write per-function self/total time + call counts to a sidecar
+	// JSON keyed by "<case>/<variant>". Kept separate from the timing run above so
+	// the profiler's per-call bookkeeping never perturbs the measured numbers.
+	bool profile_ok = true;
+	bool wrote_profile = true;
+	if (profile_requested) {
+		Dictionary profile;
+		profile_ok = runner.profile_all(profile);
+		const String profile_json = JSON::stringify(profile, "\t", false, true);
+		if (profile_output_path.is_empty()) {
+			print_line("gdscript-benchmark: no --gdscript-benchmark-profile-output given; "
+					   "printing profile to stdout (pass an output file for a pure-JSON artifact).");
+			print_line(profile_json);
+		} else {
+			Ref<FileAccess> profile_file = FileAccess::open(profile_output_path, FileAccess::WRITE);
+			if (profile_file.is_null()) {
+				ERR_PRINT("Could not open benchmark profile output file: " + profile_output_path);
+				wrote_profile = false;
+			} else {
+				profile_file->store_string(profile_json);
+				profile_file->close();
+				print_line(vformat("gdscript-benchmark: wrote profile for %d variant(s) to %s.", profile.size(), profile_output_path));
+			}
+		}
+	}
+
 	// Terminate immediately rather than returning into editor startup. `_Exit`
 	// is used instead of `exit()` because the engine is only partway through
 	// initialization here: running C++ static destructors on a half-built engine
 	// aborts on some platforms. The benchmark output file is already flushed and
 	// closed above, so nothing is lost.
 	fflush(nullptr);
-	std::_Exit(ok && wrote_output ? 0 : 1);
+	std::_Exit(ok && wrote_output && profile_ok && wrote_profile ? 0 : 1);
 }
 
 } // namespace GDScriptTests
