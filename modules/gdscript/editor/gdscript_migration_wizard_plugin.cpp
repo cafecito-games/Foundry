@@ -126,6 +126,10 @@ void GDScriptMigrationWizardDialog::_run_migration() {
 		}
 	} else if (result.applied && strict_enabled) {
 		status_label->set_text(TTR("Migration applied and strict settings enabled. Review the changes in your version control before committing."));
+	} else if (result.applied && result.strict_activation_blocked) {
+		// Apply succeeded but the requested strict flip was gated by remaining violations; report
+		// both so the activation outcome is not hidden behind the apply success.
+		status_label->set_text(TTR("Migration applied, but strict settings were not enabled because violations remain. Resolve them or allow gradual adoption."));
 	} else if (result.applied) {
 		status_label->set_text(TTR("Migration applied. Review the changes in your version control before committing."));
 	} else if (strict_enabled) {
