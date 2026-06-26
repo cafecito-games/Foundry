@@ -50,6 +50,49 @@
 			# var typed_value: int = get_dynamic_value()
 		[/codeblock]
 		Most callable and signal signature checks run as part of normal static analysis. [member ProjectSettings.debug/gdscript/analysis/strict_dynamic_checks] adds stricter checks at dynamic boundaries by rejecting [Variant] values where a non-[Variant] static type is required.
+		[b]Generics:[/b] classes and methods can be parameterized by one or more type parameters, declared with the same bracket convention used by [Array] and [Dictionary]. A type parameter is written after the class or method name ([code]class Box[T][/code], [code]func swap[T](...)[/code]), and the parameter is then usable as a type inside the body.
+		[codeblock]
+		# Generic class: `T` types members and method signatures.
+		class Box[T]:
+			var value: T
+
+			func set_value(new_value: T) -> void:
+				value = new_value
+
+			func get_value() -> T:
+				return value
+
+		# A generic class can also be file-level with `class_name Box[T]`.
+
+		# Generic method, independent of any class type parameter.
+		func swap[T](a: T, b: T) -> Array[T]:
+			return [b, a]
+		[/codeblock]
+		[b]Use-site type arguments:[/b] a generic class is specialized by supplying type arguments in brackets at the use site, including for construction: [code]Box[int].new()[/code]. A generic method infers its type parameters from the argument types, and explicit application is available as a fallback ([code]swap[float](1, 2)[/code]). Inference fails with an error directing you to apply the arguments explicitly when arguments conflict (for example [code]swap(1, "x")[/code]) or when a parameter is unconstrained because it appears only in the return type. Multiple parameters ([code]Pair[K, V][/code]) and multi-argument application ([code]Pair[int, String].new()[/code]) are supported.
+		[codeblock]
+		var box := Box[int].new()
+		box.set_value(42)            # Accepts `int`.
+		var n: int = box.get_value() # `get_value()` is substituted to `-> int`.
+
+		var inferred := swap(1, 2)        # `T` inferred as `int`.
+		var explicit := swap[float](1, 2) # `T` applied explicitly.
+		[/codeblock]
+		[b]Bounds:[/b] a type parameter can declare an upper bound with [code]T: Bound[/code]. The bound may be a class ([code]Box[T: RefCounted][/code]) or a trait ([code]Box[T: Damageable][/code]). A type argument must satisfy the bound (be the bound, derive from it, or — for a trait bound — [code]uses[/code] it), and inside the body a [code]T[/code]-typed value exposes the bound type's members for static checking. Bounds are matched [i]invariantly[/i] in their own type arguments: [code]Stack[String][/code] does not satisfy a [code]List[int][/code] bound.
+		[codeblock]
+		trait Damageable:
+			@abstract func take_damage(amount: int) -> void
+
+		class Box[T: Damageable]:
+			var value: T
+
+			func hit() -> void:
+				value.take_damage(5) # `Damageable` members resolve on `T`.
+		[/codeblock]
+		[b]Inheritance:[/b] a class can extend a generic base, rebinding the base's parameter to its own ([code]class Stack[U] extends List[U][/code]) or fixing it to a concrete type ([code]class IntList extends List[int][/code]). Inherited members and method signatures are substituted along the chain. Generic specialization is [i]invariant[/i]: [code]Stack[String][/code] is a [code]List[String][/code], not a [code]List[int][/code]. The F-bounded / CRTP pattern [code]class Sword extends Box[Sword][/code] is supported.
+		[b]Reified runtime model:[/b] generic [i]class instances[/i] are [i]reified[/i] — their type arguments survive to runtime. A [code]Box[int][/code] instance carries its bound type arguments, and writes to a [code]T[/code]-typed member are validated against them exactly as [Array] element insertion is, so assigning an incompatible value through a dynamic reference fails at runtime (values that convert, such as a [float] written to an [code skip-lint]int[/code] slot, are coerced). The reified arguments round-trip through [code].tres[/code]/scene save-load, resource duplication, and hot-reload. A generic class named without type arguments is a [i]raw[/i] generic (like an untyped [Array]): [code]var b: Box[/code] is a permissive supertype that any [code]Box[X][/code] assigns to, and its members are dynamic, with writes still validated against the instance's reified argument at runtime.
+		Generic [i]methods[/i], by contrast, are a static inference and checking device: their type parameters are [i]not[/i] reified and are erased at runtime. A generic method that returns a container whose element is a type parameter ([code]func singleton[T](...) -> Array[T][/code]) produces an untyped array at runtime; the element type is recovered from the target's concrete type at the assignment site, so assigning the result to an [code]Array[int][/code] retypes it while assigning to an untyped [Array] leaves it untyped.
+		[b]Generic traits:[/b] traits can be generic ([code]trait Holder[T][/code]) and applied with type arguments ([code]class IntBox uses Holder[int][/code]); conformance is checked under substitution, so the implementation must satisfy every required member with the argument applied. Traits can also require generic methods ([code]@abstract func transform[U](value: U) -> Array[U][/code]), which an implementation satisfies up to type-parameter renaming (alpha-equivalence by ordinal position).
+		[b]Reflection:[/b] generic type information is available at runtime. [method is_generic] and [method get_type_parameter_list] report a class's declared type parameters (as [GDScriptTypeParameter] descriptors), and [method GDScriptReflection.get_type_arguments] returns the reified type arguments bound onto an instance.
 	</description>
 	<tutorials>
 		<link title="GDScript documentation index">$DOCS_URL/tutorials/scripting/gdscript/index.html</link>
