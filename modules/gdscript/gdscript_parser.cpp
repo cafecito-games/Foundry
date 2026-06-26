@@ -3154,7 +3154,7 @@ GDScriptParser::WhileNode *GDScriptParser::parse_while() {
 	return n_while;
 }
 
-GDScriptParser::ExpressionNode *GDScriptParser::parse_precedence(Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign) {
+GDScriptParser::ExpressionNode *GDScriptParser::parse_precedence(Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign, bool p_stop_on_question_mark) {
 	// Switch multiline mode on for grouping tokens.
 	// Do this early to avoid the tokenizer generating whitespace tokens.
 	switch (current.type) {
@@ -3197,7 +3197,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_precedence(Precedence p_pr
 #endif
 
 	while (p_precedence <= get_rule(current.type)->precedence) {
-		if (previous_operand == nullptr || (p_stop_on_assign && current.type == GDScriptTokenizer::Token::EQUAL) || lambda_ended) {
+		if (previous_operand == nullptr || (p_stop_on_assign && current.type == GDScriptTokenizer::Token::EQUAL) || (p_stop_on_question_mark && current.type == GDScriptTokenizer::Token::QUESTION_MARK) || lambda_ended) {
 			return previous_operand;
 		}
 		// Also switch multiline mode on here for infix operators.
@@ -3218,8 +3218,8 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_precedence(Precedence p_pr
 	return previous_operand;
 }
 
-GDScriptParser::ExpressionNode *GDScriptParser::parse_expression(bool p_can_assign, bool p_stop_on_assign) {
-	return parse_precedence(PREC_ASSIGNMENT, p_can_assign, p_stop_on_assign);
+GDScriptParser::ExpressionNode *GDScriptParser::parse_expression(bool p_can_assign, bool p_stop_on_assign, bool p_stop_on_question_mark) {
+	return parse_precedence(PREC_ASSIGNMENT, p_can_assign, p_stop_on_assign, p_stop_on_question_mark);
 }
 
 GDScriptParser::IdentifierNode *GDScriptParser::parse_identifier() {
@@ -3843,7 +3843,10 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_subscript(ExpressionNode *
 	make_completion_context(COMPLETION_SUBSCRIPT, subscript);
 
 	subscript->base = p_previous_operand;
-	subscript->index = parse_expression(false);
+	// Stop before a trailing `?` so a use-site nullable type-argument marker (`Box[Node?]`) is not
+	// swallowed by the Pratt loop as the always-invalid `?` infix; `parse_cast`/ternary indexing
+	// (`arr[x as int]`, `arr[a if b else c]`) bind more tightly than `?` and still parse here.
+	subscript->index = parse_expression(false, false, true);
 
 #ifdef TOOLS_ENABLED
 	if (subscript->index != nullptr && subscript->index->type == Node::LITERAL) {
@@ -3863,7 +3866,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_subscript(ExpressionNode *
 		subscript->type_arguments.push_back(subscript->index);
 		subscript->type_argument_is_nullable.push_back(match(GDScriptTokenizer::Token::QUESTION_MARK));
 		while (match(GDScriptTokenizer::Token::COMMA) && !check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
-			ExpressionNode *type_argument = parse_expression(false);
+			ExpressionNode *type_argument = parse_expression(false, false, true);
 			if (type_argument == nullptr) {
 				push_error(R"(Expected type argument after ",".)");
 				break;

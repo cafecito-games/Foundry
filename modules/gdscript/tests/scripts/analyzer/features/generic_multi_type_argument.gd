@@ -12,8 +12,16 @@ class Pair[K, V]:
 		first = value
 
 
+class Box[T]:
+	var value: T
+
+
 func swap_pair[A, B](a: A, b: B) -> void:
 	print(a, " ", b)
+
+
+func identity[T](v: T) -> T:
+	return v
 
 
 func test() -> void:
@@ -25,5 +33,12 @@ func test() -> void:
 
 	# Explicit multi-argument generic-method application binds both parameters.
 	swap_pair[int, String](1, "x")
+
+	# A use-site `?` nullable marker parses for both generic-class specialization and explicit
+	# generic-method application. The marker is captured separately, so the type argument binds to
+	# the underlying type; nullable semantics under strict_null_checks are tracked separately.
+	var b := Box[Node?].new()
+	print(b.value)
+	print(identity[Node?](null))
 
 	print("multi type argument ok")
