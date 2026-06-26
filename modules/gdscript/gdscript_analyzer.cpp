@@ -10584,16 +10584,56 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		}
 	}
 
-	// An omitted parameter before the last filled slot would need its default inlined at the call
-	// site. That constant-default gap fill is handled separately; for now it is a compile error so
-	// the call can never be miscompiled into the wrong positional order.
+	// An omitted parameter before the last filled slot has no positional argument, so its default
+	// must be inlined at the call site to keep the canonical order correct. GDScript defaults run in
+	// the callee's scope and may reference `self`, members, or earlier parameters, so only a
+	// compile-time-constant default is safe to materialize here; anything else is a compile error.
+	//
+	// The inlined value is the statically resolved callee's default, matching the rest of the
+	// feature's compile-time model (the call is also type-checked against that static signature). If
+	// a subclass overrides the method with a different default, a base-typed receiver dispatched to
+	// that override still receives the static default rather than the override's; aligning this with
+	// the callee's runtime default mechanism is a separate design decision tracked as a follow-up.
 	for (int i = 0; i < max_filled_index; i++) {
-		if (slots[i] == nullptr) {
-			const StringName skipped_name = p_function->parameters[i]->identifier != nullptr ? p_function->parameters[i]->identifier->name : StringName();
+		if (slots[i] != nullptr) {
+			continue;
+		}
+
+		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
+
+		// Two cases are excluded, materializing them as a plain constant would diverge from how the
+		// callee's own default mechanism resolves the value:
+		//   - A parameter whose type depends on a type parameter: its type is substituted from the
+		//     receiver's (or method's) type arguments, so a synthesized default would be unified and
+		//     validated against the substituted type, whereas a trailing omitted default never is.
+		//   - A class metatype default (e.g. `cls = SomeClass`): the compiler deliberately keeps these
+		//     out of the constant fast path and re-resolves them to the live compiled subclass, which a
+		//     baked literal cannot do.
+		// Until those interactions are designed, such a middle skip must be passed explicitly.
+		bool can_inline_default = false;
+		if (parameter->initializer != nullptr && parameter->initializer->is_constant) {
+			const bool type_is_generic = _signature_type_involves_type_parameter(parameter->get_datatype());
+			const GDScriptParser::DataType default_type = parameter->initializer->get_datatype();
+			const bool is_class_metatype = default_type.is_meta_type && default_type.kind == GDScriptParser::DataType::CLASS;
+			can_inline_default = !type_is_generic && !is_class_metatype;
+		}
+		if (!can_inline_default) {
+			const StringName skipped_name = parameter->identifier != nullptr ? parameter->identifier->name : StringName();
 			push_error(vformat(R"(Cannot skip parameter "%s" with named arguments; pass it explicitly.)", skipped_name), p_call);
 			p_call->argument_names.clear();
 			return false;
 		}
+
+		// Synthesize a constant argument from the parameter's default. Marking it constant routes it
+		// through the normal constant-argument path in `validate_call_arg`, which applies the same
+		// builtin-type conversion a written literal would receive.
+		GDScriptParser::LiteralNode *constant_argument = parser->alloc_node<GDScriptParser::LiteralNode>();
+		constant_argument->value = parameter->initializer->reduced_value;
+		constant_argument->reduced = true;
+		constant_argument->is_constant = true;
+		constant_argument->reduced_value = parameter->initializer->reduced_value;
+		constant_argument->set_datatype(parameter->initializer->get_datatype());
+		slots.write[i] = constant_argument;
 	}
 
 	Vector<GDScriptParser::ExpressionNode *> canonical_arguments;
