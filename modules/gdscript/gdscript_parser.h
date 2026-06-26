@@ -579,6 +579,11 @@ public:
 		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script
 		// from the `[T]` type argument.
 		bool is_proxy_construct = false;
+		// Set by the analyzer when this calls a generic method whose return type is a typed container
+		// with a type-parameter element (`-> Array[T]`). That element is erased at runtime, so the value
+		// is an untyped container even though the substituted static return type is concrete; an
+		// assignment to a concrete typed container must convert (retype) the result.
+		bool returns_erased_container = false;
 #ifdef TOOLS_ENABLED
 		// Resolved parameter types for the called signature, in declaration order,
 		// recorded by the analyzer right before argument validation. Editor refactors

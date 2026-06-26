@@ -10032,6 +10032,20 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 	for (GDScriptParser::DataType &parameter_type : r_par_types) {
 		parameter_type = GDScriptParser::DataType::substitute(parameter_type, bindings);
 	}
+
+	// A typed-container return whose element involves a method type parameter (`-> Array[T]`) is erased
+	// at runtime: the method, compiled once, returns an untyped container. We still substitute the
+	// static type to the concrete container below, so flag the call here (before erasing the marker) so
+	// an assignment to a concrete typed container retypes the untyped runtime value.
+	if (p_call != nullptr) {
+		for (int i = 0; i < r_return_type.container_element_types.size(); i++) {
+			if (_signature_type_involves_type_parameter(r_return_type.container_element_types[i])) {
+				p_call->returns_erased_container = true;
+				break;
+			}
+		}
+	}
+
 	r_return_type = GDScriptParser::DataType::substitute(r_return_type, bindings);
 }
 

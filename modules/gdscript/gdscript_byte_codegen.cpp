@@ -1049,6 +1049,16 @@ void GDScriptByteCodeGenerator::write_assign_typed_parameter(const Address &p_ta
 	append(p_member_index);
 }
 
+void GDScriptByteCodeGenerator::write_assign_typed_array_convert(const Address &p_target, const Address &p_source) {
+	const GDScriptDataType &element_type = p_target.type.get_container_element_type(0);
+	append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_ARRAY_CONVERT);
+	append(p_target);
+	append(p_source);
+	append(get_container_type_pos(element_type) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
+	append(element_type.builtin_type);
+	append(element_type.native_type);
+}
+
 void GDScriptByteCodeGenerator::write_assign_null(const Address &p_target) {
 	append_opcode(GDScriptFunction::OPCODE_ASSIGN_NULL);
 	append(p_target);

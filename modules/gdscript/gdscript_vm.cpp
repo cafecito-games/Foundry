@@ -333,6 +333,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_NATIVE,                    \
 		&&OPCODE_ASSIGN_TYPED_SCRIPT,                    \
 		&&OPCODE_ASSIGN_TYPED_PARAMETER,                 \
+		&&OPCODE_ASSIGN_TYPED_ARRAY_CONVERT,             \
 		&&OPCODE_CAST_TO_BUILTIN,                        \
 		&&OPCODE_CAST_TO_NATIVE,                         \
 		&&OPCODE_CAST_TO_SCRIPT,                         \
@@ -1779,6 +1780,36 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 
 				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_ASSIGN_TYPED_ARRAY_CONVERT) {
+				CHECK_SPACE(6);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+
+				GET_VARIANT_PTR(type_info, 2);
+				Variant::Type builtin_type = (Variant::Type)_code_ptr[ip + 4];
+				int native_type_idx = _code_ptr[ip + 5];
+				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
+				const StringName native_type = _global_names_ptr[native_type_idx];
+				const ContainerType expected_type = _container_type_from_type_info(*type_info, builtin_type, native_type);
+
+				if (src->get_type() != Variant::ARRAY) {
+#ifdef DEBUG_ENABLED
+					err_text = vformat(R"(Trying to assign a value of type "%s" to a variable of type "Array[%s]".)",
+							_get_var_type(src), _get_element_type(expected_type));
+#endif // DEBUG_ENABLED
+					OPCODE_BREAK;
+				}
+
+				// A generic method returning `Array[T]` yields an untyped array at runtime (the element is
+				// erased). Retype it into the concrete typed array the call site expects, converting each
+				// element. Only emitted where the analyzer flagged an erased-container return, so it never
+				// relaxes ordinary strict typed-array assignment.
+				*dst = Array(*VariantInternal::get_array(src), expected_type);
+
+				ip += 6;
 			}
 			DISPATCH_OPCODE;
 
