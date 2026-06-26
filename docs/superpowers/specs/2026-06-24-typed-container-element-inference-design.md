@@ -107,7 +107,12 @@ a typed use type-checks the binding directly rather than downgrading it. A posit
 with no hard requirement (an untyped parameter/return/target) accepts the narrowed
 type exactly as it accepted `Variant`, so it never blocks inference. The comparison is
 exact rendered-type equality -- conservative (a compatible subtype is treated as a
-mismatch) but always sound.
+mismatch) but always sound. A "hard requirement" here means the position's resolved
+type is hard: an untyped parameter/return is `Variant`, and a *weak* (unannotated)
+assignment target carries only an inferred type that downgrades on an incompatible
+store, so neither blocks. The same check also fires for a **direct** element/value read
+used without an intermediate local (`take_string(c[i])`, `return c.pop_back()`,
+`var s: String = c[i]`), which narrows at the use site just as a bound read would.
 
 The remaining binding forms still do **not** need tracking:
 

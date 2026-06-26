@@ -357,6 +357,20 @@ public:
 		}
 	}
 
+	// Records a *direct* element/value read of the container (`our_var[i]`, an
+	// element-returning accessor call) that flows straight into a type-sensitive
+	// position without being bound to a local first, e.g. `take_string(nums[0])` or
+	// `return d[k]`. The read is `Variant` while the container is bare but narrows to
+	// `p_slot`'s type once typed; it then breaks the position unless that slot type
+	// matches `p_required`. Reconciled in `narrows_a_read` like a bound use.
+	void note_direct_read_use(Slot p_slot, const DataType &p_required) {
+		TypedUse use;
+		use.is_direct_read = true;
+		use.direct_slot = p_slot;
+		use.required = p_required;
+		typed_uses.push_back(use);
+	}
+
 	// Records a whole-variable reassignment (`p_sink = value`) of a local or loop
 	// iterator, with the assigned value's type. Only reassignments to a recorded
 	// read binding matter, but they can be seen before the binding, so all are kept.
@@ -414,17 +428,25 @@ public:
 					slot_rendered);
 			return true;
 		}
-		// A narrowed read binding used in a type-sensitive position breaks when the
-		// slot type it narrows to is not exactly the type that position requires. The
-		// `Variant` it carries while the container is bare accepts every such position,
-		// so any mismatch is currently valid only because of that softness.
+		// A narrowed read used in a type-sensitive position breaks when the slot type it
+		// narrows to is not exactly the type that position requires. The `Variant` the
+		// read carries while the container is bare accepts every such position, so any
+		// mismatch is currently valid only because of that softness. This covers a read
+		// bound to a local/iterator (resolved via `read_bindings`) and a *direct*
+		// element/value read that flows straight into the position.
 		for (const TypedUse &use : typed_uses) {
-			HashMap<const void *, Binding>::ConstIterator binding = read_bindings.find(use.sink);
-			if (binding == read_bindings.end()) {
-				continue;
+			Slot slot;
+			if (use.is_direct_read) {
+				slot = use.direct_slot;
+			} else {
+				HashMap<const void *, Binding>::ConstIterator binding = read_bindings.find(use.sink);
+				if (binding == read_bindings.end()) {
+					continue;
+				}
+				slot = binding->value.slot;
 			}
 			String slot_rendered;
-			if (!p_slot_rendered(binding->value.slot, slot_rendered)) {
+			if (!p_slot_rendered(slot, slot_rendered)) {
 				continue;
 			}
 			// A position with no *hard*, renderable requirement accepts the narrowed
@@ -440,7 +462,7 @@ public:
 				continue;
 			}
 			r_detail = vformat(
-					"a read bound to a local is later used in a position requiring %s, incompatible with the %s element type",
+					"a narrowed read is used in a position requiring %s, incompatible with the %s element type",
 					required_rendered, slot_rendered);
 			return true;
 		}
@@ -460,8 +482,10 @@ private:
 		bool is_compound = false;
 	};
 	struct TypedUse {
-		const void *sink = nullptr;
-		DataType required; // The type the use position requires the binding to satisfy.
+		const void *sink = nullptr; // The bound local/iterator, when `is_direct_read` is false.
+		bool is_direct_read = false; // True for an unbound `our_var[i]`/accessor read used directly.
+		Slot direct_slot = ARRAY_ELEMENT; // The narrowed slot, used only for a direct read.
+		DataType required; // The type the use position requires the read to satisfy.
 	};
 	HashMap<const void *, Binding> read_bindings;
 	Vector<Reassignment> reassignments;
@@ -657,12 +681,15 @@ private:
 		return identifier_refers_to(p_expr, decl, member_mode, match_member_by_name);
 	}
 
-	// Records a typed use of `p_value` against `p_required` when `p_value` is a plain
-	// reference to a local/iterator (a possible narrowed read binding). The check is
-	// reconciled against the slot type in `finalize()`; non-binding values are ignored.
+	// Records a typed use of `p_value` against `p_required` for a narrowed read flowing
+	// into a type-sensitive position: a plain reference to a local/iterator (a possible
+	// narrowed read binding) or a *direct* element read of the tracked array
+	// (`our_var[i]`, an accessor call). Reconciled in `finalize()`; anything else is ignored.
 	void note_typed_use(const GDScriptParser::ExpressionNode *p_value, const DataType &p_required) {
 		if (const void *sink = local_sink_of(p_value)) {
 			read_narrowing.note_typed_use(sink, p_required);
+		} else if (is_element_read_of_var(p_value)) {
+			read_narrowing.note_direct_read_use(ReadNarrowingTracker::ARRAY_ELEMENT, p_required);
 		}
 	}
 
@@ -1823,12 +1850,15 @@ private:
 				is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(p_expr));
 	}
 
-	// Records a typed use of `p_value` against `p_required` when `p_value` is a plain
-	// reference to a local/iterator (a possible narrowed read binding). Reconciled
-	// against the slot type in `finalize()`; non-binding values are ignored.
+	// Records a typed use of `p_value` against `p_required` for a narrowed read flowing
+	// into a type-sensitive position: a plain reference to a local/iterator (a possible
+	// narrowed read binding) or a *direct* value read of the tracked dictionary
+	// (`our_var[k]`, a value accessor). Reconciled in `finalize()`; anything else is ignored.
 	void note_typed_use(const GDScriptParser::ExpressionNode *p_value, const DataType &p_required) {
 		if (const void *sink = local_sink_of(p_value)) {
 			read_narrowing.note_typed_use(sink, p_required);
+		} else if (is_value_read_of_var(p_value)) {
+			read_narrowing.note_direct_read_use(ReadNarrowingTracker::DICTIONARY_VALUE, p_required);
 		}
 	}
 

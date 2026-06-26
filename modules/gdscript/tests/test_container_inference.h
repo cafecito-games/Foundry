@@ -527,6 +527,34 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
+
+	TEST_CASE("A direct element read passed to an incompatible typed parameter forces a conservative skip") {
+		// `take_string(nums[0])` passes the read directly without an intermediate local;
+		// it narrows from `Variant` to `int` once `nums` is typed, breaking the `String`
+		// parameter.
+		InferenceFixture fixture("func take_string(s: String) -> void:\n\tpass\nfunc f():\n\tvar nums = [1]\n\ttake_string(nums[0])\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A direct accessor read returned from an incompatible typed function forces a conservative skip") {
+		InferenceFixture fixture("func f() -> String:\n\tvar nums = [1]\n\treturn nums.pop_back()\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A direct element read initializing an incompatible typed local forces a conservative skip") {
+		InferenceFixture fixture("func f():\n\tvar nums = [1]\n\tvar s: String = nums[0]\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A direct element read used in a matching typed position still infers") {
+		InferenceFixture fixture("func take_int(n: int) -> void:\n\tpass\nfunc f():\n\tvar nums = [1]\n\ttake_int(nums[0])\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
 }
 
 TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
@@ -795,6 +823,21 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
 
 	TEST_CASE("A value read binding used in matching typed positions still infers") {
 		InferenceFixture fixture("func take_int(n: int) -> void:\n\tpass\nfunc f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\ttake_int(v)\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
+	}
+
+	TEST_CASE("A direct value read passed to an incompatible typed parameter forces a conservative skip") {
+		// `take_string(d["a"])` passes the value read directly; it narrows from `Variant`
+		// to the `int` value type once `d` is typed, breaking the `String` parameter.
+		InferenceFixture fixture("func take_string(s: String) -> void:\n\tpass\nfunc f():\n\tvar d = {\"a\": 1}\n\ttake_string(d[\"a\"])\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A direct value read used in a matching typed position still infers") {
+		InferenceFixture fixture("func take_int(n: int) -> void:\n\tpass\nfunc f():\n\tvar d = {\"a\": 1}\n\ttake_int(d[\"a\"])\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
