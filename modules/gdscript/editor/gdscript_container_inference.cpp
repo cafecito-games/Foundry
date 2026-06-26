@@ -276,44 +276,84 @@ bool is_expression_node(Node::Type p_type) {
 	}
 }
 
-// Tracks `for` loop iterators bound to a read of the tracked container --
-// `for v in c:` -- whose analyzer type is `Variant` while the container is bare
-// but narrows to a concrete element type (array element / dictionary key) once the
-// container is typed. Such an iterator is only a problem when it is later
-// reassigned to a value the narrowed type would reject; the reassignment is
-// currently valid only because iterating a bare container yields `Variant`.
+// Tracks bindings to a read of the tracked container whose analyzer type is
+// `Variant` while the container is bare but narrows to a concrete slot type (array
+// element / dictionary key / dictionary value) once the container is typed, and
+// detects when that narrowing would break otherwise-valid code.
 //
-// Only loop iterators need tracking: a plain `var v = c[i]` local is soft-typed
-// and merely downgrades to `Variant` on an incompatible reassignment (no error),
-// and an inferred `var v := c[i]` cannot even occur over a bare container (`:=`
-// from a `Variant` element read is a parse error). See the design doc.
+// Two binding forms are tracked:
+//   - `for v in c:` loop iterators, which become hard-typed once the container is
+//     typed. These break both on an incompatible reassignment (`v = <other type>`,
+//     valid only because a bare container yields `Variant`) and on a typed use.
+//   - plain `var v = c[i]` soft locals (and element-returning accessor reads bound to
+//     one). A soft local downgrades to `Variant` on reassignment rather than erroring,
+//     so reassignment never narrows it -- but a typed *use* type-checks it directly, so
+//     it is tracked for the typed-use check only (`reassignment_narrows == false`).
+// An inferred `var v := c[i]` cannot occur over a bare container (`:=` from a
+// `Variant` element read is a parse error), and an explicitly annotated binding pins
+// its type, so neither needs tracking. See the design doc.
 //
-// Because the walk is flow-insensitive and binding/reassignment can appear in any
-// order, both are recorded here and reconciled after the element type is known
-// (see `narrows_a_read`). Each binding remembers which container slot the read
-// reads from so the reassigned value can be compared against the right type.
+// A typed *use* is the binding flowing into a position valid only while it is
+// `Variant`: a typed call argument, a typed return, or a typed assignment target.
+// Each such use records the type that position requires; once the slot type is known
+// the use breaks unless that slot type matches it exactly (a conservative but sound
+// rendered-type comparison). Reassignments and uses can appear before the binding, so
+// all are recorded here and reconciled after the slot types are known (see
+// `narrows_a_read`). Each binding remembers which container slot it reads from so the
+// reassigned/required value is compared against the right type.
 //
-// This covers reassignment, the case detectable cheaply and soundly from the
-// assignment alone. It does not cover every later *use* of a narrowed read in a
-// type-sensitive position (a typed call argument, a typed return, a typed
-// assignment target), where narrowing could also change analysis; proving those
-// safe needs the whole-body re-analysis the post-edit verification harness (#34)
-// already performs on applied edits. See the design doc for the documented
-// boundary and the follow-up tracking up-front detection of those positions.
+// The narrow remaining boundary -- genuinely flow- or value-dependent cases a single
+// conservative annotation cannot capture -- still falls to the post-edit verification
+// harness (#34); see the design doc.
 class ReadNarrowingTracker {
 public:
 	enum Slot {
 		ARRAY_ELEMENT,
 		DICTIONARY_KEY,
+		DICTIONARY_VALUE,
 	};
 
-	// Records that `p_sink` (the loop iterator `IdentifierNode *` for a `for`
-	// binding) is bound to a read of the container's `p_slot`. Ignored when the
-	// iterator carries an explicit type annotation, since the analyzer then keeps
-	// that type instead of narrowing.
-	void note_read_binding(const void *p_sink, Slot p_slot) {
+	// Records that `p_sink` is a `for` loop iterator bound to a read of the container's
+	// `p_slot`. The iterator is hard-typed once the container is typed, so both a later
+	// reassignment to an incompatible value and a typed use narrow it. Ignored when the
+	// iterator carries an explicit type annotation, since the analyzer keeps that type.
+	void note_loop_read_binding(const void *p_sink, Slot p_slot) {
 		if (p_sink != nullptr) {
-			read_bindings[p_sink] = p_slot;
+			Binding binding;
+			binding.slot = p_slot;
+			binding.reassignment_narrows = true;
+			read_bindings[p_sink] = binding;
+		}
+	}
+
+	// Records that `p_sink` is a plain soft local bound to a read of the container's
+	// `p_slot` (`var v = c[i]`, an element-returning accessor). Unlike a loop iterator,
+	// a soft local downgrades to `Variant` on an incompatible reassignment rather than
+	// erroring, so reassignment never narrows it; only a typed *use* does. Recorded so
+	// the typed-use check in `narrows_a_read` can see it.
+	void note_soft_read_binding(const void *p_sink, Slot p_slot) {
+		if (p_sink != nullptr && !read_bindings.has(p_sink)) {
+			Binding binding;
+			binding.slot = p_slot;
+			binding.reassignment_narrows = false;
+			read_bindings[p_sink] = binding;
+		}
+	}
+
+	// Records that `p_sink` flows into a type-sensitive position (a typed call
+	// argument, a typed return, or a typed assignment target) that requires
+	// `p_required`. While the container is bare the binding is `Variant`, which
+	// every such position accepts; once the container is typed the binding narrows
+	// to its slot type, which the position rejects unless that slot type matches
+	// `p_required`. Uses can be seen before the binding, so all are kept and
+	// reconciled in `narrows_a_read`. A non-renderable (`Variant`/soft) requirement
+	// never narrows, so it is skipped there.
+	void note_typed_use(const void *p_sink, const DataType &p_required) {
+		if (p_sink != nullptr) {
+			TypedUse use;
+			use.sink = p_sink;
+			use.required = p_required;
+			typed_uses.push_back(use);
 		}
 	}
 
@@ -351,12 +391,14 @@ public:
 	template <typename SlotRenderer>
 	bool narrows_a_read(const SlotRenderer &p_slot_rendered, String &r_detail) const {
 		for (const Reassignment &reassignment : reassignments) {
-			HashMap<const void *, Slot>::ConstIterator binding = read_bindings.find(reassignment.sink);
-			if (binding == read_bindings.end()) {
+			HashMap<const void *, Binding>::ConstIterator binding = read_bindings.find(reassignment.sink);
+			if (binding == read_bindings.end() || !binding->value.reassignment_narrows) {
+				// A soft local downgrades on reassignment rather than erroring, so its
+				// reassignment never narrows; only a loop iterator's does.
 				continue;
 			}
 			String slot_rendered;
-			if (!p_slot_rendered(binding->value, slot_rendered)) {
+			if (!p_slot_rendered(binding->value.slot, slot_rendered)) {
 				continue;
 			}
 			if (!reassignment.is_compound) {
@@ -372,17 +414,56 @@ public:
 					slot_rendered);
 			return true;
 		}
+		// A narrowed read binding used in a type-sensitive position breaks when the
+		// slot type it narrows to is not exactly the type that position requires. The
+		// `Variant` it carries while the container is bare accepts every such position,
+		// so any mismatch is currently valid only because of that softness.
+		for (const TypedUse &use : typed_uses) {
+			HashMap<const void *, Binding>::ConstIterator binding = read_bindings.find(use.sink);
+			if (binding == read_bindings.end()) {
+				continue;
+			}
+			String slot_rendered;
+			if (!p_slot_rendered(binding->value.slot, slot_rendered)) {
+				continue;
+			}
+			// A position with no hard, renderable requirement (an untyped parameter,
+			// an untyped return, a soft assignment target) accepts the narrowed type
+			// just as it accepted `Variant`, so it never breaks.
+			String required_rendered;
+			if (!GDScriptRefactorTypes::render_annotatable_type(use.required, required_rendered)) {
+				continue;
+			}
+			if (required_rendered == slot_rendered) {
+				continue;
+			}
+			r_detail = vformat(
+					"a read bound to a local is later used in a position requiring %s, incompatible with the %s element type",
+					required_rendered, slot_rendered);
+			return true;
+		}
 		return false;
 	}
 
 private:
+	struct Binding {
+		Slot slot = ARRAY_ELEMENT;
+		// True for a `for` loop iterator (hard-typed once the container is typed, so a
+		// reassignment narrows it); false for a soft local (downgrades on reassignment).
+		bool reassignment_narrows = false;
+	};
 	struct Reassignment {
 		const void *sink = nullptr;
 		DataType value;
 		bool is_compound = false;
 	};
-	HashMap<const void *, Slot> read_bindings;
+	struct TypedUse {
+		const void *sink = nullptr;
+		DataType required; // The type the use position requires the binding to satisfy.
+	};
+	HashMap<const void *, Binding> read_bindings;
 	Vector<Reassignment> reassignments;
+	Vector<TypedUse> typed_uses;
 };
 
 // Resolves the local declaration or loop iterator a plain identifier refers to,
@@ -422,6 +503,12 @@ public:
 	// Switches member matching from pointer identity to the member's name, for
 	// scanning a subclass parsed in a separate tree (see `identifier_refers_to`).
 	void set_match_member_by_name(bool p_enabled) { match_member_by_name = p_enabled; }
+
+	// Sets the return-type contract of the body currently being scanned, so a
+	// `return <binding>` of a narrowed read can be checked against it. The local
+	// entry point sets the declaring function's return type once; member mode sets it
+	// per method, and lambda scanning swaps in (and restores) the lambda's own.
+	void set_current_return_type(const DataType &p_return_type) { current_return_type = p_return_type; }
 
 	// Records whether the caller enumerated every project-wide subclass of the
 	// declaring class, together with the declaring class itself. An overridable `self`
@@ -562,9 +649,95 @@ private:
 	bool subclasses_complete = false;
 	const GDScriptParser::ClassNode *declaring_class = nullptr;
 	String element_rendered;
+	DataType current_return_type;
 
 	bool is_our_var(const GDScriptParser::ExpressionNode *p_expr) const {
 		return identifier_refers_to(p_expr, decl, member_mode, match_member_by_name);
+	}
+
+	// Records a typed use of `p_value` against `p_required` when `p_value` is a plain
+	// reference to a local/iterator (a possible narrowed read binding). The check is
+	// reconciled against the slot type in `finalize()`; non-binding values are ignored.
+	void note_typed_use(const GDScriptParser::ExpressionNode *p_value, const DataType &p_required) {
+		if (const void *sink = local_sink_of(p_value)) {
+			read_narrowing.note_typed_use(sink, p_required);
+		}
+	}
+
+	// Records each call argument that is a narrowed read binding against the resolved
+	// parameter type it flows into. The analyzer records `resolved_parameter_types` in
+	// declaration order right before argument validation; varargs beyond the fixed
+	// count are not recorded, so those arguments are left to the reassignment check.
+	void note_call_argument_uses(const GDScriptParser::CallNode *p_call) {
+		if (p_call == nullptr) {
+			return;
+		}
+		const int count = MIN(p_call->arguments.size(), p_call->resolved_parameter_types.size());
+		for (int i = 0; i < count; i++) {
+			note_typed_use(p_call->arguments[i], p_call->resolved_parameter_types[i]);
+		}
+	}
+
+	// True when `p_value` reads a single element of the tracked array whose static
+	// type is `Variant` while the array is bare but narrows to the element type once
+	// typed: an indexed read `our_var[i]` or an element-returning accessor call
+	// (`get`/`front`/`back`/`pop_*`/`pick_random`/`max`/`min`). Binding such a read to
+	// a soft local makes that local a narrowing read binding.
+	bool is_element_read_of_var(const GDScriptParser::ExpressionNode *p_value) const {
+		if (p_value == nullptr) {
+			return false;
+		}
+		if (p_value->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+			return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
+		}
+		if (p_value->type == Node::CALL) {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
+			if (call->callee == nullptr || call->callee->type != Node::SUBSCRIPT) {
+				return false;
+			}
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+			if (!callee->is_attribute || callee->attribute == nullptr || !(is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
+				return false;
+			}
+			return is_array_element_accessor(callee->attribute->name);
+		}
+		return false;
+	}
+
+	// Array methods that return a single element value (typed as the element type on a
+	// typed array), so binding their result narrows just like `our_var[i]`.
+	static bool is_array_element_accessor(const StringName &p_name) {
+		static const char *methods[] = {
+			"get", "front", "back", "pop_back", "pop_front", "pop_at",
+			"pick_random", "max", "min",
+			nullptr
+		};
+		for (int i = 0; methods[i] != nullptr; i++) {
+			if (p_name == StringName(methods[i])) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Handles `var v = <init>`: when the initializer reads an element of the tracked
+	// array, records `v` as a narrowing read binding; when `v` is explicitly typed and
+	// the initializer is itself a narrowed read binding, records that as a typed use
+	// against `v`'s declared type.
+	void note_variable_initializer(const GDScriptParser::VariableNode *p_variable) {
+		if (p_variable == nullptr || p_variable->initializer == nullptr) {
+			return;
+		}
+		if (p_variable->datatype_specifier == nullptr) {
+			// An untyped soft local bound to an element read narrows with the array.
+			if (is_element_read_of_var(p_variable->initializer)) {
+				read_narrowing.note_soft_read_binding(p_variable, ReadNarrowingTracker::ARRAY_ELEMENT);
+			}
+		} else {
+			// `var v: T = <binding>`: the binding flows into a hard declared type.
+			note_typed_use(p_variable->initializer, p_variable->get_datatype());
+		}
 	}
 
 	bool is_self_member(const GDScriptParser::SubscriptNode *p_subscript) const {
@@ -642,6 +815,7 @@ private:
 				if (variable == decl) {
 					return; // Our own declaration; its initializer is accounted for separately.
 				}
+				note_variable_initializer(variable);
 				scan_value(variable->initializer); // Catches `var alias = our_var`.
 			} break;
 			case Node::CONSTANT: {
@@ -662,7 +836,7 @@ private:
 				} else if (for_node->datatype_specifier == nullptr) {
 					// The loop variable's type narrows from `Variant` to the element type
 					// once the array is typed; record it unless it is explicitly typed.
-					read_narrowing.note_read_binding(for_node->variable, ReadNarrowingTracker::ARRAY_ELEMENT);
+					read_narrowing.note_loop_read_binding(for_node->variable, ReadNarrowingTracker::ARRAY_ELEMENT);
 				}
 				scan_suite(for_node->loop);
 			} break;
@@ -683,6 +857,10 @@ private:
 			} break;
 			case Node::RETURN: {
 				const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_statement);
+				// `return <binding>` flows the binding into the enclosing function's return
+				// contract; once the container is typed the binding narrows and a hard
+				// return type may reject it.
+				note_typed_use(return_node->return_value, current_return_type);
 				scan_value(return_node->return_value); // `return our_var` escapes.
 			} break;
 			case Node::ASSERT: {
@@ -1188,6 +1366,9 @@ private:
 		if (bailed || p_call == nullptr) {
 			return;
 		}
+		// Record any narrowed read binding passed as a typed argument before dispatch
+		// branches consume the arguments.
+		note_call_argument_uses(p_call);
 		// A modeled method on the tracked container (`_member.append(x)` /
 		// `self._member.set(k, v)`) is handled first: its receiver is the member
 		// itself, so the dynamic-reflection/override guards below (which assume the
@@ -1276,7 +1457,12 @@ private:
 		// must see. The tracked variable itself never appears here -- capturing it
 		// already bailed above -- so scanning is safe.
 		if (p_lambda->function != nullptr) {
+			// A `return <binding>` inside the lambda targets the lambda's own return
+			// contract, not the enclosing function's; swap it in for the lambda body.
+			const DataType saved_return_type = current_return_type;
+			current_return_type = p_lambda->function->get_datatype();
 			scan_suite(p_lambda->function->body);
+			current_return_type = saved_return_type;
 		}
 	}
 
@@ -1348,6 +1534,13 @@ private:
 			} else {
 				read_narrowing.note_compound_reassignment(sink);
 			}
+		}
+		// `typed_target = <binding>`: the RHS binding flows into the target's hard type.
+		// A plain `=` to a hard-typed lvalue type-checks the RHS; a compound `op=`
+		// depends on the operand and is conservatively treated as narrowing-unsafe via
+		// the reassignment path above when the target is itself a binding.
+		if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE && assignee != nullptr) {
+			note_typed_use(p_assignment->assigned_value, assignee->get_datatype());
 		}
 		scan_value(assignee);
 		scan_value(p_assignment->assigned_value);
@@ -1451,6 +1644,11 @@ public:
 	// scanning a subclass parsed in a separate tree (see `identifier_refers_to`).
 	void set_match_member_by_name(bool p_enabled) { match_member_by_name = p_enabled; }
 
+	// Sets the return-type contract of the body currently being scanned, so a
+	// `return <binding>` of a narrowed read can be checked against it (see the array
+	// walker for the rationale).
+	void set_current_return_type(const DataType &p_return_type) { current_return_type = p_return_type; }
+
 	// Records whether the caller enumerated every project-wide subclass of the
 	// declaring class, together with the declaring class itself (see the array walker
 	// for the full rationale). An overridable `self` call need not be bailed on only
@@ -1525,11 +1723,15 @@ public:
 				}
 			}
 		}
-		// Iterating a dictionary binds keys, so the only narrowing read binding here is
-		// a loop key variable; it narrows to the key type.
+		// A loop key variable narrows to the key type; a `var v = d[k]` value read narrows
+		// to the value type. Each binding records which slot it reads from.
 		String narrow_detail;
 		const bool narrows = read_narrowing.narrows_a_read(
-				[this](ReadNarrowingTracker::Slot, String &r_rendered) {
+				[this](ReadNarrowingTracker::Slot p_slot, String &r_rendered) {
+					if (p_slot == ReadNarrowingTracker::DICTIONARY_VALUE) {
+						r_rendered = value_rendered;
+						return has_value;
+					}
 					r_rendered = key_rendered;
 					return has_key;
 				},
@@ -1594,6 +1796,7 @@ private:
 	const GDScriptParser::ClassNode *declaring_class = nullptr;
 	String key_rendered;
 	String value_rendered;
+	DataType current_return_type;
 
 	bool is_our_var(const GDScriptParser::ExpressionNode *p_expr) const {
 		return identifier_refers_to(p_expr, decl, member_mode, match_member_by_name);
@@ -1606,6 +1809,70 @@ private:
 	bool is_self_member_subscript(const GDScriptParser::ExpressionNode *p_expr) const {
 		return p_expr != nullptr && p_expr->type == Node::SUBSCRIPT &&
 				is_self_member(static_cast<const GDScriptParser::SubscriptNode *>(p_expr));
+	}
+
+	// Records a typed use of `p_value` against `p_required` when `p_value` is a plain
+	// reference to a local/iterator (a possible narrowed read binding). Reconciled
+	// against the slot type in `finalize()`; non-binding values are ignored.
+	void note_typed_use(const GDScriptParser::ExpressionNode *p_value, const DataType &p_required) {
+		if (const void *sink = local_sink_of(p_value)) {
+			read_narrowing.note_typed_use(sink, p_required);
+		}
+	}
+
+	// Records each call argument that is a narrowed read binding against the resolved
+	// parameter type it flows into (see the array walker for the varargs caveat).
+	void note_call_argument_uses(const GDScriptParser::CallNode *p_call) {
+		if (p_call == nullptr) {
+			return;
+		}
+		const int count = MIN(p_call->arguments.size(), p_call->resolved_parameter_types.size());
+		for (int i = 0; i < count; i++) {
+			note_typed_use(p_call->arguments[i], p_call->resolved_parameter_types[i]);
+		}
+	}
+
+	// True when `p_value` reads a single dictionary value whose static type is
+	// `Variant` while the dictionary is bare but narrows to the value type once typed:
+	// an indexed read `our_var[k]` or a value-returning accessor (`get`/`get_or_add`).
+	// Binding such a read to a soft local makes it a value-narrowing read binding.
+	bool is_value_read_of_var(const GDScriptParser::ExpressionNode *p_value) const {
+		if (p_value == nullptr) {
+			return false;
+		}
+		if (p_value->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_value);
+			return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
+		}
+		if (p_value->type == Node::CALL) {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_value);
+			if (call->callee == nullptr || call->callee->type != Node::SUBSCRIPT) {
+				return false;
+			}
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+			if (!callee->is_attribute || callee->attribute == nullptr || !(is_our_var(callee->base) || is_self_member_subscript(callee->base))) {
+				return false;
+			}
+			return callee->attribute->name == StringName("get") || callee->attribute->name == StringName("get_or_add");
+		}
+		return false;
+	}
+
+	// Handles `var v = <init>`: when the initializer reads a value of the tracked
+	// dictionary, records `v` as a value-narrowing read binding; when `v` is explicitly
+	// typed and the initializer is itself a narrowed read binding, records that as a
+	// typed use against `v`'s declared type.
+	void note_variable_initializer(const GDScriptParser::VariableNode *p_variable) {
+		if (p_variable == nullptr || p_variable->initializer == nullptr) {
+			return;
+		}
+		if (p_variable->datatype_specifier == nullptr) {
+			if (is_value_read_of_var(p_variable->initializer)) {
+				read_narrowing.note_soft_read_binding(p_variable, ReadNarrowingTracker::DICTIONARY_VALUE);
+			}
+		} else {
+			note_typed_use(p_variable->initializer, p_variable->get_datatype());
+		}
 	}
 
 	bool is_our_var_read_list(const GDScriptParser::ExpressionNode *p_list) const {
@@ -1687,6 +1954,7 @@ private:
 				if (variable == decl) {
 					return; // Our own declaration; its initializer is accounted for separately.
 				}
+				note_variable_initializer(variable);
 				scan_value(variable->initializer); // Catches `var alias = our_var`.
 			} break;
 			case Node::CONSTANT: {
@@ -1707,7 +1975,7 @@ private:
 				} else if (for_node->datatype_specifier == nullptr) {
 					// Iterating a dictionary binds its keys, so the loop variable narrows
 					// from `Variant` to the key type once the dictionary is typed.
-					read_narrowing.note_read_binding(for_node->variable, ReadNarrowingTracker::DICTIONARY_KEY);
+					read_narrowing.note_loop_read_binding(for_node->variable, ReadNarrowingTracker::DICTIONARY_KEY);
 				}
 				scan_suite(for_node->loop);
 			} break;
@@ -1728,6 +1996,10 @@ private:
 			} break;
 			case Node::RETURN: {
 				const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_statement);
+				// `return <binding>` flows the binding into the enclosing function's return
+				// contract; once the container is typed the binding narrows and a hard
+				// return type may reject it.
+				note_typed_use(return_node->return_value, current_return_type);
 				scan_value(return_node->return_value); // `return our_var` escapes.
 			} break;
 			case Node::ASSERT: {
@@ -2216,6 +2488,9 @@ private:
 		if (bailed || p_call == nullptr) {
 			return;
 		}
+		// Record any narrowed read binding passed as a typed argument before dispatch
+		// branches consume the arguments.
+		note_call_argument_uses(p_call);
 		// A modeled method on the tracked container (`self._member.set(k, v)`) is
 		// handled first: its receiver is the member itself, so the
 		// dynamic-reflection/override guards below (which assume the receiver may be
@@ -2302,7 +2577,12 @@ private:
 		// tracker must see. The tracked variable itself never appears here --
 		// capturing it already bailed above -- so scanning is safe.
 		if (p_lambda->function != nullptr) {
+			// A `return <binding>` inside the lambda targets the lambda's own return
+			// contract, not the enclosing function's; swap it in for the lambda body.
+			const DataType saved_return_type = current_return_type;
+			current_return_type = p_lambda->function->get_datatype();
 			scan_suite(p_lambda->function->body);
+			current_return_type = saved_return_type;
 		}
 	}
 
@@ -2379,6 +2659,10 @@ private:
 			} else {
 				read_narrowing.note_compound_reassignment(sink);
 			}
+		}
+		// `typed_target = <binding>`: the RHS binding flows into the target's hard type.
+		if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE && assignee != nullptr) {
+			note_typed_use(p_assignment->assigned_value, assignee->get_datatype());
 		}
 		scan_value(assignee);
 		scan_value(p_assignment->assigned_value);
@@ -2511,6 +2795,8 @@ void walk_class_methods(Walker &p_walker, const GDScriptParser::ClassNode *p_cla
 							p_walker.scan_initializer(parameter->initializer);
 						}
 					}
+					// A `return <binding>` in this method targets this method's return type.
+					p_walker.set_current_return_type(member.function->get_datatype());
 					p_walker.scan_suite(member.function->body);
 				}
 				break;
@@ -2572,6 +2858,9 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_local_array
 	}
 
 	ElementInferenceWalker walker(p_decl);
+	if (p_function_body->parent_function != nullptr) {
+		walker.set_current_return_type(p_function_body->parent_function->get_datatype());
+	}
 	walker.contribute_from_array_value(p_decl->initializer);
 	walker.scan_suite(p_function_body);
 	walker.finalize();
@@ -2619,6 +2908,9 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_local_dicti
 	}
 
 	DictionaryInferenceWalker walker(p_decl);
+	if (p_function_body->parent_function != nullptr) {
+		walker.set_current_return_type(p_function_body->parent_function->get_datatype());
+	}
 	walker.contribute_from_dictionary_value(p_decl->initializer);
 	walker.scan_suite(p_function_body);
 	walker.finalize();
