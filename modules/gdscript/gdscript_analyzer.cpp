@@ -2185,6 +2185,7 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 		case GDScriptParser::Node::UNARY_OPERATOR:
 			reduce_expression(static_cast<GDScriptParser::ExpressionNode *>(p_node), p_is_root);
 			break;
+		case GDScriptParser::Node::ANNOTATION_DECLARATION:
 		case GDScriptParser::Node::BREAK:
 		case GDScriptParser::Node::BREAKPOINT:
 		case GDScriptParser::Node::CONTINUE:
@@ -2193,7 +2194,7 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 		case GDScriptParser::Node::PASS:
 		case GDScriptParser::Node::SIGNAL:
 		case GDScriptParser::Node::TYPE_PARAMETER:
-			// Nothing to do.
+			// Nothing to do. Custom annotation declarations are resolved in a later pass.
 			break;
 	}
 }
@@ -3775,6 +3776,7 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 		// Non-expressions. Here only to make sure new nodes aren't forgotten.
 		case GDScriptParser::Node::NONE:
 		case GDScriptParser::Node::ANNOTATION:
+		case GDScriptParser::Node::ANNOTATION_DECLARATION:
 		case GDScriptParser::Node::ASSERT:
 		case GDScriptParser::Node::BREAK:
 		case GDScriptParser::Node::BREAKPOINT:

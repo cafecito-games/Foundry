@@ -56,6 +56,7 @@ class GDScriptParser {
 
 public:
 	// Forward-declare all parser nodes, to avoid ordering issues.
+	struct AnnotationDeclarationNode;
 	struct AnnotationNode;
 	struct ArrayNode;
 	struct AssertNode;
@@ -365,6 +366,7 @@ public:
 		enum Type {
 			NONE,
 			ANNOTATION,
+			ANNOTATION_DECLARATION,
 			ARRAY,
 			ASSERT,
 			ASSIGNMENT,
@@ -451,6 +453,32 @@ public:
 
 		AnnotationNode() {
 			type = ANNOTATION;
+		}
+	};
+
+	struct AnnotationDeclarationNode : public Node {
+		// Targets a custom annotation declaration may be applied to.
+		// Stored as flags so an annotation can be valid for several kinds at once.
+		// Bits beyond the v1 set are reserved for future targets.
+		enum Target {
+			TARGET_NONE = 0,
+			TARGET_CLASS = 1 << 0,
+			TARGET_METHOD = 1 << 1,
+			TARGET_VARIABLE = 1 << 2,
+		};
+
+		IdentifierNode *identifier = nullptr;
+		Vector<ParameterNode *> parameters;
+		HashMap<StringName, int> parameters_indices;
+		ParameterNode *rest_parameter = nullptr; // Variadic parameter; must be the final parameter.
+		uint32_t targets = TARGET_NONE; // Flags from `Target`.
+		// Canonical identity: "<namespace>.<name>", or just "<name>" in the global namespace.
+		String qualified_name;
+
+		bool is_variadic() const { return rest_parameter != nullptr; }
+
+		AnnotationDeclarationNode() {
+			type = ANNOTATION_DECLARATION;
 		}
 	};
 
@@ -875,6 +903,9 @@ public:
 		String namespace_name; // Root class only. Empty means global namespace.
 		String qualified_global_name; // Root class only. Namespace + "." + `class_name`.
 		Vector<String> imports; // Root class only. File-local imported namespaces.
+		// Root class only. Custom annotation declarations live in a separate symbol space and are
+		// intentionally kept out of `members` so they never become runtime members, constants, or methods.
+		Vector<AnnotationDeclarationNode *> annotation_declarations;
 #ifdef TOOLS_ENABLED
 		ClassDocData doc_data;
 
@@ -1710,6 +1741,9 @@ private:
 	template <typename T>
 	void parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static = false);
 	void parse_function_class_member(bool p_is_static, bool p_is_async);
+	AnnotationDeclarationNode *parse_annotation_declaration();
+	void parse_annotation_declaration_parameters(AnnotationDeclarationNode *p_annotation_declaration);
+	void parse_annotation_declaration_targets(AnnotationDeclarationNode *p_annotation_declaration);
 	SignalNode *parse_signal(bool p_is_static);
 	EnumNode *parse_enum(bool p_is_static);
 	ParameterNode *parse_parameter();
@@ -1852,6 +1886,7 @@ public:
 		void push_text(const String &p_text);
 
 		void print_annotation(const AnnotationNode *p_annotation);
+		void print_annotation_declaration(AnnotationDeclarationNode *p_annotation_declaration);
 		void print_array(ArrayNode *p_array);
 		void print_assert(AssertNode *p_assert);
 		void print_assignment(AssignmentNode *p_assignment);
