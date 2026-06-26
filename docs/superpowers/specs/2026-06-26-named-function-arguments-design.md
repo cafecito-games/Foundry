@@ -40,7 +40,6 @@ bytecode-format or compiled-script binary-compatibility impact.
 - Skipping a middle defaulted parameter whose default is a **non-constant**
   expression. This is a precise compile error, not silent or wrong behavior.
 - Any runtime/ABI change (no presence bitmask, no calling-convention change).
-- LSP completion of `name =` at call sites (noted as a possible follow-up).
 
 ## Background: the current call pipeline
 
@@ -224,10 +223,29 @@ middle skip, named argument on a `Callable` variable, missing required.
 Regenerate `.out` files with `--gdscript-generate-tests` after the behavior is
 in place, and run the suite headless with `dev_mode=yes` for CI parity.
 
+## Editor / LSP completion
+
+Named arguments are only useful if they are discoverable, so call-site
+completion of `name =` is part of delivering the feature (not a follow-up). In
+`modules/gdscript/language_server/` and the completion path in
+`gdscript_editor.cpp`:
+
+- When the cursor is inside a call's argument list and the callee resolves to a
+  known GDScript function, offer the declared parameter names as `name = `
+  completion entries.
+- Mirror the analyzer's acceptance rules so completion never suggests something
+  that would error: only parameters not already supplied (positionally or by
+  name), keep offering names once a named argument has appeared
+  (positional-then-named), and never offer the rest parameter.
+- Scope to statically resolved GDScript targets, matching the runtime feature;
+  dynamic / `Callable` targets get no name completion.
+
+The resolved parameter list and `FunctionNode.parameters_indices` already
+provide names, order, and types, so this is localized. Surfacing the parameter
+type/default in the completion detail is a nice-to-have.
+
 ## Follow-ups (out of scope for v1)
 
-- **LSP completion** of `name =` at call sites. `parameters_indices` is already
-  available, so this is a localized addition later.
 - **Non-constant middle-gap support** via a presence-bitmask calling convention
   (the rejected "Approach B"). Larger and runtime-affecting; only if real demand
   appears. The analyzer diagnostic and canonicalization pass are structured so
