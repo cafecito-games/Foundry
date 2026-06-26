@@ -51,16 +51,19 @@ namespace GDScriptTests {
 
 namespace {
 
-// Tracks whether the engine emitted a runtime error while a workload was being
-// called. GDScript runtime failures surface through the error handler with type
-// ERR_HANDLER_SCRIPT (or ERR_HANDLER_ERROR) and leave the Callable::CallError as
+// Tracks whether a GDScript runtime error was emitted while a workload was being
+// compiled, initialized, or called. Such failures surface through the error
+// handler with type ERR_HANDLER_SCRIPT and leave the Callable::CallError as
 // CALL_OK, so the call-error check alone would not notice a broken workload.
+// Only ERR_HANDLER_SCRIPT is treated as a failure: GDScript::reload() emits a
+// spurious ERR_HANDLER_ERROR ("Condition \"err\" is true") on success, so
+// flagging generic engine errors would produce false positives.
 struct WorkloadErrorTracker {
 	bool errored = false;
 };
 
 void workload_error_handler(void *p_userdata, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
-	if (p_type == ERR_HANDLER_ERROR || p_type == ERR_HANDLER_SCRIPT) {
+	if (p_type == ERR_HANDLER_SCRIPT) {
 		static_cast<WorkloadErrorTracker *>(p_userdata)->errored = true;
 	}
 }
@@ -140,42 +143,47 @@ double GDScriptBenchmarkRunner::run_variant(const WorkloadVariant &p_variant) co
 		return -1.0;
 	}
 	script->set_path(p_variant.script_path);
-	if (script->reload() != OK) {
-		ERR_PRINT("Could not reload: " + p_variant.script_path);
-		return -1.0;
-	}
-
-	Object *obj = ClassDB::instantiate(script->get_native()->get_name());
-	ERR_FAIL_NULL_V_MSG(obj, -1.0, "Could not instantiate native base for: " + p_variant.script_path);
-	Ref<RefCounted> obj_ref;
-	if (obj->is_ref_counted()) {
-		obj_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(obj));
-	}
-	obj->set_script(script);
-	ScriptInstance *instance = obj->get_script_instance();
-	if (instance == nullptr) {
-		if (obj_ref.is_null()) {
-			memdelete(obj);
-		}
-		ERR_FAIL_V_MSG(-1.0, "Could not attach script instance for: " + p_variant.script_path);
-	}
-
-	const StringName method = "run_benchmark";
 
 	// Catch GDScript runtime errors, which do not surface as Callable::CallError.
+	// Installed before reload()/set_script() so failures in static initializers,
+	// member initializers, and _init() are also detected.
 	WorkloadErrorTracker tracker;
 	ErrorHandlerList error_handler;
 	error_handler.errfunc = workload_error_handler;
 	error_handler.userdata = &tracker;
 	add_error_handler(&error_handler);
 
+	Object *obj = nullptr;
+	Ref<RefCounted> obj_ref;
 	const auto fail = [&](const String &p_message) -> double {
 		remove_error_handler(&error_handler);
-		if (obj_ref.is_null()) {
+		if (obj != nullptr && obj_ref.is_null()) {
 			memdelete(obj);
 		}
 		ERR_FAIL_V_MSG(-1.0, p_message);
 	};
+
+	if (script->reload() != OK || tracker.errored) {
+		return fail("Could not reload: " + p_variant.script_path);
+	}
+
+	obj = ClassDB::instantiate(script->get_native()->get_name());
+	if (obj == nullptr) {
+		return fail("Could not instantiate native base for: " + p_variant.script_path);
+	}
+	if (obj->is_ref_counted()) {
+		obj_ref = Ref<RefCounted>(Object::cast_to<RefCounted>(obj));
+	}
+	obj->set_script(script);
+	if (tracker.errored) {
+		return fail("Workload failed during initialization: " + p_variant.script_path);
+	}
+	ScriptInstance *instance = obj->get_script_instance();
+	if (instance == nullptr) {
+		return fail("Could not attach script instance for: " + p_variant.script_path);
+	}
+
+	const StringName method = "run_benchmark";
 
 	// Warmup (discarded).
 	for (int i = 0; i < p_variant.config.warmup; i++) {
@@ -259,6 +267,7 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 	const String json = JSON::stringify(json_map, "\t", true, true);
 	bool wrote_output = true;
 	if (output_path.is_empty()) {
+		// Stdout is the result channel; keep it pure JSON so callers can parse it.
 		print_line(json);
 	} else {
 		Ref<FileAccess> file = FileAccess::open(output_path, FileAccess::WRITE);
@@ -268,10 +277,9 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 		} else {
 			file->store_string(json);
 			file->close();
+			print_line(vformat("gdscript-benchmark: wrote %d variant(s) to %s.", results.size(), output_path));
 		}
 	}
-
-	print_line(vformat("gdscript-benchmark: ran %d variant(s).", results.size()));
 
 	// Terminate immediately rather than returning into editor startup. `_Exit`
 	// is used instead of `exit()` because the engine is only partway through
