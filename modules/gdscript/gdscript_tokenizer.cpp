@@ -488,6 +488,16 @@ GDScriptTokenizer::Token GDScriptTokenizerText::annotation() {
 		// Consume all identifier characters.
 		_advance();
 	}
+	// Fully qualified annotation usage such as `@cafecito.test.timeout` keeps the whole dotted
+	// path in a single token. Only a "." immediately followed by an identifier extends the name,
+	// so a stray "." (or a "." that begins something else) is left to the regular tokenizer.
+	while (_peek() == '.' && is_unicode_identifier_start(_peek(1))) {
+		_advance(); // Consume ".".
+		_advance(); // Consume the next segment's start character.
+		while (is_unicode_identifier_continue(_peek())) {
+			_advance();
+		}
+	}
 	Token annotation = make_token(Token::ANNOTATION);
 	annotation.literal = StringName(annotation.source);
 	return annotation;

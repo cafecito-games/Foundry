@@ -101,6 +101,7 @@ class GDScriptAnalyzer {
 	void resolve_custom_annotation(GDScriptParser::AnnotationNode *p_annotation, uint32_t p_target_kind);
 	void resolve_annotation_declaration(GDScriptParser::AnnotationDeclarationNode *p_declaration);
 	GDScriptParser::AnnotationDeclarationNode *resolve_custom_annotation_declaration(GDScriptParser::AnnotationNode *p_annotation);
+	GDScriptParser::AnnotationDeclarationNode *resolve_qualified_annotation_declaration(const String &p_identity, GDScriptParser::AnnotationNode *p_annotation);
 	GDScriptParser::AnnotationDeclarationNode *load_external_annotation_declaration(const String &p_qualified_name, GDScriptParser::AnnotationNode *p_annotation, bool &r_error_reported);
 	bool coerce_annotation_argument(const GDScriptParser::DataType &p_parameter_type, Variant &r_value, const GDScriptParser::ExpressionNode *p_argument, const String &p_context);
 	void resolve_class_member(GDScriptParser::ClassNode *p_class, const StringName &p_name, const GDScriptParser::Node *p_source = nullptr);

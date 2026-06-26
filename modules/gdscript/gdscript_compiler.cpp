@@ -2641,8 +2641,14 @@ void GDScriptCompiler::_collect_custom_annotations(const List<GDScriptParser::An
 		}
 
 		GDScript::AnnotationUsage usage;
-		// Usage nodes carry the spelled name including the leading "@"; persist the bare short name.
-		const String short_name = String(annotation->name).trim_prefix("@");
+		// Usage nodes carry the spelled name including the leading "@". A fully qualified usage such
+		// as `@cafecito.test.timeout` spells the whole identity, so persist only the final segment as
+		// the bare short name; the canonical identity is kept separately in `qualified_name`.
+		String short_name = String(annotation->name).trim_prefix("@");
+		const int last_dot = short_name.rfind_char('.');
+		if (last_dot >= 0) {
+			short_name = short_name.substr(last_dot + 1);
+		}
 		usage.name = short_name;
 		usage.qualified_name = annotation->resolved_qualified_name;
 
