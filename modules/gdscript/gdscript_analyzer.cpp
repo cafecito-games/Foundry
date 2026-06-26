@@ -8050,6 +8050,15 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 							case Variant::DICTIONARY:
 								if (base_type.has_container_element_type(0)) {
 									GDScriptParser::DataType key_type = base_type.get_container_element_type(0);
+									// A `Dictionary[K, V]` whose key type (transitively) involves a method/class type
+									// parameter is erased to an untyped key at runtime, so there is no key metadata to
+									// validate statically; indexing it inside a generic body is allowed. Mirrors how
+									// `Array[T]` element parameters were erased. The key type must itself be erased — a
+									// concretely-keyed dictionary (`Dictionary[int, String]`) indexed by an unrelated
+									// type parameter is still checked below.
+									if (_signature_type_involves_type_parameter(key_type)) {
+										break;
+									}
 									switch (index_type.builtin_type) {
 										// Null value will be treated as an empty object, allow.
 										case Variant::NIL:

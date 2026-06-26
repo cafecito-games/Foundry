@@ -122,6 +122,9 @@ public:
 	// Retype a runtime-erased (untyped) array — the result of a generic method returning `Array[T]` —
 	// into the concrete typed array of the target, converting each element.
 	virtual void write_assign_typed_array_convert(const Address &p_target, const Address &p_source) = 0;
+	// Retype a runtime-erased (untyped) dictionary — the result of a generic method returning
+	// `Dictionary[K, V]` — into the concrete typed dictionary of the target, converting each entry.
+	virtual void write_assign_typed_dictionary_convert(const Address &p_target, const Address &p_source) = 0;
 	virtual void write_assign_null(const Address &p_target) = 0;
 	virtual void write_assign_true(const Address &p_target) = 0;
 	virtual void write_assign_false(const Address &p_target) = 0;
