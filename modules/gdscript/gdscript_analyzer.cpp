@@ -10329,6 +10329,12 @@ void GDScriptAnalyzer::apply_generic_method_call(GDScriptParser::CallNode *p_cal
 			if (parameter_index >= p_call->arguments.size()) {
 				break;
 			}
+			// A default the analyzer synthesized for a skipped middle parameter must not constrain a
+			// type parameter, mirroring a trailing omitted default that never participates here.
+			if (p_call->synthesized_argument_indices.has(parameter_index)) {
+				parameter_index++;
+				continue;
+			}
 			const GDScriptParser::ExpressionNode *argument = p_call->arguments[parameter_index];
 			if (argument != nullptr) {
 				collect_type_parameter_bindings(declared_parameter_type, argument->get_datatype(), bindings, conflicts);
@@ -10948,22 +10954,15 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		}
 
 		// Interior gap with a default. The default must be materialized as a constant at the call
-		// site, but two cases are excluded because a baked constant would diverge from how the callee's
-		// own default mechanism resolves the value:
-		//   - A parameter whose type depends on a type parameter: its type is substituted from the
-		//     receiver's (or method's) type arguments, so a synthesized default would be unified and
-		//     validated against the substituted type, whereas a trailing omitted default never is.
-		//   - A class metatype default (e.g. `cls = SomeClass`): the compiler deliberately keeps these
-		//     out of the constant fast path and re-resolves them to the live compiled subclass, which a
-		//     baked literal cannot do.
-		// Until those interactions are designed, such a middle skip must be passed explicitly.
+		// site. A parameter whose type depends on a type parameter is still inlined here, but the
+		// synthesized argument is recorded so generic inference and post-substitution validation skip
+		// it: its type is substituted from the receiver's (or method's) type arguments, and a baked
+		// default must behave like a trailing omitted default, which never participates in either.
+		// One case still cannot be inlined: a class metatype default (e.g. `cls = SomeClass`), which
+		// the compiler deliberately keeps out of the constant fast path and re-resolves to the live
+		// compiled subclass, something a baked literal cannot reproduce.
 		if (!parameter->initializer->is_constant) {
 			push_error(vformat(R"(Cannot skip parameter "%s": its default value is not a constant expression. Pass it explicitly.)", parameter_name), p_call);
-			p_call->argument_names.clear();
-			return false;
-		}
-		if (_signature_type_involves_type_parameter(parameter->get_datatype())) {
-			push_error(vformat(R"(Cannot skip parameter "%s": its default value depends on a type parameter. Pass it explicitly.)", parameter_name), p_call);
 			p_call->argument_names.clear();
 			return false;
 		}
@@ -10984,6 +10983,9 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		constant_argument->reduced_value = parameter->initializer->reduced_value;
 		constant_argument->set_datatype(parameter->initializer->get_datatype());
 		slots.write[i] = constant_argument;
+		// Canonical order has no gaps below `max_filled_index`, so the canonical position of this
+		// synthesized argument equals its parameter index.
+		p_call->synthesized_argument_indices.insert(i);
 	}
 
 	Vector<GDScriptParser::ExpressionNode *> canonical_arguments;
@@ -11070,6 +11072,13 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 		if (i >= p_par_types.size()) {
 			// Already on vararg place.
 			break;
+		}
+		// A default the analyzer synthesized for a skipped middle parameter is not validated against
+		// the (possibly type-parameter-substituted) parameter type, mirroring a trailing omitted
+		// default the callee fills in itself. Its value was already coerced to the declared type when
+		// the parameter was resolved, so the baked constant matches the callee's runtime default.
+		if (p_call->synthesized_argument_indices.has(i)) {
+			continue;
 		}
 		GDScriptParser::DataType par_type = *par_itr;
 

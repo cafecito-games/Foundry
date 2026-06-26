@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 7: Cannot skip parameter "second": its default value depends on a type parameter. Pass it explicitly.
