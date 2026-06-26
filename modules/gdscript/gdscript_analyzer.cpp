@@ -7385,7 +7385,11 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 				continue;
 			}
 
-			const GDScriptParser::DataType signal_type = make_signal_type(signal_info);
+			// Reconstruct the full signature (routing each argument through type_from_property) so a
+			// directly-accessed external signal member keeps its parameter types — and any nested
+			// callable/signal hint — for emit()/connect() compatibility checks. Plain make_signal_type
+			// would leave the signature empty and erase it back to untyped at the script-API boundary.
+			const GDScriptParser::DataType signal_type = explicit_signal_type_from_info(signal_info);
 
 			p_identifier->set_datatype(signal_type);
 			p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
