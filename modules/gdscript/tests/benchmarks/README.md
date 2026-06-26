@@ -56,3 +56,23 @@ A real optimization target shows as a native frame whose share is large in
 overhead percentage and the `--gdscript-benchmark-profile` per-function data:
 the GDScript function profiler says which `.gd` function, the sampler says which
 C++ work inside it.
+
+## Deferred: opcode-level profiling
+
+Function-level (the `--gdscript-benchmark-profile` pass) plus native sampling
+covers attribution for now. Per-opcode timing is intentionally **not** built yet:
+adding `get_ticks_usec()` around each VM dispatch in `gdscript_vm.cpp` distorts
+the very loop it measures and over-reports cheap opcodes.
+
+When function + sampling data point at a specific opcode worth characterizing,
+add it behind a build flag (e.g. `gdscript_opcode_profile=yes`) so the dispatch
+loop is untouched in normal builds:
+
+- Gate a `uint64_t opcode_self_time[OPCODE_COUNT]` / `opcode_count[OPCODE_COUNT]`
+  accumulator behind `#ifdef GDSCRIPT_OPCODE_PROFILE` in `GDScriptFunction::call`.
+- Prefer counting (cheap) over timing where possible; reserve timing for a short
+  list of suspect opcodes to limit distortion.
+- Surface the totals through a new `--gdscript-benchmark-opcodes` output, parallel
+  to the function-profiler sidecar.
+
+Only build this once the cheaper layers have isolated the target.
