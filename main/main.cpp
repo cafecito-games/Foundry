@@ -961,7 +961,12 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			tests_need_run = false;
 			return EXIT_SUCCESS;
 		}
-		if ((strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6)) {
+		// `--gdscript-generate-tests` is a registered `--test` command (so it
+		// runs under `test_setup()`/`test_cleanup()` and the process shuts down
+		// cleanly); accept it as a standalone flag too, for backwards compatibility.
+		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
+		const bool is_test_command = strcmp(argv[x], "--gdscript-generate-tests") == 0;
+		if (is_test || is_test_command) {
 			tests_need_run = true;
 #ifdef TESTS_ENABLED
 			// TODO: need to come up with different test contexts.
@@ -972,7 +977,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			return status;
 #else
 			ERR_PRINT(
-					"`--test` was specified on the command line, but this Godot binary was compiled without support for unit tests. Aborting.\n"
+					"A test command was specified on the command line, but this Godot binary was compiled without support for unit tests. Aborting.\n"
 					"To be able to run unit tests, use the `tests=yes` SCons option when compiling Godot.\n");
 			return EXIT_FAILURE;
 #endif

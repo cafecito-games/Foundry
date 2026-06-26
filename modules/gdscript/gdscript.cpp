@@ -2361,7 +2361,8 @@ void GDScriptLanguage::init() {
 #endif // DEBUG_ENABLED
 
 #ifdef TESTS_ENABLED
-	GDScriptTests::GDScriptTestRunner::handle_cmdline();
+	// `--gdscript-generate-tests` is handled as a `--test` command (see
+	// `register_types.cpp`) so the process shuts down cleanly afterwards.
 	GDScriptTests::GDScriptBenchmarkRunner::handle_cmdline();
 #endif // TESTS_ENABLED
 }

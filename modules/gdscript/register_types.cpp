@@ -238,9 +238,14 @@ void test_bytecode() {
 	GDScriptTests::test(GDScriptTests::TestType::TEST_BYTECODE);
 }
 
+void generate_gdscript_tests() {
+	GDScriptTests::GDScriptTestRunner::generate_outputs_for_cmdline();
+}
+
 REGISTER_TEST_COMMAND("gdscript-tokenizer", &test_tokenizer);
 REGISTER_TEST_COMMAND("gdscript-tokenizer-buffer", &test_tokenizer_buffer);
 REGISTER_TEST_COMMAND("gdscript-parser", &test_parser);
 REGISTER_TEST_COMMAND("gdscript-compiler", &test_compiler);
 REGISTER_TEST_COMMAND("gdscript-bytecode", &test_bytecode);
+REGISTER_TEST_COMMAND("--gdscript-generate-tests", &generate_gdscript_tests);
 #endif
