@@ -203,6 +203,36 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project detects a real git w
 	DirAccess::remove_absolute(dir);
 }
 
+TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project does not run shell code embedded in the path") {
+	if (!git_is_available()) {
+		return;
+	}
+	// A directory whose name contains shell command substitution. If git were
+	// invoked through a shell, `$(...)` / backticks would execute and create the
+	// sentinel file; running git directly with an argv vector passes the path
+	// verbatim and the sentinel must never appear.
+	const String cache = OS::get_singleton()->get_cache_path();
+	const String sentinel = cache.path_join("vcs_guard_pwned_" + itos(OS::get_singleton()->get_ticks_usec()));
+	const String dir_name = "vcs_guard_inj_" + itos(OS::get_singleton()->get_ticks_usec()) + "_$(touch '" + sentinel + "')`touch '" + sentinel + "'`";
+	const String dir = cache.path_join(dir_name);
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(dir), OK);
+
+	// We do not care about the verdict here, only that nothing was executed.
+	inspect_project(dir);
+
+	Vector<String> targets;
+	targets.push_back(dir.path_join("x.gd"));
+	bool ok = true;
+	find_ignored_targets(dir, targets, ok);
+
+	CHECK_FALSE(FileAccess::exists(sentinel));
+
+	if (FileAccess::exists(sentinel)) {
+		DirAccess::remove_absolute(sentinel);
+	}
+	DirAccess::remove_absolute(dir);
+}
+
 TEST_CASE("[Editor][ScriptRefactorVCSGuard] find_ignored_targets reports only git-ignored targets") {
 	if (!git_is_available()) {
 		return;

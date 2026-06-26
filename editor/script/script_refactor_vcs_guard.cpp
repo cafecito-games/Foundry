@@ -33,6 +33,7 @@
 #ifdef TOOLS_ENABLED
 
 #include "core/config/project_settings.h"
+#include "core/io/file_access.h"
 #include "core/os/os.h"
 
 namespace ScriptRefactorVCSGuard {
@@ -72,9 +73,42 @@ Result evaluate(const WorkingTreeState &p_state) {
 
 namespace {
 
+// Reads a pipe FileAccess to EOF. Pipes are not seekable, so get_as_text() (which
+// seeks to 0) yields nothing; drain it with blocking buffer reads instead.
+String drain_pipe(const Ref<FileAccess> &p_pipe) {
+	if (p_pipe.is_null()) {
+		return String();
+	}
+	Vector<uint8_t> bytes;
+	uint8_t chunk[4096];
+	while (!p_pipe->eof_reached()) {
+		const uint64_t read = p_pipe->get_buffer(chunk, sizeof(chunk));
+		if (read == 0) {
+			break;
+		}
+		const int64_t start = bytes.size();
+		bytes.resize(start + (int64_t)read);
+		memcpy(bytes.ptrw() + start, chunk, read);
+	}
+	String text;
+	if (!bytes.is_empty()) {
+		const Error err = text.append_utf8((const char *)bytes.ptr(), bytes.size());
+		(void)err;
+	}
+	return text;
+}
+
 // Runs `git -C <project> <args...>`. Returns false if git could not be launched
 // at all (not installed / not on PATH), in which case exit code and output are
 // untouched. A successful launch with a non-zero exit code still returns true.
+//
+// This deliberately uses execute_with_pipe() rather than the simpler
+// OS::execute(..., &output, ...) overload: the latter builds a single shell
+// command string and runs it through popen() on Unix, so a project or target
+// path containing shell metacharacters (quotes, backticks, $(...)) would be
+// interpreted by the shell. execute_with_pipe() spawns git directly with an argv
+// vector (execvp / CreateProcess), so paths are passed verbatim and cannot inject
+// shell commands.
 bool run_git(const String &p_project_path, const Vector<String> &p_args, int &r_exit_code, String &r_output) {
 	List<String> arguments;
 	arguments.push_back("-C");
@@ -83,11 +117,35 @@ bool run_git(const String &p_project_path, const Vector<String> &p_args, int &r_
 		arguments.push_back(arg);
 	}
 
-	int exit_code = 0;
-	String output;
-	const Error err = OS::get_singleton()->execute("git", arguments, &output, &exit_code, true);
-	if (err != OK) {
-		return false;
+	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe("git", arguments, true);
+	if (pipe_info.is_empty()) {
+		return false; // git could not be launched.
+	}
+
+	Ref<FileAccess> stdout_pipe = pipe_info["stdio"];
+	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
+	OS::ProcessID pid = pipe_info["pid"];
+
+	// Blocking pipes: read stdout to EOF (the child closes it on exit). stderr is
+	// drained too so a child that fills the stderr buffer cannot deadlock on write.
+	const String output = drain_pipe(stdout_pipe);
+	const String discarded_stderr = drain_pipe(stderr_pipe); // Drain so a chatty child cannot block on a full stderr buffer.
+	(void)discarded_stderr;
+	if (stdout_pipe.is_valid()) {
+		stdout_pipe->close();
+	}
+	if (stderr_pipe.is_valid()) {
+		stderr_pipe->close();
+	}
+
+	// stdout closes when git exits, but reaping the PID can briefly lag behind the
+	// fd close, during which get_process_exit_code() returns -1. Poll a bounded
+	// number of times so a transient "still running" never masquerades as an error
+	// exit code that would wrongly mark the check indeterminate.
+	int exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	for (int attempt = 0; exit_code < 0 && OS::get_singleton()->is_process_running(pid) && attempt < 1000; attempt++) {
+		OS::get_singleton()->delay_usec(1000);
+		exit_code = OS::get_singleton()->get_process_exit_code(pid);
 	}
 
 	r_exit_code = exit_code;
@@ -187,9 +245,10 @@ Vector<String> find_ignored_targets(const String &p_project_path, const Vector<S
 			r_check_succeeded = false; // git could not be launched.
 			return Vector<String>();
 		}
-		// Exit code 1 means nothing matched (clean determination). >1 is an error
-		// (e.g. not a repo), which must not be read as "nothing ignored".
-		if (exit_code > 1) {
+		// Exit code 0 (some matched) and 1 (none matched) are clean determinations.
+		// >1 is an error (e.g. not a repo) and a negative code means the exit status
+		// could not be read; neither may be read as "nothing ignored".
+		if (exit_code < 0 || exit_code > 1) {
 			r_check_succeeded = false;
 			return Vector<String>();
 		}
