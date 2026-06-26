@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 14: Cannot assign a value of type Callable to variable "handler" with specified type Callable[[Box[String]], void].
