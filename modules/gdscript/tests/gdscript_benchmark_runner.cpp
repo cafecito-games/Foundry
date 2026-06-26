@@ -104,7 +104,9 @@ bool GDScriptBenchmarkRunner::collect_variants(const String &p_dir, Vector<Workl
 	dir->list_dir_end();
 
 	// A directory that contains a case.cfg is a case; otherwise recurse.
-	const String case_name = p_dir.get_file();
+	// simplify_path() strips trailing slashes so get_file() yields the directory
+	// name (e.g. "_baseline") rather than an empty string for "…/_baseline/".
+	const String case_name = p_dir.simplify_path().get_file();
 	const bool is_case = FileAccess::exists(p_dir.path_join("case.cfg"));
 	if (is_case) {
 		const CaseConfig config = load_case_config(p_dir);
@@ -243,15 +245,36 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 	List<String> args = OS::get_singleton()->get_cmdline_args();
 	String dir;
 	String output_path;
+	bool benchmark_requested = false;
+	bool malformed = false;
 	for (List<String>::Element *E = args.front(); E; E = E->next()) {
-		if (E->get() == "--gdscript-benchmark" && E->next()) {
-			dir = E->next()->get();
-		} else if (E->get() == "--gdscript-benchmark-output" && E->next()) {
-			output_path = E->next()->get();
+		const String &arg = E->get();
+		// A flag's value must exist and must not itself be another option.
+		const bool has_value = E->next() && !E->next()->get().begins_with("--");
+		if (arg == "--gdscript-benchmark") {
+			benchmark_requested = true;
+			if (has_value) {
+				dir = E->next()->get();
+			} else {
+				malformed = true;
+			}
+		} else if (arg == "--gdscript-benchmark-output") {
+			benchmark_requested = true;
+			if (has_value) {
+				output_path = E->next()->get();
+			} else {
+				malformed = true;
+			}
 		}
 	}
-	if (dir.is_empty()) {
+	if (!benchmark_requested) {
 		return; // Flag not present; normal startup continues.
+	}
+	if (malformed || dir.is_empty()) {
+		ERR_PRINT("--gdscript-benchmark requires a directory argument: "
+				  "--gdscript-benchmark <dir> [--gdscript-benchmark-output <file>]");
+		fflush(nullptr);
+		std::_Exit(2);
 	}
 
 	GDScriptBenchmarkRunner runner(dir);
