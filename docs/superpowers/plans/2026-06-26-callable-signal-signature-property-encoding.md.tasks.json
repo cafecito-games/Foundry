@@ -1,0 +1,47 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-26-callable-signal-signature-property-encoding.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Add PROPERTY_HINT_CALLABLE_TYPE enum value",
+      "status": "completed",
+      "description": "Introduce the new property hint before PROPERTY_HINT_MAX in core/object/object.h without breaking enum binary compatibility or triggering -Werror.\n\n```json:metadata\n{\"files\": [\"core/object/object.h\"], \"verifyCommand\": \"scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)\", \"acceptanceCriteria\": [\"PROPERTY_HINT_CALLABLE_TYPE before PROPERTY_HINT_MAX\", \"clean build\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Encode signature in DataType::to_property_info",
+      "status": "completed",
+      "blockedBy": [0],
+      "description": "Emit PROPERTY_HINT_CALLABLE_TYPE + recursively-encoded hint_string for explicit Callable/Signal DataTypes; untyped callables emit no hint. Recursive encoder helpers in gdscript_parser.cpp + branch in BUILTIN case; C++ encoder unit tests in test_gdscript_type.h.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_parser.cpp\", \"modules/gdscript/tests/test_gdscript_type.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-case=\\\"*Callable/Signal property encoding*\\\" --force-colors\", \"acceptanceCriteria\": [\"correct hint_string for nested/container/signal\", \"no hint for untyped\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Decode signature in type_from_property",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "Reconstruct nested Callable/Signal DataType from PROPERTY_HINT_CALLABLE_TYPE. Extract shared leaf resolver from the Array branch; recursive decoder helpers; CALLABLE/SIGNAL branch in type_from_property. explicit_callable/signal_type_from_info and comparators unchanged.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_analyzer.cpp\", \"modules/gdscript/gdscript_analyzer.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"nested decode\", \"container param decode\", \"bare callable unchanged\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Cross-script fixtures (#412 repros, round-trip, container)",
+      "status": "completed",
+      "blockedBy": [2],
+      "description": "End-to-end fixtures: both #412 repros error, matching cross-script signature accepts, Array[int] vs Array[String] param mismatch caught. Provider .notest.gd + consumer .gd + .out; reconcile .out wording via --gdscript-generate-tests.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/tests/scripts/analyzer/errors/\", \"modules/gdscript/tests/scripts/analyzer/features/\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-case=\\\"*GDScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"both #412 repros error\", \"matching accepts\", \"container mismatch caught\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Signal-path fixture + bare-callable regression guard",
+      "status": "completed",
+      "blockedBy": [3],
+      "description": "Cover the Signal arm (no return clause) and lock in that untyped cross-script callables stay gradual-typing compatible (canary for wrongly emitting a hint on non-explicit callables).\n\n```json:metadata\n{\"files\": [\"modules/gdscript/tests/scripts/analyzer/errors/\", \"modules/gdscript/tests/scripts/analyzer/features/\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --test-case=\\\"*GDScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"signal mismatch errors\", \"untyped callable still accepts\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Ripple review + CI-parity build",
+      "status": "completed",
+      "blockedBy": [3],
+      "description": "Confirm graceful degradation in Inspector/EditorHelp/docs and pass warnings-as-errors (dev_mode=yes) build. Audit hint consumers for default/fallback; doc-gen check; full unfiltered suite incl test_class_db.\n\n```json:metadata\n{\"files\": [\"editor/editor_help.cpp\", \"editor/inspector/editor_inspector.cpp\", \"modules/gdscript/editor/gdscript_docgen.cpp\"], \"verifyCommand\": \"scons platform=macos target=editor dev_mode=yes tests=yes -j$(sysctl -n hw.ncpu) && ./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"graceful Inspector/docs fallback\", \"warnings-as-errors clean\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-26T15:00:00Z"
+}

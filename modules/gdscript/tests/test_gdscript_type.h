@@ -1982,4 +1982,75 @@ TEST_CASE("[Modules][GDScript] Analyzer reads strict dynamic project setting") {
 	project_settings->set_setting(setting_path, previous_value);
 }
 
+static GDScriptParser::DataType make_typed_array_type(Variant::Type p_element_type) {
+	GDScriptParser::DataType type = make_builtin_type(Variant::ARRAY);
+	type.set_container_element_type(0, make_builtin_type(p_element_type));
+	return type;
+}
+
+static GDScriptParser::DataType make_callable_signature_type(
+		const Vector<GDScriptParser::DataType> &p_params,
+		const GDScriptParser::DataType &p_return,
+		bool p_is_signal = false) {
+	GDScriptParser::DataType type = make_builtin_type(p_is_signal ? Variant::SIGNAL : Variant::CALLABLE);
+	type.has_method_signature = true;
+	type.has_explicit_method_signature = true;
+	type.method_parameter_types = p_params;
+	if (!p_is_signal) {
+		type.method_return_type.push_back(p_return);
+	}
+	return type;
+}
+
+TEST_CASE("[Modules][GDScript] Callable/Signal property encoding") {
+	{
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(make_builtin_type(Variant::INT));
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::BOOL)).to_property_info("cb");
+		CHECK(info.type == Variant::CALLABLE);
+		CHECK(info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(info.hint_string == "[[int], bool]");
+	}
+	{
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(make_builtin_type(Variant::INT));
+		const PropertyInfo info = make_callable_signature_type(params, make_variant_type(), true).to_property_info("sig");
+		CHECK(info.type == Variant::SIGNAL);
+		CHECK(info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(info.hint_string == "[[int]]");
+	}
+	{
+		Vector<GDScriptParser::DataType> inner_params;
+		inner_params.push_back(make_builtin_type(Variant::INT));
+		GDScriptParser::DataType inner = make_callable_signature_type(inner_params, make_builtin_type(Variant::NIL));
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(inner);
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::NIL)).to_property_info("cb");
+		CHECK(info.hint_string == "[[Callable[[int], void]], void]");
+	}
+	{
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(make_typed_array_type(Variant::INT));
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::NIL)).to_property_info("cb");
+		CHECK(info.hint_string == "[[Array[int]], void]");
+	}
+	{
+		// Nullable parameter and return slots keep their `?` marker.
+		GDScriptParser::DataType nullable_node = make_native_type("Node");
+		nullable_node.is_nullable = true;
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(nullable_node);
+		GDScriptParser::DataType nullable_return = make_native_type("Node");
+		nullable_return.is_nullable = true;
+		const PropertyInfo info = make_callable_signature_type(params, nullable_return).to_property_info("cb");
+		CHECK(info.hint_string == "[[Node?], Node?]");
+	}
+	{
+		GDScriptParser::DataType untyped = make_builtin_type(Variant::CALLABLE);
+		const PropertyInfo info = untyped.to_property_info("cb");
+		CHECK(info.hint == PROPERTY_HINT_NONE);
+		CHECK(info.hint_string.is_empty());
+	}
+}
+
 } // namespace GDScriptTests

@@ -6228,6 +6228,170 @@ GDScriptParser::DataType GDScriptParser::DataType::substitute(const DataType &p_
 	return result;
 }
 
+// Renders a DataType into the flat hint grammar used by PROPERTY_HINT_CALLABLE_TYPE.
+// Mirrors DataType::to_string surface syntax, but leaf script/class/enum names use the same
+// name selection as PROPERTY_HINT_ARRAY_TYPE so the result round-trips through type_from_property.
+static String _encode_signature_leaf_name(const GDScriptParser::DataType &p_type) {
+	switch (p_type.kind) {
+		case GDScriptParser::DataType::BUILTIN:
+			return Variant::get_type_name(p_type.builtin_type);
+		case GDScriptParser::DataType::NATIVE:
+			return p_type.native_type;
+		case GDScriptParser::DataType::SCRIPT:
+			if (p_type.script_type.is_valid() && p_type.script_type->get_global_name() != StringName()) {
+				return p_type.script_type->get_global_name();
+			}
+			return p_type.native_type;
+		case GDScriptParser::DataType::CLASS:
+			if (p_type.class_type != nullptr && p_type.class_type->get_global_name() != StringName()) {
+				return p_type.class_type->get_global_name();
+			}
+			return p_type.native_type;
+		case GDScriptParser::DataType::ENUM:
+			return String(p_type.native_type).replace("::", ".");
+		default:
+			return "Variant";
+	}
+}
+
+static String _encode_signature_type(const GDScriptParser::DataType &p_type);
+
+// Encodes a Callable/Signal signature suffix: "[[p0, p1], ret]" for callables, "[[p0, p1]]" for signals.
+static String _encode_method_signature_suffix(const GDScriptParser::DataType &p_type, bool p_has_return) {
+	Vector<String> params;
+	for (const GDScriptParser::DataType &param : p_type.method_parameter_types) {
+		params.push_back(_encode_signature_type(param));
+	}
+	const String joined = String(", ").join(params);
+	if (p_has_return) {
+		String return_name;
+		if (p_type.method_return_type.is_empty()) {
+			return_name = "void";
+		} else {
+			const GDScriptParser::DataType return_type = p_type.method_return_type[0];
+			if (return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+				return_name = "void";
+			} else {
+				return_name = _encode_signature_type(return_type);
+			}
+		}
+		return vformat("[[%s], %s]", joined, return_name);
+	}
+	return vformat("[[%s]]", joined);
+}
+
+static String _encode_signature_type_base(const GDScriptParser::DataType &p_type) {
+	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
+		switch (p_type.builtin_type) {
+			case Variant::ARRAY:
+				if (p_type.has_container_element_type(0)) {
+					return vformat("Array[%s]", _encode_signature_type(p_type.get_container_element_type(0)));
+				}
+				return "Array";
+			case Variant::DICTIONARY:
+				if (p_type.has_container_element_types()) {
+					return vformat("Dictionary[%s, %s]",
+							_encode_signature_type(p_type.get_container_element_type_or_variant(0)),
+							_encode_signature_type(p_type.get_container_element_type_or_variant(1)));
+				}
+				return "Dictionary";
+			case Variant::CALLABLE:
+				if (p_type.has_explicit_method_signature) {
+					return "Callable" + _encode_method_signature_suffix(p_type, true);
+				}
+				return "Callable";
+			case Variant::SIGNAL:
+				if (p_type.has_explicit_method_signature) {
+					return "Signal" + _encode_method_signature_suffix(p_type, false);
+				}
+				return "Signal";
+			default:
+				return Variant::get_type_name(p_type.builtin_type);
+		}
+	}
+	return _encode_signature_leaf_name(p_type);
+}
+
+static String _encode_signature_type(const GDScriptParser::DataType &p_type) {
+	String encoded = _encode_signature_type_base(p_type);
+	// Preserve the nullable marker so a `T?` slot survives the boundary (mirrors to_string's guard:
+	// Variant and the NIL builtin are never marked nullable). Generic type_arguments are not yet
+	// encoded; a nested user-generic slot degrades to its bare name (tracked as a follow-up).
+	if (p_type.is_nullable && p_type.kind != GDScriptParser::DataType::VARIANT &&
+			!(p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL)) {
+		encoded += "?";
+	}
+	return encoded;
+}
+
+// True when a signature slot round-trips faithfully through the PROPERTY_HINT_CALLABLE_TYPE decoder.
+// Slots that cannot (enum leaves, non-global/nested script-classes reduced to a native fallback,
+// unexposed natives, generic type_arguments, type parameters) would decode to a coarser type — emitting
+// the hint anyway turns a previously gradual-accepted cross-script callable into a false strict mismatch.
+// When any slot is lossy the caller omits the hint, so the callable/signal crosses the boundary untyped.
+static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type) {
+	if (!p_type.type_arguments.is_empty()) {
+		return false;
+	}
+	switch (p_type.kind) {
+		case GDScriptParser::DataType::VARIANT:
+			return true;
+		case GDScriptParser::DataType::BUILTIN:
+			switch (p_type.builtin_type) {
+				case Variant::ARRAY:
+					return !p_type.has_container_element_type(0) || _signature_type_is_encodable(p_type.get_container_element_type(0));
+				case Variant::DICTIONARY:
+					return !p_type.has_container_element_types() ||
+							(_signature_type_is_encodable(p_type.get_container_element_type_or_variant(0)) &&
+									_signature_type_is_encodable(p_type.get_container_element_type_or_variant(1)));
+				case Variant::CALLABLE:
+				case Variant::SIGNAL: {
+					if (!p_type.has_explicit_method_signature) {
+						return true;
+					}
+					// The hint encodes only a fixed parameter/return list. Default-argument and vararg
+					// arity metadata cannot round-trip, so a callable carrying it must cross untyped to
+					// avoid rejecting valid default-arg/vararg calls at the script-API boundary.
+					if (!p_type.method_info.default_arguments.is_empty() ||
+							(p_type.method_info.flags & METHOD_FLAG_VARARG) != 0) {
+						return false;
+					}
+					for (const GDScriptParser::DataType &parameter_type : p_type.method_parameter_types) {
+						if (!_signature_type_is_encodable(parameter_type)) {
+							return false;
+						}
+					}
+					if (p_type.builtin_type == Variant::CALLABLE) {
+						for (const GDScriptParser::DataType &return_type : p_type.method_return_type) {
+							if (!_signature_type_is_encodable(return_type)) {
+								return false;
+							}
+						}
+					}
+					return true;
+				}
+				default:
+					return true;
+			}
+		case GDScriptParser::DataType::NATIVE:
+			return ClassDB::class_exists(p_type.native_type) && ClassDB::is_class_exposed(p_type.native_type);
+		case GDScriptParser::DataType::SCRIPT:
+		case GDScriptParser::DataType::CLASS:
+			// A user script/class leaf is encoded by name but always decoded back as a SCRIPT kind, while
+			// a local annotation of the same class may resolve to a CLASS handle. Strict signature
+			// equality compares kinds, so an encoded user-class slot could be falsely rejected after the
+			// boundary. Treat these as non-round-trippable until the decoder/comparison agree on a kind;
+			// such callables cross untyped (gradual). Native classes are unaffected and still round-trip.
+			return false;
+		case GDScriptParser::DataType::ENUM:
+		case GDScriptParser::DataType::TYPE_PARAMETER:
+		case GDScriptParser::DataType::RESOLVING:
+		case GDScriptParser::DataType::UNRESOLVED:
+			return false;
+	}
+	return false;
+}
+
 PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) const {
 	PropertyInfo result;
 	result.name = p_name;
@@ -6241,7 +6405,10 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 	switch (kind) {
 		case BUILTIN:
 			result.type = builtin_type;
-			if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
+			if ((builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) && has_explicit_method_signature && _signature_type_is_encodable(*this)) {
+				result.hint = PROPERTY_HINT_CALLABLE_TYPE;
+				result.hint_string = _encode_method_signature_suffix(*this, builtin_type == Variant::CALLABLE);
+			} else if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 				const DataType elem_type = get_container_element_type(0);
 				switch (elem_type.kind) {
 					case BUILTIN:
