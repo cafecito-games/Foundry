@@ -165,17 +165,6 @@ MigrationWizardResult GDScriptMigrationWizard::run(const String &p_root, const M
 		return result;
 	}
 
-	// Persist the manual follow-up punch-list when a path was requested, so a scripted run leaves
-	// a regenerable artifact alongside the project.
-	if (!p_options.follow_up_path.is_empty()) {
-		const Error follow_up_error = GDScriptMigrationReport::write_follow_up(result.report, p_options.follow_up_path);
-		if (follow_up_error != OK) {
-			result.ok = false;
-			result.error_message = vformat("Failed to write follow-up report to '%s' (error %d).", p_options.follow_up_path, follow_up_error);
-			return result;
-		}
-	}
-
 	// Stage 2: the atomic apply. Runs only when requested; otherwise the wizard stops as a
 	// preview. A VCS-blocked apply short-circuits the strict stage since nothing was written.
 	result.apply_requested = p_options.apply;
@@ -227,6 +216,19 @@ MigrationWizardResult GDScriptMigrationWizard::run(const String &p_root, const M
 			// fatal error, but flagged so a caller enforcing activation can fail rather than report
 			// a false success.
 			result.strict_activation_blocked = !result.strict_result.activated;
+		}
+	}
+
+	// Persist the manual follow-up punch-list when a path was requested, so a scripted run leaves a
+	// regenerable artifact alongside the project. Written LAST, after the apply stage, so that when
+	// the follow-up path is inside the project it does not dirty the working tree before the apply's
+	// version-control safety guard inspects it (which would otherwise block an otherwise-clean run).
+	if (!p_options.follow_up_path.is_empty()) {
+		const Error follow_up_error = GDScriptMigrationReport::write_follow_up(result.report, p_options.follow_up_path);
+		if (follow_up_error != OK) {
+			result.ok = false;
+			result.error_message = vformat("Failed to write follow-up report to '%s' (error %d).", p_options.follow_up_path, follow_up_error);
+			return result;
 		}
 	}
 
