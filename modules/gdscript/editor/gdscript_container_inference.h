@@ -68,6 +68,11 @@ public:
 		// A modeled mutation supplies an element whose type the analyzer could
 		// not resolve to a concrete, renderable type. Skipped and reported.
 		UNPROVABLE,
+		// An element read flows into a variable that is later reassigned to a value
+		// incompatible with the inferred element type. The read is `Variant` while
+		// the container is bare, so the reassignment is currently valid; typing the
+		// container would narrow the read and reject it. Skipped and reported.
+		READ_NARROWS,
 	};
 
 	struct Result {

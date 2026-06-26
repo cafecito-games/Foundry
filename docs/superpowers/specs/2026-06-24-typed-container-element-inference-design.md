@@ -76,6 +76,19 @@ no-evidence, already-annotated, non-literal initializer) plus the end-to-end
 candidate-collection path asserting the rendered `: Array[int] = ` edit and the
 bare `: Array = ` fallback for a mixed container.
 
+## Read narrowing (issue #313)
+
+Element *reads* (`var v = c[i]`, `for v in c:`) are safe for escape purposes, but
+once the container is typed they narrow from `Variant` to the element type. Code
+that was valid only because the read produced a `Variant` -- a binding that is
+later reassigned to an incompatible value -- would fail analysis after the
+upgrade. The walker therefore records each local/iterator bound to such a read
+(unless it carries an explicit annotation, which pins its type) and, once the
+element type is known, bails with the `READ_NARROWS` outcome when any of those
+bindings is reassigned a value whose rendered type does not match the element
+type it would narrow to. This applies uniformly to the array element, dictionary
+key (loop bindings), and dictionary value (subscript bindings) paths.
+
 ## Follow-ups (deferred)
 
 - Dictionary `Dictionary[K, V]` element inference (key/value from indexed
