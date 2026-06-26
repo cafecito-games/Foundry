@@ -62,13 +62,33 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 	return true;
 }
 
+static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right);
+
+// DataType::operator== compares Callable/Signal builtins by their outer builtin type only and ignores
+// the nested method signature metadata. Compare two signature slot types so that a mismatch buried
+// inside another Callable/Signal signature (e.g. `Callable[[Callable[[int], void]], void]` vs
+// `Callable[[Callable[[String], void]], void]`) is still detected instead of being accepted shallowly.
+static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
+	if (p_left != p_right) {
+		return false;
+	}
+	// Only recurse when both slots carry a signature. A typed-vs-untyped slot keeps the shallow
+	// result of `operator==` above, mirroring how the top-level path leniently accepts an untyped
+	// source against a typed target rather than tightening the rules only at nested depth.
+	if (p_left.kind == GDScriptParser::DataType::BUILTIN && _is_signature_builtin_type(p_left.builtin_type) &&
+			p_left.has_method_signature && p_right.has_method_signature) {
+		return _datatype_method_signature_equal(p_left, p_right);
+	}
+	return true;
+}
+
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
 	if (p_left.has_explicit_method_signature && p_right.has_explicit_method_signature) {
 		if (p_left.method_parameter_types.size() != p_right.method_parameter_types.size()) {
 			return false;
 		}
 		for (int i = 0; i < p_left.method_parameter_types.size(); i++) {
-			if (p_left.method_parameter_types[i] != p_right.method_parameter_types[i]) {
+			if (!_datatype_signature_slot_equal(p_left.method_parameter_types[i], p_right.method_parameter_types[i])) {
 				return false;
 			}
 		}
@@ -77,7 +97,7 @@ static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_l
 				return false;
 			}
 			for (int i = 0; i < p_left.method_return_type.size(); i++) {
-				if (p_left.method_return_type[i] != p_right.method_return_type[i]) {
+				if (!_datatype_signature_slot_equal(p_left.method_return_type[i], p_right.method_return_type[i])) {
 					return false;
 				}
 			}
