@@ -4506,6 +4506,11 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 
 		Variant::Type builtin_type = GDScriptParser::get_builtin_type(function_name);
+		// Builtin constructors and engine utility functions are not GDScript functions, so they
+		// cannot accept named arguments. Reject them before these paths return.
+		if (builtin_type < Variant::VARIANT_MAX || GDScriptUtilityFunctions::function_exists(function_name) || Variant::has_utility_function(function_name)) {
+			reject_named_call_arguments(p_call);
+		}
 		if (builtin_type < Variant::VARIANT_MAX) {
 			// Is a builtin constructor.
 			call_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -4997,6 +5002,26 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
 		p_call->is_noreturn = is_noreturn;
 
+		// Named arguments are only valid against a statically resolved GDScript function. When the
+		// callee resolves to one, rewrite `name = value` arguments into canonical positional order
+		// so the existing positional validation and codegen run unchanged; otherwise reject them.
+		bool named_arguments_valid = true;
+		if (found_function != nullptr) {
+			named_arguments_valid = canonicalize_named_call_arguments(p_call, found_function);
+			// Reordering may have changed argument positions, so rebuild the literal-typing maps.
+			arrays.clear();
+			dictionaries.clear();
+			for (int i = 0; i < p_call->arguments.size(); i++) {
+				if (p_call->arguments[i]->type == GDScriptParser::Node::ARRAY) {
+					arrays[i] = static_cast<GDScriptParser::ArrayNode *>(p_call->arguments[i]);
+				} else if (p_call->arguments[i]->type == GDScriptParser::Node::DICTIONARY) {
+					dictionaries[i] = static_cast<GDScriptParser::DictionaryNode *>(p_call->arguments[i]);
+				}
+			}
+		} else {
+			reject_named_call_arguments(p_call);
+		}
+
 		// Generic methods solve their type parameters here, substituting the call's parameter
 		// and return types before the arguments are validated against them.
 		if (!is_constructor && found_function != nullptr && !found_function->type_parameters.is_empty()) {
@@ -5034,7 +5059,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 #endif // TOOLS_ENABLED
 
-		validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
+		if (named_arguments_valid) {
+			validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
+		}
 		validate_signal_connect_arg(base_type, p_call);
 		validate_local_object_signal_callable_arg(p_call, is_self);
 		validate_local_object_emit_signal_args(p_call, is_self);
@@ -10449,6 +10476,128 @@ GDScriptParser::ArrayNode *GDScriptAnalyzer::array_literal_argument(const GDScri
 	}
 
 	return static_cast<GDScriptParser::ArrayNode *>(argument);
+}
+
+bool GDScriptAnalyzer::call_has_named_arguments(const GDScriptParser::CallNode *p_call) {
+	for (int i = 0; i < p_call->argument_names.size(); i++) {
+		if (p_call->argument_names[i] != StringName()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void GDScriptAnalyzer::reject_named_call_arguments(const GDScriptParser::CallNode *p_call) {
+	// Named arguments are resolved entirely at compile time against a statically known
+	// GDScript signature. For any other callee (builtin constructors, engine utility
+	// functions, native methods, or dynamic/`Callable` targets) the parameter names are
+	// unavailable, so reject them instead of silently dropping the names.
+	for (int i = 0; i < p_call->argument_names.size(); i++) {
+		if (p_call->argument_names[i] != StringName()) {
+			push_error("Named arguments are only allowed when calling a GDScript function.", p_call->arguments[i]);
+			return;
+		}
+	}
+}
+
+bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNode *p_call, const GDScriptParser::FunctionNode *p_function) {
+	// The parser keeps `argument_names` parallel to `arguments`, with an empty name for each
+	// positional argument. Map every `name = value` argument to its parameter position, rewrite
+	// the call into canonical positional order, and clear the names so the rest of the analyzer,
+	// codegen, and the VM see an ordinary positional call.
+	if (p_call->argument_names.size() != p_call->arguments.size() || !call_has_named_arguments(p_call)) {
+		// Nothing to canonicalize; drop any (all-empty) name metadata for a clean positional call.
+		p_call->argument_names.clear();
+		return true;
+	}
+
+	const int parameter_count = p_function->parameters.size();
+	const StringName function_name = p_function->identifier != nullptr ? p_function->identifier->name : StringName();
+
+	// Rule: once a named argument appears, every following argument must be named.
+	int positional_count = 0;
+	bool seen_named = false;
+	for (int i = 0; i < p_call->arguments.size(); i++) {
+		const bool is_named = p_call->argument_names[i] != StringName();
+		if (is_named) {
+			seen_named = true;
+		} else if (seen_named) {
+			push_error("Positional argument cannot follow a named argument.", p_call->arguments[i]);
+			p_call->argument_names.clear();
+			return false;
+		} else {
+			positional_count++;
+		}
+	}
+
+	Vector<GDScriptParser::ExpressionNode *> slots;
+	slots.resize(parameter_count);
+	for (int i = 0; i < parameter_count; i++) {
+		slots.write[i] = nullptr;
+	}
+
+	// Positional arguments fill the leading parameter slots in order. Arguments beyond the fixed
+	// parameter count belong to a rest parameter and keep their order after the fixed slots.
+	Vector<GDScriptParser::ExpressionNode *> rest_arguments;
+	for (int i = 0; i < positional_count; i++) {
+		if (i < parameter_count) {
+			slots.write[i] = p_call->arguments[i];
+		} else {
+			rest_arguments.push_back(p_call->arguments[i]);
+		}
+	}
+
+	for (int i = positional_count; i < p_call->arguments.size(); i++) {
+		const StringName &argument_name = p_call->argument_names[i];
+		if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr && p_function->rest_parameter->identifier->name == argument_name) {
+			push_error(vformat(R"(The rest parameter "%s" cannot be passed by name.)", argument_name), p_call->arguments[i]);
+			p_call->argument_names.clear();
+			return false;
+		}
+		const int *parameter_index = p_function->parameters_indices.getptr(argument_name);
+		if (parameter_index == nullptr) {
+			push_error(vformat(R"*(Function "%s()" has no parameter named "%s".)*", function_name, argument_name), p_call->arguments[i]);
+			p_call->argument_names.clear();
+			return false;
+		}
+		if (slots[*parameter_index] != nullptr) {
+			push_error(vformat(R"(Parameter "%s" was specified more than once.)", argument_name), p_call->arguments[i]);
+			p_call->argument_names.clear();
+			return false;
+		}
+		slots.write[*parameter_index] = p_call->arguments[i];
+	}
+
+	int max_filled_index = -1;
+	for (int i = 0; i < parameter_count; i++) {
+		if (slots[i] != nullptr) {
+			max_filled_index = i;
+		}
+	}
+
+	// An omitted parameter before the last filled slot would need its default inlined at the call
+	// site. That constant-default gap fill is handled separately; for now it is a compile error so
+	// the call can never be miscompiled into the wrong positional order.
+	for (int i = 0; i < max_filled_index; i++) {
+		if (slots[i] == nullptr) {
+			const StringName skipped_name = p_function->parameters[i]->identifier != nullptr ? p_function->parameters[i]->identifier->name : StringName();
+			push_error(vformat(R"(Cannot skip parameter "%s" with named arguments; pass it explicitly.)", skipped_name), p_call);
+			p_call->argument_names.clear();
+			return false;
+		}
+	}
+
+	Vector<GDScriptParser::ExpressionNode *> canonical_arguments;
+	for (int i = 0; i <= max_filled_index; i++) {
+		canonical_arguments.push_back(slots[i]);
+	}
+	for (int i = 0; i < rest_arguments.size(); i++) {
+		canonical_arguments.push_back(rest_arguments[i]);
+	}
+
+	p_call->arguments = canonical_arguments;
+	p_call->argument_names.clear();
+	return true;
 }
 
 void GDScriptAnalyzer::validate_call_arg(const MethodInfo &p_method, const GDScriptParser::CallNode *p_call) {
