@@ -80,6 +80,53 @@ class BuildRowsTest(unittest.TestCase):
         self.assertEqual(rows["b"]["overhead_percent"], 0.0)
 
 
+class ThresholdTest(unittest.TestCase):
+    DATA = {
+        "gdscript:_baseline/empty_loop": 100.0,
+        "gdscript:trait_call/baseline": 200.0,
+        "gdscript:trait_call/feature": 280.0,  # net 180 vs 100 -> 80% overhead.
+    }
+
+    def test_flagged_when_overhead_meets_per_case_threshold(self):
+        rows = report.build_rows(self.DATA, {"trait_call": 25})
+        row = {r["case"]: r for r in rows}["trait_call"]
+        self.assertEqual(row["threshold_percent"], 25)
+        self.assertTrue(row["flagged"])
+
+    def test_not_flagged_when_below_per_case_threshold(self):
+        rows = report.build_rows(self.DATA, {"trait_call": 90})
+        self.assertFalse({r["case"]: r for r in rows}["trait_call"]["flagged"])
+
+    def test_negative_threshold_disables_flag(self):
+        rows = report.build_rows(self.DATA, {"trait_call": -1})
+        self.assertFalse({r["case"]: r for r in rows}["trait_call"]["flagged"])
+
+    def test_absent_threshold_falls_back_to_default(self):
+        # 80% overhead exceeds the 50% default fallback.
+        rows = report.build_rows(self.DATA, {})
+        self.assertTrue({r["case"]: r for r in rows}["trait_call"]["flagged"])
+
+    def test_is_flagged_helper(self):
+        self.assertTrue(report._is_flagged(30.0, 25))
+        self.assertTrue(report._is_flagged(25.0, 25))
+        self.assertFalse(report._is_flagged(24.9, 25))
+        self.assertFalse(report._is_flagged(99.0, -1))
+        self.assertTrue(report._is_flagged(60.0, None))
+        self.assertFalse(report._is_flagged(40.0, None))
+
+    def test_load_thresholds_reads_real_corpus(self):
+        corpus = Path(__file__).resolve().parent
+        thresholds = report.load_thresholds(corpus)
+        # Values defined in the merged corpus case.cfg files.
+        self.assertEqual(thresholds["proxy_dispatch"], 40)
+        self.assertEqual(thresholds["generic_container"], 25)
+        self.assertEqual(thresholds["validated_write"], 30)
+        self.assertEqual(thresholds["_baseline"], -1)
+
+    def test_load_thresholds_missing_dir_is_empty(self):
+        self.assertEqual(report.load_thresholds(tempfile.gettempdir() + "/no_such_dir_xyz"), {})
+
+
 class CompareTest(unittest.TestCase):
     def test_compare_flags_regression(self):
         old = {"gdscript:trait_call/feature": 100.0}
