@@ -52,6 +52,7 @@
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
 #include "core/io/file_access.h"
+#include "core/variant/container_type_validate.h"
 
 #include "scene/resources/packed_scene.h"
 #include "scene/scene_string_names.h"
@@ -1634,7 +1635,47 @@ GDScript::~GDScript() {
 //         INSTANCE         //
 //////////////////////////////
 
+// Hidden storage property that persists an instance's reified generic type arguments (e.g. the
+// `int` in `Box[int].new()`) across `.tres`/scene save-load and resource duplication. Member
+// metadata and `is`/`as` resolution read these arguments dynamically, so restoring the vector is
+// sufficient to make a reloaded instance behave like a freshly constructed one.
+static const StringName &_gdscript_type_arguments_property_name() {
+	static const StringName name = StringName("__gdscript_type_arguments__");
+	return name;
+}
+
+// Serialize the reified arguments to an Array of container-type descriptors. The descriptor format
+// is the engine-wide `ContainerTypeDescriptor` one (also used by the `godot.reflection` surface),
+// so script-typed arguments persist as resource references that `.tres`/scene files round-trip.
+static Array _serialize_type_arguments(const Vector<ContainerType> &p_type_arguments) {
+	Array result;
+	for (const ContainerType &type : p_type_arguments) {
+		result.push_back(ContainerTypeDescriptor::to_variant(type));
+	}
+	return result;
+}
+
+static Vector<ContainerType> _deserialize_type_arguments(const Array &p_array) {
+	Vector<ContainerType> result;
+	for (int i = 0; i < p_array.size(); i++) {
+		ContainerType type;
+		String error;
+		if (ContainerTypeDescriptor::from_variant(p_array[i], type, &error)) {
+			result.push_back(type);
+		} else {
+			ERR_PRINT(vformat("Failed to restore reified generic type argument: %s", error));
+		}
+	}
+	return result;
+}
+
 bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
+	if (p_name == _gdscript_type_arguments_property_name()) {
+		if (p_value.get_type() == Variant::ARRAY) {
+			type_arguments = _deserialize_type_arguments(p_value);
+		}
+		return true;
+	}
 	{
 		HashMap<StringName, GDScript::MemberInfo>::Iterator E = script->member_indices.find(p_name);
 		if (E) {
@@ -1731,6 +1772,10 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 }
 
 bool GDScriptInstance::get(const StringName &p_name, Variant &r_ret) const {
+	if (p_name == _gdscript_type_arguments_property_name()) {
+		r_ret = _serialize_type_arguments(type_arguments);
+		return true;
+	}
 	{
 		HashMap<StringName, GDScript::MemberInfo>::ConstIterator E = script->member_indices.find(p_name);
 		if (E) {
@@ -1854,6 +1899,13 @@ void GDScriptInstance::validate_property(PropertyInfo &p_property) const {
 
 void GDScriptInstance::get_property_list(List<PropertyInfo> *p_properties) const {
 	// exported members, not done yet!
+
+	// Persist reified generic type arguments so a specialized instance (`Box[int].new()`) round-trips
+	// through `.tres`/scene save-load and duplication. Only emitted when present, so non-generic or
+	// unspecialized instances serialize unchanged.
+	if (!type_arguments.is_empty()) {
+		p_properties->push_back(PropertyInfo(Variant::ARRAY, _gdscript_type_arguments_property_name(), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_NO_EDITOR));
+	}
 
 	const GDScript *sptr = script.ptr();
 	List<PropertyInfo> props;
