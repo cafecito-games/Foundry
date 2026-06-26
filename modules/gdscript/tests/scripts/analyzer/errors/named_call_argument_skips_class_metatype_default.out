@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 10: Cannot skip parameter "cls" with named arguments; pass it explicitly.

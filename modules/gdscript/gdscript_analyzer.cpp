@@ -10586,11 +10586,22 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 
 		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
 
-		// A parameter whose type depends on a type parameter is excluded: its type is substituted
-		// from the receiver's (or method's) type arguments, so a materialized default would be
-		// unified and validated against the substituted type, whereas a trailing omitted default
-		// never is. Until that interaction is designed, such a middle skip must be passed explicitly.
-		const bool can_inline_default = parameter->initializer != nullptr && parameter->initializer->is_constant && !_signature_type_involves_type_parameter(parameter->get_datatype());
+		// Two cases are excluded, materializing them as a plain constant would diverge from how the
+		// callee's own default mechanism resolves the value:
+		//   - A parameter whose type depends on a type parameter: its type is substituted from the
+		//     receiver's (or method's) type arguments, so a synthesized default would be unified and
+		//     validated against the substituted type, whereas a trailing omitted default never is.
+		//   - A class metatype default (e.g. `cls = SomeClass`): the compiler deliberately keeps these
+		//     out of the constant fast path and re-resolves them to the live compiled subclass, which a
+		//     baked literal cannot do.
+		// Until those interactions are designed, such a middle skip must be passed explicitly.
+		bool can_inline_default = false;
+		if (parameter->initializer != nullptr && parameter->initializer->is_constant) {
+			const bool type_is_generic = _signature_type_involves_type_parameter(parameter->get_datatype());
+			const GDScriptParser::DataType default_type = parameter->initializer->get_datatype();
+			const bool is_class_metatype = default_type.is_meta_type && default_type.kind == GDScriptParser::DataType::CLASS;
+			can_inline_default = !type_is_generic && !is_class_metatype;
+		}
 		if (!can_inline_default) {
 			const StringName skipped_name = parameter->identifier != nullptr ? parameter->identifier->name : StringName();
 			push_error(vformat(R"(Cannot skip parameter "%s" with named arguments; pass it explicitly.)", skipped_name), p_call);
