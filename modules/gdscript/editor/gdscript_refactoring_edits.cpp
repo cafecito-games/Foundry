@@ -114,18 +114,6 @@ bool GDScriptRefactorEdits::apply(const String &p_source, const Vector<RefactorT
 	}
 
 	resolved.sort_custom<ResolvedEditComparator>();
-	// Collapse exact-duplicate zero-width inserts at the same offset. A batch can
-	// pair several annotations in one file that each need the same `import` line;
-	// applying every copy would duplicate the import, so identical inserts at the
-	// same point are merged into one rather than rejected as an overlap.
-	for (int i = resolved.size() - 1; i >= 1; i--) {
-		const ResolvedEdit &current = resolved[i];
-		const ResolvedEdit &previous = resolved[i - 1];
-		const bool both_zero_width = current.start_offset == current.end_offset && previous.start_offset == previous.end_offset;
-		if (both_zero_width && current.start_offset == previous.start_offset && current.new_text == previous.new_text) {
-			resolved.remove_at(i);
-		}
-	}
 	for (int i = 1; i < resolved.size(); i++) {
 		if (resolved[i].start_offset < resolved[i - 1].end_offset) {
 			return false; // Overlap.

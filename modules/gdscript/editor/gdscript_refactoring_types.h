@@ -54,17 +54,17 @@ struct AnnotationScope {
 bool render_annotatable_type(const GDScriptParser::DataType &p_type, String &r_rendered);
 
 // Namespace-aware rendering: chooses the minimal class spelling that resolves at
-// the insertion site described by p_scope, and reports every namespace that must
-// be imported for the spelling to resolve. A global class is rendered bare when
-// it already resolves in scope, bare plus a required import when importing its
-// namespace makes the bare name resolve, and fully-qualified (`namespace.Class`,
-// which resolves without an import) when a bare reference would be shadowed by a
-// builtin/native/global class or be ambiguous with another in-scope namespace.
-// Required namespaces are collected into r_required_imports. Container element
-// types and type arguments are rendered the same way, so a nested cross-namespace
-// class also contributes its import. Behaves identically to render_annotatable_type
-// for global (non-namespaced) classes, leaving r_required_imports empty. Returns
-// false in the same cases as render_annotatable_type.
+// the insertion site described by p_scope. A global class is rendered bare when
+// it already resolves in scope (same namespace, or imported without colliding
+// with a builtin/native/global class or another in-scope namespace), and
+// fully-qualified (`namespace.Class`, which resolves on its own) otherwise.
+// Container element types, type arguments, and Callable/Signal signatures are
+// rendered the same way. r_required_imports reports namespaces that would need a
+// new import for the chosen spelling to resolve; it is currently always empty
+// because out-of-scope classes are qualified rather than imported, but the
+// parameter is kept so a future caller that can safely insert imports can opt in.
+// Behaves identically to render_annotatable_type for global (non-namespaced)
+// classes. Returns false in the same cases as render_annotatable_type.
 bool render_annotatable_type_in_scope(const GDScriptParser::DataType &p_type, const AnnotationScope &p_scope, String &r_rendered, HashSet<String> &r_required_imports);
 
 // Renders an annotatable type with every namespaced class fully qualified,

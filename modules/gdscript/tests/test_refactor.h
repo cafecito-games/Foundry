@@ -971,17 +971,16 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_EQ(rendered, "BaseCharacter");
 			CHECK(imports.is_empty());
 		}
-		SUBCASE("unimported cross-namespace class renders bare and requires the import") {
-			// The minimal spelling is the bare name plus the import that makes it
-			// resolve, rather than the longer fully-qualified path.
+		SUBCASE("unimported cross-namespace class renders fully qualified with no import") {
+			// A fully-qualified spelling resolves on its own and never makes another
+			// bare name ambiguous, so it is preferred over adding an import.
 			GDScriptRefactorTypes::AnnotationScope scope;
 			scope.current_namespace = "game";
 			String rendered;
 			HashSet<String> imports;
 			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
-			CHECK_EQ(rendered, "BaseCharacter");
-			REQUIRE_EQ(imports.size(), 1);
-			CHECK(imports.has("characters"));
+			CHECK_EQ(rendered, "characters.BaseCharacter");
+			CHECK(imports.is_empty());
 		}
 		SUBCASE("bare name colliding with a native type falls back to the qualified spelling") {
 			// `Node` is a native class, so a bare reference can never name a
@@ -1063,7 +1062,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK_EQ(rendered, "GlobalClass");
 			CHECK(imports.is_empty());
 		}
-		SUBCASE("array of an unimported cross-namespace class renders the bare element and requires the import") {
+		SUBCASE("array of an unimported cross-namespace class qualifies the element with no import") {
 			GDScriptParser::DataType array_type;
 			array_type.kind = GDScriptParser::DataType::BUILTIN;
 			array_type.builtin_type = Variant::ARRAY;
@@ -1075,14 +1074,12 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			HashSet<String> imports;
 			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(array_type, scope, rendered, imports));
-			CHECK_EQ(rendered, "Array[BaseCharacter]");
-			REQUIRE_EQ(imports.size(), 1);
-			CHECK(imports.has("characters"));
+			CHECK_EQ(rendered, "Array[characters.BaseCharacter]");
+			CHECK(imports.is_empty());
 		}
-		SUBCASE("global-namespace generic imports its cross-namespace type argument") {
+		SUBCASE("global-namespace generic qualifies its cross-namespace type argument") {
 			// A global-namespace generic `Box[T]` whose argument is a cross-namespace
-			// class renders the argument bare and requires its import, even though the
-			// generic head itself is in scope.
+			// class qualifies the argument; the generic head itself is in scope.
 			GDScriptParser::IdentifierNode box_identifier;
 			box_identifier.name = "Box";
 			GDScriptParser::ClassNode box_node;
@@ -1098,14 +1095,10 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			HashSet<String> imports;
 			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(box_type, scope, rendered, imports));
-			CHECK_EQ(rendered, "Box[BaseCharacter]");
-			REQUIRE_EQ(imports.size(), 1);
-			CHECK(imports.has("characters"));
+			CHECK_EQ(rendered, "Box[characters.BaseCharacter]");
+			CHECK(imports.is_empty());
 		}
-		SUBCASE("two same-named classes from different namespaces keep one bare and qualify the other") {
-			// Importing both namespaces under the same bare name would be ambiguous, so
-			// the first leaf is rendered bare+import and the colliding second leaf is
-			// qualified.
+		SUBCASE("two same-named classes from different namespaces are both qualified") {
 			GDScriptParser::IdentifierNode first_identifier;
 			first_identifier.name = "Controller";
 			GDScriptParser::ClassNode first_node;
@@ -1138,9 +1131,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			HashSet<String> imports;
 			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(dictionary_type, scope, rendered, imports));
-			CHECK_EQ(rendered, "Dictionary[Controller, ui.Controller]");
-			REQUIRE_EQ(imports.size(), 1);
-			CHECK(imports.has("characters"));
+			CHECK_EQ(rendered, "Dictionary[characters.Controller, ui.Controller]");
+			CHECK(imports.is_empty());
 		}
 		SUBCASE("callable signature scopes a namespaced parameter type") {
 			GDScriptParser::DataType callable_type;
@@ -1155,9 +1147,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			HashSet<String> imports;
 			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(callable_type, scope, rendered, imports));
-			CHECK_EQ(rendered, "Callable[[BaseCharacter], void]");
-			REQUIRE_EQ(imports.size(), 1);
-			CHECK(imports.has("characters"));
+			CHECK_EQ(rendered, "Callable[[characters.BaseCharacter], void]");
+			CHECK(imports.is_empty());
 		}
 		SUBCASE("qualified identity distinguishes same-named classes from different namespaces") {
 			// Used by call-site inference to tell apart types that share a bare name.
@@ -4222,32 +4213,23 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			// The single existing import is preserved; no duplicate is inserted.
 			CHECK_EQ(out.count("import refactor.characters"), 1);
 		}
-		SUBCASE("unimported cross-namespace reference renders bare and inserts the import") {
+		SUBCASE("unimported cross-namespace reference renders fully qualified with no import") {
 			String out;
 			REQUIRE(annotate_local("res://refactor/namespace_annotation_unimported.gd", out));
-			CHECK(out.contains("var character: RefactorNsBaseCharacter = "));
-			CHECK(out.contains("import refactor.characters"));
-			// The new import lands after the namespace line and before the body.
-			const int import_pos = out.find("import refactor.characters");
-			const int namespace_pos = out.find("namespace refactor.gameplay");
-			const int func_pos = out.find("func make");
-			CHECK(namespace_pos >= 0);
-			CHECK(import_pos > namespace_pos);
-			CHECK(import_pos < func_pos);
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			CHECK_FALSE(out.contains("import refactor.characters"));
+			// The qualified annotation resolves on its own.
+			RefactorContext applied_ctx;
+			applied_ctx.path = "res://refactor/namespace_annotation_unimported.gd";
+			applied_ctx.source = out;
+			const RefactorCandidatesResult reanalyzed = GDScriptRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			CHECK(reanalyzed.ok);
 		}
-		SUBCASE("import is inserted before a class-level annotation, not after it") {
-			// The parser requires imports to precede class-level annotations such as
-			// @abstract, so the inserted import must land between the namespace and
-			// the annotation rather than after it.
+		SUBCASE("annotated namespaced file qualifies the type and stays valid") {
 			String out;
 			REQUIRE(annotate_local("res://refactor/namespace_annotation_annotated.gd", out));
-			CHECK(out.contains("var character: RefactorNsBaseCharacter = "));
-			const int import_pos = out.find("import refactor.characters");
-			const int namespace_pos = out.find("namespace refactor.gameplay");
-			const int annotation_pos = out.find("@abstract");
-			CHECK(namespace_pos >= 0);
-			CHECK(import_pos > namespace_pos);
-			CHECK(import_pos < annotation_pos);
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			CHECK_FALSE(out.contains("import refactor.characters"));
 			// The applied result must itself be valid GDScript.
 			RefactorContext applied_ctx;
 			applied_ctx.path = "res://refactor/namespace_annotation_annotated.gd";

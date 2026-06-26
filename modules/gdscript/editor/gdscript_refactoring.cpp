@@ -70,11 +70,6 @@ struct TypeAnnotationCandidate {
 	// can bucket sites by kind.
 	String kind;
 	RefactorTextEdit edit;
-	// A namespaced annotation may need an `import` declaration so the qualified or
-	// in-scope spelling resolves. When set, this edit inserts the required
-	// `import` line(s) at the top of the file and applies alongside `edit`.
-	bool has_import_edit = false;
-	RefactorTextEdit import_edit;
 	// Caret-test span of the declaration this candidate was found at. Used by the
 	// caret-driven path to select the candidate under the caret; the headless
 	// collector ignores it. The span opens at (line, caret_span_start). It closes
@@ -89,91 +84,20 @@ struct TypeAnnotationCandidate {
 
 // Namespace context for rendering type annotations in a file that declares a
 // `namespace` and/or `import`s. Carries the scope used to pick the minimal class
-// spelling, the file's already-imported namespaces (so a required import is only
-// added once), and the line at which a new `import` declaration is inserted.
-// A null context (or a file in the global namespace with no imports) renders
-// annotations exactly as before, with no import edits.
+// spelling that resolves at the insertion site. A null context (or a file in the
+// global namespace with no imports) renders annotations exactly as before.
 struct TypeAnnotationRenderContext {
 	GDScriptRefactorTypes::AnnotationScope scope;
-	int import_insert_line = 0; // 0-based line where a new `import` line is inserted.
 };
 
-// Computes the line at which a new `import` declaration can be inserted. The
-// parser requires imports to follow any `namespace` declaration and precede
-// class-level annotations (`@tool`, `@abstract`, ...), `class_name`/`extends`,
-// and the body. So the import is inserted right after the last `namespace`/
-// `import` line; when the file has neither, it goes at the very top, before any
-// leading class annotations. Returns a 0-based line index; the import is inserted
-// at the start of that line.
-// True when `p_stripped` begins with the keyword `p_keyword` followed by
-// whitespace (a space or tab). `namespace\tgame` is as valid as `namespace game`.
-bool line_starts_with_keyword(const String &p_stripped, const char *p_keyword) {
-	const String keyword = p_keyword;
-	if (!p_stripped.begins_with(keyword) || p_stripped.length() <= keyword.length()) {
-		return false;
-	}
-	const char32_t next = p_stripped[keyword.length()];
-	return next == ' ' || next == '\t';
-}
-
-int find_import_insertion_line(const Vector<String> &p_lines) {
-	int insertion_line = 0;
-	for (int i = 0; i < p_lines.size(); i++) {
-		const String stripped = p_lines[i].strip_edges();
-		if (stripped.is_empty() || stripped.begins_with("#")) {
-			continue;
-		}
-		if (line_starts_with_keyword(stripped, "namespace") || line_starts_with_keyword(stripped, "import")) {
-			insertion_line = i + 1;
-			continue;
-		}
-		// The namespace/import prologue ends at the first class-level annotation,
-		// `class_name`/`extends`/body, etc. Imports must precede all of these, so
-		// stop scanning rather than risk matching `import`/`namespace` text deeper
-		// in the file.
-		break;
-	}
-	return insertion_line;
-}
-
 // Builds the namespace render context for the root class of the edited file.
-TypeAnnotationRenderContext make_type_annotation_render_context(const Vector<String> &p_lines, const GDScriptParser::ClassNode *p_root) {
+TypeAnnotationRenderContext make_type_annotation_render_context(const GDScriptParser::ClassNode *p_root) {
 	TypeAnnotationRenderContext context;
 	if (p_root != nullptr) {
 		context.scope.current_namespace = p_root->namespace_name;
 		context.scope.imported_namespaces = p_root->imports;
 	}
-	context.import_insert_line = find_import_insertion_line(p_lines);
 	return context;
-}
-
-// Turns the set of namespaces an annotation needs into a single import edit that
-// inserts one `import <namespace>` line per namespace at the file's import
-// insertion point. Namespaces already imported by the file are skipped. Returns
-// false when nothing needs importing.
-bool build_import_edit(const TypeAnnotationRenderContext &p_context, const HashSet<String> &p_required_imports, RefactorTextEdit &r_edit) {
-	Vector<String> to_add;
-	for (const String &required : p_required_imports) {
-		if (p_context.scope.imported_namespaces.has(required)) {
-			continue;
-		}
-		to_add.push_back(required);
-	}
-	if (to_add.is_empty()) {
-		return false;
-	}
-	// Deterministic order keeps the inserted imports stable across runs.
-	to_add.sort();
-	String inserted;
-	for (const String &namespace_name : to_add) {
-		inserted += "import " + namespace_name + "\n";
-	}
-	r_edit.start_line = p_context.import_insert_line;
-	r_edit.start_column = 0;
-	r_edit.end_line = p_context.import_insert_line;
-	r_edit.end_column = 0;
-	r_edit.new_text = inserted;
-	return true;
 }
 
 struct ExtractVariableCandidate {
@@ -698,20 +622,13 @@ bool render_annotation_or_disable(const GDScriptParser::DataType &p_type, TypeAn
 		return true;
 	}
 
-	// Namespace-aware rendering: a cross-namespace class is spelled qualified and
-	// carries the `import` it needs, so the annotation resolves at the insertion
-	// site rather than being dropped by the verification harness.
+	// Namespace-aware rendering: a cross-namespace class is spelled so it resolves
+	// at the insertion site (bare when already in scope, qualified otherwise),
+	// rather than emitting a bare name the verification harness would then drop.
 	HashSet<String> required_imports;
 	if (!GDScriptRefactorTypes::render_annotatable_type_in_scope(p_type, p_render_context->scope, r_rendered, required_imports)) {
 		r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
 		return false;
-	}
-	if (!required_imports.is_empty()) {
-		RefactorTextEdit import_edit;
-		if (build_import_edit(*p_render_context, required_imports, import_edit)) {
-			r_candidate.import_edit = import_edit;
-			r_candidate.has_import_edit = true;
-		}
 	}
 	return true;
 }
@@ -1920,18 +1837,13 @@ void apply_callsite_parameter_type_annotation(
 		return;
 	}
 
-	// Render namespace-aware so a cross-namespace parameter type is qualified and
-	// carries the `import` it needs, matching the other annotation sites.
+	// Render namespace-aware so a cross-namespace parameter type is spelled to
+	// resolve at the insertion site, matching the other annotation sites.
 	if (p_render_context != nullptr && has_inferred_type) {
 		String scoped_rendered;
 		HashSet<String> required_imports;
 		if (GDScriptRefactorTypes::render_annotatable_type_in_scope(inferred_type, p_render_context->scope, scoped_rendered, required_imports)) {
 			rendered_type = scoped_rendered;
-			RefactorTextEdit import_edit;
-			if (!required_imports.is_empty() && build_import_edit(*p_render_context, required_imports, import_edit)) {
-				r_candidate.import_edit = import_edit;
-				r_candidate.has_import_edit = true;
-			}
 		}
 	}
 
@@ -5060,7 +4972,7 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
 ) {
 	// The interactive caret-located refactor applies edits directly without the
 	// verification harness, so member container inference is left disabled here.
-	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(p_lines, p_tree);
+	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(p_tree);
 	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location, /* allow_member_inference */ false, &render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
@@ -6127,11 +6039,6 @@ RefactorResult prepare_type_annotation(
 	}
 
 	result.ok = true;
-	// Insert the import before the annotation so a top-to-bottom applier adds the
-	// `import` line without shifting the annotation's columns.
-	if (candidate.has_import_edit) {
-		result.edits.push_back(candidate.import_edit);
-	}
 	result.edits.push_back(candidate.edit);
 	return result;
 }
@@ -6180,7 +6087,7 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 	}
 #endif // GDSCRIPT_NO_LSP
 
-	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(lines, tree);
+	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(tree);
 	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr, p_context.allow_member_container_inference, &render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
@@ -6196,12 +6103,6 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 		public_candidate.line = candidate.line;
 		public_candidate.column = candidate.caret_span_start; // Anchor at the start of the declaration span.
 		if (candidate.enabled) {
-			// The import edit sorts before the annotation edit so a batch applier that
-			// edits top-to-bottom inserts the `import` line without shifting the
-			// later annotation's columns.
-			if (candidate.has_import_edit) {
-				public_candidate.edits.push_back(candidate.import_edit);
-			}
 			public_candidate.edits.push_back(candidate.edit);
 		}
 		result.candidates.push_back(public_candidate);

@@ -34,7 +34,6 @@
 
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
-#include "core/templates/hash_map.h"
 #include "core/variant/variant.h"
 
 namespace {
@@ -146,86 +145,55 @@ bool namespace_is_in_scope(const String &p_namespace, const GDScriptRefactorType
 	return false;
 }
 
-enum class ClassSpelling {
-	BARE_NO_IMPORT, // Bare name already resolves to the target.
-	BARE_WITH_IMPORT, // Bare name resolves to the target once the namespace is imported.
-	QUALIFIED, // Use the fully-qualified `namespace.Class`, which resolves on its own.
-};
-
-// Chooses the minimal class spelling that resolves to `p_target_namespace`'s
-// `p_class_name` at the annotation site. Prefers the bare name (optionally adding
-// an import), and falls back to the always-resolvable qualified spelling when a
-// bare reference would be shadowed or ambiguous.
-ClassSpelling choose_class_spelling(const String &p_target_namespace, const String &p_class_name, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
+// True when the bare `p_class_name` resolves to `p_target_namespace`'s class at
+// the annotation site. A class already in scope is rendered bare; anything else
+// is rendered fully-qualified, which resolves on its own without an import.
+//
+// Out-of-scope classes are intentionally NOT rendered bare-with-a-new-import:
+// adding an `import` exposes every class in that namespace, which can make an
+// unrelated bare name ambiguous, and per-candidate import edits cannot coordinate
+// across sibling annotations in a batch. The qualified spelling sidesteps both
+// hazards.
+bool bare_name_resolves_to_target(const String &p_target_namespace, const String &p_class_name, const GDScriptRefactorTypes::AnnotationScope &p_scope) {
 	// A bare name colliding with a builtin/native/global-namespace class can never
-	// name a namespaced class (the analyzer resolves those first), and importing
-	// cannot change that. This holds even for a same-namespace class, so the check
-	// comes first.
+	// name a namespaced class (the analyzer resolves those first). This holds even
+	// for a same-namespace class, so the check comes first.
 	if (bare_name_is_globally_shadowed(p_class_name)) {
-		return ClassSpelling::QUALIFIED;
+		return false;
 	}
 	// A class in the current namespace resolves bare to itself; the current
 	// namespace wins over imports. (A same-named class elsewhere in the current
 	// namespace is a project-level conflict regardless of this refactor.)
 	if (p_target_namespace == p_scope.current_namespace) {
-		return ClassSpelling::BARE_NO_IMPORT;
+		return true;
 	}
 	// Another in-scope namespace defining the same name makes a bare reference
-	// ambiguous; importing the target would not help.
+	// ambiguous.
 	if (count_conflicting_in_scope_definitions(p_target_namespace, p_class_name, p_scope) > 0) {
-		return ClassSpelling::QUALIFIED;
+		return false;
 	}
-	if (namespace_is_in_scope(p_target_namespace, p_scope)) {
-		return ClassSpelling::BARE_NO_IMPORT;
-	}
-	return ClassSpelling::BARE_WITH_IMPORT;
+	return namespace_is_in_scope(p_target_namespace, p_scope);
 }
 
-// Mutable state shared across one annotation's leaves so import decisions stay
-// consistent: required imports accumulate here, and bare-imported class names are
-// recorded so a second leaf cannot import a *different* namespace under the same
-// bare name (which GDScript would then report as ambiguous).
+// Mutable state shared across one annotation's leaves. When force_qualified is
+// true, every namespaced class is rendered fully qualified regardless of scope;
+// used to build a scope-independent identity for comparing types across call
+// sites.
 struct RenderState {
-	HashSet<String> required_imports;
-	HashMap<String, String> bare_imported_namespace_by_class; // class name -> namespace committed to a bare-with-import spelling.
-	// When true, every namespaced class is rendered fully qualified and no imports
-	// are recorded. Used to build a scope-independent identity for comparing types
-	// across call sites.
+	HashSet<String> required_imports; // Currently always empty; see render_annotatable_type_in_scope.
 	bool force_qualified = false;
 };
 
 // Mirrors DataType::to_string() for the container/type-argument/signature
 // structure, but renders each CLASS/SCRIPT leaf with the minimal in-scope
-// spelling and records the namespaces that must be imported.
+// spelling.
 bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefactorTypes::AnnotationScope &p_scope, String &r_rendered, RenderState &r_state) {
 	String target_namespace;
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
-		ClassSpelling spelling_kind = r_state.force_qualified ? ClassSpelling::QUALIFIED : choose_class_spelling(target_namespace, class_name, p_scope);
-		// A bare-with-import leaf must not collide with another namespace already
-		// imported under the same bare name in this annotation; qualify instead.
-		if (spelling_kind == ClassSpelling::BARE_WITH_IMPORT) {
-			const String *committed = r_state.bare_imported_namespace_by_class.getptr(class_name);
-			if (committed != nullptr && *committed != target_namespace) {
-				spelling_kind = ClassSpelling::QUALIFIED;
-			}
-		}
-		String spelling;
-		switch (spelling_kind) {
-			case ClassSpelling::BARE_NO_IMPORT:
-				spelling = class_name;
-				break;
-			case ClassSpelling::BARE_WITH_IMPORT:
-				spelling = class_name;
-				r_state.required_imports.insert(target_namespace);
-				r_state.bare_imported_namespace_by_class[class_name] = target_namespace;
-				break;
-			case ClassSpelling::QUALIFIED:
-				// A fully-qualified `namespace.Class` resolves on its own, so it needs
-				// no import.
-				spelling = target_namespace + "." + class_name;
-				break;
-		}
+		const bool render_bare = !r_state.force_qualified && bare_name_resolves_to_target(target_namespace, class_name, p_scope);
+		// A fully-qualified `namespace.Class` resolves on its own, so it needs no import.
+		String spelling = render_bare ? class_name : target_namespace + "." + class_name;
 		// Specialized type arguments on a namespaced class still need scoping.
 		if (!p_type.type_arguments.is_empty()) {
 			String arguments;
