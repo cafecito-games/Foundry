@@ -63,6 +63,25 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 		// p_root may be a `res://` path or an absolute OS path; globalize_path() handles both.
 		const String project_path = ProjectSettings::get_singleton()->globalize_path(p_root);
 		result.vcs_guard = ScriptRefactorVCSGuard::inspect_project(project_path);
+
+		// The tree-level status check ignores `.gitignore`d build artifacts to avoid false
+		// positives, but a git-ignored file that is itself a migration target would be
+		// overwritten with no version-control recovery. The driver knows the concrete target
+		// set, so it checks that here and upgrades an otherwise-clean verdict accordingly.
+		if (result.vcs_guard.status == ScriptRefactorVCSGuard::Status::SAFE) {
+			Vector<String> globalized_targets;
+			for (const String &file : scan.files) {
+				globalized_targets.push_back(ProjectSettings::get_singleton()->globalize_path(file));
+			}
+			result.ignored_targets = ScriptRefactorVCSGuard::find_ignored_targets(project_path, globalized_targets);
+			if (!result.ignored_targets.is_empty()) {
+				result.vcs_guard.status = ScriptRefactorVCSGuard::Status::IGNORED_TARGETS;
+				result.vcs_guard.message = vformat(
+						TTR("%d script(s) this migration would change are excluded from version control (.gitignore). They cannot be restored from git after the migration. Commit or un-ignore them, or back up before continuing."),
+						result.ignored_targets.size());
+			}
+		}
+
 		if (result.vcs_guard.should_warn() && !p_options.acknowledge_vcs_warning) {
 			result.blocked_by_vcs_guard = true;
 			result.error_message = result.vcs_guard.message;

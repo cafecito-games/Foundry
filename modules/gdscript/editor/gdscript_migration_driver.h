@@ -72,6 +72,10 @@ struct MigrationDriverResult {
 	// before the inference stage and no file is modified.
 	ScriptRefactorVCSGuard::Result vcs_guard;
 	bool blocked_by_vcs_guard = false;
+	// Migration-target scripts that git ignores, so they would be overwritten with no
+	// version-control recovery. Populated only when the tree is otherwise clean and the
+	// guard is enabled; a non-empty list drives the IGNORED_TARGETS guard status.
+	Vector<String> ignored_targets;
 
 	// Scan stage.
 	Vector<String> scanned_files; // Every `.gd` the driver considered, deterministically ordered.

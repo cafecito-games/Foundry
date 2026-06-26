@@ -203,6 +203,65 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project detects a real git w
 	DirAccess::remove_absolute(dir);
 }
 
+TEST_CASE("[Editor][ScriptRefactorVCSGuard] find_ignored_targets reports only git-ignored targets") {
+	if (!git_is_available()) {
+		return;
+	}
+	const String dir = OS::get_singleton()->get_cache_path().path_join("vcs_guard_ignored_" + itos(OS::get_singleton()->get_ticks_usec()));
+	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(dir), OK);
+
+	auto run_git_in = [&dir](const Vector<String> &p_args) {
+		List<String> args;
+		args.push_back("-C");
+		args.push_back(dir);
+		for (const String &arg : p_args) {
+			args.push_back(arg);
+		}
+		int exit_code = -1;
+		const Error err = OS::get_singleton()->execute("git", args, nullptr, &exit_code, true);
+		return err == OK && exit_code == 0;
+	};
+
+	auto write = [](const String &p_path, const String &p_contents) {
+		Error err = OK;
+		Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &err);
+		REQUIRE_EQ(err, OK);
+		REQUIRE(file.is_valid());
+		CHECK(file->store_string(p_contents));
+		file->close();
+	};
+
+	REQUIRE(run_git_in({ "init" }));
+	REQUIRE(run_git_in({ "config", "user.email", "test@example.com" }));
+	REQUIRE(run_git_in({ "config", "user.name", "Test" }));
+
+	// generated.gd is git-ignored; tracked.gd is not.
+	write(dir.path_join(".gitignore"), "generated.gd\n");
+	const String tracked = dir.path_join("tracked.gd");
+	const String ignored = dir.path_join("generated.gd");
+	write(tracked, "var a := 1\n");
+	write(ignored, "var b := 2\n");
+
+	Vector<String> targets;
+	targets.push_back(tracked);
+	targets.push_back(ignored);
+
+	const Vector<String> result = find_ignored_targets(dir, targets);
+	REQUIRE_EQ(result.size(), 1);
+	CHECK(result[0].ends_with("generated.gd"));
+
+	// No ignored targets -> empty result.
+	Vector<String> only_tracked;
+	only_tracked.push_back(tracked);
+	CHECK(find_ignored_targets(dir, only_tracked).is_empty());
+
+	Ref<DirAccess> cleanup = DirAccess::open(dir);
+	if (cleanup.is_valid()) {
+		cleanup->erase_contents_recursive();
+	}
+	DirAccess::remove_absolute(dir);
+}
+
 } // namespace TestScriptRefactorVCSGuard
 
 #endif // TOOLS_ENABLED

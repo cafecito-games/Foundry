@@ -33,6 +33,7 @@
 #ifdef TOOLS_ENABLED
 
 #include "core/string/ustring.h"
+#include "core/templates/vector.h"
 
 // Safety guard for the migration wizard's atomic apply step.
 //
@@ -54,6 +55,9 @@ enum class Status {
 	UNVERSIONED,
 	// The working tree has uncommitted changes.
 	DIRTY,
+	// The working tree is otherwise clean, but one or more files the migration
+	// would overwrite are git-ignored and therefore not recoverable from git.
+	IGNORED_TARGETS,
 	// The project is versioned but git could not be run to inspect it.
 	UNKNOWN,
 };
@@ -94,6 +98,15 @@ Result evaluate(const WorkingTreeState &p_state);
 // returns the guard result. Pass the empty string to inspect the current
 // editor project (res://).
 Result inspect_project(const String &p_project_path = String());
+
+// Returns the subset of p_target_paths (absolute OS paths) that git considers
+// ignored under p_project_path's repository. The tree-level status check
+// deliberately ignores `.gitignore`d build artifacts to avoid false positives,
+// but a git-ignored file that is itself a migration target would be overwritten
+// with no version-control recovery; callers that know their concrete target set
+// use this to detect that case. Returns an empty vector when git is unavailable,
+// the project is outside a work tree, or no targets are ignored.
+Vector<String> find_ignored_targets(const String &p_project_path, const Vector<String> &p_target_paths);
 
 } // namespace ScriptRefactorVCSGuard
 

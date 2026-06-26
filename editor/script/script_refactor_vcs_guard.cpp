@@ -153,6 +153,48 @@ Result inspect_project(const String &p_project_path) {
 	return evaluate(state);
 }
 
+Vector<String> find_ignored_targets(const String &p_project_path, const Vector<String> &p_target_paths) {
+	Vector<String> ignored;
+	if (p_target_paths.is_empty()) {
+		return ignored;
+	}
+
+	String project_path = p_project_path;
+	if (project_path.is_empty()) {
+		project_path = ProjectSettings::get_singleton()->globalize_path("res://");
+	}
+	project_path = project_path.trim_suffix("/");
+
+	// `git check-ignore <paths...>` prints, one per line, the paths that match an
+	// ignore rule and exits 0 if any matched, 1 if none, and >1 on error. It is
+	// silent for paths outside the repository, so a clean run simply yields none.
+	Vector<String> args;
+	args.push_back("check-ignore");
+	for (const String &target : p_target_paths) {
+		args.push_back(target);
+	}
+
+	int exit_code = 0;
+	String output;
+	if (!run_git(project_path, args, exit_code, output)) {
+		return ignored; // git unavailable: nothing to report here.
+	}
+	// Exit code 1 (nothing ignored) is normal; >1 indicates an error (e.g. not a
+	// repo), in which case there is nothing reliable to report.
+	if (exit_code > 1) {
+		return ignored;
+	}
+
+	const PackedStringArray lines = output.split("\n", false);
+	for (const String &line : lines) {
+		const String trimmed = line.strip_edges();
+		if (!trimmed.is_empty()) {
+			ignored.push_back(trimmed);
+		}
+	}
+	return ignored;
+}
+
 } // namespace ScriptRefactorVCSGuard
 
 #endif // TOOLS_ENABLED
