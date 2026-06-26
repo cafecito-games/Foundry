@@ -103,8 +103,30 @@ static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_lef
 	return true;
 }
 
+// Whether a Callable/Signal type carries the rich `method_parameter_types`/`method_return_type`
+// recursion data rather than only a `MethodInfo`. Explicit `Callable[[...], ...]` annotations set
+// `has_explicit_method_signature`, but lambdas and function references populate the rich vectors from
+// their FunctionNode without that flag (see `make_callable_type(MethodInfo, FunctionNode)` in the
+// analyzer). A native, MethodInfo-only callable records neither parameter nor return DataTypes, so it
+// is distinguished by both rich vectors being empty. A Callable always records its return type (even
+// `void`), and a zero-argument callable legitimately has an empty parameter vector, so the presence of
+// either rich vector signals that the structural recursion is available.
+static bool _has_rich_method_signature(const GDScriptParser::DataType &p_type) {
+	if (!p_type.has_method_signature) {
+		return false;
+	}
+	return p_type.has_explicit_method_signature ||
+			!p_type.method_parameter_types.is_empty() ||
+			!p_type.method_return_type.is_empty();
+}
+
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
-	if (p_left.has_explicit_method_signature && p_right.has_explicit_method_signature) {
+	// Use the structural recursion whenever both sides carry rich signature data, not only when both
+	// were written as explicit annotations. Lambda/function-reference Callables preserve their nested
+	// parameter/return signatures here too, so a mismatch buried inside them (e.g. a parameter typed
+	// `Callable[[String], void]` against a required `Callable[[int], void]`) is caught instead of being
+	// erased by the lossy `MethodInfo` fallback below.
+	if (_has_rich_method_signature(p_left) && _has_rich_method_signature(p_right)) {
 		if (p_left.method_parameter_types.size() != p_right.method_parameter_types.size()) {
 			return false;
 		}
