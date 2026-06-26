@@ -988,6 +988,9 @@ static void _collect_visible_custom_annotations(GDScriptParser &p_parser, const 
 
 	const String current_namespace = head->namespace_name;
 
+	// Gather short names visible through the current namespace or explicit imports, excluding the
+	// same-file declarations already registered above (which take precedence).
+	HashSet<String> indexed_short_names;
 	List<StringName> identities;
 	language->get_global_annotation_list(&identities);
 	for (const StringName &identity : identities) {
@@ -995,44 +998,69 @@ static void _collect_visible_custom_annotations(GDScriptParser &p_parser, const 
 		const int dot = qualified_name.rfind_char('.');
 		const String declaration_namespace = dot < 0 ? String() : qualified_name.substr(0, dot);
 		const String short_name = dot < 0 ? qualified_name : qualified_name.substr(dot + 1);
-
-		bool visible = declaration_namespace == current_namespace;
-		if (!visible) {
-			visible = head->imports.has(declaration_namespace);
-		}
-		if (!visible) {
-			continue;
-		}
-
-		// Same-file declarations registered under this short name already win.
 		if (r_annotations.has(StringName(short_name))) {
 			continue;
 		}
+		if (declaration_namespace == current_namespace || head->imports.has(declaration_namespace)) {
+			indexed_short_names.insert(short_name);
+		}
+	}
 
-		const String declaration_path = language->get_global_annotation_path(identity);
-		if (declaration_path.is_empty() || GDScript::is_canonically_equal_paths(declaration_path, p_path)) {
-			// The local declarations of this file were already searched above.
-			continue;
+	for (const String &short_name : indexed_short_names) {
+		// Mirror `GDScriptAnalyzer::resolve_custom_annotation_declaration`: the current namespace
+		// takes precedence over imports, and a short name provided by two or more imports (or by a
+		// canonical identity declared in multiple files) is ambiguous. An ambiguous or unresolved
+		// name is still offered for completion, but without a declaration it does not bind for
+		// argument hints or go-to-definition (matching how the script itself fails to resolve it).
+		String resolved_identity;
+
+		const String own_identity = current_namespace.is_empty() ? short_name : current_namespace + "." + short_name;
+		if (language->is_global_annotation(StringName(own_identity))) {
+			if (!language->is_duplicated_global_annotation(StringName(own_identity))) {
+				resolved_identity = own_identity;
+			}
+		} else {
+			LocalVector<String> checked_imports;
+			Vector<String> matching_identities;
+			for (const String &import : head->imports) {
+				if (checked_imports.has(import)) {
+					continue;
+				}
+				checked_imports.push_back(import);
+				const String identity = import + "." + short_name;
+				if (language->is_global_annotation(StringName(identity))) {
+					matching_identities.push_back(identity);
+				}
+			}
+			if (matching_identities.size() == 1 && !language->is_duplicated_global_annotation(StringName(matching_identities[0]))) {
+				resolved_identity = matching_identities[0];
+			}
 		}
 
 		GDScriptVisibleAnnotation entry;
 		entry.short_name = short_name;
-		entry.qualified_name = qualified_name;
-		entry.path = declaration_path;
 
-		// Load the declaring file so its signature (parameters, defaults, variadic) is available.
-		Ref<GDScriptParserRef> ref = p_parser.get_depended_parser_for(declaration_path);
-		if (ref.is_valid() && ref->raise_status(GDScriptParserRef::INTERFACE_SOLVED) == OK) {
-			GDScriptParser *external_parser = ref->get_parser();
-			if (external_parser != nullptr && external_parser->get_tree() != nullptr) {
-				for (const GDScriptParser::AnnotationDeclarationNode *declaration : external_parser->get_tree()->annotation_declarations) {
-					if (declaration->qualified_name == qualified_name) {
-						entry.declaration = declaration;
-						break;
+		if (!resolved_identity.is_empty()) {
+			const String declaration_path = language->get_global_annotation_path(StringName(resolved_identity));
+			if (!declaration_path.is_empty() && !GDScript::is_canonically_equal_paths(declaration_path, p_path)) {
+				entry.qualified_name = resolved_identity;
+				entry.path = declaration_path;
+
+				// Load the declaring file so its signature (parameters, defaults, variadic) is available.
+				Ref<GDScriptParserRef> ref = p_parser.get_depended_parser_for(declaration_path);
+				if (ref.is_valid() && ref->raise_status(GDScriptParserRef::INTERFACE_SOLVED) == OK) {
+					GDScriptParser *external_parser = ref->get_parser();
+					if (external_parser != nullptr && external_parser->get_tree() != nullptr) {
+						for (const GDScriptParser::AnnotationDeclarationNode *declaration : external_parser->get_tree()->annotation_declarations) {
+							if (declaration->qualified_name == resolved_identity) {
+								entry.declaration = declaration;
+								break;
+							}
+						}
 					}
+					r_parser_refs.push_back(ref);
 				}
 			}
-			r_parser_refs.push_back(ref);
 		}
 
 		r_annotations[StringName(short_name)] = entry;
