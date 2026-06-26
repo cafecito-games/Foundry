@@ -1,0 +1,13 @@
+GDTEST_OK
+5
+box:5
+true
+true
+inner
+true
+5
+true
+true
+true
+local
+const alias inner class construction ok
