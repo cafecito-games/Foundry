@@ -35,10 +35,23 @@
 #include "tests/test_macros.h"
 
 #include "../editor/gdscript_migration_wizard.h"
+#include "../editor/gdscript_migration_wizard_plugin.h"
 
 #include "core/io/file_access.h"
+#include "core/object/class_db.h"
 
 #include "test_migration_driver.h" // GDScriptTests::TemporaryProjectSubtree, unguarded_options
+
+namespace GDScriptTests {
+
+TEST_SUITE("[Modules][GDScript][MigrationWizard][Editor]") {
+	TEST_CASE("Dialog class exposes the inherited confirmation signal") {
+		CHECK(ClassDB::class_exists(GDScriptMigrationWizardDialog::get_class_static()));
+		CHECK(ClassDB::has_signal(GDScriptMigrationWizardDialog::get_class_static(), SNAME("confirmed")));
+	}
+}
+
+} // namespace GDScriptTests
 
 #ifndef GDSCRIPT_NO_LSP
 
