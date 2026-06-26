@@ -2726,6 +2726,12 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_anno
 	const String usage_name = String(p_annotation->name);
 	const String short_name = usage_name.begins_with("@") ? usage_name.substr(1) : usage_name;
 
+	// A fully qualified usage such as `@cafecito.test.timeout` carries its own canonical identity.
+	// It resolves directly against that identity and never depends on the active imports.
+	if (short_name.contains_char('.')) {
+		return resolve_qualified_annotation_declaration(short_name, p_annotation);
+	}
+
 	// 1. The current file's namespace. A declaration in this file is available directly with its
 	// resolved signature; the local search also takes precedence over imported namespaces.
 	for (GDScriptParser::AnnotationDeclarationNode *declaration : parser->head->annotation_declarations) {
@@ -2802,6 +2808,45 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_anno
 
 	// 3. No custom declaration is visible. Built-in annotations never reach here.
 	push_error(vformat(R"(Unknown annotation "%s". Custom annotations must be declared in the current namespace or an imported namespace.)", p_annotation->name), p_annotation);
+	return nullptr;
+}
+
+GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_qualified_annotation_declaration(const String &p_identity, GDScriptParser::AnnotationNode *p_annotation) {
+	// `p_identity` is the bare dotted path of the usage, which is also the canonical declaration
+	// identity. The leading segments name the declaring namespace and the final segment is the
+	// annotation's short name. A qualified usage is unambiguous by construction and is resolved
+	// without consulting imports.
+
+	// 1. A declaration in the current file whose canonical identity matches. Searching locally first
+	// keeps a same-file declaration authoritative and avoids the index's same-file path guard.
+	for (GDScriptParser::AnnotationDeclarationNode *declaration : parser->head->annotation_declarations) {
+		if (declaration->qualified_name == p_identity) {
+			resolve_annotation_declaration(declaration);
+			return declaration;
+		}
+	}
+
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	if (language == nullptr) {
+		push_error(vformat(R"(Unknown annotation "%s".)", p_annotation->name), p_annotation);
+		return nullptr;
+	}
+
+	// 2. Any indexed declaration with this identity, in any namespace, regardless of imports.
+	if (language->is_global_annotation(StringName(p_identity))) {
+		if (language->is_duplicated_global_annotation(StringName(p_identity))) {
+			push_error(vformat(R"(Ambiguous annotation "%s": the canonical identity "%s" is declared in multiple files.)", p_annotation->name, p_identity), p_annotation);
+			return nullptr;
+		}
+		bool error_reported = false;
+		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(p_identity, p_annotation, error_reported);
+		if (declaration != nullptr || error_reported) {
+			return declaration;
+		}
+	}
+
+	// 3. No declaration carries this identity. Built-in annotations are never dotted.
+	push_error(vformat(R"(Unknown annotation "%s". A fully qualified annotation must name an existing declaration.)", p_annotation->name), p_annotation);
 	return nullptr;
 }
 
