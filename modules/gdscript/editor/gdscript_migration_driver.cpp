@@ -59,7 +59,11 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 	// working tree before touching any file and, unless the caller has acknowledged the
 	// warning, refuse to run over an unversioned, dirty, or indeterminate project. This
 	// resolves issue #42's second acceptance criterion.
-	if (p_options.enforce_vcs_safety_guard) {
+	//
+	// A dry run restores every touched file before returning and never leaves a change
+	// on disk, so version-control safety does not apply; the projection report relies on
+	// this to run over a working tree it does not own (e.g. an uncommitted CI checkout).
+	if (p_options.enforce_vcs_safety_guard && !p_options.inference.dry_run) {
 		// p_root may be a `res://` path or an absolute OS path; globalize_path() handles both.
 		const String project_path = ProjectSettings::get_singleton()->globalize_path(p_root);
 		result.vcs_guard = ScriptRefactorVCSGuard::inspect_project(project_path);
