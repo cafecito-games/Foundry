@@ -570,6 +570,11 @@ public:
 	struct CallNode : public ExpressionNode {
 		ExpressionNode *callee = nullptr;
 		Vector<ExpressionNode *> arguments;
+		// Parallel to `arguments`: the explicit parameter name for each argument written as
+		// `name = value` at the call site, or an empty `StringName` for a positional argument.
+		// The parser only records this surface syntax; the analyzer maps the names to parameter
+		// positions and rewrites the call into canonical positional order.
+		Vector<StringName> argument_names;
 		StringName function_name;
 		bool is_super = false;
 		bool is_static = false;

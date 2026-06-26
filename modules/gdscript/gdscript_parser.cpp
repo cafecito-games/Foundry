@@ -4028,11 +4028,36 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_call(ExpressionNode *p_pre
 			// Allow for trailing comma.
 			break;
 		}
-		ExpressionNode *argument = parse_expression(false);
+		// Stop on a trailing "=" so a leading identifier followed by "=" can be read as a
+		// named argument (`name = value`). GDScript assignment is a statement, never an
+		// expression, so `IDENTIFIER` + `EQUAL` here is unambiguously a named argument;
+		// `f(a == b)` uses `EQUAL_EQUAL` and `f(a)` has no following "=".
+		ExpressionNode *argument = parse_expression(false, true);
+		StringName argument_name;
+		if (argument != nullptr && check(GDScriptTokenizer::Token::EQUAL)) {
+			if (argument->type == Node::IDENTIFIER) {
+				argument_name = static_cast<IdentifierNode *>(argument)->name;
+				advance(); // Consume "=".
+				make_completion_context(ct, call, argument_index);
+				argument = parse_expression(false);
+				if (argument == nullptr) {
+					push_error(vformat(R"(Expected expression after "%s =" named argument.)", argument_name));
+				}
+			} else {
+				// A non-identifier target before "=" is an attempted assignment, which is not
+				// a valid expression argument. Consume the rest so the stream recovers cleanly.
+				push_error(R"(Assignment is not allowed inside an expression.)");
+				advance(); // Consume "=".
+				parse_expression(false);
+			}
+		}
 		if (argument == nullptr) {
-			push_error(R"(Expected expression as the function argument.)");
+			if (argument_name == StringName()) {
+				push_error(R"(Expected expression as the function argument.)");
+			}
 		} else {
 			call->arguments.push_back(argument);
+			call->argument_names.push_back(argument_name);
 
 			if (argument->type == Node::LITERAL) {
 				override_completion_context(argument, ct, call, argument_index);
