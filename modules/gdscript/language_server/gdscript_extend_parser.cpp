@@ -882,11 +882,14 @@ Error ExtendGDScriptParser::get_left_function_call(const LSP::Position &p_positi
 }
 
 const LSP::DocumentSymbol *ExtendGDScriptParser::get_symbol_defined_at_line(int p_line, const String &p_symbol_name) const {
-	// Line 0 (or an unset location) resolves to the script root, which also represents the root
-	// class symbol. When a different symbol is requested by name, search instead so a declaration on
-	// the first line (e.g. the opening `annotation` line of an annotation-only file) resolves to its
-	// own symbol rather than the root.
-	if (p_line <= 0 && (p_symbol_name.is_empty() || p_symbol_name == class_symbol.name)) {
+	// A negative line is the location-0 root sentinel (e.g. autoload singletons), which always
+	// resolves to the script root. Line 0 is a genuine first source line: it resolves to the root
+	// only for a whole-line lookup or the root class itself, so a declaration on the first line
+	// (e.g. the opening `annotation` line of an annotation-only file) resolves to its own symbol.
+	if (p_line < 0) {
+		return &class_symbol;
+	}
+	if (p_line == 0 && (p_symbol_name.is_empty() || p_symbol_name == class_symbol.name)) {
 		return &class_symbol;
 	}
 	return search_symbol_defined_at_line(p_line, class_symbol, p_symbol_name);
