@@ -427,11 +427,13 @@ public:
 			if (!p_slot_rendered(binding->value.slot, slot_rendered)) {
 				continue;
 			}
-			// A position with no hard, renderable requirement (an untyped parameter,
-			// an untyped return, a soft assignment target) accepts the narrowed type
-			// just as it accepted `Variant`, so it never breaks.
+			// A position with no *hard*, renderable requirement accepts the narrowed
+			// type just as it accepted `Variant`, so it never breaks: an untyped
+			// parameter/return is `Variant`, and a weak (unannotated) assignment target
+			// has only an inferred type that downgrades on an incompatible store rather
+			// than rejecting it. Only a hard requirement actually rejects.
 			String required_rendered;
-			if (!GDScriptRefactorTypes::render_annotatable_type(use.required, required_rendered)) {
+			if (!use.required.is_hard_type() || !GDScriptRefactorTypes::render_annotatable_type(use.required, required_rendered)) {
 				continue;
 			}
 			if (required_rendered == slot_rendered) {
@@ -705,12 +707,15 @@ private:
 		return false;
 	}
 
-	// Array methods that return a single element value (typed as the element type on a
-	// typed array), so binding their result narrows just like `our_var[i]`.
+	// Array methods whose return type the analyzer specializes to the element type on a
+	// typed array, so binding their result narrows just like `our_var[i]`. This list
+	// must match the analyzer's own `is_array_element_accessor` specialization exactly;
+	// `max`/`min` are deliberately excluded because they keep a `Variant` return even on
+	// a typed array, so binding them never narrows.
 	static bool is_array_element_accessor(const StringName &p_name) {
 		static const char *methods[] = {
-			"get", "front", "back", "pop_back", "pop_front", "pop_at",
-			"pick_random", "max", "min",
+			"get", "front", "back", "pick_random",
+			"pop_back", "pop_front", "pop_at",
 			nullptr
 		};
 		for (int i = 0; methods[i] != nullptr; i++) {
@@ -721,18 +726,25 @@ private:
 		return false;
 	}
 
-	// Handles `var v = <init>`: when the initializer reads an element of the tracked
-	// array, records `v` as a narrowing read binding; when `v` is explicitly typed and
-	// the initializer is itself a narrowed read binding, records that as a typed use
-	// against `v`'s declared type.
+	// Handles `var v = <init>` / `var v := <init>` / `var v: T = <init>`.
+	//   - When the initializer reads an element of the tracked array, records `v` as a
+	//     narrowing read binding. A plain `=` local is soft (downgrades on reassignment,
+	//     so only typed uses narrow it); a `:=` local is hard, so a reassignment narrows
+	//     it too. A `:=` over a *subscript* read (`var v := our_var[i]`) is a parse error
+	//     over a bare array, so only an accessor-call `:=` reaches here.
+	//   - When `v` is explicitly typed and the initializer is itself a narrowed read
+	//     binding, records that as a typed use against `v`'s hard declared type.
 	void note_variable_initializer(const GDScriptParser::VariableNode *p_variable) {
 		if (p_variable == nullptr || p_variable->initializer == nullptr) {
 			return;
 		}
 		if (p_variable->datatype_specifier == nullptr) {
-			// An untyped soft local bound to an element read narrows with the array.
 			if (is_element_read_of_var(p_variable->initializer)) {
-				read_narrowing.note_soft_read_binding(p_variable, ReadNarrowingTracker::ARRAY_ELEMENT);
+				if (p_variable->infer_datatype) {
+					read_narrowing.note_loop_read_binding(p_variable, ReadNarrowingTracker::ARRAY_ELEMENT);
+				} else {
+					read_narrowing.note_soft_read_binding(p_variable, ReadNarrowingTracker::ARRAY_ELEMENT);
+				}
 			}
 		} else {
 			// `var v: T = <binding>`: the binding flows into a hard declared type.
@@ -1858,17 +1870,22 @@ private:
 		return false;
 	}
 
-	// Handles `var v = <init>`: when the initializer reads a value of the tracked
-	// dictionary, records `v` as a value-narrowing read binding; when `v` is explicitly
-	// typed and the initializer is itself a narrowed read binding, records that as a
-	// typed use against `v`'s declared type.
+	// Handles `var v = <init>` / `var v := <init>` / `var v: T = <init>`, mirroring the
+	// array walker: a value read of the tracked dictionary makes `v` a value-narrowing
+	// read binding (soft for plain `=`, hard for `:=`, which reaches here only as an
+	// accessor-call read since `var v := d[k]` is a parse error over a bare dictionary);
+	// a hard-typed `v` records a typed use of its narrowed-binding initializer.
 	void note_variable_initializer(const GDScriptParser::VariableNode *p_variable) {
 		if (p_variable == nullptr || p_variable->initializer == nullptr) {
 			return;
 		}
 		if (p_variable->datatype_specifier == nullptr) {
 			if (is_value_read_of_var(p_variable->initializer)) {
-				read_narrowing.note_soft_read_binding(p_variable, ReadNarrowingTracker::DICTIONARY_VALUE);
+				if (p_variable->infer_datatype) {
+					read_narrowing.note_loop_read_binding(p_variable, ReadNarrowingTracker::DICTIONARY_VALUE);
+				} else {
+					read_narrowing.note_soft_read_binding(p_variable, ReadNarrowingTracker::DICTIONARY_VALUE);
+				}
 			}
 		} else {
 			note_typed_use(p_variable->initializer, p_variable->get_datatype());
@@ -2805,12 +2822,16 @@ void walk_class_methods(Walker &p_walker, const GDScriptParser::ClassNode *p_cla
 					if (member.variable != p_tracked) {
 						p_walker.scan_initializer(member.variable->initializer);
 					}
-					// Inline `set`/`get` accessor bodies can mutate the tracked member.
+					// Inline `set`/`get` accessor bodies can mutate the tracked member, and a
+					// getter can `return <binding>`; each accessor body is checked against its
+					// own return contract, not whichever method was scanned last.
 					if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 						if (member.variable->setter != nullptr) {
+							p_walker.set_current_return_type(member.variable->setter->get_datatype());
 							p_walker.scan_suite(member.variable->setter->body);
 						}
 						if (member.variable->getter != nullptr) {
+							p_walker.set_current_return_type(member.variable->getter->get_datatype());
 							p_walker.scan_suite(member.variable->getter->body);
 						}
 					}

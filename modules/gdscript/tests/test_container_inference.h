@@ -500,6 +500,33 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 	}
+
+	TEST_CASE("A hard `:=` accessor binding reassigned incompatibly forces a conservative skip") {
+		// `var v := nums.get(0)` is a hard `Variant` over a bare array, so `v = "x"` is
+		// valid; typing `nums` as `Array[int]` specializes `get` to `int`, which the
+		// reassignment then rejects. Unlike a plain `=`, a `:=` local does not downgrade.
+		InferenceFixture fixture("func f():\n\tvar nums = [1]\n\tvar v := nums.get(0)\n\tv = \"x\"\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A read binding assigned to a weak (unannotated) local does not block inference") {
+		// `var s = ""` is a weak local: an incompatible store downgrades it to `Variant`
+		// rather than erroring, so narrowing the read never breaks `s = v`.
+		InferenceFixture fixture("func f():\n\tvar nums = [1]\n\tvar v = nums[0]\n\tvar s = \"\"\n\ts = v\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("A `max()` read binding used in a typed position does not block inference") {
+		// `max()` keeps a `Variant` return even on a typed array, so binding it never
+		// narrows; passing it to a `String` parameter stays valid after typing.
+		InferenceFixture fixture("func take_string(s: String) -> void:\n\tpass\nfunc f():\n\tvar nums = [1]\n\tvar v = nums.max()\n\ttake_string(v)\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
 }
 
 TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
