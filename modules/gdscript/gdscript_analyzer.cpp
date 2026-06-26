@@ -11301,24 +11301,18 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		// synthesized argument is recorded so generic inference and post-substitution validation skip
 		// it: its type is substituted from the receiver's (or method's) type arguments, and a baked
 		// default must behave like a trailing omitted default, which never participates in either.
-		// One case still cannot be inlined: a class metatype default (e.g. `cls = SomeClass`), which
-		// the compiler deliberately keeps out of the constant fast path and re-resolves to the live
-		// compiled subclass, something a baked literal cannot reproduce.
 		if (!parameter->initializer->is_constant) {
 			push_error(vformat(R"(Cannot skip parameter "%s": its default value is not a constant expression. Pass it explicitly.)", parameter_name), p_call);
-			p_call->argument_names.clear();
-			return false;
-		}
-		const GDScriptParser::DataType default_type = parameter->initializer->get_datatype();
-		if (default_type.is_meta_type && default_type.kind == GDScriptParser::DataType::CLASS) {
-			push_error(vformat(R"(Cannot skip parameter "%s": its default value is a class type that cannot be inlined. Pass it explicitly.)", parameter_name), p_call);
 			p_call->argument_names.clear();
 			return false;
 		}
 
 		// Synthesize a constant argument from the parameter's default. Marking it constant routes it
 		// through the normal constant-argument path in `validate_call_arg`, which applies the same
-		// builtin-type conversion a written literal would receive.
+		// builtin-type conversion a written literal would receive. A class-metatype default (e.g.
+		// `cls = SomeClass`) carries the analyzer's reduced class object, which may be a shallow
+		// same-unit class; the compiler re-points it to the live compiled subclass when it lowers the
+		// synthesized literal, exactly as it does for class-constant identifiers and `const` aliases.
 		GDScriptParser::LiteralNode *constant_argument = parser->alloc_node<GDScriptParser::LiteralNode>();
 		constant_argument->value = parameter->initializer->reduced_value;
 		constant_argument->reduced = true;
