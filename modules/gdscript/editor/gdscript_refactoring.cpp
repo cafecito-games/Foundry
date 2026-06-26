@@ -4886,10 +4886,14 @@ void collect_type_annotation_in_function(
 				function_context.scope.shadowing_local_names.push_back(type_parameter->identifier->name);
 			}
 		}
-		// The signature-level sites (parameters and return type) only see the
-		// function's parameters and type parameters. Body-local names are added
-		// suite by suite as the collector descends, so each annotation site uses
-		// the locals actually in scope there rather than a whole-function union.
+		// Signature type identifiers (parameters and return type) are parsed with
+		// `current_suite` set to the function body, so the analyzer resolves them
+		// against the body suite: a top-level body local shadows a signature
+		// annotation just like an enclosing-scope name. Add the body's own
+		// top-level locals here. Locals declared only in nested blocks are added
+		// suite by suite as the collector descends, so they shadow sites inside
+		// those blocks but not the signature or outer-block sites.
+		collect_own_suite_local_names(p_function->body, function_context.scope.shadowing_local_names);
 		render_context = &function_context;
 	}
 	for (int i = 0; i < p_function->parameters.size(); i++) {

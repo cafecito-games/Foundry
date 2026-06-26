@@ -4481,6 +4481,14 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			const RefactorCandidatesResult reanalyzed = GDScriptRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 			CHECK(reanalyzed.ok);
 		}
+		SUBCASE("a top-level body local still shadows a qualified annotation in scope") {
+			// `var refactor` is a top-level body local, so it is in scope at the
+			// sibling `var character` site. A qualified spelling rooted at
+			// `refactor` would resolve to that local, so the annotation must stay
+			// disabled rather than emit invalid GDScript.
+			String out;
+			CHECK_FALSE(annotate_local("res://refactor/namespace_annotation_toplevel_shadow.gd", out));
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
