@@ -148,6 +148,10 @@ class GDScriptCompiler {
 	void _set_error(const String &p_error, const GDScriptParser::Node *p_node);
 
 	GDScriptDataType _gdtype_from_datatype(const GDScriptParser::DataType &p_datatype, GDScript *p_owner, bool p_handle_metatype = true);
+	// A `const` aliasing a class in this compilation unit (`const Alias = Box`) folds to the analyzer's
+	// shallow, uncompiled class object; constructing through it (`Alias.new()`) fails. Re-point such a
+	// folded value at the live subclass compiled in this unit so the alias matches the inner-class name.
+	Variant _resolve_aliased_class_constant(const Variant &p_value);
 	// Re-resolve a still-open type-argument binding one level through a subclass's `extends Base[args]`
 	// specialization: a forwarded class parameter stays OPEN (remapped ordinal), a concrete argument
 	// becomes FIXED. Used when a subclass inherits a base's member and per-ancestor parameter bindings.

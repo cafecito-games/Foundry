@@ -2527,7 +2527,7 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					return ERR_PARSE_ERROR;
 				}
 
-				codegen.add_local_constant(lc->identifier->name, lc->initializer->reduced_value);
+				codegen.add_local_constant(lc->identifier->name, _resolve_aliased_class_constant(lc->initializer->reduced_value));
 			} break;
 			case GDScriptParser::Node::PASS:
 				// Nothing to do.
@@ -3204,6 +3204,29 @@ void GDScriptCompiler::_specialize_type_argument_binding(GDScript::TypeArgumentB
 	}
 }
 
+Variant GDScriptCompiler::_resolve_aliased_class_constant(const Variant &p_value) {
+	if (p_value.get_type() != Variant::OBJECT || main_script == nullptr) {
+		return p_value;
+	}
+	GDScript *folded_class = Object::cast_to<GDScript>(p_value);
+	if (folded_class == nullptr || folded_class->is_valid()) {
+		// Not a class, or an already-compiled class (e.g. an external preload). Leave it as-is.
+		return p_value;
+	}
+	GDScript *live_class = main_script->find_class(folded_class->get_fully_qualified_name());
+	// Only re-point a class that genuinely belongs to this compilation unit. `find_class` resolves a
+	// fully-qualified name against `main_script`'s subclass tree by matching its leading path prefix,
+	// so an unrelated external script whose path happened to prefix-collide could otherwise resolve to
+	// a same-named local class. Confirming the resolved class's fully-qualified name matches the folded
+	// one rejects such a collision: a true same-unit alias matches exactly, an external one does not.
+	if (live_class != nullptr && live_class->get_fully_qualified_name() == folded_class->get_fully_qualified_name()) {
+		// Re-point at the live class compiled in this unit — the same object the inner-class name
+		// itself resolves to. Mirrors the specialized-handle re-resolution from #242.
+		return Ref<GDScript>(live_class);
+	}
+	return p_value;
+}
+
 Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptParser::ClassNode *p_class, bool p_keep_state) {
 	if (parsed_classes.has(p_script)) {
 		return OK;
@@ -3503,7 +3526,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				const GDScriptParser::ConstantNode *constant = member.constant;
 				StringName name = constant->identifier->name;
 
-				p_script->constants.insert(name, constant->initializer->reduced_value);
+				p_script->constants.insert(name, _resolve_aliased_class_constant(constant->initializer->reduced_value));
 			} break;
 
 			case GDScriptParser::ClassNode::Member::ENUM_VALUE: {
