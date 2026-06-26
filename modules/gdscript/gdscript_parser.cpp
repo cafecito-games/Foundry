@@ -6146,9 +6146,13 @@ static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type)
 		case GDScriptParser::DataType::NATIVE:
 			return ClassDB::class_exists(p_type.native_type) && ClassDB::is_class_exposed(p_type.native_type);
 		case GDScriptParser::DataType::SCRIPT:
-			return p_type.script_type.is_valid() && p_type.script_type->get_global_name() != StringName();
 		case GDScriptParser::DataType::CLASS:
-			return p_type.class_type != nullptr && p_type.class_type->get_global_name() != StringName();
+			// A user script/class leaf is encoded by name but always decoded back as a SCRIPT kind, while
+			// a local annotation of the same class may resolve to a CLASS handle. Strict signature
+			// equality compares kinds, so an encoded user-class slot could be falsely rejected after the
+			// boundary. Treat these as non-round-trippable until the decoder/comparison agree on a kind;
+			// such callables cross untyped (gradual). Native classes are unaffected and still round-trip.
+			return false;
 		case GDScriptParser::DataType::ENUM:
 		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::RESOLVING:
