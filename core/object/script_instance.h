@@ -31,9 +31,11 @@
 #pragma once
 
 #include "core/object/ref_counted.h"
+#include "core/templates/vector.h"
 
 class Script;
 class ScriptLanguage;
+struct ContainerType;
 
 class ScriptInstance {
 public:
@@ -84,6 +86,11 @@ public:
 	virtual bool refcount_decremented() { return true; } //return true if it can die
 
 	virtual Ref<Script> get_script() const = 0;
+
+	// Reified generic type arguments bound onto this instance (e.g. the `int` in `Box[int].new()`).
+	// Empty for non-generic or unspecialized instances. Container validation uses these to keep
+	// `Box[int]` and `Box[String]` element typings distinct at runtime.
+	virtual void get_reified_type_arguments(Vector<ContainerType> &r_type_arguments) const {}
 
 	virtual bool is_placeholder() const { return false; }
 

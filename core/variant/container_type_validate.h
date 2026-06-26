@@ -54,6 +54,10 @@ struct ContainerTypeValidate {
 	StringName class_name;
 	Ref<Script> script;
 	Vector<ContainerTypeValidate> element_types;
+	// Reified type arguments of a specialized script element type, e.g. the `int` in an
+	// `Array[Box[int]]` element. Carried through so `Box[int]` and `Box[String]` element typings stay
+	// distinct at runtime. Empty for non-generic or unspecialized types (all native/engine uses).
+	Vector<ContainerType> type_arguments;
 	const char *where = "container";
 
 private:

@@ -71,6 +71,7 @@ ContainerTypeValidate::ContainerTypeValidate(const ContainerType &p_type) {
 	for (const ContainerType &element_type : p_type.element_types) {
 		element_types.push_back(ContainerTypeValidate(element_type));
 	}
+	type_arguments = p_type.type_arguments;
 }
 
 ContainerType ContainerTypeValidate::get_container_type() const {
@@ -81,6 +82,7 @@ ContainerType ContainerTypeValidate::get_container_type() const {
 	for (const ContainerTypeValidate &element_type : element_types) {
 		result.element_types.push_back(element_type.get_container_type());
 	}
+	result.type_arguments = type_arguments;
 	return result;
 }
 
@@ -226,6 +228,36 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 		return false;
 	}
 
+	// The expected element type is a specialized script handle (e.g. `Box[int]`). Type arguments are
+	// invariant, so a value bound to the same script but different arguments (`Box[String]`) must be
+	// rejected. This is only enforced when the value's script is exactly the expected script: the
+	// instance's reified arguments are expressed against its own type parameters, and projecting a
+	// subclass's specialization onto the expected base (e.g. `class C extends Base[String]`, or a
+	// generic `PairBox[A, B] extends Box[A]`) needs the inheritance-reification machinery tracked by
+	// epic #125 (design #324). Until that lands, a subclass value is accepted under gradual typing
+	// rather than risk a spurious rejection of a genuinely compatible value. A raw, unspecialized
+	// instance (`Box.new()`) likewise carries no conflicting argument evidence and is accepted.
+	if (!type_arguments.is_empty() && other_script == script) {
+		ScriptInstance *instance = object->get_script_instance();
+		Vector<ContainerType> actual_type_arguments;
+		if (instance != nullptr) {
+			instance->get_reified_type_arguments(actual_type_arguments);
+		}
+		if (!actual_type_arguments.is_empty() && actual_type_arguments != type_arguments) {
+			if (p_output_errors) {
+				ContainerType expected;
+				expected.builtin_type = type;
+				expected.class_name = class_name;
+				expected.script = script;
+				expected.type_arguments = type_arguments;
+				ContainerType actual = expected;
+				actual.type_arguments = actual_type_arguments;
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object specialized as '%s' into a %s of '%s'.", String(p_operation), actual.get_type_name(), String(where), expected.get_type_name()));
+			}
+			return false;
+		}
+	}
+
 	return true;
 }
 
@@ -343,6 +375,15 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 		return false;
 	}
 
+	if (script == p_type.script && !type_arguments.is_empty() && type_arguments != p_type.type_arguments) {
+		// Type arguments are invariant: a `Box[int]` container can only reference another `Box[int]`
+		// container without conversion. Only enforced when both sides share the exact script, since
+		// projecting a subclass's specialization onto the expected base needs the inheritance-reification
+		// machinery tracked by epic #125 (design #324). A subclass source therefore skips this check and
+		// is accepted by reference (gradual under-rejection), rather than risking a spurious failure.
+		return false;
+	}
+
 	return true;
 }
 
@@ -350,7 +391,8 @@ bool ContainerTypeValidate::operator==(const ContainerTypeValidate &p_type) cons
 	return type == p_type.type &&
 			class_name == p_type.class_name &&
 			script == p_type.script &&
-			element_types == p_type.element_types;
+			element_types == p_type.element_types &&
+			type_arguments == p_type.type_arguments;
 }
 
 bool ContainerTypeValidate::operator!=(const ContainerTypeValidate &p_type) const {
