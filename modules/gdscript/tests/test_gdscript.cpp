@@ -3375,4 +3375,58 @@ class Inner:
 	CHECK(script->get_method_annotations().is_empty());
 	CHECK(script->get_variable_annotations().is_empty());
 }
+
+TEST_CASE("[Modules][GDScript] GDScriptAnnotation descriptor snapshots annotation metadata") {
+	GDScript::AnnotationUsage usage;
+	usage.name = SNAME("timeout");
+	usage.qualified_name = SNAME("cafecito.test.timeout");
+	usage.args.push_back(10.0);
+	usage.args.push_back("slow");
+	usage.kwargs[SNAME("provider")] = "crit_rows";
+
+	Ref<GDScriptAnnotation> descriptor = GDScriptAnnotation::from_usage(usage);
+	CHECK(descriptor.is_valid());
+	if (descriptor.is_null()) {
+		return;
+	}
+
+	SUBCASE("getters expose the resolved metadata") {
+		CHECK_EQ(descriptor->get_annotation_name(), SNAME("timeout"));
+		CHECK_EQ(descriptor->get_qualified_name(), SNAME("cafecito.test.timeout"));
+
+		Array args = descriptor->get_arguments();
+		CHECK_EQ(args.size(), 2);
+		if (args.size() == 2) {
+			CHECK_EQ(double(args[0]), 10.0);
+			CHECK_EQ(String(args[1]), "slow");
+		}
+
+		Dictionary kwargs = descriptor->get_named_arguments();
+		CHECK_EQ(kwargs.size(), 1);
+		CHECK_EQ(String(kwargs[SNAME("provider")]), "crit_rows");
+	}
+
+	SUBCASE("bound accessors are reachable through the script API") {
+		CHECK_EQ(descriptor->call(SNAME("get_annotation_name")), Variant(SNAME("timeout")));
+		CHECK_EQ(descriptor->call(SNAME("get_qualified_name")), Variant(SNAME("cafecito.test.timeout")));
+		CHECK_EQ(descriptor->get(SNAME("name")), Variant(SNAME("timeout")));
+		CHECK_EQ(Array(descriptor->get(SNAME("args"))).size(), 2);
+		CHECK_EQ(Dictionary(descriptor->get(SNAME("kwargs"))).size(), 1);
+	}
+
+	SUBCASE("mutating returned snapshots leaves the descriptor and source metadata intact") {
+		Array args = descriptor->get_arguments();
+		args.push_back("injected");
+		Dictionary kwargs = descriptor->get_named_arguments();
+		kwargs[SNAME("evil")] = true;
+
+		// The next read is unaffected by the previous mutation.
+		CHECK_EQ(descriptor->get_arguments().size(), 2);
+		CHECK_EQ(descriptor->get_named_arguments().size(), 1);
+
+		// The originating usage metadata is untouched.
+		CHECK_EQ(usage.args.size(), 2);
+		CHECK_EQ(usage.kwargs.size(), 1);
+	}
+}
 } // namespace GDScriptTests

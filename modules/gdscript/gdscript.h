@@ -495,6 +495,32 @@ public:
 	~GDScript();
 };
 
+// Read-only structured descriptor for a single resolved custom annotation usage, returned by the
+// GDScript reflection APIs. Each instance is an independent snapshot of the compiled metadata: the
+// argument accessors return copies, so callers cannot mutate the script's stored annotation data.
+class GDScriptAnnotation : public RefCounted {
+	GDCLASS(GDScriptAnnotation, RefCounted);
+
+	StringName name; // Short name, without "@": "timeout".
+	StringName qualified_name; // Canonical declaration identity: "cafecito.test.timeout".
+	Array args; // Positional argument values in source order.
+	Dictionary kwargs; // Named argument values keyed by parameter name.
+
+protected:
+	static void _bind_methods();
+
+public:
+	StringName get_annotation_name() const { return name; }
+	StringName get_qualified_name() const { return qualified_name; }
+	// Deep copies so callers never receive (and so cannot mutate) the compiled script's stored values.
+	Array get_arguments() const { return args.duplicate(true); }
+	Dictionary get_named_arguments() const { return kwargs.duplicate(true); }
+
+	// Builds an independent descriptor snapshot from compiled annotation metadata. The usage's
+	// argument containers are deep copied so the descriptor never aliases the script's stored data.
+	static Ref<GDScriptAnnotation> from_usage(const GDScript::AnnotationUsage &p_usage);
+};
+
 class GDScriptInstance : public ScriptInstance {
 	friend class GDScript;
 	friend class GDScriptFunction;
