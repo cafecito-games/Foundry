@@ -39,6 +39,7 @@
 
 #include "../gdscript_position.h"
 
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/string/string_builder.h"
 
@@ -123,6 +124,45 @@ void tally_skip_reason(const String &p_reason, MigrationSkippedCounts &r_counts)
 	}
 }
 
+// Maps a disabled Add Type Annotation reason to the manual follow-up category a human should
+// act on, or returns false when the reason describes no outstanding work (an already-typed
+// site owes nothing). The phrase matching mirrors tally_skip_reason so the punch-list and the
+// tallies stay in lockstep.
+bool follow_up_category_for_skip_reason(const String &p_reason, MigrationFollowUpCategory &r_category) {
+	if (p_reason.contains("already has a")) {
+		// Already typed: no follow-up is owed.
+		return false;
+	}
+	if (p_reason.contains("spans multiple lines")) {
+		r_category = MigrationFollowUpCategory::MULTI_LINE_DECLARATION;
+		return true;
+	}
+	if (p_reason.contains("cannot be written as an explicit annotation")) {
+		// An inferred type with no renderable annotation -- in practice an untyped container
+		// element type, which is exactly the "untyped containers" follow-up bucket.
+		r_category = MigrationFollowUpCategory::UNTYPED_CONTAINER;
+		return true;
+	}
+	// "Cannot infer a type" and "unresolved after fixpoint" both end with no concrete type.
+	r_category = MigrationFollowUpCategory::NO_INFERRED_TYPE;
+	return true;
+}
+
+// Records a skipped site in the follow-up punch-list when it represents outstanding manual work.
+// The line is normalized to 1-based for display; a -1 anchor is preserved as "unknown".
+void collect_skip_follow_up(const String &p_path, int p_line, const String &p_reason, Vector<MigrationFollowUpEntry> &r_follow_ups) {
+	MigrationFollowUpCategory category = MigrationFollowUpCategory::NO_INFERRED_TYPE;
+	if (!follow_up_category_for_skip_reason(p_reason, category)) {
+		return;
+	}
+	MigrationFollowUpEntry entry;
+	entry.category = category;
+	entry.path = p_path;
+	entry.line = p_line;
+	entry.detail = p_reason;
+	r_follow_ups.push_back(entry);
+}
+
 void tally_inferable_kind(const String &p_kind, MigrationInferableCounts &r_counts) {
 	r_counts.total++;
 	if (p_kind == "variable") {
@@ -193,6 +233,9 @@ MigrationReportResult GDScriptMigrationReport::generate(const String &p_root, co
 		// single-pass report uses.
 		for (const FixpointSkipped &skip : projection.skipped) {
 			tally_skip_reason(skip.reason, result.skipped);
+			// FixpointSkipped.line carries the candidate's 0-based anchor; normalize to 1-based.
+			const int display_line = skip.line >= 0 ? skip.line + 1 : -1;
+			collect_skip_follow_up(skip.path, display_line, skip.reason, result.follow_ups);
 		}
 
 		// Files the run could not analyze are reported the same way the single-pass report does.
@@ -223,6 +266,9 @@ MigrationReportResult GDScriptMigrationReport::generate(const String &p_root, co
 					tally_inferable_kind(candidate.declaration_kind, result.inferable);
 				} else {
 					tally_skip_reason(candidate.disabled_reason, result.skipped);
+					// RefactorCandidate.line is the 0-based anchor; normalize to 1-based.
+					const int display_line = candidate.line >= 0 ? candidate.line + 1 : -1;
+					collect_skip_follow_up(file.path, display_line, candidate.disabled_reason, result.follow_ups);
 				}
 			}
 		}
@@ -238,19 +284,36 @@ MigrationReportResult GDScriptMigrationReport::generate(const String &p_root, co
 		if (preview.ok) {
 			for (const StrictViolation &violation : preview.violations) {
 				result.strict.total++;
+				// A strict violation is a manual follow-up unless a satisfier proves an auto-fix for
+				// it. Each branch decides both the tally and whether (and as what) it is a follow-up.
+				bool is_follow_up = true;
+				MigrationFollowUpCategory category = MigrationFollowUpCategory::STRICT_UNKNOWN;
 				switch (violation.category) {
 					case StrictViolationCategory::NULLABLE:
 						result.strict.nullable++;
+						category = MigrationFollowUpCategory::STRICT_NULLABLE;
 						if (nullable_violation_is_satisfiable(violation, scan.files)) {
 							result.strict.nullable_satisfiable++;
+							// A proven widen-to-nullable fix exists, so no manual work is owed here.
+							is_follow_up = false;
 						}
 						break;
 					case StrictViolationCategory::VARIANT_BOUNDARY:
 						result.strict.variant_boundary++;
+						category = MigrationFollowUpCategory::STRICT_VARIANT_BOUNDARY;
 						break;
 					default:
 						result.strict.unknown++;
+						category = MigrationFollowUpCategory::STRICT_UNKNOWN;
 						break;
+				}
+				if (is_follow_up) {
+					MigrationFollowUpEntry entry;
+					entry.category = category;
+					entry.path = violation.path;
+					entry.line = violation.line; // Strict violations carry a 1-based line.
+					entry.detail = violation.message;
+					result.follow_ups.push_back(entry);
 				}
 			}
 		} else {
@@ -317,6 +380,108 @@ String MigrationReportResult::format() const {
 
 	builder.append("\nNo files were modified.\n");
 	return builder.as_string();
+}
+
+String MigrationFollowUpEntry::category_name(MigrationFollowUpCategory p_category) {
+	switch (p_category) {
+		case MigrationFollowUpCategory::MULTI_LINE_DECLARATION:
+			return "Multi-line declarations";
+		case MigrationFollowUpCategory::UNTYPED_CONTAINER:
+			return "Untyped containers";
+		case MigrationFollowUpCategory::NO_INFERRED_TYPE:
+			return "No inferable type";
+		case MigrationFollowUpCategory::STRICT_NULLABLE:
+			return "Strict-mode violations (nullable)";
+		case MigrationFollowUpCategory::STRICT_VARIANT_BOUNDARY:
+			return "Strict-mode violations (variant boundary)";
+		case MigrationFollowUpCategory::STRICT_UNKNOWN:
+			return "Strict-mode violations (uncategorized)";
+	}
+	return "Other";
+}
+
+String MigrationReportResult::format_follow_up() const {
+	if (!ok) {
+		return vformat("GDScript migration follow-up report\nReport failed: %s\n", error_message);
+	}
+
+	StringBuilder builder;
+	builder.append("GDScript migration follow-up report\n");
+	builder.append("===================================\n");
+	builder.append("Sites a migration could not auto-resolve, grouped by category. Each one needs a\n");
+	builder.append("manual decision before strict typing is complete.\n\n");
+
+	if (follow_ups.is_empty()) {
+		builder.append("No follow-up sites: every scanned declaration was either typed or auto-migratable.\n");
+		return builder.as_string();
+	}
+
+	// Group by category, preserving the scan-ordered entries within each group. Iterating the
+	// categories in their declaration order gives a stable, deterministic section order.
+	const MigrationFollowUpCategory order[] = {
+		MigrationFollowUpCategory::MULTI_LINE_DECLARATION,
+		MigrationFollowUpCategory::UNTYPED_CONTAINER,
+		MigrationFollowUpCategory::NO_INFERRED_TYPE,
+		MigrationFollowUpCategory::STRICT_NULLABLE,
+		MigrationFollowUpCategory::STRICT_VARIANT_BOUNDARY,
+		MigrationFollowUpCategory::STRICT_UNKNOWN,
+	};
+
+	builder.append(vformat("Total follow-up sites: %d\n", follow_ups.size()));
+
+	for (const MigrationFollowUpCategory category : order) {
+		int category_count = 0;
+		for (const MigrationFollowUpEntry &entry : follow_ups) {
+			if (entry.category == category) {
+				category_count++;
+			}
+		}
+		if (category_count == 0) {
+			continue;
+		}
+		builder.append(vformat("\n%s: %d\n", MigrationFollowUpEntry::category_name(category), category_count));
+		for (const MigrationFollowUpEntry &entry : follow_ups) {
+			if (entry.category != category) {
+				continue;
+			}
+			if (entry.line >= 0) {
+				builder.append(vformat("  %s:%d  %s\n", entry.path, entry.line, entry.detail));
+			} else {
+				builder.append(vformat("  %s  %s\n", entry.path, entry.detail));
+			}
+		}
+	}
+
+	return builder.as_string();
+}
+
+const char *GDScriptMigrationReport::DEFAULT_FOLLOW_UP_PATH = "res://gdscript_migration_followup.md";
+
+Error GDScriptMigrationReport::write_follow_up(const MigrationReportResult &p_report, const String &p_path) {
+	// A fatal-failure report carries no trustworthy follow-up list, so persisting it would be
+	// misleading. Refuse it explicitly rather than write an empty or half-formed artifact.
+	if (!p_report.ok) {
+		return ERR_INVALID_DATA;
+	}
+
+	const String base_dir = p_path.get_base_dir();
+	if (!base_dir.is_empty()) {
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+		if (dir.is_valid() && !dir->dir_exists(base_dir)) {
+			const Error make_dir_error = dir->make_dir_recursive(base_dir);
+			if (make_dir_error != OK) {
+				return make_dir_error;
+			}
+		}
+	}
+
+	Error open_error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &open_error);
+	if (open_error != OK || file.is_null()) {
+		return open_error != OK ? open_error : ERR_CANT_CREATE;
+	}
+	file->store_string(p_report.format_follow_up());
+	return OK;
 }
 
 #endif // TOOLS_ENABLED

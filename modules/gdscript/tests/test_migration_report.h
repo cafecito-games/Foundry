@@ -369,6 +369,190 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Follow-up report lists skipped sites grouped by category with file and line") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_followup_skips");
+
+		// A mix of skip reasons that each map to a distinct follow-up category:
+		//   var typed: int = 1   -> already typed (NOT a follow-up; no work owed)
+		//   var novalue          -> no inferable type
+		//   var nullish = null   -> untyped container / unrenderable type
+		const String source =
+				"var typed: int = 1\n"
+				"var novalue\n"
+				"var nullish = null\n";
+		const String path = tree.write_file("skips.gd", source);
+
+		const MigrationReportResult report = GDScriptMigrationReport::generate("res://migration_followup_skips");
+		REQUIRE(report.ok);
+
+		// The already-typed site owes no manual follow-up; the other two do.
+		int no_inferred = 0;
+		int untyped_container = 0;
+		bool every_entry_points_at_file = true;
+		for (const MigrationFollowUpEntry &entry : report.follow_ups) {
+			if (entry.path != path) {
+				every_entry_points_at_file = false;
+			}
+			switch (entry.category) {
+				case MigrationFollowUpCategory::NO_INFERRED_TYPE:
+					no_inferred++;
+					break;
+				case MigrationFollowUpCategory::UNTYPED_CONTAINER:
+					untyped_container++;
+					break;
+				default:
+					break;
+			}
+			// Every follow-up carries a usable 1-based line.
+			CHECK_GT(entry.line, 0);
+		}
+		CHECK(every_entry_points_at_file);
+		CHECK_EQ(no_inferred, 1);
+		CHECK_EQ(untyped_container, 1);
+		CHECK_EQ(report.follow_ups.size(), 2);
+
+		// No entry is the already-typed declaration.
+		for (const MigrationFollowUpEntry &entry : report.follow_ups) {
+			CHECK_FALSE(entry.detail.contains("already has a"));
+		}
+
+		// The rendered punch-list groups by category and shows path:line.
+		const String text = report.format_follow_up();
+		CHECK(text.contains("Total follow-up sites: 2"));
+		CHECK(text.contains("Untyped containers:"));
+		CHECK(text.contains("No inferable type:"));
+		CHECK(text.contains(vformat("%s:", path)));
+
+		// Reading the report changed nothing on disk.
+		CHECK_EQ(FileAccess::get_file_as_string(path), source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Follow-up report records strict violations as manual sites") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_followup_strict");
+
+		// A variant-boundary violation under strict_dynamic_checks: a manual follow-up.
+		const String source =
+				"func dyn():\n"
+				"\treturn JSON.parse_string(\"1\")\n"
+				"func use() -> void:\n"
+				"\tvar x: int = dyn()\n";
+		const String strict_path = tree.write_file("strict.gd", source);
+		(void)strict_path;
+
+		MigrationReportOptions options;
+		options.strict_dynamic_checks = true;
+		const MigrationReportResult report = GDScriptMigrationReport::generate("res://migration_followup_strict", options);
+		REQUIRE(report.ok);
+		CHECK_GT(report.strict.variant_boundary, 0);
+
+		int strict_variant = 0;
+		for (const MigrationFollowUpEntry &entry : report.follow_ups) {
+			if (entry.category == MigrationFollowUpCategory::STRICT_VARIANT_BOUNDARY) {
+				strict_variant++;
+				CHECK_GT(entry.line, 0);
+			}
+		}
+		CHECK_EQ(strict_variant, report.strict.variant_boundary);
+
+		const String text = report.format_follow_up();
+		CHECK(text.contains("Strict-mode violations (variant boundary):"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Follow-up report excludes nullable violations the satisfier can auto-fix") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_followup_nullable");
+
+		// A nullable boundary whose widen-to-nullable fix the harness can prove: no manual work owed.
+		const String source =
+				"func maybe() -> int?:\n"
+				"\treturn null\n"
+				"func use() -> void:\n"
+				"\tvar x: int = maybe()\n";
+		const String nullable_path = tree.write_file("nullable.gd", source);
+		(void)nullable_path;
+
+		MigrationReportOptions options;
+		options.strict_null_checks = true;
+		const MigrationReportResult report = GDScriptMigrationReport::generate("res://migration_followup_nullable", options);
+		REQUIRE(report.ok);
+		// Every nullable violation here is provably satisfiable.
+		CHECK_GT(report.strict.nullable, 0);
+		CHECK_EQ(report.strict.nullable_satisfiable, report.strict.nullable);
+
+		// A fully auto-fixable nullable boundary is not a manual follow-up.
+		for (const MigrationFollowUpEntry &entry : report.follow_ups) {
+			CHECK_NE(entry.category, MigrationFollowUpCategory::STRICT_NULLABLE);
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Follow-up report is regenerable: writes to a known location and overwrites in place") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_followup_write");
+
+		const String first_source_path = tree.write_file("a.gd", "var novalue\n");
+		(void)first_source_path;
+
+		const MigrationReportResult first = GDScriptMigrationReport::generate("res://migration_followup_write");
+		REQUIRE(first.ok);
+		CHECK_FALSE(first.follow_ups.is_empty());
+
+		const String report_path = "res://migration_followup_write/followup.md";
+		CHECK_EQ(GDScriptMigrationReport::write_follow_up(first, report_path), OK);
+		const String first_text = FileAccess::get_file_as_string(report_path);
+		CHECK(first_text.contains("No inferable type:"));
+		CHECK_EQ(first_text, first.format_follow_up());
+
+		// Regenerate against a now-clean project: the report overwrites in place with the empty note.
+		const String second_source_path = tree.write_file("a.gd", "var x: int = 1\n");
+		(void)second_source_path;
+		const MigrationReportResult second = GDScriptMigrationReport::generate("res://migration_followup_write");
+		REQUIRE(second.ok);
+		CHECK(second.follow_ups.is_empty());
+		CHECK_EQ(GDScriptMigrationReport::write_follow_up(second, report_path), OK);
+		const String second_text = FileAccess::get_file_as_string(report_path);
+		CHECK(second_text.contains("No follow-up sites"));
+		CHECK_FALSE(second_text.contains("No inferable type:"));
+
+		// A fatal-failure report is refused rather than persisted.
+		const MigrationReportResult failed = GDScriptMigrationReport::generate("res://migration_followup_does_not_exist");
+		CHECK_FALSE(failed.ok);
+		CHECK_NE(GDScriptMigrationReport::write_follow_up(failed, report_path), OK);
+
+		// Clean up the artifact the test wrote (it lives under the temp subtree, but the file was
+		// created by write_follow_up, not the tree helper).
+		DirAccess::remove_absolute(ProjectSettings::get_singleton()->globalize_path(report_path));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Report edge cases: empty project and unreadable root") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
