@@ -62,6 +62,7 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 		result.error_message = inference.error_message;
 		result.iterations = inference.iterations;
 		result.total_annotations_applied = inference.total_annotations_applied;
+		result.inferable = inference.inferable;
 		result.converged = inference.converged;
 		result.changed_files = inference.changed_files;
 		result.skipped = inference.skipped;
@@ -71,6 +72,7 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 
 	result.iterations = inference.iterations;
 	result.total_annotations_applied = inference.total_annotations_applied;
+	result.inferable = inference.inferable;
 	result.converged = inference.converged;
 	result.changed_files = inference.changed_files;
 	result.skipped = inference.skipped;

@@ -42,6 +42,10 @@
 struct VerificationCandidate {
 	String path;
 	int line = -1; // 0-based declaration anchor, for reporting.
+	// The kind of declaration this candidate annotates ("variable", "constant",
+	// "parameter", "return"), carried through so an accepted candidate can be bucketed
+	// by kind without re-parsing. Empty when the source did not classify it.
+	String declaration_kind;
 	Vector<RefactorTextEdit> edits;
 };
 

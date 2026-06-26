@@ -62,6 +62,9 @@ struct MigrationDriverResult {
 	// Inference stage (mirrors the fixpoint report so callers need not unpack two structs).
 	int iterations = 0; // Fixpoint passes, including the final confirming pass.
 	int total_annotations_applied = 0;
+	// The applied annotations bucketed by declaration kind. `inferable.total` equals
+	// total_annotations_applied; lets a projection report coverage by kind directly.
+	FixpointInferableCounts inferable;
 	// True means the fixpoint reached a real stable point (a pass applied nothing). False means
 	// the iteration bound stopped the loop early, so the edit set may not yet be complete.
 	bool converged = false;
