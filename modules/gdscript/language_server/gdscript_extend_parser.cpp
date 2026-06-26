@@ -140,8 +140,22 @@ void ExtendGDScriptParser::update_symbols() {
 	if (const GDScriptParser::ClassNode *gdclass = dynamic_cast<const GDScriptParser::ClassNode *>(get_tree())) {
 		parse_class_symbol(gdclass, class_symbol);
 
+		// Annotation declarations get a symbol for go-to-definition, but they are not class members
+		// and must not surface in member completion or `self.`-style member lookup. A method may
+		// legitimately share a name with an annotation, so match on the declaration line: each
+		// annotation declaration occupies its own line, so the line uniquely identifies its symbol.
+		HashSet<int> annotation_symbol_lines; // 0-based LSP line indices.
+		for (const GDScriptParser::AnnotationDeclarationNode *declaration : gdclass->annotation_declarations) {
+			if (declaration->identifier != nullptr) {
+				annotation_symbol_lines.insert(LINE_NUMBER_TO_INDEX(declaration->identifier->start_line));
+			}
+		}
+
 		for (int i = 0; i < class_symbol.children.size(); i++) {
 			const LSP::DocumentSymbol &symbol = class_symbol.children[i];
+			if (symbol.kind == LSP::SymbolKind::Function && annotation_symbol_lines.has(symbol.selectionRange.start.line)) {
+				continue;
+			}
 			members.insert(symbol.name, &symbol);
 
 			// Cache level one inner classes and traits.
@@ -443,6 +457,26 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 			case ClassNode::Member::UNDEFINED:
 				break; // Unreachable.
 		}
+	}
+
+	// Custom annotation declarations are root-only and are not class members, but they need a
+	// symbol so go-to-definition can navigate `@my_annotation` usages to their declaration.
+	for (const GDScriptParser::AnnotationDeclarationNode *declaration : p_class->annotation_declarations) {
+		if (declaration->identifier == nullptr) {
+			continue;
+		}
+		LSP::DocumentSymbol symbol;
+		symbol.name = declaration->identifier->name;
+		// No dedicated LSP symbol kind exists for annotations; Function is the closest analog for a
+		// callable-like, parameterized declaration.
+		symbol.kind = LSP::SymbolKind::Function;
+		symbol.deprecated = false;
+		symbol.range = range_of_node(declaration);
+		symbol.selectionRange = range_of_node(declaration->identifier);
+		symbol.uri = uri;
+		symbol.script_path = path;
+		symbol.detail = "annotation " + String(declaration->identifier->name);
+		r_symbol.children.push_back(symbol);
 	}
 }
 

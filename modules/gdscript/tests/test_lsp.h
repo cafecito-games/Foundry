@@ -1051,6 +1051,28 @@ func f():
 		finish_language();
 	}
 
+	TEST_CASE("[textDocument][definition] resolves custom annotation references") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		const String uri = workspace->get_file_uri("res://lsp/annotations.gd");
+
+		assert_no_errors_in("res://lsp/annotations.gd");
+
+		const LSP::Range marker_selection = range(pos(2, 11), pos(2, 20));
+		const LSP::Range timeout_selection = range(pos(3, 11), pos(3, 21));
+		// Marker annotation usage resolves to its declaration.
+		test_resolve_symbol_at(uri, pos(5, 5), uri, "my_marker", marker_selection);
+		// Parameterized annotation usage resolves to its declaration.
+		test_resolve_symbol_at(uri, pos(6, 5), uri, "my_timeout", timeout_selection);
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
 	TEST_CASE("[textDocument][rename] updates trait declarations and uses references") {
 		EditorFileSystem *efs = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *proto = initialize(root);

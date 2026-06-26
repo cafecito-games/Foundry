@@ -881,6 +881,9 @@ public:
 	String get_global_annotation_path(const StringName &p_qualified_name) const;
 	// True when any indexed annotation declaration lives in `p_namespace`.
 	bool namespace_has_annotations(const String &p_namespace) const;
+	// Append every indexed canonical annotation identity. Used by editor tooling (completion and
+	// go-to-definition) to enumerate annotations visible through the current namespace or imports.
+	void get_global_annotation_list(List<StringName> *r_annotations) const;
 
 	void add_orphan_subclass(const String &p_qualified_name, const ObjectID &p_subclass);
 	Ref<GDScript> get_orphan_subclass(const String &p_qualified_name);

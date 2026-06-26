@@ -3246,6 +3246,15 @@ String GDScriptLanguage::get_global_annotation_path(const StringName &p_qualifie
 	return (*paths)[0];
 }
 
+void GDScriptLanguage::get_global_annotation_list(List<StringName> *r_annotations) const {
+	ERR_FAIL_NULL(r_annotations);
+
+	MutexLock lock(annotation_index_mutex);
+	for (const KeyValue<StringName, Vector<String>> &entry : global_annotations) {
+		r_annotations->push_back(entry.key);
+	}
+}
+
 bool GDScriptLanguage::namespace_has_annotations(const String &p_namespace) const {
 	if (p_namespace.is_empty()) {
 		return false;

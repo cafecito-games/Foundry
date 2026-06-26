@@ -260,6 +260,38 @@ static void setup_global_classes(const String &p_dir) {
 	}
 }
 
+static void setup_global_annotations(const String &p_dir) {
+	// Mirror the editor file-system scan for the test corpus: index every custom annotation
+	// declaration so completion and go-to-definition can resolve same-namespace and imported
+	// annotations across files. (Production index population from the FS scan is tracked separately.)
+	Error err = OK;
+	Ref<DirAccess> dir = DirAccess::open(p_dir, &err);
+
+	if (err != OK) {
+		FAIL("Invalid test directory.");
+		return;
+	}
+
+	String path = dir->get_current_dir();
+
+	dir->list_dir_begin();
+	String next = dir->get_next();
+
+	while (!next.is_empty()) {
+		if (dir->current_is_dir() && next != "." && next != "..") {
+			setup_global_annotations(path.path_join(next));
+		} else if (next.ends_with(".gd")) {
+			String source_file = path.path_join(next);
+			List<StringName> annotations;
+			GDScriptLanguage::get_singleton()->get_global_annotations(source_file, &annotations);
+			for (const StringName &annotation : annotations) {
+				GDScriptLanguage::get_singleton()->add_global_annotation(annotation, source_file);
+			}
+		}
+		next = dir->get_next();
+	}
+}
+
 TEST_SUITE("[Modules][GDScript][Completion]") {
 	TEST_CASE("[Editor] Check suggestion list") {
 		// Set all editor settings that code completion relies on.
@@ -267,8 +299,10 @@ TEST_SUITE("[Modules][GDScript][Completion]") {
 		init_language("modules/gdscript/tests/scripts");
 
 		setup_global_classes("modules/gdscript/tests/scripts/completion");
+		setup_global_annotations("modules/gdscript/tests/scripts/completion");
 		test_directory("modules/gdscript/tests/scripts/completion");
 
+		GDScriptLanguage::get_singleton()->clear_global_annotations();
 		finish_language();
 	}
 }
