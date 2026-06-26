@@ -64,6 +64,20 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right);
 
+// DataType::operator== treats INFERRED/UNDETECTED operands as equal to anything so the parser can keep
+// going before inference settles. Signature-slot matching must not inherit that leniency: once the
+// non-explicit Callable/Signal paths flow through this comparison, an untyped (inferred) source
+// parameter such as a bare `func(x)` lambda parameter could otherwise silently satisfy a concretely
+// typed target slot, loosening compatibility below what the `MethodInfo`/`PropertyInfo` comparison
+// path enforced. Compare with a concrete type source so only structural equality decides the outcome.
+static bool _signature_slot_types_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
+	GDScriptParser::DataType left = p_left;
+	GDScriptParser::DataType right = p_right;
+	left.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	right.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	return left == right;
+}
+
 // DataType::operator== compares Callable/Signal builtins by their outer builtin type only and ignores
 // the nested method signature metadata. It also compares composite slots (typed-container element
 // types and generic type arguments) through that same shallow `operator==`, so a Callable/Signal
@@ -73,12 +87,12 @@ static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_l
 // through a container/generic slot (`Callable[[Array[Callable[[int], void]]], void]`,
 // `Box[Callable[[int], void]]`) — is still detected instead of being accepted shallowly.
 static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
-	if (p_left != p_right) {
+	if (!_signature_slot_types_equal(p_left, p_right)) {
 		return false;
 	}
-	// `operator==` above already established matching outer structure; recurse into the composite
-	// slots it only compared shallowly. The size guards keep the lenient outcome it returns for
-	// UNDETECTED/INFERRED operands (where the slot vectors may legitimately differ in length).
+	// The strict equality above already established matching outer structure; recurse into the
+	// composite slots it only compared shallowly. The size guards keep the lenient outcome it returns
+	// when one slot legitimately omits a composite vector the other carries.
 	if (p_left.container_element_types.size() == p_right.container_element_types.size()) {
 		for (int i = 0; i < p_left.container_element_types.size(); i++) {
 			if (!_datatype_signature_slot_equal(p_left.container_element_types[i], p_right.container_element_types[i])) {
@@ -93,9 +107,9 @@ static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_lef
 			}
 		}
 	}
-	// Only recurse into the method signature when both slots carry one. A typed-vs-untyped slot keeps
-	// the shallow result of `operator==`, mirroring how the top-level path leniently accepts an
-	// untyped source against a typed target rather than tightening the rules only at nested depth.
+	// Only recurse into the method signature when both slots carry one. A slot whose Callable/Signal
+	// has no recorded signature (e.g. a bare `Callable`) keeps the outer-structure match, mirroring how
+	// the `MethodInfo` path also could not see a nested signature that one side never recorded.
 	if (p_left.kind == GDScriptParser::DataType::BUILTIN && _is_signature_builtin_type(p_left.builtin_type) &&
 			p_left.has_method_signature && p_right.has_method_signature) {
 		return _datatype_method_signature_equal(p_left, p_right);
