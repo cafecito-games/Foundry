@@ -4230,6 +4230,18 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_call(ExpressionNode *p_pre
 				parse_expression(false);
 			}
 		}
+#ifdef TOOLS_ENABLED
+		// Record the surface argument name for each slot for editor code completion, indexed
+		// by slot so it stays aligned with the completion's current argument. This is captured
+		// even when the value is still missing (e.g. the cursor sits right after `name =`),
+		// which `argument_names` below cannot represent, and it survives the analyzer's later
+		// canonicalization that clears `argument_names`.
+		if (call->parsed_argument_names.size() <= argument_index) {
+			call->parsed_argument_names.resize(argument_index + 1);
+		}
+		call->parsed_argument_names.write[argument_index] = argument_name;
+#endif // TOOLS_ENABLED
+
 		if (argument == nullptr) {
 			if (argument_name == StringName()) {
 				push_error(R"(Expected expression as the function argument.)");
