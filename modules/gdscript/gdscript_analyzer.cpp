@@ -10503,7 +10503,7 @@ void GDScriptAnalyzer::reject_named_call_arguments(const GDScriptParser::CallNod
 	// unavailable, so reject them instead of silently dropping the names.
 	for (int i = 0; i < p_call->argument_names.size(); i++) {
 		if (p_call->argument_names[i] != StringName()) {
-			push_error("Named arguments are only allowed when calling a GDScript function.", p_call->arguments[i]);
+			push_error("Named arguments require a statically known GDScript function.", p_call->arguments[i]);
 			return;
 		}
 	}
@@ -10584,25 +10584,44 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		}
 	}
 
-	// An omitted parameter before the last filled slot has no positional argument, so its default
-	// must be inlined at the call site to keep the canonical order correct. GDScript defaults run in
-	// the callee's scope and may reference `self`, members, or earlier parameters, so only a
-	// compile-time-constant default is safe to materialize here; anything else is a compile error.
+	// Every parameter slot a named call leaves empty must be resolved here. A required parameter with
+	// no value is a compile error named after the parameter. An omitted parameter before the last
+	// filled slot has no positional argument, so its constant default must be inlined at the call site
+	// to keep the canonical order correct; GDScript defaults run in the callee's scope and may
+	// reference `self`, members, or earlier parameters, so only a compile-time-constant default is
+	// safe to materialize here, and anything else is a compile error. A trailing omitted parameter is
+	// left out so the callee applies its own default at runtime, exactly as a positional call that
+	// omits trailing arguments would.
 	//
 	// The inlined value is the statically resolved callee's default, matching the rest of the
 	// feature's compile-time model (the call is also type-checked against that static signature). If
 	// a subclass overrides the method with a different default, a base-typed receiver dispatched to
 	// that override still receives the static default rather than the override's; aligning this with
 	// the callee's runtime default mechanism is a separate design decision tracked as a follow-up.
-	for (int i = 0; i < max_filled_index; i++) {
+	for (int i = 0; i < parameter_count; i++) {
 		if (slots[i] != nullptr) {
 			continue;
 		}
 
 		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
+		const StringName parameter_name = parameter->identifier != nullptr ? parameter->identifier->name : StringName();
 
-		// Two cases are excluded, materializing them as a plain constant would diverge from how the
-		// callee's own default mechanism resolves the value:
+		if (parameter->initializer == nullptr) {
+			// A required parameter received no argument. Mirror the positional too-few-arguments error
+			// but name the specific parameter the named call left unfilled.
+			push_error(vformat(R"(Missing value for required parameter "%s".)", parameter_name), p_call);
+			p_call->argument_names.clear();
+			return false;
+		}
+
+		if (i >= max_filled_index) {
+			// Trailing optional parameter: leave it out so the callee supplies its own default.
+			continue;
+		}
+
+		// Interior gap with a default. The default must be materialized as a constant at the call
+		// site, but two cases are excluded because a baked constant would diverge from how the callee's
+		// own default mechanism resolves the value:
 		//   - A parameter whose type depends on a type parameter: its type is substituted from the
 		//     receiver's (or method's) type arguments, so a synthesized default would be unified and
 		//     validated against the substituted type, whereas a trailing omitted default never is.
@@ -10610,16 +10629,19 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		//     out of the constant fast path and re-resolves them to the live compiled subclass, which a
 		//     baked literal cannot do.
 		// Until those interactions are designed, such a middle skip must be passed explicitly.
-		bool can_inline_default = false;
-		if (parameter->initializer != nullptr && parameter->initializer->is_constant) {
-			const bool type_is_generic = _signature_type_involves_type_parameter(parameter->get_datatype());
-			const GDScriptParser::DataType default_type = parameter->initializer->get_datatype();
-			const bool is_class_metatype = default_type.is_meta_type && default_type.kind == GDScriptParser::DataType::CLASS;
-			can_inline_default = !type_is_generic && !is_class_metatype;
+		if (!parameter->initializer->is_constant) {
+			push_error(vformat(R"(Cannot skip parameter "%s": its default value is not a constant expression. Pass it explicitly.)", parameter_name), p_call);
+			p_call->argument_names.clear();
+			return false;
 		}
-		if (!can_inline_default) {
-			const StringName skipped_name = parameter->identifier != nullptr ? parameter->identifier->name : StringName();
-			push_error(vformat(R"(Cannot skip parameter "%s" with named arguments; pass it explicitly.)", skipped_name), p_call);
+		if (_signature_type_involves_type_parameter(parameter->get_datatype())) {
+			push_error(vformat(R"(Cannot skip parameter "%s": its default value depends on a type parameter. Pass it explicitly.)", parameter_name), p_call);
+			p_call->argument_names.clear();
+			return false;
+		}
+		const GDScriptParser::DataType default_type = parameter->initializer->get_datatype();
+		if (default_type.is_meta_type && default_type.kind == GDScriptParser::DataType::CLASS) {
+			push_error(vformat(R"(Cannot skip parameter "%s": its default value is a class type that cannot be inlined. Pass it explicitly.)", parameter_name), p_call);
 			p_call->argument_names.clear();
 			return false;
 		}
