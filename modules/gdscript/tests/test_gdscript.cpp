@@ -38,6 +38,7 @@
 #include "../gdscript_analyzer.h"
 #include "../gdscript_compiler.h"
 #include "../gdscript_parser.h"
+#include "../gdscript_reflection.h"
 #include "../gdscript_tokenizer.h"
 #include "../gdscript_tokenizer_buffer.h"
 
@@ -3427,6 +3428,242 @@ TEST_CASE("[Modules][GDScript] GDScriptAnnotation descriptor snapshots annotatio
 		// The originating usage metadata is untouched.
 		CHECK_EQ(usage.args.size(), 2);
 		CHECK_EQ(usage.kwargs.size(), 1);
+	}
+}
+
+static Dictionary find_descriptor_by_name(const TypedArray<Dictionary> &p_descriptors, const StringName &p_name) {
+	for (int i = 0; i < p_descriptors.size(); i++) {
+		const Dictionary descriptor = p_descriptors[i];
+		if (StringName(descriptor.get("name", StringName())) == p_name) {
+			return descriptor;
+		}
+	}
+	return Dictionary();
+}
+
+TEST_CASE("[Modules][GDScript] GDScriptReflection exposes custom annotation metadata") {
+	ScopedGDScriptNativeGlobals native_globals;
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace cafecito.reflect_cpp
+
+annotation suite(name: String = "") targets CLASS
+annotation test targets METHOD
+annotation timeout(seconds: float) targets METHOD
+annotation fixture targets VARIABLE
+annotation tags(...names: String) targets METHOD
+annotation repeatable(value: String) targets METHOD
+
+@suite(name = "Base Suite")
+class Base:
+	@fixture
+	var base_var: int = 0
+
+	@test
+	@timeout(2.0)
+	func base_method() -> void:
+		pass
+
+	@timeout(7.0)
+	func shared_method() -> void:
+		pass
+
+class Derived extends Base:
+	@test
+	func derived_method() -> void:
+		pass
+
+	@tags("override")
+	func shared_method() -> void:
+		pass
+
+trait Mixin:
+	@test
+	@tags("trait")
+	func mixin_method() -> void:
+		pass
+
+class Impl uses Mixin:
+	@repeatable("a")
+	@repeatable("b")
+	func repeated() -> void:
+		pass
+)",
+			"user://annotation_reflection_cpp.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptCompiler compiler;
+	Ref<GDScript> script;
+	script.instantiate();
+	script->set_path("user://annotation_reflection_cpp.gd");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const HashMap<StringName, Ref<GDScript>> &subclasses = script->get_subclasses();
+	CHECK(subclasses.has(SNAME("Base")));
+	CHECK(subclasses.has(SNAME("Derived")));
+	CHECK(subclasses.has(SNAME("Impl")));
+	if (!subclasses.has(SNAME("Base")) || !subclasses.has(SNAME("Derived")) || !subclasses.has(SNAME("Impl"))) {
+		return;
+	}
+	Ref<GDScript> base = subclasses[SNAME("Base")];
+	Ref<GDScript> derived = subclasses[SNAME("Derived")];
+	Ref<GDScript> impl = subclasses[SNAME("Impl")];
+
+	Ref<GDScriptReflection> reflection;
+	reflection.instantiate();
+
+	SUBCASE("class annotations are direct-only") {
+		TypedArray<GDScriptAnnotation> base_class = reflection->get_class_annotations(base);
+		CHECK_EQ(base_class.size(), 1);
+		if (base_class.size() == 1) {
+			Ref<GDScriptAnnotation> suite = base_class[0];
+			CHECK(suite.is_valid());
+			if (suite.is_valid()) {
+				CHECK_EQ(suite->get_annotation_name(), SNAME("suite"));
+				CHECK_EQ(suite->get_qualified_name(), SNAME("cafecito.reflect_cpp.suite"));
+				CHECK_EQ(String(suite->get_named_arguments()[SNAME("name")]), "Base Suite");
+			}
+		}
+
+		// Derived defines no class annotations of its own and does not inherit them.
+		CHECK(reflection->get_class_annotations(derived).is_empty());
+	}
+
+	SUBCASE("method annotations follow the effective view") {
+		TypedArray<GDScriptAnnotation> base_method = reflection->get_method_annotations(base, SNAME("base_method"));
+		CHECK_EQ(base_method.size(), 2);
+		if (base_method.size() == 2) {
+			CHECK_EQ(Ref<GDScriptAnnotation>(base_method[0])->get_annotation_name(), SNAME("test"));
+			CHECK_EQ(Ref<GDScriptAnnotation>(base_method[1])->get_annotation_name(), SNAME("timeout"));
+		}
+
+		// Base method annotations remain visible through the derived script.
+		CHECK_EQ(reflection->get_method_annotations(derived, SNAME("base_method")).size(), 2);
+
+		// A trait-flattened method carries its declaration annotations through the implementer.
+		TypedArray<GDScriptAnnotation> mixin_method = reflection->get_method_annotations(impl, SNAME("mixin_method"));
+		CHECK_EQ(mixin_method.size(), 2);
+		if (mixin_method.size() == 2) {
+			CHECK_EQ(Ref<GDScriptAnnotation>(mixin_method[0])->get_annotation_name(), SNAME("test"));
+			CHECK_EQ(Ref<GDScriptAnnotation>(mixin_method[1])->get_annotation_name(), SNAME("tags"));
+		}
+	}
+
+	SUBCASE("variable annotations follow the effective view") {
+		TypedArray<GDScriptAnnotation> base_var = reflection->get_variable_annotations(base, SNAME("base_var"));
+		CHECK_EQ(base_var.size(), 1);
+		if (base_var.size() == 1) {
+			CHECK_EQ(Ref<GDScriptAnnotation>(base_var[0])->get_annotation_name(), SNAME("fixture"));
+		}
+		CHECK_EQ(reflection->get_variable_annotations(derived, SNAME("base_var")).size(), 1);
+	}
+
+	SUBCASE("repeated annotations are preserved in source order") {
+		TypedArray<GDScriptAnnotation> repeated = reflection->get_method_annotations(impl, SNAME("repeated"));
+		CHECK_EQ(repeated.size(), 2);
+		if (repeated.size() == 2) {
+			CHECK_EQ(String(Ref<GDScriptAnnotation>(repeated[0])->get_arguments()[0]), "a");
+			CHECK_EQ(String(Ref<GDScriptAnnotation>(repeated[1])->get_arguments()[0]), "b");
+		}
+	}
+
+	SUBCASE("has_annotation and get_annotation match short and qualified names") {
+		CHECK(reflection->has_annotation(base, SNAME("base_method"), SNAME("test"), SNAME("method")));
+		CHECK(reflection->has_annotation(base, SNAME("base_method"), SNAME("cafecito.reflect_cpp.timeout"), SNAME("method")));
+		CHECK_FALSE(reflection->has_annotation(base, SNAME("base_method"), SNAME("missing"), SNAME("method")));
+		CHECK(reflection->has_annotation(base, SNAME(""), SNAME("suite"), SNAME("class")));
+		CHECK(reflection->has_annotation(base, SNAME("base_var"), SNAME("fixture"), SNAME("variable")));
+
+		Ref<GDScriptAnnotation> timeout = reflection->get_annotation(base, SNAME("base_method"), SNAME("timeout"), SNAME("method"));
+		CHECK(timeout.is_valid());
+		if (timeout.is_valid()) {
+			CHECK_EQ(double(timeout->get_arguments()[0]), doctest::Approx(2.0));
+		}
+		CHECK(reflection->get_annotation(base, SNAME("base_method"), SNAME("missing"), SNAME("method")).is_null());
+	}
+
+	SUBCASE("generic get_annotations dispatches on kind") {
+		CHECK_EQ(reflection->get_annotations(base, SNAME(""), SNAME("class")).size(), 1);
+		CHECK_EQ(reflection->get_annotations(base, SNAME("base_method"), SNAME("method")).size(), 2);
+		CHECK_EQ(reflection->get_annotations(base, SNAME("base_var"), SNAME("variable")).size(), 1);
+	}
+
+	SUBCASE("descriptors embed annotations in method and property dictionaries") {
+		const Dictionary method_descriptor = find_descriptor_by_name(reflection->get_methods(base), SNAME("base_method"));
+		CHECK(method_descriptor.has("annotations"));
+		CHECK_EQ(Array(method_descriptor["annotations"]).size(), 2);
+
+		const Dictionary method_info = reflection->get_method_info(base, SNAME("base_method"));
+		CHECK(method_info.has("annotations"));
+		CHECK_EQ(Array(method_info["annotations"]).size(), 2);
+
+		const Dictionary property_descriptor = find_descriptor_by_name(reflection->get_properties(base), SNAME("base_var"));
+		CHECK(property_descriptor.has("annotations"));
+		CHECK_EQ(Array(property_descriptor["annotations"]).size(), 1);
+	}
+
+	SUBCASE("an override and the base method it shadows keep their own embedded annotations") {
+		// Effective method annotations resolve to the override.
+		TypedArray<GDScriptAnnotation> effective = reflection->get_method_annotations(derived, SNAME("shared_method"));
+		CHECK_EQ(effective.size(), 1);
+		if (effective.size() == 1) {
+			CHECK_EQ(Ref<GDScriptAnnotation>(effective[0])->get_annotation_name(), SNAME("tags"));
+		}
+
+		// get_methods(Derived) lists both shared_method declarations (override + base), each carrying
+		// the annotations of the declaration it represents rather than the leaf's effective set.
+		TypedArray<Dictionary> methods = reflection->get_methods(derived);
+		int shared_entries = 0;
+		bool saw_override_tags = false;
+		bool saw_base_timeout = false;
+		for (int i = 0; i < methods.size(); i++) {
+			const Dictionary descriptor = methods[i];
+			if (StringName(descriptor.get("name", StringName())) != SNAME("shared_method")) {
+				continue;
+			}
+			shared_entries++;
+			const TypedArray<GDScriptAnnotation> annotations = descriptor["annotations"];
+			if (annotations.size() == 1) {
+				const StringName annotation_name = Ref<GDScriptAnnotation>(annotations[0])->get_annotation_name();
+				saw_override_tags = saw_override_tags || annotation_name == SNAME("tags");
+				saw_base_timeout = saw_base_timeout || annotation_name == SNAME("timeout");
+			}
+		}
+		CHECK_EQ(shared_entries, 2);
+		CHECK(saw_override_tags);
+		CHECK(saw_base_timeout);
+	}
+
+	SUBCASE("invalid, non-script, and freed targets return empty results without crashing") {
+		CHECK(reflection->get_class_annotations(Variant(42)).is_empty());
+		CHECK(reflection->get_method_annotations(Variant(), SNAME("base_method")).is_empty());
+		CHECK(reflection->get_variable_annotations(Variant("not a script"), SNAME("base_var")).is_empty());
+		CHECK_FALSE(reflection->has_annotation(Variant(42), SNAME("base_method"), SNAME("test"), SNAME("method")));
+		CHECK(reflection->get_annotation(Variant(42), SNAME("base_method"), SNAME("test"), SNAME("method")).is_null());
+
+		Object *freed = memnew(Object);
+		Variant freed_target(freed);
+		memdelete(freed);
+		CHECK(reflection->get_class_annotations(freed_target).is_empty());
+		CHECK_FALSE(reflection->has_annotation(freed_target, SNAME("base_method"), SNAME("test"), SNAME("method")));
+		CHECK(reflection->get_annotation(freed_target, SNAME("base_method"), SNAME("test"), SNAME("method")).is_null());
 	}
 }
 } // namespace GDScriptTests
