@@ -1,0 +1,3 @@
+namespace refactor.characters
+class_name RefactorNsBaseCharacter
+extends Node

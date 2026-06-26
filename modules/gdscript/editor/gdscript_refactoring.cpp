@@ -82,6 +82,49 @@ struct TypeAnnotationCandidate {
 	int caret_span_end_line = -1;
 };
 
+// Namespace context for rendering type annotations in a file that declares a
+// `namespace` and/or `import`s. Carries the scope used to pick the minimal class
+// spelling that resolves at the insertion site. A null context (or a file in the
+// global namespace with no imports) renders annotations exactly as before.
+struct TypeAnnotationRenderContext {
+	GDScriptRefactorTypes::AnnotationScope scope;
+};
+
+// Adds names declared by p_class that the analyzer resolves before a namespace
+// chain (its own name, members, and type parameters) to r_scope's shadow set, so
+// a qualified spelling is never rooted at one of them.
+void add_class_scope_shadow_names(GDScriptRefactorTypes::AnnotationScope &r_scope, const GDScriptParser::ClassNode *p_class) {
+	if (p_class == nullptr) {
+		return;
+	}
+	if (p_class->identifier != nullptr) {
+		r_scope.shadowing_local_names.push_back(p_class->identifier->name);
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		const String member_name = member.get_name();
+		if (!member_name.is_empty()) {
+			r_scope.shadowing_local_names.push_back(member_name);
+		}
+	}
+	for (const GDScriptParser::TypeParameterNode *type_parameter : p_class->type_parameters) {
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			r_scope.shadowing_local_names.push_back(type_parameter->identifier->name);
+		}
+	}
+}
+
+// Builds the namespace render context for the root class of the edited file. Each
+// class's own scope names are added as the collector descends into it, so this
+// only carries the file-level namespace and imports.
+TypeAnnotationRenderContext make_type_annotation_render_context(const GDScriptParser::ClassNode *p_root) {
+	TypeAnnotationRenderContext context;
+	if (p_root != nullptr) {
+		context.scope.current_namespace = p_root->namespace_name;
+		context.scope.imported_namespaces = p_root->imports;
+	}
+	return context;
+}
+
 struct ExtractVariableCandidate {
 	bool matched = false;
 	bool enabled = false;
@@ -595,8 +638,20 @@ int find_dynamic_string_reference_column(const String &p_line, const String &p_i
 	return -1;
 }
 
-bool render_annotation_or_disable(const GDScriptParser::DataType &p_type, TypeAnnotationCandidate &r_candidate, String &r_rendered) {
-	if (!GDScriptRefactorTypes::render_annotatable_type(p_type, r_rendered)) {
+bool render_annotation_or_disable(const GDScriptParser::DataType &p_type, TypeAnnotationCandidate &r_candidate, String &r_rendered, const TypeAnnotationRenderContext *p_render_context = nullptr) {
+	if (p_render_context == nullptr) {
+		if (!GDScriptRefactorTypes::render_annotatable_type(p_type, r_rendered)) {
+			r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
+			return false;
+		}
+		return true;
+	}
+
+	// Namespace-aware rendering: a cross-namespace class is spelled so it resolves
+	// at the insertion site (bare when already in scope, qualified otherwise),
+	// rather than emitting a bare name the verification harness would then drop.
+	HashSet<String> required_imports;
+	if (!GDScriptRefactorTypes::render_annotatable_type_in_scope(p_type, p_render_context->scope, r_rendered, required_imports)) {
 		r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
 		return false;
 	}
@@ -1128,7 +1183,7 @@ bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignme
 			is_self_attribute(p_assignment->assignee);
 }
 
-bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr) {
+bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr) {
 	if (p_assignable == nullptr || p_assignable->identifier == nullptr) {
 		return false;
 	}
@@ -1223,7 +1278,7 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	}
 
 	String rendered_type;
-	if (!render_annotation_or_disable(effective_type, r_candidate, rendered_type)) {
+	if (!render_annotation_or_disable(effective_type, r_candidate, rendered_type, p_render_context)) {
 		return true;
 	}
 
@@ -1271,7 +1326,7 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	return true;
 }
 
-bool find_function_return_type_annotation(const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, TypeAnnotationCandidate &r_candidate) {
+bool find_function_return_type_annotation(const Vector<String> &p_lines, const GDScriptParser::FunctionNode *p_function, TypeAnnotationCandidate &r_candidate, const TypeAnnotationRenderContext *p_render_context = nullptr) {
 	if (p_function == nullptr || p_function->identifier == nullptr) {
 		return false;
 	}
@@ -1323,7 +1378,7 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const G
 	}
 
 	String rendered_type;
-	if (!render_annotation_or_disable(p_function->get_datatype(), r_candidate, rendered_type)) {
+	if (!render_annotation_or_disable(p_function->get_datatype(), r_candidate, rendered_type, p_render_context)) {
 		return true;
 	}
 
@@ -1341,6 +1396,15 @@ struct CallsiteParameterTypeState {
 	bool has_call = false;
 	bool failed = false;
 	String rendered_type;
+	// A scope-independent, fully-qualified identity used to decide whether call
+	// sites agree. Two classes that render the same bare name but live in different
+	// namespaces (e.g. alpha.Thing vs beta.Thing) have distinct identities, so they
+	// are treated as disagreeing rather than conflated.
+	String identity;
+	// The DataType backing rendered_type, kept so the parameter annotation can be
+	// re-rendered namespace-aware (qualified + import) at the target file's scope.
+	GDScriptParser::DataType datatype;
+	bool has_datatype = false;
 };
 
 const GDScriptParser::IdentifierNode *get_call_identifier(const GDScriptParser::CallNode *p_call) {
@@ -1449,15 +1513,26 @@ void collect_callsite_parameter_type_from_call(
 		return;
 	}
 
+	const GDScriptParser::DataType argument_type = p_call->arguments[p_parameter_index]->get_datatype();
 	String rendered_type;
-	if (!GDScriptRefactorTypes::render_annotatable_type(p_call->arguments[p_parameter_index]->get_datatype(), rendered_type)) {
+	if (!GDScriptRefactorTypes::render_annotatable_type(argument_type, rendered_type)) {
+		r_state.failed = true;
+		return;
+	}
+	// Compare call sites by a scope-independent qualified identity, not the bare
+	// rendering, so two same-named classes from different namespaces disagree.
+	String identity;
+	if (!GDScriptRefactorTypes::render_qualified_identity(argument_type, identity)) {
 		r_state.failed = true;
 		return;
 	}
 
-	if (r_state.rendered_type.is_empty()) {
+	if (r_state.identity.is_empty()) {
 		r_state.rendered_type = rendered_type;
-	} else if (r_state.rendered_type != rendered_type) {
+		r_state.identity = identity;
+		r_state.datatype = argument_type;
+		r_state.has_datatype = true;
+	} else if (r_state.identity != identity) {
 		r_state.failed = true;
 	}
 }
@@ -1696,7 +1771,9 @@ bool infer_parameter_type_from_call_sites(
 		const Ref<GDScriptWorkspace> &p_workspace,
 		const ExtendGDScriptParser *p_target_parser,
 		const GDScriptParseResultProvider *p_parse_results,
-		String &r_rendered_type) {
+		String &r_rendered_type,
+		GDScriptParser::DataType &r_datatype,
+		bool &r_has_datatype) {
 	ERR_FAIL_COND_V(p_workspace.is_null(), false);
 	ERR_FAIL_NULL_V(p_class, false);
 	ERR_FAIL_NULL_V(p_function, false);
@@ -1754,6 +1831,8 @@ bool infer_parameter_type_from_call_sites(
 	}
 
 	r_rendered_type = state.rendered_type;
+	r_datatype = state.datatype;
+	r_has_datatype = state.has_datatype;
 	return true;
 }
 
@@ -1765,7 +1844,8 @@ void apply_callsite_parameter_type_annotation(
 		const Ref<GDScriptWorkspace> &p_workspace,
 		const ExtendGDScriptParser *p_target_parser,
 		const GDScriptParseResultProvider *p_parse_results,
-		TypeAnnotationCandidate &r_candidate) {
+		TypeAnnotationCandidate &r_candidate,
+		const TypeAnnotationRenderContext *p_render_context) {
 	if (!r_candidate.matched || r_candidate.enabled || p_parameter == nullptr ||
 			p_parameter->datatype_specifier != nullptr || p_parameter->initializer != nullptr) {
 		return;
@@ -1775,9 +1855,25 @@ void apply_callsite_parameter_type_annotation(
 	}
 
 	String rendered_type;
-	if (!infer_parameter_type_from_call_sites(p_class, p_function, p_parameter_index, p_workspace, p_target_parser, p_parse_results, rendered_type)) {
+	GDScriptParser::DataType inferred_type;
+	bool has_inferred_type = false;
+	if (!infer_parameter_type_from_call_sites(p_class, p_function, p_parameter_index, p_workspace, p_target_parser, p_parse_results, rendered_type, inferred_type, has_inferred_type)) {
 		r_candidate.disabled_reason = "Cannot infer a type for this parameter from resolved call sites.";
 		return;
+	}
+
+	// Render namespace-aware so a cross-namespace parameter type is spelled to
+	// resolve at the insertion site, matching the other annotation sites. When the
+	// scoped spelling cannot resolve there (e.g. a namespace rooted at a native
+	// name), disable the candidate rather than emitting the unscoped bare name.
+	if (p_render_context != nullptr && has_inferred_type) {
+		String scoped_rendered;
+		HashSet<String> required_imports;
+		if (!GDScriptRefactorTypes::render_annotatable_type_in_scope(inferred_type, p_render_context->scope, scoped_rendered, required_imports)) {
+			r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
+			return;
+		}
+		rendered_type = scoped_rendered;
 	}
 
 	r_candidate.edit.start_line = r_candidate.line;
@@ -4678,7 +4774,7 @@ void cache_inline_variable_candidate(const RefactorContext &p_context, const Ref
 	inline_variable_cache.candidate = p_candidate;
 }
 
-void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr);
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr);
 
 bool get_cached_implement_abstract_candidate(const RefactorContext &p_context, const RefactorLocation &p_location, ImplementAbstractCandidate &r_candidate) {
 	MutexLock lock(refactor_candidate_cache_mutex);
@@ -4728,10 +4824,54 @@ void cache_style_order_candidate(const RefactorContext &p_context, const StyleOr
 	style_order_cache.candidate = p_candidate;
 }
 
-void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr) {
+void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr) {
 	TypeAnnotationCandidate candidate;
-	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body, p_member_class) && candidate.matched) {
+	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body, p_member_class, p_render_context) && candidate.matched) {
 		r_candidates.push_back(candidate);
+	}
+}
+
+// Collects the names declared inside p_suite and its nested suites (locals,
+// loop/pattern binds) into r_names. A namespace chain whose leading segment
+// matches one of these would be captured by the local symbol, so a qualified
+// annotation cannot use it. Gathering the whole function (rather than only the
+// locals live at one site) is a safe superset: it can only make the renderer
+// fall back to bare/disable, never emit an unresolved name.
+void collect_suite_local_names(const GDScriptParser::SuiteNode *p_suite, Vector<String> &r_names) {
+	if (p_suite == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::SuiteNode::Local &local : p_suite->locals) {
+		if (local.name != StringName()) {
+			r_names.push_back(local.name);
+		}
+	}
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				collect_suite_local_names(if_node->true_block, r_names);
+				collect_suite_local_names(if_node->false_block, r_names);
+			} break;
+			case GDScriptParser::Node::FOR:
+				collect_suite_local_names(static_cast<const GDScriptParser::ForNode *>(statement)->loop, r_names);
+				break;
+			case GDScriptParser::Node::WHILE:
+				collect_suite_local_names(static_cast<const GDScriptParser::WhileNode *>(statement)->loop, r_names);
+				break;
+			case GDScriptParser::Node::MATCH:
+				for (const GDScriptParser::MatchBranchNode *branch : static_cast<const GDScriptParser::MatchNode *>(statement)->branches) {
+					if (branch != nullptr) {
+						collect_suite_local_names(branch->block, r_names);
+					}
+				}
+				break;
+			default:
+				break;
+		}
 	}
 }
 
@@ -4740,7 +4880,8 @@ void collect_type_annotation_in_function(
 		const GDScriptParser::ClassNode *p_class,
 		const GDScriptParser::FunctionNode *p_function,
 		const RefactorLocation *p_location,
-		Vector<TypeAnnotationCandidate> &r_candidates
+		Vector<TypeAnnotationCandidate> &r_candidates,
+		const TypeAnnotationRenderContext *p_render_context
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace,
@@ -4751,13 +4892,35 @@ void collect_type_annotation_in_function(
 	if (p_function == nullptr) {
 		return;
 	}
+	// Augment the file-level scope with this function's parameter and local names
+	// so a qualified annotation never roots at a symbol shadowed inside the body.
+	TypeAnnotationRenderContext function_context;
+	const TypeAnnotationRenderContext *render_context = p_render_context;
+	if (p_render_context != nullptr) {
+		function_context = *p_render_context;
+		for (const GDScriptParser::ParameterNode *parameter : p_function->parameters) {
+			if (parameter != nullptr && parameter->identifier != nullptr) {
+				function_context.scope.shadowing_local_names.push_back(parameter->identifier->name);
+			}
+		}
+		if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr) {
+			function_context.scope.shadowing_local_names.push_back(p_function->rest_parameter->identifier->name);
+		}
+		for (const GDScriptParser::TypeParameterNode *type_parameter : p_function->type_parameters) {
+			if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+				function_context.scope.shadowing_local_names.push_back(type_parameter->identifier->name);
+			}
+		}
+		collect_suite_local_names(p_function->body, function_context.scope.shadowing_local_names);
+		render_context = &function_context;
+	}
 	for (int i = 0; i < p_function->parameters.size(); i++) {
 		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
 		TypeAnnotationCandidate candidate;
-		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate) && candidate.matched) {
+		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate, nullptr, nullptr, render_context) && candidate.matched) {
 #ifndef GDSCRIPT_NO_LSP
 			if (p_location == nullptr || caret_on_segment(*p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
-				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate);
+				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate, render_context);
 			}
 #endif // GDSCRIPT_NO_LSP
 			r_candidates.push_back(candidate);
@@ -4766,13 +4929,13 @@ void collect_type_annotation_in_function(
 	if (p_function->rest_parameter != nullptr) {
 		// A vararg tail does not map cleanly to one call-site argument index, so
 		// keep rest parameters on the existing declaration-local inference path.
-		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates);
+		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates, nullptr, nullptr, render_context);
 	}
 	TypeAnnotationCandidate return_candidate;
-	if (find_function_return_type_annotation(p_lines, p_function, return_candidate) && return_candidate.matched) {
+	if (find_function_return_type_annotation(p_lines, p_function, return_candidate, render_context) && return_candidate.matched) {
 		r_candidates.push_back(return_candidate);
 	}
-	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body);
+	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body, render_context);
 }
 
 void collect_type_annotation_in_class(
@@ -4780,7 +4943,8 @@ void collect_type_annotation_in_class(
 		const GDScriptParser::ClassNode *p_class,
 		const RefactorLocation *p_location,
 		Vector<TypeAnnotationCandidate> &r_candidates,
-		bool p_allow_member_inference
+		bool p_allow_member_inference,
+		const TypeAnnotationRenderContext *p_render_context
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace,
@@ -4791,20 +4955,30 @@ void collect_type_annotation_in_class(
 	if (p_class == nullptr) {
 		return;
 	}
+	// Augment the scope with this class's own names (its members, type parameters,
+	// and the class name) so a qualified annotation in this class or a nested one
+	// is never rooted at a name the analyzer resolves as a member/type parameter.
+	TypeAnnotationRenderContext class_context;
+	const TypeAnnotationRenderContext *render_context = p_render_context;
+	if (p_render_context != nullptr) {
+		class_context = *p_render_context;
+		add_class_scope_shadow_names(class_context.scope, p_class);
+		render_context = &class_context;
+	}
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::CONSTANT:
-				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates);
+				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates, nullptr, nullptr, render_context);
 				break;
 			case GDScriptParser::ClassNode::Member::VARIABLE:
 				// Member container element inference is open-world-unsound on its own, so
 				// it is enabled only for the verified migration path; otherwise members
 				// keep the analyzer's bare container type.
 				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates, nullptr,
-						p_allow_member_inference ? p_class : nullptr);
+						p_allow_member_inference ? p_class : nullptr, render_context);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
-				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates
+				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates, render_context
 #ifndef GDSCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
@@ -4812,7 +4986,7 @@ void collect_type_annotation_in_class(
 				);
 				break;
 			case GDScriptParser::ClassNode::Member::CLASS:
-				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference
+				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference, render_context
 #ifndef GDSCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
@@ -4825,7 +4999,7 @@ void collect_type_annotation_in_class(
 	}
 }
 
-void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body) {
+void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScriptParser::SuiteNode *p_suite, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body, const TypeAnnotationRenderContext *p_render_context) {
 	if (p_suite == nullptr) {
 		return;
 	}
@@ -4835,29 +5009,29 @@ void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScr
 		}
 		switch (statement->type) {
 			case GDScriptParser::Node::VARIABLE:
-				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates, p_function_body);
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates, p_function_body, nullptr, p_render_context);
 				break;
 			case GDScriptParser::Node::CONSTANT:
-				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates);
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates, nullptr, nullptr, p_render_context);
 				break;
 			case GDScriptParser::Node::IF: {
 				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates, p_function_body);
-				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates, p_function_body);
+				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates, p_function_body, p_render_context);
+				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates, p_function_body, p_render_context);
 			} break;
 			case GDScriptParser::Node::FOR: {
 				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates, p_function_body);
+				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates, p_function_body, p_render_context);
 			} break;
 			case GDScriptParser::Node::WHILE: {
 				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates, p_function_body);
+				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates, p_function_body, p_render_context);
 			} break;
 			case GDScriptParser::Node::MATCH: {
 				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
 				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
 					if (branch != nullptr) {
-						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates, p_function_body);
+						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates, p_function_body, p_render_context);
 					}
 				}
 			} break;
@@ -4871,7 +5045,8 @@ Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_tree,
 		const RefactorLocation *p_location = nullptr,
-		bool p_allow_member_inference = false
+		bool p_allow_member_inference = false,
+		const TypeAnnotationRenderContext *p_render_context = nullptr
 #ifndef GDSCRIPT_NO_LSP
 		,
 		const Ref<GDScriptWorkspace> &p_workspace = Ref<GDScriptWorkspace>(),
@@ -4880,7 +5055,7 @@ Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
 #endif // GDSCRIPT_NO_LSP
 ) {
 	Vector<TypeAnnotationCandidate> candidates;
-	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates, p_allow_member_inference
+	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates, p_allow_member_inference, p_render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
@@ -4902,7 +5077,8 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
 ) {
 	// The interactive caret-located refactor applies edits directly without the
 	// verification harness, so member container inference is left disabled here.
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location, /* allow_member_inference */ false
+	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(p_tree);
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location, /* allow_member_inference */ false, &render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
@@ -6016,7 +6192,8 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 	}
 #endif // GDSCRIPT_NO_LSP
 
-	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr, p_context.allow_member_container_inference
+	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(tree);
+	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr, p_context.allow_member_container_inference, &render_context
 #ifndef GDSCRIPT_NO_LSP
 			,
 			workspace, lsp_parser, p_parse_results
