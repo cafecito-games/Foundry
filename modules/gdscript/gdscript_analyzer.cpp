@@ -304,11 +304,18 @@ static bool _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 	}
 
 	Vector<GDScriptParser::DataType> return_types;
+	const String rest = inner.substr(params_end + 1).strip_edges(); // text after the parameter block
 	if (p_has_return) {
-		const String rest = inner.substr(params_end + 1).strip_edges(); // ", <ret>"
-		const String return_name = rest.begins_with(",") ? rest.substr(1).strip_edges() : rest;
+		// A Callable suffix is "[[...], ret]": the parameter block must be followed by ", <ret>".
+		if (!rest.begins_with(",")) {
+			return false;
+		}
+		const String return_name = rest.substr(1).strip_edges();
+		if (return_name.is_empty()) {
+			return false;
+		}
 		GDScriptParser::DataType return_type;
-		if (return_name.is_empty() || return_name == "void") {
+		if (return_name == "void") {
 			return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			return_type.kind = GDScriptParser::DataType::BUILTIN;
 			return_type.builtin_type = Variant::NIL;
@@ -316,6 +323,9 @@ static bool _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 			return_type = _decode_signature_type(return_name);
 		}
 		return_types.push_back(return_type);
+	} else if (!rest.is_empty()) {
+		// A Signal suffix is "[[...]]": nothing may follow the parameter block.
+		return false;
 	}
 
 	r_type.has_method_signature = true;
