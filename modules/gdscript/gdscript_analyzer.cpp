@@ -10579,6 +10579,12 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 	// must be inlined at the call site to keep the canonical order correct. GDScript defaults run in
 	// the callee's scope and may reference `self`, members, or earlier parameters, so only a
 	// compile-time-constant default is safe to materialize here; anything else is a compile error.
+	//
+	// The inlined value is the statically resolved callee's default, matching the rest of the
+	// feature's compile-time model (the call is also type-checked against that static signature). If
+	// a subclass overrides the method with a different default, a base-typed receiver dispatched to
+	// that override still receives the static default rather than the override's; aligning this with
+	// the callee's runtime default mechanism is a separate design decision tracked as a follow-up.
 	for (int i = 0; i < max_filled_index; i++) {
 		if (slots[i] != nullptr) {
 			continue;
