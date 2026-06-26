@@ -33,6 +33,7 @@
 #ifdef TOOLS_ENABLED
 
 #include "gdscript_batch_candidates.h"
+#include "gdscript_migration_driver.h"
 #include "gdscript_refactoring.h"
 #include "gdscript_verification_harness.h"
 
@@ -112,6 +113,11 @@ void tally_skip_reason(const String &p_reason, MigrationSkippedCounts &r_counts)
 		r_counts.unrenderable_type++;
 	} else if (p_reason.contains("Cannot infer a type")) {
 		r_counts.no_inferred_type++;
+	} else if (p_reason.contains("unresolved after fixpoint")) {
+		// Projection-only: a site that was inferable in isolation but never landed because
+		// verification rejected its edit or the iteration bound was hit. It ends the run
+		// untyped, so it belongs with the other "no concrete type committed" sites.
+		r_counts.no_inferred_type++;
 	} else {
 		r_counts.other++;
 	}
@@ -150,6 +156,7 @@ MigrationReportResult GDScriptMigrationReport::generate(const String &p_root, co
 
 	const bool strict_requested = p_options.strict_null_checks || p_options.strict_dynamic_checks;
 	result.strict.requested = strict_requested;
+	result.projection = p_options.projection;
 
 	// An empty project is a successful report with nothing to tally.
 	if (scan.files.is_empty()) {
@@ -157,29 +164,66 @@ MigrationReportResult GDScriptMigrationReport::generate(const String &p_root, co
 		return result;
 	}
 
-	// Stage 2: collect every Add Type Annotation candidate across the discovered files without
-	// touching disk, then bucket each site by whether it is inferable (and its kind) or skipped
-	// (and why).
-	// The report mirrors the verified migration run, which re-checks the dependency
-	// closure, so member container element inference is enabled for the tally.
-	const BatchCandidatesResult batch = GDScriptBatchCandidates::collect(scan.files, RefactorKind::ADD_TYPE_ANNOTATION, /* allow_member_container_inference */ true);
-	if (!batch.ok) {
-		// Only reached if headless collection is unavailable for the refactor kind, which cannot
-		// happen for the fixed ADD_TYPE_ANNOTATION kind; surface it rather than report a half-run.
-		result.error_message = batch.error_message;
-		return result;
-	}
-
-	for (const BatchFileCandidates &file : batch.files) {
-		if (!file.ok) {
-			result.unanalyzable_files.push_back(file.path);
-			continue;
+	if (p_options.projection) {
+		// Projection mode: drive the full dependency-ordered fixpoint + verification exactly as a
+		// real run would, but in dry-run so the tree is restored before returning. The resulting
+		// counts are the exact set of annotations the migration would commit -- fixing both the
+		// single-pass over-count (verification-rejected sites) and under-count (cascade-only sites).
+		MigrationDriverOptions driver_options;
+		driver_options.scan = p_options.scan;
+		driver_options.inference.strict_null_checks = p_options.strict_null_checks;
+		driver_options.inference.strict_dynamic_checks = p_options.strict_dynamic_checks;
+		driver_options.inference.dry_run = true;
+		const MigrationDriverResult projection = GDScriptMigrationDriver::run(p_root, driver_options);
+		if (!projection.ok) {
+			// A fatal projection failure (e.g. a failed dry-run restore) is fatal for the report:
+			// reporting partial counts from an aborted run would be dishonest.
+			result.error_message = projection.error_message;
+			return result;
 		}
-		for (const RefactorCandidate &candidate : file.candidates) {
-			if (candidate.enabled) {
-				tally_inferable_kind(candidate.declaration_kind, result.inferable);
-			} else {
-				tally_skip_reason(candidate.disabled_reason, result.skipped);
+
+		// The committed annotations, already bucketed by declaration kind by the fixpoint.
+		result.inferable.variable = projection.inferable.variable;
+		result.inferable.constant = projection.inferable.constant;
+		result.inferable.parameter = projection.inferable.parameter;
+		result.inferable.return_type = projection.inferable.return_type;
+		result.inferable.total = projection.inferable.total;
+
+		// The sites the run left untyped, bucketed by reason through the same taxonomy the
+		// single-pass report uses.
+		for (const FixpointSkipped &skip : projection.skipped) {
+			tally_skip_reason(skip.reason, result.skipped);
+		}
+
+		// Files the run could not analyze are reported the same way the single-pass report does.
+		for (const FixpointUnanalyzed &unanalyzed : projection.unanalyzed_files) {
+			result.unanalyzable_files.push_back(unanalyzed.path);
+		}
+	} else {
+		// Stage 2: collect every Add Type Annotation candidate across the discovered files without
+		// touching disk, then bucket each site by whether it is inferable (and its kind) or skipped
+		// (and why).
+		// The report mirrors the verified migration run, which re-checks the dependency
+		// closure, so member container element inference is enabled for the tally.
+		const BatchCandidatesResult batch = GDScriptBatchCandidates::collect(scan.files, RefactorKind::ADD_TYPE_ANNOTATION, /* allow_member_container_inference */ true);
+		if (!batch.ok) {
+			// Only reached if headless collection is unavailable for the refactor kind, which cannot
+			// happen for the fixed ADD_TYPE_ANNOTATION kind; surface it rather than report a half-run.
+			result.error_message = batch.error_message;
+			return result;
+		}
+
+		for (const BatchFileCandidates &file : batch.files) {
+			if (!file.ok) {
+				result.unanalyzable_files.push_back(file.path);
+				continue;
+			}
+			for (const RefactorCandidate &candidate : file.candidates) {
+				if (candidate.enabled) {
+					tally_inferable_kind(candidate.declaration_kind, result.inferable);
+				} else {
+					tally_skip_reason(candidate.disabled_reason, result.skipped);
+				}
 			}
 		}
 	}
@@ -226,7 +270,11 @@ String MigrationReportResult::format() const {
 	StringBuilder builder;
 	builder.append("GDScript migration dry-run report\n");
 	builder.append("=================================\n");
-	builder.append("Single-pass coverage snapshot; no fixpoint iteration or verification is run.\n");
+	if (projection) {
+		builder.append("Fixpoint+verification-accurate projection: the exact edit set a migration run would commit (no files changed).\n");
+	} else {
+		builder.append("Single-pass coverage snapshot; no fixpoint iteration or verification is run.\n");
+	}
 	builder.append(vformat("Scripts scanned: %d\n", total_scripts_scanned));
 
 	builder.append(vformat("Directories skipped: %d\n", skipped_directories.size()));

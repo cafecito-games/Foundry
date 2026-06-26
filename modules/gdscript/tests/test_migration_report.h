@@ -258,6 +258,117 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Projection report counts a cascade-only annotation the single-pass report under-counts") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_report_cascade");
+
+		// C is the leaf; B relays C; A reads B. Only the dependency-ordered fixpoint types the
+		// whole chain: A's `var x = B.relay()` is Variant until B (and C) gain return types, so
+		// the single-pass report reports it skipped while the projection reports it inferable.
+		const String path_c = tree.write_file("chain_c.gd",
+				"static func value():\n"
+				"\treturn 42\n");
+		const String path_b = tree.write_file("chain_b.gd",
+				"const C = preload(\"res://migration_report_cascade/chain_c.gd\")\n"
+				"static func relay():\n"
+				"\treturn C.value()\n");
+		const String source_c = FileAccess::get_file_as_string(path_c);
+		const String source_b = FileAccess::get_file_as_string(path_b);
+		const String path_a = tree.write_file("chain_a.gd",
+				"const B = preload(\"res://migration_report_cascade/chain_b.gd\")\n"
+				"var x = B.relay()\n");
+		const String source_a = FileAccess::get_file_as_string(path_a);
+
+		// Single pass: only C's leaf `value()` resolves today. B's `relay()` forwards C's untyped
+		// result and A's `var x` reads B's, so both stay Variant and are reported skipped. The two
+		// `const = preload(...)` declarations carry a script type that has no renderable annotation,
+		// so they are skipped in both modes.
+		const MigrationReportResult single = GDScriptMigrationReport::generate("res://migration_report_cascade");
+		REQUIRE(single.ok);
+		CHECK_FALSE(single.projection);
+		CHECK_EQ(single.inferable.total, 1); // Only C's value() is inferable in isolation.
+		CHECK_EQ(single.inferable.return_type, 1);
+
+		// Projection: the dependency-ordered fixpoint types the whole chain, so C's value(), B's
+		// relay(), and A's `var x` are all counted. The two preload consts remain unrenderable.
+		MigrationReportOptions options;
+		options.projection = true;
+		const MigrationReportResult projected = GDScriptMigrationReport::generate("res://migration_report_cascade", options);
+		REQUIRE(projected.ok);
+		CHECK(projected.projection);
+		CHECK_EQ(projected.inferable.total, 3);
+		CHECK_EQ(projected.inferable.variable, 1); // A's x, inferable only after the cascade.
+		CHECK_EQ(projected.inferable.return_type, 2); // B's relay and C's value.
+		// The projection covers strictly more than the single pass on this chain.
+		CHECK_GT(projected.inferable.total, single.inferable.total);
+		// The two preload consts have no renderable annotation, so they stay skipped in both modes.
+		CHECK_EQ(projected.skipped.unrenderable_type, 2);
+		// The per-kind split still sums to the total.
+		CHECK_EQ(projected.inferable.variable + projected.inferable.constant + projected.inferable.parameter + projected.inferable.return_type, projected.inferable.total);
+
+		// The projection is read-only: the dry-run restored every file it touched.
+		CHECK_EQ(FileAccess::get_file_as_string(path_a), source_a);
+		CHECK_EQ(FileAccess::get_file_as_string(path_b), source_b);
+		CHECK_EQ(FileAccess::get_file_as_string(path_c), source_c);
+
+		// The rendered report identifies itself as the accurate projection.
+		CHECK(projected.format().contains("Fixpoint+verification-accurate projection"));
+		CHECK(projected.format().contains("No files were modified."));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Projection report drops a verification-rejected annotation the single-pass report over-counts") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_report_reject");
+
+		// provider.get_value() is inferable as `-> int` in isolation, but the consumer assigns its
+		// result to a String local, so committing the return type breaks the dependent. The
+		// verification harness rejects the edit, so the projection must NOT count it as inferable.
+		const String provider_path = tree.write_file("provider.gd",
+				"func get_value():\n"
+				"\treturn 42\n");
+		const String consumer_path = tree.write_file("consumer.gd",
+				"const Provider = preload(\"res://migration_report_reject/provider.gd\")\n"
+				"func use() -> void:\n"
+				"\tvar p: Provider = Provider.new()\n"
+				"\tvar s: String = p.get_value()\n");
+		const String provider_before = FileAccess::get_file_as_string(provider_path);
+		const String consumer_before = FileAccess::get_file_as_string(consumer_path);
+
+		// Single pass: the return type is inferable in isolation, so it is over-counted here.
+		const MigrationReportResult single = GDScriptMigrationReport::generate("res://migration_report_reject");
+		REQUIRE(single.ok);
+		CHECK_EQ(single.inferable.return_type, 1);
+
+		// Projection: verification rejects the breaking edit, so it is reported skipped, not
+		// inferable.
+		MigrationReportOptions options;
+		options.projection = true;
+		const MigrationReportResult projected = GDScriptMigrationReport::generate("res://migration_report_reject", options);
+		REQUIRE(projected.ok);
+		CHECK(projected.projection);
+		CHECK_EQ(projected.inferable.return_type, 0);
+		CHECK_EQ(projected.inferable.total, 0);
+		CHECK_GT(projected.skipped.total, 0);
+
+		// The projection is read-only: the rejected edit was never left on disk.
+		CHECK_EQ(FileAccess::get_file_as_string(provider_path), provider_before);
+		CHECK_EQ(FileAccess::get_file_as_string(consumer_path), consumer_before);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Report edge cases: empty project and unreadable root") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

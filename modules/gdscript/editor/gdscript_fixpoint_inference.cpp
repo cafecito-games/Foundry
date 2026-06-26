@@ -59,6 +59,21 @@ void invalidate_cache(const String &p_path) {
 	GDScriptCache::remove_script(p_path);
 }
 
+// Add one committed annotation of the given declaration kind to the running tally. An
+// unrecognized kind still advances `total`, so the per-kind breakdown can never exceed it.
+void tally_applied_kind(const String &p_kind, FixpointInferableCounts &r_counts) {
+	r_counts.total++;
+	if (p_kind == "variable") {
+		r_counts.variable++;
+	} else if (p_kind == "constant") {
+		r_counts.constant++;
+	} else if (p_kind == "parameter") {
+		r_counts.parameter++;
+	} else if (p_kind == "return") {
+		r_counts.return_type++;
+	}
+}
+
 } // namespace
 
 FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_paths, const FixpointInferenceOptions &p_options) {
@@ -111,6 +126,9 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 	}
 
 	HashMap<String, int> applied_per_file;
+	// Per-kind tally of every annotation actually committed, accumulated only on a successful
+	// write so a failed commit never inflates the projection's coverage.
+	FixpointInferableCounts applied_kinds;
 
 	int iteration = 0;
 	while (iteration < bound) {
@@ -147,6 +165,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 				VerificationCandidate vc;
 				vc.path = path;
 				vc.line = candidate.line;
+				vc.declaration_kind = candidate.declaration_kind;
 				vc.edits = candidate.edits;
 				candidates.push_back(vc);
 			}
@@ -154,6 +173,9 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 
 		HashMap<String, String> pending_source;
 		HashMap<String, int> pending_count;
+		// Declaration kinds of the accepted candidates per file, parallel to pending_count, so
+		// the per-kind tally only advances for files whose write actually lands.
+		HashMap<String, Vector<String>> pending_kinds;
 		if (!candidates.is_empty()) {
 			VerificationOptions verify_options;
 			verify_options.strict_null_checks = p_options.strict_null_checks;
@@ -174,6 +196,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 					accepted_edits[candidate.path].push_back(edit);
 				}
 				pending_count[candidate.path] += 1;
+				pending_kinds[candidate.path].push_back(candidate.declaration_kind);
 			}
 			for (const KeyValue<String, Vector<RefactorTextEdit>> &entry : accepted_edits) {
 				String new_source;
@@ -181,6 +204,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 					pending_source[entry.key] = new_source;
 				} else {
 					pending_count.erase(entry.key); // Could not apply this file's accepted set.
+					pending_kinds.erase(entry.key);
 				}
 			}
 		}
@@ -198,6 +222,11 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 			invalidate_cache(entry.key);
 			const int count = pending_count[entry.key];
 			applied_per_file[entry.key] += count;
+			if (pending_kinds.has(entry.key)) {
+				for (const String &kind : pending_kinds[entry.key]) {
+					tally_applied_kind(kind, applied_kinds);
+				}
+			}
 		}
 
 		if (!had_pending) {
@@ -267,6 +296,26 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 		change.annotations_applied = applied_per_file.has(path) ? applied_per_file[path] : 0;
 		result.total_annotations_applied += change.annotations_applied;
 		result.changed_files.push_back(change);
+	}
+
+	result.inferable = applied_kinds;
+
+	// Projection mode: the fixpoint and verification ran against real on-disk state (so the
+	// reports above reflect the exact edit set a real run would commit), but the tree must be
+	// left untouched. Restore every changed file to its captured original and drop the now-stale
+	// cache so a subsequent analysis re-reads the unmodified source.
+	if (p_options.dry_run) {
+		for (const FixpointFileChange &change : result.changed_files) {
+			String restore_error;
+			if (!ScriptRefactorApply::write_file(change.path, change.before_source, restore_error)) {
+				// A failed restore means the projection left the tree modified, which violates the
+				// dry-run contract. Surface it rather than report a clean, no-op projection.
+				result.ok = false;
+				result.error_message = vformat("Cannot restore '%s' after dry-run projection: %s", change.path, restore_error);
+				return result;
+			}
+			invalidate_cache(change.path);
+		}
 	}
 
 	result.ok = true;

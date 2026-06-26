@@ -42,6 +42,23 @@ struct FixpointInferenceOptions {
 	// Strict modes are forwarded to per-pass verification (issue #34).
 	bool strict_null_checks = false;
 	bool strict_dynamic_checks = false;
+	// Projection mode: drive the full dependency-ordered fixpoint exactly as a real run
+	// (each pass still writes to disk so the verification harness can re-read dependents),
+	// then restore every touched file to its original on-disk content before returning. The
+	// result (changed_files / skipped / counts) is the exact set the run would commit, but
+	// the tree is left untouched. NOT safe to call concurrently with a live editing session.
+	bool dry_run = false;
+};
+
+// Annotations the run committed (or, in dry_run mode, would commit), bucketed by the kind of
+// declaration each one annotates. `total` counts every applied annotation; the per-kind fields
+// sum to `total` whenever every applied site carried a recognized declaration kind.
+struct FixpointInferableCounts {
+	int variable = 0;
+	int constant = 0;
+	int parameter = 0;
+	int return_type = 0;
+	int total = 0;
 };
 
 // Before/after record for one file the run modified.
@@ -76,6 +93,10 @@ struct FixpointInferenceResult {
 	// detects the fixpoint, so a chain of depth N typically reports N+1.
 	int iterations = 0;
 	int total_annotations_applied = 0;
+	// The applied annotations bucketed by declaration kind (variable / constant / parameter /
+	// return). `inferable.total` equals total_annotations_applied; the per-kind split lets a
+	// projection report coverage by kind without re-deriving it.
+	FixpointInferableCounts inferable;
 	// True means a pass produced no new annotations, so the iteration reached a real
 	// fixpoint. False means the iteration bound stopped the loop early before any such
 	// empty pass, so further annotations might still have been inferable.
