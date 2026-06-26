@@ -4818,6 +4818,50 @@ void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptP
 	}
 }
 
+// Collects the names declared inside p_suite and its nested suites (locals,
+// loop/pattern binds) into r_names. A namespace chain whose leading segment
+// matches one of these would be captured by the local symbol, so a qualified
+// annotation cannot use it. Gathering the whole function (rather than only the
+// locals live at one site) is a safe superset: it can only make the renderer
+// fall back to bare/disable, never emit an unresolved name.
+void collect_suite_local_names(const GDScriptParser::SuiteNode *p_suite, Vector<String> &r_names) {
+	if (p_suite == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::SuiteNode::Local &local : p_suite->locals) {
+		if (local.name != StringName()) {
+			r_names.push_back(local.name);
+		}
+	}
+	for (const GDScriptParser::Node *statement : p_suite->statements) {
+		if (statement == nullptr) {
+			continue;
+		}
+		switch (statement->type) {
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
+				collect_suite_local_names(if_node->true_block, r_names);
+				collect_suite_local_names(if_node->false_block, r_names);
+			} break;
+			case GDScriptParser::Node::FOR:
+				collect_suite_local_names(static_cast<const GDScriptParser::ForNode *>(statement)->loop, r_names);
+				break;
+			case GDScriptParser::Node::WHILE:
+				collect_suite_local_names(static_cast<const GDScriptParser::WhileNode *>(statement)->loop, r_names);
+				break;
+			case GDScriptParser::Node::MATCH:
+				for (const GDScriptParser::MatchBranchNode *branch : static_cast<const GDScriptParser::MatchNode *>(statement)->branches) {
+					if (branch != nullptr) {
+						collect_suite_local_names(branch->block, r_names);
+					}
+				}
+				break;
+			default:
+				break;
+		}
+	}
+}
+
 void collect_type_annotation_in_function(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_class,
@@ -4835,13 +4879,30 @@ void collect_type_annotation_in_function(
 	if (p_function == nullptr) {
 		return;
 	}
+	// Augment the file-level scope with this function's parameter and local names
+	// so a qualified annotation never roots at a symbol shadowed inside the body.
+	TypeAnnotationRenderContext function_context;
+	const TypeAnnotationRenderContext *render_context = p_render_context;
+	if (p_render_context != nullptr) {
+		function_context = *p_render_context;
+		for (const GDScriptParser::ParameterNode *parameter : p_function->parameters) {
+			if (parameter != nullptr && parameter->identifier != nullptr) {
+				function_context.scope.shadowing_local_names.push_back(parameter->identifier->name);
+			}
+		}
+		if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr) {
+			function_context.scope.shadowing_local_names.push_back(p_function->rest_parameter->identifier->name);
+		}
+		collect_suite_local_names(p_function->body, function_context.scope.shadowing_local_names);
+		render_context = &function_context;
+	}
 	for (int i = 0; i < p_function->parameters.size(); i++) {
 		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
 		TypeAnnotationCandidate candidate;
-		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate, nullptr, nullptr, p_render_context) && candidate.matched) {
+		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate, nullptr, nullptr, render_context) && candidate.matched) {
 #ifndef GDSCRIPT_NO_LSP
 			if (p_location == nullptr || caret_on_segment(*p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
-				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate, p_render_context);
+				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate, render_context);
 			}
 #endif // GDSCRIPT_NO_LSP
 			r_candidates.push_back(candidate);
@@ -4850,13 +4911,13 @@ void collect_type_annotation_in_function(
 	if (p_function->rest_parameter != nullptr) {
 		// A vararg tail does not map cleanly to one call-site argument index, so
 		// keep rest parameters on the existing declaration-local inference path.
-		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates, nullptr, nullptr, p_render_context);
+		collect_assignable_candidate(p_lines, p_function->rest_parameter, "parameter", false, r_candidates, nullptr, nullptr, render_context);
 	}
 	TypeAnnotationCandidate return_candidate;
-	if (find_function_return_type_annotation(p_lines, p_function, return_candidate, p_render_context) && return_candidate.matched) {
+	if (find_function_return_type_annotation(p_lines, p_function, return_candidate, render_context) && return_candidate.matched) {
 		r_candidates.push_back(return_candidate);
 	}
-	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body, p_render_context);
+	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body, render_context);
 }
 
 void collect_type_annotation_in_class(
