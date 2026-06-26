@@ -4309,7 +4309,15 @@ int Main::start() {
 	main_loop_type = String();
 #endif // defined(OVERRIDE_PATH_ENABLED)
 
-	if (script.is_empty() && game_path.is_empty()) {
+	bool skip_main_scene_resolution = false;
+#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+	// The migration command is handled before the game branch and never runs the main scene, so do
+	// not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a fresh
+	// CI/source checkout before the migration could even print its report.
+	skip_main_scene_resolution = !gdscript_migrate_path.is_empty();
+#endif
+
+	if (!skip_main_scene_resolution && script.is_empty() && game_path.is_empty()) {
 		const String main_scene = GLOBAL_GET("application/run/main_scene");
 		if (main_scene.begins_with("uid://")) {
 			ResourceUID::ID id = ResourceUID::get_singleton()->text_to_id(main_scene);

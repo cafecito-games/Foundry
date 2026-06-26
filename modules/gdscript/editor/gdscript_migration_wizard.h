@@ -132,8 +132,9 @@ struct MigrationWizardResult {
 	// Whether the run fully achieved what its options asked for, the success signal a scripted or CI
 	// caller should branch on. It is stricter than `ok` (which only means no fatal error): a run is
 	// successful only when it did not hit a fatal error, a requested strict activation was not gated
-	// away (strict_activation_blocked), and any activation that went through actually persisted to
-	// project.godot (a flip that fails to save is lost on exit, so it is not a success).
+	// away (strict_activation_blocked), and any activation that went through both persisted to
+	// project.godot (a flip that fails to save is lost on exit) and is actually live (not left
+	// ineffective by a per-feature override that masks it).
 	bool succeeded() const;
 };
 

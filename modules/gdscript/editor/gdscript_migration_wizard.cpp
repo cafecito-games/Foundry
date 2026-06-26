@@ -130,9 +130,15 @@ bool MigrationWizardResult::succeeded() const {
 	if (strict_activation_blocked) {
 		return false;
 	}
-	// An activation that flipped the in-memory setting but failed to persist is lost on exit.
-	if (strict_activated && !strict_result.persisted) {
-		return false;
+	if (strict_activated) {
+		// An activation that flipped the in-memory setting but failed to persist is lost on exit.
+		if (!strict_result.persisted) {
+			return false;
+		}
+		// An activation a per-feature override still masks did not actually make strict mode live.
+		if (strict_result.override_masked) {
+			return false;
+		}
 	}
 	return true;
 }

@@ -107,13 +107,26 @@ void GDScriptMigrationWizardDialog::_run_migration() {
 		script_editor->reload_scripts(false);
 	}
 
+	// A flip only counts as durably "enabled" once it persisted to project.godot and is not masked
+	// by a per-feature override; otherwise the setting is lost on restart or simply not live, which
+	// the user must be told rather than shown a plain success.
+	const bool strict_degraded = result.strict_activated && (!result.strict_result.persisted || result.strict_result.override_masked);
+	const bool strict_enabled = result.strict_activated && !strict_degraded;
+
 	if (!result.ok) {
 		status_label->set_text(vformat(TTR("Migration error: %s"), result.error_message));
-	} else if (result.applied && result.strict_activated) {
+	} else if (strict_degraded) {
+		// The setting flipped in memory but is not durable/effective; surface why.
+		if (!result.strict_result.persisted) {
+			status_label->set_text(TTR("Strict settings are live for this session but could not be saved to the project; they will not survive a restart."));
+		} else {
+			status_label->set_text(vformat(TTR("Strict settings were saved but a per-feature override still masks them: %s"), result.strict_result.effective_warning));
+		}
+	} else if (result.applied && strict_enabled) {
 		status_label->set_text(TTR("Migration applied and strict settings enabled. Review the changes in your version control before committing."));
 	} else if (result.applied) {
 		status_label->set_text(TTR("Migration applied. Review the changes in your version control before committing."));
-	} else if (result.strict_activated) {
+	} else if (strict_enabled) {
 		// No annotations were applied, but the strict project settings were flipped and saved, so
 		// project.godot did change -- not a no-op dry run.
 		status_label->set_text(TTR("Strict settings enabled in the project settings. No script files were changed."));
