@@ -198,16 +198,16 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 		const bool render_bare = !r_state.force_qualified && bare_name_resolves_to_target(target_namespace, class_name, p_scope);
 		if (!render_bare && !r_state.force_qualified) {
 			// A qualified `namespace.Class` only resolves when its leading segment is
-			// not a builtin type or native class: the analyzer binds those first and
-			// never descends into the namespace (e.g. `Node.foo.Bar` resolves `Node`
-			// to the native class and then fails). A global-class root is fine because
-			// the analyzer matches the longest qualified global class before the bare
-			// root. When the root is builtin/native and the class is not in scope,
-			// neither spelling resolves, so the site is left un-annotated rather than
-			// emitting invalid source. The force_qualified identity path keeps the
-			// spelling for comparison only.
+			// not bound to something the analyzer resolves before a namespace chain: a
+			// builtin type, a native class (e.g. `Node.foo.Bar` binds `Node` to the
+			// native class and then fails), or a local class-scope name (an inner class
+			// or member). A global-class root is fine because the analyzer matches the
+			// longest qualified global class before the bare root. When the root is
+			// shadowed and the class is not in scope, neither spelling resolves, so the
+			// site is left un-annotated rather than emitting invalid source. The
+			// force_qualified identity path keeps the spelling for comparison only.
 			const String namespace_root = target_namespace.get_slicec('.', 0);
-			if (name_is_builtin_or_native(namespace_root)) {
+			if (name_is_builtin_or_native(namespace_root) || p_scope.shadowing_local_names.has(namespace_root)) {
 				return false;
 			}
 		}

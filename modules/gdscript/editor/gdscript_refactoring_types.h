@@ -47,6 +47,11 @@ namespace GDScriptRefactorTypes {
 struct AnnotationScope {
 	String current_namespace; // The file's `namespace` declaration; empty for the global namespace.
 	Vector<String> imported_namespaces; // The file's `import` declarations.
+	// Names declared in the file's class scope (members, inner classes, the class
+	// name itself) that the analyzer resolves before a namespace chain. A qualified
+	// `root.ns.Class` whose leading `root` matches one of these would be read as a
+	// nested type under that local symbol and fail, so such a spelling is rejected.
+	Vector<String> shadowing_local_names;
 };
 
 // Renders p_type to its GDScript source spelling when it is worth annotating.

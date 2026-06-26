@@ -1044,6 +1044,26 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			HashSet<String> imports;
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type_in_scope(thing_type, scope, rendered, imports));
 		}
+		SUBCASE("class whose namespace root is shadowed by a local name is not annotatable") {
+			// A local member/inner-class named `root` would capture `root.ns.Thing`, so
+			// the qualified spelling cannot resolve and the site is left untyped.
+			GDScriptParser::IdentifierNode shadowed_identifier;
+			shadowed_identifier.name = "Thing";
+			GDScriptParser::ClassNode shadowed_class;
+			shadowed_class.identifier = &shadowed_identifier;
+			shadowed_class.namespace_name = "root.ns";
+			GDScriptParser::DataType shadowed_type;
+			shadowed_type.kind = GDScriptParser::DataType::CLASS;
+			shadowed_type.type_source = GDScriptParser::DataType::INFERRED;
+			shadowed_type.class_type = &shadowed_class;
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			scope.shadowing_local_names.push_back("root");
+			String rendered;
+			HashSet<String> imports;
+			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type_in_scope(shadowed_type, scope, rendered, imports));
+		}
 		SUBCASE("class whose namespace root is an ordinary identifier qualifies normally") {
 			// A non-native root (even one that may also be a global class) does not
 			// block the qualified spelling, since the analyzer matches the longest

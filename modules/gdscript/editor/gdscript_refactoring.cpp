@@ -96,6 +96,18 @@ TypeAnnotationRenderContext make_type_annotation_render_context(const GDScriptPa
 	if (p_root != nullptr) {
 		context.scope.current_namespace = p_root->namespace_name;
 		context.scope.imported_namespaces = p_root->imports;
+		// Names in the file's class scope (the class itself plus its members and
+		// inner classes) shadow a namespace chain whose leading segment matches one
+		// of them, so a qualified spelling rooted at such a name must be avoided.
+		if (p_root->identifier != nullptr) {
+			context.scope.shadowing_local_names.push_back(p_root->identifier->name);
+		}
+		for (const GDScriptParser::ClassNode::Member &member : p_root->members) {
+			const String member_name = member.get_name();
+			if (!member_name.is_empty()) {
+				context.scope.shadowing_local_names.push_back(member_name);
+			}
+		}
 	}
 	return context;
 }
