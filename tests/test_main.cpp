@@ -40,6 +40,7 @@
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_refactor_diff_preview.h"
 #include "tests/editor/test_script_refactor_apply.h"
+#include "tests/editor/test_script_refactor_vcs_guard.h"
 #endif // TOOLS_ENABLED
 
 #include "tests/core/config/test_project_settings.h"
