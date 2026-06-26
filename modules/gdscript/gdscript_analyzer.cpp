@@ -10585,7 +10585,13 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		}
 
 		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
-		if (parameter->initializer == nullptr || !parameter->initializer->is_constant) {
+
+		// A generic function is excluded: a materialized default becomes an ordinary call argument
+		// that `apply_generic_method_call` would unify and validate against the call's substituted
+		// type parameters, whereas a trailing omitted default never is. Until that interaction is
+		// designed, a middle skip on a generic function must be passed explicitly.
+		const bool can_inline_default = parameter->initializer != nullptr && parameter->initializer->is_constant && p_function->type_parameters.is_empty();
+		if (!can_inline_default) {
 			const StringName skipped_name = parameter->identifier != nullptr ? parameter->identifier->name : StringName();
 			push_error(vformat(R"(Cannot skip parameter "%s" with named arguments; pass it explicitly.)", skipped_name), p_call);
 			p_call->argument_names.clear();
