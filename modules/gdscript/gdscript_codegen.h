@@ -119,6 +119,9 @@ public:
 	// Store into a member typed as a class type parameter (`value: T`), validating the value against the
 	// instance's reified type argument at runtime.
 	virtual void write_assign_typed_parameter(const Address &p_target, const Address &p_source, int p_member_index) = 0;
+	// Retype a runtime-erased (untyped) array — the result of a generic method returning `Array[T]` —
+	// into the concrete typed array of the target, converting each element.
+	virtual void write_assign_typed_array_convert(const Address &p_target, const Address &p_source) = 0;
 	virtual void write_assign_null(const Address &p_target) = 0;
 	virtual void write_assign_true(const Address &p_target) = 0;
 	virtual void write_assign_false(const Address &p_target) = 0;

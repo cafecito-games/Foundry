@@ -263,6 +263,16 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	return result;
 }
 
+// A generic method returning `Array[T]` yields an untyped array at runtime (the element is erased),
+// so assigning its result to a concrete typed array needs a converting retype rather than the strict
+// validate that an ordinary typed-array assignment emits.
+static bool _is_erased_container_call_to_typed_array(const GDScriptParser::ExpressionNode *p_source, const GDScriptDataType &p_target_type) {
+	return p_source != nullptr && p_source->type == GDScriptParser::Node::CALL &&
+			static_cast<const GDScriptParser::CallNode *>(p_source)->returns_erased_container &&
+			p_target_type.kind == GDScriptDataType::BUILTIN && p_target_type.builtin_type == Variant::ARRAY &&
+			p_target_type.has_container_element_type(0);
+}
+
 static bool _is_exact_type(const PropertyInfo &p_par_type, const GDScriptDataType &p_arg_type) {
 	if (!p_arg_type.has_type()) {
 		return false;
@@ -1574,6 +1584,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					// store that validates the value against the binding the leaf script resolved for this
 					// member slot (fixed by an `extends Base[int]` specialization, or open on the instance).
 					gen->write_assign_typed_parameter(target, to_assign, member_type_parameter_slot);
+				} else if (!has_operation && _is_erased_container_call_to_typed_array(assignment->assigned_value, target.type)) {
+					// The whole assigned value is a generic method returning an erased `Array[T]`; retype the
+					// untyped runtime array into the concrete typed-array target.
+					gen->write_assign_typed_array_convert(target, to_assign);
 				} else {
 					// Just assign.
 					if (assignment->use_conversion_assign) {
@@ -2424,7 +2438,9 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					if (err) {
 						return err;
 					}
-					if (lv->use_conversion_assign) {
+					if (_is_erased_container_call_to_typed_array(lv->initializer, local.type)) {
+						gen->write_assign_typed_array_convert(local, src_address);
+					} else if (lv->use_conversion_assign) {
 						gen->write_assign_with_conversion(local, src_address);
 					} else {
 						gen->write_assign(local, src_address);
