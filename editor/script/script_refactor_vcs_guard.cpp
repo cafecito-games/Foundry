@@ -126,8 +126,17 @@ Result inspect_project(const String &p_project_path) {
 
 	if (state.inside_work_tree) {
 		Vector<String> args;
+		// `-c status.showUntrackedFiles=all` overrides a repo/user setting of `no`
+		// or `normal` that would otherwise hide untracked (or untracked-in-subdir)
+		// scripts the migration can still overwrite. `--ignored=matching` also
+		// surfaces git-ignored paths, since an ignored `.gd` the scan picks up is
+		// not recoverable from git and the user must be warned before it is rewritten.
+		args.push_back("-c");
+		args.push_back("status.showUntrackedFiles=all");
 		args.push_back("status");
 		args.push_back("--porcelain");
+		args.push_back("--untracked-files=all");
+		args.push_back("--ignored=matching");
 		int exit_code = 0;
 		String output;
 		if (run_git(project_path, args, exit_code, output)) {
