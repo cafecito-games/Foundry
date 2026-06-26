@@ -88,8 +88,11 @@ def compare(old, new, tolerance_percent=10.0):
 
     Returns a list of per-key deltas. A key is flagged ``regressed`` when its
     time grew by more than ``tolerance_percent`` relative to the old run. Keys
-    absent from the old run, or with a non-positive old time, are skipped (no
-    meaningful percentage baseline).
+    that the old run did not measure with a positive time are skipped (no
+    meaningful percentage baseline). Keys present in the old run but missing
+    from the new run are reported as ``missing`` and flagged ``regressed``: a
+    benchmark that vanished (a removed case, or partial output after a workload
+    failure) is lost coverage, and the gate must not pass silently.
     """
     out = []
     for key, new_usec in new.items():
@@ -107,6 +110,20 @@ def compare(old, new, tolerance_percent=10.0):
                 "new_us": round(new_usec, 1),
                 "delta_percent": round(exact_delta_percent, 1),
                 "regressed": exact_delta_percent > tolerance_percent,
+                "missing": False,
+            }
+        )
+    for key, old_usec in old.items():
+        if key in new or old_usec is None or old_usec <= 0:
+            continue
+        out.append(
+            {
+                "key": key,
+                "old_us": round(old_usec, 1),
+                "new_us": None,
+                "delta_percent": None,
+                "regressed": True,
+                "missing": True,
             }
         )
     return out
@@ -133,7 +150,17 @@ def _print_table(rows):
 
 
 def _print_comparison(results):
-    for row in sorted(results, key=lambda item: -item["delta_percent"]):
+    # Missing keys have no delta; sort them first (treated as the worst kind of
+    # regression), then by descending delta for the rest.
+    def sort_key(item):
+        if item["missing"]:
+            return (0, 0.0)
+        return (1, -item["delta_percent"])
+
+    for row in sorted(results, key=sort_key):
+        if row["missing"]:
+            print(f"{row['key']:<44}{row['old_us']:>12}{'(missing)':>12}{'--':>10} REGRESSION (missing)")
+            continue
         mark = " REGRESSION" if row["regressed"] else ""
         print(f"{row['key']:<44}{row['old_us']:>12}{row['new_us']:>12}{row['delta_percent']:>9}%{mark}")
 

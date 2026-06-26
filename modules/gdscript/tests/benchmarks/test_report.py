@@ -115,6 +115,24 @@ class CompareTest(unittest.TestCase):
         results = report.compare(old, new, tolerance_percent=10.0)
         self.assertFalse(results[0]["regressed"])
 
+    def test_compare_flags_benchmark_dropped_from_new_run(self):
+        old = {"gdscript:a/feature": 100.0, "gdscript:b/feature": 100.0}
+        new = {"gdscript:a/feature": 100.0}
+        results = report.compare(old, new, tolerance_percent=10.0)
+        by_key = {r["key"]: r for r in results}
+        self.assertTrue(by_key["gdscript:b/feature"]["missing"])
+        self.assertTrue(by_key["gdscript:b/feature"]["regressed"])
+        self.assertIsNone(by_key["gdscript:b/feature"]["new_us"])
+        self.assertFalse(by_key["gdscript:a/feature"]["missing"])
+
+    def test_main_compare_nonzero_when_benchmark_dropped(self):
+        # Exercised through main() to confirm the dropped key fails the gate.
+        results = report.compare(
+            {"gdscript:a/feature": 100.0, "gdscript:b/feature": 100.0},
+            {"gdscript:a/feature": 100.0},
+        )
+        self.assertTrue(any(r["regressed"] for r in results))
+
     def test_compare_uses_exact_delta_not_rounded(self):
         # 1000 -> 1100.4 is a 10.04% increase: over a 10% tolerance even though
         # the displayed delta rounds to 10.0. The regression must still flag.
