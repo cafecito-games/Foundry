@@ -39,6 +39,7 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/gdscript_highlighter.h"
+#include "editor/gdscript_migration_wizard_plugin.h"
 #include "editor/gdscript_translation_parser_plugin.h"
 
 #ifndef GDSCRIPT_NO_LSP
@@ -116,6 +117,14 @@ public:
 	virtual String get_name() const override { return "GDScript"; }
 };
 
+static GDScriptMigrationWizardDialog *gdscript_migration_wizard_dialog = nullptr;
+
+static void _open_gdscript_migration_wizard() {
+	if (gdscript_migration_wizard_dialog) {
+		gdscript_migration_wizard_dialog->popup_wizard();
+	}
+}
+
 static void _editor_init() {
 	Ref<EditorExportGDScript> gd_export;
 	gd_export.instantiate();
@@ -125,6 +134,14 @@ static void _editor_init() {
 	Ref<GDScriptSyntaxHighlighter> gdscript_syntax_highlighter;
 	gdscript_syntax_highlighter.instantiate();
 	ScriptEditor::get_singleton()->register_syntax_highlighter(gdscript_syntax_highlighter);
+
+	// The editor entry point for the strict-typing migration wizard: a Project > Tools action that
+	// opens the dialog driving the same orchestrator as the `--gdscript-migrate` headless command.
+	gdscript_migration_wizard_dialog = memnew(GDScriptMigrationWizardDialog);
+	EditorNode::get_singleton()->get_gui_base()->add_child(gdscript_migration_wizard_dialog);
+	EditorNode::get_singleton()->add_tool_menu_item(
+			TTR("Migrate to Strict Typing..."),
+			callable_mp_static(&_open_gdscript_migration_wizard));
 #endif
 
 #ifndef GDSCRIPT_NO_LSP

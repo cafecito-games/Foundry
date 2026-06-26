@@ -144,6 +144,9 @@
 
 #ifdef MODULE_GDSCRIPT_ENABLED
 #include "modules/gdscript/gdscript.h"
+#ifdef TOOLS_ENABLED
+#include "modules/gdscript/editor/gdscript_migration_wizard.h"
+#endif // TOOLS_ENABLED
 #if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
 #include "modules/gdscript/language_server/gdscript_language_server.h"
 #endif // TOOLS_ENABLED && !GDSCRIPT_NO_LSP
@@ -709,6 +712,15 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--gdextension-docs", "Rather than dumping the engine API, generate API reference from all the GDExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #ifdef MODULE_GDSCRIPT_ENABLED
 	print_help_option("--gdscript-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the GDScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate <path>", "Run the GDScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --gdscript-migrate-apply to commit the inferred annotations, and the --gdscript-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-apply", "Commit the inferred type annotations to disk during --gdscript-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-strict-null-checks", "Project (and, with --gdscript-migrate-activate-strict, enable) strict null checks during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-strict-dynamic-checks", "Project (and, with --gdscript-migrate-activate-strict, enable) strict dynamic checks during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-activate-strict", "Flip the requested strict project settings during --gdscript-migrate. Requires --gdscript-migrate-confirm and a clean report (or --gdscript-migrate-allow-violations).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-confirm", "Confirm the gated strict-settings flip for --gdscript-migrate-activate-strict.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-allow-violations", "Allow the strict-settings flip even when violations remain (gradual adoption) during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-acknowledge-vcs", "Acknowledge the version-control safety warning so --gdscript-migrate-apply proceeds on an unversioned or dirty tree.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--gdscript-migrate-follow-up <path>", "Write the manual follow-up punch-list from --gdscript-migrate to <path>.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #endif
 	print_help_option("--build-solutions", "Build the scripting solutions (e.g. for C# projects). Implies --editor and requires a valid project to edit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--dump-gdextension-interface", "Generate a GDExtension header file \"gdextension_interface.h\" in the current folder. This file is the base file required to implement a GDExtension.\n", CLI_OPTION_AVAILABILITY_EDITOR);
@@ -1709,6 +1721,40 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				quit_after = 1;
 			} else {
 				OS::get_singleton()->print("Missing relative or absolute path to project for --gdscript-docs, aborting.\n");
+				goto error;
+			}
+		} else if (arg == "--gdscript-migrate") {
+			// Headless strict-typing migration wizard: runs the dry-run report and, when
+			// asked, the atomic apply and gated strict activation, then exits. Will be
+			// handled in start(); the modifier flags are read there from cmdline_args.
+			if (N) {
+				project_path = N->get();
+				// Run as a command-line tool: this skips the project-manager/game-launch
+				// branches so start() reaches the migration handler, and forces headless
+				// since the wizard prints to the console and needs no window.
+				cmdline_tool = true;
+				audio_driver = NULL_AUDIO_DRIVER;
+				display_driver = NULL_DISPLAY_DRIVER;
+				main_args.push_back(arg);
+				main_args.push_back(N->get());
+				N = N->next();
+				// The wizard finishes its work in start() and exits; like --gdscript-docs it
+				// does not need a running main loop.
+				quit_after = 1;
+			} else {
+				OS::get_singleton()->print("Missing relative or absolute path to project for --gdscript-migrate, aborting.\n");
+				goto error;
+			}
+		} else if (arg == "--gdscript-migrate-follow-up") {
+			// Validate the required path argument here (where end-of-command-line is detectable);
+			// the value itself is read in start(). Consume the path so it is not reparsed as a
+			// standalone option.
+			if (N) {
+				main_args.push_back(arg);
+				main_args.push_back(N->get());
+				N = N->next();
+			} else {
+				OS::get_singleton()->print("Missing file path argument for --gdscript-migrate-follow-up, aborting.\n");
 				goto error;
 			}
 #endif // MODULE_GDSCRIPT_ENABLED
@@ -3937,6 +3983,15 @@ int Main::start() {
 	bool export_patch = false;
 #ifdef MODULE_GDSCRIPT_ENABLED
 	String gdscript_docs_path;
+	String gdscript_migrate_path;
+	bool gdscript_migrate_apply = false;
+	bool gdscript_migrate_strict_null = false;
+	bool gdscript_migrate_strict_dynamic = false;
+	bool gdscript_migrate_activate_strict = false;
+	bool gdscript_migrate_confirm = false;
+	bool gdscript_migrate_allow_violations = false;
+	bool gdscript_migrate_acknowledge_vcs = false;
+	String gdscript_migrate_follow_up_path;
 #endif
 #ifndef DISABLE_DEPRECATED
 	bool converting_project = false;
@@ -3974,6 +4029,22 @@ int Main::start() {
 			recovery_mode = true;
 		} else if (E->get() == "--install-android-build-template") {
 			install_android_build_template = true;
+#ifdef MODULE_GDSCRIPT_ENABLED
+		} else if (E->get() == "--gdscript-migrate-apply") {
+			gdscript_migrate_apply = true;
+		} else if (E->get() == "--gdscript-migrate-strict-null-checks") {
+			gdscript_migrate_strict_null = true;
+		} else if (E->get() == "--gdscript-migrate-strict-dynamic-checks") {
+			gdscript_migrate_strict_dynamic = true;
+		} else if (E->get() == "--gdscript-migrate-activate-strict") {
+			gdscript_migrate_activate_strict = true;
+		} else if (E->get() == "--gdscript-migrate-confirm") {
+			gdscript_migrate_confirm = true;
+		} else if (E->get() == "--gdscript-migrate-allow-violations") {
+			gdscript_migrate_allow_violations = true;
+		} else if (E->get() == "--gdscript-migrate-acknowledge-vcs") {
+			gdscript_migrate_acknowledge_vcs = true;
+#endif // MODULE_GDSCRIPT_ENABLED
 #endif // TOOLS_ENABLED
 		} else if (E->get() == "--scene") {
 #if defined(OVERRIDE_PATH_ENABLED)
@@ -4033,6 +4104,10 @@ int Main::start() {
 #ifdef MODULE_GDSCRIPT_ENABLED
 			} else if (E->get() == "--gdscript-docs") {
 				gdscript_docs_path = E->next()->get();
+			} else if (E->get() == "--gdscript-migrate") {
+				gdscript_migrate_path = E->next()->get();
+			} else if (E->get() == "--gdscript-migrate-follow-up") {
+				gdscript_migrate_follow_up_path = E->next()->get();
 #endif
 			} else if (E->get() == "--export-release") {
 				ERR_FAIL_COND_V_MSG(!editor && !found_project, EXIT_FAILURE, "Please provide a valid project path when exporting, aborting.");
@@ -4234,7 +4309,15 @@ int Main::start() {
 	main_loop_type = String();
 #endif // defined(OVERRIDE_PATH_ENABLED)
 
-	if (script.is_empty() && game_path.is_empty()) {
+	bool skip_main_scene_resolution = false;
+#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+	// The migration command is handled before the game branch and never runs the main scene, so do
+	// not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a fresh
+	// CI/source checkout before the migration could even print its report.
+	skip_main_scene_resolution = !gdscript_migrate_path.is_empty();
+#endif
+
+	if (!skip_main_scene_resolution && script.is_empty() && game_path.is_empty()) {
 		const String main_scene = GLOBAL_GET("application/run/main_scene");
 		if (main_scene.begins_with("uid://")) {
 			ResourceUID::ID id = ResourceUID::get_singleton()->text_to_id(main_scene);
@@ -4258,6 +4341,49 @@ int Main::start() {
 		ERR_FAIL_V_MSG(EXIT_FAILURE, "Couldn't detect whether to run the editor, the project manager or a specific project. Aborting.");
 	}
 #endif
+
+#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+	if (!gdscript_migrate_path.is_empty()) {
+		// Headless strict-typing migration wizard. Reuses the same orchestrator the editor entry
+		// point drives (report -> apply -> gated strict activation), so a scripted or
+		// continuous-integration run produces the identical flow without a window. Handled here --
+		// before the project main loop is resolved/instantiated and before the game branch loads and
+		// instantiates project autoloads -- so it runs independently of the project's runtime
+		// main-loop setting and a dry-run preview never executes arbitrary project code before
+		// printing its report.
+
+		// Refuse to run unless a real project was loaded. Otherwise ProjectSettings::setup() may
+		// have left res:// bound to the process working directory, and an --apply run could rewrite
+		// an unintended tree (and falsely report success).
+		ERR_FAIL_COND_V_MSG(!found_project, EXIT_FAILURE,
+				"--gdscript-migrate requires a valid project; none was found at the given path. Aborting.");
+
+		// --gdscript-migrate-follow-up takes a path; reject a missing one (the next token was
+		// another option, or the flag ended the command line) so the request is not silently
+		// dropped or made to consume an unrelated option as its path.
+		ERR_FAIL_COND_V_MSG(gdscript_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
+				"--gdscript-migrate-follow-up requires a file path argument. Aborting.");
+
+		MigrationWizardOptions options;
+		options.apply = gdscript_migrate_apply;
+		options.strict_null_checks = gdscript_migrate_strict_null;
+		options.strict_dynamic_checks = gdscript_migrate_strict_dynamic;
+		options.activate_strict = gdscript_migrate_activate_strict;
+		options.confirm_strict_activation = gdscript_migrate_confirm;
+		options.allow_strict_with_violations = gdscript_migrate_allow_violations;
+		options.acknowledge_vcs_warning = gdscript_migrate_acknowledge_vcs;
+		options.follow_up_path = gdscript_migrate_follow_up_path;
+
+		// The migration path was loaded as the project (project_path), so res:// resolves to it; the
+		// wizard scans the whole project tree.
+		const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
+		OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
+		// succeeded() is stricter than ok: it also fails a gated strict activation and an activation
+		// that flipped but could not be persisted, so a scripted or CI run enforcing strict
+		// activation never mistakes a blocked or unsaved flip for success.
+		return migration_result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
+	}
+#endif // TOOLS_ENABLED && MODULE_GDSCRIPT_ENABLED
 
 	MainLoop *main_loop = nullptr;
 	if (editor) {
