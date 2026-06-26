@@ -37,6 +37,7 @@
 #include "../gdscript_utility_functions.h"
 
 #include "core/string/node_path.h"
+#include "core/templates/hash_map.h"
 #include "core/variant/variant.h"
 
 namespace {
@@ -275,6 +276,134 @@ bool is_expression_node(Node::Type p_type) {
 	}
 }
 
+// Tracks `for` loop iterators bound to a read of the tracked container --
+// `for v in c:` -- whose analyzer type is `Variant` while the container is bare
+// but narrows to a concrete element type (array element / dictionary key) once the
+// container is typed. Such an iterator is only a problem when it is later
+// reassigned to a value the narrowed type would reject; the reassignment is
+// currently valid only because iterating a bare container yields `Variant`.
+//
+// Only loop iterators need tracking: a plain `var v = c[i]` local is soft-typed
+// and merely downgrades to `Variant` on an incompatible reassignment (no error),
+// and an inferred `var v := c[i]` cannot even occur over a bare container (`:=`
+// from a `Variant` element read is a parse error). See the design doc.
+//
+// Because the walk is flow-insensitive and binding/reassignment can appear in any
+// order, both are recorded here and reconciled after the element type is known
+// (see `narrows_a_read`). Each binding remembers which container slot the read
+// reads from so the reassigned value can be compared against the right type.
+//
+// This covers reassignment, the case detectable cheaply and soundly from the
+// assignment alone. It does not cover every later *use* of a narrowed read in a
+// type-sensitive position (a typed call argument, a typed return, a typed
+// assignment target), where narrowing could also change analysis; proving those
+// safe needs the whole-body re-analysis the post-edit verification harness (#34)
+// already performs on applied edits. See the design doc for the documented
+// boundary and the follow-up tracking up-front detection of those positions.
+class ReadNarrowingTracker {
+public:
+	enum Slot {
+		ARRAY_ELEMENT,
+		DICTIONARY_KEY,
+	};
+
+	// Records that `p_sink` (the loop iterator `IdentifierNode *` for a `for`
+	// binding) is bound to a read of the container's `p_slot`. Ignored when the
+	// iterator carries an explicit type annotation, since the analyzer then keeps
+	// that type instead of narrowing.
+	void note_read_binding(const void *p_sink, Slot p_slot) {
+		if (p_sink != nullptr) {
+			read_bindings[p_sink] = p_slot;
+		}
+	}
+
+	// Records a whole-variable reassignment (`p_sink = value`) of a local or loop
+	// iterator, with the assigned value's type. Only reassignments to a recorded
+	// read binding matter, but they can be seen before the binding, so all are kept.
+	void note_reassignment(const void *p_sink, const DataType &p_value) {
+		if (p_sink != nullptr) {
+			Reassignment reassignment;
+			reassignment.sink = p_sink;
+			reassignment.value = p_value;
+			reassignments.push_back(reassignment);
+		}
+	}
+
+	// Records a compound reassignment (`p_sink op= ...`) of a local or loop
+	// iterator. A compound operation's result type and validity depend on the
+	// operand type, which changes once the binding narrows from `Variant` to the
+	// element type, so any compound reassignment of a read binding is treated as
+	// narrowing-unsafe regardless of the operand.
+	void note_compound_reassignment(const void *p_sink) {
+		if (p_sink != nullptr) {
+			Reassignment reassignment;
+			reassignment.sink = p_sink;
+			reassignment.is_compound = true;
+			reassignments.push_back(reassignment);
+		}
+	}
+
+	// True when some read binding is reassigned a value whose rendered type differs
+	// from the element type its slot would narrow to (or a compound reassignment,
+	// which is always unsafe). `p_slot_rendered` returns the rendered element type
+	// for a slot, or false when that slot has no concrete type (then nothing
+	// narrows there, so it is skipped).
+	template <typename SlotRenderer>
+	bool narrows_a_read(const SlotRenderer &p_slot_rendered, String &r_detail) const {
+		for (const Reassignment &reassignment : reassignments) {
+			HashMap<const void *, Slot>::ConstIterator binding = read_bindings.find(reassignment.sink);
+			if (binding == read_bindings.end()) {
+				continue;
+			}
+			String slot_rendered;
+			if (!p_slot_rendered(binding->value, slot_rendered)) {
+				continue;
+			}
+			if (!reassignment.is_compound) {
+				DataType value = reassignment.value;
+				value.is_constant = false;
+				String value_rendered;
+				if (GDScriptRefactorTypes::render_annotatable_type(value, value_rendered) && value_rendered == slot_rendered) {
+					continue;
+				}
+			}
+			r_detail = vformat(
+					"a read bound to a local is later reassigned a value incompatible with the %s element type",
+					slot_rendered);
+			return true;
+		}
+		return false;
+	}
+
+private:
+	struct Reassignment {
+		const void *sink = nullptr;
+		DataType value;
+		bool is_compound = false;
+	};
+	HashMap<const void *, Slot> read_bindings;
+	Vector<Reassignment> reassignments;
+};
+
+// Resolves the local declaration or loop iterator a plain identifier refers to,
+// so a reassignment target can be matched to a recorded read binding by identity.
+// Returns nullptr for anything that is not a writable local/iterator reference.
+const void *local_sink_of(const GDScriptParser::ExpressionNode *p_expr) {
+	if (p_expr == nullptr || p_expr->type != Node::IDENTIFIER) {
+		return nullptr;
+	}
+	const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expr);
+	switch (identifier->source) {
+		case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+			return identifier->variable_source;
+		case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+		case GDScriptParser::IdentifierNode::LOCAL_BIND:
+			return identifier->bind_source;
+		default:
+			return nullptr;
+	}
+}
+
 // Walks a function body and accumulates the set of element types ever stored
 // into one specific local array variable, bailing out conservatively the moment
 // it sees the variable escape or be mutated in an unmodelled way.
@@ -316,6 +445,10 @@ public:
 	Vector<PendingValidation> pending_validations;
 	Vector<PendingCompoundWrite> pending_compound_writes;
 
+	// Locals/iterators bound to a read of the array whose narrowing to the element
+	// type could break a later reassignment. Reconciled in `finalize()`.
+	ReadNarrowingTracker read_narrowing;
+
 	// Resolves the deferred validations and compound writes against the final
 	// element type. Must be called once after the whole body has been scanned and
 	// before the result is read. When no element type was accumulated the container
@@ -353,6 +486,16 @@ public:
 			if (bailed) {
 				return;
 			}
+		}
+		String narrow_detail;
+		const bool narrows = read_narrowing.narrows_a_read(
+				[this](ReadNarrowingTracker::Slot, String &r_rendered) {
+					r_rendered = element_rendered;
+					return has_element;
+				},
+				narrow_detail);
+		if (narrows) {
+			bail(GDScriptContainerInference::READ_NARROWS, narrow_detail);
 		}
 	}
 
@@ -500,6 +643,10 @@ private:
 				// `for element in our_var:` is a safe read of the variable.
 				if (!is_our_var_read_list(for_node->list)) {
 					scan_value(for_node->list);
+				} else if (for_node->datatype_specifier == nullptr) {
+					// The loop variable's type narrows from `Variant` to the element type
+					// once the array is typed; record it unless it is explicitly typed.
+					read_narrowing.note_read_binding(for_node->variable, ReadNarrowingTracker::ARRAY_ELEMENT);
 				}
 				scan_suite(for_node->loop);
 			} break;
@@ -570,6 +717,11 @@ private:
 		scan_suite(p_branch->block);
 	}
 
+	// A match-pattern bind (`match <test>: var v:`) is a constant: GDScript rejects
+	// reassigning it, so it can never trigger the read-narrowing reassignment check
+	// and needs no read-binding tracking here. (Other downstream uses of a narrowed
+	// bind fall under the documented verification-harness boundary; see the design
+	// doc.)
 	void scan_pattern(const GDScriptParser::PatternNode *p_pattern) {
 		if (bailed || p_pattern == nullptr) {
 			return;
@@ -1058,19 +1210,21 @@ private:
 				return;
 			}
 		}
-		if (member_mode) {
+		if (member_mode && p_lambda->use_self) {
 			// In member mode a member is reached through `self`, not a capture, so a
 			// lambda that uses `self` could mutate the member through a callable that
 			// may be stored or invoked later in ways the analysis cannot bound.
-			if (p_lambda->use_self) {
-				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
-				return;
-			}
-			// The lambda body can also reach the member through another reference
-			// (`func(): other._member.append(x)`); scan it for such foreign writes.
-			if (p_lambda->function != nullptr) {
-				scan_suite(p_lambda->function->body);
-			}
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+			return;
+		}
+		// Scan the lambda body. In member mode it can reach the member through another
+		// reference (`func(): other._member.append(x)`); in either mode it can
+		// reassign a captured local bound to a narrowing read of the container
+		// (`var v = c[0]; var cb = func(): v = "x"`), which the read-narrowing tracker
+		// must see. The tracked variable itself never appears here -- capturing it
+		// already bailed above -- so scanning is safe.
+		if (p_lambda->function != nullptr) {
+			scan_suite(p_lambda->function->body);
 		}
 	}
 
@@ -1133,6 +1287,16 @@ private:
 		}
 		// Assignment to some other target. Both sides are values: the variable
 		// appearing on either side is an escape (e.g. `alias = our_var`).
+		// A whole-variable reassignment of a local/iterator (`v = value` or
+		// `v op= value`) is also noted, in case `v` was bound to a narrowing read of
+		// the array.
+		if (const void *sink = local_sink_of(assignee)) {
+			if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
+				read_narrowing.note_reassignment(sink, p_assignment->assigned_value != nullptr ? p_assignment->assigned_value->get_datatype() : DataType());
+			} else {
+				read_narrowing.note_compound_reassignment(sink);
+			}
+		}
 		scan_value(assignee);
 		scan_value(p_assignment->assigned_value);
 	}
@@ -1257,6 +1421,10 @@ public:
 	Vector<PendingKeyValidation> pending_key_validations;
 	Vector<PendingCompoundWrite> pending_compound_writes;
 
+	// Locals/iterators bound to a read of the dictionary whose narrowing to the key
+	// or value type could break a later reassignment. Reconciled in `finalize()`.
+	ReadNarrowingTracker read_narrowing;
+
 	// Resolves the deferred key validations and compound writes once both element
 	// types are known. When either type was never accumulated the dictionary is left
 	// bare, so the deferred operations run on a Variant entry exactly as before.
@@ -1294,6 +1462,18 @@ public:
 					return;
 				}
 			}
+		}
+		// Iterating a dictionary binds keys, so the only narrowing read binding here is
+		// a loop key variable; it narrows to the key type.
+		String narrow_detail;
+		const bool narrows = read_narrowing.narrows_a_read(
+				[this](ReadNarrowingTracker::Slot, String &r_rendered) {
+					r_rendered = key_rendered;
+					return has_key;
+				},
+				narrow_detail);
+		if (narrows) {
+			bail(GDScriptContainerInference::READ_NARROWS, narrow_detail);
 		}
 	}
 
@@ -1460,6 +1640,10 @@ private:
 				// `for key in our_var:` is a safe read of the variable.
 				if (!is_our_var_read_list(for_node->list)) {
 					scan_value(for_node->list);
+				} else if (for_node->datatype_specifier == nullptr) {
+					// Iterating a dictionary binds its keys, so the loop variable narrows
+					// from `Variant` to the key type once the dictionary is typed.
+					read_narrowing.note_read_binding(for_node->variable, ReadNarrowingTracker::DICTIONARY_KEY);
 				}
 				scan_suite(for_node->loop);
 			} break;
@@ -1520,6 +1704,11 @@ private:
 		scan_suite(p_branch->block);
 	}
 
+	// A match-pattern bind (`match <test>: var v:`) is a constant: GDScript rejects
+	// reassigning it, so it can never trigger the read-narrowing reassignment check
+	// and needs no read-binding tracking here. (Other downstream uses of a narrowed
+	// bind fall under the documented verification-harness boundary; see the design
+	// doc.)
 	void scan_pattern(const GDScriptParser::PatternNode *p_pattern) {
 		if (bailed || p_pattern == nullptr) {
 			return;
@@ -2001,19 +2190,21 @@ private:
 				return;
 			}
 		}
-		if (member_mode) {
+		if (member_mode && p_lambda->use_self) {
 			// In member mode a member is reached through `self`, not a capture, so a
 			// lambda that uses `self` could mutate the member through a callable that
 			// may be stored or invoked later in ways the analysis cannot bound.
-			if (p_lambda->use_self) {
-				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
-				return;
-			}
-			// The lambda body can also reach the member through another reference
-			// (`func(): other._member[k] = v`); scan it for such foreign writes.
-			if (p_lambda->function != nullptr) {
-				scan_suite(p_lambda->function->body);
-			}
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a lambda capturing `self`");
+			return;
+		}
+		// Scan the lambda body. In member mode it can reach the member through another
+		// reference (`func(): other._member[k] = v`); in either mode it can reassign a
+		// captured local bound to a narrowing read of the dictionary
+		// (`var v = d["a"]; var cb = func(): v = "x"`), which the read-narrowing
+		// tracker must see. The tracked variable itself never appears here --
+		// capturing it already bailed above -- so scanning is safe.
+		if (p_lambda->function != nullptr) {
+			scan_suite(p_lambda->function->body);
 		}
 	}
 
@@ -2081,6 +2272,16 @@ private:
 		}
 		// Assignment to some other target. Both sides are values: the variable
 		// appearing on either side is an escape (e.g. `alias = our_var`).
+		// A whole-variable reassignment of a local/iterator (`v = value` or
+		// `v op= value`) is also noted, in case `v` was bound to a narrowing read of
+		// the dictionary.
+		if (const void *sink = local_sink_of(assignee)) {
+			if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
+				read_narrowing.note_reassignment(sink, p_assignment->assigned_value != nullptr ? p_assignment->assigned_value->get_datatype() : DataType());
+			} else {
+				read_narrowing.note_compound_reassignment(sink);
+			}
+		}
 		scan_value(assignee);
 		scan_value(p_assignment->assigned_value);
 	}
