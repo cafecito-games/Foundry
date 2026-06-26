@@ -6094,6 +6094,63 @@ static String _encode_signature_type(const GDScriptParser::DataType &p_type) {
 	return encoded;
 }
 
+// True when a signature slot round-trips faithfully through the PROPERTY_HINT_CALLABLE_TYPE decoder.
+// Slots that cannot (enum leaves, non-global/nested script-classes reduced to a native fallback,
+// unexposed natives, generic type_arguments, type parameters) would decode to a coarser type — emitting
+// the hint anyway turns a previously gradual-accepted cross-script callable into a false strict mismatch.
+// When any slot is lossy the caller omits the hint, so the callable/signal crosses the boundary untyped.
+static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type) {
+	if (!p_type.type_arguments.is_empty()) {
+		return false;
+	}
+	switch (p_type.kind) {
+		case GDScriptParser::DataType::VARIANT:
+			return true;
+		case GDScriptParser::DataType::BUILTIN:
+			switch (p_type.builtin_type) {
+				case Variant::ARRAY:
+					return !p_type.has_container_element_type(0) || _signature_type_is_encodable(p_type.get_container_element_type(0));
+				case Variant::DICTIONARY:
+					return !p_type.has_container_element_types() ||
+							(_signature_type_is_encodable(p_type.get_container_element_type_or_variant(0)) &&
+									_signature_type_is_encodable(p_type.get_container_element_type_or_variant(1)));
+				case Variant::CALLABLE:
+				case Variant::SIGNAL: {
+					if (!p_type.has_explicit_method_signature) {
+						return true;
+					}
+					for (const GDScriptParser::DataType &parameter_type : p_type.method_parameter_types) {
+						if (!_signature_type_is_encodable(parameter_type)) {
+							return false;
+						}
+					}
+					if (p_type.builtin_type == Variant::CALLABLE) {
+						for (const GDScriptParser::DataType &return_type : p_type.method_return_type) {
+							if (!_signature_type_is_encodable(return_type)) {
+								return false;
+							}
+						}
+					}
+					return true;
+				}
+				default:
+					return true;
+			}
+		case GDScriptParser::DataType::NATIVE:
+			return ClassDB::class_exists(p_type.native_type) && ClassDB::is_class_exposed(p_type.native_type);
+		case GDScriptParser::DataType::SCRIPT:
+			return p_type.script_type.is_valid() && p_type.script_type->get_global_name() != StringName();
+		case GDScriptParser::DataType::CLASS:
+			return p_type.class_type != nullptr && p_type.class_type->get_global_name() != StringName();
+		case GDScriptParser::DataType::ENUM:
+		case GDScriptParser::DataType::TYPE_PARAMETER:
+		case GDScriptParser::DataType::RESOLVING:
+		case GDScriptParser::DataType::UNRESOLVED:
+			return false;
+	}
+	return false;
+}
+
 PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) const {
 	PropertyInfo result;
 	result.name = p_name;
@@ -6107,7 +6164,7 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 	switch (kind) {
 		case BUILTIN:
 			result.type = builtin_type;
-			if ((builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) && has_explicit_method_signature) {
+			if ((builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) && has_explicit_method_signature && _signature_type_is_encodable(*this)) {
 				result.hint = PROPERTY_HINT_CALLABLE_TYPE;
 				result.hint_string = _encode_method_signature_suffix(*this, builtin_type == Variant::CALLABLE);
 			} else if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
