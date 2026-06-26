@@ -155,12 +155,26 @@ DataType compound_write_result_type(Variant::Operator p_op, const DataType &p_el
 // True when `p_expr` is a plain identifier that resolves to `p_decl`, whether as
 // a local variable or, in member mode, as a member variable accessed through
 // implicit `self` (a bare `member` reference).
-bool identifier_refers_to(const GDScriptParser::ExpressionNode *p_expr, const GDScriptParser::VariableNode *p_decl, bool p_member_mode) {
+//
+// `p_match_by_name` switches member matching from pointer identity to the member's
+// name. It is used when scanning a subclass parsed in a separate tree: there a
+// reference to the inherited member resolves to that tree's own member node (or the
+// base node from a dependency parse), never the original `p_decl` pointer, so the
+// name is the only stable key. Pointer identity is preferred whenever available to
+// avoid confusing a same-named member shadowed in a nested class.
+bool identifier_refers_to(const GDScriptParser::ExpressionNode *p_expr, const GDScriptParser::VariableNode *p_decl, bool p_member_mode, bool p_match_by_name = false) {
 	if (p_expr == nullptr || p_expr->type != Node::IDENTIFIER) {
 		return false;
 	}
 	const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expr);
 	if (p_member_mode) {
+		if (p_match_by_name) {
+			// In a subclass the inherited member resolves to INHERITED_VARIABLE; in
+			// the declaring class it is MEMBER_VARIABLE. Either names the member.
+			const bool is_member_source = identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE ||
+					identifier->source == GDScriptParser::IdentifierNode::INHERITED_VARIABLE;
+			return is_member_source && p_decl->identifier != nullptr && identifier->name == p_decl->identifier->name;
+		}
 		return identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE && identifier->variable_source == p_decl;
 	}
 	return identifier->source == GDScriptParser::IdentifierNode::LOCAL_VARIABLE && identifier->variable_source == p_decl;
@@ -174,7 +188,7 @@ bool identifier_refers_to(const GDScriptParser::ExpressionNode *p_expr, const GD
 // The attribute is matched by its resolved declaration, not merely its name, so a
 // nested class with its own member of the same name (where `self` is a different
 // instance) is not mistaken for the tracked member.
-bool self_attribute_refers_to(const GDScriptParser::SubscriptNode *p_subscript, const GDScriptParser::VariableNode *p_decl, bool p_member_mode) {
+bool self_attribute_refers_to(const GDScriptParser::SubscriptNode *p_subscript, const GDScriptParser::VariableNode *p_decl, bool p_member_mode, bool p_match_by_name = false) {
 	if (!p_member_mode || p_subscript == nullptr || !p_subscript->is_attribute) {
 		return false;
 	}
@@ -183,6 +197,11 @@ bool self_attribute_refers_to(const GDScriptParser::SubscriptNode *p_subscript, 
 	}
 	if (p_subscript->attribute == nullptr || p_decl->identifier == nullptr) {
 		return false;
+	}
+	// When scanning a subclass tree the tracked member resolves to a different node
+	// (or the base node from a dependency parse), so match on the inherited name.
+	if (p_match_by_name) {
+		return p_subscript->attribute->name == p_decl->identifier->name;
 	}
 	// When the analyzer resolved the attribute to a member variable, require it to
 	// be exactly the tracked declaration. Fall back to a name comparison only when
@@ -270,6 +289,10 @@ class ElementInferenceWalker {
 public:
 	explicit ElementInferenceWalker(const GDScriptParser::VariableNode *p_decl, bool p_member_mode = false) :
 			decl(p_decl), member_mode(p_member_mode) {}
+
+	// Switches member matching from pointer identity to the member's name, for
+	// scanning a subclass parsed in a separate tree (see `identifier_refers_to`).
+	void set_match_member_by_name(bool p_enabled) { match_member_by_name = p_enabled; }
 
 	bool bailed = false;
 	GDScriptContainerInference::Outcome bail_outcome = GDScriptContainerInference::NOT_APPLICABLE;
@@ -378,14 +401,15 @@ public:
 private:
 	const GDScriptParser::VariableNode *decl = nullptr;
 	bool member_mode = false;
+	bool match_member_by_name = false;
 	String element_rendered;
 
 	bool is_our_var(const GDScriptParser::ExpressionNode *p_expr) const {
-		return identifier_refers_to(p_expr, decl, member_mode);
+		return identifier_refers_to(p_expr, decl, member_mode, match_member_by_name);
 	}
 
 	bool is_self_member(const GDScriptParser::SubscriptNode *p_subscript) const {
-		return self_attribute_refers_to(p_subscript, decl, member_mode);
+		return self_attribute_refers_to(p_subscript, decl, member_mode, match_member_by_name);
 	}
 
 	// `is_self_member` for an expression that is expected to be a `self.<member>`
@@ -1207,6 +1231,10 @@ public:
 	explicit DictionaryInferenceWalker(const GDScriptParser::VariableNode *p_decl, bool p_member_mode = false) :
 			decl(p_decl), member_mode(p_member_mode) {}
 
+	// Switches member matching from pointer identity to the member's name, for
+	// scanning a subclass parsed in a separate tree (see `identifier_refers_to`).
+	void set_match_member_by_name(bool p_enabled) { match_member_by_name = p_enabled; }
+
 	bool bailed = false;
 	GDScriptContainerInference::Outcome bail_outcome = GDScriptContainerInference::NOT_APPLICABLE;
 	String bail_detail;
@@ -1319,15 +1347,16 @@ public:
 private:
 	const GDScriptParser::VariableNode *decl = nullptr;
 	bool member_mode = false;
+	bool match_member_by_name = false;
 	String key_rendered;
 	String value_rendered;
 
 	bool is_our_var(const GDScriptParser::ExpressionNode *p_expr) const {
-		return identifier_refers_to(p_expr, decl, member_mode);
+		return identifier_refers_to(p_expr, decl, member_mode, match_member_by_name);
 	}
 
 	bool is_self_member(const GDScriptParser::SubscriptNode *p_subscript) const {
-		return self_attribute_refers_to(p_subscript, decl, member_mode);
+		return self_attribute_refers_to(p_subscript, decl, member_mode, match_member_by_name);
 	}
 
 	bool is_self_member_subscript(const GDScriptParser::ExpressionNode *p_expr) const {
@@ -2133,13 +2162,14 @@ private:
 //
 // Soundness boundary: GDScript also has no `final`, so an external subclass can
 // `extends` this class and mutate the inherited member from its own methods with
-// a different element type, which this single-file scan cannot observe. That
-// open-world case is handled by the migration pipeline's second stage, not here:
-// the `GDScriptVerificationHarness` re-analyzes the dependency closure (including
-// inverse-dependent subclasses in the project) and rejects any element annotation
-// that breaks a dependent before it is committed. A subclass-aware *inference*
-// (so the proposal itself accounts for project-wide writers rather than relying
-// on the verifier to veto them) is deferred follow-up work.
+// a different element type. The inference accounts for this directly: the member
+// entry points accept the project-wide set of subclasses (discovered by the caller
+// from the dependency closure) and fold their writers into the same union/escape
+// model, matching the inherited member by name. When the caller cannot prove it
+// enumerated every subclass, it passes `p_subclasses_complete == false` and the
+// inference skips conservatively. The `GDScriptVerificationHarness` re-analysis of
+// the dependency closure remains a backstop, but the proposed annotation is already
+// sound across the open world rather than optimistic-then-verified.
 String member_disqualifier(const GDScriptParser::VariableNode *p_member) {
 	if (p_member->exported) {
 		return "the member is `@export`ed, so external code can assign it";
@@ -2316,7 +2346,9 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_local_dicti
 
 GDScriptContainerInference::Result GDScriptContainerInference::infer_member_array_element_type(
 		const GDScriptParser::VariableNode *p_member,
-		const GDScriptParser::ClassNode *p_class) {
+		const GDScriptParser::ClassNode *p_class,
+		const Vector<const GDScriptParser::ClassNode *> &p_subclasses,
+		bool p_subclasses_complete) {
 	Result result;
 	if (p_member == nullptr || p_class == nullptr) {
 		return result; // NOT_APPLICABLE
@@ -2345,6 +2377,14 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_arra
 		result.detail = disqualifier;
 		return result;
 	}
+	// GDScript has no `final`: an external subclass can mutate the inherited member.
+	// When the caller could not prove it enumerated every subclass in the project,
+	// the open world is unbounded and inference must skip conservatively.
+	if (!p_subclasses_complete) {
+		result.outcome = ESCAPES;
+		result.detail = "the set of subclasses that could mutate the member is not bounded";
+		return result;
+	}
 
 	ElementInferenceWalker walker(p_member, /* member_mode */ true);
 	walker.contribute_from_array_value(p_member->initializer);
@@ -2352,6 +2392,18 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_arra
 	// still leak the instance (e.g. `[register(self)]`); scan them for escapes.
 	walker.scan_initializer(p_member->initializer);
 	walk_class_methods(walker, p_class, p_member);
+	// Fold every project-wide subclass writer into the same union/escape model so
+	// the proposed annotation is sound across the open world, not optimistic. The
+	// subclass is parsed in a separate tree, so its references to the inherited
+	// member match by name rather than by the base member node's pointer.
+	for (const GDScriptParser::ClassNode *subclass : p_subclasses) {
+		if (walker.bailed) {
+			break;
+		}
+		walker.set_match_member_by_name(true);
+		walk_class_methods(walker, subclass, p_member);
+	}
+	walker.set_match_member_by_name(false);
 	walker.finalize();
 
 	if (walker.bailed) {
@@ -2373,7 +2425,9 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_arra
 
 GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dictionary_element_type(
 		const GDScriptParser::VariableNode *p_member,
-		const GDScriptParser::ClassNode *p_class) {
+		const GDScriptParser::ClassNode *p_class,
+		const Vector<const GDScriptParser::ClassNode *> &p_subclasses,
+		bool p_subclasses_complete) {
 	Result result;
 	if (p_member == nullptr || p_class == nullptr) {
 		return result; // NOT_APPLICABLE
@@ -2397,6 +2451,14 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dict
 		result.detail = disqualifier;
 		return result;
 	}
+	// GDScript has no `final`: an external subclass can mutate the inherited member.
+	// When the caller could not prove it enumerated every subclass in the project,
+	// the open world is unbounded and inference must skip conservatively.
+	if (!p_subclasses_complete) {
+		result.outcome = ESCAPES;
+		result.detail = "the set of subclasses that could mutate the member is not bounded";
+		return result;
+	}
 
 	DictionaryInferenceWalker walker(p_member, /* member_mode */ true);
 	walker.contribute_from_dictionary_value(p_member->initializer);
@@ -2404,6 +2466,16 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dict
 	// still leak the instance (e.g. `{0: register(self)}`); scan them for escapes.
 	walker.scan_initializer(p_member->initializer);
 	walk_class_methods(walker, p_class, p_member);
+	// Fold every project-wide subclass writer into the same union/escape model so
+	// the proposed annotation is sound across the open world (see the array path).
+	for (const GDScriptParser::ClassNode *subclass : p_subclasses) {
+		if (walker.bailed) {
+			break;
+		}
+		walker.set_match_member_by_name(true);
+		walk_class_methods(walker, subclass, p_member);
+	}
+	walker.set_match_member_by_name(false);
 	walker.finalize();
 
 	if (walker.bailed) {

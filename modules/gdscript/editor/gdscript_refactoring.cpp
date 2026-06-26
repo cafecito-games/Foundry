@@ -90,6 +90,17 @@ struct TypeAnnotationRenderContext {
 	GDScriptRefactorTypes::AnnotationScope scope;
 };
 
+// The project-wide set of classes that `extends` a given class (transitively),
+// used to make member container element inference subclass-aware: a subclass can
+// mutate an inherited member with a different element type, so its writers must be
+// folded into the inference's union. `complete` records whether the caller could
+// prove it enumerated every such subclass; when it could not (e.g. a project script
+// failed to parse), the inference bails conservatively rather than guessing.
+struct MemberSubclassClosure {
+	Vector<const GDScriptParser::ClassNode *> subclasses;
+	bool complete = true;
+};
+
 // Adds names declared by p_class that the analyzer resolves before a namespace
 // chain (its own name, members, and type parameters) to r_scope's shadow set, so
 // a qualified spelling is never rooted at one of them.
@@ -1183,7 +1194,7 @@ bool is_safe_extract_assignment(const GDScriptParser::AssignmentNode *p_assignme
 			is_self_attribute(p_assignment->assignee);
 }
 
-bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr) {
+bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, TypeAnnotationCandidate &r_candidate, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr, const MemberSubclassClosure *p_member_subclasses = nullptr) {
 	if (p_assignable == nullptr || p_assignable->identifier == nullptr) {
 		return false;
 	}
@@ -1261,15 +1272,19 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 	GDScriptParser::DataType effective_type = p_assignable->get_datatype();
 	if (p_assignable->type == GDScriptParser::Node::VARIABLE && (p_function_body != nullptr || p_member_class != nullptr)) {
 		const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_assignable);
-		// A member variable is analyzed class-wide; a local against its function body.
+		// A member variable is analyzed class-wide (including project-wide subclass
+		// writers); a local is analyzed against its function body.
+		const Vector<const GDScriptParser::ClassNode *> subclasses =
+				p_member_subclasses != nullptr ? p_member_subclasses->subclasses : Vector<const GDScriptParser::ClassNode *>();
+		const bool subclasses_complete = p_member_subclasses == nullptr || p_member_subclasses->complete;
 		const GDScriptContainerInference::Result array_inference = p_member_class != nullptr
-				? GDScriptContainerInference::infer_member_array_element_type(variable, p_member_class)
+				? GDScriptContainerInference::infer_member_array_element_type(variable, p_member_class, subclasses, subclasses_complete)
 				: GDScriptContainerInference::infer_local_array_element_type(variable, p_function_body);
 		if (array_inference.outcome == GDScriptContainerInference::INFERRED) {
 			effective_type = array_inference.element_type;
 		} else {
 			const GDScriptContainerInference::Result dictionary_inference = p_member_class != nullptr
-					? GDScriptContainerInference::infer_member_dictionary_element_type(variable, p_member_class)
+					? GDScriptContainerInference::infer_member_dictionary_element_type(variable, p_member_class, subclasses, subclasses_complete)
 					: GDScriptContainerInference::infer_local_dictionary_element_type(variable, p_function_body);
 			if (dictionary_inference.outcome == GDScriptContainerInference::INFERRED) {
 				effective_type = dictionary_inference.element_type;
@@ -4824,9 +4839,9 @@ void cache_style_order_candidate(const RefactorContext &p_context, const StyleOr
 	style_order_cache.candidate = p_candidate;
 }
 
-void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr) {
+void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptParser::AssignableNode *p_assignable, const String &p_kind, bool p_has_keyword, Vector<TypeAnnotationCandidate> &r_candidates, const GDScriptParser::SuiteNode *p_function_body = nullptr, const GDScriptParser::ClassNode *p_member_class = nullptr, const TypeAnnotationRenderContext *p_render_context = nullptr, const MemberSubclassClosure *p_member_subclasses = nullptr) {
 	TypeAnnotationCandidate candidate;
-	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body, p_member_class, p_render_context) && candidate.matched) {
+	if (find_assignable_type_annotation(p_lines, p_assignable, p_kind, p_has_keyword, candidate, p_function_body, p_member_class, p_render_context, p_member_subclasses) && candidate.matched) {
 		r_candidates.push_back(candidate);
 	}
 }
@@ -4938,6 +4953,133 @@ void collect_type_annotation_in_function(
 	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body, render_context);
 }
 
+#ifndef GDSCRIPT_NO_LSP
+// True when `p_descendant` derives (transitively) from the class identified by
+// `p_base_fqcn`, by walking its resolved base-class chain. `p_descendant` itself is
+// not considered its own subclass.
+bool class_derives_from_fqcn(const GDScriptParser::ClassNode *p_descendant, const String &p_base_fqcn) {
+	if (p_descendant == nullptr || p_base_fqcn.is_empty()) {
+		return false;
+	}
+	for (const GDScriptParser::ClassNode *base = p_descendant->base_type.class_type; base != nullptr; base = base->base_type.class_type) {
+		if (base->fqcn == p_base_fqcn) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Collects every class in `p_tree` (including nested classes) that derives from
+// `p_base_fqcn` into `r_closure`.
+void collect_subclasses_in_tree(const GDScriptParser::ClassNode *p_tree, const String &p_base_fqcn, MemberSubclassClosure &r_closure) {
+	if (p_tree == nullptr) {
+		return;
+	}
+	if (class_derives_from_fqcn(p_tree, p_base_fqcn)) {
+		r_closure.subclasses.push_back(p_tree);
+	}
+	for (const GDScriptParser::ClassNode::Member &member : p_tree->members) {
+		if (member.type == GDScriptParser::ClassNode::Member::CLASS) {
+			collect_subclasses_in_tree(member.m_class, p_base_fqcn, r_closure);
+		}
+	}
+}
+
+// True when `p_lines` textually mentions `extends` together with a token that could
+// name the base class (its global `class_name` or its source path). A parse-failed
+// script can only hide a subclass of the base if it could spell such an `extends`,
+// so this filters out the project's many unrelated broken fixtures while still
+// flagging a plausible-but-unanalyzable subclass.
+bool source_could_extend_base(const Vector<String> &p_lines, const Vector<String> &p_base_tokens) {
+	bool mentions_extends = false;
+	for (const String &line : p_lines) {
+		if (line.contains("extends")) {
+			mentions_extends = true;
+			break;
+		}
+	}
+	if (!mentions_extends) {
+		return false;
+	}
+	for (const String &line : p_lines) {
+		for (const String &token : p_base_tokens) {
+			if (!token.is_empty() && line.contains(token)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Discovers, across the whole project, the set of classes that `extends` `p_class`
+// so member container element inference can fold their writers into its union (see
+// MemberSubclassClosure). Soundness requires the enumeration to be exhaustive: if
+// the class has no stable identity to derive from, `complete` is left false and the
+// inference skips. A project script that fails to parse only breaks completeness
+// when its text could plausibly extend the base (most broken fixtures are unrelated
+// and must not poison every member). `p_class` and its nested classes (already
+// scanned in-file) are excluded.
+MemberSubclassClosure discover_member_subclasses(
+		const GDScriptParser::ClassNode *p_class,
+		const Ref<GDScriptWorkspace> &p_workspace,
+		const ExtendGDScriptParser *p_parser,
+		const GDScriptParseResultProvider *p_parse_results) {
+	MemberSubclassClosure closure;
+	if (p_class == nullptr || p_workspace.is_null() || p_parse_results == nullptr) {
+		closure.complete = false;
+		return closure;
+	}
+	const String base_fqcn = p_class->fqcn;
+	if (base_fqcn.is_empty()) {
+		// Without a resolved identity the base chain of other classes cannot be
+		// matched against this one, so subclasses cannot be proven absent.
+		closure.complete = false;
+		return closure;
+	}
+
+	// Tokens by which another script could name this class in an `extends` clause:
+	// its global `class_name`, or its source file (for `extends "res://..."`).
+	Vector<String> base_tokens;
+	const StringName global_name = p_class->get_global_name();
+	if (global_name != StringName()) {
+		base_tokens.push_back(String(global_name));
+	}
+	if (p_parser != nullptr && !p_parser->get_path().is_empty()) {
+		base_tokens.push_back(p_parser->get_path().get_file());
+	}
+	// When the class has no `class_name`, its fqcn is the source path.
+	if (base_fqcn.contains("/") || base_fqcn.ends_with(".gd")) {
+		base_tokens.push_back(base_fqcn.get_file());
+	}
+
+	List<String> paths;
+	p_workspace->list_project_script_files(paths);
+	for (const String &path : paths) {
+		const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(path);
+		if (parser == nullptr) {
+			continue;
+		}
+		if (parser->parse_result != OK) {
+			// A script that does not parse could hide a subclass only if its text
+			// could spell an `extends` of this base.
+			if (source_could_extend_base(parser->get_lines(), base_tokens)) {
+				closure.complete = false;
+			}
+			continue;
+		}
+		const GDScriptParser::ClassNode *tree = parser->get_tree();
+		if (tree == nullptr) {
+			continue;
+		}
+		if (tree->fqcn == base_fqcn) {
+			continue; // The declaring file itself; its classes are scanned in-file.
+		}
+		collect_subclasses_in_tree(tree, base_fqcn, closure);
+	}
+	return closure;
+}
+#endif // GDSCRIPT_NO_LSP
+
 void collect_type_annotation_in_class(
 		const Vector<String> &p_lines,
 		const GDScriptParser::ClassNode *p_class,
@@ -4965,17 +5107,32 @@ void collect_type_annotation_in_class(
 		add_class_scope_shadow_names(class_context.scope, p_class);
 		render_context = &class_context;
 	}
+
+	// When member inference is enabled, discover the project-wide subclasses of this
+	// class once so each member candidate is proven sound against the open world
+	// rather than relying solely on the post-edit verifier (computed lazily, only
+	// for the verified migration path).
+	const MemberSubclassClosure *member_subclasses = nullptr;
+#ifndef GDSCRIPT_NO_LSP
+	MemberSubclassClosure subclass_closure;
+	if (p_allow_member_inference) {
+		subclass_closure = discover_member_subclasses(p_class, p_workspace, p_parser, p_parse_results);
+		member_subclasses = &subclass_closure;
+	}
+#endif // GDSCRIPT_NO_LSP
+
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::CONSTANT:
 				collect_assignable_candidate(p_lines, member.constant, "constant", true, r_candidates, nullptr, nullptr, render_context);
 				break;
 			case GDScriptParser::ClassNode::Member::VARIABLE:
-				// Member container element inference is open-world-unsound on its own, so
-				// it is enabled only for the verified migration path; otherwise members
-				// keep the analyzer's bare container type.
+				// Member container element inference folds project-wide subclass writers
+				// into its union (subclass_closure); it is enabled only for the verified
+				// migration path, where the dependency closure is parsed. Otherwise
+				// members keep the analyzer's bare container type.
 				collect_assignable_candidate(p_lines, member.variable, "variable", true, r_candidates, nullptr,
-						p_allow_member_inference ? p_class : nullptr, render_context);
+						p_allow_member_inference ? p_class : nullptr, render_context, member_subclasses);
 				break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
 				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates, render_context

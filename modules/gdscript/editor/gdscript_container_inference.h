@@ -35,6 +35,7 @@
 #include "../gdscript_parser.h"
 
 #include "core/string/ustring.h"
+#include "core/templates/vector.h"
 
 // Infers the element type of a bare `Array` local variable from how it is used
 // inside its declaring function, so the migration wizard can upgrade
@@ -109,16 +110,31 @@ public:
 	// underscore), `@export`ed, has a custom setter/getter, is `static`, is
 	// accessed through a base other than `self`, or the instance escapes in a way
 	// external code could exploit to mutate it. `p_class` declares `p_member`.
+	//
+	// `p_subclasses` is the project-wide set of classes that `extends` `p_class`
+	// (transitively), discovered from the dependency closure by the caller. Because
+	// GDScript has no `final`, such a subclass can mutate the inherited member from
+	// its own methods with a different element type; an empty inference here would be
+	// unsound. Each subclass body is folded into the same union/escape model as the
+	// declaring class, except its references to the member resolve by name (the
+	// subclass is parsed in a separate tree, so it cannot share the member node's
+	// pointer identity). When the open world cannot be bounded -- because the caller
+	// could not prove it enumerated every subclass -- pass `p_subclasses_complete`
+	// as false and the inference bails conservatively.
 	static Result infer_member_array_element_type(
 			const GDScriptParser::VariableNode *p_member,
-			const GDScriptParser::ClassNode *p_class);
+			const GDScriptParser::ClassNode *p_class,
+			const Vector<const GDScriptParser::ClassNode *> &p_subclasses = Vector<const GDScriptParser::ClassNode *>(),
+			bool p_subclasses_complete = true);
 
 	// Infers the key and value types of a bare `Dictionary` member variable across
 	// the whole declaring class, with the same widened soundness boundary as
-	// `infer_member_array_element_type`.
+	// `infer_member_array_element_type` (including the project-wide subclass scan).
 	static Result infer_member_dictionary_element_type(
 			const GDScriptParser::VariableNode *p_member,
-			const GDScriptParser::ClassNode *p_class);
+			const GDScriptParser::ClassNode *p_class,
+			const Vector<const GDScriptParser::ClassNode *> &p_subclasses = Vector<const GDScriptParser::ClassNode *>(),
+			bool p_subclasses_complete = true);
 };
 
 #endif // TOOLS_ENABLED
