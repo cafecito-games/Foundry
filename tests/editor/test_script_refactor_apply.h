@@ -234,6 +234,50 @@ TEST_CASE("[Editor][ScriptRefactorApply] Closed file write failure leaves origin
 }
 #endif // UNIX_ENABLED
 
+TEST_CASE("[Editor][ScriptRefactorApply] Plan retains exact pre-apply source so undo restores it") {
+	// The wizard's single-step undo restores each file from the plan's
+	// before_source. This guards the acceptance criterion that applying and then
+	// undoing restores the project exactly, exercised at the file-write layer
+	// (apply writes after_source; undo writes before_source).
+	const String dir = make_temp_dir("script_refactor_apply_roundtrip");
+	const String path = dir.path_join("player.gd");
+	const String original = "var speed := 10\r\nprint(speed)\n";
+	write_text_for_test(path, original);
+
+	RefactorFileEdit player_edits;
+	player_edits.path = path;
+	player_edits.edits.push_back(make_edit(0, 4, 9, "speed", "move_speed"));
+	player_edits.edits.push_back(make_edit(1, 6, 11, "speed", "move_speed"));
+
+	Vector<RefactorFileEdit> edits;
+	edits.push_back(player_edits);
+
+	Vector<ScriptRefactorSource> sources;
+	sources.push_back(make_source(path, original));
+
+	ScriptRefactorApplyPlan plan;
+	String error;
+	REQUIRE(ScriptRefactorApply::build_plan(edits, sources, plan, error));
+	REQUIRE_EQ(plan.files.size(), 1);
+
+	// before_source must be byte-identical to the original (including the mixed
+	// line endings) so undo cannot silently normalize the file.
+	CHECK_EQ(plan.files[0].before_source, original);
+
+	// Apply (write after_source), then undo (write before_source) and confirm
+	// the file matches the original exactly.
+	CHECK(ScriptRefactorApply::write_file(path, plan.files[0].after_source, error));
+	Error read_error = OK;
+	CHECK_NE(FileAccess::get_file_as_string(path, &read_error), original);
+
+	CHECK(ScriptRefactorApply::write_file(path, plan.files[0].before_source, error));
+	CHECK_EQ(FileAccess::get_file_as_string(path, &read_error), original);
+	CHECK_EQ(read_error, OK);
+
+	DirAccess::remove_absolute(path);
+	DirAccess::remove_absolute(dir);
+}
+
 } // namespace TestScriptRefactorApply
 
 #endif // TOOLS_ENABLED
