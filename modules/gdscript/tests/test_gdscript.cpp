@@ -3464,9 +3464,17 @@ class Base:
 	func base_method() -> void:
 		pass
 
+	@timeout(7.0)
+	func shared_method() -> void:
+		pass
+
 class Derived extends Base:
 	@test
 	func derived_method() -> void:
+		pass
+
+	@tags("override")
+	func shared_method() -> void:
 		pass
 
 trait Mixin:
@@ -3609,6 +3617,38 @@ class Impl uses Mixin:
 		const Dictionary property_descriptor = find_descriptor_by_name(reflection->get_properties(base), SNAME("base_var"));
 		CHECK(property_descriptor.has("annotations"));
 		CHECK_EQ(Array(property_descriptor["annotations"]).size(), 1);
+	}
+
+	SUBCASE("an override and the base method it shadows keep their own embedded annotations") {
+		// Effective method annotations resolve to the override.
+		TypedArray<GDScriptAnnotation> effective = reflection->get_method_annotations(derived, SNAME("shared_method"));
+		CHECK_EQ(effective.size(), 1);
+		if (effective.size() == 1) {
+			CHECK_EQ(Ref<GDScriptAnnotation>(effective[0])->get_annotation_name(), SNAME("tags"));
+		}
+
+		// get_methods(Derived) lists both shared_method declarations (override + base), each carrying
+		// the annotations of the declaration it represents rather than the leaf's effective set.
+		TypedArray<Dictionary> methods = reflection->get_methods(derived);
+		int shared_entries = 0;
+		bool saw_override_tags = false;
+		bool saw_base_timeout = false;
+		for (int i = 0; i < methods.size(); i++) {
+			const Dictionary descriptor = methods[i];
+			if (StringName(descriptor.get("name", StringName())) != SNAME("shared_method")) {
+				continue;
+			}
+			shared_entries++;
+			const TypedArray<GDScriptAnnotation> annotations = descriptor["annotations"];
+			if (annotations.size() == 1) {
+				const StringName annotation_name = Ref<GDScriptAnnotation>(annotations[0])->get_annotation_name();
+				saw_override_tags = saw_override_tags || annotation_name == SNAME("tags");
+				saw_base_timeout = saw_base_timeout || annotation_name == SNAME("timeout");
+			}
+		}
+		CHECK_EQ(shared_entries, 2);
+		CHECK(saw_override_tags);
+		CHECK(saw_base_timeout);
 	}
 
 	SUBCASE("invalid, non-script, and freed targets return empty results without crashing") {

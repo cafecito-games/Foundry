@@ -151,17 +151,27 @@ TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) 
 		return result;
 	}
 	const GDScript *gdscript = Object::cast_to<GDScript>(script.ptr());
-	List<MethodInfo> methods;
-	script->get_script_method_list(&methods);
-	for (const MethodInfo &method : methods) {
-		Dictionary descriptor(method);
-		if (gdscript != nullptr) {
-			// Embed the effective custom annotations (empty array when none) so every GDScript
-			// method descriptor returned here carries the key consistently.
-			const Vector<GDScript::AnnotationUsage> *usages = find_effective_method_annotations(gdscript, method.name);
-			descriptor["annotations"] = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
+	if (gdscript == nullptr) {
+		List<MethodInfo> methods;
+		script->get_script_method_list(&methods);
+		for (const MethodInfo &method : methods) {
+			result.push_back(Dictionary(method));
 		}
-		result.push_back(descriptor);
+		return result;
+	}
+	// Enumerate per script down the base chain (matching get_script_method_list's leaf-first order)
+	// so each descriptor carries the annotations of the exact declaration it represents. An override
+	// and the base method it shadows are distinct entries, so resolving by name from the leaf would
+	// misattribute the override's annotations to the base entry.
+	HashSet<const GDScript *> visited;
+	for (const GDScript *current = gdscript; current != nullptr && !visited.has(current); current = Object::cast_to<GDScript>(current->get_base_script().ptr())) {
+		visited.insert(current);
+		for (const KeyValue<StringName, GDScriptFunction *> &entry : current->get_member_functions()) {
+			Dictionary descriptor(entry.value->get_method_info());
+			const Vector<GDScript::AnnotationUsage> *usages = current->get_method_annotations().getptr(entry.key);
+			descriptor["annotations"] = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
+			result.push_back(descriptor);
+		}
 	}
 	return result;
 }
