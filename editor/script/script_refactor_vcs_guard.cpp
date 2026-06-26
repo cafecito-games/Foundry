@@ -73,34 +73,49 @@ Result evaluate(const WorkingTreeState &p_state) {
 
 namespace {
 
-// Reads a pipe FileAccess to EOF. Pipes are not seekable, so get_as_text() (which
-// seeks to 0) yields nothing; drain it with blocking buffer reads instead.
-String drain_pipe(const Ref<FileAccess> &p_pipe) {
+// Whether a usable git executable can be launched. The no-pipe OS::execute()
+// path spawns the process directly (create_process / posix_spawn) and returns a
+// non-OK Error when the binary cannot be spawned, so it is a reliable presence
+// probe — unlike execute_with_pipe(), which returns a pipe dictionary on Unix
+// before the child's execvp() has had a chance to fail.
+bool git_available() {
+	List<String> args;
+	args.push_back("--version");
+	int exit_code = -1;
+	const Error err = OS::get_singleton()->execute("git", args, nullptr, &exit_code, false);
+	return err == OK && exit_code == 0;
+}
+
+// Appends any bytes currently available on p_pipe to r_bytes and returns how many
+// were read. A pipe FileAccess never reports eof_reached(), so callers detect the
+// end of output by the child process having exited together with a zero-length
+// read, not by polling eof.
+uint64_t pump_pipe(const Ref<FileAccess> &p_pipe, Vector<uint8_t> &r_bytes) {
 	if (p_pipe.is_null()) {
-		return String();
+		return 0;
 	}
-	Vector<uint8_t> bytes;
 	uint8_t chunk[4096];
-	while (!p_pipe->eof_reached()) {
-		const uint64_t read = p_pipe->get_buffer(chunk, sizeof(chunk));
-		if (read == 0) {
-			break;
-		}
-		const int64_t start = bytes.size();
-		bytes.resize(start + (int64_t)read);
-		memcpy(bytes.ptrw() + start, chunk, read);
+	const uint64_t read = p_pipe->get_buffer(chunk, sizeof(chunk));
+	if (read > 0) {
+		const int64_t start = r_bytes.size();
+		r_bytes.resize(start + (int64_t)read);
+		memcpy(r_bytes.ptrw() + start, chunk, read);
 	}
+	return read;
+}
+
+String bytes_to_string(const Vector<uint8_t> &p_bytes) {
 	String text;
-	if (!bytes.is_empty()) {
-		const Error err = text.append_utf8((const char *)bytes.ptr(), bytes.size());
+	if (!p_bytes.is_empty()) {
+		const Error err = text.append_utf8((const char *)p_bytes.ptr(), p_bytes.size());
 		(void)err;
 	}
 	return text;
 }
 
 // Runs `git -C <project> <args...>`. Returns false if git could not be launched
-// at all (not installed / not on PATH), in which case exit code and output are
-// untouched. A successful launch with a non-zero exit code still returns true.
+// at all, in which case exit code and output are untouched. A successful launch
+// with a non-zero exit code still returns true.
 //
 // This deliberately uses execute_with_pipe() rather than the simpler
 // OS::execute(..., &output, ...) overload: the latter builds a single shell
@@ -108,7 +123,8 @@ String drain_pipe(const Ref<FileAccess> &p_pipe) {
 // path containing shell metacharacters (quotes, backticks, $(...)) would be
 // interpreted by the shell. execute_with_pipe() spawns git directly with an argv
 // vector (execvp / CreateProcess), so paths are passed verbatim and cannot inject
-// shell commands.
+// shell commands. Callers must verify git is present (git_available()) first,
+// since on Unix this returns a pipe dictionary before the child's execvp() fails.
 bool run_git(const String &p_project_path, const Vector<String> &p_args, int &r_exit_code, String &r_output) {
 	List<String> arguments;
 	arguments.push_back("-C");
@@ -117,7 +133,10 @@ bool run_git(const String &p_project_path, const Vector<String> &p_args, int &r_
 		arguments.push_back(arg);
 	}
 
-	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe("git", arguments, true);
+	// Non-blocking pipes so stdout and stderr are pumped in the same loop; draining
+	// one fully before the other (with blocking pipes) can deadlock if the child
+	// fills the not-yet-read pipe's buffer before exiting.
+	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe("git", arguments, false);
 	if (pipe_info.is_empty()) {
 		return false; // git could not be launched.
 	}
@@ -126,11 +145,30 @@ bool run_git(const String &p_project_path, const Vector<String> &p_args, int &r_
 	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
 	OS::ProcessID pid = pipe_info["pid"];
 
-	// Blocking pipes: read stdout to EOF (the child closes it on exit). stderr is
-	// drained too so a child that fills the stderr buffer cannot deadlock on write.
-	const String output = drain_pipe(stdout_pipe);
-	const String discarded_stderr = drain_pipe(stderr_pipe); // Drain so a chatty child cannot block on a full stderr buffer.
-	(void)discarded_stderr;
+	Vector<uint8_t> stdout_bytes;
+	Vector<uint8_t> stderr_bytes; // Drained but discarded; keeps the child from blocking on stderr.
+	while (true) {
+		// Pump both pipes each iteration so neither side can deadlock by filling its
+		// buffer while the other is being drained.
+		const uint64_t read_out = pump_pipe(stdout_pipe, stdout_bytes);
+		const uint64_t read_err = pump_pipe(stderr_pipe, stderr_bytes);
+
+		if (read_out == 0 && read_err == 0) {
+			if (!OS::get_singleton()->is_process_running(pid)) {
+				// The process has exited and this pass read nothing. Make one final pass
+				// to collect anything written just before exit, then stop if it is also
+				// empty (avoids a race where output lands between read and exit check).
+				const uint64_t final_out = pump_pipe(stdout_pipe, stdout_bytes);
+				const uint64_t final_err = pump_pipe(stderr_pipe, stderr_bytes);
+				if (final_out == 0 && final_err == 0) {
+					break;
+				}
+			} else {
+				OS::get_singleton()->delay_usec(1000);
+			}
+		}
+	}
+
 	if (stdout_pipe.is_valid()) {
 		stdout_pipe->close();
 	}
@@ -138,18 +176,8 @@ bool run_git(const String &p_project_path, const Vector<String> &p_args, int &r_
 		stderr_pipe->close();
 	}
 
-	// stdout closes when git exits, but reaping the PID can briefly lag behind the
-	// fd close, during which get_process_exit_code() returns -1. Poll a bounded
-	// number of times so a transient "still running" never masquerades as an error
-	// exit code that would wrongly mark the check indeterminate.
-	int exit_code = OS::get_singleton()->get_process_exit_code(pid);
-	for (int attempt = 0; exit_code < 0 && OS::get_singleton()->is_process_running(pid) && attempt < 1000; attempt++) {
-		OS::get_singleton()->delay_usec(1000);
-		exit_code = OS::get_singleton()->get_process_exit_code(pid);
-	}
-
-	r_exit_code = exit_code;
-	r_output = output;
+	r_exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	r_output = bytes_to_string(stdout_bytes);
 	return true;
 }
 
@@ -164,6 +192,15 @@ Result inspect_project(const String &p_project_path) {
 
 	WorkingTreeState state;
 
+	// Probe for git first: on Unix execute_with_pipe() reports a successful launch
+	// before the child's execvp() can fail, so run_git() alone cannot tell a
+	// missing git from a real error. Without this, a missing git would look like a
+	// clean rev-parse failure and be misread as "not a work tree" (UNVERSIONED).
+	if (!git_available()) {
+		return evaluate(state); // git_available stays false -> UNKNOWN.
+	}
+	state.git_available = true;
+
 	// `git rev-parse --is-inside-work-tree` walks up from the project directory,
 	// so a project nested anywhere inside a repository is recognized as versioned
 	// (not just a directory containing `.git`). It prints "true" and exits 0 from
@@ -175,10 +212,9 @@ Result inspect_project(const String &p_project_path) {
 		int exit_code = 0;
 		String output;
 		if (!run_git(project_path, args, exit_code, output)) {
-			// git is not installed / not runnable; cannot determine anything.
+			state.git_available = false;
 			return evaluate(state);
 		}
-		state.git_available = true;
 		state.inside_work_tree = (exit_code == 0) && (output.strip_edges() == "true");
 	}
 
@@ -215,6 +251,11 @@ Vector<String> find_ignored_targets(const String &p_project_path, const Vector<S
 	Vector<String> ignored;
 	r_check_succeeded = true;
 	if (p_target_paths.is_empty()) {
+		return ignored;
+	}
+
+	if (!git_available()) {
+		r_check_succeeded = false;
 		return ignored;
 	}
 
