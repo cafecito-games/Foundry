@@ -92,10 +92,33 @@ iterator is reassigned a value whose rendered type does not match the element ty
 it narrows to (compound reassignments always bail). Reassignments inside a lambda
 that captures the iterator are caught too.
 
-The other binding forms do **not** need tracking:
+A narrowed read binding can also be **used** later in a type-sensitive position that
+is valid only while it remains `Variant` -- a typed call argument, a typed return, or
+a typed assignment target -- even if it is never reassigned. The `Variant` a bare
+read produces coerces into every such position; once the container is typed the
+binding narrows to its slot type, which the position rejects unless that slot type is
+exactly the type the position requires. The walker records each such use (resolving
+call-argument parameter types from the analyzer's `resolved_parameter_types`, returns
+against the enclosing function/lambda/method return contract, and assignment targets
+against the assignee's hard type) and bails with `READ_NARROWS` when the narrowed slot
+type does not match. This covers both the loop iterator **and** the plain
+`var v = c[i]` soft local (and element-returning accessor reads bound to one), because
+a typed use type-checks the binding directly rather than downgrading it. A position
+with no hard requirement (an untyped parameter/return/target) accepts the narrowed
+type exactly as it accepted `Variant`, so it never blocks inference. The comparison is
+exact rendered-type equality -- conservative (a compatible subtype is treated as a
+mismatch) but always sound. A "hard requirement" here means the position's resolved
+type is hard: an untyped parameter/return is `Variant`, and a *weak* (unannotated)
+assignment target carries only an inferred type that downgrades on an incompatible
+store, so neither blocks. The same check also fires for a **direct** element/value read
+used without an intermediate local (`take_string(c[i])`, `return c.pop_back()`,
+`var s: String = c[i]`), which narrows at the use site just as a bound read would.
 
-- `var v = c[i]` (plain `=`) is soft-typed: an incompatible reassignment downgrades
-  it to `Variant` rather than erroring, so narrowing the read never breaks it.
+The remaining binding forms still do **not** need tracking:
+
+- `var v = c[i]` (plain `=`) is soft-typed for *reassignment*: an incompatible
+  reassignment downgrades it to `Variant` rather than erroring, so reassignment never
+  narrows it (only a typed use does, handled above).
 - `var v := c[i]` (`:=`, hard) cannot occur over a *bare* container in the first
   place: the element read is `Variant`, and `:=` from a value with no set type is
   already a parse error, so no valid pre-upgrade source has this shape.
@@ -106,18 +129,19 @@ The other binding forms do **not** need tracking:
 
 ### Boundary
 
-The reassignment check covers the case where the loop iterator is overwritten with
-an incompatible value -- a write the narrowed type unambiguously rejects,
-detectable cheaply and soundly from the assignment alone. It does **not** cover
-every later *use* of a narrowed read in a type-sensitive position (e.g. passing a
-loop iterator or a read result to a typed parameter, returning it from a typed
-function, or assigning it to a typed target), where narrowing from `Variant` to
-the element type could also change analysis. Proving those positions safe requires the same whole-body
-type re-analysis the post-edit verification harness (#34) already performs, which
-re-analyses every applied edit and rejects one that newly fails. Detecting them
-up front in this pass (resolving call signatures, return contracts, etc.) is
-tracked as a follow-up; until then the harness remains the second line of defense
-for downstream typed uses, consistent with the soundness model above.
+The reassignment check covers a loop iterator overwritten with an incompatible value
+-- a write the narrowed type unambiguously rejects -- and the typed-use check (above)
+covers a narrowed read flowing into a typed call argument, a typed return, or a typed
+assignment target, the cases identified by #409. Both are detectable cheaply and
+soundly from the AST plus the analyzer's resolved types, without a second analysis
+pass. What remains outside this pass is genuinely flow- or value-dependent reasoning
+that a single conservative annotation cannot capture (e.g. a narrowed read passed to
+an overloaded native method whose selected overload depends on the runtime value, or a
+typed use reached only on a path where the binding was already downgraded). Proving
+those safe requires the whole-body type re-analysis the post-edit verification harness
+(#34) already performs, which re-analyses every applied edit and rejects one that newly
+fails; it remains the second line of defense, consistent with the soundness model
+above.
 
 ## Follow-ups (deferred)
 
