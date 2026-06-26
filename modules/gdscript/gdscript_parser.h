@@ -633,10 +633,12 @@ public:
 		// the type each argument flows into; the runtime compiler does not use them.
 		// Entries beyond the fixed parameter count (varargs) are not recorded.
 		Vector<DataType> resolved_parameter_types;
-		// Snapshot of `argument_names` taken at parse time, before the analyzer maps named
-		// arguments to parameter positions, rewrites the call into canonical positional order,
-		// and clears `argument_names`. Editor code completion reads this to know which parameters
-		// a call already supplies (positionally or by name); the runtime compiler does not use it.
+		// Surface argument name per call slot, captured at parse time for editor code completion.
+		// Indexed by argument slot: an empty entry for a positional argument and the parameter
+		// name for a `name = value` argument (recorded even when the value is still missing at the
+		// cursor). Unlike `argument_names`, this survives the analyzer's canonicalization, which
+		// maps named arguments to parameter positions and clears `argument_names`. Completion reads
+		// it to know which parameters a call already supplies; the runtime compiler does not use it.
 		Vector<StringName> parsed_argument_names;
 #endif // TOOLS_ENABLED
 

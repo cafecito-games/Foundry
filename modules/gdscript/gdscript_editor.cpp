@@ -3395,6 +3395,14 @@ static void _add_named_argument_completions(const Vector<StringName> &p_paramete
 	// parameter name for a `name = value` argument. It is read instead of the live CallNode
 	// because the analyzer canonicalizes named calls and clears their names.
 
+	// If the slot under the cursor already has a name, the cursor is on the value of a
+	// `name = value` argument (e.g. `f(width = |)`), not at a fresh argument slot. Parameter-name
+	// completions do not apply there: the user is typing the value, so suggesting `name = ` would
+	// produce a duplicate, malformed argument.
+	if (p_argidx >= 0 && p_argidx < p_supplied_argument_names.size() && p_supplied_argument_names[p_argidx] != StringName()) {
+		return;
+	}
+
 	// Map already-written arguments to the parameter positions they fill, so a name is
 	// only suggested while it remains unfilled. The argument currently being typed (at
 	// `p_argidx`) is skipped: it is the token the user is completing, not a supplied value.
