@@ -49,21 +49,41 @@
 namespace GDScriptTests {
 
 // Restores the two strict project settings to their prior values when it goes out of scope, so a
-// test that flips them does not leak state into later tests (the analyzer reads these globally).
+// test that flips them does not leak state into later tests (the analyzer reads these globally). A
+// confirmed activation also persists project.godot, so the guard snapshots the on-disk file and
+// restores it byte-for-byte, keeping the curated test fixture (and its comments) intact rather than
+// letting ProjectSettings::save() rewrite it with full defaults.
 struct StrictSettingsGuard {
 	Variant prior_null;
 	Variant prior_dynamic;
+	String project_path;
+	bool had_project_file = false;
+	PackedByteArray project_bytes;
 
 	StrictSettingsGuard() {
 		ProjectSettings *settings = ProjectSettings::get_singleton();
 		prior_null = settings->get_setting("debug/gdscript/analysis/strict_null_checks", false);
 		prior_dynamic = settings->get_setting("debug/gdscript/analysis/strict_dynamic_checks", false);
+
+		project_path = settings->globalize_path("res://project.godot");
+		if (FileAccess::exists(project_path)) {
+			had_project_file = true;
+			project_bytes = FileAccess::get_file_as_bytes(project_path);
+		}
 	}
 
 	~StrictSettingsGuard() {
 		ProjectSettings *settings = ProjectSettings::get_singleton();
 		settings->set_setting("debug/gdscript/analysis/strict_null_checks", prior_null);
 		settings->set_setting("debug/gdscript/analysis/strict_dynamic_checks", prior_dynamic);
+
+		// Restore the exact on-disk project.godot so a persisted flip never leaks onto disk.
+		if (had_project_file) {
+			Ref<FileAccess> file = FileAccess::open(project_path, FileAccess::WRITE);
+			if (file.is_valid()) {
+				file->store_buffer(project_bytes.ptr(), project_bytes.size());
+			}
+		}
 	}
 };
 
@@ -180,9 +200,13 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 		CHECK(result.strict_null_checks_set);
 		CHECK(result.strict_dynamic_checks_set);
 
-		// The settings were actually written.
+		// The settings were actually written (live for the session).
 		CHECK((bool)settings->get_setting("debug/gdscript/analysis/strict_null_checks", false));
 		CHECK((bool)settings->get_setting("debug/gdscript/analysis/strict_dynamic_checks", false));
+
+		// Persistence is reported honestly: either it was saved to disk, or a save error explains
+		// why the live flip is not yet durable. Never both empty (silent loss on restart).
+		CHECK((result.persisted) == (result.persist_error.is_empty()));
 
 		// The post-flip report is clean.
 		CHECK(result.post_flip.ok);

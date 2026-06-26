@@ -83,6 +83,12 @@ struct StrictActivationResult {
 	// confirmed, or gate not clean and violations not allowed). Empty when activated is true.
 	String blocked_reason;
 
+	// True iff a flip went through and ProjectSettings was successfully persisted to disk, so the
+	// activation survives an editor restart. False with activated=true means the settings are live
+	// for this session but the on-disk project.godot could not be written; see persist_error.
+	bool persisted = false;
+	String persist_error; // The save failure message when activated && !persisted; empty otherwise.
+
 	// The values the settings hold after the call. Each is true only if the request asked for it
 	// and the flip went through; an unrequested flag stays false here regardless of its prior value.
 	bool strict_null_checks_set = false;
