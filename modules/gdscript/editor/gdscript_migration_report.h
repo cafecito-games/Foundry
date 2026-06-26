@@ -97,6 +97,33 @@ struct MigrationReportOptions {
 	bool projection = false;
 };
 
+// The category a follow-up site falls under, so the manual punch-list can group sites by the
+// kind of work each one needs. These mirror the skip reasons and strict violations the report
+// already collects; the manual report exists to turn those tallies into an actionable list of
+// concrete file:line sites a human must revisit.
+enum class MigrationFollowUpCategory {
+	MULTI_LINE_DECLARATION, // A declaration whose assignment spans multiple lines, so no annotation could be placed.
+	UNRENDERABLE_TYPE, // A type was inferred but cannot be written as an explicit annotation (untyped containers, null/NIL, script or metatypes).
+	NO_INFERRED_TYPE, // A site where no concrete type could be inferred (Variant / unresolved after fixpoint).
+	STRICT_NULLABLE, // A strict_null_checks violation requiring a manual null guard or nullable annotation.
+	STRICT_VARIANT_BOUNDARY, // A strict_dynamic_checks violation requiring a manual cast or boundary type.
+	STRICT_UNKNOWN, // An uncategorized strict-only diagnostic.
+};
+
+// One concrete site a human must revisit, with enough location to jump straight to it. The
+// detail carries the verbatim reason or message so the punch-list is self-explanatory without
+// re-running the analyzer.
+struct MigrationFollowUpEntry {
+	MigrationFollowUpCategory category = MigrationFollowUpCategory::NO_INFERRED_TYPE;
+	String path; // The `res://` (or absolute) path of the file the site lives in.
+	int line = -1; // 1-based source line of the site (-1 when the source did not supply one).
+	String detail; // The verbatim skip reason or strict-violation message describing the site.
+
+	// Stable, human-readable name of a category, used as the section heading in the rendered
+	// follow-up report.
+	static String category_name(MigrationFollowUpCategory p_category);
+};
+
 // The dry-run report: an honest, read-only snapshot of a project's migration coverage and
 // friction before any edit is made. It joins the scan stage's coverage (scripts considered,
 // directories pruned) with a per-site tally of what the Add Type Annotation refactor can and
@@ -136,9 +163,21 @@ struct MigrationReportResult {
 	MigrationSkippedCounts skipped;
 	MigrationStrictCounts strict;
 
+	// The manual follow-up punch-list: every site a migration could NOT auto-resolve, in scan
+	// order, each with its category, file, and line. This is the actionable detail behind the
+	// `skipped` and `strict` tallies above -- the set of places a human must revisit. Sites that
+	// are already typed are not follow-ups (no work is owed) and are excluded.
+	Vector<MigrationFollowUpEntry> follow_ups;
+
 	// Renders the counts as the human-readable report a command or menu action prints. The text
 	// is for display only; callers that need the numbers read the fields above directly.
 	String format() const;
+
+	// Renders the manual follow-up punch-list: the `follow_ups` entries grouped by category, each
+	// listed as `path:line  detail`. This is the regenerable artifact issue #44 calls for -- a
+	// human-readable list of every site the migration left for manual follow-up. Returns a report
+	// with an explicit "no follow-up sites" note when nothing was left behind.
+	String format_follow_up() const;
 };
 
 // The dry-run migration report generator. It enumerates a project with GDScriptProjectScan,
@@ -153,6 +192,21 @@ public:
 	static MigrationReportResult generate(
 			const String &p_root,
 			const MigrationReportOptions &p_options = MigrationReportOptions());
+
+	// The default location, relative to the project root, where the manual follow-up report is
+	// written. Kept stable so the artifact can be regenerated in place and tracked alongside the
+	// project.
+	static const char *DEFAULT_FOLLOW_UP_PATH;
+
+	// Writes the manual follow-up punch-list (MigrationReportResult::format_follow_up) to
+	// p_path (a `res://`, `user://`, or bare filesystem path), creating intermediate directories
+	// as needed via the access backend the path resolves to. This is the regenerable, on-demand
+	// artifact: calling it again overwrites the
+	// previous report in place. Returns OK on success, or the FileAccess error otherwise. A report
+	// that did not complete (ok == false) is refused so a fatal-failure report is never persisted.
+	static Error write_follow_up(
+			const MigrationReportResult &p_report,
+			const String &p_path = String(DEFAULT_FOLLOW_UP_PATH));
 };
 
 #endif // TOOLS_ENABLED
