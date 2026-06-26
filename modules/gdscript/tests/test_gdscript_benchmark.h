@@ -34,6 +34,8 @@
 #include "../tests/gdscript_benchmark_runner.h"
 
 #include "core/math/math_funcs.h"
+#include "core/variant/array.h"
+#include "core/variant/dictionary.h"
 
 #include "tests/test_macros.h"
 
@@ -53,6 +55,41 @@ TEST_CASE("[GDScriptBenchmark] Runs a case and reports a finite positive time") 
 		CHECK(entry.value > 0.0);
 		CHECK(Math::is_finite(entry.value));
 	}
+}
+
+TEST_CASE("[GDScriptBenchmark] Profile pass captures per-function rows") {
+	GDScriptLanguage::get_singleton()->init();
+
+	GDScriptBenchmarkRunner runner("modules/gdscript/tests/benchmarks/_baseline");
+	Dictionary profile;
+	const bool ok = runner.profile_all(profile);
+	CHECK(ok);
+	CHECK(profile.size() >= 1);
+
+	// Every variant key maps to an array of function rows, and at least one row
+	// (the workload's run_benchmark) must carry a positive call count plus the
+	// documented self/total time and signature fields.
+	bool saw_run_benchmark = false;
+	for (const Variant &key : profile.keys()) {
+		const Array functions = profile[key];
+		for (int i = 0; i < functions.size(); i++) {
+			const Dictionary row = functions[i];
+			CHECK(row.has("signature"));
+			CHECK(row.has("call_count"));
+			CHECK(row.has("self_time"));
+			CHECK(row.has("total_time"));
+			const int64_t call_count = row["call_count"];
+			CHECK(call_count > 0);
+			// The function profiler labels each row with a non-empty signature
+			// (`<path>::<line>::<function>`); the workload entry point must appear.
+			const String signature = row["signature"];
+			CHECK_FALSE(signature.is_empty());
+			if (signature.contains("run_benchmark")) {
+				saw_run_benchmark = true;
+			}
+		}
+	}
+	CHECK(saw_run_benchmark);
 }
 
 } // namespace GDScriptTests

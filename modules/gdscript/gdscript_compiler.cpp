@@ -2943,7 +2943,11 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	}
 
 #ifdef DEBUG_ENABLED
-	if (EngineDebugger::is_active()) {
+	// Record the profiler signature in every debug build, not only when a
+	// debugger is attached, so headless profiling tools (e.g. the GDScript
+	// benchmark profiler) can label per-function timing. The signature is inert
+	// unless the function profiler is running.
+	{
 		String signature;
 		// Path.
 		if (!p_script->get_script_path().is_empty()) {
@@ -3127,7 +3131,11 @@ GDScriptFunction *GDScriptCompiler::_make_static_initializer(Error &r_error, GDS
 	}
 
 #ifdef DEBUG_ENABLED
-	if (EngineDebugger::is_active()) {
+	// Record the profiler signature in every debug build, not only when a
+	// debugger is attached, so headless profiling tools (e.g. the GDScript
+	// benchmark profiler) can label per-function timing. The signature is inert
+	// unless the function profiler is running.
+	{
 		String signature;
 		// Path.
 		if (!p_script->get_script_path().is_empty()) {

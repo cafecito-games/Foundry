@@ -33,6 +33,7 @@
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/vector.h"
+#include "core/variant/dictionary.h"
 
 namespace GDScriptTests {
 
@@ -60,6 +61,11 @@ class GDScriptBenchmarkRunner {
 	CaseConfig load_case_config(const String &p_case_dir) const;
 	// Runs one variant; returns measured microseconds, or -1.0 on failure.
 	double run_variant(const WorkloadVariant &p_variant) const;
+	// Runs one variant under the GDScript function profiler, appending a
+	// per-function row (a Dictionary {signature, call_count, self_time,
+	// total_time}) to `r_functions` for every function the workload actually
+	// invoked. Returns false if the workload failed to compile or run.
+	bool profile_variant(const WorkloadVariant &p_variant, Array &r_functions) const;
 
 public:
 	explicit GDScriptBenchmarkRunner(const String &p_source_dir);
@@ -69,6 +75,12 @@ public:
 	// Returns false if discovery failed, no variant was found, or any variant
 	// failed to compile/run.
 	bool run_all(HashMap<String, double> &r_results) const;
+
+	// Profiles every discovered variant under the GDScript function profiler in a
+	// pass separate from the timing run, filling r_profile with a map whose key is
+	// "<case>/<variant>" and whose value is an Array of per-function rows. Returns
+	// false if discovery failed, no variant was found, or any variant failed.
+	bool profile_all(Dictionary &r_profile) const;
 
 	// CLI entry: scans for `--gdscript-benchmark <dir>`, runs, dumps JSON, exits.
 	static void handle_cmdline();
