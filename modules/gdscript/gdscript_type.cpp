@@ -64,73 +64,25 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right);
 
-// Reduce a signature slot to the form the `MethodInfo`/`PropertyInfo` comparison path used. That path
-// serialized each slot through `DataType::to_property_info`, which erases any non-hard (inferred or
-// undetected) type to Variant before comparing. Mirror that erasure so a body-inferred or weakly
-// inferred slot — an untyped `func(x)` lambda parameter, or a `func foo(): return 1` whose return is
-// inferred to `int` without an annotation — is compared as Variant rather than as the concrete type it
-// happened to infer. Hard-typed slots keep their structure but are pinned to a concrete type source so
-// the comparison below is decided structurally instead of by DataType::operator=='s parser leniency
-// (which treats INFERRED/UNDETECTED operands as equal to anything).
-// Whether a slot would be recorded as Variant at the `MethodInfo` boundary the comparison historically
-// used. `DataType::to_property_info` erases to Variant both every non-hard slot and the hard kinds that
-// have no runtime type of their own — type parameters (erased outside the type checker), Variant, and
-// the transient resolving/unresolved kinds.
-static bool _signature_slot_erases_to_variant(const GDScriptParser::DataType &p_type) {
-	if (!p_type.is_hard_type()) {
-		return true;
-	}
-	switch (p_type.kind) {
-		case GDScriptParser::DataType::TYPE_PARAMETER:
-		case GDScriptParser::DataType::VARIANT:
-		case GDScriptParser::DataType::RESOLVING:
-		case GDScriptParser::DataType::UNRESOLVED:
-			return true;
-		default:
-			return false;
-	}
-}
-
-static GDScriptParser::DataType _erased_signature_slot(const GDScriptParser::DataType &p_type) {
-	if (!_signature_slot_erases_to_variant(p_type)) {
-		GDScriptParser::DataType hard = p_type;
-		hard.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-		return hard;
-	}
-	GDScriptParser::DataType erased;
-	erased.kind = GDScriptParser::DataType::VARIANT;
-	erased.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-	return erased;
-}
-
-// Compare two signature slot types the way the erased `MethodInfo` path did: non-hard slots collapse to
-// Variant, so an untyped or body-inferred slot does not silently satisfy a concretely typed target the
-// way it would under DataType::operator=='s leniency.
-static bool _signature_slot_types_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
-	return _erased_signature_slot(p_left) == _erased_signature_slot(p_right);
-}
-
-// DataType::operator== compares Callable/Signal builtins by their outer builtin type only and ignores
-// the nested method signature metadata. It also compares composite slots (typed-container element
-// types and generic type arguments) through that same shallow `operator==`, so a Callable/Signal
-// signature mismatch buried inside one of those slots is lost too. Compare two signature slot types
-// structurally so that a mismatch nested anywhere a Callable/Signal can appear — directly
-// (`Callable[[Callable[[int], void]], void]` vs `Callable[[Callable[[String], void]], void]`) or
-// through a container/generic slot (`Callable[[Array[Callable[[int], void]]], void]`,
-// `Box[Callable[[int], void]]`) — is still detected instead of being accepted shallowly.
+// Compare two Callable/Signal signature slots the way the historical `MethodInfo` fallback path did,
+// then recover the one piece that path could not represent. That path serialized each slot through
+// `DataType::to_property_info` and compared the resulting `PropertyInfo`s, which erases type parameters
+// and non-hard (inferred/undetected) types to Variant and encodes typed containers by hint. Reusing
+// that serialization keeps every non-Callable/Signal aspect of slot matching byte-for-byte identical to
+// the prior behavior (so an untyped `func(x)` parameter, a body-inferred `func foo(): return 1` return,
+// a type-parameter slot, or an `Array[T]` element all collapse to the same erased form they did before).
+//
+// The single thing `to_property_info` cannot express is a Callable/Signal's nested method signature —
+// it records only the outer builtin type — which is exactly the information #382 needs. So after the
+// property comparison, recurse to detect a nested Callable/Signal mismatch wherever one can hide:
+// directly (`Callable[[Callable[[int], void]], void]` vs `Callable[[Callable[[String], void]], void]`),
+// inside a typed-container element (`Array[Callable[[int], void]]`), or inside a generic type argument
+// (`Box[Callable[[int], void]]`). The size guards keep the lenient outcome the property comparison
+// already produced when one slot legitimately omits a composite vector the other carries.
 static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
-	if (!_signature_slot_types_equal(p_left, p_right)) {
+	if (!_property_signature_equal(p_left.to_property_info(""), p_right.to_property_info(""))) {
 		return false;
 	}
-	// Only recurse into the composite structure of slots that carry a concrete type. A slot erased to
-	// Variant above (mirroring the MethodInfo path) has no concrete nested container, generic, or
-	// method-signature data to deep-compare; the equality already accepted it as Variant.
-	if (_signature_slot_erases_to_variant(p_left) || _signature_slot_erases_to_variant(p_right)) {
-		return true;
-	}
-	// The strict equality above already established matching outer structure; recurse into the
-	// composite slots it only compared shallowly. The size guards keep the lenient outcome it returns
-	// when one slot legitimately omits a composite vector the other carries.
 	if (p_left.container_element_types.size() == p_right.container_element_types.size()) {
 		for (int i = 0; i < p_left.container_element_types.size(); i++) {
 			if (!_datatype_signature_slot_equal(p_left.container_element_types[i], p_right.container_element_types[i])) {
