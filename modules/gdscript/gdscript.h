@@ -586,6 +586,13 @@ class GDScriptLanguage : public ScriptLanguage {
 
 	String _get_global_class_name(const String &p_path, String *r_base_type, String *r_icon_path, bool *r_is_abstract, bool *r_is_tool, bool *r_is_trait, LocalVector<String> &r_visited) const;
 
+	// Cross-file index of custom annotation declarations, keyed by canonical identity
+	// ("<namespace>.<name>", or "<name>" in the global namespace). Each entry tracks the
+	// distinct source paths that declare it so duplicate canonical identities and
+	// annotation-only namespaces can be discovered for import resolution.
+	HashMap<StringName, Vector<String>> global_annotations;
+	mutable Mutex annotation_index_mutex;
+
 	friend class GDScriptInstance;
 
 	Mutex mutex;
@@ -804,6 +811,23 @@ public:
 
 	virtual bool handles_global_class_type(const String &p_type) const override;
 	virtual String get_global_class_name(const String &p_path, String *r_base_type = nullptr, String *r_icon_path = nullptr, bool *r_is_abstract = nullptr, bool *r_is_tool = nullptr, bool *r_is_trait = nullptr) const override;
+
+	/* CUSTOM ANNOTATION INDEX */
+
+	// Parse `p_path` (without running the analyzer, mirroring `get_global_class_name`) and
+	// collect the canonical identities of every root-level custom annotation declaration.
+	void get_global_annotations(const String &p_path, List<StringName> *r_annotations) const;
+	// Register a custom annotation declaration under its canonical identity for `p_path`.
+	void add_global_annotation(const StringName &p_qualified_name, const String &p_path);
+	// Drop every annotation declaration previously registered for `p_path`.
+	void remove_global_annotations_by_path(const String &p_path);
+	void clear_global_annotations();
+	// True when the canonical identity is declared by at least one indexed file.
+	bool is_global_annotation(const StringName &p_qualified_name) const;
+	// True when the canonical identity is declared by two or more distinct files.
+	bool is_duplicated_global_annotation(const StringName &p_qualified_name) const;
+	// True when any indexed annotation declaration lives in `p_namespace`.
+	bool namespace_has_annotations(const String &p_namespace) const;
 
 	void add_orphan_subclass(const String &p_qualified_name, const ObjectID &p_subclass);
 	Ref<GDScript> get_orphan_subclass(const String &p_qualified_name);

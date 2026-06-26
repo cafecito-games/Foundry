@@ -1500,8 +1500,11 @@ void GDScriptParser::parse_function_class_member(bool p_is_static, bool p_is_asy
 GDScriptParser::AnnotationDeclarationNode *GDScriptParser::parse_annotation_declaration() {
 	AnnotationDeclarationNode *annotation_declaration = alloc_node<AnnotationDeclarationNode>();
 
-	// The current token is the contextual `annotation` identifier.
+	// The current token is the contextual `annotation` identifier. `alloc_node` anchored the
+	// node to the preceding token, so re-anchor it to `annotation` itself once consumed; this
+	// keeps analyzer diagnostics (duplicate/reserved identity) pointing at the declaration.
 	advance();
+	reset_extents(annotation_declaration, previous);
 
 	// An annotation declaration is not a runtime member, so no class-level annotation may
 	// apply to it. Consume any pending annotations here (erroring on each) so they cannot

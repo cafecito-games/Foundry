@@ -2454,6 +2454,8 @@ void GDScriptLanguage::finish() {
 	}
 	finishing = true;
 
+	clear_global_annotations();
+
 	// Clear the cache before parsing the script_list
 	GDScriptCache::clear();
 
@@ -3133,6 +3135,96 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 		return String();
 	}
 	return c->qualified_global_name.is_empty() ? String(c->identifier->name) : c->qualified_global_name;
+}
+
+void GDScriptLanguage::get_global_annotations(const String &p_path, List<StringName> *r_annotations) const {
+	ERR_FAIL_NULL(r_annotations);
+
+	Error err = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ, &err);
+	if (err) {
+		return;
+	}
+
+	// Like `get_global_class_name`, this must not rely on the analyzer: annotation declarations
+	// are indexed before dependencies are guaranteed to be resolvable. Unlike class-name
+	// extraction, a file that fails to parse is not indexed: a broken source cannot be a
+	// reliable annotation library, and indexing partial declarations would surface spurious
+	// duplicate-identity collisions.
+	// The full body must be parsed because annotation declarations are root body declarations;
+	// the class-name fast path (which skips the body) would never see them.
+	GDScriptParser parser;
+	if (parser.parse(file->get_as_utf8_string(), p_path, false, true) != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	if (root == nullptr) {
+		return;
+	}
+
+	for (const GDScriptParser::AnnotationDeclarationNode *declaration : root->annotation_declarations) {
+		if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
+			continue;
+		}
+		r_annotations->push_back(StringName(declaration->qualified_name));
+	}
+}
+
+void GDScriptLanguage::add_global_annotation(const StringName &p_qualified_name, const String &p_path) {
+	MutexLock lock(annotation_index_mutex);
+
+	Vector<String> &paths = global_annotations[p_qualified_name];
+	if (!paths.has(p_path)) {
+		paths.push_back(p_path);
+	}
+}
+
+void GDScriptLanguage::remove_global_annotations_by_path(const String &p_path) {
+	MutexLock lock(annotation_index_mutex);
+
+	List<StringName> emptied;
+	for (KeyValue<StringName, Vector<String>> &entry : global_annotations) {
+		entry.value.erase(p_path);
+		if (entry.value.is_empty()) {
+			emptied.push_back(entry.key);
+		}
+	}
+	for (const StringName &name : emptied) {
+		global_annotations.erase(name);
+	}
+}
+
+void GDScriptLanguage::clear_global_annotations() {
+	MutexLock lock(annotation_index_mutex);
+	global_annotations.clear();
+}
+
+bool GDScriptLanguage::is_global_annotation(const StringName &p_qualified_name) const {
+	MutexLock lock(annotation_index_mutex);
+	return global_annotations.has(p_qualified_name);
+}
+
+bool GDScriptLanguage::is_duplicated_global_annotation(const StringName &p_qualified_name) const {
+	MutexLock lock(annotation_index_mutex);
+	const Vector<String> *paths = global_annotations.getptr(p_qualified_name);
+	return paths != nullptr && paths->size() > 1;
+}
+
+bool GDScriptLanguage::namespace_has_annotations(const String &p_namespace) const {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+
+	const String namespace_prefix = p_namespace + ".";
+
+	MutexLock lock(annotation_index_mutex);
+	for (const KeyValue<StringName, Vector<String>> &entry : global_annotations) {
+		if (String(entry.key).begins_with(namespace_prefix)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 thread_local GDScriptLanguage::CallLevel *GDScriptLanguage::_call_stack = nullptr;

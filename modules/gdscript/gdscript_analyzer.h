@@ -198,6 +198,7 @@ class GDScriptAnalyzer {
 			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
 			const HashMap<StringName, GDScriptParser::DataType> &p_trait_substitution = HashMap<StringName, GDScriptParser::DataType>());
 	Error validate_imports();
+	Error validate_annotation_declarations();
 #ifdef DEBUG_ENABLED
 	void validate_mixed_namespace_directory();
 #endif // DEBUG_ENABLED

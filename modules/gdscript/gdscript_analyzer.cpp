@@ -6771,8 +6771,55 @@ Error GDScriptAnalyzer::validate_imports() {
 		}
 		checked_imports.push_back(import);
 
-		if (!_namespace_exists_in_global_classes(global_classes, import)) {
+		// A namespace is a valid import target when it exposes any global class/trait or any
+		// custom annotation declaration. Annotation-only libraries declare no `class_name`, so
+		// they would otherwise be invisible to import validation.
+		if (!_namespace_exists_in_global_classes(global_classes, import) &&
+				!GDScriptLanguage::get_singleton()->namespace_has_annotations(import)) {
 			push_error(vformat(R"(Could not find imported namespace "%s".)", import), parser->head);
+		}
+	}
+
+	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+}
+
+Error GDScriptAnalyzer::validate_annotation_declarations() {
+	if (parser->head->annotation_declarations.is_empty()) {
+		return OK;
+	}
+
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	HashSet<String> declared_in_file;
+
+	for (GDScriptParser::AnnotationDeclarationNode *declaration : parser->head->annotation_declarations) {
+		if (declaration->identifier == nullptr) {
+			continue;
+		}
+
+		const StringName short_name = declaration->identifier->name;
+
+		// Built-in annotation names (registered with the leading `@`) stay reserved in the
+		// annotation-symbol space so custom declarations can never shadow engine behavior.
+		if (parser->valid_annotations.has(StringName("@" + String(short_name)))) {
+			push_error(vformat(R"(Cannot declare custom annotation "%s": "@%s" is a built-in annotation.)", short_name, short_name), declaration);
+			continue;
+		}
+
+		const String &qualified_name = declaration->qualified_name;
+		if (qualified_name.is_empty()) {
+			continue;
+		}
+
+		if (declared_in_file.has(qualified_name)) {
+			push_error(vformat(R"(Duplicate annotation declaration "%s".)", qualified_name), declaration);
+			continue;
+		}
+		declared_in_file.insert(qualified_name);
+
+		// A canonical identity registered by two or more distinct files is a hard error: imports
+		// could not disambiguate between the declarations.
+		if (language != nullptr && language->is_duplicated_global_annotation(StringName(qualified_name))) {
+			push_error(vformat(R"(Duplicate annotation declaration "%s": the same canonical annotation is declared in another file.)", qualified_name), declaration);
 		}
 	}
 
@@ -11422,6 +11469,11 @@ Error GDScriptAnalyzer::analyze() {
 	parser->errors.clear();
 
 	Error err = validate_imports();
+	if (err) {
+		return err;
+	}
+
+	err = validate_annotation_declarations();
 	if (err) {
 		return err;
 	}
