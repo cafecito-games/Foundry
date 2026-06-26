@@ -2200,6 +2200,13 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 }
 
 void GDScriptAnalyzer::resolve_annotation(GDScriptParser::AnnotationNode *p_annotation) {
+	if (p_annotation->is_custom) {
+		// Unresolved custom annotation usage. Import-aware resolution and validation of custom
+		// annotations land in a later analyzer change; until then the usage is preserved but
+		// neither applied as a built-in nor reported here.
+		return;
+	}
+
 	ERR_FAIL_COND_MSG(!parser->valid_annotations.has(p_annotation->name), vformat(R"(Annotation "%s" not found to validate.)", p_annotation->name));
 
 	if (p_annotation->is_resolved) {

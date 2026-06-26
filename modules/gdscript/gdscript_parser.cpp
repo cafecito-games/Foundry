@@ -2426,17 +2426,22 @@ GDScriptParser::AnnotationNode *GDScriptParser::parse_annotation(uint32_t p_vali
 	if (!valid_annotations.has(annotation->name)) {
 		if (annotation->name == "@deprecated") {
 			push_error(R"("@deprecated" annotation does not exist. Use "## @deprecated: Reason here." instead.)");
+			valid = false;
 		} else if (annotation->name == "@experimental") {
 			push_error(R"("@experimental" annotation does not exist. Use "## @experimental: Reason here." instead.)");
+			valid = false;
 		} else if (annotation->name == "@tutorial") {
 			push_error(R"("@tutorial" annotation does not exist. Use "## @tutorial(Title): https://example.com" instead.)");
+			valid = false;
 		} else {
-			push_error(vformat(R"(Unrecognized annotation: "%s".)", annotation->name));
+			// Unknown non-built-in annotation. Preserve it as an unresolved custom usage so the
+			// analyzer can resolve it against same-namespace or imported annotation declarations.
+			// Its `info` stays null and its target/arguments are validated later by the analyzer.
+			annotation->is_custom = true;
 		}
-		valid = false;
 	}
 
-	if (valid) {
+	if (valid && !annotation->is_custom) {
 		annotation->info = &valid_annotations[annotation->name];
 
 		if (!annotation->applies_to(p_valid_targets)) {
@@ -2463,13 +2468,43 @@ GDScriptParser::AnnotationNode *GDScriptParser::parse_annotation(uint32_t p_vali
 				break;
 			}
 
-			ExpressionNode *argument = parse_expression(false);
+			ExpressionNode *argument = nullptr;
+			StringName argument_name;
+			if (annotation->is_custom) {
+				// Custom annotation usages accept `name = value` named arguments. Stop on a
+				// trailing "=" so a leading identifier can be read as the argument name.
+				// GDScript assignment is a statement, never an expression, so `IDENTIFIER` +
+				// `EQUAL` here is unambiguously a named argument; `@a(x == y)` uses `EQUAL_EQUAL`.
+				argument = parse_expression(false, true);
+				if (argument != nullptr && check(GDScriptTokenizer::Token::EQUAL)) {
+					if (argument->type == Node::IDENTIFIER) {
+						argument_name = static_cast<IdentifierNode *>(argument)->name;
+						advance(); // Consume "=".
+						make_completion_context(COMPLETION_ANNOTATION_ARGUMENTS, annotation, argument_index);
+						argument = parse_expression(false);
+						if (argument == nullptr) {
+							push_error(vformat(R"(Expected expression after "%s =" named argument.)", argument_name));
+						}
+					} else {
+						// A non-identifier target before "=" is an attempted assignment, which is
+						// not a valid expression argument. Consume the rest so parsing recovers.
+						push_error(R"(Assignment is not allowed inside an expression.)");
+						advance(); // Consume "=".
+						parse_expression(false);
+					}
+				}
+			} else {
+				argument = parse_expression(false);
+			}
 
 			if (argument == nullptr) {
-				push_error("Expected expression as the annotation argument.");
-				valid = false;
+				if (argument_name == StringName()) {
+					push_error("Expected expression as the annotation argument.");
+					valid = false;
+				}
 			} else {
 				annotation->arguments.push_back(argument);
+				annotation->argument_names.push_back(argument_name);
 
 				if (argument->type == Node::LITERAL) {
 					override_completion_context(argument, COMPLETION_ANNOTATION_ARGUMENTS, annotation, argument_index);
@@ -2487,7 +2522,7 @@ GDScriptParser::AnnotationNode *GDScriptParser::parse_annotation(uint32_t p_vali
 
 	match(GDScriptTokenizer::Token::NEWLINE); // Newline after annotation is optional.
 
-	if (valid) {
+	if (valid && !annotation->is_custom) {
 		valid = validate_annotation_arguments(annotation);
 	}
 
@@ -5065,10 +5100,22 @@ bool GDScriptParser::AnnotationNode::apply(GDScriptParser *p_this, Node *p_targe
 		return true;
 	}
 	is_applied = true;
+	if (info == nullptr) {
+		// Unresolved custom annotation usage: there is no built-in behavior to apply.
+		// The analyzer resolves and validates it separately.
+		return true;
+	}
 	return (p_this->*(p_this->valid_annotations[name].apply))(this, p_target, p_class);
 }
 
 bool GDScriptParser::AnnotationNode::applies_to(uint32_t p_target_kinds) const {
+	if (info == nullptr) {
+		// Unresolved custom annotation usage. The parser does not know the declared targets
+		// yet, so it attaches to any declaration (class, variable, function, etc.) and defers
+		// target validation to the analyzer. Custom annotations are never script-level or
+		// standalone, so those structural queries must stay false to keep parser routing intact.
+		return (p_target_kinds & (AnnotationInfo::SCRIPT | AnnotationInfo::STANDALONE)) == 0;
+	}
 	return (info->target_kind & p_target_kinds) > 0;
 }
 

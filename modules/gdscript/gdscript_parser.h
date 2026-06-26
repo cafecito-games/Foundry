@@ -440,10 +440,19 @@ public:
 	struct AnnotationNode : public Node {
 		StringName name;
 		Vector<ExpressionNode *> arguments;
+		// Parallel to `arguments`: the explicit parameter name for each argument written as
+		// `name = value` at the use site, or an empty `StringName` for a positional argument.
+		// Named arguments are only recognized for custom annotation usages; the analyzer maps
+		// the names to declaration parameters. Built-in annotations keep positional-only entries.
+		Vector<StringName> argument_names;
 		Vector<Variant> resolved_arguments;
 
 		/** Information of the annotation. Might be null for unknown annotations. */
 		AnnotationInfo *info = nullptr;
+		// True for an unresolved non-built-in annotation usage (`@my_annotation`). The parser
+		// preserves the node instead of rejecting the unknown name so the analyzer can perform
+		// import-aware resolution and validation. Such nodes have a null `info`.
+		bool is_custom = false;
 		PropertyInfo export_info;
 		bool is_resolved = false;
 		bool is_applied = false;
