@@ -4249,6 +4249,12 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_call(ExpressionNode *p_pre
 	consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after call arguments.)*");
 	complete_extents(call);
 
+#ifdef TOOLS_ENABLED
+	// Preserve the surface argument names for editor code completion: the analyzer later
+	// canonicalizes named arguments and clears `argument_names`.
+	call->parsed_argument_names = call->argument_names;
+#endif // TOOLS_ENABLED
+
 	return call;
 }
 

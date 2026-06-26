@@ -3367,6 +3367,66 @@ static void _find_enumeration_candidates(GDScriptParser::CompletionContext &p_co
 	}
 }
 
+// Offer the declared parameter names of a statically resolved GDScript callee as
+// `name = ` completions, so named arguments are discoverable in the editor. Only
+// parameters that are not already supplied (positionally or by name) are suggested,
+// matching what the analyzer accepts. The variadic rest parameter is never offered.
+static Vector<StringName> _collect_function_parameter_names(const GDScriptParser::FunctionNode *p_function) {
+	Vector<StringName> names;
+	if (p_function == nullptr) {
+		return names;
+	}
+	// `parameters` excludes the variadic rest parameter, so it is never offered as a name.
+	// Push one entry per parameter (empty for a malformed one) to keep the vector index
+	// aligned with the parameter's declaration position.
+	for (const GDScriptParser::ParameterNode *parameter : p_function->parameters) {
+		if (parameter != nullptr && parameter->identifier != nullptr) {
+			names.push_back(parameter->identifier->name);
+		} else {
+			names.push_back(StringName());
+		}
+	}
+	return names;
+}
+
+static void _add_named_argument_completions(const Vector<StringName> &p_parameter_names, const Vector<StringName> &p_supplied_argument_names, int p_argidx, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	// `p_supplied_argument_names` is the parser's snapshot of the call's surface arguments,
+	// parallel to the arguments as written: an empty entry for a positional argument and the
+	// parameter name for a `name = value` argument. It is read instead of the live CallNode
+	// because the analyzer canonicalizes named calls and clears their names.
+
+	// Map already-written arguments to the parameter positions they fill, so a name is
+	// only suggested while it remains unfilled. The argument currently being typed (at
+	// `p_argidx`) is skipped: it is the token the user is completing, not a supplied value.
+	HashSet<int> filled_positions;
+	for (int i = 0; i < p_supplied_argument_names.size(); i++) {
+		if (i == p_argidx) {
+			continue;
+		}
+		const StringName &argument_name = p_supplied_argument_names[i];
+		if (argument_name == StringName()) {
+			// Positional arguments form a prefix and fill parameters in declaration order,
+			// so the argument at list position `i` fills the parameter at position `i`.
+			filled_positions.insert(i);
+		} else {
+			for (int j = 0; j < p_parameter_names.size(); j++) {
+				if (p_parameter_names[j] == argument_name) {
+					filled_positions.insert(j);
+					break;
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < p_parameter_names.size(); i++) {
+		if (filled_positions.has(i) || p_parameter_names[i] == StringName()) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(String(p_parameter_names[i]) + " = ", ScriptLanguage::CODE_COMPLETION_KIND_VARIABLE);
+		r_result.insert(option.display, option);
+	}
+}
+
 static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, const GDScriptCompletionIdentifier &p_base, const GDScriptParser::CallNode *p_call, int p_argidx, bool p_static, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, String &r_arghint) {
 	Variant base = p_base.value;
 	GDScriptParser::DataType base_type = p_base.type;
@@ -3388,6 +3448,7 @@ static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, c
 
 							if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 								r_arghint = base_type.class_type->get_datatype().to_string() + " new" + _make_arguments_hint(member.function, p_argidx, true);
+								_add_named_argument_completions(_collect_function_parameter_names(member.function), p_call->parsed_argument_names, p_argidx, r_result);
 								return;
 							}
 						}
@@ -3403,6 +3464,7 @@ static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, c
 
 					if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 						r_arghint = _make_arguments_hint(member.function, p_argidx);
+						_add_named_argument_completions(_collect_function_parameter_names(member.function), p_call->parsed_argument_names, p_argidx, r_result);
 						return;
 					}
 				}
