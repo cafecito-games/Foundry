@@ -313,6 +313,14 @@ bool is_expression_node(Node::Type p_type) {
 // (see `narrows_a_read`). Each binding remembers which container slot the read
 // reads from (array element / dictionary key / dictionary value) so the
 // reassigned value can be compared against the right element type.
+//
+// This covers reassignment, the case detectable cheaply and soundly from the
+// assignment alone. It does not cover every later *use* of the binding in a
+// type-sensitive position (a typed call argument, a typed return, a typed
+// assignment target), where narrowing could also change analysis; proving those
+// safe needs the whole-body re-analysis the post-edit verification harness (#34)
+// already performs on applied edits. See the design doc for the documented
+// boundary and the follow-up tracking up-front detection of those positions.
 class ReadNarrowingTracker {
 public:
 	enum Slot {

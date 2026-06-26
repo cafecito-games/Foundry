@@ -89,6 +89,21 @@ bindings is reassigned a value whose rendered type does not match the element
 type it would narrow to. This applies uniformly to the array element, dictionary
 key (loop bindings), and dictionary value (subscript bindings) paths.
 
+### Boundary
+
+The reassignment check covers the case where the binding is overwritten with an
+incompatible value -- a write the narrowed type unambiguously rejects, detectable
+cheaply and soundly from the assignment alone. It does **not** cover every later
+*use* of the binding in a type-sensitive position (e.g. passing it to a typed
+parameter, returning it from a typed function, or assigning it to a typed
+target), where narrowing the binding from `Variant` to the element type could
+also change analysis. Proving those positions safe requires the same whole-body
+type re-analysis the post-edit verification harness (#34) already performs, which
+re-analyses every applied edit and rejects one that newly fails. Detecting them
+up front in this pass (resolving call signatures, return contracts, etc.) is
+tracked as a follow-up; until then the harness remains the second line of defense
+for downstream typed uses, consistent with the soundness model above.
+
 ## Follow-ups (deferred)
 
 - Dictionary `Dictionary[K, V]` element inference (key/value from indexed
