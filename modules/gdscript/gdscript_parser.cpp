@@ -6119,6 +6119,13 @@ static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type)
 					if (!p_type.has_explicit_method_signature) {
 						return true;
 					}
+					// The hint encodes only a fixed parameter/return list. Default-argument and vararg
+					// arity metadata cannot round-trip, so a callable carrying it must cross untyped to
+					// avoid rejecting valid default-arg/vararg calls at the script-API boundary.
+					if (!p_type.method_info.default_arguments.is_empty() ||
+							(p_type.method_info.flags & METHOD_FLAG_VARARG) != 0) {
+						return false;
+					}
 					for (const GDScriptParser::DataType &parameter_type : p_type.method_parameter_types) {
 						if (!_signature_type_is_encodable(parameter_type)) {
 							return false;
