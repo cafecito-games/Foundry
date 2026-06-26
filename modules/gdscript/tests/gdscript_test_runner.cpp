@@ -136,6 +136,7 @@ void init_language(const String &p_base_path) {
 }
 
 void finish_language() {
+	GDScriptLanguage::get_singleton()->clear_global_annotations();
 	GDScriptLanguage::get_singleton()->finish();
 	ScriptServer::global_classes_clear();
 }
@@ -388,14 +389,20 @@ static bool generate_class_index_recursive(const String &p_dir) {
 			bool is_tool = false;
 			bool is_trait = false;
 			String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(source_file, &base_type, nullptr, &is_abstract, &is_tool, &is_trait);
-			if (class_name.is_empty()) {
-				next = dir->get_next();
-				continue;
-			}
-			ERR_FAIL_COND_V_MSG(ScriptServer::is_global_class(class_name), false,
-					"Class name '" + class_name + "' from " + source_file + " is already used in " + ScriptServer::get_global_class_path(class_name));
+			if (!class_name.is_empty()) {
+				ERR_FAIL_COND_V_MSG(ScriptServer::is_global_class(class_name), false,
+						"Class name '" + class_name + "' from " + source_file + " is already used in " + ScriptServer::get_global_class_path(class_name));
 
-			ScriptServer::add_global_class(class_name, base_type, gdscript_name, source_file, is_abstract, is_tool, is_trait);
+				ScriptServer::add_global_class(class_name, base_type, gdscript_name, source_file, is_abstract, is_tool, is_trait);
+			}
+
+			// Index custom annotation declarations even for annotation-only files that declare
+			// no `class_name`/`trait_name`, so imports and duplicate-identity checks can see them.
+			List<StringName> annotations;
+			GDScriptLanguage::get_singleton()->get_global_annotations(source_file, &annotations);
+			for (const StringName &annotation : annotations) {
+				GDScriptLanguage::get_singleton()->add_global_annotation(annotation, source_file);
+			}
 		}
 
 		next = dir->get_next();
