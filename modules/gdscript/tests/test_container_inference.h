@@ -786,9 +786,11 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
-	TEST_CASE("Calling an overridable script method on self escapes the member") {
-		// A subclass outside this file can override `notify()` and mutate the
-		// inherited `_items` with a different type, so the call is not bounded.
+	TEST_CASE("Calling an overridable script method on self resolves through the complete closure") {
+		// With the subclass closure proven complete, every override of `after_add`
+		// lives in this class or a scanned subclass, all folded into the same union.
+		// The override body here does not touch `_items`, so the inference resolves the
+		// dispatch instead of bailing.
 		InferenceFixture fixture(
 				"var _items = []\n"
 				"func add(n: int) -> void:\n"
@@ -797,6 +799,24 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 				"func after_add() -> void:\n"
 				"\tpass\n");
 		GDScriptContainerInference::Result result = infer_member_in(fixture, "_items");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("Calling an overridable script method on self escapes when the closure is incomplete") {
+		// When the caller cannot prove it enumerated every subclass, an unseen override
+		// of `after_add` could mutate the inherited member, so the call is not bounded.
+		InferenceFixture fixture(
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n"
+				"\tafter_add()\n"
+				"func after_add() -> void:\n"
+				"\tpass\n");
+		const GDScriptParser::VariableNode *variable = fixture.member("_items");
+		REQUIRE(variable != nullptr);
+		GDScriptContainerInference::Result result = GDScriptContainerInference::infer_member_array_element_type(
+				variable, fixture.tree(), Vector<const GDScriptParser::ClassNode *>(), /* subclasses_complete */ false);
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
@@ -1073,7 +1093,9 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
 	}
 
-	TEST_CASE("A member dictionary with an overridable self call escapes") {
+	TEST_CASE("A member dictionary with an overridable self call resolves through the complete closure") {
+		// As in the array case, a complete closure means every override of `after_put`
+		// is folded into this union, so the dispatch resolves instead of bailing.
 		InferenceFixture fixture(
 				"var _by_name = {}\n"
 				"func put(key: String, value: int) -> void:\n"
@@ -1082,7 +1104,8 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Member]") {
 				"func after_put() -> void:\n"
 				"\tpass\n");
 		GDScriptContainerInference::Result result = infer_member_dict_in(fixture, "_by_name");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::ESCAPES);
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
 	}
 
 	TEST_CASE("A super call may mutate the inherited member and escapes it") {
@@ -1536,6 +1559,134 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		REQUIRE(result.ok);
 
 		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("An overridable self call whose override matches keeps the member inferred") {
+		// The base calls an overridable `self` hook. A subclass overrides it and mutates
+		// the inherited member with the same element type. Because the subclass closure
+		// is complete, the override body is folded into the union: the call resolves
+		// through it instead of bailing, and the union stays monomorphic.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_override_base_ok.gd";
+		const String base_source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n"
+				"\ton_added()\n"
+				"func on_added() -> void:\n"
+				"\tpass\n";
+		TemporaryScriptFile base_file(base_path, base_source);
+
+		const String subclass_path = "res://refactor/container_member_override_child_ok.gd";
+		TemporaryScriptFile subclass_file(subclass_path,
+				"extends \"res://refactor/container_member_override_base_ok.gd\"\n"
+				"func on_added() -> void:\n"
+				"\t_items.append(7)\n");
+
+		RefactorContext context;
+		context.path = base_path;
+		context.source = base_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array[int] = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("An overridable self call whose override conflicts keeps the member bare") {
+		// The subclass overrides the hook called on `self` and mutates the inherited
+		// member with a different element type. The folded override pushes a second
+		// type into the union, so the inference withholds the upgrade.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_override_base_conflict.gd";
+		const String base_source =
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n"
+				"\ton_added()\n"
+				"func on_added() -> void:\n"
+				"\tpass\n";
+		TemporaryScriptFile base_file(base_path, base_source);
+
+		const String subclass_path = "res://refactor/container_member_override_child_conflict.gd";
+		TemporaryScriptFile subclass_file(subclass_path,
+				"extends \"res://refactor/container_member_override_base_conflict.gd\"\n"
+				"func on_added() -> void:\n"
+				"\t_items.append(\"x\")\n");
+
+		RefactorContext context;
+		context.path = base_path;
+		context.source = base_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 0);
+		REQUIRE(items != nullptr);
+		CHECK(items->enabled);
+		REQUIRE_FALSE(items->edits.is_empty());
+		CHECK_EQ(items->edits[0].new_text, ": Array = ");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("An inherited base method called on self keeps the member bare") {
+		// The declaring class calls a method inherited from an unscanned base. The
+		// subclass closure spans only descendants, so the base body is not folded into
+		// the union: it could mutate the member dynamically (`self.set(...)`) with
+		// another type unseen, and the inference must withhold the upgrade rather than
+		// resolve the call.
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/container_member_inherited_base.gd";
+		TemporaryScriptFile base_file(base_path,
+				"extends RefCounted\n"
+				"func base_hook() -> void:\n"
+				"\tset(\"_items\", [\"x\"])\n");
+
+		const String derived_path = "res://refactor/container_member_inherited_derived.gd";
+		const String derived_source =
+				"extends \"res://refactor/container_member_inherited_base.gd\"\n"
+				"var _items = []\n"
+				"func add(n: int) -> void:\n"
+				"\t_items.append(n)\n"
+				"\tbase_hook()\n";
+		TemporaryScriptFile derived_file(derived_path, derived_source);
+
+		RefactorContext context;
+		context.path = derived_path;
+		context.source = derived_source;
+		context.allow_member_container_inference = true; // Verified migration path.
+		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(context, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *items = inference_candidate_at_line(result, 1);
 		REQUIRE(items != nullptr);
 		CHECK(items->enabled);
 		REQUIRE_FALSE(items->edits.is_empty());

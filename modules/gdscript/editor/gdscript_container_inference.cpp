@@ -423,6 +423,20 @@ public:
 	// scanning a subclass parsed in a separate tree (see `identifier_refers_to`).
 	void set_match_member_by_name(bool p_enabled) { match_member_by_name = p_enabled; }
 
+	// Records whether the caller enumerated every project-wide subclass of the
+	// declaring class, together with the declaring class itself. An overridable `self`
+	// call need not be bailed on only when the closure is complete *and* the called
+	// method is declared directly in the declaring class: then, for any instance in the
+	// scanned set (the declaring class or one of its subclasses), the call dispatches
+	// to the declaring class's body or a subclass override -- all folded into this same
+	// union. A call to a method inherited from a base above the declaring class is not
+	// bounded by the closure (a plain declaring-class instance would dispatch to the
+	// unscanned base body, which could mutate the member dynamically), so it must bail.
+	void set_override_resolution(bool p_complete, const GDScriptParser::ClassNode *p_declaring_class) {
+		subclasses_complete = p_complete;
+		declaring_class = p_declaring_class;
+	}
+
 	bool bailed = false;
 	GDScriptContainerInference::Outcome bail_outcome = GDScriptContainerInference::NOT_APPLICABLE;
 	String bail_detail;
@@ -545,6 +559,8 @@ private:
 	const GDScriptParser::VariableNode *decl = nullptr;
 	bool member_mode = false;
 	bool match_member_by_name = false;
+	bool subclasses_complete = false;
+	const GDScriptParser::ClassNode *declaring_class = nullptr;
 	String element_rendered;
 
 	bool is_our_var(const GDScriptParser::ExpressionNode *p_expr) const {
@@ -896,6 +912,27 @@ private:
 		return p_call != nullptr && p_call->is_super;
 	}
 
+	// True when an overridable `self` method call targets a method declared directly in
+	// the declaring class. Such a method's dispatch is bounded by the scanned union: for
+	// any instance in the closure it resolves to the declaring class's body or a
+	// subclass override, all folded in here. A method only inherited from a base above
+	// the declaring class is excluded, since a plain declaring-class instance would
+	// dispatch to that unscanned base body. The name match is exact: a non-static
+	// (instance) function member of the declaring class with the call's name.
+	bool resolves_to_scanned_method(const GDScriptParser::CallNode *p_call) const {
+		if (declaring_class == nullptr || p_call == nullptr || p_call->function_name == StringName()) {
+			return false;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : declaring_class->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr &&
+					member.function->identifier != nullptr && member.function->identifier->name == p_call->function_name &&
+					!member.function->is_static) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// True when `p_value` takes a bound reference to a non-static script method on
 	// this instance (`var cb = hook` or `var cb = self.hook`). The callable can
 	// later dispatch to a subclass override that mutates the inherited member.
@@ -1166,12 +1203,27 @@ private:
 			bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 			return;
 		}
-		if (member_mode && (is_super_call(p_call) || is_overrideable_self_method_call(p_call))) {
-			// A script method on this instance (or a base method via `super`) can be
-			// overridden/extended by code outside the file that mutates the inherited
-			// member with another type, which the scan cannot see.
-			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
+		if (member_mode && is_super_call(p_call)) {
+			// A `super(...)` call dispatches upward to a base-class method in another
+			// file. The base classes lie outside the subclass closure the caller
+			// enumerated, so their bodies are not folded into this union and a base
+			// method could mutate the inherited member with another type unseen.
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a base method via `super`");
 			return;
+		}
+		if (member_mode && is_overrideable_self_method_call(p_call)) {
+			// A script method on this instance can be overridden by a subclass that
+			// mutates the inherited member with another type. The call is sound to
+			// resolve -- rather than bail -- only when the closure is complete *and* the
+			// method resolves to a scanned body (the declaring class or a scanned
+			// subclass): then every override of it also lives in a scanned subclass and
+			// is folded into this same union. A call to an inherited base method (defined
+			// above the declaring class, outside the closure) is not scanned and could
+			// mutate the member dynamically, so it must still bail.
+			if (!subclasses_complete || !resolves_to_scanned_method(p_call)) {
+				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or inherited method");
+				return;
+			}
 		}
 		if (p_call->callee != nullptr && p_call->callee->type == Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
@@ -1399,6 +1451,16 @@ public:
 	// scanning a subclass parsed in a separate tree (see `identifier_refers_to`).
 	void set_match_member_by_name(bool p_enabled) { match_member_by_name = p_enabled; }
 
+	// Records whether the caller enumerated every project-wide subclass of the
+	// declaring class, together with the declaring class itself (see the array walker
+	// for the full rationale). An overridable `self` call need not be bailed on only
+	// when the closure is complete *and* the called method is declared directly in the
+	// declaring class.
+	void set_override_resolution(bool p_complete, const GDScriptParser::ClassNode *p_declaring_class) {
+		subclasses_complete = p_complete;
+		declaring_class = p_declaring_class;
+	}
+
 	bool bailed = false;
 	GDScriptContainerInference::Outcome bail_outcome = GDScriptContainerInference::NOT_APPLICABLE;
 	String bail_detail;
@@ -1528,6 +1590,8 @@ private:
 	const GDScriptParser::VariableNode *decl = nullptr;
 	bool member_mode = false;
 	bool match_member_by_name = false;
+	bool subclasses_complete = false;
+	const GDScriptParser::ClassNode *declaring_class = nullptr;
 	String key_rendered;
 	String value_rendered;
 
@@ -1877,6 +1941,27 @@ private:
 		return p_call != nullptr && p_call->is_super;
 	}
 
+	// True when an overridable `self` method call targets a method declared directly in
+	// the declaring class. Such a method's dispatch is bounded by the scanned union: for
+	// any instance in the closure it resolves to the declaring class's body or a
+	// subclass override, all folded in here. A method only inherited from a base above
+	// the declaring class is excluded, since a plain declaring-class instance would
+	// dispatch to that unscanned base body. The name match is exact: a non-static
+	// (instance) function member of the declaring class with the call's name.
+	bool resolves_to_scanned_method(const GDScriptParser::CallNode *p_call) const {
+		if (declaring_class == nullptr || p_call == nullptr || p_call->function_name == StringName()) {
+			return false;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : declaring_class->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::FUNCTION && member.function != nullptr &&
+					member.function->identifier != nullptr && member.function->identifier->name == p_call->function_name &&
+					!member.function->is_static) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// True when `p_value` takes a bound reference to a non-static script method on
 	// this instance (`var cb = hook` or `var cb = self.hook`). The callable can
 	// later dispatch to a subclass override that mutates the inherited member.
@@ -2146,12 +2231,25 @@ private:
 			bail(GDScriptContainerInference::ESCAPES, "the member may be reached through a dynamic property call");
 			return;
 		}
-		if (member_mode && (is_super_call(p_call) || is_overrideable_self_method_call(p_call))) {
-			// A script method on this instance (or a base method via `super`) can be
-			// overridden/extended by code outside the file that mutates the inherited
-			// member with another key/value type, which the scan cannot see.
-			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or base method");
+		if (member_mode && is_super_call(p_call)) {
+			// A `super(...)` call dispatches upward to a base-class method in another
+			// file. The base classes lie outside the subclass closure the caller
+			// enumerated, so their bodies are not folded into this union and a base
+			// method could mutate the inherited member with another key/value type unseen.
+			bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by a base method via `super`");
 			return;
+		}
+		if (member_mode && is_overrideable_self_method_call(p_call)) {
+			// A script method on this instance can be overridden by a subclass that
+			// mutates the inherited member with another key/value type. The call is sound
+			// to resolve only when the closure is complete *and* the method resolves to a
+			// scanned body (see the array walker for the full rationale). A call to an
+			// inherited base method is not scanned and could mutate the member
+			// dynamically, so it must still bail.
+			if (!subclasses_complete || !resolves_to_scanned_method(p_call)) {
+				bail(GDScriptContainerInference::ESCAPES, "the member may be mutated by an overridden or inherited method");
+				return;
+			}
 		}
 		if (p_call->callee != nullptr && p_call->callee->type == Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(p_call->callee);
@@ -2588,6 +2686,10 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_arra
 	}
 
 	ElementInferenceWalker walker(p_member, /* member_mode */ true);
+	// The early return above guarantees the closure is complete, so an overridable
+	// `self` call that targets a method declared in the declaring class resolves to a
+	// scanned body rather than forcing a conservative bail.
+	walker.set_override_resolution(/* subclasses_complete */ true, p_class);
 	walker.contribute_from_array_value(p_member->initializer);
 	// The literal's contents are contributed above, but its sub-expressions can
 	// still leak the instance (e.g. `[register(self)]`); scan them for escapes.
@@ -2662,6 +2764,10 @@ GDScriptContainerInference::Result GDScriptContainerInference::infer_member_dict
 	}
 
 	DictionaryInferenceWalker walker(p_member, /* member_mode */ true);
+	// The early return above guarantees the closure is complete, so an overridable
+	// `self` call that targets a method declared in the declaring class resolves to a
+	// scanned body rather than forcing a conservative bail.
+	walker.set_override_resolution(/* subclasses_complete */ true, p_class);
 	walker.contribute_from_dictionary_value(p_member->initializer);
 	// The literal's contents are contributed above, but its sub-expressions can
 	// still leak the instance (e.g. `{0: register(self)}`); scan them for escapes.
