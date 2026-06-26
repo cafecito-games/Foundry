@@ -87,6 +87,14 @@ struct MigrationReportOptions {
 	ProjectScanOptions scan;
 	bool strict_null_checks = false;
 	bool strict_dynamic_checks = false;
+	// Projection mode. When false (default), the inferable/skipped tallies are the single-pass
+	// coverage snapshot described on MigrationReportResult. When true, they instead reflect the
+	// ACTUAL dependency-ordered fixpoint + verification outcome -- the exact set of annotations
+	// GDScriptMigrationDriver::run would commit -- computed without writing to disk. This fixes
+	// the single-pass over-count (a site verification would reject) and under-count (a site that
+	// only becomes inferable after a dependency is typed). The strict projection is independent
+	// and still honored in either mode.
+	bool projection = false;
 };
 
 // The dry-run report: an honest, read-only snapshot of a project's migration coverage and
@@ -94,19 +102,29 @@ struct MigrationReportOptions {
 // directories pruned) with a per-site tally of what the Add Type Annotation refactor can and
 // cannot type, plus an optional projection of strict-mode violations.
 //
-// The tally is a single, independent pass: each site is "inferable" when the analyzer resolves
-// a concrete, renderable type for it as the project stands today, and "skipped" (with a reason)
-// otherwise. It is intentionally NOT a simulation of a full migration run: it does not iterate
-// the dependency-ordered fixpoint (so a site that would only become inferable after a dependency
-// is typed is reported as skipped here), and it does not run post-edit verification (so a site
-// the verification harness would later reject for breaking a dependent is still counted as
-// inferable). The numbers are an upper bound on per-pass coverage and a map of immediate
-// friction, which is what surfacing migration viability before the first edit calls for.
+// By default the tally is a single, independent pass: each site is "inferable" when the analyzer
+// resolves a concrete, renderable type for it as the project stands today, and "skipped" (with a
+// reason) otherwise. It is intentionally NOT a simulation of a full migration run: it does not
+// iterate the dependency-ordered fixpoint (so a site that would only become inferable after a
+// dependency is typed is reported as skipped here), and it does not run post-edit verification
+// (so a site the verification harness would later reject for breaking a dependent is still
+// counted as inferable). The numbers are an upper bound on per-pass coverage and a map of
+// immediate friction, which is what surfacing migration viability before the first edit calls for.
+//
+// In projection mode (MigrationReportOptions::projection) the inferable/skipped tallies are
+// instead the fixpoint+verification-accurate outcome: the exact set of annotations a real
+// migration run would commit, computed by driving GDScriptMigrationDriver in a non-committing
+// dry-run that restores every touched file before returning. This removes both the single-pass
+// over-count and under-count at the cost of running the full pipeline.
 struct MigrationReportResult {
 	// True only means the report completed without a fatal error; an empty project is a
 	// successful report with zero counts.
 	bool ok = false;
 	String error_message; // Set only on a fatal failure (an unreadable root).
+
+	// True when the inferable/skipped tallies below are the fixpoint+verification-accurate
+	// projection (MigrationReportOptions::projection) rather than the single-pass snapshot.
+	bool projection = false;
 
 	// Scan stage.
 	int total_scripts_scanned = 0;
