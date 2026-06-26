@@ -44,6 +44,7 @@
 #endif
 
 #ifdef TESTS_ENABLED
+#include "tests/gdscript_benchmark_runner.h"
 #include "tests/gdscript_test_runner.h"
 #endif
 
@@ -2289,6 +2290,7 @@ void GDScriptLanguage::init() {
 
 #ifdef TESTS_ENABLED
 	GDScriptTests::GDScriptTestRunner::handle_cmdline();
+	GDScriptTests::GDScriptBenchmarkRunner::handle_cmdline();
 #endif // TESTS_ENABLED
 }
 
