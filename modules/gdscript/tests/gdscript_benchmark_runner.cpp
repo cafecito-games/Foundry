@@ -265,9 +265,15 @@ void GDScriptBenchmarkRunner::handle_cmdline() {
 		json_map[entry.key] = entry.value;
 	}
 	const String json = JSON::stringify(json_map, "\t", true, true);
+
+	// The parseable result channel is the `--gdscript-benchmark-output` file: it
+	// contains nothing but the JSON map. Stdout cannot be a pure-JSON channel
+	// because the engine has already printed its startup header there by the time
+	// this runs, so a bare stdout dump is only a human-readable convenience.
 	bool wrote_output = true;
 	if (output_path.is_empty()) {
-		// Stdout is the result channel; keep it pure JSON so callers can parse it.
+		print_line("gdscript-benchmark: no --gdscript-benchmark-output given; "
+				   "printing results to stdout (pass an output file for a pure-JSON artifact).");
 		print_line(json);
 	} else {
 		Ref<FileAccess> file = FileAccess::open(output_path, FileAccess::WRITE);
