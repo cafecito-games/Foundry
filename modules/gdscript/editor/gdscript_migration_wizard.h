@@ -106,6 +106,11 @@ struct MigrationWizardResult {
 	StrictActivationPlan strict_plan;
 	bool strict_activated = false;
 	StrictActivationResult strict_result;
+	// True when activation was requested (options.activate_strict) but the gate refused to flip any
+	// setting -- e.g. no confirmation, or remaining violations without the escape hatch. The flip
+	// itself is not a fatal error (ok stays true so the report and apply still stand), but a caller
+	// enforcing strict activation (a CI run) should treat this as a failure rather than success.
+	bool strict_activation_blocked = false;
 
 	// A human-readable, multi-section summary of every stage that ran: the report, the apply
 	// outcome (or that it was a preview), and the strict plan/activation. This is what the CLI

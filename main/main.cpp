@@ -4459,6 +4459,37 @@ int Main::start() {
 		ResourceLoader::add_custom_loaders();
 		ResourceSaver::add_custom_savers();
 
+#ifdef TOOLS_ENABLED
+#ifdef MODULE_GDSCRIPT_ENABLED
+		if (!gdscript_migrate_path.is_empty()) {
+			// Headless strict-typing migration wizard. Reuses the same orchestrator the editor
+			// entry point drives (report -> apply -> gated strict activation), so a scripted or
+			// continuous-integration run produces the identical flow without a window. Handled here
+			// -- before the game branch loads and instantiates project autoloads -- so a dry-run
+			// preview never executes arbitrary project code before printing its report.
+			MigrationWizardOptions options;
+			options.apply = gdscript_migrate_apply;
+			options.strict_null_checks = gdscript_migrate_strict_null;
+			options.strict_dynamic_checks = gdscript_migrate_strict_dynamic;
+			options.activate_strict = gdscript_migrate_activate_strict;
+			options.confirm_strict_activation = gdscript_migrate_confirm;
+			options.allow_strict_with_violations = gdscript_migrate_allow_violations;
+			options.acknowledge_vcs_warning = gdscript_migrate_acknowledge_vcs;
+			options.follow_up_path = gdscript_migrate_follow_up_path;
+
+			// The migration path was loaded as the project (project_path), so res:// resolves to
+			// it; the wizard scans the whole project tree.
+			const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
+			OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
+			// A run that requested strict activation but was gated (no confirmation, or remaining
+			// violations) leaves the settings unchanged; report that as a failure so a scripted or
+			// CI invocation enforcing strict activation does not mistake a blocked flip for success.
+			const bool migration_succeeded = migration_result.ok && !migration_result.strict_activation_blocked;
+			return migration_succeeded ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+#endif // MODULE_GDSCRIPT_ENABLED
+#endif // TOOLS_ENABLED
+
 		if (!project_manager && !editor) { // game
 			if (!game_path.is_empty() || !script.is_empty()) {
 				//autoload
@@ -4576,27 +4607,6 @@ int Main::start() {
 			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error saving GDScript docs:" + itos(err));
 
 			return EXIT_SUCCESS;
-		}
-
-		if (!gdscript_migrate_path.is_empty()) {
-			// Headless strict-typing migration wizard. Reuses the same orchestrator the editor
-			// entry point drives (report -> apply -> gated strict activation), so a scripted or
-			// continuous-integration run produces the identical flow without a window.
-			MigrationWizardOptions options;
-			options.apply = gdscript_migrate_apply;
-			options.strict_null_checks = gdscript_migrate_strict_null;
-			options.strict_dynamic_checks = gdscript_migrate_strict_dynamic;
-			options.activate_strict = gdscript_migrate_activate_strict;
-			options.confirm_strict_activation = gdscript_migrate_confirm;
-			options.allow_strict_with_violations = gdscript_migrate_allow_violations;
-			options.acknowledge_vcs_warning = gdscript_migrate_acknowledge_vcs;
-			options.follow_up_path = gdscript_migrate_follow_up_path;
-
-			// The migration path was loaded as the project (project_path), so res:// resolves to
-			// it; the wizard scans the whole project tree.
-			const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
-			OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
-			return migration_result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 #endif // MODULE_GDSCRIPT_ENABLED
 

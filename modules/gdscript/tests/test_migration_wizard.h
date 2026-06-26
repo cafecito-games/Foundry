@@ -142,6 +142,8 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		REQUIRE(result.ok);
 		CHECK(result.strict_evaluated);
 		CHECK_FALSE(result.strict_activated);
+		// Activation was never requested, so it is not considered blocked.
+		CHECK_FALSE(result.strict_activation_blocked);
 		// The setting was not touched.
 		CHECK_EQ(ProjectSettings::get_singleton()->get_setting("debug/gdscript/analysis/strict_null_checks", false), prior_null);
 
@@ -172,11 +174,57 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		REQUIRE(result.ok);
 		CHECK(result.strict_evaluated);
 		CHECK_FALSE(result.strict_activated);
+		// A requested-but-gated flip is flagged so a CI caller can fail rather than report success.
+		CHECK(result.strict_activation_blocked);
 		CHECK_FALSE(result.strict_result.blocked_reason.is_empty());
 		// Still untouched.
 		CHECK_EQ(ProjectSettings::get_singleton()->get_setting("debug/gdscript/analysis/strict_null_checks", false), prior_null);
 
 		// The unconfirmed setting was not persisted, so no project.godot restore is needed.
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Confirmed activation on a clean project flips and is not flagged blocked") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		ProjectSettings *settings = ProjectSettings::get_singleton();
+		const Variant prior_null = settings->get_setting("debug/gdscript/analysis/strict_null_checks", false);
+		// A confirmed flip persists project.godot, so snapshot and restore it byte-for-byte to keep
+		// the curated test fixture intact.
+		const String project_path = settings->globalize_path("res://project.godot");
+		const bool had_project_file = FileAccess::exists(project_path);
+		const PackedByteArray project_bytes = had_project_file ? FileAccess::get_file_as_bytes(project_path) : PackedByteArray();
+
+		TemporaryProjectSubtree tree("res://migration_wizard_strict_confirmed");
+		const String clean_path = tree.write_file("clean.gd",
+				"func add(a: int, b: int) -> int:\n"
+				"\treturn a + b\n");
+		CHECK_FALSE(clean_path.is_empty());
+
+		MigrationWizardOptions options = unguarded_wizard_options();
+		options.strict_null_checks = true;
+		options.activate_strict = true;
+		options.confirm_strict_activation = true;
+
+		const MigrationWizardResult result = GDScriptMigrationWizard::run("res://migration_wizard_strict_confirmed", options);
+		REQUIRE(result.ok);
+		CHECK(result.strict_activated);
+		CHECK_FALSE(result.strict_activation_blocked);
+
+		// Restore the settings and the on-disk project file so the flip does not leak into later
+		// tests or onto disk.
+		settings->set_setting("debug/gdscript/analysis/strict_null_checks", prior_null);
+		if (had_project_file) {
+			Ref<FileAccess> file = FileAccess::open(project_path, FileAccess::WRITE);
+			if (file.is_valid()) {
+				file->store_buffer(project_bytes.ptr(), project_bytes.size());
+			}
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

@@ -81,15 +81,17 @@ String MigrationWizardResult::summary() const {
 		}
 
 		if (strict_activated) {
-			builder.append("Strict settings were activated and persisted to the project.\n");
+			if (strict_result.persisted) {
+				builder.append("Strict settings were activated and persisted to the project.\n");
+			} else {
+				builder.append("Strict settings are live for this session but could not be saved to the project; ");
+				builder.append("they will not survive an editor restart: ");
+				builder.append(strict_result.persist_error);
+				builder.append("\n");
+			}
 			if (strict_result.override_masked) {
 				builder.append("Warning: a per-feature override still masks the effective value: ");
 				builder.append(strict_result.effective_warning);
-				builder.append("\n");
-			}
-			if (!strict_result.persist_error.is_empty()) {
-				builder.append("Warning: settings are live for this session but could not be saved: ");
-				builder.append(strict_result.persist_error);
 				builder.append("\n");
 			}
 		} else if (strict_result.ok && !strict_result.blocked_reason.is_empty()) {
@@ -183,6 +185,10 @@ MigrationWizardResult GDScriptMigrationWizard::run(const String &p_root, const M
 				result.error_message = result.strict_result.error_message;
 				return result;
 			}
+			// The flip was requested but the gate (confirmation / clean report) refused it. Not a
+			// fatal error, but flagged so a caller enforcing activation can fail rather than report
+			// a false success.
+			result.strict_activation_blocked = !result.strict_result.activated;
 		}
 	}
 
