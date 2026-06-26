@@ -192,6 +192,18 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
 		const bool render_bare = !r_state.force_qualified && bare_name_resolves_to_target(target_namespace, class_name, p_scope);
+		if (!render_bare) {
+			// A qualified `namespace.Class` only resolves when the leading namespace
+			// segment is not itself a builtin/native/global-namespace name (the
+			// analyzer resolves those first and never descends into the namespace).
+			// When the root is shadowed, neither bare nor qualified resolves, so the
+			// site is left un-annotated rather than emitting invalid source. The
+			// force_qualified identity path keeps the spelling for comparison only.
+			const String namespace_root = target_namespace.get_slicec('.', 0);
+			if (!r_state.force_qualified && bare_name_is_globally_shadowed(namespace_root)) {
+				return false;
+			}
+		}
 		// A fully-qualified `namespace.Class` resolves on its own, so it needs no import.
 		String spelling = render_bare ? class_name : target_namespace + "." + class_name;
 		// Specialized type arguments on a namespaced class still need scoping.
