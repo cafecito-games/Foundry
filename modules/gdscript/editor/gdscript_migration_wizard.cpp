@@ -53,6 +53,17 @@ String MigrationWizardResult::summary() const {
 			builder.append("Apply blocked by version-control safety guard: ");
 			builder.append(apply_result.vcs_guard.message);
 			builder.append("\nRe-run with the version-control acknowledgment to proceed.\n");
+		} else if (apply_requested) {
+			// The apply stage was requested but the driver failed. The driver may fail after some
+			// files were already committed, so do NOT claim nothing changed; point at the partial
+			// edit set instead.
+			builder.append("Apply failed: ");
+			builder.append(apply_result.error_message.is_empty() ? error_message : apply_result.error_message);
+			builder.append("\n");
+			if (!apply_result.changed_files.is_empty()) {
+				builder.append(vformat("Warning: %d file(s) may have already been modified before the failure; review your version control.\n",
+						apply_result.changed_files.size()));
+			}
 		} else {
 			builder.append("Preview only -- no files were modified. Re-run with apply enabled to commit edits.\n");
 		}
@@ -114,13 +125,16 @@ String MigrationWizardResult::summary() const {
 MigrationWizardResult GDScriptMigrationWizard::run(const String &p_root, const MigrationWizardOptions &p_options) {
 	MigrationWizardResult result;
 
-	// Stage 1: the dry-run report. Always runs first; it is read-only and is what the user/CI
-	// sees before anything is written. Projection mode makes its counts match what apply commits.
+	// Stage 1: the dry-run report. Always runs first and is what the user/CI sees before anything is
+	// committed. The accurate projection matches what apply commits but is not side-effect free
+	// (write-then-restore, no VCS guard), so it is used only when apply is requested -- the tree is
+	// about to be written under the guard anyway -- or when the caller explicitly opts in. A
+	// preview-only run uses the truly read-only single-pass snapshot.
 	MigrationReportOptions report_options;
 	report_options.scan = p_options.scan;
 	report_options.strict_null_checks = p_options.strict_null_checks;
 	report_options.strict_dynamic_checks = p_options.strict_dynamic_checks;
-	report_options.projection = true;
+	report_options.projection = p_options.projection || p_options.apply;
 	result.report = GDScriptMigrationReport::generate(p_root, report_options);
 	if (!result.report.ok) {
 		result.ok = false;
@@ -141,6 +155,7 @@ MigrationWizardResult GDScriptMigrationWizard::run(const String &p_root, const M
 
 	// Stage 2: the atomic apply. Runs only when requested; otherwise the wizard stops as a
 	// preview. A VCS-blocked apply short-circuits the strict stage since nothing was written.
+	result.apply_requested = p_options.apply;
 	if (p_options.apply) {
 		MigrationDriverOptions driver_options;
 		driver_options.scan = p_options.scan;

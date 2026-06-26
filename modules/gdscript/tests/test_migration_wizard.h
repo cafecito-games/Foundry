@@ -81,7 +81,10 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		CHECK(result.report.ok);
 		CHECK_FALSE(result.applied);
 		CHECK_FALSE(result.strict_activated);
-		// The projection report counts the site the apply would type.
+		// A preview-only run uses the truly read-only single-pass snapshot, not the
+		// write-then-restore projection.
+		CHECK_FALSE(result.report.projection);
+		// The single-pass report counts the site the apply would type.
 		CHECK_GT(result.report.inferable.total, 0);
 
 		// Nothing on disk changed.
@@ -109,6 +112,8 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		const MigrationWizardResult result = GDScriptMigrationWizard::run("res://migration_wizard_apply", options);
 		REQUIRE(result.ok);
 		CHECK(result.applied);
+		// An apply run previews its exact edit set with the accurate projection.
+		CHECK(result.report.projection);
 		CHECK(result.apply_result.ok);
 		CHECK_GT(result.apply_result.total_annotations_applied, 0);
 

@@ -60,6 +60,15 @@ struct MigrationWizardOptions {
 	// all consider the same set of files. Defaults match the wizard's safe-by-default stance.
 	ProjectScanOptions scan;
 
+	// Whether the dry-run report uses the fixpoint+verification-accurate projection. Projection is
+	// exact (it matches what apply commits) but is NOT free of side effects: it drives the migration
+	// driver's dry-run path, which writes each pass to disk and restores the files before returning,
+	// and it runs without the apply VCS guard. So it is off by default -- a preview is then the truly
+	// read-only single-pass snapshot. The wizard forces it on whenever apply is requested (the tree
+	// is about to be written anyway, under the guard), so a committed run always previews its exact
+	// edit set; a caller wanting the accurate projection without applying can opt in here.
+	bool projection = false;
+
 	// When false (default), the wizard stops after the report: a preview-only run that writes
 	// nothing. The editor wires this to the user's confirmation; the CLI wires it to an explicit
 	// --apply flag so a scripted run never mutates files unless asked.
@@ -93,6 +102,9 @@ struct MigrationWizardResult {
 	// The dry-run report always runs and is always populated.
 	MigrationReportResult report;
 
+	// True when options.apply asked for the apply stage to run (whether or not it succeeded).
+	// Distinguishes a preview (no apply requested) from an apply that ran and failed.
+	bool apply_requested = false;
 	// The apply stage runs only when options.apply is true. applied stays false otherwise.
 	bool applied = false;
 	MigrationDriverResult apply_result;
