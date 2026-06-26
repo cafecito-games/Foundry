@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 11: Cannot assign a value of type Dictionary[int, String] to variable "bad" with specified type Dictionary[int, int].

@@ -473,6 +473,14 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 6;
 			} break;
+			case OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT: {
+				text += "assign typed dictionary (convert) ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+
+				incr += 9;
+			} break;
 			case OPCODE_ASSIGN_TYPED_PARAMETER: {
 				text += "assign typed member (slot ";
 				text += itos(_code_ptr[ip + 3]);

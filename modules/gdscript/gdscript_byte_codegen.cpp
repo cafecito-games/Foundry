@@ -1065,6 +1065,20 @@ void GDScriptByteCodeGenerator::write_assign_typed_array_convert(const Address &
 	append(element_type.native_type);
 }
 
+void GDScriptByteCodeGenerator::write_assign_typed_dictionary_convert(const Address &p_target, const Address &p_source) {
+	const GDScriptDataType &key_type = p_target.type.get_container_element_type_or_variant(0);
+	const GDScriptDataType &value_type = p_target.type.get_container_element_type_or_variant(1);
+	append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT);
+	append(p_target);
+	append(p_source);
+	append(get_container_type_pos(key_type) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
+	append(get_container_type_pos(value_type) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
+	append(key_type.builtin_type);
+	append(key_type.native_type);
+	append(value_type.builtin_type);
+	append(value_type.native_type);
+}
+
 void GDScriptByteCodeGenerator::write_assign_null(const Address &p_target) {
 	append_opcode(GDScriptFunction::OPCODE_ASSIGN_NULL);
 	append(p_target);
