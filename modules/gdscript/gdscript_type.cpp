@@ -40,11 +40,15 @@ static bool _is_signature_builtin_type(Variant::Type p_type) {
 }
 
 static bool _property_signature_equal(const PropertyInfo &p_left, const PropertyInfo &p_right) {
+	// Only the type-identifying fields matter for signature compatibility. Storage/editor usage flags do
+	// not: a synthesized slot (DataType::to_property_info, usage NONE) must still match an equivalent
+	// natural MethodInfo slot (e.g. a utility function like `sin`, usage DEFAULT). The one usage bit that
+	// is type-relevant is NIL_IS_VARIANT, which distinguishes a `Variant` slot from a concrete/`void` NIL.
 	return p_left.type == p_right.type &&
 			p_left.class_name == p_right.class_name &&
 			p_left.hint == p_right.hint &&
 			p_left.hint_string == p_right.hint_string &&
-			p_left.usage == p_right.usage;
+			(p_left.usage & PROPERTY_USAGE_NIL_IS_VARIANT) == (p_right.usage & PROPERTY_USAGE_NIL_IS_VARIANT);
 }
 
 static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &p_right) {
