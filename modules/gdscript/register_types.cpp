@@ -183,6 +183,7 @@ void initialize_gdscript_module(ModuleInitializationLevel p_level) {
 		EditorTranslationParser::get_singleton()->add_parser(gdscript_translation_parser_plugin, EditorTranslationParser::STANDARD);
 	} else if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_CLASS(GDScriptSyntaxHighlighter);
+		GDREGISTER_CLASS(GDScriptMigrationWizardDialog);
 	}
 #endif // TOOLS_ENABLED
 }
