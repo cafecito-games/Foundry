@@ -4506,11 +4506,10 @@ int Main::start() {
 			// it; the wizard scans the whole project tree.
 			const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
 			OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
-			// A run that requested strict activation but was gated (no confirmation, or remaining
-			// violations) leaves the settings unchanged; report that as a failure so a scripted or
-			// CI invocation enforcing strict activation does not mistake a blocked flip for success.
-			const bool migration_succeeded = migration_result.ok && !migration_result.strict_activation_blocked;
-			return migration_succeeded ? EXIT_SUCCESS : EXIT_FAILURE;
+			// succeeded() is stricter than ok: it also fails a gated strict activation and an
+			// activation that flipped but could not be persisted, so a scripted or CI run enforcing
+			// strict activation never mistakes a blocked or unsaved flip for success.
+			return migration_result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 #endif // MODULE_GDSCRIPT_ENABLED
 #endif // TOOLS_ENABLED

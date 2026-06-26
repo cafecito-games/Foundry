@@ -122,6 +122,21 @@ String MigrationWizardResult::summary() const {
 	return builder.as_string();
 }
 
+bool MigrationWizardResult::succeeded() const {
+	if (!ok) {
+		return false;
+	}
+	// A requested strict activation that the gate refused leaves the settings unchanged.
+	if (strict_activation_blocked) {
+		return false;
+	}
+	// An activation that flipped the in-memory setting but failed to persist is lost on exit.
+	if (strict_activated && !strict_result.persisted) {
+		return false;
+	}
+	return true;
+}
+
 MigrationWizardResult GDScriptMigrationWizard::run(const String &p_root, const MigrationWizardOptions &p_options) {
 	MigrationWizardResult result;
 

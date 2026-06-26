@@ -128,6 +128,13 @@ struct MigrationWizardResult {
 	// outcome (or that it was a preview), and the strict plan/activation. This is what the CLI
 	// prints and the editor dialog can show; callers needing numbers read the fields above.
 	String summary() const;
+
+	// Whether the run fully achieved what its options asked for, the success signal a scripted or CI
+	// caller should branch on. It is stricter than `ok` (which only means no fatal error): a run is
+	// successful only when it did not hit a fatal error, a requested strict activation was not gated
+	// away (strict_activation_blocked), and any activation that went through actually persisted to
+	// project.godot (a flip that fails to save is lost on exit, so it is not a success).
+	bool succeeded() const;
 };
 
 // The migration wizard orchestrator. run() executes the full report -> apply -> strict-activation

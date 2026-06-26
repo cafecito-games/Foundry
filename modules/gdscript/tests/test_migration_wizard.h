@@ -78,6 +78,7 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		// Default options: apply is off, so the wizard is a pure preview.
 		const MigrationWizardResult result = GDScriptMigrationWizard::run("res://migration_wizard_preview", unguarded_wizard_options());
 		REQUIRE(result.ok);
+		CHECK(result.succeeded());
 		CHECK(result.report.ok);
 		CHECK_FALSE(result.applied);
 		CHECK_FALSE(result.strict_activated);
@@ -183,6 +184,9 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		CHECK_FALSE(result.strict_activated);
 		// A requested-but-gated flip is flagged so a CI caller can fail rather than report success.
 		CHECK(result.strict_activation_blocked);
+		// succeeded() is the CI signal: a gated activation is not a success even though ok is true.
+		CHECK(result.ok);
+		CHECK_FALSE(result.succeeded());
 		CHECK_FALSE(result.strict_result.blocked_reason.is_empty());
 		// Still untouched.
 		CHECK_EQ(ProjectSettings::get_singleton()->get_setting("debug/gdscript/analysis/strict_null_checks", false), prior_null);
@@ -222,6 +226,9 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 		REQUIRE(result.ok);
 		CHECK(result.strict_activated);
 		CHECK_FALSE(result.strict_activation_blocked);
+		// A confirmed, clean, persisted activation is a full success.
+		CHECK(result.strict_result.persisted);
+		CHECK(result.succeeded());
 
 		// Restore the settings and the on-disk project file so the flip does not leak into later
 		// tests or onto disk.

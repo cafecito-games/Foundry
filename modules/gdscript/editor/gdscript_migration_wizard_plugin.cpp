@@ -109,10 +109,18 @@ void GDScriptMigrationWizardDialog::_run_migration() {
 
 	if (!result.ok) {
 		status_label->set_text(vformat(TTR("Migration error: %s"), result.error_message));
+	} else if (result.applied && result.strict_activated) {
+		status_label->set_text(TTR("Migration applied and strict settings enabled. Review the changes in your version control before committing."));
 	} else if (result.applied) {
 		status_label->set_text(TTR("Migration applied. Review the changes in your version control before committing."));
+	} else if (result.strict_activated) {
+		// No annotations were applied, but the strict project settings were flipped and saved, so
+		// project.godot did change -- not a no-op dry run.
+		status_label->set_text(TTR("Strict settings enabled in the project settings. No script files were changed."));
 	} else if (result.blocked_by_vcs_guard) {
 		status_label->set_text(TTR("Apply blocked by the version-control guard. Acknowledge the warning to proceed."));
+	} else if (result.strict_activation_blocked) {
+		status_label->set_text(TTR("Strict settings were not enabled because violations remain. Resolve them or allow gradual adoption."));
 	} else {
 		status_label->set_text(TTR("Dry-run complete. No files were changed."));
 	}
