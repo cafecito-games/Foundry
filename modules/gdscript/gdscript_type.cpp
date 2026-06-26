@@ -64,18 +64,31 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right);
 
-// DataType::operator== treats INFERRED/UNDETECTED operands as equal to anything so the parser can keep
-// going before inference settles. Signature-slot matching must not inherit that leniency: once the
-// non-explicit Callable/Signal paths flow through this comparison, an untyped (inferred) source
-// parameter such as a bare `func(x)` lambda parameter could otherwise silently satisfy a concretely
-// typed target slot, loosening compatibility below what the `MethodInfo`/`PropertyInfo` comparison
-// path enforced. Compare with a concrete type source so only structural equality decides the outcome.
+// Reduce a signature slot to the form the `MethodInfo`/`PropertyInfo` comparison path used. That path
+// serialized each slot through `DataType::to_property_info`, which erases any non-hard (inferred or
+// undetected) type to Variant before comparing. Mirror that erasure so a body-inferred or weakly
+// inferred slot — an untyped `func(x)` lambda parameter, or a `func foo(): return 1` whose return is
+// inferred to `int` without an annotation — is compared as Variant rather than as the concrete type it
+// happened to infer. Hard-typed slots keep their structure but are pinned to a concrete type source so
+// the comparison below is decided structurally instead of by DataType::operator=='s parser leniency
+// (which treats INFERRED/UNDETECTED operands as equal to anything).
+static GDScriptParser::DataType _erased_signature_slot(const GDScriptParser::DataType &p_type) {
+	if (p_type.is_hard_type()) {
+		GDScriptParser::DataType hard = p_type;
+		hard.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		return hard;
+	}
+	GDScriptParser::DataType erased;
+	erased.kind = GDScriptParser::DataType::VARIANT;
+	erased.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	return erased;
+}
+
+// Compare two signature slot types the way the erased `MethodInfo` path did: non-hard slots collapse to
+// Variant, so an untyped or body-inferred slot does not silently satisfy a concretely typed target the
+// way it would under DataType::operator=='s leniency.
 static bool _signature_slot_types_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
-	GDScriptParser::DataType left = p_left;
-	GDScriptParser::DataType right = p_right;
-	left.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-	right.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-	return left == right;
+	return _erased_signature_slot(p_left) == _erased_signature_slot(p_right);
 }
 
 // DataType::operator== compares Callable/Signal builtins by their outer builtin type only and ignores
@@ -89,6 +102,12 @@ static bool _signature_slot_types_equal(const GDScriptParser::DataType &p_left, 
 static bool _datatype_signature_slot_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
 	if (!_signature_slot_types_equal(p_left, p_right)) {
 		return false;
+	}
+	// Only recurse into the composite structure of hard-typed slots. A non-hard slot was erased to
+	// Variant for the equality above (mirroring the MethodInfo path), so its nested container, generic,
+	// or method-signature data must not be deep-compared as if it were a concrete type.
+	if (!p_left.is_hard_type() || !p_right.is_hard_type()) {
+		return true;
 	}
 	// The strict equality above already established matching outer structure; recurse into the
 	// composite slots it only compared shallowly. The size guards keep the lenient outcome it returns
