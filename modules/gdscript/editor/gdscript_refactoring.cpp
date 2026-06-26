@@ -1838,13 +1838,17 @@ void apply_callsite_parameter_type_annotation(
 	}
 
 	// Render namespace-aware so a cross-namespace parameter type is spelled to
-	// resolve at the insertion site, matching the other annotation sites.
+	// resolve at the insertion site, matching the other annotation sites. When the
+	// scoped spelling cannot resolve there (e.g. a namespace rooted at a native
+	// name), disable the candidate rather than emitting the unscoped bare name.
 	if (p_render_context != nullptr && has_inferred_type) {
 		String scoped_rendered;
 		HashSet<String> required_imports;
-		if (GDScriptRefactorTypes::render_annotatable_type_in_scope(inferred_type, p_render_context->scope, scoped_rendered, required_imports)) {
-			rendered_type = scoped_rendered;
+		if (!GDScriptRefactorTypes::render_annotatable_type_in_scope(inferred_type, p_render_context->scope, scoped_rendered, required_imports)) {
+			r_candidate.disabled_reason = "The inferred type cannot be written as an explicit annotation.";
+			return;
 		}
+		rendered_type = scoped_rendered;
 	}
 
 	r_candidate.edit.start_line = r_candidate.line;

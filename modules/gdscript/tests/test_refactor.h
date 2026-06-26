@@ -1044,6 +1044,28 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			HashSet<String> imports;
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type_in_scope(thing_type, scope, rendered, imports));
 		}
+		SUBCASE("class whose namespace root is an ordinary identifier qualifies normally") {
+			// A non-native root (even one that may also be a global class) does not
+			// block the qualified spelling, since the analyzer matches the longest
+			// qualified global class first.
+			GDScriptParser::IdentifierNode thing_identifier;
+			thing_identifier.name = "Thing";
+			GDScriptParser::ClassNode thing_class;
+			thing_class.identifier = &thing_identifier;
+			thing_class.namespace_name = "root.ns";
+			GDScriptParser::DataType thing_type;
+			thing_type.kind = GDScriptParser::DataType::CLASS;
+			thing_type.type_source = GDScriptParser::DataType::INFERRED;
+			thing_type.class_type = &thing_class;
+
+			GDScriptRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type_in_scope(thing_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "root.ns.Thing");
+			CHECK(imports.is_empty());
+		}
 		SUBCASE("nullable typed array keeps its nullable marker") {
 			GDScriptParser::DataType array_type;
 			array_type.kind = GDScriptParser::DataType::BUILTIN;

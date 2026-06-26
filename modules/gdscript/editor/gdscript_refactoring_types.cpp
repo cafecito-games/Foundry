@@ -102,15 +102,19 @@ bool namespace_defines_class(const String &p_namespace, const String &p_class_na
 	return ScriptServer::is_global_class(p_namespace + "." + p_class_name);
 }
 
+// True when a bare `p_name` names a builtin type or a native engine class. The
+// analyzer resolves these before any namespace lookup, so they shadow a bare
+// reference and also block a qualified chain whose leading segment is such a name.
+bool name_is_builtin_or_native(const String &p_name) {
+	return Variant::get_type_by_name(p_name) != Variant::VARIANT_MAX || ClassDB::class_exists(p_name);
+}
+
 // True when a bare `p_class_name` would bind to something other than a namespaced
 // global class: a builtin type, a native class, or a global-namespace global
 // class. These all win over (or collide with) a namespaced import, so the bare
 // spelling cannot be made to name the target by importing.
 bool bare_name_is_globally_shadowed(const String &p_class_name) {
-	if (Variant::get_type_by_name(p_class_name) != Variant::VARIANT_MAX) {
-		return true;
-	}
-	if (ClassDB::class_exists(p_class_name)) {
+	if (name_is_builtin_or_native(p_class_name)) {
 		return true;
 	}
 	// A global class with no namespace is referred to by its bare name.
@@ -192,15 +196,18 @@ bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefacto
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
 		const bool render_bare = !r_state.force_qualified && bare_name_resolves_to_target(target_namespace, class_name, p_scope);
-		if (!render_bare) {
-			// A qualified `namespace.Class` only resolves when the leading namespace
-			// segment is not itself a builtin/native/global-namespace name (the
-			// analyzer resolves those first and never descends into the namespace).
-			// When the root is shadowed, neither bare nor qualified resolves, so the
-			// site is left un-annotated rather than emitting invalid source. The
-			// force_qualified identity path keeps the spelling for comparison only.
+		if (!render_bare && !r_state.force_qualified) {
+			// A qualified `namespace.Class` only resolves when its leading segment is
+			// not a builtin type or native class: the analyzer binds those first and
+			// never descends into the namespace (e.g. `Node.foo.Bar` resolves `Node`
+			// to the native class and then fails). A global-class root is fine because
+			// the analyzer matches the longest qualified global class before the bare
+			// root. When the root is builtin/native and the class is not in scope,
+			// neither spelling resolves, so the site is left un-annotated rather than
+			// emitting invalid source. The force_qualified identity path keeps the
+			// spelling for comparison only.
 			const String namespace_root = target_namespace.get_slicec('.', 0);
-			if (!r_state.force_qualified && bare_name_is_globally_shadowed(namespace_root)) {
+			if (name_is_builtin_or_native(namespace_root)) {
 				return false;
 			}
 		}
