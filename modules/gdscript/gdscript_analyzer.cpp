@@ -192,6 +192,167 @@ static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info, const
 	return type;
 }
 
+// Resolves a single hint type-name (as produced by the PROPERTY_HINT_CALLABLE_TYPE / ARRAY_TYPE grammar)
+// into a leaf DataType. Returns false if the name cannot be resolved.
+static bool _resolve_hint_leaf_type(const StringName &p_name, GDScriptParser::DataType &r_type) {
+	r_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	r_type.is_constant = false;
+
+	const Variant::Type builtin_type = GDScriptParser::get_builtin_type(p_name);
+	if (builtin_type < Variant::VARIANT_MAX) {
+		r_type.kind = GDScriptParser::DataType::BUILTIN;
+		r_type.builtin_type = builtin_type;
+		return true;
+	}
+	if (GDScriptAnalyzer::class_exists(p_name)) {
+		r_type.kind = GDScriptParser::DataType::NATIVE;
+		r_type.builtin_type = Variant::OBJECT;
+		r_type.native_type = p_name;
+		return true;
+	}
+	if (ScriptServer::is_global_class(p_name)) {
+		Ref<Script> script = ResourceLoader::load(ScriptServer::get_global_class_path(p_name));
+		if (script.is_valid()) {
+			r_type.kind = GDScriptParser::DataType::SCRIPT;
+			r_type.builtin_type = Variant::OBJECT;
+			r_type.native_type = script->get_instance_base_type();
+			r_type.script_type = script;
+			return true;
+		}
+	}
+	return false;
+}
+
+// Splits a comma-separated list at bracket depth zero, so nested "Array[int]" / "Callable[[...]]"
+// are not split internally. Trims surrounding whitespace on each element.
+static Vector<String> _split_signature_top_level(const String &p_text) {
+	Vector<String> parts;
+	int depth = 0;
+	int start = 0;
+	for (int i = 0; i < p_text.length(); i++) {
+		const char32_t character = p_text[i];
+		if (character == '[') {
+			depth++;
+		} else if (character == ']') {
+			depth--;
+		} else if (character == ',' && depth == 0) {
+			parts.push_back(p_text.substr(start, i - start).strip_edges());
+			start = i + 1;
+		}
+	}
+	parts.push_back(p_text.substr(start).strip_edges());
+	return parts;
+}
+
+static GDScriptParser::DataType _decode_signature_type(const String &p_encoded);
+
+// Decodes a Callable/Signal signature suffix ("[[p0, p1], ret]" or "[[p0, p1]]") into r_type.
+static void _decode_method_signature_suffix(const String &p_suffix, bool p_has_return, GDScriptParser::DataType &r_type) {
+	r_type.has_method_signature = true;
+	r_type.has_explicit_method_signature = true;
+
+	// p_suffix is "[<params_block>], <ret>]" wrapped: full form "[[...], ret]" or "[[...]]".
+	// Strip the single outer pair of brackets first.
+	const String inner = p_suffix.substr(1, p_suffix.length() - 2); // "[<params>], <ret>" or "[<params>]"
+
+	// The parameter list is the first bracket-balanced "[...]" segment of `inner`.
+	int depth = 0;
+	int params_end = -1;
+	for (int i = 0; i < inner.length(); i++) {
+		if (inner[i] == '[') {
+			depth++;
+		} else if (inner[i] == ']') {
+			depth--;
+			if (depth == 0) {
+				params_end = i;
+				break;
+			}
+		}
+	}
+	if (params_end >= 1) {
+		const String params_block = inner.substr(1, params_end - 1); // between the inner brackets
+		const String trimmed_params = params_block.strip_edges();
+		if (!trimmed_params.is_empty()) {
+			for (const String &parameter : _split_signature_top_level(params_block)) {
+				if (parameter.is_empty()) {
+					continue;
+				}
+				r_type.method_parameter_types.push_back(_decode_signature_type(parameter));
+			}
+		}
+	}
+
+	if (p_has_return) {
+		String return_name;
+		if (params_end >= 0) {
+			const String rest = inner.substr(params_end + 1).strip_edges(); // ", <ret>"
+			return_name = rest.begins_with(",") ? rest.substr(1).strip_edges() : rest;
+		}
+		GDScriptParser::DataType return_type;
+		if (return_name.is_empty() || return_name == "void") {
+			return_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			return_type.kind = GDScriptParser::DataType::BUILTIN;
+			return_type.builtin_type = Variant::NIL;
+		} else {
+			return_type = _decode_signature_type(return_name);
+		}
+		r_type.method_return_type.push_back(return_type);
+	}
+}
+
+static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) {
+	GDScriptParser::DataType result;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	const String text = p_encoded.strip_edges();
+
+	if (text == "Callable" || text.begins_with("Callable[")) {
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::CALLABLE;
+		if (text.length() > 8) { // has a "[...]" suffix after "Callable"
+			_decode_method_signature_suffix(text.substr(8), true, result);
+		}
+		return result;
+	}
+	if (text == "Signal" || text.begins_with("Signal[")) {
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::SIGNAL;
+		if (text.length() > 6) {
+			_decode_method_signature_suffix(text.substr(6), false, result);
+		}
+		return result;
+	}
+	if (text.begins_with("Array[") && text.ends_with("]")) {
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::ARRAY;
+		const String element = text.substr(6, text.length() - 7); // between "Array[" and trailing "]"
+		GDScriptParser::DataType element_type = _decode_signature_type(element);
+		element_type.is_constant = false;
+		result.set_container_element_type(0, element_type);
+		return result;
+	}
+	if (text.begins_with("Dictionary[") && text.ends_with("]")) {
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::DICTIONARY;
+		const String pair = text.substr(11, text.length() - 12); // between "Dictionary[" and trailing "]"
+		const Vector<String> key_value = _split_signature_top_level(pair);
+		if (key_value.size() == 2) {
+			GDScriptParser::DataType key_type = _decode_signature_type(key_value[0]);
+			GDScriptParser::DataType value_type = _decode_signature_type(key_value[1]);
+			key_type.is_constant = false;
+			value_type.is_constant = false;
+			result.set_container_element_type(0, key_type);
+			result.set_container_element_type(1, value_type);
+		}
+		return result;
+	}
+	if (_resolve_hint_leaf_type(text, result)) {
+		return result;
+	}
+	// Unresolvable leaf: degrade to Variant rather than fail the whole decode.
+	result.kind = GDScriptParser::DataType::VARIANT;
+	return result;
+}
+
 static GDScriptParser::DataType make_native_meta_type(const StringName &p_class_name) {
 	GDScriptParser::DataType type;
 	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -8732,7 +8893,15 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 	} else {
 		result.kind = GDScriptParser::DataType::BUILTIN;
 		result.builtin_type = p_property.type;
-		if (p_property.type == Variant::ARRAY && p_property.hint == PROPERTY_HINT_ARRAY_TYPE) {
+		if ((p_property.type == Variant::CALLABLE || p_property.type == Variant::SIGNAL) &&
+				p_property.hint == PROPERTY_HINT_CALLABLE_TYPE && !p_property.hint_string.is_empty()) {
+			const String encoded = (p_property.type == Variant::CALLABLE ? String("Callable") : String("Signal")) + p_property.hint_string;
+			const GDScriptParser::DataType decoded = _decode_signature_type(encoded);
+			result.has_method_signature = decoded.has_method_signature;
+			result.has_explicit_method_signature = decoded.has_explicit_method_signature;
+			result.method_parameter_types = decoded.method_parameter_types;
+			result.method_return_type = decoded.method_return_type;
+		} else if (p_property.type == Variant::ARRAY && p_property.hint == PROPERTY_HINT_ARRAY_TYPE) {
 			// Check element type.
 			StringName elem_type_name = p_property.hint_string;
 			GDScriptParser::DataType elem_type;
