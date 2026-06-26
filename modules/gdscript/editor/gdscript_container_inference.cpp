@@ -113,6 +113,31 @@ bool is_safe_readonly_array_method(const StringName &p_name) {
 	return false;
 }
 
+// Array accessor methods that return a single element of the array, so on a typed
+// `Array[T]` their result narrows from `Variant` to `T`. A local bound to such a
+// call (`var v = arr.front()`) is therefore subject to the same read-narrowing
+// soundness check as a `var v = arr[i]` subscript read.
+bool array_accessor_returns_element(const StringName &p_name) {
+	static const char *accessors[] = {
+		"get", "front", "back", "pop_back", "pop_front", "pop_at", "pick_random", "max", "min",
+		nullptr
+	};
+	for (int i = 0; accessors[i] != nullptr; i++) {
+		if (p_name == StringName(accessors[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Dictionary accessor methods that return a stored value, so on a typed
+// `Dictionary[K, V]` their result narrows from `Variant` to `V`. Only modeled
+// (non-bailing) reads need listing here; `get` and the other value-validating
+// reads already force a conservative skip, so they never reach an inferred type.
+bool dictionary_accessor_returns_value(const StringName &p_name) {
+	return p_name == StringName("get_or_add");
+}
+
 // Computes the builtin type a compound indexed write `container[key] op= value`
 // stores back, modeling the runtime: the stored type is the result of the
 // `Variant` operator applied to the current element type and the value type, not
@@ -318,10 +343,25 @@ public:
 		}
 	}
 
+	// Records a compound reassignment (`p_sink op= ...`) of a local or loop
+	// iterator. A compound operation's result type and validity depend on the
+	// operand type, which changes once the binding narrows from `Variant` to the
+	// element type, so any compound reassignment of a read binding is treated as
+	// narrowing-unsafe regardless of the operand.
+	void note_compound_reassignment(const void *p_sink) {
+		if (p_sink != nullptr) {
+			Reassignment reassignment;
+			reassignment.sink = p_sink;
+			reassignment.is_compound = true;
+			reassignments.push_back(reassignment);
+		}
+	}
+
 	// True when some read binding is reassigned a value whose rendered type differs
-	// from the element type its slot would narrow to. `p_slot_rendered` returns the
-	// rendered element type for a slot, or false when that slot has no concrete type
-	// (then nothing narrows there, so it is skipped).
+	// from the element type its slot would narrow to (or a compound reassignment,
+	// which is always unsafe). `p_slot_rendered` returns the rendered element type
+	// for a slot, or false when that slot has no concrete type (then nothing
+	// narrows there, so it is skipped).
 	template <typename SlotRenderer>
 	bool narrows_a_read(const SlotRenderer &p_slot_rendered, String &r_detail) const {
 		for (const Reassignment &reassignment : reassignments) {
@@ -333,11 +373,13 @@ public:
 			if (!p_slot_rendered(binding->value, slot_rendered)) {
 				continue;
 			}
-			DataType value = reassignment.value;
-			value.is_constant = false;
-			String value_rendered;
-			if (GDScriptRefactorTypes::render_annotatable_type(value, value_rendered) && value_rendered == slot_rendered) {
-				continue;
+			if (!reassignment.is_compound) {
+				DataType value = reassignment.value;
+				value.is_constant = false;
+				String value_rendered;
+				if (GDScriptRefactorTypes::render_annotatable_type(value, value_rendered) && value_rendered == slot_rendered) {
+					continue;
+				}
 			}
 			r_detail = vformat(
 					"a read bound to a local is later reassigned a value incompatible with the %s element type",
@@ -351,6 +393,7 @@ private:
 	struct Reassignment {
 		const void *sink = nullptr;
 		DataType value;
+		bool is_compound = false;
 	};
 	HashMap<const void *, Slot> read_bindings;
 	Vector<Reassignment> reassignments;
@@ -1256,26 +1299,43 @@ private:
 		}
 		// Assignment to some other target. Both sides are values: the variable
 		// appearing on either side is an escape (e.g. `alias = our_var`).
-		// A whole-variable reassignment of a local/iterator (`v = value`) is also
-		// noted, in case `v` was bound to a narrowing read of the array.
-		if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
-			if (const void *sink = local_sink_of(assignee)) {
+		// A whole-variable reassignment of a local/iterator (`v = value` or
+		// `v op= value`) is also noted, in case `v` was bound to a narrowing read of
+		// the array.
+		if (const void *sink = local_sink_of(assignee)) {
+			if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
 				read_narrowing.note_reassignment(sink, p_assignment->assigned_value != nullptr ? p_assignment->assigned_value->get_datatype() : DataType());
+			} else {
+				read_narrowing.note_compound_reassignment(sink);
 			}
 		}
 		scan_value(assignee);
 		scan_value(p_assignment->assigned_value);
 	}
 
-	// True when `p_expr` is a direct subscript read of the tracked array
-	// (`our_var[i]` / `self.member[i]`), whose result type narrows from `Variant`
-	// to the element type once the array is typed.
+	// True when `p_expr` reads a single element of the tracked array, whose result
+	// type narrows from `Variant` to the element type once the array is typed: a
+	// direct subscript read (`our_var[i]` / `self.member[i]`) or an element-
+	// returning accessor call (`our_var.front()` / `self.member.get(i)`).
 	bool reads_our_element(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr || p_expr->type != Node::SUBSCRIPT) {
+		if (p_expr == nullptr) {
 			return false;
 		}
-		const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expr);
-		return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
+		if (p_expr->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expr);
+			return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
+		}
+		if (p_expr->type == Node::CALL) {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expr);
+			if (call->callee == nullptr || call->callee->type != Node::SUBSCRIPT) {
+				return false;
+			}
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+			return callee->is_attribute && callee->attribute != nullptr &&
+					array_accessor_returns_element(callee->attribute->name) &&
+					(is_our_var(callee->base) || is_self_member_subscript(callee->base));
+		}
+		return false;
 	}
 
 	void scan_method_on_var(const GDScriptParser::CallNode *p_call, const StringName &p_method) {
@@ -2249,26 +2309,43 @@ private:
 		}
 		// Assignment to some other target. Both sides are values: the variable
 		// appearing on either side is an escape (e.g. `alias = our_var`).
-		// A whole-variable reassignment of a local/iterator (`v = value`) is also
-		// noted, in case `v` was bound to a narrowing read of the dictionary.
-		if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
-			if (const void *sink = local_sink_of(assignee)) {
+		// A whole-variable reassignment of a local/iterator (`v = value` or
+		// `v op= value`) is also noted, in case `v` was bound to a narrowing read of
+		// the dictionary.
+		if (const void *sink = local_sink_of(assignee)) {
+			if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
 				read_narrowing.note_reassignment(sink, p_assignment->assigned_value != nullptr ? p_assignment->assigned_value->get_datatype() : DataType());
+			} else {
+				read_narrowing.note_compound_reassignment(sink);
 			}
 		}
 		scan_value(assignee);
 		scan_value(p_assignment->assigned_value);
 	}
 
-	// True when `p_expr` is a direct subscript read of the tracked dictionary
-	// (`our_var[k]` / `self.member[k]`), whose result type narrows from `Variant`
-	// to the value type once the dictionary is typed.
+	// True when `p_expr` reads a stored value of the tracked dictionary, whose
+	// result type narrows from `Variant` to the value type once the dictionary is
+	// typed: a direct subscript read (`our_var[k]` / `self.member[k]`) or a value-
+	// returning accessor call (`our_var.get_or_add(k, default)`).
 	bool reads_our_value(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr || p_expr->type != Node::SUBSCRIPT) {
+		if (p_expr == nullptr) {
 			return false;
 		}
-		const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expr);
-		return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
+		if (p_expr->type == Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expr);
+			return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
+		}
+		if (p_expr->type == Node::CALL) {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expr);
+			if (call->callee == nullptr || call->callee->type != Node::SUBSCRIPT) {
+				return false;
+			}
+			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
+			return callee->is_attribute && callee->attribute != nullptr &&
+					dictionary_accessor_returns_value(callee->attribute->name) &&
+					(is_our_var(callee->base) || is_self_member_subscript(callee->base));
+		}
+		return false;
 	}
 
 	void scan_method_on_var(const GDScriptParser::CallNode *p_call, const StringName &p_method) {

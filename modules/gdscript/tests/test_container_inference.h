@@ -413,6 +413,28 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
+
+	TEST_CASE("An accessor read bound to a later-reassigned local forces a conservative skip") {
+		// `nums.front()` returns the element type on a typed array, so it narrows
+		// from `Variant` to `int` exactly like `nums[0]`.
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums.front()\n\tv = \"x\"\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A get accessor read bound to a later-reassigned local forces a conservative skip") {
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums.get(0)\n\tv = \"x\"\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A compound reassignment of a read binding forces a conservative skip") {
+		// `v += "x"` is valid while `v` is `Variant`; after `nums` becomes
+		// `Array[int]`, `v` is `int` and the compound operand is rejected.
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tv += \"x\"\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
 }
 
 TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
@@ -623,6 +645,20 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
+	}
+
+	TEST_CASE("A get_or_add accessor read bound to a later-reassigned local forces a conservative skip") {
+		// `get_or_add` returns the value type on a typed dictionary, so its result
+		// narrows from `Variant` to `int`.
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d.get_or_add(\"a\", 1)\n\tv = \"x\"\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A compound reassignment of a dictionary read binding forces a conservative skip") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tv += \"x\"\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 	}
 }
 
