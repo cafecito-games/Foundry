@@ -1,7 +1,10 @@
 # A `const` aliasing an inner class (no generic specialization) can be instantiated through the
 # alias with `.new()`, exactly like the inner class name itself. The alias must resolve to the live
-# compiled subclass rather than the analyzer's shallow, uncompiled folded class object.
+# compiled subclass rather than the analyzer's shallow, uncompiled folded class object. The same
+# holds across compilation units: an alias of an *external* (preloaded) inner class also constructs,
+# resolving to the live external subclass held by GDScriptCache.
 # https://github.com/cafecito-games/godot/issues/377
+# https://github.com/cafecito-games/godot/issues/391
 
 class Box:
 	var value: int = 5
@@ -56,5 +59,17 @@ func test() -> void:
 	print(ExternalClassAlias == External.Class)
 	print(ExternalClassAlias != Class)
 	print(Class.new().origin)
+
+	# Construction through the external alias works as well: the cross-unit external subclass is held
+	# live and valid by GDScriptCache, so the folded constant is already a compiled class and `.new()`
+	# constructs it directly. This is the cross-unit companion to the same-unit case above (#391).
+	var from_external_alias = ExternalClassAlias.new()
+	print(from_external_alias.origin)
+	print(from_external_alias is External.Class)
+
+	# The direct external inner-class name constructs to the same external class, not the local one.
+	var from_external_direct = External.Class.new()
+	print(from_external_direct.origin)
+	print(from_external_direct is External.Class)
 
 	print("const alias inner class construction ok")
