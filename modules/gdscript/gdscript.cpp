@@ -109,6 +109,29 @@ void GDScriptTypeParameter::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bound", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_bound");
 }
 
+Ref<GDScriptAnnotation> GDScriptAnnotation::from_usage(const GDScript::AnnotationUsage &p_usage) {
+	Ref<GDScriptAnnotation> descriptor;
+	descriptor.instantiate();
+	descriptor->name = p_usage.name;
+	descriptor->qualified_name = p_usage.qualified_name;
+	// Deep copy so the descriptor owns an independent snapshot and never aliases compiled metadata.
+	descriptor->args = p_usage.args.duplicate(true);
+	descriptor->kwargs = p_usage.kwargs.duplicate(true);
+	return descriptor;
+}
+
+void GDScriptAnnotation::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_annotation_name"), &GDScriptAnnotation::get_annotation_name);
+	ClassDB::bind_method(D_METHOD("get_qualified_name"), &GDScriptAnnotation::get_qualified_name);
+	ClassDB::bind_method(D_METHOD("get_arguments"), &GDScriptAnnotation::get_arguments);
+	ClassDB::bind_method(D_METHOD("get_named_arguments"), &GDScriptAnnotation::get_named_arguments);
+
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_annotation_name");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "qualified_name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_qualified_name");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "args", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_arguments");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "kwargs", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_named_arguments");
+}
+
 Variant GDScriptNativeClass::_new() {
 	Object *o = instantiate();
 	ERR_FAIL_NULL_V_MSG(o, Variant(), "Class type: '" + String(name) + "' is not instantiable.");

@@ -158,6 +158,7 @@ void initialize_gdscript_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		GDREGISTER_CLASS(GDScript);
 		GDREGISTER_CLASS(GDScriptTypeParameter);
+		GDREGISTER_CLASS(GDScriptAnnotation);
 		GDREGISTER_CLASS(GDScriptReflection);
 		GDREGISTER_CLASS(GDScriptGodotNamespace);
 

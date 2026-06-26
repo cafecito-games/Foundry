@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GDScriptAnnotation" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A read-only description of a single custom annotation applied to a [GDScript] declaration.
+	</brief_description>
+	<description>
+		Describes one resolved use of a passive custom annotation on a class, method, or member variable, such as [code]@timeout(10.0)[/code] or [code]@cases(provider = "crit_rows")[/code]. Instances are produced by the GDScript reflection APIs and are immutable snapshots of the compiled annotation metadata.
+		The argument accessors return copies, so mutating them does not change the script's stored annotation data. Values supplied positionally appear in [member args]; values supplied by name appear in [member kwargs]. Defaults declared on the annotation are validated but are not injected into either collection. Built-in engine annotations such as [code]@export[/code] or [code]@rpc[/code] are not exposed as [GDScriptAnnotation] objects.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="args" type="Array" setter="" getter="get_arguments">
+			The positional argument values supplied at the annotation use site, in source order. Each call returns an independent snapshot. Empty for marker annotations or annotations used with only named arguments.
+		</member>
+		<member name="kwargs" type="Dictionary" setter="" getter="get_named_arguments">
+			The named argument values supplied at the annotation use site, keyed by the declaration's parameter name. Each call returns an independent snapshot. Empty when no named arguments were supplied.
+		</member>
+		<member name="name" type="StringName" setter="" getter="get_annotation_name">
+			The annotation's short name, without the leading [code]@[/code] (for example [code]&amp;"timeout"[/code]).
+		</member>
+		<member name="qualified_name" type="StringName" setter="" getter="get_qualified_name">
+			The annotation's canonical declaration identity, including its namespace (for example [code]&amp;"cafecito.test.timeout"[/code]). Equal to [member name] when the annotation is declared in the global namespace.
+		</member>
+	</members>
+</class>
