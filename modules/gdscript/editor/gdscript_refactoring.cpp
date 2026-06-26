@@ -4831,46 +4831,21 @@ void collect_assignable_candidate(const Vector<String> &p_lines, const GDScriptP
 	}
 }
 
-// Collects the names declared inside p_suite and its nested suites (locals,
-// loop/pattern binds) into r_names. A namespace chain whose leading segment
-// matches one of these would be captured by the local symbol, so a qualified
-// annotation cannot use it. Gathering the whole function (rather than only the
-// locals live at one site) is a safe superset: it can only make the renderer
-// fall back to bare/disable, never emit an unresolved name.
-void collect_suite_local_names(const GDScriptParser::SuiteNode *p_suite, Vector<String> &r_names) {
+// Collects the names declared directly in p_suite (its own locals and loop/
+// pattern binds), without descending into nested blocks, into r_names. This
+// mirrors the analyzer's `SuiteNode::has_local()`, which resolves a name against
+// the current suite and its parents only: a local declared in a nested block
+// does not shadow names at an enclosing site. The collector adds each suite's
+// own names as it descends, so a site sees exactly the locals in scope there,
+// instead of a whole-function union that could disable an otherwise valid
+// qualified annotation rooted at a name only used in some unrelated branch.
+void collect_own_suite_local_names(const GDScriptParser::SuiteNode *p_suite, Vector<String> &r_names) {
 	if (p_suite == nullptr) {
 		return;
 	}
 	for (const GDScriptParser::SuiteNode::Local &local : p_suite->locals) {
 		if (local.name != StringName()) {
 			r_names.push_back(local.name);
-		}
-	}
-	for (const GDScriptParser::Node *statement : p_suite->statements) {
-		if (statement == nullptr) {
-			continue;
-		}
-		switch (statement->type) {
-			case GDScriptParser::Node::IF: {
-				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
-				collect_suite_local_names(if_node->true_block, r_names);
-				collect_suite_local_names(if_node->false_block, r_names);
-			} break;
-			case GDScriptParser::Node::FOR:
-				collect_suite_local_names(static_cast<const GDScriptParser::ForNode *>(statement)->loop, r_names);
-				break;
-			case GDScriptParser::Node::WHILE:
-				collect_suite_local_names(static_cast<const GDScriptParser::WhileNode *>(statement)->loop, r_names);
-				break;
-			case GDScriptParser::Node::MATCH:
-				for (const GDScriptParser::MatchBranchNode *branch : static_cast<const GDScriptParser::MatchNode *>(statement)->branches) {
-					if (branch != nullptr) {
-						collect_suite_local_names(branch->block, r_names);
-					}
-				}
-				break;
-			default:
-				break;
 		}
 	}
 }
@@ -4911,7 +4886,14 @@ void collect_type_annotation_in_function(
 				function_context.scope.shadowing_local_names.push_back(type_parameter->identifier->name);
 			}
 		}
-		collect_suite_local_names(p_function->body, function_context.scope.shadowing_local_names);
+		// Signature type identifiers (parameters and return type) are parsed with
+		// `current_suite` set to the function body, so the analyzer resolves them
+		// against the body suite: a top-level body local shadows a signature
+		// annotation just like an enclosing-scope name. Add the body's own
+		// top-level locals here. Locals declared only in nested blocks are added
+		// suite by suite as the collector descends, so they shadow sites inside
+		// those blocks but not the signature or outer-block sites.
+		collect_own_suite_local_names(p_function->body, function_context.scope.shadowing_local_names);
 		render_context = &function_context;
 	}
 	for (int i = 0; i < p_function->parameters.size(); i++) {
@@ -5003,35 +4985,47 @@ void collect_type_annotation_in_suite(const Vector<String> &p_lines, const GDScr
 	if (p_suite == nullptr) {
 		return;
 	}
+	// Augment the inherited scope with this suite's own locals (not nested ones),
+	// mirroring `SuiteNode::has_local()` precedence: a site here is shadowed by a
+	// name from the current suite or an enclosing one, but not by a local declared
+	// in a sibling or deeper block. Nested suites receive this context and add
+	// their own locals in turn.
+	TypeAnnotationRenderContext suite_context;
+	const TypeAnnotationRenderContext *render_context = p_render_context;
+	if (p_render_context != nullptr) {
+		suite_context = *p_render_context;
+		collect_own_suite_local_names(p_suite, suite_context.scope.shadowing_local_names);
+		render_context = &suite_context;
+	}
 	for (const GDScriptParser::Node *statement : p_suite->statements) {
 		if (statement == nullptr) {
 			continue;
 		}
 		switch (statement->type) {
 			case GDScriptParser::Node::VARIABLE:
-				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates, p_function_body, nullptr, p_render_context);
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::VariableNode *>(statement), "variable", true, r_candidates, p_function_body, nullptr, render_context);
 				break;
 			case GDScriptParser::Node::CONSTANT:
-				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates, nullptr, nullptr, p_render_context);
+				collect_assignable_candidate(p_lines, static_cast<const GDScriptParser::ConstantNode *>(statement), "constant", true, r_candidates, nullptr, nullptr, render_context);
 				break;
 			case GDScriptParser::Node::IF: {
 				const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates, p_function_body, p_render_context);
-				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates, p_function_body, p_render_context);
+				collect_type_annotation_in_suite(p_lines, if_node->true_block, r_candidates, p_function_body, render_context);
+				collect_type_annotation_in_suite(p_lines, if_node->false_block, r_candidates, p_function_body, render_context);
 			} break;
 			case GDScriptParser::Node::FOR: {
 				const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates, p_function_body, p_render_context);
+				collect_type_annotation_in_suite(p_lines, for_node->loop, r_candidates, p_function_body, render_context);
 			} break;
 			case GDScriptParser::Node::WHILE: {
 				const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(statement);
-				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates, p_function_body, p_render_context);
+				collect_type_annotation_in_suite(p_lines, while_node->loop, r_candidates, p_function_body, render_context);
 			} break;
 			case GDScriptParser::Node::MATCH: {
 				const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(statement);
 				for (const GDScriptParser::MatchBranchNode *branch : match_node->branches) {
 					if (branch != nullptr) {
-						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates, p_function_body, p_render_context);
+						collect_type_annotation_in_suite(p_lines, branch->block, r_candidates, p_function_body, render_context);
 					}
 				}
 			} break;

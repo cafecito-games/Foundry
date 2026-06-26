@@ -4465,6 +4465,30 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			const RefactorCandidatesResult reanalyzed = GDScriptRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 			CHECK(reanalyzed.ok);
 		}
+		SUBCASE("a nested-block local does not shadow an outer-scope qualified annotation") {
+			// The function body's `var character` site is annotated with the
+			// fully-qualified `refactor.characters.RefactorNsBaseCharacter`. A local
+			// named `refactor` declared only inside the nested `if` block is not in
+			// scope at that site, so it must not suppress the qualified spelling.
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_nested_shadow.gd", out));
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			CHECK_FALSE(out.contains("import refactor.characters"));
+			// The applied result must itself be valid GDScript.
+			RefactorContext applied_ctx;
+			applied_ctx.path = "res://refactor/namespace_annotation_nested_shadow.gd";
+			applied_ctx.source = out;
+			const RefactorCandidatesResult reanalyzed = GDScriptRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			CHECK(reanalyzed.ok);
+		}
+		SUBCASE("a top-level body local still shadows a qualified annotation in scope") {
+			// `var refactor` is a top-level body local, so it is in scope at the
+			// sibling `var character` site. A qualified spelling rooted at
+			// `refactor` would resolve to that local, so the annotation must stay
+			// disabled rather than emit invalid GDScript.
+			String out;
+			CHECK_FALSE(annotate_local("res://refactor/namespace_annotation_toplevel_shadow.gd", out));
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
