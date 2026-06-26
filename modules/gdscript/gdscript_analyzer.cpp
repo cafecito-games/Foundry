@@ -192,6 +192,43 @@ static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info, const
 	return type;
 }
 
+static GDScriptParser::DataType make_native_enum_type(const StringName &p_enum_name, const StringName &p_native_class, bool p_meta);
+static GDScriptParser::DataType make_builtin_enum_type(const StringName &p_enum_name, Variant::Type p_type, bool p_meta);
+static GDScriptParser::DataType make_global_enum_type(const StringName &p_enum_name, const StringName &p_base, bool p_meta);
+
+// Rebuilds the enum identity behind a hint leaf — "Base.Member" for native-class/built-in enums or a
+// bare name for global enums — so a nested enum slot compares exactly across the script-API boundary
+// (enum equality keys on native_type). Only enums whose identity the flat grammar can reproduce qualify:
+// global (CoreConstants), native-class (ClassDB), and built-in (Variant). A script/class enum has no
+// stable global name here (the accepted non-global script/class leaf limitation), so it is left for the
+// caller to degrade. This MUST stay in sync with the encoder's `_enum_signature_leaf_round_trips`
+// (gdscript_parser.cpp). Returns false without touching r_type when p_name is not a reproducible enum.
+static bool _resolve_hint_enum_leaf(const String &p_name, GDScriptParser::DataType &r_type) {
+	if (CoreConstants::is_global_enum(p_name)) {
+		r_type = make_global_enum_type(p_name, StringName(), false);
+		r_type.is_constant = false;
+		return true;
+	}
+	const int separator = p_name.rfind(".");
+	if (separator <= 0 || separator >= p_name.length() - 1) {
+		return false;
+	}
+	const String base = p_name.substr(0, separator);
+	const StringName enum_name = p_name.substr(separator + 1);
+	if (ClassDB::class_exists(base) && ClassDB::has_enum(base, enum_name)) {
+		r_type = make_native_enum_type(enum_name, base, false);
+		r_type.is_constant = false;
+		return true;
+	}
+	const Variant::Type base_builtin = GDScriptParser::get_builtin_type(base);
+	if (base_builtin < Variant::VARIANT_MAX && Variant::has_enum(base_builtin, enum_name)) {
+		r_type = make_builtin_enum_type(enum_name, base_builtin, false);
+		r_type.is_constant = false;
+		return true;
+	}
+	return false;
+}
+
 // Resolves a single hint type-name (as produced by the PROPERTY_HINT_CALLABLE_TYPE / ARRAY_TYPE grammar)
 // into a leaf DataType. Returns false if the name cannot be resolved.
 static bool _resolve_hint_leaf_type(const StringName &p_name, GDScriptParser::DataType &r_type) {
@@ -219,6 +256,9 @@ static bool _resolve_hint_leaf_type(const StringName &p_name, GDScriptParser::Da
 			r_type.script_type = script;
 			return true;
 		}
+	}
+	if (_resolve_hint_enum_leaf(p_name, r_type)) {
+		return true;
 	}
 	return false;
 }
@@ -419,14 +459,19 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 // A signature slot is comparison-safe across the script-API boundary when its kind survives a
 // PropertyInfo round-trip unambiguously. A user script/class surfaces as SCRIPT when rebuilt from
 // PropertyInfo but may be a CLASS handle in a local annotation, and the strict rich-slot comparator
-// keys on kind; enums and type parameters are likewise ambiguous. A signature carrying such a slot is
-// kept non-explicit so the MethodInfo fallback — which compares object slots by class name — decides
-// compatibility instead (mirroring how the encoder side suppresses these hints).
+// keys on kind; a script/class enum and type parameters are likewise ambiguous. A signature carrying
+// such a slot is kept non-explicit so the MethodInfo fallback — which compares object slots by class
+// name — decides compatibility instead (mirroring how the encoder side suppresses these hints). A
+// global/native/built-in enum is the exception: its identity round-trips through the hint grammar, so
+// it is safe to compare as a rich slot.
 static bool _signature_slot_is_comparison_safe(const GDScriptParser::DataType &p_type) {
 	switch (p_type.kind) {
+		case GDScriptParser::DataType::ENUM: {
+			GDScriptParser::DataType reconstructed;
+			return _resolve_hint_enum_leaf(String(p_type.native_type).replace("::", "."), reconstructed);
+		}
 		case GDScriptParser::DataType::SCRIPT:
 		case GDScriptParser::DataType::CLASS:
-		case GDScriptParser::DataType::ENUM:
 		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED:

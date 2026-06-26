@@ -2053,4 +2053,66 @@ TEST_CASE("[Modules][GDScript] Callable/Signal property encoding") {
 	}
 }
 
+static GDScriptParser::DataType make_enum_value_type(const StringName &p_native_type) {
+	GDScriptParser::DataType type;
+	type.kind = GDScriptParser::DataType::ENUM;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.builtin_type = Variant::INT;
+	type.native_type = p_native_type;
+	return type;
+}
+
+TEST_CASE("[Modules][GDScript] Callable/Signal enum signature leaves encode their identity") {
+	// A built-in enum parameter (Vector3.Axis) is now encoded by its identity so the decoder can rebuild
+	// it across the script-API boundary, instead of suppressing the whole hint and crossing untyped.
+	{
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(make_enum_value_type(SNAME("Vector3.Axis")));
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::NIL)).to_property_info("cb");
+		CHECK(info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(info.hint_string == "[[Vector3.Axis], void]");
+	}
+
+	// A native-class enum (Object.ConnectFlags) encodes its declaring-class-qualified name.
+	{
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(make_enum_value_type(SNAME("Object.ConnectFlags")));
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::NIL)).to_property_info("cb");
+		CHECK(info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(info.hint_string == "[[Object.ConnectFlags], void]");
+	}
+
+	// A global enum (Error) is encoded as a bare name (it has no base class in the grammar).
+	{
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(make_enum_value_type(SNAME("Error")));
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::NIL)).to_property_info("cb");
+		CHECK(info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(info.hint_string == "[[Error], void]");
+	}
+
+	// An enum nested inside a typed Array element shares the same leaf encoder, so it gains the same
+	// fidelity (the Array/Dictionary element-hint extension called out in the acceptance criteria).
+	{
+		GDScriptParser::DataType array_of_axis = make_builtin_type(Variant::ARRAY);
+		array_of_axis.set_container_element_type(0, make_enum_value_type(SNAME("Vector3.Axis")));
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(array_of_axis);
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::NIL)).to_property_info("cb");
+		CHECK(info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(info.hint_string == "[[Array[Vector3.Axis]], void]");
+	}
+
+	// A script/class enum has no reproducible global name in the flat hint grammar, so the callable
+	// crosses untyped (the accepted non-global script/class leaf limitation) rather than emitting a
+	// lossy hint that the decoder could not reconstruct to an equal type.
+	{
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(make_enum_value_type(SNAME("res://script.gd.Kind")));
+		const PropertyInfo info = make_callable_signature_type(params, make_builtin_type(Variant::NIL)).to_property_info("cb");
+		CHECK(info.hint == PROPERTY_HINT_NONE);
+		CHECK(info.hint_string.is_empty());
+	}
+}
+
 } // namespace GDScriptTests

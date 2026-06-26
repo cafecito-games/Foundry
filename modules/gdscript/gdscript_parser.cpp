@@ -35,6 +35,7 @@
 #include "gdscript_tokenizer_buffer.h"
 
 #include "core/config/project_settings.h"
+#include "core/core_constants.h"
 #include "core/io/resource_loader.h"
 #include "core/math/math_defs.h"
 #include "scene/main/multiplayer_api.h"
@@ -6324,11 +6325,35 @@ static String _encode_signature_type(const GDScriptParser::DataType &p_type) {
 	return encoded;
 }
 
+// Whether an enum hint leaf reconstructs to an identical enum identity on the decode side. The leaf is
+// "Base.Member" for native-class/built-in enums and a bare name for global enums. This predicate MUST
+// stay in sync with the decoder's `_resolve_hint_enum_leaf` (gdscript_analyzer.cpp): the encoder only
+// emits an enum hint the decoder can rebuild exactly, so a round-tripped enum slot is never turned into
+// a false strict mismatch. Global (CoreConstants), native-class (ClassDB), and built-in (Variant) enums
+// qualify; a script/class enum has no stable global name in the grammar and must cross untyped.
+static bool _enum_signature_leaf_round_trips(const String &p_name) {
+	if (CoreConstants::is_global_enum(p_name)) {
+		return true;
+	}
+	const int separator = p_name.rfind(".");
+	if (separator <= 0 || separator >= p_name.length() - 1) {
+		return false;
+	}
+	const String base = p_name.substr(0, separator);
+	const StringName enum_name = p_name.substr(separator + 1);
+	if (ClassDB::class_exists(base) && ClassDB::has_enum(base, enum_name)) {
+		return true;
+	}
+	const Variant::Type base_builtin = GDScriptParser::get_builtin_type(base);
+	return base_builtin < Variant::VARIANT_MAX && Variant::has_enum(base_builtin, enum_name);
+}
+
 // True when a signature slot round-trips faithfully through the PROPERTY_HINT_CALLABLE_TYPE decoder.
-// Slots that cannot (enum leaves, non-global/nested script-classes reduced to a native fallback,
-// unexposed natives, generic type_arguments, type parameters) would decode to a coarser type — emitting
-// the hint anyway turns a previously gradual-accepted cross-script callable into a false strict mismatch.
-// When any slot is lossy the caller omits the hint, so the callable/signal crosses the boundary untyped.
+// Slots that cannot (script/class enum leaves and non-global/nested script-classes reduced to a native
+// fallback, unexposed natives, generic type_arguments, type parameters) would decode to a coarser type —
+// emitting the hint anyway turns a previously gradual-accepted cross-script callable into a false strict
+// mismatch. When any slot is lossy the caller omits the hint, so the callable/signal crosses the boundary
+// untyped. Global, native-class, and built-in enum leaves do round-trip (see `_enum_signature_leaf_round_trips`).
 static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type) {
 	if (!p_type.type_arguments.is_empty()) {
 		return false;
@@ -6384,6 +6409,10 @@ static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type)
 			// such callables cross untyped (gradual). Native classes are unaffected and still round-trip.
 			return false;
 		case GDScriptParser::DataType::ENUM:
+			// Global, native-class, and built-in enums encode an identity the decoder rebuilds exactly; a
+			// script/class enum has no such name in the flat grammar (mirroring the non-global script/class
+			// leaf limitation) and must cross untyped to avoid a false mismatch.
+			return _enum_signature_leaf_round_trips(_encode_signature_leaf_name(p_type));
 		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED:
