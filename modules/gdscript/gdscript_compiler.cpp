@@ -3634,6 +3634,13 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				StringName name = constant->identifier->name;
 
 				p_script->constants.insert(name, _resolve_aliased_class_constant(constant->initializer->reduced_value));
+
+				// Persist constant annotation metadata, keyed by name.
+				Vector<GDScript::AnnotationUsage> constant_usages;
+				_collect_custom_annotations(constant->annotations, constant_usages);
+				if (!constant_usages.is_empty()) {
+					p_script->constant_annotations[name] = constant_usages;
+				}
 			} break;
 
 			case GDScriptParser::ClassNode::Member::ENUM_VALUE: {
@@ -3648,6 +3655,13 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				StringName name = signal->identifier->name;
 
 				p_script->_signals[name] = signal->method_info;
+
+				// Persist signal annotation metadata, keyed by name.
+				Vector<GDScript::AnnotationUsage> signal_usages;
+				_collect_custom_annotations(signal->annotations, signal_usages);
+				if (!signal_usages.is_empty()) {
+					p_script->signal_annotations[name] = signal_usages;
+				}
 			} break;
 
 			case GDScriptParser::ClassNode::Member::ENUM: {

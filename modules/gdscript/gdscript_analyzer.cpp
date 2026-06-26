@@ -1912,7 +1912,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 
 				// Apply annotations.
 				for (GDScriptParser::AnnotationNode *&E : member.constant->annotations) {
-					resolve_annotation(E);
+					resolve_annotation(E, GDScriptParser::AnnotationDeclarationNode::TARGET_CONSTANT);
 					E->apply(parser, member.constant, p_class);
 				}
 			} break;
@@ -1942,7 +1942,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 
 				// Apply annotations.
 				for (GDScriptParser::AnnotationNode *&E : member.signal->annotations) {
-					resolve_annotation(E);
+					resolve_annotation(E, GDScriptParser::AnnotationDeclarationNode::TARGET_SIGNAL);
 					E->apply(parser, member.signal, p_class);
 				}
 			} break;
@@ -2587,6 +2587,10 @@ static String _annotation_target_name(uint32_t p_target_kind) {
 			return "a method";
 		case GDScriptParser::AnnotationDeclarationNode::TARGET_VARIABLE:
 			return "a member variable";
+		case GDScriptParser::AnnotationDeclarationNode::TARGET_SIGNAL:
+			return "a signal";
+		case GDScriptParser::AnnotationDeclarationNode::TARGET_CONSTANT:
+			return "a constant";
 		default:
 			return "this target";
 	}

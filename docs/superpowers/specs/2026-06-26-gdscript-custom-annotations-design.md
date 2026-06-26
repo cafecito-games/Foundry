@@ -117,9 +117,14 @@ V1 target names:
 | `CLASS` | Root classes, `class_name` scripts, and inner classes. |
 | `METHOD` | Script methods, including static methods and abstract/trait methods. |
 | `VARIABLE` | Member `var` declarations only, including static member variables. |
+| `SIGNAL` | Member `signal` declarations. |
+| `CONSTANT` | Member `const` declarations. |
 
-The implementation can reserve internal target bits for future targets, but the parser
-and docs should expose only the v1 target names.
+`SIGNAL` and `CONSTANT` were added as a follow-up to the v1 set; they reflect through
+`get_signal_annotations` / `get_constant_annotations` and the generic `get_annotations`
+with `kind` of `"signal"` or `"constant"`, mirroring the member-variable view. The
+implementation can reserve internal target bits for additional future targets, but the
+parser and docs should expose only the supported target names.
 
 ### Parameters
 
@@ -524,8 +529,8 @@ These should be filed under the implementation epic but kept out of the v1 accep
 criteria unless explicitly reprioritized:
 
 - Support fully qualified annotation usage such as `@cafecito.test.timeout(...)`.
-- Add targets for signals, constants, parameters, local variables, statements, and
-  expression positions.
+- Add targets for parameters, local variables, statements, and expression positions.
+  (Signals and constants are now supported targets.)
 - Reflect built-in annotations as metadata.
 - Add direct-only/effective-view switches to reflection APIs.
 - Add structured method and property descriptor types to replace the remaining reflection

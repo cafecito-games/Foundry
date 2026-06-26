@@ -87,6 +87,21 @@ TEST_CASE("[Modules][GDScript] Annotation declaration parses typed parameters, d
 	CHECK((declaration->targets & GDScriptParser::AnnotationDeclarationNode::TARGET_VARIABLE) == 0);
 }
 
+TEST_CASE("[Modules][GDScript] Annotation declaration parses SIGNAL and CONSTANT targets") {
+	GDScriptParser parser;
+	const Error error = parser.parse("annotation marker targets SIGNAL, CONSTANT\n", "user://test.gd", false);
+	REQUIRE(error == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->annotation_declarations.size() == 1);
+
+	const GDScriptParser::AnnotationDeclarationNode *declaration = root_class->annotation_declarations[0];
+	CHECK((declaration->targets & GDScriptParser::AnnotationDeclarationNode::TARGET_SIGNAL) != 0);
+	CHECK((declaration->targets & GDScriptParser::AnnotationDeclarationNode::TARGET_CONSTANT) != 0);
+	CHECK((declaration->targets & GDScriptParser::AnnotationDeclarationNode::TARGET_METHOD) == 0);
+}
+
 TEST_CASE("[Modules][GDScript] Annotation declaration parses a final variadic parameter") {
 	GDScriptParser parser;
 	const Error error = parser.parse("annotation tags(...names: String) targets METHOD, CLASS\n", "user://test.gd", false);

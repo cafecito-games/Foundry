@@ -62,11 +62,14 @@ public:
 
 	// Passive custom annotation reflection. `target` may be a Script type or an instance. Matching by
 	// `annotation` accepts either the short name ("timeout") or the qualified name
-	// ("cafecito.test.timeout"). `kind` is one of "class", "method", or "variable". Invalid, freed, or
-	// non-script targets yield empty arrays, a null descriptor, or false, without crashing.
+	// ("cafecito.test.timeout"). `kind` is one of "class", "method", "variable", "signal", or
+	// "constant". Invalid, freed, or non-script targets yield empty arrays, a null descriptor, or
+	// false, without crashing.
 	TypedArray<GDScriptAnnotation> get_class_annotations(const Variant &p_target) const;
 	TypedArray<GDScriptAnnotation> get_method_annotations(const Variant &p_target, const StringName &p_method) const;
 	TypedArray<GDScriptAnnotation> get_variable_annotations(const Variant &p_target, const StringName &p_variable) const;
+	TypedArray<GDScriptAnnotation> get_signal_annotations(const Variant &p_target, const StringName &p_signal) const;
+	TypedArray<GDScriptAnnotation> get_constant_annotations(const Variant &p_target, const StringName &p_constant) const;
 	bool has_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind) const;
 	Ref<GDScriptAnnotation> get_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind) const;
 	TypedArray<GDScriptAnnotation> get_annotations(const Variant &p_target, const StringName &p_member, const StringName &p_kind) const;

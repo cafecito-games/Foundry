@@ -147,9 +147,9 @@ TEST_CASE("[Modules][GDScript] Repeated custom annotations are preserved in sour
 	CHECK(annotations->back()->get()->name == StringName("@tag"));
 }
 
-TEST_CASE("[Modules][GDScript] Custom annotations apply to class, method, and variable targets") {
+TEST_CASE("[Modules][GDScript] Custom annotations apply to class, method, variable, signal, and constant targets") {
 	GDScriptParser parser;
-	const Error error = parser.parse("@marker\nclass Inner:\n\t@marker\n\tvar value: int = 0\n\t@marker\n\tfunc method():\n\t\tpass\n", "user://test.gd", false);
+	const Error error = parser.parse("@marker\nclass Inner:\n\t@marker\n\tvar value: int = 0\n\t@marker\n\tconst LIMIT = 1\n\t@marker\n\tsignal changed()\n\t@marker\n\tfunc method():\n\t\tpass\n", "user://test.gd", false);
 	REQUIRE(error == OK);
 }
 
@@ -160,9 +160,6 @@ TEST_CASE("[Modules][GDScript] Doc-comment annotation names remain parse errors"
 }
 
 TEST_CASE("[Modules][GDScript] Custom annotations are rejected on unsupported targets") {
-	GDScriptParser constant_parser;
-	CHECK(constant_parser.parse("@marker\nconst SOME_CONSTANT = 1\n", "user://test.gd", false) != OK);
-
 	GDScriptParser enum_parser;
 	CHECK(enum_parser.parse("@marker\nenum Direction { UP, DOWN }\n", "user://test.gd", false) != OK);
 

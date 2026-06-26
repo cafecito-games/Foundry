@@ -478,6 +478,8 @@ public:
 			TARGET_CLASS = 1 << 0,
 			TARGET_METHOD = 1 << 1,
 			TARGET_VARIABLE = 1 << 2,
+			TARGET_SIGNAL = 1 << 3,
+			TARGET_CONSTANT = 1 << 4,
 		};
 
 		IdentifierNode *identifier = nullptr;
