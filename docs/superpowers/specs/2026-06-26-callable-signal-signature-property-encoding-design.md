@@ -85,7 +85,7 @@ A single hint covers both kinds. The `PropertyInfo.type` field (`Variant::CALLAB
 | DataType | `PropertyInfo.type` | `hint` | `hint_string` |
 |---|---|---|---|
 | `Callable[[int], bool]` | CALLABLE | CALLABLE_TYPE | `[[int], bool]` |
-| `Signal[int]` | SIGNAL | CALLABLE_TYPE | `[[int]]` |
+| `Signal[[int]]` | SIGNAL | CALLABLE_TYPE | `[[int]]` |
 | `Callable[[Callable[[int], void]], void]` | CALLABLE | CALLABLE_TYPE | `[[Callable[[int], void]], void]` |
 | `Callable[[Array[int]], void]` | CALLABLE | CALLABLE_TYPE | `[[Array[int]], void]` |
 | `Callable[[Dictionary[String, int]], void]` | CALLABLE | CALLABLE_TYPE | `[[Dictionary[String, int]], void]` |
@@ -138,11 +138,13 @@ The signature-aware comparators from #327/#382 already recurse through `method_p
 
 ## Round-trip and graceful degradation
 
+Note: the GDScript surface syntax for a signal signature is double-bracketed (`Signal[[int]]`), mirroring the callable form; the `hint_string` carries the suffix (`[[int]]`) and `PropertyInfo.type == SIGNAL` marks it as a signal with no return clause.
+
 An unknown hint is inert everywhere it is not understood:
 
 - **Inspector / `EditorHelp`** — fall back to the plain `Callable`/`Signal` label. Verify rendering does not choke on the new hint value; default-case handling should already ignore unknown hints.
 - **Generated class-reference docs** — the doc generator ignores the hint; verify no spurious diffs in generated docs.
-- **Resource `.tres` / scene round-trip** — `PropertyInfo.hint_string` is a plain `String` serialized verbatim by the resource format with no hint-specific parsing, so it is structurally opaque-passthrough. In practice typed callable signatures are method-local rather than `@export`ed properties saved to disk, so the path is rarely if ever exercised; existing untyped callables emit no hint and are unchanged. An encode↔decode round-trip unit test guards the format's stability directly.
+- **Resource `.tres` / scene round-trip** — `PropertyInfo.hint_string` is a plain `String` serialized verbatim by the resource format with no hint-specific parsing, so it is structurally opaque-passthrough. In practice typed callable signatures are method-local rather than `@export`ed properties saved to disk, so the path is rarely if ever exercised; existing untyped callables emit no hint and are unchanged. The full encode→decode round-trip is guarded directly by the cross-script `.out` fixtures (a provider's typed return crosses the boundary via `to_property_info` and is reconstructed via `type_from_property` during the consumer's analysis) plus the encoder unit test's exact `hint_string` assertions; a standalone C++ round-trip test was intentionally not added because the decoder (`type_from_property`) is private and exposing it solely for a test would weaken encapsulation for coverage the fixtures already provide.
 - **Other language bindings** — see Non-goals; the format is reserved canonical, no binding reads it yet.
 
 ## Ripple-review checklist
