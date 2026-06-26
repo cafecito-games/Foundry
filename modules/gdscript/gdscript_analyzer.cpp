@@ -5789,6 +5789,13 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 
 		call_type = return_type;
 	} else {
+		// The callee could not be resolved to a statically known GDScript signature (dynamic or
+		// `Variant` receiver, or an unresolved method on a typed base). Named arguments are
+		// canonicalized entirely at compile time against such a signature, so without one their
+		// names cannot be mapped to positions. Reject them here instead of letting codegen drop
+		// the names and silently pass the values positionally in source order.
+		reject_named_call_arguments(p_call);
+
 		bool found = false;
 
 		// Enums do not have functions other than the built-in dictionary ones.
