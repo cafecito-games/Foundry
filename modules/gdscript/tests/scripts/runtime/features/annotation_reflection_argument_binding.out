@@ -1,0 +1,28 @@
+GDTEST_OK
+~~ WARNING at line 58: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 59: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 63: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 68: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 70: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 72: (UNSAFE_METHOD_ACCESS) The method "has()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 79: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+0
+0
+1
+flaky
+1
+1
+1
+x
+false
+0
+2
+integration
+slow
+3.0
+10
+1
+fixture
+2
+timeout
+priority
