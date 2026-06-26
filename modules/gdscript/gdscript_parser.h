@@ -1755,8 +1755,8 @@ private:
 	PatternNode *parse_match_pattern(PatternNode *p_root_pattern = nullptr);
 	WhileNode *parse_while();
 	// Expressions.
-	ExpressionNode *parse_expression(bool p_can_assign, bool p_stop_on_assign = false);
-	ExpressionNode *parse_precedence(Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign = false);
+	ExpressionNode *parse_expression(bool p_can_assign, bool p_stop_on_assign = false, bool p_stop_on_question_mark = false);
+	ExpressionNode *parse_precedence(Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign = false, bool p_stop_on_question_mark = false);
 	ExpressionNode *parse_literal(ExpressionNode *p_previous_operand, bool p_can_assign);
 	LiteralNode *parse_literal();
 	ExpressionNode *parse_self(ExpressionNode *p_previous_operand, bool p_can_assign);
