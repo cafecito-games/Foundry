@@ -3211,6 +3211,15 @@ bool GDScriptLanguage::is_duplicated_global_annotation(const StringName &p_quali
 	return paths != nullptr && paths->size() > 1;
 }
 
+String GDScriptLanguage::get_global_annotation_path(const StringName &p_qualified_name) const {
+	MutexLock lock(annotation_index_mutex);
+	const Vector<String> *paths = global_annotations.getptr(p_qualified_name);
+	if (paths == nullptr || paths->is_empty()) {
+		return String();
+	}
+	return (*paths)[0];
+}
+
 bool GDScriptLanguage::namespace_has_annotations(const String &p_namespace) const {
 	if (p_namespace.is_empty()) {
 		return false;

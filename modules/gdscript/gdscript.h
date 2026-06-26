@@ -826,6 +826,9 @@ public:
 	bool is_global_annotation(const StringName &p_qualified_name) const;
 	// True when the canonical identity is declared by two or more distinct files.
 	bool is_duplicated_global_annotation(const StringName &p_qualified_name) const;
+	// Source path of the file that declares the canonical identity, or an empty string when it is
+	// unknown. When several files declare it (a duplicate identity), the first indexed path wins.
+	String get_global_annotation_path(const StringName &p_qualified_name) const;
 	// True when any indexed annotation declaration lives in `p_namespace`.
 	bool namespace_has_annotations(const String &p_namespace) const;
 

@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Default value for annotation parameter "seconds" must be a constant expression.
