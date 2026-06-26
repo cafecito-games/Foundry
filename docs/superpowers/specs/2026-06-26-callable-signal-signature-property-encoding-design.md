@@ -106,6 +106,8 @@ leaf      := same name grammar as PROPERTY_HINT_ARRAY_TYPE
 WS        := " "
 ```
 
+A nullable slot keeps its trailing `?` marker (`Callable[[Node?], void]` → `[[Node?], void]`), encoded and decoded the same way `DataType::to_string` renders `is_nullable`; this preserves strict-null diagnostics across the boundary. (Generic `type_arguments` are not yet encoded — a nested user-generic slot degrades to its bare name; tracked alongside the enum/local-class fidelity follow-up in #446.)
+
 The grammar is **uniformly recursive over every container-bearing type** — `Callable`, `Signal`, `Array`, and `Dictionary` — so a parameter that is itself a typed container preserves its full signature rather than degrading to its bare outer type. (Recursing only on `Callable`/`Signal` would leave `Callable[[Array[int]], void]` erasing its `Array[int]` param to bare `Array` — the same soundness class this issue closes.)
 
 The encoder emits canonical spacing (`", "` between args, `"]"`/`", "` before the return) so the format is stable and matches `to_string`. The decoder tolerates the canonical form; it is not required to accept arbitrary whitespace.

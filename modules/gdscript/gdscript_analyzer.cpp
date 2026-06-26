@@ -300,7 +300,7 @@ static void _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 	}
 }
 
-static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) {
+static GDScriptParser::DataType _decode_signature_type_base(const String &p_encoded) {
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	const String text = p_encoded.strip_edges();
@@ -351,6 +351,21 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 	// Unresolvable leaf: degrade to Variant rather than fail the whole decode.
 	result.kind = GDScriptParser::DataType::VARIANT;
 	return result;
+}
+
+static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) {
+	const String text = p_encoded.strip_edges();
+	// A trailing `?` marks a nullable slot (encoded by _encode_signature_type). It only ever appears
+	// as the final character of a whole type token; nested `T?` slots sit inside brackets and are
+	// recovered by the recursive decode of each split element.
+	if (text.ends_with("?")) {
+		GDScriptParser::DataType result = _decode_signature_type_base(text.substr(0, text.length() - 1));
+		if (result.kind != GDScriptParser::DataType::VARIANT) {
+			result.is_nullable = true;
+		}
+		return result;
+	}
+	return _decode_signature_type_base(text);
 }
 
 static GDScriptParser::DataType make_native_meta_type(const StringName &p_class_name) {

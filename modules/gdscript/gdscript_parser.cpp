@@ -6050,7 +6050,7 @@ static String _encode_method_signature_suffix(const GDScriptParser::DataType &p_
 	return vformat("[[%s]]", joined);
 }
 
-static String _encode_signature_type(const GDScriptParser::DataType &p_type) {
+static String _encode_signature_type_base(const GDScriptParser::DataType &p_type) {
 	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
 		switch (p_type.builtin_type) {
 			case Variant::ARRAY:
@@ -6080,6 +6080,18 @@ static String _encode_signature_type(const GDScriptParser::DataType &p_type) {
 		}
 	}
 	return _encode_signature_leaf_name(p_type);
+}
+
+static String _encode_signature_type(const GDScriptParser::DataType &p_type) {
+	String encoded = _encode_signature_type_base(p_type);
+	// Preserve the nullable marker so a `T?` slot survives the boundary (mirrors to_string's guard:
+	// Variant and the NIL builtin are never marked nullable). Generic type_arguments are not yet
+	// encoded; a nested user-generic slot degrades to its bare name (tracked as a follow-up).
+	if (p_type.is_nullable && p_type.kind != GDScriptParser::DataType::VARIANT &&
+			!(p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL)) {
+		encoded += "?";
+	}
+	return encoded;
 }
 
 PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) const {

@@ -2035,6 +2035,17 @@ TEST_CASE("[Modules][GDScript] Callable/Signal property encoding") {
 		CHECK(info.hint_string == "[[Array[int]], void]");
 	}
 	{
+		// Nullable parameter and return slots keep their `?` marker.
+		GDScriptParser::DataType nullable_node = make_native_type("Node");
+		nullable_node.is_nullable = true;
+		Vector<GDScriptParser::DataType> params;
+		params.push_back(nullable_node);
+		GDScriptParser::DataType nullable_return = make_native_type("Node");
+		nullable_return.is_nullable = true;
+		const PropertyInfo info = make_callable_signature_type(params, nullable_return).to_property_info("cb");
+		CHECK(info.hint_string == "[[Node?], Node?]");
+	}
+	{
 		GDScriptParser::DataType untyped = make_builtin_type(Variant::CALLABLE);
 		const PropertyInfo info = untyped.to_property_info("cb");
 		CHECK(info.hint == PROPERTY_HINT_NONE);
