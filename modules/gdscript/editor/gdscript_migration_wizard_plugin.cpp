@@ -35,6 +35,7 @@
 #include "gdscript_migration_wizard.h"
 
 #include "editor/editor_string_names.h"
+#include "editor/script/script_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 
 #include "scene/gui/box_container.h"
@@ -70,10 +71,26 @@ void GDScriptMigrationWizardDialog::_option_toggled(bool p_pressed) {
 }
 
 void GDScriptMigrationWizardDialog::_run_migration() {
+	const bool apply_requested = apply_checkbox->is_pressed();
+
+	// The migration writes scripts directly on disk and is documented as unsafe to run alongside a
+	// live editing session: unsaved buffers in the script editor are invisible to it (so its edits
+	// could be lost when the user later saves) and would be clobbered on disk by the apply. So an
+	// apply is gated on a clean editor -- the user must save or discard open changes first. A
+	// preview writes nothing, so it needs no gate.
+	ScriptEditor *script_editor = ScriptEditor::get_singleton();
+	if (apply_requested && script_editor) {
+		const PackedStringArray unsaved = script_editor->get_unsaved_scripts();
+		if (!unsaved.is_empty()) {
+			status_label->set_text(vformat(TTR("Cannot apply: %d script(s) have unsaved changes in the editor. Save or discard them, then run again."), unsaved.size()));
+			return;
+		}
+	}
+
 	MigrationWizardOptions options;
 	options.strict_null_checks = strict_null_checkbox->is_pressed();
 	options.strict_dynamic_checks = strict_dynamic_checkbox->is_pressed();
-	options.apply = apply_checkbox->is_pressed();
+	options.apply = apply_requested;
 	options.acknowledge_vcs_warning = acknowledge_vcs_checkbox->is_pressed();
 	// Activating from the editor is a single confirmed action: the user ticked the box and pressed
 	// the dialog's confirm button, which is the explicit confirmation the activation gate requires.
@@ -82,6 +99,13 @@ void GDScriptMigrationWizardDialog::_run_migration() {
 
 	const MigrationWizardResult result = GDScriptMigrationWizard::run(MIGRATION_PROJECT_ROOT, options);
 	report_output->set_text(result.summary());
+
+	// Reload open script buffers from disk so they reflect the migration's on-disk result; a stale
+	// buffer left open from before the apply would otherwise overwrite the migrated file on its next
+	// save.
+	if (result.applied && script_editor) {
+		script_editor->reload_scripts(false);
+	}
 
 	if (!result.ok) {
 		status_label->set_text(vformat(TTR("Migration error: %s"), result.error_message));
