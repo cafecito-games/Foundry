@@ -411,8 +411,32 @@ String MigrationReportResult::format_follow_up() const {
 	builder.append("Sites a migration could not auto-resolve, grouped by category. Each one needs a\n");
 	builder.append("manual decision before strict typing is complete.\n\n");
 
+	// Caveats are outstanding work that has no per-site list: files the analyzer could not read
+	// at all (so their declarations were invisible to the tally) and a strict preview that failed
+	// (so any strict violations went uncounted). They are surfaced before -- and independently of
+	// -- the per-site list so a report is never read as "all clear" while work was silently skipped.
+	const bool has_unanalyzable = !unanalyzable_files.is_empty();
+	const bool strict_preview_failed = strict.requested && !strict.error.is_empty();
+
+	if (has_unanalyzable) {
+		builder.append(vformat("Files that could not be analyzed (their sites are NOT in the list below): %d\n", unanalyzable_files.size()));
+		for (const String &file : unanalyzable_files) {
+			builder.append(vformat("  %s\n", file));
+		}
+		builder.append("\n");
+	}
+	if (strict_preview_failed) {
+		builder.append(vformat("Strict-mode preview failed, so strict violations are NOT in the list below: %s\n\n", strict.error));
+	}
+
 	if (follow_ups.is_empty()) {
-		builder.append("No follow-up sites: every scanned declaration was either typed or auto-migratable.\n");
+		if (has_unanalyzable || strict_preview_failed) {
+			// No per-site follow-ups, but the caveats above mean the report is not a clean bill of
+			// health: outstanding work exists that simply could not be enumerated.
+			builder.append("No per-site follow-ups, but see the caveats above for work that could not be enumerated.\n");
+		} else {
+			builder.append("No follow-up sites: every scanned declaration was either typed or auto-migratable.\n");
+		}
 		return builder.as_string();
 	}
 
@@ -464,9 +488,12 @@ Error GDScriptMigrationReport::write_follow_up(const MigrationReportResult &p_re
 		return ERR_INVALID_DATA;
 	}
 
+	// Create any missing parent directories. Select the access backend from the path itself
+	// (create_for_path resolves res://, user://, and bare filesystem paths to the right backend),
+	// so a user:// report path is not forced through the resource backend.
 	const String base_dir = p_path.get_base_dir();
 	if (!base_dir.is_empty()) {
-		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+		Ref<DirAccess> dir = DirAccess::create_for_path(base_dir);
 		if (dir.is_valid() && !dir->dir_exists(base_dir)) {
 			const Error make_dir_error = dir->make_dir_recursive(base_dir);
 			if (make_dir_error != OK) {

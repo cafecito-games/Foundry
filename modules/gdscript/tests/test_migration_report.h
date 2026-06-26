@@ -553,6 +553,37 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Follow-up report does not claim a clean bill of health when a file is unanalyzable") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_followup_unanalyzable");
+
+		// A fully-typed file (no per-site follow-ups) plus a parse-broken file the analyzer cannot
+		// read. The broken file's declarations are invisible to the tally, so the report must warn
+		// rather than imply everything was typed or auto-migratable.
+		const String good_path = tree.write_file("good.gd", "var x: int = 1\n");
+		const String broken_path = tree.write_file("broken.gd", "func oops(\n");
+
+		const MigrationReportResult report = GDScriptMigrationReport::generate("res://migration_followup_unanalyzable");
+		REQUIRE(report.ok);
+		CHECK(report.follow_ups.is_empty()); // The good file is typed; the broken file yields no sites.
+		CHECK(report.unanalyzable_files.has(broken_path));
+
+		const String text = report.format_follow_up();
+		// The misleading "all clear" line is suppressed; the unanalyzable file is surfaced instead.
+		CHECK_FALSE(text.contains("every scanned declaration was either typed or auto-migratable"));
+		CHECK(text.contains("could not be analyzed"));
+		CHECK(text.contains(broken_path));
+
+		CHECK_EQ(FileAccess::get_file_as_string(good_path), "var x: int = 1\n");
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Report edge cases: empty project and unreadable root") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

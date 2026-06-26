@@ -199,8 +199,9 @@ public:
 	static const char *DEFAULT_FOLLOW_UP_PATH;
 
 	// Writes the manual follow-up punch-list (MigrationReportResult::format_follow_up) to
-	// p_path (a `res://` path or any path DirAccess can open), creating intermediate directories
-	// as needed. This is the regenerable, on-demand artifact: calling it again overwrites the
+	// p_path (a `res://`, `user://`, or bare filesystem path), creating intermediate directories
+	// as needed via the access backend the path resolves to. This is the regenerable, on-demand
+	// artifact: calling it again overwrites the
 	// previous report in place. Returns OK on success, or the FileAccess error otherwise. A report
 	// that did not complete (ok == false) is refused so a fatal-failure report is never persisted.
 	static Error write_follow_up(
