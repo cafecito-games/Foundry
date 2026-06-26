@@ -512,6 +512,37 @@ void GDScriptCache::remove_static_script(const String &p_fqcn) {
 	singleton->static_gdscript_cache.erase(p_fqcn);
 }
 
+void GDScriptCache::invalidate_analysis() {
+	if (singleton == nullptr) {
+		return;
+	}
+
+	Vector<String> parser_paths;
+	{
+		MutexLock lock(singleton->mutex);
+		parser_paths.resize(singleton->parser_map.size());
+		int index = 0;
+		for (const KeyValue<String, GDScriptParserRef *> &E : singleton->parser_map) {
+			parser_paths.write[index++] = E.key;
+		}
+	}
+
+	// remove_parser() abandons the entry and recurses into inverse dependencies, so it must run
+	// without the lock held (it re-acquires it) and tolerates paths already removed by a prior
+	// recursive call.
+	for (const String &path : parser_paths) {
+		remove_parser(path);
+	}
+
+	MutexLock lock(singleton->mutex);
+	// Drop the analyzed-script artifacts so a subsequent load rebuilds them under the new settings.
+	// Source overrides are intentionally preserved: an in-progress edit's buffer must outlive a
+	// settings flip so the re-analysis still sees the unsaved source.
+	singleton->shallow_gdscript_cache.clear();
+	singleton->full_gdscript_cache.clear();
+	singleton->static_gdscript_cache.clear();
+}
+
 void GDScriptCache::clear() {
 	if (singleton == nullptr) {
 		return;

@@ -1815,6 +1815,12 @@ public:
 
 #ifdef DEBUG_ENABLED
 	static void update_project_settings();
+	// Invoked on project-settings changes: if either strict analysis flag
+	// (debug/gdscript/analysis/strict_null_checks / strict_dynamic_checks) changed since the last
+	// call, drops the GDScript cache's built artifacts so already-analyzed scripts are re-reported
+	// under the new flags within the same session. Returns true iff it detected a change and
+	// invalidated. Override-aware to match what GDScriptAnalyzer actually reads.
+	static bool invalidate_analysis_on_strict_settings_change();
 	// Global toggle for warning collection. Used by tests to isolate analyzer-error
 	// checks from warning state that other test cases enable globally.
 	static bool is_ignoring_warnings() { return is_project_ignoring_warnings; }
