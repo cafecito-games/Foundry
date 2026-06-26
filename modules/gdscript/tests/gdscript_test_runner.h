@@ -126,7 +126,9 @@ class GDScriptTestRunner {
 public:
 	static StringName test_function_name;
 
-	static void handle_cmdline();
+	// Registered as the `--gdscript-generate-tests` test command so it runs
+	// under the `--test` setup/teardown and the process can shut down cleanly.
+	static void generate_outputs_for_cmdline();
 	int run_tests();
 	bool generate_outputs();
 

@@ -39,6 +39,7 @@
 #include "core/config/project_settings.h"
 #include "core/core_globals.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
 #include "core/os/os.h"
 #include "core/string/string_builder.h"
@@ -405,6 +406,22 @@ static bool generate_class_index_recursive(const String &p_dir) {
 	return true;
 }
 
+// Walk up from `p_dir` to the nearest ancestor containing `project.godot`,
+// falling back to `p_dir` itself if none is found.
+static String find_test_project_root(const String &p_dir) {
+	String current = p_dir;
+	while (true) {
+		if (FileAccess::exists(current.path_join("project.godot"))) {
+			return current;
+		}
+		const String parent = current.get_base_dir();
+		if (parent.is_empty() || parent == current) {
+			return p_dir;
+		}
+		current = parent;
+	}
+}
+
 bool GDScriptTestRunner::generate_class_index() {
 	Error err = OK;
 	Ref<DirAccess> dir(DirAccess::open(source_dir, &err));
@@ -412,7 +429,13 @@ bool GDScriptTestRunner::generate_class_index() {
 	ERR_FAIL_COND_V_MSG(err != OK, false, "Could not open specified test directory.");
 
 	source_dir = dir->get_current_dir() + "/"; // Make it absolute path.
-	return generate_class_index_recursive(dir->get_current_dir());
+
+	// Global classes (`class_name`) are project-global: a fixture in any
+	// subdirectory may reference one declared elsewhere in the test project
+	// (e.g. `Utils` from `utils.notest.gd` at the scripts root). Index from the
+	// project root so generating a subdirectory's outputs still resolves classes
+	// declared outside it.
+	return generate_class_index_recursive(find_test_project_root(dir->get_current_dir()));
 }
 
 GDScriptTest::GDScriptTest(const String &p_source_path, const String &p_output_path, const String &p_base_dir) {
@@ -423,25 +446,25 @@ GDScriptTest::GDScriptTest(const String &p_source_path, const String &p_output_p
 	_error_handler.errfunc = error_handler;
 }
 
-void GDScriptTestRunner::handle_cmdline() {
+void GDScriptTestRunner::generate_outputs_for_cmdline() {
 	List<String> cmdline_args = OS::get_singleton()->get_cmdline_args();
 
+	String path = "modules/gdscript/tests/scripts";
 	for (List<String>::Element *E = cmdline_args.front(); E; E = E->next()) {
-		String &cmd = E->get();
-		if (cmd == "--gdscript-generate-tests") {
-			String path;
+		if (E->get() == "--gdscript-generate-tests") {
 			if (E->next()) {
 				path = E->next()->get();
-			} else {
-				path = "modules/gdscript/tests/scripts";
 			}
-
-			GDScriptTestRunner runner(path, false, cmdline_args.find("--print-filenames") != nullptr);
-
-			bool completed = runner.generate_outputs();
-			int failed = completed ? 0 : -1;
-			exit(failed);
+			break;
 		}
+	}
+
+	// This runs as a `--test` command, so the script language is not initialized
+	// yet; have the runner set it up (and tear it down) itself.
+	GDScriptTestRunner runner(path, true, cmdline_args.find("--print-filenames") != nullptr);
+
+	if (!runner.generate_outputs()) {
+		OS::get_singleton()->set_exit_code(EXIT_FAILURE);
 	}
 }
 

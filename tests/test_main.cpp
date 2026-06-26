@@ -279,7 +279,9 @@ int test_main(int argc, char *argv[]) {
 			Error err = cleanup_test_temp_path();
 			delete test_commands;
 			ERR_FAIL_COND_V_MSG(err != OK, 1, "Failed to clean test temp path");
-			return 0;
+			// Honor an exit code set by the command (e.g. a generator failure),
+			// since this return value becomes the process exit code.
+			return OS::get_singleton()->get_exit_code();
 		}
 	}
 	// Doctest runner.
