@@ -61,12 +61,14 @@ enum class Status {
 // Raw inputs gathered from the environment, passed to evaluate() so the
 // decision is a pure function of observable facts.
 struct WorkingTreeState {
-	// Whether a `.git` directory or file (worktree/submodule pointer) exists at
-	// the project root.
-	bool has_git_metadata = false;
-	// Whether a git executable could be located and run.
+	// Whether a git executable could be located and run at all.
 	bool git_available = false;
-	// Exit code of `git status --porcelain` (only meaningful when git ran).
+	// Whether the project path is inside a git working tree (the result of
+	// `git rev-parse --is-inside-work-tree`). This correctly recognizes a
+	// project nested in a subdirectory of a repository, not just a repo root.
+	bool inside_work_tree = false;
+	// Exit code of `git status --porcelain` (only meaningful when git ran and
+	// the project is inside a work tree).
 	int git_status_exit_code = 0;
 	// Output of `git status --porcelain` (only meaningful when git ran).
 	String git_status_output;

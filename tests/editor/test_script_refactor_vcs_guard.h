@@ -46,8 +46,8 @@ using namespace ScriptRefactorVCSGuard;
 
 TEST_CASE("[Editor][ScriptRefactorVCSGuard] Clean tracked tree is safe") {
 	WorkingTreeState state;
-	state.has_git_metadata = true;
 	state.git_available = true;
+	state.inside_work_tree = true;
 	state.git_status_exit_code = 0;
 	state.git_status_output = "";
 
@@ -59,8 +59,8 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] Clean tracked tree is safe") {
 
 TEST_CASE("[Editor][ScriptRefactorVCSGuard] Clean tree ignores trailing whitespace output") {
 	WorkingTreeState state;
-	state.has_git_metadata = true;
 	state.git_available = true;
+	state.inside_work_tree = true;
 	state.git_status_exit_code = 0;
 	state.git_status_output = "\n";
 
@@ -71,7 +71,8 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] Clean tree ignores trailing whitespa
 
 TEST_CASE("[Editor][ScriptRefactorVCSGuard] Unversioned project warns") {
 	WorkingTreeState state;
-	state.has_git_metadata = false;
+	state.git_available = true;
+	state.inside_work_tree = false;
 
 	const Result result = evaluate(state);
 	CHECK_EQ(result.status, Status::UNVERSIONED);
@@ -81,8 +82,8 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] Unversioned project warns") {
 
 TEST_CASE("[Editor][ScriptRefactorVCSGuard] Dirty working tree warns") {
 	WorkingTreeState state;
-	state.has_git_metadata = true;
 	state.git_available = true;
+	state.inside_work_tree = true;
 	state.git_status_exit_code = 0;
 	state.git_status_output = " M player.gd\n?? new_file.gd\n";
 
@@ -92,9 +93,8 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] Dirty working tree warns") {
 	CHECK_FALSE(result.message.is_empty());
 }
 
-TEST_CASE("[Editor][ScriptRefactorVCSGuard] Git metadata present but git unavailable is unknown") {
+TEST_CASE("[Editor][ScriptRefactorVCSGuard] Git unavailable is unknown") {
 	WorkingTreeState state;
-	state.has_git_metadata = true;
 	state.git_available = false;
 
 	const Result result = evaluate(state);
@@ -103,10 +103,10 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] Git metadata present but git unavail
 	CHECK_FALSE(result.message.is_empty());
 }
 
-TEST_CASE("[Editor][ScriptRefactorVCSGuard] Non-zero git exit code is unknown") {
+TEST_CASE("[Editor][ScriptRefactorVCSGuard] Non-zero git status exit code is unknown") {
 	WorkingTreeState state;
-	state.has_git_metadata = true;
 	state.git_available = true;
+	state.inside_work_tree = true;
 	state.git_status_exit_code = 128;
 	state.git_status_output = "fatal: not a git repository";
 
@@ -115,8 +115,24 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] Non-zero git exit code is unknown") 
 	CHECK(result.should_warn());
 }
 
-TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project flags a directory without git metadata") {
-	const String dir = TestUtils::get_temp_path("vcs_guard_unversioned_" + itos(OS::get_singleton()->get_ticks_usec()));
+// Whether a usable `git` binary is on PATH. inspect_project() integration tests
+// only assert specific statuses when git can actually be run; otherwise every
+// path collapses to UNKNOWN and the assertions would not be meaningful.
+static bool git_is_available() {
+	List<String> args;
+	args.push_back("--version");
+	int exit_code = -1;
+	const Error err = OS::get_singleton()->execute("git", args, nullptr, &exit_code, true);
+	return err == OK && exit_code == 0;
+}
+
+TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project flags a directory outside any repository") {
+	if (!git_is_available()) {
+		return;
+	}
+	// Use the system temp root, which is not a git repository, to avoid the test
+	// runner's own checkout being picked up by rev-parse's upward walk.
+	const String dir = OS::get_singleton()->get_cache_path().path_join("vcs_guard_unversioned_" + itos(OS::get_singleton()->get_ticks_usec()));
 	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(dir), OK);
 
 	const Result result = inspect_project(dir);
@@ -126,29 +142,64 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project flags a directory wi
 	DirAccess::remove_absolute(dir);
 }
 
-TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project detects a git worktree-style .git file") {
-	const String dir = TestUtils::get_temp_path("vcs_guard_gitfile_" + itos(OS::get_singleton()->get_ticks_usec()));
+TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project detects a real git working tree and its dirty state") {
+	if (!git_is_available()) {
+		return;
+	}
+	const String dir = OS::get_singleton()->get_cache_path().path_join("vcs_guard_repo_" + itos(OS::get_singleton()->get_ticks_usec()));
 	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(dir), OK);
 
-	// A `.git` *file* (as used by linked worktrees/submodules) counts as
-	// version-control metadata even though it is not a directory.
-	const String git_file = dir.path_join(".git");
+	auto run_git_in = [&dir](const Vector<String> &p_args) {
+		List<String> args;
+		args.push_back("-C");
+		args.push_back(dir);
+		for (const String &arg : p_args) {
+			args.push_back(arg);
+		}
+		int exit_code = -1;
+		const Error err = OS::get_singleton()->execute("git", args, nullptr, &exit_code, true);
+		return err == OK && exit_code == 0;
+	};
+
+	REQUIRE(run_git_in({ "init" }));
+	REQUIRE(run_git_in({ "config", "user.email", "test@example.com" }));
+	REQUIRE(run_git_in({ "config", "user.name", "Test" }));
+
+	// Empty new repo: nothing committed, nothing untracked -> clean working tree.
 	{
-		Error err = OK;
-		Ref<FileAccess> file = FileAccess::open(git_file, FileAccess::WRITE, &err);
-		REQUIRE_EQ(err, OK);
-		REQUIRE(file.is_valid());
-		CHECK(file->store_string("gitdir: /somewhere/else\n"));
-		file->close();
+		const Result result = inspect_project(dir);
+		CHECK_EQ(result.status, Status::SAFE);
 	}
 
-	// git is not actually run against a real repo here; without a working repo
-	// `git status` fails, so the result is UNKNOWN rather than UNVERSIONED. The
-	// key assertion is that metadata presence is detected (not UNVERSIONED).
-	const Result result = inspect_project(dir);
-	CHECK_NE(result.status, Status::UNVERSIONED);
+	// Add an untracked file -> dirty.
+	{
+		const String path = dir.path_join("player.gd");
+		Error err = OK;
+		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE, &err);
+		REQUIRE_EQ(err, OK);
+		REQUIRE(file.is_valid());
+		CHECK(file->store_string("var speed := 10\n"));
+		file->close();
 
-	DirAccess::remove_absolute(git_file);
+		const Result result = inspect_project(dir);
+		CHECK_EQ(result.status, Status::DIRTY);
+		CHECK(result.should_warn());
+	}
+
+	// A project in a *subdirectory* of the repo is still recognized as versioned
+	// (regression guard for the monorepo/nested-project false negative).
+	{
+		const String sub = dir.path_join("game");
+		REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(sub), OK);
+		const Result result = inspect_project(sub);
+		CHECK_NE(result.status, Status::UNVERSIONED);
+	}
+
+	// Best-effort recursive cleanup of the throwaway repository.
+	Ref<DirAccess> cleanup = DirAccess::open(dir);
+	if (cleanup.is_valid()) {
+		cleanup->erase_contents_recursive();
+	}
 	DirAccess::remove_absolute(dir);
 }
 

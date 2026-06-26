@@ -33,8 +33,6 @@
 #ifdef TOOLS_ENABLED
 
 #include "core/config/project_settings.h"
-#include "core/io/dir_access.h"
-#include "core/io/file_access.h"
 #include "core/os/os.h"
 
 namespace ScriptRefactorVCSGuard {
@@ -42,13 +40,19 @@ namespace ScriptRefactorVCSGuard {
 Result evaluate(const WorkingTreeState &p_state) {
 	Result result;
 
-	if (!p_state.has_git_metadata) {
+	if (!p_state.git_available) {
+		result.status = Status::UNKNOWN;
+		result.message = TTR("Could not check the version-control status of this project because git is not available. Make sure your working tree is committed or backed up before applying the migration.");
+		return result;
+	}
+
+	if (!p_state.inside_work_tree) {
 		result.status = Status::UNVERSIONED;
 		result.message = TTR("This project is not under version control. Applying the migration overwrites your scripts in place; undo is only available until you close the editor. Back up or initialize version control before continuing.");
 		return result;
 	}
 
-	if (!p_state.git_available || p_state.git_status_exit_code != 0) {
+	if (p_state.git_status_exit_code != 0) {
 		result.status = Status::UNKNOWN;
 		result.message = TTR("Could not check the version-control status of this project. Make sure your working tree is committed or backed up before applying the migration.");
 		return result;
@@ -68,19 +72,16 @@ Result evaluate(const WorkingTreeState &p_state) {
 
 namespace {
 
-bool has_git_metadata(const String &p_project_path) {
-	const String git_path = p_project_path.path_join(".git");
-	// A `.git` entry is a directory in a normal clone and a regular file in a
-	// linked worktree or submodule, so accept either.
-	return DirAccess::exists(git_path) || FileAccess::exists(git_path);
-}
-
-bool run_git_status(const String &p_project_path, int &r_exit_code, String &r_output) {
+// Runs `git -C <project> <args...>`. Returns false if git could not be launched
+// at all (not installed / not on PATH), in which case exit code and output are
+// untouched. A successful launch with a non-zero exit code still returns true.
+bool run_git(const String &p_project_path, const Vector<String> &p_args, int &r_exit_code, String &r_output) {
 	List<String> arguments;
 	arguments.push_back("-C");
 	arguments.push_back(p_project_path);
-	arguments.push_back("status");
-	arguments.push_back("--porcelain");
+	for (const String &arg : p_args) {
+		arguments.push_back(arg);
+	}
 
 	int exit_code = 0;
 	String output;
@@ -104,17 +105,37 @@ Result inspect_project(const String &p_project_path) {
 	project_path = project_path.trim_suffix("/");
 
 	WorkingTreeState state;
-	state.has_git_metadata = has_git_metadata(project_path);
 
-	if (state.has_git_metadata) {
+	// `git rev-parse --is-inside-work-tree` walks up from the project directory,
+	// so a project nested anywhere inside a repository is recognized as versioned
+	// (not just a directory containing `.git`). It prints "true" and exits 0 from
+	// inside a work tree, and exits non-zero when outside any repository.
+	{
+		Vector<String> args;
+		args.push_back("rev-parse");
+		args.push_back("--is-inside-work-tree");
 		int exit_code = 0;
 		String output;
-		if (run_git_status(project_path, exit_code, output)) {
-			state.git_available = true;
+		if (!run_git(project_path, args, exit_code, output)) {
+			// git is not installed / not runnable; cannot determine anything.
+			return evaluate(state);
+		}
+		state.git_available = true;
+		state.inside_work_tree = (exit_code == 0) && (output.strip_edges() == "true");
+	}
+
+	if (state.inside_work_tree) {
+		Vector<String> args;
+		args.push_back("status");
+		args.push_back("--porcelain");
+		int exit_code = 0;
+		String output;
+		if (run_git(project_path, args, exit_code, output)) {
 			state.git_status_exit_code = exit_code;
 			state.git_status_output = output;
 		} else {
-			state.git_available = false;
+			// rev-parse ran but status could not: treat as indeterminate.
+			state.git_status_exit_code = -1;
 		}
 	}
 

@@ -38,12 +38,23 @@
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
 
+#include "editor/script/script_refactor_vcs_guard.h"
+
 // Options for a full migration run: how the project is enumerated (scan stage) and how
 // annotations are inferred and verified (fixpoint stage). Defaults match the safe-by-default
 // stance of the wizard: third-party code is excluded and strict modes stay off.
 struct MigrationDriverOptions {
 	ProjectScanOptions scan;
 	FixpointInferenceOptions inference;
+
+	// Before writing any edits, inspect the project's version-control state and
+	// refuse to overwrite an unversioned, dirty, or indeterminate working tree.
+	// The migration applies edits in place across many files, so a clean commit
+	// or backup is the user's only reliable way to revert; on by default.
+	bool enforce_vcs_safety_guard = true;
+	// Set once the user has seen the guard's warning and chosen to proceed anyway.
+	// When true the guard result is still reported but does not block the run.
+	bool acknowledge_vcs_warning = false;
 };
 
 // The combined report of a single migration run, joining the scan stage's honest account of
@@ -54,6 +65,13 @@ struct MigrationDriverResult {
 	// annotations were applied. Consult changed_files and skipped for actual results.
 	bool ok = false;
 	String error_message; // Set only on a fatal, no-op failure (unreadable root or file).
+
+	// Version-control safety guard outcome, evaluated before any file is written.
+	// When enforce_vcs_safety_guard is on and the guard warns without an
+	// acknowledgment, the run is blocked (ok=false, blocked_by_vcs_guard=true)
+	// before the inference stage and no file is modified.
+	ScriptRefactorVCSGuard::Result vcs_guard;
+	bool blocked_by_vcs_guard = false;
 
 	// Scan stage.
 	Vector<String> scanned_files; // Every `.gd` the driver considered, deterministically ordered.

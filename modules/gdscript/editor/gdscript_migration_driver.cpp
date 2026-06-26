@@ -32,6 +32,8 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "core/config/project_settings.h"
+
 MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const MigrationDriverOptions &p_options) {
 	MigrationDriverResult result;
 
@@ -50,6 +52,22 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 		result.ok = true;
 		result.converged = true;
 		return result;
+	}
+
+	// Safety guard: the inference stage overwrites scripts in place across the whole
+	// project, and that is only reliably reversible from version control. Inspect the
+	// working tree before touching any file and, unless the caller has acknowledged the
+	// warning, refuse to run over an unversioned, dirty, or indeterminate project. This
+	// resolves issue #42's second acceptance criterion.
+	if (p_options.enforce_vcs_safety_guard) {
+		// p_root may be a `res://` path or an absolute OS path; globalize_path() handles both.
+		const String project_path = ProjectSettings::get_singleton()->globalize_path(p_root);
+		result.vcs_guard = ScriptRefactorVCSGuard::inspect_project(project_path);
+		if (result.vcs_guard.should_warn() && !p_options.acknowledge_vcs_warning) {
+			result.blocked_by_vcs_guard = true;
+			result.error_message = result.vcs_guard.message;
+			return result;
+		}
 	}
 
 	// Stage 2: drive Add Type Annotation to a fixpoint over the discovered files. Each pass

@@ -99,6 +99,15 @@ struct TemporaryProjectSubtree {
 	}
 };
 
+// Options that skip the version-control safety guard. The inference-focused tests run
+// against a `res://` subtree inside the engine's own (often dirty) checkout, so the guard
+// would otherwise block them; it has dedicated coverage in its own test cases below.
+static MigrationDriverOptions unguarded_options() {
+	MigrationDriverOptions options;
+	options.enforce_vcs_safety_guard = false;
+	return options;
+}
+
 static bool result_contains_file(const Vector<String> &p_files, const String &p_path) {
 	for (const String &file : p_files) {
 		if (file == p_path) {
@@ -140,7 +149,7 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 				"const B = preload(\"res://migration_driver_basic/chain_b.gd\")\n"
 				"var x = B.relay()\n");
 
-		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_basic");
+		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_basic", unguarded_options());
 		REQUIRE(result.ok);
 		CHECK(result.converged);
 
@@ -165,7 +174,7 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 		CHECK_EQ(summed, result.total_annotations_applied);
 
 		// Determinism / stability: a second run over the now-typed project changes nothing.
-		const MigrationDriverResult second = GDScriptMigrationDriver::run("res://migration_driver_basic");
+		const MigrationDriverResult second = GDScriptMigrationDriver::run("res://migration_driver_basic", unguarded_options());
 		REQUIRE(second.ok);
 		CHECK(second.converged);
 		CHECK_EQ(second.changed_files.size(), 0);
@@ -194,7 +203,7 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 				"\treturn 2\n");
 		const String plugin_before = FileAccess::get_file_as_string(path_plugin);
 
-		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_addons");
+		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_addons", unguarded_options());
 		REQUIRE(result.ok);
 		CHECK(result.converged);
 
@@ -236,7 +245,7 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 				"func broken( ->:\n"
 				"\tpass\n");
 
-		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_unanalyzable");
+		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_unanalyzable", unguarded_options());
 		REQUIRE(result.ok);
 
 		// The analyzable leaf is still typed despite the broken sibling.
@@ -284,7 +293,7 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 		const String provider_before = FileAccess::get_file_as_string(provider_path);
 		const String consumer_before = FileAccess::get_file_as_string(consumer_path);
 
-		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_verify");
+		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_verify", unguarded_options());
 		REQUIRE(result.ok);
 		CHECK(result.converged);
 
@@ -326,6 +335,56 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 			CHECK_FALSE(result.ok);
 			CHECK_FALSE(result.error_message.is_empty());
 			CHECK_EQ(result.changed_files.size(), 0);
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Driver's VCS safety guard blocks writes on an unsafe working tree (issue #42)") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_driver_vcs_guard");
+
+		const String path = tree.write_file("player.gd",
+				"static func value():\n"
+				"\treturn 1\n");
+		const String before = FileAccess::get_file_as_string(path);
+
+		// With the guard enabled (the default), inspect_project runs against the engine's own
+		// res:// checkout. Writing this temporary, untracked fixture makes the working tree dirty
+		// (or the tree may be unversioned/indeterminate in some environments); in every non-clean
+		// case the guard must block the run before any file is rewritten. If the checkout happens
+		// to be perfectly clean the guard returns SAFE and the run proceeds, which is also correct;
+		// the untracked fixture makes the dirty case the norm here.
+		MigrationDriverOptions guarded;
+		guarded.enforce_vcs_safety_guard = true;
+		const MigrationDriverResult blocked = GDScriptMigrationDriver::run("res://migration_driver_vcs_guard", guarded);
+
+		if (blocked.blocked_by_vcs_guard) {
+			CHECK_FALSE(blocked.ok);
+			CHECK(blocked.vcs_guard.should_warn());
+			CHECK_FALSE(blocked.error_message.is_empty());
+			// No file was modified while blocked.
+			CHECK_EQ(FileAccess::get_file_as_string(path), before);
+			CHECK_EQ(blocked.changed_files.size(), 0);
+			CHECK_EQ(blocked.total_annotations_applied, 0);
+
+			// Acknowledging the warning lets the same run proceed and apply edits.
+			MigrationDriverOptions acknowledged = guarded;
+			acknowledged.acknowledge_vcs_warning = true;
+			const MigrationDriverResult proceeded = GDScriptMigrationDriver::run("res://migration_driver_vcs_guard", acknowledged);
+			CHECK(proceeded.ok);
+			CHECK_FALSE(proceeded.blocked_by_vcs_guard);
+			CHECK(FileAccess::get_file_as_string(path).contains("static func value() -> int:"));
+		} else {
+			// Clean checkout: the guard allowed the run, which then typed the file.
+			CHECK(blocked.ok);
+			CHECK_EQ(blocked.vcs_guard.status, ScriptRefactorVCSGuard::Status::SAFE);
+			CHECK(FileAccess::get_file_as_string(path).contains("static func value() -> int:"));
 		}
 
 		memdelete(protocol);
