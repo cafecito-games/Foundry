@@ -95,9 +95,10 @@ the call site.
    missing parameter name.
 7. **Gap fill.** An omitted parameter positioned *before* the last filled
    argument slot must have a compile-time-constant default; the compiler inlines
-   that constant. If its default is a non-constant expression, it is an error.
-   Omitted *trailing* parameters are handled by the callee's existing default
-   mechanism, regardless of default kind.
+   that constant, resolved against the **statically known** callee signature (see
+   "Inlined defaults bind to the static type"). If its default is a non-constant
+   expression, it is an error. Omitted *trailing* parameters are handled by the
+   callee's existing default mechanism, regardless of default kind.
 8. **Evaluation order.** Argument *expressions* are evaluated in source
    (left-to-right written) order, matching Python, C#, and Kotlin; the parameter
    name only chooses which parameter each value *binds* to. `f(b = g(), a = h())`
@@ -136,6 +137,47 @@ Given `func g(a, b = [], c = 2)` (`b`'s default is a non-constant array literal)
 | ------------- | ----------------------------------------------------------------------- |
 | `g(0, c = 5)` | Error: cannot skip `b`; its default is not a constant expression (r. 7). |
 | `g(0, b = 5)` | OK: `c` omitted is trailing.                                            |
+
+### Inlined defaults bind to the static type
+
+A middle gap is filled by inlining the skipped parameter's default, resolved
+against the **statically resolved** callee signature — the same signature the
+call is type-checked against. When a subclass overrides the method with a
+*different* default and a base-typed receiver is dispatched at runtime to the
+override, the inlined gap still carries the **base** (static) default, while a
+trailing omission on that same receiver picks up the **override's** (runtime)
+default through the callee's default mechanism:
+
+```gdscript
+class Base:
+    func f(a: int, b: int = 10, c: int = 0) -> int: return a * 100 + b * 10 + c
+class Derived extends Base:
+    func f(a: int, b: int = 99, c: int = 0) -> int: return a * 100 + b * 10 + c
+
+var x: Base = Derived.new()
+x.f(1, c = 5)  # 205  — middle gap inlines Base's b = 10 (static type)
+x.f(1)         # 1090 — trailing omit uses Derived's b = 99 (runtime dispatch)
+```
+
+This is **intended** behavior, not a defect, and is the direct and unavoidable
+consequence of the "no ABI change / no presence bitmask" non-goal:
+
+- A non-trailing gap has no ABI-free representation other than a materialized
+  call-site value, so it must be inlined at compile time. Compile-time inlining
+  can only see the static signature.
+- A trailing omission *does* have an ABI-free representation — the existing
+  `OPCODE_JUMP_TO_DEF_ARGUMENT` callee mechanism — which is required anyway for
+  non-constant defaults and matches long-standing positional-call behavior. It
+  therefore honors the override's default.
+
+The two paths consequently diverge precisely when an override changes a constant
+default's value. Resolving the inlined default from the static type is also the
+coherent choice for a compile-time feature and mirrors C#, where an optional
+argument's default is likewise determined by the **compile-time** receiver type
+rather than its runtime type. Making the middle-gap path honor the runtime
+override would require the presence-bitmask calling convention this design rules
+out (see Follow-ups). This behavior is locked in by the runtime fixture
+`named_call_argument_middle_gap_static_default.gd`.
 
 ## Architecture
 
@@ -278,4 +320,7 @@ type/default in the completion detail is a nice-to-have.
 - **Non-constant middle-gap support** via a presence-bitmask calling convention
   (the rejected "Approach B"). Larger and runtime-affecting; only if real demand
   appears. The analyzer diagnostic and canonicalization pass are structured so
-  this restriction can be lifted in a localized way.
+  this restriction can be lifted in a localized way. The same calling convention
+  would also let a middle gap honor an override's runtime default instead of the
+  static-type default it inlines today (see "Inlined defaults bind to the static
+  type"); both are deferred together, and neither is planned absent real demand.

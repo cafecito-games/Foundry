@@ -11329,10 +11329,14 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 	// omits trailing arguments would.
 	//
 	// The inlined value is the statically resolved callee's default, matching the rest of the
-	// feature's compile-time model (the call is also type-checked against that static signature). If
-	// a subclass overrides the method with a different default, a base-typed receiver dispatched to
-	// that override still receives the static default rather than the override's; aligning this with
-	// the callee's runtime default mechanism is a separate design decision tracked as a follow-up.
+	// feature's compile-time model (the call is also type-checked against that static signature), as
+	// C# resolves optional-argument defaults from the compile-time receiver type. If a subclass
+	// overrides the method with a different default, a base-typed receiver dispatched to that override
+	// still receives the static default rather than the override's. This is intended: a non-trailing
+	// gap can only be filled without an ABI change by inlining at the call site, while a trailing
+	// omission defers to the callee's runtime default mechanism, so the two paths necessarily diverge
+	// when an override changes a constant default. Honoring the runtime override here would require the
+	// presence-bitmask calling convention the feature explicitly rules out as a non-goal.
 	for (int i = 0; i < parameter_count; i++) {
 		if (slots[i] != nullptr) {
 			continue;
