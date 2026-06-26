@@ -1,16 +1,37 @@
 # GDScript Benchmark Corpus
 
-Workloads and tooling for the GDScript performance harness. See
-`docs/superpowers/specs/2026-06-25-gdscript-performance-harness-design.md` for the
-design and `docs/superpowers/plans/2026-06-25-gdscript-performance-harness.md` for
-the plan.
+Workloads and tooling for the GDScript performance harness (`--gdscript-benchmark`).
+See `docs/superpowers/specs/2026-06-25-gdscript-performance-harness-design.md` for
+the design and `docs/superpowers/plans/2026-06-25-gdscript-performance-harness.md`
+for the plan.
 
-Each *case* is a directory holding `.gd` workloads plus a `case.cfg`. Feature
-cases are A/B pairs — `feature.gd` exercises a fork feature (generics, traits,
-proxies, validated writes) and `baseline.gd` does the same observable work in
-plain GDScript — so the timing delta isolates the feature's overhead. The runner
-discovers cases, controls warmup vs measured iteration counts, and emits a JSON
-map of `gdscript:<case>/<variant>` to microseconds via `--gdscript-benchmark`.
+## Layout
+
+Each *case* is a directory. A feature case is an A/B pair:
+
+- `feature.gd`  — uses a fork feature (generics, traits, proxies, validated writes).
+- `baseline.gd` — equivalent vanilla GDScript doing the same observable work.
+- `case.cfg`    — per-case config (see schema below).
+
+`_baseline/` is special: a single `empty_loop.gd` measuring harness overhead.
+
+## Entry convention
+
+Every workload `.gd` extends `RefCounted` and defines exactly:
+
+    func run_benchmark(iterations: int) -> void:
+        # do the measured work `iterations` times; never time internally.
+
+The runner discovers cases, controls warmup vs measured iteration counts and all
+timing, and emits a JSON map of `gdscript:<case>/<variant>` to microseconds.
+
+## case.cfg schema
+
+    [case]
+    iterations=<int>                  ; measured iterations
+    warmup=<int>                      ; discarded warmup iterations
+    overhead_threshold_percent=<int>  ; report.py flags overhead above this; -1 = none
+    note="<string>"                   ; optional
 
 ## Sampling-profiler workflow (native-frame attribution)
 
