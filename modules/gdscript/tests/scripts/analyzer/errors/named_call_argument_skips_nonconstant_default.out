@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 10: Cannot skip parameter "b" with named arguments; pass it explicitly.

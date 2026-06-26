@@ -10575,16 +10575,33 @@ bool GDScriptAnalyzer::canonicalize_named_call_arguments(GDScriptParser::CallNod
 		}
 	}
 
-	// An omitted parameter before the last filled slot would need its default inlined at the call
-	// site. That constant-default gap fill is handled separately; for now it is a compile error so
-	// the call can never be miscompiled into the wrong positional order.
+	// An omitted parameter before the last filled slot has no positional argument, so its default
+	// must be inlined at the call site to keep the canonical order correct. GDScript defaults run in
+	// the callee's scope and may reference `self`, members, or earlier parameters, so only a
+	// compile-time-constant default is safe to materialize here; anything else is a compile error.
 	for (int i = 0; i < max_filled_index; i++) {
-		if (slots[i] == nullptr) {
-			const StringName skipped_name = p_function->parameters[i]->identifier != nullptr ? p_function->parameters[i]->identifier->name : StringName();
+		if (slots[i] != nullptr) {
+			continue;
+		}
+
+		const GDScriptParser::ParameterNode *parameter = p_function->parameters[i];
+		if (parameter->initializer == nullptr || !parameter->initializer->is_constant) {
+			const StringName skipped_name = parameter->identifier != nullptr ? parameter->identifier->name : StringName();
 			push_error(vformat(R"(Cannot skip parameter "%s" with named arguments; pass it explicitly.)", skipped_name), p_call);
 			p_call->argument_names.clear();
 			return false;
 		}
+
+		// Synthesize a constant argument from the parameter's default. Marking it constant routes it
+		// through the normal constant-argument path in `validate_call_arg`, which applies the same
+		// builtin-type conversion a written literal would receive.
+		GDScriptParser::LiteralNode *constant_argument = parser->alloc_node<GDScriptParser::LiteralNode>();
+		constant_argument->value = parameter->initializer->reduced_value;
+		constant_argument->reduced = true;
+		constant_argument->is_constant = true;
+		constant_argument->reduced_value = parameter->initializer->reduced_value;
+		constant_argument->set_datatype(parameter->initializer->get_datatype());
+		slots.write[i] = constant_argument;
 	}
 
 	Vector<GDScriptParser::ExpressionNode *> canonical_arguments;
