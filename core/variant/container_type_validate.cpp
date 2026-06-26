@@ -36,6 +36,23 @@
 #include "core/variant/dictionary.h"
 #include "core/variant/variant_internal.h"
 
+// Compares a value's projected type arguments against an expected specialization. A bound (non-empty)
+// projected argument that differs from the expected one is a definite invariance violation; an unbound
+// (empty) argument carries no evidence and is left to gradual acceptance, mirroring the unspecialized-leaf
+// behavior. `p_expected` is the expected element specialization (always fully bound here).
+static bool _projected_type_arguments_conflict(const Vector<ContainerType> &p_expected, const Vector<ContainerType> &p_projected) {
+	const ContainerType unbound;
+	for (int i = 0; i < p_projected.size() && i < p_expected.size(); i++) {
+		if (p_projected[i] == unbound) {
+			continue;
+		}
+		if (p_projected[i] != p_expected[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool ContainerType::operator==(const ContainerType &p_type) const {
 	return builtin_type == p_type.builtin_type &&
 			class_name == p_type.class_name &&
@@ -229,21 +246,21 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 	}
 
 	// The expected element type is a specialized script handle (e.g. `Box[int]`). Type arguments are
-	// invariant, so a value bound to the same script but different arguments (`Box[String]`) must be
-	// rejected. This is only enforced when the value's script is exactly the expected script: the
-	// instance's reified arguments are expressed against its own type parameters, and projecting a
-	// subclass's specialization onto the expected base (e.g. `class C extends Base[String]`, or a
-	// generic `PairBox[A, B] extends Box[A]`) needs the inheritance-reification machinery tracked by
-	// epic #125 (design #324). Until that lands, a subclass value is accepted under gradual typing
-	// rather than risk a spurious rejection of a genuinely compatible value. A raw, unspecialized
-	// instance (`Box.new()`) likewise carries no conflicting argument evidence and is accepted.
-	if (!type_arguments.is_empty() && other_script == script) {
+	// invariant, so a value whose effective arguments for this base differ (`Box[String]`) must be
+	// rejected. The value's reified arguments are expressed against ITS OWN leaf type parameters, so a
+	// subclass value (`StringBox extends Box[String]`, or a generic `PairBox[A, B] extends Box[A]`) is
+	// first projected onto the expected base's parameters via the inheritance-reification table before
+	// comparison. A slot left unbound (an unspecialized generic leaf, or a raw `Box.new()`) carries no
+	// argument evidence and is accepted under gradual typing rather than risking a spurious rejection.
+	if (!type_arguments.is_empty()) {
 		ScriptInstance *instance = object->get_script_instance();
-		Vector<ContainerType> actual_type_arguments;
+		Vector<ContainerType> reified_type_arguments;
 		if (instance != nullptr) {
-			instance->get_reified_type_arguments(actual_type_arguments);
+			instance->get_reified_type_arguments(reified_type_arguments);
 		}
-		if (!actual_type_arguments.is_empty() && actual_type_arguments != type_arguments) {
+		Vector<ContainerType> projected_type_arguments;
+		if (other_script->project_type_arguments_onto_base(script, reified_type_arguments, projected_type_arguments) &&
+				_projected_type_arguments_conflict(type_arguments, projected_type_arguments)) {
 			if (p_output_errors) {
 				ContainerType expected;
 				expected.builtin_type = type;
@@ -251,7 +268,7 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 				expected.script = script;
 				expected.type_arguments = type_arguments;
 				ContainerType actual = expected;
-				actual.type_arguments = actual_type_arguments;
+				actual.type_arguments = projected_type_arguments;
 				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object specialized as '%s' into a %s of '%s'.", String(p_operation), actual.get_type_name(), String(where), expected.get_type_name()));
 			}
 			return false;
@@ -375,13 +392,25 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 		return false;
 	}
 
-	if (script == p_type.script && !type_arguments.is_empty() && type_arguments != p_type.type_arguments) {
-		// Type arguments are invariant: a `Box[int]` container can only reference another `Box[int]`
-		// container without conversion. Only enforced when both sides share the exact script, since
-		// projecting a subclass's specialization onto the expected base needs the inheritance-reification
-		// machinery tracked by epic #125 (design #324). A subclass source therefore skips this check and
-		// is accepted by reference (gradual under-rejection), rather than risking a spurious failure.
-		return false;
+	// Type arguments are invariant: a `Box[int]` container can only reference another `Box[int]`
+	// container without conversion.
+	if (!type_arguments.is_empty()) {
+		if (script == p_type.script) {
+			// Same script: arguments are compared directly (a raw, unspecialized source is conservatively
+			// rejected here, since an `Array[Box]` may hold a differently specialized element).
+			if (type_arguments != p_type.type_arguments) {
+				return false;
+			}
+		} else if (p_type.script.is_valid()) {
+			// Subclass source (`StringBox extends Box[String]`, or generic `PairBox[A, B] extends Box[A]`):
+			// project its specialization onto this expected base's parameters before comparing. An unbound
+			// slot (unspecialized source) carries no evidence and is accepted by reference under gradual typing.
+			Vector<ContainerType> projected_type_arguments;
+			if (p_type.script->project_type_arguments_onto_base(script, p_type.type_arguments, projected_type_arguments) &&
+					_projected_type_arguments_conflict(type_arguments, projected_type_arguments)) {
+				return false;
+			}
+		}
 	}
 
 	return true;

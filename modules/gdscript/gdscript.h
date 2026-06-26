@@ -383,6 +383,7 @@ public:
 	bool is_abstract() const override { return _is_abstract; }
 	bool is_trait_type() const override { return _is_trait_type; }
 	StringName get_trait_type_name() const override { return trait_type_name; }
+	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments) const override;
 	Ref<GDScript> get_base() const;
 
 	const HashMap<StringName, MemberInfo> &debug_get_member_indices() const { return member_indices; }

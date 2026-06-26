@@ -196,6 +196,16 @@ public:
 	virtual bool is_trait_type() const { return false; }
 	virtual StringName get_trait_type_name() const { return StringName(); }
 
+	// Projects a leaf type's reified type arguments onto the type parameters of `p_base`, an ancestor
+	// this script inherits from, so a subclass value can be validated against an expected specialized
+	// base element type (e.g. a `PairBox[A, B] extends Box[A]` value checked against `Array[Box[int]]`).
+	// `p_leaf_type_arguments` are the reified arguments of THIS (leaf) script. Returns false when no
+	// projection is available (not a generics-aware script, or `p_base` is not a recorded ancestor); the
+	// caller then falls back to gradual acceptance. On success `r_type_arguments` holds one entry per
+	// `p_base` type parameter — an entry may be an empty ContainerType for a parameter still open at an
+	// unspecialized leaf, which carries no argument evidence.
+	virtual bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments) const { return false; }
+
 	virtual bool get_property_default_value(const StringName &p_property, Variant &r_value) const = 0;
 
 	virtual void update_exports() {} //editor tool

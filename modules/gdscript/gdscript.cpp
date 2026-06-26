@@ -1240,6 +1240,45 @@ bool GDScript::inherits_script(const Ref<Script> &p_script) const {
 	return false;
 }
 
+bool GDScript::project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments) const {
+	r_type_arguments.clear();
+
+	const GDScript *base_script = Object::cast_to<GDScript>(p_base.ptr());
+	if (base_script == nullptr) {
+		return false;
+	}
+
+	// The leaf script holds a per-ancestor table mapping each ancestor's type parameter to how it
+	// resolves for this leaf: FIXED to a concrete argument by an `extends Base[X]` specialization in
+	// the chain, or OPEN against the leaf's own reified arguments (see
+	// docs/superpowers/specs/2026-06-25-reified-type-argument-bindings-design.md). Projecting through it
+	// yields the leaf's effective arguments for `p_base`'s parameters, so a subclass value validates
+	// invariantly against an expected specialized base element type.
+	const Vector<TypeArgumentBinding> *bindings = type_parameter_bindings_by_ancestor.getptr(const_cast<GDScript *>(base_script));
+	if (bindings == nullptr) {
+		return false;
+	}
+
+	Vector<ContainerType> projected;
+	projected.resize(bindings->size());
+	for (int i = 0; i < bindings->size(); i++) {
+		const TypeArgumentBinding &binding = (*bindings)[i];
+		if (binding.kind == TypeArgumentBinding::FIXED) {
+			// A temporary ContainerType is materialized here at validation time rather than persisted, so
+			// a local-class argument is not held by a strong Ref in member metadata (avoiding reference cycles).
+			projected.write[i] = binding.fixed.to_container_type();
+		} else if (binding.kind == TypeArgumentBinding::OPEN &&
+				binding.leaf_ordinal >= 0 && binding.leaf_ordinal < p_leaf_type_arguments.size()) {
+			projected.write[i] = p_leaf_type_arguments[binding.leaf_ordinal];
+		}
+		// Otherwise the parameter is still open at an unspecialized leaf: leave a default (empty)
+		// ContainerType so the caller treats the slot as carrying no argument evidence.
+	}
+
+	r_type_arguments = projected;
+	return true;
+}
+
 GDScript *GDScript::find_class(const String &p_qualified_name) {
 	String first = p_qualified_name.get_slice("::", 0);
 
