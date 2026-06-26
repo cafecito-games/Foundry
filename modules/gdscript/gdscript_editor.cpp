@@ -948,6 +948,186 @@ static void _get_directory_contents(EditorFileSystemDirectory *p_dir, HashMap<St
 	}
 }
 
+struct GDScriptVisibleAnnotation {
+	String short_name;
+	String qualified_name;
+	String path;
+	// Declaration node owned by the file's parser. For external declarations, the corresponding
+	// `GDScriptParserRef` must be kept alive by the caller while this pointer is read.
+	const GDScriptParser::AnnotationDeclarationNode *declaration = nullptr;
+};
+
+// Collect the custom annotation declarations visible from `p_parser`'s root: declarations in the
+// same file, declarations in the same namespace, and declarations in explicitly imported
+// namespaces. Same-file declarations take precedence over indexed ones sharing a short name,
+// mirroring `GDScriptAnalyzer::resolve_custom_annotation_declaration`. External declarations are
+// loaded through the dependency parser cache; the caller must keep `r_parser_refs` alive while the
+// returned declaration pointers are read.
+static void _collect_visible_custom_annotations(GDScriptParser &p_parser, const String &p_path, List<Ref<GDScriptParserRef>> &r_parser_refs, HashMap<StringName, GDScriptVisibleAnnotation> &r_annotations) {
+	const GDScriptParser::ClassNode *head = p_parser.get_tree();
+	if (head == nullptr) {
+		return;
+	}
+
+	// Count same-file declarations per short name so a duplicated canonical identity (which the
+	// analyzer rejects as ambiguous) is offered for completion but does not bind to an arbitrary one.
+	HashMap<StringName, int> local_counts;
+	for (const GDScriptParser::AnnotationDeclarationNode *declaration : head->annotation_declarations) {
+		if (declaration->identifier != nullptr && !declaration->qualified_name.is_empty()) {
+			local_counts[declaration->identifier->name]++;
+		}
+	}
+	for (const GDScriptParser::AnnotationDeclarationNode *declaration : head->annotation_declarations) {
+		if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
+			continue;
+		}
+		GDScriptVisibleAnnotation visible;
+		visible.short_name = declaration->identifier->name;
+		visible.qualified_name = declaration->qualified_name;
+		visible.path = p_path;
+		visible.declaration = local_counts[declaration->identifier->name] > 1 ? nullptr : declaration;
+		r_annotations[declaration->identifier->name] = visible;
+	}
+
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	if (language == nullptr) {
+		return;
+	}
+
+	const String current_namespace = head->namespace_name;
+
+	// Gather short names visible through the current namespace or explicit imports, excluding the
+	// same-file declarations already registered above (which take precedence).
+	HashSet<String> indexed_short_names;
+	List<StringName> identities;
+	language->get_global_annotation_list(&identities);
+	for (const StringName &identity : identities) {
+		const String qualified_name = identity;
+		const int dot = qualified_name.rfind_char('.');
+		const String declaration_namespace = dot < 0 ? String() : qualified_name.substr(0, dot);
+		const String short_name = dot < 0 ? qualified_name : qualified_name.substr(dot + 1);
+		if (r_annotations.has(StringName(short_name))) {
+			continue;
+		}
+		if (declaration_namespace == current_namespace || head->imports.has(declaration_namespace)) {
+			indexed_short_names.insert(short_name);
+		}
+	}
+
+	for (const String &short_name : indexed_short_names) {
+		// Mirror `GDScriptAnalyzer::resolve_custom_annotation_declaration`: the current namespace
+		// takes precedence over imports, and a short name provided by two or more imports (or by a
+		// canonical identity declared in multiple files) is ambiguous. An ambiguous or unresolved
+		// name is still offered for completion, but without a declaration it does not bind for
+		// argument hints or go-to-definition (matching how the script itself fails to resolve it).
+		String resolved_identity;
+
+		const String own_identity = current_namespace.is_empty() ? short_name : current_namespace + "." + short_name;
+		if (language->is_global_annotation(StringName(own_identity))) {
+			if (!language->is_duplicated_global_annotation(StringName(own_identity))) {
+				resolved_identity = own_identity;
+			}
+		} else {
+			LocalVector<String> checked_imports;
+			Vector<String> matching_identities;
+			for (const String &import : head->imports) {
+				if (checked_imports.has(import)) {
+					continue;
+				}
+				checked_imports.push_back(import);
+				const String identity = import + "." + short_name;
+				if (language->is_global_annotation(StringName(identity))) {
+					matching_identities.push_back(identity);
+				}
+			}
+			if (matching_identities.size() == 1 && !language->is_duplicated_global_annotation(StringName(matching_identities[0]))) {
+				resolved_identity = matching_identities[0];
+			}
+		}
+
+		GDScriptVisibleAnnotation entry;
+		entry.short_name = short_name;
+
+		if (!resolved_identity.is_empty()) {
+			const String declaration_path = language->get_global_annotation_path(StringName(resolved_identity));
+			if (!declaration_path.is_empty() && !GDScript::is_canonically_equal_paths(declaration_path, p_path)) {
+				entry.qualified_name = resolved_identity;
+				entry.path = declaration_path;
+
+				// Load the declaring file so its signature (parameters, defaults, variadic) is available.
+				Ref<GDScriptParserRef> ref = p_parser.get_depended_parser_for(declaration_path);
+				if (ref.is_valid() && ref->raise_status(GDScriptParserRef::INTERFACE_SOLVED) == OK) {
+					GDScriptParser *external_parser = ref->get_parser();
+					if (external_parser != nullptr && external_parser->get_tree() != nullptr) {
+						// A same-file duplicate identity in the declaring file is ambiguous; do not bind.
+						const GDScriptParser::AnnotationDeclarationNode *found = nullptr;
+						for (const GDScriptParser::AnnotationDeclarationNode *declaration : external_parser->get_tree()->annotation_declarations) {
+							if (declaration->qualified_name == resolved_identity) {
+								if (found != nullptr) {
+									found = nullptr;
+									break;
+								}
+								found = declaration;
+							}
+						}
+						entry.declaration = found;
+					}
+					r_parser_refs.push_back(ref);
+				}
+			}
+		}
+
+		r_annotations[StringName(short_name)] = entry;
+	}
+}
+
+// Render an argument hint for a custom annotation usage from its declaration signature, matching
+// the format used for built-in annotations and functions: parameter names, types, constant
+// defaults, and a final variadic parameter. `p_arg_idx` is wrapped in sentinels to emphasize the
+// argument currently being edited.
+static String _make_annotation_arguments_hint(const GDScriptParser::AnnotationDeclarationNode *p_declaration, int p_arg_idx) {
+	String arghint = String(p_declaration->identifier->name) + "(";
+
+	const int fixed_count = p_declaration->parameters.size();
+	for (int i = 0; i < fixed_count; i++) {
+		if (i > 0) {
+			arghint += ", ";
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+		const GDScriptParser::ParameterNode *parameter = p_declaration->parameters[i];
+		const GDScriptParser::DataType type = parameter->get_datatype();
+		arghint += String(parameter->identifier->name) + ": " + (type.is_hard_type() ? type.to_string() : String("Variant"));
+		if (parameter->initializer != nullptr) {
+			arghint += " = ";
+			arghint += parameter->initializer->is_constant ? parameter->initializer->reduced_value.get_construct_string() : String("<unknown>");
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	if (p_declaration->is_variadic()) {
+		if (fixed_count > 0) {
+			arghint += ", ";
+		}
+		const bool emphasize = p_arg_idx >= fixed_count;
+		if (emphasize) {
+			arghint += String::chr(0xFFFF);
+		}
+		const GDScriptParser::ParameterNode *rest = p_declaration->rest_parameter;
+		const GDScriptParser::DataType type = rest->get_datatype();
+		arghint += "..." + String(rest->identifier->name) + ": " + (type.is_hard_type() ? type.to_string() : String("Variant"));
+		if (emphasize) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	arghint += ")";
+	return arghint;
+}
+
 static void _find_annotation_arguments(const GDScriptParser::AnnotationNode *p_annotation, int p_argument, const String p_quote_style, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, String &r_arghint) {
 	ERR_FAIL_NULL(p_annotation);
 
@@ -3973,6 +4153,19 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				}
 				options.insert(option.display, option);
 			}
+
+			// Custom annotations visible through the current namespace or explicit imports.
+			List<Ref<GDScriptParserRef>> annotation_parser_refs;
+			HashMap<StringName, GDScriptVisibleAnnotation> visible_annotations;
+			_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
+			for (const KeyValue<StringName, GDScriptVisibleAnnotation> &E : visible_annotations) {
+				ScriptLanguage::CodeCompletionOption option(E.value.short_name, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+				const GDScriptParser::AnnotationDeclarationNode *declaration = E.value.declaration;
+				if (declaration != nullptr && (declaration->parameters.size() > 0 || declaration->is_variadic())) {
+					option.insert_text += "(";
+				}
+				options.insert(option.display, option);
+			}
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_ANNOTATION_ARGUMENTS: {
@@ -3980,7 +4173,18 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				break;
 			}
 			const GDScriptParser::AnnotationNode *annotation = static_cast<const GDScriptParser::AnnotationNode *>(completion_context.node);
-			_find_annotation_arguments(annotation, completion_context.current_argument, quote_style, options, r_call_hint);
+			if (annotation->info != nullptr) {
+				_find_annotation_arguments(annotation, completion_context.current_argument, quote_style, options, r_call_hint);
+			} else {
+				// Custom annotation usage: resolve the declaration to build the argument hint.
+				List<Ref<GDScriptParserRef>> annotation_parser_refs;
+				HashMap<StringName, GDScriptVisibleAnnotation> visible_annotations;
+				_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
+				const String short_name = String(annotation->name).trim_prefix("@");
+				if (HashMap<StringName, GDScriptVisibleAnnotation>::ConstIterator E = visible_annotations.find(short_name); E && E->value.declaration != nullptr) {
+					r_call_hint = _make_annotation_arguments_hint(E->value.declaration, completion_context.current_argument);
+				}
+			}
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_BUILT_IN_TYPE_CONSTANT_OR_STATIC_METHOD: {
@@ -5035,7 +5239,31 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 }
 
 ::Error GDScriptLanguage::lookup_code(const String &p_code, const String &p_symbol, const String &p_path, Object *p_owner, LookupResult &r_result) {
-	// Before parsing, try the usual stuff.
+	GDScriptParser parser;
+	parser.parse(p_code, p_path, true);
+
+	GDScriptParser::CompletionContext context = parser.get_completion_context();
+	context.base = p_owner;
+
+	// A custom annotation usage resolves to its declaration before any global-symbol shortcut.
+	// Custom annotation names live in a separate symbol space and may legitimately collide with a
+	// class, builtin type, constant, or utility-function name (e.g. `@Node`, `@print`); the global
+	// shortcuts below would otherwise navigate to the colliding symbol instead of the declaration.
+	if (context.type == GDScriptParser::COMPLETION_ANNOTATION && context.node != nullptr && context.node->type == GDScriptParser::Node::ANNOTATION && static_cast<const GDScriptParser::AnnotationNode *>(context.node)->info == nullptr) {
+		List<Ref<GDScriptParserRef>> annotation_parser_refs;
+		HashMap<StringName, GDScriptVisibleAnnotation> visible_annotations;
+		_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
+		if (HashMap<StringName, GDScriptVisibleAnnotation>::ConstIterator E = visible_annotations.find(p_symbol); E && E->value.declaration != nullptr && E->value.declaration->identifier != nullptr) {
+			Error err = OK;
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_SCRIPT_LOCATION;
+			r_result.script = GDScriptCache::get_shallow_script(E->value.path, err);
+			r_result.script_path = E->value.path;
+			r_result.location = E->value.declaration->identifier->start_line;
+			return OK;
+		}
+	}
+
+	// Before further analysis, try the usual global symbols.
 	if (GDScriptAnalyzer::class_exists(p_symbol)) {
 		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 		r_result.class_name = p_symbol;
@@ -5060,12 +5288,6 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 		r_result.class_member = p_symbol;
 		return OK;
 	}
-
-	GDScriptParser parser;
-	parser.parse(p_code, p_path, true);
-
-	GDScriptParser::CompletionContext context = parser.get_completion_context();
-	context.base = p_owner;
 
 	// Allows class functions with the names like built-ins to be handled properly.
 	if (context.type != GDScriptParser::COMPLETION_ATTRIBUTE) {
@@ -5401,6 +5623,8 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			}
 		} break;
 		case GDScriptParser::COMPLETION_ANNOTATION: {
+			// Custom annotation usages are resolved to their declaration earlier, before the global
+			// symbol shortcuts. Only built-in annotations remain to be handled here.
 			const String annotation_symbol = "@" + p_symbol;
 			if (parser.annotation_exists(annotation_symbol)) {
 				r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ANNOTATION;

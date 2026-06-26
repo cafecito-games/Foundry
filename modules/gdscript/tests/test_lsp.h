@@ -1051,6 +1051,40 @@ func f():
 		finish_language();
 	}
 
+	TEST_CASE("[textDocument][definition] resolves custom annotation references") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		const String uri = workspace->get_file_uri("res://lsp/annotations.gd");
+
+		assert_no_errors_in("res://lsp/annotations.gd");
+
+		const LSP::Range marker_selection = range(pos(2, 11), pos(2, 20));
+		const LSP::Range timeout_selection = range(pos(3, 11), pos(3, 21));
+		// Marker annotation usage resolves to its declaration.
+		test_resolve_symbol_at(uri, pos(5, 5), uri, "my_marker", marker_selection);
+		// Parameterized annotation usage resolves to its declaration.
+		test_resolve_symbol_at(uri, pos(6, 5), uri, "my_timeout", timeout_selection);
+
+		// An annotation-only file whose declaration is on the first line still resolves to the
+		// declaration symbol rather than the script root.
+		const String library_uri = workspace->get_file_uri("res://lsp/annotation_library.gd");
+		assert_no_errors_in("res://lsp/annotation_library.gd");
+		test_resolve_symbol_at(library_uri, pos(2, 2), library_uri, "tag", range(pos(0, 11), pos(0, 14)));
+
+		// A custom annotation whose name collides with a class resolves to the declaration, not the
+		// class, because annotation names live in a separate symbol space.
+		const String collision_uri = workspace->get_file_uri("res://lsp/annotation_collision.gd");
+		assert_no_errors_in("res://lsp/annotation_collision.gd");
+		test_resolve_symbol_at(collision_uri, pos(4, 3), collision_uri, "Node", range(pos(2, 11), pos(2, 15)));
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
 	TEST_CASE("[textDocument][rename] updates trait declarations and uses references") {
 		EditorFileSystem *efs = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *proto = initialize(root);

@@ -142,6 +142,13 @@ void ExtendGDScriptParser::update_symbols() {
 
 		for (int i = 0; i < class_symbol.children.size(); i++) {
 			const LSP::DocumentSymbol &symbol = class_symbol.children[i];
+			// Annotation declarations get a symbol for go-to-definition, but they are not class
+			// members and must not surface in member completion or `self.`-style member lookup. They
+			// are the only children emitted with `Operator` kind, so they can be skipped reliably
+			// without colliding with a method that happens to share a source line.
+			if (symbol.kind == LSP::SymbolKind::Operator) {
+				continue;
+			}
 			members.insert(symbol.name, &symbol);
 
 			// Cache level one inner classes and traits.
@@ -443,6 +450,26 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 			case ClassNode::Member::UNDEFINED:
 				break; // Unreachable.
 		}
+	}
+
+	// Custom annotation declarations are root-only and are not class members, but they need a
+	// symbol so go-to-definition can navigate `@my_annotation` usages to their declaration.
+	for (const GDScriptParser::AnnotationDeclarationNode *declaration : p_class->annotation_declarations) {
+		if (declaration->identifier == nullptr) {
+			continue;
+		}
+		LSP::DocumentSymbol symbol;
+		symbol.name = declaration->identifier->name;
+		// No dedicated LSP symbol kind exists for annotations. `Operator` is unused by any class
+		// member here, so it doubles as a marker that keeps these symbols out of the member cache.
+		symbol.kind = LSP::SymbolKind::Operator;
+		symbol.deprecated = false;
+		symbol.range = range_of_node(declaration);
+		symbol.selectionRange = range_of_node(declaration->identifier);
+		symbol.uri = uri;
+		symbol.script_path = path;
+		symbol.detail = "annotation " + String(declaration->identifier->name);
+		r_symbol.children.push_back(symbol);
 	}
 }
 
@@ -855,7 +882,14 @@ Error ExtendGDScriptParser::get_left_function_call(const LSP::Position &p_positi
 }
 
 const LSP::DocumentSymbol *ExtendGDScriptParser::get_symbol_defined_at_line(int p_line, const String &p_symbol_name) const {
-	if (p_line <= 0) {
+	// A negative line is the location-0 root sentinel (e.g. autoload singletons), which always
+	// resolves to the script root. Line 0 is a genuine first source line: it resolves to the root
+	// only for a whole-line lookup or the root class itself, so a declaration on the first line
+	// (e.g. the opening `annotation` line of an annotation-only file) resolves to its own symbol.
+	if (p_line < 0) {
+		return &class_symbol;
+	}
+	if (p_line == 0 && (p_symbol_name.is_empty() || p_symbol_name == class_symbol.name)) {
 		return &class_symbol;
 	}
 	return search_symbol_defined_at_line(p_line, class_symbol, p_symbol_name);
