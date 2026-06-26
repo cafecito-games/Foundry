@@ -103,7 +103,7 @@ struct MigrationReportOptions {
 // concrete file:line sites a human must revisit.
 enum class MigrationFollowUpCategory {
 	MULTI_LINE_DECLARATION, // A declaration whose assignment spans multiple lines, so no annotation could be placed.
-	UNTYPED_CONTAINER, // A site whose only inferable type is an untyped/unrenderable container (no element type).
+	UNRENDERABLE_TYPE, // A type was inferred but cannot be written as an explicit annotation (untyped containers, null/NIL, script or metatypes).
 	NO_INFERRED_TYPE, // A site where no concrete type could be inferred (Variant / unresolved after fixpoint).
 	STRICT_NULLABLE, // A strict_null_checks violation requiring a manual null guard or nullable annotation.
 	STRICT_VARIANT_BOUNDARY, // A strict_dynamic_checks violation requiring a manual cast or boundary type.

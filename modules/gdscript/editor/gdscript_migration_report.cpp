@@ -138,9 +138,10 @@ bool follow_up_category_for_skip_reason(const String &p_reason, MigrationFollowU
 		return true;
 	}
 	if (p_reason.contains("cannot be written as an explicit annotation")) {
-		// An inferred type with no renderable annotation -- in practice an untyped container
-		// element type, which is exactly the "untyped containers" follow-up bucket.
-		r_category = MigrationFollowUpCategory::UNTYPED_CONTAINER;
+		// A type was inferred but has no renderable annotation. The renderer emits this for
+		// untyped containers (no element type), null/NIL initializers, and script or metatypes
+		// alike, so the category covers all of them rather than claiming "container" for each.
+		r_category = MigrationFollowUpCategory::UNRENDERABLE_TYPE;
 		return true;
 	}
 	// "Cannot infer a type" and "unresolved after fixpoint" both end with no concrete type.
@@ -386,8 +387,8 @@ String MigrationFollowUpEntry::category_name(MigrationFollowUpCategory p_categor
 	switch (p_category) {
 		case MigrationFollowUpCategory::MULTI_LINE_DECLARATION:
 			return "Multi-line declarations";
-		case MigrationFollowUpCategory::UNTYPED_CONTAINER:
-			return "Untyped containers";
+		case MigrationFollowUpCategory::UNRENDERABLE_TYPE:
+			return "Unrenderable inferred type (untyped containers, null, script types)";
 		case MigrationFollowUpCategory::NO_INFERRED_TYPE:
 			return "No inferable type";
 		case MigrationFollowUpCategory::STRICT_NULLABLE:
@@ -444,7 +445,7 @@ String MigrationReportResult::format_follow_up() const {
 	// categories in their declaration order gives a stable, deterministic section order.
 	const MigrationFollowUpCategory order[] = {
 		MigrationFollowUpCategory::MULTI_LINE_DECLARATION,
-		MigrationFollowUpCategory::UNTYPED_CONTAINER,
+		MigrationFollowUpCategory::UNRENDERABLE_TYPE,
 		MigrationFollowUpCategory::NO_INFERRED_TYPE,
 		MigrationFollowUpCategory::STRICT_NULLABLE,
 		MigrationFollowUpCategory::STRICT_VARIANT_BOUNDARY,
@@ -508,6 +509,13 @@ Error GDScriptMigrationReport::write_follow_up(const MigrationReportResult &p_re
 		return open_error != OK ? open_error : ERR_CANT_CREATE;
 	}
 	file->store_string(p_report.format_follow_up());
+	// store_string buffers through FileAccess; a short write or post-open I/O failure surfaces only
+	// via get_error(). Flush and check it so a truncated or failed write is never reported as OK.
+	file->flush();
+	const Error write_error = file->get_error();
+	if (write_error != OK) {
+		return write_error;
+	}
 	return OK;
 }
 

@@ -379,7 +379,7 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		// A mix of skip reasons that each map to a distinct follow-up category:
 		//   var typed: int = 1   -> already typed (NOT a follow-up; no work owed)
 		//   var novalue          -> no inferable type
-		//   var nullish = null   -> untyped container / unrenderable type
+		//   var nullish = null   -> unrenderable inferred type (NIL initializer)
 		const String source =
 				"var typed: int = 1\n"
 				"var novalue\n"
@@ -391,7 +391,7 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		// The already-typed site owes no manual follow-up; the other two do.
 		int no_inferred = 0;
-		int untyped_container = 0;
+		int unrenderable_type = 0;
 		bool every_entry_points_at_file = true;
 		for (const MigrationFollowUpEntry &entry : report.follow_ups) {
 			if (entry.path != path) {
@@ -401,8 +401,8 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 				case MigrationFollowUpCategory::NO_INFERRED_TYPE:
 					no_inferred++;
 					break;
-				case MigrationFollowUpCategory::UNTYPED_CONTAINER:
-					untyped_container++;
+				case MigrationFollowUpCategory::UNRENDERABLE_TYPE:
+					unrenderable_type++;
 					break;
 				default:
 					break;
@@ -412,7 +412,7 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		}
 		CHECK(every_entry_points_at_file);
 		CHECK_EQ(no_inferred, 1);
-		CHECK_EQ(untyped_container, 1);
+		CHECK_EQ(unrenderable_type, 1);
 		CHECK_EQ(report.follow_ups.size(), 2);
 
 		// No entry is the already-typed declaration.
@@ -423,7 +423,7 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		// The rendered punch-list groups by category and shows path:line.
 		const String text = report.format_follow_up();
 		CHECK(text.contains("Total follow-up sites: 2"));
-		CHECK(text.contains("Untyped containers:"));
+		CHECK(text.contains("Unrenderable inferred type"));
 		CHECK(text.contains("No inferable type:"));
 		CHECK(text.contains(vformat("%s:", path)));
 
