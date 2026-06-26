@@ -3670,6 +3670,41 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			REQUIRE(r.ok);
 			CHECK(out.contains("self.fired.emit(value as int)"));
 		}
+		SUBCASE("casts a Variant legacy emit_signal payload to the parameter type") {
+			// The legacy string-named API resolves the target signal from the name argument, so the
+			// Variant payload is a genuine emit boundary even though it flows through the generic
+			// `Object.emit_signal` vararg signature.
+			const String source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\temit_signal(\"fired\", value)\n";
+			String out;
+			// Caret on the `value` payload argument.
+			RefactorResult r = run_insert_cast(source, 2, 22, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("emit_signal(\"fired\", value as int)"));
+		}
+		SUBCASE("casts a Variant legacy emit_signal payload on a typed receiver") {
+			const String source =
+					"class Emitter:\n"
+					"\tsignal fired(amount: int)\n"
+					"func use(emitter: Emitter, value) -> void:\n"
+					"\temitter.emit_signal(\"fired\", value)\n";
+			String out;
+			// Caret on the `value` payload argument.
+			RefactorResult r = run_insert_cast(source, 3, 31, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("emitter.emit_signal(\"fired\", value as int)"));
+		}
+		SUBCASE("does not offer a cast on the legacy emit_signal name argument") {
+			// The leading name argument is a plain String literal, not a payload boundary.
+			const String source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\temit_signal(\"fired\", value)\n";
+			// Caret on the `"fired"` name argument.
+			CHECK_FALSE(insert_cast_enabled(source, 2, 13));
+		}
 		SUBCASE("casts a single argument among several") {
 			const String source =
 					"func takes(label: String, amount: int) -> void:\n"
@@ -3810,6 +3845,30 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(saw_argument);
 			CHECK(saw_return);
 			CHECK_EQ(enabled_count, 3);
+		}
+		SUBCASE("enumerates a legacy emit_signal payload boundary") {
+			RefactorContext ctx;
+			ctx.path = "user://insert_cast_emit_signal_candidates.gd";
+			ctx.source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\temit_signal(\"fired\", value)\n";
+			RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::INSERT_EXPLICIT_CAST);
+			REQUIRE(result.ok);
+
+			bool saw_payload = false;
+			for (const RefactorCandidate &candidate : result.candidates) {
+				CHECK_EQ(candidate.kind, RefactorKind::INSERT_EXPLICIT_CAST);
+				if (!candidate.enabled) {
+					continue;
+				}
+				REQUIRE_FALSE(candidate.edits.is_empty());
+				// `candidate.line` is zero-based, so the `emit_signal(...)` on source line 3 is line 2.
+				if (candidate.line == 2 && candidate.edits[0].new_text == "value as int") {
+					saw_payload = true;
+				}
+			}
+			CHECK(saw_payload);
 		}
 	}
 
