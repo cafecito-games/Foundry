@@ -3918,6 +3918,43 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			REQUIRE(r.ok);
 			CHECK(out.contains("var n: Node? = maybe()"));
 		}
+		SUBCASE("widens a covariant native boundary (Button? -> Node)") {
+			// `Button?` is assignment-compatible with `Node` apart from its nullability, so the
+			// satisfier widens the boundary to `Node?` even though the underlying types differ.
+			const String source =
+					"func maybe() -> Button?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar n: Node = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var n: Node? = maybe()"));
+		}
+		SUBCASE("widens a covariant native return boundary (Button? -> Node)") {
+			const String source =
+					"func maybe() -> Button?:\n"
+					"\treturn null\n"
+					"func use() -> Node:\n"
+					"\treturn maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 4, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func use() -> Node?:"));
+		}
+		SUBCASE("widens an implicit numeric boundary (int? -> float)") {
+			// `int?` reaches a `float` boundary via the same implicit numeric conversion the
+			// analyzer accepts for the underlying types, so widening to `float?` is the right fix.
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: float = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: float? = maybe()"));
+		}
 		SUBCASE("is disabled when the value is not nullable") {
 			const String source =
 					"func use() -> void:\n"
