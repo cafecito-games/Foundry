@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 10: Cannot assign a value of type Signal to variable "typed_event" with specified type Signal[[Callable[[int], void]]].
