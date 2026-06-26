@@ -1414,17 +1414,26 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					err_text = "Cannot resolve a type parameter without an instance.";
 					OPCODE_BREAK;
 				}
-				// The index is a type-parameter ordinal in the class that declares this
-				// function. The instance's reified `type_arguments` line up with that ordinal
-				// only when the instance is directly an instance of that class. For a derived
-				// instance the base's parameters are not (yet) remapped onto its reified
-				// arguments, so resolve to null there and let the proxy constructor's guard
-				// report it, rather than reading an unrelated slot.
+				// The index is a type-parameter ordinal in `_script`, the class that declares this
+				// function. The leaf script holds a per-ancestor table mapping each ancestor's parameter
+				// to how it resolves for this instance: FIXED to a concrete script by an `extends Base[X]`
+				// specialization in the chain, or OPEN against the instance's own reified arguments. This
+				// resolves `T` correctly both for a directly-specialized instance (`Mock[Greeter]`) and a
+				// derived one whose base was specialized (`Mock extends Base[Greeter]`).
 				const Vector<ContainerType> &reified = p_instance->get_type_arguments();
-				if (p_instance->script.ptr() == _script && type_parameter_index >= 0 && type_parameter_index < reified.size()) {
-					*dst = reified[type_parameter_index].script;
-				} else {
-					*dst = Variant();
+				*dst = Variant();
+				if (p_instance->script.is_valid()) {
+					const HashMap<GDScript *, Vector<GDScript::TypeArgumentBinding>> &table = p_instance->script->type_parameter_bindings_by_ancestor;
+					const Vector<GDScript::TypeArgumentBinding> *entry = table.getptr(_script);
+					if (entry != nullptr && type_parameter_index >= 0 && type_parameter_index < entry->size()) {
+						const GDScript::TypeArgumentBinding &binding = (*entry)[type_parameter_index];
+						if (binding.kind == GDScript::TypeArgumentBinding::FIXED) {
+							*dst = binding.fixed.to_container_type().script;
+						} else if (binding.kind == GDScript::TypeArgumentBinding::OPEN &&
+								binding.leaf_ordinal >= 0 && binding.leaf_ordinal < reified.size()) {
+							*dst = reified[binding.leaf_ordinal].script;
+						}
+					}
 				}
 				ip += 3;
 			}

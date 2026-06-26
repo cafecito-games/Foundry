@@ -182,6 +182,12 @@ private:
 	// member-store opcode can resolve a `T`-typed member's reified argument from the leaf script
 	// without a name lookup. Populated after `member_indices` is finalized.
 	Vector<TypeArgumentBinding> member_type_argument_bindings;
+	// How each ancestor class's type parameters resolve for instances of this (leaf) class, keyed by the
+	// ancestor's GDScript and indexed by that ancestor's parameter ordinal. Lets `create_proxy[T]`
+	// (OPCODE_GET_TYPE_PARAMETER), compiled once in a base, materialize `T`'s bound script for a derived
+	// instance whose base was specialized (`Mock extends Base[Greeter]`). Ancestor keys are raw pointers
+	// kept alive by the `base` chain.
+	HashMap<GDScript *, Vector<TypeArgumentBinding>> type_parameter_bindings_by_ancestor;
 
 	// Only static variables of the current class.
 	HashMap<StringName, MemberInfo> static_variables_indices;
