@@ -493,6 +493,8 @@ public:
 
 	const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
 
+	virtual void get_reified_type_arguments(Vector<ContainerType> &r_type_arguments) const { r_type_arguments = type_arguments; }
+
 	virtual bool set(const StringName &p_name, const Variant &p_value);
 	virtual bool get(const StringName &p_name, Variant &r_ret) const;
 	virtual void get_property_list(List<PropertyInfo> *p_properties) const;

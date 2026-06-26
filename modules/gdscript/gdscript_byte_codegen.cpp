@@ -59,6 +59,12 @@ int GDScriptByteCodeGenerator::get_container_type_pos(const GDScriptDataType &p_
 	if ((p_type.builtin_type == Variant::ARRAY || p_type.builtin_type == Variant::DICTIONARY) && p_type.has_container_element_types()) {
 		return get_constant_pos(make_container_type_descriptor(p_type));
 	}
+	// A specialized object element type (e.g. `Box[int]` as the element of `Array[Box[int]]`) carries
+	// reified type arguments that a bare `script_type` constant would drop. Emit the full descriptor so
+	// the runtime element metadata keeps `Box[int]` and `Box[String]` distinguishable.
+	if (!p_type.type_arguments.is_empty()) {
+		return get_constant_pos(make_container_type_descriptor(p_type));
+	}
 	return get_constant_pos(p_type.script_type);
 }
 
