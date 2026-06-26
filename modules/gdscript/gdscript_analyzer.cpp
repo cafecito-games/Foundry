@@ -10822,6 +10822,21 @@ void GDScriptAnalyzer::validate_signal_emit_args(const GDScriptParser::DataType 
 		return;
 	}
 
+#ifdef TOOLS_ENABLED
+	// Refine the per-payload parameter types cached for editor refactors (insert-explicit-cast).
+	// The generic `Object.emit_signal` vararg signature recorded Variant payload slots; overwrite
+	// them with the resolved signal parameter types, aligned to the call's actual argument indices
+	// (the leading name argument occupies the slots before `p_first_emit_arg_index`). The analyzer
+	// owns the parsed tree, so writing through the const handle is sound; the runtime never reads it.
+	GDScriptParser::CallNode *mutable_call = const_cast<GDScriptParser::CallNode *>(p_call);
+	if (mutable_call->resolved_parameter_types.size() < p_first_emit_arg_index + signal_argument_count) {
+		mutable_call->resolved_parameter_types.resize(p_first_emit_arg_index + signal_argument_count);
+	}
+	for (int i = 0; i < signal_argument_count; i++) {
+		mutable_call->resolved_parameter_types.write[p_first_emit_arg_index + i] = p_signal_type.method_parameter_types[i];
+	}
+#endif // TOOLS_ENABLED
+
 	GDScriptTypeCompatibility::Options options;
 	options.allow_implicit_conversion = true;
 	options.strict_dynamic = strict_dynamic_checks;
