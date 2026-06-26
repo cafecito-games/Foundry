@@ -153,6 +153,16 @@ public:
 		MethodInfo method_info;
 	};
 
+	// Resolved passive custom annotation metadata persisted by the compiler. Built-in annotations
+	// are excluded. The data is runtime-safe (no AST pointers): argument values are copied as plain
+	// Variants. Reading it is a reflection operation and adds no per-call execution cost.
+	struct AnnotationUsage {
+		StringName name; // Short name, without "@": "timeout".
+		StringName qualified_name; // Canonical declaration identity: "cafecito.test.timeout".
+		Array args; // Positional argument values in source order.
+		Dictionary kwargs; // Named argument values keyed by parameter name.
+	};
+
 private:
 	struct ClearData {
 		RBSet<GDScriptFunction *> functions;
@@ -215,6 +225,13 @@ private:
 	// Generic type parameters declared directly on this class (`class Box[T]`). Empty for non-generic classes.
 	Vector<TypeParameter> type_parameters;
 	Dictionary rpc_config;
+
+	// Passive custom annotation metadata resolved by the analyzer and persisted by the compiler.
+	// Class annotations are direct-only; method/variable tables include concrete trait-flattened
+	// members. Built-in annotations are never recorded here.
+	Vector<AnnotationUsage> class_annotations;
+	HashMap<StringName, Vector<AnnotationUsage>> method_annotations;
+	HashMap<StringName, Vector<AnnotationUsage>> variable_annotations;
 
 public:
 	struct LambdaInfo {
@@ -369,6 +386,13 @@ public:
 
 	_FORCE_INLINE_ const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
 	_FORCE_INLINE_ const HashMap<StringName, AbstractTraitRequirement> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
+
+	// Passive custom annotation metadata. Class annotations are direct-only; method/variable tables
+	// cover this script's own and concrete trait-flattened members. Inherited (base-chain) annotations
+	// are resolved at reflection time, not stored here.
+	_FORCE_INLINE_ const Vector<AnnotationUsage> &get_class_annotations() const { return class_annotations; }
+	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_method_annotations() const { return method_annotations; }
+	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_variable_annotations() const { return variable_annotations; }
 	_FORCE_INLINE_ const HashMap<GDScriptFunction *, LambdaInfo> &get_lambda_info() const { return lambda_info; }
 
 	_FORCE_INLINE_ const GDScriptFunction *get_implicit_initializer() const { return implicit_initializer; }
