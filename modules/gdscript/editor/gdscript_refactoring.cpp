@@ -39,6 +39,7 @@
 
 #include "../gdscript_analyzer.h"
 #include "../gdscript_position.h"
+#include "../gdscript_type.h"
 
 #include "core/io/file_access.h"
 #include "core/object/class_db.h"
@@ -6860,11 +6861,14 @@ bool is_void_type(const GDScriptParser::DataType &p_target) {
 // expression untouched and only makes the declared type admit the null the strict-null
 // analyzer proved can already reach it.
 //
-// It is enabled only when the value's underlying (non-nullable) type is exactly the
-// target type, i.e. the boundary differs solely in nullability. That is the only shape
-// the analyzer reports as a nullable mismatch (an underlying-type mismatch is a separate,
-// unrelated error that widening would not fix), so the restriction keeps the action from
-// emitting code that is still wrong or, for `void` returns, syntactically invalid.
+// It is enabled when the value's underlying (non-nullable) type is assignment-compatible
+// with the target, i.e. the only thing the boundary rejects is the value's nullability.
+// This covers both the boundary that differs purely in nullability (`int?` -> `int`) and
+// the boundaries that additionally rely on a covariant or implicit-numeric conversion the
+// analyzer already accepts for the underlying types (`Button?` -> `Node`, `int?` -> `float`).
+// A genuine underlying-type mismatch (e.g. `String?` -> `int`) is a separate, unrelated
+// error that widening would not fix, and `void` returns have no nullable form, so both stay
+// disabled to keep the action from emitting code that is still wrong or syntactically invalid.
 void build_widen_to_nullable_candidate(
 		const Vector<String> &p_lines,
 		const GDScriptParser::Node *p_statement,
@@ -6905,12 +6909,25 @@ void build_widen_to_nullable_candidate(
 		r_candidate.disabled_reason = "This value is not nullable; no widening is needed.";
 		return;
 	}
-	// Require the value's underlying type to match the target exactly so the only
-	// difference is nullability. A different underlying type (e.g. a `String?` value at an
-	// `int` boundary) is a separate type error that widening would leave unfixed.
+	// Require the value's underlying type to be assignment-compatible with the target so the
+	// only thing the boundary rejects is the value's *top-level* nullability. Allowing the
+	// implicit numeric conversion mirrors the analyzer's own assignment/return checks, so a
+	// boundary the analyzer flagged solely for nullability (`Button?` -> `Node`, `int?` ->
+	// `float`) becomes fixable, while a genuine underlying-type mismatch (e.g. a `String?` value
+	// at an `int` boundary) is a separate type error that widening would leave unfixed and stays
+	// disabled.
+	//
+	// Only the source's outer nullability is cleared, and the check keeps strict-null enabled so
+	// a *nested* nullability mismatch still rejects the candidate: the edit only inserts a single
+	// `?` after the outer type, so e.g. `Array[int?]?` reaching `Array[int]` would widen to
+	// `Array[int]?` and leave the `int?` vs `int` element mismatch unfixed. That is not a boundary
+	// rejected solely by top-level nullability, so it must remain disabled.
 	GDScriptParser::DataType value_underlying = value_type;
 	value_underlying.is_nullable = false;
-	if (value_underlying != p_target_type) {
+	GDScriptTypeCompatibility::Options compatibility_options;
+	compatibility_options.allow_implicit_conversion = true;
+	compatibility_options.strict_null = true;
+	if (!GDScriptTypeCompatibility::check(p_target_type, value_underlying, compatibility_options).compatible) {
 		r_candidate.disabled_reason = "This value's type does not match the target; widening would not fix the error.";
 		return;
 	}

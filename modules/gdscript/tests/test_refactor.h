@@ -3918,6 +3918,43 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			REQUIRE(r.ok);
 			CHECK(out.contains("var n: Node? = maybe()"));
 		}
+		SUBCASE("widens a covariant native boundary (Button? -> Node)") {
+			// `Button?` is assignment-compatible with `Node` apart from its nullability, so the
+			// satisfier widens the boundary to `Node?` even though the underlying types differ.
+			const String source =
+					"func maybe() -> Button?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar n: Node = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var n: Node? = maybe()"));
+		}
+		SUBCASE("widens a covariant native return boundary (Button? -> Node)") {
+			const String source =
+					"func maybe() -> Button?:\n"
+					"\treturn null\n"
+					"func use() -> Node:\n"
+					"\treturn maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 4, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func use() -> Node?:"));
+		}
+		SUBCASE("widens an implicit numeric boundary (int? -> float)") {
+			// `int?` reaches a `float` boundary via the same implicit numeric conversion the
+			// analyzer accepts for the underlying types, so widening to `float?` is the right fix.
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: float = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: float? = maybe()"));
+		}
 		SUBCASE("is disabled when the value is not nullable") {
 			const String source =
 					"func use() -> void:\n"
@@ -3957,6 +3994,19 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 					"\treturn null\n"
 					"func use() -> void:\n"
 					"\tvar x: int = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
+		}
+		SUBCASE("is disabled when only a nested element differs in nullability") {
+			// `Array[int?]?` reaching `Array[int]` is rejected by both the outer nullability and
+			// the `int?` vs `int` element. Widening inserts a single outer `?` (`Array[int]?`),
+			// which would leave the nested element mismatch unfixed, so the satisfier must stay
+			// disabled rather than offer a fix that produces still-wrong code.
+			const String source =
+					"func maybe() -> Array[int?]?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar a: Array[int] = maybe()\n";
 			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
 			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
 		}

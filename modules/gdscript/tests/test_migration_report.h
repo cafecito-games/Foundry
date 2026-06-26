@@ -230,6 +230,43 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 		GDScriptTests::finish_language();
 	}
 
+	TEST_CASE("Report counts compatible-but-not-identical nullable boundaries as auto-fixable") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_report_nullable_compatible");
+
+		// `maybe()` returns `Button?`; landing it in a non-nullable `Node` local is a strict-null
+		// violation whose underlying type is assignment-compatible (covariant) rather than
+		// identical. The widen-to-nullable fix (`Node` -> `Node?`) is still provable, so the
+		// boundary must be counted as `nullable_satisfiable`.
+		const String source =
+				"func maybe() -> Button?:\n"
+				"\treturn null\n"
+				"func use() -> void:\n"
+				"\tvar n: Node = maybe()\n";
+		const String path = tree.write_file("nullable_compatible.gd", source);
+
+		MigrationReportOptions options;
+		options.strict_null_checks = true;
+		const MigrationReportResult strict = GDScriptMigrationReport::generate("res://migration_report_nullable_compatible", options);
+		REQUIRE(strict.ok);
+		CHECK(strict.strict.requested);
+		CHECK(strict.strict.error.is_empty());
+		CHECK_GT(strict.strict.nullable, 0);
+		// The compatible-but-not-identical boundary is provably satisfiable, so the satisfiable
+		// tally must keep pace with the nullable tally rather than undercounting it.
+		CHECK_EQ(strict.strict.nullable_satisfiable, strict.strict.nullable);
+
+		// The projection is read-only.
+		CHECK_EQ(FileAccess::get_file_as_string(path), source);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
 	TEST_CASE("Report records an unanalyzable file without aborting the rest") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
