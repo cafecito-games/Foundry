@@ -2361,7 +2361,8 @@ void GDScriptAnalyzer::resolve_annotation_declaration_signatures() {
 	}
 }
 
-GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::load_external_annotation_declaration(const String &p_qualified_name) {
+GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::load_external_annotation_declaration(const String &p_qualified_name, GDScriptParser::AnnotationNode *p_annotation, bool &r_error_reported) {
+	r_error_reported = false;
 	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
 	if (language == nullptr) {
 		return nullptr;
@@ -2384,13 +2385,23 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::load_external_annot
 	}
 
 	// The external file resolved its own declaration signatures while raising to
-	// `INTERFACE_SOLVED`, so the returned node already carries resolved parameter types.
+	// `INTERFACE_SOLVED`, so the returned node already carries resolved parameter types. The
+	// `INTERFACE_SOLVED` status does not run `validate_annotation_declarations()`, which detects
+	// same-file duplicate identities, and a single file collapses to one index path so the
+	// cross-file duplicate check cannot catch it either. Detect a same-file duplicate here so a
+	// usage never binds to an arbitrary one of the conflicting declarations.
+	GDScriptParser::AnnotationDeclarationNode *first_match = nullptr;
 	for (GDScriptParser::AnnotationDeclarationNode *declaration : external_parser->head->annotation_declarations) {
 		if (declaration->qualified_name == p_qualified_name) {
-			return declaration;
+			if (first_match != nullptr) {
+				push_error(vformat(R"(Ambiguous annotation "%s": the canonical identity "%s" has multiple declarations.)", p_annotation->name, p_qualified_name), p_annotation);
+				r_error_reported = true;
+				return nullptr;
+			}
+			first_match = declaration;
 		}
 	}
-	return nullptr;
+	return first_match;
 }
 
 GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_annotation_declaration(GDScriptParser::AnnotationNode *p_annotation) {
@@ -2424,8 +2435,9 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_anno
 			push_error(vformat(R"(Ambiguous annotation "%s": the canonical identity "%s" is declared in multiple files.)", p_annotation->name, own_identity), p_annotation);
 			return nullptr;
 		}
-		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(own_identity);
-		if (declaration != nullptr) {
+		bool error_reported = false;
+		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(own_identity, p_annotation, error_reported);
+		if (declaration != nullptr || error_reported) {
 			return declaration;
 		}
 	}
@@ -2464,8 +2476,9 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptAnalyzer::resolve_custom_anno
 			push_error(vformat(R"(Ambiguous annotation "%s": the canonical identity "%s" is declared in multiple files.)", p_annotation->name, resolved_identity), p_annotation);
 			return nullptr;
 		}
-		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(resolved_identity);
-		if (declaration != nullptr) {
+		bool error_reported = false;
+		GDScriptParser::AnnotationDeclarationNode *declaration = load_external_annotation_declaration(resolved_identity, p_annotation, error_reported);
+		if (declaration != nullptr || error_reported) {
 			return declaration;
 		}
 	}
