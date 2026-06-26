@@ -364,44 +364,50 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::NOT_APPLICABLE);
 	}
 
-	TEST_CASE("A subscript read bound to a later-reassigned local forces a conservative skip") {
-		// `var v = nums[0]` reads `Variant` while `nums` is bare `Array`, so `v = "x"`
-		// is valid. Typing `nums` as `Array[int]` narrows the read to `int`, which
-		// would reject the later `String` reassignment. Bail rather than break it.
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tv = \"x\"\n");
+	TEST_CASE("A loop variable reassigned to an incompatible type forces a conservative skip") {
+		// `for x in nums:` binds `x` as `Variant` while `nums` is bare, so `x = "y"` is
+		// valid. Typing `nums` as `Array[int]` narrows `x` to a hard `int`, which would
+		// reject the later `String` reassignment. Bail rather than break it.
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tfor x in nums:\n\t\tx = \"y\"\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
-	TEST_CASE("A loop variable reassigned to an incompatible type forces a conservative skip") {
-		// `for x in nums:` binds `x` as `Variant` while `nums` is bare, so `x = "y"`
-		// is valid. Typing `nums` as `Array[int]` narrows `x` to `int`.
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tfor x in nums:\n\t\tx = \"y\"\n");
+	TEST_CASE("A compound reassignment of a loop variable forces a conservative skip") {
+		// `x += "y"` is valid while `x` is `Variant`; after `nums` becomes `Array[int]`,
+		// `x` is `int` and the compound operand is rejected.
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tfor x in nums:\n\t\tx += \"y\"\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 	}
 
-	TEST_CASE("A subscript read bound to a local reassigned to the element type still infers") {
-		// The later reassignment stores another `int`, so narrowing the read to `int`
-		// is behavior-preserving.
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tv = 9\n");
+	TEST_CASE("A loop variable reassigned inside a captured lambda forces a conservative skip") {
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tfor x in nums:\n\t\tvar cb = func(): x = \"y\"\n\t\tcb.call()\n");
+		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A loop variable reassigned to the element type still infers") {
+		// The reassignment stores another `int`, so narrowing the loop variable to
+		// `int` is behavior-preserving.
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tfor x in nums:\n\t\tx = 9\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
 
-	TEST_CASE("A subscript read bound to an unreassigned local does not block inference") {
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tprint(v)\n");
+	TEST_CASE("An unreassigned loop variable does not block inference") {
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tfor x in nums:\n\t\tprint(x)\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
 	}
 
-	TEST_CASE("An explicitly typed read binding is not narrowed and does not block inference") {
-		// `var v: Variant = nums[0]` keeps `v` as `Variant` regardless of the
-		// container type, so the later `String` reassignment stays valid.
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v: Variant = nums[0]\n\tv = \"x\"\n");
+	TEST_CASE("A plain (soft) read binding reassigned incompatibly does not block inference") {
+		// A plain `var v =` local is soft-typed: an incompatible reassignment downgrades
+		// it to `Variant` rather than erroring, so narrowing the read never breaks it.
+		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tv = \"x\"\n");
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
@@ -412,36 +418,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Array[int]");
-	}
-
-	TEST_CASE("An accessor read bound to a later-reassigned local forces a conservative skip") {
-		// `nums.front()` returns the element type on a typed array, so it narrows
-		// from `Variant` to `int` exactly like `nums[0]`.
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums.front()\n\tv = \"x\"\n");
-		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
-	}
-
-	TEST_CASE("A get accessor read bound to a later-reassigned local forces a conservative skip") {
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums.get(0)\n\tv = \"x\"\n");
-		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
-	}
-
-	TEST_CASE("A compound reassignment of a read binding forces a conservative skip") {
-		// `v += "x"` is valid while `v` is `Variant`; after `nums` becomes
-		// `Array[int]`, `v` is `int` and the compound operand is rejected.
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tv += \"x\"\n");
-		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
-	}
-
-	TEST_CASE("A read binding reassigned inside a captured lambda forces a conservative skip") {
-		// The lambda captures `v` and reassigns it to a `String`; valid while `v` is
-		// `Variant`, rejected once `nums` becomes `Array[int]` and `v` narrows to int.
-		InferenceFixture fixture("func f():\n\tvar nums = [1, 2]\n\tvar v = nums[0]\n\tvar cb = func(): v = \"x\"\n\tcb.call()\n");
-		GDScriptContainerInference::Result result = infer_in(fixture, "f", "nums");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 	}
 }
 
@@ -624,55 +600,53 @@ TEST_SUITE("[Modules][GDScript][ContainerInference][Dictionary]") {
 		CHECK_EQ(result.outcome, GDScriptContainerInference::NOT_APPLICABLE);
 	}
 
-	TEST_CASE("A subscript read bound to a later-reassigned local forces a conservative skip") {
-		// `var v = d["a"]` reads `Variant` while `d` is bare, so `v = "x"` is valid.
-		// Typing `d` as `Dictionary[String, int]` narrows the value read to `int`.
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tv = \"x\"\n");
+	TEST_CASE("A loop key variable reassigned to an incompatible type forces a conservative skip") {
+		// `for k in d:` binds `k` as `Variant` while `d` is bare, so `k = 5` is valid.
+		// Typing `d` as `Dictionary[String, int]` narrows `k` to a hard `String`.
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tfor k in d:\n\t\tk = 5\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
-	TEST_CASE("A loop key variable reassigned to an incompatible type forces a conservative skip") {
-		// `for k in d:` binds `k` as `Variant` while `d` is bare, so `k = 5` is valid.
-		// Typing `d` as `Dictionary[String, int]` narrows `k` to `String`.
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tfor k in d:\n\t\tk = 5\n");
+	TEST_CASE("A compound reassignment of a loop key variable forces a conservative skip") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tfor k in d:\n\t\tk += 5\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
 	}
 
-	TEST_CASE("A subscript read bound to a local reassigned to the value type still infers") {
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tv = 9\n");
+	TEST_CASE("A loop key variable reassigned inside a captured lambda forces a conservative skip") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tfor k in d:\n\t\tvar cb = func(): k = 5\n\t\tcb.call()\n");
+		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+	}
+
+	TEST_CASE("A loop key variable reassigned to the key type still infers") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tfor k in d:\n\t\tk = \"b\"\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
 	}
 
-	TEST_CASE("A read bound to an unreassigned local does not block dictionary inference") {
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tprint(v)\n");
+	TEST_CASE("An unreassigned loop key variable does not block dictionary inference") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tfor k in d:\n\t\tprint(k)\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
 		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
 	}
 
-	TEST_CASE("A get_or_add accessor read bound to a later-reassigned local forces a conservative skip") {
-		// `get_or_add` returns the value type on a typed dictionary, so its result
-		// narrows from `Variant` to `int`.
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d.get_or_add(\"a\", 1)\n\tv = \"x\"\n");
+	TEST_CASE("A plain (soft) dictionary read binding reassigned incompatibly does not block inference") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tv = \"x\"\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
 	}
 
-	TEST_CASE("A compound reassignment of a dictionary read binding forces a conservative skip") {
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tv += \"x\"\n");
+	TEST_CASE("An explicitly typed loop key variable is not narrowed and does not block inference") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tfor k: Variant in d:\n\t\tk = 5\n");
 		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
-	}
-
-	TEST_CASE("A dictionary read binding reassigned inside a captured lambda forces a conservative skip") {
-		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar v = d[\"a\"]\n\tvar cb = func(): v = \"x\"\n\tcb.call()\n");
-		GDScriptContainerInference::Result result = infer_dict_in(fixture, "f", "d");
-		CHECK_EQ(result.outcome, GDScriptContainerInference::READ_NARROWS);
+		CHECK_EQ(result.outcome, GDScriptContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
 	}
 }
 

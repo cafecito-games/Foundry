@@ -113,31 +113,6 @@ bool is_safe_readonly_array_method(const StringName &p_name) {
 	return false;
 }
 
-// Array accessor methods that return a single element of the array, so on a typed
-// `Array[T]` their result narrows from `Variant` to `T`. A local bound to such a
-// call (`var v = arr.front()`) is therefore subject to the same read-narrowing
-// soundness check as a `var v = arr[i]` subscript read.
-bool array_accessor_returns_element(const StringName &p_name) {
-	static const char *accessors[] = {
-		"get", "front", "back", "pop_back", "pop_front", "pop_at", "pick_random", "max", "min",
-		nullptr
-	};
-	for (int i = 0; accessors[i] != nullptr; i++) {
-		if (p_name == StringName(accessors[i])) {
-			return true;
-		}
-	}
-	return false;
-}
-
-// Dictionary accessor methods that return a stored value, so on a typed
-// `Dictionary[K, V]` their result narrows from `Variant` to `V`. Only modeled
-// (non-bailing) reads need listing here; `get` and the other value-validating
-// reads already force a conservative skip, so they never reach an inferred type.
-bool dictionary_accessor_returns_value(const StringName &p_name) {
-	return p_name == StringName("get_or_add");
-}
-
 // Computes the builtin type a compound indexed write `container[key] op= value`
 // stores back, modeling the runtime: the stored type is the result of the
 // `Variant` operator applied to the current element type and the value type, not
@@ -301,21 +276,25 @@ bool is_expression_node(Node::Type p_type) {
 	}
 }
 
-// Tracks locals (and loop iterators) that are bound to a *read* of the tracked
-// container -- `var v = c[i]`, `for v in c:` -- whose analyzer type is `Variant`
-// while the container is bare but would narrow to a concrete element type once
-// the container is typed. Such a binding is only a problem when the bound
-// variable is later reassigned to a value the narrowed type would reject; the
-// reassignment is currently valid only because the read produced a `Variant`.
+// Tracks `for` loop iterators bound to a read of the tracked container --
+// `for v in c:` -- whose analyzer type is `Variant` while the container is bare
+// but narrows to a concrete element type (array element / dictionary key) once the
+// container is typed. Such an iterator is only a problem when it is later
+// reassigned to a value the narrowed type would reject; the reassignment is
+// currently valid only because iterating a bare container yields `Variant`.
+//
+// Only loop iterators need tracking: a plain `var v = c[i]` local is soft-typed
+// and merely downgrades to `Variant` on an incompatible reassignment (no error),
+// and an inferred `var v := c[i]` cannot even occur over a bare container (`:=`
+// from a `Variant` element read is a parse error). See the design doc.
 //
 // Because the walk is flow-insensitive and binding/reassignment can appear in any
 // order, both are recorded here and reconciled after the element type is known
 // (see `narrows_a_read`). Each binding remembers which container slot the read
-// reads from (array element / dictionary key / dictionary value) so the
-// reassigned value can be compared against the right element type.
+// reads from so the reassigned value can be compared against the right type.
 //
 // This covers reassignment, the case detectable cheaply and soundly from the
-// assignment alone. It does not cover every later *use* of the binding in a
+// assignment alone. It does not cover every later *use* of a narrowed read in a
 // type-sensitive position (a typed call argument, a typed return, a typed
 // assignment target), where narrowing could also change analysis; proving those
 // safe needs the whole-body re-analysis the post-edit verification harness (#34)
@@ -326,13 +305,12 @@ public:
 	enum Slot {
 		ARRAY_ELEMENT,
 		DICTIONARY_KEY,
-		DICTIONARY_VALUE,
 	};
 
-	// Records that `p_sink` (a `VariableNode *` for a `var` binding, or the loop
-	// iterator `IdentifierNode *` for a `for` binding) is bound to a read of the
-	// container's `p_slot`. Ignored when the binding carries an explicit type
-	// annotation, since the analyzer then keeps that type instead of narrowing.
+	// Records that `p_sink` (the loop iterator `IdentifierNode *` for a `for`
+	// binding) is bound to a read of the container's `p_slot`. Ignored when the
+	// iterator carries an explicit type annotation, since the analyzer then keeps
+	// that type instead of narrowing.
 	void note_read_binding(const void *p_sink, Slot p_slot) {
 		if (p_sink != nullptr) {
 			read_bindings[p_sink] = p_slot;
@@ -648,11 +626,6 @@ private:
 				if (variable == decl) {
 					return; // Our own declaration; its initializer is accounted for separately.
 				}
-				// `var v = our_var[i]` binds a read whose type narrows once the array is
-				// typed; record it (unless `v` is explicitly typed, which pins its type).
-				if (variable->datatype_specifier == nullptr && reads_our_element(variable->initializer)) {
-					read_narrowing.note_read_binding(variable, ReadNarrowingTracker::ARRAY_ELEMENT);
-				}
 				scan_value(variable->initializer); // Catches `var alias = our_var`.
 			} break;
 			case Node::CONSTANT: {
@@ -744,6 +717,11 @@ private:
 		scan_suite(p_branch->block);
 	}
 
+	// A match-pattern bind (`match <test>: var v:`) is a constant: GDScript rejects
+	// reassigning it, so it can never trigger the read-narrowing reassignment check
+	// and needs no read-binding tracking here. (Other downstream uses of a narrowed
+	// bind fall under the documented verification-harness boundary; see the design
+	// doc.)
 	void scan_pattern(const GDScriptParser::PatternNode *p_pattern) {
 		if (bailed || p_pattern == nullptr) {
 			return;
@@ -1323,31 +1301,6 @@ private:
 		scan_value(p_assignment->assigned_value);
 	}
 
-	// True when `p_expr` reads a single element of the tracked array, whose result
-	// type narrows from `Variant` to the element type once the array is typed: a
-	// direct subscript read (`our_var[i]` / `self.member[i]`) or an element-
-	// returning accessor call (`our_var.front()` / `self.member.get(i)`).
-	bool reads_our_element(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr) {
-			return false;
-		}
-		if (p_expr->type == Node::SUBSCRIPT) {
-			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expr);
-			return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
-		}
-		if (p_expr->type == Node::CALL) {
-			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expr);
-			if (call->callee == nullptr || call->callee->type != Node::SUBSCRIPT) {
-				return false;
-			}
-			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-			return callee->is_attribute && callee->attribute != nullptr &&
-					array_accessor_returns_element(callee->attribute->name) &&
-					(is_our_var(callee->base) || is_self_member_subscript(callee->base));
-		}
-		return false;
-	}
-
 	void scan_method_on_var(const GDScriptParser::CallNode *p_call, const StringName &p_method) {
 		if (bailed) {
 			return;
@@ -1510,15 +1463,13 @@ public:
 				}
 			}
 		}
+		// Iterating a dictionary binds keys, so the only narrowing read binding here is
+		// a loop key variable; it narrows to the key type.
 		String narrow_detail;
 		const bool narrows = read_narrowing.narrows_a_read(
-				[this](ReadNarrowingTracker::Slot p_slot, String &r_rendered) {
-					if (p_slot == ReadNarrowingTracker::DICTIONARY_KEY) {
-						r_rendered = key_rendered;
-						return has_key;
-					}
-					r_rendered = value_rendered;
-					return has_value;
+				[this](ReadNarrowingTracker::Slot, String &r_rendered) {
+					r_rendered = key_rendered;
+					return has_key;
 				},
 				narrow_detail);
 		if (narrows) {
@@ -1672,11 +1623,6 @@ private:
 				if (variable == decl) {
 					return; // Our own declaration; its initializer is accounted for separately.
 				}
-				// `var v = our_var[k]` binds a value read that narrows once the dictionary
-				// is typed; record it unless `v` is explicitly typed.
-				if (variable->datatype_specifier == nullptr && reads_our_value(variable->initializer)) {
-					read_narrowing.note_read_binding(variable, ReadNarrowingTracker::DICTIONARY_VALUE);
-				}
 				scan_value(variable->initializer); // Catches `var alias = our_var`.
 			} break;
 			case Node::CONSTANT: {
@@ -1758,6 +1704,11 @@ private:
 		scan_suite(p_branch->block);
 	}
 
+	// A match-pattern bind (`match <test>: var v:`) is a constant: GDScript rejects
+	// reassigning it, so it can never trigger the read-narrowing reassignment check
+	// and needs no read-binding tracking here. (Other downstream uses of a narrowed
+	// bind fall under the documented verification-harness boundary; see the design
+	// doc.)
 	void scan_pattern(const GDScriptParser::PatternNode *p_pattern) {
 		if (bailed || p_pattern == nullptr) {
 			return;
@@ -2333,31 +2284,6 @@ private:
 		}
 		scan_value(assignee);
 		scan_value(p_assignment->assigned_value);
-	}
-
-	// True when `p_expr` reads a stored value of the tracked dictionary, whose
-	// result type narrows from `Variant` to the value type once the dictionary is
-	// typed: a direct subscript read (`our_var[k]` / `self.member[k]`) or a value-
-	// returning accessor call (`our_var.get_or_add(k, default)`).
-	bool reads_our_value(const GDScriptParser::ExpressionNode *p_expr) const {
-		if (p_expr == nullptr) {
-			return false;
-		}
-		if (p_expr->type == Node::SUBSCRIPT) {
-			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expr);
-			return !subscript->is_attribute && (is_our_var(subscript->base) || is_self_member_subscript(subscript->base));
-		}
-		if (p_expr->type == Node::CALL) {
-			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expr);
-			if (call->callee == nullptr || call->callee->type != Node::SUBSCRIPT) {
-				return false;
-			}
-			const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(call->callee);
-			return callee->is_attribute && callee->attribute != nullptr &&
-					dictionary_accessor_returns_value(callee->attribute->name) &&
-					(is_our_var(callee->base) || is_self_member_subscript(callee->base));
-		}
-		return false;
 	}
 
 	void scan_method_on_var(const GDScriptParser::CallNode *p_call, const StringName &p_method) {
