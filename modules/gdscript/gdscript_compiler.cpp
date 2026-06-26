@@ -800,17 +800,62 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 									specialization = candidate;
 								}
 							}
-							GDScriptDataType specialization_type;
+							// Mechanism (b) for stored/aliased specialized class handles (#242): the construction target is
+							// the expression yielding the class object, and the reified arguments come from its static
+							// meta-type. For the direct `Box[int].new()` that is `Box` with `Box[int]`'s arguments; for an
+							// aliased handle (`const IntBox = Box[int]; IntBox.new()`, `var h = Box[int]; h.new()`) it is the
+							// handle expression itself, whose static type is the specialized meta-type. A handle widened to
+							// `GDScript`/`Object`/... carries no type arguments and falls through to plain construction.
+							const GDScriptParser::ExpressionNode *specialized_base = nullptr;
+							Vector<GDScriptDataType> specialized_type_arguments;
 							if (specialization != nullptr) {
-								specialization_type = _gdtype_from_datatype(specialization->get_datatype(), codegen.script);
+								const GDScriptDataType specialization_type = _gdtype_from_datatype(specialization->get_datatype(), codegen.script);
+								if (!specialization_type.type_arguments.is_empty()) {
+									specialized_base = specialization->base;
+									specialized_type_arguments = specialization_type.type_arguments;
+								}
+							} else if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr) {
+								const GDScriptParser::DataType base_static = subscript->base->get_datatype();
+								if (base_static.is_set() && base_static.is_meta_type &&
+										(base_static.kind == GDScriptParser::DataType::CLASS || base_static.kind == GDScriptParser::DataType::SCRIPT) &&
+										!base_static.type_arguments.is_empty()) {
+									// The handle's own type may be weakly inferred (an untyped `var h = Box[int]`), which would
+									// make `_gdtype_from_datatype(base_static)` discard the whole type. The reified arguments
+									// themselves are hard explicit types, so convert them individually instead.
+									Vector<GDScriptDataType> reified_arguments;
+									for (int i = 0; i < base_static.type_arguments.size(); i++) {
+										reified_arguments.push_back(_gdtype_from_datatype(base_static.type_arguments[i], codegen.script));
+									}
+									specialized_base = subscript->base;
+									specialized_type_arguments = reified_arguments;
+								}
 							}
 
-							if (specialization != nullptr && !specialization_type.type_arguments.is_empty()) {
-								GDScriptCodeGenerator::Address base = _parse_expression(codegen, r_error, specialization->base);
-								if (r_error) {
-									return GDScriptCodeGenerator::Address();
+							if (specialized_base != nullptr) {
+								// A specialized handle folded into a constant (e.g. `const IntBox = Box[int]`) bakes the
+								// analyzer's shallow, uncompiled class object; constructing from it would fail since the
+								// class never finishes compiling. Re-resolve it to the live class compiled in this unit —
+								// the same object the direct `Box[int].new()` form instantiates. A non-constant handle
+								// (`var h = Box[int]`) instead evaluates to its live runtime value, and anything not found
+								// in this unit (e.g. an already-compiled preloaded script) keeps its folded value.
+								GDScriptCodeGenerator::Address base;
+								GDScript *folded_class = nullptr;
+								if (specialized_base->is_constant && specialized_base->reduced_value.get_type() == Variant::OBJECT) {
+									folded_class = Object::cast_to<GDScript>(specialized_base->reduced_value);
 								}
-								gen->write_construct_specialized(result, base, specialization_type.type_arguments, arguments);
+								GDScript *live_class = nullptr;
+								if (folded_class != nullptr && !folded_class->is_valid() && main_script != nullptr) {
+									live_class = main_script->find_class(folded_class->get_fully_qualified_name());
+								}
+								if (live_class != nullptr) {
+									base = codegen.add_constant(Ref<GDScript>(live_class));
+								} else {
+									base = _parse_expression(codegen, r_error, specialized_base);
+									if (r_error) {
+										return GDScriptCodeGenerator::Address();
+									}
+								}
+								gen->write_construct_specialized(result, base, specialized_type_arguments, arguments);
 								if (base.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 									gen->pop_temporary();
 								}
@@ -986,6 +1031,19 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 		// Indexing operator.
 		case GDScriptParser::Node::SUBSCRIPT: {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+
+			// A specialized generic class meta-type used as a value (`Box[int]`, e.g. stored in a `const`/
+			// `var` handle) evaluates to the base class object; the `[int]` type arguments are compile-time
+			// metadata carried by the static type and recovered at a `.new()` call site, not a runtime index.
+			// Without this, codegen would try to evaluate the type index `int` as an expression and fail.
+			if (!subscript->is_attribute) {
+				const GDScriptParser::DataType subscript_type = subscript->get_datatype();
+				if (subscript_type.is_meta_type && subscript_type.kind == GDScriptParser::DataType::CLASS &&
+						!subscript_type.type_arguments.is_empty()) {
+					return _parse_expression(codegen, r_error, subscript->base);
+				}
+			}
+
 			GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(subscript->get_datatype(), codegen.script));
 
 			GDScriptCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
