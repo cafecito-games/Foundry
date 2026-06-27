@@ -1365,6 +1365,40 @@ static signal triggered
 			R"(The "static" modifier cannot be applied to signals.)");
 }
 
+TEST_CASE("[Modules][GDScript] Parser recovery preserves a leading abstract modifier") {
+	// The malformed `var` aborts mid-declaration with `abstract` as the next token, so the
+	// recovery in `synchronize()` must stop at `abstract` rather than skipping over it.
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+class Broken:
+	var abstract func required() -> void
+
+func after() -> void:
+	pass
+)",
+			"user://abstract_recovery.gd", false);
+
+	CHECK(err != OK);
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *broken = find_parser_class(root, SNAME("Broken"));
+	CHECK(broken != nullptr);
+	if (broken != nullptr) {
+		const GDScriptParser::FunctionNode *required = find_parser_function(broken, SNAME("required"));
+		CHECK(required != nullptr);
+		if (required != nullptr) {
+			CHECK(required->is_abstract);
+		}
+	}
+
+	CHECK(find_parser_function(root, SNAME("after")) != nullptr);
+}
+
 TEST_CASE("[Modules][GDScript] Parser keeps async usable as an identifier outside modifier positions") {
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
