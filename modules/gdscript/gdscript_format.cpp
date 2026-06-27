@@ -145,6 +145,162 @@ static String unary_operator_text(GDScriptParser::UnaryOpNode::OpType p_operatio
 	return "?";
 }
 
+// Mirrors `GDScriptParser::Precedence` (gdscript_parser.h) one-for-one. The
+// parser's enum is private, so the printer keeps its own copy in the same order:
+// higher value binds tighter. The reconstructed parentheses depend on this
+// matching the parser exactly, so the two must be kept in sync.
+enum FormatPrecedence {
+	FPREC_NONE,
+	FPREC_ASSIGNMENT,
+	FPREC_CAST,
+	FPREC_TERNARY,
+	FPREC_LOGIC_OR,
+	FPREC_LOGIC_AND,
+	FPREC_LOGIC_NOT,
+	FPREC_CONTENT_TEST,
+	FPREC_COMPARISON,
+	FPREC_BIT_OR,
+	FPREC_BIT_XOR,
+	FPREC_BIT_AND,
+	FPREC_BIT_SHIFT,
+	FPREC_ADDITION_SUBTRACTION,
+	FPREC_FACTOR,
+	FPREC_SIGN,
+	FPREC_BIT_NOT,
+	FPREC_POWER,
+	FPREC_TYPE_TEST,
+	FPREC_AWAIT,
+	FPREC_CALL,
+	FPREC_ATTRIBUTE,
+	FPREC_SUBSCRIPT,
+	FPREC_PRIMARY,
+};
+
+static int binary_operator_precedence(GDScriptParser::BinaryOpNode::OpType p_operation) {
+	switch (p_operation) {
+		case GDScriptParser::BinaryOpNode::OP_ADDITION:
+		case GDScriptParser::BinaryOpNode::OP_SUBTRACTION:
+			return FPREC_ADDITION_SUBTRACTION;
+		case GDScriptParser::BinaryOpNode::OP_MULTIPLICATION:
+		case GDScriptParser::BinaryOpNode::OP_DIVISION:
+		case GDScriptParser::BinaryOpNode::OP_MODULO:
+			return FPREC_FACTOR;
+		case GDScriptParser::BinaryOpNode::OP_POWER:
+			return FPREC_POWER;
+		case GDScriptParser::BinaryOpNode::OP_BIT_LEFT_SHIFT:
+		case GDScriptParser::BinaryOpNode::OP_BIT_RIGHT_SHIFT:
+			return FPREC_BIT_SHIFT;
+		case GDScriptParser::BinaryOpNode::OP_BIT_AND:
+			return FPREC_BIT_AND;
+		case GDScriptParser::BinaryOpNode::OP_BIT_OR:
+			return FPREC_BIT_OR;
+		case GDScriptParser::BinaryOpNode::OP_BIT_XOR:
+			return FPREC_BIT_XOR;
+		case GDScriptParser::BinaryOpNode::OP_LOGIC_AND:
+			return FPREC_LOGIC_AND;
+		case GDScriptParser::BinaryOpNode::OP_LOGIC_OR:
+			return FPREC_LOGIC_OR;
+		case GDScriptParser::BinaryOpNode::OP_CONTENT_TEST:
+			return FPREC_CONTENT_TEST;
+		case GDScriptParser::BinaryOpNode::OP_COMP_EQUAL:
+		case GDScriptParser::BinaryOpNode::OP_COMP_NOT_EQUAL:
+		case GDScriptParser::BinaryOpNode::OP_COMP_LESS:
+		case GDScriptParser::BinaryOpNode::OP_COMP_LESS_EQUAL:
+		case GDScriptParser::BinaryOpNode::OP_COMP_GREATER:
+		case GDScriptParser::BinaryOpNode::OP_COMP_GREATER_EQUAL:
+			return FPREC_COMPARISON;
+	}
+	return FPREC_PRIMARY;
+}
+
+static int unary_operator_precedence(GDScriptParser::UnaryOpNode::OpType p_operation) {
+	switch (p_operation) {
+		case GDScriptParser::UnaryOpNode::OP_POSITIVE:
+		case GDScriptParser::UnaryOpNode::OP_NEGATIVE:
+			return FPREC_SIGN;
+		case GDScriptParser::UnaryOpNode::OP_COMPLEMENT:
+			return FPREC_BIT_NOT;
+		case GDScriptParser::UnaryOpNode::OP_LOGIC_NOT:
+			return FPREC_LOGIC_NOT;
+	}
+	return FPREC_PRIMARY;
+}
+
+// Precedence of an expression node as seen by its parent. Atoms (literals,
+// identifiers, calls, subscripts, collections, ...) never need wrapping, so they
+// report the maximum precedence.
+static int expression_precedence(const GDScriptParser::ExpressionNode *p_expression) {
+	switch (p_expression->type) {
+		case GDScriptParser::Node::ASSIGNMENT:
+			return FPREC_ASSIGNMENT;
+		case GDScriptParser::Node::CAST:
+			return FPREC_CAST;
+		case GDScriptParser::Node::TERNARY_OPERATOR:
+			return FPREC_TERNARY;
+		case GDScriptParser::Node::BINARY_OPERATOR:
+			return binary_operator_precedence(static_cast<const GDScriptParser::BinaryOpNode *>(p_expression)->operation);
+		case GDScriptParser::Node::UNARY_OPERATOR:
+			return unary_operator_precedence(static_cast<const GDScriptParser::UnaryOpNode *>(p_expression)->operation);
+		case GDScriptParser::Node::TYPE_TEST:
+			return FPREC_TYPE_TEST;
+		case GDScriptParser::Node::AWAIT:
+			return FPREC_AWAIT;
+		default:
+			return FPREC_PRIMARY;
+	}
+}
+
+// Re-quotes a string literal to canonical double quotes. Only the simple,
+// single-line `'...'` form is rewritten, and only when its content has no
+// unescaped `"` that double quotes would break. Triple-quoted (`'''...'''`) and
+// raw (`r'...'`) strings keep their delimiters; escapes and content are never
+// altered. A leading `&`/`^` (StringName / NodePath) prefix is preserved.
+static String canonicalize_string_literal(const String &p_source) {
+	int start = 0;
+	while (start < p_source.length() && p_source[start] != '\'' && p_source[start] != '"') {
+		const char32_t prefix_char = p_source[start];
+		if (prefix_char == 'r' || prefix_char == 'R') {
+			return p_source; // Raw string: leave the delimiter untouched.
+		}
+		start++;
+	}
+	if (start >= p_source.length() || p_source[start] != '\'') {
+		return p_source; // Already double-quoted, or not a string at all.
+	}
+	if (start + 2 < p_source.length() && p_source[start + 1] == '\'' && p_source[start + 2] == '\'') {
+		return p_source; // Triple-quoted single string.
+	}
+	if (p_source[p_source.length() - 1] != '\'') {
+		return p_source; // Defensive: not a balanced single-quoted literal.
+	}
+	const String prefix = p_source.substr(0, start);
+	const String inner = p_source.substr(start + 1, p_source.length() - start - 2);
+	if (inner.find_char('"') != -1) {
+		return p_source; // A double quote inside would have to be escaped; keep single.
+	}
+	return prefix + "\"" + inner + "\"";
+}
+
+// Canonicalizes numeric literal casing: lowercase the `0x`/`0b` base prefix and
+// the float exponent marker, uppercase hexadecimal digits. Underscores and the
+// rest of the digit text are preserved verbatim.
+static String canonicalize_number_literal(const String &p_source) {
+	if (p_source.length() >= 2 && p_source[0] == '0' && (p_source[1] == 'x' || p_source[1] == 'X')) {
+		return "0x" + p_source.substr(2).to_upper();
+	}
+	if (p_source.length() >= 2 && p_source[0] == '0' && (p_source[1] == 'b' || p_source[1] == 'B')) {
+		return "0b" + p_source.substr(2);
+	}
+	return p_source.replace("E", "e");
+}
+
+// A collection node (array / dictionary / call) is laid out across several lines
+// when the author wrote it that way; the formatter respects that without
+// introducing new wrapping of its own.
+static bool node_spans_multiple_lines(const GDScriptParser::Node *p_node) {
+	return p_node->end_line > p_node->start_line;
+}
+
 Error GDScriptFormatter::format(const String &p_source, const String &p_path, Result &r_result) {
 	// Pass 1: tokenize to capture comments and original literal source text.
 	GDScriptTokenizerText tokenizer;
@@ -227,6 +383,15 @@ bool GDScriptPrinter::is_full_line_comment(int p_line) const {
 	return found && found->value.new_line;
 }
 
+// Emits one full-line comment at the current indent and advances the cursor past
+// its source line so it is never emitted twice.
+void GDScriptPrinter::emit_comment_line(int p_line, const String &p_raw_comment) {
+	write_indent();
+	write(normalize_comment_text(p_raw_comment));
+	newline();
+	last_emitted_line = p_line;
+}
+
 // Emits the full-line comments and the normalized blank lines that sit between
 // the last emitted source line and `p_next_line` (exclusive). `p_required_blanks`
 // is the structural minimum to enforce before the first emitted piece (comment
@@ -264,10 +429,7 @@ void GDScriptPrinter::emit_leading_trivia(int p_next_line, int p_required_blanks
 
 		if (comment_follows) {
 			HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(line);
-			write_indent();
-			write(normalize_comment_text(found->value.comment));
-			newline();
-			last_emitted_line = line;
+			emit_comment_line(line, found->value.comment);
 			line++;
 		} else {
 			done = true;
@@ -305,10 +467,7 @@ void GDScriptPrinter::flush_block_tail_comments() {
 	int line = last_emitted_line + 1;
 	while (is_full_line_comment(line)) {
 		HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(line);
-		write_indent();
-		write(normalize_comment_text(found->value.comment));
-		newline();
-		last_emitted_line = line;
+		emit_comment_line(line, found->value.comment);
 		line++;
 	}
 }
@@ -502,7 +661,14 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 	newline();
 	last_emitted_line = p_class->start_line;
 	indent_level++;
-	print_class_body(p_class, false);
+	if (p_class->members.is_empty()) {
+		// An inner class with an empty body (only `pass`) still needs a body line.
+		write_indent();
+		write("pass");
+		newline();
+	} else {
+		print_class_body(p_class, false);
+	}
 	indent_level--;
 }
 
@@ -590,10 +756,15 @@ void GDScriptPrinter::print_class_body(const GDScriptParser::ClassNode *p_class,
 		const GDScriptParser::Node *node = member_node(member);
 		const int start_line = member_start_line(member);
 
+		// Canonical vertical spacing around definitions (functions and classes):
+		// two blank lines at the top level, one inside a nested class. Other
+		// member kinds (vars, constants, signals) keep no enforced blank.
+		const int top_level_definition_blanks = 2;
+		const int nested_definition_blanks = 1;
 		int required_blanks = 0;
 		if (previous != nullptr) {
 			const bool definition = member_is_definition(member) || member_is_definition(*previous);
-			required_blanks = definition ? (p_is_root ? 2 : 1) : 0;
+			required_blanks = definition ? (p_is_root ? top_level_definition_blanks : nested_definition_blanks) : 0;
 		}
 		if (start_line > 0) {
 			emit_leading_trivia(start_line, required_blanks);
@@ -1335,21 +1506,53 @@ void GDScriptPrinter::print_literal(const GDScriptParser::LiteralNode *p_literal
 	const uint64_t key = pos_key(p_literal->start_line, p_literal->start_column);
 	HashMap<uint64_t, LiteralToken>::ConstIterator found = literals.find(key);
 	if (found) {
-		write(found->value.source); // Exact original text (quotes / number form).
+		// Start from the exact original token text, then apply canonical casing /
+		// quoting that never changes the value the literal evaluates to.
+		switch (p_literal->value.get_type()) {
+			case Variant::STRING:
+			case Variant::STRING_NAME:
+			case Variant::NODE_PATH:
+				write(canonicalize_string_literal(found->value.source));
+				break;
+			case Variant::INT:
+			case Variant::FLOAT:
+				write(canonicalize_number_literal(found->value.source));
+				break;
+			default:
+				write(found->value.source);
+				break;
+		}
 		return;
 	}
 	// Fallback for synthesized literals without a backing token.
 	write(p_literal->value.operator String());
 }
 
+void GDScriptPrinter::print_operand(int p_min_precedence, const GDScriptParser::ExpressionNode *p_child) {
+	if (p_child == nullptr) {
+		return;
+	}
+	const bool needs_parentheses = expression_precedence(p_child) < p_min_precedence;
+	if (needs_parentheses) {
+		write("(");
+		print_expression(p_child);
+		write(")");
+	} else {
+		print_expression(p_child);
+	}
+}
+
 void GDScriptPrinter::print_binary_op(const GDScriptParser::BinaryOpNode *p_op) {
-	// Operand grouping (precedence-driven parentheses) is deferred to a later
-	// task; the parse tree already encodes precedence and associativity.
-	print_expression(p_op->left_operand);
+	// All GDScript binary operators are left-associative (the parser parses the
+	// right operand one precedence level tighter), so the left operand may share
+	// the operator's precedence without parentheses while the right operand may
+	// not.
+	const int precedence = binary_operator_precedence(p_op->operation);
+	print_operand(precedence, p_op->left_operand);
 	write(" ");
 	write(binary_operator_text(p_op->operation));
 	write(" ");
-	print_expression(p_op->right_operand);
+	print_operand(precedence + 1, p_op->right_operand);
 }
 
 void GDScriptPrinter::print_unary_op(const GDScriptParser::UnaryOpNode *p_op) {
@@ -1358,15 +1561,19 @@ void GDScriptPrinter::print_unary_op(const GDScriptParser::UnaryOpNode *p_op) {
 	if (p_op->operation == GDScriptParser::UnaryOpNode::OP_LOGIC_NOT) {
 		write(" ");
 	}
-	print_expression(p_op->operand);
+	print_operand(unary_operator_precedence(p_op->operation), p_op->operand);
 }
 
 void GDScriptPrinter::print_ternary_op(const GDScriptParser::TernaryOpNode *p_op) {
-	print_expression(p_op->true_expr);
+	// The value branch (left operand) must be parenthesized when it is itself a
+	// ternary, otherwise re-parsing would re-group it; the condition and the
+	// alternative branch are parsed at the ternary level (right-associative), so
+	// a nested ternary there needs no parentheses.
+	print_operand(FPREC_TERNARY + 1, p_op->true_expr);
 	write(" if ");
-	print_expression(p_op->condition);
+	print_operand(FPREC_TERNARY, p_op->condition);
 	write(" else ");
-	print_expression(p_op->false_expr);
+	print_operand(FPREC_TERNARY, p_op->false_expr);
 }
 
 void GDScriptPrinter::print_call(const GDScriptParser::CallNode *p_call) {
@@ -1377,26 +1584,57 @@ void GDScriptPrinter::print_call(const GDScriptParser::CallNode *p_call) {
 		}
 	}
 	if (p_call->callee != nullptr) {
-		print_expression(p_call->callee);
+		// The callee binds as the base of a call, tighter than any operator.
+		print_operand(FPREC_CALL, p_call->callee);
 	} else if (!String(p_call->function_name).is_empty()) {
 		write(p_call->function_name);
 	}
-	write("(");
-	for (int i = 0; i < p_call->arguments.size(); i++) {
-		if (i > 0) {
-			write(", ");
-		}
-		if (i < p_call->argument_names.size() && !String(p_call->argument_names[i]).is_empty()) {
-			write(p_call->argument_names[i]);
+	print_argument_list(p_call->arguments, p_call->argument_names, node_spans_multiple_lines(p_call));
+}
+
+// Prints a parenthesized, comma-separated argument list. Multi-line lists (as the
+// author laid them out) put each argument on its own indented line and gain a
+// trailing comma after the last argument; single-line lists stay compact.
+void GDScriptPrinter::print_argument_list(const Vector<GDScriptParser::ExpressionNode *> &p_arguments,
+		const Vector<StringName> &p_argument_names, bool p_multiline) {
+	const auto write_argument = [&](int p_index) {
+		if (p_index < p_argument_names.size() && !String(p_argument_names[p_index]).is_empty()) {
+			write(p_argument_names[p_index]);
 			write(" = ");
 		}
-		print_expression(p_call->arguments[i]);
+		print_expression(p_arguments[p_index]);
+	};
+
+	if (!p_multiline || p_arguments.is_empty()) {
+		write("(");
+		for (int i = 0; i < p_arguments.size(); i++) {
+			if (i > 0) {
+				write(", ");
+			}
+			write_argument(i);
+		}
+		write(")");
+		return;
 	}
+
+	write("(");
+	indent_level++;
+	for (int i = 0; i < p_arguments.size(); i++) {
+		newline();
+		write_indent();
+		write_argument(i);
+		write(",");
+	}
+	indent_level--;
+	newline();
+	write_indent();
 	write(")");
 }
 
 void GDScriptPrinter::print_subscript(const GDScriptParser::SubscriptNode *p_subscript) {
-	print_expression(p_subscript->base);
+	// `.attribute` and `[index]` bind tighter than every operator, so a base that
+	// is itself an operator expression must be parenthesized to keep the tree.
+	print_operand(FPREC_CALL, p_subscript->base);
 	if (p_subscript->is_attribute) {
 		write(".");
 		if (p_subscript->attribute != nullptr) {
@@ -1422,24 +1660,41 @@ void GDScriptPrinter::print_subscript(const GDScriptParser::SubscriptNode *p_sub
 }
 
 void GDScriptPrinter::print_cast(const GDScriptParser::CastNode *p_cast) {
-	print_expression(p_cast->operand);
+	print_operand(FPREC_CAST, p_cast->operand);
 	write(" as ");
 	print_type(p_cast->cast_type);
 }
 
 void GDScriptPrinter::print_await(const GDScriptParser::AwaitNode *p_await) {
 	write("await ");
-	print_expression(p_await->to_await);
+	print_operand(FPREC_AWAIT, p_await->to_await);
 }
 
 void GDScriptPrinter::print_array(const GDScriptParser::ArrayNode *p_array) {
-	write("[");
-	for (int i = 0; i < p_array->elements.size(); i++) {
-		if (i > 0) {
-			write(", ");
+	const bool multiline = node_spans_multiple_lines(p_array) && !p_array->elements.is_empty();
+	if (!multiline) {
+		write("[");
+		for (int i = 0; i < p_array->elements.size(); i++) {
+			if (i > 0) {
+				write(", ");
+			}
+			print_expression(p_array->elements[i]);
 		}
-		print_expression(p_array->elements[i]);
+		write("]");
+		return;
 	}
+
+	write("[");
+	indent_level++;
+	for (int i = 0; i < p_array->elements.size(); i++) {
+		newline();
+		write_indent();
+		print_expression(p_array->elements[i]);
+		write(",");
+	}
+	indent_level--;
+	newline();
+	write_indent();
 	write("]");
 }
 
@@ -1448,22 +1703,38 @@ void GDScriptPrinter::print_dictionary(const GDScriptParser::DictionaryNode *p_d
 		write("{}");
 		return;
 	}
-	write("{");
-	for (int i = 0; i < p_dictionary->elements.size(); i++) {
-		if (i > 0) {
-			write(", ");
+	const bool lua_style = p_dictionary->style == GDScriptParser::DictionaryNode::LUA_TABLE;
+	const auto write_pair = [&](int p_index) {
+		const GDScriptParser::DictionaryNode::Pair &pair = p_dictionary->elements[p_index];
+		print_expression(pair.key);
+		write(lua_style ? " = " : ": ");
+		print_expression(pair.value);
+	};
+
+	const bool multiline = node_spans_multiple_lines(p_dictionary);
+	if (!multiline) {
+		write("{");
+		for (int i = 0; i < p_dictionary->elements.size(); i++) {
+			if (i > 0) {
+				write(", ");
+			}
+			write_pair(i);
 		}
-		const GDScriptParser::DictionaryNode::Pair &pair = p_dictionary->elements[i];
-		if (p_dictionary->style == GDScriptParser::DictionaryNode::LUA_TABLE) {
-			print_expression(pair.key);
-			write(" = ");
-			print_expression(pair.value);
-		} else {
-			print_expression(pair.key);
-			write(": ");
-			print_expression(pair.value);
-		}
+		write("}");
+		return;
 	}
+
+	write("{");
+	indent_level++;
+	for (int i = 0; i < p_dictionary->elements.size(); i++) {
+		newline();
+		write_indent();
+		write_pair(i);
+		write(",");
+	}
+	indent_level--;
+	newline();
+	write_indent();
 	write("}");
 }
 
@@ -1517,7 +1788,7 @@ void GDScriptPrinter::print_get_node(const GDScriptParser::GetNodeNode *p_get_no
 }
 
 void GDScriptPrinter::print_type_test(const GDScriptParser::TypeTestNode *p_test) {
-	print_expression(p_test->operand);
+	print_operand(FPREC_TYPE_TEST, p_test->operand);
 	write(" is ");
 	print_type(p_test->test_type);
 }
