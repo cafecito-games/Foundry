@@ -399,8 +399,9 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::LSPeer::parse_script(const Strin
 
 	// Keep the global custom annotation index in sync with the buffer the LSP just parsed, so
 	// annotation-only namespaces declared in open (possibly unsaved) files resolve cross-file for
-	// completion and lookup. Only a cleanly parsed tree is indexed, matching the editor scan path,
-	// which avoids surfacing spurious duplicate-identity errors from half-typed declarations.
+	// completion and lookup. A cleanly parsed buffer is the source of truth and is indexed directly;
+	// if it fails to parse, fall back to the on-disk version so a half-typed edit cannot leave stale
+	// buffer annotations behind (which mirrors the editor scan, never indexing a broken file).
 	if (parser->parse_result == OK && parser->get_tree() != nullptr) {
 		List<StringName> annotations;
 		for (const GDScriptParser::AnnotationDeclarationNode *declaration : parser->get_tree()->annotation_declarations) {
@@ -410,6 +411,8 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::LSPeer::parse_script(const Strin
 			annotations.push_back(StringName(declaration->qualified_name));
 		}
 		GDScriptLanguage::get_singleton()->replace_global_annotations(p_path, annotations);
+	} else {
+		GDScriptLanguage::get_singleton()->update_global_class_annotations(p_path, p_path);
 	}
 
 	if (document != nullptr) {
@@ -508,6 +511,11 @@ void GDScriptLanguageProtocol::lsp_did_close(const Dictionary &p_params) {
 	bool was_opened = client->managed_files.erase(path);
 
 	client->remove_cached_parser(path);
+
+	// The unsaved buffer is gone: re-sync the annotation index with the on-disk file so any
+	// declarations indexed only from the closed buffer are dropped and any on-disk declarations
+	// are restored.
+	GDScriptLanguage::get_singleton()->update_global_class_annotations(path, path);
 
 	/// A close notification requires a previous open notification to be sent.
 	ERR_FAIL_COND_MSG(!was_opened, "LSP: Client is closing file without opening it.");
