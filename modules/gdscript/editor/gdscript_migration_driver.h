@@ -55,6 +55,14 @@ struct MigrationDriverOptions {
 	// Set once the user has seen the guard's warning and chosen to proceed anyway.
 	// When true the guard result is still reported but does not block the run.
 	bool acknowledge_vcs_warning = false;
+	// Test/embedding seam. When non-null, the driver derives its version-control
+	// safety verdict from this injected working-tree state through the guard's pure
+	// evaluate() function instead of inspecting the real project with git. This lets
+	// headless callers — notably the unit tests — exercise the block / acknowledge /
+	// proceed handling deterministically without a git checkout or spawned git
+	// processes. The live per-target ignored-file refinement (a separate git probe)
+	// is skipped when state is injected; the injected state alone fixes the verdict.
+	const ScriptRefactorVCSGuard::WorkingTreeState *vcs_state_override = nullptr;
 };
 
 // The combined report of a single migration run, joining the scan stage's honest account of

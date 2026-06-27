@@ -342,7 +342,7 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 		GDScriptTests::finish_language();
 	}
 
-	TEST_CASE("Driver's VCS safety guard blocks writes on an unsafe working tree (issue #42)") {
+	TEST_CASE("Driver's VCS safety guard blocks writes on a dirty working tree, then proceeds once acknowledged (issue #42)") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
 		REQUIRE(protocol);
@@ -354,38 +354,74 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 				"\treturn 1\n");
 		const String before = FileAccess::get_file_as_string(path);
 
-		// With the guard enabled (the default), inspect_project runs against the engine's own
-		// res:// checkout. Writing this temporary, untracked fixture makes the working tree dirty
-		// (or the tree may be unversioned/indeterminate in some environments); in every non-clean
-		// case the guard must block the run before any file is rewritten. If the checkout happens
-		// to be perfectly clean the guard returns SAFE and the run proceeds, which is also correct;
-		// the untracked fixture makes the dirty case the norm here.
+		// Inject a dirty working-tree state so the guard's block/acknowledge handling is
+		// exercised deterministically, without inspecting the engine's own res:// checkout
+		// or spawning git (which would make this test depend on the CI environment's git
+		// state). The guard's own git-inspection logic is covered separately by the pure
+		// evaluate() and inspect_project() unit tests.
+		ScriptRefactorVCSGuard::WorkingTreeState dirty_state;
+		dirty_state.git_available = true;
+		dirty_state.inside_work_tree = true;
+		dirty_state.git_status_exit_code = 0;
+		dirty_state.git_status_output = " M player.gd\n"; // Non-empty porcelain output => DIRTY.
+
 		MigrationDriverOptions guarded;
 		guarded.enforce_vcs_safety_guard = true;
+		guarded.vcs_state_override = &dirty_state;
 		const MigrationDriverResult blocked = GDScriptMigrationDriver::run("res://migration_driver_vcs_guard", guarded);
 
-		if (blocked.blocked_by_vcs_guard) {
-			CHECK_FALSE(blocked.ok);
-			CHECK(blocked.vcs_guard.should_warn());
-			CHECK_FALSE(blocked.error_message.is_empty());
-			// No file was modified while blocked.
-			CHECK_EQ(FileAccess::get_file_as_string(path), before);
-			CHECK_EQ(blocked.changed_files.size(), 0);
-			CHECK_EQ(blocked.total_annotations_applied, 0);
+		CHECK(blocked.blocked_by_vcs_guard);
+		CHECK_FALSE(blocked.ok);
+		CHECK_EQ(blocked.vcs_guard.status, ScriptRefactorVCSGuard::Status::DIRTY);
+		CHECK(blocked.vcs_guard.should_warn());
+		CHECK_FALSE(blocked.error_message.is_empty());
+		// No file was modified while blocked.
+		CHECK_EQ(FileAccess::get_file_as_string(path), before);
+		CHECK_EQ(blocked.changed_files.size(), 0);
+		CHECK_EQ(blocked.total_annotations_applied, 0);
 
-			// Acknowledging the warning lets the same run proceed and apply edits.
-			MigrationDriverOptions acknowledged = guarded;
-			acknowledged.acknowledge_vcs_warning = true;
-			const MigrationDriverResult proceeded = GDScriptMigrationDriver::run("res://migration_driver_vcs_guard", acknowledged);
-			CHECK(proceeded.ok);
-			CHECK_FALSE(proceeded.blocked_by_vcs_guard);
-			CHECK(FileAccess::get_file_as_string(path).contains("static func value() -> int:"));
-		} else {
-			// Clean checkout: the guard allowed the run, which then typed the file.
-			CHECK(blocked.ok);
-			CHECK_EQ(blocked.vcs_guard.status, ScriptRefactorVCSGuard::Status::SAFE);
-			CHECK(FileAccess::get_file_as_string(path).contains("static func value() -> int:"));
-		}
+		// Acknowledging the warning lets the same run proceed and apply edits.
+		MigrationDriverOptions acknowledged = guarded;
+		acknowledged.acknowledge_vcs_warning = true;
+		const MigrationDriverResult proceeded = GDScriptMigrationDriver::run("res://migration_driver_vcs_guard", acknowledged);
+		CHECK(proceeded.ok);
+		CHECK_FALSE(proceeded.blocked_by_vcs_guard);
+		CHECK(FileAccess::get_file_as_string(path).contains("static func value() -> int:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+		GDScriptTests::finish_language();
+	}
+
+	TEST_CASE("Driver's VCS safety guard proceeds on a clean working tree without consulting git (issue #42)") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		TemporaryProjectSubtree tree("res://migration_driver_vcs_guard_clean");
+
+		const String path = tree.write_file("player.gd",
+				"static func value():\n"
+				"\treturn 1\n");
+
+		// Inject a clean working-tree state: git ran, the project is inside a work tree, and
+		// `git status --porcelain` produced no output. The guard returns SAFE and the run
+		// proceeds to type the file, all without spawning git.
+		ScriptRefactorVCSGuard::WorkingTreeState clean_state;
+		clean_state.git_available = true;
+		clean_state.inside_work_tree = true;
+		clean_state.git_status_exit_code = 0;
+		clean_state.git_status_output = ""; // Empty porcelain output => SAFE.
+
+		MigrationDriverOptions guarded;
+		guarded.enforce_vcs_safety_guard = true;
+		guarded.vcs_state_override = &clean_state;
+		const MigrationDriverResult proceeded = GDScriptMigrationDriver::run("res://migration_driver_vcs_guard_clean", guarded);
+
+		CHECK(proceeded.ok);
+		CHECK_FALSE(proceeded.blocked_by_vcs_guard);
+		CHECK_EQ(proceeded.vcs_guard.status, ScriptRefactorVCSGuard::Status::SAFE);
+		CHECK(FileAccess::get_file_as_string(path).contains("static func value() -> int:"));
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
