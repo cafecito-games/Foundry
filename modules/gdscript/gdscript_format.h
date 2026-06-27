@@ -92,6 +92,7 @@ private:
 	// normalizing the blank lines that separate them.
 	String normalize_comment_text(const String &p_raw) const;
 	bool is_full_line_comment(int p_line) const;
+	void emit_comment_line(int p_line, const String &p_raw_comment);
 	void emit_leading_trivia(int p_next_line, int p_required_blanks);
 	void emit_trailing_comment(int p_line);
 	void flush_block_tail_comments();
@@ -140,11 +141,17 @@ private:
 
 	// Expressions.
 	void print_expression(const GDScriptParser::ExpressionNode *p_expression);
+	// Prints `p_child`, wrapping it in parentheses only when its operator binds
+	// looser than `p_min_precedence` requires, so the output re-parses to the same
+	// tree (the parser discards the author's original parentheses).
+	void print_operand(int p_min_precedence, const GDScriptParser::ExpressionNode *p_child);
 	void print_literal(const GDScriptParser::LiteralNode *p_literal);
 	void print_binary_op(const GDScriptParser::BinaryOpNode *p_op);
 	void print_unary_op(const GDScriptParser::UnaryOpNode *p_op);
 	void print_ternary_op(const GDScriptParser::TernaryOpNode *p_op);
 	void print_call(const GDScriptParser::CallNode *p_call);
+	void print_argument_list(const Vector<GDScriptParser::ExpressionNode *> &p_arguments,
+			const Vector<StringName> &p_argument_names, bool p_multiline);
 	void print_subscript(const GDScriptParser::SubscriptNode *p_subscript);
 	void print_cast(const GDScriptParser::CastNode *p_cast);
 	void print_await(const GDScriptParser::AwaitNode *p_await);

@@ -151,6 +151,113 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		CHECK_EQ(format_or_fail("#!shebang\n##doc comment\nvar x = 1\n"),
 				"#!shebang\n##doc comment\nvar x = 1\n");
 	}
+
+	TEST_CASE("[Format] Normalizes single quotes to double") {
+		CHECK_EQ(format_or_fail("var s = 'hi'\n"), "var s = \"hi\"\n");
+	}
+
+	TEST_CASE("[Format] Keeps single quotes when content has a double quote") {
+		CHECK_EQ(format_or_fail("var s = 'say \"hi\"'\n"), "var s = 'say \"hi\"'\n");
+	}
+
+	TEST_CASE("[Format] Leaves double-quoted strings untouched") {
+		CHECK_EQ(format_or_fail("var s = \"hi\"\n"), "var s = \"hi\"\n");
+	}
+
+	TEST_CASE("[Format] Leaves triple-quoted strings untouched") {
+		CHECK_EQ(format_or_fail("var s = '''hi'''\n"), "var s = '''hi'''\n");
+	}
+
+	TEST_CASE("[Format] Leaves raw strings untouched") {
+		CHECK_EQ(format_or_fail("var s = r'hi'\n"), "var s = r'hi'\n");
+	}
+
+	TEST_CASE("[Format] Normalizes hex literal casing") {
+		CHECK_EQ(format_or_fail("var n = 0Xff\n"), "var n = 0xFF\n");
+	}
+
+	TEST_CASE("[Format] Normalizes binary literal prefix casing") {
+		CHECK_EQ(format_or_fail("var n = 0B1010\n"), "var n = 0b1010\n");
+	}
+
+	TEST_CASE("[Format] Normalizes exponent casing and preserves underscores") {
+		CHECK_EQ(format_or_fail("var n = 1_000E3\n"), "var n = 1_000e3\n");
+		CHECK_EQ(format_or_fail("var h = 0xDE_AD\n"), "var h = 0xDE_AD\n");
+	}
+
+	TEST_CASE("[Format] Single-line array has no trailing comma") {
+		CHECK_EQ(format_or_fail("var a = [1, 2, 3]\n"), "var a = [1, 2, 3]\n");
+	}
+
+	TEST_CASE("[Format] Multi-line array gains a trailing comma") {
+		CHECK_EQ(format_or_fail("var a = [\n\t1,\n\t2\n]\n"),
+				"var a = [\n\t1,\n\t2,\n]\n");
+	}
+
+	TEST_CASE("[Format] Multi-line dictionary gains a trailing comma") {
+		CHECK_EQ(format_or_fail("var d = {\n\t\"a\": 1,\n\t\"b\": 2\n}\n"),
+				"var d = {\n\t\"a\": 1,\n\t\"b\": 2,\n}\n");
+	}
+
+	TEST_CASE("[Format] Multi-line call arguments gain a trailing comma") {
+		CHECK_EQ(format_or_fail("func f():\n\tfoo(\n\t\t1,\n\t\t2\n\t)\n"),
+				"func f():\n\tfoo(\n\t\t1,\n\t\t2,\n\t)\n");
+	}
+
+	TEST_CASE("[Format] Keeps parentheses required by precedence") {
+		CHECK_EQ(format_or_fail("var n = (1 + 2) * 3\n"), "var n = (1 + 2) * 3\n");
+	}
+
+	TEST_CASE("[Format] Drops parentheses not required by precedence") {
+		CHECK_EQ(format_or_fail("var n = 1 + (2 * 3)\n"), "var n = 1 + 2 * 3\n");
+	}
+
+	TEST_CASE("[Format] Keeps parentheses for left-associativity grouping") {
+		CHECK_EQ(format_or_fail("var n = 1 - (2 - 3)\n"), "var n = 1 - (2 - 3)\n");
+		CHECK_EQ(format_or_fail("var n = 12 / (3 / 2)\n"), "var n = 12 / (3 / 2)\n");
+	}
+
+	TEST_CASE("[Format] Drops parentheses on the left for left-associativity") {
+		CHECK_EQ(format_or_fail("var n = (1 - 2) - 3\n"), "var n = 1 - 2 - 3\n");
+	}
+
+	TEST_CASE("[Format] Keeps parentheses across logical operator precedence") {
+		CHECK_EQ(format_or_fail("var b = (a or b) and c\n"), "var b = (a or b) and c\n");
+		CHECK_EQ(format_or_fail("var b = a or (b and c)\n"), "var b = a or b and c\n");
+	}
+
+	TEST_CASE("[Format] Parenthesizes a unary operand by precedence") {
+		CHECK_EQ(format_or_fail("var n = -a * b\n"), "var n = -a * b\n");
+		CHECK_EQ(format_or_fail("var n = -(a * b)\n"), "var n = -(a * b)\n");
+	}
+
+	TEST_CASE("[Format] Parenthesizes nested ternary on the value side") {
+		CHECK_EQ(format_or_fail("var n = (a if b else c) if d else e\n"),
+				"var n = (a if b else c) if d else e\n");
+		CHECK_EQ(format_or_fail("var n = a if b else c if d else e\n"),
+				"var n = a if b else c if d else e\n");
+	}
+
+	TEST_CASE("[Format] Parenthesizes an await operand by precedence") {
+		CHECK_EQ(format_or_fail("func f():\n\tawait (a + b)\n"),
+				"func f():\n\tawait (a + b)\n");
+		CHECK_EQ(format_or_fail("func f():\n\tawait a + b\n"),
+				"func f():\n\tawait a + b\n");
+	}
+
+	TEST_CASE("[Format] Parenthesizes a cast operand by precedence") {
+		CHECK_EQ(format_or_fail("var n = (a + b) as int\n"), "var n = a + b as int\n");
+		CHECK_EQ(format_or_fail("var n = a + (b as int)\n"), "var n = a + (b as int)\n");
+	}
+
+	TEST_CASE("[Format] Generic type parameters spaced canonically") {
+		CHECK_EQ(format_or_fail("class Box[T,U]:\n\tpass\n"), "class Box[T, U]:\n\tpass\n");
+	}
+
+	TEST_CASE("[Format] AsyncCallable signature spacing") {
+		CHECK_EQ(format_or_fail("var f: AsyncCallable[[int,String],bool]\n"),
+				"var f: AsyncCallable[[int, String], bool]\n");
+	}
 }
 
 } // namespace GDScriptTests
