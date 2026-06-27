@@ -576,16 +576,26 @@ GDScriptPrinter::GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentDa
 		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations), source_lines(p_source_lines), header_lines(p_header_lines), string_comments(p_string_comments) {
 }
 
-int GDScriptPrinter::line_indent_depth(int p_line) const {
+int GDScriptPrinter::line_indent_columns(int p_line) const {
 	if (p_line < 1 || p_line > source_lines.size()) {
 		return 0;
 	}
+	// Leading-whitespace width in columns, so the measure is comparable whatever the
+	// source uses (tabs, spaces, or a mix): a tab advances to the next tab stop and a
+	// space counts as one column. Used only for relative depth comparisons.
+	const int tab_width = 4;
 	const String &line = source_lines[p_line - 1];
-	int depth = 0;
-	while (depth < line.length() && line[depth] == '\t') {
-		depth++;
+	int columns = 0;
+	for (int i = 0; i < line.length(); i++) {
+		if (line[i] == '\t') {
+			columns += tab_width - (columns % tab_width);
+		} else if (line[i] == ' ') {
+			columns += 1;
+		} else {
+			break;
+		}
 	}
-	return depth;
+	return columns;
 }
 
 void GDScriptPrinter::write_indent() {
@@ -724,14 +734,15 @@ void GDScriptPrinter::emit_trailing_comment(int p_line) {
 
 // Emits the comments that trail the last statement of a block body, taken from
 // the lines immediately following the last emitted line (a blank line or a
-// non-trivia line ends the run). A trailing full-line comment belongs to this
-// body only when its source indent is at least the body indent; a comment at a
-// shallower indent (e.g. a column-0 doc comment before the next member) belongs
-// to the following node and is left for its leading-trivia flush, which emits it
-// at that node's indent with the normal blank-line rules.
+// non-trivia line ends the run). A trailing full-line comment belongs to this body
+// only when its source indentation is at least the body's own (measured from the
+// last emitted body statement, so it is correct whether the source is tab- or
+// space-indented); a shallower comment (e.g. a column-0 doc comment before the next
+// member) belongs to the following node and is left for its leading-trivia flush.
 void GDScriptPrinter::flush_block_tail_comments() {
+	const int body_columns = line_indent_columns(last_emitted_line);
 	int line = last_emitted_line + 1;
-	while (is_trivia_line(line) && line_indent_depth(line) >= indent_level) {
+	while (is_trivia_line(line) && line_indent_columns(line) >= body_columns) {
 		emit_trivia_line(line);
 		line = last_emitted_line + 1;
 	}
@@ -1999,8 +2010,12 @@ void GDScriptPrinter::print_match_branch(const GDScriptParser::MatchBranchNode *
 	}
 	write(":");
 	newline();
-	last_emitted_line = p_branch->start_line;
-	emit_trailing_comment(p_branch->start_line);
+	// A multi-line array/dict pattern advances the cursor past `start_line`, so the
+	// header line (where the `:` lands and an inline comment would sit) is the later
+	// of the branch start and the cursor; never move the cursor backward.
+	const int header_line = MAX(p_branch->start_line, last_emitted_line);
+	last_emitted_line = header_line;
+	emit_trailing_comment(header_line);
 	indent_level++;
 	print_suite(p_branch->block);
 	flush_block_tail_comments();
@@ -2020,33 +2035,45 @@ void GDScriptPrinter::print_pattern(const GDScriptParser::PatternNode *p_pattern
 			write(p_pattern->bind->name);
 			break;
 		case GDScriptParser::PatternNode::PT_ARRAY:
-			write("[");
-			for (int i = 0; i < p_pattern->array.size(); i++) {
-				if (i > 0) {
-					write(", ");
-				}
-				print_pattern(p_pattern->array[i]);
-			}
-			write("]");
+			// Route multi-line array patterns through the shared delimited-items
+			// machinery so interior comments are interleaved (same as array literals).
+			print_delimited_items(
+					"[", "]", p_pattern->array.size(), node_was_authored_multiline(p_pattern),
+					p_pattern->start_line, p_pattern->end_line,
+					[&](int p_index) { print_pattern(p_pattern->array[p_index]); },
+					[&](int p_index) { return p_pattern->array[p_index]->start_line; },
+					[&](int p_index) { return p_pattern->array[p_index]->end_line; });
 			break;
 		case GDScriptParser::PatternNode::PT_DICTIONARY:
-			write("{");
-			for (int i = 0; i < p_pattern->dictionary.size(); i++) {
-				if (i > 0) {
-					write(", ");
-				}
-				const GDScriptParser::PatternNode::Pair &pair = p_pattern->dictionary[i];
-				if (pair.key != nullptr) {
-					print_expression(pair.key);
-					if (pair.value_pattern != nullptr) {
-						write(": ");
-						print_pattern(pair.value_pattern);
-					}
-				} else {
-					write("..");
-				}
-			}
-			write("}");
+			print_delimited_items(
+					"{", "}", p_pattern->dictionary.size(), node_was_authored_multiline(p_pattern),
+					p_pattern->start_line, p_pattern->end_line,
+					[&](int p_index) {
+						const GDScriptParser::PatternNode::Pair &pair = p_pattern->dictionary[p_index];
+						if (pair.key != nullptr) {
+							print_expression(pair.key);
+							if (pair.value_pattern != nullptr) {
+								write(": ");
+								print_pattern(pair.value_pattern);
+							}
+						} else {
+							write("..");
+						}
+					},
+					[&](int p_index) {
+						const GDScriptParser::PatternNode::Pair &pair = p_pattern->dictionary[p_index];
+						if (pair.key != nullptr) {
+							return pair.key->start_line;
+						}
+						return pair.value_pattern != nullptr ? pair.value_pattern->start_line : p_pattern->start_line;
+					},
+					[&](int p_index) {
+						const GDScriptParser::PatternNode::Pair &pair = p_pattern->dictionary[p_index];
+						if (pair.value_pattern != nullptr) {
+							return pair.value_pattern->end_line;
+						}
+						return pair.key != nullptr ? pair.key->end_line : p_pattern->start_line;
+					});
 			break;
 		case GDScriptParser::PatternNode::PT_REST:
 			write("..");
@@ -2476,8 +2503,20 @@ static bool write_file_atomic(const String &p_path, const String &p_content, Str
 		}
 	}
 	if (DirAccess::rename_absolute(temp_path, p_path) != OK) {
-		r_error_message = "could not replace original file";
-		DirAccess::remove_absolute(temp_path);
+		// The atomic replace failed. Crucially, the temp file is NOT deleted here: it
+		// holds the fully-formatted content (the desired output). On some platforms
+		// `DirAccess::rename` is not a true atomic replace -- the Windows implementation
+		// removes the destination before `MoveFileW`, so a failed move can leave the
+		// original already gone. If the original is missing, try once more to move the
+		// temp into its place (recovering the destination the failed rename removed). If
+		// that also fails, leave the temp in place and report its path. The guarantee: a
+		// failed write leaves EITHER the original intact OR the formatted content
+		// recoverable at the reported path -- never both lost.
+		if (!FileAccess::exists(p_path) && !DirAccess::exists(p_path) &&
+				DirAccess::rename_absolute(temp_path, p_path) == OK) {
+			return true; // Recovered: the formatted content now occupies the original path.
+		}
+		r_error_message = "could not replace original file; formatted output preserved at \"" + temp_path + "\"";
 		return false;
 	}
 	return true;

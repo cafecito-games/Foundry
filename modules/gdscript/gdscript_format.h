@@ -110,8 +110,8 @@ private:
 	const HashMap<int, StandaloneAnnotation> &standalone_annotations;
 	// The original source split into lines (1-based: line N is `source_lines[N - 1]`).
 	// The comment map has no column, so a full-line comment's original indentation is
-	// recovered from the leading tabs of its source line, which drives whether a tail
-	// comment belongs to a block body or to the following, shallower-indented node.
+	// recovered from the leading whitespace of its source line, which drives whether a
+	// tail comment belongs to a block body or to the following, shallower-indented node.
 	const Vector<String> &source_lines;
 	HeaderLines header_lines;
 	const HashMap<int, StringComment> &string_comments;
@@ -134,8 +134,10 @@ private:
 	// before the next node, emitting full-line comments at the current indent and
 	// normalizing the blank lines that separate them.
 	String normalize_comment_text(const String &p_raw) const;
-	// Leading-tab indent depth of source line `p_line` (1-based); 0 if out of range.
-	int line_indent_depth(int p_line) const;
+	// Leading-whitespace width of source line `p_line` (1-based) in columns (tabs
+	// expand to a 4-wide tab stop, spaces count as one); 0 if out of range. Used for
+	// relative-depth comparisons that must work for tab- or space-indented sources.
+	int line_indent_columns(int p_line) const;
 	bool is_full_line_comment(int p_line) const;
 	// Emits full-line comments whose source line falls in `(last_emitted_line,
 	// p_until_line)`, each on its own line at the current indent. Used to interleave
