@@ -398,11 +398,8 @@ static bool generate_class_index_recursive(const String &p_dir) {
 
 			// Index custom annotation declarations even for annotation-only files that declare
 			// no `class_name`/`trait_name`, so imports and duplicate-identity checks can see them.
-			List<StringName> annotations;
-			GDScriptLanguage::get_singleton()->get_global_annotations(source_file, &annotations);
-			for (const StringName &annotation : annotations) {
-				GDScriptLanguage::get_singleton()->add_global_annotation(annotation, source_file);
-			}
+			// Mirrors the editor file-system scan, which refreshes the index through the same call.
+			GDScriptLanguage::get_singleton()->update_global_class_annotations(source_file, source_file);
 		}
 
 		next = dir->get_next();

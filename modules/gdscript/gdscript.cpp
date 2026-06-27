@@ -3286,7 +3286,8 @@ void GDScriptLanguage::get_global_annotations(const String &p_path, List<StringN
 	// are indexed before dependencies are guaranteed to be resolvable. Unlike class-name
 	// extraction, a file that fails to parse is not indexed: a broken source cannot be a
 	// reliable annotation library, and indexing partial declarations would surface spurious
-	// duplicate-identity collisions.
+	// duplicate-identity collisions. Only the syntactic parse is consulted (the analyzer is not
+	// run), so a file with valid declarations but unrelated analyzer errors is still indexed.
 	// The full body must be parsed because annotation declarations are root body declarations;
 	// the class-name fast path (which skips the body) would never see them.
 	GDScriptParser parser;
@@ -3305,6 +3306,44 @@ void GDScriptLanguage::get_global_annotations(const String &p_path, List<StringN
 		}
 		r_annotations->push_back(StringName(declaration->qualified_name));
 	}
+}
+
+void GDScriptLanguage::replace_global_annotations(const String &p_path, const List<StringName> &p_annotations) {
+	// Drop every entry currently registered for this path and register the new set under a single
+	// lock, so a concurrent refresh of the same path (LSP reparse vs. editor scan with the threaded
+	// language server) cannot interleave the remove and add steps and strand an older parse's data.
+	MutexLock lock(annotation_index_mutex);
+
+	List<StringName> emptied;
+	for (KeyValue<StringName, Vector<String>> &entry : global_annotations) {
+		entry.value.erase(p_path);
+		if (entry.value.is_empty()) {
+			emptied.push_back(entry.key);
+		}
+	}
+	for (const StringName &name : emptied) {
+		global_annotations.erase(name);
+	}
+
+	for (const StringName &qualified_name : p_annotations) {
+		Vector<String> &paths = global_annotations[qualified_name];
+		if (!paths.has(p_path)) {
+			paths.push_back(p_path);
+		}
+	}
+}
+
+void GDScriptLanguage::update_global_class_annotations(const String &p_search_path, const String &p_target_path) {
+	// The file may have moved: drop the old path's entries before re-indexing the new one.
+	if (p_search_path != p_target_path) {
+		remove_global_annotations_by_path(p_search_path);
+	}
+
+	// `get_global_annotations` indexes nothing for a path that no longer exists or fails to parse,
+	// so a removed/renamed file collapses to an empty replacement, dropping its stale entries.
+	List<StringName> annotations;
+	get_global_annotations(p_target_path, &annotations);
+	replace_global_annotations(p_target_path, annotations);
 }
 
 void GDScriptLanguage::add_global_annotation(const StringName &p_qualified_name, const String &p_path) {

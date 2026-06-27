@@ -30,6 +30,8 @@
 
 #include "gdscript_language_protocol.h"
 
+#include "modules/gdscript/gdscript.h"
+
 #include "core/config/project_settings.h"
 #include "core/os/thread.h"
 #include "editor/doc/doc_tools.h"
@@ -389,6 +391,13 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::LSPeer::parse_script(const Strin
 		}
 		content = document->text;
 	}
+
+	// Keep the global custom annotation index fresh for this path from its on-disk contents before
+	// parsing, so the analyzer this parse runs resolves annotation-only namespaces consistently.
+	// Index disk rather than the unsaved buffer on purpose: cross-file annotation resolution loads
+	// declarations through GDScriptCache/disk, so indexing buffer-only declarations would advertise
+	// annotations whose declaration cannot yet be loaded. This mirrors the editor file-system scan.
+	GDScriptLanguage::get_singleton()->update_global_class_annotations(p_path, p_path);
 
 	ExtendGDScriptParser *parser = memnew(ExtendGDScriptParser);
 	parse_results[p_path] = parser;

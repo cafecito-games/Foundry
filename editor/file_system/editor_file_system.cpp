@@ -2570,6 +2570,27 @@ HashSet<String> EditorFileSystem::get_valid_extensions() const {
 void EditorFileSystem::_register_global_class_script(const String &p_search_path, const String &p_target_path, const ScriptClassInfoUpdate &p_script_update) {
 	ScriptServer::remove_global_class_by_path(p_search_path); // First remove, just in case it changed
 
+	// Refresh the owning language's cross-file custom annotation index for this path. This must run
+	// even for annotation-only files that declare no global class (which return early below), so
+	// pure annotation libraries are discoverable by imports and duplicate-identity checks. Match the
+	// language by file extension, since a removed file carries no resource type to dispatch on. A
+	// rename can change the extension, so the language owning the new path (which re-indexes it) and
+	// the one that owned the old path (which must drop its stale entries) can differ; handle both so
+	// a `.gd` renamed to a non-script extension does not leave annotations behind.
+	const String search_extension = p_search_path.get_extension().to_lower();
+	const String target_extension = p_target_path.get_extension().to_lower();
+	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
+		ScriptLanguage *language = ScriptServer::get_language(i);
+		const String language_extension = language->get_extension();
+		if (language_extension == target_extension) {
+			language->update_global_class_annotations(p_search_path, p_target_path);
+		} else if (language_extension == search_extension) {
+			// The old path's language no longer owns the new path: just drop the old path's entries
+			// (its file is gone after the rename, so re-indexing it collapses to a removal).
+			language->update_global_class_annotations(p_search_path, p_search_path);
+		}
+	}
+
 	if (p_script_update.name.is_empty()) {
 		return;
 	}
