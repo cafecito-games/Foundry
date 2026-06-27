@@ -162,7 +162,9 @@ Array GDScriptMethodDescriptor::get_default_arguments() const {
 	for (const Variant &default_argument : method_info.default_arguments) {
 		result.push_back(default_argument);
 	}
-	return result;
+	// Deep copy so an Array/Dictionary default cannot be mutated through the returned snapshot and
+	// alias this read-only descriptor's stored metadata.
+	return result.duplicate(true);
 }
 
 Dictionary GDScriptMethodDescriptor::to_dictionary() const {
