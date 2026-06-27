@@ -120,6 +120,58 @@ static String assignment_operator_text(GDScriptParser::AssignmentNode::Operation
 // bare. The parsed `full_path` drops the original quotes, so a name like
 // `My Node` (from `$"My Node"`) must be re-wrapped or the output would tokenize
 // as two identifiers and change the token stream.
+// Encodes a decoded String value as a canonical double-quoted GDScript string
+// literal, escaping the inverse of every escape the tokenizer decodes (see
+// `gdscript_tokenizer.cpp`): backslash, double quote, and the control escapes
+// `\a \b \f \n \r \t \v`. Any remaining control character is emitted as `\uXXXX`.
+// Use this for fields the parser stores as already-decoded Strings (extends path,
+// `@icon` path, quoted node-path segments); literals backed by a source token go
+// through the token index instead.
+static String quote_string_literal(const String &p_value) {
+	String result = "\"";
+	for (int i = 0; i < p_value.length(); i++) {
+		const char32_t character = p_value[i];
+		switch (character) {
+			case '\\':
+				result += "\\\\";
+				break;
+			case '"':
+				result += "\\\"";
+				break;
+			case '\a':
+				result += "\\a";
+				break;
+			case '\b':
+				result += "\\b";
+				break;
+			case '\f':
+				result += "\\f";
+				break;
+			case '\n':
+				result += "\\n";
+				break;
+			case '\r':
+				result += "\\r";
+				break;
+			case '\t':
+				result += "\\t";
+				break;
+			case '\v':
+				result += "\\v";
+				break;
+			default:
+				if (character < 0x20) {
+					result += "\\u" + String::num_uint64(character, 16).lpad(4, "0");
+				} else {
+					result += String::chr(character);
+				}
+				break;
+		}
+	}
+	result += "\"";
+	return result;
+}
+
 static String node_path_segment_text(const String &p_segment) {
 	if (p_segment.is_empty()) {
 		return p_segment; // Empty parts come from leading/internal slashes.
@@ -131,8 +183,7 @@ static String node_path_segment_text(const String &p_segment) {
 		name = name.substr(1);
 	}
 	if (name.is_empty() || !name.is_valid_unicode_identifier()) {
-		const String escaped = name.replace("\\", "\\\\").replace("\"", "\\\"");
-		return prefix + "\"" + escaped + "\"";
+		return prefix + quote_string_literal(name);
 	}
 	return prefix + name;
 }
@@ -682,7 +733,7 @@ String GDScriptPrinter::print_tree(const GDScriptParser::ClassNode *p_root, bool
 void GDScriptPrinter::print_extends_clause(const GDScriptParser::ClassNode *p_class) {
 	bool first = true;
 	if (!p_class->extends_path.is_empty()) {
-		write("\"" + p_class->extends_path + "\"");
+		write(quote_string_literal(p_class->extends_path));
 		first = false;
 	}
 	for (int i = 0; i < p_class->extends.size(); i++) {
@@ -772,7 +823,7 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 		newline();
 	}
 	if (!p_class->icon_path.is_empty()) {
-		write("@icon(\"" + p_class->icon_path + "\")");
+		write("@icon(" + quote_string_literal(p_class->icon_path) + ")");
 		newline();
 	}
 	if (p_class->annotated_static_unload) {
@@ -1744,8 +1795,23 @@ void GDScriptPrinter::print_literal(const GDScriptParser::LiteralNode *p_literal
 		}
 		return;
 	}
-	// Fallback for synthesized literals without a backing token.
-	write(p_literal->value.operator String());
+	// Fallback for synthesized literals without a backing token. String-valued
+	// literals must still be emitted as escaped, quoted literals (with their
+	// StringName / NodePath prefix) rather than as raw decoded text.
+	switch (p_literal->value.get_type()) {
+		case Variant::STRING:
+			write(quote_string_literal(p_literal->value));
+			break;
+		case Variant::STRING_NAME:
+			write("&" + quote_string_literal(p_literal->value));
+			break;
+		case Variant::NODE_PATH:
+			write("^" + quote_string_literal(p_literal->value));
+			break;
+		default:
+			write(p_literal->value.operator String());
+			break;
+	}
 }
 
 void GDScriptPrinter::print_operand(int p_min_precedence, const GDScriptParser::ExpressionNode *p_child) {
@@ -1987,9 +2053,14 @@ static String read_all_stdin() {
 // only replaced once the new content is fully and successfully written.
 static bool write_file_atomic(const String &p_path, const String &p_content, String &r_error_message) {
 	// Choose a temp sibling name unlikely to collide with real files: the pid plus
-	// a per-process counter. Refuse any candidate that already exists (a stale temp,
-	// an unrelated file, or a planted symlink) so opening it WRITE never truncates
-	// or follows something we did not create before the atomic rename.
+	// a per-process counter, skipping any candidate that already exists (a stale
+	// temp, an unrelated file, or a symlink). Note this is not fully race-safe:
+	// `FileAccess` opens via `fopen("wb")` and exposes no exclusive/no-follow create
+	// (no `O_EXCL`/`O_NOFOLLOW`), so a symlink planted at the chosen path between the
+	// existence check and the open could still be followed and truncated. The
+	// unpredictable name plus the existence check make that race very narrow, and it
+	// only matters for a writable, attacker-controlled directory; closing it fully
+	// would need a FileAccess API change out of scope here.
 	static uint32_t temp_counter = 0;
 	const uint64_t process_id = OS::get_singleton() != nullptr ? uint64_t(OS::get_singleton()->get_process_id()) : 0;
 	String temp_path;
