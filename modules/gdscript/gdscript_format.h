@@ -94,6 +94,7 @@ private:
 	bool is_full_line_comment(int p_line) const;
 	void emit_leading_trivia(int p_next_line, int p_required_blanks);
 	void emit_trailing_comment(int p_line);
+	void flush_block_tail_comments();
 	void flush_tail_comments();
 
 	static const GDScriptParser::Node *member_node(const GDScriptParser::ClassNode::Member &p_member);

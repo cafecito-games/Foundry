@@ -294,6 +294,25 @@ void GDScriptPrinter::emit_trailing_comment(int p_line) {
 	}
 }
 
+// Emits the comments that trail the last statement of a block body. Only the
+// comments on the lines immediately following the last emitted line are taken
+// (a blank line ends the run): without per-comment column data this is the
+// deterministic way to keep a body-trailing comment inside the body at its
+// indent rather than letting the next outer member steal it at a shallower
+// indent. Comments separated from the body by a blank line are left for the
+// enclosing scope's leading flush.
+void GDScriptPrinter::flush_block_tail_comments() {
+	int line = last_emitted_line + 1;
+	while (is_full_line_comment(line)) {
+		HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(line);
+		write_indent();
+		write(normalize_comment_text(found->value.comment));
+		newline();
+		last_emitted_line = line;
+		line++;
+	}
+}
+
 void GDScriptPrinter::flush_tail_comments() {
 	int max_line = 0;
 	for (const KeyValue<int, GDScriptTokenizer::CommentData> &entry : comments) {
@@ -586,7 +605,11 @@ void GDScriptPrinter::print_class_body(const GDScriptParser::ClassNode *p_class,
 			if (node->start_line == node->end_line) {
 				emit_trailing_comment(node->end_line);
 			}
-			last_emitted_line = node->end_line;
+			// A body-trailing comment may already have advanced the cursor past
+			// the node's end line; never move it backward (that would re-emit it).
+			if (node->end_line > last_emitted_line) {
+				last_emitted_line = node->end_line;
+			}
 		}
 		previous = &member;
 	}
@@ -760,6 +783,7 @@ void GDScriptPrinter::print_function(const GDScriptParser::FunctionNode *p_funct
 	last_emitted_line = p_function->start_line;
 	indent_level++;
 	print_suite(p_function->body);
+	flush_block_tail_comments();
 	indent_level--;
 }
 
@@ -808,6 +832,7 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 			last_emitted_line = p_variable->getter->start_line;
 			indent_level++;
 			print_suite(p_variable->getter->body);
+			flush_block_tail_comments();
 			indent_level--;
 		}
 		if (p_variable->setter != nullptr) {
@@ -821,6 +846,7 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 			last_emitted_line = p_variable->setter->start_line;
 			indent_level++;
 			print_suite(p_variable->setter->body);
+			flush_block_tail_comments();
 			indent_level--;
 		}
 	} else { // PROP_SETGET
@@ -999,7 +1025,9 @@ void GDScriptPrinter::print_suite(const GDScriptParser::SuiteNode *p_suite) {
 		if (statement->start_line == statement->end_line) {
 			emit_trailing_comment(statement->end_line);
 		}
-		last_emitted_line = statement->end_line;
+		if (statement->end_line > last_emitted_line) {
+			last_emitted_line = statement->end_line;
+		}
 	}
 }
 
@@ -1463,6 +1491,7 @@ void GDScriptPrinter::print_lambda(const GDScriptParser::LambdaNode *p_lambda) {
 	last_emitted_line = function->start_line;
 	indent_level++;
 	print_suite(function->body);
+	flush_block_tail_comments();
 	indent_level--;
 }
 
