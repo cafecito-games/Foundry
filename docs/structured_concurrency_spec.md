@@ -71,8 +71,67 @@ must:
 3. keep `is_coroutine = true`;
 4. carry `T` in `container_element_types[0]`.
 
-The exact `kind` encoding (synthetic `NATIVE` over `GDScriptFunctionState` vs. a
-dedicated pseudo-builtin) is an implementation detail provided those four hold.
+### Pinned encoding: NATIVE over `GDScriptFunctionState`
+
+```
+kind                    = NATIVE
+native_type             = "GDScriptFunctionState"
+is_coroutine            = true     // discriminator, reused
+container_element_types = [ T ]    // the phantom result type
+```
+
+"Coroutine" is a **source-level skin** applied in `to_string()` and at the parse
+site — the same approach `Type[T]` (#568) takes by skinning a `CLASS`/`NATIVE`
+type rather than introducing a new `Kind` (`gdscript_parser.cpp:6262`).
+
+There is deliberately **no `Variant::COROUTINE` builtin**: `Variant`'s type enum
+is a closed engine-wide set, and a coroutine is never a `Variant` value — at
+runtime it is an `Object` (`GDScriptFunctionState`, a registered `RefCounted`).
+
+Why NATIVE over `GDScriptFunctionState` rather than a pure synthetic flag
+(`BUILTIN`/`OBJECT` with no native class):
+
+- **Runtime-truthful** — the static type *is* the class the value actually has;
+  that honesty is the whole premise of this phase.
+- **Null / RefCounted semantics, and ClassDB resolution, come for free** (the
+  class is registered via `GDCLASS`).
+- **Reuses `is_coroutine`** as the discriminator, so the five set-sites and
+  `reduce_await` keep working with minimal change.
+- A future `is_valid() -> bool` member would resolve through normal native
+  member lookup with no special casing.
+
+The one cost the skin imposes: the native name must never leak. Route all
+rendering through the `is_coroutine` branch (see `to_string()` below).
+
+### Implementation obligations (#340)
+
+1. **`to_string()`** — add an `is_coroutine` branch *first* (mirroring the
+   `is_type_handle_annotation` check at `gdscript_parser.cpp:6262`), rendering
+   `Coroutine[%s]` from `container_element_types[0]`. Single choke point, so the
+   native name cannot leak into hovers / errors / completion.
+2. **`operator==`** (`gdscript_parser.h`, NATIVE branch) — the NATIVE case
+   compares `native_type` only; add a `container_element_types` compare (or a
+   top-level `is_coroutine` guard). `_datatype_alpha_equal` already recurses
+   `container_element_types` for any kind, so it mostly works as-is.
+3. **`GDScriptTypeCompatibility::check`** (`gdscript_type.cpp`) — NATIVE→NATIVE
+   compat is inheritance-based and ignores element types. Add a branch: if
+   either side is `is_coroutine`, require *both* to be and check element[0]
+   **invariantly** (clone the `Array` element branch at
+   `gdscript_type.cpp:313–322`). This is the one genuinely new piece of
+   compatibility code.
+4. **Parse-site recognition** — recognize `Coroutine` in type-annotation
+   position like the `Type` special-case at `gdscript_analyzer.cpp:1530`, not as
+   a real class; route `T` into `container_element_types[0]`.
+
+Invariant to hold: `is_coroutine == true` now *always* means "principal identity
+is Coroutine, result type in `container_element_types[0]`." The
+`make_coroutine_type(T)` helper consolidation is what enforces this across the
+five set-sites and `reduce_await`.
+
+`container_element_types[0]` is used for `T` (not `type_arguments[0]`) because it
+reuses the `has_`/`get_container_element_type` plumbing, the `alpha_equal`
+recursion, and the array-style invariant compat; `type_arguments` would buy
+nothing here.
 
 ## `await` operand-dispatch rules
 
