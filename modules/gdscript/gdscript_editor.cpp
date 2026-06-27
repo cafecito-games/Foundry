@@ -4525,6 +4525,11 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 								continue;
 							}
 
+							// Final methods cannot be overridden, so never offer them as override candidates.
+							if (member.function->is_final) {
+								continue;
+							}
+
 							if (options.has(member.function->identifier->name)) {
 								continue;
 							}
