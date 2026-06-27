@@ -36,9 +36,13 @@
 #include "editor/export/editor_export_platform_apple_embedded.h"
 #include "editor/export/editor_export_preset.h"
 
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/json.h"
+#include "core/io/plist.h"
 #include "core/object/object.h"
 #include "core/os/os.h"
+#include "core/templates/hash_set.h"
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
@@ -118,6 +122,64 @@ Array IOSRunTargetPlatform::build_probe_devices(const String &p_devicectl_json, 
 	}
 
 	return devices;
+}
+
+bool IOSRunTargetPlatform::parse_provisioning_profile_team(const String &p_decoded_plist, SigningTeam &r_team) {
+	if (p_decoded_plist.strip_edges().is_empty()) {
+		return false;
+	}
+
+	PList plist;
+	String parse_error;
+	if (!plist.load_string(p_decoded_plist, parse_error)) {
+		return false;
+	}
+
+	Ref<PListNode> root = plist.get_root();
+	if (root.is_null() || root->get_type() != PList::PL_NODE_TYPE_DICT) {
+		return false;
+	}
+	const HashMap<String, Ref<PListNode>> &fields = root->data_dict;
+
+	// The team id is the first entry of the `TeamIdentifier` array.
+	String team_id;
+	HashMap<String, Ref<PListNode>>::ConstIterator identifiers = fields.find("TeamIdentifier");
+	if (identifiers != fields.end() && identifiers->value.is_valid() && identifiers->value->get_type() == PList::PL_NODE_TYPE_ARRAY) {
+		const Vector<Ref<PListNode>> &entries = identifiers->value->data_array;
+		if (!entries.is_empty() && entries[0].is_valid() && entries[0]->get_type() == PList::PL_NODE_TYPE_STRING) {
+			team_id = String(entries[0]->get_value()).strip_edges();
+		}
+	}
+	if (team_id.is_empty()) {
+		return false;
+	}
+
+	String team_name;
+	HashMap<String, Ref<PListNode>>::ConstIterator name = fields.find("TeamName");
+	if (name != fields.end() && name->value.is_valid() && name->value->get_type() == PList::PL_NODE_TYPE_STRING) {
+		team_name = String(name->value->get_value()).strip_edges();
+	}
+
+	r_team.id = team_id;
+	r_team.name = team_name.is_empty() ? team_id : team_name;
+	return true;
+}
+
+Vector<SigningTeam> IOSRunTargetPlatform::parse_signing_teams(const Vector<String> &p_decoded_plists) {
+	Vector<SigningTeam> result;
+	HashSet<String> seen;
+	for (const String &payload : p_decoded_plists) {
+		SigningTeam team;
+		if (!parse_provisioning_profile_team(payload, team)) {
+			continue;
+		}
+		if (seen.has(team.id)) {
+			continue;
+		}
+		seen.insert(team.id);
+		result.push_back(team);
+	}
+	return result;
 }
 
 IOSRunTargetPlatform::IOSRunTargetPlatform() {
@@ -277,6 +339,103 @@ Vector<RunTargetDevice> IOSRunTargetPlatform::list_devices() {
 	}
 
 	return result;
+}
+
+Vector<String> IOSRunTargetPlatform::_list_provisioning_profile_paths() const {
+	Vector<String> paths;
+
+	const String home = OS::get_singleton()->get_environment("HOME");
+	if (home.is_empty()) {
+		return paths;
+	}
+	const String directory = home.path_join("Library/MobileDevice/Provisioning Profiles");
+
+	Ref<DirAccess> dir = DirAccess::open(directory);
+	if (dir.is_null()) {
+		return paths;
+	}
+
+	dir->list_dir_begin();
+	for (String file = dir->get_next(); !file.is_empty(); file = dir->get_next()) {
+		if (dir->current_is_dir()) {
+			continue;
+		}
+		const String extension = file.get_extension().to_lower();
+		if (extension == "mobileprovision" || extension == "provisionprofile") {
+			paths.push_back(directory.path_join(file));
+		}
+	}
+	dir->list_dir_end();
+
+	return paths;
+}
+
+String IOSRunTargetPlatform::extract_plist_from_profile(const Vector<uint8_t> &p_bytes) {
+	if (p_bytes.is_empty()) {
+		return String();
+	}
+
+	// A `.mobileprovision`/`.provisionprofile` is a CMS (PKCS#7) wrapper whose
+	// signed content is the profile's plist stored as cleartext. Slice that plist
+	// out of the raw bytes rather than running `security cms -D`, so the filename
+	// never reaches a shell.
+	const uint8_t *data = p_bytes.ptr();
+	const int size = p_bytes.size();
+
+	const auto find_bytes = [data, size](const char *p_needle, int p_from) -> int {
+		const int needle_length = strlen(p_needle);
+		if (needle_length == 0 || size < needle_length) {
+			return -1;
+		}
+		for (int i = MAX(p_from, 0); i + needle_length <= size; i++) {
+			if (memcmp(data + i, p_needle, needle_length) == 0) {
+				return i;
+			}
+		}
+		return -1;
+	};
+
+	int start = find_bytes("<?xml", 0);
+	if (start < 0) {
+		start = find_bytes("<plist", 0);
+	}
+	static const char *CLOSE_TAG = "</plist>";
+	const int close = find_bytes(CLOSE_TAG, MAX(start, 0));
+	if (start < 0 || close < 0) {
+		return String();
+	}
+	const int end = close + (int)strlen(CLOSE_TAG);
+
+	// The sliced range is XML text (ASCII, including any base64 `<data>` blobs),
+	// so it is valid UTF-8.
+	String result;
+	if (result.append_utf8((const char *)(data + start), end - start) != OK) {
+		return String();
+	}
+	return result;
+}
+
+String IOSRunTargetPlatform::_read_provisioning_profile_plist(const String &p_path) {
+	Error error = OK;
+	const Vector<uint8_t> bytes = FileAccess::get_file_as_bytes(p_path, &error);
+	if (error != OK) {
+		return String();
+	}
+	return extract_plist_from_profile(bytes);
+}
+
+Vector<SigningTeam> IOSRunTargetPlatform::list_signing_teams() {
+	// Read every installed provisioning profile and hand the batch to the pure
+	// parser. Each profile embeds the (team id, team name) pair Xcode minted for
+	// it, so the union across profiles is the set of teams the user can sign with.
+	Vector<String> profiles;
+	for (const String &path : _list_provisioning_profile_paths()) {
+		const String plist = _read_provisioning_profile_plist(path);
+		if (!plist.strip_edges().is_empty()) {
+			profiles.push_back(plist);
+		}
+	}
+	return parse_signing_teams(profiles);
 }
 
 EditorExportPlatformAppleEmbedded *IOSRunTargetPlatform::_find_export_platform() const {

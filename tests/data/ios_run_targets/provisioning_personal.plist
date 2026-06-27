@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AppIDName</key>
+	<string>My Game</string>
+	<key>ApplicationIdentifierPrefix</key>
+	<array>
+		<string>ABCDE12345</string>
+	</array>
+	<key>Name</key>
+	<string>iOS Team Provisioning Profile: com.example.mygame</string>
+	<key>TeamIdentifier</key>
+	<array>
+		<string>ABCDE12345</string>
+	</array>
+	<key>TeamName</key>
+	<string>Jane Developer</string>
+	<key>IsXcodeManaged</key>
+	<true/>
+</dict>
+</plist>

@@ -88,6 +88,21 @@ struct RunTargetDevice {
 	}
 };
 
+// A signing team a platform adapter detected on this system (e.g. an Apple
+// Developer team enrolled in Xcode). The Targets panel renders these into the
+// team picker so the user selects a known team rather than typing its raw id.
+struct SigningTeam {
+	String id; // Stable team identifier (e.g. the 10-character Apple team id).
+	String name; // Human-readable team name, e.g. "Jane Developer".
+
+	bool operator==(const SigningTeam &p_other) const {
+		return id == p_other.id && name == p_other.name;
+	}
+	bool operator!=(const SigningTeam &p_other) const {
+		return !(*this == p_other);
+	}
+};
+
 // Platform-agnostic adapter the run-target layer drives. The iOS adapter wraps
 // the existing export enumeration + `run()` machinery; Android (and desktop)
 // drop in later by supplying their own implementation. The manager, run-bar
@@ -102,6 +117,12 @@ public:
 
 	// Enumerate the devices this platform can currently deploy to.
 	virtual Vector<RunTargetDevice> list_devices() = 0;
+
+	// Enumerate the signing teams detected on this system, so the Targets panel
+	// can offer a picker instead of a free-form id field. Platforms without a
+	// notion of signing teams (the default) return an empty list, and the panel
+	// falls back to manual entry.
+	virtual Vector<SigningTeam> list_signing_teams() { return Vector<SigningTeam>(); }
 
 	// Deploy and launch `p_target`. `p_debug_flags` is a bitmask of
 	// `EditorExportPlatform::DebugFlags` (e.g. DEBUG_FLAG_REMOTE_DEBUG).

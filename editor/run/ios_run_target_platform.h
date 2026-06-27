@@ -112,6 +112,25 @@ public:
 	// connected but not yet runnable, so the ladder can still explain the blocker).
 	static Array build_probe_devices(const String &p_devicectl_json, const Vector<IOSDeployDevice> &p_ios_deploy_devices);
 
+	// Extracts the signing team from one decoded provisioning profile (the XML
+	// plist embedded in its CMS wrapper). Reads the first `TeamIdentifier` entry as
+	// the id and `TeamName` as the label, falling back to the id when no name is
+	// present. Returns false when the payload carries no team identifier. Pure so
+	// the team parser is unit-testable from captured fixtures.
+	static bool parse_provisioning_profile_team(const String &p_decoded_plist, SigningTeam &r_team);
+
+	// Parses a batch of decoded provisioning profiles into the distinct signing
+	// teams they reference, preserving first-seen order and deduplicating by team
+	// id. Profiles without a team are skipped. Pure; the live `list_signing_teams`
+	// is thin glue over this.
+	static Vector<SigningTeam> parse_signing_teams(const Vector<String> &p_decoded_plists);
+
+	// Slices the cleartext `<?xml ... </plist>` payload out of a provisioning
+	// profile's raw CMS (PKCS#7) bytes, returning an empty string when no plist is
+	// present. Pure, so the extraction the live path relies on (instead of shelling
+	// out `security cms -D` with an attacker-influenced filename) is unit-testable.
+	static String extract_plist_from_profile(const Vector<uint8_t> &p_bytes);
+
 	// Constructs the adapter with the production `OSCommandRunner`.
 	IOSRunTargetPlatform();
 	// Constructs the adapter with an injected runner (not owned by the adapter).
@@ -120,11 +139,23 @@ public:
 
 	virtual Vector<ReadinessStep> probe_readiness(const RunTarget &p_target) override;
 	virtual Vector<RunTargetDevice> list_devices() override;
+	virtual Vector<SigningTeam> list_signing_teams() override;
 	virtual Error run(const RunTarget &p_target, int p_debug_flags) override;
 
 private:
 	CommandRunner *command_runner = nullptr;
 	bool owns_command_runner = false;
+
+	// Lists the absolute paths of the installed provisioning profiles
+	// (`~/Library/MobileDevice/Provisioning Profiles/*.mobileprovision` and
+	// `*.provisionprofile`). Empty when the directory is absent (no profiles, or
+	// off macOS). Live filesystem glue, mirrored by the readiness probe seams.
+	Vector<String> _list_provisioning_profile_paths() const;
+
+	// Reads one provisioning profile from disk and returns its embedded plist via
+	// `extract_plist_from_profile`. Empty when the file is unreadable or has no
+	// plist payload.
+	static String _read_provisioning_profile_plist(const String &p_path);
 
 	// Runs `xcrun devicectl list devices` and returns its raw output, or an empty
 	// string when the tool is unavailable or fails.

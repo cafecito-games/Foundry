@@ -38,9 +38,22 @@
 
 #include "editor/export/editor_export_platform.h"
 
+#include "core/io/file_access.h"
+
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
 
 namespace TestIOSRunTargetPlatform {
+
+// Reads a captured decoded-provisioning-profile fixture (the XML plist
+// `security cms -D` emits) from `tests/data/ios_run_targets/`.
+static String load_profile_fixture(const String &p_fixture) {
+	const String path = TestUtils::get_data_path(String("ios_run_targets/").path_join(p_fixture));
+	Error error = OK;
+	const String text = FileAccess::get_file_as_string(path, &error);
+	REQUIRE_MESSAGE(error == OK, vformat("Could not read fixture: %s", path));
+	return text;
+}
 
 // A `CommandRunner` test double that returns canned `xcode-select` and `xcrun
 // devicectl` output, so the iOS adapter's readiness probing and device
@@ -357,6 +370,127 @@ TEST_CASE("[Editor][IOSRunTarget] run fails gracefully without a registered expo
 	ERR_PRINT_ON;
 
 	CHECK_NE(error, OK);
+}
+
+TEST_CASE("[Editor][IOSRunTarget] Provisioning profile parses into a signing team") {
+	SigningTeam team;
+	CHECK(IOSRunTargetPlatform::parse_provisioning_profile_team(load_profile_fixture("provisioning_personal.plist"), team));
+	CHECK_EQ(team.id, "ABCDE12345");
+	CHECK_EQ(team.name, "Jane Developer");
+
+	SigningTeam company;
+	CHECK(IOSRunTargetPlatform::parse_provisioning_profile_team(load_profile_fixture("provisioning_company.plist"), company));
+	CHECK_EQ(company.id, "FGHIJ67890");
+	CHECK_EQ(company.name, "Acme Incorporated");
+}
+
+TEST_CASE("[Editor][IOSRunTarget] Provisioning profile without a team name falls back to the id") {
+	const String plist =
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+			"<plist version=\"1.0\"><dict>"
+			"<key>TeamIdentifier</key><array><string>KLMNO13579</string></array>"
+			"</dict></plist>";
+	SigningTeam team;
+	CHECK(IOSRunTargetPlatform::parse_provisioning_profile_team(plist, team));
+	CHECK_EQ(team.id, "KLMNO13579");
+	CHECK_EQ(team.name, "KLMNO13579");
+}
+
+TEST_CASE("[Editor][IOSRunTarget] Profiles without a team identifier are rejected") {
+	SigningTeam team;
+
+	// Empty input.
+	CHECK_FALSE(IOSRunTargetPlatform::parse_provisioning_profile_team("", team));
+
+	// Not a plist at all.
+	CHECK_FALSE(IOSRunTargetPlatform::parse_provisioning_profile_team("not a plist", team));
+
+	// A valid plist that carries no team identifier.
+	const String no_team =
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+			"<plist version=\"1.0\"><dict>"
+			"<key>AppIDName</key><string>Orphan</string>"
+			"</dict></plist>";
+	CHECK_FALSE(IOSRunTargetPlatform::parse_provisioning_profile_team(no_team, team));
+
+	// A team identifier present but empty.
+	const String empty_team =
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+			"<plist version=\"1.0\"><dict>"
+			"<key>TeamIdentifier</key><array><string></string></array>"
+			"</dict></plist>";
+	CHECK_FALSE(IOSRunTargetPlatform::parse_provisioning_profile_team(empty_team, team));
+}
+
+TEST_CASE("[Editor][IOSRunTarget] Embedded plist is sliced out of a CMS-wrapped profile") {
+	// A provisioning profile stores its plist as cleartext inside a binary CMS
+	// wrapper (including NUL bytes). The extractor must recover exactly the
+	// `<?xml ... </plist>` span and feed cleanly into the team parser.
+	const String plist =
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+			"<plist version=\"1.0\"><dict>"
+			"<key>TeamIdentifier</key><array><string>PQRST24680</string></array>"
+			"<key>TeamName</key><string>Slice Team</string>"
+			"</dict></plist>";
+
+	Vector<uint8_t> bytes;
+	// Binary DER prelude, including a NUL byte.
+	bytes.push_back(0x30);
+	bytes.push_back(0x82);
+	bytes.push_back(0x00);
+	bytes.push_back(0x2A);
+	const CharString plist_utf8 = plist.utf8();
+	for (int i = 0; i < plist_utf8.length(); i++) {
+		bytes.push_back((uint8_t)plist_utf8[i]);
+	}
+	// Trailing signature bytes after </plist>.
+	bytes.push_back(0x00);
+	bytes.push_back(0xFF);
+
+	const String extracted = IOSRunTargetPlatform::extract_plist_from_profile(bytes);
+	CHECK_EQ(extracted, plist);
+
+	SigningTeam team;
+	CHECK(IOSRunTargetPlatform::parse_provisioning_profile_team(extracted, team));
+	CHECK_EQ(team.id, "PQRST24680");
+	CHECK_EQ(team.name, "Slice Team");
+
+	// No plist payload yields an empty string.
+	Vector<uint8_t> junk;
+	junk.push_back(0x01);
+	junk.push_back(0x02);
+	CHECK(IOSRunTargetPlatform::extract_plist_from_profile(junk).is_empty());
+	CHECK(IOSRunTargetPlatform::extract_plist_from_profile(Vector<uint8_t>()).is_empty());
+}
+
+TEST_CASE("[Editor][IOSRunTarget] Signing teams are deduplicated across profiles") {
+	Vector<String> payloads;
+	// Two profiles for the same personal team plus one company profile; a personal
+	// developer commonly has many profiles minted for the same team.
+	payloads.push_back(load_profile_fixture("provisioning_personal.plist"));
+	payloads.push_back(load_profile_fixture("provisioning_company.plist"));
+	payloads.push_back(load_profile_fixture("provisioning_personal.plist"));
+	payloads.push_back("garbage that does not parse");
+
+	const Vector<SigningTeam> teams = IOSRunTargetPlatform::parse_signing_teams(payloads);
+	REQUIRE_EQ(teams.size(), 2);
+	// First-seen order is preserved.
+	CHECK_EQ(teams[0].id, "ABCDE12345");
+	CHECK_EQ(teams[0].name, "Jane Developer");
+	CHECK_EQ(teams[1].id, "FGHIJ67890");
+	CHECK_EQ(teams[1].name, "Acme Incorporated");
+}
+
+TEST_CASE("[Editor][IOSRunTarget] Default platform adapter advertises no signing teams") {
+	// The base interface returns nothing so platforms without a team concept fall
+	// back to manual entry in the panel.
+	struct StubPlatform : public RunTargetPlatform {
+		virtual Vector<ReadinessStep> probe_readiness(const RunTarget &) override { return Vector<ReadinessStep>(); }
+		virtual Vector<RunTargetDevice> list_devices() override { return Vector<RunTargetDevice>(); }
+		virtual Error run(const RunTarget &, int) override { return OK; }
+	};
+	StubPlatform stub;
+	CHECK(stub.list_signing_teams().is_empty());
 }
 
 } // namespace TestIOSRunTargetPlatform
