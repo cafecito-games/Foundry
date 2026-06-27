@@ -34,6 +34,7 @@
 #include "editor/export/editor_export.h"
 #include "editor/export/editor_export_platform.h"
 #include "editor/export/editor_export_preset.h"
+#include "editor/run/editor_run_native.h"
 #include "editor/run/ios_run_target_platform.h"
 #include "editor/run/run_target_manager.h"
 #include "editor/themes/editor_scale.h"
@@ -116,6 +117,44 @@ int RunTargetsPanel::first_actionable_step_index(const Vector<ReadinessStep> &p_
 		}
 	}
 	return -1;
+}
+
+String RunTargetsPanel::unique_target_name(const String &p_preferred, const Vector<RunTarget> &p_existing) {
+	String base = p_preferred.strip_edges();
+	if (base.is_empty()) {
+		base = TTR("New Target");
+	}
+	String candidate = base;
+	int suffix = 2;
+	bool collision = true;
+	while (collision) {
+		collision = false;
+		for (int i = 0; i < p_existing.size(); i++) {
+			if (p_existing[i].name == candidate) {
+				collision = true;
+				break;
+			}
+		}
+		if (collision) {
+			candidate = base + " " + itos(suffix++);
+		}
+	}
+	return candidate;
+}
+
+RunTarget RunTargetsPanel::make_device_setup_target(const String &p_platform, const String &p_device_id, const String &p_device_name, const String &p_export_preset, const Vector<RunTarget> &p_existing) {
+	String preferred = p_device_name.strip_edges();
+	if (preferred.is_empty()) {
+		preferred = p_device_id.strip_edges();
+	}
+
+	RunTarget target;
+	target.name = unique_target_name(preferred, p_existing);
+	target.platform = p_platform;
+	target.export_preset = p_export_preset;
+	target.device_id = p_device_id.is_empty() ? String(AUTO_DEVICE_ID) : p_device_id;
+	target.signing_mode = DEFAULT_SIGNING_MODE;
+	return target;
 }
 
 void RunTargetsPanel::_ensure_manager() {
@@ -425,25 +464,7 @@ void RunTargetsPanel::_on_add_pressed() {
 	Ref<EditorExportPreset> preset = _get_or_create_preset_for_platform(IOS_PLATFORM);
 
 	RunTarget target;
-	// Give the target a unique default name.
-	const String base_name = TTR("New Target");
-	String name = base_name;
-	int suffix = 2;
-	const Vector<RunTarget> &existing = manager->get_targets();
-	bool collision = true;
-	while (collision) {
-		collision = false;
-		for (int i = 0; i < existing.size(); i++) {
-			if (existing[i].name == name) {
-				collision = true;
-				break;
-			}
-		}
-		if (collision) {
-			name = base_name + " " + itos(suffix++);
-		}
-	}
-	target.name = name;
+	target.name = unique_target_name(TTR("New Target"), manager->get_targets());
 	target.platform = IOS_PLATFORM;
 	target.export_preset = preset.is_valid() ? preset->get_name() : String();
 	target.device_id = AUTO_DEVICE_ID;
@@ -455,6 +476,85 @@ void RunTargetsPanel::_on_add_pressed() {
 	manager->save();
 
 	_refresh_target_list(targets.size() - 1);
+	_refresh_unconfigured_devices();
+}
+
+HashMap<String, Vector<RunTargetDevice>> RunTargetsPanel::_gather_devices_by_platform() const {
+	HashMap<String, Vector<RunTargetDevice>> devices_by_platform;
+
+	// Probe iOS plus any platform a configured target references, so a target on a
+	// platform without an adapter never makes the section claim it has no devices
+	// for a platform it cannot enumerate.
+	HashMap<String, bool> candidate_platforms;
+	candidate_platforms[IOS_PLATFORM] = true;
+	for (const RunTarget &target : manager->get_targets()) {
+		candidate_platforms[target.platform] = true;
+	}
+	for (const KeyValue<String, bool> &candidate : candidate_platforms) {
+		RunTargetPlatform *adapter = manager->get_platform(candidate.key);
+		if (adapter != nullptr) {
+			devices_by_platform[candidate.key] = adapter->list_devices();
+		}
+	}
+	return devices_by_platform;
+}
+
+void RunTargetsPanel::_refresh_unconfigured_devices() {
+	_clear_device_rows();
+
+	const HashMap<String, Vector<RunTargetDevice>> devices_by_platform = _gather_devices_by_platform();
+	// build_menu_model already partitions devices into configured-target rows and
+	// SETUP_DEVICE rows for connected devices no target claims; reuse it so the dock
+	// and the run-bar selector agree on which devices still need setting up.
+	const Vector<RunTargetMenuEntry> entries = EditorRunNative::build_menu_model(manager->get_targets(), devices_by_platform);
+
+	bool any_unconfigured = false;
+	for (const RunTargetMenuEntry &entry : entries) {
+		if (entry.kind != RunTargetMenuEntry::SETUP_DEVICE) {
+			continue;
+		}
+		any_unconfigured = true;
+
+		const String device_label = entry.label.is_empty() ? entry.device_id : entry.label;
+		Button *setup_button = memnew(Button);
+		setup_button->set_text(vformat(TTR("Set up %s…"), device_label));
+		setup_button->set_tooltip_text(TTR("Create a run target for this connected device."));
+		setup_button->set_disabled(!config_writable);
+		setup_button->connect(SceneStringName(pressed), callable_mp(this, &RunTargetsPanel::_on_setup_device_pressed).bind(entry.platform, entry.device_id, device_label));
+		devices_container->add_child(setup_button);
+	}
+
+	devices_placeholder->set_visible(!any_unconfigured);
+}
+
+void RunTargetsPanel::_clear_device_rows() {
+	for (int i = devices_container->get_child_count() - 1; i >= 0; i--) {
+		Node *child = devices_container->get_child(i);
+		if (child == devices_placeholder) {
+			continue;
+		}
+		child->queue_free();
+		devices_container->remove_child(child);
+	}
+}
+
+void RunTargetsPanel::_on_setup_device_pressed(const String &p_platform, const String &p_device_id, const String &p_device_name) {
+	if (!config_writable) {
+		return;
+	}
+
+	Ref<EditorExportPreset> preset = _get_or_create_preset_for_platform(p_platform);
+	const RunTarget target = make_device_setup_target(p_platform, p_device_id, p_device_name, preset.is_valid() ? preset->get_name() : String(), manager->get_targets());
+
+	Vector<RunTarget> targets = manager->get_targets();
+	targets.push_back(target);
+	manager->set_targets(targets);
+	manager->save();
+
+	// Select the freshly created target so the user lands on its signing/team
+	// fields and readiness ladder, then drop the now-claimed device from the list.
+	_refresh_target_list(targets.size() - 1);
+	_refresh_unconfigured_devices();
 }
 
 void RunTargetsPanel::_on_remove_pressed() {
@@ -468,6 +568,7 @@ void RunTargetsPanel::_on_remove_pressed() {
 	manager->save();
 
 	_refresh_target_list(MIN(index, targets.size() - 1));
+	_refresh_unconfigured_devices();
 }
 
 void RunTargetsPanel::_on_rename_pressed() {
@@ -617,6 +718,9 @@ void RunTargetsPanel::_on_device_changed(int p_index) {
 	RunTarget target = manager->get_targets()[index];
 	target.device_id = device_option->get_item_metadata(p_index);
 	_commit_target(index, target);
+
+	// Binding/unbinding a device changes which devices are still unconfigured.
+	_refresh_unconfigured_devices();
 }
 
 void RunTargetsPanel::_on_recheck_pressed() {
@@ -761,14 +865,17 @@ void RunTargetsPanel::_notification(int p_what) {
 		case NOTIFICATION_READY: {
 			_ensure_manager();
 			_refresh_target_list();
+			_refresh_unconfigured_devices();
 			initialized = true;
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			// Opening the panel triggers an on-demand reprobe so the ladder reflects
-			// the current device/toolchain state.
+			// the current device/toolchain state, and re-enumerates connected devices
+			// so a just-plugged-in device offers its "Set up this device…" row live.
 			if (initialized && is_visible_in_tree()) {
 				_reprobe_selected();
+				_refresh_unconfigured_devices();
 			}
 		} break;
 	}
@@ -810,6 +917,22 @@ RunTargetsPanel::RunTargetsPanel() {
 	rename_button->set_text(TTR("Rename"));
 	rename_button->connect(SceneStringName(pressed), callable_mp(this, &RunTargetsPanel::_on_rename_pressed));
 	list_buttons->add_child(rename_button);
+
+	// Connected-but-unconfigured devices: one-click "Set up this device…" rows.
+	list_column->add_child(memnew(HSeparator));
+
+	Label *devices_header = memnew(Label);
+	devices_header->set_text(TTR("Connected Devices"));
+	devices_header->set_theme_type_variation("HeaderSmall");
+	list_column->add_child(devices_header);
+
+	devices_container = memnew(VBoxContainer);
+	list_column->add_child(devices_container);
+
+	devices_placeholder = memnew(Label);
+	devices_placeholder->set_text(TTR("No unconfigured devices detected."));
+	devices_placeholder->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	devices_container->add_child(devices_placeholder);
 
 	// Details column (signing & devices, readiness).
 	details_container = memnew(VBoxContainer);

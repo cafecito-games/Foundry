@@ -79,6 +79,57 @@ TEST_CASE("[RunTargetsPanel] Default bundle id derivation") {
 	CHECK(RunTargetsPanel::is_valid_bundle_id(RunTargetsPanel::default_bundle_id_for_project("My Project")));
 }
 
+TEST_CASE("[RunTargetsPanel] Unique target name generation") {
+	Vector<RunTarget> existing;
+
+	// No collision: the preferred name is used verbatim.
+	CHECK(RunTargetsPanel::unique_target_name("My iPhone", existing) == "My iPhone");
+
+	RunTarget a;
+	a.name = "My iPhone";
+	existing.push_back(a);
+
+	// First collision appends " 2", and so on.
+	CHECK(RunTargetsPanel::unique_target_name("My iPhone", existing) == "My iPhone 2");
+
+	RunTarget b;
+	b.name = "My iPhone 2";
+	existing.push_back(b);
+	CHECK(RunTargetsPanel::unique_target_name("My iPhone", existing) == "My iPhone 3");
+
+	// A blank preferred name falls back to a generic label rather than an empty one.
+	CHECK_FALSE(RunTargetsPanel::unique_target_name("   ", existing).strip_edges().is_empty());
+}
+
+TEST_CASE("[RunTargetsPanel] One-click device setup target") {
+	Vector<RunTarget> existing;
+
+	// A connected device becomes a target that preselects its id and platform,
+	// with automatic signing and the device name as the (unique) target name.
+	const RunTarget target = RunTargetsPanel::make_device_setup_target("ios", "00008-UDID", "Jane's iPhone", "iOS", existing);
+	CHECK(target.name == "Jane's iPhone");
+	CHECK(target.platform == "ios");
+	CHECK(target.device_id == "00008-UDID");
+	CHECK(target.export_preset == "iOS");
+	CHECK(target.signing_mode == "automatic");
+
+	// The generated name avoids colliding with an existing target.
+	existing.push_back(target);
+	const RunTarget second = RunTargetsPanel::make_device_setup_target("ios", "00008-UDID", "Jane's iPhone", "iOS", existing);
+	CHECK(second.name == "Jane's iPhone 2");
+
+	// With no device name, the device id is used as the name.
+	const RunTarget no_name = RunTargetsPanel::make_device_setup_target("ios", "ABC123", "", "iOS", existing);
+	CHECK(no_name.name == "ABC123");
+	CHECK(no_name.device_id == "ABC123");
+
+	// With neither name nor id, the device id falls back to "auto" and the name to
+	// a non-empty generic label.
+	const RunTarget blank = RunTargetsPanel::make_device_setup_target("ios", "", "", "iOS", existing);
+	CHECK(blank.device_id == "auto");
+	CHECK_FALSE(blank.name.strip_edges().is_empty());
+}
+
 TEST_CASE("[RunTargetsPanel] First actionable step selection") {
 	Vector<ReadinessStep> steps;
 
