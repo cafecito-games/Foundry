@@ -137,6 +137,51 @@ TEST_CASE("[Modules][GDScript] Coroutine nests as a container element type") {
 	CHECK(element->container_types[0]->type_chain[0]->name == StringName("int"));
 }
 
+TEST_CASE("[Modules][GDScript] Coroutine[T] is recorded in a function return type") {
+	// The variable-position cases above never exercise the return-type slot, which is parsed
+	// through a separate path, so a regression there would otherwise go unnoticed.
+	GDScriptParser parser;
+	const Error error = parser.parse("func start() -> Coroutine[String]:\n\tpass\n", "user://test.gd", false);
+	REQUIRE(error == OK);
+	REQUIRE(parser.get_errors().is_empty());
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->has_function(StringName("start")));
+	const GDScriptParser::FunctionNode *function = root_class->get_member(StringName("start")).function;
+	REQUIRE(function != nullptr);
+
+	const GDScriptParser::TypeNode *type = function->return_type;
+	REQUIRE(type != nullptr);
+	CHECK(type->is_coroutine);
+	REQUIRE(type->type_chain.size() == 1);
+	CHECK(type->type_chain[0]->name == StringName("Coroutine"));
+	REQUIRE(type->container_types.size() == 1);
+	CHECK(type->container_types[0]->type_chain[0]->name == StringName("String"));
+}
+
+TEST_CASE("[Modules][GDScript] Coroutine[T] is recorded in a parameter type") {
+	GDScriptParser parser;
+	const Error error = parser.parse("func consume(job: Coroutine[int]):\n\tpass\n", "user://test.gd", false);
+	REQUIRE(error == OK);
+	REQUIRE(parser.get_errors().is_empty());
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->has_function(StringName("consume")));
+	const GDScriptParser::FunctionNode *function = root_class->get_member(StringName("consume")).function;
+	REQUIRE(function != nullptr);
+	REQUIRE(function->parameters.size() == 1);
+
+	const GDScriptParser::TypeNode *type = function->parameters[0]->datatype_specifier;
+	REQUIRE(type != nullptr);
+	CHECK(type->is_coroutine);
+	REQUIRE(type->type_chain.size() == 1);
+	CHECK(type->type_chain[0]->name == StringName("Coroutine"));
+	REQUIRE(type->container_types.size() == 1);
+	CHECK(type->container_types[0]->type_chain[0]->name == StringName("int"));
+}
+
 TEST_CASE("[Modules][GDScript] Coroutine[] rejects a missing result type") {
 	GDScriptParser parser;
 	const Error error = parser.parse("func test():\n\tvar job: Coroutine[]\n", "user://test.gd", false);
