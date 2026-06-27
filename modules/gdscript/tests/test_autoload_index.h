@@ -190,9 +190,34 @@ Error analyze_autoload_source(GDScriptParser &r_parser, const String &p_source, 
 	return analyzer.analyze();
 }
 
+Error analyze_autoload_source_with_index(
+		GDScriptParser &r_parser,
+		const String &p_source,
+		const String &p_path,
+		GDScriptAutoloadIndex &r_index) {
+	Error err = r_parser.parse(p_source, p_path, false);
+	if (err != OK) {
+		return err;
+	}
+
+	GDScriptAnalyzer analyzer(&r_parser);
+	err = analyzer.analyze();
+	r_index = analyzer.get_autoload_index();
+	return err;
+}
+
 bool autoload_analyzer_has_error(const GDScriptParser &p_parser, const String &p_expected_error) {
 	for (const GDScriptParser::ParserError &parser_error : p_parser.get_errors()) {
 		if (parser_error.message == p_expected_error) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool autoload_analyzer_has_error_containing(const GDScriptParser &p_parser, const String &p_expected_fragment) {
+	for (const GDScriptParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (parser_error.message.contains(p_expected_fragment)) {
 			return true;
 		}
 	}
@@ -526,6 +551,359 @@ TEST_CASE("[Modules][GDScript] Autoload index allows same-script class and autol
 		return;
 	}
 	CHECK_EQ(index.get_by_global_class(SNAME("IndexSame"))->path, same_path);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer extracts script-owned autoload entries") {
+	ScopedTempFiles files("gdscript_analyzer_autoload_annotation_valid");
+	ScopedAutoloadSettings autoloads;
+
+	const String save_source =
+			"@autoload\n"
+			"class_name AnalyzerAnnotationSaveManager extends Node\n";
+	const String save_path = files.write("save_manager.gd", save_source);
+	ScopedScriptServerClass registered_save(SNAME("AnalyzerAnnotationSaveManager"), "Node", save_path);
+
+	const String event_source =
+			"@autoload(depends_on = [AnalyzerAnnotationSaveManager], order_id = 10 + 5)\n"
+			"class_name AnalyzerAnnotationEventBus extends Node\n";
+	const String event_path = files.write("event_bus.gd", event_source);
+	ScopedScriptServerClass registered_event(SNAME("AnalyzerAnnotationEventBus"), "Node", event_path);
+
+	GDScriptParser save_parser;
+	GDScriptAutoloadIndex save_index;
+	CHECK_EQ(analyze_autoload_source_with_index(save_parser, save_source, save_path, save_index), OK);
+	const GDScriptAutoloadIndexEntry *save_entry = save_index.get_by_name(SNAME("AnalyzerAnnotationSaveManager"));
+	REQUIRE(save_entry != nullptr);
+	CHECK_EQ(save_entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(save_entry->name, SNAME("AnalyzerAnnotationSaveManager"));
+	CHECK_EQ(save_entry->path, save_path);
+	CHECK(save_entry->is_singleton);
+	CHECK(save_entry->is_node);
+	CHECK(save_entry->dependencies.is_empty());
+
+	GDScriptParser event_parser;
+	GDScriptAutoloadIndex event_index;
+	CHECK_EQ(analyze_autoload_source_with_index(event_parser, event_source, event_path, event_index), OK);
+	const GDScriptAutoloadIndexEntry *event_entry = event_index.get_by_name(SNAME("AnalyzerAnnotationEventBus"));
+	REQUIRE(event_entry != nullptr);
+	CHECK_EQ(event_entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(event_entry->name, SNAME("AnalyzerAnnotationEventBus"));
+	CHECK_EQ(event_entry->path, event_path);
+	CHECK(event_entry->is_singleton);
+	CHECK(event_entry->is_node);
+	CHECK_EQ(event_entry->global_class_name, SNAME("AnalyzerAnnotationEventBus"));
+	CHECK_EQ(event_entry->script_path, event_path);
+	CHECK_EQ(event_entry->native_base, SNAME("Node"));
+	CHECK_EQ(event_entry->order, 15);
+	REQUIRE_EQ(event_entry->dependencies.size(), 1);
+	CHECK_EQ(event_entry->dependencies[0].name, SNAME("AnalyzerAnnotationSaveManager"));
+	CHECK(event_entry->dependencies[0].is_autoload);
+
+	Vector<GDScriptAutoloadIndexEntry> entries;
+	entries.push_back(*event_entry);
+	entries.push_back(*save_entry);
+
+	GDScriptAutoloadIndex combined;
+	combined.rebuild_from_entries(entries);
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("AnalyzerAnnotationSaveManager"));
+	expected_order.push_back(SNAME("AnalyzerAnnotationEventBus"));
+	check_entry_order(combined, expected_order);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer indexes namespaced autoloads under simple singleton names") {
+	ScopedTempFiles files("gdscript_analyzer_autoload_annotation_namespace");
+	ScopedAutoloadSettings autoloads;
+
+	const String source =
+			"@autoload\n"
+			"namespace AnalyzerAnnotationNamespace\n"
+			"class_name NamespacedAutoload extends Node\n";
+	const String path = files.write("namespaced_autoload.gd", source);
+	ScopedScriptServerClass registered_namespaced(
+			SNAME("AnalyzerAnnotationNamespace.NamespacedAutoload"),
+			"Node",
+			path);
+
+	GDScriptParser parser;
+	GDScriptAutoloadIndex index;
+	const Error err = analyze_autoload_source_with_index(parser, source, path, index);
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+	CHECK(index.get_by_name(SNAME("AnalyzerAnnotationNamespace.NamespacedAutoload")) == nullptr);
+
+	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("NamespacedAutoload"));
+	CHECK(entry != nullptr);
+	if (entry == nullptr) {
+		return;
+	}
+	CHECK_EQ(entry->name, SNAME("NamespacedAutoload"));
+	CHECK_EQ(entry->global_class_name, SNAME("AnalyzerAnnotationNamespace.NamespacedAutoload"));
+	CHECK_EQ(entry->path, path);
+	CHECK_EQ(index.get_by_global_class(SNAME("AnalyzerAnnotationNamespace.NamespacedAutoload")), entry);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer resolves namespaced autoload dependencies through global classes") {
+	ScopedTempFiles files("gdscript_analyzer_autoload_annotation_namespaced_dependency");
+	ScopedAutoloadSettings autoloads;
+
+	const String save_source =
+			"@autoload\n"
+			"namespace AnalyzerAnnotationDependencyNamespace\n"
+			"class_name NamespacedSave extends Node\n";
+	const String save_path = files.write("namespaced_save.gd", save_source);
+	ScopedScriptServerClass registered_save(
+			SNAME("AnalyzerAnnotationDependencyNamespace.NamespacedSave"),
+			"Node",
+			save_path);
+
+	const String event_source =
+			"@autoload(depends_on = [NamespacedSave])\n"
+			"namespace AnalyzerAnnotationDependencyNamespace\n"
+			"class_name NamespacedEvent extends Node\n";
+	const String event_path = files.write("namespaced_event.gd", event_source);
+	ScopedScriptServerClass registered_event(
+			SNAME("AnalyzerAnnotationDependencyNamespace.NamespacedEvent"),
+			"Node",
+			event_path);
+
+	GDScriptParser save_parser;
+	GDScriptAutoloadIndex save_index;
+	CHECK_EQ(analyze_autoload_source_with_index(save_parser, save_source, save_path, save_index), OK);
+	const GDScriptAutoloadIndexEntry *save_entry = save_index.get_by_name(SNAME("NamespacedSave"));
+	REQUIRE(save_entry != nullptr);
+
+	GDScriptParser event_parser;
+	GDScriptAutoloadIndex event_index;
+	CHECK_EQ(analyze_autoload_source_with_index(event_parser, event_source, event_path, event_index), OK);
+	const GDScriptAutoloadIndexEntry *event_entry = event_index.get_by_name(SNAME("NamespacedEvent"));
+	REQUIRE(event_entry != nullptr);
+	REQUIRE_EQ(event_entry->dependencies.size(), 1);
+	CHECK_EQ(event_entry->dependencies[0].name, SNAME("AnalyzerAnnotationDependencyNamespace.NamespacedSave"));
+
+	Vector<GDScriptAutoloadIndexEntry> entries;
+	entries.push_back(*event_entry);
+	entries.push_back(*save_entry);
+
+	GDScriptAutoloadIndex combined;
+	combined.rebuild_from_entries(entries);
+
+	const GDScriptAutoloadIndexEntry *combined_event = combined.get_by_name(SNAME("NamespacedEvent"));
+	REQUIRE(combined_event != nullptr);
+	CHECK_FALSE(has_diagnostic(*combined_event, GDScriptAutoloadIndexDiagnostic::MISSING_DEPENDENCY));
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("NamespacedSave"));
+	expected_order.push_back(SNAME("NamespacedEvent"));
+	check_entry_order(combined, expected_order);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer populates script-owned autoload name diagnostics") {
+	ScopedTempFiles files("gdscript_analyzer_autoload_annotation_name_diagnostics");
+	ScopedAutoloadSettings autoloads;
+
+	const String reserved_source =
+			"@autoload\n"
+			"class_name godot extends Node\n";
+	const String reserved_path = files.write("reserved.gd", reserved_source);
+
+	GDScriptParser reserved_parser;
+	GDScriptAutoloadIndex reserved_index;
+	const Error reserved_err = analyze_autoload_source_with_index(
+			reserved_parser,
+			reserved_source,
+			reserved_path,
+			reserved_index);
+	CHECK_EQ(reserved_err, OK);
+	if (reserved_err != OK) {
+		return;
+	}
+
+	const GDScriptAutoloadIndexEntry *reserved_entry = reserved_index.get_by_name(SNAME("godot"));
+	REQUIRE(reserved_entry != nullptr);
+	CHECK(has_diagnostic(*reserved_entry, GDScriptAutoloadIndexDiagnostic::RESERVED_GLOBAL_NAME_COLLISION));
+
+	const String unrelated_global_path = files.write("simple_global.gd",
+			"class_name AnalyzerAnnotationSimpleCollision extends Node\n");
+	ScopedScriptServerClass registered_unrelated_simple(
+			SNAME("AnalyzerAnnotationSimpleCollision"),
+			"Node",
+			unrelated_global_path);
+
+	const String namespaced_collision_source =
+			"@autoload\n"
+			"namespace AnalyzerAnnotationCollisionNamespace\n"
+			"class_name AnalyzerAnnotationSimpleCollision extends Node\n";
+	const String namespaced_collision_path = files.write("namespaced_collision.gd", namespaced_collision_source);
+	ScopedScriptServerClass registered_namespaced_collision(
+			SNAME("AnalyzerAnnotationCollisionNamespace.AnalyzerAnnotationSimpleCollision"),
+			"Node",
+			namespaced_collision_path);
+
+	GDScriptParser collision_parser;
+	GDScriptAutoloadIndex collision_index;
+	const Error collision_err = analyze_autoload_source_with_index(
+			collision_parser,
+			namespaced_collision_source,
+			namespaced_collision_path,
+			collision_index);
+	CHECK_EQ(collision_err, OK);
+	if (collision_err != OK) {
+		return;
+	}
+
+	const GDScriptAutoloadIndexEntry *collision_entry =
+			collision_index.get_by_name(SNAME("AnalyzerAnnotationSimpleCollision"));
+	REQUIRE(collision_entry != nullptr);
+	CHECK(has_diagnostic(*collision_entry, GDScriptAutoloadIndexDiagnostic::UNRELATED_GLOBAL_CLASS_COLLISION));
+}
+
+TEST_CASE("[Modules][GDScript] Autoload annotation rejects invalid declarations") {
+	ScopedTempFiles files("gdscript_analyzer_autoload_annotation_invalid");
+
+	const String invalid_target_path = files.write("invalid_target.gd",
+			"class_name AnalyzerAnnotationInvalidTarget extends Node\n"
+			"@autoload\n"
+			"var value = 1\n");
+	GDScriptParser invalid_target_parser;
+	CHECK_NE(analyze_autoload_source(invalid_target_parser,
+					 "class_name AnalyzerAnnotationInvalidTarget extends Node\n"
+					 "@autoload\n"
+					 "var value = 1\n",
+					 invalid_target_path),
+			OK);
+	CHECK(autoload_analyzer_has_error_containing(
+			invalid_target_parser,
+			R"(Annotation "@autoload" must be at the top of the script)"));
+
+	const String missing_class_name_path = files.write("missing_class_name.gd",
+			"@autoload\n"
+			"extends Node\n");
+	GDScriptParser missing_class_name_parser;
+	CHECK_NE(analyze_autoload_source(missing_class_name_parser,
+					 "@autoload\n"
+					 "extends Node\n",
+					 missing_class_name_path),
+			OK);
+	CHECK(autoload_analyzer_has_error(missing_class_name_parser, R"("@autoload" requires "class_name".)"));
+
+	const String trait_name_path = files.write("trait_name.gd",
+			"@autoload\n"
+			"trait_name AnalyzerAnnotationAutoloadTrait\n");
+	GDScriptParser trait_name_parser;
+	CHECK_NE(analyze_autoload_source(trait_name_parser,
+					 "@autoload\n"
+					 "trait_name AnalyzerAnnotationAutoloadTrait\n",
+					 trait_name_path),
+			OK);
+	CHECK(autoload_analyzer_has_error(trait_name_parser, R"("@autoload" requires "class_name".)"));
+
+	const String non_node_path = files.write("non_node.gd",
+			"@autoload\n"
+			"class_name AnalyzerAnnotationPlainAutoload extends RefCounted\n");
+	GDScriptParser non_node_parser;
+	CHECK_NE(analyze_autoload_source(non_node_parser,
+					 "@autoload\n"
+					 "class_name AnalyzerAnnotationPlainAutoload extends RefCounted\n",
+					 non_node_path),
+			OK);
+	CHECK(autoload_analyzer_has_error(non_node_parser, R"("@autoload" requires the script to inherit from "Node".)"));
+
+	const String order_overflow_path = files.write("order_overflow.gd",
+			"@autoload(order_id = 1 << 40)\n"
+			"class_name AnalyzerAnnotationOrderOverflow extends Node\n");
+	GDScriptParser order_overflow_parser;
+	CHECK_NE(analyze_autoload_source(order_overflow_parser,
+					 "@autoload(order_id = 1 << 40)\n"
+					 "class_name AnalyzerAnnotationOrderOverflow extends Node\n",
+					 order_overflow_path),
+			OK);
+	CHECK(autoload_analyzer_has_error(
+			order_overflow_parser,
+			R"("order_id" of annotation "@autoload" must fit in a 32-bit signed integer.)"));
+
+	const String shadowed_dependency_path = files.write("shadowed_dependency.gd",
+			"class_name AnalyzerAnnotationShadowedDependency extends Node\n");
+	ScopedScriptServerClass registered_shadowed_dependency(
+			SNAME("AnalyzerAnnotationShadowedDependency"),
+			"Node",
+			shadowed_dependency_path);
+	const String shadowed_dependency_consumer_path = files.write("shadowed_dependency_consumer.gd",
+			"@autoload(depends_on = [AnalyzerAnnotationShadowedDependency])\n"
+			"class_name AnalyzerAnnotationShadowConsumer extends Node\n"
+			"const AnalyzerAnnotationShadowedDependency = 1\n");
+	GDScriptParser shadowed_dependency_parser;
+	CHECK_NE(analyze_autoload_source(shadowed_dependency_parser,
+					 "@autoload(depends_on = [AnalyzerAnnotationShadowedDependency])\n"
+					 "class_name AnalyzerAnnotationShadowConsumer extends Node\n"
+					 "const AnalyzerAnnotationShadowedDependency = 1\n",
+					 shadowed_dependency_consumer_path),
+			OK);
+	CHECK(autoload_analyzer_has_error_containing(
+			shadowed_dependency_parser,
+			R"(Dependency 1 of annotation "@autoload" must resolve to a script class.)"));
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index merges compatible migration entries") {
+	Vector<GDScriptAutoloadIndexDependency> dependencies;
+	dependencies.push_back(make_dependency(SNAME("IndexMigrationDependency")));
+
+	GDScriptAutoloadIndexEntry project_entry = make_dependency_entry(SNAME("IndexMigrationSame"), 40);
+	project_entry.path = "res://migration_same.gd";
+	project_entry.source = GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
+
+	GDScriptAutoloadIndexEntry script_entry = make_dependency_entry(SNAME("IndexMigrationSame"), 10, dependencies);
+	script_entry.path = "res://migration_same.gd";
+	script_entry.source = GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION;
+
+	Vector<GDScriptAutoloadIndexEntry> entries;
+	entries.push_back(project_entry);
+	entries.push_back(script_entry);
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	const Vector<GDScriptAutoloadIndexEntry> &indexed_entries = index.get_entries();
+	REQUIRE_EQ(indexed_entries.size(), 1);
+	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("IndexMigrationSame"));
+	REQUIRE(entry != nullptr);
+	CHECK_EQ(entry->path, "res://migration_same.gd");
+	REQUIRE_EQ(entry->dependencies.size(), 1);
+	CHECK_EQ(entry->dependencies[0].name, SNAME("IndexMigrationDependency"));
+	CHECK_FALSE(has_diagnostic(*entry, GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH));
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index diagnoses same-name different-path migration conflicts") {
+	GDScriptAutoloadIndexEntry project_entry = make_dependency_entry(SNAME("IndexMigrationConflict"), 10);
+	project_entry.path = "res://migration_settings.gd";
+	project_entry.source = GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
+
+	GDScriptAutoloadIndexEntry script_entry = make_dependency_entry(SNAME("IndexMigrationConflict"), 20);
+	script_entry.path = "res://migration_script.gd";
+	script_entry.source = GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION;
+
+	Vector<GDScriptAutoloadIndexEntry> entries;
+	entries.push_back(project_entry);
+	entries.push_back(script_entry);
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	const Vector<GDScriptAutoloadIndexEntry> &indexed_entries = index.get_entries();
+	REQUIRE_EQ(indexed_entries.size(), 1);
+	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("IndexMigrationConflict"));
+	REQUIRE(entry != nullptr);
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			"res://migration_settings.gd"));
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			"res://migration_script.gd"));
 }
 
 TEST_CASE("[Modules][GDScript] Analyzer allows same-script class name and autoload singleton names") {
