@@ -6077,7 +6077,10 @@ void EditorNode::_begin_first_scan() {
 }
 
 void EditorNode::_show_run_targets_dock_on_first_open() {
-	if (run_targets_dock == nullptr || editor_dock_manager == nullptr) {
+	// Command-line/headless runs (export, import, tests) must not consume the
+	// one-shot marker: there is no dock to reveal, and burning it here would mean
+	// the first interactive open never shows the dock.
+	if (cmdline_mode || run_targets_dock == nullptr || editor_dock_manager == nullptr) {
 		return;
 	}
 

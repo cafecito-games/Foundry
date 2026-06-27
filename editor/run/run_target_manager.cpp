@@ -193,7 +193,14 @@ bool RunTargetManager::consume_show_dock_on_first_open(const String &p_config_pa
 	// Clear the one-shot marker (this drops the meta section too when nothing else
 	// lives there) so the dock is revealed at most once, then persist the change.
 	config->erase_section_key(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY);
-	config->save(p_config_path);
+	const Error save_error = config->save(p_config_path);
+	if (save_error != OK) {
+		// The marker is still on disk, so reporting it consumed would auto-focus the
+		// dock on every open. Skip the reveal this time; a later open with a writable
+		// config will clear it cleanly.
+		WARN_PRINT(vformat("Could not clear the run-target first-open marker at \"%s\" (error %d); skipping the Targets dock reveal.", p_config_path, save_error));
+		return false;
+	}
 	return requested;
 }
 
