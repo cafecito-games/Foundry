@@ -106,6 +106,42 @@ func _ready():
 	CHECK_EQ(err, OK);
 }
 
+TEST_CASE("[Modules][GDScript] Language reserved words include final") {
+	Vector<String> reserved_words = GDScriptLanguage::get_singleton()->get_reserved_words();
+	int final_count = 0;
+	for (const String &word : reserved_words) {
+		if (word == "final") {
+			final_count++;
+		}
+	}
+	CHECK(final_count == 1);
+}
+
+TEST_CASE("[Modules][GDScript] Tokenizer emits FINAL for the final keyword") {
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code("final");
+	GDScriptTokenizer::Token token = tokenizer.scan();
+	CHECK(token.type == GDScriptTokenizer::Token::FINAL);
+}
+
+TEST_CASE("[Modules][GDScript] FINAL keyword is still valid as a node name") {
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code("final");
+	GDScriptTokenizer::Token token = tokenizer.scan();
+	CHECK(token.type == GDScriptTokenizer::Token::FINAL);
+	CHECK(token.is_node_name());
+
+	// `$final` must keep resolving to a node named `final` rather than producing a
+	// parse error now that `final` is a keyword.
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+func _ready():
+	return $final
+)",
+			"user://final_node_name.gd", false);
+	CHECK_EQ(err, OK);
+}
+
 static PackedStringArray parse_source_errors(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://namespace_import_test.gd", false);
@@ -232,6 +268,95 @@ static const GDScriptParser::ClassNode *find_parser_trait(const GDScriptParser::
 	}
 
 	return nullptr;
+}
+
+static const GDScriptParser::VariableNode *find_parser_variable(const GDScriptParser::ClassNode *p_class, const StringName &p_name) {
+	ERR_FAIL_NULL_V(p_class, nullptr);
+
+	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != GDScriptParser::ClassNode::Member::VARIABLE || member.variable == nullptr ||
+				member.variable->identifier == nullptr) {
+			continue;
+		}
+		if (member.variable->identifier->name == p_name) {
+			return member.variable;
+		}
+	}
+
+	return nullptr;
+}
+
+TEST_CASE("[Modules][GDScript] Parser sets is_final on final declarations") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+final var member_value := 1
+final static var shared := 2
+var plain_value := 3
+
+final func locked() -> void:
+	pass
+
+func unlocked() -> void:
+	pass
+
+final class Inner:
+	pass
+
+class Plain:
+	pass
+)",
+			"user://final_flags.gd", false);
+	CHECK_EQ(err, OK);
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::VariableNode *member_value = find_parser_variable(root, SNAME("member_value"));
+	CHECK(member_value != nullptr);
+	if (member_value != nullptr) {
+		CHECK(member_value->is_final);
+		CHECK_FALSE(member_value->is_static);
+	}
+
+	const GDScriptParser::VariableNode *shared = find_parser_variable(root, SNAME("shared"));
+	CHECK(shared != nullptr);
+	if (shared != nullptr) {
+		CHECK(shared->is_final);
+		CHECK(shared->is_static);
+	}
+
+	const GDScriptParser::VariableNode *plain_value = find_parser_variable(root, SNAME("plain_value"));
+	CHECK(plain_value != nullptr);
+	if (plain_value != nullptr) {
+		CHECK_FALSE(plain_value->is_final);
+	}
+
+	const GDScriptParser::FunctionNode *locked = find_parser_function(root, SNAME("locked"));
+	CHECK(locked != nullptr);
+	if (locked != nullptr) {
+		CHECK(locked->is_final);
+	}
+
+	const GDScriptParser::FunctionNode *unlocked = find_parser_function(root, SNAME("unlocked"));
+	CHECK(unlocked != nullptr);
+	if (unlocked != nullptr) {
+		CHECK_FALSE(unlocked->is_final);
+	}
+
+	const GDScriptParser::ClassNode *inner = find_parser_class(root, SNAME("Inner"));
+	CHECK(inner != nullptr);
+	if (inner != nullptr) {
+		CHECK(inner->is_final);
+	}
+
+	const GDScriptParser::ClassNode *plain = find_parser_class(root, SNAME("Plain"));
+	CHECK(plain != nullptr);
+	if (plain != nullptr) {
+		CHECK_FALSE(plain->is_final);
+	}
 }
 
 static bool has_parser_error(const GDScriptParser &p_parser, const String &p_expected_error) {
