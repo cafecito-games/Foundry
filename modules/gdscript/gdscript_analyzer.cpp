@@ -44,6 +44,7 @@
 #include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
+#include "core/templates/hashfuncs.h"
 #include "scene/main/node.h"
 
 #if defined(TOOLS_ENABLED) && !defined(DISABLE_DEPRECATED)
@@ -805,13 +806,15 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	if (p_class->identifier) {
 		StringName class_name = p_class->identifier->name;
 		StringName global_class_name = (p_class == parser->head && !p_class->qualified_global_name.is_empty()) ? StringName(p_class->qualified_global_name) : class_name;
+		ensure_autoload_index_current();
 		if (GDScriptParser::get_builtin_type(class_name) < Variant::VARIANT_MAX || class_name == SNAME("AsyncCallable")) {
 			push_error(vformat(R"(Class "%s" hides a built-in type.)", class_name), p_class->identifier);
 		} else if (class_exists(class_name)) {
 			push_error(vformat(R"(Class "%s" hides a native class.)", class_name), p_class->identifier);
 		} else if (ScriptServer::is_global_class(global_class_name) && (!GDScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(global_class_name), parser->script_path) || p_class != parser->head)) {
 			push_error(vformat(R"(Class "%s" from "%s" collides with global script class from "%s".)", global_class_name, parser->script_path, ScriptServer::get_global_class_path(global_class_name)), p_class->identifier);
-		} else if (ProjectSettings::get_singleton()->has_autoload(class_name) && ProjectSettings::get_singleton()->get_autoload(class_name).is_singleton) {
+		} else if (const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(class_name); autoload != nullptr && autoload->is_singleton &&
+				(p_class != parser->head || !GDScript::is_canonically_equal_paths(autoload->path, parser->script_path))) {
 			push_error(vformat(R"(Class "%s" hides an autoload singleton.)", class_name), p_class->identifier);
 		}
 	}
@@ -905,34 +908,6 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 
 					base = base_parser->get_parser()->head->get_datatype();
 				}
-			} else if (ProjectSettings::get_singleton()->has_autoload(name) && ProjectSettings::get_singleton()->get_autoload(name).is_singleton && !GDScriptLanguage::get_singleton()->is_reserved_global_name(name)) {
-				// A reserved named global (e.g. the `godot` reflection namespace) is not a
-				// base type; an autoload of that name must not be used for `extends`.
-				const ProjectSettings::AutoloadInfo &info = ProjectSettings::get_singleton()->get_autoload(name);
-				if (!info.path.has_extension(GDScriptLanguage::get_singleton()->get_extension())) {
-					push_error(vformat(R"(Singleton %s is not a GDScript.)", info.name), id);
-					return ERR_PARSE_ERROR;
-				}
-
-				Ref<GDScriptParserRef> info_parser = parser->get_depended_parser_for(info.path);
-				if (info_parser.is_null()) {
-					push_error(vformat(R"(Could not parse singleton from "%s".)", info.path), id);
-					return ERR_PARSE_ERROR;
-				}
-
-				Error err = info_parser->raise_status(GDScriptParserRef::INHERITANCE_SOLVED);
-				if (err != OK) {
-					push_error(vformat(R"(Could not resolve super class inheritance from "%s".)", name), id);
-					return err;
-				}
-
-#ifdef DEBUG_ENABLED
-				if (!parser->_is_tool && info_parser->get_parser()->_is_tool) {
-					parser->push_warning(p_class, GDScriptWarning::MISSING_TOOL);
-				}
-#endif // DEBUG_ENABLED
-
-				base = info_parser->get_parser()->head->get_datatype();
 			} else if (class_exists(name)) {
 				if (Engine::get_singleton()->has_singleton(name)) {
 					push_error(vformat(R"(Cannot inherit native class "%s" because it is an engine singleton.)", name), id);
@@ -1373,39 +1348,6 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					result = make_script_meta_type(ResourceLoader::load(path, "Script"));
 				}
 			}
-		} else if (ProjectSettings::get_singleton()->has_autoload(first) && ProjectSettings::get_singleton()->get_autoload(first).is_singleton && !GDScriptLanguage::get_singleton()->is_reserved_global_name(first)) {
-			// A reserved named global (e.g. the `godot` reflection namespace) is not a type;
-			// an autoload of that name must not be resolved as one in a type position.
-			const ProjectSettings::AutoloadInfo &autoload = ProjectSettings::get_singleton()->get_autoload(first);
-			String script_path;
-			if (ResourceLoader::get_resource_type(autoload.path) == "PackedScene") {
-				// Try to get script from scene if possible.
-				if (GDScriptLanguage::get_singleton()->has_any_global_constant(autoload.name)) {
-					Variant constant = GDScriptLanguage::get_singleton()->get_any_global_constant(autoload.name);
-					Node *node = Object::cast_to<Node>(constant);
-					if (node != nullptr) {
-						Ref<GDScript> scr = node->get_script();
-						if (scr.is_valid()) {
-							script_path = scr->get_script_path();
-						}
-					}
-				}
-			} else if (ResourceLoader::get_resource_type(autoload.path) == "GDScript") {
-				script_path = autoload.path;
-			}
-			if (script_path.is_empty()) {
-				return bad_type;
-			}
-			Ref<GDScriptParserRef> ref = parser->get_depended_parser_for(script_path);
-			if (ref.is_null()) {
-				push_error(vformat(R"(The referenced autoload "%s" (from "%s") could not be loaded.)", first, script_path), p_type);
-				return bad_type;
-			}
-			if (ref->raise_status(GDScriptParserRef::INHERITANCE_SOLVED) != OK) {
-				push_error(vformat(R"(Could not parse singleton "%s" from "%s".)", first, script_path), p_type);
-				return bad_type;
-			}
-			result = ref->get_parser()->head->get_datatype();
 		} else if (ClassDB::has_enum(parser->current_class->base_type.native_type, first)) {
 			// Native enum in current class.
 			result = make_native_enum_type(first, parser->current_class->base_type.native_type);
@@ -6148,6 +6090,53 @@ GDScriptParser::DataType GDScriptAnalyzer::make_global_class_meta_type(const Str
 	}
 }
 
+bool GDScriptAnalyzer::get_autoload_singleton_value_type(const StringName &p_name, GDScriptParser::DataType &r_type) {
+	if (GDScriptLanguage::get_singleton()->is_reserved_global_name(p_name)) {
+		return false;
+	}
+
+	ensure_autoload_index_current();
+	const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_name);
+	if (autoload == nullptr || !autoload->is_singleton) {
+		return false;
+	}
+
+	GDScriptParser::DataType result;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	result.kind = GDScriptParser::DataType::NATIVE;
+	result.builtin_type = Variant::OBJECT;
+	result.native_type = SNAME("Node");
+
+	String script_path = autoload->script_path;
+	if (script_path.is_empty() && ResourceLoader::get_resource_type(autoload->path) == "PackedScene") {
+		// Try to get script from scene if possible.
+		if (GDScriptLanguage::get_singleton()->has_any_global_constant(autoload->name)) {
+			Variant constant = GDScriptLanguage::get_singleton()->get_any_global_constant(autoload->name);
+			Node *node = Object::cast_to<Node>(constant);
+			if (node != nullptr) {
+				Ref<GDScript> scr = node->get_script();
+				if (scr.is_valid()) {
+					script_path = scr->get_script_path();
+				}
+			}
+		}
+	}
+
+	if (!script_path.is_empty()) {
+		Ref<GDScriptParserRef> single_parser = parser->get_depended_parser_for(script_path);
+		if (single_parser.is_valid()) {
+			Error err = single_parser->raise_status(GDScriptParserRef::INHERITANCE_SOLVED);
+			if (err == OK) {
+				result = type_from_metatype(single_parser->get_parser()->head->get_datatype());
+			}
+		}
+	}
+
+	result.is_constant = true;
+	r_type = result;
+	return true;
+}
+
 static String _join_identifier_chain(const Vector<GDScriptParser::IdentifierNode *> &p_chain, int p_from, int p_count) {
 	String result;
 	for (int i = p_from; i < p_count; i++) {
@@ -6351,26 +6340,36 @@ bool GDScriptAnalyzer::is_namespace_chain_root_shadowed(GDScriptParser::Identifi
 	}
 
 	const StringName native = parser->current_class->base_type.native_type;
-	if (!class_exists(native)) {
-		return false;
+	if (class_exists(native)) {
+		if (ClassDB::has_property(native, name)) {
+			return true;
+		}
+
+		MethodInfo method_info;
+		if (ClassDB::get_method_info(native, name, &method_info) || ClassDB::get_signal(native, name, &method_info)) {
+			return true;
+		}
+
+		if (ClassDB::has_enum(native, name)) {
+			return true;
+		}
+
+		bool valid = false;
+		ClassDB::get_integer_constant(native, name, &valid);
+		if (valid) {
+			return true;
+		}
 	}
 
-	if (ClassDB::has_property(native, name)) {
-		return true;
+	if (!GDScriptLanguage::get_singleton()->is_reserved_global_name(name)) {
+		ensure_autoload_index_current();
+		const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(name);
+		if (autoload != nullptr && autoload->is_singleton) {
+			return true;
+		}
 	}
 
-	MethodInfo method_info;
-	if (ClassDB::get_method_info(native, name, &method_info) || ClassDB::get_signal(native, name, &method_info)) {
-		return true;
-	}
-
-	if (ClassDB::has_enum(native, name)) {
-		return true;
-	}
-
-	bool valid = false;
-	ClassDB::get_integer_constant(native, name, &valid);
-	return valid;
+	return false;
 }
 
 static const GDScriptParser::Node *_trait_use_source(const GDScriptParser::ClassNode::TraitUse &p_trait_use,
@@ -8376,6 +8375,12 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 		return;
 	}
 
+	GDScriptParser::DataType autoload_singleton_type;
+	if (get_autoload_singleton_value_type(name, autoload_singleton_type)) {
+		p_identifier->set_datatype(autoload_singleton_type);
+		return;
+	}
+
 	StringName namespace_global_class;
 	bool namespace_error = false;
 	if (get_global_class_in_namespace(parser->head->namespace_name, name, namespace_global_class) ||
@@ -8393,53 +8398,6 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 	if (ScriptServer::is_global_class(name)) {
 		p_identifier->set_datatype(make_global_class_meta_type(name, p_identifier));
 		return;
-	}
-
-	// Try singletons.
-	// Do this before globals because this might be a singleton loading another one before it's compiled.
-	// A language-reserved named global (e.g. the `godot` reflection namespace) wins over a
-	// project autoload of the same name, so resolution falls through to the named-global
-	// constant below and `godot.reflection` stays reachable even if project.godot defines a
-	// shadowing autoload.
-	if (ProjectSettings::get_singleton()->has_autoload(name) && !GDScriptLanguage::get_singleton()->is_reserved_global_name(name)) {
-		const ProjectSettings::AutoloadInfo &autoload = ProjectSettings::get_singleton()->get_autoload(name);
-		if (autoload.is_singleton) {
-			// Singleton exists, so it's at least a Node.
-			GDScriptParser::DataType result;
-			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-			result.kind = GDScriptParser::DataType::NATIVE;
-			result.builtin_type = Variant::OBJECT;
-			result.native_type = SNAME("Node");
-			if (ResourceLoader::get_resource_type(autoload.path) == "GDScript") {
-				Ref<GDScriptParserRef> single_parser = parser->get_depended_parser_for(autoload.path);
-				if (single_parser.is_valid()) {
-					Error err = single_parser->raise_status(GDScriptParserRef::INHERITANCE_SOLVED);
-					if (err == OK) {
-						result = type_from_metatype(single_parser->get_parser()->head->get_datatype());
-					}
-				}
-			} else if (ResourceLoader::get_resource_type(autoload.path) == "PackedScene") {
-				if (GDScriptLanguage::get_singleton()->has_any_global_constant(name)) {
-					Variant constant = GDScriptLanguage::get_singleton()->get_any_global_constant(name);
-					Node *node = Object::cast_to<Node>(constant);
-					if (node != nullptr) {
-						Ref<GDScript> scr = node->get_script();
-						if (scr.is_valid()) {
-							Ref<GDScriptParserRef> single_parser = parser->get_depended_parser_for(scr->get_script_path());
-							if (single_parser.is_valid()) {
-								Error err = single_parser->raise_status(GDScriptParserRef::INHERITANCE_SOLVED);
-								if (err == OK) {
-									result = type_from_metatype(single_parser->get_parser()->head->get_datatype());
-								}
-							}
-						}
-					}
-				}
-			}
-			result.is_constant = true;
-			p_identifier->set_datatype(result);
-			return;
-		}
 	}
 
 	if (CoreConstants::is_global_constant(name)) {
@@ -12413,11 +12371,39 @@ bool GDScriptAnalyzer::class_exists(const StringName &p_class) {
 	return ClassDB::class_exists(p_class) && ClassDB::is_class_exposed(p_class);
 }
 
+uint32_t GDScriptAnalyzer::get_autoload_settings_hash() const {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings == nullptr) {
+		return 0;
+	}
+
+	uint32_t hash = hash_murmur3_one_32(project_settings->get_autoload_list().size());
+	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &kv : project_settings->get_autoload_list()) {
+		const ProjectSettings::AutoloadInfo &autoload = kv.value;
+		hash = hash_murmur3_one_32(autoload.name.hash(), hash);
+		hash = hash_murmur3_one_32(autoload.path.hash(), hash);
+		hash = hash_murmur3_one_32(autoload.is_singleton ? 1 : 0, hash);
+	}
+	return hash_fmix32(hash);
+}
+
+void GDScriptAnalyzer::ensure_autoload_index_current() {
+	const uint32_t settings_hash = get_autoload_settings_hash();
+	if (autoload_index.get_version() > 0 && autoload_index_settings_hash == settings_hash) {
+		return;
+	}
+
+	autoload_index.rebuild_from_project_settings();
+	autoload_index_settings_hash = settings_hash;
+}
+
 Error GDScriptAnalyzer::resolve_inheritance() {
+	ensure_autoload_index_current();
 	return resolve_class_inheritance(parser->head, true);
 }
 
 Error GDScriptAnalyzer::resolve_interface() {
+	ensure_autoload_index_current();
 	Error err = resolve_trait_uses(parser->head, true);
 	if (err) {
 		return err;
@@ -12435,6 +12421,7 @@ Error GDScriptAnalyzer::resolve_interface() {
 }
 
 Error GDScriptAnalyzer::resolve_body() {
+	ensure_autoload_index_current();
 	resolve_class_body(parser->head, true);
 
 #ifdef DEBUG_ENABLED
@@ -12458,6 +12445,7 @@ Error GDScriptAnalyzer::resolve_dependencies() {
 
 Error GDScriptAnalyzer::analyze() {
 	parser->errors.clear();
+	ensure_autoload_index_current();
 
 	Error err = validate_imports();
 	if (err) {

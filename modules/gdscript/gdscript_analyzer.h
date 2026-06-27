@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "gdscript_autoload_index.h"
 #include "gdscript_cache.h"
 #include "gdscript_parser.h"
 
@@ -39,6 +40,8 @@
 
 class GDScriptAnalyzer {
 	GDScriptParser *parser = nullptr;
+	GDScriptAutoloadIndex autoload_index;
+	uint32_t autoload_index_settings_hash = 0;
 
 	struct TraitMethodImplementation {
 		GDScriptParser::FunctionNode *function = nullptr;
@@ -174,6 +177,9 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType type_from_variant(const Variant &p_value, const GDScriptParser::Node *p_source);
 	GDScriptParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false) const;
 	GDScriptParser::DataType make_global_class_meta_type(const StringName &p_class_name, const GDScriptParser::Node *p_source);
+	uint32_t get_autoload_settings_hash() const;
+	void ensure_autoload_index_current();
+	bool get_autoload_singleton_value_type(const StringName &p_name, GDScriptParser::DataType &r_type);
 	bool get_global_class_in_namespace(const String &p_namespace, const StringName &p_class_name, StringName &r_global_class_name) const;
 	bool get_imported_global_class(const StringName &p_class_name, const GDScriptParser::Node *p_source, StringName &r_global_class_name, bool &r_error, const String &p_symbol_kind = "type");
 	bool get_namespace_global_class_from_type_chain(const Vector<GDScriptParser::IdentifierNode *> &p_type_chain, const GDScriptParser::Node *p_source, StringName &r_global_class_name, int &r_type_chain_size, bool &r_error, const String &p_symbol_kind = "type");
