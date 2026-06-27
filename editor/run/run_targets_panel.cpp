@@ -641,13 +641,13 @@ void RunTargetsPanel::_render_readiness(const Vector<ReadinessStep> &p_steps) {
 		marker->add_theme_color_override(SceneStringName(font_color), marker_color);
 		header->add_child(marker);
 
-		Label *title = memnew(Label);
-		title->set_text(step.title);
-		title->set_h_size_flags(SIZE_EXPAND_FILL);
+		Label *title_label = memnew(Label);
+		title_label->set_text(step.title);
+		title_label->set_h_size_flags(SIZE_EXPAND_FILL);
 		if (step.status != ReadinessStep::OK && i != actionable) {
-			title->add_theme_color_override(SceneStringName(font_color), disabled_color);
+			title_label->add_theme_color_override(SceneStringName(font_color), disabled_color);
 		}
-		header->add_child(title);
+		header->add_child(title_label);
 
 		// Expand the step the user can act on with its detail and fix hint.
 		if (i == actionable) {
