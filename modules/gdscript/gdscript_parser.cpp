@@ -1726,9 +1726,9 @@ void GDScriptParser::validate_declaration_modifiers(const DeclarationModifiers &
 	if (p_allow_abstract && p_allow_static && p_modifiers.is_abstract && p_modifiers.is_static && !p_in_trait) {
 		push_error(R"(The "abstract" and "static" modifiers cannot be combined outside a trait.)");
 	}
-	if (p_allow_abstract && p_allow_async && p_modifiers.is_abstract && p_modifiers.is_async) {
-		push_error(R"(The "abstract" and "async" modifiers cannot be combined.)");
-	}
+	// `abstract async` is intentionally allowed: it declares an async contract that
+	// forces overriding implementations to be async, matching the `@abstract async`
+	// annotation form (the `abstract` keyword is a superset of that annotation).
 }
 
 void GDScriptParser::parse_class_body(bool p_is_multiline) {
