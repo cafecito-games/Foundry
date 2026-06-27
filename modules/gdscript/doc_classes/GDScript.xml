@@ -50,6 +50,22 @@
 			# var typed_value: int = get_dynamic_value()
 		[/codeblock]
 		Most callable and signal signature checks run as part of normal static analysis. [member ProjectSettings.debug/gdscript/analysis/strict_dynamic_checks] adds stricter checks at dynamic boundaries by rejecting [Variant] values where a non-[Variant] static type is required.
+		[b]Abstract classes and methods:[/b] the contextual [code]abstract[/code] keyword marks a class or a method as abstract. It is written as a prefix on the declaration: [code]abstract func[/code] for a method, [code]abstract class[/code] for an inner class, and, at the top level of a file, [code]abstract class_name Shape[/code] or [code]abstract extends RefCounted[/code] for the script's own class.
+		An abstract class cannot be instantiated directly; it is meant to be inherited, and attempting to call [method new] on it results in an error. An abstract method has no implementation, so a newline or a semicolon is expected after its header. An abstract method defines a contract that inheriting classes must conform to, because the method signature must be compatible when overriding. Inheriting classes must either provide implementations for all inherited abstract methods or be marked as abstract themselves. If a class has at least one abstract method (its own or an unimplemented inherited one), then it must also be marked as abstract. The reverse is not required: an abstract class is allowed to have no abstract methods.
+		[codeblock]
+		abstract class Shape:
+			abstract func draw()
+
+		class Circle extends Shape:
+			func draw():
+				print("Drawing a circle.")
+
+		class Square extends Shape:
+			func draw():
+				print("Drawing a square.")
+		[/codeblock]
+		A method may be both abstract and asynchronous: [code]abstract async func[/code] declares an asynchronous override contract that inheriting classes must satisfy with a compatible asynchronous implementation.
+		At the top level, [code]abstract[/code] attaches to the script's own class, so it must precede a [code]class_name[/code] or [code]extends[/code] declaration. A file that declares neither implicitly extends [RefCounted], but the [code]abstract[/code] prefix has nothing to attach to; such a file must add an explicit base — for example [code]abstract extends RefCounted[/code] — to be marked abstract.
 		[b]Generics:[/b] classes and methods can be parameterized by one or more type parameters, declared with the same bracket convention used by [Array] and [Dictionary]. A type parameter is written after the class or method name ([code]class Box[T][/code], [code]func swap[T](...)[/code]), and the parameter is then usable as a type inside the body.
 		[codeblock]
 		# Generic class: `T` types members and method signatures.
@@ -80,7 +96,7 @@
 		[b]Bounds:[/b] a type parameter can declare an upper bound with [code]T: Bound[/code]. The bound may be a class ([code]Box[T: RefCounted][/code]) or a trait ([code]Box[T: Damageable][/code]). A type argument must satisfy the bound (be the bound, derive from it, or — for a trait bound — [code]uses[/code] it), and inside the body a [code]T[/code]-typed value exposes the bound type's members for static checking. Bounds are matched [i]invariantly[/i] in their own type arguments: [code]Stack[String][/code] does not satisfy a [code]List[int][/code] bound.
 		[codeblock]
 		trait Damageable:
-			@abstract func take_damage(amount: int) -> void
+			abstract func take_damage(amount: int) -> void
 
 		class Box[T: Damageable]:
 			var value: T
@@ -91,7 +107,7 @@
 		[b]Inheritance:[/b] a class can extend a generic base, rebinding the base's parameter to its own ([code]class Stack[U] extends List[U][/code]) or fixing it to a concrete type ([code]class IntList extends List[int][/code]). Inherited members and method signatures are substituted along the chain. Generic specialization is [i]invariant[/i]: [code]Stack[String][/code] is a [code]List[String][/code], not a [code]List[int][/code]. The F-bounded / CRTP pattern [code]class Sword extends Box[Sword][/code] is supported.
 		[b]Reified runtime model:[/b] generic [i]class instances[/i] are [i]reified[/i] — their type arguments survive to runtime. A [code]Box[int][/code] instance carries its bound type arguments, and writes to a [code]T[/code]-typed member are validated against them exactly as [Array] element insertion is, so assigning an incompatible value through a dynamic reference fails at runtime (values that convert, such as a [float] written to an [code skip-lint]int[/code] slot, are coerced). The reified arguments round-trip through [code].tres[/code]/scene save-load, resource duplication, and hot-reload. A generic class named without type arguments is a [i]raw[/i] generic (like an untyped [Array]): [code]var b: Box[/code] is a permissive supertype that any [code]Box[X][/code] assigns to, and its members are dynamic, with writes still validated against the instance's reified argument at runtime.
 		Generic [i]methods[/i], by contrast, are a static inference and checking device: their type parameters are [i]not[/i] reified and are erased at runtime. A generic method that returns a container whose element is a type parameter ([code]func singleton[T](...) -> Array[T][/code]) produces an untyped array at runtime; the element type is recovered from the target's concrete type at the assignment site, so assigning the result to an [code]Array[int][/code] retypes it while assigning to an untyped [Array] leaves it untyped.
-		[b]Generic traits:[/b] traits can be generic ([code]trait Holder[T][/code]) and applied with type arguments ([code]class IntBox uses Holder[int][/code]); conformance is checked under substitution, so the implementation must satisfy every required member with the argument applied. Traits can also require generic methods ([code]@abstract func transform[U](value: U) -> Array[U][/code]), which an implementation satisfies up to type-parameter renaming (alpha-equivalence by ordinal position).
+		[b]Generic traits:[/b] traits can be generic ([code]trait Holder[T][/code]) and applied with type arguments ([code]class IntBox uses Holder[int][/code]); conformance is checked under substitution, so the implementation must satisfy every required member with the argument applied. Traits can also require generic methods ([code]abstract func transform[U](value: U) -> Array[U][/code]), which an implementation satisfies up to type-parameter renaming (alpha-equivalence by ordinal position).
 		[b]Reflection:[/b] generic type information is available at runtime. [method is_generic] and [method get_type_parameter_list] report a class's declared type parameters (as [GDScriptTypeParameter] descriptors), and [method GDScriptReflection.get_type_arguments] returns the reified type arguments bound onto an instance.
 		[b]Custom annotations:[/b] a script can declare its own [i]passive[/i] annotations and attach them to classes, methods, and member variables. Custom annotations are static metadata only: they are never executed and add no per-call runtime cost. They do not introduce decorators, interceptors, AST transforms, or code generation. A declaration is written at the root of a script with the contextual [code]annotation[/code] keyword, names the parameters it accepts, and lists the targets it may be applied to with [code]targets[/code]. The valid targets are [code]CLASS[/code] (root and inner classes), [code]METHOD[/code] (including static, abstract, and trait methods), and [code]VARIABLE[/code] (member [code]var[/code] declarations, including static member variables). Declarations are root-only; they are not allowed inside inner classes, traits, or functions, and they do not become members, constants, or callables.
 		[codeblock]
