@@ -4517,11 +4517,31 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			GDScriptParser::FunctionNode *function_node = static_cast<GDScriptParser::FunctionNode *>(completion_context.node);
 			const bool is_static = function_node != nullptr && function_node->is_static;
 			const bool is_coroutine = function_node != nullptr && function_node->is_coroutine;
+			// Names of methods sealed by a `final` override somewhere in the hierarchy.
+			// Once a derived class makes a method final it cannot be overridden again, so
+			// the candidate must be suppressed even if an ancestor declares it non-final.
+			HashSet<StringName> sealed_overrides;
 			while (native_type.is_set() && native_type.kind != GDScriptParser::DataType::NATIVE) {
 				switch (native_type.kind) {
 					case GDScriptParser::DataType::CLASS: {
 						for (const GDScriptParser::ClassNode::Member &member : native_type.class_type->members) {
 							if (member.type != GDScriptParser::ClassNode::Member::FUNCTION) {
+								continue;
+							}
+
+							// Final methods cannot be overridden, so never offer them as override
+							// candidates, and seal the name so ancestor declarations are also hidden.
+							// Constructors are exempt: `_init`/`_static_init` are not overrides (the
+							// analyzer skips the final-override check for them), so a subclass may
+							// declare its own even when an ancestor marks one final.
+							const StringName &member_name = member.function->identifier->name;
+							const bool is_constructor = member_name == SNAME("_init") || member_name == SNAME("_static_init");
+							if (member.function->is_final && !is_constructor) {
+								sealed_overrides.insert(member_name);
+								continue;
+							}
+
+							if (sealed_overrides.has(member.function->identifier->name)) {
 								continue;
 							}
 
@@ -4563,6 +4583,9 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			for (const GDScriptParser::ClassNode *trait : completion_context.current_class->resolved_traits) {
 				for (const GDScriptParser::ClassNode::Member &member : trait->members) {
 					if (member.type != GDScriptParser::ClassNode::Member::FUNCTION || !member.function->is_abstract) {
+						continue;
+					}
+					if (sealed_overrides.has(member.function->identifier->name)) {
 						continue;
 					}
 					if (options.has(member.function->identifier->name)) {
@@ -4614,6 +4637,9 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			}
 
 			for (const MethodInfo &mi : virtual_methods) {
+				if (sealed_overrides.has(mi.name)) {
+					continue;
+				}
 				if (options.has(mi.name)) {
 					continue;
 				}
