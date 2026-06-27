@@ -152,6 +152,35 @@ private:
 	void print_call(const GDScriptParser::CallNode *p_call);
 	void print_argument_list(const Vector<GDScriptParser::ExpressionNode *> &p_arguments,
 			const Vector<StringName> &p_argument_names, bool p_multiline);
+	// Prints a `p_open`...`p_close` delimited list. When `p_multiline` (and the
+	// list is non-empty) each item goes on its own indented line with a trailing
+	// comma after the last; otherwise items are joined with `, ` on one line.
+	// `p_emit_item(i)` writes item `i` (without separators or surrounding spaces).
+	template <typename EmitItem>
+	void print_delimited_items(const char *p_open, const char *p_close, int p_count, bool p_multiline, EmitItem p_emit_item) {
+		write(p_open);
+		if (!p_multiline || p_count == 0) {
+			for (int i = 0; i < p_count; i++) {
+				if (i > 0) {
+					write(", ");
+				}
+				p_emit_item(i);
+			}
+			write(p_close);
+			return;
+		}
+		indent_level++;
+		for (int i = 0; i < p_count; i++) {
+			newline();
+			write_indent();
+			p_emit_item(i);
+			write(",");
+		}
+		indent_level--;
+		newline();
+		write_indent();
+		write(p_close);
+	}
 	void print_subscript(const GDScriptParser::SubscriptNode *p_subscript);
 	void print_cast(const GDScriptParser::CastNode *p_cast);
 	void print_await(const GDScriptParser::AwaitNode *p_await);
