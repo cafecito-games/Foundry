@@ -130,10 +130,11 @@ private:
 	// p_until_line)`, each on its own line at the current indent. Used to interleave
 	// comments inside a multi-line collection / call between its items.
 	void flush_inner_comments(int p_until_line);
-	// Emits full-line comments in `(last_emitted_line, p_until_line)` at the current
-	// indent, advancing the cursor. Used to keep comments that sit between an
-	// annotation and the node it annotates (and between successive annotations).
-	void flush_comments_until(int p_until_line);
+	// Emits trivia -- full-line comments and recovered standalone warning
+	// annotations -- in `(last_emitted_line, p_until_line)` at the current indent, in
+	// source order, advancing the cursor. Used to keep trivia that sits between an
+	// annotation/header sub-line and the following node (and between annotations).
+	void flush_trivia_until(int p_until_line);
 	// True when a full-line comment sits strictly between `p_after` and `p_before`.
 	// Lets an *empty* multi-line collection keep an interior comment (`[\n\t# c\n]`).
 	bool has_full_line_comment_between(int p_after, int p_before) const;

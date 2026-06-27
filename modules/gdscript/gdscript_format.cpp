@@ -689,10 +689,16 @@ bool GDScriptPrinter::has_full_line_comment_between(int p_after, int p_before) c
 	return false;
 }
 
-void GDScriptPrinter::flush_comments_until(int p_until_line) {
-	for (int line = last_emitted_line + 1; line < p_until_line; line++) {
-		if (is_full_line_comment(line)) {
-			emit_comment_line(line, comments.find(line)->value.comment);
+void GDScriptPrinter::flush_trivia_until(int p_until_line) {
+	int line = last_emitted_line + 1;
+	while (line < p_until_line) {
+		if (is_trivia_line(line)) {
+			// Emits a full-line comment or a recovered standalone warning annotation,
+			// advancing the cursor (a multi-line annotation past its end line).
+			emit_trivia_line(line);
+			line = last_emitted_line + 1;
+		} else {
+			line++;
 		}
 	}
 }
@@ -896,7 +902,11 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 				emit_leading_trivia(declaration->start_line, 0);
 			}
 			print_annotation_declaration(declaration);
-			last_emitted_line = declaration->end_line;
+			if (declaration->end_line > last_emitted_line) {
+				last_emitted_line = declaration->end_line;
+			}
+			// An inline comment on the declaration's own line.
+			emit_trailing_comment(declaration->end_line);
 		}
 		print_class_body(p_class, true);
 		return;
@@ -961,21 +971,21 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 
 	if (p_is_tool) {
 		if (header_lines.tool > 0) {
-			flush_comments_until(header_lines.tool);
+			flush_trivia_until(header_lines.tool);
 		}
 		write("@tool");
 		finish_header_line(header_lines.tool);
 	}
 	if (!p_class->icon_path.is_empty()) {
 		if (header_lines.icon > 0) {
-			flush_comments_until(header_lines.icon);
+			flush_trivia_until(header_lines.icon);
 		}
 		write("@icon(" + quote_string_literal(p_class->icon_path) + ")");
 		finish_header_line(header_lines.icon);
 	}
 	if (p_class->annotated_static_unload) {
 		if (header_lines.static_unload > 0) {
-			flush_comments_until(header_lines.static_unload);
+			flush_trivia_until(header_lines.static_unload);
 		}
 		write("@static_unload");
 		finish_header_line(header_lines.static_unload);
@@ -983,7 +993,7 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 
 	if (!p_class->namespace_name.is_empty()) {
 		if (header_lines.name_space > 0) {
-			flush_comments_until(header_lines.name_space);
+			flush_trivia_until(header_lines.name_space);
 		}
 		write("namespace ");
 		write(p_class->namespace_name);
@@ -992,7 +1002,7 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 	for (int i = 0; i < p_class->imports.size(); i++) {
 		const int import_line = i < header_lines.imports.size() ? header_lines.imports[i] : 0;
 		if (import_line > 0) {
-			flush_comments_until(import_line);
+			flush_trivia_until(import_line);
 		}
 		write("import ");
 		write(p_class->imports[i]);
@@ -1028,7 +1038,7 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 				? p_class->extends[0]->start_line
 				: header_lines.extends;
 		if (extends_line > 0) {
-			flush_comments_until(extends_line);
+			flush_trivia_until(extends_line);
 		}
 		if (!modifier_consumed) {
 			write(modifier);
@@ -1047,7 +1057,7 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 			uses_line = p_class->used_traits[0].name[0]->start_line;
 		}
 		if (uses_line > 0) {
-			flush_comments_until(uses_line);
+			flush_trivia_until(uses_line);
 		}
 		for (int i = 0; i < p_class->used_traits.size(); i++) {
 			write(i == 0 ? "uses " : ", ");
@@ -1181,7 +1191,7 @@ void GDScriptPrinter::print_annotations(const List<GDScriptParser::AnnotationNod
 	for (const GDScriptParser::AnnotationNode *annotation : p_annotations) {
 		// Full-line comments that sit between the previous annotation and this one.
 		if (annotation->start_line > 0) {
-			flush_comments_until(annotation->start_line);
+			flush_trivia_until(annotation->start_line);
 		}
 		write_indent();
 		print_annotation_inline(annotation);
@@ -1200,7 +1210,7 @@ void GDScriptPrinter::print_annotations(const List<GDScriptParser::AnnotationNod
 	}
 	// Full-line comments between the last annotation and the node it annotates.
 	if (p_target_line > 0) {
-		flush_comments_until(p_target_line);
+		flush_trivia_until(p_target_line);
 	}
 }
 
@@ -1370,7 +1380,7 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 	if (p_variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 		if (p_variable->getter != nullptr) {
 			// Full-line comments between the `var x:` line and the `get:` block.
-			flush_comments_until(p_variable->getter->start_line);
+			flush_trivia_until(p_variable->getter->start_line);
 			write_indent();
 			write("get:");
 			newline();
@@ -1383,7 +1393,7 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 		}
 		if (p_variable->setter != nullptr) {
 			// Full-line comments before the `set(...):` block (after `var x:` or the getter).
-			flush_comments_until(p_variable->setter->start_line);
+			flush_trivia_until(p_variable->setter->start_line);
 			write_indent();
 			write("set(");
 			if (p_variable->setter_parameter != nullptr) {
@@ -1406,7 +1416,7 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 		// so emit them all on their own lines *before* the single clause line. Doing
 		// it before (not after) keeps it idempotent: on a reformat those comments are
 		// already above the clause line and stay there.
-		flush_comments_until(p_variable->end_line);
+		flush_trivia_until(p_variable->end_line);
 		write_indent();
 		bool wrote_clause = false;
 		if (p_variable->getter_pointer != nullptr) {
@@ -2413,6 +2423,12 @@ void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vec
 		}
 		const String full_path = p_dir.path_join(entry);
 		if (dir->current_is_dir()) {
+			// Do not descend into symlinked directories: following them would let a
+			// `--write` run escape the target tree (rewriting external `.gd` files) or
+			// loop forever on a symlink cycle.
+			if (dir->is_link(full_path)) {
+				continue;
+			}
 			collect_gd_scripts_recursive(full_path, r_files);
 		} else if (entry.get_extension() == "gd") {
 			r_files.push_back(full_path);
@@ -2523,6 +2539,14 @@ void GDScriptFormatterCLI::run_from_cmdline() {
 
 	bool needs_change = false;
 	bool had_error = false;
+
+	// Mixing the stdin sentinel (`-`) with explicit paths is rejected rather than
+	// silently formatting only stdin and dropping the named files.
+	if (options.read_stdin && !options.paths.is_empty()) {
+		fprintf(stderr, "gdscript-format: cannot combine stdin (\"-\") with file or directory paths.\n");
+		OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+		return;
+	}
 
 	if (options.read_stdin) {
 		const String source = read_all_stdin();
