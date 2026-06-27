@@ -902,6 +902,18 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 			CHECK_MESSAGE(trees_equivalent(source, formatted, "y.gd"),
 					"Formatting must preserve the @icon path value.");
 		}
+		{
+			// U+202E (right-to-left override) is rejected raw in a string literal, so
+			// the decoded value must round-trip as a `\uXXXX` escape, not raw text.
+			const String source = "extends \"res://\\u202e.gd\"\n";
+			const String formatted = format_or_fail(source);
+			CHECK_MESSAGE(formatted.contains("\\u202e"), vformat("Bidi control must stay escaped: %s", formatted));
+			GDScriptParser reparser;
+			CHECK_MESSAGE(parse_no_errors(reparser, formatted, "z.gd"),
+					vformat("Formatted bidi-control path must re-parse: %s", formatted));
+			CHECK_MESSAGE(trees_equivalent(source, formatted, "z.gd"),
+					"Formatting must preserve the bidi-control path value.");
+		}
 	}
 
 	TEST_CASE("[Format] Standalone warning-region annotations survive formatting") {

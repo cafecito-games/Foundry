@@ -76,7 +76,8 @@ public:
 
 	GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
 			const HashMap<uint64_t, LiteralToken> &p_literals,
-			const HashMap<int, StandaloneAnnotation> &p_standalone_annotations);
+			const HashMap<int, StandaloneAnnotation> &p_standalone_annotations,
+			const Vector<String> &p_source_lines);
 
 	String print_tree(const GDScriptParser::ClassNode *p_root, bool p_is_tool);
 
@@ -84,6 +85,11 @@ private:
 	const HashMap<int, GDScriptTokenizer::CommentData> &comments;
 	const HashMap<uint64_t, LiteralToken> &literals;
 	const HashMap<int, StandaloneAnnotation> &standalone_annotations;
+	// The original source split into lines (1-based: line N is `source_lines[N - 1]`).
+	// The comment map has no column, so a full-line comment's original indentation is
+	// recovered from the leading tabs of its source line, which drives whether a tail
+	// comment belongs to a block body or to the following, shallower-indented node.
+	const Vector<String> &source_lines;
 
 	String output;
 	int indent_level = 0;
@@ -103,7 +109,13 @@ private:
 	// before the next node, emitting full-line comments at the current indent and
 	// normalizing the blank lines that separate them.
 	String normalize_comment_text(const String &p_raw) const;
+	// Leading-tab indent depth of source line `p_line` (1-based); 0 if out of range.
+	int line_indent_depth(int p_line) const;
 	bool is_full_line_comment(int p_line) const;
+	// Emits full-line comments whose source line falls in `(last_emitted_line,
+	// p_until_line)`, each on its own line at the current indent. Used to interleave
+	// comments inside a multi-line collection / call between its items.
+	void flush_inner_comments(int p_until_line);
 	// A trivia line is a full-line comment or a recovered standalone annotation;
 	// `emit_trivia_line` emits whichever sits at `p_line` and advances the cursor.
 	bool is_trivia_line(int p_line) const;
@@ -111,6 +123,10 @@ private:
 	void emit_comment_line(int p_line, const String &p_raw_comment);
 	void emit_leading_trivia(int p_next_line, int p_required_blanks);
 	void emit_trailing_comment(int p_line);
+	// Appends an inline comment on source line `p_line` to the current output line
+	// (no trailing newline), for an inline comment after an item inside a multi-line
+	// collection (`1,  # note`). No-op when the line has no unconsumed inline comment.
+	void append_inline_comment(int p_line);
 	void flush_block_tail_comments();
 	void flush_tail_comments();
 
@@ -174,13 +190,20 @@ private:
 	void print_ternary_op(const GDScriptParser::TernaryOpNode *p_op);
 	void print_call(const GDScriptParser::CallNode *p_call);
 	void print_argument_list(const Vector<GDScriptParser::ExpressionNode *> &p_arguments,
-			const Vector<StringName> &p_argument_names, bool p_multiline);
+			const Vector<StringName> &p_argument_names, bool p_multiline, int p_open_line, int p_close_line);
 	// Prints a `p_open`...`p_close` delimited list. When `p_multiline` (and the
 	// list is non-empty) each item goes on its own indented line with a trailing
 	// comma after the last; otherwise items are joined with `, ` on one line.
 	// `p_emit_item(i)` writes item `i` (without separators or surrounding spaces).
-	template <typename EmitItem>
-	void print_delimited_items(const char *p_open, const char *p_close, int p_count, bool p_multiline, EmitItem p_emit_item) {
+	//
+	// In the multi-line layout, full-line comments authored between items (and
+	// before the closing delimiter) are interleaved at the inner indent.
+	// `p_open_line`/`p_close_line` are the source lines of the open/close delimiters
+	// and `p_item_start_line(i)`/`p_item_end_line(i)` the source span of item `i`,
+	// all used only to place those comments; pass 0 to disable comment interleaving.
+	template <typename EmitItem, typename ItemStartLine, typename ItemEndLine>
+	void print_delimited_items(const char *p_open, const char *p_close, int p_count, bool p_multiline,
+			int p_open_line, int p_close_line, EmitItem p_emit_item, ItemStartLine p_item_start_line, ItemEndLine p_item_end_line) {
 		write(p_open);
 		if (!p_multiline || p_count == 0) {
 			for (int i = 0; i < p_count; i++) {
@@ -192,17 +215,29 @@ private:
 			write(p_close);
 			return;
 		}
+		if (p_open_line > last_emitted_line) {
+			last_emitted_line = p_open_line;
+		}
 		indent_level++;
 		for (int i = 0; i < p_count; i++) {
+			flush_inner_comments(p_item_start_line(i));
 			newline();
 			write_indent();
 			p_emit_item(i);
 			write(",");
+			append_inline_comment(p_item_end_line(i));
+			if (p_item_end_line(i) > last_emitted_line) {
+				last_emitted_line = p_item_end_line(i);
+			}
 		}
+		flush_inner_comments(p_close_line);
 		indent_level--;
 		newline();
 		write_indent();
 		write(p_close);
+		if (p_close_line > last_emitted_line) {
+			last_emitted_line = p_close_line;
+		}
 	}
 	void print_subscript(const GDScriptParser::SubscriptNode *p_subscript);
 	void print_cast(const GDScriptParser::CastNode *p_cast);

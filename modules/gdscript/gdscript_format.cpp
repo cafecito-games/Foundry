@@ -120,10 +120,21 @@ static String assignment_operator_text(GDScriptParser::AssignmentNode::Operation
 // bare. The parsed `full_path` drops the original quotes, so a name like
 // `My Node` (from `$"My Node"`) must be re-wrapped or the output would tokenize
 // as two identifiers and change the token stream.
+// Bidirectional / isolate format controls the tokenizer refuses to accept raw in
+// a string literal (`gdscript_tokenizer.cpp`: "Invisible text direction control
+// character ..."). They are legal only when written as an escape, so the formatter
+// must emit them as `\uXXXX` for the output to re-parse.
+static bool is_disallowed_raw_string_control(char32_t p_character) {
+	return p_character == 0x200E || p_character == 0x200F ||
+			(p_character >= 0x202A && p_character <= 0x202E) ||
+			(p_character >= 0x2066 && p_character <= 0x2069);
+}
+
 // Encodes a decoded String value as a canonical double-quoted GDScript string
 // literal, escaping the inverse of every escape the tokenizer decodes (see
 // `gdscript_tokenizer.cpp`): backslash, double quote, and the control escapes
-// `\a \b \f \n \r \t \v`. Any remaining control character is emitted as `\uXXXX`.
+// `\a \b \f \n \r \t \v`. Any remaining control character, and the bidi/isolate
+// format characters the tokenizer rejects raw, are emitted as `\uXXXX`.
 // Use this for fields the parser stores as already-decoded Strings (extends path,
 // `@icon` path, quoted node-path segments); literals backed by a source token go
 // through the token index instead.
@@ -160,7 +171,7 @@ static String quote_string_literal(const String &p_value) {
 				result += "\\v";
 				break;
 			default:
-				if (character < 0x20) {
+				if (character < 0x20 || is_disallowed_raw_string_control(character)) {
 					result += "\\u" + String::num_uint64(character, 16).lpad(4, "0");
 				} else {
 					result += String::chr(character);
@@ -369,6 +380,15 @@ static bool node_was_authored_multiline(const GDScriptParser::Node *p_node) {
 	return p_node->end_line > p_node->start_line;
 }
 
+// A compound statement whose body is its own suite (`if`/`for`/`while`/`match`).
+// Their bodies emit any trailing inline comment on the body's last line
+// internally, so the enclosing suite must not also try to attach one (which would
+// double-emit it).
+static bool is_block_statement(GDScriptParser::Node::Type p_type) {
+	return p_type == GDScriptParser::Node::IF || p_type == GDScriptParser::Node::FOR ||
+			p_type == GDScriptParser::Node::WHILE || p_type == GDScriptParser::Node::MATCH;
+}
+
 Error GDScriptFormatter::format(const String &p_source, const String &p_path, Result &r_result) {
 	// Pass 1: tokenize to capture comments and original literal source text.
 	GDScriptTokenizerText tokenizer;
@@ -453,15 +473,29 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 	}
 
 	// Pass 3: print.
-	GDScriptPrinter printer(comments, literals, standalone_annotations);
+	const Vector<String> source_lines = p_source.split("\n");
+	GDScriptPrinter printer(comments, literals, standalone_annotations, source_lines);
 	r_result.formatted = printer.print_tree(parser.get_tree(), parser.is_tool());
 	return OK;
 }
 
 GDScriptPrinter::GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
 		const HashMap<uint64_t, LiteralToken> &p_literals,
-		const HashMap<int, StandaloneAnnotation> &p_standalone_annotations) :
-		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations) {
+		const HashMap<int, StandaloneAnnotation> &p_standalone_annotations,
+		const Vector<String> &p_source_lines) :
+		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations), source_lines(p_source_lines) {
+}
+
+int GDScriptPrinter::line_indent_depth(int p_line) const {
+	if (p_line < 1 || p_line > source_lines.size()) {
+		return 0;
+	}
+	const String &line = source_lines[p_line - 1];
+	int depth = 0;
+	while (depth < line.length() && line[depth] == '\t') {
+		depth++;
+	}
+	return depth;
 }
 
 void GDScriptPrinter::write_indent() {
@@ -587,18 +621,43 @@ void GDScriptPrinter::emit_trailing_comment(int p_line) {
 	}
 }
 
-// Emits the comments that trail the last statement of a block body. Only the
-// comments on the lines immediately following the last emitted line are taken
-// (a blank line ends the run): without per-comment column data this is the
-// deterministic way to keep a body-trailing comment inside the body at its
-// indent rather than letting the next outer member steal it at a shallower
-// indent. Comments separated from the body by a blank line are left for the
-// enclosing scope's leading flush.
+// Emits the comments that trail the last statement of a block body, taken from
+// the lines immediately following the last emitted line (a blank line or a
+// non-trivia line ends the run). A trailing full-line comment belongs to this
+// body only when its source indent is at least the body indent; a comment at a
+// shallower indent (e.g. a column-0 doc comment before the next member) belongs
+// to the following node and is left for its leading-trivia flush, which emits it
+// at that node's indent with the normal blank-line rules.
 void GDScriptPrinter::flush_block_tail_comments() {
 	int line = last_emitted_line + 1;
-	while (is_trivia_line(line)) {
+	while (is_trivia_line(line) && line_indent_depth(line) >= indent_level) {
 		emit_trivia_line(line);
 		line = last_emitted_line + 1;
+	}
+}
+
+void GDScriptPrinter::append_inline_comment(int p_line) {
+	if (p_line <= last_emitted_line) {
+		return; // Already consumed.
+	}
+	HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(p_line);
+	if (!found || found->value.new_line) {
+		return;
+	}
+	write("  ");
+	write(normalize_comment_text(found->value.comment));
+	last_emitted_line = p_line;
+}
+
+void GDScriptPrinter::flush_inner_comments(int p_until_line) {
+	for (int line = last_emitted_line + 1; line < p_until_line; line++) {
+		if (!is_full_line_comment(line)) {
+			continue;
+		}
+		newline();
+		write_indent();
+		write(normalize_comment_text(comments.find(line)->value.comment));
+		last_emitted_line = line;
 	}
 }
 
@@ -930,7 +989,22 @@ void GDScriptPrinter::print_class_body(const GDScriptParser::ClassNode *p_class,
 		print_member(member);
 
 		if (node != nullptr) {
-			if (node->start_line == node->end_line) {
+			// A member that emits a suite internally (a function/class body, or a
+			// variable with an inline `get:`/`set:` property block) already attaches
+			// any inline comment on its last body line; emitting one here too would
+			// duplicate it. Every other member (and a single-line one, e.g. a bodyless
+			// abstract method) can carry an inline comment on its closing line here.
+			bool has_own_body_flush = false;
+			if (node->start_line != node->end_line) {
+				if (member.type == GDScriptParser::ClassNode::Member::FUNCTION ||
+						member.type == GDScriptParser::ClassNode::Member::CLASS) {
+					has_own_body_flush = true;
+				} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE &&
+						member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
+					has_own_body_flush = true;
+				}
+			}
+			if (!has_own_body_flush) {
 				emit_trailing_comment(node->end_line);
 			}
 			// A body-trailing comment may already have advanced the cursor past
@@ -1364,7 +1438,11 @@ void GDScriptPrinter::print_suite(const GDScriptParser::SuiteNode *p_suite) {
 		const GDScriptParser::Node *statement = p_suite->statements[i];
 		emit_leading_trivia(statement->start_line, 0);
 		print_statement(statement);
-		if (statement->start_line == statement->end_line) {
+		// An inline comment on the statement's last physical line trails it. Block
+		// statements emit their own body-tail comments, so skip them here to avoid
+		// a double emission; every other statement (including multi-line collections)
+		// can carry an inline comment on its closing line.
+		if (!is_block_statement(statement->type)) {
 			emit_trailing_comment(statement->end_line);
 		}
 		if (statement->end_line > last_emitted_line) {
@@ -1542,6 +1620,7 @@ void GDScriptPrinter::print_if(const GDScriptParser::IfNode *p_if, bool p_is_eli
 	last_emitted_line = p_if->start_line;
 	indent_level++;
 	print_suite(p_if->true_block);
+	flush_block_tail_comments();
 	indent_level--;
 
 	if (p_if->false_block == nullptr) {
@@ -1561,6 +1640,7 @@ void GDScriptPrinter::print_if(const GDScriptParser::IfNode *p_if, bool p_is_eli
 		last_emitted_line = p_if->false_block->start_line;
 		indent_level++;
 		print_suite(p_if->false_block);
+		flush_block_tail_comments();
 		indent_level--;
 	}
 }
@@ -1580,6 +1660,7 @@ void GDScriptPrinter::print_for(const GDScriptParser::ForNode *p_for) {
 	last_emitted_line = p_for->start_line;
 	indent_level++;
 	print_suite(p_for->loop);
+	flush_block_tail_comments();
 	indent_level--;
 }
 
@@ -1592,6 +1673,7 @@ void GDScriptPrinter::print_while(const GDScriptParser::WhileNode *p_while) {
 	last_emitted_line = p_while->start_line;
 	indent_level++;
 	print_suite(p_while->loop);
+	flush_block_tail_comments();
 	indent_level--;
 }
 
@@ -1613,7 +1695,11 @@ void GDScriptPrinter::print_match(const GDScriptParser::MatchNode *p_match) {
 		const GDScriptParser::MatchBranchNode *branch = p_match->branches[i];
 		emit_leading_trivia(branch->start_line, 0);
 		print_match_branch(branch);
-		last_emitted_line = branch->end_line;
+		// The branch's tail-comment flush may already have advanced the cursor; never
+		// move it backward (that would re-emit a comment).
+		if (branch->end_line > last_emitted_line) {
+			last_emitted_line = branch->end_line;
+		}
 	}
 	indent_level--;
 }
@@ -1637,6 +1723,7 @@ void GDScriptPrinter::print_match_branch(const GDScriptParser::MatchBranchNode *
 	last_emitted_line = p_branch->start_line;
 	indent_level++;
 	print_suite(p_branch->block);
+	flush_block_tail_comments();
 	indent_level--;
 }
 
@@ -1878,20 +1965,25 @@ void GDScriptPrinter::print_call(const GDScriptParser::CallNode *p_call) {
 	} else if (!String(p_call->function_name).is_empty()) {
 		write(p_call->function_name);
 	}
-	print_argument_list(p_call->arguments, p_call->argument_names, node_was_authored_multiline(p_call));
+	print_argument_list(p_call->arguments, p_call->argument_names, node_was_authored_multiline(p_call),
+			p_call->start_line, p_call->end_line);
 }
 
 // Prints a parenthesized argument list, honoring the author's single- or
 // multi-line layout (see `print_delimited_items`).
 void GDScriptPrinter::print_argument_list(const Vector<GDScriptParser::ExpressionNode *> &p_arguments,
-		const Vector<StringName> &p_argument_names, bool p_multiline) {
-	print_delimited_items("(", ")", p_arguments.size(), p_multiline, [&](int p_index) {
-		if (p_index < p_argument_names.size() && !String(p_argument_names[p_index]).is_empty()) {
-			write(p_argument_names[p_index]);
-			write(" = ");
-		}
-		print_expression(p_arguments[p_index]);
-	});
+		const Vector<StringName> &p_argument_names, bool p_multiline, int p_open_line, int p_close_line) {
+	print_delimited_items(
+			"(", ")", p_arguments.size(), p_multiline, p_open_line, p_close_line,
+			[&](int p_index) {
+				if (p_index < p_argument_names.size() && !String(p_argument_names[p_index]).is_empty()) {
+					write(p_argument_names[p_index]);
+					write(" = ");
+				}
+				print_expression(p_arguments[p_index]);
+			},
+			[&](int p_index) { return p_arguments[p_index]->start_line; },
+			[&](int p_index) { return p_arguments[p_index]->end_line; });
 }
 
 void GDScriptPrinter::print_subscript(const GDScriptParser::SubscriptNode *p_subscript) {
@@ -1934,19 +2026,27 @@ void GDScriptPrinter::print_await(const GDScriptParser::AwaitNode *p_await) {
 }
 
 void GDScriptPrinter::print_array(const GDScriptParser::ArrayNode *p_array) {
-	print_delimited_items("[", "]", p_array->elements.size(), node_was_authored_multiline(p_array), [&](int p_index) {
-		print_expression(p_array->elements[p_index]);
-	});
+	print_delimited_items(
+			"[", "]", p_array->elements.size(), node_was_authored_multiline(p_array),
+			p_array->start_line, p_array->end_line,
+			[&](int p_index) { print_expression(p_array->elements[p_index]); },
+			[&](int p_index) { return p_array->elements[p_index]->start_line; },
+			[&](int p_index) { return p_array->elements[p_index]->end_line; });
 }
 
 void GDScriptPrinter::print_dictionary(const GDScriptParser::DictionaryNode *p_dictionary) {
 	const bool lua_style = p_dictionary->style == GDScriptParser::DictionaryNode::LUA_TABLE;
-	print_delimited_items("{", "}", p_dictionary->elements.size(), node_was_authored_multiline(p_dictionary), [&](int p_index) {
-		const GDScriptParser::DictionaryNode::Pair &pair = p_dictionary->elements[p_index];
-		print_expression(pair.key);
-		write(lua_style ? " = " : ": ");
-		print_expression(pair.value);
-	});
+	print_delimited_items(
+			"{", "}", p_dictionary->elements.size(), node_was_authored_multiline(p_dictionary),
+			p_dictionary->start_line, p_dictionary->end_line,
+			[&](int p_index) {
+				const GDScriptParser::DictionaryNode::Pair &pair = p_dictionary->elements[p_index];
+				print_expression(pair.key);
+				write(lua_style ? " = " : ": ");
+				print_expression(pair.value);
+			},
+			[&](int p_index) { return p_dictionary->elements[p_index].key->start_line; },
+			[&](int p_index) { return p_dictionary->elements[p_index].value->end_line; });
 }
 
 void GDScriptPrinter::print_lambda(const GDScriptParser::LambdaNode *p_lambda) {
