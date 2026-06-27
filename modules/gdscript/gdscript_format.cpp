@@ -1730,17 +1730,50 @@ void GDScriptPrinter::print_type_test(const GDScriptParser::TypeTestNode *p_test
 static String read_all_stdin() {
 	Vector<uint8_t> bytes;
 	uint8_t buffer[4096];
-	size_t read = 0;
-	while ((read = fread(buffer, 1, sizeof(buffer), stdin)) > 0) {
+	size_t bytes_read = 0;
+	while ((bytes_read = fread(buffer, 1, sizeof(buffer), stdin)) > 0) {
 		int previous = bytes.size();
-		bytes.resize(previous + (int)read);
-		memcpy(bytes.ptrw() + previous, buffer, read);
+		bytes.resize(previous + (int)bytes_read);
+		memcpy(bytes.ptrw() + previous, buffer, bytes_read);
 	}
 	String result;
 	if (!bytes.is_empty()) {
 		result.append_utf8((const char *)bytes.ptr(), bytes.size());
 	}
 	return result;
+}
+
+// Writes formatted text without clobbering the original on failure: store into a
+// temp sibling, flush, then atomically rename over the target. The original is
+// only replaced once the new content is fully and successfully written.
+static bool write_file_atomic(const String &p_path, const String &p_content, String &r_error_message) {
+	const String temp_path = p_path + ".gdformat-tmp";
+	{
+		Ref<FileAccess> output = FileAccess::open(temp_path, FileAccess::WRITE);
+		if (output.is_null()) {
+			r_error_message = "could not open temporary file for writing";
+			return false;
+		}
+		if (!output->store_string(p_content)) {
+			r_error_message = "could not write formatted text";
+			output.unref();
+			DirAccess::remove_absolute(temp_path);
+			return false;
+		}
+		output->flush();
+		if (output->get_error() != OK) {
+			r_error_message = "error while writing formatted text";
+			output.unref();
+			DirAccess::remove_absolute(temp_path);
+			return false;
+		}
+	}
+	if (DirAccess::rename_absolute(temp_path, p_path) != OK) {
+		r_error_message = "could not replace original file";
+		DirAccess::remove_absolute(temp_path);
+		return false;
+	}
+	return true;
 }
 
 void GDScriptFormatterCLI::print_raw(const String &p_text) {
@@ -1784,9 +1817,12 @@ void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vec
 	if (dir.is_null()) {
 		return;
 	}
+	// Skip hidden entries (`.git`, `.godot`, `.import`, ...): `.godot` caches can
+	// hold generated `.gd` files that must never be reformatted.
+	dir->set_include_hidden(false);
 	dir->list_dir_begin();
 	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
-		if (entry == "." || entry == "..") {
+		if (entry == "." || entry == ".." || dir->current_is_hidden()) {
 			continue;
 		}
 		const String full_path = p_dir.path_join(entry);
@@ -1811,21 +1847,53 @@ Vector<String> GDScriptFormatterCLI::collect_files(const Vector<String> &p_paths
 			r_had_error = true;
 		}
 	}
+	// Deterministic order so `--check`/`--diff` output is stable across runs and
+	// filesystems (a CI gate must be reproducible).
+	files.sort();
 	return files;
 }
 
+// Splits into lines for diffing. A trailing newline does not introduce a
+// phantom empty final line (so the hunk header line counts stay accurate); a
+// file without a trailing newline keeps its real last line.
+static Vector<String> split_lines_for_diff(const String &p_text) {
+	Vector<String> lines = p_text.split("\n");
+	if (!lines.is_empty() && p_text.ends_with("\n")) {
+		lines.remove_at(lines.size() - 1);
+	}
+	return lines;
+}
+
 String GDScriptFormatterCLI::make_unified_diff(const String &p_path, const String &p_original, const String &p_formatted) {
-	const Vector<String> a = p_original.split("\n");
-	const Vector<String> b = p_formatted.split("\n");
+	const Vector<String> a = split_lines_for_diff(p_original);
+	const Vector<String> b = split_lines_for_diff(p_formatted);
 	const int n = a.size();
 	const int m = b.size();
+
+	String result;
+	result += "--- " + p_path + "\n";
+	result += "+++ " + p_path + "\n";
+	result += "@@ -1," + itos(n) + " +1," + itos(m) + " @@\n";
+
+	// Guard against the O(n*m) LCS table on large files: fall back to a
+	// whole-file replace hunk rather than allocating gigabytes.
+	const int max_lcs_lines = 5000;
+	if (n > max_lcs_lines || m > max_lcs_lines) {
+		for (int i = 0; i < n; i++) {
+			result += "-" + a[i] + "\n";
+		}
+		for (int j = 0; j < m; j++) {
+			result += "+" + b[j] + "\n";
+		}
+		return result;
+	}
 
 	// Longest common subsequence over lines; the table drives a simple unified
 	// diff that emits the whole file as a single hunk.
 	LocalVector<int> table;
 	table.resize((n + 1) * (m + 1));
-	for (uint32_t i = 0; i < table.size(); i++) {
-		table[i] = 0;
+	for (uint32_t t = 0; t < table.size(); t++) {
+		table[t] = 0;
 	}
 	const auto at = [&](int p_i, int p_j) -> int & { return table[p_i * (m + 1) + p_j]; };
 	for (int i = n - 1; i >= 0; i--) {
@@ -1838,10 +1906,6 @@ String GDScriptFormatterCLI::make_unified_diff(const String &p_path, const Strin
 		}
 	}
 
-	String result;
-	result += "--- " + p_path + "\n";
-	result += "+++ " + p_path + "\n";
-	result += "@@ -1," + itos(n) + " +1," + itos(m) + " @@\n";
 	int i = 0;
 	int j = 0;
 	while (i < n && j < m) {
@@ -1931,12 +1995,10 @@ void GDScriptFormatterCLI::run_from_cmdline() {
 				break;
 			case MODE_WRITE:
 				if (differs) {
-					Ref<FileAccess> output = FileAccess::open(file, FileAccess::WRITE);
-					if (output.is_null()) {
-						fprintf(stderr, "%s: could not write file\n", file.utf8().get_data());
+					String write_error;
+					if (!write_file_atomic(file, result.formatted, write_error)) {
+						fprintf(stderr, "%s: %s\n", file.utf8().get_data(), write_error.utf8().get_data());
 						had_error = true;
-					} else {
-						output->store_string(result.formatted);
 					}
 				}
 				break;
