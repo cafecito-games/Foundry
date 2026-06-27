@@ -2628,36 +2628,74 @@ static bool _is_flattenable_trait_member(const GDScriptParser::ClassNode::Member
 	}
 }
 
-// Converts an AST node's resolved annotation list into runtime-safe passive metadata. Built-in
-// annotations are skipped; only custom annotations the analyzer resolved to a declaration (non-empty
-// qualified name) are persisted. Argument values come from the analyzer's reduced constants:
-// positionally-supplied values go to `args`, named ones to `kwargs` keyed by parameter name, both in
-// source order. The analyzer keeps `resolved_arguments` parallel to `argument_names` for a clean
-// compile; the size guard keeps this defensive against any partially-resolved node.
-void GDScriptCompiler::_collect_custom_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations, Vector<GDScript::AnnotationUsage> &r_usages) {
+// Converts an AST node's resolved annotation list into runtime-safe passive metadata, preserving
+// source order. Both Godot's built-in annotations (`@export`, `@rpc`, `@onready`, ...) and custom
+// annotations the analyzer resolved to a declaration are persisted; the resulting usages carry
+// `is_builtin` to discriminate them. Argument values come from the analyzer's reduced constants:
+// for custom annotations, positionally-supplied values go to `args` and named ones to `kwargs` keyed
+// by parameter name; built-ins are positional-only, so all of their resolved arguments go to `args`.
+// The analyzer keeps `resolved_arguments` parallel to `argument_names` for a clean compile; the size
+// guard keeps this defensive against any partially-resolved node.
+//
+// Script-configuration annotations the parser applies and discards (`@tool`, `@icon`,
+// `@static_unload`) and standalone layout markers (`@export_group`/`@export_category` and the
+// `@warning_ignore_start`/`@warning_ignore_restore` pair) never reach a declaration's annotation list,
+// so they are not reflected; only built-ins retained on a class/member declaration are surfaced.
+void GDScriptCompiler::_collect_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations, Vector<GDScript::AnnotationUsage> &r_usages) {
 	for (const GDScriptParser::AnnotationNode *annotation : p_annotations) {
-		if (annotation == nullptr || !annotation->is_custom || annotation->resolved_qualified_name.is_empty()) {
+		if (annotation == nullptr) {
 			continue;
 		}
 
 		GDScript::AnnotationUsage usage;
-		// Usage nodes carry the spelled name including the leading "@". A fully qualified usage such
-		// as `@cafecito.test.timeout` spells the whole identity, so persist only the final segment as
-		// the bare short name; the canonical identity is kept separately in `qualified_name`.
-		String short_name = String(annotation->name).trim_prefix("@");
-		const int last_dot = short_name.rfind_char('.');
-		if (last_dot >= 0) {
-			short_name = short_name.substr(last_dot + 1);
-		}
-		usage.name = short_name;
-		usage.qualified_name = annotation->resolved_qualified_name;
+		if (annotation->is_custom) {
+			// A custom usage only carries persistable metadata once the analyzer resolved it to a
+			// declaration; unresolved usages (an analysis error) are skipped.
+			if (annotation->resolved_qualified_name.is_empty()) {
+				continue;
+			}
+			usage.is_builtin = false;
+			// Usage nodes carry the spelled name including the leading "@". A fully qualified usage such
+			// as `@cafecito.test.timeout` spells the whole identity, so persist only the final segment as
+			// the bare short name; the canonical identity is kept separately in `qualified_name`.
+			String short_name = String(annotation->name).trim_prefix("@");
+			const int last_dot = short_name.rfind_char('.');
+			if (last_dot >= 0) {
+				short_name = short_name.substr(last_dot + 1);
+			}
+			usage.name = short_name;
+			usage.qualified_name = annotation->resolved_qualified_name;
 
-		for (int i = 0; i < annotation->resolved_arguments.size(); i++) {
-			const StringName argument_name = i < annotation->argument_names.size() ? annotation->argument_names[i] : StringName();
-			if (argument_name == StringName()) {
-				usage.args.push_back(annotation->resolved_arguments[i]);
-			} else {
-				usage.kwargs[argument_name] = annotation->resolved_arguments[i];
+			for (int i = 0; i < annotation->resolved_arguments.size(); i++) {
+				const StringName argument_name = i < annotation->argument_names.size() ? annotation->argument_names[i] : StringName();
+				if (argument_name == StringName()) {
+					usage.args.push_back(annotation->resolved_arguments[i]);
+				} else {
+					usage.kwargs[argument_name] = annotation->resolved_arguments[i];
+				}
+			}
+		} else {
+			// Built-in annotation. A null `info` means the parser left an unknown name for the analyzer
+			// to reject, so it carries no built-in identity to persist.
+			if (annotation->info == nullptr) {
+				continue;
+			}
+			// `@warning_ignore` is a diagnostic-suppression directive, not declarative metadata: the
+			// analyzer only resolves its arguments under DEBUG_ENABLED (and the normal member loop skips
+			// it), so reflecting it would expose build-configuration-dependent data (arguments present
+			// in dev builds, empty in release). Exclude it to keep reflected metadata consistent.
+			if (annotation->name == SNAME("@warning_ignore")) {
+				continue;
+			}
+			usage.is_builtin = true;
+			// Built-in annotations are never dotted; the bare name doubles as the canonical identity so
+			// `has_annotation`/`get_annotation` match either accessor.
+			const StringName short_name = String(annotation->name).trim_prefix("@");
+			usage.name = short_name;
+			usage.qualified_name = short_name;
+			// Built-in annotations are positional-only; the analyzer leaves `argument_names` empty.
+			for (const Variant &argument : annotation->resolved_arguments) {
+				usage.args.push_back(argument);
 			}
 		}
 
@@ -3396,7 +3434,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->trait_type_name = p_class->is_trait ? gdscript_trait_identity_name(p_class) : StringName();
 
 	// Class annotations are direct-only (not inherited); record this class's own resolved usages.
-	_collect_custom_annotations(p_class->annotations, p_script->class_annotations);
+	_collect_annotations(p_class->annotations, p_script->class_annotations);
 
 	if (p_script->local_name != StringName()) {
 		if (GDScriptAnalyzer::class_exists(p_script->local_name)) {
@@ -3615,7 +3653,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				// variables collected above. Keyed by name so the implementer's effective view wins.
 				{
 					Vector<GDScript::AnnotationUsage> variable_usages;
-					_collect_custom_annotations(variable->annotations, variable_usages);
+					_collect_annotations(variable->annotations, variable_usages);
 					if (!variable_usages.is_empty()) {
 						p_script->variable_annotations[name] = variable_usages;
 					}
@@ -3639,7 +3677,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 
 				// Persist constant annotation metadata, keyed by name.
 				Vector<GDScript::AnnotationUsage> constant_usages;
-				_collect_custom_annotations(constant->annotations, constant_usages);
+				_collect_annotations(constant->annotations, constant_usages);
 				if (!constant_usages.is_empty()) {
 					p_script->constant_annotations[name] = constant_usages;
 				}
@@ -3660,7 +3698,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 
 				// Persist signal annotation metadata, keyed by name.
 				Vector<GDScript::AnnotationUsage> signal_usages;
-				_collect_custom_annotations(signal->annotations, signal_usages);
+				_collect_annotations(signal->annotations, signal_usages);
 				if (!signal_usages.is_empty()) {
 					p_script->signal_annotations[name] = signal_usages;
 				}
@@ -3767,7 +3805,7 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 			// Persist method annotation metadata, including concrete trait-flattened methods
 			// collected above. Keyed by name so an overriding method's annotations are effective.
 			Vector<GDScript::AnnotationUsage> method_usages;
-			_collect_custom_annotations(function->annotations, method_usages);
+			_collect_annotations(function->annotations, method_usages);
 			if (!method_usages.is_empty()) {
 				p_script->method_annotations[function->identifier->name] = method_usages;
 			}

@@ -163,7 +163,7 @@ class GDScriptCompiler {
 	void _clear_block_locals(CodeGen &codegen, const List<GDScriptCodeGenerator::Address> &p_locals);
 	Error _parse_block(CodeGen &codegen, const GDScriptParser::SuiteNode *p_block, bool p_add_locals = true, bool p_clear_locals = true);
 	static void _collect_flattened_trait_members(const GDScriptParser::ClassNode *p_class, Vector<const GDScriptParser::ClassNode::Member *> &r_members);
-	static void _collect_custom_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations, Vector<GDScript::AnnotationUsage> &r_usages);
+	static void _collect_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations, Vector<GDScript::AnnotationUsage> &r_usages);
 	void _collect_trait_abstract_requirements(const GDScriptParser::ClassNode *p_class, GDScript *p_script);
 	GDScriptFunction *_parse_function(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class, const GDScriptParser::FunctionNode *p_func, bool p_for_ready = false, bool p_for_lambda = false);
 	GDScriptFunction *_make_static_initializer(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class);

@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="GDScriptAnnotation" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		A read-only description of a single custom annotation applied to a [GDScript] declaration.
+		A read-only description of a single annotation applied to a [GDScript] declaration.
 	</brief_description>
 	<description>
-		Describes one resolved use of a passive custom annotation on a class, method, or member variable, such as [code]@timeout(10.0)[/code] or [code]@cases(provider = "crit_rows")[/code]. Instances are produced by the GDScript reflection APIs and are immutable snapshots of the compiled annotation metadata.
-		The argument accessors return copies, so mutating them does not change the script's stored annotation data. Values supplied positionally appear in [member args]; values supplied by name appear in [member kwargs]. Defaults declared on the annotation are validated but are not injected into either collection. Built-in engine annotations such as [code]@export[/code] or [code]@rpc[/code] are not exposed as [GDScriptAnnotation] objects.
+		Describes one resolved use of a passive annotation on a class, method, member variable, signal, or constant, such as [code]@timeout(10.0)[/code], [code]@cases(provider = "crit_rows")[/code], or a built-in [code]@export_range(0, 100)[/code]. Instances are produced by the GDScript reflection APIs and are immutable snapshots of the compiled annotation metadata.
+		The argument accessors return copies, so mutating them does not change the script's stored annotation data. Values supplied positionally appear in [member args]; values supplied by name appear in [member kwargs]. Defaults declared on the annotation are validated but are not injected into either collection.
+		Both user-declared custom annotations and Godot's built-in engine annotations (such as [code]@export[/code], [code]@onready[/code], or [code]@rpc[/code]) are surfaced as [GDScriptAnnotation] objects; use [member builtin] to tell them apart. Built-in annotations are positional-only, so their arguments always appear in [member args] and [member kwargs] is empty. Script-configuration annotations applied by the parser ([code]@tool[/code], [code]@icon[/code], [code]@static_unload[/code]) are not reflected.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -13,8 +14,11 @@
 		<member name="args" type="Array" setter="" getter="get_arguments">
 			The positional argument values supplied at the annotation use site, in source order. Each call returns an independent snapshot. Empty for marker annotations or annotations used with only named arguments.
 		</member>
+		<member name="builtin" type="bool" setter="" getter="is_builtin">
+			[code]true[/code] when this describes one of Godot's built-in engine annotations (such as [code]@export[/code] or [code]@rpc[/code]); [code]false[/code] for a user-declared custom annotation. Lets reflection consumers filter built-in annotations apart from custom ones.
+		</member>
 		<member name="kwargs" type="Dictionary" setter="" getter="get_named_arguments">
-			The named argument values supplied at the annotation use site, keyed by the declaration's parameter name. Each call returns an independent snapshot. Empty when no named arguments were supplied.
+			The named argument values supplied at the annotation use site, keyed by the declaration's parameter name. Each call returns an independent snapshot. Empty when no named arguments were supplied, and always empty for built-in annotations, which are positional-only.
 		</member>
 		<member name="name" type="StringName" setter="" getter="get_annotation_name">
 			The annotation's short name, without the leading [code]@[/code] (for example [code]&amp;"timeout"[/code]).
