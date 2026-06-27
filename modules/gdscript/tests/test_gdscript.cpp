@@ -2068,6 +2068,85 @@ var map: Dictionary[String, DocTarget]
 	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
 }
 
+TEST_CASE("[Modules][GDScript] Docgen emits custom annotation declarations") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace cafecito
+
+## Marks the script's entry point.
+annotation entry targets CLASS, METHOD
+
+## Sets a timeout in seconds.
+annotation timeout(seconds: float = 5.0) targets METHOD
+
+annotation tags(...names: String) targets CLASS, METHOD
+)",
+			"user://annotation_docgen.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptCompiler::make_scripts(script.ptr(), root, false);
+	GDScriptDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	const DocData::MethodDoc *entry = nullptr;
+	const DocData::MethodDoc *timeout = nullptr;
+	const DocData::MethodDoc *tags = nullptr;
+	for (const DocData::MethodDoc &annotation : docs[0].annotations) {
+		if (annotation.name == "@entry") {
+			entry = &annotation;
+		} else if (annotation.name == "@timeout") {
+			timeout = &annotation;
+		} else if (annotation.name == "@tags") {
+			tags = &annotation;
+		}
+	}
+
+	CHECK_EQ(docs[0].annotations.size(), 3);
+
+	CHECK(entry != nullptr);
+	CHECK(timeout != nullptr);
+	CHECK(tags != nullptr);
+	if (entry == nullptr || timeout == nullptr || tags == nullptr) {
+		return;
+	}
+
+	CHECK_EQ(entry->qualifiers, "class method");
+	CHECK_EQ(entry->description, "Marks the script's entry point.");
+	CHECK(entry->arguments.is_empty());
+
+	CHECK_EQ(timeout->qualifiers, "method");
+	CHECK_EQ(timeout->description, "Sets a timeout in seconds.");
+	CHECK_EQ(timeout->arguments.size(), 1);
+	if (timeout->arguments.size() == 1) {
+		CHECK_EQ(timeout->arguments[0].name, "seconds");
+		CHECK_EQ(timeout->arguments[0].type, "float");
+		CHECK_EQ(timeout->arguments[0].default_value, "5.0");
+	}
+
+	CHECK_EQ(tags->qualifiers, "class method vararg");
+	CHECK(tags->description.is_empty());
+	CHECK(tags->arguments.is_empty());
+	CHECK_EQ(tags->rest_argument.name, "names");
+	CHECK_EQ(tags->rest_argument.type, "String");
+}
+
 TEST_CASE("[Modules][GDScript] Docgen emits async method qualifiers") {
 	GDScriptParser parser;
 	Error err = parser.parse(R"(

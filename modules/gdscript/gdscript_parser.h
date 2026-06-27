@@ -493,6 +493,9 @@ public:
 		// constant defaults). Guards the idempotent resolution shared by the local validation
 		// pass and import-aware usage resolution from other files.
 		bool resolved_signature = false;
+#ifdef TOOLS_ENABLED
+		MemberDocData doc_data;
+#endif // TOOLS_ENABLED
 
 		bool is_variadic() const { return rest_parameter != nullptr; }
 

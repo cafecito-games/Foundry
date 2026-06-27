@@ -321,6 +321,40 @@ String GDScriptDocGen::docvalue_from_expression(const GDP::ExpressionNode *p_exp
 	return "<unknown>";
 }
 
+// Builds the space-separated qualifier list for an annotation declaration. The applicable
+// target kinds are emitted as lowercase tokens (matching the reflection vocabulary), with a
+// trailing `vararg` token when the declaration accepts a rest parameter. The doc viewer reads
+// `vararg` to render the rest parameter and shows the remaining tokens as-is.
+static String _annotation_qualifiers(const GDScriptParser::AnnotationDeclarationNode *p_annotation_declaration) {
+	String qualifiers;
+	const uint32_t targets = p_annotation_declaration->targets;
+	static const struct {
+		uint32_t bit;
+		const char *name;
+	} target_names[] = {
+		{ GDScriptParser::AnnotationDeclarationNode::TARGET_CLASS, "class" },
+		{ GDScriptParser::AnnotationDeclarationNode::TARGET_METHOD, "method" },
+		{ GDScriptParser::AnnotationDeclarationNode::TARGET_VARIABLE, "variable" },
+		{ GDScriptParser::AnnotationDeclarationNode::TARGET_SIGNAL, "signal" },
+		{ GDScriptParser::AnnotationDeclarationNode::TARGET_CONSTANT, "constant" },
+	};
+	for (const auto &target : target_names) {
+		if (targets & target.bit) {
+			if (!qualifiers.is_empty()) {
+				qualifiers += " ";
+			}
+			qualifiers += target.name;
+		}
+	}
+	if (p_annotation_declaration->is_variadic()) {
+		if (!qualifiers.is_empty()) {
+			qualifiers += " ";
+		}
+		qualifiers += "vararg";
+	}
+	return qualifiers;
+}
+
 void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_class) {
 	p_script->_clear_doc();
 
@@ -605,6 +639,42 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 			default:
 				break;
 		}
+	}
+
+	// Annotation declarations live outside `members` (they are root-only passive metadata), so
+	// surface them in their own doc section. Each becomes a `MethodDoc` mirroring how built-in
+	// annotations are documented: an `@`-prefixed name, declared parameters with types/defaults,
+	// the rest parameter for variadic declarations, and the applicable targets as qualifiers.
+	for (const GDP::AnnotationDeclarationNode *annotation_declaration : p_class->annotation_declarations) {
+		if (annotation_declaration->identifier == nullptr) {
+			continue;
+		}
+
+		DocData::MethodDoc annotation_doc;
+		annotation_doc.name = "@" + String(annotation_declaration->identifier->name);
+		annotation_doc.qualifiers = _annotation_qualifiers(annotation_declaration);
+		annotation_doc.description = annotation_declaration->doc_data.description;
+		annotation_doc.is_deprecated = annotation_declaration->doc_data.is_deprecated;
+		annotation_doc.deprecated_message = annotation_declaration->doc_data.deprecated_message;
+		annotation_doc.is_experimental = annotation_declaration->doc_data.is_experimental;
+		annotation_doc.experimental_message = annotation_declaration->doc_data.experimental_message;
+
+		for (const GDP::ParameterNode *p : annotation_declaration->parameters) {
+			DocData::ArgumentDoc arg_doc;
+			arg_doc.name = p->identifier->name;
+			_doctype_from_gdtype(p->get_datatype(), arg_doc.type, arg_doc.enumeration);
+			if (p->initializer != nullptr) {
+				arg_doc.default_value = docvalue_from_expression(p->initializer, p->get_datatype());
+			}
+			annotation_doc.arguments.push_back(arg_doc);
+		}
+
+		if (annotation_declaration->is_variadic()) {
+			annotation_doc.rest_argument.name = annotation_declaration->rest_parameter->identifier->name;
+			_doctype_from_gdtype(annotation_declaration->rest_parameter->get_datatype(), annotation_doc.rest_argument.type, annotation_doc.rest_argument.enumeration);
+		}
+
+		doc.annotations.push_back(annotation_doc);
 	}
 
 	// Add doc to the outer-most class.
