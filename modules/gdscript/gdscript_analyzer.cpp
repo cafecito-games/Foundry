@@ -2611,9 +2611,15 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
 		if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
 			GDScriptParser::VariableNode *variable = member.variable;
-			if (variable->is_final && !variable->is_static && variable->property == GDScriptParser::VariableNode::PROP_NONE) {
-				finals.insert(variable);
-				finals_by_name[variable->identifier->name] = variable;
+			if (variable->is_final && !variable->is_static) {
+				if (variable->property != GDScriptParser::VariableNode::PROP_NONE) {
+					// A getter/setter property has no single stored slot to write once, and its
+					// setter would make the value mutable, contradicting `final`.
+					push_error(vformat(R"(Final variable "%s" cannot declare a getter or setter.)", variable->identifier->name), variable);
+				} else {
+					finals.insert(variable);
+					finals_by_name[variable->identifier->name] = variable;
+				}
 			}
 		} else if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			if (member.function->identifier != nullptr && member.function->identifier->name == SNAME("_init")) {
@@ -3042,6 +3048,12 @@ void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScrip
 		case GDScriptParser::Node::RETURN: {
 			const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_statement);
 			check_final_reads_in_expression(return_node->return_value, p_finals, p_finals_by_name, r_state);
+			// A return makes this path unreachable; its assigned set becomes the universal set, which
+			// is neutral at branch joins. This is the deliberate "assign-or-return" rule from the
+			// design spec: `if cond: id = a else: return` leaves `id` definitely assigned afterwards.
+			// The trade-off (an early return can construct an object with a blank final at its
+			// default) is intentional; `check_final_member_assignments` still rejects the case where
+			// *every* path returns without assigning, via the assigned-anywhere union.
 			r_state.reachable = false;
 		} break;
 		case GDScriptParser::Node::BREAK:
