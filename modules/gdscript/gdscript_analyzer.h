@@ -130,28 +130,46 @@ class GDScriptAnalyzer {
 		HashSet<const GDScriptParser::VariableNode *> maybe_assigned;
 		bool reachable = true;
 	};
+	// Selects which kind of `final` variable a definite-assignment pass tracks. The same engine
+	// serves all three; only the assignment slot, the way a target identifier is recognized, and the
+	// diagnostic wording differ:
+	//   - INSTANCE_MEMBER: `self`'s own final members; slot is the declaration initializer or `_init`.
+	//   - STATIC_MEMBER:   this class's `final static var`s; slot is the initializer or `_static_init`.
+	//   - LOCAL:           `final var` locals; slot is the declaration or a single definite assignment
+	//                      before use within the enclosing function body.
+	enum class FinalAssignmentScope {
+		INSTANCE_MEMBER,
+		STATIC_MEMBER,
+		LOCAL,
+	};
 	void check_final_member_assignments(GDScriptParser::ClassNode *p_class);
+	void check_final_static_assignments(GDScriptParser::ClassNode *p_class);
+	void check_final_local_assignments(GDScriptParser::ClassNode *p_class);
+	void analyze_function_local_finals(const GDScriptParser::FunctionNode *p_function);
+	void collect_local_finals(const GDScriptParser::Node *p_node,
+			HashSet<const GDScriptParser::VariableNode *> &r_finals,
+			HashMap<StringName, const GDScriptParser::VariableNode *> &r_finals_by_name);
 	static void merge_final_assignment_branches(const FinalAssignmentState &p_first, const FinalAssignmentState &p_second, FinalAssignmentState &r_out);
 	const GDScriptParser::VariableNode *final_member_assignment_target(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, bool *r_is_self_receiver = nullptr) const;
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver = nullptr) const;
 	void scan_illegal_final_writes(const GDScriptParser::Node *p_node,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, bool p_in_init);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init);
 	void analyze_final_definite_assignment_suite(const GDScriptParser::SuiteNode *p_suite,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state,
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
 			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
 	void analyze_final_definite_assignment_statement(const GDScriptParser::Node *p_statement,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state,
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
 			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
 	void check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, const FinalAssignmentState &p_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state);
 	void check_final_reads_in_pattern(const GDScriptParser::PatternNode *p_pattern,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, const FinalAssignmentState &p_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state);
 	void resolve_function_signature(GDScriptParser::FunctionNode *p_function, const GDScriptParser::Node *p_source = nullptr, bool p_is_lambda = false);
 	void resolve_function_body(GDScriptParser::FunctionNode *p_function, bool p_is_lambda = false);
 	void resolve_node(GDScriptParser::Node *p_node, bool p_is_root = true);
