@@ -544,6 +544,10 @@ class GDScriptMethodDescriptor : public RefCounted {
 
 	MethodInfo method_info;
 	TypedArray<GDScriptAnnotation> annotations;
+	// Whether the reflected method is a GDScript declaration. Only GDScript descriptors carry an
+	// `annotations` key in their Dictionary form, matching `GDScriptReflection.get_methods()`, which
+	// omits the key for native (non-GDScript) methods that have no passive annotations.
+	bool gdscript_member = true;
 
 protected:
 	static void _bind_methods();
@@ -561,11 +565,13 @@ public:
 	// Returns a fresh array so the caller cannot mutate the descriptor's stored annotations.
 	TypedArray<GDScriptAnnotation> get_annotations() const { return annotations.duplicate(); }
 	// The equivalent loosely-keyed descriptor Dictionary, matching `GDScriptReflection.get_methods()`
-	// entries (an `Object.get_method_list()` Dictionary plus an `annotations` key).
+	// entries: an `Object.get_method_list()` Dictionary, plus an `annotations` key for GDScript methods.
 	Dictionary to_dictionary() const;
 
 	// Builds a descriptor from a method's MethodInfo and its already-resolved annotation descriptors.
-	static Ref<GDScriptMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<GDScriptAnnotation> &p_annotations);
+	// `p_gdscript_member` is false for native (non-GDScript) methods, which omit the Dictionary's
+	// `annotations` key.
+	static Ref<GDScriptMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<GDScriptAnnotation> &p_annotations, bool p_gdscript_member = true);
 };
 
 // Read-only structured descriptor for a single reflected GDScript member variable, returned by the
@@ -578,6 +584,10 @@ class GDScriptPropertyDescriptor : public RefCounted {
 
 	PropertyInfo property_info;
 	TypedArray<GDScriptAnnotation> annotations;
+	// Whether the reflected variable is a GDScript declaration. Only GDScript descriptors carry an
+	// `annotations` key in their Dictionary form, matching `GDScriptReflection.get_properties()`, which
+	// omits the key for native (non-GDScript) properties that have no passive annotations.
+	bool gdscript_member = true;
 
 protected:
 	static void _bind_methods();
@@ -593,11 +603,13 @@ public:
 	// Returns a fresh array so the caller cannot mutate the descriptor's stored annotations.
 	TypedArray<GDScriptAnnotation> get_annotations() const { return annotations.duplicate(); }
 	// The equivalent loosely-keyed descriptor Dictionary, matching `GDScriptReflection.get_properties()`
-	// entries (an `Object.get_property_list()` Dictionary plus an `annotations` key).
+	// entries: an `Object.get_property_list()` Dictionary, plus an `annotations` key for GDScript variables.
 	Dictionary to_dictionary() const;
 
 	// Builds a descriptor from a variable's PropertyInfo and its already-resolved annotation descriptors.
-	static Ref<GDScriptPropertyDescriptor> create(const PropertyInfo &p_property_info, const TypedArray<GDScriptAnnotation> &p_annotations);
+	// `p_gdscript_member` is false for native (non-GDScript) variables, which omit the Dictionary's
+	// `annotations` key.
+	static Ref<GDScriptPropertyDescriptor> create(const PropertyInfo &p_property_info, const TypedArray<GDScriptAnnotation> &p_annotations, bool p_gdscript_member = true);
 };
 
 class GDScriptInstance : public ScriptInstance {

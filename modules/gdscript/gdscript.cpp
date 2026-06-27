@@ -137,11 +137,12 @@ void GDScriptAnnotation::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "builtin", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "is_builtin");
 }
 
-Ref<GDScriptMethodDescriptor> GDScriptMethodDescriptor::create(const MethodInfo &p_method_info, const TypedArray<GDScriptAnnotation> &p_annotations) {
+Ref<GDScriptMethodDescriptor> GDScriptMethodDescriptor::create(const MethodInfo &p_method_info, const TypedArray<GDScriptAnnotation> &p_annotations, bool p_gdscript_member) {
 	Ref<GDScriptMethodDescriptor> descriptor;
 	descriptor.instantiate();
 	descriptor->method_info = p_method_info;
 	descriptor->annotations = p_annotations;
+	descriptor->gdscript_member = p_gdscript_member;
 	return descriptor;
 }
 
@@ -169,9 +170,12 @@ Array GDScriptMethodDescriptor::get_default_arguments() const {
 
 Dictionary GDScriptMethodDescriptor::to_dictionary() const {
 	Dictionary descriptor(method_info);
-	// Mirror the loosely-keyed `get_methods()` descriptor, which always carries an `annotations` key.
+	// Mirror the loosely-keyed `get_methods()` descriptor: GDScript methods carry an `annotations` key
+	// (empty when the method has none); native methods omit it to preserve the historical shape.
 	// Duplicate so the returned Dictionary never aliases this read-only descriptor's stored array.
-	descriptor["annotations"] = annotations.duplicate();
+	if (gdscript_member) {
+		descriptor["annotations"] = annotations.duplicate();
+	}
 	return descriptor;
 }
 
@@ -192,19 +196,23 @@ void GDScriptMethodDescriptor::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "annotations", PROPERTY_HINT_ARRAY_TYPE, "GDScriptAnnotation", PROPERTY_USAGE_READ_ONLY), "", "get_annotations");
 }
 
-Ref<GDScriptPropertyDescriptor> GDScriptPropertyDescriptor::create(const PropertyInfo &p_property_info, const TypedArray<GDScriptAnnotation> &p_annotations) {
+Ref<GDScriptPropertyDescriptor> GDScriptPropertyDescriptor::create(const PropertyInfo &p_property_info, const TypedArray<GDScriptAnnotation> &p_annotations, bool p_gdscript_member) {
 	Ref<GDScriptPropertyDescriptor> descriptor;
 	descriptor.instantiate();
 	descriptor->property_info = p_property_info;
 	descriptor->annotations = p_annotations;
+	descriptor->gdscript_member = p_gdscript_member;
 	return descriptor;
 }
 
 Dictionary GDScriptPropertyDescriptor::to_dictionary() const {
 	Dictionary descriptor(property_info);
-	// Mirror the loosely-keyed `get_properties()` descriptor, which always carries an `annotations` key.
+	// Mirror the loosely-keyed `get_properties()` descriptor: GDScript variables carry an `annotations`
+	// key (empty when the variable has none); native properties omit it to preserve the historical shape.
 	// Duplicate so the returned Dictionary never aliases this read-only descriptor's stored array.
-	descriptor["annotations"] = annotations.duplicate();
+	if (gdscript_member) {
+		descriptor["annotations"] = annotations.duplicate();
+	}
 	return descriptor;
 }
 

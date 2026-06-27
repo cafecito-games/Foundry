@@ -206,7 +206,7 @@ TypedArray<GDScriptMethodDescriptor> GDScriptReflection::get_method_descriptors(
 		List<MethodInfo> methods;
 		script->get_script_method_list(&methods);
 		for (const MethodInfo &method : methods) {
-			result.push_back(GDScriptMethodDescriptor::create(method, TypedArray<GDScriptAnnotation>()));
+			result.push_back(GDScriptMethodDescriptor::create(method, TypedArray<GDScriptAnnotation>(), false));
 		}
 		return result;
 	}
@@ -243,7 +243,7 @@ Ref<GDScriptMethodDescriptor> GDScriptReflection::get_method_descriptor(const Va
 				const Vector<GDScript::AnnotationUsage> *usages = find_effective_method_annotations(gdscript, p_method);
 				annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
 			}
-			return GDScriptMethodDescriptor::create(script->get_method_info(p_method), annotations);
+			return GDScriptMethodDescriptor::create(script->get_method_info(p_method), annotations, gdscript != nullptr);
 		}
 		script = script->get_base_script();
 	}
@@ -269,53 +269,35 @@ TypedArray<GDScriptPropertyDescriptor> GDScriptReflection::get_property_descript
 			const Vector<GDScript::AnnotationUsage> *usages = find_effective_variable_annotations(gdscript, property.name);
 			annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
 		}
-		result.push_back(GDScriptPropertyDescriptor::create(property, annotations));
+		result.push_back(GDScriptPropertyDescriptor::create(property, annotations, gdscript != nullptr));
 	}
 	return result;
 }
 
 TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) const {
 	// Preserve the loosely-keyed descriptor surface by projecting each structured descriptor down to
-	// its Dictionary form, so the two views never diverge. Native (non-GDScript) scripts have no
-	// passive annotations, so the historical no-"annotations"-key shape is kept for them.
-	const bool is_gdscript = Object::cast_to<GDScript>(_resolve_script(p_target).ptr()) != nullptr;
+	// its Dictionary form, so the two views never diverge. The descriptor's to_dictionary() already
+	// omits the "annotations" key for native methods, matching the historical shape.
 	TypedArray<GDScriptMethodDescriptor> descriptors = get_method_descriptors(p_target);
 	TypedArray<Dictionary> result;
 	for (int i = 0; i < descriptors.size(); i++) {
 		Ref<GDScriptMethodDescriptor> descriptor = descriptors[i];
-		Dictionary entry = descriptor->to_dictionary();
-		if (!is_gdscript) {
-			entry.erase("annotations");
-		}
-		result.push_back(entry);
+		result.push_back(descriptor->to_dictionary());
 	}
 	return result;
 }
 
 Dictionary GDScriptReflection::get_method_info(const Variant &p_target, const StringName &p_method) const {
 	Ref<GDScriptMethodDescriptor> descriptor = get_method_descriptor(p_target, p_method);
-	if (descriptor.is_null()) {
-		return Dictionary();
-	}
-	Dictionary entry = descriptor->to_dictionary();
-	if (Object::cast_to<GDScript>(_resolve_script(p_target).ptr()) == nullptr) {
-		// Native scripts carry no passive annotations; preserve the historical no-key shape.
-		entry.erase("annotations");
-	}
-	return entry;
+	return descriptor.is_valid() ? descriptor->to_dictionary() : Dictionary();
 }
 
 TypedArray<Dictionary> GDScriptReflection::get_properties(const Variant &p_target) const {
-	const bool is_gdscript = Object::cast_to<GDScript>(_resolve_script(p_target).ptr()) != nullptr;
 	TypedArray<GDScriptPropertyDescriptor> descriptors = get_property_descriptors(p_target);
 	TypedArray<Dictionary> result;
 	for (int i = 0; i < descriptors.size(); i++) {
 		Ref<GDScriptPropertyDescriptor> descriptor = descriptors[i];
-		Dictionary entry = descriptor->to_dictionary();
-		if (!is_gdscript) {
-			entry.erase("annotations");
-		}
-		result.push_back(entry);
+		result.push_back(descriptor->to_dictionary());
 	}
 	return result;
 }
