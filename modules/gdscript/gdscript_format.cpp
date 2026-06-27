@@ -149,6 +149,11 @@ static String unary_operator_text(GDScriptParser::UnaryOpNode::OpType p_operatio
 // parser's enum is private, so the printer keeps its own copy in the same order:
 // higher value binds tighter. The reconstructed parentheses depend on this
 // matching the parser exactly, so the two must be kept in sync.
+//
+// The postfix tiers (FPREC_CALL / FPREC_ATTRIBUTE / FPREC_SUBSCRIPT) exist only
+// to preserve the parser's ordering; the printer never emits an operator at
+// those levels, it only compares against them when deciding whether a base needs
+// parentheses.
 enum FormatPrecedence {
 	FPREC_NONE,
 	FPREC_ASSIGNMENT,
@@ -294,10 +299,11 @@ static String canonicalize_number_literal(const String &p_source) {
 	return p_source.replace("E", "e");
 }
 
-// A collection node (array / dictionary / call) is laid out across several lines
-// when the author wrote it that way; the formatter respects that without
-// introducing new wrapping of its own.
-static bool node_spans_multiple_lines(const GDScriptParser::Node *p_node) {
+// True when the author wrote a collection node (array / dictionary / call) across
+// several lines. The formatter respects that layout without introducing new
+// wrapping of its own, so this drives "keep the author's multi-line shape",
+// not "this currently overflows the line width".
+static bool node_was_authored_multiline(const GDScriptParser::Node *p_node) {
 	return p_node->end_line > p_node->start_line;
 }
 
@@ -1589,46 +1595,20 @@ void GDScriptPrinter::print_call(const GDScriptParser::CallNode *p_call) {
 	} else if (!String(p_call->function_name).is_empty()) {
 		write(p_call->function_name);
 	}
-	print_argument_list(p_call->arguments, p_call->argument_names, node_spans_multiple_lines(p_call));
+	print_argument_list(p_call->arguments, p_call->argument_names, node_was_authored_multiline(p_call));
 }
 
-// Prints a parenthesized, comma-separated argument list. Multi-line lists (as the
-// author laid them out) put each argument on its own indented line and gain a
-// trailing comma after the last argument; single-line lists stay compact.
+// Prints a parenthesized argument list, honoring the author's single- or
+// multi-line layout (see `print_delimited_items`).
 void GDScriptPrinter::print_argument_list(const Vector<GDScriptParser::ExpressionNode *> &p_arguments,
 		const Vector<StringName> &p_argument_names, bool p_multiline) {
-	const auto write_argument = [&](int p_index) {
+	print_delimited_items("(", ")", p_arguments.size(), p_multiline, [&](int p_index) {
 		if (p_index < p_argument_names.size() && !String(p_argument_names[p_index]).is_empty()) {
 			write(p_argument_names[p_index]);
 			write(" = ");
 		}
 		print_expression(p_arguments[p_index]);
-	};
-
-	if (!p_multiline || p_arguments.is_empty()) {
-		write("(");
-		for (int i = 0; i < p_arguments.size(); i++) {
-			if (i > 0) {
-				write(", ");
-			}
-			write_argument(i);
-		}
-		write(")");
-		return;
-	}
-
-	write("(");
-	indent_level++;
-	for (int i = 0; i < p_arguments.size(); i++) {
-		newline();
-		write_indent();
-		write_argument(i);
-		write(",");
-	}
-	indent_level--;
-	newline();
-	write_indent();
-	write(")");
+	});
 }
 
 void GDScriptPrinter::print_subscript(const GDScriptParser::SubscriptNode *p_subscript) {
@@ -1671,71 +1651,19 @@ void GDScriptPrinter::print_await(const GDScriptParser::AwaitNode *p_await) {
 }
 
 void GDScriptPrinter::print_array(const GDScriptParser::ArrayNode *p_array) {
-	const bool multiline = node_spans_multiple_lines(p_array) && !p_array->elements.is_empty();
-	if (!multiline) {
-		write("[");
-		for (int i = 0; i < p_array->elements.size(); i++) {
-			if (i > 0) {
-				write(", ");
-			}
-			print_expression(p_array->elements[i]);
-		}
-		write("]");
-		return;
-	}
-
-	write("[");
-	indent_level++;
-	for (int i = 0; i < p_array->elements.size(); i++) {
-		newline();
-		write_indent();
-		print_expression(p_array->elements[i]);
-		write(",");
-	}
-	indent_level--;
-	newline();
-	write_indent();
-	write("]");
+	print_delimited_items("[", "]", p_array->elements.size(), node_was_authored_multiline(p_array), [&](int p_index) {
+		print_expression(p_array->elements[p_index]);
+	});
 }
 
 void GDScriptPrinter::print_dictionary(const GDScriptParser::DictionaryNode *p_dictionary) {
-	if (p_dictionary->elements.is_empty()) {
-		write("{}");
-		return;
-	}
 	const bool lua_style = p_dictionary->style == GDScriptParser::DictionaryNode::LUA_TABLE;
-	const auto write_pair = [&](int p_index) {
+	print_delimited_items("{", "}", p_dictionary->elements.size(), node_was_authored_multiline(p_dictionary), [&](int p_index) {
 		const GDScriptParser::DictionaryNode::Pair &pair = p_dictionary->elements[p_index];
 		print_expression(pair.key);
 		write(lua_style ? " = " : ": ");
 		print_expression(pair.value);
-	};
-
-	const bool multiline = node_spans_multiple_lines(p_dictionary);
-	if (!multiline) {
-		write("{");
-		for (int i = 0; i < p_dictionary->elements.size(); i++) {
-			if (i > 0) {
-				write(", ");
-			}
-			write_pair(i);
-		}
-		write("}");
-		return;
-	}
-
-	write("{");
-	indent_level++;
-	for (int i = 0; i < p_dictionary->elements.size(); i++) {
-		newline();
-		write_indent();
-		write_pair(i);
-		write(",");
-	}
-	indent_level--;
-	newline();
-	write_indent();
-	write("}");
+	});
 }
 
 void GDScriptPrinter::print_lambda(const GDScriptParser::LambdaNode *p_lambda) {
