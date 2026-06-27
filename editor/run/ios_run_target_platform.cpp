@@ -200,10 +200,24 @@ Vector<ReadinessStep> IOSRunTargetPlatform::probe_readiness(const RunTarget &p_t
 Vector<RunTargetDevice> IOSRunTargetPlatform::list_devices() {
 	Vector<RunTargetDevice> result;
 
-	const Vector<DeviceInfo> devices = parse_devicectl_devices(_query_devicectl());
-	for (const DeviceInfo &info : devices) {
-		// Mirror the export poll thread's filter: only paired devices with Developer
-		// Mode enabled are runnable, so they are the ones surfaced as run targets.
+	// In the live editor, surface the same device cache the deploy path matches
+	// against, so every device shown here is one `run()` can actually deploy to (no
+	// drift between what the adapter lists and what `run_on_device` will accept).
+	EditorExportPlatformAppleEmbedded *platform = _find_export_platform();
+	if (platform != nullptr) {
+		for (const EditorExportPlatformAppleEmbedded::RunnableDeviceInfo &info : platform->get_runnable_devices()) {
+			RunTargetDevice device;
+			device.id = info.id;
+			device.name = info.name;
+			device.badge = ReadinessStep::OK;
+			result.push_back(device);
+		}
+		return result;
+	}
+
+	// Headless tooling and tests have no export platform; enumerate directly through
+	// the command seam instead, applying the same runnable filter as the poll.
+	for (const DeviceInfo &info : parse_devicectl_devices(_query_devicectl())) {
 		if (!info.paired || !info.developer_mode) {
 			continue;
 		}
@@ -266,12 +280,12 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 	// can't drift from a separately enumerated, possibly newer, devicectl query.
 	String device_id = p_target.device_id;
 	if (device_id.is_empty() || device_id == "auto") {
-		const Vector<String> runnable = platform->get_runnable_device_ids();
+		const Vector<EditorExportPlatformAppleEmbedded::RunnableDeviceInfo> runnable = platform->get_runnable_devices();
 		if (runnable.is_empty()) {
 			ERR_PRINT(vformat("Cannot run iOS target \"%s\": no runnable device is connected.", p_target.name));
 			return ERR_UNAVAILABLE;
 		}
-		device_id = runnable[0];
+		device_id = runnable[0].id;
 	}
 
 	// Hand off to the existing export-to-`.xcarchive` + `devicectl` deploy path,

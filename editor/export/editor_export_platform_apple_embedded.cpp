@@ -2245,13 +2245,16 @@ int EditorExportPlatformAppleEmbedded::get_options_count() const {
 	return devices.size();
 }
 
-Vector<String> EditorExportPlatformAppleEmbedded::get_runnable_device_ids() const {
+Vector<EditorExportPlatformAppleEmbedded::RunnableDeviceInfo> EditorExportPlatformAppleEmbedded::get_runnable_devices() const {
 	MutexLock lock(device_lock);
-	Vector<String> ids;
+	Vector<RunnableDeviceInfo> result;
 	for (const Device &device : devices) {
-		ids.push_back(device.id);
+		RunnableDeviceInfo info;
+		info.id = device.id;
+		info.name = device.name;
+		result.push_back(info);
 	}
-	return ids;
+	return result;
 }
 
 String EditorExportPlatformAppleEmbedded::get_options_tooltip() const {
