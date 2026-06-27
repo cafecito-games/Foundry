@@ -273,6 +273,14 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 		return ERR_DOES_NOT_EXIST;
 	}
 
+	// The target remembers the signing team; make it the team the export actually
+	// signs with. Readiness reads the team from the target, but the iOS export reads
+	// `application/app_store_team_id` from the preset, so without this a target with a
+	// team set could read ready and then deploy with a blank or stale preset team.
+	if (!p_target.team_id.is_empty()) {
+		preset->set("application/app_store_team_id", p_target.team_id);
+	}
+
 	// Resolve the device to deploy to. A target may remember "auto" (or nothing),
 	// meaning "the connected device"; `run_on_device` only matches concrete UUIDs.
 	// Resolve "auto" against the export platform's own poll cache (the exact list
