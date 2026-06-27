@@ -5235,6 +5235,12 @@ void GDScriptAnalyzer::reduce_await(GDScriptParser::AwaitNode *p_await) {
 		// single-level unwrap: await Coroutine[Coroutine[U]] yields Coroutine[U].
 		if (operand_type.has_container_element_type(0)) {
 			await_type = operand_type.get_container_element_type(0);
+			if (operand_type.is_nullable && !await_type.is_variant() &&
+					!(await_type.kind == GDScriptParser::DataType::BUILTIN && await_type.builtin_type == Variant::NIL)) {
+				// Awaiting a nullable coroutine can observe a null handle (`await null` yields null at
+				// runtime), so the awaited result is nullable too.
+				await_type.is_nullable = true;
+			}
 		} else {
 			await_type = GDScriptParser::DataType();
 			await_type.kind = GDScriptParser::DataType::VARIANT;
