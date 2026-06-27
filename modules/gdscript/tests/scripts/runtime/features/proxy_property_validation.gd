@@ -4,7 +4,7 @@
 trait Bag:
 	var count: int
 	var tags: Array[int]
-	@abstract func use() -> void
+	abstract func use() -> void
 
 func test() -> void:
 	var bag: Object = create_proxy_dynamic(Bag, func(_method: StringName, _args: Array) -> Variant:

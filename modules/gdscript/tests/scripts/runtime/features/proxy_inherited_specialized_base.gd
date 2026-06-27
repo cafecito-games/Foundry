@@ -3,7 +3,7 @@
 # (`Mock extends Base[Greeter]`) and through a generic subclass that forwards its own parameter
 # (`Forwarder[U] extends Base[U]`). A direct specialization (`Base[Greeter].new()`) still works.
 trait Greeter:
-	@abstract func greet(subject: String) -> String
+	abstract func greet(subject: String) -> String
 
 
 class Base[T]:

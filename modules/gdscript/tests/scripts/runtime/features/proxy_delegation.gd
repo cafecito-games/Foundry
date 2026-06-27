@@ -1,9 +1,9 @@
 # A delegating proxy advises a subset of methods and forwards everything else --
 # the remaining methods and all property access -- to a real target object.
-@abstract class Service:
+abstract class Service:
 	var label: String
-	@abstract func greet(subject: String) -> String
-	@abstract func add(a: int, b: int) -> int
+	abstract func greet(subject: String) -> String
+	abstract func add(a: int, b: int) -> int
 
 class RealService extends Service:
 	func greet(subject: String) -> String:

@@ -3,7 +3,7 @@
 # (e.g. `Mock[Greeter].new()` binds T = Greeter), so the proxy's runtime descriptor
 # is the bound concrete type.
 trait Greeter:
-	@abstract func greet(subject: String) -> String
+	abstract func greet(subject: String) -> String
 
 class Mock[T]:
 	var calls: Array = []

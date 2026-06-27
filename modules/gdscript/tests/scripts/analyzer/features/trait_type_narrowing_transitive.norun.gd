@@ -2,10 +2,10 @@ extends RefCounted
 uses Damageable
 
 trait Identified:
-	@abstract func id() -> int
+	abstract func id() -> int
 
 trait Damageable uses Identified:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 
 func id() -> int:
 	return 1

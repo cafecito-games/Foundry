@@ -327,8 +327,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: enabled when a derived class owes an abstract method") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		CHECK(GDScriptTests::implement_abstract_enabled(source, 3, 1));
@@ -336,8 +336,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: disabled when the method is already overridden") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
 				"class Circle extends Base:\n"
 				"\tfunc area() -> float:\n"
 				"\t\treturn 3.14\n";
@@ -347,9 +347,9 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: disabled for an abstract derived class") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
-				"@abstract class Shape extends Base:\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"abstract class Shape extends Base:\n"
 				"\tvar name := \"\"\n";
 		CHECK_FALSE(GDScriptTests::implement_abstract_enabled(source, 3, 1));
 		CHECK_EQ(GDScriptTests::implement_abstract_reason(source, 3, 1), String("Abstract classes don't need to implement abstract methods."));
@@ -371,10 +371,10 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: intermediate concrete override satisfies the contract") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
-				"\t@abstract func name() -> String\n"
-				"@abstract class Mid extends Base:\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"\tabstract func name() -> String\n"
+				"abstract class Mid extends Base:\n"
 				"\tfunc area() -> float:\n"
 				"\t\treturn 0.0\n"
 				"class Leaf extends Mid:\n"
@@ -385,8 +385,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: renders typed stub with push_error and default return") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		String out;
@@ -399,8 +399,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: void method has no return") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func tick() -> void\n"
+				"abstract class Base:\n"
+				"\tabstract func tick() -> void\n"
 				"class Clock extends Base:\n"
 				"\tvar t := 0\n";
 		String out;
@@ -413,8 +413,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: generic method preserves its type-parameter list") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func id[T](value: T) -> T\n"
+				"abstract class Base:\n"
+				"\tabstract func id[T](value: T) -> T\n"
 				"class Child extends Base:\n"
 				"\tvar marker := 0\n";
 		String out;
@@ -426,8 +426,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: generic method preserves bounded type parameters") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func first[T: RefCounted](value: T) -> T\n"
+				"abstract class Base:\n"
+				"\tabstract func first[T: RefCounted](value: T) -> T\n"
 				"class Child extends Base:\n"
 				"\tvar marker := 0\n";
 		String out;
@@ -440,8 +440,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		const String source =
 				"class Animal:\n"
 				"\tpass\n"
-				"@abstract class Base:\n"
-				"\t@abstract func pick[T: Animal](value: T) -> T\n"
+				"abstract class Base:\n"
+				"\tabstract func pick[T: Animal](value: T) -> T\n"
 				"class Child extends Base:\n"
 				"\tvar marker := 0\n";
 		String out;
@@ -452,8 +452,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: object return type uses pass") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func make() -> Node\n"
+				"abstract class Base:\n"
+				"\tabstract func make() -> Node\n"
 				"class Factory extends Base:\n"
 				"\tvar count := 0\n";
 		String out;
@@ -467,8 +467,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: preserves params and annotated types") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func combine(a: int, b: int) -> int\n"
+				"abstract class Base:\n"
+				"\tabstract func combine(a: int, b: int) -> int\n"
 				"class Math extends Base:\n"
 				"\tvar seed := 0\n";
 		String out;
@@ -480,9 +480,9 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: generates all owed methods at once") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
-				"\t@abstract func name() -> String\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"\tabstract func name() -> String\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		String out;
@@ -495,8 +495,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: inner class stub is indented one level deeper") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		String out;
@@ -509,8 +509,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: reproduces parameter default values") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func scaled(factor: float = 1.0) -> float\n"
+				"abstract class Base:\n"
+				"\tabstract func scaled(factor: float = 1.0) -> float\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		String out;
@@ -521,8 +521,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: Array return defaults to empty array") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func items() -> Array\n"
+				"abstract class Base:\n"
+				"\tabstract func items() -> Array\n"
 				"class Bag extends Base:\n"
 				"\tvar count := 0\n";
 		String out;
@@ -534,8 +534,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: Dictionary return defaults to empty dictionary") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func lookup() -> Dictionary\n"
+				"abstract class Base:\n"
+				"\tabstract func lookup() -> Dictionary\n"
 				"class Store extends Base:\n"
 				"\tvar count := 0\n";
 		String out;
@@ -547,8 +547,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: StringName return defaults to empty string name") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func tag() -> StringName\n"
+				"abstract class Base:\n"
+				"\tabstract func tag() -> StringName\n"
 				"class Label extends Base:\n"
 				"\tvar count := 0\n";
 		String out;
@@ -561,8 +561,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: top-level class stub has no indentation") {
 		const String source =
 				"extends Base\n"
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
 				"var radius := 1.0\n";
 		String out;
 		RefactorResult r = GDScriptTests::run_implement_abstract(source, 0, 0, out);
@@ -575,8 +575,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: top-level class with no members has no indentation") {
 		const String source =
 				"extends Base\n"
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n";
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n";
 		String out;
 		RefactorResult r = GDScriptTests::run_implement_abstract(source, 0, 0, out);
 		REQUIRE(r.ok);
@@ -586,8 +586,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: preserves the async modifier") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract async func area() -> int\n"
+				"abstract class Base:\n"
+				"\tabstract async func area() -> int\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		String out;
@@ -598,8 +598,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: preserves the rest (vararg) parameter") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func record(...args)\n"
+				"abstract class Base:\n"
+				"\tabstract func record(...args)\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		String out;
@@ -611,8 +611,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: rest parameter follows fixed parameters") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func record(prefix: String, ...args)\n"
+				"abstract class Base:\n"
+				"\tabstract func record(prefix: String, ...args)\n"
 				"class Circle extends Base:\n"
 				"\tvar radius := 1.0\n";
 		String out;
@@ -623,8 +623,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 	TEST_CASE("Implement abstract: reproduces a multi-line default value") {
 		const String source =
-				"@abstract class Base:\n"
-				"\t@abstract func build(options := {\n"
+				"abstract class Base:\n"
+				"\tabstract func build(options := {\n"
 				"\t\t\t\"a\": 1,\n"
 				"\t\t\t\"b\": 2,\n"
 				"\t\t}) -> int\n"
@@ -641,7 +641,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: enabled when a class uses a trait with an abstract method") {
 		const String source =
 				"trait Damageable:\n"
-				"\t@abstract func take_damage(amount: int) -> void\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
 				"class Player:\n"
 				"\tuses Damageable\n"
 				"\tvar hp := 10\n";
@@ -651,7 +651,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: renders a stub for a trait-required abstract method") {
 		const String source =
 				"trait Damageable:\n"
-				"\t@abstract func take_damage(amount: int) -> void\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
 				"class Player:\n"
 				"\tuses Damageable\n"
 				"\tvar hp := 10\n";
@@ -665,7 +665,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: disabled when the class implements the trait method") {
 		const String source =
 				"trait Damageable:\n"
-				"\t@abstract func take_damage(amount: int) -> void\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
 				"class Player:\n"
 				"\tuses Damageable\n"
 				"\tfunc take_damage(amount: int) -> void:\n"
@@ -677,10 +677,10 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: collects transitively-used trait abstract methods") {
 		const String source =
 				"trait Base:\n"
-				"\t@abstract func base_required() -> void\n"
+				"\tabstract func base_required() -> void\n"
 				"trait Middle:\n"
 				"\tuses Base\n"
-				"\t@abstract func middle_required() -> void\n"
+				"\tabstract func middle_required() -> void\n"
 				"class Player:\n"
 				"\tuses Middle\n"
 				"\tvar hp := 10\n";
@@ -692,11 +692,11 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	}
 
 	TEST_CASE("Implement abstract: preserves static on a trait-required abstract method") {
-		// A trait may declare an @abstract static func (unlike an abstract class method),
+		// A trait may declare an abstract static func (unlike an abstract class method),
 		// and the implementation's static flag must match, so the stub keeps `static`.
 		const String source =
 				"trait Fetcher:\n"
-				"\t@abstract static func fetch() -> String\n"
+				"\tabstract static func fetch() -> String\n"
 				"class Player:\n"
 				"\tuses Fetcher\n"
 				"\tvar hp := 10\n";
@@ -711,7 +711,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		// base already implements the trait method and nothing is owed.
 		const String source =
 				"trait Named:\n"
-				"\t@abstract func get_class() -> String\n"
+				"\tabstract func get_class() -> String\n"
 				"class Player:\n"
 				"\tuses Named\n"
 				"\tvar hp := 10\n";
@@ -722,7 +722,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: disabled inside a trait that uses another trait") {
 		const String source =
 				"trait Damageable:\n"
-				"\t@abstract func take_damage(amount: int) -> void\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
 				"trait Combatant:\n"
 				"\tuses Damageable\n"
 				"\tfunc fight() -> void:\n"
@@ -734,7 +734,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 	TEST_CASE("Implement abstract: a concrete base implementation satisfies a trait requirement") {
 		const String source =
 				"trait Damageable:\n"
-				"\t@abstract func take_damage(amount: int) -> void\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
 				"class Living:\n"
 				"\tfunc take_damage(amount: int) -> void:\n"
 				"\t\tpass\n"
@@ -1656,8 +1656,8 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		RefactorContext ctx;
 		ctx.path = "user://type_annotation_abstract.gd";
 		ctx.source =
-				"@abstract class Base:\n"
-				"\t@abstract func area() -> float\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
 				"\tvar radius := 1.0\n";
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
@@ -4430,15 +4430,13 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		const String base_path = "res://refactor/implement_abstract_cache_base.gd";
 		const String child_path = "res://refactor/implement_abstract_cache_child.gd";
 		const String base_v1 =
-				"@abstract\n"
-				"extends RefCounted\n"
+				"abstract extends RefCounted\n"
 				"\n"
-				"@abstract func scaled(factor: float = 1.0) -> float\n";
+				"abstract func scaled(factor: float = 1.0) -> float\n";
 		const String base_v2 =
-				"@abstract\n"
-				"extends RefCounted\n"
+				"abstract extends RefCounted\n"
 				"\n"
-				"@abstract func scaled(value: int = 2) -> int\n";
+				"abstract func scaled(value: int = 2) -> int\n";
 		const String child_source =
 				"extends \"res://refactor/implement_abstract_cache_base.gd\"\n"
 				"\n"

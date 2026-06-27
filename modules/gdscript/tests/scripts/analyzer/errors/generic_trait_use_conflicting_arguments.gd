@@ -1,7 +1,7 @@
 # A generic trait reached through two different used traits must be bound to the same type arguments
 # on every path; conflicting specializations are a contradiction and are rejected.
 trait Storage[T]:
-	@abstract func add(item: T) -> void
+	abstract func add(item: T) -> void
 
 
 trait IntStorage uses Storage[int]:

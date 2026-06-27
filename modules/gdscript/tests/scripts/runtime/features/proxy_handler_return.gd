@@ -1,12 +1,12 @@
 # The handler's return value is coerced to each intercepted method's declared
 # return type: passed through when already correct, converted for compatible
 # builtins (int -> float), and ignored for `void`.
-@abstract class Service:
-	@abstract func get_count() -> int
-	@abstract func get_ratio() -> float
-	@abstract func describe() -> String
-	@abstract func do_nothing() -> void
-	@abstract func passthrough() -> Variant
+abstract class Service:
+	abstract func get_count() -> int
+	abstract func get_ratio() -> float
+	abstract func describe() -> String
+	abstract func do_nothing() -> void
+	abstract func passthrough() -> Variant
 
 func test() -> void:
 	var box: Array = [null]

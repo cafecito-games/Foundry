@@ -10,7 +10,7 @@ trait TraitB:
 
 # Abstract classes and composing traits may defer disambiguation to a concrete
 # subclass, so an unresolved trait method conflict is not an error for them.
-@abstract class AbstractUser:
+abstract class AbstractUser:
 	uses TraitA, TraitB
 
 trait CompositeTrait uses TraitA, TraitB:

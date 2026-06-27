@@ -1,9 +1,9 @@
 # Spring-style AOP via the pure proxy core: a handler logs every call and then
 # "proceeds" by forwarding to a real target. No special engine support beyond
 # create_proxy_dynamic -- interception is an ordinary handler that wraps a call.
-@abstract class UserService:
-	@abstract func get_name(id: int) -> String
-	@abstract func get_age(id: int) -> int
+abstract class UserService:
+	abstract func get_name(id: int) -> String
+	abstract func get_age(id: int) -> int
 
 class RealUserService extends UserService:
 	func get_name(id: int) -> String:

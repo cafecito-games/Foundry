@@ -1,7 +1,7 @@
 # A type argument must use a trait that stands as its type parameter's bound; deriving
 # from an unrelated type is not enough.
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 
 
 class Sword:

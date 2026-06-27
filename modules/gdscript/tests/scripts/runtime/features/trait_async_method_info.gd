@@ -5,7 +5,7 @@ extends RefCounted
 uses RemoteLoadable
 
 trait RemoteLoadable:
-	@abstract async func fetch() -> String
+	abstract async func fetch() -> String
 
 	async func fetch_twice() -> String:
 		return await fetch() + await fetch()

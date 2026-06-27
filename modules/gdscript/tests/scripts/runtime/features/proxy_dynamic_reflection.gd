@@ -2,8 +2,8 @@
 # for building a dynamic proxy: every contract call on the proxied trait/abstract
 # type is routed through the handler, invoked as `handler.call(method_name, args)`.
 trait Repository:
-	@abstract func find(id: int) -> String
-	@abstract func count() -> int
+	abstract func find(id: int) -> String
+	abstract func count() -> int
 
 func test() -> void:
 	var calls: Array = []

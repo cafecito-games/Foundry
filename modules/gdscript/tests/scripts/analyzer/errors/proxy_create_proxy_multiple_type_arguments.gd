@@ -2,10 +2,10 @@
 # list with more than one entry (`create_proxy[A, B]`) is rejected with an arity
 # diagnostic rather than silently consuming only the first argument.
 trait Greeter:
-	@abstract func greet(name: String) -> String
+	abstract func greet(name: String) -> String
 
 trait Fareweller:
-	@abstract func bye(name: String) -> String
+	abstract func bye(name: String) -> String
 
 func handle(_method_name: StringName, _args: Array) -> Variant:
 	return null

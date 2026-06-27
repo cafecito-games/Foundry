@@ -2,7 +2,7 @@ extends RefCounted
 uses Damageable, Trackable
 
 trait Identified:
-	@abstract func id() -> int
+	abstract func id() -> int
 
 trait Damageable uses Identified:
 	pass

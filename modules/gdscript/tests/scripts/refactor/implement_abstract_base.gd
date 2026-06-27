@@ -1,4 +1,4 @@
 abstract class_name RefactorAbstractShape
 
-@abstract func area() -> float
-@abstract func describe() -> String
+abstract func area() -> float
+abstract func describe() -> String

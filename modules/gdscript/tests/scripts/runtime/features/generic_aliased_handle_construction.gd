@@ -3,7 +3,7 @@
 # (erasure-on-widening: preserved while the static type still names them). Reflection, member-type
 # validation, and `create_proxy[T]` behave identically to the direct form.
 trait Greeter:
-	@abstract func greet(subject: String) -> String
+	abstract func greet(subject: String) -> String
 
 
 class Box[T]:

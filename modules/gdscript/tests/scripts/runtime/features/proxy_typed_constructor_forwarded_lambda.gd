@@ -2,7 +2,7 @@
 # `self` (to read the reified binding), so create_proxy[T] marks the enclosing
 # lambda as using self even when it touches nothing else on self.
 trait Greeter:
-	@abstract func greet(subject: String) -> String
+	abstract func greet(subject: String) -> String
 
 class Mock[T]:
 	func make_builder(handler: Callable) -> Callable:

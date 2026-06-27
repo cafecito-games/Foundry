@@ -1,2 +1,2 @@
 GDTEST_PARSER_ERROR
-Annotation "@abstract" cannot be applied to a annotation declaration.
+Annotation "@warning_ignore" cannot be applied to a annotation declaration.

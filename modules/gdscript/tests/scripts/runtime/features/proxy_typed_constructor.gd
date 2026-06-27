@@ -2,7 +2,7 @@
 # result as T, so contract methods are callable directly off the typed value with
 # no `as` cast, and the runtime receives T's descriptor to scan the contract.
 trait Greeter:
-	@abstract func greet(name: String) -> String
+	abstract func greet(name: String) -> String
 
 class Recorder:
 	var calls: Array = []

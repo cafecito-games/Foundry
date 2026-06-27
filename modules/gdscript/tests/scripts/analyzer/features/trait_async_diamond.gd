@@ -4,7 +4,7 @@ extends RefCounted
 uses Left, Right
 
 trait Fetchable:
-	@abstract async func fetch() -> String
+	abstract async func fetch() -> String
 
 trait Left:
 	uses Fetchable

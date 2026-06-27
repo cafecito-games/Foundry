@@ -2,11 +2,11 @@
 # (alpha-equivalence by ordinal position). Here `transform[V]` satisfies required `transform[U]`, and
 # a matching bound aligns after renaming.
 trait Mapper:
-	@abstract func transform[U](value: U) -> Array[U]
+	abstract func transform[U](value: U) -> Array[U]
 
 
 trait Bounded:
-	@abstract func keep[U: RefCounted](value: U) -> U
+	abstract func keep[U: RefCounted](value: U) -> U
 
 
 class Impl:

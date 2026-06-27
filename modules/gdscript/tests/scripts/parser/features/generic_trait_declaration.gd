@@ -1,11 +1,11 @@
 # Generic trait declarations parse: inline `trait Name[T]` (with bounds), and `uses Name[Arg]`
 # applying type arguments at the use site. This is a parser-level feature check.
 trait Bucket[T]:
-	@abstract func add(item: T) -> void
+	abstract func add(item: T) -> void
 
 
 trait Bounded[T: RefCounted]:
-	@abstract func keep(item: T) -> T
+	abstract func keep(item: T) -> T
 
 
 class IntBucket uses Bucket[int]:
