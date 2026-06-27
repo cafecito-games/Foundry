@@ -357,6 +357,26 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 		return result;
 	}
 
+	if (p_target.is_coroutine || p_source.is_coroutine) {
+		// Coroutine[T] is its own family: a coroutine target requires a coroutine source (and vice
+		// versa), and the phantom result type is matched invariantly, like a typed Array element.
+		// Generic NATIVE inheritance (GDScriptFunctionState) must not be used here, so this branch
+		// runs before the native compatibility logic below.
+		if (!p_target.is_coroutine || !p_source.is_coroutine) {
+			return result;
+		}
+		result.compatible = true;
+		if (p_target.has_container_element_type(0) && p_source.has_container_element_type(0)) {
+			Options element_options = p_options;
+			element_options.allow_implicit_conversion = false;
+			const Result element_result = check(p_target.get_container_element_type(0), p_source.get_container_element_type(0), element_options);
+			result.compatible = element_result.compatible;
+			result.requires_runtime_check = element_result.requires_runtime_check;
+			result.uses_implicit_conversion = element_result.uses_implicit_conversion;
+		}
+		return result;
+	}
+
 	if (p_target.kind == GDScriptParser::DataType::CLASS && p_target.class_type != nullptr &&
 			p_target.class_type->is_trait && !p_target.is_meta_type) {
 		if (p_source.kind == GDScriptParser::DataType::CLASS && !p_source.is_meta_type) {

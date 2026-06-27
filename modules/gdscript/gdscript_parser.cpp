@@ -6298,6 +6298,24 @@ String GDScriptParser::DataType::to_string() const {
 		return vformat("Type[%s]%s", represented_type.to_string(), nullable_suffix);
 	}
 
+	if (is_coroutine) {
+		// Coroutine[T] is a source-level skin over GDScriptFunctionState. Render the phantom result
+		// type from container_element_types[0] as the only choke point, so the underlying native
+		// class name never leaks into hovers, errors, or completion. A void result (NIL) and an
+		// absent result render with their source spellings.
+		String element = "Variant";
+		if (has_container_element_type(0)) {
+			const DataType result_type = get_container_element_type(0);
+			if (result_type.kind == BUILTIN && result_type.builtin_type == Variant::NIL) {
+				element = "void";
+			} else {
+				element = result_type.to_string();
+			}
+		}
+		const String nullable_suffix = is_nullable ? "?" : "";
+		return vformat("Coroutine[%s]%s", element, nullable_suffix);
+	}
+
 	String result;
 	bool valid_kind = true;
 	switch (kind) {
