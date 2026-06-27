@@ -11,4 +11,4 @@ class Guarded:
 		print("id is %d" % id)
 
 func test() -> void:
-	Guarded.new(true)
+	var _guard := Guarded.new(true)
