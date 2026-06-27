@@ -130,7 +130,14 @@ void RunTargetsPanel::_ensure_manager() {
 	// publish it so the rest of the editor shares this single instance.
 	manager = memnew(RunTargetManager);
 	owns_manager = true;
-	manager->load(RUN_TARGETS_CONFIG_PATH);
+	const Error load_error = manager->load(RUN_TARGETS_CONFIG_PATH);
+	if (load_error != OK) {
+		// A malformed/unreadable run_targets.cfg leaves the manager without a save
+		// path; editing would silently lose changes, so keep the dock read-only and
+		// tell the user instead of pretending edits persist.
+		config_writable = false;
+		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The dock is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
+	}
 
 #ifdef MACOS_ENABLED
 	owned_adapter = memnew(IOSRunTargetPlatform);
@@ -243,8 +250,9 @@ void RunTargetsPanel::_refresh_target_list(int p_select_index) {
 	}
 
 	const bool has_selection = select >= 0;
-	remove_button->set_disabled(!has_selection);
-	rename_button->set_disabled(!has_selection);
+	add_button->set_disabled(!config_writable);
+	remove_button->set_disabled(!has_selection || !config_writable);
+	rename_button->set_disabled(!has_selection || !config_writable);
 	details_container->set_visible(has_selection);
 	recheck_button->set_disabled(!has_selection);
 
@@ -318,8 +326,8 @@ void RunTargetsPanel::_refresh_device_options(const RunTarget &p_target) {
 
 void RunTargetsPanel::_on_target_selected(int p_index) {
 	_load_selection_into_fields();
-	remove_button->set_disabled(false);
-	rename_button->set_disabled(false);
+	remove_button->set_disabled(!config_writable);
+	rename_button->set_disabled(!config_writable);
 	details_container->set_visible(true);
 	recheck_button->set_disabled(false);
 }
@@ -391,6 +399,12 @@ void RunTargetsPanel::_on_rename_confirmed() {
 	}
 	const String new_name = rename_field->get_text().strip_edges();
 	if (new_name.is_empty()) {
+		return;
+	}
+	// Targets are stored and resolved by name; refuse a rename that would collide
+	// with another target and make the active selection ambiguous.
+	if (!_is_name_available(new_name, index)) {
+		ERR_PRINT(vformat("Run Targets: a target named \"%s\" already exists.", new_name));
 		return;
 	}
 
@@ -509,8 +523,29 @@ void RunTargetsPanel::_reprobe_selected() {
 		return;
 	}
 
-	const Vector<ReadinessStep> steps = adapter->probe_readiness(target);
+	const Vector<ReadinessStep> steps = adapter->probe_readiness(_effective_target_for_probe(target));
 	_render_readiness(steps);
+}
+
+RunTarget RunTargetsPanel::_effective_target_for_probe(const RunTarget &p_target) const {
+	RunTarget effective = p_target;
+	if (effective.team_id.is_empty()) {
+		Ref<EditorExportPreset> preset = _resolve_preset(p_target);
+		if (preset.is_valid()) {
+			effective.team_id = preset->get(PRESET_KEY_TEAM_ID);
+		}
+	}
+	return effective;
+}
+
+bool RunTargetsPanel::_is_name_available(const String &p_name, int p_ignore_index) const {
+	const Vector<RunTarget> &targets = manager->get_targets();
+	for (int i = 0; i < targets.size(); i++) {
+		if (i != p_ignore_index && targets[i].name == p_name) {
+			return false;
+		}
+	}
+	return true;
 }
 
 void RunTargetsPanel::_clear_readiness_rows() {

@@ -95,6 +95,10 @@ private:
 
 	bool initialized = false;
 	bool updating_fields = false; // Guards field writes while loading a selection.
+	// False when the project's run_targets.cfg failed to load (malformed/unreadable)
+	// and an owned manager therefore has no usable save path; the dock disables
+	// mutation rather than silently dropping edits.
+	bool config_writable = true;
 
 	// Targets list region.
 	ItemList *target_list = nullptr;
@@ -126,6 +130,16 @@ private:
 	void _refresh_target_list(int p_select_index = -1);
 	void _load_selection_into_fields();
 	void _refresh_device_options(const RunTarget &p_target);
+
+	// Returns a copy of `p_target` with its `team_id` filled in from the linked
+	// export preset's signing team when the target itself has none, so a team
+	// stored only on the preset is not reported as a missing-team readiness
+	// failure. The readiness probe reads `RunTarget::team_id`.
+	RunTarget _effective_target_for_probe(const RunTarget &p_target) const;
+
+	// True when a target name is unused, or used only by the target at
+	// `p_ignore_index` (so a rename can keep its own name).
+	bool _is_name_available(const String &p_name, int p_ignore_index) const;
 
 	void _on_target_selected(int p_index);
 	void _on_add_pressed();
