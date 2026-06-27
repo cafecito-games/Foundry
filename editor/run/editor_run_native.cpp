@@ -180,7 +180,17 @@ void EditorRunNative::_rebuild_popup() {
 		}
 	}
 
-	run_target_entries = build_menu_model(run_target_manager.get_targets(), devices_by_platform);
+	// Only targets whose platform has a registered adapter can be deployed, so a
+	// build without that adapter (e.g. iOS targets on a non-macOS editor) does not
+	// surface dead, undeployable rows or enable the menu on their account.
+	Vector<RunTarget> renderable_targets;
+	for (const RunTarget &target : run_target_manager.get_targets()) {
+		if (run_target_manager.get_platform(target.platform) != nullptr) {
+			renderable_targets.push_back(target);
+		}
+	}
+
+	run_target_entries = build_menu_model(renderable_targets, devices_by_platform);
 
 	// The first four runnable rows (run-target rows first, then legacy device rows)
 	// share the existing remote_deploy/deploy_to_device_N shortcuts so Shift+F5 /
@@ -214,8 +224,14 @@ void EditorRunNative::_rebuild_popup() {
 			}
 			if (entry.kind == RunTargetMenuEntry::TARGET && !entry.runnable) {
 				popup->set_item_tooltip(-1, TTRC("The device for this target is not connected."));
+			} else if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE) {
+				popup->set_item_tooltip(-1, TTRC("Deploys now using your configured signing. Open the Targets panel to save it as its own run target."));
 			}
-			if (entry.kind == RunTargetMenuEntry::TARGET && entry.runnable && device_shortcut_id <= 4) {
+			// Share the deploy shortcuts with the first runnable rows (targets first,
+			// then setup-able connected devices), so the shortcuts keep deploying once
+			// the iOS rows that own them move into the run-target section.
+			const bool row_runnable = (entry.kind == RunTargetMenuEntry::TARGET && entry.runnable) || entry.kind == RunTargetMenuEntry::SETUP_DEVICE;
+			if (row_runnable && device_shortcut_id <= 4) {
 				popup->set_item_shortcut(-1, ED_GET_SHORTCUT(vformat("remote_deploy/deploy_to_device_%d", device_shortcut_id)), true);
 				device_shortcut_id += 1;
 			}
@@ -293,30 +309,59 @@ void EditorRunNative::_show_result(const String &p_text, bool p_is_error) {
 	}
 }
 
+bool EditorRunNative::_find_target(const String &p_name, RunTarget &r_target) const {
+	for (const RunTarget &candidate : run_target_manager.get_targets()) {
+		if (candidate.name == p_name) {
+			r_target = candidate;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool EditorRunNative::_find_signing_target(const String &p_platform, RunTarget &r_target) const {
+	// Prefer the active target when it is on the requested platform, so a connected
+	// device deploys with the signing the user most recently chose.
+	if (run_target_manager.has_active_target()) {
+		const RunTarget active = run_target_manager.get_active_target();
+		if (active.platform == p_platform) {
+			r_target = active;
+			return true;
+		}
+	}
+	for (const RunTarget &candidate : run_target_manager.get_targets()) {
+		if (candidate.platform == p_platform) {
+			r_target = candidate;
+			return true;
+		}
+	}
+	return false;
+}
+
 Error EditorRunNative::_start_run_target(int p_entry_index) {
 	ERR_FAIL_INDEX_V(p_entry_index, run_target_entries.size(), ERR_INVALID_PARAMETER);
 	const RunTargetMenuEntry entry = run_target_entries[p_entry_index];
 
 	if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE) {
-		// No configured target to deploy to yet: route the user into setup. The
-		// Targets dock listens for this; until it exists the message explains the
-		// next step rather than silently doing nothing.
+		// A connected device not yet saved as its own target. Let a setup surface (the
+		// Targets dock) react, then deploy to it right away by borrowing the signing of
+		// a configured target on the same platform — so a connected device stays
+		// one-click deployable even before it is configured, matching the legacy menu.
 		emit_signal(SNAME("setup_target_requested"), entry.platform, entry.device_id, entry.label);
-		_show_result(vformat(TTR("\"%s\" is connected but not set up as a run target yet.\nOpen the Targets panel to configure signing and add it as a run target."), entry.label), true);
-		return OK;
+
+		RunTarget base;
+		if (!_find_signing_target(entry.platform, base)) {
+			_show_result(vformat(TTR("\"%s\" is connected but no run target provides signing for it yet.\nOpen the Targets panel to configure signing."), entry.label), true);
+			return ERR_UNAVAILABLE;
+		}
+		RunTarget ephemeral = base;
+		ephemeral.name = entry.label;
+		ephemeral.device_id = entry.device_id;
+		return _deploy_run_target(ephemeral);
 	}
 
-	// Resolve the configured target to its preset, device, debug flags, and adapter.
 	RunTarget target;
-	bool found = false;
-	for (const RunTarget &candidate : run_target_manager.get_targets()) {
-		if (candidate.name == entry.target_name) {
-			target = candidate;
-			found = true;
-			break;
-		}
-	}
-	if (!found) {
+	if (!_find_target(entry.target_name, target)) {
 		_show_result(vformat(TTR("Run target \"%s\" no longer exists."), entry.target_name), true);
 		return ERR_DOES_NOT_EXIST;
 	}
@@ -324,11 +369,14 @@ Error EditorRunNative::_start_run_target(int p_entry_index) {
 	// Selecting a target makes it the active selection, persisted for next session.
 	run_target_manager.set_active_target(target.name);
 	run_target_manager.save();
+	return _deploy_run_target(target);
+}
 
+Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 	RunTargetManager::ResolvedTarget resolved;
-	const Error resolve_error = run_target_manager.resolve(target, resolved);
+	const Error resolve_error = run_target_manager.resolve(p_target, resolved);
 	if (resolve_error != OK || resolved.platform_adapter == nullptr || resolved.preset.is_null()) {
-		_show_result(vformat(TTR("Cannot run \"%s\": its export preset \"%s\" is missing or its platform has no adapter."), target.name, target.export_preset), true);
+		_show_result(vformat(TTR("Cannot run \"%s\": its export preset \"%s\" is missing or its platform has no adapter."), p_target.name, p_target.export_preset), true);
 		return resolve_error != OK ? resolve_error : ERR_UNAVAILABLE;
 	}
 
@@ -339,10 +387,10 @@ Error EditorRunNative::_start_run_target(int p_entry_index) {
 	// Surface the Doctor's next step instead of letting a deploy fail silently: if
 	// anything in the readiness ladder is unmet, show the first actionable rung and
 	// stop here so the user knows exactly what to fix.
-	const Vector<ReadinessStep> ladder = resolved.platform_adapter->probe_readiness(target);
+	const Vector<ReadinessStep> ladder = resolved.platform_adapter->probe_readiness(p_target);
 	for (const ReadinessStep &step : ladder) {
 		if (step.status != ReadinessStep::OK) {
-			String message = vformat(TTR("\"%s\" is not ready to run yet.\n\n%s\n%s"), target.name, step.title, step.detail);
+			String message = vformat(TTR("\"%s\" is not ready to run yet.\n\n%s\n%s"), p_target.name, step.title, step.detail);
 			if (!step.fix_hint.is_empty()) {
 				message += "\n\n" + step.fix_hint;
 			}
@@ -367,7 +415,7 @@ Error EditorRunNative::_start_run_target(int p_entry_index) {
 		export_platform->clear_messages();
 	}
 
-	const Error run_error = resolved.platform_adapter->run(target, resolved.debug_flags);
+	const Error run_error = resolved.platform_adapter->run(p_target, resolved.debug_flags);
 
 	result_dialog_log->clear();
 	if (export_platform.is_valid() && export_platform->fill_log_messages(result_dialog_log, run_error)) {
@@ -377,7 +425,7 @@ Error EditorRunNative::_start_run_target(int p_entry_index) {
 	} else if (run_error != OK) {
 		// The deploy failed but produced no structured messages: surface a note so
 		// the failure is never silent.
-		_show_result(vformat(TTR("Deploying \"%s\" failed. See the Output log for details."), target.name), true);
+		_show_result(vformat(TTR("Deploying \"%s\" failed. See the Output log for details."), p_target.name), true);
 	}
 	return run_error;
 }

@@ -97,6 +97,9 @@ class EditorRunNative : public HBoxContainer {
 	void _rebuild_popup();
 	void _show_result(const String &p_text, bool p_is_error);
 	Error _start_run_target(int p_entry_index);
+	Error _deploy_run_target(const RunTarget &p_target);
+	bool _find_target(const String &p_name, RunTarget &r_target) const;
+	bool _find_signing_target(const String &p_platform, RunTarget &r_target) const;
 	Ref<Texture2D> _badge_icon(ReadinessStep::Status p_status) const;
 
 protected:
