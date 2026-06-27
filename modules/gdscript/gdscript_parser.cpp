@@ -4765,6 +4765,11 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		type->signature_is_async = true;
 	}
 
+	// Coroutine[T] is the typed handle to an in-flight async computation for structured concurrency.
+	if (type->type_chain.size() == 1 && type_element->name == SNAME("Coroutine")) {
+		type->is_coroutine = true;
+	}
+
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		const bool is_callable_type = type->type_chain.size() == 1 && (type_element->name == SNAME("Callable") || type_element->name == SNAME("AsyncCallable"));
 		const bool is_signal_type = type->type_chain.size() == 1 && type_element->name == SNAME("Signal");
@@ -4794,6 +4799,32 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				parse_type(true);
 			}
 			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after signature type.)");
+			if (match(GDScriptTokenizer::Token::QUESTION_MARK)) {
+				type->is_nullable = true;
+			}
+			complete_extents(type);
+			return type;
+		}
+
+		// Coroutine[T] carries exactly one phantom result type, unlike the variadic typed collections.
+		if (type->is_coroutine) {
+			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				push_error(R"(Coroutine[T] expects a single result type parameter.)");
+			} else {
+				TypeNode *result_type = parse_type(false); // Don't allow void for the result type.
+				if (result_type == nullptr) {
+					push_error(R"(Expected result type for Coroutine after "[".)");
+				} else {
+					type->container_types.append(result_type);
+				}
+				if (check(GDScriptTokenizer::Token::COMMA)) {
+					push_error(R"(Coroutine[T] expects a single result type parameter, but more were given.)");
+					while (match(GDScriptTokenizer::Token::COMMA)) {
+						parse_type(false); // Consume the extra parameters so parsing stays aligned.
+					}
+				}
+			}
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after Coroutine result type.)");
 			if (match(GDScriptTokenizer::Token::QUESTION_MARK)) {
 				type->is_nullable = true;
 			}
