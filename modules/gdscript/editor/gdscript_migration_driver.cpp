@@ -64,31 +64,39 @@ MigrationDriverResult GDScriptMigrationDriver::run(const String &p_root, const M
 	// on disk, so version-control safety does not apply; the projection report relies on
 	// this to run over a working tree it does not own (e.g. an uncommitted CI checkout).
 	if (p_options.enforce_vcs_safety_guard && !p_options.inference.dry_run) {
-		// p_root may be a `res://` path or an absolute OS path; globalize_path() handles both.
-		const String project_path = ProjectSettings::get_singleton()->globalize_path(p_root);
-		result.vcs_guard = ScriptRefactorVCSGuard::inspect_project(project_path);
+		if (p_options.vcs_state_override != nullptr) {
+			// Injected working-tree state: derive the verdict purely through evaluate(),
+			// without spawning git. The per-target ignored-file refinement below is a
+			// separate git probe and is intentionally skipped here; the injected state
+			// alone fixes the verdict.
+			result.vcs_guard = ScriptRefactorVCSGuard::evaluate(*p_options.vcs_state_override);
+		} else {
+			// p_root may be a `res://` path or an absolute OS path; globalize_path() handles both.
+			const String project_path = ProjectSettings::get_singleton()->globalize_path(p_root);
+			result.vcs_guard = ScriptRefactorVCSGuard::inspect_project(project_path);
 
-		// The tree-level status check ignores `.gitignore`d build artifacts to avoid false
-		// positives, but a git-ignored file that is itself a migration target would be
-		// overwritten with no version-control recovery. The driver knows the concrete target
-		// set, so it checks that here and upgrades an otherwise-clean verdict accordingly.
-		if (result.vcs_guard.status == ScriptRefactorVCSGuard::Status::SAFE) {
-			Vector<String> globalized_targets;
-			for (const String &file : scan.files) {
-				globalized_targets.push_back(ProjectSettings::get_singleton()->globalize_path(file));
-			}
-			bool ignore_check_succeeded = true;
-			result.ignored_targets = ScriptRefactorVCSGuard::find_ignored_targets(project_path, globalized_targets, ignore_check_succeeded);
-			if (!ignore_check_succeeded) {
-				// The ignored-target check could not reach a reliable conclusion. Degrade to
-				// UNKNOWN rather than proceeding as safe, so an indeterminate check still warns.
-				result.vcs_guard.status = ScriptRefactorVCSGuard::Status::UNKNOWN;
-				result.vcs_guard.message = TTR("Could not determine whether any migration targets are excluded from version control. Make sure your working tree is committed or backed up before applying the migration.");
-			} else if (!result.ignored_targets.is_empty()) {
-				result.vcs_guard.status = ScriptRefactorVCSGuard::Status::IGNORED_TARGETS;
-				result.vcs_guard.message = vformat(
-						TTR("%d script(s) this migration would change are excluded from version control (.gitignore). They cannot be restored from git after the migration. Commit or un-ignore them, or back up before continuing."),
-						result.ignored_targets.size());
+			// The tree-level status check ignores `.gitignore`d build artifacts to avoid false
+			// positives, but a git-ignored file that is itself a migration target would be
+			// overwritten with no version-control recovery. The driver knows the concrete target
+			// set, so it checks that here and upgrades an otherwise-clean verdict accordingly.
+			if (result.vcs_guard.status == ScriptRefactorVCSGuard::Status::SAFE) {
+				Vector<String> globalized_targets;
+				for (const String &file : scan.files) {
+					globalized_targets.push_back(ProjectSettings::get_singleton()->globalize_path(file));
+				}
+				bool ignore_check_succeeded = true;
+				result.ignored_targets = ScriptRefactorVCSGuard::find_ignored_targets(project_path, globalized_targets, ignore_check_succeeded);
+				if (!ignore_check_succeeded) {
+					// The ignored-target check could not reach a reliable conclusion. Degrade to
+					// UNKNOWN rather than proceeding as safe, so an indeterminate check still warns.
+					result.vcs_guard.status = ScriptRefactorVCSGuard::Status::UNKNOWN;
+					result.vcs_guard.message = TTR("Could not determine whether any migration targets are excluded from version control. Make sure your working tree is committed or backed up before applying the migration.");
+				} else if (!result.ignored_targets.is_empty()) {
+					result.vcs_guard.status = ScriptRefactorVCSGuard::Status::IGNORED_TARGETS;
+					result.vcs_guard.message = vformat(
+							TTR("%d script(s) this migration would change are excluded from version control (.gitignore). They cannot be restored from git after the migration. Commit or un-ignore them, or back up before continuing."),
+							result.ignored_targets.size());
+				}
 			}
 		}
 
