@@ -3387,14 +3387,21 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 			if (!subscript->is_attribute || subscript->attribute == nullptr) {
 				return nullptr;
 			}
-			// Only `self.<name>` designates this implementer's flattened slot. An attribute through any
-			// other receiver (`other.id`) targets that receiver's own member; resolving it by name here
-			// would mis-flag an unrelated member that merely shares a final's name.
-			if (subscript->base == nullptr || subscript->base->type != GDScriptParser::Node::SELF) {
-				return nullptr;
-			}
 			name = subscript->attribute->name;
-			self_receiver = true;
+			self_receiver = subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF;
+			if (!self_receiver) {
+				// A non-`self` receiver designates the slot only when its attribute resolves to the *same*
+				// final the implementer tracks: an alias of `self`, another instance of the declaring type,
+				// or a qualified static form (`Type.VALUE`). An unrelated receiver whose member merely
+				// shares the name resolves elsewhere and must not be flagged. The attribute's
+				// `variable_source` is reliable for this identity test even in a trait body (a shadowed
+				// trait final is excluded below because its name is not tracked by the implementer).
+				const bool attribute_is_variable = subscript->attribute->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::INHERITED_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE;
+				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator slot = p_finals_by_name.find(name);
+				if (!slot || !attribute_is_variable || subscript->attribute->variable_source != slot->value) {
+					return nullptr;
+				}
+			}
 		} else {
 			return nullptr;
 		}
