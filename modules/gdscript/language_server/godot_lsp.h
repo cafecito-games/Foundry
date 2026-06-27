@@ -296,6 +296,40 @@ struct DocumentLink {
 };
 
 /**
+ * Value-object describing what options formatting should use. The canonical
+ * GDScript formatter has a single fixed style, so these are accepted for
+ * protocol completeness but do not alter the output.
+ */
+struct FormattingOptions {
+	int tabSize = 4;
+	bool insertSpaces = false;
+
+	void load(const Dictionary &p_params) {
+		if (p_params.has("tabSize")) {
+			tabSize = p_params["tabSize"];
+		}
+		if (p_params.has("insertSpaces")) {
+			insertSpaces = p_params["insertSpaces"];
+		}
+	}
+};
+
+/**
+ * The parameters of a textDocument/formatting request.
+ */
+struct DocumentFormattingParams {
+	TextDocumentIdentifier textDocument;
+	FormattingOptions options;
+
+	void load(const Dictionary &p_params) {
+		textDocument.load(p_params["textDocument"]);
+		if (p_params.has("options")) {
+			options.load(p_params["options"]);
+		}
+	}
+};
+
+/**
  * A textual edit applicable to a text document.
  */
 struct TextEdit {
@@ -1888,7 +1922,7 @@ struct ServerCapabilities {
 	/**
 	 * The server provides document formatting.
 	 */
-	bool documentFormattingProvider = false;
+	bool documentFormattingProvider = true;
 
 	/**
 	 * The server provides document range formatting.

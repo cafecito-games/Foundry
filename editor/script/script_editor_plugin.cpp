@@ -2827,6 +2827,13 @@ void ScriptEditor::save_current_script() {
 		current->convert_indent();
 	}
 
+	// Format last so its canonical output is the final state of the buffer and
+	// matches the CLI byte-for-byte. No-op for non-GDScript buffers and on parse
+	// error; the diagnostic is left to the live parser to avoid save-time noise.
+	if (format_on_save) {
+		current->format_document(false);
+	}
+
 	Ref<Resource> resource = current->get_edited_resource();
 	Ref<TextFile> text_file = resource;
 	Ref<Script> scr = resource;
@@ -3205,6 +3212,7 @@ void ScriptEditor::_apply_editor_settings() {
 	trim_trailing_whitespace_on_save = EDITOR_GET("text_editor/behavior/files/trim_trailing_whitespace_on_save");
 	trim_final_newlines_on_save = EDITOR_GET("text_editor/behavior/files/trim_final_newlines_on_save");
 	convert_indent_on_save = EDITOR_GET("text_editor/behavior/files/convert_indent_on_save");
+	format_on_save = EDITOR_GET("text_editor/behavior/files/format_on_save");
 
 	members_overview_enabled = EDITOR_GET("text_editor/script_list/show_members_overview");
 	help_overview_enabled = EDITOR_GET("text_editor/help/show_help_index");
@@ -4676,6 +4684,7 @@ ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
 	trim_trailing_whitespace_on_save = EDITOR_GET("text_editor/behavior/files/trim_trailing_whitespace_on_save");
 	trim_final_newlines_on_save = EDITOR_GET("text_editor/behavior/files/trim_final_newlines_on_save");
 	convert_indent_on_save = EDITOR_GET("text_editor/behavior/files/convert_indent_on_save");
+	format_on_save = EDITOR_GET("text_editor/behavior/files/format_on_save");
 
 	ScriptServer::edit_request_func = _open_script_request;
 

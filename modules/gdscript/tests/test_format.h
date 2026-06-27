@@ -32,6 +32,7 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "../gdscript.h"
 #include "../gdscript_format.h"
 #include "../gdscript_parser.h"
 
@@ -1273,6 +1274,30 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		}
 		MESSAGE("String-comment preservation: checked ", checked, " parseable corpus scripts.");
 		CHECK(checked > 0);
+	}
+
+	TEST_CASE("[Format] Language bridge reformats through the canonical core") {
+		// The editor and LSP front-ends reach the formatter through the
+		// ScriptLanguage::format_code bridge; it must produce exactly what driving
+		// the core formatter directly produces (single source of truth).
+		const String source = "func f():\n\treturn  1\n";
+		String formatted;
+		String error_message;
+		const bool ok = GDScriptLanguage::get_singleton()->format_code(source, "test.gd", formatted, &error_message);
+		CHECK(ok);
+		CHECK(error_message.is_empty());
+		CHECK_EQ(formatted, format_or_fail(source));
+	}
+
+	TEST_CASE("[Format] Language bridge refuses to format on parse error") {
+		const String source = "func f(:\n";
+		String formatted = "untouched";
+		String error_message;
+		const bool ok = GDScriptLanguage::get_singleton()->format_code(source, "test.gd", formatted, &error_message);
+		CHECK_FALSE(ok);
+		// The output reference is left untouched and the diagnostic is surfaced.
+		CHECK_EQ(formatted, "untouched");
+		CHECK_FALSE(error_message.is_empty());
 	}
 }
 

@@ -50,6 +50,7 @@
 #include "editor/editor_node.h"
 
 #include "modules/gdscript/gdscript_analyzer.h"
+#include "modules/gdscript/gdscript_format.h"
 #include "modules/regex/regex.h"
 
 #include "thirdparty/doctest/doctest.h"
@@ -225,6 +226,17 @@ Dictionary make_code_action_params(const String &p_uri, const LSP::Range &p_rang
 Dictionary make_rename_params(const String &p_uri, const LSP::Position &p_position, const String &p_new_name) {
 	Dictionary params = pos_in(p_uri, p_position).to_json();
 	params["newName"] = p_new_name;
+	return params;
+}
+
+Dictionary make_formatting_params(const String &p_uri) {
+	Dictionary options;
+	options["tabSize"] = 4;
+	options["insertSpaces"] = false;
+
+	Dictionary params;
+	params["textDocument"] = make_text_document_identifier(p_uri);
+	params["options"] = options;
 	return params;
 }
 
@@ -1308,6 +1320,80 @@ func f():
 				CHECK_EQ(int(params["type"]), LSP::MessageType::Warning);
 				CHECK(String(params["message"]).to_lower().contains("exported"));
 			}
+		}
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][formatting] formats through the canonical core") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		Ref<GDScriptWorkspace> workspace = GDScriptLanguageProtocol::get_singleton()->get_workspace();
+		Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+
+		SUBCASE("server capabilities advertise document formatting") {
+			TestGDScriptLanguageProtocolInitializer::mark_initialized(proto);
+
+			Dictionary init_params;
+			init_params["rootUri"] = workspace->root_uri;
+			init_params["rootPath"] = workspace->root;
+
+			Dictionary request;
+			request["jsonrpc"] = "2.0";
+			request["id"] = 1;
+			request["method"] = "initialize";
+			request["params"] = init_params;
+
+			Dictionary response = proto->process_action(request);
+			Dictionary result = response["result"];
+			Dictionary capabilities = result["capabilities"];
+			CHECK(bool(capabilities["documentFormattingProvider"]));
+		}
+
+		SUBCASE("returns a single whole-document edit with canonical text") {
+			const String source = "func f():\n\treturn  1\n";
+			const String uri = workspace->get_file_uri("res://lsp/formatting_basic.gd");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Array edits = text_document->formatting(make_formatting_params(uri));
+			REQUIRE_EQ(edits.size(), 1);
+			Dictionary edit = edits[0];
+			Dictionary range = edit["range"];
+			Dictionary start = range["start"];
+			Dictionary end = range["end"];
+			CHECK_EQ(int(start["line"]), 0);
+			CHECK_EQ(int(start["character"]), 0);
+			// Two lines plus a trailing newline: the end sits at the start of line 2.
+			CHECK_EQ(int(end["line"]), 2);
+			CHECK_EQ(int(end["character"]), 0);
+
+			GDScriptFormatter formatter;
+			GDScriptFormatter::Result expected;
+			REQUIRE_EQ(formatter.format(source, "formatting_basic.gd", expected), OK);
+			CHECK_EQ(String(edit["newText"]), expected.formatted);
+		}
+
+		SUBCASE("returns no edits when the document is already canonical") {
+			GDScriptFormatter formatter;
+			GDScriptFormatter::Result canonical;
+			REQUIRE_EQ(formatter.format("func f():\n\treturn 1\n", "x.gd", canonical), OK);
+
+			const String uri = workspace->get_file_uri("res://lsp/formatting_canonical.gd");
+			text_document->didOpen(make_did_open_params(uri, canonical.formatted));
+
+			Array edits = text_document->formatting(make_formatting_params(uri));
+			CHECK_EQ(edits.size(), 0);
+		}
+
+		SUBCASE("returns no edits when the document does not parse") {
+			const String uri = workspace->get_file_uri("res://lsp/formatting_invalid.gd");
+			text_document->didOpen(make_did_open_params(uri, "func f(:\n"));
+
+			Array edits = text_document->formatting(make_formatting_params(uri));
+			CHECK_EQ(edits.size(), 0);
 		}
 
 		memdelete(proto);

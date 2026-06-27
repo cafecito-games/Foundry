@@ -36,6 +36,8 @@
 #include "gdscript_utility_functions.h"
 
 #ifdef TOOLS_ENABLED
+#include "gdscript_format.h"
+
 #include "editor/gdscript_docgen.h"
 #include "editor/script_templates/templates.gen.h"
 #endif
@@ -4892,6 +4894,19 @@ void GDScriptLanguage::auto_indent_code(String &p_code, int p_from_line, int p_t
 }
 
 #ifdef TOOLS_ENABLED
+
+bool GDScriptLanguage::format_code(const String &p_code, const String &p_path, String &r_formatted_code, String *r_error_message) const {
+	GDScriptFormatter formatter;
+	GDScriptFormatter::Result result;
+	if (formatter.format(p_code, p_path, result) != OK) {
+		if (r_error_message) {
+			*r_error_message = result.error_message;
+		}
+		return false;
+	}
+	r_formatted_code = result.formatted;
+	return true;
+}
 
 static Error _set_lookup_result_from_class_member(const GDScriptParser::DataType &p_base_type, const String &p_name, const GDScriptParser::ClassNode::Member &p_member, GDScriptLanguage::LookupResult &r_result) {
 	switch (p_member.type) {

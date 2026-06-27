@@ -786,6 +786,50 @@ void ScriptTextEditor::convert_indent() {
 	code_editor->get_text_editor()->convert_indent();
 }
 
+void ScriptTextEditor::format_document(bool p_notify_on_error) {
+	if (script.is_null()) {
+		return;
+	}
+	ScriptLanguage *language = script->get_language();
+	if (language == nullptr) {
+		return;
+	}
+
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	const String source = text_editor->get_text();
+	String formatted;
+	String error_message;
+	if (!language->format_code(source, script->get_path(), formatted, &error_message)) {
+		// The core formatter refuses on parse error; leave the buffer untouched.
+		if (p_notify_on_error && !error_message.is_empty()) {
+			EditorToaster::get_singleton()->popup_str(vformat(TTR("Could not format script: %s"), error_message), EditorToaster::SEVERITY_WARNING);
+		}
+		return;
+	}
+	if (formatted == source) {
+		return;
+	}
+
+	// Whole-file replace; the formatter is whole-document so line/column may shift.
+	// Keep the scroll fixed and clamp the caret into the reformatted buffer.
+	const int caret_line = text_editor->get_caret_line();
+	const int caret_column = text_editor->get_caret_column();
+	const int h_scroll = text_editor->get_h_scroll();
+	const double v_scroll = text_editor->get_v_scroll();
+
+	text_editor->begin_complex_operation();
+	text_editor->remove_secondary_carets();
+	text_editor->deselect();
+	text_editor->set_text(formatted);
+	text_editor->end_complex_operation();
+
+	const int clamped_line = CLAMP(caret_line, 0, text_editor->get_line_count() - 1);
+	text_editor->set_caret_line(clamped_line, false);
+	text_editor->set_caret_column(MIN(caret_column, text_editor->get_line(clamped_line).length()), false);
+	text_editor->set_h_scroll(h_scroll);
+	text_editor->set_v_scroll(v_scroll);
+}
+
 void ScriptTextEditor::tag_saved_version() {
 	code_editor->get_text_editor()->tag_saved_version();
 	edited_file_data.last_modified_time = FileAccess::get_modified_time(edited_file_data.path);
@@ -1909,6 +1953,9 @@ void ScriptTextEditor::_edit_option(int p_op) {
 		case EDIT_CONVERT_INDENT_TO_TABS: {
 			code_editor->set_indent_using_spaces(false);
 			convert_indent();
+		} break;
+		case EDIT_FORMAT_DOCUMENT: {
+			format_document(true);
 		} break;
 		case EDIT_PICK_COLOR: {
 			color_panel->popup();
@@ -3673,6 +3720,7 @@ void ScriptTextEditor::_enable_code_editor() {
 		sub_menu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
 		edit_menu->get_popup()->add_submenu_node_item(TTRC("Indentation"), sub_menu);
 	}
+	edit_menu->get_popup()->add_shortcut(ED_GET_SHORTCUT("script_text_editor/format_document"), EDIT_FORMAT_DOCUMENT);
 	edit_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
 	edit_menu->get_popup()->add_separator();
 	edit_menu->get_popup()->add_shortcut(ED_GET_SHORTCUT("script_text_editor/refactor_rename"), EDIT_REFACTOR_RENAME);
@@ -3879,6 +3927,7 @@ void ScriptTextEditor::register_editor() {
 	ED_SHORTCUT("script_text_editor/toggle_word_wrap", TTRC("Toggle Word Wrap"), KeyModifierMask::ALT | Key::Z);
 	ED_SHORTCUT("script_text_editor/trim_trailing_whitespace", TTRC("Trim Trailing Whitespace"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key::T);
 	ED_SHORTCUT("script_text_editor/trim_final_newlines", TTRC("Trim Final Newlines"), Key::NONE);
+	ED_SHORTCUT("script_text_editor/format_document", TTRC("Format Document"), Key::NONE);
 	ED_SHORTCUT("script_text_editor/convert_indent_to_spaces", TTRC("Convert Indent to Spaces"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::Y);
 	ED_SHORTCUT("script_text_editor/convert_indent_to_tabs", TTRC("Convert Indent to Tabs"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::I);
 	ED_SHORTCUT("script_text_editor/auto_indent", TTRC("Auto Indent"), KeyModifierMask::CMD_OR_CTRL | Key::I);

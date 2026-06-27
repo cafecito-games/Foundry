@@ -32,6 +32,7 @@
 
 #include "../editor/gdscript_refactoring.h"
 #include "../gdscript.h"
+#include "../gdscript_format.h"
 #include "gdscript_extend_parser.h"
 #include "gdscript_language_protocol.h"
 
@@ -743,6 +744,62 @@ Variant GDScriptTextDocument::signatureHelp(const Dictionary &p_params) {
 	}
 
 	return ret;
+}
+
+Array GDScriptTextDocument::formatting(const Dictionary &p_params) {
+	Array edits;
+
+	LSP::DocumentFormattingParams params;
+	params.load(p_params);
+
+	// `make_refactor_context` reconstructs the exact in-editor buffer (it joins the
+	// parser's lines, the inverse of the `split("\n")` that produced them), so the
+	// replace range computed below lines up with what the client holds.
+	RefactorContext context;
+	if (!make_refactor_context(params.textDocument.uri, context)) {
+		return edits;
+	}
+
+	String formatted;
+	String error_message;
+	if (!GDScriptLanguage::get_singleton()->format_code(context.source, context.path, formatted, &error_message)) {
+		// The core refuses on parse error; return no edits and surface the diagnostic.
+		if (!error_message.is_empty()) {
+			notify_refactor_message(LSP::MessageType::Warning, "Cannot format document: " + error_message);
+		}
+		return edits;
+	}
+
+	if (formatted == context.source) {
+		// Already canonical: no edit avoids a redundant client-side change.
+		return edits;
+	}
+
+	// A single whole-document replacement. The end position is the spot just past
+	// the buffer's final character, walked so a trailing newline lands on its own
+	// (empty) line rather than overshooting. LSP character offsets are counted in
+	// UTF-16 code units, so a non-BMP code point (e.g. an emoji in a string literal)
+	// advances the column by two.
+	LSP::TextEdit edit;
+	edit.range.start.line = 0;
+	edit.range.start.character = 0;
+	int end_line = 0;
+	int end_character = 0;
+	for (int i = 0; i < context.source.length(); i++) {
+		const char32_t character = context.source[i];
+		if (character == '\n') {
+			end_line++;
+			end_character = 0;
+		} else {
+			end_character += (character > 0xFFFF) ? 2 : 1;
+		}
+	}
+	edit.range.end.line = end_line;
+	edit.range.end.character = end_character;
+	edit.newText = formatted;
+
+	edits.push_back(edit.to_json());
+	return edits;
 }
 
 GDScriptTextDocument::GDScriptTextDocument() {
