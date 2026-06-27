@@ -209,22 +209,31 @@ RunTargetReadiness::ProbeResult RunTargetReadiness::parse_ios_probe(const Dictio
 	result.provisioning_resolved = provisioning_error.strip_edges().is_empty();
 
 	const Array devices = p_snapshot.get("devices", Array());
-	result.device_connected = !devices.is_empty();
+	const String wanted = p_device_id.strip_edges();
+	const bool wants_specific_device = !wanted.is_empty() && wanted != "auto";
 
-	if (result.device_connected) {
-		// Pick the requested device, falling back to the first enumerated one.
-		Dictionary device = devices[0];
-		const String wanted = p_device_id.strip_edges();
-		if (!wanted.is_empty() && wanted != "auto") {
-			for (int i = 0; i < devices.size(); i++) {
-				const Dictionary candidate = devices[i];
-				if (String(candidate.get("identifier", String())) == wanted) {
-					device = candidate;
-					break;
-				}
+	// Resolve which enumerated device to inspect. A specific saved device must be
+	// matched by identifier; if it is not currently enumerated the target is not
+	// connected, and we must NOT fall back to another phone's trust/Developer-Mode
+	// state (that would report a missing target as ready).
+	Dictionary device;
+	bool device_found = false;
+	if (wants_specific_device) {
+		for (int i = 0; i < devices.size(); i++) {
+			const Dictionary candidate = devices[i];
+			if (String(candidate.get("identifier", String())) == wanted) {
+				device = candidate;
+				device_found = true;
+				break;
 			}
 		}
+	} else if (!devices.is_empty()) {
+		device = devices[0];
+		device_found = true;
+	}
 
+	result.device_connected = device_found;
+	if (device_found) {
 		const Dictionary connection_properties = device.get("connectionProperties", Dictionary());
 		result.device_trusted = String(connection_properties.get("pairingState", String())) == "paired";
 

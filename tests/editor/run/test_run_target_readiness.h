@@ -241,6 +241,40 @@ TEST_CASE("[Editor][RunTargetReadiness] Device selection picks the requested dev
 	CHECK(a.developer_mode_enabled);
 }
 
+TEST_CASE("[Editor][RunTargetReadiness] A missing requested device is reported as disconnected") {
+	Dictionary snapshot;
+	snapshot["xcode_select_path"] = "/Applications/Xcode.app/Contents/Developer";
+	snapshot["signing_team"] = "ABCDE12345";
+	snapshot["provisioning_stderr"] = "";
+
+	// A different phone than the one the target remembers is plugged in, fully set up.
+	Dictionary connection;
+	connection["pairingState"] = "paired";
+	Dictionary properties;
+	properties["developerModeStatus"] = "enabled";
+	Dictionary other;
+	other["identifier"] = "phone-other";
+	other["connectionProperties"] = connection;
+	other["deviceProperties"] = properties;
+
+	Array devices;
+	devices.push_back(other);
+	snapshot["devices"] = devices;
+
+	// The saved target points at a device that is not currently connected. We must
+	// not borrow the other phone's trust/Developer-Mode state.
+	const RunTargetReadiness::ProbeResult result = RunTargetReadiness::parse_ios_probe(snapshot, "phone-missing");
+	CHECK_FALSE(result.device_connected);
+	CHECK_FALSE(result.device_trusted);
+	CHECK_FALSE(result.developer_mode_enabled);
+
+	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(result);
+	REQUIRE_EQ(steps.size(), 6);
+	CHECK_EQ(steps[0].status, ReadinessStep::OK); // xcode
+	CHECK_EQ(steps[1].id, StringName(RunTargetReadiness::STEP_DEVICE));
+	CHECK_EQ(steps[1].status, ReadinessStep::ACTION_NEEDED); // blocks on the missing device
+}
+
 } // namespace TestRunTargetReadiness
 
 #endif // TOOLS_ENABLED
