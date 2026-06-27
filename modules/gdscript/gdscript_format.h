@@ -112,6 +112,7 @@ private:
 	void print_class(const GDScriptParser::ClassNode *p_class, bool p_is_root, bool p_is_tool);
 	void print_class_header(const GDScriptParser::ClassNode *p_class, bool p_is_tool);
 	void print_extends_clause(const GDScriptParser::ClassNode *p_class);
+	void print_trait_use(const GDScriptParser::ClassNode::TraitUse &p_use);
 	void print_class_body(const GDScriptParser::ClassNode *p_class, bool p_is_root);
 	void print_member(const GDScriptParser::ClassNode::Member &p_member);
 	void print_function(const GDScriptParser::FunctionNode *p_function);
@@ -129,6 +130,12 @@ private:
 	// Statements / suites.
 	void print_suite(const GDScriptParser::SuiteNode *p_suite);
 	void print_statement(const GDScriptParser::Node *p_statement);
+	// Prints a single statement with no leading indent or trailing newline, for a
+	// single-line lambda body (`func(): return x`). Returns false when the
+	// statement cannot be expressed inline (compound blocks, properties), so the
+	// caller falls back to a multi-line body.
+	bool print_statement_inline(const GDScriptParser::Node *p_statement);
+	bool try_print_suite_inline(const GDScriptParser::SuiteNode *p_suite);
 	void print_assignment(const GDScriptParser::AssignmentNode *p_assignment);
 	void print_if(const GDScriptParser::IfNode *p_if, bool p_is_elif);
 	void print_for(const GDScriptParser::ForNode *p_for);
@@ -211,6 +218,12 @@ public:
 	};
 
 	static void run_from_cmdline();
+
+	// Regenerates the golden `expected.gd` next to each `input.gd` fixture by
+	// formatting the input with the current formatter. Driven by the
+	// `--gdscript-generate-format-tests` command; the optional path argument
+	// overrides the default fixture root.
+	static void generate_format_tests();
 
 	// Parses the formatter arguments that follow `--gdscript-format`. Exposed for
 	// unit testing of the pure argument/mode parsing (no process side effects).

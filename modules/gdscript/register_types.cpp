@@ -252,6 +252,10 @@ void gdscript_format_command() {
 	GDScriptFormatterCLI::run_from_cmdline();
 }
 
+void gdscript_generate_format_tests() {
+	GDScriptFormatterCLI::generate_format_tests();
+}
+
 REGISTER_TEST_COMMAND("gdscript-tokenizer", &test_tokenizer);
 REGISTER_TEST_COMMAND("gdscript-tokenizer-buffer", &test_tokenizer_buffer);
 REGISTER_TEST_COMMAND("gdscript-parser", &test_parser);
@@ -259,4 +263,5 @@ REGISTER_TEST_COMMAND("gdscript-compiler", &test_compiler);
 REGISTER_TEST_COMMAND("gdscript-bytecode", &test_bytecode);
 REGISTER_TEST_COMMAND("--gdscript-generate-tests", &generate_gdscript_tests);
 REGISTER_TEST_COMMAND("--gdscript-format", &gdscript_format_command);
+REGISTER_TEST_COMMAND("--gdscript-generate-format-tests", &gdscript_generate_format_tests);
 #endif
