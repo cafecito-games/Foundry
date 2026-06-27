@@ -585,6 +585,16 @@ void GDScriptLanguageProtocol::reparse_open_scripts() {
 }
 
 GDScriptLanguageProtocol::LSPeer::~LSPeer() {
+	// The client is gone (disconnect or crash) without necessarily sending didClose for its open
+	// buffers. Re-sync the global annotation index with the on-disk files so unsaved additions or
+	// removals indexed from those buffers do not linger as stale cross-file data. Guard the
+	// singleton in case the language is already torn down during editor shutdown.
+	if (GDScriptLanguage *language = GDScriptLanguage::get_singleton()) {
+		for (const KeyValue<String, LSP::TextDocumentItem> &document : managed_files) {
+			language->update_global_class_annotations(document.key, document.key);
+		}
+	}
+
 	while (!parse_results.is_empty()) {
 		String path = parse_results.begin()->key;
 		remove_cached_parser(path);
