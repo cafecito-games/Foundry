@@ -2,8 +2,8 @@
 # end to end, with no mock library. The handler records each call and returns a
 # stubbed value; verification inspects the recorded calls afterwards.
 trait Repository:
-	@abstract func find(id: int) -> String
-	@abstract func save(value: String) -> bool
+	abstract func find(id: int) -> String
+	abstract func save(value: String) -> bool
 
 class Mock:
 	var calls: Array = []

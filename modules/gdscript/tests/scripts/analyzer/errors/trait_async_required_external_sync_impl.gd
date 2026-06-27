@@ -2,7 +2,7 @@ extends "trait_async_required_external_sync_impl_base.notest.gd"
 uses RemoteLoadable
 
 trait RemoteLoadable:
-	@abstract async func fetch() -> String
+	abstract async func fetch() -> String
 
 func test() -> void:
 	pass

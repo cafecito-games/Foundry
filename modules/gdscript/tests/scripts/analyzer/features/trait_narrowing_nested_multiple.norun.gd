@@ -1,10 +1,10 @@
 extends RefCounted
 
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 
 trait Movable:
-	@abstract func move_by(delta: int) -> void
+	abstract func move_by(delta: int) -> void
 
 func take_damage(_amount: int) -> void:
 	pass

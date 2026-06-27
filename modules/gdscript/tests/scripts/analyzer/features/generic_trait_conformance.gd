@@ -3,8 +3,8 @@
 # member with `T := int` applied. The parameterized trait also works as a plain type in `is`/`as`
 # checks and in typed parameter annotations.
 trait Holder[T]:
-	@abstract func add(item: T) -> void
-	@abstract func first() -> T
+	abstract func add(item: T) -> void
+	abstract func first() -> T
 
 
 class IntBox uses Holder[int]:

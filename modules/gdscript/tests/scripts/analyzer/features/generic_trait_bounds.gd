@@ -2,7 +2,7 @@
 # bound when it uses the trait, and inside the body a `T`-typed value exposes the
 # trait's required members for static checking.
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 
 
 class Sword:

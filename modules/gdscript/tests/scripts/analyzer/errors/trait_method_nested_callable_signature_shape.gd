@@ -2,7 +2,7 @@
 # `Callable[[Callable[[int], void]], void]` is not satisfied by an implementation that nests
 # `Callable[[String], void]`, even though the outer Callable shapes are identical.
 trait T:
-	@abstract func on(handler: Callable[[Callable[[int], void]], void]) -> void
+	abstract func on(handler: Callable[[Callable[[int], void]], void]) -> void
 
 
 class C:

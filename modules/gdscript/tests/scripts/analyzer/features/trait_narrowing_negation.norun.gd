@@ -1,7 +1,7 @@
 extends RefCounted
 
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 
 func take_damage(_amount: int) -> void:
 	pass

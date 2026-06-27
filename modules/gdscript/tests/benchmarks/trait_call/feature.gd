@@ -4,7 +4,7 @@
 extends RefCounted
 
 trait Greeting:
-	@abstract func greet(value: int) -> int
+	abstract func greet(value: int) -> int
 
 class Greeter uses Greeting:
 	func greet(value: int) -> int:

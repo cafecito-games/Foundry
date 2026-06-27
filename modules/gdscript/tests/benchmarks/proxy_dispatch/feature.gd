@@ -5,7 +5,7 @@
 extends RefCounted
 
 trait Computer:
-	@abstract func compute(value: int) -> int
+	abstract func compute(value: int) -> int
 
 func run_benchmark(iterations: int) -> void:
 	var computer := create_proxy_dynamic(Computer, func(_method_name: StringName, args: Array) -> Variant:

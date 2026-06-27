@@ -1,17 +1,17 @@
 # godot.reflection exposes a read-only introspection surface: method and
 # property descriptors plus trait conformance, for a script type or instance.
 trait Drawable:
-	@abstract func draw_self() -> void
+	abstract func draw_self() -> void
 
 trait Sprite uses Drawable:
 	var label: String
 	var count: int
-	@abstract func render() -> void
+	abstract func render() -> void
 	func describe() -> String:
 		return "sprite"
 
 trait Unrelated:
-	@abstract func z() -> void
+	abstract func z() -> void
 
 func test() -> void:
 	var method_names: Array = []

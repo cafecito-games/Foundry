@@ -2383,12 +2383,12 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 					if (member.function->is_abstract) {
 						if (base_class == p_class) {
 							const String class_name = p_class->identifier == nullptr ? p_class->fqcn.get_file() : String(p_class->identifier->name);
-							push_error(vformat(R"*(Class "%s" is not abstract but contains abstract methods. Mark the class as "@abstract" or remove "@abstract" from all methods in this class.)*", class_name), p_class);
+							push_error(vformat(R"*(Class "%s" is not abstract but contains abstract methods. Mark the class as "abstract" or remove "abstract" from all methods in this class.)*", class_name), p_class);
 							break;
 						} else if (!implemented_funcs.has(member.function->identifier->name)) {
 							const String class_name = p_class->identifier == nullptr ? p_class->fqcn.get_file() : String(p_class->identifier->name);
 							const String base_class_name = base_class->identifier == nullptr ? base_class->fqcn.get_file() : String(base_class->identifier->name);
-							push_error(vformat(R"*(Class "%s" must implement "%s.%s()" and other inherited abstract methods or be marked as "@abstract".)*", class_name, base_class_name, member.function->identifier->name), p_class);
+							push_error(vformat(R"*(Class "%s" must implement "%s.%s()" and other inherited abstract methods or be marked as "abstract".)*", class_name, base_class_name, member.function->identifier->name), p_class);
 							break;
 						}
 					} else {
@@ -3255,7 +3255,7 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 		if (p_function->source_lambda != nullptr) {
 			push_error(R"(A lambda function must have a ":" followed by a body.)", p_function);
 		} else if (!p_function->is_abstract) {
-			push_error(R"(A function must either have a ":" followed by a body, or be marked as "@abstract".)", p_function);
+			push_error(R"(A function must either have a ":" followed by a body, or be marked as "abstract".)", p_function);
 		}
 		return;
 	} else {

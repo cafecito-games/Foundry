@@ -667,7 +667,7 @@ class_name Player
 uses Damageable
 
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 
 func take_damage(amount: int) -> void:
 	pass
@@ -701,7 +701,7 @@ namespace characters
 trait_name Damageable
 extends RefCounted
 
-@abstract func take_damage(amount: int) -> void
+abstract func take_damage(amount: int) -> void
 )");
 
 	String base_type;
@@ -826,7 +826,7 @@ class_name Player
 uses Damageable
 
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 )",
 			"user://trait_required_method_error.gd");
 
@@ -840,7 +840,7 @@ class_name Player
 uses RemoteLoadable
 
 trait RemoteLoadable:
-	@abstract async func fetch() -> String
+	abstract async func fetch() -> String
 
 func fetch() -> String:
 	return ""
@@ -857,7 +857,7 @@ class_name Player
 uses LocalLoadable
 
 trait LocalLoadable:
-	@abstract func fetch() -> String
+	abstract func fetch() -> String
 
 async func fetch() -> String:
 	return ""
@@ -875,7 +875,7 @@ class_name Player
 uses Damageable
 
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 
 func take_damage(amount: String) -> void:
 	pass
@@ -893,7 +893,7 @@ extends RefCounted
 uses NamedTrait
 
 trait NamedTrait:
-	@abstract func get_class() -> String
+	abstract func get_class() -> String
 )",
 			"user://trait_required_method_native_base.gd");
 
@@ -920,7 +920,7 @@ extends TraitMethodBase
 uses Damageable
 
 trait Damageable:
-	@abstract func take_damage(amount: int) -> void
+	abstract func take_damage(amount: int) -> void
 )",
 			"user://trait_required_method_external_base_user.gd");
 
@@ -1022,7 +1022,7 @@ trait Loader:
 	class Payload:
 		pass
 
-	@abstract func load(value: Payload) -> Payload
+	abstract func load(value: Payload) -> Payload
 
 func load(value: Loader.Payload) -> Loader.Payload:
 	return value
@@ -1055,7 +1055,7 @@ class_name Player
 uses Damageable, Trackable
 
 trait Identified:
-	@abstract func id() -> int
+	abstract func id() -> int
 
 trait Damageable uses Identified:
 	pass
@@ -1084,8 +1084,7 @@ func id() -> int:
 TEST_CASE("[Modules][GDScript] Parser accepts contextual async function modifiers") {
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
-@abstract
-class_name AsyncParserContract
+abstract class_name AsyncParserContract
 
 async func load() -> int:
 	return 1
@@ -1093,7 +1092,7 @@ async func load() -> int:
 static async func make() -> int:
 	return 2
 
-@abstract async func download_data() -> String
+abstract async func download_data() -> String
 
 @rpc async func remote_load() -> void:
 	pass
@@ -1360,9 +1359,8 @@ static signal triggered
 }
 
 TEST_CASE("[Modules][GDScript] Parser accepts keyword abstract async functions") {
-	// The `abstract` keyword is a superset of the `@abstract` annotation, so the
-	// keyword form must accept `abstract async func` just like `@abstract async func`.
-	// Such a declaration is an async contract that forces overrides to be async.
+	// The `abstract` keyword must accept `abstract async func`: such a declaration
+	// is an async contract that forces overriding implementations to be async.
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
 abstract class AbstractAsync:
@@ -1583,15 +1581,12 @@ TEST_CASE("[Modules][GDScript] Compiled abstract functions reflect required meth
 	ScopedGDScriptNativeGlobals native_globals;
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
-@abstract
-class_name RequiredMethodReflection
+abstract class_name RequiredMethodReflection
 extends RefCounted
 
-@abstract
-func required_contract(amount: int, label: String = "default") -> bool
+abstract func required_contract(amount: int, label: String = "default") -> bool
 
-@abstract
-func untyped_required_contract()
+abstract func untyped_required_contract()
 
 func implemented() -> void:
 	pass
@@ -1879,7 +1874,7 @@ class_name NamespaceAfterImport
 			R"("namespace" must be declared before "import".)");
 
 	check_parse_source_error(R"(
-@abstract
+@warning_ignore("redundant_await")
 namespace characters.controllers
 class_name ClassAnnotationBeforeNamespace
 )",
@@ -1887,7 +1882,7 @@ class_name ClassAnnotationBeforeNamespace
 
 	{
 		PackedStringArray errors = parse_source_errors(R"(
-@abstract
+@warning_ignore("redundant_await")
 namespace characters.controllers import characters
 class_name ClassAnnotationBeforeMalformedNamespace
 )");

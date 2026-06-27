@@ -3,15 +3,15 @@
 # with `int` must satisfy the forwarded `Storage` requirement with `T := int`. A diamond — two
 # intermediate traits forwarding to the same generic supertrait — composes consistently.
 trait Storage[T]:
-	@abstract func add(item: T) -> void
+	abstract func add(item: T) -> void
 
 
 trait Reader[T] uses Storage[T]:
-	@abstract func read() -> T
+	abstract func read() -> T
 
 
 trait Writer[T] uses Storage[T]:
-	@abstract func write(item: T) -> void
+	abstract func write(item: T) -> void
 
 
 class IntStore uses Reader[int], Writer[int]:

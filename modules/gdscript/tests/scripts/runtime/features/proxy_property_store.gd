@@ -4,7 +4,7 @@
 trait Bag:
 	var label: String
 	var count: int
-	@abstract func use() -> void
+	abstract func use() -> void
 
 func test() -> void:
 	var handled: Array = []
