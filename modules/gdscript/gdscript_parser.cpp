@@ -184,7 +184,6 @@ GDScriptParser::GDScriptParser() {
 		register_annotation(MethodInfo("@tool"), AnnotationInfo::SCRIPT, &GDScriptParser::tool_annotation);
 		register_annotation(MethodInfo("@icon", PropertyInfo(Variant::STRING, "icon_path")), AnnotationInfo::SCRIPT, &GDScriptParser::icon_annotation);
 		register_annotation(MethodInfo("@static_unload"), AnnotationInfo::SCRIPT, &GDScriptParser::static_unload_annotation);
-		register_annotation(MethodInfo("@abstract"), AnnotationInfo::SCRIPT | AnnotationInfo::CLASS | AnnotationInfo::FUNCTION, &GDScriptParser::abstract_annotation);
 		register_annotation(MethodInfo("@noreturn"), AnnotationInfo::FUNCTION, &GDScriptParser::noreturn_annotation);
 		// Onready annotation.
 		register_annotation(MethodInfo("@onready"), AnnotationInfo::VARIABLE, &GDScriptParser::onready_annotation);
@@ -5316,33 +5315,6 @@ bool GDScriptParser::static_unload_annotation(AnnotationNode *p_annotation, Node
 	}
 	class_node->annotated_static_unload = true;
 	return true;
-}
-
-bool GDScriptParser::abstract_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class) {
-	// NOTE: Use `p_target`, **not** `p_class`, because when `p_target` is a class then `p_class` refers to the outer class.
-	if (p_target->type == Node::CLASS) {
-		ClassNode *class_node = static_cast<ClassNode *>(p_target);
-		if (class_node->is_abstract) {
-			push_error(R"("@abstract" annotation can only be used once per class.)", p_annotation);
-			return false;
-		}
-		class_node->is_abstract = true;
-		return true;
-	}
-	if (p_target->type == Node::FUNCTION) {
-		FunctionNode *function_node = static_cast<FunctionNode *>(p_target);
-		if (function_node->is_static && (p_class == nullptr || !p_class->is_trait)) {
-			push_error(R"("@abstract" annotation cannot be applied to static functions.)", p_annotation);
-			return false;
-		}
-		if (function_node->is_abstract) {
-			push_error(R"("@abstract" annotation can only be used once per function.)", p_annotation);
-			return false;
-		}
-		function_node->is_abstract = true;
-		return true;
-	}
-	ERR_FAIL_V_MSG(false, R"("@abstract" annotation can only be applied to classes and functions.)");
 }
 
 bool GDScriptParser::noreturn_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class) {

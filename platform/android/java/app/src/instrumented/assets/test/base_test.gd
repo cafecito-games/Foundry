@@ -1,11 +1,11 @@
-@abstract class_name BaseTest
+abstract class_name BaseTest
 
 var _test_started := 0
 var _test_completed := 0
 var _test_assert_passes := 0
 var _test_assert_failures := 0
 
-@abstract func run_tests()
+abstract func run_tests()
 
 func __exec_test(test_func: Callable):
 	_test_started += 1
