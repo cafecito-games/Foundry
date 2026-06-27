@@ -1078,6 +1078,34 @@ TEST_CASE("[Modules][GDScript] Docgen renders AsyncCallable parameter and return
 	CHECK(docs[0].properties[0].type == "AsyncCallable");
 }
 
+TEST_CASE("[Modules][GDScript] Docgen renders Coroutine result types") {
+	GDScriptParser parser;
+	Error err = parser.parse("enum Direction { NORTH, SOUTH }\nvar pending: Coroutine[String]\nvar jobs: Array[Coroutine[String]] = []\nvar step: Coroutine[Direction]\n", "user://coroutine_docgen.gd", false);
+	REQUIRE(err == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	REQUIRE(err == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptDocGen::generate_docs(script.ptr(), root_class);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	REQUIRE(docs.size() == 1);
+	REQUIRE(docs[0].properties.size() == 3);
+	// The native `GDScriptFunctionState` name must never leak; docs render the phantom result type.
+	CHECK(docs[0].properties[0].type == "Coroutine[String]");
+	// An Array of coroutines uses the doc `T[]` array spelling over the coroutine type.
+	CHECK(docs[0].properties[1].type == "Coroutine[String][]");
+	// An enum result collapses to its underlying `int`, matching `Array[Enum]` -> `int[]`,
+	// so the wrapped spelling never emits a dead class-style help link for the enum name.
+	CHECK(docs[0].properties[2].type == "Coroutine[int]");
+}
+
 TEST_CASE("[Modules][GDScript] Docgen displays nested typed container values") {
 	GDScriptParser parser;
 	Error err = parser.parse("const VALUES: Array[Dictionary[String, int]] = [{ \"score\": 10 }]\nconst GROUPS: Dictionary[String, Array[int]] = { \"scores\": [1] }\n", "user://nested_docgen_type.gd", false);
