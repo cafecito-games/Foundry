@@ -4524,17 +4524,20 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			// Once a derived class makes a method final it cannot be overridden again, so
 			// the candidate must be suppressed even if an ancestor declares it non-final.
 			HashSet<StringName> sealed_overrides;
-			// Names of `final` methods supplied to a class through a used trait. Concrete
-			// trait methods are not flattened into the using class's `members`, so a trait
-			// can mark a method `final` -- e.g. sealing a native virtual like `_process` --
-			// without that method ever appearing in the inheritance walk below. Such a
-			// method must not be offered as a native-virtual override candidate. This is
-			// kept separate from `sealed_overrides`: a concrete trait method does not
-			// satisfy an abstract requirement from another trait, so a trait's final flag
-			// must not hide that still-required abstract method from the trait-requirement
-			// suggestions; nor does it shadow a non-final class-hierarchy declaration of the
-			// same name, which is offered through the class members above and stays
-			// overridable downstream.
+			// Names of `final` methods supplied to a base class through a used trait.
+			// Concrete trait methods are not flattened into the using class's `members`,
+			// so a trait can mark a method `final` -- e.g. sealing a native virtual like
+			// `_process` -- without that method ever appearing in the inheritance walk
+			// below. A subclass inherits that sealed method through the base and cannot
+			// override it, so it must not be offered as a native-virtual override
+			// candidate. Only base-class traits are collected: a class may always
+			// redeclare a `final` method from a trait it uses directly, so finals from the
+			// current class's own traits stay overridable here. This is kept separate from
+			// `sealed_overrides` because a concrete trait method does not satisfy an
+			// abstract requirement from another trait, so a trait's final flag must not
+			// hide that still-required abstract method from the trait-requirement
+			// suggestions, nor shadow a non-final class-hierarchy declaration of the same
+			// name, which is offered through the class members above.
 			HashSet<StringName> trait_sealed_methods;
 			auto collect_trait_finals = [&](const GDScriptParser::ClassNode *p_class) {
 				if (p_class == nullptr) {
@@ -4558,7 +4561,6 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 					}
 				}
 			};
-			collect_trait_finals(completion_context.current_class);
 			while (native_type.is_set() && native_type.kind != GDScriptParser::DataType::NATIVE) {
 				switch (native_type.kind) {
 					case GDScriptParser::DataType::CLASS: {
