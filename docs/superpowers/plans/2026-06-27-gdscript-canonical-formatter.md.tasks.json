@@ -31,7 +31,7 @@
     {
       "id": 5,
       "subject": "Task 5: Test harness, fixtures, and property/semantic tests",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [1, 2, 3],
       "description": "**Goal:** Golden fixtures + corpus-wide idempotency, refuse-on-error, and token-stream semantic-preservation tests, with a regen command.\n\n**Files:**\n- Modify: modules/gdscript/tests/test_format.h, modules/gdscript/register_types.cpp\n- Create: modules/gdscript/tests/scripts/format/**\n\n**Verify:** ./bin/godot.* --headless --test --test-suite=\"*Format*\"\n\n```json:metadata\n{\"files\": [\"modules/gdscript/tests/test_format.h\", \"modules/gdscript/tests/scripts/format\", \"modules/gdscript/register_types.cpp\"], \"verifyCommand\": \"./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --test-suite=\\\"*Format*\\\"\", \"acceptanceCriteria\": [\"fixture runner compares input.gd->expected.gd byte-for-byte\", \"fixtures cover basics/comments/strings/collections/fork-syntax\", \"idempotency over whole corpus\", \"refuse-on-error over errors fixtures\", \"token-stream semantic preservation\", \"--gdscript-generate-format-tests regenerates expected.gd\"]}\n```"
     },
