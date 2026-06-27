@@ -37,6 +37,7 @@
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_paths.h"
 #include "editor/settings/editor_settings.h"
+#include "tests/editor/project_manager/test_ios_project_template.h"
 #include "tests/editor/run/test_run_target.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_refactor_diff_preview.h"

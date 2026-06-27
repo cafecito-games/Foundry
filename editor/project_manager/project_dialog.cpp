@@ -37,6 +37,7 @@
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/gui/editor_file_dialog.h"
+#include "editor/project_manager/ios_project_template.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_icons.h"
 #include "editor/themes/editor_scale.h"
@@ -489,11 +490,20 @@ void ProjectDialog::_reset_name() {
 void ProjectDialog::_renderer_selected() {
 	ERR_FAIL_NULL(renderer_button_group->get_pressed_button());
 
-	String renderer_type = renderer_button_group->get_pressed_button()->get_meta(SNAME("rendering_method"));
+	BaseButton *pressed_button = renderer_button_group->get_pressed_button();
+	String renderer_type = pressed_button->get_meta(SNAME("rendering_method"));
+	const bool is_ios_template = pressed_button->get_meta(SNAME("ios_template"), false);
 
 	bool rd_error = false;
 
-	if (renderer_type == "forward_plus") {
+	if (is_ios_template) {
+		renderer_info->set_text(
+				String::utf8("•  ") + TTR("Targets iPhone and iPad.") +
+				String::utf8("\n•  ") + TTR("Seeds an iOS export preset and a default run target.") +
+				String::utf8("\n•  ") + TTR("Uses the Mobile renderer (RenderingDevice backend).") +
+				String::utf8("\n•  ") + TTR("Running on a device requires macOS with Xcode."));
+		rd_error = !rendering_device_supported;
+	} else if (renderer_type == "forward_plus") {
 		renderer_info->set_text(
 				String::utf8("•  ") + TTR("Supports desktop platforms only.") +
 				String::utf8("\n•  ") + TTR("Advanced 3D graphics available.") +
@@ -569,11 +579,19 @@ void ProjectDialog::ok_pressed() {
 		// Be sure to change this code if/when renderers are changed.
 		// Default values are "forward_plus" for the main setting, "mobile" for the mobile override,
 		// and "gl_compatibility" for the web override.
-		String renderer_type = renderer_button_group->get_pressed_button()->get_meta(SNAME("rendering_method"));
+		BaseButton *pressed_renderer_button = renderer_button_group->get_pressed_button();
+		String renderer_type = pressed_renderer_button->get_meta(SNAME("rendering_method"));
+		const bool is_ios_template = pressed_renderer_button->get_meta(SNAME("ios_template"), false);
 		initial_settings["rendering/renderer/rendering_method"] = renderer_type;
 
 		EditorSettings::get_singleton()->set("project_manager/default_renderer", renderer_type);
 		EditorSettings::get_singleton()->save();
+
+		if (is_ios_template) {
+			// Portrait suits the typical mobile game default; the user can change
+			// it later in Project Settings.
+			initial_settings["display/window/handheld/orientation"] = DisplayServer::SCREEN_PORTRAIT;
+		}
 
 		if (renderer_type == "forward_plus") {
 			project_features.push_back("Forward Plus");
@@ -626,6 +644,16 @@ void ProjectDialog::ok_pressed() {
 			f->store_line("charset = utf-8");
 			f->close();
 			FileAccess::set_hidden_attribute(editor_config_path, true);
+		}
+
+		if (is_ios_template) {
+			// Seed the iOS export preset and default run target so the project is
+			// ready to run on a device once the user completes signing.
+			const Error ios_err = IOSProjectTemplate::seed(path, project_name->get_text().strip_edges());
+			if (ios_err != OK) {
+				// Non-fatal: the project itself was created successfully.
+				ERR_PRINT("Couldn't seed the iOS run target template in project path.");
+			}
 		}
 	}
 
@@ -1154,6 +1182,21 @@ ProjectDialog::ProjectDialog() {
 	rs_button->set_meta(SNAME("rendering_method"), "gl_compatibility");
 	rs_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectDialog::_renderer_selected));
 	rvb->add_child(rs_button);
+
+	// "Mobile (iOS)" seeds an iOS export preset and a default run target on top
+	// of the Mobile renderer, so a new project is ready to run on a phone.
+	rs_button = memnew(CheckBox);
+	rs_button->set_button_group(renderer_button_group);
+	rs_button->set_text(TTRC("Mobile (iOS)"));
+	rs_button->set_accessibility_name(TTRC("Renderer:"));
+#ifndef RD_ENABLED
+	rs_button->set_disabled(true);
+#endif
+	rs_button->set_meta(SNAME("rendering_method"), "mobile");
+	rs_button->set_meta(SNAME("ios_template"), true);
+	rs_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectDialog::_renderer_selected));
+	rvb->add_child(rs_button);
+
 	LinkButton *ri_link = memnew(LinkButton);
 	ri_link->set_text(TTRC("More information"));
 	ri_link->set_uri(GODOT_VERSION_DOCS_URL "/tutorials/rendering/renderers.html");
