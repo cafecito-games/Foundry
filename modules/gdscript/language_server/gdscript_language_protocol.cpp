@@ -154,6 +154,18 @@ void GDScriptLanguageProtocol::on_client_disconnected(const int &p_client_id) {
 	EditorNode::get_log()->add_message("[LSP] Disconnected", EditorLog::MSG_TYPE_EDITOR);
 }
 
+bool GDScriptLanguageProtocol::is_path_managed_by_other_client(const String &p_path, const LSPeer *p_excluded_peer) const {
+	for (const KeyValue<int, Ref<LSPeer>> &client : clients) {
+		if (client.value.ptr() == p_excluded_peer) {
+			continue;
+		}
+		if (client.value->managed_files.has(p_path)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 String GDScriptLanguageProtocol::process_message(const String &p_text) {
 	String ret = process_string(p_text);
 	if (ret.is_empty()) {
@@ -392,23 +404,23 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::LSPeer::parse_script(const Strin
 		content = document->text;
 	}
 
-	ExtendGDScriptParser *parser = memnew(ExtendGDScriptParser);
-	parse_results[p_path] = parser;
-
-	parser->parse(content, p_path);
-
-	// Keep the global custom annotation index in sync with the buffer the LSP just parsed, so
-	// annotation-only namespaces declared in open (possibly unsaved) files resolve cross-file for
-	// completion and lookup. Extract from the buffer source with the same syntax-only parse the
-	// editor scan uses (so a buffer with valid declarations but unrelated analyzer errors is still
-	// indexed); if the buffer is syntactically broken, fall back to the on-disk version so a
-	// half-typed edit cannot strand stale buffer annotations.
+	// Keep the global custom annotation index in sync with the buffer before parsing it, so the
+	// analyzer this parse runs sees the buffer's own up-to-date declarations (e.g. a freshly typed
+	// duplicate identity is diagnosed on this pass, not only after a later reparse). Extract from
+	// the buffer source with the same syntax-only parse the editor scan uses, so a buffer with valid
+	// declarations but unrelated analyzer errors is still indexed; if the buffer is syntactically
+	// broken, fall back to the on-disk version so a half-typed edit cannot strand stale annotations.
 	List<StringName> annotations;
 	if (GDScriptLanguage::get_singleton()->get_global_annotations_from_source(content, p_path, &annotations) == OK) {
 		GDScriptLanguage::get_singleton()->replace_global_annotations(p_path, annotations);
 	} else {
 		GDScriptLanguage::get_singleton()->update_global_class_annotations(p_path, p_path);
 	}
+
+	ExtendGDScriptParser *parser = memnew(ExtendGDScriptParser);
+	parse_results[p_path] = parser;
+
+	parser->parse(content, p_path);
 
 	if (document != nullptr) {
 		GDScriptLanguageProtocol::get_singleton()->get_workspace()->publish_diagnostics(p_path);
@@ -509,8 +521,11 @@ void GDScriptLanguageProtocol::lsp_did_close(const Dictionary &p_params) {
 
 	// The unsaved buffer is gone: re-sync the annotation index with the on-disk file so any
 	// declarations indexed only from the closed buffer are dropped and any on-disk declarations
-	// are restored.
-	GDScriptLanguage::get_singleton()->update_global_class_annotations(path, path);
+	// are restored. Skip this when another client still has the file open, so its in-memory
+	// declarations are not clobbered by the disk version.
+	if (!is_path_managed_by_other_client(path, client.ptr())) {
+		GDScriptLanguage::get_singleton()->update_global_class_annotations(path, path);
+	}
 
 	/// A close notification requires a previous open notification to be sent.
 	ERR_FAIL_COND_MSG(!was_opened, "LSP: Client is closing file without opening it.");
@@ -584,8 +599,14 @@ GDScriptLanguageProtocol::LSPeer::~LSPeer() {
 	// buffers. Re-sync the global annotation index with the on-disk files so unsaved additions or
 	// removals indexed from those buffers do not linger as stale cross-file data. Guard the
 	// singleton in case the language is already torn down during editor shutdown.
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
 	if (GDScriptLanguage *language = GDScriptLanguage::get_singleton()) {
 		for (const KeyValue<String, LSP::TextDocumentItem> &document : managed_files) {
+			// Leave the index alone for files another client still has open, so this peer's teardown
+			// does not clobber a live buffer's in-memory declarations.
+			if (protocol != nullptr && protocol->is_path_managed_by_other_client(document.key, this)) {
+				continue;
+			}
 			language->update_global_class_annotations(document.key, document.key);
 		}
 	}
