@@ -42,10 +42,19 @@ struct GDScriptAutoloadIndexDiagnostic {
 		NON_NODE_SCRIPT,
 		RESERVED_GLOBAL_NAME_COLLISION,
 		UNRELATED_GLOBAL_CLASS_COLLISION,
+		MISSING_DEPENDENCY,
+		NON_AUTOLOAD_DEPENDENCY,
+		CYCLIC_DEPENDENCY,
 	};
 
 	Code code = MISSING_PATH;
 	String message;
+	bool is_error = true;
+};
+
+struct GDScriptAutoloadIndexDependency {
+	StringName name;
+	bool is_autoload = true;
 };
 
 struct GDScriptAutoloadIndexEntry {
@@ -67,6 +76,7 @@ struct GDScriptAutoloadIndexEntry {
 	bool is_tool = false;
 	bool is_same_script_global_class = false;
 
+	Vector<GDScriptAutoloadIndexDependency> dependencies;
 	Vector<GDScriptAutoloadIndexDiagnostic> diagnostics;
 };
 
@@ -78,10 +88,12 @@ class GDScriptAutoloadIndex {
 	uint64_t version = 0;
 
 	void clear();
+	void sort_and_validate_dependencies();
 	void rebuild_lookups();
 
 public:
 	void rebuild_from_project_settings();
+	void rebuild_from_entries(const Vector<GDScriptAutoloadIndexEntry> &p_entries);
 
 	bool has_autoload(const StringName &p_name) const;
 	const GDScriptAutoloadIndexEntry *get_by_name(const StringName &p_name) const;

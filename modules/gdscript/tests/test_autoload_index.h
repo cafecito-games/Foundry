@@ -138,6 +138,48 @@ bool has_diagnostic(const GDScriptAutoloadIndexEntry &p_entry, GDScriptAutoloadI
 	return false;
 }
 
+bool has_hard_diagnostic_containing(const GDScriptAutoloadIndexEntry &p_entry, GDScriptAutoloadIndexDiagnostic::Code p_code, const String &p_fragment) {
+	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_entry.diagnostics) {
+		if (diagnostic.code == p_code && diagnostic.is_error && diagnostic.message.contains(p_fragment)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+GDScriptAutoloadIndexDependency make_dependency(const StringName &p_name) {
+	GDScriptAutoloadIndexDependency dependency;
+	dependency.name = p_name;
+	return dependency;
+}
+
+GDScriptAutoloadIndexDependency make_non_autoload_dependency(const StringName &p_name) {
+	GDScriptAutoloadIndexDependency dependency;
+	dependency.name = p_name;
+	dependency.is_autoload = false;
+	return dependency;
+}
+
+GDScriptAutoloadIndexEntry make_dependency_entry(const StringName &p_name, int p_order, const Vector<GDScriptAutoloadIndexDependency> &p_dependencies = Vector<GDScriptAutoloadIndexDependency>()) {
+	GDScriptAutoloadIndexEntry entry;
+	entry.name = p_name;
+	entry.path = "res://" + String(p_name) + ".gd";
+	entry.is_singleton = true;
+	entry.order = p_order;
+	entry.source = GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION;
+	entry.is_node = true;
+	entry.dependencies = p_dependencies;
+	return entry;
+}
+
+void check_entry_order(const GDScriptAutoloadIndex &p_index, const Vector<StringName> &p_expected_names) {
+	const Vector<GDScriptAutoloadIndexEntry> &entries = p_index.get_entries();
+	REQUIRE_EQ(entries.size(), p_expected_names.size());
+	for (int i = 0; i < p_expected_names.size(); i++) {
+		CHECK_EQ(entries[i].name, p_expected_names[i]);
+	}
+}
+
 Error analyze_autoload_source(GDScriptParser &r_parser, const String &p_source, const String &p_path) {
 	Error err = r_parser.parse(p_source, p_path, false);
 	if (err != OK) {
@@ -217,6 +259,192 @@ TEST_CASE("[Modules][GDScript] Autoload index builds project settings entries in
 	}
 	CHECK_EQ(index.get_by_global_class(SNAME("IndexEarlier"))->name, SNAME("IndexEarlier"));
 	CHECK(index.get_version() > 0);
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index sorts dependencies before dependents") {
+	Vector<GDScriptAutoloadIndexEntry> entries;
+
+	Vector<GDScriptAutoloadIndexDependency> consumer_dependencies;
+	consumer_dependencies.push_back(make_dependency(SNAME("IndexDependencyService")));
+
+	entries.push_back(make_dependency_entry(SNAME("IndexDependencyConsumer"), 10, consumer_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexDependencyIndependent"), 20));
+	entries.push_back(make_dependency_entry(SNAME("IndexDependencyService"), 30));
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("IndexDependencyIndependent"));
+	expected_order.push_back(SNAME("IndexDependencyService"));
+	expected_order.push_back(SNAME("IndexDependencyConsumer"));
+	check_entry_order(index, expected_order);
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index keeps project settings order as dependency tie-breaker") {
+	Vector<GDScriptAutoloadIndexEntry> entries;
+	entries.push_back(make_dependency_entry(SNAME("IndexTieLater"), 30));
+	entries.push_back(make_dependency_entry(SNAME("IndexTieFirst"), 10));
+	entries.push_back(make_dependency_entry(SNAME("IndexTieEqualA"), 40));
+	entries.push_back(make_dependency_entry(SNAME("IndexTieSecond"), 20));
+	entries.push_back(make_dependency_entry(SNAME("IndexTieEqualB"), 40));
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("IndexTieFirst"));
+	expected_order.push_back(SNAME("IndexTieSecond"));
+	expected_order.push_back(SNAME("IndexTieLater"));
+	expected_order.push_back(SNAME("IndexTieEqualA"));
+	expected_order.push_back(SNAME("IndexTieEqualB"));
+	check_entry_order(index, expected_order);
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index diagnoses dependency cycles with the cycle path") {
+	Vector<GDScriptAutoloadIndexEntry> entries;
+
+	Vector<GDScriptAutoloadIndexDependency> a_dependencies;
+	a_dependencies.push_back(make_dependency(SNAME("IndexCycleB")));
+	Vector<GDScriptAutoloadIndexDependency> b_dependencies;
+	b_dependencies.push_back(make_dependency(SNAME("IndexCycleC")));
+	Vector<GDScriptAutoloadIndexDependency> c_dependencies;
+	c_dependencies.push_back(make_dependency(SNAME("IndexCycleA")));
+
+	entries.push_back(make_dependency_entry(SNAME("IndexCycleA"), 10, a_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexCycleB"), 20, b_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexCycleC"), 30, c_dependencies));
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	const String expected_cycle = "IndexCycleA -> IndexCycleB -> IndexCycleC -> IndexCycleA";
+	const GDScriptAutoloadIndexEntry *a = index.get_by_name(SNAME("IndexCycleA"));
+	const GDScriptAutoloadIndexEntry *b = index.get_by_name(SNAME("IndexCycleB"));
+	const GDScriptAutoloadIndexEntry *c = index.get_by_name(SNAME("IndexCycleC"));
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+	REQUIRE(c != nullptr);
+
+	CHECK(has_hard_diagnostic_containing(*a, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, expected_cycle));
+	CHECK(has_hard_diagnostic_containing(*b, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, expected_cycle));
+	CHECK(has_hard_diagnostic_containing(*c, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, expected_cycle));
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index diagnoses each independent dependency cycle") {
+	Vector<GDScriptAutoloadIndexEntry> entries;
+
+	Vector<GDScriptAutoloadIndexDependency> first_a_dependencies;
+	first_a_dependencies.push_back(make_dependency(SNAME("IndexFirstCycleB")));
+	Vector<GDScriptAutoloadIndexDependency> first_b_dependencies;
+	first_b_dependencies.push_back(make_dependency(SNAME("IndexFirstCycleA")));
+	Vector<GDScriptAutoloadIndexDependency> second_a_dependencies;
+	second_a_dependencies.push_back(make_dependency(SNAME("IndexSecondCycleB")));
+	Vector<GDScriptAutoloadIndexDependency> second_b_dependencies;
+	second_b_dependencies.push_back(make_dependency(SNAME("IndexSecondCycleA")));
+
+	entries.push_back(make_dependency_entry(SNAME("IndexFirstCycleA"), 10, first_a_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexFirstCycleB"), 20, first_b_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexSecondCycleA"), 30, second_a_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexSecondCycleB"), 40, second_b_dependencies));
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	const String first_cycle = "IndexFirstCycleA -> IndexFirstCycleB -> IndexFirstCycleA";
+	const String second_cycle = "IndexSecondCycleA -> IndexSecondCycleB -> IndexSecondCycleA";
+	const GDScriptAutoloadIndexEntry *first_a = index.get_by_name(SNAME("IndexFirstCycleA"));
+	const GDScriptAutoloadIndexEntry *first_b = index.get_by_name(SNAME("IndexFirstCycleB"));
+	const GDScriptAutoloadIndexEntry *second_a = index.get_by_name(SNAME("IndexSecondCycleA"));
+	const GDScriptAutoloadIndexEntry *second_b = index.get_by_name(SNAME("IndexSecondCycleB"));
+	REQUIRE(first_a != nullptr);
+	REQUIRE(first_b != nullptr);
+	REQUIRE(second_a != nullptr);
+	REQUIRE(second_b != nullptr);
+
+	CHECK(has_hard_diagnostic_containing(*first_a, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, first_cycle));
+	CHECK(has_hard_diagnostic_containing(*first_b, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, first_cycle));
+	CHECK(has_hard_diagnostic_containing(*second_a, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, second_cycle));
+	CHECK(has_hard_diagnostic_containing(*second_b, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, second_cycle));
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index diagnoses overlapping dependency cycles") {
+	Vector<GDScriptAutoloadIndexEntry> entries;
+
+	Vector<GDScriptAutoloadIndexDependency> a_dependencies;
+	a_dependencies.push_back(make_dependency(SNAME("IndexOverlapB")));
+	Vector<GDScriptAutoloadIndexDependency> b_dependencies;
+	b_dependencies.push_back(make_dependency(SNAME("IndexOverlapA")));
+	b_dependencies.push_back(make_dependency(SNAME("IndexOverlapC")));
+	Vector<GDScriptAutoloadIndexDependency> c_dependencies;
+	c_dependencies.push_back(make_dependency(SNAME("IndexOverlapB")));
+
+	entries.push_back(make_dependency_entry(SNAME("IndexOverlapA"), 10, a_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexOverlapB"), 20, b_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexOverlapC"), 30, c_dependencies));
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	const String first_cycle = "IndexOverlapA -> IndexOverlapB -> IndexOverlapA";
+	const String second_cycle = "IndexOverlapC -> IndexOverlapB -> IndexOverlapC";
+	const GDScriptAutoloadIndexEntry *a = index.get_by_name(SNAME("IndexOverlapA"));
+	const GDScriptAutoloadIndexEntry *b = index.get_by_name(SNAME("IndexOverlapB"));
+	const GDScriptAutoloadIndexEntry *c = index.get_by_name(SNAME("IndexOverlapC"));
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+	REQUIRE(c != nullptr);
+
+	CHECK(has_hard_diagnostic_containing(*a, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, first_cycle));
+	CHECK(has_hard_diagnostic_containing(*b, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, first_cycle));
+	CHECK(has_hard_diagnostic_containing(*c, GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY, second_cycle));
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index keeps downstream dependents after cyclic dependencies") {
+	Vector<GDScriptAutoloadIndexEntry> entries;
+
+	Vector<GDScriptAutoloadIndexDependency> dependent_dependencies;
+	dependent_dependencies.push_back(make_dependency(SNAME("IndexCyclicDependencyA")));
+	Vector<GDScriptAutoloadIndexDependency> a_dependencies;
+	a_dependencies.push_back(make_dependency(SNAME("IndexCyclicDependencyB")));
+	Vector<GDScriptAutoloadIndexDependency> b_dependencies;
+	b_dependencies.push_back(make_dependency(SNAME("IndexCyclicDependencyA")));
+
+	entries.push_back(make_dependency_entry(SNAME("IndexDownstreamDependent"), 10, dependent_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexCyclicDependencyA"), 20, a_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexCyclicDependencyB"), 30, b_dependencies));
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("IndexCyclicDependencyA"));
+	expected_order.push_back(SNAME("IndexCyclicDependencyB"));
+	expected_order.push_back(SNAME("IndexDownstreamDependent"));
+	check_entry_order(index, expected_order);
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index diagnoses missing and non-autoload dependencies") {
+	Vector<GDScriptAutoloadIndexEntry> entries;
+
+	Vector<GDScriptAutoloadIndexDependency> missing_dependencies;
+	missing_dependencies.push_back(make_dependency(SNAME("IndexMissingDependency")));
+	Vector<GDScriptAutoloadIndexDependency> non_autoload_dependencies;
+	non_autoload_dependencies.push_back(make_non_autoload_dependency(SNAME("IndexPlainClassDependency")));
+
+	entries.push_back(make_dependency_entry(SNAME("IndexMissingConsumer"), 10, missing_dependencies));
+	entries.push_back(make_dependency_entry(SNAME("IndexPlainConsumer"), 20, non_autoload_dependencies));
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(entries);
+
+	const GDScriptAutoloadIndexEntry *missing_consumer = index.get_by_name(SNAME("IndexMissingConsumer"));
+	const GDScriptAutoloadIndexEntry *plain_consumer = index.get_by_name(SNAME("IndexPlainConsumer"));
+	REQUIRE(missing_consumer != nullptr);
+	REQUIRE(plain_consumer != nullptr);
+
+	CHECK(has_hard_diagnostic_containing(*missing_consumer, GDScriptAutoloadIndexDiagnostic::MISSING_DEPENDENCY, "IndexMissingDependency"));
+	CHECK(has_hard_diagnostic_containing(*plain_consumer, GDScriptAutoloadIndexDiagnostic::NON_AUTOLOAD_DEPENDENCY, "IndexPlainClassDependency"));
 }
 
 TEST_CASE("[Modules][GDScript] Autoload index records project settings diagnostics") {
