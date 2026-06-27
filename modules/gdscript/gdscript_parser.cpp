@@ -686,6 +686,21 @@ void GDScriptParser::synchronize() {
 				break;
 		}
 
+		// The `async` modifier is a contextual identifier rather than a keyword token, so it is
+		// not covered by the switch above. Treat it as a declaration sync point only when it
+		// directly precedes a `static`/`abstract`/`func` declaration, so a recovered function
+		// keeps its `is_declared_async` / `is_coroutine` metadata. A stray `async` identifier
+		// inside a broken expression is left to ordinary recovery to avoid halting on a false
+		// modifier and cascading into worse recovery.
+		if (current.type == GDScriptTokenizer::Token::IDENTIFIER && current.get_identifier() == StringName("async")) {
+			const GDScriptTokenizer::Token::Type next_type = peek().type;
+			if (next_type == GDScriptTokenizer::Token::FUNC ||
+					next_type == GDScriptTokenizer::Token::STATIC ||
+					next_type == GDScriptTokenizer::Token::ABSTRACT) {
+				return;
+			}
+		}
+
 		advance();
 	}
 }

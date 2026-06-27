@@ -1250,6 +1250,39 @@ func after_inline() -> void:
 	CHECK(find_parser_function(inline_root, SNAME("after_inline")) != nullptr);
 }
 
+TEST_CASE("[Modules][GDScript] Parser recovery preserves a leading async modifier") {
+	// The malformed `var = ...` aborts mid-declaration with the contextual `async`
+	// identifier as the next token, so the recovery in `synchronize()` must stop at
+	// `async` rather than skipping over it and dropping the recovered function's
+	// `is_declared_async` / `is_coroutine` metadata.
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+var = async func load() -> void:
+	pass
+
+func after() -> void:
+	pass
+)",
+			"user://async_modifier_recovery.gd", false);
+
+	CHECK(err != OK);
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::FunctionNode *load = find_parser_function(root, SNAME("load"));
+	CHECK(load != nullptr);
+	if (load != nullptr) {
+		CHECK(load->is_declared_async);
+		CHECK(load->is_coroutine);
+	}
+
+	CHECK(find_parser_function(root, SNAME("after")) != nullptr);
+}
+
 TEST_CASE("[Modules][GDScript] Parser collects declaration modifiers in any order") {
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
