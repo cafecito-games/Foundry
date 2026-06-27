@@ -50,6 +50,14 @@ static DataType make_builtin(Variant::Type p_type) {
 	return type;
 }
 
+static DataType make_native(const StringName &p_name) {
+	DataType type;
+	type.kind = DataType::NATIVE;
+	type.native_type = p_name;
+	type.type_source = DataType::ANNOTATED_EXPLICIT;
+	return type;
+}
+
 static DataType make_type_parameter(const StringName &p_name, int p_index = 0, DataType::TypeParameterScope p_scope = DataType::TYPE_PARAMETER_CLASS) {
 	DataType type;
 	type.kind = DataType::TYPE_PARAMETER;
@@ -96,6 +104,25 @@ TEST_CASE("[Modules][GDScript][GenericTypeModel] substitute recurses into contai
 	REQUIRE(result.has_container_element_type(0));
 	CHECK(result.get_container_element_type(0).kind == DataType::BUILTIN);
 	CHECK(result.get_container_element_type(0).builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[Modules][GDScript][GenericTypeModel] substitute preserves Type wrapper on type parameters") {
+	DataType type_of_t = make_type_parameter("T");
+	type_of_t.is_meta_type = true;
+	type_of_t.is_type_handle_annotation = true;
+	type_of_t.is_nullable = true;
+
+	HashMap<StringName, DataType> bindings;
+	bindings.insert("T", make_native("Node"));
+
+	const DataType result = DataType::substitute(type_of_t, bindings);
+
+	CHECK(result.kind == DataType::NATIVE);
+	CHECK(result.native_type == StringName("Node"));
+	CHECK(result.is_meta_type);
+	CHECK(result.is_type_handle_annotation);
+	CHECK(result.is_nullable);
+	CHECK(result.to_string() == "Type[Node]?");
 }
 
 TEST_CASE("[Modules][GDScript][GenericTypeModel] substitute recurses into type arguments") {

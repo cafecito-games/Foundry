@@ -6191,6 +6191,16 @@ static String _method_signature_to_string(const Vector<GDScriptParser::DataType>
 }
 
 String GDScriptParser::DataType::to_string() const {
+	if (is_type_handle_annotation) {
+		DataType represented_type = *this;
+		represented_type.is_meta_type = false;
+		represented_type.is_type_handle_annotation = false;
+		represented_type.is_constant = false;
+		represented_type.is_nullable = false;
+		const String nullable_suffix = is_nullable ? "?" : "";
+		return vformat("Type[%s]%s", represented_type.to_string(), nullable_suffix);
+	}
+
 	String result;
 	bool valid_kind = true;
 	switch (kind) {
@@ -6294,6 +6304,15 @@ GDScriptParser::DataType GDScriptParser::DataType::substitute(const DataType &p_
 	if (p_type.kind == TYPE_PARAMETER) {
 		const DataType *binding = p_bindings.getptr(p_type.type_parameter_name);
 		if (binding != nullptr) {
+			if (p_type.is_type_handle_annotation) {
+				DataType result = *binding;
+				result.is_meta_type = true;
+				result.is_type_handle_annotation = true;
+				result.is_pseudo_type = false;
+				result.is_constant = p_type.is_constant;
+				result.is_nullable = p_type.is_nullable;
+				return result;
+			}
 			return *binding;
 		}
 		// Unbound parameter: leave it intact so an outer scope can substitute it later, but specialize

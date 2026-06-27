@@ -32,6 +32,76 @@
 
 #include "gdscript.h"
 
+bool GDScriptDataType::is_type_handle_type(const Variant &p_variant) const {
+	if (p_variant.get_type() == Variant::NIL) {
+		return true;
+	}
+	if (p_variant.get_type() != Variant::OBJECT) {
+		return false;
+	}
+
+	bool was_freed = false;
+	Object *object = p_variant.get_validated_object_with_check(was_freed);
+	if (object == nullptr) {
+		return !was_freed;
+	}
+
+	GDScriptNativeClass *native_class = Object::cast_to<GDScriptNativeClass>(object);
+	if (native_class != nullptr) {
+		return kind == NATIVE && ClassDB::is_parent_class(native_class->get_name(), native_type);
+	}
+
+	Script *script = Object::cast_to<Script>(object);
+	if (script == nullptr) {
+		return false;
+	}
+
+	if (kind == NATIVE) {
+		const StringName script_native = script->get_instance_base_type();
+		return script_native != StringName() && ClassDB::is_parent_class(script_native, native_type);
+	}
+
+	if (kind == SCRIPT || kind == GDSCRIPT) {
+		if (is_script_trait) {
+			return script->has_script_trait(script_trait);
+		}
+		while (script != nullptr) {
+			if (script == script_type) {
+				return true;
+			}
+			script = script->get_base_script().ptr();
+		}
+	}
+
+	return false;
+}
+
+GDScriptDataType GDScriptDataType::from_type_handle_container_type(const ContainerType &p_container_type) {
+	GDScriptDataType type;
+	type.is_type_handle = true;
+
+	if (p_container_type.script.is_valid()) {
+		type.kind = Object::cast_to<GDScript>(p_container_type.script.ptr()) != nullptr ? GDSCRIPT : SCRIPT;
+		type.builtin_type = Variant::OBJECT;
+		type.native_type = p_container_type.script->get_instance_base_type();
+		type.script_type_ref = p_container_type.script;
+		type.script_type = type.script_type_ref.ptr();
+		type.is_script_trait = p_container_type.script->is_trait_type();
+		type.script_trait = p_container_type.script->get_trait_type_name();
+	} else if (p_container_type.builtin_type == Variant::OBJECT) {
+		type.kind = NATIVE;
+		type.builtin_type = Variant::OBJECT;
+		type.native_type = p_container_type.class_name != StringName() ? p_container_type.class_name : Object::get_class_static();
+	} else if (p_container_type.builtin_type != Variant::NIL) {
+		type.kind = BUILTIN;
+		type.builtin_type = p_container_type.builtin_type;
+	} else {
+		type.kind = VARIANT;
+	}
+
+	return type;
+}
+
 Variant GDScriptFunction::get_constant(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, constants.size(), "<errconst>");
 	return constants[p_idx];

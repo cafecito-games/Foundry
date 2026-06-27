@@ -118,6 +118,9 @@ class GDScript : public Script {
 		// invariance evidence (it cannot validate the dependent argument soundly), keeping the existing
 		// gradual acceptance instead of a spurious rejection.
 		bool fixed_is_dependent = false;
+		// The member is `Type[T]`, so resolved writes must validate class handles for the reified `T`
+		// instead of instances of `T`.
+		bool is_type_handle = false;
 		int leaf_ordinal = -1; // Index into the leaf instance's `type_arguments`; valid when kind == OPEN.
 	};
 
