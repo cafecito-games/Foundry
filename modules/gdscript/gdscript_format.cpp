@@ -324,16 +324,61 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 	tokenizer.set_source_code(p_source);
 
 	HashMap<uint64_t, GDScriptPrinter::LiteralToken> literals;
-	for (GDScriptTokenizer::Token token = tokenizer.scan();
-			token.type != GDScriptTokenizer::Token::TK_EOF;
-			token = tokenizer.scan()) {
+	// Standalone region annotations (`@warning_ignore_start`/`@warning_ignore_restore`)
+	// are consumed and discarded by the parser, so they never reach the tree. Recover
+	// them here, keyed by source line, and reattach them through the trivia walker.
+	HashMap<int, GDScriptPrinter::StandaloneAnnotation> standalone_annotations;
+	GDScriptTokenizer::Token token = tokenizer.scan();
+	while (token.type != GDScriptTokenizer::Token::TK_EOF) {
+		if (token.type == GDScriptTokenizer::Token::ERROR) {
+			break; // The parse pass below produces the authoritative diagnostic.
+		}
 		if (token.type == GDScriptTokenizer::Token::LITERAL) {
 			const uint64_t key = (uint64_t(uint32_t(token.start_line)) << 32) | uint32_t(token.start_column);
 			literals[key] = GDScriptPrinter::LiteralToken{ token.source };
 		}
-		if (token.type == GDScriptTokenizer::Token::ERROR) {
-			break; // The parse pass below produces the authoritative diagnostic.
+		if (token.type == GDScriptTokenizer::Token::ANNOTATION &&
+				(token.source == "@warning_ignore_start" || token.source == "@warning_ignore_restore")) {
+			GDScriptPrinter::StandaloneAnnotation entry;
+			entry.text = token.source;
+			entry.end_line = token.end_line;
+			const int start_line = token.start_line;
+			GDScriptTokenizer::Token next = tokenizer.scan();
+			if (next.type == GDScriptTokenizer::Token::PARENTHESIS_OPEN) {
+				entry.text += "(";
+				int depth = 1;
+				GDScriptTokenizer::Token argument = tokenizer.scan();
+				while (depth > 0 && argument.type != GDScriptTokenizer::Token::TK_EOF &&
+						argument.type != GDScriptTokenizer::Token::ERROR) {
+					entry.end_line = argument.end_line;
+					if (argument.type == GDScriptTokenizer::Token::PARENTHESIS_OPEN) {
+						depth++;
+						entry.text += "(";
+					} else if (argument.type == GDScriptTokenizer::Token::PARENTHESIS_CLOSE) {
+						depth--;
+						if (depth == 0) {
+							break;
+						}
+						entry.text += ")";
+					} else if (argument.type == GDScriptTokenizer::Token::COMMA && depth == 1) {
+						entry.text += ", ";
+					} else if (argument.type == GDScriptTokenizer::Token::LITERAL) {
+						entry.text += canonicalize_string_literal(argument.source);
+					} else {
+						entry.text += argument.source;
+					}
+					argument = tokenizer.scan();
+				}
+				entry.text += ")";
+				standalone_annotations[start_line] = entry;
+				token = tokenizer.scan(); // Resume after the closing parenthesis.
+				continue;
+			}
+			standalone_annotations[start_line] = entry;
+			token = next; // No argument list; process the look-ahead token next.
+			continue;
 		}
+		token = tokenizer.scan();
 	}
 	const HashMap<int, GDScriptTokenizer::CommentData> comments = tokenizer.get_comments();
 
@@ -357,14 +402,15 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 	}
 
 	// Pass 3: print.
-	GDScriptPrinter printer(comments, literals);
+	GDScriptPrinter printer(comments, literals, standalone_annotations);
 	r_result.formatted = printer.print_tree(parser.get_tree(), parser.is_tool());
 	return OK;
 }
 
 GDScriptPrinter::GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
-		const HashMap<uint64_t, LiteralToken> &p_literals) :
-		comments(p_comments), literals(p_literals) {
+		const HashMap<uint64_t, LiteralToken> &p_literals,
+		const HashMap<int, StandaloneAnnotation> &p_standalone_annotations) :
+		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations) {
 }
 
 void GDScriptPrinter::write_indent() {
@@ -409,6 +455,24 @@ void GDScriptPrinter::emit_comment_line(int p_line, const String &p_raw_comment)
 	last_emitted_line = p_line;
 }
 
+bool GDScriptPrinter::is_trivia_line(int p_line) const {
+	return is_full_line_comment(p_line) || standalone_annotations.has(p_line);
+}
+
+// Emits the trivia at `p_line` (a full-line comment or a recovered standalone
+// annotation) at the current indent and advances the cursor past it.
+void GDScriptPrinter::emit_trivia_line(int p_line) {
+	HashMap<int, StandaloneAnnotation>::ConstIterator annotation = standalone_annotations.find(p_line);
+	if (annotation) {
+		write_indent();
+		write(annotation->value.text);
+		newline();
+		last_emitted_line = MAX(p_line, annotation->value.end_line);
+		return;
+	}
+	emit_comment_line(p_line, comments.find(p_line)->value.comment);
+}
+
 // Emits the full-line comments and the normalized blank lines that sit between
 // the last emitted source line and `p_next_line` (exclusive). `p_required_blanks`
 // is the structural minimum to enforce before the first emitted piece (comment
@@ -421,11 +485,11 @@ void GDScriptPrinter::emit_leading_trivia(int p_next_line, int p_required_blanks
 	bool done = false;
 	while (!done) {
 		int blank_run = 0;
-		while (line < p_next_line && !is_full_line_comment(line)) {
+		while (line < p_next_line && !is_trivia_line(line)) {
 			blank_run++;
 			line++;
 		}
-		const bool comment_follows = line < p_next_line;
+		const bool trivia_follows = line < p_next_line;
 
 		int blanks;
 		if (first_piece) {
@@ -444,10 +508,9 @@ void GDScriptPrinter::emit_leading_trivia(int p_next_line, int p_required_blanks
 		}
 		first_piece = false;
 
-		if (comment_follows) {
-			HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(line);
-			emit_comment_line(line, found->value.comment);
-			line++;
+		if (trivia_follows) {
+			emit_trivia_line(line);
+			line = last_emitted_line + 1;
 		} else {
 			done = true;
 		}
@@ -482,10 +545,9 @@ void GDScriptPrinter::emit_trailing_comment(int p_line) {
 // enclosing scope's leading flush.
 void GDScriptPrinter::flush_block_tail_comments() {
 	int line = last_emitted_line + 1;
-	while (is_full_line_comment(line)) {
-		HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(line);
-		emit_comment_line(line, found->value.comment);
-		line++;
+	while (is_trivia_line(line)) {
+		emit_trivia_line(line);
+		line = last_emitted_line + 1;
 	}
 }
 
@@ -494,6 +556,12 @@ void GDScriptPrinter::flush_tail_comments() {
 	for (const KeyValue<int, GDScriptTokenizer::CommentData> &entry : comments) {
 		if (entry.value.new_line && entry.key > max_line) {
 			max_line = entry.key;
+		}
+	}
+	for (const KeyValue<int, StandaloneAnnotation> &entry : standalone_annotations) {
+		const int annotation_end = MAX(entry.key, entry.value.end_line);
+		if (annotation_end > max_line) {
+			max_line = annotation_end;
 		}
 	}
 	if (max_line > last_emitted_line) {
@@ -694,9 +762,11 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 }
 
 void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_class, bool p_is_tool) {
-	// Script-level annotations (`@tool`, `@icon`, `@static_unload`) must appear at
-	// the very top, before `namespace`/`extends`/`class_name`; emitting them after
-	// `namespace` is a parse error.
+	// The grammar pins annotation placement around `namespace`/`import`: script/
+	// file-level annotations must appear before them, class-level (and custom)
+	// annotations after (`Class annotations must appear after "namespace" and
+	// "import" declarations.`). `@tool`/`@icon`/`@static_unload` are script-level
+	// flags recovered from the class, not the annotation list, and always lead.
 	if (p_is_tool) {
 		write("@tool");
 		newline();
@@ -709,7 +779,6 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 		write("@static_unload");
 		newline();
 	}
-	print_annotations(p_class->annotations);
 
 	if (!p_class->namespace_name.is_empty()) {
 		write("namespace ");
@@ -721,6 +790,12 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 		write(import_name);
 		newline();
 	}
+
+	// The only SCRIPT-target annotations are `@tool`/`@icon`/`@static_unload`, which
+	// the parser consumes into the flags emitted above and never stores in the list.
+	// So every entry in `annotations` is a class-level (or custom) annotation, which
+	// the grammar requires to appear *after* `namespace`/`import`.
+	print_annotations(p_class->annotations);
 
 	String modifier;
 	if (p_class->is_abstract) {
@@ -1911,7 +1986,24 @@ static String read_all_stdin() {
 // temp sibling, flush, then atomically rename over the target. The original is
 // only replaced once the new content is fully and successfully written.
 static bool write_file_atomic(const String &p_path, const String &p_content, String &r_error_message) {
-	const String temp_path = p_path + ".gdformat-tmp";
+	// Choose a temp sibling name unlikely to collide with real files: the pid plus
+	// a per-process counter. Refuse any candidate that already exists (a stale temp,
+	// an unrelated file, or a planted symlink) so opening it WRITE never truncates
+	// or follows something we did not create before the atomic rename.
+	static uint32_t temp_counter = 0;
+	const uint64_t process_id = OS::get_singleton() != nullptr ? uint64_t(OS::get_singleton()->get_process_id()) : 0;
+	String temp_path;
+	for (int attempt = 0; attempt < 4096; attempt++) {
+		const String candidate = p_path + ".gdformat-tmp." + itos(process_id) + "." + itos(temp_counter++);
+		if (!FileAccess::exists(candidate) && !DirAccess::exists(candidate)) {
+			temp_path = candidate;
+			break;
+		}
+	}
+	if (temp_path.is_empty()) {
+		r_error_message = "could not find an unused temporary file name";
+		return false;
+	}
 	{
 		Ref<FileAccess> output = FileAccess::open(temp_path, FileAccess::WRITE);
 		if (output.is_null()) {

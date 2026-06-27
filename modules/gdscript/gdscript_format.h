@@ -64,14 +64,26 @@ public:
 		String source; // Exact original text including quotes / number form.
 	};
 
+	// A standalone region annotation (`@warning_ignore_start`/`@warning_ignore_restore`).
+	// The parser applies these as side effects and discards the nodes, so they are
+	// not in the tree; the formatter recovers them from its own tokenize pass and
+	// reattaches them by source line through the trivia walker. `end_line` lets the
+	// line cursor skip a (rare) multi-line annotation.
+	struct StandaloneAnnotation {
+		String text; // Canonical reconstructed text, e.g. `@warning_ignore_start("x")`.
+		int end_line = 0;
+	};
+
 	GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
-			const HashMap<uint64_t, LiteralToken> &p_literals);
+			const HashMap<uint64_t, LiteralToken> &p_literals,
+			const HashMap<int, StandaloneAnnotation> &p_standalone_annotations);
 
 	String print_tree(const GDScriptParser::ClassNode *p_root, bool p_is_tool);
 
 private:
 	const HashMap<int, GDScriptTokenizer::CommentData> &comments;
 	const HashMap<uint64_t, LiteralToken> &literals;
+	const HashMap<int, StandaloneAnnotation> &standalone_annotations;
 
 	String output;
 	int indent_level = 0;
@@ -92,6 +104,10 @@ private:
 	// normalizing the blank lines that separate them.
 	String normalize_comment_text(const String &p_raw) const;
 	bool is_full_line_comment(int p_line) const;
+	// A trivia line is a full-line comment or a recovered standalone annotation;
+	// `emit_trivia_line` emits whichever sits at `p_line` and advances the cursor.
+	bool is_trivia_line(int p_line) const;
+	void emit_trivia_line(int p_line);
 	void emit_comment_line(int p_line, const String &p_raw_comment);
 	void emit_leading_trivia(int p_next_line, int p_required_blanks);
 	void emit_trailing_comment(int p_line);

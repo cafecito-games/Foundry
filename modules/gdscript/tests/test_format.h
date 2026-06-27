@@ -858,6 +858,43 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		CHECK_FALSE(diff_options.read_stdin);
 	}
 
+	TEST_CASE("[Format] Class annotation is emitted after namespace and re-parses") {
+		// Regression: class-level annotations must follow `namespace`/`import`;
+		// emitting them first is rejected ("Class annotations must appear after
+		// \"namespace\" and \"import\" declarations.").
+		const String source =
+				"namespace cafecito.demo\n\n"
+				"@marker\n"
+				"class_name Thing\n"
+				"extends RefCounted\n\n"
+				"annotation marker targets CLASS\n";
+		const String formatted = format_or_fail(source);
+		const int namespace_pos = formatted.find("namespace ");
+		const int marker_pos = formatted.find("@marker");
+		CHECK(namespace_pos >= 0);
+		CHECK_MESSAGE(marker_pos > namespace_pos, "Class annotation must follow namespace.");
+		GDScriptParser reparser;
+		CHECK_MESSAGE(parse_no_errors(reparser, formatted, "reformatted.gd"),
+				"Formatted namespace + class annotation must re-parse cleanly.");
+	}
+
+	TEST_CASE("[Format] Standalone warning-region annotations survive formatting") {
+		// Regression: `@warning_ignore_start`/`@warning_ignore_restore` are applied
+		// by the parser and dropped from the tree; the formatter recovers them from
+		// its own tokenize pass so they are not silently lost.
+		const String source =
+				"func f():\n"
+				"\t@warning_ignore_start(\"unused_variable\")\n"
+				"\tvar x = 1\n"
+				"\t@warning_ignore_restore(\"unused_variable\")\n"
+				"\treturn 0\n";
+		const String formatted = format_or_fail(source);
+		CHECK(formatted.contains("@warning_ignore_start(\"unused_variable\")"));
+		CHECK(formatted.contains("@warning_ignore_restore(\"unused_variable\")"));
+		GDScriptParser reparser;
+		CHECK(parse_no_errors(reparser, formatted, "reformatted.gd"));
+	}
+
 	TEST_CASE("[Format] Golden fixtures match byte-for-byte") {
 		const String root = "modules/gdscript/tests/scripts/format";
 		Vector<String> inputs;
