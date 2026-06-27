@@ -121,7 +121,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.builtin_type = p_datatype.builtin_type;
 		} break;
 		case GDScriptParser::DataType::NATIVE: {
-			if (p_handle_metatype && p_datatype.is_meta_type) {
+			if (p_handle_metatype && p_datatype.is_meta_type && !p_datatype.is_type_handle_annotation) {
 				result.kind = GDScriptDataType::NATIVE;
 				result.builtin_type = Variant::OBJECT;
 				// Fixes GH-82255. `GDScriptNativeClass` is obtainable in GDScript,
@@ -144,7 +144,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 #endif
 		} break;
 		case GDScriptParser::DataType::SCRIPT: {
-			if (p_handle_metatype && p_datatype.is_meta_type) {
+			if (p_handle_metatype && p_datatype.is_meta_type && !p_datatype.is_type_handle_annotation) {
 				result.kind = GDScriptDataType::NATIVE;
 				result.builtin_type = Variant::OBJECT;
 				result.native_type = p_datatype.script_type.is_valid() ? p_datatype.script_type->get_class_name() : Script::get_class_static();
@@ -158,7 +158,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.native_type = p_datatype.native_type;
 		} break;
 		case GDScriptParser::DataType::CLASS: {
-			if (p_handle_metatype && p_datatype.is_meta_type) {
+			if (p_handle_metatype && p_datatype.is_meta_type && !p_datatype.is_type_handle_annotation) {
 				result.kind = GDScriptDataType::NATIVE;
 				result.builtin_type = Variant::OBJECT;
 				result.native_type = GDScript::get_class_static();
@@ -217,8 +217,15 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.builtin_type = p_datatype.builtin_type;
 			break;
 		case GDScriptParser::DataType::TYPE_PARAMETER: {
-			// Generics are type-erased at runtime; an unsubstituted parameter becomes Variant.
-			result.kind = GDScriptDataType::VARIANT;
+			// Plain `T` is erased to Variant. `Type[T]` cannot preserve the represented method parameter
+			// at runtime, but it can still enforce that the value is a class handle.
+			if (p_handle_metatype && p_datatype.is_type_handle_annotation) {
+				result.kind = GDScriptDataType::NATIVE;
+				result.builtin_type = Variant::OBJECT;
+				result.native_type = Object::get_class_static();
+			} else {
+				result.kind = GDScriptDataType::VARIANT;
+			}
 		} break;
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED: {
@@ -226,6 +233,8 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			return GDScriptDataType();
 		}
 	}
+
+	result.is_type_handle = p_handle_metatype && p_datatype.is_type_handle_annotation;
 
 	// A nullable value type must accept null at runtime. Metatypes are never nullable.
 	result.is_nullable = p_datatype.is_nullable && !(p_handle_metatype && p_datatype.is_meta_type);
@@ -682,7 +691,8 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 		} break;
 		case GDScriptParser::Node::CAST: {
 			const GDScriptParser::CastNode *cn = static_cast<const GDScriptParser::CastNode *>(p_expression);
-			GDScriptDataType cast_type = _gdtype_from_datatype(cn->get_datatype(), codegen.script, false);
+			const bool handles_type_annotation = cn->get_datatype().is_type_handle_annotation;
+			GDScriptDataType cast_type = _gdtype_from_datatype(cn->get_datatype(), codegen.script, handles_type_annotation);
 
 			GDScriptCodeGenerator::Address result;
 			if (cast_type.has_type()) {
@@ -721,13 +731,32 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			arguments.resize(call->arguments.size());
 			const Vector<int> &evaluation_order = call->argument_evaluation_order;
 			const bool has_evaluation_order = !evaluation_order.is_empty();
+			int argument_temporaries_to_pop = 0;
 			for (int order = 0; order < call->arguments.size(); order++) {
 				const int i = has_evaluation_order ? evaluation_order[order] : order;
 				GDScriptCodeGenerator::Address arg = _parse_expression(codegen, r_error, call->arguments[i]);
 				if (r_error) {
 					return GDScriptCodeGenerator::Address();
 				}
+				if (arg.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					argument_temporaries_to_pop++;
+				}
 				arguments.write[i] = arg;
+			}
+
+			const int checked_argument_count = MIN(arguments.size(), call->resolved_parameter_types.size());
+			for (int i = 0; i < checked_argument_count; i++) {
+				if (call->synthesized_argument_indices.has(i)) {
+					continue;
+				}
+				const GDScriptDataType parameter_type = _gdtype_from_datatype(call->resolved_parameter_types[i], codegen.script);
+				if (!parameter_type.is_type_handle) {
+					continue;
+				}
+				GDScriptCodeGenerator::Address checked_argument = codegen.add_temporary(parameter_type);
+				argument_temporaries_to_pop++;
+				gen->write_assign_with_conversion(checked_argument, arguments[i]);
+				arguments.write[i] = checked_argument;
 			}
 
 			if (call->is_proxy_construct) {
@@ -1010,10 +1039,8 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				}
 			}
 
-			for (int i = 0; i < arguments.size(); i++) {
-				if (arguments[i].mode == GDScriptCodeGenerator::Address::TEMPORARY) {
-					gen->pop_temporary();
-				}
+			for (int i = 0; i < argument_temporaries_to_pop; i++) {
+				gen->pop_temporary();
 			}
 			return result;
 		} break;
@@ -1251,7 +1278,8 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(type_test->get_datatype(), codegen.script));
 
 			GDScriptCodeGenerator::Address operand = _parse_expression(codegen, r_error, type_test->operand);
-			GDScriptDataType test_type = _gdtype_from_datatype(type_test->test_datatype, codegen.script, false);
+			const bool handles_type_annotation = type_test->test_datatype.is_type_handle_annotation;
+			GDScriptDataType test_type = _gdtype_from_datatype(type_test->test_datatype, codegen.script, handles_type_annotation);
 			if (r_error) {
 				return GDScriptCodeGenerator::Address();
 			}
@@ -3631,6 +3659,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 					// Open at this declaring level; a subclass that fixes it via `extends` re-resolves the
 					// binding when it inherits the member.
 					minfo.type_argument_binding.kind = GDScript::TypeArgumentBinding::OPEN;
+					minfo.type_argument_binding.is_type_handle = member_datatype.is_type_handle_annotation;
 					minfo.type_argument_binding.leaf_ordinal = member_datatype.type_parameter_index;
 				}
 

@@ -211,6 +211,15 @@ static bool _class_has_trait(const GDScriptParser::ClassNode *p_class, const GDS
 	return false;
 }
 
+static GDScriptParser::DataType _type_handle_represented_type(const GDScriptParser::DataType &p_type) {
+	GDScriptParser::DataType result = p_type;
+	result.is_type_handle_annotation = false;
+	result.is_meta_type = false;
+	result.is_pseudo_type = false;
+	result.is_constant = false;
+	return result;
+}
+
 GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source) {
 	return check(p_target, p_source, Options());
 }
@@ -243,6 +252,20 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 		// builtin and enum target branches below, which would otherwise reject null for those kinds.
 		result.compatible = true;
 		return result;
+	}
+
+	if (p_target.is_type_handle_annotation && p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL) {
+		// Type handles are object-like values at runtime, so null is accepted even without an explicit
+		// nullable suffix, matching legacy Object compatibility.
+		result.compatible = true;
+		return result;
+	}
+
+	if (p_target.is_type_handle_annotation) {
+		if (!p_source.is_meta_type && !p_source.is_type_handle_annotation) {
+			return result;
+		}
+		return check(_type_handle_represented_type(p_target), _type_handle_represented_type(p_source), p_options);
 	}
 
 	if (p_target.kind == GDScriptParser::DataType::TYPE_PARAMETER || p_source.kind == GDScriptParser::DataType::TYPE_PARAMETER) {

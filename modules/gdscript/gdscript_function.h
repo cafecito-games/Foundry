@@ -72,6 +72,7 @@ public:
 	// Whether this type also accepts null. Builtin and enum kinds reject null otherwise; object kinds
 	// already do at runtime, but the flag keeps the information available for them too.
 	bool is_nullable = false;
+	bool is_type_handle = false;
 	bool is_script_trait = false;
 	StringName script_trait;
 
@@ -85,9 +86,15 @@ public:
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
+	bool is_type_handle_type(const Variant &p_variant) const;
+	static GDScriptDataType from_type_handle_container_type(const ContainerType &p_container_type);
+
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const {
 		if (is_nullable && p_variant.get_type() == Variant::NIL) {
 			return true;
+		}
+		if (is_type_handle) {
+			return is_type_handle_type(p_variant);
 		}
 		switch (kind) {
 			case VARIANT: {
@@ -257,6 +264,7 @@ public:
 				builtin_type == p_other.builtin_type &&
 				native_type == p_other.native_type &&
 				is_nullable == p_other.is_nullable &&
+				is_type_handle == p_other.is_type_handle &&
 				(script_type == p_other.script_type || script_type_ref == p_other.script_type_ref) &&
 				is_script_trait == p_other.is_script_trait &&
 				script_trait == p_other.script_trait &&
@@ -278,6 +286,7 @@ public:
 		script_type = p_other.script_type;
 		script_type_ref = p_other.script_type_ref;
 		is_nullable = p_other.is_nullable;
+		is_type_handle = p_other.is_type_handle;
 		is_script_trait = p_other.is_script_trait;
 		script_trait = p_other.script_trait;
 		container_element_types = p_other.container_element_types;

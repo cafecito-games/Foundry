@@ -1899,10 +1899,17 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 					has_expected_type = true;
 				}
 				if (has_expected_type) {
-					ContainerTypeValidate validator(expected_type);
-					validator.where = "member";
-					if (!validator.validate(value, "assign")) {
-						return false;
+					if (member->type_argument_binding.is_type_handle) {
+						const GDScriptDataType expected_handle_type = GDScriptDataType::from_type_handle_container_type(expected_type);
+						if (!expected_handle_type.is_type(value)) {
+							return false;
+						}
+					} else {
+						ContainerTypeValidate validator(expected_type);
+						validator.where = "member";
+						if (!validator.validate(value, "assign")) {
+							return false;
+						}
 					}
 				}
 			} else if (!member->data_type.is_type(value)) {

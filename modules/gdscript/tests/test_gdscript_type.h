@@ -426,6 +426,44 @@ TEST_CASE("[Modules][GDScript] Parser resolves nullable type annotations") {
 	CHECK(array_type.to_string() == "Array[Node?]");
 }
 
+TEST_CASE("[Modules][GDScript] Analyzer resolves Type annotations as class-handle expectations") {
+	GDScriptParser parser;
+	const String source = "class User:\n"
+						  "\tpass\n\n"
+						  "var user_type: Type[User]\n"
+						  "var maybe_user_type: Type[User]?\n";
+	Error err = parser.parse(source, "user://type_metatype_annotation.gd", false);
+	REQUIRE(err == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	REQUIRE(err == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->members.size() == 3);
+	REQUIRE(root_class->members[1].type == GDScriptParser::ClassNode::Member::VARIABLE);
+	REQUIRE(root_class->members[2].type == GDScriptParser::ClassNode::Member::VARIABLE);
+
+	const GDScriptParser::VariableNode *variable = root_class->members[1].variable;
+	REQUIRE(variable != nullptr);
+	const GDScriptParser::DataType variable_type = variable->get_datatype();
+
+	CHECK(variable_type.kind == GDScriptParser::DataType::CLASS);
+	CHECK(variable_type.class_type != nullptr);
+	CHECK(variable_type.is_meta_type);
+	CHECK(variable_type.is_type_handle_annotation);
+	CHECK(variable_type.to_string() == "Type[User]");
+
+	const GDScriptParser::VariableNode *nullable_variable = root_class->members[2].variable;
+	REQUIRE(nullable_variable != nullptr);
+	const GDScriptParser::DataType nullable_variable_type = nullable_variable->get_datatype();
+
+	CHECK(nullable_variable_type.is_nullable);
+	CHECK(nullable_variable_type.is_type_handle_annotation);
+	CHECK(nullable_variable_type.to_string() == "Type[User]?");
+}
+
 TEST_CASE("[Modules][GDScript] Parser resolves callable and signal signature annotations") {
 	GDScriptParser parser;
 	Error err = parser.parse("var callback: Callable[[int], bool]\nvar event: Signal[[String]]\nvar maybe_callback: Callable[[Node?], void]\nvar maybe_event: Signal[[Node?]]\n", "user://signature_type.gd", false);

@@ -225,20 +225,26 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += DADDR(1);
 				text += " = ";
 				text += DADDR(2);
-				text += " is ";
+				text += _code_ptr[ip + 4] ? " is Type[" : " is ";
 				text += get_global_name(_code_ptr[ip + 3]);
+				if (_code_ptr[ip + 4]) {
+					text += "]";
+				}
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_TYPE_TEST_SCRIPT: {
 				text += "type test ";
 				text += DADDR(1);
 				text += " = ";
 				text += DADDR(2);
-				text += " is ";
+				text += _code_ptr[ip + 4] ? " is Type[" : " is ";
 				text += DADDR(3);
+				if (_code_ptr[ip + 4]) {
+					text += "]";
+				}
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_SET_KEYED: {
 				text += "set keyed ";
@@ -507,7 +513,7 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = ";
 				text += DADDR(2);
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_ASSIGN_TYPED_SCRIPT: {
 				Ref<Script> script = get_constant(_code_ptr[ip + 3] & ADDR_MASK);
@@ -519,7 +525,7 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = ";
 				text += DADDR(2);
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_CAST_TO_BUILTIN: {
 				text += "cast builtin ";
@@ -536,20 +542,26 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += DADDR(2);
 				text += " = ";
 				text += DADDR(1);
-				text += " as ";
+				text += _code_ptr[ip + 4] ? " as Type[" : " as ";
 				text += DADDR(3);
+				if (_code_ptr[ip + 4]) {
+					text += "]";
+				}
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_CAST_TO_SCRIPT: {
 				text += "cast ";
 				text += DADDR(2);
 				text += " = ";
 				text += DADDR(1);
-				text += " as ";
+				text += _code_ptr[ip + 4] ? " as Type[" : " as ";
 				text += DADDR(3);
+				if (_code_ptr[ip + 4]) {
+					text += "]";
+				}
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_CONSTRUCT: {
 				int instr_var_args = _code_ptr[++ip];
@@ -1174,7 +1186,7 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += ") ";
 				text += DADDR(1);
 
-				incr += 3;
+				incr += 4;
 			} break;
 			case OPCODE_RETURN_TYPED_SCRIPT: {
 				Ref<Script> script = get_constant(_code_ptr[ip + 2] & ADDR_MASK);
@@ -1184,7 +1196,7 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += ") ";
 				text += DADDR(1);
 
-				incr += 3;
+				incr += 4;
 			} break;
 
 #define DISASSEMBLE_ITERATE(m_type)      \

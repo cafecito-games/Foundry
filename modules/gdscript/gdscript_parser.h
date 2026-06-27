@@ -136,6 +136,7 @@ public:
 		bool is_constant = false;
 		bool is_read_only = false;
 		bool is_meta_type = false;
+		bool is_type_handle_annotation = false; // `Type[T]`: keep the represented type as a class-handle expectation.
 		bool is_pseudo_type = false; // For global names that can't be used standalone.
 		bool is_coroutine = false; // For function calls.
 		bool is_nullable = false;
@@ -247,6 +248,9 @@ public:
 			if (is_nullable != p_other.is_nullable) {
 				return false;
 			}
+			if (is_type_handle_annotation != p_other.is_type_handle_annotation) {
+				return false;
+			}
 
 			bool equal = false;
 			switch (kind) {
@@ -295,6 +299,7 @@ public:
 			is_read_only = p_other.is_read_only;
 			is_constant = p_other.is_constant;
 			is_meta_type = p_other.is_meta_type;
+			is_type_handle_annotation = p_other.is_type_handle_annotation;
 			is_pseudo_type = p_other.is_pseudo_type;
 			is_coroutine = p_other.is_coroutine;
 			is_nullable = p_other.is_nullable;
@@ -654,13 +659,13 @@ public:
 		// side-effect-free and ordered last. Empty for ordinary calls, where positional order already
 		// matches source order and the compiler evaluates `arguments` front to back.
 		Vector<int> argument_evaluation_order;
-#ifdef TOOLS_ENABLED
 		// Resolved parameter types for the called signature, in declaration order,
-		// recorded by the analyzer right before argument validation. Editor refactors
-		// (e.g. insert-explicit-cast at a call-argument boundary) read these to learn
-		// the type each argument flows into; the runtime compiler does not use them.
-		// Entries beyond the fixed parameter count (varargs) are not recorded.
+		// recorded by the analyzer right before argument validation. The runtime compiler uses Type-handle
+		// entries to preserve generic method substitutions at the call site; editor refactors also read
+		// these to learn the type each argument flows into. Entries beyond the fixed parameter count
+		// (varargs) are not recorded.
 		Vector<DataType> resolved_parameter_types;
+#ifdef TOOLS_ENABLED
 		// Surface argument name per call slot, captured at parse time for editor code completion.
 		// Indexed by argument slot: an empty entry for a positional argument and the parameter
 		// name for a `name = value` argument (recorded even when the value is still missing at the
