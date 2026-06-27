@@ -121,6 +121,10 @@ void GDScriptDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type
 					return;
 				}
 			}
+			if (p_gdtype.builtin_type == Variant::CALLABLE && p_gdtype.signature_is_async) {
+				r_type = "AsyncCallable";
+				return;
+			}
 			r_type = Variant::get_type_name(p_gdtype.builtin_type);
 			return;
 		case GDType::NATIVE:
