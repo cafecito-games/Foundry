@@ -496,11 +496,14 @@ static GDScriptParser::DataType _decode_signature_type_base(const String &p_enco
 		}
 		return result;
 	}
-	if (text == "Coroutine" || (text.begins_with("Coroutine[") && text.ends_with("]"))) {
-		String element = "";
-		if (text.begins_with("Coroutine[")) {
-			element = text.substr(10, text.length() - 11); // between "Coroutine[" and trailing "]"
-		}
+	// Only the bracketed form is the coroutine skin: the reserved coroutine syntax always carries brackets
+	// (see is_coroutine_type gating in the parser and _encode_signature_type_base, which always emits
+	// "Coroutine[...]" for a genuine coroutine). A bare "Coroutine" leaf is an ordinary class/native literally
+	// named "Coroutine" and must fall through to the leaf resolver, mirroring the container-element gating in
+	// _container_element_hint_is_coroutine. Matching the bare token here would misdecode such a class as the
+	// GDScriptFunctionState coroutine skin across the Callable/Signal signature boundary.
+	if (text.begins_with("Coroutine[") && text.ends_with("]")) {
+		const String element = text.substr(10, text.length() - 11); // between "Coroutine[" and trailing "]"
 		return _decode_coroutine_result_element(element);
 	}
 	if (_resolve_hint_leaf_type(text, result)) {
