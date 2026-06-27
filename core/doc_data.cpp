@@ -191,6 +191,17 @@ static void _append_method_qualifier(String &r_qualifiers, const char *p_qualifi
 	r_qualifiers += p_qualifier;
 }
 
+String DocData::get_type_link_target(const String &p_type) {
+	// GDScript renders async-typed callables as `AsyncCallable`, a synthetic
+	// spelling of the `Callable` builtin that has no class help page of its own.
+	// Link it to `Callable` so the type text stays accurate while the hyperlink
+	// resolves to a real page.
+	if (p_type == "AsyncCallable") {
+		return "Callable";
+	}
+	return p_type;
+}
+
 String DocData::get_method_qualifiers_from_methodinfo(const MethodInfo &p_methodinfo) {
 	String qualifiers;
 	if (p_methodinfo.flags & METHOD_FLAG_VIRTUAL) {

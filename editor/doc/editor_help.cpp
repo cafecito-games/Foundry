@@ -431,7 +431,7 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 			p_rt->add_text("Dictionary");
 			p_rt->pop(); // meta
 			p_rt->add_text("[");
-			p_rt->push_meta("#" + link_t.get_slice(", ", 0), RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+			p_rt->push_meta("#" + DocData::get_type_link_target(link_t.get_slice(", ", 0)), RichTextLabel::META_UNDERLINE_ON_HOVER); // class
 			p_rt->add_text(_contextualize_class_specifier(display_t.get_slice(", ", 0), p_class));
 			p_rt->pop(); // meta
 			p_rt->add_text(", ");
@@ -450,7 +450,7 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 		if (is_enum_type) {
 			p_rt->push_meta("$" + link_t, RichTextLabel::META_UNDERLINE_ON_HOVER); // enum
 		} else {
-			p_rt->push_meta("#" + link_t, RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+			p_rt->push_meta("#" + DocData::get_type_link_target(link_t), RichTextLabel::META_UNDERLINE_ON_HOVER); // class
 		}
 	}
 	p_rt->add_text(display_t);

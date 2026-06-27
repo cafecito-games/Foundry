@@ -1002,6 +1002,11 @@ public:
 	};
 
 	static String get_default_value_string(const Variant &p_value, const PropertyInfo &p_info);
+	// Resolves the class help page a doc type string should hyperlink to. Most
+	// types link to a page named after themselves, but synthetic, language-only
+	// type spellings (such as GDScript's `AsyncCallable`) have no dedicated page
+	// and must redirect to the closest real class to avoid a dead link.
+	static String get_type_link_target(const String &p_type);
 	static String get_method_qualifiers_from_methodinfo(const MethodInfo &p_methodinfo);
 
 	static void return_doc_from_retinfo(DocData::MethodDoc &p_method, const PropertyInfo &p_retinfo);
