@@ -576,6 +576,36 @@ TEST_CASE("[Modules][GDScript] AsyncCallable stringifies distinctly from Callabl
 	CHECK(bare_type.to_string() == "AsyncCallable");
 }
 
+TEST_CASE("[Modules][GDScript] Async method reference infers a bare AsyncCallable type") {
+	GDScriptParser parser;
+	Error err = parser.parse("async func _fetch() -> int:\n\treturn 1\nvar handler := _fetch\n", "user://async_method_reference.gd", false);
+	REQUIRE(err == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	REQUIRE(err == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+
+	const GDScriptParser::VariableNode *handler = nullptr;
+	for (const GDScriptParser::ClassNode::Member &member : root_class->members) {
+		if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->identifier->name == "handler") {
+			handler = member.variable;
+			break;
+		}
+	}
+	REQUIRE(handler != nullptr);
+
+	const GDScriptParser::DataType handler_type = handler->get_datatype();
+	CHECK(handler_type.builtin_type == Variant::CALLABLE);
+	// A reference to an async method carries the async marker but no explicit method
+	// signature, so it stringifies as a bare `AsyncCallable` rather than `Callable`.
+	CHECK(handler_type.signature_is_async);
+	CHECK_FALSE(handler_type.has_explicit_method_signature);
+	CHECK(handler_type.to_string() == "AsyncCallable");
+}
+
 TEST_CASE("[Modules][GDScript] Docgen renders AsyncCallable parameter and return types") {
 	GDScriptParser parser;
 	Error err = parser.parse("var handler: AsyncCallable[[int], bool]\n", "user://async_callable_docgen.gd", false);
