@@ -69,6 +69,25 @@ TEST_CASE("[Modules][GDScript] Language reserved words include hard trait declar
 	CHECK_FALSE(reserved_words.has("uses"));
 }
 
+TEST_CASE("[Modules][GDScript] Language reserved words include abstract but not async") {
+	Vector<String> reserved_words = GDScriptLanguage::get_singleton()->get_reserved_words();
+	int abstract_count = 0;
+	for (const String &word : reserved_words) {
+		if (word == "abstract") {
+			abstract_count++;
+		}
+	}
+	CHECK(abstract_count == 1);
+	CHECK_FALSE(reserved_words.has("async"));
+}
+
+TEST_CASE("[Modules][GDScript] Tokenizer emits ABSTRACT for the abstract keyword") {
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code("abstract");
+	GDScriptTokenizer::Token token = tokenizer.scan();
+	CHECK(token.type == GDScriptTokenizer::Token::ABSTRACT);
+}
+
 static PackedStringArray parse_source_errors(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://namespace_import_test.gd", false);
