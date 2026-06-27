@@ -2721,17 +2721,16 @@ static bool _is_flattenable_trait_member(const GDScriptParser::ClassNode::Member
 	}
 }
 
-// Collects the `final` variables an implementing class receives from its applied traits, in the
-// order the compiler flattens them. Trait members are merged into the class at compile time
+// Collects the members an implementing class receives from its applied traits, in the order the
+// compiler flattens them. Trait members are merged into the class at compile time
 // (`GDScriptCompiler::_collect_flattened_trait_members`), so they never appear in `p_class->members`
-// when the final-enforcement passes run; without this, a trait-supplied final is neither write-once
-// enforced nor recognized as having a legal `_init`/`_static_init` slot on the implementer. The
-// shadowing here matches the compiler exactly: a trait member is dropped when the implementing class
-// or any base already declares its name, and the first trait to provide a name wins. `p_static`
-// selects between the instance-member and static-final passes. Properties and `@onready` finals are
-// skipped (the same corners the direct-member passes reject) rather than tracked as a write-once slot.
-static void _collect_flattened_trait_finals(const GDScriptParser::ClassNode *p_class, bool p_static,
-		LocalVector<GDScriptParser::VariableNode *> &r_trait_finals) {
+// when the final-enforcement passes run; without them a trait-supplied final is neither write-once
+// enforced nor recognized as having a legal `_init`/`_static_init` slot on the implementer, and a
+// concrete trait method or initializer that mutates such a final is never scanned. The shadowing
+// here matches the compiler exactly: a trait member is dropped when the implementing class or any
+// base already declares its name, and the first trait to provide a name wins.
+static void _collect_flattened_trait_members(const GDScriptParser::ClassNode *p_class,
+		LocalVector<const GDScriptParser::ClassNode::Member *> &r_members) {
 	if (p_class->resolved_traits.is_empty()) {
 		return;
 	}
@@ -2758,23 +2757,8 @@ static void _collect_flattened_trait_finals(const GDScriptParser::ClassNode *p_c
 			if (name == StringName() || defined.has(name)) {
 				continue;
 			}
-			// Claim the name for every flattenable member kind (not just finals) so first-trait-wins
-			// shadowing matches the compiler; a later trait can no longer contribute this name.
 			defined.insert(name);
-			if (member.type != GDScriptParser::ClassNode::Member::VARIABLE) {
-				continue;
-			}
-			GDScriptParser::VariableNode *variable = member.variable;
-			if (variable == nullptr || !variable->is_final || variable->is_static != p_static) {
-				continue;
-			}
-			if (variable->property != GDScriptParser::VariableNode::PROP_NONE) {
-				continue;
-			}
-			if (!p_static && variable->onready) {
-				continue;
-			}
-			r_trait_finals.push_back(variable);
+			r_members.push_back(&member);
 		}
 	}
 }
@@ -2817,13 +2801,34 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 		}
 	}
 
-	// Trait-supplied finals flatten into this class at compile time, so include them as owned slots:
-	// the legal write site is this class's own `_init`, exactly as for a directly declared final.
-	LocalVector<GDScriptParser::VariableNode *> trait_finals;
-	_collect_flattened_trait_finals(p_class, false, trait_finals);
-	for (GDScriptParser::VariableNode *variable : trait_finals) {
-		finals.insert(variable);
-		finals_by_name[variable->identifier->name] = variable;
+	// Trait members flatten into this class at compile time, so they never appear in `p_class->members`
+	// here. Mirror that flattening and apply the same member checks, so a trait-supplied final is an
+	// owned write-once slot whose legal write site is this class's own `_init`, exactly as for a
+	// directly declared final. The same property/`@onready` misuse is rejected here too, since the
+	// trait's own pass returns before those checks run.
+	LocalVector<const GDScriptParser::ClassNode::Member *> trait_members;
+	_collect_flattened_trait_members(p_class, trait_members);
+	for (const GDScriptParser::ClassNode::Member *member_ptr : trait_members) {
+		const GDScriptParser::ClassNode::Member &member = *member_ptr;
+		if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
+			GDScriptParser::VariableNode *variable = member.variable;
+			if (variable->is_final && !variable->is_static) {
+				if (variable->property != GDScriptParser::VariableNode::PROP_NONE) {
+					push_error(vformat(R"(Final variable "%s" cannot declare a getter or setter.)", variable->identifier->name), variable);
+				} else if (variable->onready) {
+					push_error(vformat(R"(Final variable "%s" cannot be annotated with "@onready".)", variable->identifier->name), variable);
+				} else {
+					finals.insert(variable);
+					finals_by_name[variable->identifier->name] = variable;
+				}
+			}
+		} else if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			// A trait can supply `_init` when the implementer declares none; it then becomes the legal
+			// assignment slot. The implementer's own `_init` (found above) takes precedence.
+			if (init_function == nullptr && member.function->identifier != nullptr && member.function->identifier->name == SNAME("_init")) {
+				init_function = member.function;
+			}
+		}
 	}
 
 	// Reject every assignment to a final outside its legal slot. This runs for every class (even
@@ -2842,6 +2847,26 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 			// Only an inline property owns its accessor bodies; a `get = func` / `set = func` property
 			// points at separately declared methods (already scanned above) and the `getter`/`setter`
 			// union members instead hold identifier pointers.
+			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
+				if (member.variable->getter != nullptr) {
+					scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
+				}
+				if (member.variable->setter != nullptr) {
+					scan_illegal_final_writes(member.variable->setter->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
+				}
+			}
+		}
+	}
+
+	// The same scan over the flattened trait bodies: a concrete trait method, initializer, or accessor
+	// is compiled into this class, so a write it makes to a trait-supplied final must be caught here.
+	for (const GDScriptParser::ClassNode::Member *member_ptr : trait_members) {
+		const GDScriptParser::ClassNode::Member &member = *member_ptr;
+		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			GDScriptParser::FunctionNode *function = member.function;
+			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, function == init_function);
+		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
+			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
 			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 				if (member.variable->getter != nullptr) {
 					scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
@@ -2887,11 +2912,21 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 	}
 
 	// Trait member initializers run after this class's own member initializers (the compiler appends
-	// flattened trait members), so thread their state in after the loop above. An initialized trait
-	// final fills its slot in the constructor prologue; a blank one stays open until `_init`.
-	for (GDScriptParser::VariableNode *variable : trait_finals) {
+	// flattened trait members), so thread their state in after the loop above — including non-final
+	// trait variables, whose initializers can read a still-blank trait final before `_init` fills it.
+	for (const GDScriptParser::ClassNode::Member *member_ptr : trait_members) {
+		const GDScriptParser::ClassNode::Member &member = *member_ptr;
+		if (member.type != GDScriptParser::ClassNode::Member::VARIABLE) {
+			continue;
+		}
+		GDScriptParser::VariableNode *variable = member.variable;
 		if (variable->initializer != nullptr) {
 			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, init_state);
+		}
+		if (!finals.has(variable)) {
+			continue;
+		}
+		if (variable->initializer != nullptr) {
 			init_state.assigned.insert(variable);
 			init_state.maybe_assigned.insert(variable);
 		} else {
@@ -2965,13 +3000,31 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 		}
 	}
 
-	// Trait-supplied static finals flatten into this class's static storage at compile time; include
-	// them as owned slots so `_static_init` is their legal write site, as for a declared static final.
-	LocalVector<GDScriptParser::VariableNode *> trait_finals;
-	_collect_flattened_trait_finals(p_class, true, trait_finals);
-	for (GDScriptParser::VariableNode *variable : trait_finals) {
-		finals.insert(variable);
-		finals_by_name[variable->identifier->name] = variable;
+	// Trait members flatten into this class's static storage at compile time, so mirror that flattening
+	// and apply the same checks: a trait-supplied `final static var` becomes an owned slot whose legal
+	// write site is this class's own `_static_init`, and the same property misuse is rejected here
+	// since the trait's own pass returns first.
+	LocalVector<const GDScriptParser::ClassNode::Member *> trait_members;
+	_collect_flattened_trait_members(p_class, trait_members);
+	for (const GDScriptParser::ClassNode::Member *member_ptr : trait_members) {
+		const GDScriptParser::ClassNode::Member &member = *member_ptr;
+		if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
+			GDScriptParser::VariableNode *variable = member.variable;
+			if (variable->is_final && variable->is_static) {
+				if (variable->property != GDScriptParser::VariableNode::PROP_NONE) {
+					push_error(vformat(R"(Final variable "%s" cannot declare a getter or setter.)", variable->identifier->name), variable);
+				} else {
+					finals.insert(variable);
+					finals_by_name[variable->identifier->name] = variable;
+				}
+			}
+		} else if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			// A trait can supply `_static_init` when the implementer declares none; it then becomes the
+			// legal static-assignment slot. The implementer's own `_static_init` takes precedence.
+			if (static_init_function == nullptr && member.function->identifier != nullptr && member.function->identifier->name == SNAME("_static_init")) {
+				static_init_function = member.function;
+			}
+		}
 	}
 
 	// Reject every assignment to a static final outside its legal slot (this class's own static
@@ -2979,6 +3032,26 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 	// or an inherited static final from any method here is still caught.
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			GDScriptParser::FunctionNode *function = member.function;
+			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, function == static_init_function);
+		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
+			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
+			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
+				if (member.variable->getter != nullptr) {
+					scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
+				}
+				if (member.variable->setter != nullptr) {
+					scan_illegal_final_writes(member.variable->setter->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
+				}
+			}
+		}
+	}
+
+	// The same scan over the flattened trait bodies: a concrete trait method or static initializer
+	// compiled into this class may write a trait-supplied static final outside its slot.
+	for (const GDScriptParser::ClassNode::Member *member_ptr : trait_members) {
+		const GDScriptParser::ClassNode::Member &member = *member_ptr;
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			GDScriptParser::FunctionNode *function = member.function;
 			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, function == static_init_function);
@@ -3029,11 +3102,25 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 	}
 
 	// Trait static finals flatten into this class's static initialization, after its own static var
-	// initializers; thread their state in here so an initialized trait static fills its slot and a
-	// blank one must be definitely assigned in `_static_init`.
-	for (GDScriptParser::VariableNode *variable : trait_finals) {
+	// initializers; thread their state in here (including non-final trait static vars, whose
+	// initializers can read a still-blank static final) so an initialized trait static fills its slot
+	// and a blank one must be definitely assigned in `_static_init`.
+	for (const GDScriptParser::ClassNode::Member *member_ptr : trait_members) {
+		const GDScriptParser::ClassNode::Member &member = *member_ptr;
+		if (member.type != GDScriptParser::ClassNode::Member::VARIABLE) {
+			continue;
+		}
+		GDScriptParser::VariableNode *variable = member.variable;
+		if (!variable->is_static) {
+			continue;
+		}
 		if (variable->initializer != nullptr) {
 			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, init_state);
+		}
+		if (!finals.has(variable)) {
+			continue;
+		}
+		if (variable->initializer != nullptr) {
 			init_state.assigned.insert(variable);
 			init_state.maybe_assigned.insert(variable);
 		} else {
@@ -3273,6 +3360,19 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 				}
 				return identifier->variable_source;
 			}
+			// A bare reference to a trait's own `final static var` from a trait method body is left
+			// unresolved until the trait flattens into an implementer (see the instance-member case
+			// below); resolve it by name against the tracked static finals so trait-method writes are
+			// caught. Locals keep this scope's own `LOCAL_VARIABLE` source and are unaffected.
+			if (p_scope == FinalAssignmentScope::STATIC_MEMBER && identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
+				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(identifier->name);
+				if (found) {
+					if (r_is_self_receiver != nullptr) {
+						*r_is_self_receiver = true;
+					}
+					return found->value;
+				}
+			}
 		}
 		// A static final has a single shared slot regardless of receiver, so qualified forms
 		// (`ClassName.VALUE`, `self.VALUE`, `instance.VALUE`) designate the same slot as the bare
@@ -3300,6 +3400,21 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 				*r_is_self_receiver = true;
 			}
 			return identifier->variable_source;
+		}
+		// Inside a trait method body a bare reference to one of the trait's own members is left
+		// unresolved (`UNDEFINED_SOURCE`): a trait is not instantiable on its own, so member binding is
+		// deferred to each implementing class at flatten time. When such a body is scanned as part of an
+		// implementer, resolve the bare name against the tracked finals the same way `self.<name>` is,
+		// so a trait method that writes a trait-supplied final is caught. A genuine local/parameter has a
+		// concrete local source and is excluded, so this never shadows a same-named local.
+		if (identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
+			HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(identifier->name);
+			if (found) {
+				if (r_is_self_receiver != nullptr) {
+					*r_is_self_receiver = true;
+				}
+				return found->value;
+			}
 		}
 		return nullptr;
 	}
