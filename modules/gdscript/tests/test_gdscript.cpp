@@ -3409,8 +3409,9 @@ annotation test targets METHOD
 func networked() -> void:
 	pass
 
+@warning_ignore("unused_parameter")
 @test
-func custom_and_builtin() -> void:
+func custom_and_builtin(unused: int) -> void:
 	pass
 )",
 			"user://builtin_annotation_metadata.gd", false);
@@ -3484,13 +3485,18 @@ func custom_and_builtin() -> void:
 		}
 	}
 
-	// A custom annotation on a method is still recorded and stays non-built-in.
+	// A custom annotation on a method is still recorded and stays non-built-in. `@warning_ignore` is a
+	// diagnostic directive whose arguments only resolve under DEBUG_ENABLED, so it is excluded from
+	// reflected metadata to stay consistent across build configurations.
 	{
 		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_method_annotations(), SNAME("custom_and_builtin"));
 		CHECK(usages != nullptr);
-		if (usages != nullptr && !usages->is_empty()) {
-			CHECK_EQ((*usages)[0].name, SNAME("test"));
-			CHECK_FALSE((*usages)[0].is_builtin);
+		if (usages != nullptr) {
+			CHECK_EQ(usages->size(), 1);
+			if (!usages->is_empty()) {
+				CHECK_EQ((*usages)[0].name, SNAME("test"));
+				CHECK_FALSE((*usages)[0].is_builtin);
+			}
 		}
 	}
 }

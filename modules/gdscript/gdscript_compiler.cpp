@@ -2680,6 +2680,13 @@ void GDScriptCompiler::_collect_annotations(const List<GDScriptParser::Annotatio
 			if (annotation->info == nullptr) {
 				continue;
 			}
+			// `@warning_ignore` is a diagnostic-suppression directive, not declarative metadata: the
+			// analyzer only resolves its arguments under DEBUG_ENABLED (and the normal member loop skips
+			// it), so reflecting it would expose build-configuration-dependent data (arguments present
+			// in dev builds, empty in release). Exclude it to keep reflected metadata consistent.
+			if (annotation->name == SNAME("@warning_ignore")) {
+				continue;
+			}
 			usage.is_builtin = true;
 			// Built-in annotations are never dotted; the bare name doubles as the canonical identity so
 			// `has_annotation`/`get_annotation` match either accessor.
