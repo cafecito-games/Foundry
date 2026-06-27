@@ -46,17 +46,18 @@ EditorRunNative *EditorRunNative::singleton = nullptr;
 // Path to the project's run-target config, parallel to `export_presets.cfg`.
 static const char *RUN_TARGETS_CONFIG_PATH = "res://run_targets.cfg";
 
-// Whether an export preset with `p_name` currently exists. Mirrors the manager's
-// default name-based preset lookup so the menu can tell, without emitting resolve
-// errors every poll, whether a configured target still points at a live preset.
-static bool editor_has_export_preset(const String &p_name) {
+// Whether an export preset with `p_name` exists and is marked runnable. Mirrors
+// the legacy menu, which only exposed `preset->is_runnable()` presets, so the menu
+// can tell — without emitting resolve errors every poll — whether a configured
+// target still points at a preset the user actually wants deployed.
+static bool editor_has_runnable_export_preset(const String &p_name) {
 	EditorExport *editor_export = EditorExport::get_singleton();
 	if (editor_export == nullptr) {
 		return false;
 	}
 	for (int i = 0; i < editor_export->get_export_preset_count(); i++) {
 		const Ref<EditorExportPreset> preset = editor_export->get_export_preset(i);
-		if (preset.is_valid() && preset->get_name() == p_name) {
+		if (preset.is_valid() && preset->get_name() == p_name && preset->is_runnable()) {
 			return true;
 		}
 	}
@@ -195,7 +196,7 @@ void EditorRunNative::_rebuild_popup() {
 		// still present. A stale target pointing at a deleted/renamed preset must not
 		// hide the working legacy rows that can still deploy the project.
 		for (const RunTarget &target : run_target_manager.get_targets()) {
-			if (run_target_manager.get_platform(target.platform) != nullptr && editor_has_export_preset(target.export_preset)) {
+			if (run_target_manager.get_platform(target.platform) != nullptr && editor_has_runnable_export_preset(target.export_preset)) {
 				owned_platforms[target.platform] = true;
 			}
 		}
@@ -347,13 +348,13 @@ bool EditorRunNative::_find_signing_target(const String &p_platform, RunTarget &
 	// same-platform target can still provide signing.
 	if (run_target_manager.has_active_target()) {
 		const RunTarget active = run_target_manager.get_active_target();
-		if (active.platform == p_platform && editor_has_export_preset(active.export_preset)) {
+		if (active.platform == p_platform && editor_has_runnable_export_preset(active.export_preset)) {
 			r_target = active;
 			return true;
 		}
 	}
 	for (const RunTarget &candidate : run_target_manager.get_targets()) {
-		if (candidate.platform == p_platform && editor_has_export_preset(candidate.export_preset)) {
+		if (candidate.platform == p_platform && editor_has_runnable_export_preset(candidate.export_preset)) {
 			r_target = candidate;
 			return true;
 		}
@@ -401,6 +402,13 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 	if (resolve_error != OK || resolved.platform_adapter == nullptr || resolved.preset.is_null()) {
 		_show_result(vformat(TTR("Cannot run \"%s\": its export preset \"%s\" is missing or its platform has no adapter."), p_target.name, p_target.export_preset), true);
 		return resolve_error != OK ? resolve_error : ERR_UNAVAILABLE;
+	}
+
+	// Honor the preset's Runnable flag exactly like the legacy menu: never deploy a
+	// preset the user explicitly disabled, even if a target still references it.
+	if (!resolved.preset->is_runnable()) {
+		_show_result(vformat(TTR("Cannot run \"%s\": its export preset \"%s\" is not marked Runnable.\nEnable \"Runnable\" on the preset in the Export dialog."), p_target.name, p_target.export_preset), true);
+		return ERR_UNAVAILABLE;
 	}
 
 	if (!EditorNode::get_singleton()->ensure_main_scene(true)) {
