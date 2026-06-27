@@ -74,6 +74,15 @@ public:
 		int end_line = 0;
 	};
 
+	// A bare string literal used as a comment in a class/top-level body. The parser
+	// consumes it as a multi-line comment without creating a member, so it is absent
+	// from the tree; the formatter recovers it from the tokenize pass (the exact
+	// source text) and reattaches it by source line through the trivia walker.
+	struct StringComment {
+		String text; // Exact original literal text, e.g. `"""..."""` (possibly multi-line).
+		int end_line = 0;
+	};
+
 	// Source lines of the head class's header keywords that the AST does not record
 	// (`@tool`/`@icon`/`@static_unload` consumed into flags, `namespace`, `import`,
 	// and a path-only `extends`). Recovered from the tokenize pass so the header
@@ -90,7 +99,8 @@ public:
 	GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
 			const HashMap<uint64_t, LiteralToken> &p_literals,
 			const HashMap<int, StandaloneAnnotation> &p_standalone_annotations,
-			const Vector<String> &p_source_lines, const HeaderLines &p_header_lines);
+			const Vector<String> &p_source_lines, const HeaderLines &p_header_lines,
+			const HashMap<int, StringComment> &p_string_comments);
 
 	String print_tree(const GDScriptParser::ClassNode *p_root, bool p_is_tool);
 
@@ -104,6 +114,7 @@ private:
 	// comment belongs to a block body or to the following, shallower-indented node.
 	const Vector<String> &source_lines;
 	HeaderLines header_lines;
+	const HashMap<int, StringComment> &string_comments;
 
 	String output;
 	int indent_level = 0;
@@ -314,8 +325,13 @@ public:
 	// unit testing of the pure argument/mode parsing (no process side effects).
 	static Options parse_options(const List<String> &p_cmdline_args);
 
-private:
+	// Recursively collects `*.gd` files under `p_paths` (directories recurse, files
+	// are taken as-is), skipping hidden and symlinked directories. `r_had_error` is
+	// set when a path is missing or a directory cannot be opened or listed. Exposed
+	// for unit testing of the filesystem traversal.
 	static Vector<String> collect_files(const Vector<String> &p_paths, bool &r_had_error);
+
+private:
 	static void collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files, bool &r_had_error);
 	static String make_unified_diff(const String &p_path, const String &p_original, const String &p_formatted);
 	static void print_raw(const String &p_text);

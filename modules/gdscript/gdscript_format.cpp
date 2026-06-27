@@ -389,6 +389,41 @@ static bool is_block_statement(GDScriptParser::Node::Type p_type) {
 			p_type == GDScriptParser::Node::WHILE || p_type == GDScriptParser::Node::MATCH;
 }
 
+// True when `p_line` falls inside a non-class member of `p_class` (or, recursively,
+// inside a non-class member of a nested class). Used to tell a class-body string
+// comment (not inside any member -> recover it) from a genuine string node inside
+// a function/variable/etc. (an AST node already emitted by the normal walk).
+static bool class_line_is_inside_member(const GDScriptParser::ClassNode *p_class, int p_line) {
+	if (p_class == nullptr) {
+		return false;
+	}
+	for (int i = 0; i < p_class->members.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		const GDScriptParser::Node *node = member.get_source_node();
+		if (node == nullptr || node->start_line <= 0) {
+			continue;
+		}
+		// A member's annotations sit above its node, and multi-line annotation
+		// arguments (`@export_enum(\n"A",\n)`) put strings on their own lines before
+		// the node's start_line; extend the range to cover them so those argument
+		// strings are not mistaken for class-body string comments.
+		int member_start = node->start_line;
+		for (const GDScriptParser::AnnotationNode *annotation : node->annotations) {
+			if (annotation->start_line > 0 && annotation->start_line < member_start) {
+				member_start = annotation->start_line;
+			}
+		}
+		if (p_line < member_start || p_line > node->end_line) {
+			continue;
+		}
+		if (member.type == GDScriptParser::ClassNode::Member::CLASS) {
+			return class_line_is_inside_member(member.m_class, p_line);
+		}
+		return true; // Inside a function / variable / constant / signal / enum.
+	}
+	return false; // In a gap between members (or the header region): a string comment.
+}
+
 Error GDScriptFormatter::format(const String &p_source, const String &p_path, Result &r_result) {
 	// Pass 1: tokenize to capture comments and original literal source text.
 	GDScriptTokenizerText tokenizer;
@@ -500,9 +535,35 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 		return ERR_PARSE_ERROR;
 	}
 
+	// A bare string literal at statement position in a class/top-level body is
+	// consumed by the parser as a multi-line comment, producing no member, so it is
+	// absent from the tree. Recover such "string comments": scan for standalone
+	// string tokens (at a line start) and keep the ones that do not fall inside any
+	// real member -- a string inside a function/variable/etc. is a genuine AST node
+	// (a string statement or expression) and is emitted by the normal walk.
+	HashMap<int, GDScriptPrinter::StringComment> string_comments;
+	{
+		GDScriptTokenizerText string_tokenizer;
+		string_tokenizer.set_source_code(p_source);
+		GDScriptTokenizer::Token::Type previous_type = GDScriptTokenizer::Token::NEWLINE;
+		for (GDScriptTokenizer::Token string_token = string_tokenizer.scan();
+				string_token.type != GDScriptTokenizer::Token::TK_EOF && string_token.type != GDScriptTokenizer::Token::ERROR;
+				string_token = string_tokenizer.scan()) {
+			const bool at_line_start = previous_type == GDScriptTokenizer::Token::NEWLINE ||
+					previous_type == GDScriptTokenizer::Token::INDENT ||
+					previous_type == GDScriptTokenizer::Token::DEDENT;
+			if (at_line_start && string_token.type == GDScriptTokenizer::Token::LITERAL &&
+					string_token.literal.get_type() == Variant::STRING &&
+					!class_line_is_inside_member(parser.get_tree(), string_token.start_line)) {
+				string_comments[string_token.start_line] = GDScriptPrinter::StringComment{ string_token.source, string_token.end_line };
+			}
+			previous_type = string_token.type;
+		}
+	}
+
 	// Pass 3: print.
 	const Vector<String> source_lines = p_source.split("\n");
-	GDScriptPrinter printer(comments, literals, standalone_annotations, source_lines, header_lines);
+	GDScriptPrinter printer(comments, literals, standalone_annotations, source_lines, header_lines, string_comments);
 	r_result.formatted = printer.print_tree(parser.get_tree(), parser.is_tool());
 	return OK;
 }
@@ -510,8 +571,9 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 GDScriptPrinter::GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
 		const HashMap<uint64_t, LiteralToken> &p_literals,
 		const HashMap<int, StandaloneAnnotation> &p_standalone_annotations,
-		const Vector<String> &p_source_lines, const HeaderLines &p_header_lines) :
-		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations), source_lines(p_source_lines), header_lines(p_header_lines) {
+		const Vector<String> &p_source_lines, const HeaderLines &p_header_lines,
+		const HashMap<int, StringComment> &p_string_comments) :
+		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations), source_lines(p_source_lines), header_lines(p_header_lines), string_comments(p_string_comments) {
 }
 
 int GDScriptPrinter::line_indent_depth(int p_line) const {
@@ -569,11 +631,12 @@ void GDScriptPrinter::emit_comment_line(int p_line, const String &p_raw_comment)
 }
 
 bool GDScriptPrinter::is_trivia_line(int p_line) const {
-	return is_full_line_comment(p_line) || standalone_annotations.has(p_line);
+	return is_full_line_comment(p_line) || standalone_annotations.has(p_line) || string_comments.has(p_line);
 }
 
-// Emits the trivia at `p_line` (a full-line comment or a recovered standalone
-// annotation) at the current indent and advances the cursor past it.
+// Emits the trivia at `p_line` (a full-line comment, a recovered standalone
+// annotation, or a recovered string comment) at the current indent and advances
+// the cursor past it.
 void GDScriptPrinter::emit_trivia_line(int p_line) {
 	HashMap<int, StandaloneAnnotation>::ConstIterator annotation = standalone_annotations.find(p_line);
 	if (annotation) {
@@ -581,6 +644,16 @@ void GDScriptPrinter::emit_trivia_line(int p_line) {
 		write(annotation->value.text);
 		newline();
 		last_emitted_line = MAX(p_line, annotation->value.end_line);
+		return;
+	}
+	HashMap<int, StringComment>::ConstIterator string_comment = string_comments.find(p_line);
+	if (string_comment) {
+		// The literal text may span several lines; the first line gets the current
+		// indent and the rest is emitted verbatim (its content is part of the string).
+		write_indent();
+		write(string_comment->value.text);
+		newline();
+		last_emitted_line = MAX(p_line, string_comment->value.end_line);
 		return;
 	}
 	emit_comment_line(p_line, comments.find(p_line)->value.comment);
@@ -742,6 +815,12 @@ void GDScriptPrinter::flush_tail_comments() {
 		const int annotation_end = MAX(entry.key, entry.value.end_line);
 		if (annotation_end > max_line) {
 			max_line = annotation_end;
+		}
+	}
+	for (const KeyValue<int, StringComment> &entry : string_comments) {
+		const int string_end = MAX(entry.key, entry.value.end_line);
+		if (string_end > max_line) {
+			max_line = string_end;
 		}
 	}
 	if (max_line > last_emitted_line) {
@@ -2453,7 +2532,13 @@ void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vec
 	// Skip hidden entries (`.git`, `.godot`, `.import`, ...): `.godot` caches can
 	// hold generated `.gd` files that must never be reformatted.
 	dir->set_include_hidden(false);
-	dir->list_dir_begin();
+	if (dir->list_dir_begin() != OK) {
+		// A searchable-but-unreadable directory opens (the path resolves) but cannot
+		// be listed; do not let that subtree be silently skipped.
+		fprintf(stderr, "%s: could not list directory\n", p_dir.utf8().get_data());
+		r_had_error = true;
+		return;
+	}
 	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
 		if (entry == "." || entry == ".." || dir->current_is_hidden()) {
 			continue;
@@ -2462,8 +2547,10 @@ void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vec
 		if (dir->current_is_dir()) {
 			// Do not descend into symlinked directories: following them would let a
 			// `--write` run escape the target tree (rewriting external `.gd` files) or
-			// loop forever on a symlink cycle.
-			if (dir->is_link(full_path)) {
+			// loop forever on a symlink cycle. `is_link` is queried with the bare entry
+			// name because `dir` is positioned at `p_dir`; passing the joined path would
+			// (on Unix) be resolved relative to the open directory and miss the link.
+			if (dir->is_link(entry)) {
 				continue;
 			}
 			collect_gd_scripts_recursive(full_path, r_files, r_had_error);
