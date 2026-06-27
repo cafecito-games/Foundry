@@ -668,6 +668,7 @@ void GDScriptParser::synchronize() {
 		}
 
 		switch (current.type) {
+			case GDScriptTokenizer::Token::ABSTRACT:
 			case GDScriptTokenizer::Token::CLASS:
 			case GDScriptTokenizer::Token::FUNC:
 			case GDScriptTokenizer::Token::STATIC:

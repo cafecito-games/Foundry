@@ -1283,6 +1283,66 @@ func after() -> void:
 	CHECK(find_parser_function(root, SNAME("after")) != nullptr);
 }
 
+TEST_CASE("[Modules][GDScript] Parser recovery preserves a leading abstract modifier") {
+	// The malformed `var = ...` aborts mid-declaration with the `abstract` keyword as
+	// the next token, so the recovery in `synchronize()` must stop at `abstract`
+	// rather than skipping over it and dropping the recovered declaration's
+	// `is_abstract` metadata.
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+var = abstract func load() -> void:
+	pass
+
+func after() -> void:
+	pass
+)",
+			"user://abstract_func_modifier_recovery.gd", false);
+
+	CHECK(err != OK);
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::FunctionNode *load = find_parser_function(root, SNAME("load"));
+	CHECK(load != nullptr);
+	if (load != nullptr) {
+		CHECK(load->is_abstract);
+	}
+
+	CHECK(find_parser_function(root, SNAME("after")) != nullptr);
+
+	// The same recovery must keep `is_abstract` on a recovered `abstract class`.
+	GDScriptParser class_parser;
+	Error class_err = class_parser.parse(R"(
+var = abstract class Shape:
+	func area() -> float:
+		return 0.0
+
+func after() -> void:
+	pass
+)",
+			"user://abstract_class_modifier_recovery.gd", false);
+
+	CHECK(class_err != OK);
+
+	const GDScriptParser::ClassNode *class_root = class_parser.get_tree();
+	CHECK(class_root != nullptr);
+	if (class_root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *shape = find_parser_class(class_root, SNAME("Shape"));
+	CHECK(shape != nullptr);
+	if (shape != nullptr) {
+		CHECK(shape->is_abstract);
+	}
+
+	CHECK(find_parser_function(class_root, SNAME("after")) != nullptr);
+}
+
 TEST_CASE("[Modules][GDScript] Parser collects declaration modifiers in any order") {
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
