@@ -1121,6 +1121,10 @@ void ScriptEditor::_resave_scripts(const String &p_str) {
 			se->convert_indent();
 		}
 
+		if (format_on_save) {
+			se->format_document(false);
+		}
+
 		Ref<TextFile> text_file = scr;
 		if (text_file.is_valid()) {
 			se->apply_code();
@@ -1590,6 +1594,10 @@ void ScriptEditor::_menu_option(int p_option) {
 
 				if (convert_indent_on_save) {
 					current->convert_indent();
+				}
+
+				if (format_on_save) {
+					current->format_document(false);
 				}
 
 				Ref<Resource> resource = current->get_edited_resource();
@@ -2874,6 +2882,10 @@ void ScriptEditor::save_all_scripts() {
 
 		if (trim_final_newlines_on_save) {
 			se->trim_final_newlines();
+		}
+
+		if (format_on_save) {
+			se->format_document(false);
 		}
 
 		if (!se->is_unsaved()) {
