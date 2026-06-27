@@ -2858,11 +2858,22 @@ void GDScriptAnalyzer::check_final_local_assignments(GDScriptParser::ClassNode *
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			analyze_function_local_finals(member.function);
-		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
-			// Inline property accessor bodies hold their own statement trees (and `final var` locals),
-			// so they are analyzed like any other function.
-			analyze_function_local_finals(member.variable->getter);
-			analyze_function_local_finals(member.variable->setter);
+		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
+			// A member or static var initializer can embed a lambda whose body declares `final var`
+			// locals. The initializer itself is an expression (no top-level local declaration), so the
+			// collected throwaway sets stay empty; the walk's purpose is to reach those lambda bodies,
+			// which `collect_local_finals` analyzes as their own scopes.
+			if (member.variable->initializer != nullptr) {
+				HashSet<const GDScriptParser::VariableNode *> nested_finals;
+				HashMap<StringName, const GDScriptParser::VariableNode *> nested_finals_by_name;
+				collect_local_finals(member.variable->initializer, nested_finals, nested_finals_by_name);
+			}
+			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
+				// Inline property accessor bodies hold their own statement trees (and `final var`
+				// locals), so they are analyzed like any other function.
+				analyze_function_local_finals(member.variable->getter);
+				analyze_function_local_finals(member.variable->setter);
+			}
 		}
 	}
 }
