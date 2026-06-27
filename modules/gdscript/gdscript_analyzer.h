@@ -160,10 +160,10 @@ class GDScriptAnalyzer {
 	static void merge_final_assignment_branches(const FinalAssignmentState &p_first, const FinalAssignmentState &p_second, FinalAssignmentState &r_out);
 	const GDScriptParser::VariableNode *final_member_assignment_target(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver = nullptr) const;
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver = nullptr, bool p_flattened_trait_body = false) const;
 	void scan_illegal_final_writes(const GDScriptParser::Node *p_node,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init, bool p_flattened_trait_body = false);
 	void analyze_final_definite_assignment_suite(const GDScriptParser::SuiteNode *p_suite,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
@@ -174,7 +174,7 @@ class GDScriptAnalyzer {
 			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
 	void check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
 	void check_final_reads_in_pattern(const GDScriptParser::PatternNode *p_pattern,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state);

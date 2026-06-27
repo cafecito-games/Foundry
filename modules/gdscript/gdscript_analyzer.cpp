@@ -2864,15 +2864,15 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 		const GDScriptParser::ClassNode::Member &member = *member_ptr;
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			GDScriptParser::FunctionNode *function = member.function;
-			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, function == init_function);
+			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, function == init_function, true);
 		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
-			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
+			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false, true);
 			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 				if (member.variable->getter != nullptr) {
-					scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
+					scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false, true);
 				}
 				if (member.variable->setter != nullptr) {
-					scan_illegal_final_writes(member.variable->setter->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
+					scan_illegal_final_writes(member.variable->setter->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false, true);
 				}
 			}
 		}
@@ -2921,7 +2921,7 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 		}
 		GDScriptParser::VariableNode *variable = member.variable;
 		if (variable->initializer != nullptr) {
-			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, init_state);
+			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, init_state, true);
 		}
 		if (!finals.has(variable)) {
 			continue;
@@ -3054,15 +3054,15 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 		const GDScriptParser::ClassNode::Member &member = *member_ptr;
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			GDScriptParser::FunctionNode *function = member.function;
-			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, function == static_init_function);
+			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, function == static_init_function, true);
 		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
-			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
+			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false, true);
 			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 				if (member.variable->getter != nullptr) {
-					scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
+					scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false, true);
 				}
 				if (member.variable->setter != nullptr) {
-					scan_illegal_final_writes(member.variable->setter->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
+					scan_illegal_final_writes(member.variable->setter->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false, true);
 				}
 			}
 		}
@@ -3115,7 +3115,7 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 			continue;
 		}
 		if (variable->initializer != nullptr) {
-			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, init_state);
+			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, init_state, true);
 		}
 		if (!finals.has(variable)) {
 			continue;
@@ -3341,12 +3341,57 @@ void GDScriptAnalyzer::collect_local_finals(const GDScriptParser::Node *p_node,
 // and a read through one targets a different instance and is not flow-tracked.
 const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_target(const GDScriptParser::ExpressionNode *p_expression,
 		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver) const {
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver, bool p_flattened_trait_body) const {
 	if (r_is_self_receiver != nullptr) {
 		*r_is_self_receiver = false;
 	}
 	if (p_expression == nullptr) {
 		return nullptr;
+	}
+	if (p_flattened_trait_body) {
+		// In a flattened trait body the member references resolve against the trait's own AST, but the
+		// compiler emits the flattened assignments by name against the implementing class's same-named
+		// slot. A trait `variable_source` therefore carries a stale finality (an external trait body is
+		// fully resolved in its own class context, so it points at the trait's member even when the
+		// implementer shadows it). Resolve purely by name against the implementer's tracked finals so
+		// shadowing is honored: a name the implementer tracks as final is its slot, and a name shadowed
+		// to a mutable (or absent) member is not a final write here.
+		StringName name;
+		bool self_receiver = false;
+		if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
+			const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
+			switch (identifier->source) {
+				case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+				case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+				case GDScriptParser::IdentifierNode::LOCAL_CONSTANT:
+				case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+				case GDScriptParser::IdentifierNode::LOCAL_BIND:
+					// A genuine local/parameter of the trait method that merely shares a final's name.
+					return nullptr;
+				default:
+					break;
+			}
+			name = identifier->name;
+			// A bare member reference is implicitly `self.<name>`.
+			self_receiver = true;
+		} else if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			if (!subscript->is_attribute || subscript->attribute == nullptr) {
+				return nullptr;
+			}
+			name = subscript->attribute->name;
+			self_receiver = subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF;
+		} else {
+			return nullptr;
+		}
+		HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(name);
+		if (!found) {
+			return nullptr;
+		}
+		if (r_is_self_receiver != nullptr) {
+			*r_is_self_receiver = self_receiver;
+		}
+		return found->value;
 	}
 	if (p_scope != FinalAssignmentScope::INSTANCE_MEMBER) {
 		// Static and local finals are referenced by a bare identifier (this class's static variable,
@@ -3359,19 +3404,6 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 					*r_is_self_receiver = true;
 				}
 				return identifier->variable_source;
-			}
-			// A bare reference to a trait's own `final static var` from a trait method body is left
-			// unresolved until the trait flattens into an implementer (see the instance-member case
-			// below); resolve it by name against the tracked static finals so trait-method writes are
-			// caught. Locals keep this scope's own `LOCAL_VARIABLE` source and are unaffected.
-			if (p_scope == FinalAssignmentScope::STATIC_MEMBER && identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
-				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(identifier->name);
-				if (found) {
-					if (r_is_self_receiver != nullptr) {
-						*r_is_self_receiver = true;
-					}
-					return found->value;
-				}
 			}
 		}
 		// A static final has a single shared slot regardless of receiver, so qualified forms
@@ -3400,21 +3432,6 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 				*r_is_self_receiver = true;
 			}
 			return identifier->variable_source;
-		}
-		// Inside a trait method body a bare reference to one of the trait's own members is left
-		// unresolved (`UNDEFINED_SOURCE`): a trait is not instantiable on its own, so member binding is
-		// deferred to each implementing class at flatten time. When such a body is scanned as part of an
-		// implementer, resolve the bare name against the tracked finals the same way `self.<name>` is,
-		// so a trait method that writes a trait-supplied final is caught. A genuine local/parameter has a
-		// concrete local source and is excluded, so this never shadows a same-named local.
-		if (identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
-			HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(identifier->name);
-			if (found) {
-				if (r_is_self_receiver != nullptr) {
-					*r_is_self_receiver = true;
-				}
-				return found->value;
-			}
 		}
 		return nullptr;
 	}
@@ -3457,13 +3474,13 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 // lambda boundaries, which are out of scope for the single-assignment-slot model.
 void GDScriptAnalyzer::check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
 		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state) {
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body) {
 	if (p_expression == nullptr) {
 		return;
 	}
 
 	bool is_self_receiver = false;
-	const GDScriptParser::VariableNode *referenced = final_member_assignment_target(p_expression, p_finals, p_finals_by_name, p_scope, &is_self_receiver);
+	const GDScriptParser::VariableNode *referenced = final_member_assignment_target(p_expression, p_finals, p_finals_by_name, p_scope, &is_self_receiver, p_flattened_trait_body);
 	// Use-before-assignment only applies to this instance's own (this-class) slot: an inherited
 	// final is assigned by the base constructor, and another instance's final (`other.id`) is a
 	// separate, possibly fully constructed object.
@@ -3474,50 +3491,50 @@ void GDScriptAnalyzer::check_final_reads_in_expression(const GDScriptParser::Exp
 	switch (p_expression->type) {
 		case GDScriptParser::Node::BINARY_OPERATOR: {
 			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
-			check_final_reads_in_expression(binary->left_operand, p_finals, p_finals_by_name, p_scope, p_state);
-			check_final_reads_in_expression(binary->right_operand, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(binary->left_operand, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
+			check_final_reads_in_expression(binary->right_operand, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::UNARY_OPERATOR: {
 			const GDScriptParser::UnaryOpNode *unary = static_cast<const GDScriptParser::UnaryOpNode *>(p_expression);
-			check_final_reads_in_expression(unary->operand, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(unary->operand, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::TERNARY_OPERATOR: {
 			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
-			check_final_reads_in_expression(ternary->condition, p_finals, p_finals_by_name, p_scope, p_state);
-			check_final_reads_in_expression(ternary->true_expr, p_finals, p_finals_by_name, p_scope, p_state);
-			check_final_reads_in_expression(ternary->false_expr, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(ternary->condition, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
+			check_final_reads_in_expression(ternary->true_expr, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
+			check_final_reads_in_expression(ternary->false_expr, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::TYPE_TEST: {
 			const GDScriptParser::TypeTestNode *type_test = static_cast<const GDScriptParser::TypeTestNode *>(p_expression);
-			check_final_reads_in_expression(type_test->operand, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(type_test->operand, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::CAST: {
 			const GDScriptParser::CastNode *cast = static_cast<const GDScriptParser::CastNode *>(p_expression);
-			check_final_reads_in_expression(cast->operand, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(cast->operand, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::AWAIT: {
 			const GDScriptParser::AwaitNode *await = static_cast<const GDScriptParser::AwaitNode *>(p_expression);
-			check_final_reads_in_expression(await->to_await, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(await->to_await, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::ARRAY: {
 			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
 			for (int i = 0; i < array->elements.size(); i++) {
-				check_final_reads_in_expression(array->elements[i], p_finals, p_finals_by_name, p_scope, p_state);
+				check_final_reads_in_expression(array->elements[i], p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::DICTIONARY: {
 			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
 			for (int i = 0; i < dictionary->elements.size(); i++) {
-				check_final_reads_in_expression(dictionary->elements[i].key, p_finals, p_finals_by_name, p_scope, p_state);
-				check_final_reads_in_expression(dictionary->elements[i].value, p_finals, p_finals_by_name, p_scope, p_state);
+				check_final_reads_in_expression(dictionary->elements[i].key, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
+				check_final_reads_in_expression(dictionary->elements[i].value, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::CALL: {
 			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
 			// The callee can be `base.method`; checking it covers reading a final as the call base.
-			check_final_reads_in_expression(call->callee, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(call->callee, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 			for (int i = 0; i < call->arguments.size(); i++) {
-				check_final_reads_in_expression(call->arguments[i], p_finals, p_finals_by_name, p_scope, p_state);
+				check_final_reads_in_expression(call->arguments[i], p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::SUBSCRIPT: {
@@ -3525,15 +3542,15 @@ void GDScriptAnalyzer::check_final_reads_in_expression(const GDScriptParser::Exp
 			// A self-receiver final (`self.id`) was already handled above; for anything else recurse
 			// into the base/index for nested reads (e.g. `array[id]`, or the `other` in `other.id`).
 			if (referenced == nullptr || !is_self_receiver) {
-				check_final_reads_in_expression(subscript->base, p_finals, p_finals_by_name, p_scope, p_state);
+				check_final_reads_in_expression(subscript->base, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 				if (!subscript->is_attribute) {
-					check_final_reads_in_expression(subscript->index, p_finals, p_finals_by_name, p_scope, p_state);
+					check_final_reads_in_expression(subscript->index, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 				}
 			}
 		} break;
 		case GDScriptParser::Node::ASSIGNMENT: {
 			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
-			check_final_reads_in_expression(assignment->assigned_value, p_finals, p_finals_by_name, p_scope, p_state);
+			check_final_reads_in_expression(assignment->assigned_value, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
 		default:
 			break;
@@ -3573,7 +3590,7 @@ void GDScriptAnalyzer::check_final_reads_in_pattern(const GDScriptParser::Patter
 // definite-assignment flow analysis to `_init`'s own statement tree.
 void GDScriptAnalyzer::scan_illegal_final_writes(const GDScriptParser::Node *p_node,
 		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init) {
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init, bool p_flattened_trait_body) {
 	if (p_node == nullptr) {
 		return;
 	}
@@ -3582,39 +3599,39 @@ void GDScriptAnalyzer::scan_illegal_final_writes(const GDScriptParser::Node *p_n
 		case GDScriptParser::Node::SUITE: {
 			const GDScriptParser::SuiteNode *suite = static_cast<const GDScriptParser::SuiteNode *>(p_node);
 			for (int i = 0; i < suite->statements.size(); i++) {
-				scan_illegal_final_writes(suite->statements[i], p_finals, p_finals_by_name, p_scope, p_in_init);
+				scan_illegal_final_writes(suite->statements[i], p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::IF: {
 			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_node);
-			scan_illegal_final_writes(if_node->condition, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(if_node->true_block, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(if_node->false_block, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(if_node->condition, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(if_node->true_block, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(if_node->false_block, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::FOR: {
 			const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_node);
-			scan_illegal_final_writes(for_node->list, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(for_node->loop, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(for_node->list, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(for_node->loop, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::WHILE: {
 			const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(p_node);
-			scan_illegal_final_writes(while_node->condition, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(while_node->loop, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(while_node->condition, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(while_node->loop, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::MATCH: {
 			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_node);
-			scan_illegal_final_writes(match_node->test, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(match_node->test, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			for (int i = 0; i < match_node->branches.size(); i++) {
 				if (match_node->branches[i] != nullptr) {
-					scan_illegal_final_writes(match_node->branches[i]->guard_body, p_finals, p_finals_by_name, p_scope, p_in_init);
-					scan_illegal_final_writes(match_node->branches[i]->block, p_finals, p_finals_by_name, p_scope, p_in_init);
+					scan_illegal_final_writes(match_node->branches[i]->guard_body, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+					scan_illegal_final_writes(match_node->branches[i]->block, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 				}
 			}
 		} break;
 		case GDScriptParser::Node::ASSIGNMENT: {
 			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_node);
 			bool is_self_receiver = false;
-			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name, p_scope, &is_self_receiver);
+			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name, p_scope, &is_self_receiver, p_flattened_trait_body);
 			if (p_scope == FinalAssignmentScope::LOCAL) {
 				// A local final is assigned within its own function body (tracked by the definite-
 				// assignment pass). The single illegal form is a write from inside a nested lambda,
@@ -3631,81 +3648,81 @@ void GDScriptAnalyzer::scan_illegal_final_writes(const GDScriptParser::Node *p_n
 				const char *slot_function = p_scope == FinalAssignmentScope::STATIC_MEMBER ? "_static_init()" : "_init()";
 				push_error(vformat(R"*(Final variable "%s" can only be assigned in its declaration or in "%s".)*", target->identifier->name, slot_function), assignment->assignee);
 			}
-			scan_illegal_final_writes(assignment->assignee, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(assignment->assigned_value, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(assignment->assignee, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(assignment->assigned_value, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::LAMBDA: {
 			const GDScriptParser::LambdaNode *lambda = static_cast<const GDScriptParser::LambdaNode *>(p_node);
 			if (lambda->function != nullptr) {
 				// Writes inside a lambda never fill the single slot, even within the slot function.
-				scan_illegal_final_writes(lambda->function->body, p_finals, p_finals_by_name, p_scope, false);
+				scan_illegal_final_writes(lambda->function->body, p_finals, p_finals_by_name, p_scope, false, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::VARIABLE: {
 			const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_node);
-			scan_illegal_final_writes(variable->initializer, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(variable->initializer, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::RETURN: {
 			const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_node);
-			scan_illegal_final_writes(return_node->return_value, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(return_node->return_value, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::ASSERT: {
 			const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(p_node);
-			scan_illegal_final_writes(assert_node->condition, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(assert_node->message, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(assert_node->condition, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(assert_node->message, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::BINARY_OPERATOR: {
 			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_node);
-			scan_illegal_final_writes(binary->left_operand, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(binary->right_operand, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(binary->left_operand, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(binary->right_operand, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::UNARY_OPERATOR: {
 			const GDScriptParser::UnaryOpNode *unary = static_cast<const GDScriptParser::UnaryOpNode *>(p_node);
-			scan_illegal_final_writes(unary->operand, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(unary->operand, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::TERNARY_OPERATOR: {
 			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_node);
-			scan_illegal_final_writes(ternary->condition, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(ternary->true_expr, p_finals, p_finals_by_name, p_scope, p_in_init);
-			scan_illegal_final_writes(ternary->false_expr, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(ternary->condition, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(ternary->true_expr, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			scan_illegal_final_writes(ternary->false_expr, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::TYPE_TEST: {
 			const GDScriptParser::TypeTestNode *type_test = static_cast<const GDScriptParser::TypeTestNode *>(p_node);
-			scan_illegal_final_writes(type_test->operand, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(type_test->operand, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::CAST: {
 			const GDScriptParser::CastNode *cast = static_cast<const GDScriptParser::CastNode *>(p_node);
-			scan_illegal_final_writes(cast->operand, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(cast->operand, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::AWAIT: {
 			const GDScriptParser::AwaitNode *await = static_cast<const GDScriptParser::AwaitNode *>(p_node);
-			scan_illegal_final_writes(await->to_await, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(await->to_await, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
 		case GDScriptParser::Node::ARRAY: {
 			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_node);
 			for (int i = 0; i < array->elements.size(); i++) {
-				scan_illegal_final_writes(array->elements[i], p_finals, p_finals_by_name, p_scope, p_in_init);
+				scan_illegal_final_writes(array->elements[i], p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::DICTIONARY: {
 			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_node);
 			for (int i = 0; i < dictionary->elements.size(); i++) {
-				scan_illegal_final_writes(dictionary->elements[i].key, p_finals, p_finals_by_name, p_scope, p_in_init);
-				scan_illegal_final_writes(dictionary->elements[i].value, p_finals, p_finals_by_name, p_scope, p_in_init);
+				scan_illegal_final_writes(dictionary->elements[i].key, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+				scan_illegal_final_writes(dictionary->elements[i].value, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::CALL: {
 			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_node);
-			scan_illegal_final_writes(call->callee, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(call->callee, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			for (int i = 0; i < call->arguments.size(); i++) {
-				scan_illegal_final_writes(call->arguments[i], p_finals, p_finals_by_name, p_scope, p_in_init);
+				scan_illegal_final_writes(call->arguments[i], p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			}
 		} break;
 		case GDScriptParser::Node::SUBSCRIPT: {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_node);
-			scan_illegal_final_writes(subscript->base, p_finals, p_finals_by_name, p_scope, p_in_init);
+			scan_illegal_final_writes(subscript->base, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			if (!subscript->is_attribute) {
-				scan_illegal_final_writes(subscript->index, p_finals, p_finals_by_name, p_scope, p_in_init);
+				scan_illegal_final_writes(subscript->index, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			}
 		} break;
 		default:
