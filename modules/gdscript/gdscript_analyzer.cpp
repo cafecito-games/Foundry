@@ -537,6 +537,119 @@ static GDScriptParser::DataType make_script_meta_type(const Ref<Script> &p_scrip
 	return type;
 }
 
+static GDScriptParser::DataType type_handle_represented_type(const GDScriptParser::DataType &p_type) {
+	GDScriptParser::DataType represented_type = p_type;
+	represented_type.is_type_handle_annotation = false;
+	represented_type.is_meta_type = false;
+	represented_type.is_pseudo_type = false;
+	represented_type.is_constant = false;
+	represented_type.is_nullable = false;
+	return represented_type;
+}
+
+static String _type_handle_represented_type_name(
+		const GDScriptParser::DataType &p_type,
+		const GDScriptParser::Node *p_source_node = nullptr) {
+	if (p_source_node != nullptr && p_source_node->is_expression()) {
+		const GDScriptParser::ExpressionNode *expression = static_cast<const GDScriptParser::ExpressionNode *>(p_source_node);
+		if (expression->is_constant && expression->reduced_value.get_type() == Variant::OBJECT) {
+			bool was_freed = false;
+			Object *object = expression->reduced_value.get_validated_object_with_check(was_freed);
+			if (object != nullptr) {
+				GDScriptNativeClass *native_class = Object::cast_to<GDScriptNativeClass>(object);
+				if (native_class != nullptr) {
+					return native_class->get_name();
+				}
+			}
+		}
+	}
+
+	return type_handle_represented_type(p_type).to_string();
+}
+
+static bool _type_handle_source_is_handle(const GDScriptParser::DataType &p_type) {
+	return p_type.is_meta_type || p_type.is_type_handle_annotation;
+}
+
+static bool _type_handle_source_is_null(const GDScriptParser::DataType &p_type) {
+	return p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL;
+}
+
+static String _make_type_handle_assignment_error(
+		const GDScriptParser::DataType &p_target_type,
+		const GDScriptParser::DataType &p_source_type,
+		const GDScriptParser::Node *p_source_node,
+		const String &p_target_kind,
+		const StringName &p_target_name,
+		bool p_has_specified_type) {
+	if (!p_target_type.is_type_handle_annotation || _type_handle_source_is_null(p_source_type)) {
+		return String();
+	}
+
+	const String target_type = p_target_type.to_string();
+	const String expected_represented_type = type_handle_represented_type(p_target_type).to_string();
+	const String source_represented_type = _type_handle_represented_type_name(p_source_type, p_source_node);
+	const bool source_is_handle = _type_handle_source_is_handle(p_source_type);
+
+	String target_description;
+	if (p_target_name != StringName()) {
+		target_description = vformat(R"(%s "%s"%s "%s")",
+				p_target_kind,
+				p_target_name,
+				p_has_specified_type ? " with specified type" : " of type",
+				target_type);
+	} else {
+		target_description = vformat(R"(target of type "%s")", target_type);
+	}
+
+	if (source_is_handle) {
+		return vformat(R"(Cannot assign class handle "%s" to %s; handle represents "%s", which is not compatible with "%s".)",
+				source_represented_type,
+				target_description,
+				source_represented_type,
+				expected_represented_type);
+	}
+
+	return vformat("Cannot assign instance value of type \"%s\" to %s; "
+				   "expected a class handle whose represented instance type is \"%s\".",
+			p_source_type.to_string(),
+			target_description,
+			expected_represented_type);
+}
+
+static String _make_type_handle_argument_error(
+		const StringName &p_function,
+		int p_argument_number,
+		const GDScriptParser::DataType &p_expected_type,
+		const GDScriptParser::DataType &p_actual_type,
+		const GDScriptParser::Node *p_actual_node) {
+	if (!p_expected_type.is_type_handle_annotation || _type_handle_source_is_null(p_actual_type)) {
+		return String();
+	}
+
+	const String expected_type = p_expected_type.to_string();
+	const String expected_represented_type = type_handle_represented_type(p_expected_type).to_string();
+	const String actual_represented_type = _type_handle_represented_type_name(p_actual_type, p_actual_node);
+	if (_type_handle_source_is_handle(p_actual_type)) {
+		return vformat("Cannot pass class handle \"%s\" as argument %d of \"%s()\"; "
+					   "handle represents \"%s\", which is not compatible with expected represented instance type \"%s\" for \"%s\".",
+				actual_represented_type,
+				p_argument_number,
+				p_function,
+				actual_represented_type,
+				expected_represented_type,
+				expected_type);
+	}
+
+	return vformat("Cannot pass instance value of type \"%s\" as argument %d of \"%s()\"; "
+				   "expected a class handle whose represented instance type is \"%s\" for \"%s\".",
+			p_actual_type.to_string(),
+			p_argument_number,
+			p_function,
+			expected_represented_type,
+			expected_type);
+}
+
 // In enum types, native_type is used to store the class (native or otherwise) that the enum belongs to.
 // This disambiguates between similarly named enums in base classes or outer classes
 static GDScriptParser::DataType make_enum_type(const StringName &p_enum_name, const String &p_base_name, const bool p_meta = false) {
@@ -3730,7 +3843,19 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 				}
 			} else if (!is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer)) {
 				const bool nullable_mismatch = strict_null_checks && initializer_type.is_nullable && !specified_type.is_nullable && !specified_type.is_variant();
-				if (!nullable_mismatch && !is_constant && is_type_compatible(initializer_type, specified_type)) {
+				String type_handle_error;
+				if (!nullable_mismatch) {
+					type_handle_error = _make_type_handle_assignment_error(
+							specified_type,
+							initializer_type,
+							p_assignable->initializer,
+							p_kind,
+							p_assignable->identifier->name,
+							true);
+				}
+				if (!type_handle_error.is_empty()) {
+					push_error(type_handle_error, p_assignable->initializer);
+				} else if (!nullable_mismatch && !is_constant && is_type_compatible(initializer_type, specified_type)) {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				} else {
@@ -5035,7 +5160,19 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 				mark_node_unsafe(p_assignment);
 				if (assignee_is_hard) {
 					const bool nullable_mismatch = strict_null_checks && op_type.is_nullable && !assignee_type.is_nullable && !assignee_type.is_variant();
-					if (!nullable_mismatch && is_type_compatible(op_type, assignee_type)) {
+					String type_handle_error;
+					if (!nullable_mismatch) {
+						type_handle_error = _make_type_handle_assignment_error(
+								assignee_type,
+								assigned_value_type,
+								p_assignment->assigned_value,
+								"variable",
+								assignee_name,
+								false);
+					}
+					if (!type_handle_error.is_empty()) {
+						push_error(type_handle_error, p_assignment->assigned_value);
+					} else if (!nullable_mismatch && is_type_compatible(op_type, assignee_type)) {
 						// hard non-variant assignee and maybe compatible result
 						p_assignment->use_conversion_assign = true;
 					} else {
@@ -10682,15 +10819,6 @@ bool GDScriptAnalyzer::merge_inferred_type_argument(const GDScriptParser::DataTy
 	return false;
 }
 
-static GDScriptParser::DataType type_handle_represented_type(const GDScriptParser::DataType &p_type) {
-	GDScriptParser::DataType result = p_type;
-	result.is_type_handle_annotation = false;
-	result.is_meta_type = false;
-	result.is_pseudo_type = false;
-	result.is_constant = false;
-	return result;
-}
-
 void GDScriptAnalyzer::collect_type_parameter_bindings(const GDScriptParser::DataType &p_parameter_type, const GDScriptParser::DataType &p_argument_type,
 		HashMap<StringName, GDScriptParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts) {
 	if (p_parameter_type.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
@@ -11671,7 +11799,14 @@ static bool _method_signature_accepts_argument_count(int p_argument_count, int p
 	return false;
 }
 
-String GDScriptAnalyzer::make_invalid_argument_error(const StringName &p_function, int p_argument_number, const GDScriptParser::DataType &p_expected_type, const GDScriptParser::DataType &p_actual_type, bool p_strict_dynamic_mismatch, bool p_strict_nullable_mismatch) const {
+String GDScriptAnalyzer::make_invalid_argument_error(
+		const StringName &p_function,
+		int p_argument_number,
+		const GDScriptParser::DataType &p_expected_type,
+		const GDScriptParser::DataType &p_actual_type,
+		bool p_strict_dynamic_mismatch,
+		bool p_strict_nullable_mismatch,
+		const GDScriptParser::Node *p_actual_node) const {
 	if (p_strict_dynamic_mismatch) {
 		return vformat(R"*(Cannot pass Variant value as argument %d of "%s()" in strict dynamic mode; expected "%s".)*",
 				p_argument_number,
@@ -11684,6 +11819,15 @@ String GDScriptAnalyzer::make_invalid_argument_error(const StringName &p_functio
 				p_argument_number,
 				p_function,
 				p_expected_type.to_string());
+	}
+	const String type_handle_error = _make_type_handle_argument_error(
+			p_function,
+			p_argument_number,
+			p_expected_type,
+			p_actual_type,
+			p_actual_node);
+	if (!type_handle_error.is_empty()) {
+		return type_handle_error;
 	}
 	return vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
 			p_function,
@@ -11723,7 +11867,15 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 
 		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
 			if (arg_type.is_variant() && strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				push_error(make_invalid_argument_error(p_call->function_name, i + 1, par_type, arg_type, true, false), p_call->arguments[i]);
+				push_error(make_invalid_argument_error(
+								   p_call->function_name,
+								   i + 1,
+								   par_type,
+								   arg_type,
+								   true,
+								   false,
+								   p_call->arguments[i]),
+						p_call->arguments[i]);
 			} else {
 #ifdef DEBUG_ENABLED
 				// Argument can be anything, so this is unsafe (unless the parameter is a hard variant).
@@ -11735,8 +11887,27 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 			}
 		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
 			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
-			if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
-				push_error(make_invalid_argument_error(p_call->function_name, i + 1, par_type, arg_type, false, nullable_mismatch), p_call->arguments[i]);
+			String type_handle_error;
+			if (!nullable_mismatch) {
+				type_handle_error = _make_type_handle_argument_error(
+						p_call->function_name,
+						i + 1,
+						par_type,
+						arg_type,
+						p_call->arguments[i]);
+			}
+			if (!type_handle_error.is_empty()) {
+				push_error(type_handle_error, p_call->arguments[i]);
+			} else if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
+				push_error(make_invalid_argument_error(
+								   p_call->function_name,
+								   i + 1,
+								   par_type,
+								   arg_type,
+								   false,
+								   nullable_mismatch,
+								   p_call->arguments[i]),
+						p_call->arguments[i]);
 #ifdef DEBUG_ENABLED
 			} else {
 				// Supertypes are acceptable for dynamic compliance, but it's unsafe.
@@ -11780,7 +11951,7 @@ void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScrip
 
 		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
 			if (arg_type.is_variant() && strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, true, false), argument);
+				push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, true, false, argument), argument);
 			} else {
 #ifdef DEBUG_ENABLED
 				if (!(par_type.is_hard_type() && par_type.is_variant())) {
@@ -11791,8 +11962,27 @@ void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScrip
 			}
 		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
 			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
-			if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
-				push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, false, nullable_mismatch), argument);
+			String type_handle_error;
+			if (!nullable_mismatch) {
+				type_handle_error = _make_type_handle_argument_error(
+						p_function,
+						i + 1,
+						par_type,
+						arg_type,
+						argument);
+			}
+			if (!type_handle_error.is_empty()) {
+				push_error(type_handle_error, argument);
+			} else if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
+				push_error(make_invalid_argument_error(
+								   p_function,
+								   i + 1,
+								   par_type,
+								   arg_type,
+								   false,
+								   nullable_mismatch,
+								   argument),
+						argument);
 #ifdef DEBUG_ENABLED
 			} else {
 				mark_node_unsafe(argument);
@@ -12050,7 +12240,15 @@ void GDScriptAnalyzer::validate_signal_emit_args(const GDScriptParser::DataType 
 		}
 		if (emit_argument_type.is_variant() || !emit_argument_type.is_hard_type()) {
 			if (emit_argument_type.is_variant() && strict_dynamic_checks && !(signal_parameter_type.is_hard_type() && signal_parameter_type.is_variant())) {
-				push_error(make_invalid_argument_error(p_call->function_name, emit_argument_index + 1, signal_parameter_type, emit_argument_type, true, false), p_call->arguments[emit_argument_index]);
+				push_error(make_invalid_argument_error(
+								   p_call->function_name,
+								   emit_argument_index + 1,
+								   signal_parameter_type,
+								   emit_argument_type,
+								   true,
+								   false,
+								   p_call->arguments[emit_argument_index]),
+						p_call->arguments[emit_argument_index]);
 			} else {
 				mark_node_unsafe(p_call->arguments[emit_argument_index]);
 			}
@@ -12059,7 +12257,15 @@ void GDScriptAnalyzer::validate_signal_emit_args(const GDScriptParser::DataType 
 
 		const bool nullable_mismatch = strict_null_checks && emit_argument_type.is_nullable && !signal_parameter_type.is_nullable && !signal_parameter_type.is_variant();
 		if (nullable_mismatch || !GDScriptTypeCompatibility::check(signal_parameter_type, emit_argument_type, options).compatible) {
-			push_error(make_invalid_argument_error(p_call->function_name, emit_argument_index + 1, signal_parameter_type, emit_argument_type, false, nullable_mismatch), p_call->arguments[emit_argument_index]);
+			push_error(make_invalid_argument_error(
+							   p_call->function_name,
+							   emit_argument_index + 1,
+							   signal_parameter_type,
+							   emit_argument_type,
+							   false,
+							   nullable_mismatch,
+							   p_call->arguments[emit_argument_index]),
+					p_call->arguments[emit_argument_index]);
 			return;
 		}
 	}

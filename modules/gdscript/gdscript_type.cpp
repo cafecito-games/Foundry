@@ -217,6 +217,7 @@ static GDScriptParser::DataType _type_handle_represented_type(const GDScriptPars
 	result.is_meta_type = false;
 	result.is_pseudo_type = false;
 	result.is_constant = false;
+	result.is_nullable = false;
 	return result;
 }
 

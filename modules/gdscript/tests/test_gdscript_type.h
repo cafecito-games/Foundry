@@ -255,6 +255,29 @@ TEST_CASE("[Modules][GDScript] Type compatibility can reject nullable source for
 	CHECK(nullable_result.compatible);
 }
 
+TEST_CASE("[Modules][GDScript] Type compatibility treats Type handle nullability as outer state") {
+	GDScriptParser::DataType target = make_native_type(SNAME("Node"));
+	target.is_meta_type = true;
+	target.is_type_handle_annotation = true;
+	GDScriptParser::DataType source = make_native_type(SNAME("Button"));
+	source.is_meta_type = true;
+	source.is_type_handle_annotation = true;
+	GDScriptParser::DataType nullable_target = target;
+	nullable_target.is_nullable = true;
+	GDScriptParser::DataType nullable_source = source;
+	nullable_source.is_nullable = true;
+	GDScriptParser::DataType wrong_source = make_native_type(SNAME("RefCounted"));
+	wrong_source.is_meta_type = true;
+	wrong_source.is_type_handle_annotation = true;
+	wrong_source.is_nullable = true;
+	GDScriptTypeCompatibility::Options options;
+	options.strict_null = true;
+
+	CHECK_FALSE(GDScriptTypeCompatibility::check(target, nullable_source, options).compatible);
+	CHECK(GDScriptTypeCompatibility::check(nullable_target, nullable_source, options).compatible);
+	CHECK_FALSE(GDScriptTypeCompatibility::check(nullable_target, wrong_source, options).compatible);
+}
+
 TEST_CASE("[Modules][GDScript] Type compatibility reports implicit builtin conversion") {
 	const GDScriptParser::DataType target = make_builtin_type(Variant::FLOAT);
 	const GDScriptParser::DataType source = make_builtin_type(Variant::INT);
@@ -1888,6 +1911,40 @@ TEST_CASE("[Modules][GDScript] Analyzer reports strict assignment diagnostics") 
 			true);
 	check_source_error(nullable_assignment_source,
 			R"*(Cannot assign nullable value of type "Node?" to variable "node"; expected non-nullable "Node".)*",
+			true);
+}
+
+TEST_CASE("[Modules][GDScript] Analyzer reports strict nullable Type handle diagnostics") {
+	const String base_source = "func get_nullable_node_type() -> Type[Node]?:\n"
+							   "\treturn null\n\n";
+	const String nullable_initializer_source = base_source + "var node_handle: Type[Node] = get_nullable_node_type()\n";
+	const String nullable_assignment_source = base_source + "func test() -> void:\n"
+															"\tvar node_handle: Type[Node] = Node\n"
+															"\tnode_handle = get_nullable_node_type()\n";
+	const String nullable_argument_source = base_source + "func accept_node_type(_klass: Type[Node]) -> void:\n"
+														  "\tpass\n\n"
+														  "func test() -> void:\n"
+														  "\taccept_node_type(get_nullable_node_type())\n";
+	const String nullable_callv_source = base_source + "func accept_node_type(_klass: Type[Node]) -> void:\n"
+													   "\tpass\n\n"
+													   "func test() -> void:\n"
+													   "\tcallv(\"accept_node_type\", [get_nullable_node_type()])\n";
+
+	check_source_error(nullable_initializer_source,
+			"Cannot assign nullable value of type \"Type[Node]?\" to variable \"node_handle\"; "
+			"expected non-nullable \"Type[Node]\".",
+			true);
+	check_source_error(nullable_assignment_source,
+			"Cannot assign nullable value of type \"Type[Node]?\" to variable \"node_handle\"; "
+			"expected non-nullable \"Type[Node]\".",
+			true);
+	check_source_error(nullable_argument_source,
+			"Cannot pass nullable value of type \"Type[Node]?\" as argument 1 of \"accept_node_type()\"; "
+			"expected non-nullable \"Type[Node]\".",
+			true);
+	check_source_error(nullable_callv_source,
+			"Cannot pass nullable value of type \"Type[Node]?\" as argument 1 of \"callv()\"; "
+			"expected non-nullable \"Type[Node]\".",
 			true);
 }
 
