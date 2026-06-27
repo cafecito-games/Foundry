@@ -265,7 +265,14 @@ class GDScriptAnalyzer {
 	void reject_named_call_arguments(const GDScriptParser::CallNode *p_call);
 	bool canonicalize_named_call_arguments(GDScriptParser::CallNode *p_call, const GDScriptParser::FunctionNode *p_function);
 	void validate_callable_array_literal_args(const Vector<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, GDScriptParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
-	String make_invalid_argument_error(const StringName &p_function, int p_argument_number, const GDScriptParser::DataType &p_expected_type, const GDScriptParser::DataType &p_actual_type, bool p_strict_dynamic_mismatch, bool p_strict_nullable_mismatch) const;
+	String make_invalid_argument_error(
+			const StringName &p_function,
+			int p_argument_number,
+			const GDScriptParser::DataType &p_expected_type,
+			const GDScriptParser::DataType &p_actual_type,
+			bool p_strict_dynamic_mismatch,
+			bool p_strict_nullable_mismatch,
+			const GDScriptParser::Node *p_actual_node = nullptr) const;
 	void validate_signal_connect_arg(const GDScriptParser::DataType &p_signal_type, const GDScriptParser::CallNode *p_call, int p_callable_arg_index = 0, bool p_require_explicit_signal = true);
 	void validate_signal_emit_args(const GDScriptParser::DataType &p_signal_type, const GDScriptParser::CallNode *p_call, int p_first_emit_arg_index);
 	void validate_local_object_signal_callable_arg(const GDScriptParser::CallNode *p_call, bool p_is_self);
