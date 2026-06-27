@@ -2797,8 +2797,10 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 		return;
 	}
 
-	// Static var initializers evaluate in declaration order before `_static_init`, so thread the
-	// assignment state through them just like instance member initializers.
+	// Only static var initializers participate in static initialization, evaluating in declaration
+	// order before `_static_init`. Instance var initializers run later, at instance construction,
+	// once every static final is already assigned, so they are not part of this flow and may freely
+	// read static finals.
 	FinalAssignmentState init_state;
 	LocalVector<const GDScriptParser::VariableNode *> blank_finals;
 	for (int i = 0; i < p_class->members.size(); i++) {
@@ -2807,6 +2809,9 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 			continue;
 		}
 		GDScriptParser::VariableNode *variable = member.variable;
+		if (!variable->is_static) {
+			continue;
+		}
 		if (variable->initializer != nullptr) {
 			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, init_state);
 		}
