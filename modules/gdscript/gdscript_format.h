@@ -134,6 +134,9 @@ private:
 	// indent, advancing the cursor. Used to keep comments that sit between an
 	// annotation and the node it annotates (and between successive annotations).
 	void flush_comments_until(int p_until_line);
+	// True when a full-line comment sits strictly between `p_after` and `p_before`.
+	// Lets an *empty* multi-line collection keep an interior comment (`[\n\t# c\n]`).
+	bool has_full_line_comment_between(int p_after, int p_before) const;
 	// A trivia line is a full-line comment or a recovered standalone annotation;
 	// `emit_trivia_line` emits whichever sits at `p_line` and advances the cursor.
 	bool is_trivia_line(int p_line) const;
@@ -226,7 +229,11 @@ private:
 	void print_delimited_items(const char *p_open, const char *p_close, int p_count, bool p_multiline,
 			int p_open_line, int p_close_line, EmitItem p_emit_item, ItemStartLine p_item_start_line, ItemEndLine p_item_end_line) {
 		write(p_open);
-		if (!p_multiline || p_count == 0) {
+		// An empty collection still needs the multi-line layout when it was authored
+		// multi-line with an interior comment, so the comment has a place to live.
+		const bool keep_multiline = p_multiline &&
+				(p_count > 0 || has_full_line_comment_between(p_open_line, p_close_line));
+		if (!keep_multiline) {
 			for (int i = 0; i < p_count; i++) {
 				if (i > 0) {
 					write(", ");
