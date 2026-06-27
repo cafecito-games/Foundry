@@ -46,6 +46,23 @@ EditorRunNative *EditorRunNative::singleton = nullptr;
 // Path to the project's run-target config, parallel to `export_presets.cfg`.
 static const char *RUN_TARGETS_CONFIG_PATH = "res://run_targets.cfg";
 
+// Whether an export preset with `p_name` currently exists. Mirrors the manager's
+// default name-based preset lookup so the menu can tell, without emitting resolve
+// errors every poll, whether a configured target still points at a live preset.
+static bool editor_has_export_preset(const String &p_name) {
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export == nullptr) {
+		return false;
+	}
+	for (int i = 0; i < editor_export->get_export_preset_count(); i++) {
+		const Ref<EditorExportPreset> preset = editor_export->get_export_preset(i);
+		if (preset.is_valid() && preset->get_name() == p_name) {
+			return true;
+		}
+	}
+	return false;
+}
+
 Vector<RunTargetMenuEntry> EditorRunNative::build_menu_model(const Vector<RunTarget> &p_targets, const HashMap<String, Vector<RunTargetDevice>> &p_devices_by_platform) {
 	Vector<RunTargetMenuEntry> entries;
 
@@ -173,8 +190,12 @@ void EditorRunNative::_rebuild_popup() {
 			}
 			devices_by_platform[candidate.key] = adapter->list_devices();
 		}
+		// A platform is owned (its legacy device rows suppressed) only when it has a
+		// target that can actually deploy — adapter registered and its export preset
+		// still present. A stale target pointing at a deleted/renamed preset must not
+		// hide the working legacy rows that can still deploy the project.
 		for (const RunTarget &target : run_target_manager.get_targets()) {
-			if (run_target_manager.get_platform(target.platform) != nullptr) {
+			if (run_target_manager.get_platform(target.platform) != nullptr && editor_has_export_preset(target.export_preset)) {
 				owned_platforms[target.platform] = true;
 			}
 		}
