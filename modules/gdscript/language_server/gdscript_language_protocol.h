@@ -104,12 +104,6 @@ private:
 	Error on_client_connected();
 	void on_client_disconnected(const int &p_client_id);
 
-	// Re-sync the global annotation index for `p_path` after `p_excluded_peer` stops managing it
-	// (didClose or disconnect). The index holds one version per path, so refresh it to a still-live
-	// source: another connected client's open buffer if one exists, otherwise the on-disk file. This
-	// avoids leaving the just-closed buffer's annotations stranded in the index.
-	void refresh_global_annotations_after_close(const String &p_path, const LSPeer *p_excluded_peer);
-
 	String process_message(const String &p_text);
 	String format_output(const String &p_text);
 

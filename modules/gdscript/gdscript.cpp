@@ -3282,29 +3282,22 @@ void GDScriptLanguage::get_global_annotations(const String &p_path, List<StringN
 		return;
 	}
 
-	get_global_annotations_from_source(file->get_as_utf8_string(), p_path, r_annotations);
-}
-
-Error GDScriptLanguage::get_global_annotations_from_source(const String &p_source, const String &p_path, List<StringName> *r_annotations) const {
-	ERR_FAIL_NULL_V(r_annotations, ERR_INVALID_PARAMETER);
-
 	// Like `get_global_class_name`, this must not rely on the analyzer: annotation declarations
 	// are indexed before dependencies are guaranteed to be resolvable. Unlike class-name
-	// extraction, a source that fails to parse is not indexed: a broken source cannot be a
+	// extraction, a file that fails to parse is not indexed: a broken source cannot be a
 	// reliable annotation library, and indexing partial declarations would surface spurious
-	// duplicate-identity collisions. Only the syntactic parse is consulted, so a source with
-	// valid declarations but unrelated analyzer errors is still indexed.
+	// duplicate-identity collisions. Only the syntactic parse is consulted (the analyzer is not
+	// run), so a file with valid declarations but unrelated analyzer errors is still indexed.
 	// The full body must be parsed because annotation declarations are root body declarations;
 	// the class-name fast path (which skips the body) would never see them.
 	GDScriptParser parser;
-	const Error parse_result = parser.parse(p_source, p_path, false, true);
-	if (parse_result != OK) {
-		return parse_result;
+	if (parser.parse(file->get_as_utf8_string(), p_path, false, true) != OK) {
+		return;
 	}
 
 	const GDScriptParser::ClassNode *root = parser.get_tree();
 	if (root == nullptr) {
-		return ERR_PARSE_ERROR;
+		return;
 	}
 
 	for (const GDScriptParser::AnnotationDeclarationNode *declaration : root->annotation_declarations) {
@@ -3313,7 +3306,6 @@ Error GDScriptLanguage::get_global_annotations_from_source(const String &p_sourc
 		}
 		r_annotations->push_back(StringName(declaration->qualified_name));
 	}
-	return OK;
 }
 
 void GDScriptLanguage::replace_global_annotations(const String &p_path, const List<StringName> &p_annotations) {
