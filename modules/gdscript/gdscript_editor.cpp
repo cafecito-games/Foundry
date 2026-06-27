@@ -4531,8 +4531,13 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 
 							// Final methods cannot be overridden, so never offer them as override
 							// candidates, and seal the name so ancestor declarations are also hidden.
-							if (member.function->is_final) {
-								sealed_overrides.insert(member.function->identifier->name);
+							// Constructors are exempt: `_init`/`_static_init` are not overrides (the
+							// analyzer skips the final-override check for them), so a subclass may
+							// declare its own even when an ancestor marks one final.
+							const StringName &member_name = member.function->identifier->name;
+							const bool is_constructor = member_name == SNAME("_init") || member_name == SNAME("_static_init");
+							if (member.function->is_final && !is_constructor) {
+								sealed_overrides.insert(member_name);
 								continue;
 							}
 
