@@ -883,12 +883,18 @@ void GDScriptParser::parse_program() {
 		switch (current.type) {
 			case GDScriptTokenizer::Token::FINAL: {
 				// A top-level `final` marks the whole-file head class final, but only when it
-				// immediately precedes the head keyword it applies to: `class_name`, `trait_name`, or
-				// `extends`. Otherwise it is an ordinary declaration modifier on the first body member;
-				// leave it unconsumed so `parse_class_body()` validates it through the shared collector.
+				// immediately precedes the head keyword it applies to: `class_name` or `extends`.
+				// Otherwise it is an ordinary declaration modifier on the first body member; leave it
+				// unconsumed so `parse_class_body()` validates it through the shared collector.
 				const GDScriptTokenizer::Token::Type next_type = peek().type;
+				if (next_type == GDScriptTokenizer::Token::TRAIT_NAME) {
+					// A trait is meant to be mixed in, so it cannot be final. Reject it here rather
+					// than marking the head final, mirroring how inline `final trait` is rejected.
+					advance();
+					push_error(R"(The "final" modifier cannot be applied to traits.)");
+					break;
+				}
 				if (next_type != GDScriptTokenizer::Token::CLASS_NAME &&
-						next_type != GDScriptTokenizer::Token::TRAIT_NAME &&
 						next_type != GDScriptTokenizer::Token::EXTENDS) {
 					can_have_class_or_extends = false;
 					break;
