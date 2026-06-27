@@ -10,7 +10,7 @@
     {
       "id": 2,
       "subject": "Task 2: Comment reattachment + blank-line normalization",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [1],
       "description": "**Goal:** Interleave comments from the line-keyed map at correct indent and normalize blank lines.\n\n**Files:**\n- Modify: modules/gdscript/gdscript_format.cpp, modules/gdscript/gdscript_format.h\n- Test: modules/gdscript/tests/test_format.h\n\n**Verify:** ./bin/godot.* --headless --test --test-suite=\"*Format*\"\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_format.cpp\", \"modules/gdscript/gdscript_format.h\", \"modules/gdscript/tests/test_format.h\"], \"verifyCommand\": \"./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --test-suite=\\\"*Format*\\\"\", \"acceptanceCriteria\": [\"full-line comments emitted before next node at its indent\", \"inline comments emitted as trailing two-space # comment\", \"comment-only files and trailing comments preserved\", \"blank runs collapse to one inside blocks; 2 between top-level defs, 1 between methods\", \"one space after # (preserve ## and #!)\"]}\n```"
     },

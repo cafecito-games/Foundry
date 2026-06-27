@@ -606,7 +606,7 @@ git commit -m "feat(gdscript): interleave comments and normalize blank lines in 
 - [ ] Single-quoted strings normalize to double quotes unless the content contains an unescaped `"` (then leave single). Escapes and contents are otherwise untouched.
 - [ ] Multi-line array/dictionary/argument literals get a trailing comma on the last element; single-line ones do not.
 - [ ] Numeric literals normalize casing: lowercase `0x`/`0b`/exponent `e`, hex digits uppercase (`0xFF`), preserve underscores.
-- [ ] Redundant parentheses policy: preserve as written in v1 (conservative); add a focused test locking this behavior so a future change is deliberate.
+- [ ] Parentheses are reconstructed by precedence, not preserved from source. The parser discards original parentheses (the AST has no paren node), so "preserve as written" is impossible — instead emit the **minimal** parentheses required by operator precedence and associativity so the formatted text re-parses to an identical tree. A child operand is wrapped in `()` iff its operator binds looser than the parent context requires (lower precedence, or equal precedence on the associativity-wrong side; also wrap a ternary/`await`/cast operand where grammar demands). This is a hard semantic-preservation requirement that Task 5's token-stream test enforces (`(1 + 2) * 3` must stay parenthesized; `1 + (2 * 3)` must drop to `1 + 2 * 3`).
 - [ ] Fork syntax spacing: `[T, U]` with `, ` and no inner padding; `[T: Bound]`; `AsyncCallable[[int, String], bool]` / `async func(...) -> ...` signatures spaced canonically; trait `uses`/declaration spacing.
 - [ ] No auto-wrap/auto-join: existing author line breaks within an expression are preserved.
 
@@ -659,6 +659,22 @@ Call it from `print_literal` for string tokens; numeric normalization (`canonica
 - [ ] **Step 4: Implement trailing-comma rule for collections/arguments**
 
 In array/dictionary/call/parameter printing, detect multi-line by comparing the node's `start_line` and `end_line`; when multi-line, emit each element on its own indented line with a trailing comma after the last. When single-line, keep `, ` separators and no trailing comma. (No new wrapping: only respect the author's existing multi-line layout.)
+
+- [ ] **Step 4b: Reconstruct minimal precedence parentheses**
+
+The parser drops parens, so binary/unary/ternary/cast/await printing must re-insert exactly the parens needed. Give each expression a precedence rank (mirror the parser's `GDScriptParser::Precedence` ordering — read it from `gdscript_parser.h`/`.cpp` rather than re-deriving) and, when printing an operand, wrap it in `()` when its rank is lower than the parent's, or equal-rank on the side that associativity would otherwise re-group. Centralize this in a `print_operand(parent_context, child)` helper so every operator site uses the same rule. Add tests:
+
+```cpp
+TEST_CASE("[Format] Keeps parentheses required by precedence") {
+	CHECK_EQ(format_or_fail("var n = (1 + 2) * 3\n"), "var n = (1 + 2) * 3\n");
+}
+TEST_CASE("[Format] Drops parentheses not required by precedence") {
+	CHECK_EQ(format_or_fail("var n = 1 + (2 * 3)\n"), "var n = 1 + 2 * 3\n");
+}
+TEST_CASE("[Format] Keeps parentheses for left-associativity grouping") {
+	CHECK_EQ(format_or_fail("var n = 1 - (2 - 3)\n"), "var n = 1 - (2 - 3)\n");
+}
+```
 
 - [ ] **Step 5: Lock fork-syntax spacing**
 
