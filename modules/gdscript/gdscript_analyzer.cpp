@@ -1222,9 +1222,10 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				return bad_type;
 			}
 			result.kind = GDScriptParser::DataType::VARIANT;
-		} else if (GDScriptParser::get_builtin_type(first) < Variant::VARIANT_MAX) {
-			// Built-in types.
-			const Variant::Type builtin_type = GDScriptParser::get_builtin_type(first);
+		} else if (GDScriptParser::get_builtin_type(first) < Variant::VARIANT_MAX || first == SNAME("AsyncCallable")) {
+			// Built-in types. AsyncCallable is an async-marked alias of Callable.
+			const bool is_async_callable = first == SNAME("AsyncCallable");
+			const Variant::Type builtin_type = is_async_callable ? Variant::CALLABLE : GDScriptParser::get_builtin_type(first);
 
 			if (p_type->type_chain.size() == 2) {
 				// May be nested enum.
@@ -1245,6 +1246,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.builtin_type = builtin_type;
 
 			if (builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) {
+				result.signature_is_async = is_async_callable;
 				if (p_type->has_signature) {
 					result.has_method_signature = true;
 					result.has_explicit_method_signature = true;

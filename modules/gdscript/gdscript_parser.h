@@ -150,6 +150,7 @@ public:
 		MethodInfo method_info; // For callable/signals.
 		bool has_method_signature = false; // Whether method_info participates in callable/signal type checks.
 		bool has_explicit_method_signature = false; // Whether the signature came from a Callable/Signal type annotation.
+		bool signature_is_async = false; // Whether the callable type was written as AsyncCallable rather than Callable.
 		Vector<DataType> method_parameter_types; // Rich GDScript signature preserving metadata MethodInfo cannot store.
 		Vector<DataType> method_return_type; // Empty for signals, one element for callables.
 		Vector<int> method_extra_allowed_argument_counts; // Extra exact arities not expressible by default arguments, for transformed Callables.
@@ -306,6 +307,7 @@ public:
 			method_info = p_other.method_info;
 			has_method_signature = p_other.has_method_signature;
 			has_explicit_method_signature = p_other.has_explicit_method_signature;
+			signature_is_async = p_other.signature_is_async;
 			method_parameter_types = p_other.method_parameter_types;
 			method_return_type = p_other.method_return_type;
 			method_extra_allowed_argument_counts = p_other.method_extra_allowed_argument_counts;
@@ -1428,6 +1430,7 @@ public:
 		Vector<TypeNode *> signature_parameter_types;
 		TypeNode *signature_return_type = nullptr;
 		bool has_signature = false;
+		bool signature_is_async = false; // Set when the type was written as AsyncCallable.
 		bool is_nullable = false;
 
 		TypeNode *get_container_type_or_null(int p_index) const {
