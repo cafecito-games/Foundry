@@ -42,6 +42,7 @@
 #include "tests/editor/run/test_ios_run_target_platform.h"
 #include "tests/editor/run/test_run_target.h"
 #include "tests/editor/run/test_run_target_readiness.h"
+#include "tests/editor/run/test_run_targets_panel.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_refactor_diff_preview.h"
 #include "tests/editor/test_script_refactor_apply.h"

@@ -64,7 +64,17 @@ public:
 	}
 };
 
+RunTargetManager *singleton = nullptr;
+
 } // namespace
+
+RunTargetManager *RunTargetManager::get_singleton() {
+	return singleton;
+}
+
+void RunTargetManager::set_singleton(RunTargetManager *p_manager) {
+	singleton = p_manager;
+}
 
 void RunTargetManager::register_platform(const String &p_platform, RunTargetPlatform *p_adapter) {
 	ERR_FAIL_NULL(p_adapter);
