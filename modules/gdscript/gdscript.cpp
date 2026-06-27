@@ -170,6 +170,10 @@ Array GDScriptMethodDescriptor::get_default_arguments() const {
 
 Dictionary GDScriptMethodDescriptor::to_dictionary() const {
 	Dictionary descriptor(method_info);
+	// Dictionary(MethodInfo) shallow-copies default_arguments, so an Array/Dictionary default would
+	// alias this descriptor's stored metadata. Replace it with the deep-copied snapshot to keep the
+	// returned Dictionary read-only.
+	descriptor["default_args"] = get_default_arguments();
 	// Mirror the loosely-keyed `get_methods()` descriptor: GDScript methods carry an `annotations` key
 	// (empty when the method has none); native methods omit it to preserve the historical shape.
 	// Duplicate so the returned Dictionary never aliases this read-only descriptor's stored array.
