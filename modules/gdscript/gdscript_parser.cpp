@@ -1608,8 +1608,8 @@ void GDScriptParser::parse_annotation_declaration_targets(AnnotationDeclarationN
 		uint32_t target_bit = AnnotationDeclarationNode::TARGET_NONE;
 		String target_name;
 
-		// Target names (`CLASS`, `METHOD`, `VARIABLE`) are uppercase, so they arrive as
-		// ordinary identifiers rather than the lowercase `class` keyword token.
+		// Target names (`CLASS`, `METHOD`, `VARIABLE`, `SIGNAL`, `CONSTANT`) are uppercase, so they
+		// arrive as ordinary identifiers rather than the lowercase keyword tokens.
 		if (match(GDScriptTokenizer::Token::IDENTIFIER)) {
 			target_name = previous.get_identifier();
 			if (target_name == "CLASS") {
@@ -1618,8 +1618,12 @@ void GDScriptParser::parse_annotation_declaration_targets(AnnotationDeclarationN
 				target_bit = AnnotationDeclarationNode::TARGET_METHOD;
 			} else if (target_name == "VARIABLE") {
 				target_bit = AnnotationDeclarationNode::TARGET_VARIABLE;
+			} else if (target_name == "SIGNAL") {
+				target_bit = AnnotationDeclarationNode::TARGET_SIGNAL;
+			} else if (target_name == "CONSTANT") {
+				target_bit = AnnotationDeclarationNode::TARGET_CONSTANT;
 			} else {
-				push_error(vformat(R"(Unknown annotation target "%s". Expected "CLASS", "METHOD", or "VARIABLE".)", target_name));
+				push_error(vformat(R"(Unknown annotation target "%s". Expected "CLASS", "METHOD", "VARIABLE", "SIGNAL", or "CONSTANT".)", target_name));
 			}
 		} else {
 			push_error(R"(Expected an annotation target name.)");
@@ -5127,11 +5131,11 @@ bool GDScriptParser::AnnotationNode::apply(GDScriptParser *p_this, Node *p_targe
 bool GDScriptParser::AnnotationNode::applies_to(uint32_t p_target_kinds) const {
 	if (info == nullptr) {
 		// Unresolved custom annotation usage. The exact declaration is resolved by the analyzer
-		// later, but custom annotations only ever target the v1 surface (class, method, member
-		// variable), so the parser attaches to those positions and keeps the existing placement
-		// diagnostic for anything else (constants, signals, enums, statements, standalone slots,
+		// later, but custom annotations only ever target the declaration surface (class, method,
+		// member variable, signal, constant), so the parser attaches to those positions and keeps
+		// the existing placement diagnostic for anything else (enums, statements, standalone slots,
 		// script level, or a pending annotation before an `annotation` declaration).
-		const uint32_t custom_targets = AnnotationInfo::CLASS | AnnotationInfo::VARIABLE | AnnotationInfo::FUNCTION;
+		const uint32_t custom_targets = AnnotationInfo::CLASS | AnnotationInfo::VARIABLE | AnnotationInfo::FUNCTION | AnnotationInfo::SIGNAL | AnnotationInfo::CONSTANT;
 		return (p_target_kinds & custom_targets) != 0;
 	}
 	return (info->target_kind & p_target_kinds) > 0;
@@ -6797,6 +6801,14 @@ void GDScriptParser::TreePrinter::print_annotation_declaration(AnnotationDeclara
 	}
 	if (targets & AnnotationDeclarationNode::TARGET_VARIABLE) {
 		push_text(first ? "VARIABLE" : ", VARIABLE");
+		first = false;
+	}
+	if (targets & AnnotationDeclarationNode::TARGET_SIGNAL) {
+		push_text(first ? "SIGNAL" : ", SIGNAL");
+		first = false;
+	}
+	if (targets & AnnotationDeclarationNode::TARGET_CONSTANT) {
+		push_text(first ? "CONSTANT" : ", CONSTANT");
 		first = false;
 	}
 

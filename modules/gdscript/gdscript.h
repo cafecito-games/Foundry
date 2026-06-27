@@ -227,11 +227,13 @@ private:
 	Dictionary rpc_config;
 
 	// Passive custom annotation metadata resolved by the analyzer and persisted by the compiler.
-	// Class annotations are direct-only; method/variable tables include concrete trait-flattened
-	// members. Built-in annotations are never recorded here.
+	// Class annotations are direct-only; method/variable/signal/constant tables include concrete
+	// trait-flattened members. Built-in annotations are never recorded here.
 	Vector<AnnotationUsage> class_annotations;
 	HashMap<StringName, Vector<AnnotationUsage>> method_annotations;
 	HashMap<StringName, Vector<AnnotationUsage>> variable_annotations;
+	HashMap<StringName, Vector<AnnotationUsage>> signal_annotations;
+	HashMap<StringName, Vector<AnnotationUsage>> constant_annotations;
 
 public:
 	struct LambdaInfo {
@@ -393,6 +395,9 @@ public:
 	_FORCE_INLINE_ const Vector<AnnotationUsage> &get_class_annotations() const { return class_annotations; }
 	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_method_annotations() const { return method_annotations; }
 	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_variable_annotations() const { return variable_annotations; }
+	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_signal_annotations() const { return signal_annotations; }
+	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_constant_annotations() const { return constant_annotations; }
+	_FORCE_INLINE_ const HashMap<StringName, MethodInfo> &get_signals() const { return _signals; }
 	_FORCE_INLINE_ const HashMap<GDScriptFunction *, LambdaInfo> &get_lambda_info() const { return lambda_info; }
 
 	_FORCE_INLINE_ const GDScriptFunction *get_implicit_initializer() const { return implicit_initializer; }
