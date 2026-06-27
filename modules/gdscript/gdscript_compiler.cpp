@@ -73,6 +73,46 @@ bool GDScriptCompiler::_is_local_or_parameter(CodeGen &codegen, const StringName
 	return codegen.parameters.has(p_name) || codegen.locals.has(p_name);
 }
 
+static GDScriptParser::DataType _class_type_parameter_handle(const GDScriptParser::TypeParameterNode *p_parameter, int p_index) {
+	GDScriptParser::DataType type;
+	type.kind = GDScriptParser::DataType::TYPE_PARAMETER;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	if (p_parameter != nullptr && p_parameter->identifier != nullptr) {
+		type.type_parameter_name = p_parameter->identifier->name;
+	}
+	type.type_parameter_scope = GDScriptParser::DataType::TYPE_PARAMETER_CLASS;
+	type.type_parameter_index = p_index;
+	if (p_parameter != nullptr && !p_parameter->resolved_bound.has_no_type()) {
+		type.type_parameter_bound.push_back(p_parameter->resolved_bound);
+	}
+	return type;
+}
+
+static GDScriptParser::DataType _self_type_for_class(const GDScriptParser::ClassNode *p_class) {
+	GDScriptParser::DataType self_type;
+	if (p_class != nullptr) {
+		self_type = p_class->get_datatype();
+		self_type.is_meta_type = false;
+		self_type.type_arguments.clear();
+		for (int i = 0; i < p_class->type_parameters.size(); i++) {
+			self_type.type_arguments.push_back(_class_type_parameter_handle(p_class->type_parameters[i], i));
+		}
+	}
+	return self_type;
+}
+
+static GDScriptParser::DataType _substitute_self_type_parameter_for_class(
+		const GDScriptParser::DataType &p_type,
+		const GDScriptParser::ClassNode *p_class) {
+	GDScriptParser::DataType self_type = _self_type_for_class(p_class);
+	if (!self_type.is_set()) {
+		return p_type;
+	}
+	HashMap<StringName, GDScriptParser::DataType> bindings;
+	bindings.insert(SNAME("@Self"), self_type);
+	return GDScriptParser::DataType::substitute(p_type, bindings);
+}
+
 void GDScriptCompiler::_set_error(const String &p_error, const GDScriptParser::Node *p_node) {
 	if (!error.is_empty()) {
 		return;
@@ -234,6 +274,19 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.builtin_type = p_datatype.builtin_type;
 			break;
 		case GDScriptParser::DataType::TYPE_PARAMETER: {
+			if (p_datatype.type_parameter_name == SNAME("@Self") && p_owner != nullptr) {
+				if (p_handle_metatype && p_datatype.is_type_handle_annotation) {
+					result.kind = GDScriptDataType::NATIVE;
+					result.builtin_type = Variant::OBJECT;
+					result.native_type = Object::get_class_static();
+					break;
+				}
+				result.kind = GDScriptDataType::GDSCRIPT;
+				result.builtin_type = Variant::OBJECT;
+				result.script_type = p_owner;
+				result.native_type = p_owner->get_instance_base_type();
+				break;
+			}
 			// Plain `T` is erased to Variant. `Type[T]` cannot preserve the represented method parameter
 			// at runtime, but it can still enforce that the value is a class handle.
 			if (p_handle_metatype && p_datatype.is_type_handle_annotation) {
@@ -2916,6 +2969,7 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	bool is_static = false;
 	Variant rpc_config;
 	GDScriptDataType return_type;
+	GDScriptParser::DataType function_datatype;
 	return_type.kind = GDScriptDataType::BUILTIN;
 	return_type.builtin_type = Variant::NIL;
 
@@ -2928,7 +2982,8 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 		is_abstract = p_func->is_abstract;
 		is_static = p_func->is_static;
 		rpc_config = p_func->rpc_config;
-		return_type = _gdtype_from_datatype(p_func->get_datatype(), p_script);
+		function_datatype = _substitute_self_type_parameter_for_class(p_func->get_datatype(), p_class);
+		return_type = _gdtype_from_datatype(function_datatype, p_script);
 	} else {
 		if (p_for_ready) {
 			func_name = "@implicit_ready";
@@ -2959,11 +3014,12 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	if (p_func) {
 		for (int i = 0; i < p_func->parameters.size(); i++) {
 			const GDScriptParser::ParameterNode *parameter = p_func->parameters[i];
-			GDScriptDataType par_type = _gdtype_from_datatype(parameter->get_datatype(), p_script);
+			const GDScriptParser::DataType parameter_datatype = _substitute_self_type_parameter_for_class(parameter->get_datatype(), p_class);
+			GDScriptDataType par_type = _gdtype_from_datatype(parameter_datatype, p_script);
 			uint32_t par_addr = codegen.generator->add_parameter(parameter->identifier->name, parameter->initializer != nullptr, par_type);
 			codegen.parameters[parameter->identifier->name] = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::FUNCTION_PARAMETER, par_addr, par_type);
 
-			method_info.arguments.push_back(parameter->get_datatype().to_property_info(parameter->identifier->name));
+			method_info.arguments.push_back(parameter_datatype.to_property_info(parameter->identifier->name));
 
 			if (parameter->initializer != nullptr) {
 				optional_parameters++;
@@ -3162,8 +3218,8 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	if (p_func) {
 		// Abstract functions have no executable body, but MethodInfo must still expose annotated return contracts.
 		if ((p_func->is_abstract && p_func->return_type != nullptr) || p_func->body->has_return) {
-			gd_function->return_type = _gdtype_from_datatype(p_func->get_datatype(), p_script);
-			method_info.return_val = p_func->get_datatype().to_property_info(String());
+			gd_function->return_type = _gdtype_from_datatype(function_datatype, p_script);
+			method_info.return_val = function_datatype.to_property_info(String());
 		} else {
 			// If no `return` statement, then return type is `void`, not `Variant`.
 			gd_function->return_type = GDScriptDataType();
@@ -3669,9 +3725,9 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 						}
 						break;
 				}
-				minfo.data_type = _gdtype_from_datatype(variable->get_datatype(), p_script);
+				const GDScriptParser::DataType member_datatype = _substitute_self_type_parameter_for_class(variable->get_datatype(), p_class);
+				minfo.data_type = _gdtype_from_datatype(member_datatype, p_script);
 
-				const GDScriptParser::DataType member_datatype = variable->get_datatype();
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
 						member_datatype.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
 						member_datatype.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
@@ -3685,7 +3741,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 					minfo.type_argument_binding.leaf_ordinal = member_datatype.type_parameter_index;
 				}
 
-				PropertyInfo prop_info = variable->get_datatype().to_property_info(name);
+				PropertyInfo prop_info = member_datatype.to_property_info(name);
 				PropertyInfo export_info = variable->export_info;
 
 				if (variable->exported) {

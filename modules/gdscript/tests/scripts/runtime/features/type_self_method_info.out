@@ -1,0 +1,3 @@
+GDTEST_OK
+func clone() -> TypeSelfMethodInfo
+func copy(other: TypeSelfMethodInfo) -> void

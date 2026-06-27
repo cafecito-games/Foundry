@@ -6405,7 +6405,7 @@ String GDScriptParser::DataType::to_string() const {
 			break;
 		}
 		case TYPE_PARAMETER:
-			result = type_parameter_name.operator String();
+			result = type_parameter_name == SNAME("@Self") ? "Self" : type_parameter_name.operator String();
 			break;
 		case RESOLVING:
 		case UNRESOLVED:
