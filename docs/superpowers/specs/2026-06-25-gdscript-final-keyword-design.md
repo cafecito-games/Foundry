@@ -153,7 +153,16 @@ flowing *out* from the set flowing *in*:
 - **Terminators** (`return`, `break`, `continue`, fatal aborts): mark the path
   **unreachable**. An unreachable path's out-set is the universal set (⊤), which
   is neutral under intersection at the join. This is what lets
-  `if cond: id = a else: return` count `id` as definitely assigned afterward.
+  `if cond: x = a else: <fatal>` count `x` as definitely assigned afterward
+  (e.g. for a local, or after a branch that aborts via `@noreturn`/`push_fatal`).
+- **`return` from `_init()`/`_static_init()` is an escape point.** Unlike a fatal
+  abort, a `return` still produces a fully constructed object (or loaded class),
+  so a blank final left unassigned on that path would escape at its default value.
+  Following Java's blank-final-in-constructor rule, every blank final member must
+  be definitely assigned *before* each `return` that exits initialization; a
+  `return` that leaves one unassigned is an error at the `return`. (Join
+  neutrality above still governs the *after-state* used for locals and for reads
+  past the join — it is not a license to skip this escape-point check.)
 
 **Where it runs.** A focused traversal invoked from the analyzer once a class's
 members and `_init` are resolved: seed `assigned` with all initialized finals,
@@ -203,14 +212,16 @@ the headless runner.
 - Reassign an initialized final; double-assign a blank final (initializer +
   `_init`); assign a final member outside `_init`.
 - Blank final not assigned on every `_init` path (missing `else`, non-wildcard
-  `match`, assignment only inside a loop body).
+  `match`, assignment only inside a loop body, early `return` that leaves it
+  unassigned).
 - Read a blank final before assignment; local final reassignment and
   use-before-assign.
 
 **Positive fixtures (must compile & run):**
 
 - Blank final assigned once in `_init`; assigned in both arms of `if/else`;
-  assigned-or-`return` pattern (unreachable-path neutrality); wildcard `match`.
+  assigned before an early `return`; assign-or-abort pattern (a branch that ends
+  in `@noreturn`/`push_fatal` is exempt); wildcard `match`.
 - `final func` overriding a non-final parent; `final static var` with
   initializer; `final` local assigned once then read.
 
