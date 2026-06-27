@@ -38,6 +38,7 @@
 
 #include "editor/export/editor_export_platform.h"
 #include "editor/export/editor_export_preset.h"
+#include "editor/settings/editor_settings.h"
 
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
@@ -332,6 +333,14 @@ TEST_CASE("[Editor][RunTarget] Manager resolves a target to its preset, device, 
 	RunTarget target = make_target("My iPhone");
 	target.device_id = "00008110-000000000000000E";
 
+	// `[Editor]` tests create EditorSettings, and `compute_debug_flags` reads the
+	// shared "Deploy Remote Debug" project setting. Pin it so the assertion below
+	// does not depend on a stray on-disk project_metadata.cfg, and restore it.
+	EditorSettings *settings = EditorSettings::get_singleton();
+	REQUIRE(settings != nullptr);
+	const Variant previous_remote_debug = settings->get_project_metadata("debug_options", "run_deploy_remote_debug", true);
+	settings->set_project_metadata("debug_options", "run_deploy_remote_debug", true);
+
 	RunTargetManager::ResolvedTarget resolved;
 	const Error error = manager.resolve(target, resolved);
 
@@ -341,8 +350,17 @@ TEST_CASE("[Editor][RunTarget] Manager resolves a target to its preset, device, 
 	CHECK_EQ(resolved.preset, provider.presets["iOS"]);
 	CHECK_EQ(resolved.device_id, "00008110-000000000000000E");
 	CHECK_EQ(resolved.platform_adapter, &ios);
-	// A run-target deploy always wires the running app back to the editor debugger.
+	// A run-target deploy wires the running app back to the editor debugger when
+	// the user has not opted out.
 	CHECK((resolved.debug_flags & EditorExportPlatform::DEBUG_FLAG_REMOTE_DEBUG) != 0);
+
+	// Opting out of remote debug clears the flag, matching the native deploy path.
+	settings->set_project_metadata("debug_options", "run_deploy_remote_debug", false);
+	RunTargetManager::ResolvedTarget opted_out;
+	CHECK_EQ(manager.resolve(target, opted_out), OK);
+	CHECK((opted_out.debug_flags & EditorExportPlatform::DEBUG_FLAG_REMOTE_DEBUG) == 0);
+
+	settings->set_project_metadata("debug_options", "run_deploy_remote_debug", previous_remote_debug);
 }
 
 TEST_CASE("[Editor][RunTarget] Resolving a target whose export preset is gone fails gracefully") {
