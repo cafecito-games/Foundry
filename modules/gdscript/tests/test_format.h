@@ -872,6 +872,20 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		CHECK_FALSE(diff_options.read_stdin);
 	}
 
+	TEST_CASE("[Format] CLI option parsing flags mixed stdin and paths") {
+		// `--gdscript-format - file.gd` requests both stdin and a path. `run_from_cmdline`
+		// rejects this state (it would otherwise silently format only stdin and drop the
+		// file); the parser surfaces it as `read_stdin` with a non-empty `paths`.
+		List<String> mixed;
+		mixed.push_back("--gdscript-format");
+		mixed.push_back("-");
+		mixed.push_back("file.gd");
+		GDScriptFormatterCLI::Options options = GDScriptFormatterCLI::parse_options(mixed);
+		CHECK(options.read_stdin);
+		REQUIRE_EQ(options.paths.size(), 1);
+		CHECK_EQ(options.paths[0], "file.gd");
+	}
+
 	TEST_CASE("[Format] Class annotation is emitted after namespace and re-parses") {
 		// Regression: class-level annotations must follow `namespace`/`import`;
 		// emitting them first is rejected ("Class annotations must appear after
