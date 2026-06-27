@@ -3430,6 +3430,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 
 	p_script->tool = parser->is_tool();
 	p_script->_is_abstract = p_class->is_abstract;
+	p_script->_is_final = p_class->is_final;
 	p_script->_is_trait_type = p_class->is_trait;
 	p_script->trait_type_name = p_class->is_trait ? gdscript_trait_identity_name(p_class) : StringName();
 
@@ -3495,6 +3496,14 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 					_set_error(vformat(R"(Could not populate class members of base class "%s" in "%s".)", base->fully_qualified_name, base->path), nullptr);
 					return err;
 				}
+			}
+
+			// Backstop for dynamically loaded scripts that bypass the analyzer: a final base
+			// cannot be extended. The analyzer rejects this for statically analyzed scripts;
+			// this load-time guard covers the runtime `load()`/`reload()` path.
+			if (base->is_final()) {
+				_set_error(vformat(R"(Cannot extend final class "%s".)", base->fully_qualified_name.is_empty() ? base->path : base->fully_qualified_name), p_class);
+				return ERR_PARSE_ERROR;
 			}
 
 			p_script->base = base;
