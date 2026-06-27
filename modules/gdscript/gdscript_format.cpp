@@ -192,8 +192,6 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 GDScriptPrinter::GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
 		const HashMap<uint64_t, LiteralToken> &p_literals) :
 		comments(p_comments), literals(p_literals) {
-	// Comment interleaving consumes `comments`; it is wired in a later task.
-	(void)comments;
 }
 
 void GDScriptPrinter::write_indent() {
@@ -208,6 +206,201 @@ void GDScriptPrinter::write(const String &p_text) {
 
 void GDScriptPrinter::newline() {
 	output += "\n";
+}
+
+String GDScriptPrinter::normalize_comment_text(const String &p_raw) const {
+	// `p_raw` includes the leading `#`. Doc comments (`##`) and shebang-style
+	// first lines (`#!`) are preserved verbatim apart from trailing whitespace;
+	// every other comment gets exactly one space after the `#`.
+	if (p_raw.begins_with("##") || p_raw.begins_with("#!")) {
+		return p_raw.strip_edges(false, true);
+	}
+	const String body = p_raw.substr(1).strip_edges();
+	if (body.is_empty()) {
+		return "#";
+	}
+	return "# " + body;
+}
+
+bool GDScriptPrinter::is_full_line_comment(int p_line) const {
+	HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(p_line);
+	return found && found->value.new_line;
+}
+
+// Emits the full-line comments and the normalized blank lines that sit between
+// the last emitted source line and `p_next_line` (exclusive). `p_required_blanks`
+// is the structural minimum to enforce before the first emitted piece (comment
+// or the upcoming node); runs of blank lines otherwise collapse to a single one,
+// and the very top of the file never gains leading blanks.
+void GDScriptPrinter::emit_leading_trivia(int p_next_line, int p_required_blanks) {
+	const bool at_file_start = last_emitted_line == 0;
+	int line = last_emitted_line + 1;
+	bool first_piece = true;
+	bool done = false;
+	while (!done) {
+		int blank_run = 0;
+		while (line < p_next_line && !is_full_line_comment(line)) {
+			blank_run++;
+			line++;
+		}
+		const bool comment_follows = line < p_next_line;
+
+		int blanks;
+		if (first_piece) {
+			if (at_file_start) {
+				blanks = 0;
+			} else if (p_required_blanks > 0) {
+				blanks = p_required_blanks;
+			} else {
+				blanks = blank_run > 0 ? 1 : 0;
+			}
+		} else {
+			blanks = blank_run > 0 ? 1 : 0;
+		}
+		for (int i = 0; i < blanks; i++) {
+			newline();
+		}
+		first_piece = false;
+
+		if (comment_follows) {
+			HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(line);
+			write_indent();
+			write(normalize_comment_text(found->value.comment));
+			newline();
+			last_emitted_line = line;
+			line++;
+		} else {
+			done = true;
+		}
+	}
+}
+
+// Appends an inline comment (` # ...`) to the just-emitted line. The caller emits
+// the code line first; this rewrites its trailing newline so the comment trails
+// the code with the canonical two-space gap.
+void GDScriptPrinter::emit_trailing_comment(int p_line) {
+	HashMap<int, GDScriptTokenizer::CommentData>::ConstIterator found = comments.find(p_line);
+	if (!found || found->value.new_line) {
+		return;
+	}
+	if (output.ends_with("\n")) {
+		output = output.substr(0, output.length() - 1);
+	}
+	write("  ");
+	write(normalize_comment_text(found->value.comment));
+	newline();
+	if (p_line > last_emitted_line) {
+		last_emitted_line = p_line;
+	}
+}
+
+void GDScriptPrinter::flush_tail_comments() {
+	int max_line = 0;
+	for (const KeyValue<int, GDScriptTokenizer::CommentData> &entry : comments) {
+		if (entry.value.new_line && entry.key > max_line) {
+			max_line = entry.key;
+		}
+	}
+	if (max_line > last_emitted_line) {
+		emit_leading_trivia(max_line + 1, 0);
+	}
+}
+
+const GDScriptParser::Node *GDScriptPrinter::member_node(const GDScriptParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::CLASS:
+			return p_member.m_class;
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+			return p_member.constant;
+		case GDScriptParser::ClassNode::Member::FUNCTION:
+			return p_member.function;
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			return p_member.signal;
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+			return p_member.variable;
+		case GDScriptParser::ClassNode::Member::ENUM:
+			return p_member.m_enum;
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+			return p_member.enum_value.parent_enum;
+		case GDScriptParser::ClassNode::Member::GROUP:
+			return p_member.annotation;
+		case GDScriptParser::ClassNode::Member::UNDEFINED:
+			return nullptr;
+	}
+	return nullptr;
+}
+
+int GDScriptPrinter::member_start_line(const GDScriptParser::ClassNode::Member &p_member) {
+	const GDScriptParser::Node *node = member_node(p_member);
+	if (node == nullptr) {
+		return 0;
+	}
+	int start = node->start_line;
+
+	const List<GDScriptParser::AnnotationNode *> *annotations = nullptr;
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::CLASS:
+			annotations = &p_member.m_class->annotations;
+			break;
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+			annotations = &p_member.constant->annotations;
+			break;
+		case GDScriptParser::ClassNode::Member::FUNCTION:
+			annotations = &p_member.function->annotations;
+			break;
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			annotations = &p_member.signal->annotations;
+			break;
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+			annotations = &p_member.variable->annotations;
+			break;
+		case GDScriptParser::ClassNode::Member::ENUM:
+			annotations = &p_member.m_enum->annotations;
+			break;
+		case GDScriptParser::ClassNode::Member::GROUP:
+			annotations = &p_member.annotation->annotations;
+			break;
+		default:
+			break;
+	}
+	if (annotations != nullptr) {
+		for (const GDScriptParser::AnnotationNode *annotation : *annotations) {
+			if (annotation->start_line > 0 && annotation->start_line < start) {
+				start = annotation->start_line;
+			}
+		}
+	}
+	return start;
+}
+
+bool GDScriptPrinter::member_is_definition(const GDScriptParser::ClassNode::Member &p_member) {
+	return p_member.type == GDScriptParser::ClassNode::Member::FUNCTION ||
+			p_member.type == GDScriptParser::ClassNode::Member::CLASS;
+}
+
+void GDScriptPrinter::header_line_range(const GDScriptParser::ClassNode *p_class, int &r_min_line, int &r_max_line) {
+	r_min_line = 0;
+	r_max_line = 0;
+	const auto consider = [&](int p_line) {
+		if (p_line <= 0) {
+			return;
+		}
+		if (r_min_line == 0 || p_line < r_min_line) {
+			r_min_line = p_line;
+		}
+		if (p_line > r_max_line) {
+			r_max_line = p_line;
+		}
+	};
+	for (const GDScriptParser::AnnotationNode *annotation : p_class->annotations) {
+		consider(annotation->start_line);
+	}
+	if (p_class->identifier != nullptr) {
+		consider(p_class->identifier->start_line);
+	}
+	for (int i = 0; i < p_class->extends.size(); i++) {
+		consider(p_class->extends[i]->start_line);
+	}
 }
 
 String GDScriptPrinter::print_tree(const GDScriptParser::ClassNode *p_root, bool p_is_tool) {
@@ -250,11 +443,24 @@ void GDScriptPrinter::print_extends_clause(const GDScriptParser::ClassNode *p_cl
 
 void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool p_is_root, bool p_is_tool) {
 	if (p_is_root) {
-		print_class_header(p_class, p_is_tool);
-		for (const GDScriptParser::AnnotationDeclarationNode *declaration : p_class->annotation_declarations) {
-			print_annotation_declaration(declaration);
+		int header_min_line = 0;
+		int header_max_line = 0;
+		header_line_range(p_class, header_min_line, header_max_line);
+		if (header_min_line > 0) {
+			emit_leading_trivia(header_min_line, 0);
 		}
-		print_class_body(p_class);
+		print_class_header(p_class, p_is_tool);
+		if (header_max_line > last_emitted_line) {
+			last_emitted_line = header_max_line;
+		}
+		for (const GDScriptParser::AnnotationDeclarationNode *declaration : p_class->annotation_declarations) {
+			if (declaration->start_line > 0) {
+				emit_leading_trivia(declaration->start_line, 0);
+			}
+			print_annotation_declaration(declaration);
+			last_emitted_line = declaration->end_line;
+		}
+		print_class_body(p_class, true);
 		return;
 	}
 
@@ -275,8 +481,9 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 	}
 	write(":");
 	newline();
+	last_emitted_line = p_class->start_line;
 	indent_level++;
-	print_class_body(p_class);
+	print_class_body(p_class, false);
 	indent_level--;
 }
 
@@ -351,9 +558,41 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 	}
 }
 
-void GDScriptPrinter::print_class_body(const GDScriptParser::ClassNode *p_class) {
+void GDScriptPrinter::print_class_body(const GDScriptParser::ClassNode *p_class, bool p_is_root) {
+	const GDScriptParser::ClassNode::Member *previous = nullptr;
 	for (int i = 0; i < p_class->members.size(); i++) {
-		print_member(p_class->members[i]);
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		// Unnamed enum values are flattened into the class; only the first one
+		// renders (it reconstructs the whole `enum { ... }`), so skip the rest.
+		if (member.type == GDScriptParser::ClassNode::Member::ENUM_VALUE && member.enum_value.index != 0) {
+			continue;
+		}
+
+		const GDScriptParser::Node *node = member_node(member);
+		const int start_line = member_start_line(member);
+
+		int required_blanks = 0;
+		if (previous != nullptr) {
+			const bool definition = member_is_definition(member) || member_is_definition(*previous);
+			required_blanks = definition ? (p_is_root ? 2 : 1) : 0;
+		}
+		if (start_line > 0) {
+			emit_leading_trivia(start_line, required_blanks);
+		}
+
+		print_member(member);
+
+		if (node != nullptr) {
+			if (node->start_line == node->end_line) {
+				emit_trailing_comment(node->end_line);
+			}
+			last_emitted_line = node->end_line;
+		}
+		previous = &member;
+	}
+
+	if (p_is_root) {
+		flush_tail_comments();
 	}
 }
 
@@ -518,6 +757,7 @@ void GDScriptPrinter::print_function(const GDScriptParser::FunctionNode *p_funct
 	if (p_function->is_abstract || p_function->body == nullptr) {
 		return; // Abstract methods have no body.
 	}
+	last_emitted_line = p_function->start_line;
 	indent_level++;
 	print_suite(p_function->body);
 	indent_level--;
@@ -558,12 +798,14 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 
 	write(":");
 	newline();
+	last_emitted_line = p_variable->start_line;
 	indent_level++;
 	if (p_variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 		if (p_variable->getter != nullptr) {
 			write_indent();
 			write("get:");
 			newline();
+			last_emitted_line = p_variable->getter->start_line;
 			indent_level++;
 			print_suite(p_variable->getter->body);
 			indent_level--;
@@ -576,6 +818,7 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 			}
 			write("):");
 			newline();
+			last_emitted_line = p_variable->setter->start_line;
 			indent_level++;
 			print_suite(p_variable->setter->body);
 			indent_level--;
@@ -750,7 +993,13 @@ void GDScriptPrinter::print_suite(const GDScriptParser::SuiteNode *p_suite) {
 		return;
 	}
 	for (int i = 0; i < p_suite->statements.size(); i++) {
-		print_statement(p_suite->statements[i]);
+		const GDScriptParser::Node *statement = p_suite->statements[i];
+		emit_leading_trivia(statement->start_line, 0);
+		print_statement(statement);
+		if (statement->start_line == statement->end_line) {
+			emit_trailing_comment(statement->end_line);
+		}
+		last_emitted_line = statement->end_line;
 	}
 }
 
@@ -812,7 +1061,6 @@ void GDScriptPrinter::print_statement(const GDScriptParser::Node *p_statement) {
 			newline();
 			break;
 	}
-	last_emitted_line = p_statement->end_line;
 }
 
 void GDScriptPrinter::print_assignment(const GDScriptParser::AssignmentNode *p_assignment) {
@@ -829,6 +1077,7 @@ void GDScriptPrinter::print_if(const GDScriptParser::IfNode *p_if, bool p_is_eli
 	print_expression(p_if->condition);
 	write(":");
 	newline();
+	last_emitted_line = p_if->start_line;
 	indent_level++;
 	print_suite(p_if->true_block);
 	indent_level--;
@@ -847,6 +1096,7 @@ void GDScriptPrinter::print_if(const GDScriptParser::IfNode *p_if, bool p_is_eli
 		write_indent();
 		write("else:");
 		newline();
+		last_emitted_line = p_if->false_block->start_line;
 		indent_level++;
 		print_suite(p_if->false_block);
 		indent_level--;
@@ -865,6 +1115,7 @@ void GDScriptPrinter::print_for(const GDScriptParser::ForNode *p_for) {
 	print_expression(p_for->list);
 	write(":");
 	newline();
+	last_emitted_line = p_for->start_line;
 	indent_level++;
 	print_suite(p_for->loop);
 	indent_level--;
@@ -876,6 +1127,7 @@ void GDScriptPrinter::print_while(const GDScriptParser::WhileNode *p_while) {
 	print_expression(p_while->condition);
 	write(":");
 	newline();
+	last_emitted_line = p_while->start_line;
 	indent_level++;
 	print_suite(p_while->loop);
 	indent_level--;
@@ -887,9 +1139,13 @@ void GDScriptPrinter::print_match(const GDScriptParser::MatchNode *p_match) {
 	print_expression(p_match->test);
 	write(":");
 	newline();
+	last_emitted_line = p_match->start_line;
 	indent_level++;
 	for (int i = 0; i < p_match->branches.size(); i++) {
-		print_match_branch(p_match->branches[i]);
+		const GDScriptParser::MatchBranchNode *branch = p_match->branches[i];
+		emit_leading_trivia(branch->start_line, 0);
+		print_match_branch(branch);
+		last_emitted_line = branch->end_line;
 	}
 	indent_level--;
 }
@@ -908,6 +1164,7 @@ void GDScriptPrinter::print_match_branch(const GDScriptParser::MatchBranchNode *
 	}
 	write(":");
 	newline();
+	last_emitted_line = p_branch->start_line;
 	indent_level++;
 	print_suite(p_branch->block);
 	indent_level--;
@@ -1203,6 +1460,7 @@ void GDScriptPrinter::print_lambda(const GDScriptParser::LambdaNode *p_lambda) {
 	}
 	write(":");
 	newline();
+	last_emitted_line = function->start_line;
 	indent_level++;
 	print_suite(function->body);
 	indent_level--;
