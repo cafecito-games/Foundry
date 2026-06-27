@@ -153,14 +153,17 @@ public:
 		MethodInfo method_info;
 	};
 
-	// Resolved passive custom annotation metadata persisted by the compiler. Built-in annotations
-	// are excluded. The data is runtime-safe (no AST pointers): argument values are copied as plain
-	// Variants. Reading it is a reflection operation and adds no per-call execution cost.
+	// Resolved passive annotation metadata persisted by the compiler. Covers both user-declared custom
+	// annotations and Godot's built-in annotations (`@export`, `@rpc`, `@onready`, `@tool`, ...), with
+	// `is_builtin` discriminating the two. The data is runtime-safe (no AST pointers): argument values
+	// are copied as plain Variants. Reading it is a reflection operation and adds no per-call execution
+	// cost.
 	struct AnnotationUsage {
-		StringName name; // Short name, without "@": "timeout".
-		StringName qualified_name; // Canonical declaration identity: "cafecito.test.timeout".
+		StringName name; // Short name, without "@": "timeout", "export_range".
+		StringName qualified_name; // Canonical declaration identity: "cafecito.test.timeout"; the bare name for built-ins.
 		Array args; // Positional argument values in source order.
-		Dictionary kwargs; // Named argument values keyed by parameter name.
+		Dictionary kwargs; // Named argument values keyed by parameter name. Always empty for built-ins (positional only).
+		bool is_builtin = false; // True for a Godot built-in annotation; false for a user-declared custom annotation.
 	};
 
 private:
@@ -226,9 +229,10 @@ private:
 	Vector<TypeParameter> type_parameters;
 	Dictionary rpc_config;
 
-	// Passive custom annotation metadata resolved by the analyzer and persisted by the compiler.
-	// Class annotations are direct-only; method/variable/signal/constant tables include concrete
-	// trait-flattened members. Built-in annotations are never recorded here.
+	// Passive annotation metadata resolved by the analyzer and persisted by the compiler. Holds both
+	// user-declared custom annotations and Godot's built-in annotations (tagged via `is_builtin`), in
+	// source order. Class annotations are direct-only; method/variable/signal/constant tables include
+	// concrete trait-flattened members.
 	Vector<AnnotationUsage> class_annotations;
 	HashMap<StringName, Vector<AnnotationUsage>> method_annotations;
 	HashMap<StringName, Vector<AnnotationUsage>> variable_annotations;
@@ -389,7 +393,7 @@ public:
 	_FORCE_INLINE_ const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
 	_FORCE_INLINE_ const HashMap<StringName, AbstractTraitRequirement> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
 
-	// Passive custom annotation metadata. Class annotations are direct-only; method/variable tables
+	// Passive annotation metadata (custom and built-in). Class annotations are direct-only; method/variable tables
 	// cover this script's own and concrete trait-flattened members. Inherited (base-chain) annotations
 	// are resolved at reflection time, not stored here.
 	_FORCE_INLINE_ const Vector<AnnotationUsage> &get_class_annotations() const { return class_annotations; }
@@ -506,10 +510,11 @@ public:
 class GDScriptAnnotation : public RefCounted {
 	GDCLASS(GDScriptAnnotation, RefCounted);
 
-	StringName name; // Short name, without "@": "timeout".
-	StringName qualified_name; // Canonical declaration identity: "cafecito.test.timeout".
+	StringName name; // Short name, without "@": "timeout", "export_range".
+	StringName qualified_name; // Canonical declaration identity: "cafecito.test.timeout"; the bare name for built-ins.
 	Array args; // Positional argument values in source order.
 	Dictionary kwargs; // Named argument values keyed by parameter name.
+	bool builtin = false; // True for a Godot built-in annotation; false for a user-declared custom annotation.
 
 protected:
 	static void _bind_methods();
@@ -520,6 +525,9 @@ public:
 	// Deep copies so callers never receive (and so cannot mutate) the compiled script's stored values.
 	Array get_arguments() const { return args.duplicate(true); }
 	Dictionary get_named_arguments() const { return kwargs.duplicate(true); }
+	// True when this descriptor wraps a Godot built-in annotation (e.g. `@export`), letting consumers
+	// filter built-ins apart from user-declared custom annotations.
+	bool is_builtin() const { return builtin; }
 
 	// Builds an independent descriptor snapshot from compiled annotation metadata. The usage's
 	// argument containers are deep copied so the descriptor never aliases the script's stored data.

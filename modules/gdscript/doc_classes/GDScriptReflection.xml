@@ -52,7 +52,7 @@
 			<param index="2" name="annotation" type="StringName" />
 			<param index="3" name="kind" type="StringName" default="&amp;&quot;method&quot;" />
 			<description>
-				Returns the first custom annotation named [param annotation] applied to the requested declaration, or [code]null[/code] if none matches. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name ([code]"timeout"[/code]) or the qualified name ([code]"cafecito.test.timeout"[/code]). Callers that care about repeated annotations should use [method get_annotations] instead. Invalid, freed, or non-script targets return [code]null[/code].
+				Returns the first annotation named [param annotation] applied to the requested declaration, or [code]null[/code] if none matches. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name ([code]"timeout"[/code]) or the qualified name ([code]"cafecito.test.timeout"[/code]). Callers that care about repeated annotations should use [method get_annotations] instead. Invalid, freed, or non-script targets return [code]null[/code].
 			</description>
 		</method>
 		<method name="get_annotations" qualifiers="const">
@@ -61,14 +61,14 @@
 			<param index="1" name="member" type="StringName" default="&amp;&quot;&quot;" />
 			<param index="2" name="kind" type="StringName" default="&amp;&quot;class&quot;" />
 			<description>
-				Returns the custom annotations applied to the requested declaration in source order, as [GDScriptAnnotation] descriptors. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. This is the generic convenience form of [method get_class_annotations], [method get_method_annotations], and [method get_variable_annotations]. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the requested declaration in source order, as [GDScriptAnnotation] descriptors. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. This is the generic convenience form of [method get_class_annotations], [method get_method_annotations], and [method get_variable_annotations]. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_class_annotations" qualifiers="const">
 			<return type="GDScriptAnnotation[]" />
 			<param index="0" name="target" type="Variant" />
 			<description>
-				Returns the custom annotations applied directly to [param target]'s class declaration, in source order, as [GDScriptAnnotation] descriptors. Class annotations are direct-only: they are not inherited from base scripts. [param target] may be a [Script] type or an instance. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied directly to [param target]'s class declaration, in source order, as [GDScriptAnnotation] descriptors. Class annotations are direct-only: they are not inherited from base scripts. [param target] may be a [Script] type or an instance. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_constant_annotations" qualifiers="const">
@@ -76,7 +76,7 @@
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="constant" type="StringName" />
 			<description>
-				Returns the custom annotations applied to the constant named [param constant], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a constant declared on a base script carries its annotations when reflected from a derived script. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the constant named [param constant], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a constant declared on a base script carries its annotations when reflected from a derived script. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_method_annotations" qualifiers="const">
@@ -84,7 +84,7 @@
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="method" type="StringName" />
 			<description>
-				Returns the custom annotations applied to the method named [param method], in source order, as [GDScriptAnnotation] descriptors. The effective method view is used: a method declared on a base script carries its annotations when reflected from a derived script, a concrete trait method flattened into an implementer carries its declaration annotations, and an overriding method's annotations take precedence. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the method named [param method], in source order, as [GDScriptAnnotation] descriptors. The effective method view is used: a method declared on a base script carries its annotations when reflected from a derived script, a concrete trait method flattened into an implementer carries its declaration annotations, and an overriding method's annotations take precedence. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_method_info" qualifiers="const">
@@ -93,7 +93,7 @@
 			<param index="1" name="method" type="StringName" />
 			<description>
 				Returns the descriptor for the method named [param method] declared by [param target]'s script or one of its base scripts, in the same shape as the entries of [method Object.get_method_list]. [param target] may be a [Script] type or an instance. Returns an empty [Dictionary] if the method is not declared.
-				For a GDScript target the descriptor also carries an [code]"annotations"[/code] key holding the effective custom annotations as an [GDScriptAnnotation] array (empty when the method has none), matching [method get_method_annotations].
+				For a GDScript target the descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [GDScriptAnnotation] array (empty when the method has none), matching [method get_method_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member GDScriptAnnotation.builtin] to tell them apart.
 			</description>
 		</method>
 		<method name="get_methods" qualifiers="const">
@@ -101,7 +101,7 @@
 			<param index="0" name="target" type="Variant" />
 			<description>
 				Returns the descriptors of every method declared by [param target]'s script and its base scripts, in the same shape as [method Object.get_method_list]. [param target] may be a [Script] type or an instance. Returns an empty array if [param target] has no script.
-				For a GDScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective custom annotations as an [GDScriptAnnotation] array (empty when the method has none), matching [method get_method_annotations].
+				For a GDScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [GDScriptAnnotation] array (empty when the method has none), matching [method get_method_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member GDScriptAnnotation.builtin] to tell them apart.
 			</description>
 		</method>
 		<method name="get_properties" qualifiers="const">
@@ -109,7 +109,7 @@
 			<param index="0" name="target" type="Variant" />
 			<description>
 				Returns the descriptors of the variables declared by [param target]'s script and its base scripts, in the same shape as [method Object.get_property_list]. Only declared [code]var[/code]s are returned (category and group headers are omitted). [param target] may be a [Script] type or an instance.
-				For a GDScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective custom annotations as an [GDScriptAnnotation] array (empty when the variable has none), matching [method get_variable_annotations].
+				For a GDScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [GDScriptAnnotation] array (empty when the variable has none), matching [method get_variable_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member GDScriptAnnotation.builtin] to tell them apart.
 			</description>
 		</method>
 		<method name="get_signal_annotations" qualifiers="const">
@@ -117,7 +117,7 @@
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="signal" type="StringName" />
 			<description>
-				Returns the custom annotations applied to the signal named [param signal], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a signal declared on a base script carries its annotations when reflected from a derived script. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the signal named [param signal], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a signal declared on a base script carries its annotations when reflected from a derived script. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_variable_annotations" qualifiers="const">
@@ -125,7 +125,7 @@
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="variable" type="StringName" />
 			<description>
-				Returns the custom annotations applied to the member variable named [param variable], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a variable declared on a base script carries its annotations when reflected from a derived script, a trait-flattened variable carries its declaration annotations, and a shadowing variable's annotations take precedence. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the member variable named [param variable], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a variable declared on a base script carries its annotations when reflected from a derived script, a trait-flattened variable carries its declaration annotations, and a shadowing variable's annotations take precedence. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="has_annotation" qualifiers="const">
@@ -135,7 +135,7 @@
 			<param index="2" name="annotation" type="StringName" />
 			<param index="3" name="kind" type="StringName" default="&amp;&quot;method&quot;" />
 			<description>
-				Returns [code]true[/code] if a custom annotation named [param annotation] is applied to the requested declaration. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name or the qualified name. Invalid, freed, or non-script targets return [code]false[/code].
+				Returns [code]true[/code] if an annotation named [param annotation] is applied to the requested declaration. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name or the qualified name. Invalid, freed, or non-script targets return [code]false[/code].
 			</description>
 		</method>
 		<method name="get_type_arguments" qualifiers="const">

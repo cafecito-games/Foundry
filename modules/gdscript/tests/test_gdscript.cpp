@@ -3291,7 +3291,7 @@ class Inner:
 		}
 	}
 
-	// Root member-variable annotations; built-in annotations such as `@export` are excluded.
+	// Root member-variable annotations. Custom usages carry `is_builtin == false`.
 	{
 		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_variable_annotations(), SNAME("world"));
 		CHECK(usages != nullptr);
@@ -3299,10 +3299,23 @@ class Inner:
 			CHECK_EQ(usages->size(), 1);
 			if (!usages->is_empty()) {
 				CHECK_EQ((*usages)[0].name, SNAME("fixture"));
+				CHECK_FALSE((*usages)[0].is_builtin);
 			}
 		}
 
-		CHECK(find_annotation_usages(script->get_variable_annotations(), SNAME("exported_value")) == nullptr);
+		// Built-in annotations such as `@export` are now reflected as metadata, tagged `is_builtin`.
+		const Vector<GDScript::AnnotationUsage> *exported = find_annotation_usages(script->get_variable_annotations(), SNAME("exported_value"));
+		CHECK(exported != nullptr);
+		if (exported != nullptr) {
+			CHECK_EQ(exported->size(), 1);
+			if (!exported->is_empty()) {
+				CHECK_EQ((*exported)[0].name, SNAME("export"));
+				CHECK_EQ((*exported)[0].qualified_name, SNAME("export"));
+				CHECK((*exported)[0].is_builtin);
+				CHECK((*exported)[0].args.is_empty());
+				CHECK((*exported)[0].kwargs.is_empty());
+			}
+		}
 	}
 
 	// Concrete trait members flattened into the implementer carry their declaration annotations.
@@ -3377,6 +3390,111 @@ class Inner:
 	CHECK(script->get_variable_annotations().is_empty());
 }
 
+TEST_CASE("[Modules][GDScript] Compiled scripts persist built-in annotation metadata") {
+	ScopedGDScriptNativeGlobals native_globals;
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+@tool
+extends Node
+
+annotation test targets METHOD
+
+@export_range(0, 100) var ranged: int = 1
+
+@onready var ready_node: Node = self
+
+@export var exported: int = 0
+
+@rpc("any_peer", "reliable")
+func networked() -> void:
+	pass
+
+@test
+func custom_and_builtin() -> void:
+	pass
+)",
+			"user://builtin_annotation_metadata.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	GDScriptCompiler compiler;
+	Ref<GDScript> script;
+	script.instantiate();
+	script->set_path("user://builtin_annotation_metadata.gd");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	// Script-configuration annotations (`@tool`, `@icon`, `@static_unload`) are applied by the parser
+	// and not retained on the AST, so they are intentionally not surfaced as class annotations.
+	CHECK(script->get_class_annotations().is_empty());
+
+	// `@export_range(0, 100)` carries its positional arguments in `args`.
+	{
+		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_variable_annotations(), SNAME("ranged"));
+		CHECK(usages != nullptr);
+		if (usages != nullptr) {
+			CHECK_EQ(usages->size(), 1);
+			if (!usages->is_empty()) {
+				CHECK_EQ((*usages)[0].name, SNAME("export_range"));
+				CHECK((*usages)[0].is_builtin);
+				CHECK_EQ((*usages)[0].args.size(), 2);
+				if ((*usages)[0].args.size() == 2) {
+					CHECK_EQ(int((*usages)[0].args[0]), 0);
+					CHECK_EQ(int((*usages)[0].args[1]), 100);
+				}
+				CHECK((*usages)[0].kwargs.is_empty());
+			}
+		}
+	}
+
+	// `@onready` is a marker built-in with no arguments.
+	{
+		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_variable_annotations(), SNAME("ready_node"));
+		CHECK(usages != nullptr);
+		if (usages != nullptr && !usages->is_empty()) {
+			CHECK_EQ((*usages)[0].name, SNAME("onready"));
+			CHECK((*usages)[0].is_builtin);
+			CHECK((*usages)[0].args.is_empty());
+		}
+	}
+
+	// `@rpc` arguments are reflected positionally.
+	{
+		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_method_annotations(), SNAME("networked"));
+		CHECK(usages != nullptr);
+		if (usages != nullptr && !usages->is_empty()) {
+			CHECK_EQ((*usages)[0].name, SNAME("rpc"));
+			CHECK((*usages)[0].is_builtin);
+			CHECK_EQ((*usages)[0].args.size(), 2);
+		}
+	}
+
+	// A custom annotation on a method is still recorded and stays non-built-in.
+	{
+		const Vector<GDScript::AnnotationUsage> *usages = find_annotation_usages(script->get_method_annotations(), SNAME("custom_and_builtin"));
+		CHECK(usages != nullptr);
+		if (usages != nullptr && !usages->is_empty()) {
+			CHECK_EQ((*usages)[0].name, SNAME("test"));
+			CHECK_FALSE((*usages)[0].is_builtin);
+		}
+	}
+}
+
 TEST_CASE("[Modules][GDScript] GDScriptAnnotation descriptor snapshots annotation metadata") {
 	GDScript::AnnotationUsage usage;
 	usage.name = SNAME("timeout");
@@ -3405,6 +3523,9 @@ TEST_CASE("[Modules][GDScript] GDScriptAnnotation descriptor snapshots annotatio
 		Dictionary kwargs = descriptor->get_named_arguments();
 		CHECK_EQ(kwargs.size(), 1);
 		CHECK_EQ(String(kwargs[SNAME("provider")]), "crit_rows");
+
+		// Custom annotations default to non-built-in.
+		CHECK_FALSE(descriptor->is_builtin());
 	}
 
 	SUBCASE("bound accessors are reachable through the script API") {
@@ -3413,6 +3534,24 @@ TEST_CASE("[Modules][GDScript] GDScriptAnnotation descriptor snapshots annotatio
 		CHECK_EQ(descriptor->get(SNAME("name")), Variant(SNAME("timeout")));
 		CHECK_EQ(Array(descriptor->get(SNAME("args"))).size(), 2);
 		CHECK_EQ(Dictionary(descriptor->get(SNAME("kwargs"))).size(), 1);
+		CHECK_EQ(descriptor->get(SNAME("builtin")), Variant(false));
+	}
+
+	SUBCASE("the built-in flag is carried from the source usage") {
+		GDScript::AnnotationUsage builtin_usage;
+		builtin_usage.name = SNAME("export_range");
+		builtin_usage.qualified_name = SNAME("export_range");
+		builtin_usage.args.push_back(0.0);
+		builtin_usage.args.push_back(100.0);
+		builtin_usage.is_builtin = true;
+
+		Ref<GDScriptAnnotation> builtin_descriptor = GDScriptAnnotation::from_usage(builtin_usage);
+		CHECK(builtin_descriptor.is_valid());
+		if (builtin_descriptor.is_valid()) {
+			CHECK(builtin_descriptor->is_builtin());
+			CHECK_EQ(builtin_descriptor->get(SNAME("builtin")), Variant(true));
+			CHECK_EQ(builtin_descriptor->get_arguments().size(), 2);
+		}
 	}
 
 	SUBCASE("mutating returned snapshots leaves the descriptor and source metadata intact") {

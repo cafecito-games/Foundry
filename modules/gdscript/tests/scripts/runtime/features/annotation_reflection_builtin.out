@@ -1,0 +1,20 @@
+GDTEST_OK
+1
+export_range
+export_range
+true
+0.0
+100.0
+0
+2
+marker false
+onready true
+2
+rpc true
+marker false
+2
+0
+true
+true
+1
+export true
