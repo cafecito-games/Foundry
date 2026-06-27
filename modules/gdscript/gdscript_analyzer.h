@@ -214,7 +214,8 @@ class GDScriptAnalyzer {
 			GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types,
 			int &r_default_arg_count, BitField<MethodFlags> &r_method_flags,
 			StringName *r_native_class = nullptr, bool *r_is_noreturn = nullptr,
-			GDScriptParser::FunctionNode **r_found_function = nullptr);
+			GDScriptParser::FunctionNode **r_found_function = nullptr,
+			GDScriptParser::ClassNode **r_found_in_class = nullptr);
 	void collect_type_parameter_bindings(const GDScriptParser::DataType &p_parameter_type, const GDScriptParser::DataType &p_argument_type,
 			HashMap<StringName, GDScriptParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts);
 	bool merge_inferred_type_argument(const GDScriptParser::DataType &p_existing, const GDScriptParser::DataType &p_candidate, GDScriptParser::DataType &r_merged);
