@@ -39,6 +39,7 @@
 #include "editor/settings/editor_settings.h"
 #include "tests/editor/project_manager/test_ios_project_template.h"
 #include "tests/editor/run/test_run_target.h"
+#include "tests/editor/run/test_run_target_readiness.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_refactor_diff_preview.h"
 #include "tests/editor/test_script_refactor_apply.h"

@@ -1,0 +1,18 @@
+{
+	"xcode_select_path": "/Applications/Xcode.app/Contents/Developer",
+	"signing_team": "ABCDE12345",
+	"provisioning_stderr": "error: Failed to register bundle identifier. The app identifier \"com.example.mygame\" cannot be registered to your development team because it is not available. Change your bundle identifier to a unique string to try again. (in target 'mygame' from project 'mygame')",
+	"devices": [
+		{
+			"identifier": "00008110-000000000000000E",
+			"deviceProperties": {
+				"name": "My iPhone",
+				"developerModeStatus": "enabled"
+			},
+			"connectionProperties": {
+				"pairingState": "paired",
+				"tunnelState": "connected"
+			}
+		}
+	]
+}
