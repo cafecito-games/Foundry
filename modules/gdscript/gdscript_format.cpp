@@ -409,7 +409,15 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 		if (token.type == GDScriptTokenizer::Token::ERROR) {
 			break; // The parse pass below produces the authoritative diagnostic.
 		}
-		if (token.type == GDScriptTokenizer::Token::LITERAL) {
+		// Built-in numeric constants (`PI`/`TAU`/`INF`/`NaN`) parse into a LiteralNode
+		// from their own CONST_* tokens, not a LITERAL token, so index them too or the
+		// printer would Variant-stringify the float value (`3.14159...`), changing the
+		// syntax (and possibly precision) of an otherwise value-equal literal.
+		const bool is_const_keyword_token = token.type == GDScriptTokenizer::Token::CONST_PI ||
+				token.type == GDScriptTokenizer::Token::CONST_TAU ||
+				token.type == GDScriptTokenizer::Token::CONST_INF ||
+				token.type == GDScriptTokenizer::Token::CONST_NAN;
+		if (token.type == GDScriptTokenizer::Token::LITERAL || is_const_keyword_token) {
 			const uint64_t key = (uint64_t(uint32_t(token.start_line)) << 32) | uint32_t(token.start_column);
 			literals[key] = GDScriptPrinter::LiteralToken{ token.source };
 		}
@@ -667,6 +675,18 @@ void GDScriptPrinter::append_inline_comment(int p_line) {
 	write("  ");
 	write(normalize_comment_text(found->value.comment));
 	last_emitted_line = p_line;
+}
+
+bool GDScriptPrinter::has_full_line_comment_between(int p_after, int p_before) const {
+	if (p_after <= 0 || p_before <= 0) {
+		return false;
+	}
+	for (int line = p_after + 1; line < p_before; line++) {
+		if (is_full_line_comment(line)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 void GDScriptPrinter::flush_comments_until(int p_until_line) {
@@ -1453,8 +1473,10 @@ void GDScriptPrinter::print_enum(const GDScriptParser::EnumNode *p_enum) {
 		write(" ");
 	}
 	// Keep an enum the author wrote across several lines multi-line, so comments
-	// and value doc comments between its values keep a place to live.
-	const bool multiline = node_was_authored_multiline(p_enum) && !p_enum->values.is_empty();
+	// and value doc comments between its values keep a place to live. (When it has
+	// no values and no interior comment, `print_delimited_items` collapses it to a
+	// single-line `{}`.)
+	const bool multiline = node_was_authored_multiline(p_enum);
 	print_delimited_items(
 			"{", "}", p_enum->values.size(), multiline, p_enum->start_line, p_enum->end_line,
 			[&](int p_index) {
