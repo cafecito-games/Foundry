@@ -696,6 +696,34 @@ GDScriptTest::TestResult GDScriptTest::execute_test_code(bool p_is_generating) {
 	obj->set_script(script);
 	GDScriptInstance *instance = static_cast<GDScriptInstance *>(obj->get_script_instance());
 
+	// A script whose head class is abstract can't be instantiated: `set_script` refuses
+	// it and leaves the object without a script instance. Report a clean, deterministic
+	// runtime error instead of dereferencing a null instance below.
+	if (instance == nullptr) {
+		enable_stdout();
+		remove_print_handler(&_print_handler);
+		remove_error_handler(&_error_handler);
+
+		result.status = GDTEST_RUNTIME_ERROR;
+		result.output = get_text_for_status(result.status) + "\n";
+		if (script->is_abstract()) {
+			result.output += ">> Test couldn't run: the head class is abstract and can't be instantiated.\n";
+		} else {
+			result.output += ">> Test couldn't run: the script instance couldn't be created.\n";
+		}
+
+		if (obj_ref.is_null()) {
+			memdelete(obj);
+		}
+
+		if (!p_is_generating) {
+			result.passed = check_output(result.output);
+		}
+
+		GDScriptCache::remove_script(script->get_path());
+		return result;
+	}
+
 	// Call test function.
 	Callable::CallError call_err;
 	instance->callp(GDScriptTestRunner::test_function_name, nullptr, 0, call_err);
