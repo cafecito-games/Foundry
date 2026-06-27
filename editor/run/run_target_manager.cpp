@@ -85,28 +85,41 @@ RunTargetPlatform *RunTargetManager::get_platform(const String &p_platform) cons
 }
 
 Error RunTargetManager::load(const String &p_path) {
-	config_path = p_path;
-
+	// Build the new state in locals and only commit it after a clean load. A
+	// malformed/unreadable config must leave the manager's existing path,
+	// targets, and active selection untouched, so a later save() cannot clobber
+	// the file with empty targets and a stale active marker.
 	Error error = OK;
-	targets = RunTarget::load_all(p_path, &error);
+	const Vector<RunTarget> loaded_targets = RunTarget::load_all(p_path, &error);
 	if (error != OK) {
 		return error;
 	}
 
-	active_target_name = String();
-
+	String loaded_active;
 	Ref<ConfigFile> config;
 	config.instantiate();
 	if (config->load(p_path) == OK && config->has_section_key(META_SECTION, ACTIVE_TARGET_KEY)) {
-		active_target_name = config->get_value(META_SECTION, ACTIVE_TARGET_KEY, String());
+		loaded_active = config->get_value(META_SECTION, ACTIVE_TARGET_KEY, String());
 	}
 
 	// Drop a dangling active selection so callers never resolve a target that is
 	// no longer present.
-	if (!active_target_name.is_empty() && find_target_index(active_target_name) < 0) {
-		active_target_name = String();
+	if (!loaded_active.is_empty()) {
+		bool found = false;
+		for (int i = 0; i < loaded_targets.size(); i++) {
+			if (loaded_targets[i].name == loaded_active) {
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			loaded_active = String();
+		}
 	}
 
+	config_path = p_path;
+	targets = loaded_targets;
+	active_target_name = loaded_active;
 	return OK;
 }
 
@@ -203,22 +216,33 @@ Ref<EditorExportPreset> RunTargetManager::find_preset(const String &p_name) cons
 }
 
 int RunTargetManager::compute_debug_flags() const {
-	// A run target always wires the running app back to the editor's remote
-	// debugger; that is the whole point of deploying from the editor.
 	BitField<EditorExportPlatform::DebugFlags> flags = {};
-	flags.set_flag(EditorExportPlatform::DEBUG_FLAG_REMOTE_DEBUG);
+
+	EditorSettings *settings = EditorSettings::get_singleton();
+
+	// A run-target deploy wires the running app back to the editor's remote
+	// debugger, but honor the user's "Deploy Remote Debug" opt-out exactly like
+	// the native deploy path (`EditorRunNative::is_deploy_debug_remote_enabled`).
+	// Headless tooling has no editor settings, so it keeps the on-by-default
+	// behavior.
+	bool remote_debug = true;
+	if (settings != nullptr) {
+		remote_debug = settings->get_project_metadata("debug_options", "run_deploy_remote_debug", true);
+	}
+	if (remote_debug) {
+		flags.set_flag(EditorExportPlatform::DEBUG_FLAG_REMOTE_DEBUG);
+	}
 
 	// Fold in the optional debug overlays the user toggled for in-editor runs so a
-	// run-target deploy matches the normal Play button. These live in editor
-	// settings, which is absent in headless tooling.
-	if (EditorSettings::get_singleton() != nullptr) {
-		if (EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_file_server", false)) {
+	// run-target deploy matches the normal Play button.
+	if (settings != nullptr) {
+		if (settings->get_project_metadata("debug_options", "run_file_server", false)) {
 			flags.set_flag(EditorExportPlatform::DEBUG_FLAG_DUMB_CLIENT);
 		}
-		if (EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_collisions", false)) {
+		if (settings->get_project_metadata("debug_options", "run_debug_collisions", false)) {
 			flags.set_flag(EditorExportPlatform::DEBUG_FLAG_VIEW_COLLISIONS);
 		}
-		if (EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_navigation", false)) {
+		if (settings->get_project_metadata("debug_options", "run_debug_navigation", false)) {
 			flags.set_flag(EditorExportPlatform::DEBUG_FLAG_VIEW_NAVIGATION);
 		}
 	}

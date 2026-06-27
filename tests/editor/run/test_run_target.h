@@ -454,6 +454,43 @@ TEST_CASE("[Editor][RunTarget] A dangling active selection is dropped on load") 
 	CHECK(manager.get_active_target_name().is_empty());
 }
 
+TEST_CASE("[Editor][RunTarget] A failed load leaves prior state untouched") {
+	const String good_path = TestUtils::get_temp_path("run_targets_good.cfg");
+	const String bad_path = TestUtils::get_temp_path("run_targets_malformed.cfg");
+
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	CHECK_EQ(RunTarget::save_all(good_path, initial), OK);
+
+	// Author a file ConfigFile cannot parse so load() reports a hard error.
+	{
+		Ref<FileAccess> file = FileAccess::open(bad_path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string("this is not a valid config file = = =\n[unterminated");
+		file->close();
+	}
+
+	RunTargetManager manager;
+	REQUIRE_EQ(manager.load(good_path), OK);
+	REQUIRE(manager.set_active_target("My iPhone"));
+
+	// Loading a malformed file must fail without mutating the good state.
+	ERR_PRINT_OFF;
+	const Error error = manager.load(bad_path);
+	ERR_PRINT_ON;
+	CHECK_NE(error, OK);
+
+	CHECK_EQ(manager.get_targets().size(), 1);
+	CHECK(manager.has_active_target());
+	CHECK_EQ(manager.get_active_target_name(), "My iPhone");
+
+	// A subsequent save must still target the good path and preserve its targets.
+	CHECK_EQ(manager.save(), OK);
+	const Vector<RunTarget> reloaded = RunTarget::load_all(good_path);
+	REQUIRE_EQ(reloaded.size(), 1);
+	CHECK_EQ(reloaded[0].name, "My iPhone");
+}
+
 } // namespace TestRunTarget
 
 #endif // TOOLS_ENABLED
