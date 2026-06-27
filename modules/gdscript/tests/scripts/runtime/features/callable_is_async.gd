@@ -42,5 +42,7 @@ func test():
 	var derived: Resource = load("res://runtime/features/callable_is_async_derived.notest.gd")
 	print(Callable(derived, "inherited_static_async").is_async())
 	print(Callable(derived, "inherited_static_sync").is_async())
+	# A non-static method is not a valid callable target on a script object.
+	print(Callable(derived, "instance_async").is_async())
 
 	print(Callable().is_async())

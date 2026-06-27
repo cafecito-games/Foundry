@@ -50,11 +50,16 @@ static bool _method_info_has_async_flag(Object *p_object, const StringName &p_me
 		}
 	}
 
-	// The object may itself be a Script that exposes static methods.
+	// The object may itself be a Script that exposes static methods. Only static
+	// methods are valid callable targets on a script object, so a non-static match
+	// is not a callable target at all and must not be reported as async.
 	const Script *script_object = Object::cast_to<Script>(p_object);
 	while (script_object != nullptr) {
 		MethodInfo method_info = script_object->get_method_info(p_method);
 		if (method_info.name == p_method) {
+			if ((method_info.flags & METHOD_FLAG_STATIC) == 0) {
+				return false;
+			}
 			return (method_info.flags & METHOD_FLAG_ASYNC) != 0;
 		}
 		script_object = script_object->get_base_script().ptr();
