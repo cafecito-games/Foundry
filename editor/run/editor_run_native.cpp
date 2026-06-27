@@ -305,6 +305,14 @@ Error EditorRunNative::_start_run_target(int p_entry_index) {
 	// Selecting a target makes it the active selection, persisted for next session.
 	run_target_manager.set_active_target(target.name);
 	run_target_manager.save();
+
+	// The model already knows this target has no connected device. Stop before
+	// _deploy_run_target, which would emit native_run (stopping the current session
+	// and kicking off a build/debugger) for a deploy that cannot succeed.
+	if (!entry.runnable) {
+		_show_result(vformat(TTR("\"%s\" cannot run yet: its device is not connected."), target.name), true);
+		return ERR_UNAVAILABLE;
+	}
 	return _deploy_run_target(target);
 }
 
