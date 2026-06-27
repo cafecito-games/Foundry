@@ -941,6 +941,60 @@ func f():
 			CHECK_EQ(set_mode->detail, "func set_mode(target: enum_default_values.gd.Mode = IDLE, repeats: int = 2) -> void");
 		}
 
+		SUBCASE("AsyncCallable types are presented distinctly across LSP surfaces") {
+			String path = "res://lsp/async_callable_presentation.gd";
+			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+
+			// Member symbols carry the AsyncCallable rendering, not a plain Callable.
+			const LSP::DocumentSymbol *on_ready = parser->get_member_symbol("on_ready");
+			REQUIRE(on_ready);
+			CHECK_EQ(on_ready->detail, "var on_ready: AsyncCallable[[int], String]");
+
+			const LSP::DocumentSymbol *fetch = parser->get_member_symbol("fetch");
+			REQUIRE(fetch);
+			CHECK_EQ(fetch->detail, "async func fetch(handler: AsyncCallable[[int], String]) -> String");
+
+			// Hover preserves the AsyncCallable type.
+			Variant hover_variant = text_document->hover(pos_in(uri, on_ready->selectionRange.start).to_json());
+			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary hover = hover_variant;
+			Dictionary hover_contents = hover["contents"];
+			CHECK(String(hover_contents["value"]).contains("var on_ready: AsyncCallable[[int], String]"));
+
+			// Resolved completion details keep the AsyncCallable rendering.
+			const Array &completion_items = parser->get_member_completions();
+			Dictionary on_ready_completion;
+			Dictionary fetch_completion;
+			for (int i = 0; i < completion_items.size(); i++) {
+				Dictionary completion = completion_items[i];
+				const String label = completion["label"];
+				if (label == "on_ready") {
+					on_ready_completion = completion;
+				} else if (label == "fetch") {
+					fetch_completion = completion;
+				}
+			}
+			REQUIRE(!on_ready_completion.is_empty());
+			REQUIRE(!fetch_completion.is_empty());
+			Dictionary resolved_on_ready_completion = text_document->resolve(on_ready_completion);
+			Dictionary resolved_fetch_completion = text_document->resolve(fetch_completion);
+			CHECK_EQ(String(resolved_on_ready_completion["detail"]), "var on_ready: AsyncCallable[[int], String]");
+			CHECK_EQ(String(resolved_fetch_completion["detail"]), "async func fetch(handler: AsyncCallable[[int], String]) -> String");
+
+			// Signature help renders the async function and its AsyncCallable parameter.
+			LSP::SignatureHelp signature_help;
+			CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(8, 8)), signature_help), OK);
+			REQUIRE(signature_help.signatures.size() == 1);
+			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			CHECK_EQ(signature.label, "async func fetch(handler: AsyncCallable[[int], String]) -> String");
+			REQUIRE(signature.parameters.size() == 1);
+			CHECK_EQ(signature.parameters[0].label, "handler: AsyncCallable[[int], String]");
+		}
+
 		memdelete(proto);
 		memdelete(efs);
 		finish_language();
