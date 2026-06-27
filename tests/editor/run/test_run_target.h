@@ -33,9 +33,12 @@
 #ifdef TOOLS_ENABLED
 
 #include "editor/run/run_target.h"
+#include "editor/run/run_target_manager.h"
 #include "editor/run/run_target_platform.h"
 
 #include "editor/export/editor_export_platform.h"
+#include "editor/export/editor_export_preset.h"
+#include "editor/settings/editor_settings.h"
 
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
@@ -276,6 +279,234 @@ TEST_CASE("[Editor][RunTarget] ReadinessStep equality compares every field") {
 	ReadinessStep different_hint = base;
 	different_hint.fix_hint = "Something else.";
 	CHECK_NE(base, different_hint);
+}
+
+// A preset lookup that resolves names from an in-memory table, standing in for
+// the editor's `EditorExport` singleton (absent in headless tests).
+class FakePresetProvider : public RunTargetManager::PresetProvider {
+public:
+	HashMap<String, Ref<EditorExportPreset>> presets;
+
+	// Note: `EditorExportPreset::set_name` writes through `EditorExport::singleton`,
+	// which is absent in headless tests, so the fake keys presets by name in its
+	// own table instead of setting the preset's internal name.
+	void add(const String &p_name) {
+		Ref<EditorExportPreset> preset;
+		preset.instantiate();
+		presets[p_name] = preset;
+	}
+
+	virtual Ref<EditorExportPreset> find_preset_by_name(const String &p_name) const override {
+		HashMap<String, Ref<EditorExportPreset>>::ConstIterator found = presets.find(p_name);
+		if (found == presets.end()) {
+			return Ref<EditorExportPreset>();
+		}
+		return found->value;
+	}
+};
+
+TEST_CASE("[Editor][RunTarget] Manager dispatches to the adapter registered for a platform") {
+	FakeRunTargetPlatform ios;
+	FakeRunTargetPlatform android;
+
+	RunTargetManager manager;
+	manager.register_platform("ios", &ios);
+	manager.register_platform("android", &android);
+
+	CHECK_EQ(manager.get_platform("ios"), &ios);
+	CHECK_EQ(manager.get_platform("android"), &android);
+	CHECK_EQ(manager.get_platform("web"), nullptr);
+
+	manager.unregister_platform("android");
+	CHECK_EQ(manager.get_platform("android"), nullptr);
+}
+
+TEST_CASE("[Editor][RunTarget] Manager resolves a target to its preset, device, and debug flags") {
+	FakeRunTargetPlatform ios;
+	FakePresetProvider provider;
+	provider.add("iOS");
+
+	RunTargetManager manager;
+	manager.register_platform("ios", &ios);
+	manager.set_preset_provider(&provider);
+
+	RunTarget target = make_target("My iPhone");
+	target.device_id = "00008110-000000000000000E";
+
+	// `[Editor]` tests create EditorSettings, and `compute_debug_flags` reads the
+	// shared "Deploy Remote Debug" project setting. Pin it so the assertion below
+	// does not depend on a stray on-disk project_metadata.cfg, and restore it.
+	EditorSettings *settings = EditorSettings::get_singleton();
+	REQUIRE(settings != nullptr);
+	const Variant previous_remote_debug = settings->get_project_metadata("debug_options", "run_deploy_remote_debug", true);
+	settings->set_project_metadata("debug_options", "run_deploy_remote_debug", true);
+
+	RunTargetManager::ResolvedTarget resolved;
+	const Error error = manager.resolve(target, resolved);
+
+	CHECK_EQ(error, OK);
+	REQUIRE(resolved.preset.is_valid());
+	// The manager returns the exact preset the provider linked by name.
+	CHECK_EQ(resolved.preset, provider.presets["iOS"]);
+	CHECK_EQ(resolved.device_id, "00008110-000000000000000E");
+	CHECK_EQ(resolved.platform_adapter, &ios);
+	// A run-target deploy wires the running app back to the editor debugger when
+	// the user has not opted out.
+	CHECK((resolved.debug_flags & EditorExportPlatform::DEBUG_FLAG_REMOTE_DEBUG) != 0);
+
+	// Opting out of remote debug clears the flag, matching the native deploy path.
+	settings->set_project_metadata("debug_options", "run_deploy_remote_debug", false);
+	RunTargetManager::ResolvedTarget opted_out;
+	CHECK_EQ(manager.resolve(target, opted_out), OK);
+	CHECK((opted_out.debug_flags & EditorExportPlatform::DEBUG_FLAG_REMOTE_DEBUG) == 0);
+
+	settings->set_project_metadata("debug_options", "run_deploy_remote_debug", previous_remote_debug);
+}
+
+TEST_CASE("[Editor][RunTarget] Resolving a target whose export preset is gone fails gracefully") {
+	FakeRunTargetPlatform ios;
+	FakePresetProvider provider; // No presets registered: the linked one is "deleted".
+
+	RunTargetManager manager;
+	manager.register_platform("ios", &ios);
+	manager.set_preset_provider(&provider);
+
+	RunTarget target = make_target("My iPhone");
+
+	RunTargetManager::ResolvedTarget resolved;
+	ERR_PRINT_OFF;
+	const Error error = manager.resolve(target, resolved);
+	ERR_PRINT_ON;
+
+	CHECK_EQ(error, ERR_DOES_NOT_EXIST);
+	CHECK(resolved.preset.is_null());
+}
+
+TEST_CASE("[Editor][RunTarget] Resolving a target with an unregistered platform fails gracefully") {
+	FakePresetProvider provider;
+	provider.add("iOS");
+
+	RunTargetManager manager;
+	// No adapter registered for "ios".
+	manager.set_preset_provider(&provider);
+
+	RunTarget target = make_target("My iPhone");
+
+	RunTargetManager::ResolvedTarget resolved;
+	ERR_PRINT_OFF;
+	const Error error = manager.resolve(target, resolved);
+	ERR_PRINT_ON;
+
+	CHECK_EQ(error, ERR_UNAVAILABLE);
+	CHECK_EQ(resolved.platform_adapter, nullptr);
+}
+
+TEST_CASE("[Editor][RunTarget] Active-target selection rejects unknown names") {
+	const String path = TestUtils::get_temp_path("run_targets_active_reject.cfg");
+
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	CHECK_EQ(RunTarget::save_all(path, initial), OK);
+
+	RunTargetManager manager;
+	CHECK_EQ(manager.load(path), OK);
+
+	CHECK_FALSE(manager.has_active_target());
+	CHECK_FALSE(manager.set_active_target("Nonexistent"));
+	CHECK_FALSE(manager.has_active_target());
+
+	CHECK(manager.set_active_target("My iPhone"));
+	CHECK(manager.has_active_target());
+	CHECK_EQ(manager.get_active_target().name, "My iPhone");
+
+	// An empty name clears the selection.
+	CHECK(manager.set_active_target(String()));
+	CHECK_FALSE(manager.has_active_target());
+}
+
+TEST_CASE("[Editor][RunTarget] Active-target selection persists across a reload") {
+	const String path = TestUtils::get_temp_path("run_targets_active_persist.cfg");
+
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	RunTarget second = make_target("My iPad");
+	second.export_preset = "iPad";
+	initial.push_back(second);
+	CHECK_EQ(RunTarget::save_all(path, initial), OK);
+
+	{
+		RunTargetManager manager;
+		REQUIRE_EQ(manager.load(path), OK);
+		REQUIRE(manager.set_active_target("My iPad"));
+		CHECK_EQ(manager.save(), OK);
+	}
+
+	RunTargetManager reloaded;
+	REQUIRE_EQ(reloaded.load(path), OK);
+	CHECK(reloaded.has_active_target());
+	CHECK_EQ(reloaded.get_active_target_name(), "My iPad");
+	CHECK_EQ(reloaded.get_active_target().export_preset, "iPad");
+
+	// The targets themselves survive the manager's save path unchanged.
+	REQUIRE_EQ(reloaded.get_targets().size(), 2);
+	CHECK_EQ(reloaded.get_targets()[0].name, "My iPhone");
+	CHECK_EQ(reloaded.get_targets()[1].name, "My iPad");
+}
+
+TEST_CASE("[Editor][RunTarget] A dangling active selection is dropped on load") {
+	const String path = TestUtils::get_temp_path("run_targets_active_dangling.cfg");
+
+	// Author a config whose persisted active target no longer exists.
+	{
+		Ref<ConfigFile> config;
+		config.instantiate();
+		config->set_value("target.0", "name", "My iPhone");
+		config->set_value("target.0", "platform", "ios");
+		config->set_value("meta", "active_target", "Deleted Target");
+		CHECK_EQ(config->save(path), OK);
+	}
+
+	RunTargetManager manager;
+	REQUIRE_EQ(manager.load(path), OK);
+	CHECK_FALSE(manager.has_active_target());
+	CHECK(manager.get_active_target_name().is_empty());
+}
+
+TEST_CASE("[Editor][RunTarget] A failed load leaves prior state untouched") {
+	const String good_path = TestUtils::get_temp_path("run_targets_good.cfg");
+	const String bad_path = TestUtils::get_temp_path("run_targets_malformed.cfg");
+
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	CHECK_EQ(RunTarget::save_all(good_path, initial), OK);
+
+	// Author a file ConfigFile cannot parse so load() reports a hard error.
+	{
+		Ref<FileAccess> file = FileAccess::open(bad_path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string("this is not a valid config file = = =\n[unterminated");
+		file->close();
+	}
+
+	RunTargetManager manager;
+	REQUIRE_EQ(manager.load(good_path), OK);
+	REQUIRE(manager.set_active_target("My iPhone"));
+
+	// Loading a malformed file must fail without mutating the good state.
+	ERR_PRINT_OFF;
+	const Error error = manager.load(bad_path);
+	ERR_PRINT_ON;
+	CHECK_NE(error, OK);
+
+	CHECK_EQ(manager.get_targets().size(), 1);
+	CHECK(manager.has_active_target());
+	CHECK_EQ(manager.get_active_target_name(), "My iPhone");
+
+	// A subsequent save must still target the good path and preserve its targets.
+	CHECK_EQ(manager.save(), OK);
+	const Vector<RunTarget> reloaded = RunTarget::load_all(good_path);
+	REQUIRE_EQ(reloaded.size(), 1);
+	CHECK_EQ(reloaded[0].name, "My iPhone");
 }
 
 } // namespace TestRunTarget
