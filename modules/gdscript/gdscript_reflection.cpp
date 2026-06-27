@@ -195,8 +195,8 @@ StringName GDScriptReflection::_resolve_trait_name(const Variant &p_trait) {
 	return StringName();
 }
 
-TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) const {
-	TypedArray<Dictionary> result;
+TypedArray<GDScriptMethodDescriptor> GDScriptReflection::get_method_descriptors(const Variant &p_target) const {
+	TypedArray<GDScriptMethodDescriptor> result;
 	Ref<Script> script = _resolve_script(p_target);
 	if (script.is_null()) {
 		return result;
@@ -206,7 +206,7 @@ TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) 
 		List<MethodInfo> methods;
 		script->get_script_method_list(&methods);
 		for (const MethodInfo &method : methods) {
-			result.push_back(Dictionary(method));
+			result.push_back(GDScriptMethodDescriptor::create(method, TypedArray<GDScriptAnnotation>(), false));
 		}
 		return result;
 	}
@@ -218,18 +218,17 @@ TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) 
 	for (const GDScript *current = gdscript; current != nullptr && !visited.has(current); current = Object::cast_to<GDScript>(current->get_base_script().ptr())) {
 		visited.insert(current);
 		for (const KeyValue<StringName, GDScriptFunction *> &entry : current->get_member_functions()) {
-			Dictionary descriptor(entry.value->get_method_info());
 			const Vector<GDScript::AnnotationUsage> *usages = current->get_method_annotations().getptr(entry.key);
-			descriptor["annotations"] = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
-			result.push_back(descriptor);
+			TypedArray<GDScriptAnnotation> annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
+			result.push_back(GDScriptMethodDescriptor::create(entry.value->get_method_info(), annotations));
 		}
 	}
 	return result;
 }
 
-Dictionary GDScriptReflection::get_method_info(const Variant &p_target, const StringName &p_method) const {
+Ref<GDScriptMethodDescriptor> GDScriptReflection::get_method_descriptor(const Variant &p_target, const StringName &p_method) const {
 	// Walk the script base chain so an inherited method resolves, matching
-	// get_methods() (which uses get_script_method_list, base chain included). The
+	// get_method_descriptors() (which uses get_script_method_list, base chain included). The
 	// visited set guards against a malformed cyclic base chain.
 	Ref<Script> leaf = _resolve_script(p_target);
 	const GDScript *gdscript = Object::cast_to<GDScript>(leaf.ptr());
@@ -238,21 +237,21 @@ Dictionary GDScriptReflection::get_method_info(const Variant &p_target, const St
 	while (script.is_valid() && !visited.has(script.ptr())) {
 		visited.insert(script.ptr());
 		if (script->has_method(p_method)) {
-			Dictionary descriptor(script->get_method_info(p_method));
+			TypedArray<GDScriptAnnotation> annotations;
 			if (gdscript != nullptr) {
-				// Resolve annotations from the leaf so an override's annotations win, matching get_methods().
+				// Resolve annotations from the leaf so an override's annotations win, matching get_method_descriptors().
 				const Vector<GDScript::AnnotationUsage> *usages = find_effective_method_annotations(gdscript, p_method);
-				descriptor["annotations"] = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
+				annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
 			}
-			return descriptor;
+			return GDScriptMethodDescriptor::create(script->get_method_info(p_method), annotations, gdscript != nullptr);
 		}
 		script = script->get_base_script();
 	}
-	return Dictionary();
+	return Ref<GDScriptMethodDescriptor>();
 }
 
-TypedArray<Dictionary> GDScriptReflection::get_properties(const Variant &p_target) const {
-	TypedArray<Dictionary> result;
+TypedArray<GDScriptPropertyDescriptor> GDScriptReflection::get_property_descriptors(const Variant &p_target) const {
+	TypedArray<GDScriptPropertyDescriptor> result;
 	Ref<Script> script = _resolve_script(p_target);
 	if (script.is_null()) {
 		return result;
@@ -265,12 +264,40 @@ TypedArray<Dictionary> GDScriptReflection::get_properties(const Variant &p_targe
 		if (!(property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE)) {
 			continue;
 		}
-		Dictionary descriptor(property);
+		TypedArray<GDScriptAnnotation> annotations;
 		if (gdscript != nullptr) {
 			const Vector<GDScript::AnnotationUsage> *usages = find_effective_variable_annotations(gdscript, property.name);
-			descriptor["annotations"] = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
+			annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<GDScriptAnnotation>();
 		}
-		result.push_back(descriptor);
+		result.push_back(GDScriptPropertyDescriptor::create(property, annotations, gdscript != nullptr));
+	}
+	return result;
+}
+
+TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) const {
+	// Preserve the loosely-keyed descriptor surface by projecting each structured descriptor down to
+	// its Dictionary form, so the two views never diverge. The descriptor's to_dictionary() already
+	// omits the "annotations" key for native methods, matching the historical shape.
+	TypedArray<GDScriptMethodDescriptor> descriptors = get_method_descriptors(p_target);
+	TypedArray<Dictionary> result;
+	for (int i = 0; i < descriptors.size(); i++) {
+		Ref<GDScriptMethodDescriptor> descriptor = descriptors[i];
+		result.push_back(descriptor->to_dictionary());
+	}
+	return result;
+}
+
+Dictionary GDScriptReflection::get_method_info(const Variant &p_target, const StringName &p_method) const {
+	Ref<GDScriptMethodDescriptor> descriptor = get_method_descriptor(p_target, p_method);
+	return descriptor.is_valid() ? descriptor->to_dictionary() : Dictionary();
+}
+
+TypedArray<Dictionary> GDScriptReflection::get_properties(const Variant &p_target) const {
+	TypedArray<GDScriptPropertyDescriptor> descriptors = get_property_descriptors(p_target);
+	TypedArray<Dictionary> result;
+	for (int i = 0; i < descriptors.size(); i++) {
+		Ref<GDScriptPropertyDescriptor> descriptor = descriptors[i];
+		result.push_back(descriptor->to_dictionary());
 	}
 	return result;
 }
@@ -378,6 +405,9 @@ void GDScriptReflection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_methods", "target"), &GDScriptReflection::get_methods);
 	ClassDB::bind_method(D_METHOD("get_method_info", "target", "method"), &GDScriptReflection::get_method_info);
 	ClassDB::bind_method(D_METHOD("get_properties", "target"), &GDScriptReflection::get_properties);
+	ClassDB::bind_method(D_METHOD("get_method_descriptors", "target"), &GDScriptReflection::get_method_descriptors);
+	ClassDB::bind_method(D_METHOD("get_method_descriptor", "target", "method"), &GDScriptReflection::get_method_descriptor);
+	ClassDB::bind_method(D_METHOD("get_property_descriptors", "target"), &GDScriptReflection::get_property_descriptors);
 	ClassDB::bind_method(D_METHOD("implements_trait", "target", "trait"), &GDScriptReflection::implements_trait);
 	ClassDB::bind_method(D_METHOD("get_type_arguments", "target"), &GDScriptReflection::get_type_arguments);
 
