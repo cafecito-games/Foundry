@@ -388,132 +388,192 @@ void EditorHelp::_class_desc_resized(bool p_force_update_theme) {
 static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
 	const Color type_color = p_owner_node->get_theme_color(SNAME("type_color"), SNAME("EditorHelp"));
 
-	if (p_type.is_empty() || p_type == "void") {
-		p_rt->push_color(Color(type_color, 0.5));
-		p_rt->push_hint(TTR("No return value."));
-		p_rt->add_text("void");
-		p_rt->pop(); // hint
+	for (const EditorHelp::HelpTypeRenderSegment &segment : EditorHelp::_build_type_render_segments(p_type, p_enum, p_is_bitfield, p_class)) {
+		p_rt->push_color(segment.dim ? Color(type_color, 0.5) : type_color);
+		const bool has_hint = !segment.hint.is_empty();
+		if (has_hint) {
+			p_rt->push_hint(segment.hint);
+		}
+		switch (segment.kind) {
+			case EditorHelp::HelpTypeRenderSegment::CLASS_LINK: {
+				p_rt->push_meta("#" + segment.link, RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+			} break;
+			case EditorHelp::HelpTypeRenderSegment::ENUM_LINK: {
+				p_rt->push_meta("$" + segment.link, RichTextLabel::META_UNDERLINE_ON_HOVER); // enum
+			} break;
+			case EditorHelp::HelpTypeRenderSegment::TEXT: {
+			} break;
+		}
+		p_rt->add_text(segment.text);
+		if (segment.kind != EditorHelp::HelpTypeRenderSegment::TEXT) {
+			p_rt->pop(); // meta
+		}
+		if (has_hint) {
+			p_rt->pop(); // hint
+		}
 		p_rt->pop(); // color
-		return;
+	}
+}
+
+Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segments(const String &p_type, const String &p_enum, bool p_is_bitfield, const String &p_class) {
+	Vector<HelpTypeRenderSegment> segments;
+
+	if (p_type.is_empty() || p_type == "void") {
+		HelpTypeRenderSegment segment;
+		segment.text = "void";
+		segment.dim = true;
+		segment.hint = TTR("No return value.");
+		segments.push_back(segment);
+		return segments;
 	}
 
-	if (p_enum.is_empty() && p_type.begins_with("Coroutine[")) {
-		// `Coroutine[T]` is a synthetic GDScript type with no dedicated class page.
-		// Find the bracket that closes the leading `Coroutine[` so the array spelling
-		// docgen emits for `Array[Coroutine[T]]` (`Coroutine[T][]`) and other nested
-		// forms aren't misparsed as a top-level coroutine.
-		constexpr int coroutine_prefix_length = 10; // length of "Coroutine["
-		int depth = 0;
-		int close = -1;
-		for (int i = coroutine_prefix_length - 1; i < p_type.length(); i++) {
-			const char32_t character = p_type[i];
-			if (character == '[') {
-				depth++;
-			} else if (character == ']') {
-				depth--;
-				if (depth == 0) {
-					close = i;
+	// Container element types recurse through this builder so any nesting depth
+	// links each leaf type correctly. Enum and pointer types are leaves and skip
+	// this; they can never spell a typed container.
+	if (p_enum.is_empty() && !p_type.contains_char('*')) {
+		if (p_type.begins_with("Coroutine[") && p_type.ends_with("]")) {
+			// `Coroutine[T]` is a synthetic GDScript type with no dedicated class
+			// page. Render the wrapper as plain text and recurse on the result type
+			// so `T` links correctly instead of producing a dead `Coroutine[T]` link.
+			// Confirm the leading `Coroutine[` closes at the final bracket; otherwise
+			// the spelling is a container of coroutines (e.g. `Coroutine[T][]`) and is
+			// routed through the generic array/dictionary handling below.
+			constexpr int coroutine_prefix_length = 10; // length of "Coroutine["
+			int depth = 0;
+			int close = -1;
+			for (int i = coroutine_prefix_length - 1; i < p_type.length(); i++) {
+				const char32_t character = p_type[i];
+				if (character == '[') {
+					depth++;
+				} else if (character == ']') {
+					depth--;
+					if (depth == 0) {
+						close = i;
+						break;
+					}
+				}
+			}
+			if (close == p_type.length() - 1) {
+				const String result_type = p_type.substr(coroutine_prefix_length, close - coroutine_prefix_length);
+				HelpTypeRenderSegment open;
+				open.text = "Coroutine[";
+				segments.push_back(open);
+				segments.append_array(_build_type_render_segments(result_type, "", false, p_class));
+				HelpTypeRenderSegment close_segment;
+				close_segment.text = "]";
+				segments.push_back(close_segment);
+				return segments;
+			}
+		}
+
+		if (p_type.ends_with("[]")) {
+			// `Array[T]` is docgen-spelled `T[]`; peel one level and recurse so the
+			// element type (which may itself be a container) renders consistently.
+			HelpTypeRenderSegment array_link;
+			array_link.kind = HelpTypeRenderSegment::CLASS_LINK;
+			array_link.link = "Array";
+			array_link.text = "Array";
+			segments.push_back(array_link);
+			HelpTypeRenderSegment open;
+			open.text = "[";
+			segments.push_back(open);
+			segments.append_array(_build_type_render_segments(p_type.substr(0, p_type.length() - 2), "", false, p_class));
+			HelpTypeRenderSegment close_segment;
+			close_segment.text = "]";
+			segments.push_back(close_segment);
+			return segments;
+		}
+
+		if (p_type.begins_with("Dictionary[")) {
+			constexpr int dictionary_prefix_length = 11; // length of "Dictionary["
+			const String inner = p_type.substr(dictionary_prefix_length, p_type.length() - dictionary_prefix_length - 1);
+			// Find the top-level (depth 0) comma separating key and value so nested
+			// generics such as `Dictionary[Dictionary[int, String], bool]` split
+			// correctly instead of breaking on an inner comma.
+			int depth = 0;
+			int separator = -1;
+			for (int i = 0; i < inner.length(); i++) {
+				const char32_t character = inner[i];
+				if (character == '[') {
+					depth++;
+				} else if (character == ']') {
+					depth--;
+				} else if (character == ',' && depth == 0) {
+					separator = i;
 					break;
 				}
 			}
-		}
-		// Only the bare `Coroutine[T]` and its single-level array `Coroutine[T][]`
-		// are rendered here; anything else falls through to the generic handling.
-		const String trailing = close == -1 ? String() : p_type.substr(close + 1);
-		if (close != -1 && (trailing.is_empty() || trailing == "[]")) {
-			const String result_type = p_type.substr(coroutine_prefix_length, close - coroutine_prefix_length);
-			const bool is_array = trailing == "[]";
-			p_rt->push_color(type_color);
-			if (is_array) {
-				p_rt->push_meta("#Array", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
-				p_rt->add_text("Array");
-				p_rt->pop(); // meta
-				p_rt->add_text("[");
+			if (separator != -1) {
+				const String key_type = inner.substr(0, separator).strip_edges();
+				const String value_type = inner.substr(separator + 1).strip_edges();
+				HelpTypeRenderSegment dictionary_link;
+				dictionary_link.kind = HelpTypeRenderSegment::CLASS_LINK;
+				dictionary_link.link = "Dictionary";
+				dictionary_link.text = "Dictionary";
+				segments.push_back(dictionary_link);
+				HelpTypeRenderSegment open;
+				open.text = "[";
+				segments.push_back(open);
+				segments.append_array(_build_type_render_segments(key_type, "", false, p_class));
+				HelpTypeRenderSegment comma;
+				comma.text = ", ";
+				segments.push_back(comma);
+				segments.append_array(_build_type_render_segments(value_type, "", false, p_class));
+				HelpTypeRenderSegment close_segment;
+				close_segment.text = "]";
+				segments.push_back(close_segment);
+				return segments;
 			}
-			// Render the wrapper as plain text and recurse on the result type so `T`
-			// links correctly while `void`/nested container/coroutine results stay safe
-			// instead of producing dead links to missing help pages.
-			p_rt->add_text("Coroutine[");
-			p_rt->pop(); // color
-			_add_type_to_rt(result_type, "", false, p_rt, p_owner_node, p_class);
-			p_rt->push_color(type_color);
-			p_rt->add_text("]");
-			if (is_array) {
-				p_rt->add_text("]");
-			}
-			p_rt->pop(); // color
-			return;
 		}
 	}
 
-	bool is_enum_type = !p_enum.is_empty();
-	bool is_bitfield = p_is_bitfield && is_enum_type;
-	bool can_ref = !p_type.contains_char('*') || is_enum_type;
+	const bool is_enum_type = !p_enum.is_empty();
+	const bool is_bitfield = p_is_bitfield && is_enum_type;
+	const bool can_ref = !p_type.contains_char('*') || is_enum_type;
 
-	String link_t = p_type; // For links in metadata
+	String link_t = p_type; // For links in metadata.
 	String display_t; // For display purposes.
 	if (is_enum_type) {
-		link_t = p_enum; // The link for enums is always the full enum description
+		link_t = p_enum; // The link for enums is always the full enum description.
 		display_t = _contextualize_class_specifier(p_enum, p_class);
 	} else {
 		display_t = _contextualize_class_specifier(p_type, p_class);
 	}
 
-	p_rt->push_color(type_color);
-	bool add_typed_container = false;
-	if (can_ref) {
-		if (link_t.ends_with("[]")) {
-			add_typed_container = true;
-			link_t = link_t.trim_suffix("[]");
-			display_t = display_t.trim_suffix("[]");
-
-			p_rt->push_meta("#Array", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
-			p_rt->add_text("Array");
-			p_rt->pop(); // meta
-			p_rt->add_text("[");
-		} else if (link_t.begins_with("Dictionary[")) {
-			add_typed_container = true;
-			link_t = link_t.trim_prefix("Dictionary[").trim_suffix("]");
-			display_t = display_t.trim_prefix("Dictionary[").trim_suffix("]");
-
-			p_rt->push_meta("#Dictionary", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
-			p_rt->add_text("Dictionary");
-			p_rt->pop(); // meta
-			p_rt->add_text("[");
-			p_rt->push_meta("#" + DocData::get_type_link_target(link_t.get_slice(", ", 0)), RichTextLabel::META_UNDERLINE_ON_HOVER); // class
-			p_rt->add_text(_contextualize_class_specifier(display_t.get_slice(", ", 0), p_class));
-			p_rt->pop(); // meta
-			p_rt->add_text(", ");
-
-			link_t = link_t.get_slice(", ", 1);
-			display_t = _contextualize_class_specifier(display_t.get_slice(", ", 1), p_class);
-		} else if (is_bitfield) {
-			p_rt->push_color(Color(type_color, 0.5));
-			p_rt->push_hint(TTR("This value is an integer composed as a bitmask of the following flags."));
-			p_rt->add_text("BitField");
-			p_rt->pop(); // hint
-			p_rt->add_text("[");
-			p_rt->pop(); // color
-		}
-
-		if (is_enum_type) {
-			p_rt->push_meta("$" + link_t, RichTextLabel::META_UNDERLINE_ON_HOVER); // enum
-		} else {
-			p_rt->push_meta("#" + DocData::get_type_link_target(link_t), RichTextLabel::META_UNDERLINE_ON_HOVER); // class
-		}
+	if (!can_ref) {
+		// Pointer types have no help page; render as plain text without a link.
+		HelpTypeRenderSegment segment;
+		segment.text = display_t;
+		segments.push_back(segment);
+		return segments;
 	}
-	p_rt->add_text(display_t);
-	if (can_ref) {
-		p_rt->pop(); // meta
-		if (add_typed_container) {
-			p_rt->add_text("]");
-		} else if (is_bitfield) {
-			p_rt->push_color(Color(type_color, 0.5));
-			p_rt->add_text("]");
-			p_rt->pop(); // color
-		}
+
+	if (is_bitfield) {
+		HelpTypeRenderSegment bitfield_name;
+		bitfield_name.text = "BitField";
+		bitfield_name.dim = true;
+		bitfield_name.hint = TTR("This value is an integer composed as a bitmask of the following flags.");
+		segments.push_back(bitfield_name);
+		HelpTypeRenderSegment open;
+		open.text = "[";
+		open.dim = true;
+		segments.push_back(open);
 	}
-	p_rt->pop(); // color
+
+	HelpTypeRenderSegment link_segment;
+	link_segment.kind = is_enum_type ? HelpTypeRenderSegment::ENUM_LINK : HelpTypeRenderSegment::CLASS_LINK;
+	link_segment.link = is_enum_type ? link_t : DocData::get_type_link_target(link_t);
+	link_segment.text = display_t;
+	segments.push_back(link_segment);
+
+	if (is_bitfield) {
+		HelpTypeRenderSegment close_segment;
+		close_segment.text = "]";
+		close_segment.dim = true;
+		segments.push_back(close_segment);
+	}
+
+	return segments;
 }
 
 void EditorHelp::_add_type(const String &p_type, const String &p_enum, bool p_is_bitfield) {
