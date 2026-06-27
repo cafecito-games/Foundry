@@ -81,6 +81,45 @@ Vector<IOSRunTargetPlatform::DeviceInfo> IOSRunTargetPlatform::parse_devicectl_d
 	return result;
 }
 
+Array IOSRunTargetPlatform::build_probe_devices(const String &p_devicectl_json, const Vector<IOSDeployDevice> &p_ios_deploy_devices) {
+	Array devices;
+
+	// Legacy ios_deploy devices first, matching the export poll's ordering so an
+	// "auto" target's readiness and Run resolve to the same device. The legacy
+	// enumerator only reports paired, deployable devices and exposes no trust or
+	// Developer-Mode detail, so each is emitted in devicectl shape as paired with
+	// Developer Mode enabled (i.e. fully ready), agreeing with what the device
+	// list and run() already treat as runnable.
+	for (const IOSDeployDevice &ios_deploy_device : p_ios_deploy_devices) {
+		Dictionary connection_properties;
+		connection_properties["pairingState"] = "paired";
+
+		Dictionary device_properties;
+		device_properties["name"] = ios_deploy_device.name;
+		device_properties["developerModeStatus"] = "enabled";
+
+		Dictionary entry;
+		entry["identifier"] = ios_deploy_device.id;
+		entry["connectionProperties"] = connection_properties;
+		entry["deviceProperties"] = device_properties;
+		devices.push_back(entry);
+	}
+
+	// Then the devicectl devices in their native shape, preserving connected but
+	// not-yet-runnable devices so the ladder can still diagnose them.
+	const Variant parsed = JSON::parse_string(p_devicectl_json);
+	if (parsed.get_type() == Variant::DICTIONARY) {
+		const Dictionary data = parsed;
+		const Dictionary outcome = data.get("result", Dictionary());
+		const Array devicectl_devices = outcome.get("devices", Array());
+		for (int i = 0; i < devicectl_devices.size(); i++) {
+			devices.push_back(devicectl_devices[i]);
+		}
+	}
+
+	return devices;
+}
+
 IOSRunTargetPlatform::IOSRunTargetPlatform() {
 	command_runner = memnew(OSCommandRunner);
 	owns_command_runner = true;
@@ -167,18 +206,27 @@ Vector<ReadinessStep> IOSRunTargetPlatform::probe_readiness(const RunTarget &p_t
 		}
 	}
 
-	// Device state: the raw `devicectl` device array maps directly onto the probe's
-	// expected `devices` shape (identifier / connectionProperties / deviceProperties).
+	// Device state: combine the same two enumeration sources the export poll uses
+	// so readiness sees every device the list and Run can reach. The raw `devicectl`
+	// array already matches the probe's expected `devices` shape (identifier /
+	// connectionProperties / deviceProperties); the legacy `ios_deploy` devices are
+	// pulled from the export poll cache and folded in so a pre-Xcode-15 device is
+	// not reported as "no device connected" while it is listed and runnable.
 	{
-		const String devices_json = _query_devicectl();
-		const Variant parsed = JSON::parse_string(devices_json);
-		Array devices;
-		if (parsed.get_type() == Variant::DICTIONARY) {
-			const Dictionary data = parsed;
-			const Dictionary outcome = data.get("result", Dictionary());
-			devices = outcome.get("devices", Array());
+		Vector<IOSDeployDevice> ios_deploy_devices;
+		const EditorExportPlatformAppleEmbedded *export_platform = _find_export_platform();
+		if (export_platform != nullptr) {
+			for (const EditorExportPlatformAppleEmbedded::RunnableDeviceInfo &info : export_platform->get_runnable_devices()) {
+				if (!info.use_ios_deploy) {
+					continue;
+				}
+				IOSDeployDevice ios_deploy_device;
+				ios_deploy_device.id = info.id;
+				ios_deploy_device.name = info.name;
+				ios_deploy_devices.push_back(ios_deploy_device);
+			}
 		}
-		snapshot["devices"] = devices;
+		snapshot["devices"] = build_probe_devices(_query_devicectl(), ios_deploy_devices);
 	}
 
 	// Signing team: resolved from the target's remembered selection. A cold probe

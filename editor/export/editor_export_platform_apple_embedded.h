@@ -263,6 +263,10 @@ public:
 	struct RunnableDeviceInfo {
 		String id;
 		String name;
+		// True for legacy ios_deploy (pre-Xcode 15) devices. The run-target adapter
+		// needs this to fold them into its readiness probe, which otherwise only
+		// sees the modern devicectl enumeration.
+		bool use_ios_deploy = false;
 	};
 
 	// Returns the currently enumerated, runnable devices, in poll order. This is the

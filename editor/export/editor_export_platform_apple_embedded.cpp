@@ -2252,6 +2252,7 @@ Vector<EditorExportPlatformAppleEmbedded::RunnableDeviceInfo> EditorExportPlatfo
 		RunnableDeviceInfo info;
 		info.id = device.id;
 		info.name = device.name;
+		info.use_ios_deploy = device.use_ios_deploy;
 		result.push_back(info);
 	}
 	return result;
