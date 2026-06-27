@@ -2749,10 +2749,9 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 	}
 
 	// Run the definite-assignment pass over `_init`: it reports double-assignment of any tracked
-	// final (initialized or blank) and reads before assignment, so it runs whenever a final
-	// exists. `assigned_anywhere` is the union of finals assigned on any path (terminating or
-	// not); `init_state.assigned` is the intersection that survives to normal completion, used to
-	// require every blank final is assigned.
+	// final (initialized or blank) and reads before assignment, so it runs whenever a final exists.
+	// The pass also rejects any `return` that leaves a blank final unassigned (an escape point), so
+	// the only check left here is the final fall-off-the-end exit.
 	if (init_function != nullptr) {
 		// A `_init` parameter's default value is evaluated before the body runs, when no blank
 		// final is assigned yet, so reading one through an omitted default is use-before-assignment.
@@ -2762,16 +2761,14 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 
 		HashSet<const GDScriptParser::VariableNode *> assigned_anywhere;
 		analyze_final_definite_assignment_suite(init_function->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, init_state, assigned_anywhere);
-		for (const GDScriptParser::VariableNode *variable : blank_finals) {
-			if (init_state.reachable) {
-				// `_init` can fall off its end: the final must be assigned on every path that reaches it.
+		if (init_state.reachable) {
+			// `_init` can fall off its end: the final must be assigned on every path that reaches it.
+			// (Paths that exit early via `return` are checked at the return itself; a path that aborts
+			// via `@noreturn`/`push_fatal` never lets the object escape, so it carries no obligation.)
+			for (const GDScriptParser::VariableNode *variable : blank_finals) {
 				if (!init_state.assigned.has(variable)) {
 					push_error(vformat(R"*(Final variable "%s" must be definitely assigned in its declaration or in "_init()".)*", variable->identifier->name), variable);
 				}
-			} else if (!assigned_anywhere.has(variable)) {
-				// Every path terminated (e.g. an unconditional `return`); a final that is never
-				// assigned on any of them is left at its default value, which is rejected.
-				push_error(vformat(R"*(Final variable "%s" must be definitely assigned in its declaration or in "_init()".)*", variable->identifier->name), variable);
 			}
 		}
 	} else {
@@ -2878,13 +2875,13 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 
 		HashSet<const GDScriptParser::VariableNode *> assigned_anywhere;
 		analyze_final_definite_assignment_suite(static_init_function->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, init_state, assigned_anywhere);
-		for (const GDScriptParser::VariableNode *variable : blank_finals) {
-			if (init_state.reachable) {
+		if (init_state.reachable) {
+			// A `return` that leaves a blank static final unassigned is reported at the return itself;
+			// the only check left here is the fall-off-the-end exit of `_static_init()`.
+			for (const GDScriptParser::VariableNode *variable : blank_finals) {
 				if (!init_state.assigned.has(variable)) {
 					push_error(vformat(R"*(Final variable "%s" must be definitely assigned in its declaration or in "_static_init()".)*", variable->identifier->name), variable);
 				}
-			} else if (!assigned_anywhere.has(variable)) {
-				push_error(vformat(R"*(Final variable "%s" must be definitely assigned in its declaration or in "_static_init()".)*", variable->identifier->name), variable);
 			}
 		}
 	} else {
@@ -3555,12 +3552,22 @@ void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScrip
 		case GDScriptParser::Node::RETURN: {
 			const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_statement);
 			check_final_reads_in_expression(return_node->return_value, p_finals, p_finals_by_name, p_scope, r_state);
-			// A return makes this path unreachable; its assigned set becomes the universal set, which
-			// is neutral at branch joins. This is the deliberate "assign-or-return" rule from the
-			// design spec: `if cond: id = a else: return` leaves `id` definitely assigned afterwards.
-			// The trade-off (an early return can construct an object with a blank final at its
-			// default) is intentional; `check_final_member_assignments` still rejects the case where
-			// *every* path returns without assigning, via the assigned-anywhere union.
+			// A `return` exits `_init()`/`_static_init()` while still producing a constructed object
+			// (or a fully loaded class), so any blank final left unassigned on this path would escape
+			// at its default value. Mirroring Java's blank-final-in-constructor rule, every final must
+			// be definitely assigned before the return. A genuine abort such as `@noreturn`/`push_fatal`
+			// never lets the object escape and is exempt (handled in the default case below), and locals
+			// carry no such obligation, so this check is limited to member scopes.
+			if (p_scope != FinalAssignmentScope::LOCAL) {
+				const char *init_name = p_scope == FinalAssignmentScope::STATIC_MEMBER ? "_static_init()" : "_init()";
+				for (const GDScriptParser::VariableNode *variable : p_finals) {
+					if (!r_state.assigned.has(variable)) {
+						push_error(vformat(R"*(Final variable "%s" must be definitely assigned before returning from "%s".)*", variable->identifier->name, init_name), return_node);
+					}
+				}
+			}
+			// The path is now unreachable; its assigned set acts as the universal set, which is neutral
+			// at branch joins (so `if cond: id = a else: <abort>` keeps `id` definitely assigned after).
 			r_state.reachable = false;
 		} break;
 		case GDScriptParser::Node::BREAK:
