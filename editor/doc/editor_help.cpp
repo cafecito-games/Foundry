@@ -2046,7 +2046,7 @@ void EditorHelp::_update_doc() {
 			class_desc->add_text(annotation.name);
 			class_desc->pop(); // color
 
-			if (!annotation.arguments.is_empty()) {
+			if (!annotation.arguments.is_empty() || annotation.qualifiers.contains("vararg")) {
 				class_desc->push_color(theme_cache.symbol_color);
 				class_desc->add_text("(");
 				class_desc->pop(); // color
@@ -3943,6 +3943,9 @@ EditorHelpBit::HelpData EditorHelpBit::_get_annotation_help_data(const StringNam
 				current.arguments.push_back({ argument.name, argument_type, argument.default_value });
 			}
 			current.qualifiers = annotation.qualifiers;
+			const DocData::ArgumentDoc &rest_argument = annotation.rest_argument;
+			const DocType rest_argument_doc_type = { rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield };
+			current.rest_argument = { rest_argument.name, rest_argument_doc_type, rest_argument.default_value };
 
 			if (annotation.name == p_annotation_name) {
 				result = current;

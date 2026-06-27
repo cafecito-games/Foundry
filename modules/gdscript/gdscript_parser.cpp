@@ -976,8 +976,12 @@ void GDScriptParser::parse_program() {
 
 	int max_line = head->end_line;
 	if (!head->members.is_empty()) {
-		max_line = MIN(max_script_doc_line, head->members[0].get_line() - 1);
+		max_line = MIN(max_line, head->members[0].get_line() - 1);
 	}
+	// `max_script_doc_line` is lowered past any doc comment already consumed by a member or an
+	// annotation declaration. Clamp by it so those doc comments are never reused as the class
+	// description, including in scripts whose only declarations are annotations (no members).
+	max_line = MIN(max_line, max_script_doc_line);
 
 	int line = 0;
 	while (line <= max_line) {
@@ -1585,6 +1589,21 @@ GDScriptParser::AnnotationDeclarationNode *GDScriptParser::parse_annotation_decl
 	annotation_declaration->qualified_name = namespace_name.is_empty()
 			? String(annotation_declaration->identifier->name)
 			: namespace_name + "." + String(annotation_declaration->identifier->name);
+
+#ifdef TOOLS_ENABLED
+	// Capture the doc comment so generated docs can describe the declaration. Annotation
+	// declarations never carry leading `@annotations`, so the comment is on the line right
+	// before the declaration (or inline on the same line).
+	int doc_comment_line = annotation_declaration->start_line - 1;
+	if (has_comment(annotation_declaration->start_line, true)) {
+		// Inline doc comment.
+		annotation_declaration->doc_data = parse_doc_comment(annotation_declaration->start_line, true);
+	} else if (doc_comment_line >= min_member_doc_line && has_comment(doc_comment_line, true) && tokenizer->get_comments()[doc_comment_line].new_line) {
+		// Normal doc comment.
+		annotation_declaration->doc_data = parse_doc_comment(doc_comment_line);
+	}
+	min_member_doc_line = annotation_declaration->end_line + 1; // Prevent reuse of the same doc comment.
+#endif // TOOLS_ENABLED
 
 	if (is_root_declaration) {
 		current_class->annotation_declarations.push_back(annotation_declaration);
