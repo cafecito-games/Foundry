@@ -162,6 +162,11 @@ static bool _method_signature_slots_equal(const GDScriptParser::DataType &p_left
 }
 
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
+	// AsyncCallable and plain Callable are not interchangeable: a callable whose signature is async
+	// carries a coroutine result that a synchronous Callable does not, so their signatures differ.
+	if (p_left.signature_is_async != p_right.signature_is_async) {
+		return false;
+	}
 	// Both sides written as explicit annotations: compare the rich slots strictly, exactly as the
 	// explicit Callable/Signal path always has.
 	if (p_left.has_explicit_method_signature && p_right.has_explicit_method_signature) {
@@ -268,6 +273,17 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 				result.compatible = _datatype_method_signature_equal(p_target, p_source);
 			} else if (p_target.has_method_signature && !p_source.has_method_signature) {
 				result.requires_runtime_check = true;
+			}
+			// Enforce the async marker even when only one side carries a method signature, so a bare
+			// `AsyncCallable` is still distinct from a bare `Callable`. An async target requires an
+			// async source, and a synchronous target that carries a signature rejects an async source.
+			// A bare, signatureless synchronous `Callable` target still accepts any callable (e.g. the
+			// `Callable` parameter of `Signal.connect`), so async-ness is only enforced when the target
+			// is itself async or carries an explicit signature.
+			if (result.compatible && p_target.builtin_type == Variant::CALLABLE &&
+					p_target.signature_is_async != p_source.signature_is_async &&
+					(p_target.signature_is_async || p_target.has_method_signature)) {
+				result.compatible = false;
 			}
 		}
 		if (result.compatible && p_target.builtin_type == Variant::ARRAY && p_source.builtin_type == Variant::ARRAY) {

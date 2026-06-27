@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 9: Function "call()" is a coroutine, so it must be called with "await".

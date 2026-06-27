@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Cannot assign a value of type Callable to variable "cb" with specified type Callable.
