@@ -6441,16 +6441,17 @@ GDScriptParser::DataType GDScriptParser::DataType::substitute(const DataType &p_
 	if (p_type.kind == TYPE_PARAMETER) {
 		const DataType *binding = p_bindings.getptr(p_type.type_parameter_name);
 		if (binding != nullptr) {
+			DataType result = *binding;
 			if (p_type.is_type_handle_annotation) {
-				DataType result = *binding;
 				result.is_meta_type = true;
 				result.is_type_handle_annotation = true;
 				result.is_pseudo_type = false;
 				result.is_constant = p_type.is_constant;
 				result.is_nullable = p_type.is_nullable;
-				return result;
+			} else {
+				result.is_nullable = result.is_nullable || p_type.is_nullable;
 			}
-			return *binding;
+			return result;
 		}
 		// Unbound parameter: leave it intact so an outer scope can substitute it later, but specialize
 		// its bound so a bound referencing a substituted parameter (e.g. `[U: T]` with `T := int`)
@@ -6930,6 +6931,10 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 		case UNRESOLVED:
 			result.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
 			break;
+	}
+
+	if (is_nullable && result.type == Variant::OBJECT && result.class_name != StringName()) {
+		result.class_name = String(result.class_name) + "?";
 	}
 
 	return result;

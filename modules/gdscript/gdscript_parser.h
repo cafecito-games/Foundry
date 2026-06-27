@@ -649,10 +649,10 @@ public:
 		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script
 		// from the `[T]` type argument.
 		bool is_proxy_construct = false;
-		// Set by the analyzer when this calls a generic method whose return type is a typed container
-		// with a type-parameter element (`-> Array[T]`). That element is erased at runtime, so the value
-		// is an untyped container even though the substituted static return type is concrete; an
-		// assignment to a concrete typed container must convert (retype) the result.
+		// Set by the analyzer when this calls a method whose typed-container return needs retyping at the
+		// assignment target. Generic method elements (`-> Array[T]`) are erased at runtime; inherited
+		// `Self` container returns are compiled against the declaring class while the static call type is
+		// receiver-specialized.
 		bool returns_erased_container = false;
 		// Canonical argument positions whose value the analyzer synthesized from a skipped middle
 		// parameter's constant default during named-argument gap fill. Such an argument is excluded
@@ -1100,6 +1100,7 @@ public:
 
 		bool resolved_signature = false;
 		bool resolved_body = false;
+		bool uses_receiver_relative_self = false;
 
 		_FORCE_INLINE_ bool is_vararg() const { return rest_parameter != nullptr; }
 

@@ -6,11 +6,16 @@ class Child:
 	extends Base
 
 	func copy_from(other: Child) -> void:
-		print(other is Child)
+		pass
+
+
+class OtherChild:
+	extends Base
+
+	func copy_from(other: OtherChild) -> void:
+		pass
 
 
 func test() -> void:
-	var child := Child.new()
-	child.copy_from(child)
-	var base: Base = child
-	base.copy_from(base)
+	var base: Base = Child.new()
+	base.copy_from(OtherChild.new())
