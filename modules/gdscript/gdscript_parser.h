@@ -156,6 +156,7 @@ public:
 		Vector<DataType> method_return_type; // Empty for signals, one element for callables.
 		Vector<int> method_extra_allowed_argument_counts; // Extra exact arities not expressible by default arguments, for transformed Callables.
 		int method_unbound_argument_count = 0; // Trailing arguments ignored by transformed Callables.
+		bool callable_is_over_bound = false; // Set when bind()/bindv() bound more arguments than a fixed-arity target accepts, making any invocation fail.
 		HashMap<StringName, int64_t> enum_values; // For enums.
 
 		// For TYPE_PARAMETER kind.
@@ -323,6 +324,7 @@ public:
 			method_return_type = p_other.method_return_type;
 			method_extra_allowed_argument_counts = p_other.method_extra_allowed_argument_counts;
 			method_unbound_argument_count = p_other.method_unbound_argument_count;
+			callable_is_over_bound = p_other.callable_is_over_bound;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
 			type_parameter_name = p_other.type_parameter_name;

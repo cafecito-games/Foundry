@@ -11014,6 +11014,21 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		const bool is_callable_call_deferred = p_function == SNAME("call_deferred");
 		const bool is_callable_rpc = p_function == SNAME("rpc");
 		const bool is_callable_rpc_id = p_function == SNAME("rpc_id");
+		if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.callable_is_over_bound) {
+			// An over-bound callable (more arguments bound than its fixed-arity target accepts) can
+			// never be invoked successfully, so flag any invocation. bind()/bindv()/unbind() keep
+			// producing an over-bound callable so a later invocation is still flagged.
+			if (is_callable_call || is_callable_callv || is_callable_call_deferred || is_callable_rpc || is_callable_rpc_id) {
+				push_error(R"(Cannot invoke this Callable: it was over-bound (more arguments were bound than its target accepts), so the call can never succeed.)", p_source);
+				// Fall through to the generic Callable handling below so the call still resolves to a result type.
+			} else if ((p_function == SNAME("bind") || p_function == SNAME("bindv") || p_function == SNAME("unbind")) &&
+					Variant::has_builtin_method(Variant::CALLABLE, p_function)) {
+				const MethodInfo method_info = Variant::get_builtin_method_info(Variant::CALLABLE, p_function);
+				function_signature_from_info(method_info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
+				r_return_type = over_bound_callable_type(p_base_type);
+				return true;
+			}
+		}
 		if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.has_explicit_method_signature) {
 			const bool is_callable_vararg = (p_base_type.method_info.flags & METHOD_FLAG_VARARG) != 0;
 			auto can_bound_argument_fill_parameter = [&](const GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_parameter_type) -> bool {
@@ -11792,6 +11807,7 @@ GDScriptParser::DataType GDScriptAnalyzer::over_bound_callable_type(const GDScri
 	// callable that still carries the source's async marker (bind()/unbind() preserve async-ness).
 	GDScriptParser::DataType callable_type = plain_callable_type();
 	callable_type.signature_is_async = p_source_callable_type.signature_is_async;
+	callable_type.callable_is_over_bound = true;
 	return callable_type;
 }
 
