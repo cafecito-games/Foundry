@@ -852,8 +852,9 @@ TEST_CASE("[Modules][GDScript] Coroutine container element types survive the Pro
 	const GDScriptParser::DataType decoded_nested = TestGDScriptAnalyzerAccessor::decode_property(nested_info);
 	CHECK(decoded_nested.to_string() == "Array[Coroutine[Array[int]]]");
 
-	// Array[Coroutine] (no result slot) round-trips as a result-less coroutine element ("Coroutine"),
-	// staying awaitable rather than masquerading as a concrete Coroutine[Variant].
+	// Array[Coroutine] (no result slot) round-trips as a result-less coroutine element. It is encoded as
+	// the bracketed "Coroutine[]" so the element stays unambiguous: a bare "Coroutine" would collide with
+	// an ordinary class named Coroutine. It stays awaitable rather than masquerading as Coroutine[Variant].
 	GDScriptParser::DataType bare_coroutine;
 	bare_coroutine.kind = GDScriptParser::DataType::NATIVE;
 	bare_coroutine.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -861,7 +862,7 @@ TEST_CASE("[Modules][GDScript] Coroutine container element types survive the Pro
 	bare_coroutine.native_type = SNAME("GDScriptFunctionState");
 	bare_coroutine.is_coroutine = true;
 	const PropertyInfo bare_info = make_array_of(bare_coroutine).to_property_info("jobs");
-	CHECK(bare_info.hint_string == "Coroutine");
+	CHECK(bare_info.hint_string == "Coroutine[]");
 	const GDScriptParser::DataType decoded_bare = TestGDScriptAnalyzerAccessor::decode_property(bare_info);
 	REQUIRE(decoded_bare.has_container_element_type(0));
 	CHECK(decoded_bare.get_container_element_type(0).is_coroutine);
@@ -873,7 +874,7 @@ TEST_CASE("[Modules][GDScript] Coroutine container element types survive the Pro
 	type_parameter.kind = GDScriptParser::DataType::TYPE_PARAMETER;
 	type_parameter.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	const PropertyInfo lossy_info = make_array_of(make_coroutine_type(type_parameter)).to_property_info("jobs");
-	CHECK(lossy_info.hint_string == "Coroutine");
+	CHECK(lossy_info.hint_string == "Coroutine[]");
 	const GDScriptParser::DataType decoded_lossy = TestGDScriptAnalyzerAccessor::decode_property(lossy_info);
 	REQUIRE(decoded_lossy.has_container_element_type(0));
 	CHECK(decoded_lossy.get_container_element_type(0).is_coroutine);
@@ -900,6 +901,17 @@ TEST_CASE("[Modules][GDScript] Coroutine container element types survive the Pro
 	CHECK(decoded_dict_key.get_container_element_type(0).is_coroutine);
 	CHECK(decoded_dict_key.get_container_element_type(1).builtin_type == Variant::STRING);
 	CHECK(decoded_dict_key.to_string() == "Dictionary[Coroutine[int], String]");
+
+	// A plain (non-coroutine) native array element keeps its bare class-name hint and decodes back as an
+	// ordinary native element, never as a coroutine: only the bracketed element form is treated as a
+	// coroutine, so an array of an ordinary class (including one literally named Coroutine) stays safe.
+	const GDScriptParser::DataType array_native = make_array_of(make_native_type(SNAME("RefCounted")));
+	const PropertyInfo native_array_info = array_native.to_property_info("handles");
+	CHECK(native_array_info.hint_string == "RefCounted");
+	const GDScriptParser::DataType decoded_native_array = TestGDScriptAnalyzerAccessor::decode_property(native_array_info);
+	REQUIRE(decoded_native_array.has_container_element_type(0));
+	CHECK(decoded_native_array.get_container_element_type(0).kind == GDScriptParser::DataType::NATIVE);
+	CHECK_FALSE(decoded_native_array.get_container_element_type(0).is_coroutine);
 
 	// The decoded Array[Coroutine[String]] compares equal both ways with the in-memory original, so a
 	// cross-script consumer can both receive and assign the typed container without a false mismatch.

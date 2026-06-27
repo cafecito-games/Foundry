@@ -530,8 +530,10 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 // DataType::to_property_info's array/dictionary branches), distinct from the plain class-name leaf used
 // for every other element kind. The decoder routes such an element through _decode_signature_type so the
 // coroutine identity and phantom result T are rebuilt instead of resolving "Coroutine[...]" as a class.
+// Only the bracketed form is a coroutine: a bare "Coroutine" is an ordinary class name (the reserved
+// coroutine syntax always carries brackets), so the result-less element is encoded as "Coroutine[]".
 static bool _container_element_hint_is_coroutine(const String &p_hint) {
-	return p_hint == "Coroutine" || (p_hint.begins_with("Coroutine[") && p_hint.ends_with("]"));
+	return p_hint.begins_with("Coroutine[") && p_hint.ends_with("]");
 }
 
 // A signature slot is comparison-safe across the script-API boundary when its kind survives a

@@ -6695,7 +6695,10 @@ static String _encode_coroutine_container_element(const GDScriptParser::DataType
 	if (p_coroutine.has_container_element_type(0) && _signature_type_is_encodable(p_coroutine.get_container_element_type(0))) {
 		return vformat("Coroutine[%s]", _encode_coroutine_result_element(p_coroutine));
 	}
-	return "Coroutine";
+	// The bracketed empty slot keeps a result-less coroutine element unambiguous: a bare "Coroutine"
+	// element name would collide with an ordinary class named Coroutine (only `Coroutine[...]` is the
+	// reserved coroutine syntax), so a class used as Array[Coroutine] must stay decodable as that class.
+	return "Coroutine[]";
 }
 
 PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) const {
