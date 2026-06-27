@@ -4760,8 +4760,13 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 
 	type->type_chain.push_back(type_element);
 
+	// AsyncCallable mirrors Callable typing but carries an async marker for structured concurrency.
+	if (type->type_chain.size() == 1 && type_element->name == SNAME("AsyncCallable")) {
+		type->signature_is_async = true;
+	}
+
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		const bool is_callable_type = type->type_chain.size() == 1 && type_element->name == SNAME("Callable");
+		const bool is_callable_type = type->type_chain.size() == 1 && (type_element->name == SNAME("Callable") || type_element->name == SNAME("AsyncCallable"));
 		const bool is_signal_type = type->type_chain.size() == 1 && type_element->name == SNAME("Signal");
 		if ((is_callable_type || is_signal_type) && match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 			type->has_signature = true;

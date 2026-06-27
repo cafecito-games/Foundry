@@ -685,7 +685,7 @@ Error GDScriptAnalyzer::check_native_member_name_conflict(const StringName &p_me
 		return ERR_PARSE_ERROR;
 	}
 
-	if (GDScriptParser::get_builtin_type(p_member_name) < Variant::VARIANT_MAX) {
+	if (GDScriptParser::get_builtin_type(p_member_name) < Variant::VARIANT_MAX || p_member_name == SNAME("AsyncCallable")) {
 		push_error(vformat(R"(The member "%s" cannot have the same name as a builtin type.)", p_member_name), p_member_node);
 		return ERR_PARSE_ERROR;
 	}
@@ -801,7 +801,7 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	if (p_class->identifier) {
 		StringName class_name = p_class->identifier->name;
 		StringName global_class_name = (p_class == parser->head && !p_class->qualified_global_name.is_empty()) ? StringName(p_class->qualified_global_name) : class_name;
-		if (GDScriptParser::get_builtin_type(class_name) < Variant::VARIANT_MAX) {
+		if (GDScriptParser::get_builtin_type(class_name) < Variant::VARIANT_MAX || class_name == SNAME("AsyncCallable")) {
 			push_error(vformat(R"(Class "%s" hides a built-in type.)", class_name), p_class->identifier);
 		} else if (class_exists(class_name)) {
 			push_error(vformat(R"(Class "%s" hides a native class.)", class_name), p_class->identifier);
@@ -1222,9 +1222,10 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				return bad_type;
 			}
 			result.kind = GDScriptParser::DataType::VARIANT;
-		} else if (GDScriptParser::get_builtin_type(first) < Variant::VARIANT_MAX) {
-			// Built-in types.
-			const Variant::Type builtin_type = GDScriptParser::get_builtin_type(first);
+		} else if (GDScriptParser::get_builtin_type(first) < Variant::VARIANT_MAX || first == SNAME("AsyncCallable")) {
+			// Built-in types. AsyncCallable is an async-marked alias of Callable.
+			const bool is_async_callable = first == SNAME("AsyncCallable");
+			const Variant::Type builtin_type = is_async_callable ? Variant::CALLABLE : GDScriptParser::get_builtin_type(first);
 
 			if (p_type->type_chain.size() == 2) {
 				// May be nested enum.
@@ -1245,6 +1246,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.builtin_type = builtin_type;
 
 			if (builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) {
+				result.signature_is_async = is_async_callable;
 				if (p_type->has_signature) {
 					result.has_method_signature = true;
 					result.has_explicit_method_signature = true;
