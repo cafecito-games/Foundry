@@ -3136,7 +3136,14 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		int default_par_count = 0;
 		BitField<MethodFlags> method_flags = {};
 		StringName native_base;
-		if (!p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
+		GDScriptParser::FunctionNode *parent_function = nullptr;
+		GDScriptParser::ClassNode *parent_function_class = nullptr;
+		if (!p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class)) {
+			// A final method cannot be overridden in a subclass. Reported independently of
+			// signature compatibility so the more fundamental violation surfaces first.
+			if (parent_function != nullptr && parent_function->is_final) {
+				push_error(vformat(R"*(Cannot override final function "%s()" declared in "%s".)*", function_name, _class_or_trait_name(parent_function_class)), p_function);
+			}
 			bool valid = p_function->is_static == method_flags.has_flag(METHOD_FLAG_STATIC);
 			const bool parent_is_coroutine = method_flags.has_flag(METHOD_FLAG_ASYNC);
 			const bool current_is_coroutine = p_function->is_coroutine;
@@ -9663,7 +9670,8 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types,
 		int &r_default_arg_count, BitField<MethodFlags> &r_method_flags,
 		StringName *r_native_class, bool *r_is_noreturn,
-		GDScriptParser::FunctionNode **r_found_function) {
+		GDScriptParser::FunctionNode **r_found_function,
+		GDScriptParser::ClassNode **r_found_in_class) {
 	r_method_flags = METHOD_FLAGS_DEFAULT;
 	r_default_arg_count = 0;
 	if (r_native_class) {
@@ -9674,6 +9682,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	}
 	if (r_found_function) {
 		*r_found_function = nullptr;
+	}
+	if (r_found_in_class) {
+		*r_found_in_class = nullptr;
 	}
 	StringName function_name = p_function;
 
@@ -10131,6 +10142,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	if (found_function != nullptr) {
 		if (r_found_function) {
 			*r_found_function = found_function;
+		}
+		if (r_found_in_class) {
+			*r_found_in_class = found_in_class;
 		}
 		if (found_function->is_abstract) {
 			r_method_flags.set_flag(METHOD_FLAG_VIRTUAL_REQUIRED);
