@@ -663,13 +663,16 @@ GDScriptLanguageProtocol::GDScriptLanguageProtocol() {
 }
 
 GDScriptLanguageProtocol::~GDScriptLanguageProtocol() {
-	clients.clear();
-
-	// Clear the singleton so callers that null-check `get_singleton()` after
-	// shutdown do not dereference a dangling pointer.
+	// Null the singleton before destroying the peers. `clients.clear()` runs each `~LSPeer`, which
+	// consults `get_singleton()->is_path_managed_by_other_client()`; iterating the `clients` map
+	// while it is mid-clear (elements already freed, head/tail/size not yet reset) would be a
+	// use-after-free. With the singleton cleared first, those destructors skip the cross-client
+	// lookup. This also keeps callers that null-check `get_singleton()` after shutdown safe.
 	if (singleton == this) {
 		singleton = nullptr;
 	}
+
+	clients.clear();
 }
 
 #undef SET_DOCUMENT_METHOD
