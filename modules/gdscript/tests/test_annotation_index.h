@@ -32,6 +32,10 @@
 
 #include "modules/gdscript/gdscript.h"
 
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+#include "core/os/os.h"
+
 #include "tests/test_macros.h"
 
 namespace GDScriptTests {
@@ -85,6 +89,99 @@ TEST_CASE("[Modules][GDScript] Annotation index resolves namespaces and duplicat
 	}
 
 	language->clear_global_annotations();
+}
+
+// These tests exercise `update_global_class_annotations`, the entry point the editor file-system
+// scan and the LSP call to refresh the index from real files on disk. They write throwaway scripts
+// under the OS temp path so the disk-extraction path runs against actual files.
+
+TEST_CASE("[Modules][GDScript] Annotation index refreshes from disk") {
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	REQUIRE(language != nullptr);
+
+	language->clear_global_annotations();
+
+	const String root = OS::get_singleton()->get_temp_path().path_join("gdscript_annotation_index_refresh");
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE_EQ(dir->make_dir_recursive(root), OK);
+
+	const String library_path = root.path_join("library.gd");
+	const auto write_file = [](const String &p_path, const String &p_contents) {
+		Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string(p_contents);
+	};
+
+	// An annotation-only library that declares no `class_name`/`trait_name`.
+	write_file(library_path,
+			"namespace cafecito.test\n"
+			"annotation suite targets CLASS\n"
+			"annotation fixture targets VARIABLE\n");
+
+	language->update_global_class_annotations(library_path, library_path);
+
+	SUBCASE("Annotation-only files are indexed by the scan entry point") {
+		CHECK(language->is_global_annotation(SNAME("cafecito.test.suite")));
+		CHECK(language->is_global_annotation(SNAME("cafecito.test.fixture")));
+		CHECK(language->namespace_has_annotations("cafecito.test"));
+		CHECK_EQ(language->get_global_annotation_path(SNAME("cafecito.test.suite")), library_path);
+	}
+
+	SUBCASE("Re-scanning the same file does not create duplicates") {
+		language->update_global_class_annotations(library_path, library_path);
+		CHECK_FALSE(language->is_duplicated_global_annotation(SNAME("cafecito.test.suite")));
+	}
+
+	SUBCASE("Editing a file replaces its previous declarations") {
+		write_file(library_path,
+				"namespace cafecito.test\n"
+				"annotation suite targets CLASS\n");
+		language->update_global_class_annotations(library_path, library_path);
+
+		CHECK(language->is_global_annotation(SNAME("cafecito.test.suite")));
+		// The removed declaration is no longer indexed.
+		CHECK_FALSE(language->is_global_annotation(SNAME("cafecito.test.fixture")));
+	}
+
+	SUBCASE("Removing a file drops its declarations from the index") {
+		REQUIRE_EQ(dir->remove(library_path), OK);
+		// Re-running against the now-missing path mirrors the editor's file-removal path.
+		language->update_global_class_annotations(library_path, library_path);
+
+		CHECK_FALSE(language->is_global_annotation(SNAME("cafecito.test.suite")));
+		CHECK_FALSE(language->is_global_annotation(SNAME("cafecito.test.fixture")));
+		CHECK_FALSE(language->namespace_has_annotations("cafecito.test"));
+	}
+
+	SUBCASE("Renaming a file moves its declarations to the new path") {
+		const String renamed_path = root.path_join("renamed.gd");
+		REQUIRE_EQ(dir->rename(library_path, renamed_path), OK);
+		language->update_global_class_annotations(library_path, renamed_path);
+
+		CHECK(language->is_global_annotation(SNAME("cafecito.test.suite")));
+		// The identity is declared by exactly one path, not duplicated across old and new.
+		CHECK_FALSE(language->is_duplicated_global_annotation(SNAME("cafecito.test.suite")));
+		CHECK_EQ(language->get_global_annotation_path(SNAME("cafecito.test.suite")), renamed_path);
+
+		REQUIRE_EQ(dir->remove(renamed_path), OK);
+	}
+
+	SUBCASE("A file that fails to parse is not indexed") {
+		const String broken_path = root.path_join("broken.gd");
+		write_file(broken_path,
+				"namespace cafecito.broken\n"
+				"annotation suite targets\n"); // Missing target list: a parse error.
+		language->update_global_class_annotations(broken_path, broken_path);
+
+		CHECK_FALSE(language->is_global_annotation(SNAME("cafecito.broken.suite")));
+		CHECK_FALSE(language->namespace_has_annotations("cafecito.broken"));
+
+		REQUIRE_EQ(dir->remove(broken_path), OK);
+	}
+
+	language->clear_global_annotations();
+	dir->remove(library_path); // No-op if a subcase already removed it.
+	dir->remove(root);
 }
 
 } // namespace GDScriptTests

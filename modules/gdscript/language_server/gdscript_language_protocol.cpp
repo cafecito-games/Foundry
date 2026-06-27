@@ -30,6 +30,8 @@
 
 #include "gdscript_language_protocol.h"
 
+#include "modules/gdscript/gdscript.h"
+
 #include "core/config/project_settings.h"
 #include "core/os/thread.h"
 #include "editor/doc/doc_tools.h"
@@ -394,6 +396,21 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::LSPeer::parse_script(const Strin
 	parse_results[p_path] = parser;
 
 	parser->parse(content, p_path);
+
+	// Keep the global custom annotation index in sync with the buffer the LSP just parsed, so
+	// annotation-only namespaces declared in open (possibly unsaved) files resolve cross-file for
+	// completion and lookup. Only a cleanly parsed tree is indexed, matching the editor scan path,
+	// which avoids surfacing spurious duplicate-identity errors from half-typed declarations.
+	if (parser->parse_result == OK && parser->get_tree() != nullptr) {
+		List<StringName> annotations;
+		for (const GDScriptParser::AnnotationDeclarationNode *declaration : parser->get_tree()->annotation_declarations) {
+			if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
+				continue;
+			}
+			annotations.push_back(StringName(declaration->qualified_name));
+		}
+		GDScriptLanguage::get_singleton()->replace_global_annotations(p_path, annotations);
+	}
 
 	if (document != nullptr) {
 		GDScriptLanguageProtocol::get_singleton()->get_workspace()->publish_diagnostics(p_path);

@@ -3307,6 +3307,26 @@ void GDScriptLanguage::get_global_annotations(const String &p_path, List<StringN
 	}
 }
 
+void GDScriptLanguage::replace_global_annotations(const String &p_path, const List<StringName> &p_annotations) {
+	remove_global_annotations_by_path(p_path);
+	for (const StringName &qualified_name : p_annotations) {
+		add_global_annotation(qualified_name, p_path);
+	}
+}
+
+void GDScriptLanguage::update_global_class_annotations(const String &p_search_path, const String &p_target_path) {
+	// The file may have moved: drop the old path's entries before re-indexing the new one.
+	if (p_search_path != p_target_path) {
+		remove_global_annotations_by_path(p_search_path);
+	}
+
+	// `get_global_annotations` indexes nothing for a path that no longer exists or fails to parse,
+	// so a removed/renamed file collapses to an empty replacement, dropping its stale entries.
+	List<StringName> annotations;
+	get_global_annotations(p_target_path, &annotations);
+	replace_global_annotations(p_target_path, annotations);
+}
+
 void GDScriptLanguage::add_global_annotation(const StringName &p_qualified_name, const String &p_path) {
 	MutexLock lock(annotation_index_mutex);
 

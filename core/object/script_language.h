@@ -474,6 +474,15 @@ public:
 	virtual bool handles_global_class_type(const String &p_type) const { return false; }
 	virtual String get_global_class_name(const String &p_path, String *r_base_type = nullptr, String *r_icon_path = nullptr, bool *r_is_abstract = nullptr, bool *r_is_tool = nullptr, bool *r_is_trait = nullptr) const { return String(); }
 
+	// Refresh the language's cross-file custom annotation index for a script path, so editor
+	// tooling can resolve annotation-only namespaces and detect duplicate annotation declarations
+	// across files. Mirrors `get_global_class_name`: it runs during the editor file-system scan
+	// and must not depend on the analyzer. `p_search_path` is the path previously indexed (dropped
+	// here, in case the file moved) and `p_target_path` is the path to re-index. A path that no
+	// longer exists is simply removed. The default is a no-op for languages without custom
+	// annotations.
+	virtual void update_global_class_annotations(const String &p_search_path, const String &p_target_path) {}
+
 	virtual ~ScriptLanguage() {}
 };
 

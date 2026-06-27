@@ -958,6 +958,12 @@ public:
 	// Parse `p_path` (without running the analyzer, mirroring `get_global_class_name`) and
 	// collect the canonical identities of every root-level custom annotation declaration.
 	void get_global_annotations(const String &p_path, List<StringName> *r_annotations) const;
+	// Replace every annotation declaration indexed for `p_path` with `p_annotations`, dropping any
+	// previously registered for that path. Refreshes the index from a freshly parsed file.
+	void replace_global_annotations(const String &p_path, const List<StringName> &p_annotations);
+	// Re-extract a file's annotation declarations from disk and refresh the index. Called by the
+	// editor file-system scan (see `ScriptLanguage::update_global_class_annotations`).
+	virtual void update_global_class_annotations(const String &p_search_path, const String &p_target_path) override;
 	// Register a custom annotation declaration under its canonical identity for `p_path`.
 	void add_global_annotation(const StringName &p_qualified_name, const String &p_path);
 	// Drop every annotation declaration previously registered for `p_path`.
