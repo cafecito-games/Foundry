@@ -563,7 +563,7 @@ void GDScriptPrinter::emit_trailing_comment(int p_line) {
 
 - [ ] **Step 4: Hook comment flushing into statement/member emission**
 
-Before emitting a statement/member, call `flush_comments_before(node->start_line)`; after emitting its line (before `newline()`), call `emit_trailing_comment(node->end_line)`; update `last_emitted_line = node->end_line`. Wire these into `print_statement`, `print_member`, and the suite/class-body loops. After the final node, flush any remaining comments (comment-only tails) via `flush_comments_before(INT_MAX)` analogue that runs to the max comment line.
+Before emitting a statement/member, call `flush_comments_before(node->start_line)`; after emitting its line (before `newline()`), call `emit_trailing_comment(node->end_line)`; update `last_emitted_line = node->end_line`. Wire these into `print_statement`, `print_member`, and the suite/class-body loops. After the final node, flush any remaining comments (comment-only tails) via `flush_comments_before(INT_MAX)` analog that runs to the max comment line.
 
 - [ ] **Step 5: Blank-line normalization**
 
@@ -852,7 +852,7 @@ TEST_CASE("[Format] Idempotent over the whole corpus") {
 - [ ] **Step 4: Add refuse-on-error and semantic-preservation tests**
 
 ```cpp
-TEST_CASE("[Format] Refuses unparseable error fixtures") {
+TEST_CASE("[Format] Refuses unparsable error fixtures") {
 	for (const String &script : collect_gd_scripts("modules/gdscript/tests/scripts/analyzer/errors")) {
 		String source = FileAccess::get_file_as_string(script);
 		GDScriptFormatter formatter;
