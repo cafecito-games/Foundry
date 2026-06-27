@@ -161,6 +161,8 @@ static GDScriptParser::DataType make_callable_type(const MethodInfo &p_info) {
 	type.is_constant = true;
 	type.method_info = p_info;
 	type.has_method_signature = true;
+	// A reference to an async/coroutine method forms an AsyncCallable rather than a plain Callable.
+	type.signature_is_async = (p_info.flags & METHOD_FLAG_ASYNC) != 0;
 	return type;
 }
 
@@ -170,6 +172,8 @@ static GDScriptParser::DataType make_callable_type(const MethodInfo &p_info, con
 		type.method_parameter_types.push_back(parameter->get_datatype());
 	}
 	type.method_return_type.push_back(p_function->get_datatype());
+	// A lambda/function that awaits is a coroutine, so the callable it forms is async.
+	type.signature_is_async = type.signature_is_async || p_function->is_coroutine;
 	return type;
 }
 
@@ -9780,6 +9784,11 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
 				}
 				r_return_type = is_callable_call_deferred || is_callable_rpc || is_callable_rpc_id || p_base_type.method_return_type.is_empty() ? type_from_property(PropertyInfo(Variant::NIL, "")) : p_base_type.method_return_type[0];
+				// Synchronously invoking an AsyncCallable yields a coroutine, so the result must be awaited.
+				// Deferred/RPC dispatches do not return the callee's value, so they stay non-coroutine.
+				if (is_callable_call && p_base_type.signature_is_async) {
+					r_return_type.is_coroutine = true;
+				}
 				if (is_callable_rpc_id) {
 					r_par_types.push_back(type_from_property(PropertyInfo(Variant::INT, "peer_id"), true));
 				}
@@ -9794,6 +9803,10 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_par_types.push_back(type_from_property(PropertyInfo(Variant::ARRAY, "arguments"), true));
 				r_return_type = p_base_type.method_return_type.is_empty() ? type_from_property(PropertyInfo(Variant::NIL, "")) : p_base_type.method_return_type[0];
+				// As with call(), invoking an AsyncCallable through callv() yields a coroutine.
+				if (p_base_type.signature_is_async) {
+					r_return_type.is_coroutine = true;
+				}
 				validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts, p_base_type.method_unbound_argument_count);
 				return true;
 			}
@@ -10426,11 +10439,12 @@ GDScriptParser::DataType GDScriptAnalyzer::plain_callable_type() const {
 	return type_from_property(PropertyInfo(Variant::CALLABLE, ""));
 }
 
-GDScriptParser::DataType GDScriptAnalyzer::explicit_callable_type_from_signature(const GDScriptParser::DataType &p_return_type, const Vector<GDScriptParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const {
+GDScriptParser::DataType GDScriptAnalyzer::explicit_callable_type_from_signature(const GDScriptParser::DataType &p_return_type, const Vector<GDScriptParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg, bool p_is_async) const {
 	GDScriptParser::DataType callable_type = plain_callable_type();
 	callable_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	callable_type.has_method_signature = true;
 	callable_type.has_explicit_method_signature = true;
+	callable_type.signature_is_async = p_is_async;
 	callable_type.method_parameter_types = p_parameter_types;
 	callable_type.method_return_type.push_back(p_return_type);
 	callable_type.method_info.return_val = p_return_type.to_property_info("");
@@ -11061,7 +11075,7 @@ bool GDScriptAnalyzer::callable_type_from_method(const GDScriptParser::DataType 
 	for (const GDScriptParser::DataType &parameter_type : parameter_types) {
 		parameter_type_vector.push_back(parameter_type);
 	}
-	r_callable_type = explicit_callable_type_from_signature(return_type, parameter_type_vector, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG));
+	r_callable_type = explicit_callable_type_from_signature(return_type, parameter_type_vector, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), method_flags.has_flag(METHOD_FLAG_ASYNC));
 	return true;
 }
 

@@ -162,6 +162,11 @@ static bool _method_signature_slots_equal(const GDScriptParser::DataType &p_left
 }
 
 static bool _datatype_method_signature_equal(const GDScriptParser::DataType &p_left, const GDScriptParser::DataType &p_right) {
+	// AsyncCallable and plain Callable are not interchangeable: a callable whose signature is async
+	// carries a coroutine result that a synchronous Callable does not, so their signatures differ.
+	if (p_left.signature_is_async != p_right.signature_is_async) {
+		return false;
+	}
 	// Both sides written as explicit annotations: compare the rich slots strictly, exactly as the
 	// explicit Callable/Signal path always has.
 	if (p_left.has_explicit_method_signature && p_right.has_explicit_method_signature) {
