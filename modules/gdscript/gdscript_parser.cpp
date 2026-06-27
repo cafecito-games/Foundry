@@ -6684,6 +6684,20 @@ static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type)
 	return false;
 }
 
+// Encodes a Coroutine[T] container element (a typed-array element or a typed-dictionary key/value) into
+// the flat element-hint grammar, mirroring the top-level PROPERTY_HINT_COROUTINE_TYPE encoding. A
+// faithfully round-trippable result yields "Coroutine[<result>]"; an absent or non-round-trippable
+// result degrades to a result-less "Coroutine" rather than masquerading as a concrete "Coroutine[Variant]"
+// (matching DataType::to_property_info's top-level lossy handling). The runtime typed-container element
+// stays GDScriptFunctionState via the in-memory bytecode descriptor and is unaffected by this hint string;
+// only the cross-script analyzer round-trip reads it (see GDScriptAnalyzer::type_from_property).
+static String _encode_coroutine_container_element(const GDScriptParser::DataType &p_coroutine) {
+	if (p_coroutine.has_container_element_type(0) && _signature_type_is_encodable(p_coroutine.get_container_element_type(0))) {
+		return vformat("Coroutine[%s]", _encode_coroutine_result_element(p_coroutine));
+	}
+	return "Coroutine";
+}
+
 PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) const {
 	PropertyInfo result;
 	result.name = p_name;
@@ -6714,6 +6728,13 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 				// signature_is_async (see type_from_property).
 				result.hint = PROPERTY_HINT_CALLABLE_TYPE;
 				result.hint_string = "async";
+			} else if (builtin_type == Variant::ARRAY && has_container_element_type(0) && get_container_element_type(0).is_coroutine) {
+				// A Coroutine[T] array element keeps its coroutine identity and phantom result type T across
+				// the cross-script boundary via the signature-grammar element hint (decoded in
+				// type_from_property), instead of leaking the bare GDScriptFunctionState native name and
+				// erasing T to Array[GDScriptFunctionState].
+				result.hint = PROPERTY_HINT_ARRAY_TYPE;
+				result.hint_string = _encode_coroutine_container_element(get_container_element_type(0));
 			} else if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 				const DataType elem_type = get_container_element_type(0);
 				switch (elem_type.kind) {
@@ -6814,6 +6835,16 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 					default:
 						value_hint = "Variant";
 						break;
+				}
+				// A Coroutine[T] key/value element round-trips its coroutine identity and phantom result type
+				// T via the signature-grammar element hint (decoded in type_from_property), overriding the
+				// bare GDScriptFunctionState native name the NATIVE switch case emits above. See the array
+				// branch and _encode_coroutine_container_element.
+				if (key_type.is_coroutine) {
+					key_hint = _encode_coroutine_container_element(key_type);
+				}
+				if (value_type.is_coroutine) {
+					value_hint = _encode_coroutine_container_element(value_type);
 				}
 				result.hint = PROPERTY_HINT_DICTIONARY_TYPE;
 				result.hint_string = key_hint + ";" + value_hint;
