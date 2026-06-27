@@ -12,61 +12,11 @@ env:
     module_text_server_fb_enabled=yes
 
 jobs:
-  # Single source of truth for how the doctest suite is split across parallel test
-  # shards. Each shard runs the same editor binary over a disjoint slice of the
-  # suite, so wall-clock time drops to roughly the slowest shard instead of the
-  # whole suite running serially on one core.
-  setup:
-    name: Configure test shards
+  build-linux:
     runs-on: ubuntu-22.04
-    outputs:
-      shards: ${{ steps.shards.outputs.shards }}
-    steps:
-      - name: Define test shards
-        id: shards
-        shell: bash
-        run: |
-          # A provably-complete, disjoint partition of the doctest suite, verified by the
-          # 'Verify shard coverage' step below (the per-shard counts must sum to the full
-          # suite count). Three constraints shape the design:
-          #   - `--test-suite` silently drops tests that declare no TEST_SUITE (many
-          #     GDScript analyzer/type tests do), so the final shard uses `-tse=*GDScript*`
-          #     (exclude) to sweep up every non-GDScript-suite test, suite-less ones
-          #     included — nothing is dropped.
-          #   - mixing `-ts` and `-tse` in one shard does not subtract as you would expect
-          #     (it can zero out the whole selection), so the GDScript shards are
-          #     include-only, partitioned by suite name.
-          #   - some GDScript suites leak global state between each other, so a given test's
-          #     result can depend on which other suites ran first. The two slowest and most
-          #     leak-sensitive suites (Refactor, Verification) therefore each run ALONE in
-          #     their own shard, matching how they pass in a full serial run; do not fold
-          #     other suites into them without re-checking (see issue #595).
-          # Refactor and Verification are also by far the slowest suites, so isolating them
-          # is what actually shortens the critical path; the remaining suites are cheap.
-          cat > shards.json <<'JSON'
-          [
-            {"name": "gdscript-refactor",     "filter": "-ts=*Refactor*"},
-            {"name": "gdscript-verification", "filter": "-ts=*Verification*"},
-            {"name": "gdscript-container",    "filter": "-ts=*ContainerInference*"},
-            {"name": "gdscript-misc",         "filter": "-ts=[Modules][GDScript],*BatchCandidates*,*Completion*,*Fixpoint*,*LSP*,*Migration*,*ProjectScan*,*Strict*"},
-            {"name": "engine-and-untyped",    "filter": "-tse=*GDScript*"}
-          ]
-          JSON
-          echo "shards=$(jq -c . shards.json)" >> "$GITHUB_OUTPUT"
-
-  build-and-test:
-    name: ${{ matrix.shard.name }}
-    needs: setup
-    runs-on: ubuntu-22.04
+    name: Editor dev build and tests
     timeout-minutes: 120
-    strategy:
-      # Run every shard even if one fails, so a single failing slice does not hide
-      # results from the others.
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.setup.outputs.shards) }}
-    env:
-      GODOT_BIN: ./bin/godot.linuxbsd.editor.dev.x86_64
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -100,56 +50,14 @@ jobs:
           platform: linuxbsd
           target: editor
 
-      # Every shard builds an identical binary, so only one shard needs to refresh the
-      # shared cache; the others would just race on the same key.
       - name: Save Godot build cache
-        if: matrix.shard.name == 'gdscript-refactor'
         uses: ./.github/actions/godot-cache-save
         with:
           cache-name: linux-editor-tests
         continue-on-error: true
 
-      - name: Smoke test
-        run: |
-          ${{ env.GODOT_BIN }} --version
-          ${{ env.GODOT_BIN }} --help
-
-      # Guards the shard partition: the per-shard counts must sum to the full suite
-      # count, or some test is being skipped (false green) or double-counted. Runs on a
-      # single shard since it inspects every shard's filter. Pulls the filters from the
-      # same setup output the matrix uses, so the check can never drift from the shards
-      # that actually run.
-      - name: Verify shard coverage
-        if: matrix.shard.name == 'engine-and-untyped'
-        shell: bash
-        env:
-          SHARDS_JSON: ${{ needs.setup.outputs.shards }}
-        run: |
-          set -euo pipefail
-          set -f # Disable globbing so filter patterns like *GDScript* reach doctest verbatim.
-          count_for() {
-            # doctest's --count prints "...passing the current filters: N" and exits
-            # without running anything. --no-colors keeps the number easy to parse.
-            ${{ env.GODOT_BIN }} --headless --test --no-colors --count $1 \
-              | grep -oE 'filters: [0-9]+' | grep -oE '[0-9]+' | tail -1
-          }
-          total=$(count_for "")
-          sum=0
-          while IFS= read -r filter; do
-            n=$(count_for "$filter")
-            echo "shard [$filter] -> $n"
-            sum=$((sum + n))
-          done < <(echo "$SHARDS_JSON" | jq -r '.[].filter')
-          echo "Full suite: $total   Sum of shards: $sum"
-          if [ "$sum" -ne "$total" ]; then
-            echo "::error::Test shards do not partition the suite (sum=$sum, total=$total). A test would be skipped or run twice; fix the shard filters in the 'setup' job."
-            exit 1
-          fi
-
       - name: Unit tests
-        shell: bash
         run: |
-          set -f # Disable globbing so filter patterns like *GDScript* reach doctest verbatim.
-          # -d/--duration prints per-test-case wall time, so the slowest cases in each
-          # shard are visible in the log for future balancing.
-          ${{ env.GODOT_BIN }} --headless --test --force-colors --duration ${{ matrix.shard.filter }}
+          ./bin/godot.linuxbsd.editor.dev.x86_64 --version
+          ./bin/godot.linuxbsd.editor.dev.x86_64 --help
+          ./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors
