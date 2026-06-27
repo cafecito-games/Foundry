@@ -6491,6 +6491,20 @@ static String _encode_signature_leaf_name(const GDScriptParser::DataType &p_type
 
 static String _encode_signature_type(const GDScriptParser::DataType &p_type);
 
+// Encodes the phantom result type T of a Coroutine[T] into the flat hint grammar. The bracketed result
+// slot mirrors to_string: an absent slot renders as "Variant" and a NIL (void) result as "void", so the
+// coroutine round-trips with an awaitable result type. Callers wrap this as "Coroutine[<element>]".
+static String _encode_coroutine_result_element(const GDScriptParser::DataType &p_coroutine) {
+	if (!p_coroutine.has_container_element_type(0)) {
+		return "Variant";
+	}
+	const GDScriptParser::DataType result_type = p_coroutine.get_container_element_type(0);
+	if (result_type.kind == GDScriptParser::DataType::BUILTIN && result_type.builtin_type == Variant::NIL) {
+		return "void";
+	}
+	return _encode_signature_type(result_type);
+}
+
 // Encodes a Callable/Signal signature suffix: "[[p0, p1], ret]" for callables, "[[p0, p1]]" for signals.
 static String _encode_method_signature_suffix(const GDScriptParser::DataType &p_type, bool p_has_return) {
 	Vector<String> params;
@@ -6516,6 +6530,11 @@ static String _encode_method_signature_suffix(const GDScriptParser::DataType &p_
 }
 
 static String _encode_signature_type_base(const GDScriptParser::DataType &p_type) {
+	// Coroutine[T] is a NATIVE skin over GDScriptFunctionState; intercept it before the leaf fallthrough
+	// so the bare native name never leaks and the result type T survives the boundary.
+	if (p_type.is_coroutine) {
+		return vformat("Coroutine[%s]", _encode_coroutine_result_element(p_type));
+	}
 	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
 		switch (p_type.builtin_type) {
 			case Variant::ARRAY:
@@ -6596,6 +6615,11 @@ static bool _enum_signature_leaf_round_trips(const String &p_name) {
 static bool _signature_type_is_encodable(const GDScriptParser::DataType &p_type) {
 	if (!p_type.type_arguments.is_empty()) {
 		return false;
+	}
+	// Coroutine[T] round-trips as long as its result type T does; the coroutine skin itself is always
+	// expressible in the grammar (see _encode_signature_type_base). An absent result is Variant.
+	if (p_type.is_coroutine) {
+		return !p_type.has_container_element_type(0) || _signature_type_is_encodable(p_type.get_container_element_type(0));
 	}
 	switch (p_type.kind) {
 		case GDScriptParser::DataType::VARIANT:
@@ -6799,6 +6823,20 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 			result.type = Variant::OBJECT;
 			if (is_meta_type) {
 				result.class_name = GDScriptNativeClass::get_class_static();
+			} else if (is_coroutine) {
+				// Coroutine[T] is a source-level skin over GDScriptFunctionState. Preserve both the
+				// coroutine identity and the phantom result type T across the PropertyInfo boundary via a
+				// dedicated hint (mirroring PROPERTY_HINT_ARRAY_TYPE), decoded in type_from_property.
+				// Without this the skin leaks as a bare GDScriptFunctionState and a cross-script consumer
+				// loses T and awaitability. A result type that cannot round-trip degrades to Variant so the
+				// handle stays awaitable rather than crossing untyped.
+				result.class_name = native_type;
+				result.hint = PROPERTY_HINT_COROUTINE_TYPE;
+				if (has_container_element_type(0) && !_signature_type_is_encodable(get_container_element_type(0))) {
+					result.hint_string = "Variant";
+				} else {
+					result.hint_string = _encode_coroutine_result_element(*this);
+				}
 			} else {
 				result.class_name = native_type;
 			}

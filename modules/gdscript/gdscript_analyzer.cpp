@@ -309,6 +309,25 @@ static Vector<String> _split_signature_top_level(const String &p_text) {
 
 static GDScriptParser::DataType _decode_signature_type(const String &p_encoded);
 
+// Rebuilds a Coroutine[T] from its encoded result-type element (see _encode_coroutine_result_element).
+// An empty or "Variant" element yields Coroutine[Variant]; "void" yields a NIL result; anything else is
+// decoded through the shared signature grammar. The result is always wrapped via make_coroutine_type so
+// the coroutine identity and phantom result type survive the boundary.
+static GDScriptParser::DataType _decode_coroutine_result_element(const String &p_element) {
+	const String element = p_element.strip_edges();
+	GDScriptParser::DataType result_type;
+	result_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	if (element.is_empty() || element == "Variant") {
+		result_type.kind = GDScriptParser::DataType::VARIANT;
+	} else if (element == "void") {
+		result_type.kind = GDScriptParser::DataType::BUILTIN;
+		result_type.builtin_type = Variant::NIL;
+	} else {
+		result_type = _decode_signature_type(element);
+	}
+	return make_coroutine_type(result_type);
+}
+
 // Decodes a Callable/Signal signature suffix ("[[p0, p1], ret]" or "[[p0, p1]]") into r_type. Returns
 // false — leaving r_type untouched (a bare callable/signal) — when the suffix does not match the
 // expected grammar, so malformed external metadata degrades to gradual typing instead of a bogus
@@ -466,6 +485,13 @@ static GDScriptParser::DataType _decode_signature_type_base(const String &p_enco
 			result.set_container_element_type(1, value_type);
 		}
 		return result;
+	}
+	if (text == "Coroutine" || (text.begins_with("Coroutine[") && text.ends_with("]"))) {
+		String element = "";
+		if (text.begins_with("Coroutine[")) {
+			element = text.substr(10, text.length() - 11); // between "Coroutine[" and trailing "]"
+		}
+		return _decode_coroutine_result_element(element);
 	}
 	if (_resolve_hint_leaf_type(text, result)) {
 		return result;
@@ -10798,6 +10824,14 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 	}
 	result.builtin_type = p_property.type;
 	if (p_property.type == Variant::OBJECT) {
+		if (p_property.hint == PROPERTY_HINT_COROUTINE_TYPE) {
+			// Rebuild Coroutine[T] from the dedicated hint emitted by DataType::to_property_info, so the
+			// coroutine identity and phantom result type survive a cross-script PropertyInfo round-trip
+			// instead of degrading to a bare GDScriptFunctionState.
+			GDScriptParser::DataType coroutine = _decode_coroutine_result_element(p_property.hint_string);
+			coroutine.is_read_only = p_is_readonly;
+			return coroutine;
+		}
 		if (ScriptServer::is_global_class(p_property.class_name)) {
 			result.kind = GDScriptParser::DataType::SCRIPT;
 			result.script_path = ScriptServer::get_global_class_path(p_property.class_name);
@@ -11732,7 +11766,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 bool GDScriptAnalyzer::function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
 	r_return_type = type_from_property(p_info.return_val);
-	if ((p_info.flags & METHOD_FLAG_ASYNC) != 0) {
+	// METHOD_FLAG_ASYNC wraps a bare declared return type T into Coroutine[T]. Guard against double
+	// wrapping in case the return type already round-tripped as a coroutine via PROPERTY_HINT_COROUTINE_TYPE.
+	if ((p_info.flags & METHOD_FLAG_ASYNC) != 0 && !r_return_type.is_coroutine) {
 		r_return_type = make_coroutine_type(r_return_type);
 	}
 	r_default_arg_count = p_info.default_arguments.size();

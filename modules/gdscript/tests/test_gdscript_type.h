@@ -87,6 +87,19 @@ static GDScriptParser::DataType make_native_type(const StringName &p_native_type
 	return type;
 }
 
+// Mirrors the analyzer's file-static make_coroutine_type: a Coroutine[T] is a NATIVE skin over
+// GDScriptFunctionState whose result type T lives in container_element_types[0].
+static GDScriptParser::DataType make_coroutine_type(const GDScriptParser::DataType &p_result_type) {
+	GDScriptParser::DataType type;
+	type.kind = GDScriptParser::DataType::NATIVE;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.builtin_type = Variant::OBJECT;
+	type.native_type = SNAME("GDScriptFunctionState");
+	type.is_coroutine = true;
+	type.set_container_element_type(0, p_result_type);
+	return type;
+}
+
 static GDScriptParser::DataType make_signature_builtin_type(Variant::Type p_builtin_type, Variant::Type p_argument_type, Variant::Type p_return_type) {
 	GDScriptParser::DataType type = make_builtin_type(p_builtin_type);
 	type.has_method_signature = true;
@@ -665,6 +678,79 @@ TEST_CASE("[Modules][GDScript] AsyncCallable async marker survives the PropertyI
 	REQUIRE(decoded_signal.method_parameter_types.size() == 1);
 	CHECK(decoded_signal.method_parameter_types[0].builtin_type == Variant::CALLABLE);
 	CHECK(decoded_signal.method_parameter_types[0].signature_is_async);
+}
+
+TEST_CASE("[Modules][GDScript] Coroutine result type survives the PropertyInfo boundary") {
+	// A Coroutine[T] that crosses the MethodInfo/PropertyInfo boundary (e.g. a synchronous method on
+	// another compiled script that returns an in-flight handle) must keep both its coroutine identity and
+	// the phantom result type T. Without the dedicated hint it would leak as a bare GDScriptFunctionState,
+	// so a cross-script consumer would lose T and the ability to await it as T. This exercises the encode
+	// (DataType::to_property_info) and decode (GDScriptAnalyzer::type_from_property) pair directly.
+
+	// Coroutine[String]: a builtin result type round-trips exactly.
+	GDScriptParser::DataType coroutine_string = make_coroutine_type(make_builtin_type(Variant::STRING));
+	const PropertyInfo string_info = coroutine_string.to_property_info("handle");
+	CHECK(string_info.type == Variant::OBJECT);
+	CHECK(string_info.class_name == StringName("GDScriptFunctionState"));
+	CHECK(string_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
+	CHECK(string_info.hint_string == "String");
+
+	const GDScriptParser::DataType decoded_string = TestGDScriptAnalyzerAccessor::decode_property(string_info);
+	CHECK(decoded_string.kind == GDScriptParser::DataType::NATIVE);
+	CHECK(decoded_string.is_coroutine);
+	CHECK(decoded_string.native_type == StringName("GDScriptFunctionState"));
+	REQUIRE(decoded_string.has_container_element_type(0));
+	CHECK(decoded_string.get_container_element_type(0).builtin_type == Variant::STRING);
+	CHECK(decoded_string.to_string() == "Coroutine[String]");
+
+	// Coroutine[void]: a NIL result is encoded as "void" and rebuilt as a NIL result.
+	GDScriptParser::DataType coroutine_void = make_coroutine_type(make_builtin_type(Variant::NIL));
+	const PropertyInfo void_info = coroutine_void.to_property_info("handle");
+	CHECK(void_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
+	CHECK(void_info.hint_string == "void");
+	const GDScriptParser::DataType decoded_void = TestGDScriptAnalyzerAccessor::decode_property(void_info);
+	CHECK(decoded_void.is_coroutine);
+	REQUIRE(decoded_void.has_container_element_type(0));
+	CHECK(decoded_void.get_container_element_type(0).builtin_type == Variant::NIL);
+	CHECK(decoded_void.to_string() == "Coroutine[void]");
+
+	// Coroutine without a result slot degrades to Coroutine[Variant] and stays awaitable.
+	GDScriptParser::DataType coroutine_bare;
+	coroutine_bare.kind = GDScriptParser::DataType::NATIVE;
+	coroutine_bare.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	coroutine_bare.builtin_type = Variant::OBJECT;
+	coroutine_bare.native_type = SNAME("GDScriptFunctionState");
+	coroutine_bare.is_coroutine = true;
+	const PropertyInfo bare_info = coroutine_bare.to_property_info("handle");
+	CHECK(bare_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
+	CHECK(bare_info.hint_string == "Variant");
+	const GDScriptParser::DataType decoded_bare = TestGDScriptAnalyzerAccessor::decode_property(bare_info);
+	CHECK(decoded_bare.is_coroutine);
+	REQUIRE(decoded_bare.has_container_element_type(0));
+	CHECK(decoded_bare.get_container_element_type(0).kind == GDScriptParser::DataType::VARIANT);
+
+	// A nested Array result (Coroutine[Array[int]]) round-trips through the recursive grammar.
+	GDScriptParser::DataType array_int = make_builtin_type(Variant::ARRAY);
+	array_int.set_container_element_type(0, make_builtin_type(Variant::INT));
+	GDScriptParser::DataType coroutine_array = make_coroutine_type(array_int);
+	const PropertyInfo array_info = coroutine_array.to_property_info("handle");
+	CHECK(array_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
+	CHECK(array_info.hint_string == "Array[int]");
+	const GDScriptParser::DataType decoded_array = TestGDScriptAnalyzerAccessor::decode_property(array_info);
+	CHECK(decoded_array.is_coroutine);
+	REQUIRE(decoded_array.has_container_element_type(0));
+	CHECK(decoded_array.get_container_element_type(0).builtin_type == Variant::ARRAY);
+	REQUIRE(decoded_array.get_container_element_type(0).has_container_element_type(0));
+	CHECK(decoded_array.get_container_element_type(0).get_container_element_type(0).builtin_type == Variant::INT);
+
+	// A native result type round-trips, and the decoded coroutine compares equal to the in-memory one.
+	GDScriptParser::DataType coroutine_native = make_coroutine_type(make_native_type(SNAME("RefCounted")));
+	const PropertyInfo native_info = coroutine_native.to_property_info("handle");
+	CHECK(native_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
+	CHECK(native_info.hint_string == "RefCounted");
+	const GDScriptParser::DataType decoded_native = TestGDScriptAnalyzerAccessor::decode_property(native_info);
+	CHECK(GDScriptTypeCompatibility::check(coroutine_native, decoded_native).compatible);
+	CHECK(GDScriptTypeCompatibility::check(decoded_native, coroutine_native).compatible);
 }
 
 TEST_CASE("[Modules][GDScript] Async method reference infers a bare AsyncCallable type") {
