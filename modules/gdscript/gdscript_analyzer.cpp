@@ -2835,6 +2835,22 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 		}
 	}
 
+	// A flattened trait body that writes a same-named final through a non-`self` receiver must be
+	// disambiguated from a write to a genuinely external/inherited final: the former carries stale
+	// finality and is resolved by name, the latter is flagged. Record every final name any applied
+	// trait supplies (including names the implementer shadows) so that disambiguation can be made.
+	flattened_trait_final_names.clear();
+	for (const GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->is_final && !member.variable->is_static && member.variable->identifier != nullptr) {
+				flattened_trait_final_names.insert(member.variable->identifier->name);
+			}
+		}
+	}
+
 	// Reject every assignment to a final outside its legal slot. This runs for every class (even
 	// one with no finals of its own) because detection is global: a write to another class's or an
 	// inherited final from any method/initializer here must still be caught. The legal slot is this
@@ -3031,6 +3047,21 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 			if (static_init_function == nullptr && member.function->identifier != nullptr && member.function->identifier->name == SNAME("_static_init")) {
 				static_init_function = member.function;
 				static_init_function_from_trait = true;
+			}
+		}
+	}
+
+	// Record every static final name any applied trait supplies (including names the implementer
+	// shadows) so a non-`self` write to a trait-supplied static final's stale slot is resolved by name
+	// while one to a genuinely external/inherited static final is still flagged (see the member pass).
+	flattened_trait_final_names.clear();
+	for (const GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->is_final && member.variable->is_static && member.variable->identifier != nullptr) {
+				flattened_trait_final_names.insert(member.variable->identifier->name);
 			}
 		}
 	}
@@ -3361,11 +3392,8 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 		// compiler emits the flattened assignments by name against the implementing class's same-named
 		// slot. A trait `variable_source` therefore carries a stale finality (an external trait body is
 		// fully resolved in its own class context, so it points at the trait's member even when the
-		// implementer shadows it). Resolve purely by name against the implementer's tracked finals so
-		// shadowing is honored: a name the implementer tracks as final is its slot, and a name shadowed
-		// to a mutable (or absent) member is not a final write here.
-		StringName name;
-		bool self_receiver = false;
+		// implementer shadows it). Resolve a reference to the implementer's own slot purely by name so
+		// shadowing is honored; references that are not the implementer's slot are handled below.
 		if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
 			const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
 			switch (identifier->source) {
@@ -3379,40 +3407,55 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 				default:
 					break;
 			}
-			name = identifier->name;
-			// A bare member reference is implicitly `self.<name>`.
-			self_receiver = true;
-		} else if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
+			// A bare member reference is implicitly `self.<name>`; resolve by name so a name the
+			// implementer shadows to a mutable (or absent) member is not treated as a final write, while
+			// its own tracked slot still is.
+			HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(identifier->name);
+			if (found) {
+				if (r_is_self_receiver != nullptr) {
+					*r_is_self_receiver = true;
+				}
+				return found->value;
+			}
+			return nullptr;
+		}
+		if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
 			if (!subscript->is_attribute || subscript->attribute == nullptr) {
 				return nullptr;
 			}
-			name = subscript->attribute->name;
-			self_receiver = subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF;
-			if (!self_receiver) {
-				// A non-`self` receiver designates the slot only when its attribute resolves to the *same*
-				// final the implementer tracks: an alias of `self`, another instance of the declaring type,
-				// or a qualified static form (`Type.VALUE`). An unrelated receiver whose member merely
-				// shares the name resolves elsewhere and must not be flagged. The attribute's
-				// `variable_source` is reliable for this identity test even in a trait body (a shadowed
-				// trait final is excluded below because its name is not tracked by the implementer).
-				const bool attribute_is_variable = subscript->attribute->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::INHERITED_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE;
-				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator slot = p_finals_by_name.find(name);
-				if (!slot || !attribute_is_variable || subscript->attribute->variable_source != slot->value) {
-					return nullptr;
+			const StringName name = subscript->attribute->name;
+			if (subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF) {
+				// `self.<name>` designates this instance's slot; resolve by name (stale finality again).
+				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(name);
+				if (found) {
+					if (r_is_self_receiver != nullptr) {
+						*r_is_self_receiver = true;
+					}
+					return found->value;
 				}
+				return nullptr;
 			}
+			// A non-`self` receiver designates the implementer's slot only when its attribute resolves to
+			// the *same* final the implementer tracks: an alias of `self` or another instance of the
+			// declaring type. `variable_source` is reliable for this identity test.
+			const bool attribute_is_variable = subscript->attribute->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::INHERITED_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE;
+			HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator slot = p_finals_by_name.find(name);
+			if (slot && attribute_is_variable && subscript->attribute->variable_source == slot->value) {
+				return slot->value;
+			}
+			if (flattened_trait_final_names.has(name)) {
+				// The name is a trait-supplied final the implementer shadows (or otherwise does not track
+				// on this receiver); its trait `variable_source` carries stale finality, so a non-`self`
+				// write through it must not be flagged here.
+				return nullptr;
+			}
+			// Otherwise the reference is to a genuinely external or inherited final, whose own
+			// `variable_source` is reliable; fall through to the normal resolution below so the illegal
+			// write is reported exactly as it would be outside a trait body.
 		} else {
 			return nullptr;
 		}
-		HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(name);
-		if (!found) {
-			return nullptr;
-		}
-		if (r_is_self_receiver != nullptr) {
-			*r_is_self_receiver = self_receiver;
-		}
-		return found->value;
 	}
 	if (p_scope != FinalAssignmentScope::INSTANCE_MEMBER) {
 		// Static and local finals are referenced by a bare identifier (this class's static variable,
