@@ -2853,6 +2853,11 @@ void GDScriptAnalyzer::check_final_local_assignments(GDScriptParser::ClassNode *
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			analyze_function_local_finals(member.function);
+		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
+			// Inline property accessor bodies hold their own statement trees (and `final var` locals),
+			// so they are analyzed like any other function.
+			analyze_function_local_finals(member.variable->getter);
+			analyze_function_local_finals(member.variable->setter);
 		}
 	}
 }
@@ -2868,6 +2873,10 @@ void GDScriptAnalyzer::analyze_function_local_finals(const GDScriptParser::Funct
 	HashMap<StringName, const GDScriptParser::VariableNode *> finals_by_name;
 	collect_local_finals(p_function->body, finals, finals_by_name);
 	if (!finals.is_empty()) {
+		// Reject reassignment of a captured local final from inside a nested lambda before running the
+		// definite-assignment walk (which intentionally does not descend into lambda scopes).
+		scan_illegal_final_writes(p_function->body, finals, finals_by_name, FinalAssignmentScope::LOCAL, true);
+
 		FinalAssignmentState state;
 		HashSet<const GDScriptParser::VariableNode *> assigned_anywhere;
 		analyze_final_definite_assignment_suite(p_function->body, finals, finals_by_name, FinalAssignmentScope::LOCAL, state, assigned_anywhere);
@@ -3023,9 +3032,7 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 	}
 	if (p_scope != FinalAssignmentScope::INSTANCE_MEMBER) {
 		// Static and local finals are referenced by a bare identifier (this class's static variable,
-		// or a block local). There is no self/other-instance aliasing or inheritance receiver to
-		// disambiguate, so the single tracked form is the direct identifier; the caller gates the
-		// rest by membership in `p_finals`.
+		// or a block local); the caller gates the rest by membership in `p_finals`.
 		if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
 			const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
 			const GDScriptParser::IdentifierNode::Source expected_source = p_scope == FinalAssignmentScope::STATIC_MEMBER ? GDScriptParser::IdentifierNode::STATIC_VARIABLE : GDScriptParser::IdentifierNode::LOCAL_VARIABLE;
@@ -3034,6 +3041,21 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 					*r_is_self_receiver = true;
 				}
 				return identifier->variable_source;
+			}
+		}
+		// A static final has a single shared slot regardless of receiver, so qualified forms
+		// (`ClassName.VALUE`, `self.VALUE`, `instance.VALUE`) designate the same slot as the bare
+		// name. Recognize them so reassignment and use-before-assignment are still enforced; reaching
+		// this class's own static (matched by name) counts as the tracked slot.
+		if (p_scope == FinalAssignmentScope::STATIC_MEMBER && p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			if (subscript->is_attribute && subscript->attribute != nullptr && subscript->attribute->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE && subscript->attribute->variable_source != nullptr && subscript->attribute->variable_source->is_final) {
+				const GDScriptParser::VariableNode *static_final = subscript->attribute->variable_source;
+				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(subscript->attribute->name);
+				if (found && found->value == static_final && r_is_self_receiver != nullptr) {
+					*r_is_self_receiver = true;
+				}
+				return static_final;
 			}
 		}
 		return nullptr;
@@ -3247,11 +3269,19 @@ void GDScriptAnalyzer::scan_illegal_final_writes(const GDScriptParser::Node *p_n
 			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_node);
 			bool is_self_receiver = false;
 			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name, p_scope, &is_self_receiver);
-			// The only legal write fills *this class's own* final (instance or static) on *this*
-			// receiver, lexically in the matching initializer slot. Everything else is rejected: a
-			// write outside the slot function, through another receiver (`other.id`/alias of `self`),
-			// to an inherited final (the base owns its slot), or to another class's final.
-			if (target != nullptr && !(p_finals.has(target) && is_self_receiver && p_in_init)) {
+			if (p_scope == FinalAssignmentScope::LOCAL) {
+				// A local final is assigned within its own function body (tracked by the definite-
+				// assignment pass). The single illegal form is a write from inside a nested lambda,
+				// which captures the final but is a separate scope outside the single-slot model.
+				// `p_in_init` is true in the declaring body and false once a lambda boundary is crossed.
+				if (target != nullptr && p_finals.has(target) && !p_in_init) {
+					push_error(vformat(R"(Final variable "%s" cannot be assigned inside a lambda.)", target->identifier->name), assignment->assignee);
+				}
+			} else if (target != nullptr && !(p_finals.has(target) && is_self_receiver && p_in_init)) {
+				// The only legal write fills *this class's own* final (instance or static) on *this*
+				// receiver, lexically in the matching initializer slot. Everything else is rejected: a
+				// write outside the slot function, through another receiver (`other.id`/alias of
+				// `self`), to an inherited final (the base owns its slot), or to another class's final.
 				const char *slot_function = p_scope == FinalAssignmentScope::STATIC_MEMBER ? "_static_init()" : "_init()";
 				push_error(vformat(R"*(Final variable "%s" can only be assigned in its declaration or in "%s".)*", target->identifier->name, slot_function), assignment->assignee);
 			}
