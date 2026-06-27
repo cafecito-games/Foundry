@@ -33,7 +33,6 @@
 #include "editor/editor_node.h"
 #include "editor/export/editor_export.h"
 #include "editor/export/editor_export_platform.h"
-#include "editor/export/editor_export_platform_apple_embedded.h"
 #include "editor/export/editor_export_preset.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
@@ -155,7 +154,12 @@ void EditorRunNative::_rebuild_popup() {
 	// platforms with an adapter (iOS on macOS today) contribute run-target rows;
 	// everything else still flows through the legacy per-platform enumeration below.
 	HashMap<String, Vector<RunTargetDevice>> devices_by_platform;
-	HashMap<String, bool> adapter_platforms;
+	// A platform is "owned" by the run-target section only once the project has at
+	// least one configured target for it (and an adapter is registered). For an
+	// owned platform the section renders setup rows and the legacy device rows are
+	// suppressed; a platform with no configured target keeps its legacy rows so an
+	// existing project with no run_targets.cfg deploys exactly as before.
+	HashMap<String, bool> owned_platforms;
 	{
 		HashMap<String, bool> candidate_platforms;
 		candidate_platforms["ios"] = true;
@@ -167,18 +171,32 @@ void EditorRunNative::_rebuild_popup() {
 			if (adapter == nullptr) {
 				continue;
 			}
-			adapter_platforms[candidate.key] = true;
 			devices_by_platform[candidate.key] = adapter->list_devices();
+		}
+		for (const RunTarget &target : run_target_manager.get_targets()) {
+			if (run_target_manager.get_platform(target.platform) != nullptr) {
+				owned_platforms[target.platform] = true;
+			}
 		}
 	}
 
 	run_target_entries = build_menu_model(run_target_manager.get_targets(), devices_by_platform);
 
-	if (!run_target_entries.is_empty()) {
-		popup->add_separator(TTRC("Run Targets"));
+	{
 		const String active = run_target_manager.get_active_target_name();
+		bool header_added = false;
 		for (int i = 0; i < run_target_entries.size(); i++) {
 			const RunTargetMenuEntry &entry = run_target_entries[i];
+			// A connected-but-unconfigured device only earns a "set up" row once its
+			// platform is owned; otherwise it is still reachable (and deployable)
+			// through the legacy rows below, so showing it twice would be redundant.
+			if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE && !owned_platforms.has(entry.platform)) {
+				continue;
+			}
+			if (!header_added) {
+				popup->add_separator(TTRC("Run Targets"));
+				header_added = true;
+			}
 			String label = entry.label;
 			if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE) {
 				label = vformat(TTR("Set up this device… (%s)"), entry.label);
@@ -194,9 +212,11 @@ void EditorRunNative::_rebuild_popup() {
 		}
 	}
 
-	// Legacy per-export-platform device enumeration. Platforms already covered by a
-	// run-target adapter (iOS on macOS) are skipped here to avoid listing the same
-	// devices twice; all other platforms keep their existing behavior unchanged.
+	// Legacy per-export-platform device enumeration. The iOS platform is skipped
+	// only once it is owned by the run-target section (a configured iOS target
+	// exists), to avoid listing the same devices twice; visionOS and every other
+	// platform — and iOS itself when no run target is configured — keep their
+	// existing behavior unchanged.
 	int device_shortcut_id = 1;
 	for (int i = 0; i < EditorExport::get_singleton()->get_export_preset_count(); i++) {
 		Ref<EditorExportPreset> preset = EditorExport::get_singleton()->get_export_preset(i);
@@ -204,7 +224,7 @@ void EditorRunNative::_rebuild_popup() {
 		if (eep.is_null()) {
 			continue;
 		}
-		if (adapter_platforms.has("ios") && Object::cast_to<EditorExportPlatformAppleEmbedded>(eep.ptr()) != nullptr) {
+		if (owned_platforms.has("ios") && eep->get_name() == "iOS") {
 			continue;
 		}
 		const int platform_idx = EditorExport::get_singleton()->get_export_platform_index_by_name(eep->get_name());
