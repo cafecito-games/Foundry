@@ -256,6 +256,11 @@ static int expression_precedence(const GDScriptParser::ExpressionNode *p_express
 			return FPREC_TYPE_TEST;
 		case GDScriptParser::Node::AWAIT:
 			return FPREC_AWAIT;
+		case GDScriptParser::Node::LAMBDA:
+			// A lambda body greedily extends to the end of the line, so anything
+			// that follows it (a postfix `.method()`, an operator) must be inside
+			// parentheses. Rank it lowest so every operand context wraps it.
+			return FPREC_NONE;
 		default:
 			return FPREC_PRIMARY;
 	}
@@ -669,6 +674,10 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 		write(" extends ");
 		print_extends_clause(p_class);
 	}
+	for (int i = 0; i < p_class->used_traits.size(); i++) {
+		write(i == 0 ? " uses " : ", ");
+		print_trait_use(p_class->used_traits[i]);
+	}
 	write(":");
 	newline();
 	last_emitted_line = p_class->start_line;
@@ -685,17 +694,9 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 }
 
 void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_class, bool p_is_tool) {
-	if (!p_class->namespace_name.is_empty()) {
-		write("namespace ");
-		write(p_class->namespace_name);
-		newline();
-	}
-	for (const String &import_name : p_class->imports) {
-		write("import ");
-		write(import_name);
-		newline();
-	}
-
+	// Script-level annotations (`@tool`, `@icon`, `@static_unload`) must appear at
+	// the very top, before `namespace`/`extends`/`class_name`; emitting them after
+	// `namespace` is a parse error.
 	if (p_is_tool) {
 		write("@tool");
 		newline();
@@ -709,6 +710,17 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 		newline();
 	}
 	print_annotations(p_class->annotations);
+
+	if (!p_class->namespace_name.is_empty()) {
+		write("namespace ");
+		write(p_class->namespace_name);
+		newline();
+	}
+	for (const String &import_name : p_class->imports) {
+		write("import ");
+		write(import_name);
+		newline();
+	}
 
 	String modifier;
 	if (p_class->is_abstract) {
@@ -737,21 +749,28 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 		newline();
 	}
 
+	// All used traits share a single `uses` statement; a second `uses` line is a
+	// parse error ("Cannot use \"uses\" more than once in the same class.").
 	for (int i = 0; i < p_class->used_traits.size(); i++) {
-		const GDScriptParser::ClassNode::TraitUse &trait_use = p_class->used_traits[i];
-		write("uses ");
-		write(trait_use.to_string());
-		if (!trait_use.type_arguments.is_empty()) {
-			write("[");
-			for (int j = 0; j < trait_use.type_arguments.size(); j++) {
-				if (j > 0) {
-					write(", ");
-				}
-				print_type(trait_use.type_arguments[j]);
-			}
-			write("]");
-		}
+		write(i == 0 ? "uses " : ", ");
+		print_trait_use(p_class->used_traits[i]);
+	}
+	if (!p_class->used_traits.is_empty()) {
 		newline();
+	}
+}
+
+void GDScriptPrinter::print_trait_use(const GDScriptParser::ClassNode::TraitUse &p_use) {
+	write(p_use.to_string());
+	if (!p_use.type_arguments.is_empty()) {
+		write("[");
+		for (int j = 0; j < p_use.type_arguments.size(); j++) {
+			if (j > 0) {
+				write(", ");
+			}
+			print_type(p_use.type_arguments[j]);
+		}
+		write("]");
 	}
 }
 
@@ -958,10 +977,18 @@ void GDScriptPrinter::print_function(const GDScriptParser::FunctionNode *p_funct
 		write(" -> ");
 		print_type(p_function->return_type);
 	}
+	if (p_function->is_abstract && (p_function->body == nullptr || p_function->body->statements.is_empty())) {
+		// A well-formed abstract method declares a signature only (its body is empty);
+		// a trailing `:` is a parse error, so emit the bare declaration line. (An
+		// abstract method that still carries real statements is an error fixture; fall
+		// through so its body is preserved and the parsed tree is unchanged.)
+		newline();
+		return;
+	}
 	write(":");
 	newline();
-	if (p_function->is_abstract || p_function->body == nullptr) {
-		return; // Abstract methods have no body.
+	if (p_function->body == nullptr) {
+		return;
 	}
 	last_emitted_line = p_function->start_line;
 	indent_level++;
@@ -1033,18 +1060,24 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 			indent_level--;
 		}
 	} else { // PROP_SETGET
+		// The `get = getter, set = setter` clauses share a single indented line;
+		// splitting them across lines ends the property block early ("Expected end
+		// of indented block for property.").
+		write_indent();
+		bool wrote_clause = false;
 		if (p_variable->getter_pointer != nullptr) {
-			write_indent();
 			write("get = ");
 			write(p_variable->getter_pointer->name);
-			newline();
+			wrote_clause = true;
 		}
 		if (p_variable->setter_pointer != nullptr) {
-			write_indent();
+			if (wrote_clause) {
+				write(", ");
+			}
 			write("set = ");
 			write(p_variable->setter_pointer->name);
-			newline();
 		}
+		newline();
 	}
 	indent_level--;
 }
@@ -1215,6 +1248,9 @@ void GDScriptPrinter::print_suite(const GDScriptParser::SuiteNode *p_suite) {
 }
 
 void GDScriptPrinter::print_statement(const GDScriptParser::Node *p_statement) {
+	// Statement-level annotations (`@warning_ignore(...)`, ...) attach to the node
+	// and print on their own lines above it at the same indent.
+	print_annotations(p_statement->annotations);
 	switch (p_statement->type) {
 		case GDScriptParser::Node::VARIABLE:
 			print_variable(static_cast<const GDScriptParser::VariableNode *>(p_statement));
@@ -1272,6 +1308,95 @@ void GDScriptPrinter::print_statement(const GDScriptParser::Node *p_statement) {
 			newline();
 			break;
 	}
+}
+
+bool GDScriptPrinter::print_statement_inline(const GDScriptParser::Node *p_statement) {
+	switch (p_statement->type) {
+		case GDScriptParser::Node::PASS:
+			write("pass");
+			return true;
+		case GDScriptParser::Node::BREAK:
+			write("break");
+			return true;
+		case GDScriptParser::Node::CONTINUE:
+			write("continue");
+			return true;
+		case GDScriptParser::Node::BREAKPOINT:
+			write("breakpoint");
+			return true;
+		case GDScriptParser::Node::RETURN: {
+			const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_statement);
+			write("return");
+			if (return_node->return_value != nullptr) {
+				write(" ");
+				print_expression(return_node->return_value);
+			}
+			return true;
+		}
+		case GDScriptParser::Node::ASSERT: {
+			const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(p_statement);
+			write("assert(");
+			print_expression(assert_node->condition);
+			if (assert_node->message != nullptr) {
+				write(", ");
+				print_expression(assert_node->message);
+			}
+			write(")");
+			return true;
+		}
+		case GDScriptParser::Node::ASSIGNMENT:
+			print_assignment(static_cast<const GDScriptParser::AssignmentNode *>(p_statement));
+			return true;
+		case GDScriptParser::Node::VARIABLE: {
+			const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_statement);
+			if (variable->property != GDScriptParser::VariableNode::PROP_NONE || variable->is_static) {
+				return false;
+			}
+			write("var ");
+			write(variable->identifier->name);
+			if (variable->datatype_specifier != nullptr) {
+				write(": ");
+				print_type(variable->datatype_specifier);
+				if (variable->initializer != nullptr) {
+					write(" = ");
+					print_expression(variable->initializer);
+				}
+			} else if (variable->infer_datatype) {
+				write(" := ");
+				if (variable->initializer != nullptr) {
+					print_expression(variable->initializer);
+				}
+			} else if (variable->initializer != nullptr) {
+				write(" = ");
+				print_expression(variable->initializer);
+			}
+			return true;
+		}
+		default:
+			if (p_statement->is_expression()) {
+				print_expression(static_cast<const GDScriptParser::ExpressionNode *>(p_statement));
+				return true;
+			}
+			return false;
+	}
+}
+
+bool GDScriptPrinter::try_print_suite_inline(const GDScriptParser::SuiteNode *p_suite) {
+	if (p_suite == nullptr || p_suite->statements.is_empty()) {
+		return false;
+	}
+	const int previous_length = output.length();
+	for (int i = 0; i < p_suite->statements.size(); i++) {
+		if (i > 0) {
+			write("; ");
+		}
+		if (!print_statement_inline(p_suite->statements[i])) {
+			// Roll back any partial inline output and let the caller emit a block.
+			output = output.substr(0, previous_length);
+			return false;
+		}
+	}
+	return true;
 }
 
 void GDScriptPrinter::print_assignment(const GDScriptParser::AssignmentNode *p_assignment) {
@@ -1352,6 +1477,12 @@ void GDScriptPrinter::print_match(const GDScriptParser::MatchNode *p_match) {
 	newline();
 	last_emitted_line = p_match->start_line;
 	indent_level++;
+	if (p_match->branches.is_empty()) {
+		// A branchless `match` still needs an indented body line (e.g. `pass`).
+		write_indent();
+		write("pass");
+		newline();
+	}
 	for (int i = 0; i < p_match->branches.size(); i++) {
 		const GDScriptParser::MatchBranchNode *branch = p_match->branches[i];
 		emit_leading_trivia(branch->start_line, 0);
@@ -1362,6 +1493,8 @@ void GDScriptPrinter::print_match(const GDScriptParser::MatchNode *p_match) {
 }
 
 void GDScriptPrinter::print_match_branch(const GDScriptParser::MatchBranchNode *p_branch) {
+	// A match branch may carry its own annotations (e.g. `@warning_ignore(...)`).
+	print_annotations(p_branch->annotations);
 	write_indent();
 	for (int i = 0; i < p_branch->patterns.size(); i++) {
 		if (i > 0) {
@@ -1590,12 +1723,15 @@ void GDScriptPrinter::print_ternary_op(const GDScriptParser::TernaryOpNode *p_op
 
 void GDScriptPrinter::print_call(const GDScriptParser::CallNode *p_call) {
 	if (p_call->is_super) {
+		// `super(...)` (callee null) is an implicit call to the parent method of the
+		// same name; `function_name` holds the enclosing method's name and must not
+		// be emitted. `super.method(...)` keeps its explicit callee.
 		write("super");
 		if (p_call->callee != nullptr) {
 			write(".");
+			print_operand(FPREC_CALL, p_call->callee);
 		}
-	}
-	if (p_call->callee != nullptr) {
+	} else if (p_call->callee != nullptr) {
 		// The callee binds as the base of a call, tighter than any operator.
 		print_operand(FPREC_CALL, p_call->callee);
 	} else if (!String(p_call->function_name).is_empty()) {
@@ -1686,18 +1822,46 @@ void GDScriptPrinter::print_lambda(const GDScriptParser::LambdaNode *p_lambda) {
 		}
 		print_parameter(function->parameters[i]);
 	}
+	if (function->rest_parameter != nullptr) {
+		if (!function->parameters.is_empty()) {
+			write(", ");
+		}
+		write("...");
+		print_parameter(function->rest_parameter);
+	}
 	write(")");
 	if (function->return_type != nullptr) {
 		write(" -> ");
 		print_type(function->return_type);
 	}
 	write(":");
+
+	// A lambda the author wrote on a single line keeps its inline body
+	// (`func(): return x`). Emitting it as a multi-line block would corrupt any
+	// surrounding expression, e.g. `(func(): return x).call()`.
+	if (p_lambda->start_line == p_lambda->end_line) {
+		write(" ");
+		if (try_print_suite_inline(function->body)) {
+			return;
+		}
+		// Could not inline (e.g. a property or static var): drop the trailing space
+		// and fall through to the block form.
+		output = output.substr(0, output.length() - 1);
+	}
+
 	newline();
 	last_emitted_line = function->start_line;
 	indent_level++;
 	print_suite(function->body);
 	flush_block_tail_comments();
 	indent_level--;
+	// A lambda is an expression: the enclosing statement (or a following postfix
+	// like `).call()`) supplies the terminator. Drop the block body's trailing
+	// newline so it does not double into a spurious blank line that grows on every
+	// reformat.
+	if (output.ends_with("\n")) {
+		output = output.substr(0, output.length() - 1);
+	}
 }
 
 void GDScriptPrinter::print_preload(const GDScriptParser::PreloadNode *p_preload) {
@@ -2018,6 +2182,55 @@ void GDScriptFormatterCLI::run_from_cmdline() {
 
 	const bool failure = had_error || ((options.mode == MODE_CHECK || options.mode == MODE_DIFF) && needs_change);
 	OS::get_singleton()->set_exit_code(failure ? EXIT_FAILURE : EXIT_SUCCESS);
+}
+
+void GDScriptFormatterCLI::generate_format_tests() {
+	String root = "modules/gdscript/tests/scripts/format";
+	const List<String> cmdline_args = OS::get_singleton()->get_cmdline_args();
+	for (const List<String>::Element *E = cmdline_args.front(); E; E = E->next()) {
+		if (E->get() == "--gdscript-generate-format-tests" && E->next()) {
+			root = E->next()->get();
+			break;
+		}
+	}
+
+	Vector<String> all_scripts;
+	collect_gd_scripts_recursive(root, all_scripts);
+	all_scripts.sort();
+
+	int written = 0;
+	bool had_error = false;
+	for (const String &input_path : all_scripts) {
+		if (input_path.get_file() != "input.gd") {
+			continue;
+		}
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(input_path, &read_error);
+		if (read_error != OK) {
+			fprintf(stderr, "%s: could not read fixture input\n", input_path.utf8().get_data());
+			had_error = true;
+			continue;
+		}
+		GDScriptFormatter formatter;
+		GDScriptFormatter::Result result;
+		if (formatter.format(source, input_path, result) != OK) {
+			fprintf(stderr, "%s:%d:%d: %s\n", input_path.utf8().get_data(),
+					result.error_line, result.error_column, result.error_message.utf8().get_data());
+			had_error = true;
+			continue;
+		}
+		const String expected_path = input_path.get_base_dir().path_join("expected.gd");
+		String write_error;
+		if (!write_file_atomic(expected_path, result.formatted, write_error)) {
+			fprintf(stderr, "%s: %s\n", expected_path.utf8().get_data(), write_error.utf8().get_data());
+			had_error = true;
+			continue;
+		}
+		written++;
+	}
+	fprintf(stdout, "Regenerated %d formatter fixture(s) under %s\n", written, root.utf8().get_data());
+	fflush(stdout);
+	OS::get_singleton()->set_exit_code(had_error ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
 #endif // TOOLS_ENABLED
