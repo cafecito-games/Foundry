@@ -131,6 +131,18 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		CHECK_EQ(format_or_fail(source), expected);
 	}
 
+	TEST_CASE("[Format] Keeps a trailing comment inside the function body") {
+		String source = "func f():\n\tvar a = 1\n\t# trailing in f\nfunc g():\n\tpass\n";
+		String expected = "func f():\n\tvar a = 1\n\t# trailing in f\n\n\nfunc g():\n\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+	}
+
+	TEST_CASE("[Format] Keeps a trailing comment inside an inner-class method") {
+		String source = "class Inner:\n\tfunc a():\n\t\tvar x = 1\n\t\t# trailing in a\n\tfunc b():\n\t\tpass\n";
+		String expected = "class Inner:\n\tfunc a():\n\t\tvar x = 1\n\t\t# trailing in a\n\n\tfunc b():\n\t\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+	}
+
 	TEST_CASE("[Format] Enforces one space after the hash") {
 		CHECK_EQ(format_or_fail("#foo\n"), "# foo\n");
 	}
