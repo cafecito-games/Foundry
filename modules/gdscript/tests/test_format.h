@@ -878,6 +878,32 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 				"Formatted namespace + class annotation must re-parse cleanly.");
 	}
 
+	TEST_CASE("[Format] String-valued paths escape special characters") {
+		// Regression: `extends`/`@icon` paths are reconstructed from the parser's
+		// already-decoded String value. A path containing `"` or `\` must be escaped,
+		// or the output is an invalid/unterminated literal that re-parses differently.
+		{
+			// extends path containing `"` (`\"`) and `\` (`\\`).
+			const String source = "extends \"res://a\\\"b\\\\c.gd\"\n";
+			const String formatted = format_or_fail(source);
+			GDScriptParser reparser;
+			CHECK_MESSAGE(parse_no_errors(reparser, formatted, "x.gd"),
+					vformat("Formatted extends path must re-parse: %s", formatted));
+			CHECK_MESSAGE(trees_equivalent(source, formatted, "x.gd"),
+					"Formatting must preserve the extends path value.");
+		}
+		{
+			// @icon path containing an embedded quote.
+			const String source = "@icon(\"res://a\\\"b.svg\")\nextends RefCounted\n";
+			const String formatted = format_or_fail(source);
+			GDScriptParser reparser;
+			CHECK_MESSAGE(parse_no_errors(reparser, formatted, "y.gd"),
+					vformat("Formatted @icon path must re-parse: %s", formatted));
+			CHECK_MESSAGE(trees_equivalent(source, formatted, "y.gd"),
+					"Formatting must preserve the @icon path value.");
+		}
+	}
+
 	TEST_CASE("[Format] Standalone warning-region annotations survive formatting") {
 		// Regression: `@warning_ignore_start`/`@warning_ignore_restore` are applied
 		// by the parser and dropped from the tree; the formatter recovers them from
