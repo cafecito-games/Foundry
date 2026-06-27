@@ -37,4 +37,10 @@ func test():
 	var sync_rpc: Callable = remote_sync
 	print(sync_rpc.is_async())
 
+	# Inherited static coroutine resolved through the base-script chain of a
+	# script object (the case Object.has_method() alone would miss).
+	var derived: Resource = load("res://runtime/features/callable_is_async_derived.notest.gd")
+	print(Callable(derived, "inherited_static_async").is_async())
+	print(Callable(derived, "inherited_static_sync").is_async())
+
 	print(Callable().is_async())

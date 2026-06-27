@@ -274,9 +274,13 @@ bool Callable::is_async() const {
 		return custom->is_async();
 	}
 	Object *obj = get_object();
-	if (!obj || !obj->has_method(method)) {
+	if (!obj) {
 		return false;
 	}
+	// Do not gate on Object::has_method(): for a Script object it only checks
+	// static methods declared directly on that script, which would miss inherited
+	// static coroutines. The helper resolves the flag across the base-script chain
+	// and reports false for methods it cannot find.
 	return _method_info_has_async_flag(obj, method);
 }
 
