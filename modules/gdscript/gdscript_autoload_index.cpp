@@ -78,6 +78,94 @@ void add_diagnostic(GDScriptAutoloadIndexEntry &r_entry, GDScriptAutoloadIndexDi
 	r_entry.diagnostics.push_back(diagnostic);
 }
 
+bool is_dependency_diagnostic(GDScriptAutoloadIndexDiagnostic::Code p_code) {
+	return p_code == GDScriptAutoloadIndexDiagnostic::MISSING_DEPENDENCY ||
+			p_code == GDScriptAutoloadIndexDiagnostic::NON_AUTOLOAD_DEPENDENCY ||
+			p_code == GDScriptAutoloadIndexDiagnostic::CYCLIC_DEPENDENCY;
+}
+
+bool is_name_diagnostic(GDScriptAutoloadIndexDiagnostic::Code p_code) {
+	return p_code == GDScriptAutoloadIndexDiagnostic::RESERVED_GLOBAL_NAME_COLLISION ||
+			p_code == GDScriptAutoloadIndexDiagnostic::UNRELATED_GLOBAL_CLASS_COLLISION;
+}
+
+void clear_dependency_diagnostics(Vector<GDScriptAutoloadIndexEntry> &r_entries) {
+	for (int i = 0; i < r_entries.size(); i++) {
+		GDScriptAutoloadIndexEntry &entry = r_entries.write[i];
+		Vector<GDScriptAutoloadIndexDiagnostic> retained;
+		for (const GDScriptAutoloadIndexDiagnostic &diagnostic : entry.diagnostics) {
+			if (!is_dependency_diagnostic(diagnostic.code)) {
+				retained.push_back(diagnostic);
+			}
+		}
+		entry.diagnostics = retained;
+	}
+}
+
+void clear_name_diagnostics(Vector<GDScriptAutoloadIndexEntry> &r_entries) {
+	for (int i = 0; i < r_entries.size(); i++) {
+		GDScriptAutoloadIndexEntry &entry = r_entries.write[i];
+		Vector<GDScriptAutoloadIndexDiagnostic> retained;
+		for (const GDScriptAutoloadIndexDiagnostic &diagnostic : entry.diagnostics) {
+			if (!is_name_diagnostic(diagnostic.code)) {
+				retained.push_back(diagnostic);
+			}
+		}
+		entry.diagnostics = retained;
+	}
+}
+
+void merge_compatible_autoload_entry(
+		GDScriptAutoloadIndexEntry &r_existing,
+		const GDScriptAutoloadIndexEntry &p_incoming) {
+	Vector<GDScriptAutoloadIndexDiagnostic> diagnostics = r_existing.diagnostics;
+	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_incoming.diagnostics) {
+		diagnostics.push_back(diagnostic);
+	}
+
+	if (p_incoming.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+		r_existing = p_incoming;
+	} else if (r_existing.source != GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+		r_existing = p_incoming;
+	}
+
+	r_existing.diagnostics = diagnostics;
+}
+
+void normalize_duplicate_entries(Vector<GDScriptAutoloadIndexEntry> &r_entries) {
+	Vector<GDScriptAutoloadIndexEntry> normalized;
+	HashMap<StringName, int> name_indices;
+
+	for (int i = 0; i < r_entries.size(); i++) {
+		GDScriptAutoloadIndexEntry entry = r_entries[i];
+		if (!entry.path.is_empty()) {
+			entry.path = ResourceUID::ensure_path(entry.path);
+		}
+
+		const int *existing_index = name_indices.getptr(entry.name);
+		if (existing_index == nullptr) {
+			name_indices[entry.name] = normalized.size();
+			normalized.push_back(entry);
+			continue;
+		}
+
+		GDScriptAutoloadIndexEntry &existing = normalized.write[*existing_index];
+		if (GDScript::is_canonically_equal_paths(existing.path, entry.path)) {
+			merge_compatible_autoload_entry(existing, entry);
+			continue;
+		}
+
+		add_diagnostic(existing,
+				GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+				vformat("Autoload \"%s\" is declared with conflicting paths \"%s\" and \"%s\" during migration.",
+						String(existing.name),
+						existing.path,
+						entry.path));
+	}
+
+	r_entries = normalized;
+}
+
 String format_dependency_cycle_path(const Vector<int> &p_cycle, const Vector<GDScriptAutoloadIndexEntry> &p_entries) {
 	String path;
 	for (int i = 0; i < p_cycle.size(); i++) {
@@ -362,6 +450,7 @@ void GDScriptAutoloadIndex::clear() {
 }
 
 void GDScriptAutoloadIndex::sort_and_validate_dependencies() {
+	clear_dependency_diagnostics(entries);
 	sort_entries_by_order(entries);
 	rebuild_lookups();
 
@@ -387,6 +476,9 @@ void GDScriptAutoloadIndex::sort_and_validate_dependencies() {
 			}
 
 			const int *dependency_index = name_lookup.getptr(dependency.name);
+			if (dependency_index == nullptr) {
+				dependency_index = global_class_lookup.getptr(dependency.name);
+			}
 			if (dependency_index == nullptr) {
 				add_diagnostic(entry,
 						GDScriptAutoloadIndexDiagnostic::MISSING_DEPENDENCY,
@@ -551,6 +643,11 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings() {
 void GDScriptAutoloadIndex::rebuild_from_entries(const Vector<GDScriptAutoloadIndexEntry> &p_entries) {
 	clear();
 	entries = p_entries;
+	normalize_duplicate_entries(entries);
+	clear_name_diagnostics(entries);
+	for (int i = 0; i < entries.size(); i++) {
+		populate_name_diagnostics(entries.write[i]);
+	}
 	sort_and_validate_dependencies();
 	rebuild_lookups();
 	version++;

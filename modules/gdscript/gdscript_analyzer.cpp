@@ -3313,6 +3313,11 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 }
 
 void GDScriptAnalyzer::resolve_annotation(GDScriptParser::AnnotationNode *p_annotation, uint32_t p_target_kind) {
+	if (p_annotation->name == SNAME("@autoload")) {
+		resolve_autoload_annotation(p_annotation);
+		return;
+	}
+
 	if (p_annotation->is_custom) {
 		// Unresolved custom annotation usage: resolve it against same-namespace or imported
 		// annotation declarations and validate its target and arguments.
@@ -3373,6 +3378,196 @@ void GDScriptAnalyzer::resolve_annotation(GDScriptParser::AnnotationNode *p_anno
 
 		p_annotation->resolved_arguments.push_back(value);
 	}
+}
+
+bool GDScriptAnalyzer::get_autoload_dependency_name_from_expression(
+		GDScriptParser::ExpressionNode *p_expression,
+		StringName &r_name) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+
+	const GDScriptParser::DataType datatype = p_expression->get_datatype();
+	if (datatype.is_meta_type && datatype.kind == GDScriptParser::DataType::CLASS && datatype.class_type != nullptr) {
+		r_name = datatype.class_type->get_global_name();
+		return r_name != StringName();
+	}
+
+	if (datatype.is_meta_type && datatype.kind == GDScriptParser::DataType::SCRIPT && datatype.script_type.is_valid()) {
+		const String script_path = datatype.script_type->get_path();
+		LocalVector<StringName> global_classes;
+		ScriptServer::get_global_class_list(global_classes);
+		for (const StringName &global_class : global_classes) {
+			if (GDScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(global_class), script_path)) {
+				r_name = global_class;
+				return true;
+			}
+		}
+	}
+
+	if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
+		const GDScriptParser::IdentifierNode *identifier = static_cast<GDScriptParser::IdentifierNode *>(p_expression);
+		if (identifier->source != GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
+			return false;
+		}
+
+		const StringName identifier_name = identifier->name;
+		StringName global_class;
+		bool global_class_error = false;
+		if (get_global_class_in_namespace(parser->head->namespace_name, identifier_name, global_class) ||
+				get_imported_global_class(identifier_name, p_expression, global_class, global_class_error)) {
+			if (global_class_error) {
+				return false;
+			}
+			r_name = global_class;
+			return true;
+		}
+
+		if (ScriptServer::is_global_class(identifier_name)) {
+			r_name = identifier_name;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void GDScriptAnalyzer::resolve_autoload_annotation(GDScriptParser::AnnotationNode *p_annotation) {
+	if (p_annotation->is_resolved) {
+		return;
+	}
+	p_annotation->is_resolved = true;
+
+	bool valid = true;
+	int autoload_annotation_count = 0;
+	for (GDScriptParser::AnnotationNode *annotation : parser->head->annotations) {
+		if (annotation->name == SNAME("@autoload")) {
+			autoload_annotation_count++;
+		}
+	}
+	if (autoload_annotation_count > 1) {
+		push_error(R"("@autoload" annotation can only be used once per script.)", p_annotation);
+		valid = false;
+	}
+
+	GDScriptAutoloadIndexEntry entry;
+	entry.source = GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION;
+	entry.path = parser->script_path;
+	entry.script_path = parser->script_path;
+	entry.is_singleton = true;
+	entry.order = 0;
+	entry.is_tool = parser->is_tool();
+
+	if (parser->head->identifier == nullptr || parser->head->trait_name_used) {
+		push_error(R"("@autoload" requires "class_name".)", p_annotation);
+		valid = false;
+	} else {
+		entry.name = parser->head->identifier->name;
+		entry.global_class_name = parser->head->get_global_name();
+	}
+
+	entry.native_base = parser->head->base_type.native_type;
+	entry.is_node = entry.native_base != StringName() && ClassDB::is_parent_class(entry.native_base, SNAME("Node"));
+	entry.is_same_script_global_class = entry.global_class_name == entry.name &&
+			GDScript::is_canonically_equal_paths(entry.script_path, entry.path);
+	if (!entry.is_node) {
+		push_error(R"("@autoload" requires the script to inherit from "Node".)", p_annotation);
+		valid = false;
+	}
+
+	bool bound_arguments[2] = { false, false };
+	bool seen_named_argument = false;
+	int next_positional_argument = 0;
+
+	for (int i = 0; i < p_annotation->arguments.size(); i++) {
+		GDScriptParser::ExpressionNode *argument = p_annotation->arguments[i];
+		const StringName argument_name = p_annotation->argument_names[i];
+
+		int argument_index = -1;
+		if (argument_name == StringName()) {
+			if (seen_named_argument) {
+				push_error(R"(Positional argument after named argument in annotation "@autoload".)", argument);
+				valid = false;
+				continue;
+			}
+			argument_index = next_positional_argument++;
+		} else {
+			seen_named_argument = true;
+			if (argument_name == SNAME("depends_on")) {
+				argument_index = 0;
+			} else if (argument_name == SNAME("order_id")) {
+				argument_index = 1;
+			} else {
+				push_error(vformat(R"(Annotation "@autoload" has no parameter named "%s".)", argument_name), argument);
+				valid = false;
+				continue;
+			}
+		}
+
+		if (argument_index < 0 || argument_index >= 2) {
+			push_error(vformat(R"(Annotation "@autoload" takes at most 2 argument(s), but %d were given.)",
+							   p_annotation->arguments.size()),
+					argument);
+			valid = false;
+			continue;
+		}
+		if (bound_arguments[argument_index]) {
+			push_error(vformat(R"(Parameter "%s" of annotation "@autoload" was specified more than once.)",
+							   argument_index == 0 ? "depends_on" : "order_id"),
+					argument);
+			valid = false;
+			continue;
+		}
+		bound_arguments[argument_index] = true;
+
+		reduce_expression(argument);
+		if (argument_index == 0) {
+			if (argument->type != GDScriptParser::Node::ARRAY) {
+				push_error(R"(Argument "depends_on" of annotation "@autoload" must be an array of class names.)", argument);
+				valid = false;
+				continue;
+			}
+
+			GDScriptParser::ArrayNode *dependencies = static_cast<GDScriptParser::ArrayNode *>(argument);
+			for (int dependency_index = 0; dependency_index < dependencies->elements.size(); dependency_index++) {
+				GDScriptParser::ExpressionNode *dependency_expression = dependencies->elements[dependency_index];
+				StringName dependency_name;
+				if (!get_autoload_dependency_name_from_expression(dependency_expression, dependency_name)) {
+					push_error(vformat(R"(Dependency %d of annotation "@autoload" must resolve to a script class.)",
+									   dependency_index + 1),
+							dependency_expression);
+					valid = false;
+					continue;
+				}
+
+				GDScriptAutoloadIndexDependency dependency;
+				dependency.name = dependency_name;
+				dependency.is_autoload = true;
+				entry.dependencies.push_back(dependency);
+			}
+		} else {
+			if (!argument->is_constant || argument->reduced_value.get_type() != Variant::INT) {
+				push_error(R"(Argument "order_id" of annotation "@autoload" must be a constant integer expression.)", argument);
+				valid = false;
+				continue;
+			}
+			int64_t order = argument->reduced_value.operator int64_t();
+			if (order < INT_MIN || order > INT_MAX) {
+				push_error(R"("order_id" of annotation "@autoload" must fit in a 32-bit signed integer.)", argument);
+				valid = false;
+				continue;
+			}
+			entry.order = static_cast<int>(order);
+		}
+	}
+
+	if (!valid) {
+		return;
+	}
+
+	Vector<GDScriptAutoloadIndexEntry> entries = autoload_index.get_entries();
+	entries.push_back(entry);
+	autoload_index.rebuild_from_entries(entries);
 }
 
 static String _annotation_target_name(uint32_t p_target_kind) {

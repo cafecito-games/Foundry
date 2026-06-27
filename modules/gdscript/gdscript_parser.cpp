@@ -184,6 +184,11 @@ GDScriptParser::GDScriptParser() {
 		register_annotation(MethodInfo("@tool"), AnnotationInfo::SCRIPT, &GDScriptParser::tool_annotation);
 		register_annotation(MethodInfo("@icon", PropertyInfo(Variant::STRING, "icon_path")), AnnotationInfo::SCRIPT, &GDScriptParser::icon_annotation);
 		register_annotation(MethodInfo("@static_unload"), AnnotationInfo::SCRIPT, &GDScriptParser::static_unload_annotation);
+		register_annotation(
+				MethodInfo("@autoload", PropertyInfo(Variant::ARRAY, "depends_on"), PropertyInfo(Variant::INT, "order_id")),
+				AnnotationInfo::SCRIPT,
+				&GDScriptParser::autoload_annotation,
+				varray(Array(), 0));
 		register_annotation(MethodInfo("@noreturn"), AnnotationInfo::FUNCTION, &GDScriptParser::noreturn_annotation);
 		// Onready annotation.
 		register_annotation(MethodInfo("@onready"), AnnotationInfo::VARIABLE, &GDScriptParser::onready_annotation);
@@ -2643,9 +2648,11 @@ GDScriptParser::AnnotationNode *GDScriptParser::parse_annotation(uint32_t p_vali
 
 			ExpressionNode *argument = nullptr;
 			StringName argument_name;
-			if (annotation->is_custom) {
-				// Custom annotation usages accept `name = value` named arguments. Stop on a
-				// trailing "=" so a leading identifier can be read as the argument name.
+			const bool accepts_named_arguments = annotation->is_custom || annotation->name == SNAME("@autoload");
+			if (accepts_named_arguments) {
+				// Custom annotation usages and the built-in `@autoload` annotation accept
+				// `name = value` named arguments. Stop on a trailing "=" so a leading
+				// identifier can be read as the argument name.
 				// GDScript assignment is a statement, never an expression, so `IDENTIFIER` +
 				// `EQUAL` here is unambiguously a named argument; `@a(x == y)` uses `EQUAL_EQUAL`.
 				argument = parse_expression(false, true);
@@ -5445,6 +5452,14 @@ bool GDScriptParser::static_unload_annotation(AnnotationNode *p_annotation, Node
 		return false;
 	}
 	class_node->annotated_static_unload = true;
+	return true;
+}
+
+bool GDScriptParser::autoload_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class) {
+	ERR_FAIL_COND_V_MSG(
+			p_target->type != Node::CLASS,
+			false,
+			R"("@autoload" annotation can only be applied to the root script declaration.)");
 	return true;
 }
 
