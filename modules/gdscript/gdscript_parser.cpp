@@ -6280,7 +6280,14 @@ String GDScriptParser::DataType::to_string() const {
 				return "null";
 			}
 			if (builtin_type == Variant::CALLABLE && has_explicit_method_signature) {
-				result = vformat("Callable%s", _method_signature_to_string(method_parameter_types, method_return_type, true));
+				const char *callable_name = signature_is_async ? "AsyncCallable" : "Callable";
+				result = vformat("%s%s", callable_name, _method_signature_to_string(method_parameter_types, method_return_type, true));
+				break;
+			}
+			if (builtin_type == Variant::CALLABLE && signature_is_async) {
+				// A bare AsyncCallable (or a reference to an async method) carries the async marker
+				// without an explicit signature; still render it as AsyncCallable for readability.
+				result = "AsyncCallable";
 				break;
 			}
 			if (builtin_type == Variant::SIGNAL && has_explicit_method_signature) {

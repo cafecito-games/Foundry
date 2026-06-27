@@ -551,6 +551,53 @@ TEST_CASE("[Modules][GDScript] Parser resolves callable and signal signature ann
 	CHECK(nullable_signal_type.to_string() == "Signal[[Node?]]");
 }
 
+TEST_CASE("[Modules][GDScript] AsyncCallable stringifies distinctly from Callable") {
+	GDScriptParser parser;
+	Error err = parser.parse("var explicit: AsyncCallable[[int], bool]\nvar bare: AsyncCallable\n", "user://async_callable_type.gd", false);
+	REQUIRE(err == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	REQUIRE(err == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->members.size() == 2);
+
+	const GDScriptParser::DataType explicit_type = root_class->members[0].variable->get_datatype();
+	CHECK(explicit_type.builtin_type == Variant::CALLABLE);
+	CHECK(explicit_type.signature_is_async);
+	CHECK(explicit_type.has_explicit_method_signature);
+	CHECK(explicit_type.to_string() == "AsyncCallable[[int], bool]");
+
+	const GDScriptParser::DataType bare_type = root_class->members[1].variable->get_datatype();
+	CHECK(bare_type.builtin_type == Variant::CALLABLE);
+	CHECK(bare_type.signature_is_async);
+	CHECK(bare_type.to_string() == "AsyncCallable");
+}
+
+TEST_CASE("[Modules][GDScript] Docgen renders AsyncCallable parameter and return types") {
+	GDScriptParser parser;
+	Error err = parser.parse("var handler: AsyncCallable[[int], bool]\n", "user://async_callable_docgen.gd", false);
+	REQUIRE(err == OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	REQUIRE(err == OK);
+
+	const GDScriptParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptDocGen::generate_docs(script.ptr(), root_class);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	REQUIRE(docs.size() == 1);
+	REQUIRE(docs[0].properties.size() == 1);
+	CHECK(docs[0].properties[0].type == "AsyncCallable");
+}
+
 TEST_CASE("[Modules][GDScript] Docgen displays nested typed container values") {
 	GDScriptParser parser;
 	Error err = parser.parse("const VALUES: Array[Dictionary[String, int]] = [{ \"score\": 10 }]\nconst GROUPS: Dictionary[String, Array[int]] = { \"scores\": [1] }\n", "user://nested_docgen_type.gd", false);

@@ -1,7 +1,6 @@
 # AsyncCallable and plain Callable are not interchangeable even when their parameter/return slots
 # match: the async marker is part of signature equality. Assigning across the two is rejected in
-# both directions. (The printed type names are identical here because async-aware to_string() is
-# tracked separately; the mismatch is on the async marker, not the visible signature.)
+# both directions, and async-aware stringification names each side distinctly in the diagnostic.
 func _sync(value: int) -> String:
 	return str(value)
 

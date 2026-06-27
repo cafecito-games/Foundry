@@ -1,2 +1,2 @@
 GDTEST_ANALYZER_ERROR
->> ERROR at line 8: Cannot assign a value of type Callable to variable "typed" with specified type Callable[[], int].
+>> ERROR at line 8: Cannot assign a value of type AsyncCallable to variable "typed" with specified type Callable[[], int].
