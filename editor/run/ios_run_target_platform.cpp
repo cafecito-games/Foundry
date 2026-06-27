@@ -110,6 +110,11 @@ String IOSRunTargetPlatform::_query_devicectl() {
 	// Bound the call so a stuck tool cannot hang the editor.
 	args.push_back("--timeout");
 	args.push_back("5");
+	// Mirror the export poll's device-type filter so the run-target list and
+	// readiness only consider devices the iOS export platform can deploy to
+	// (matching EditorExportPlatformIOS::device_types).
+	args.push_back("--filter");
+	args.push_back("hardwareProperties.deviceType MATCHES 'iPhone|iPad'");
 
 	const CommandResult outcome = command_runner->run("xcrun", args);
 	if (outcome.error != OK || outcome.exit_code != 0) {
@@ -224,8 +229,21 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 		return ERR_DOES_NOT_EXIST;
 	}
 
+	// Resolve the device to deploy to. A target may remember "auto" (or nothing),
+	// meaning "the connected device"; `run_on_device` only matches concrete UUIDs,
+	// so pick the first runnable device, matching how readiness treats "auto".
+	String device_id = p_target.device_id;
+	if (device_id.is_empty() || device_id == "auto") {
+		const Vector<RunTargetDevice> devices = list_devices();
+		if (devices.is_empty()) {
+			ERR_PRINT(vformat("Cannot run iOS target \"%s\": no runnable device is connected.", p_target.name));
+			return ERR_UNAVAILABLE;
+		}
+		device_id = devices[0].id;
+	}
+
 	// Hand off to the existing export-to-`.xcarchive` + `devicectl` deploy path,
 	// which already passes `-allowProvisioningUpdates` so automatic signing resolves
 	// certificates, profiles, and device registration.
-	return platform->run_on_device(preset, p_target.device_id, p_debug_flags);
+	return platform->run_on_device(preset, device_id, p_debug_flags);
 }
