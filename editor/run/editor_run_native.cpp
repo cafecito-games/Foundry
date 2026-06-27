@@ -327,14 +327,17 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 		return OK;
 	}
 
+	// Apply export-plugin value overrides first, then read the signing team, so a
+	// later failure diagnostic probes the exact team the export will sign with
+	// (EditorExportPreset::get reflects overrides only after this call).
+	resolved.preset->update_value_overrides();
+
 	// The export preset is the source of truth for the signing team. Diagnose (and
 	// run) against the team the deploy will actually use, so a later readiness probe
 	// can never report ready off a remembered team while the preset signs with a
 	// different one — and without mutating the shared preset.
 	RunTarget effective_target = p_target;
 	effective_target.team_id = resolved.preset->get("application/app_store_team_id");
-
-	resolved.preset->update_value_overrides();
 
 	// Wire the running app back to the editor debugger exactly like the legacy
 	// native-run path, then hand off to the adapter's deploy.
