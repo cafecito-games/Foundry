@@ -509,6 +509,81 @@ TEST_CASE("[Editor][RunTarget] A failed load leaves prior state untouched") {
 	CHECK_EQ(reloaded[0].name, "My iPhone");
 }
 
+TEST_CASE("[Editor][RunTarget] First-open dock marker round-trips and is consumed once") {
+	const String path = TestUtils::get_temp_path("run_targets_first_open.cfg");
+	if (FileAccess::exists(path)) {
+		DirAccess::remove_absolute(path);
+	}
+
+	// Seed targets first, then request the marker, mirroring the project template.
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	REQUIRE_EQ(RunTarget::save_all(path, initial), OK);
+	REQUIRE_EQ(RunTargetManager::request_show_dock_on_first_open(path), OK);
+
+	// Requesting the marker does not disturb the seeded targets.
+	const Vector<RunTarget> after_request = RunTarget::load_all(path);
+	REQUIRE_EQ(after_request.size(), 1);
+	CHECK_EQ(after_request[0].name, "My iPhone");
+
+	// The first consume reports the request and clears it; the second sees nothing.
+	CHECK(RunTargetManager::consume_show_dock_on_first_open(path));
+	CHECK_FALSE(RunTargetManager::consume_show_dock_on_first_open(path));
+
+	// Clearing the marker leaves the targets intact.
+	const Vector<RunTarget> after_consume = RunTarget::load_all(path);
+	REQUIRE_EQ(after_consume.size(), 1);
+	CHECK_EQ(after_consume[0].name, "My iPhone");
+}
+
+TEST_CASE("[Editor][RunTarget] Consuming a first-open marker preserves the active selection") {
+	const String path = TestUtils::get_temp_path("run_targets_first_open_active.cfg");
+	if (FileAccess::exists(path)) {
+		DirAccess::remove_absolute(path);
+	}
+
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	{
+		RunTargetManager manager;
+		REQUIRE_EQ(RunTarget::save_all(path, initial), OK);
+		REQUIRE_EQ(manager.load(path), OK);
+		REQUIRE(manager.set_active_target("My iPhone"));
+		REQUIRE_EQ(manager.save(), OK);
+	}
+	REQUIRE_EQ(RunTargetManager::request_show_dock_on_first_open(path), OK);
+
+	CHECK(RunTargetManager::consume_show_dock_on_first_open(path));
+
+	// The active selection persisted alongside the marker survives consuming it.
+	RunTargetManager reloaded;
+	REQUIRE_EQ(reloaded.load(path), OK);
+	CHECK(reloaded.has_active_target());
+	CHECK_EQ(reloaded.get_active_target_name(), "My iPhone");
+}
+
+TEST_CASE("[Editor][RunTarget] Consuming a marker on a config without one returns false") {
+	const String path = TestUtils::get_temp_path("run_targets_no_marker.cfg");
+	if (FileAccess::exists(path)) {
+		DirAccess::remove_absolute(path);
+	}
+
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	REQUIRE_EQ(RunTarget::save_all(path, initial), OK);
+
+	CHECK_FALSE(RunTargetManager::consume_show_dock_on_first_open(path));
+}
+
+TEST_CASE("[Editor][RunTarget] Consuming a marker on a missing config returns false") {
+	const String path = TestUtils::get_temp_path("run_targets_marker_missing.cfg");
+	if (FileAccess::exists(path)) {
+		DirAccess::remove_absolute(path);
+	}
+
+	CHECK_FALSE(RunTargetManager::consume_show_dock_on_first_open(path));
+}
+
 } // namespace TestRunTarget
 
 #endif // TOOLS_ENABLED

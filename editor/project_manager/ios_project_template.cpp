@@ -30,6 +30,8 @@
 
 #include "ios_project_template.h"
 
+#include "editor/run/run_target_manager.h"
+
 #include "core/io/config_file.h"
 #include "core/templates/vector.h"
 
@@ -93,9 +95,18 @@ Error seed(const String &p_project_path, const String &p_project_name) {
 		return presets_error;
 	}
 
+	const String targets_path = p_project_path.path_join("run_targets.cfg");
 	Vector<RunTarget> targets;
 	targets.push_back(make_default_target());
-	return RunTarget::save_all(p_project_path.path_join("run_targets.cfg"), targets);
+	const Error targets_error = RunTarget::save_all(targets_path, targets);
+	if (targets_error != OK) {
+		return targets_error;
+	}
+
+	// Ask the editor to reveal the Targets dock the first time this project is
+	// opened, landing the user on the readiness ladder ("here's what's left to run
+	// on your phone") instead of leaving the seeded target undiscovered.
+	return RunTargetManager::request_show_dock_on_first_open(targets_path);
 }
 
 } // namespace IOSProjectTemplate

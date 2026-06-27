@@ -147,6 +147,7 @@
 #include "editor/run/editor_run.h"
 #include "editor/run/editor_run_bar.h"
 #include "editor/run/game_view_plugin.h"
+#include "editor/run/run_target_manager.h"
 #include "editor/run/run_targets_panel.h"
 #include "editor/scene/3d/material_3d_conversion_plugins.h"
 #include "editor/scene/3d/mesh_library_editor_plugin.h"
@@ -1440,6 +1441,11 @@ void EditorNode::_sources_changed(bool p_exist) {
 		RenderingServer::get_singleton()->global_shader_parameters_load_settings(true);
 
 		_load_editor_layout();
+
+		// Reveal the Targets dock the first time a freshly seeded "Mobile (iOS)"
+		// project is opened, so the run-target readiness ladder is discoverable.
+		// Runs after the layout load so it wins over the restored active tab.
+		_show_run_targets_dock_on_first_open();
 
 		if (!defer_load_scene.is_empty()) {
 			OS::get_singleton()->benchmark_begin_measure("Editor", "Load Scene");
@@ -6068,6 +6074,19 @@ void EditorNode::_begin_first_scan() {
 		return;
 	}
 	requested_first_scan = true;
+}
+
+void EditorNode::_show_run_targets_dock_on_first_open() {
+	if (run_targets_dock == nullptr || editor_dock_manager == nullptr) {
+		return;
+	}
+
+	// The marker is seeded into the project's run_targets.cfg by the "Mobile (iOS)"
+	// project template and consumed (read once, then cleared) here, so the dock is
+	// revealed exactly once — on the first editor open of a freshly created project.
+	if (RunTargetManager::consume_show_dock_on_first_open("res://run_targets.cfg")) {
+		editor_dock_manager->focus_dock(run_targets_dock);
+	}
 }
 
 Error EditorNode::export_preset(const String &p_preset, const String &p_path, bool p_debug, bool p_pack_only, bool p_android_build_template, bool p_patch, const Vector<String> &p_patches) {

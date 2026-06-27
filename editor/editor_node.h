@@ -700,6 +700,7 @@ private:
 	void _immediate_dialog_confirmed();
 
 	void _begin_first_scan();
+	void _show_run_targets_dock_on_first_open();
 
 	void _notify_nodes_scene_reimported(Node *p_node, Array p_reimported_nodes);
 

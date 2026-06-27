@@ -43,6 +43,7 @@ namespace {
 // sections written by `RunTarget::save_all`.
 constexpr const char *META_SECTION = "meta";
 constexpr const char *ACTIVE_TARGET_KEY = "active_target";
+constexpr const char *SHOW_DOCK_ON_FIRST_OPEN_KEY = "show_dock_on_first_open";
 
 // The default preset lookup: resolves a preset by name against the editor's
 // `EditorExport` singleton. Returns a null Ref when the singleton is absent
@@ -155,6 +156,45 @@ Error RunTargetManager::save() {
 	}
 	config->set_value(META_SECTION, ACTIVE_TARGET_KEY, active_target_name);
 	return config->save(config_path);
+}
+
+Error RunTargetManager::request_show_dock_on_first_open(const String &p_config_path) {
+	ERR_FAIL_COND_V(p_config_path.is_empty(), ERR_INVALID_PARAMETER);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	// Preserve any targets and active selection already written to the file; the
+	// template seeds those before requesting the marker. A missing file is fine —
+	// the marker is then written into a fresh config.
+	const Error load_error = config->load(p_config_path);
+	if (load_error != OK && load_error != ERR_FILE_NOT_FOUND) {
+		return load_error;
+	}
+
+	config->set_value(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY, true);
+	return config->save(p_config_path);
+}
+
+bool RunTargetManager::consume_show_dock_on_first_open(const String &p_config_path) {
+	if (p_config_path.is_empty()) {
+		return false;
+	}
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	if (config->load(p_config_path) != OK) {
+		return false;
+	}
+	if (!config->has_section_key(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY)) {
+		return false;
+	}
+
+	const bool requested = config->get_value(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY, false);
+	// Clear the one-shot marker (this drops the meta section too when nothing else
+	// lives there) so the dock is revealed at most once, then persist the change.
+	config->erase_section_key(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY);
+	config->save(p_config_path);
+	return requested;
 }
 
 void RunTargetManager::set_targets(const Vector<RunTarget> &p_targets) {
