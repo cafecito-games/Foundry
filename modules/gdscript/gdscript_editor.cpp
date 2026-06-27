@@ -4524,18 +4524,19 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			// Once a derived class makes a method final it cannot be overridden again, so
 			// the candidate must be suppressed even if an ancestor declares it non-final.
 			HashSet<StringName> sealed_overrides;
-			// Seals `final` methods supplied to a class through a used trait. Concrete
-			// trait methods are not flattened into the using class's `members`, so a
-			// trait can mark a method `final` -- e.g. sealing a native virtual like
-			// `_process` -- without that method ever appearing in the inheritance walk
-			// below. Such a method must not be offered for override. A trait's final
-			// flag is ignored when a nearer class-hierarchy declaration shadows it with
-			// its own (non-final) method, since that declaration wins and the method
-			// stays overridable downstream. `p_consult_options` is true for base
-			// classes, where `options` already holds the non-final declarations from
-			// nearer (more derived) classes that shadow the trait; it is false for the
-			// current class, whose own redeclaration is detected via `has_function`.
-			auto seal_trait_finals = [&](const GDScriptParser::ClassNode *p_class, bool p_consult_options) {
+			// Names of `final` methods supplied to a class through a used trait. Concrete
+			// trait methods are not flattened into the using class's `members`, so a trait
+			// can mark a method `final` -- e.g. sealing a native virtual like `_process` --
+			// without that method ever appearing in the inheritance walk below. Such a
+			// method must not be offered as a native-virtual override candidate. This is
+			// kept separate from `sealed_overrides`: a concrete trait method does not
+			// satisfy an abstract requirement from another trait, so a trait's final flag
+			// must not hide that still-required abstract method from the trait-requirement
+			// suggestions; nor does it shadow a non-final class-hierarchy declaration of the
+			// same name, which is offered through the class members above and stays
+			// overridable downstream.
+			HashSet<StringName> trait_sealed_methods;
+			auto collect_trait_finals = [&](const GDScriptParser::ClassNode *p_class) {
 				if (p_class == nullptr) {
 					return;
 				}
@@ -4553,23 +4554,11 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 						if (member_name == SNAME("_init") || member_name == SNAME("_static_init")) {
 							continue;
 						}
-						if (sealed_overrides.has(member_name)) {
-							continue;
-						}
-						if (p_consult_options && options.has(member_name)) {
-							continue;
-						}
-						if (completion_context.current_class->has_function(member_name) && completion_context.current_class->get_member(member_name).function != function_node) {
-							continue;
-						}
-						sealed_overrides.insert(member_name);
+						trait_sealed_methods.insert(member_name);
 					}
 				}
 			};
-			// Seal finals from the current class's own traits first (no nearer class can
-			// shadow them, so `options` -- populated only by base classes below -- must
-			// not be consulted).
-			seal_trait_finals(completion_context.current_class, false);
+			collect_trait_finals(completion_context.current_class);
 			while (native_type.is_set() && native_type.kind != GDScriptParser::DataType::NATIVE) {
 				switch (native_type.kind) {
 					case GDScriptParser::DataType::CLASS: {
@@ -4620,9 +4609,9 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 							option.insert_text = insert_text;
 							options.insert(member.function->identifier->name, option); // Insert name instead of display to track duplicates.
 						}
-						// Seal finals supplied to this base class through its used traits, now
-						// that its own (nearer) declarations have populated `options`.
-						seal_trait_finals(native_type.class_type, true);
+						// Collect finals supplied to this base class through its used traits so
+						// the native-virtual loop below does not offer a sealed native method.
+						collect_trait_finals(native_type.class_type);
 						native_type = native_type.class_type->base_type;
 					} break;
 					default: {
@@ -4689,7 +4678,7 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			}
 
 			for (const MethodInfo &mi : virtual_methods) {
-				if (sealed_overrides.has(mi.name)) {
+				if (sealed_overrides.has(mi.name) || trait_sealed_methods.has(mi.name)) {
 					continue;
 				}
 				if (options.has(mi.name)) {
