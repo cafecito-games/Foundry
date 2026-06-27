@@ -121,37 +121,56 @@ bool annotation_matches(const GDScript::AnnotationUsage &p_usage, const StringNa
 	return p_usage.name == p_annotation || p_usage.qualified_name == p_annotation;
 }
 
-// Resolves the passive custom annotation usages effective for `p_member` under `p_kind`: "class"
-// (direct-only on the target script), or "method", "variable", "signal", "constant" (which walk the
-// script base chain so the most-derived declaring script wins, matching the effective method/property
-// views). The caller holds `p_script` for the whole walk so the base chain it owns stays alive.
-// Returns an empty vector for a null, non-GDScript script, or an unknown kind.
-Vector<GDScript::AnnotationUsage> compute_effective_annotations(const Ref<Script> &p_script, const StringName &p_member, const StringName &p_kind) {
+// Looks up the annotations declared directly on `p_script` for `p_member` under `p_kind`, without
+// walking the base chain. Trait-flattened members are copied onto the implementer at compile time,
+// so they are owned by `p_script` and remain visible through this direct lookup.
+const Vector<GDScript::AnnotationUsage> *find_direct_annotations(const GDScript *p_script, const StringName &p_member, const StringName &p_kind) {
+	if (p_kind == SNAME("method")) {
+		return p_script->get_method_annotations().getptr(p_member);
+	}
+	if (p_kind == SNAME("variable")) {
+		return p_script->get_variable_annotations().getptr(p_member);
+	}
+	if (p_kind == SNAME("signal")) {
+		return p_script->get_signal_annotations().getptr(p_member);
+	}
+	if (p_kind == SNAME("constant")) {
+		return p_script->get_constant_annotations().getptr(p_member);
+	}
+	return nullptr;
+}
+
+// Resolves the passive custom annotation usages for `p_member` under `p_kind`: "class" (always
+// direct-only on the target script, never inherited), or "method", "variable", "signal", "constant".
+// For those member kinds, `p_effective` selects the view: true walks the script base chain so the
+// most-derived declaring script wins (matching the effective method/property views), while false
+// restricts the result to annotations declared on the exact target script. The caller holds
+// `p_script` for the whole walk so the base chain it owns stays alive. Returns an empty vector for a
+// null, non-GDScript script, or an unknown kind.
+Vector<GDScript::AnnotationUsage> compute_annotations(const Ref<Script> &p_script, const StringName &p_member, const StringName &p_kind, bool p_effective) {
 	const GDScript *script = Object::cast_to<GDScript>(p_script.ptr());
 	if (script == nullptr) {
 		return Vector<GDScript::AnnotationUsage>();
 	}
 	if (p_kind == SNAME("class")) {
-		// Class annotations are direct-only and never inherited.
+		// Class annotations are direct-only and never inherited, so the flag has no effect here.
 		return script->get_class_annotations();
 	}
-	if (p_kind == SNAME("method")) {
-		const Vector<GDScript::AnnotationUsage> *usages = find_effective_method_annotations(script, p_member);
-		return usages != nullptr ? *usages : Vector<GDScript::AnnotationUsage>();
+	const Vector<GDScript::AnnotationUsage> *usages = nullptr;
+	if (p_effective) {
+		if (p_kind == SNAME("method")) {
+			usages = find_effective_method_annotations(script, p_member);
+		} else if (p_kind == SNAME("variable")) {
+			usages = find_effective_variable_annotations(script, p_member);
+		} else if (p_kind == SNAME("signal")) {
+			usages = find_effective_signal_annotations(script, p_member);
+		} else if (p_kind == SNAME("constant")) {
+			usages = find_effective_constant_annotations(script, p_member);
+		}
+	} else {
+		usages = find_direct_annotations(script, p_member, p_kind);
 	}
-	if (p_kind == SNAME("variable")) {
-		const Vector<GDScript::AnnotationUsage> *usages = find_effective_variable_annotations(script, p_member);
-		return usages != nullptr ? *usages : Vector<GDScript::AnnotationUsage>();
-	}
-	if (p_kind == SNAME("signal")) {
-		const Vector<GDScript::AnnotationUsage> *usages = find_effective_signal_annotations(script, p_member);
-		return usages != nullptr ? *usages : Vector<GDScript::AnnotationUsage>();
-	}
-	if (p_kind == SNAME("constant")) {
-		const Vector<GDScript::AnnotationUsage> *usages = find_effective_constant_annotations(script, p_member);
-		return usages != nullptr ? *usages : Vector<GDScript::AnnotationUsage>();
-	}
-	return Vector<GDScript::AnnotationUsage>();
+	return usages != nullptr ? *usages : Vector<GDScript::AnnotationUsage>();
 }
 } // namespace
 
@@ -311,27 +330,27 @@ Ref<RefCounted> GDScriptReflection::create_delegating_proxy(const Ref<Script> &p
 }
 
 TypedArray<GDScriptAnnotation> GDScriptReflection::get_class_annotations(const Variant &p_target) const {
-	return usages_to_descriptors(compute_effective_annotations(_resolve_script(p_target), StringName(), SNAME("class")));
+	return usages_to_descriptors(compute_annotations(_resolve_script(p_target), StringName(), SNAME("class"), true));
 }
 
-TypedArray<GDScriptAnnotation> GDScriptReflection::get_method_annotations(const Variant &p_target, const StringName &p_method) const {
-	return usages_to_descriptors(compute_effective_annotations(_resolve_script(p_target), p_method, SNAME("method")));
+TypedArray<GDScriptAnnotation> GDScriptReflection::get_method_annotations(const Variant &p_target, const StringName &p_method, bool p_effective) const {
+	return usages_to_descriptors(compute_annotations(_resolve_script(p_target), p_method, SNAME("method"), p_effective));
 }
 
-TypedArray<GDScriptAnnotation> GDScriptReflection::get_variable_annotations(const Variant &p_target, const StringName &p_variable) const {
-	return usages_to_descriptors(compute_effective_annotations(_resolve_script(p_target), p_variable, SNAME("variable")));
+TypedArray<GDScriptAnnotation> GDScriptReflection::get_variable_annotations(const Variant &p_target, const StringName &p_variable, bool p_effective) const {
+	return usages_to_descriptors(compute_annotations(_resolve_script(p_target), p_variable, SNAME("variable"), p_effective));
 }
 
-TypedArray<GDScriptAnnotation> GDScriptReflection::get_signal_annotations(const Variant &p_target, const StringName &p_signal) const {
-	return usages_to_descriptors(compute_effective_annotations(_resolve_script(p_target), p_signal, SNAME("signal")));
+TypedArray<GDScriptAnnotation> GDScriptReflection::get_signal_annotations(const Variant &p_target, const StringName &p_signal, bool p_effective) const {
+	return usages_to_descriptors(compute_annotations(_resolve_script(p_target), p_signal, SNAME("signal"), p_effective));
 }
 
-TypedArray<GDScriptAnnotation> GDScriptReflection::get_constant_annotations(const Variant &p_target, const StringName &p_constant) const {
-	return usages_to_descriptors(compute_effective_annotations(_resolve_script(p_target), p_constant, SNAME("constant")));
+TypedArray<GDScriptAnnotation> GDScriptReflection::get_constant_annotations(const Variant &p_target, const StringName &p_constant, bool p_effective) const {
+	return usages_to_descriptors(compute_annotations(_resolve_script(p_target), p_constant, SNAME("constant"), p_effective));
 }
 
-bool GDScriptReflection::has_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind) const {
-	const Vector<GDScript::AnnotationUsage> usages = compute_effective_annotations(_resolve_script(p_target), p_member, p_kind);
+bool GDScriptReflection::has_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind, bool p_effective) const {
+	const Vector<GDScript::AnnotationUsage> usages = compute_annotations(_resolve_script(p_target), p_member, p_kind, p_effective);
 	for (const GDScript::AnnotationUsage &usage : usages) {
 		if (annotation_matches(usage, p_annotation)) {
 			return true;
@@ -340,8 +359,8 @@ bool GDScriptReflection::has_annotation(const Variant &p_target, const StringNam
 	return false;
 }
 
-Ref<GDScriptAnnotation> GDScriptReflection::get_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind) const {
-	const Vector<GDScript::AnnotationUsage> usages = compute_effective_annotations(_resolve_script(p_target), p_member, p_kind);
+Ref<GDScriptAnnotation> GDScriptReflection::get_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind, bool p_effective) const {
+	const Vector<GDScript::AnnotationUsage> usages = compute_annotations(_resolve_script(p_target), p_member, p_kind, p_effective);
 	for (const GDScript::AnnotationUsage &usage : usages) {
 		// First match in reflected order; callers that care about repeats use the array APIs.
 		if (annotation_matches(usage, p_annotation)) {
@@ -351,8 +370,8 @@ Ref<GDScriptAnnotation> GDScriptReflection::get_annotation(const Variant &p_targ
 	return Ref<GDScriptAnnotation>();
 }
 
-TypedArray<GDScriptAnnotation> GDScriptReflection::get_annotations(const Variant &p_target, const StringName &p_member, const StringName &p_kind) const {
-	return usages_to_descriptors(compute_effective_annotations(_resolve_script(p_target), p_member, p_kind));
+TypedArray<GDScriptAnnotation> GDScriptReflection::get_annotations(const Variant &p_target, const StringName &p_member, const StringName &p_kind, bool p_effective) const {
+	return usages_to_descriptors(compute_annotations(_resolve_script(p_target), p_member, p_kind, p_effective));
 }
 
 void GDScriptReflection::_bind_methods() {
@@ -363,13 +382,13 @@ void GDScriptReflection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_type_arguments", "target"), &GDScriptReflection::get_type_arguments);
 
 	ClassDB::bind_method(D_METHOD("get_class_annotations", "target"), &GDScriptReflection::get_class_annotations);
-	ClassDB::bind_method(D_METHOD("get_method_annotations", "target", "method"), &GDScriptReflection::get_method_annotations);
-	ClassDB::bind_method(D_METHOD("get_variable_annotations", "target", "variable"), &GDScriptReflection::get_variable_annotations);
-	ClassDB::bind_method(D_METHOD("get_signal_annotations", "target", "signal"), &GDScriptReflection::get_signal_annotations);
-	ClassDB::bind_method(D_METHOD("get_constant_annotations", "target", "constant"), &GDScriptReflection::get_constant_annotations);
-	ClassDB::bind_method(D_METHOD("has_annotation", "target", "member", "annotation", "kind"), &GDScriptReflection::has_annotation, DEFVAL(SNAME("method")));
-	ClassDB::bind_method(D_METHOD("get_annotation", "target", "member", "annotation", "kind"), &GDScriptReflection::get_annotation, DEFVAL(SNAME("method")));
-	ClassDB::bind_method(D_METHOD("get_annotations", "target", "member", "kind"), &GDScriptReflection::get_annotations, DEFVAL(StringName()), DEFVAL(SNAME("class")));
+	ClassDB::bind_method(D_METHOD("get_method_annotations", "target", "method", "effective"), &GDScriptReflection::get_method_annotations, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_variable_annotations", "target", "variable", "effective"), &GDScriptReflection::get_variable_annotations, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_signal_annotations", "target", "signal", "effective"), &GDScriptReflection::get_signal_annotations, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_constant_annotations", "target", "constant", "effective"), &GDScriptReflection::get_constant_annotations, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("has_annotation", "target", "member", "annotation", "kind", "effective"), &GDScriptReflection::has_annotation, DEFVAL(SNAME("method")), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_annotation", "target", "member", "annotation", "kind", "effective"), &GDScriptReflection::get_annotation, DEFVAL(SNAME("method")), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_annotations", "target", "member", "kind", "effective"), &GDScriptReflection::get_annotations, DEFVAL(StringName()), DEFVAL(SNAME("class")), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("create_proxy_dynamic", "type", "handler"), &GDScriptReflection::create_proxy_dynamic);
 	ClassDB::bind_method(D_METHOD("create_delegating_proxy", "type", "target", "interceptor"), &GDScriptReflection::create_delegating_proxy);
 }

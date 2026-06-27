@@ -51,8 +51,9 @@
 			<param index="1" name="member" type="StringName" />
 			<param index="2" name="annotation" type="StringName" />
 			<param index="3" name="kind" type="StringName" default="&amp;&quot;method&quot;" />
+			<param index="4" name="effective" type="bool" default="true" />
 			<description>
-				Returns the first annotation named [param annotation] applied to the requested declaration, or [code]null[/code] if none matches. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name ([code]"timeout"[/code]) or the qualified name ([code]"cafecito.test.timeout"[/code]). Callers that care about repeated annotations should use [method get_annotations] instead. Invalid, freed, or non-script targets return [code]null[/code].
+				Returns the first annotation named [param annotation] applied to the requested declaration, or [code]null[/code] if none matches. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name ([code]"timeout"[/code]) or the qualified name ([code]"cafecito.test.timeout"[/code]). When [param effective] is [code]true[/code] (the default) the member kinds search the script base chain so inherited and trait-flattened declarations are considered; when [code]false[/code] only annotations declared on [param target]'s exact script are considered. Class annotations are direct-only and unaffected by [param effective]. Callers that care about repeated annotations should use [method get_annotations] instead. Invalid, freed, or non-script targets return [code]null[/code].
 			</description>
 		</method>
 		<method name="get_annotations" qualifiers="const">
@@ -60,8 +61,9 @@
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="member" type="StringName" default="&amp;&quot;&quot;" />
 			<param index="2" name="kind" type="StringName" default="&amp;&quot;class&quot;" />
+			<param index="3" name="effective" type="bool" default="true" />
 			<description>
-				Returns the annotations applied to the requested declaration in source order, as [GDScriptAnnotation] descriptors. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. This is the generic convenience form of [method get_class_annotations], [method get_method_annotations], and [method get_variable_annotations]. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the requested declaration in source order, as [GDScriptAnnotation] descriptors. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. When [param effective] is [code]true[/code] (the default) the member kinds search the script base chain so inherited and trait-flattened declarations are included; when [code]false[/code] only annotations declared on [param target]'s exact script are returned. Class annotations are direct-only and unaffected by [param effective]. This is the generic convenience form of [method get_class_annotations], [method get_method_annotations], and [method get_variable_annotations]. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_class_annotations" qualifiers="const">
@@ -75,16 +77,18 @@
 			<return type="GDScriptAnnotation[]" />
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="constant" type="StringName" />
+			<param index="2" name="effective" type="bool" default="true" />
 			<description>
-				Returns the annotations applied to the constant named [param constant], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a constant declared on a base script carries its annotations when reflected from a derived script. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the constant named [param constant], in source order, as [GDScriptAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective member view is used: a constant declared on a base script carries its annotations when reflected from a derived script. When [code]false[/code] only annotations declared on [param target]'s exact script are returned. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_method_annotations" qualifiers="const">
 			<return type="GDScriptAnnotation[]" />
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="method" type="StringName" />
+			<param index="2" name="effective" type="bool" default="true" />
 			<description>
-				Returns the annotations applied to the method named [param method], in source order, as [GDScriptAnnotation] descriptors. The effective method view is used: a method declared on a base script carries its annotations when reflected from a derived script, a concrete trait method flattened into an implementer carries its declaration annotations, and an overriding method's annotations take precedence. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the method named [param method], in source order, as [GDScriptAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective method view is used: a method declared on a base script carries its annotations when reflected from a derived script, a concrete trait method flattened into an implementer carries its declaration annotations, and an overriding method's annotations take precedence. When [code]false[/code] only annotations declared on [param target]'s exact script are returned (trait-flattened methods are owned by the implementer, so they remain visible). Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_method_info" qualifiers="const">
@@ -116,16 +120,18 @@
 			<return type="GDScriptAnnotation[]" />
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="signal" type="StringName" />
+			<param index="2" name="effective" type="bool" default="true" />
 			<description>
-				Returns the annotations applied to the signal named [param signal], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a signal declared on a base script carries its annotations when reflected from a derived script. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the signal named [param signal], in source order, as [GDScriptAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective member view is used: a signal declared on a base script carries its annotations when reflected from a derived script. When [code]false[/code] only annotations declared on [param target]'s exact script are returned. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="get_variable_annotations" qualifiers="const">
 			<return type="GDScriptAnnotation[]" />
 			<param index="0" name="target" type="Variant" />
 			<param index="1" name="variable" type="StringName" />
+			<param index="2" name="effective" type="bool" default="true" />
 			<description>
-				Returns the annotations applied to the member variable named [param variable], in source order, as [GDScriptAnnotation] descriptors. The effective member view is used: a variable declared on a base script carries its annotations when reflected from a derived script, a trait-flattened variable carries its declaration annotations, and a shadowing variable's annotations take precedence. Invalid, freed, or non-script targets return an empty array.
+				Returns the annotations applied to the member variable named [param variable], in source order, as [GDScriptAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective member view is used: a variable declared on a base script carries its annotations when reflected from a derived script, a trait-flattened variable carries its declaration annotations, and a shadowing variable's annotations take precedence. When [code]false[/code] only annotations declared on [param target]'s exact script are returned (trait-flattened variables are owned by the implementer, so they remain visible). Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
 		<method name="has_annotation" qualifiers="const">
@@ -134,8 +140,9 @@
 			<param index="1" name="member" type="StringName" />
 			<param index="2" name="annotation" type="StringName" />
 			<param index="3" name="kind" type="StringName" default="&amp;&quot;method&quot;" />
+			<param index="4" name="effective" type="bool" default="true" />
 			<description>
-				Returns [code]true[/code] if an annotation named [param annotation] is applied to the requested declaration. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name or the qualified name. Invalid, freed, or non-script targets return [code]false[/code].
+				Returns [code]true[/code] if an annotation named [param annotation] is applied to the requested declaration. [param kind] selects the declaration: [code]"class"[/code] (the [param member] argument is ignored), [code]"method"[/code], [code]"variable"[/code], [code]"signal"[/code], or [code]"constant"[/code]. [param annotation] matches either the short name or the qualified name. When [param effective] is [code]true[/code] (the default) the member kinds search the script base chain so inherited and trait-flattened declarations are considered; when [code]false[/code] only annotations declared on [param target]'s exact script are considered. Class annotations are direct-only and unaffected by [param effective]. Invalid, freed, or non-script targets return [code]false[/code].
 			</description>
 		</method>
 		<method name="get_type_arguments" qualifiers="const">
