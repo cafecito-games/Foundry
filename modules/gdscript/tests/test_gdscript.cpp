@@ -431,8 +431,7 @@ TEST_CASE("[Modules][GDScript] Parser stores namespace and import declarations")
 namespace characters.controllers
 import characters
 import characters.stats
-@abstract
-class_name MyCharacterController
+abstract class_name MyCharacterController
 extends Node
 )",
 			"user://my_character_controller.gd", false);

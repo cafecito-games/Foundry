@@ -601,10 +601,15 @@ GDScriptTokenizer::Token GDScriptParser::advance() {
 		ERR_FAIL_COND_V_MSG(current.type == GDScriptTokenizer::Token::TK_EOF, current, "GDScript parser bug: Trying to advance past the end of stream.");
 	}
 	previous = current;
-	current = tokenizer->scan();
-	while (current.type == GDScriptTokenizer::Token::ERROR) {
-		push_error(current.literal);
+	if (has_lookahead) {
+		current = lookahead;
+		has_lookahead = false;
+	} else {
 		current = tokenizer->scan();
+		while (current.type == GDScriptTokenizer::Token::ERROR) {
+			push_error(current.literal);
+			current = tokenizer->scan();
+		}
 	}
 	if (previous.type != GDScriptTokenizer::Token::DEDENT) { // `DEDENT` belongs to the next non-empty line.
 		for (Node *n : nodes_in_progress) {
@@ -612,6 +617,21 @@ GDScriptTokenizer::Token GDScriptParser::advance() {
 		}
 	}
 	return previous;
+}
+
+// Returns the token that follows `current` without consuming `current`. The peeked token is
+// buffered so the next `advance()` reuses it. Use sparingly: it scans ahead under the current
+// multiline mode, so only peek when the decision is made before that mode can change.
+const GDScriptTokenizer::Token &GDScriptParser::peek() {
+	if (!has_lookahead) {
+		lookahead = tokenizer->scan();
+		while (lookahead.type == GDScriptTokenizer::Token::ERROR) {
+			push_error(lookahead.literal);
+			lookahead = tokenizer->scan();
+		}
+		has_lookahead = true;
+	}
+	return lookahead;
 }
 
 bool GDScriptParser::match(GDScriptTokenizer::Token::Type p_token_type) {
@@ -844,6 +864,30 @@ void GDScriptParser::parse_program() {
 	while (can_have_class_or_extends) {
 		// Order here doesn't matter, but there should be only one of each at most.
 		switch (current.type) {
+			case GDScriptTokenizer::Token::ABSTRACT: {
+				// A top-level `abstract` marks the whole-file head class abstract, but only when it
+				// immediately precedes the head keyword it applies to: `class_name`, `trait_name`, or
+				// `extends`. A file with neither `class_name` nor `extends` has no head declaration to
+				// mark abstract, so it must add an explicit `extends` (for example
+				// `abstract extends RefCounted`) to be abstract.
+				//
+				// When `abstract` is followed by anything else (`var`, `func`, `class`, `trait`, ...)
+				// it is an ordinary declaration modifier on the first body member; leave it unconsumed
+				// so `parse_class_body()` validates it through the shared modifier collector.
+				const GDScriptTokenizer::Token::Type next_type = peek().type;
+				if (next_type != GDScriptTokenizer::Token::CLASS_NAME &&
+						next_type != GDScriptTokenizer::Token::TRAIT_NAME &&
+						next_type != GDScriptTokenizer::Token::EXTENDS) {
+					can_have_class_or_extends = false;
+					break;
+				}
+				advance();
+				if (head->is_abstract) {
+					push_error(R"(The "abstract" modifier was already specified.)");
+				} else {
+					head->is_abstract = true;
+				}
+			} break;
 			case GDScriptTokenizer::Token::CLASS_NAME:
 				push_pending_annotations_to_head();
 				advance();
@@ -911,14 +955,6 @@ void GDScriptParser::parse_program() {
 
 		if (panic_mode) {
 			synchronize();
-		}
-	}
-
-	for (AnnotationNode *&annotation : head->annotations) {
-		if (annotation->name == SNAME("@abstract")) {
-			// Some annotations need to be resolved and applied in the parser.
-			// The root class is not in any class, so `head->outer == nullptr`.
-			annotation->apply(this, head, nullptr);
 		}
 	}
 

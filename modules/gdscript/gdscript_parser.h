@@ -1624,6 +1624,8 @@ private:
 	GDScriptTokenizer *tokenizer = nullptr;
 	GDScriptTokenizer::Token previous;
 	GDScriptTokenizer::Token current;
+	GDScriptTokenizer::Token lookahead;
+	bool has_lookahead = false;
 
 	ClassNode *current_class = nullptr;
 	FunctionNode *current_function = nullptr;
@@ -1755,6 +1757,7 @@ private:
 	void set_last_completion_call_arg(int p_argument);
 
 	GDScriptTokenizer::Token advance();
+	const GDScriptTokenizer::Token &peek();
 	bool match(GDScriptTokenizer::Token::Type p_token_type);
 	bool check(GDScriptTokenizer::Token::Type p_token_type) const;
 	bool consume(GDScriptTokenizer::Token::Type p_token_type, const String &p_error_message);
