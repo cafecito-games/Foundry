@@ -932,6 +932,7 @@ public:
 		bool extends_used = false;
 		bool onready_used = false;
 		bool is_abstract = false;
+		bool is_final = false;
 		bool has_static_data = false;
 		bool annotated_static_unload = false;
 		// True for inline TraitNode declarations and root ClassNode declarations created by `trait_name`.
@@ -1067,6 +1068,7 @@ public:
 		TypeNode *return_type = nullptr;
 		SuiteNode *body = nullptr;
 		bool is_abstract = false;
+		bool is_final = false;
 		bool is_noreturn = false;
 		bool is_static = false; // For lambdas it's determined in the analyzer.
 		bool is_declared_async = false;
@@ -1501,6 +1503,7 @@ public:
 		PropertyInfo export_info;
 		int assignments = 0;
 		bool is_static = false;
+		bool is_final = false;
 #ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
 #endif // TOOLS_ENABLED
@@ -1772,14 +1775,16 @@ private:
 	void push_multiline(bool p_state);
 	void pop_multiline();
 
-	// Leading run of declaration modifiers (`abstract`, `static`, `async`) collected
+	// Leading run of declaration modifiers (`final`, `abstract`, `static`, `async`) collected
 	// before a class-body member and validated against the declaration that follows.
-	// `is_final` is reserved for a future modifier.
 	struct DeclarationModifiers {
+		bool is_final = false;
 		bool is_abstract = false;
 		bool is_static = false;
 		bool is_async = false;
 
+		int final_line = 0;
+		int final_column = 0;
 		int abstract_line = 0;
 		int abstract_column = 0;
 		int static_line = 0;
@@ -1787,11 +1792,11 @@ private:
 		int async_line = 0;
 		int async_column = 0;
 
-		bool has_any() const { return is_abstract || is_static || is_async; }
+		bool has_any() const { return is_final || is_abstract || is_static || is_async; }
 	};
 
 	DeclarationModifiers collect_declaration_modifiers();
-	void validate_declaration_modifiers(const DeclarationModifiers &p_modifiers, const char *p_target_kind, bool p_allow_abstract, bool p_allow_static, bool p_allow_async, bool p_in_trait);
+	void validate_declaration_modifiers(const DeclarationModifiers &p_modifiers, const char *p_target_kind, bool p_allow_abstract, bool p_allow_static, bool p_allow_async, bool p_allow_final, bool p_in_trait);
 
 	// Main blocks.
 	void parse_program();
@@ -1844,7 +1849,7 @@ private:
 	// Statements.
 	Node *parse_statement();
 	VariableNode *parse_variable(const DeclarationModifiers &p_modifiers);
-	VariableNode *parse_variable(bool p_is_static, bool p_allow_property);
+	VariableNode *parse_variable(bool p_is_static, bool p_allow_property, bool p_is_final = false);
 	VariableNode *parse_property(VariableNode *p_variable, bool p_need_indent);
 	void parse_property_getter(VariableNode *p_variable);
 	void parse_property_setter(VariableNode *p_variable);
