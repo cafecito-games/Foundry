@@ -38,15 +38,17 @@
 #include "core/variant/variant_callable.h"
 
 static bool _method_info_has_async_flag(Object *p_object, const StringName &p_method) {
-	// Script methods (including GDScript coroutines) carry METHOD_FLAG_ASYNC in their MethodInfo.
+	// Script methods (including GDScript coroutines) carry METHOD_FLAG_ASYNC in their
+	// MethodInfo. Consult the instance's own method list so dynamically dispatched
+	// methods (such as trait-proxy contract methods) are covered alongside the
+	// script's compiled methods and any inherited ones.
 	if (ScriptInstance *script_instance = p_object->get_script_instance()) {
-		Ref<Script> script = script_instance->get_script();
-		while (script.is_valid()) {
-			MethodInfo method_info = script->get_method_info(p_method);
+		List<MethodInfo> methods;
+		script_instance->get_method_list(&methods);
+		for (const MethodInfo &method_info : methods) {
 			if (method_info.name == p_method) {
 				return (method_info.flags & METHOD_FLAG_ASYNC) != 0;
 			}
-			script = script->get_base_script();
 		}
 	}
 
