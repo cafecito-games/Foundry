@@ -2548,6 +2548,8 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 	validate_trait_conflicts(p_class);
 	validate_trait_requirements(p_class);
 
+	check_final_member_assignments(p_class);
+
 	parser->current_class = previous_class;
 }
 
@@ -2561,6 +2563,430 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, bo
 				resolve_class_body(member.m_class, true);
 			}
 		}
+	}
+}
+
+// Joins two branches that diverged from the same incoming state. A variable is definitely
+// assigned after the join only if it is assigned on every reachable branch (intersection).
+// An unreachable branch (one that terminated via return/break/continue) contributes the
+// universal set, so it is neutral: the join keeps the other branch's set. When both branches
+// are unreachable the join itself is unreachable.
+void GDScriptAnalyzer::merge_final_assignment_branches(const FinalAssignmentState &p_first, const FinalAssignmentState &p_second, FinalAssignmentState &r_out) {
+	if (!p_first.reachable && !p_second.reachable) {
+		r_out.assigned.clear();
+		r_out.reachable = false;
+		return;
+	}
+	if (!p_first.reachable) {
+		r_out = p_second;
+		return;
+	}
+	if (!p_second.reachable) {
+		r_out = p_first;
+		return;
+	}
+	r_out.reachable = true;
+	r_out.assigned.clear();
+	for (const GDScriptParser::VariableNode *variable : p_first.assigned) {
+		if (p_second.assigned.has(variable)) {
+			r_out.assigned.insert(variable);
+		}
+	}
+}
+
+// Enforces write-once semantics for `final` member variables of `p_class`: each must be
+// assigned exactly once, in its declaration initializer or definitely on every `_init()` path,
+// and never reassigned or read before assignment. Static and local finals are handled elsewhere.
+void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode *p_class) {
+	if (p_class->is_trait) {
+		// A trait's members are flattened into and checked on each implementing class.
+		return;
+	}
+
+	HashSet<const GDScriptParser::VariableNode *> finals;
+	HashMap<StringName, const GDScriptParser::VariableNode *> finals_by_name;
+	GDScriptParser::FunctionNode *init_function = nullptr;
+
+	for (int i = 0; i < p_class->members.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
+			GDScriptParser::VariableNode *variable = member.variable;
+			if (variable->is_final && !variable->is_static && variable->property == GDScriptParser::VariableNode::PROP_NONE) {
+				finals.insert(variable);
+				finals_by_name[variable->identifier->name] = variable;
+			}
+		} else if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			if (member.function->identifier != nullptr && member.function->identifier->name == SNAME("_init")) {
+				init_function = member.function;
+			}
+		}
+	}
+
+	if (finals.is_empty()) {
+		return;
+	}
+
+	// Seed the `_init` entry state with the initialized finals (their declaration fills the slot)
+	// and collect the blank finals that must be definitely assigned within `_init`.
+	FinalAssignmentState init_state;
+	LocalVector<const GDScriptParser::VariableNode *> blank_finals;
+	for (const GDScriptParser::VariableNode *variable : finals) {
+		if (variable->initializer != nullptr) {
+			init_state.assigned.insert(variable);
+		} else {
+			blank_finals.push_back(variable);
+		}
+	}
+
+	// Reject every assignment to a final outside its legal slot (any method other than `_init`,
+	// or a lambda even within `_init`).
+	for (int i = 0; i < p_class->members.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			GDScriptParser::FunctionNode *function = member.function;
+			scan_illegal_final_writes(function->body, finals, finals_by_name, function == init_function);
+		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property != GDScriptParser::VariableNode::PROP_NONE) {
+			if (member.variable->getter != nullptr) {
+				scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, false);
+			}
+			if (member.variable->setter != nullptr) {
+				scan_illegal_final_writes(member.variable->setter->body, finals, finals_by_name, false);
+			}
+		}
+	}
+
+	// Run the definite-assignment pass over `_init` and require every blank final to be assigned
+	// on normal completion. Returns/terminators make their paths neutral, so an early return that
+	// skips the assignment is fine as long as that path does not fall through to the end.
+	if (init_function != nullptr) {
+		analyze_final_definite_assignment_suite(init_function->body, finals, finals_by_name, init_state);
+		if (init_state.reachable) {
+			for (const GDScriptParser::VariableNode *variable : blank_finals) {
+				if (!init_state.assigned.has(variable)) {
+					push_error(vformat(R"*(Final variable "%s" must be definitely assigned in its declaration or in "_init()".)*", variable->identifier->name), variable);
+				}
+			}
+		}
+	} else {
+		for (const GDScriptParser::VariableNode *variable : blank_finals) {
+			push_error(vformat(R"*(Final variable "%s" must be definitely assigned in its declaration or in "_init()".)*", variable->identifier->name), variable);
+		}
+	}
+}
+
+// Returns the `final` member written by `p_expression` when used as an assignment target,
+// or `nullptr` if the expression does not designate a tracked `final` member. Recognizes a
+// bare member identifier (`id = ...`) and explicit self access (`self.id = ...`).
+const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_target(const GDScriptParser::ExpressionNode *p_expression,
+		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name) const {
+	if (p_expression == nullptr) {
+		return nullptr;
+	}
+	if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
+		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
+		if (identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE && identifier->variable_source != nullptr && p_finals.has(identifier->variable_source)) {
+			return identifier->variable_source;
+		}
+		return nullptr;
+	}
+	if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
+		const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+		if (subscript->is_attribute && subscript->attribute != nullptr && subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF) {
+			HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(subscript->attribute->name);
+			if (found) {
+				return found->value;
+			}
+		}
+	}
+	return nullptr;
+}
+
+// Reports any read of a blank `final` member that has not yet been definitely assigned along
+// the current path ("may be used before assignment"). Walks the expression tree but stops at
+// lambda boundaries, which are out of scope for the single-assignment-slot model.
+void GDScriptAnalyzer::check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
+		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, const FinalAssignmentState &p_state) {
+	if (p_expression == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::VariableNode *referenced = final_member_assignment_target(p_expression, p_finals, p_finals_by_name);
+	if (referenced != nullptr && !p_state.assigned.has(referenced)) {
+		push_error(vformat(R"(Final variable "%s" may be used before assignment.)", referenced->identifier->name), p_expression);
+	}
+
+	switch (p_expression->type) {
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_expression);
+			check_final_reads_in_expression(binary->left_operand, p_finals, p_finals_by_name, p_state);
+			check_final_reads_in_expression(binary->right_operand, p_finals, p_finals_by_name, p_state);
+		} break;
+		case GDScriptParser::Node::UNARY_OPERATOR: {
+			const GDScriptParser::UnaryOpNode *unary = static_cast<const GDScriptParser::UnaryOpNode *>(p_expression);
+			check_final_reads_in_expression(unary->operand, p_finals, p_finals_by_name, p_state);
+		} break;
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			const GDScriptParser::TernaryOpNode *ternary = static_cast<const GDScriptParser::TernaryOpNode *>(p_expression);
+			check_final_reads_in_expression(ternary->condition, p_finals, p_finals_by_name, p_state);
+			check_final_reads_in_expression(ternary->true_expr, p_finals, p_finals_by_name, p_state);
+			check_final_reads_in_expression(ternary->false_expr, p_finals, p_finals_by_name, p_state);
+		} break;
+		case GDScriptParser::Node::TYPE_TEST: {
+			const GDScriptParser::TypeTestNode *type_test = static_cast<const GDScriptParser::TypeTestNode *>(p_expression);
+			check_final_reads_in_expression(type_test->operand, p_finals, p_finals_by_name, p_state);
+		} break;
+		case GDScriptParser::Node::CAST: {
+			const GDScriptParser::CastNode *cast = static_cast<const GDScriptParser::CastNode *>(p_expression);
+			check_final_reads_in_expression(cast->operand, p_finals, p_finals_by_name, p_state);
+		} break;
+		case GDScriptParser::Node::AWAIT: {
+			const GDScriptParser::AwaitNode *await = static_cast<const GDScriptParser::AwaitNode *>(p_expression);
+			check_final_reads_in_expression(await->to_await, p_finals, p_finals_by_name, p_state);
+		} break;
+		case GDScriptParser::Node::ARRAY: {
+			const GDScriptParser::ArrayNode *array = static_cast<const GDScriptParser::ArrayNode *>(p_expression);
+			for (int i = 0; i < array->elements.size(); i++) {
+				check_final_reads_in_expression(array->elements[i], p_finals, p_finals_by_name, p_state);
+			}
+		} break;
+		case GDScriptParser::Node::DICTIONARY: {
+			const GDScriptParser::DictionaryNode *dictionary = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);
+			for (int i = 0; i < dictionary->elements.size(); i++) {
+				check_final_reads_in_expression(dictionary->elements[i].key, p_finals, p_finals_by_name, p_state);
+				check_final_reads_in_expression(dictionary->elements[i].value, p_finals, p_finals_by_name, p_state);
+			}
+		} break;
+		case GDScriptParser::Node::CALL: {
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
+			// The callee can be `base.method`; checking it covers reading a final as the call base.
+			check_final_reads_in_expression(call->callee, p_finals, p_finals_by_name, p_state);
+			for (int i = 0; i < call->arguments.size(); i++) {
+				check_final_reads_in_expression(call->arguments[i], p_finals, p_finals_by_name, p_state);
+			}
+		} break;
+		case GDScriptParser::Node::SUBSCRIPT: {
+			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
+			// `self.id` was already handled above via `final_member_assignment_target`; only recurse
+			// into the base/index for nested reads (e.g. `array[id]` or `other.id`).
+			if (referenced == nullptr) {
+				check_final_reads_in_expression(subscript->base, p_finals, p_finals_by_name, p_state);
+				if (!subscript->is_attribute) {
+					check_final_reads_in_expression(subscript->index, p_finals, p_finals_by_name, p_state);
+				}
+			}
+		} break;
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
+			check_final_reads_in_expression(assignment->assigned_value, p_finals, p_finals_by_name, p_state);
+		} break;
+		default:
+			break;
+	}
+}
+
+// Reports every assignment to a `final` member that occurs outside its single legal slot —
+// any function other than `_init`, or inside a lambda even within `_init`. This bounds the
+// definite-assignment flow analysis to `_init`'s own statement tree.
+void GDScriptAnalyzer::scan_illegal_final_writes(const GDScriptParser::Node *p_node,
+		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, bool p_in_init) {
+	if (p_node == nullptr) {
+		return;
+	}
+
+	switch (p_node->type) {
+		case GDScriptParser::Node::SUITE: {
+			const GDScriptParser::SuiteNode *suite = static_cast<const GDScriptParser::SuiteNode *>(p_node);
+			for (int i = 0; i < suite->statements.size(); i++) {
+				scan_illegal_final_writes(suite->statements[i], p_finals, p_finals_by_name, p_in_init);
+			}
+		} break;
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_node);
+			scan_illegal_final_writes(if_node->true_block, p_finals, p_finals_by_name, p_in_init);
+			scan_illegal_final_writes(if_node->false_block, p_finals, p_finals_by_name, p_in_init);
+		} break;
+		case GDScriptParser::Node::FOR: {
+			const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_node);
+			scan_illegal_final_writes(for_node->loop, p_finals, p_finals_by_name, p_in_init);
+		} break;
+		case GDScriptParser::Node::WHILE: {
+			const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(p_node);
+			scan_illegal_final_writes(while_node->loop, p_finals, p_finals_by_name, p_in_init);
+		} break;
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_node);
+			for (int i = 0; i < match_node->branches.size(); i++) {
+				if (match_node->branches[i] != nullptr) {
+					scan_illegal_final_writes(match_node->branches[i]->block, p_finals, p_finals_by_name, p_in_init);
+				}
+			}
+		} break;
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_node);
+			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name);
+			if (target != nullptr && !p_in_init) {
+				push_error(vformat(R"*(Final variable "%s" can only be assigned in its declaration or in "_init()".)*", target->identifier->name), assignment->assignee);
+			}
+			// A lambda assigned-value introduces a new (non-`_init`) scope.
+			scan_illegal_final_writes(assignment->assigned_value, p_finals, p_finals_by_name, p_in_init);
+		} break;
+		case GDScriptParser::Node::LAMBDA: {
+			const GDScriptParser::LambdaNode *lambda = static_cast<const GDScriptParser::LambdaNode *>(p_node);
+			if (lambda->function != nullptr) {
+				// Writes inside a lambda never fill the single slot, even within `_init`.
+				scan_illegal_final_writes(lambda->function->body, p_finals, p_finals_by_name, false);
+			}
+		} break;
+		case GDScriptParser::Node::VARIABLE: {
+			const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_node);
+			scan_illegal_final_writes(variable->initializer, p_finals, p_finals_by_name, p_in_init);
+		} break;
+		case GDScriptParser::Node::RETURN: {
+			const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_node);
+			scan_illegal_final_writes(return_node->return_value, p_finals, p_finals_by_name, p_in_init);
+		} break;
+		default:
+			break;
+	}
+}
+
+// Threads the definite-assignment state through a structured statement, mutating `r_state`.
+// Implements the JLS merge rules for if/match (intersection), loops (zero-iteration), and
+// terminators (unreachable path acts as the universal set under intersection).
+void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScriptParser::Node *p_statement,
+		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state) {
+	if (p_statement == nullptr || !r_state.reachable) {
+		return;
+	}
+
+	switch (p_statement->type) {
+		case GDScriptParser::Node::ASSIGNMENT: {
+			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_statement);
+			check_final_reads_in_expression(assignment->assigned_value, p_finals, p_finals_by_name, r_state);
+
+			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name);
+			if (target == nullptr) {
+				// Not a final target; the assignee may still read finals (e.g. `array[id] = x`).
+				check_final_reads_in_expression(assignment->assignee, p_finals, p_finals_by_name, r_state);
+				break;
+			}
+
+			if (r_state.assigned.has(target)) {
+				push_error(vformat(R"(Cannot assign to final variable "%s"; it is already assigned.)", target->identifier->name), assignment->assignee);
+			} else if (assignment->operation != GDScriptParser::AssignmentNode::OP_NONE) {
+				// A compound assignment reads the target before writing it.
+				push_error(vformat(R"(Final variable "%s" may be used before assignment.)", target->identifier->name), assignment->assignee);
+			}
+			r_state.assigned.insert(target);
+		} break;
+		case GDScriptParser::Node::IF: {
+			const GDScriptParser::IfNode *if_node = static_cast<const GDScriptParser::IfNode *>(p_statement);
+			check_final_reads_in_expression(if_node->condition, p_finals, p_finals_by_name, r_state);
+
+			FinalAssignmentState true_state = r_state;
+			analyze_final_definite_assignment_suite(if_node->true_block, p_finals, p_finals_by_name, true_state);
+
+			FinalAssignmentState false_state = r_state;
+			if (if_node->false_block != nullptr) {
+				analyze_final_definite_assignment_suite(if_node->false_block, p_finals, p_finals_by_name, false_state);
+			}
+
+			merge_final_assignment_branches(true_state, false_state, r_state);
+		} break;
+		case GDScriptParser::Node::FOR: {
+			const GDScriptParser::ForNode *for_node = static_cast<const GDScriptParser::ForNode *>(p_statement);
+			check_final_reads_in_expression(for_node->list, p_finals, p_finals_by_name, r_state);
+			// The body may run zero times, so its assignments never count afterwards; analyze a
+			// copy so reads/double-assigns inside are still reported.
+			FinalAssignmentState body_state = r_state;
+			analyze_final_definite_assignment_suite(for_node->loop, p_finals, p_finals_by_name, body_state);
+		} break;
+		case GDScriptParser::Node::WHILE: {
+			const GDScriptParser::WhileNode *while_node = static_cast<const GDScriptParser::WhileNode *>(p_statement);
+			check_final_reads_in_expression(while_node->condition, p_finals, p_finals_by_name, r_state);
+			FinalAssignmentState body_state = r_state;
+			analyze_final_definite_assignment_suite(while_node->loop, p_finals, p_finals_by_name, body_state);
+		} break;
+		case GDScriptParser::Node::MATCH: {
+			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
+			check_final_reads_in_expression(match_node->test, p_finals, p_finals_by_name, r_state);
+
+			bool has_wildcard = false;
+			bool has_branch = false;
+			FinalAssignmentState merged;
+			merged.reachable = false; // Identity for intersection; replaced by the first branch.
+			for (int i = 0; i < match_node->branches.size(); i++) {
+				const GDScriptParser::MatchBranchNode *branch = match_node->branches[i];
+				if (branch == nullptr) {
+					continue;
+				}
+				has_wildcard = has_wildcard || branch->has_wildcard;
+				FinalAssignmentState branch_state = r_state;
+				analyze_final_definite_assignment_suite(branch->block, p_finals, p_finals_by_name, branch_state);
+				if (!has_branch) {
+					merged = branch_state;
+					has_branch = true;
+				} else {
+					FinalAssignmentState intersection;
+					merge_final_assignment_branches(merged, branch_state, intersection);
+					merged = intersection;
+				}
+			}
+
+			if (!has_branch) {
+				break;
+			}
+			if (!has_wildcard) {
+				// The no-match path falls through with the incoming state, so nothing the branches
+				// assign can be guaranteed; intersect with the incoming (reachable) state.
+				FinalAssignmentState fallthrough = r_state;
+				FinalAssignmentState intersection;
+				merge_final_assignment_branches(merged, fallthrough, intersection);
+				merged = intersection;
+			}
+			r_state = merged;
+		} break;
+		case GDScriptParser::Node::RETURN: {
+			const GDScriptParser::ReturnNode *return_node = static_cast<const GDScriptParser::ReturnNode *>(p_statement);
+			check_final_reads_in_expression(return_node->return_value, p_finals, p_finals_by_name, r_state);
+			r_state.reachable = false;
+		} break;
+		case GDScriptParser::Node::BREAK:
+		case GDScriptParser::Node::CONTINUE: {
+			r_state.reachable = false;
+		} break;
+		case GDScriptParser::Node::VARIABLE: {
+			const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(p_statement);
+			check_final_reads_in_expression(variable->initializer, p_finals, p_finals_by_name, r_state);
+		} break;
+		case GDScriptParser::Node::ASSERT: {
+			const GDScriptParser::AssertNode *assert_node = static_cast<const GDScriptParser::AssertNode *>(p_statement);
+			check_final_reads_in_expression(assert_node->condition, p_finals, p_finals_by_name, r_state);
+			check_final_reads_in_expression(assert_node->message, p_finals, p_finals_by_name, r_state);
+		} break;
+		case GDScriptParser::Node::SUITE: {
+			analyze_final_definite_assignment_suite(static_cast<const GDScriptParser::SuiteNode *>(p_statement), p_finals, p_finals_by_name, r_state);
+		} break;
+		default: {
+			if (p_statement->is_expression()) {
+				check_final_reads_in_expression(static_cast<const GDScriptParser::ExpressionNode *>(p_statement), p_finals, p_finals_by_name, r_state);
+			}
+		} break;
+	}
+}
+
+void GDScriptAnalyzer::analyze_final_definite_assignment_suite(const GDScriptParser::SuiteNode *p_suite,
+		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state) {
+	if (p_suite == nullptr) {
+		return;
+	}
+	for (int i = 0; i < p_suite->statements.size(); i++) {
+		analyze_final_definite_assignment_statement(p_suite->statements[i], p_finals, p_finals_by_name, r_state);
 	}
 }
 

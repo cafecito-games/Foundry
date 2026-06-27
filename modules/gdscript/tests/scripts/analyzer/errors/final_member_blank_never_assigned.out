@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 4: Final variable "id" must be definitely assigned in its declaration or in "_init()".
