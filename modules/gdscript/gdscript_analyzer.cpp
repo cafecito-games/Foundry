@@ -10670,7 +10670,12 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 			if (p_function == SNAME("bind")) {
 				r_default_arg_count = 0;
+				// Callable.bind() is a variadic builtin: it accepts any number of arguments
+				// regardless of the target method's arity. Marking the synthesized signature
+				// vararg keeps the leading bound arguments type-checked against the known
+				// parameters while permitting extra bound arguments without an arity error.
 				r_method_flags = METHOD_FLAGS_DEFAULT;
+				r_method_flags.set_flag(METHOD_FLAG_VARARG);
 				r_return_type = plain_callable_type();
 				if (!is_callable_vararg && call != nullptr) {
 					const int bind_argument_count = call->arguments.size();
@@ -10720,7 +10725,10 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 					for (int i = 0; i < checked_bind_argument_count; i++) {
 						bound_parameter_types.push_back(p_base_type.method_parameter_types[checked_bind_start + i]);
 					}
-					validate_callable_array_literal_args(bound_parameter_types, 0, false, bind_array, p_function);
+					// Callable.bindv() is variadic over the bound array's contents, so extra
+					// elements beyond the target's arity must not raise an arity error; the
+					// leading elements are still type-checked against the known parameters.
+					validate_callable_array_literal_args(bound_parameter_types, 0, true, bind_array, p_function);
 
 					Vector<GDScriptParser::DataType> remaining_parameter_types;
 					const int remaining_argument_count = MAX(callable_argument_count - bind_argument_count, 0);
