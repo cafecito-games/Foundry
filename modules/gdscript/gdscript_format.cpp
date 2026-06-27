@@ -677,6 +677,22 @@ void GDScriptPrinter::append_inline_comment(int p_line) {
 	last_emitted_line = p_line;
 }
 
+int GDScriptPrinter::find_else_line(int p_true_block_end, int p_else_block_start) const {
+	// The gap between the true block and the else block's first statement holds only
+	// the `else` line plus comments/blank lines, so the first non-comment, non-blank
+	// line in it is the `else` keyword.
+	for (int line = p_true_block_end + 1; line < p_else_block_start; line++) {
+		if (is_full_line_comment(line)) {
+			continue;
+		}
+		if (line >= 1 && line <= source_lines.size() && source_lines[line - 1].strip_edges().is_empty()) {
+			continue;
+		}
+		return line;
+	}
+	return 0;
+}
+
 bool GDScriptPrinter::has_full_line_comment_between(int p_after, int p_before) const {
 	if (p_after <= 0 || p_before <= 0) {
 		return false;
@@ -1796,13 +1812,29 @@ void GDScriptPrinter::print_if(const GDScriptParser::IfNode *p_if, bool p_is_eli
 	const bool is_elif_chain = p_if->false_block->statements.size() == 1 &&
 			p_if->false_block->statements[0]->type == GDScriptParser::Node::IF &&
 			p_if->false_block->start_line == p_if->false_block->statements[0]->start_line;
+	// Invariant: a continuation header line (`elif`/`else` here, like `get:`/`set:`
+	// or a class header sub-line) is not a fresh statement/member, so the enclosing
+	// suite loop gives it no leading-trivia flush. Before writing it, flush every
+	// unemitted trivia line (comment or recovered annotation) above its source line,
+	// then attach any inline comment on the line itself.
 	if (is_elif_chain) {
-		print_if(static_cast<const GDScriptParser::IfNode *>(p_if->false_block->statements[0]), true);
+		const GDScriptParser::IfNode *elif = static_cast<const GDScriptParser::IfNode *>(p_if->false_block->statements[0]);
+		flush_trivia_until(elif->start_line);
+		print_if(elif, true); // The recursive call attaches the `elif` line's own inline comment.
 	} else {
+		// The else suite's `start_line` is its first statement, not the `else` line,
+		// so recover the `else` line to place comments above it and its own inline
+		// comment correctly. Comments between `else:` and the first statement are
+		// flushed by `print_suite`'s leading-trivia pass.
+		const int else_line = find_else_line(p_if->true_block->end_line, p_if->false_block->start_line);
+		flush_trivia_until(else_line > 0 ? else_line : p_if->false_block->start_line);
 		write_indent();
 		write("else:");
 		newline();
-		last_emitted_line = p_if->false_block->start_line;
+		if (else_line > last_emitted_line) {
+			last_emitted_line = else_line;
+		}
+		emit_trailing_comment(else_line);
 		indent_level++;
 		print_suite(p_if->false_block);
 		flush_block_tail_comments();
@@ -2408,9 +2440,14 @@ GDScriptFormatterCLI::Options GDScriptFormatterCLI::parse_options(const List<Str
 	return options;
 }
 
-void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files) {
-	Ref<DirAccess> dir = DirAccess::open(p_dir);
-	if (dir.is_null()) {
+void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files, bool &r_had_error) {
+	Error open_error = OK;
+	Ref<DirAccess> dir = DirAccess::open(p_dir, &open_error);
+	if (dir.is_null() || open_error != OK) {
+		// An unreadable subtree must not be silently skipped (a CI `--check` would
+		// pass blind); report it and mark failure, but keep scanning siblings.
+		fprintf(stderr, "%s: could not open directory\n", p_dir.utf8().get_data());
+		r_had_error = true;
 		return;
 	}
 	// Skip hidden entries (`.git`, `.godot`, `.import`, ...): `.godot` caches can
@@ -2429,7 +2466,7 @@ void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vec
 			if (dir->is_link(full_path)) {
 				continue;
 			}
-			collect_gd_scripts_recursive(full_path, r_files);
+			collect_gd_scripts_recursive(full_path, r_files, r_had_error);
 		} else if (entry.get_extension() == "gd") {
 			r_files.push_back(full_path);
 		}
@@ -2441,7 +2478,7 @@ Vector<String> GDScriptFormatterCLI::collect_files(const Vector<String> &p_paths
 	Vector<String> files;
 	for (const String &path : p_paths) {
 		if (DirAccess::exists(path)) {
-			collect_gd_scripts_recursive(path, files);
+			collect_gd_scripts_recursive(path, files, r_had_error);
 		} else if (FileAccess::exists(path)) {
 			files.push_back(path);
 		} else {
@@ -2641,11 +2678,11 @@ void GDScriptFormatterCLI::generate_format_tests() {
 	}
 
 	Vector<String> all_scripts;
-	collect_gd_scripts_recursive(root, all_scripts);
+	bool had_error = false;
+	collect_gd_scripts_recursive(root, all_scripts, had_error);
 	all_scripts.sort();
 
 	int written = 0;
-	bool had_error = false;
 	for (const String &input_path : all_scripts) {
 		if (input_path.get_file() != "input.gd") {
 			continue;
