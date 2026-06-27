@@ -10687,14 +10687,22 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 						r_par_types.push_back(p_base_type.method_parameter_types[checked_bind_start + i]);
 					}
 
-					Vector<GDScriptParser::DataType> remaining_parameter_types;
-					const int remaining_argument_count = MAX(callable_argument_count - bind_argument_count, 0);
-					for (int i = 0; i < remaining_argument_count; i++) {
-						remaining_parameter_types.push_back(p_base_type.method_parameter_types[i]);
-					}
+					if (bind_argument_count > callable_argument_count) {
+						// Over-binding a fixed-arity callable yields one whose invocation can never
+						// succeed; rather than assert a misleading precise signature, fall back to a
+						// signatureless callable (keeping the async marker) so downstream call sites
+						// are not type-checked against a bogus shape.
+						r_return_type = over_bound_callable_type(p_base_type);
+					} else {
+						Vector<GDScriptParser::DataType> remaining_parameter_types;
+						const int remaining_argument_count = callable_argument_count - bind_argument_count;
+						for (int i = 0; i < remaining_argument_count; i++) {
+							remaining_parameter_types.push_back(p_base_type.method_parameter_types[i]);
+						}
 
-					const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
-					r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
+						r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+					}
 				} else {
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
 					if (call != nullptr) {
@@ -10730,14 +10738,20 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 					// leading elements are still type-checked against the known parameters.
 					validate_callable_array_literal_args(bound_parameter_types, 0, true, bind_array, p_function);
 
-					Vector<GDScriptParser::DataType> remaining_parameter_types;
-					const int remaining_argument_count = MAX(callable_argument_count - bind_argument_count, 0);
-					for (int i = 0; i < remaining_argument_count; i++) {
-						remaining_parameter_types.push_back(p_base_type.method_parameter_types[i]);
-					}
+					if (bind_argument_count > callable_argument_count) {
+						// As with bind(), over-binding produces an uninvocable callable; avoid
+						// asserting a precise signature for it.
+						r_return_type = over_bound_callable_type(p_base_type);
+					} else {
+						Vector<GDScriptParser::DataType> remaining_parameter_types;
+						const int remaining_argument_count = callable_argument_count - bind_argument_count;
+						for (int i = 0; i < remaining_argument_count; i++) {
+							remaining_parameter_types.push_back(p_base_type.method_parameter_types[i]);
+						}
 
-					const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
-					r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
+						r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+					}
 				} else if (is_callable_vararg && bind_array != nullptr) {
 					Vector<const GDScriptParser::ExpressionNode *> bound_arguments;
 					for (GDScriptParser::ExpressionNode *argument : bind_array->elements) {
@@ -11312,6 +11326,15 @@ bool GDScriptAnalyzer::callable_signature_from_type(const GDScriptParser::DataTy
 
 GDScriptParser::DataType GDScriptAnalyzer::plain_callable_type() const {
 	return type_from_property(PropertyInfo(Variant::CALLABLE, ""));
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::over_bound_callable_type(const GDScriptParser::DataType &p_source_callable_type) const {
+	// Binding more arguments than a fixed-arity target accepts produces a callable that cannot be
+	// invoked successfully. There is no precise signature to describe it, so return a signatureless
+	// callable that still carries the source's async marker (bind()/unbind() preserve async-ness).
+	GDScriptParser::DataType callable_type = plain_callable_type();
+	callable_type.signature_is_async = p_source_callable_type.signature_is_async;
+	return callable_type;
 }
 
 GDScriptParser::DataType GDScriptAnalyzer::explicit_callable_type_from_signature(const GDScriptParser::DataType &p_return_type, const Vector<GDScriptParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg, bool p_is_async) const {
