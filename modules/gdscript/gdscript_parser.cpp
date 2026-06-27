@@ -6512,11 +6512,16 @@ static String _encode_signature_type_base(const GDScriptParser::DataType &p_type
 							_encode_signature_type(p_type.get_container_element_type_or_variant(1)));
 				}
 				return "Dictionary";
-			case Variant::CALLABLE:
+			case Variant::CALLABLE: {
+				// AsyncCallable is encoded under a distinct type name so the async marker survives the
+				// hint-string round-trip and a cross-script async callable stays distinct from a plain
+				// (synchronous) Callable. The decoder rebuilds the marker from this name.
+				const String callable_name = p_type.signature_is_async ? "AsyncCallable" : "Callable";
 				if (p_type.has_explicit_method_signature) {
-					return "Callable" + _encode_method_signature_suffix(p_type, true);
+					return callable_name + _encode_method_signature_suffix(p_type, true);
 				}
-				return "Callable";
+				return callable_name;
+			}
 			case Variant::SIGNAL:
 				if (p_type.has_explicit_method_signature) {
 					return "Signal" + _encode_method_signature_suffix(p_type, false);
@@ -6653,6 +6658,13 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 			if ((builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) && has_explicit_method_signature && _signature_type_is_encodable(*this)) {
 				result.hint = PROPERTY_HINT_CALLABLE_TYPE;
 				result.hint_string = _encode_method_signature_suffix(*this, builtin_type == Variant::CALLABLE);
+				// The hint string carries only the signature suffix; the decoder rebuilds the leading
+				// type name from the property type, which cannot express AsyncCallable. Tag an async
+				// callable with a leading marker so the async-ness survives this boundary (signals are
+				// never async). The marker is stripped on decode (see type_from_property).
+				if (builtin_type == Variant::CALLABLE && signature_is_async) {
+					result.hint_string = "async " + result.hint_string;
+				}
 			} else if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 				const DataType elem_type = get_container_element_type(0);
 				switch (elem_type.kind) {

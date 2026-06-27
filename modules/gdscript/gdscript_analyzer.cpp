@@ -406,6 +406,17 @@ static GDScriptParser::DataType _decode_signature_type_base(const String &p_enco
 		}
 		return result;
 	}
+	// AsyncCallable is encoded under a distinct name (see _encode_signature_type_base) so the async
+	// marker survives the boundary; rebuild it as a Callable that carries signature_is_async.
+	if (text == "AsyncCallable" || text.begins_with("AsyncCallable[")) {
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::CALLABLE;
+		result.signature_is_async = true;
+		if (text.length() > 13) { // has a "[...]" suffix after "AsyncCallable"
+			_decode_method_signature_suffix(text.substr(13), true, result);
+		}
+		return result;
+	}
 	if (text == "Signal" || text.begins_with("Signal[")) {
 		result.kind = GDScriptParser::DataType::BUILTIN;
 		result.builtin_type = Variant::SIGNAL;
@@ -10392,8 +10403,18 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 		result.builtin_type = p_property.type;
 		if ((p_property.type == Variant::CALLABLE || p_property.type == Variant::SIGNAL) &&
 				p_property.hint == PROPERTY_HINT_CALLABLE_TYPE && !p_property.hint_string.is_empty()) {
-			const String encoded = (p_property.type == Variant::CALLABLE ? String("Callable") : String("Signal")) + p_property.hint_string;
+			// The hint string is only the signature suffix; the leading type name is implied by the
+			// property type. An async callable is tagged with a leading "async " marker on encode (see
+			// DataType::to_property_info) because the property type alone cannot express AsyncCallable.
+			String suffix = p_property.hint_string;
+			bool is_async = false;
+			if (p_property.type == Variant::CALLABLE && suffix.begins_with("async ")) {
+				is_async = true;
+				suffix = suffix.substr(6);
+			}
+			const String encoded = (p_property.type == Variant::CALLABLE ? String("Callable") : String("Signal")) + suffix;
 			const GDScriptParser::DataType decoded = _decode_signature_type(encoded);
+			result.signature_is_async = is_async;
 			result.has_method_signature = decoded.has_method_signature;
 			result.has_explicit_method_signature = decoded.has_explicit_method_signature;
 			result.method_parameter_types = decoded.method_parameter_types;
