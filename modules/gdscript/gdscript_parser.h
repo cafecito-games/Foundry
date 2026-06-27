@@ -1766,10 +1766,31 @@ private:
 	void push_multiline(bool p_state);
 	void pop_multiline();
 
+	// Leading run of declaration modifiers (`abstract`, `static`, `async`) collected
+	// before a class-body member and validated against the declaration that follows.
+	// `is_final` is reserved for a future modifier.
+	struct DeclarationModifiers {
+		bool is_abstract = false;
+		bool is_static = false;
+		bool is_async = false;
+
+		int abstract_line = 0;
+		int abstract_column = 0;
+		int static_line = 0;
+		int static_column = 0;
+		int async_line = 0;
+		int async_column = 0;
+
+		bool has_any() const { return is_abstract || is_static || is_async; }
+	};
+
+	DeclarationModifiers collect_declaration_modifiers();
+	void validate_declaration_modifiers(const DeclarationModifiers &p_modifiers, const char *p_target_kind, bool p_allow_abstract, bool p_allow_static, bool p_allow_async, bool p_in_trait);
+
 	// Main blocks.
 	void parse_program();
-	ClassNode *parse_class(bool p_is_static);
-	TraitNode *parse_trait(bool p_is_static);
+	ClassNode *parse_class(const DeclarationModifiers &p_modifiers);
+	TraitNode *parse_trait(const DeclarationModifiers &p_modifiers);
 	bool parse_identifier_chain(const String &p_declaration_name, String &r_chain);
 	void parse_namespace();
 	void parse_import();
@@ -1783,15 +1804,15 @@ private:
 	template <typename T>
 	void finalize_class_member(T *p_member, List<AnnotationNode *> &p_annotations, const String &p_member_kind);
 	template <typename T>
-	void parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static = false);
-	void parse_function_class_member(bool p_is_static, bool p_is_async);
+	void parse_class_member(T *(GDScriptParser::*p_parse_function)(const DeclarationModifiers &), AnnotationInfo::TargetKind p_target, const String &p_member_kind, const DeclarationModifiers &p_modifiers);
+	void parse_function_class_member(const DeclarationModifiers &p_modifiers);
 	AnnotationDeclarationNode *parse_annotation_declaration();
 	void parse_annotation_declaration_parameters(AnnotationDeclarationNode *p_annotation_declaration);
 	void parse_annotation_declaration_targets(AnnotationDeclarationNode *p_annotation_declaration);
-	SignalNode *parse_signal(bool p_is_static);
-	EnumNode *parse_enum(bool p_is_static);
+	SignalNode *parse_signal(const DeclarationModifiers &p_modifiers);
+	EnumNode *parse_enum(const DeclarationModifiers &p_modifiers);
 	ParameterNode *parse_parameter();
-	FunctionNode *parse_function_declaration(bool p_is_static, bool p_is_declared_async);
+	FunctionNode *parse_function_declaration(const DeclarationModifiers &p_modifiers);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);
 	SuiteNode *parse_suite(const String &p_context, SuiteNode *p_suite = nullptr, bool p_for_lambda = false);
 	// Annotations
@@ -1817,12 +1838,12 @@ private:
 	bool rpc_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	// Statements.
 	Node *parse_statement();
-	VariableNode *parse_variable(bool p_is_static);
+	VariableNode *parse_variable(const DeclarationModifiers &p_modifiers);
 	VariableNode *parse_variable(bool p_is_static, bool p_allow_property);
 	VariableNode *parse_property(VariableNode *p_variable, bool p_need_indent);
 	void parse_property_getter(VariableNode *p_variable);
 	void parse_property_setter(VariableNode *p_variable);
-	ConstantNode *parse_constant(bool p_is_static);
+	ConstantNode *parse_constant(const DeclarationModifiers &p_modifiers);
 	AssertNode *parse_assert();
 	BreakNode *parse_break();
 	ContinueNode *parse_continue();

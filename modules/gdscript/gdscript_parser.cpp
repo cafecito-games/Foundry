@@ -1085,12 +1085,13 @@ void GDScriptParser::parse_import() {
 	}
 }
 
-GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
+GDScriptParser::ClassNode *GDScriptParser::parse_class(const DeclarationModifiers &p_modifiers) {
 	ClassNode *n_class = alloc_node<ClassNode>();
 
 	ClassNode *previous_class = current_class;
 	current_class = n_class;
 	n_class->outer = previous_class;
+	n_class->is_abstract = p_modifiers.is_abstract;
 
 	if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for the class name after "class".)")) {
 		n_class->identifier = parse_identifier();
@@ -1152,12 +1153,13 @@ GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 	return n_class;
 }
 
-GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
+GDScriptParser::TraitNode *GDScriptParser::parse_trait(const DeclarationModifiers &p_modifiers) {
 	TraitNode *trait = alloc_node<TraitNode>();
 
 	ClassNode *previous_class = current_class;
 	current_class = trait;
 	trait->outer = previous_class;
+	trait->is_abstract = p_modifiers.is_abstract;
 
 	if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for the trait name after "trait".)")) {
 		trait->identifier = parse_identifier();
@@ -1484,17 +1486,17 @@ void GDScriptParser::finalize_class_member(T *p_member, List<AnnotationNode *> &
 }
 
 template <typename T>
-void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static) {
+void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(const DeclarationModifiers &), AnnotationInfo::TargetKind p_target, const String &p_member_kind, const DeclarationModifiers &p_modifiers) {
 	advance();
 	List<AnnotationNode *> annotations = parse_class_member_annotations(p_target, p_member_kind);
-	T *member = (this->*p_parse_function)(p_is_static);
+	T *member = (this->*p_parse_function)(p_modifiers);
 	finalize_class_member(member, annotations, p_member_kind);
 }
 
-void GDScriptParser::parse_function_class_member(bool p_is_static, bool p_is_async) {
+void GDScriptParser::parse_function_class_member(const DeclarationModifiers &p_modifiers) {
 	advance();
 	List<AnnotationNode *> annotations = parse_class_member_annotations(AnnotationInfo::FUNCTION, "function");
-	FunctionNode *member = parse_function_declaration(p_is_static, p_is_async);
+	FunctionNode *member = parse_function_declaration(p_modifiers);
 	finalize_class_member(member, annotations, "function");
 }
 
@@ -1640,46 +1642,109 @@ void GDScriptParser::parse_annotation_declaration_targets(AnnotationDeclarationN
 	} while (match(GDScriptTokenizer::Token::COMMA));
 }
 
+GDScriptParser::DeclarationModifiers GDScriptParser::collect_declaration_modifiers() {
+	DeclarationModifiers modifiers;
+	while (true) {
+		if (check(GDScriptTokenizer::Token::ABSTRACT)) {
+			advance();
+			if (modifiers.is_abstract) {
+				push_error(R"(The "abstract" modifier was already specified.)");
+			}
+			modifiers.is_abstract = true;
+			modifiers.abstract_line = previous.start_line;
+			modifiers.abstract_column = previous.start_column;
+		} else if (check(GDScriptTokenizer::Token::STATIC)) {
+			advance();
+			if (modifiers.is_static) {
+				push_error(R"(The "static" modifier was already specified.)");
+			}
+			modifiers.is_static = true;
+			modifiers.static_line = previous.start_line;
+			modifiers.static_column = previous.start_column;
+		} else if (current.type == GDScriptTokenizer::Token::IDENTIFIER && current.get_identifier() == StringName("async")) {
+			advance();
+			if (modifiers.is_async) {
+				push_error(R"(The "async" modifier was already specified.)");
+			}
+			modifiers.is_async = true;
+			modifiers.async_line = previous.start_line;
+			modifiers.async_column = previous.start_column;
+		} else {
+			break;
+		}
+	}
+	return modifiers;
+}
+
+void GDScriptParser::validate_declaration_modifiers(const DeclarationModifiers &p_modifiers, const char *p_target_kind, bool p_allow_abstract, bool p_allow_static, bool p_allow_async, bool p_in_trait) {
+	if (p_modifiers.is_abstract && !p_allow_abstract) {
+		push_error(vformat(R"(The "abstract" modifier cannot be applied to %s.)", p_target_kind));
+	}
+	if (p_modifiers.is_static && !p_allow_static) {
+		push_error(vformat(R"(The "static" modifier cannot be applied to %s.)", p_target_kind));
+	}
+	if (p_modifiers.is_async && !p_allow_async) {
+		push_error(vformat(R"(The "async" modifier cannot be applied to %s.)", p_target_kind));
+	}
+	// Combination rules only apply where each modifier is individually valid (functions).
+	if (p_allow_abstract && p_allow_static && p_modifiers.is_abstract && p_modifiers.is_static && !p_in_trait) {
+		push_error(R"(The "abstract" and "static" modifiers cannot be combined outside a trait.)");
+	}
+	if (p_allow_abstract && p_allow_async && p_modifiers.is_abstract && p_modifiers.is_async) {
+		push_error(R"(The "abstract" and "async" modifiers cannot be combined.)");
+	}
+}
+
 void GDScriptParser::parse_class_body(bool p_is_multiline) {
 	bool class_end = false;
-	bool next_is_static = false;
-	bool next_is_async = false;
 	while (!class_end && !is_at_end()) {
+		DeclarationModifiers modifiers = collect_declaration_modifiers();
+		const bool in_trait = current_class != nullptr && current_class->is_trait;
+
 		GDScriptTokenizer::Token token = current;
-		const bool token_is_async_identifier = token.type == GDScriptTokenizer::Token::IDENTIFIER && token.get_identifier() == "async";
+		const bool starts_declaration = token.type == GDScriptTokenizer::Token::VAR ||
+				token.type == GDScriptTokenizer::Token::TK_CONST ||
+				token.type == GDScriptTokenizer::Token::SIGNAL ||
+				token.type == GDScriptTokenizer::Token::FUNC ||
+				token.type == GDScriptTokenizer::Token::CLASS ||
+				token.type == GDScriptTokenizer::Token::TRAIT ||
+				token.type == GDScriptTokenizer::Token::ENUM;
+		if (modifiers.has_any() && !starts_declaration) {
+			push_error(R"(Expected a declaration after the modifier.)");
+		}
+
 		switch (token.type) {
 			case GDScriptTokenizer::Token::VAR:
-				parse_class_member(&GDScriptParser::parse_variable, AnnotationInfo::VARIABLE, "variable", next_is_static);
-				if (next_is_static) {
+				validate_declaration_modifiers(modifiers, "variables", false, true, false, in_trait);
+				parse_class_member(&GDScriptParser::parse_variable, AnnotationInfo::VARIABLE, "variable", modifiers);
+				if (modifiers.is_static) {
 					current_class->has_static_data = true;
 				}
 				break;
 			case GDScriptTokenizer::Token::TK_CONST:
-				parse_class_member(&GDScriptParser::parse_constant, AnnotationInfo::CONSTANT, "constant");
+				validate_declaration_modifiers(modifiers, "constants", false, false, false, in_trait);
+				parse_class_member(&GDScriptParser::parse_constant, AnnotationInfo::CONSTANT, "constant", modifiers);
 				break;
 			case GDScriptTokenizer::Token::SIGNAL:
-				parse_class_member(&GDScriptParser::parse_signal, AnnotationInfo::SIGNAL, "signal");
+				validate_declaration_modifiers(modifiers, "signals", false, false, false, in_trait);
+				parse_class_member(&GDScriptParser::parse_signal, AnnotationInfo::SIGNAL, "signal", modifiers);
 				break;
 			case GDScriptTokenizer::Token::FUNC:
-				parse_function_class_member(next_is_static, next_is_async);
+				validate_declaration_modifiers(modifiers, "functions", true, true, true, in_trait);
+				parse_function_class_member(modifiers);
 				break;
 			case GDScriptTokenizer::Token::CLASS:
-				parse_class_member(&GDScriptParser::parse_class, AnnotationInfo::CLASS, "class");
+				validate_declaration_modifiers(modifiers, "classes", true, false, false, in_trait);
+				parse_class_member(&GDScriptParser::parse_class, AnnotationInfo::CLASS, "class", modifiers);
 				break;
 			case GDScriptTokenizer::Token::TRAIT:
-				parse_class_member(&GDScriptParser::parse_trait, AnnotationInfo::CLASS, "trait");
+				validate_declaration_modifiers(modifiers, "traits", true, false, false, in_trait);
+				parse_class_member(&GDScriptParser::parse_trait, AnnotationInfo::CLASS, "trait", modifiers);
 				break;
 			case GDScriptTokenizer::Token::ENUM:
-				parse_class_member(&GDScriptParser::parse_enum, AnnotationInfo::NONE, "enum");
+				validate_declaration_modifiers(modifiers, "enums", false, false, false, in_trait);
+				parse_class_member(&GDScriptParser::parse_enum, AnnotationInfo::NONE, "enum", modifiers);
 				break;
-			case GDScriptTokenizer::Token::STATIC: {
-				advance();
-				next_is_static = true;
-				if (!check(GDScriptTokenizer::Token::FUNC) && !check(GDScriptTokenizer::Token::VAR) &&
-						!(current.type == GDScriptTokenizer::Token::IDENTIFIER && current.get_identifier() == "async")) {
-					push_error(R"(Expected "func" or "var" after "static".)");
-				}
-			} break;
 			case GDScriptTokenizer::Token::ANNOTATION: {
 				advance();
 
@@ -1756,20 +1821,6 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 					parse_annotation_declaration();
 					break;
 				}
-				if (token_is_async_identifier) {
-					advance();
-					if (match(GDScriptTokenizer::Token::STATIC)) {
-						push_error(R"("static" must appear before "async" in a static async function declaration.)");
-						next_is_static = true;
-						next_is_async = check(GDScriptTokenizer::Token::FUNC);
-					} else if (check(GDScriptTokenizer::Token::FUNC)) {
-						next_is_async = true;
-					} else {
-						push_error(R"("async" can only be used as a function modifier before "func".)");
-						next_is_async = false;
-					}
-					break;
-				}
 				// Display a completion with declaration-oriented identifiers.
 				make_completion_context(COMPLETION_DECLARATION, nullptr);
 				advance();
@@ -1796,23 +1847,17 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				}
 				break;
 		}
-		if (token.type != GDScriptTokenizer::Token::STATIC && !(token_is_async_identifier && next_is_async)) {
-			next_is_static = false;
-		}
-		if (!(token_is_async_identifier && next_is_async)) {
-			next_is_async = false;
-		}
 		if (panic_mode) {
 			synchronize();
 		}
-		if (!p_is_multiline && !next_is_static && !next_is_async) {
+		if (!p_is_multiline) {
 			class_end = true;
 		}
 	}
 }
 
-GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static) {
-	return parse_variable(p_is_static, true);
+GDScriptParser::VariableNode *GDScriptParser::parse_variable(const DeclarationModifiers &p_modifiers) {
+	return parse_variable(p_modifiers.is_static, true);
 }
 
 GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static, bool p_allow_property) {
@@ -2058,7 +2103,7 @@ void GDScriptParser::parse_property_getter(VariableNode *p_variable) {
 	}
 }
 
-GDScriptParser::ConstantNode *GDScriptParser::parse_constant(bool p_is_static) {
+GDScriptParser::ConstantNode *GDScriptParser::parse_constant(const DeclarationModifiers &p_modifiers) {
 	ConstantNode *constant = alloc_node<ConstantNode>();
 
 	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected constant name after "const".)")) {
@@ -2126,7 +2171,7 @@ GDScriptParser::ParameterNode *GDScriptParser::parse_parameter() {
 	return parameter;
 }
 
-GDScriptParser::SignalNode *GDScriptParser::parse_signal(bool p_is_static) {
+GDScriptParser::SignalNode *GDScriptParser::parse_signal(const DeclarationModifiers &p_modifiers) {
 	SignalNode *signal = alloc_node<SignalNode>();
 
 	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected signal name after "signal".)")) {
@@ -2171,7 +2216,7 @@ GDScriptParser::SignalNode *GDScriptParser::parse_signal(bool p_is_static) {
 	return signal;
 }
 
-GDScriptParser::EnumNode *GDScriptParser::parse_enum(bool p_is_static) {
+GDScriptParser::EnumNode *GDScriptParser::parse_enum(const DeclarationModifiers &p_modifiers) {
 	EnumNode *enum_node = alloc_node<EnumNode>();
 	bool named = false;
 
@@ -2356,12 +2401,13 @@ bool GDScriptParser::parse_function_signature(FunctionNode *p_function, SuiteNod
 	return match(GDScriptTokenizer::Token::COLON);
 }
 
-GDScriptParser::FunctionNode *GDScriptParser::parse_function_declaration(bool p_is_static, bool p_is_declared_async) {
+GDScriptParser::FunctionNode *GDScriptParser::parse_function_declaration(const DeclarationModifiers &p_modifiers) {
 	FunctionNode *function = alloc_node<FunctionNode>();
-	function->is_static = p_is_static;
-	function->is_declared_async = p_is_declared_async;
+	function->is_static = p_modifiers.is_static;
+	function->is_abstract = p_modifiers.is_abstract;
+	function->is_declared_async = p_modifiers.is_async;
 	// Declared async functions are coroutine-callable even before parsing a body-level await.
-	function->is_coroutine = p_is_declared_async;
+	function->is_coroutine = p_modifiers.is_async;
 
 	make_completion_context(COMPLETION_OVERRIDE_METHOD, function);
 
@@ -2688,7 +2734,7 @@ GDScriptParser::Node *GDScriptParser::parse_statement() {
 			break;
 		case GDScriptTokenizer::Token::TK_CONST:
 			advance();
-			result = parse_constant(false);
+			result = parse_constant(DeclarationModifiers());
 			break;
 		case GDScriptTokenizer::Token::IF:
 			advance();

@@ -1204,12 +1204,6 @@ class InlineStatic: static func make() -> int: return 3
 
 TEST_CASE("[Modules][GDScript] Parser rejects invalid async function modifier positions") {
 	check_parse_source_error(R"(
-async static func load() -> void:
-	pass
-)",
-			R"("static" must appear before "async" in a static async function declaration.)");
-
-	check_parse_source_error(R"(
 func async load() -> void:
 	pass
 )",
@@ -1218,7 +1212,7 @@ func async load() -> void:
 	check_parse_source_error(R"(
 async var value = 1
 )",
-			R"("async" can only be used as a function modifier before "func".)");
+			R"(The "async" modifier cannot be applied to variables.)");
 
 	GDScriptParser parser;
 	Error err = parser.parse(R"(
@@ -1256,6 +1250,119 @@ func after_inline() -> void:
 		return;
 	}
 	CHECK(find_parser_function(inline_root, SNAME("after_inline")) != nullptr);
+}
+
+TEST_CASE("[Modules][GDScript] Parser collects declaration modifiers in any order") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+abstract class Shape:
+	abstract func area() -> float
+
+abstract trait Drawable:
+	abstract func draw() -> void
+
+async static func make() -> int:
+	return 1
+
+static async func build() -> int:
+	return 2
+)",
+			"user://declaration_modifiers.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *shape = find_parser_class(root, SNAME("Shape"));
+	CHECK(shape != nullptr);
+	if (shape != nullptr) {
+		CHECK(shape->is_abstract);
+		const GDScriptParser::FunctionNode *area = find_parser_function(shape, SNAME("area"));
+		CHECK(area != nullptr);
+		if (area != nullptr) {
+			CHECK(area->is_abstract);
+		}
+	}
+
+	const GDScriptParser::ClassNode *drawable = find_parser_trait(root, SNAME("Drawable"));
+	CHECK(drawable != nullptr);
+	if (drawable != nullptr) {
+		CHECK(drawable->is_abstract);
+		CHECK(drawable->is_trait);
+	}
+
+	const GDScriptParser::FunctionNode *make = find_parser_function(root, SNAME("make"));
+	CHECK(make != nullptr);
+	if (make != nullptr) {
+		CHECK(make->is_static);
+		CHECK(make->is_declared_async);
+		CHECK(make->is_coroutine);
+	}
+
+	const GDScriptParser::FunctionNode *build = find_parser_function(root, SNAME("build"));
+	CHECK(build != nullptr);
+	if (build != nullptr) {
+		CHECK(build->is_static);
+		CHECK(build->is_declared_async);
+	}
+}
+
+TEST_CASE("[Modules][GDScript] Parser allows static abstract methods only inside traits") {
+	GDScriptParser trait_parser;
+	Error trait_err = trait_parser.parse(R"(
+abstract trait Factory:
+	static abstract func create() -> int
+)",
+			"user://static_abstract_trait.gd", false);
+
+	CHECK_EQ(trait_err, OK);
+	if (trait_err == OK) {
+		const GDScriptParser::ClassNode *trait_root = trait_parser.get_tree();
+		const GDScriptParser::ClassNode *factory = find_parser_trait(trait_root, SNAME("Factory"));
+		CHECK(factory != nullptr);
+		if (factory != nullptr) {
+			const GDScriptParser::FunctionNode *create = find_parser_function(factory, SNAME("create"));
+			CHECK(create != nullptr);
+			if (create != nullptr) {
+				CHECK(create->is_static);
+				CHECK(create->is_abstract);
+			}
+		}
+	}
+
+	check_parse_source_error(R"(
+static abstract func create() -> int
+)",
+			R"(The "abstract" and "static" modifiers cannot be combined outside a trait.)");
+}
+
+TEST_CASE("[Modules][GDScript] Parser validates declaration modifier targets") {
+	check_parse_source_error(R"(
+abstract var value = 1
+)",
+			R"(The "abstract" modifier cannot be applied to variables.)");
+
+	check_parse_source_error(R"(
+abstract abstract func run() -> void
+)",
+			R"(The "abstract" modifier was already specified.)");
+
+	check_parse_source_error(R"(
+abstract async func run() -> void
+)",
+			R"(The "abstract" and "async" modifiers cannot be combined.)");
+
+	check_parse_source_error(R"(
+static signal triggered
+)",
+			R"(The "static" modifier cannot be applied to signals.)");
 }
 
 TEST_CASE("[Modules][GDScript] Parser keeps async usable as an identifier outside modifier positions") {
