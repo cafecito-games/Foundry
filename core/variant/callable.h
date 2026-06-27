@@ -113,6 +113,7 @@ public:
 	void get_bound_arguments_ref(Vector<Variant> &r_arguments) const; // Internal engine use, the exposed one is below.
 	Array get_bound_arguments() const;
 	int get_unbound_arguments_count() const;
+	bool is_async() const;
 
 	uint32_t hash() const;
 
@@ -164,6 +165,7 @@ public:
 	virtual int get_bound_arguments_count() const;
 	virtual void get_bound_arguments(Vector<Variant> &r_arguments) const;
 	virtual int get_unbound_arguments_count() const;
+	virtual bool is_async() const;
 
 	CallableCustom();
 	virtual ~CallableCustom() {}

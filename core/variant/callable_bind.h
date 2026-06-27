@@ -56,6 +56,7 @@ public:
 	virtual int get_bound_arguments_count() const override;
 	virtual void get_bound_arguments(Vector<Variant> &r_arguments) const override;
 	virtual int get_unbound_arguments_count() const override;
+	virtual bool is_async() const override;
 	Callable get_callable() { return callable; }
 	Vector<Variant> get_binds() { return binds; }
 
@@ -85,6 +86,7 @@ public:
 	virtual int get_bound_arguments_count() const override;
 	virtual void get_bound_arguments(Vector<Variant> &r_arguments) const override;
 	virtual int get_unbound_arguments_count() const override;
+	virtual bool is_async() const override;
 
 	Callable get_callable() { return callable; }
 	int get_unbinds() { return argcount; }
