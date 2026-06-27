@@ -1182,6 +1182,9 @@ ProjectDialog::ProjectDialog() {
 	rs_button->set_meta(SNAME("rendering_method"), "gl_compatibility");
 	rs_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectDialog::_renderer_selected));
 	rvb->add_child(rs_button);
+	// Kept so the default-selection block below can target this button after
+	// `rs_button` is reassigned to the "Mobile (iOS)" checkbox.
+	Button *compatibility_button = rs_button;
 
 	// "Mobile (iOS)" seeds an iOS export preset and a default run target on top
 	// of the Mobile renderer, so a new project is ready to run on a phone.
@@ -1204,7 +1207,7 @@ ProjectDialog::ProjectDialog() {
 	rvb->add_child(ri_link);
 #if defined(GLES3_ENABLED)
 	if (default_renderer_type == "gl_compatibility") {
-		rs_button->set_pressed(true);
+		compatibility_button->set_pressed(true);
 	}
 #endif
 	rshc->add_child(memnew(VSeparator));
