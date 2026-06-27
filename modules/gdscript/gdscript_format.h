@@ -82,6 +82,25 @@ private:
 	void write(const String &p_text);
 	void newline();
 
+	// Comment reattachment and blank-line normalization.
+	//
+	// Comments live in a line-keyed map (1-based, the same indexing the parser
+	// uses for node start/end lines). `last_emitted_line` is a cursor over the
+	// source: it advances past every line whose content has been emitted so each
+	// comment is consumed exactly once. `emit_leading_trivia` walks the gap
+	// before the next node, emitting full-line comments at the current indent and
+	// normalizing the blank lines that separate them.
+	String normalize_comment_text(const String &p_raw) const;
+	bool is_full_line_comment(int p_line) const;
+	void emit_leading_trivia(int p_next_line, int p_required_blanks);
+	void emit_trailing_comment(int p_line);
+	void flush_tail_comments();
+
+	static const GDScriptParser::Node *member_node(const GDScriptParser::ClassNode::Member &p_member);
+	static int member_start_line(const GDScriptParser::ClassNode::Member &p_member);
+	static bool member_is_definition(const GDScriptParser::ClassNode::Member &p_member);
+	static void header_line_range(const GDScriptParser::ClassNode *p_class, int &r_min_line, int &r_max_line);
+
 	// Position key for the literal index: (line << 32) | column.
 	static uint64_t pos_key(int p_line, int p_column) {
 		return (uint64_t(uint32_t(p_line)) << 32) | uint32_t(p_column);
@@ -91,7 +110,7 @@ private:
 	void print_class(const GDScriptParser::ClassNode *p_class, bool p_is_root, bool p_is_tool);
 	void print_class_header(const GDScriptParser::ClassNode *p_class, bool p_is_tool);
 	void print_extends_clause(const GDScriptParser::ClassNode *p_class);
-	void print_class_body(const GDScriptParser::ClassNode *p_class);
+	void print_class_body(const GDScriptParser::ClassNode *p_class, bool p_is_root);
 	void print_member(const GDScriptParser::ClassNode::Member &p_member);
 	void print_function(const GDScriptParser::FunctionNode *p_function);
 	void print_variable(const GDScriptParser::VariableNode *p_variable);
