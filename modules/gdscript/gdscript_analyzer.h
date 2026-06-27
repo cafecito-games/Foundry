@@ -137,10 +137,12 @@ class GDScriptAnalyzer {
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, bool p_in_init);
 	void analyze_final_definite_assignment_suite(const GDScriptParser::SuiteNode *p_suite,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state,
+			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
 	void analyze_final_definite_assignment_statement(const GDScriptParser::Node *p_statement,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state,
+			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
 	void check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, const FinalAssignmentState &p_state);
