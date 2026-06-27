@@ -422,6 +422,47 @@ TEST_CASE("[Editor][IOSRunTarget] Profiles without a team identifier are rejecte
 	CHECK_FALSE(IOSRunTargetPlatform::parse_provisioning_profile_team(empty_team, team));
 }
 
+TEST_CASE("[Editor][IOSRunTarget] Embedded plist is sliced out of a CMS-wrapped profile") {
+	// A provisioning profile stores its plist as cleartext inside a binary CMS
+	// wrapper (including NUL bytes). The extractor must recover exactly the
+	// `<?xml ... </plist>` span and feed cleanly into the team parser.
+	const String plist =
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+			"<plist version=\"1.0\"><dict>"
+			"<key>TeamIdentifier</key><array><string>PQRST24680</string></array>"
+			"<key>TeamName</key><string>Slice Team</string>"
+			"</dict></plist>";
+
+	Vector<uint8_t> bytes;
+	// Binary DER prelude, including a NUL byte.
+	bytes.push_back(0x30);
+	bytes.push_back(0x82);
+	bytes.push_back(0x00);
+	bytes.push_back(0x2A);
+	const CharString plist_utf8 = plist.utf8();
+	for (int i = 0; i < plist_utf8.length(); i++) {
+		bytes.push_back((uint8_t)plist_utf8[i]);
+	}
+	// Trailing signature bytes after </plist>.
+	bytes.push_back(0x00);
+	bytes.push_back(0xFF);
+
+	const String extracted = IOSRunTargetPlatform::extract_plist_from_profile(bytes);
+	CHECK_EQ(extracted, plist);
+
+	SigningTeam team;
+	CHECK(IOSRunTargetPlatform::parse_provisioning_profile_team(extracted, team));
+	CHECK_EQ(team.id, "PQRST24680");
+	CHECK_EQ(team.name, "Slice Team");
+
+	// No plist payload yields an empty string.
+	Vector<uint8_t> junk;
+	junk.push_back(0x01);
+	junk.push_back(0x02);
+	CHECK(IOSRunTargetPlatform::extract_plist_from_profile(junk).is_empty());
+	CHECK(IOSRunTargetPlatform::extract_plist_from_profile(Vector<uint8_t>()).is_empty());
+}
+
 TEST_CASE("[Editor][IOSRunTarget] Signing teams are deduplicated across profiles") {
 	Vector<String> payloads;
 	// Two profiles for the same personal team plus one company profile; a personal

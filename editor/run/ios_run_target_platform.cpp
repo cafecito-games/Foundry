@@ -370,35 +370,72 @@ Vector<String> IOSRunTargetPlatform::_list_provisioning_profile_paths() const {
 	return paths;
 }
 
-String IOSRunTargetPlatform::_decode_provisioning_profile(const String &p_path) {
-	ERR_FAIL_NULL_V(command_runner, String());
-
-	List<String> args;
-	args.push_back("cms");
-	args.push_back("-D");
-	args.push_back("-i");
-	args.push_back(p_path);
-
-	const CommandResult outcome = command_runner->run("security", args);
-	if (outcome.error != OK || outcome.exit_code != 0) {
+String IOSRunTargetPlatform::extract_plist_from_profile(const Vector<uint8_t> &p_bytes) {
+	if (p_bytes.is_empty()) {
 		return String();
 	}
-	return outcome.output;
+
+	// A `.mobileprovision`/`.provisionprofile` is a CMS (PKCS#7) wrapper whose
+	// signed content is the profile's plist stored as cleartext. Slice that plist
+	// out of the raw bytes rather than running `security cms -D`, so the filename
+	// never reaches a shell.
+	const uint8_t *data = p_bytes.ptr();
+	const int size = p_bytes.size();
+
+	const auto find_bytes = [data, size](const char *p_needle, int p_from) -> int {
+		const int needle_length = strlen(p_needle);
+		if (needle_length == 0 || size < needle_length) {
+			return -1;
+		}
+		for (int i = MAX(p_from, 0); i + needle_length <= size; i++) {
+			if (memcmp(data + i, p_needle, needle_length) == 0) {
+				return i;
+			}
+		}
+		return -1;
+	};
+
+	int start = find_bytes("<?xml", 0);
+	if (start < 0) {
+		start = find_bytes("<plist", 0);
+	}
+	static const char *CLOSE_TAG = "</plist>";
+	const int close = find_bytes(CLOSE_TAG, MAX(start, 0));
+	if (start < 0 || close < 0) {
+		return String();
+	}
+	const int end = close + (int)strlen(CLOSE_TAG);
+
+	// The sliced range is XML text (ASCII, including any base64 `<data>` blobs),
+	// so it is valid UTF-8.
+	String result;
+	if (result.append_utf8((const char *)(data + start), end - start) != OK) {
+		return String();
+	}
+	return result;
+}
+
+String IOSRunTargetPlatform::_read_provisioning_profile_plist(const String &p_path) {
+	Error error = OK;
+	const Vector<uint8_t> bytes = FileAccess::get_file_as_bytes(p_path, &error);
+	if (error != OK) {
+		return String();
+	}
+	return extract_plist_from_profile(bytes);
 }
 
 Vector<SigningTeam> IOSRunTargetPlatform::list_signing_teams() {
-	// Decode every installed provisioning profile through the command seam, then
-	// hand the batch to the pure parser. Each profile embeds the (team id, team
-	// name) pair Xcode minted for it, so the union across profiles is the set of
-	// teams the user can sign with.
-	Vector<String> decoded;
+	// Read every installed provisioning profile and hand the batch to the pure
+	// parser. Each profile embeds the (team id, team name) pair Xcode minted for
+	// it, so the union across profiles is the set of teams the user can sign with.
+	Vector<String> profiles;
 	for (const String &path : _list_provisioning_profile_paths()) {
-		const String plist = _decode_provisioning_profile(path);
+		const String plist = _read_provisioning_profile_plist(path);
 		if (!plist.strip_edges().is_empty()) {
-			decoded.push_back(plist);
+			profiles.push_back(plist);
 		}
 	}
-	return parse_signing_teams(decoded);
+	return parse_signing_teams(profiles);
 }
 
 EditorExportPlatformAppleEmbedded *IOSRunTargetPlatform::_find_export_platform() const {

@@ -125,6 +125,12 @@ public:
 	// is thin glue over this.
 	static Vector<SigningTeam> parse_signing_teams(const Vector<String> &p_decoded_plists);
 
+	// Slices the cleartext `<?xml ... </plist>` payload out of a provisioning
+	// profile's raw CMS (PKCS#7) bytes, returning an empty string when no plist is
+	// present. Pure, so the extraction the live path relies on (instead of shelling
+	// out `security cms -D` with an attacker-influenced filename) is unit-testable.
+	static String extract_plist_from_profile(const Vector<uint8_t> &p_bytes);
+
 	// Constructs the adapter with the production `OSCommandRunner`.
 	IOSRunTargetPlatform();
 	// Constructs the adapter with an injected runner (not owned by the adapter).
@@ -146,10 +152,10 @@ private:
 	// off macOS). Live filesystem glue, mirrored by the readiness probe seams.
 	Vector<String> _list_provisioning_profile_paths() const;
 
-	// Decodes one provisioning profile to its XML plist via `security cms -D`
-	// through the command seam, or an empty string when the tool is unavailable or
-	// fails. Tests inject a fake runner; production shells out to `security`.
-	String _decode_provisioning_profile(const String &p_path);
+	// Reads one provisioning profile from disk and returns its embedded plist via
+	// `extract_plist_from_profile`. Empty when the file is unreadable or has no
+	// plist payload.
+	static String _read_provisioning_profile_plist(const String &p_path);
 
 	// Runs `xcrun devicectl list devices` and returns its raw output, or an empty
 	// string when the tool is unavailable or fails.

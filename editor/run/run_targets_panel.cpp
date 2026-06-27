@@ -373,7 +373,12 @@ void RunTargetsPanel::_refresh_team_options(const RunTarget &p_target, const Str
 		detected_teams = adapter->list_signing_teams();
 	}
 
-	int select = -1;
+	// An explicit "None" entry so a stale or wrong team can be cleared from the
+	// picker (the manual field's empty submit is a deliberate no-op).
+	team_option->add_item(TTR("None"));
+	team_option->set_item_metadata(0, String());
+
+	int select = p_current_team_id.is_empty() ? 0 : -1;
 	bool current_present = false;
 	for (int i = 0; i < detected_teams.size(); i++) {
 		const SigningTeam &team = detected_teams[i];
@@ -395,14 +400,12 @@ void RunTargetsPanel::_refresh_team_options(const RunTarget &p_target, const Str
 		select = item_index;
 	}
 
-	if (team_option->get_item_count() > 0) {
-		team_option->add_separator();
-	}
+	team_option->add_separator();
 	const int manual_index = team_option->get_item_count();
 	team_option->add_item(TTR("Enter Team ID manually…"));
 	team_option->set_item_metadata(manual_index, MANUAL_TEAM_ITEM);
 
-	// With no team chosen yet, land on manual entry so the field is available.
+	// Defensive fallback; an empty team already resolves to "None" above.
 	if (select < 0) {
 		select = manual_index;
 	}
