@@ -2703,6 +2703,82 @@ void GDScriptAnalyzer::merge_final_assignment_branches(const FinalAssignmentStat
 	}
 }
 
+// Mirrors `GDScriptCompiler::_is_flattenable_trait_member`: the member kinds a trait contributes
+// to each implementing class. Name-claiming for the first-trait-wins shadowing below must use the
+// exact same predicate the compiler uses so the analyzer tracks the same flattened slots.
+static bool _is_flattenable_trait_member(const GDScriptParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case GDScriptParser::ClassNode::Member::VARIABLE:
+		case GDScriptParser::ClassNode::Member::CONSTANT:
+		case GDScriptParser::ClassNode::Member::ENUM:
+		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
+		case GDScriptParser::ClassNode::Member::SIGNAL:
+			return true;
+		case GDScriptParser::ClassNode::Member::FUNCTION:
+			return p_member.function != nullptr && !p_member.function->is_abstract;
+		default:
+			return false;
+	}
+}
+
+// Collects the `final` variables an implementing class receives from its applied traits, in the
+// order the compiler flattens them. Trait members are merged into the class at compile time
+// (`GDScriptCompiler::_collect_flattened_trait_members`), so they never appear in `p_class->members`
+// when the final-enforcement passes run; without this, a trait-supplied final is neither write-once
+// enforced nor recognized as having a legal `_init`/`_static_init` slot on the implementer. The
+// shadowing here matches the compiler exactly: a trait member is dropped when the implementing class
+// or any base already declares its name, and the first trait to provide a name wins. `p_static`
+// selects between the instance-member and static-final passes. Properties and `@onready` finals are
+// skipped (the same corners the direct-member passes reject) rather than tracked as a write-once slot.
+static void _collect_flattened_trait_finals(const GDScriptParser::ClassNode *p_class, bool p_static,
+		LocalVector<GDScriptParser::VariableNode *> &r_trait_finals) {
+	if (p_class->resolved_traits.is_empty()) {
+		return;
+	}
+
+	HashSet<StringName> defined;
+	for (const GDScriptParser::ClassNode *owner = p_class; owner != nullptr; owner = owner->base_type.class_type) {
+		for (const GDScriptParser::ClassNode::Member &member : owner->members) {
+			const StringName name = member.get_name();
+			if (name != StringName()) {
+				defined.insert(name);
+			}
+		}
+	}
+
+	for (GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (!_is_flattenable_trait_member(member)) {
+				continue;
+			}
+			const StringName name = member.get_name();
+			if (name == StringName() || defined.has(name)) {
+				continue;
+			}
+			// Claim the name for every flattenable member kind (not just finals) so first-trait-wins
+			// shadowing matches the compiler; a later trait can no longer contribute this name.
+			defined.insert(name);
+			if (member.type != GDScriptParser::ClassNode::Member::VARIABLE) {
+				continue;
+			}
+			GDScriptParser::VariableNode *variable = member.variable;
+			if (variable == nullptr || !variable->is_final || variable->is_static != p_static) {
+				continue;
+			}
+			if (variable->property != GDScriptParser::VariableNode::PROP_NONE) {
+				continue;
+			}
+			if (!p_static && variable->onready) {
+				continue;
+			}
+			r_trait_finals.push_back(variable);
+		}
+	}
+}
+
 // Enforces write-once semantics for `final` member variables of `p_class`: each must be
 // assigned exactly once, in its declaration initializer or definitely on every `_init()` path,
 // and never reassigned or read before assignment. Static and local finals are handled elsewhere.
@@ -2739,6 +2815,15 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 				init_function = member.function;
 			}
 		}
+	}
+
+	// Trait-supplied finals flatten into this class at compile time, so include them as owned slots:
+	// the legal write site is this class's own `_init`, exactly as for a directly declared final.
+	LocalVector<GDScriptParser::VariableNode *> trait_finals;
+	_collect_flattened_trait_finals(p_class, false, trait_finals);
+	for (GDScriptParser::VariableNode *variable : trait_finals) {
+		finals.insert(variable);
+		finals_by_name[variable->identifier->name] = variable;
 	}
 
 	// Reject every assignment to a final outside its legal slot. This runs for every class (even
@@ -2794,6 +2879,19 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 			continue;
 		}
 		if (variable->initializer != nullptr) {
+			init_state.assigned.insert(variable);
+			init_state.maybe_assigned.insert(variable);
+		} else {
+			blank_finals.push_back(variable);
+		}
+	}
+
+	// Trait member initializers run after this class's own member initializers (the compiler appends
+	// flattened trait members), so thread their state in after the loop above. An initialized trait
+	// final fills its slot in the constructor prologue; a blank one stays open until `_init`.
+	for (GDScriptParser::VariableNode *variable : trait_finals) {
+		if (variable->initializer != nullptr) {
+			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, init_state);
 			init_state.assigned.insert(variable);
 			init_state.maybe_assigned.insert(variable);
 		} else {
@@ -2867,6 +2965,15 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 		}
 	}
 
+	// Trait-supplied static finals flatten into this class's static storage at compile time; include
+	// them as owned slots so `_static_init` is their legal write site, as for a declared static final.
+	LocalVector<GDScriptParser::VariableNode *> trait_finals;
+	_collect_flattened_trait_finals(p_class, true, trait_finals);
+	for (GDScriptParser::VariableNode *variable : trait_finals) {
+		finals.insert(variable);
+		finals_by_name[variable->identifier->name] = variable;
+	}
+
 	// Reject every assignment to a static final outside its legal slot (this class's own static
 	// final, lexically in `_static_init`). This runs for every class so a write to another class's
 	// or an inherited static final from any method here is still caught.
@@ -2914,6 +3021,19 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 			continue;
 		}
 		if (variable->initializer != nullptr) {
+			init_state.assigned.insert(variable);
+			init_state.maybe_assigned.insert(variable);
+		} else {
+			blank_finals.push_back(variable);
+		}
+	}
+
+	// Trait static finals flatten into this class's static initialization, after its own static var
+	// initializers; thread their state in here so an initialized trait static fills its slot and a
+	// blank one must be definitely assigned in `_static_init`.
+	for (GDScriptParser::VariableNode *variable : trait_finals) {
+		if (variable->initializer != nullptr) {
+			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, init_state);
 			init_state.assigned.insert(variable);
 			init_state.maybe_assigned.insert(variable);
 		} else {
