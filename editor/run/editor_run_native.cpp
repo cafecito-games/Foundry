@@ -357,8 +357,26 @@ Error EditorRunNative::_start_run_target(int p_entry_index) {
 	// native-run path, then hand off to the adapter's deploy.
 	emit_signal(SNAME("native_run"), resolved.preset);
 
+	// The adapter delegates to the export platform's deploy, which reports
+	// export/install/launch failures through EditorExportPlatform messages (and can
+	// surface an error while still returning OK). Mirror the legacy path: clear the
+	// platform's messages before the run and render them after, so those failures
+	// are shown instead of being swallowed.
+	Ref<EditorExportPlatform> export_platform = resolved.preset->get_platform();
+	if (export_platform.is_valid()) {
+		export_platform->clear_messages();
+	}
+
 	const Error run_error = resolved.platform_adapter->run(target, resolved.debug_flags);
-	if (run_error != OK) {
+
+	result_dialog_log->clear();
+	if (export_platform.is_valid() && export_platform->fill_log_messages(result_dialog_log, run_error)) {
+		if (export_platform->get_worst_message_type() >= EditorExportPlatform::EXPORT_MESSAGE_ERROR) {
+			result_dialog->popup_centered_ratio(0.5);
+		}
+	} else if (run_error != OK) {
+		// The deploy failed but produced no structured messages: surface a note so
+		// the failure is never silent.
 		_show_result(vformat(TTR("Deploying \"%s\" failed. See the Output log for details."), target.name), true);
 	}
 	return run_error;
