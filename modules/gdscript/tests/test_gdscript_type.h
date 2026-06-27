@@ -919,6 +919,82 @@ TEST_CASE("[Modules][GDScript] Coroutine container element types survive the Pro
 	CHECK(GDScriptTypeCompatibility::check(decoded_array, array_coroutine_string).compatible);
 }
 
+TEST_CASE("[Modules][GDScript] Callable/Signal signature with a class named Coroutine does not collide with the coroutine skin") {
+	// The Callable/Signal signature grammar serializes an ordinary class/native named "Coroutine" to the
+	// bare leaf token "Coroutine"; only the reserved coroutine syntax carries brackets ("Coroutine[T]").
+	// A bare-leaf decoder branch would misread such a class as the GDScriptFunctionState coroutine skin
+	// when it crosses the MethodInfo/PropertyInfo boundary, silently corrupting its type. The decoder must
+	// treat only the bracketed form as a coroutine, so a class literally named "Coroutine" round-trips as
+	// that class while a genuine Coroutine[T] still round-trips as the coroutine skin.
+
+	// A real, exposed native class literally named "Coroutine" (e.g. a GDExtension class) is the only kind of
+	// "Coroutine"-named slot the signature grammar actually encodes: script/class leaves cross untyped, and a
+	// bare native name only round-trips when ClassDB knows it. Such a native serializes to the bare leaf
+	// "Coroutine" (the reserved coroutine syntax always carries brackets), so its cross-script PropertyInfo
+	// carries a Callable/Signal signature suffix whose parameter/return leaf is the bare token "Coroutine".
+	// The bug lives in the decoder (GDScriptAnalyzer::type_from_property -> _decode_signature_type_base), so we
+	// drive it directly with the exact hint strings such a native produces, independent of ClassDB state.
+	const auto make_callable_signature = [](const String &p_suffix) {
+		PropertyInfo info;
+		info.type = Variant::CALLABLE;
+		info.hint = PROPERTY_HINT_CALLABLE_TYPE;
+		info.hint_string = p_suffix;
+		return info;
+	};
+	const auto make_signal_signature = [](const String &p_suffix) {
+		PropertyInfo info;
+		info.type = Variant::SIGNAL;
+		info.hint = PROPERTY_HINT_CALLABLE_TYPE;
+		info.hint_string = p_suffix;
+		return info;
+	};
+
+	// A Callable whose single parameter is the class named "Coroutine" must not decode back as the coroutine
+	// skin: the bare leaf is an ordinary class name, never a result-less coroutine.
+	const GDScriptParser::DataType decoded_callable_class =
+			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[Coroutine], void]"));
+	CHECK(decoded_callable_class.builtin_type == Variant::CALLABLE);
+	REQUIRE(decoded_callable_class.method_parameter_types.size() == 1);
+	const GDScriptParser::DataType decoded_class_param = decoded_callable_class.method_parameter_types[0];
+	CHECK_FALSE(decoded_class_param.is_coroutine);
+	CHECK(decoded_class_param.native_type != StringName("GDScriptFunctionState"));
+
+	// The same class as a Callable return slot must also stay un-skinned.
+	const GDScriptParser::DataType decoded_callable_return =
+			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[], Coroutine]"));
+	REQUIRE(decoded_callable_return.method_return_type.size() == 1);
+	CHECK_FALSE(decoded_callable_return.method_return_type[0].is_coroutine);
+	CHECK(decoded_callable_return.method_return_type[0].native_type != StringName("GDScriptFunctionState"));
+
+	// A Signal carrying the class named "Coroutine" as a parameter keeps the same disambiguation.
+	const GDScriptParser::DataType decoded_signal_class =
+			TestGDScriptAnalyzerAccessor::decode_property(make_signal_signature("[[Coroutine]]"));
+	CHECK(decoded_signal_class.builtin_type == Variant::SIGNAL);
+	REQUIRE(decoded_signal_class.method_parameter_types.size() == 1);
+	CHECK_FALSE(decoded_signal_class.method_parameter_types[0].is_coroutine);
+	CHECK(decoded_signal_class.method_parameter_types[0].native_type != StringName("GDScriptFunctionState"));
+
+	// A genuine Coroutine[Variant] parameter is always bracketed and must still decode as the coroutine skin,
+	// so the disambiguation does not regress real coroutine signature slots.
+	const GDScriptParser::DataType decoded_callable_coroutine =
+			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[Coroutine[Variant]], void]"));
+	REQUIRE(decoded_callable_coroutine.method_parameter_types.size() == 1);
+	const GDScriptParser::DataType decoded_coroutine_param = decoded_callable_coroutine.method_parameter_types[0];
+	CHECK(decoded_coroutine_param.is_coroutine);
+	CHECK(decoded_coroutine_param.native_type == StringName("GDScriptFunctionState"));
+	REQUIRE(decoded_coroutine_param.has_container_element_type(0));
+	CHECK(decoded_coroutine_param.get_container_element_type(0).kind == GDScriptParser::DataType::VARIANT);
+
+	// A genuine bracketed Coroutine[String] result also still round-trips as the coroutine skin.
+	const GDScriptParser::DataType decoded_callable_coroutine_ret =
+			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[], Coroutine[String]]"));
+	REQUIRE(decoded_callable_coroutine_ret.method_return_type.size() == 1);
+	const GDScriptParser::DataType decoded_coroutine_ret = decoded_callable_coroutine_ret.method_return_type[0];
+	CHECK(decoded_coroutine_ret.is_coroutine);
+	REQUIRE(decoded_coroutine_ret.has_container_element_type(0));
+	CHECK(decoded_coroutine_ret.get_container_element_type(0).builtin_type == Variant::STRING);
+}
+
 TEST_CASE("[Modules][GDScript] Async MethodInfo wraps the declared return type in a coroutine") {
 	// METHOD_FLAG_ASYNC means the call result is Coroutine[declared return type]. The declared return type
 	// lives in MethodInfo::return_val, so the wrap is unconditional, mirroring the in-memory async call
