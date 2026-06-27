@@ -40,6 +40,7 @@
 #include "editor/export/macho.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/import/resource_importer_texture_settings.h"
+#include "editor/run/ios_run_target_platform.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "main/main.h"
@@ -2244,6 +2245,18 @@ int EditorExportPlatformAppleEmbedded::get_options_count() const {
 	return devices.size();
 }
 
+Vector<EditorExportPlatformAppleEmbedded::RunnableDeviceInfo> EditorExportPlatformAppleEmbedded::get_runnable_devices() const {
+	MutexLock lock(device_lock);
+	Vector<RunnableDeviceInfo> result;
+	for (const Device &device : devices) {
+		RunnableDeviceInfo info;
+		info.id = device.id;
+		info.name = device.name;
+		result.push_back(info);
+	}
+	return result;
+}
+
 String EditorExportPlatformAppleEmbedded::get_options_tooltip() const {
 	return TTR("Select device from the list");
 }
@@ -2418,25 +2431,18 @@ void EditorExportPlatformAppleEmbedded::_check_for_changes_poll_thread(void *ud)
 			int ec = 0;
 			Error err = OS::get_singleton()->execute("xcrun", args, &devices_json, &ec, false);
 			if (err == OK && ec == 0) {
-				Ref<JSON> json;
-				json.instantiate();
-				err = json->parse(devices_json);
-				if (err == OK) {
-					const Dictionary &data = json->get_data();
-					const Dictionary &result = data["result"];
-					const Array &devices = result["devices"];
-					for (int i = 0; i < devices.size(); i++) {
-						const Dictionary &device_info = devices[i];
-						const Dictionary &conn_props = device_info["connectionProperties"];
-						const Dictionary &dev_props = device_info["deviceProperties"];
-						if (dev_props.has("developerModeStatus") && conn_props.has("pairingState") && conn_props.has("transportType") && conn_props["pairingState"] == "paired" && dev_props["developerModeStatus"] == "enabled") {
-							Device nd;
-							nd.id = device_info["identifier"];
-							nd.name = dev_props["name"].operator String() + " (devicectl, " + ((conn_props["transportType"] == "localNetwork") ? "network" : "wired") + ")";
-							nd.wifi = conn_props["transportType"] == "localNetwork";
-							ldevices.push_back(nd);
-						}
+				// Share one devicectl JSON parser with the run-target adapter so device
+				// enumeration is never duplicated. Only paired devices with Developer
+				// Mode enabled are runnable, matching the run-target list.
+				for (const IOSRunTargetPlatform::DeviceInfo &info : IOSRunTargetPlatform::parse_devicectl_devices(devices_json)) {
+					if (!info.paired || !info.developer_mode) {
+						continue;
 					}
+					Device nd;
+					nd.id = info.id;
+					nd.name = info.name + " (devicectl, " + (info.wifi ? "network" : "wired") + ")";
+					nd.wifi = info.wifi;
+					ldevices.push_back(nd);
 				}
 			}
 		}
@@ -2608,8 +2614,44 @@ int EditorExportPlatformAppleEmbedded::_execute(const String &p_path, const List
 
 Error EditorExportPlatformAppleEmbedded::run(const Ref<EditorExportPreset> &p_preset, int p_device, BitField<EditorExportPlatform::DebugFlags> p_debug_flags) {
 #ifdef MACOS_ENABLED
-	ERR_FAIL_INDEX_V(p_device, devices.size(), ERR_INVALID_PARAMETER);
+	Device dev;
+	{
+		MutexLock lock(device_lock);
+		ERR_FAIL_INDEX_V(p_device, devices.size(), ERR_INVALID_PARAMETER);
+		dev = devices[p_device];
+	}
+	return _run_on_device(p_preset, dev, p_debug_flags);
+#else
+	return ERR_UNCONFIGURED;
+#endif
+}
 
+Error EditorExportPlatformAppleEmbedded::run_on_device(const Ref<EditorExportPreset> &p_preset, const String &p_device_id, BitField<EditorExportPlatform::DebugFlags> p_debug_flags) {
+#ifdef MACOS_ENABLED
+	Device dev;
+	bool found = false;
+	{
+		MutexLock lock(device_lock);
+		for (const Device &candidate : devices) {
+			if (candidate.id == p_device_id) {
+				dev = candidate;
+				found = true;
+				break;
+			}
+		}
+	}
+	if (!found) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Run"), vformat(TTR("Device with UUID \"%s\" is not connected."), p_device_id));
+		return ERR_INVALID_PARAMETER;
+	}
+	return _run_on_device(p_preset, dev, p_debug_flags);
+#else
+	return ERR_UNCONFIGURED;
+#endif
+}
+
+Error EditorExportPlatformAppleEmbedded::_run_on_device(const Ref<EditorExportPreset> &p_preset, const Device &dev, BitField<EditorExportPlatform::DebugFlags> p_debug_flags) {
+#ifdef MACOS_ENABLED
 	String can_export_error;
 	bool can_export_missing_templates;
 	if (!can_export(p_preset, can_export_error, can_export_missing_templates)) {
@@ -2617,9 +2659,10 @@ Error EditorExportPlatformAppleEmbedded::run(const Ref<EditorExportPreset> &p_pr
 		return ERR_UNCONFIGURED;
 	}
 
-	MutexLock lock(device_lock);
-
-	EditorProgress ep("run", vformat(TTR("Running on %s"), devices[p_device].name), 3);
+	// `dev` is a copy taken under `device_lock` by the caller, so the deploy can run
+	// without holding the lock while the background poll thread keeps updating the
+	// device list.
+	EditorProgress ep("run", vformat(TTR("Running on %s"), dev.name), 3);
 
 	String id = "tmpexport." + uitos(OS::get_singleton()->get_unix_time());
 
@@ -2638,8 +2681,6 @@ Error EditorExportPlatformAppleEmbedded::run(const Ref<EditorExportPreset> &p_pr
 		return m_err;                                                                                      \
 	}                                                                                                      \
 	((void)0)
-
-	Device dev = devices[p_device];
 
 	// Export before sending to device.
 	Error err = _export_project_helper(p_preset, true, tmp_export_path, p_debug_flags, true);

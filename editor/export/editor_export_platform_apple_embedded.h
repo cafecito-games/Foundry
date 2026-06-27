@@ -207,6 +207,10 @@ private:
 
 	Error _export_project_helper(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, BitField<EditorExportPlatform::DebugFlags> p_flags, bool p_oneclick);
 
+	// Shared deploy body for both `run()` (by menu index) and `run_on_device()` (by
+	// device id): exports the preset and installs/launches it on `p_device`.
+	Error _run_on_device(const Ref<EditorExportPreset> &p_preset, const Device &p_device, BitField<EditorExportPlatform::DebugFlags> p_debug_flags);
+
 	bool is_package_name_valid(const String &p_package, String *r_error = nullptr) const;
 
 protected:
@@ -248,6 +252,24 @@ public:
 	virtual String get_option_label(int p_index) const override;
 	virtual String get_option_tooltip(int p_index) const override;
 	virtual Error run(const Ref<EditorExportPreset> &p_preset, int p_device, BitField<EditorExportPlatform::DebugFlags> p_debug_flags) override;
+
+	// Deploys and launches `p_preset` on the connected device identified by
+	// `p_device_id`. This is the same deploy path the legacy device menu's `run()`
+	// uses, exposed so the run-target adapter can invoke it by device id rather than
+	// by menu index. Returns ERR_INVALID_PARAMETER when no connected device matches.
+	Error run_on_device(const Ref<EditorExportPreset> &p_preset, const String &p_device_id, BitField<EditorExportPlatform::DebugFlags> p_debug_flags);
+
+	// A currently enumerated, runnable device, exposed to the run-target adapter.
+	struct RunnableDeviceInfo {
+		String id;
+		String name;
+	};
+
+	// Returns the currently enumerated, runnable devices, in poll order. This is the
+	// same cache `run_on_device` matches against, so a run-target adapter can both
+	// list devices and resolve an "auto" selection to one this platform can actually
+	// deploy to, without a separate, possibly out-of-sync, enumeration.
+	Vector<RunnableDeviceInfo> get_runnable_devices() const;
 
 	virtual bool poll_export() override {
 		bool dc = devices_changed.is_set();
