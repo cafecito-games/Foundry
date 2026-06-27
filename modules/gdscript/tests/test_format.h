@@ -50,6 +50,20 @@ static String format_or_fail(const String &p_source) {
 	return result.formatted;
 }
 
+// Counts the comments in `p_text` by re-tokenizing it the same way the formatter
+// does. A canonical formatter must neither drop nor duplicate comments, so the
+// count must be identical before and after formatting.
+static int count_comments(const String &p_text) {
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code(p_text);
+	for (GDScriptTokenizer::Token token = tokenizer.scan();
+			token.type != GDScriptTokenizer::Token::TK_EOF && token.type != GDScriptTokenizer::Token::ERROR;
+			token = tokenizer.scan()) {
+		// Drain the token stream so `get_comments()` is fully populated.
+	}
+	return tokenizer.get_comments().size();
+}
+
 // ---------------------------------------------------------------------------
 // Corpus collection helpers.
 // ---------------------------------------------------------------------------
@@ -1041,6 +1055,35 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 			checked++;
 		}
 		MESSAGE("Tree preservation: checked ", checked, " parseable corpus scripts.");
+		CHECK(checked > 0);
+	}
+
+	TEST_CASE("[Format] Preserves all comments") {
+		// A global invariant: formatting must never drop or duplicate a comment. The
+		// parse-tree sweep cannot see comments (they are trivia, not AST), so this
+		// count-equality check is what guarantees every comment survives everywhere.
+		const String root = "modules/gdscript/tests/scripts";
+		int checked = 0;
+		for (const String &script : collect_gd_scripts(root)) {
+			if (is_narrow_skipped_fixture(script)) {
+				continue;
+			}
+			Error read_error = OK;
+			const String source = FileAccess::get_file_as_string(script, &read_error);
+			if (read_error != OK) {
+				continue;
+			}
+			GDScriptFormatter formatter;
+			GDScriptFormatter::Result result;
+			if (formatter.format(source, script, result) != OK) {
+				continue;
+			}
+			CHECK_MESSAGE(count_comments(source) == count_comments(result.formatted),
+					vformat("Comment count changed (%d -> %d) for: %s",
+							count_comments(source), count_comments(result.formatted), script));
+			checked++;
+		}
+		MESSAGE("Comment preservation: checked ", checked, " parseable corpus scripts.");
 		CHECK(checked > 0);
 	}
 }

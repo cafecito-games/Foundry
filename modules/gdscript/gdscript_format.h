@@ -74,10 +74,23 @@ public:
 		int end_line = 0;
 	};
 
+	// Source lines of the head class's header keywords that the AST does not record
+	// (`@tool`/`@icon`/`@static_unload` consumed into flags, `namespace`, `import`,
+	// and a path-only `extends`). Recovered from the tokenize pass so the header
+	// emission can flush leading comments above each sub-line in source order.
+	struct HeaderLines {
+		int tool = 0;
+		int icon = 0;
+		int static_unload = 0;
+		int name_space = 0;
+		int extends = 0;
+		Vector<int> imports;
+	};
+
 	GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
 			const HashMap<uint64_t, LiteralToken> &p_literals,
 			const HashMap<int, StandaloneAnnotation> &p_standalone_annotations,
-			const Vector<String> &p_source_lines);
+			const Vector<String> &p_source_lines, const HeaderLines &p_header_lines);
 
 	String print_tree(const GDScriptParser::ClassNode *p_root, bool p_is_tool);
 
@@ -90,6 +103,7 @@ private:
 	// recovered from the leading tabs of its source line, which drives whether a tail
 	// comment belongs to a block body or to the following, shallower-indented node.
 	const Vector<String> &source_lines;
+	HeaderLines header_lines;
 
 	String output;
 	int indent_level = 0;
@@ -116,6 +130,10 @@ private:
 	// p_until_line)`, each on its own line at the current indent. Used to interleave
 	// comments inside a multi-line collection / call between its items.
 	void flush_inner_comments(int p_until_line);
+	// Emits full-line comments in `(last_emitted_line, p_until_line)` at the current
+	// indent, advancing the cursor. Used to keep comments that sit between an
+	// annotation and the node it annotates (and between successive annotations).
+	void flush_comments_until(int p_until_line);
 	// A trivia line is a full-line comment or a recovered standalone annotation;
 	// `emit_trivia_line` emits whichever sits at `p_line` and advances the cursor.
 	bool is_trivia_line(int p_line) const;
@@ -152,7 +170,10 @@ private:
 	void print_constant(const GDScriptParser::ConstantNode *p_constant);
 	void print_signal(const GDScriptParser::SignalNode *p_signal);
 	void print_enum(const GDScriptParser::EnumNode *p_enum);
-	void print_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations);
+	// Emits each annotation on its own line, keeping a comment on an annotation line
+	// (inline) and a full-line comment between annotations or between the last
+	// annotation and the annotated node (when `p_target_line` is the node's line).
+	void print_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations, int p_target_line = 0);
 	void print_annotation_inline(const GDScriptParser::AnnotationNode *p_annotation);
 	void print_annotation_declaration(const GDScriptParser::AnnotationDeclarationNode *p_declaration);
 	void print_parameter(const GDScriptParser::ParameterNode *p_parameter);

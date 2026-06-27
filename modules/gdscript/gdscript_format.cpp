@@ -399,6 +399,11 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 	// are consumed and discarded by the parser, so they never reach the tree. Recover
 	// them here, keyed by source line, and reattach them through the trivia walker.
 	HashMap<int, GDScriptPrinter::StandaloneAnnotation> standalone_annotations;
+	// Source lines of head-header keywords the AST does not retain (see HeaderLines).
+	// `namespace`/`import`/`@tool`/`@icon`/`@static_unload` are head-only, so their
+	// first occurrence is the head's; `extends` may also appear on inner classes, so
+	// only its first occurrence is recorded (the head's, when it has one).
+	GDScriptPrinter::HeaderLines header_lines;
 	GDScriptTokenizer::Token token = tokenizer.scan();
 	while (token.type != GDScriptTokenizer::Token::TK_EOF) {
 		if (token.type == GDScriptTokenizer::Token::ERROR) {
@@ -407,6 +412,21 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 		if (token.type == GDScriptTokenizer::Token::LITERAL) {
 			const uint64_t key = (uint64_t(uint32_t(token.start_line)) << 32) | uint32_t(token.start_column);
 			literals[key] = GDScriptPrinter::LiteralToken{ token.source };
+		}
+		if (token.type == GDScriptTokenizer::Token::NAMESPACE && header_lines.name_space == 0) {
+			header_lines.name_space = token.start_line;
+		} else if (token.type == GDScriptTokenizer::Token::IMPORT) {
+			header_lines.imports.push_back(token.start_line);
+		} else if (token.type == GDScriptTokenizer::Token::EXTENDS && header_lines.extends == 0) {
+			header_lines.extends = token.start_line;
+		} else if (token.type == GDScriptTokenizer::Token::ANNOTATION) {
+			if (token.source == "@tool" && header_lines.tool == 0) {
+				header_lines.tool = token.start_line;
+			} else if (token.source == "@icon" && header_lines.icon == 0) {
+				header_lines.icon = token.start_line;
+			} else if (token.source == "@static_unload" && header_lines.static_unload == 0) {
+				header_lines.static_unload = token.start_line;
+			}
 		}
 		if (token.type == GDScriptTokenizer::Token::ANNOTATION &&
 				(token.source == "@warning_ignore_start" || token.source == "@warning_ignore_restore")) {
@@ -474,7 +494,7 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 
 	// Pass 3: print.
 	const Vector<String> source_lines = p_source.split("\n");
-	GDScriptPrinter printer(comments, literals, standalone_annotations, source_lines);
+	GDScriptPrinter printer(comments, literals, standalone_annotations, source_lines, header_lines);
 	r_result.formatted = printer.print_tree(parser.get_tree(), parser.is_tool());
 	return OK;
 }
@@ -482,8 +502,8 @@ Error GDScriptFormatter::format(const String &p_source, const String &p_path, Re
 GDScriptPrinter::GDScriptPrinter(const HashMap<int, GDScriptTokenizer::CommentData> &p_comments,
 		const HashMap<uint64_t, LiteralToken> &p_literals,
 		const HashMap<int, StandaloneAnnotation> &p_standalone_annotations,
-		const Vector<String> &p_source_lines) :
-		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations), source_lines(p_source_lines) {
+		const Vector<String> &p_source_lines, const HeaderLines &p_header_lines) :
+		comments(p_comments), literals(p_literals), standalone_annotations(p_standalone_annotations), source_lines(p_source_lines), header_lines(p_header_lines) {
 }
 
 int GDScriptPrinter::line_indent_depth(int p_line) const {
@@ -647,6 +667,14 @@ void GDScriptPrinter::append_inline_comment(int p_line) {
 	write("  ");
 	write(normalize_comment_text(found->value.comment));
 	last_emitted_line = p_line;
+}
+
+void GDScriptPrinter::flush_comments_until(int p_until_line) {
+	for (int line = last_emitted_line + 1; line < p_until_line; line++) {
+		if (is_full_line_comment(line)) {
+			emit_comment_line(line, comments.find(line)->value.comment);
+		}
+	}
 }
 
 void GDScriptPrinter::flush_inner_comments(int p_until_line) {
@@ -819,6 +847,23 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 		int header_min_line = 0;
 		int header_max_line = 0;
 		header_line_range(p_class, header_min_line, header_max_line);
+		// Fold in the header keyword lines the AST does not retain, so the leading
+		// comment flush above the header starts at the true first header line.
+		// `header_lines.extends` records the first `extends` in the file, which is an
+		// inner class's when the head has none, so only trust it when the head extends.
+		const int header_keyword_lines[] = { header_lines.tool, header_lines.icon,
+			header_lines.static_unload, header_lines.name_space,
+			p_class->extends_used ? header_lines.extends : 0 };
+		for (const int keyword_line : header_keyword_lines) {
+			if (keyword_line > 0 && (header_min_line == 0 || keyword_line < header_min_line)) {
+				header_min_line = keyword_line;
+			}
+		}
+		for (const int import_line : header_lines.imports) {
+			if (import_line > 0 && (header_min_line == 0 || import_line < header_min_line)) {
+				header_min_line = import_line;
+			}
+		}
 		if (header_min_line > 0) {
 			emit_leading_trivia(header_min_line, 0);
 		}
@@ -859,6 +904,7 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 	write(":");
 	newline();
 	last_emitted_line = p_class->start_line;
+	emit_trailing_comment(p_class->start_line);
 	indent_level++;
 	if (p_class->members.is_empty()) {
 		// An inner class with an empty body (only `pass`) still needs a body line.
@@ -872,40 +918,73 @@ void GDScriptPrinter::print_class(const GDScriptParser::ClassNode *p_class, bool
 }
 
 void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_class, bool p_is_tool) {
+	// Emit each header sub-line in grammar (= source) order, flushing full-line
+	// comments above it and keeping an inline comment on it, so comments
+	// interleaved through the header keep their place. Header lines the AST does not
+	// retain come from the tokenize-pass `header_lines`.
+	//
 	// The grammar pins annotation placement around `namespace`/`import`: script/
-	// file-level annotations must appear before them, class-level (and custom)
-	// annotations after (`Class annotations must appear after "namespace" and
-	// "import" declarations.`). `@tool`/`@icon`/`@static_unload` are script-level
-	// flags recovered from the class, not the annotation list, and always lead.
-	if (p_is_tool) {
-		write("@tool");
+	// file-level annotations come before them, class-level (and custom) annotations
+	// after (`Class annotations must appear after "namespace" and "import"
+	// declarations.`). `@tool`/`@icon`/`@static_unload` are script-level flags
+	// recovered from the class, not the annotation list, and always lead.
+	// Terminates the header sub-line just written: the caller flushes the full-line
+	// comments above it first, then this ends the line and attaches any inline
+	// comment on it.
+	const auto finish_header_line = [&](int p_line) {
 		newline();
+		if (p_line > last_emitted_line) {
+			last_emitted_line = p_line;
+		}
+		emit_trailing_comment(p_line);
+	};
+
+	if (p_is_tool) {
+		if (header_lines.tool > 0) {
+			flush_comments_until(header_lines.tool);
+		}
+		write("@tool");
+		finish_header_line(header_lines.tool);
 	}
 	if (!p_class->icon_path.is_empty()) {
+		if (header_lines.icon > 0) {
+			flush_comments_until(header_lines.icon);
+		}
 		write("@icon(" + quote_string_literal(p_class->icon_path) + ")");
-		newline();
+		finish_header_line(header_lines.icon);
 	}
 	if (p_class->annotated_static_unload) {
+		if (header_lines.static_unload > 0) {
+			flush_comments_until(header_lines.static_unload);
+		}
 		write("@static_unload");
-		newline();
+		finish_header_line(header_lines.static_unload);
 	}
 
 	if (!p_class->namespace_name.is_empty()) {
+		if (header_lines.name_space > 0) {
+			flush_comments_until(header_lines.name_space);
+		}
 		write("namespace ");
 		write(p_class->namespace_name);
-		newline();
+		finish_header_line(header_lines.name_space);
 	}
-	for (const String &import_name : p_class->imports) {
+	for (int i = 0; i < p_class->imports.size(); i++) {
+		const int import_line = i < header_lines.imports.size() ? header_lines.imports[i] : 0;
+		if (import_line > 0) {
+			flush_comments_until(import_line);
+		}
 		write("import ");
-		write(import_name);
-		newline();
+		write(p_class->imports[i]);
+		finish_header_line(import_line);
 	}
 
 	// The only SCRIPT-target annotations are `@tool`/`@icon`/`@static_unload`, which
 	// the parser consumes into the flags emitted above and never stores in the list.
 	// So every entry in `annotations` is a class-level (or custom) annotation, which
 	// the grammar requires to appear *after* `namespace`/`import`.
-	print_annotations(p_class->annotations);
+	const int class_name_line = p_class->identifier != nullptr ? p_class->identifier->start_line : 0;
+	print_annotations(p_class->annotations, class_name_line);
 
 	String modifier;
 	if (p_class->is_abstract) {
@@ -921,27 +1000,40 @@ void GDScriptPrinter::print_class_header(const GDScriptParser::ClassNode *p_clas
 		write(p_class->trait_name_used ? "trait_name " : "class_name ");
 		write(p_class->identifier->name);
 		print_type_parameters(p_class->type_parameters);
-		newline();
+		finish_header_line(class_name_line);
 	}
 
 	if (p_class->extends_used) {
+		const int extends_line = !p_class->extends.is_empty() && p_class->extends[0] != nullptr
+				? p_class->extends[0]->start_line
+				: header_lines.extends;
+		if (extends_line > 0) {
+			flush_comments_until(extends_line);
+		}
 		if (!modifier_consumed) {
 			write(modifier);
 			modifier_consumed = true;
 		}
 		write("extends ");
 		print_extends_clause(p_class);
-		newline();
+		finish_header_line(extends_line);
 	}
 
 	// All used traits share a single `uses` statement; a second `uses` line is a
 	// parse error ("Cannot use \"uses\" more than once in the same class.").
-	for (int i = 0; i < p_class->used_traits.size(); i++) {
-		write(i == 0 ? "uses " : ", ");
-		print_trait_use(p_class->used_traits[i]);
-	}
 	if (!p_class->used_traits.is_empty()) {
-		newline();
+		int uses_line = 0;
+		if (!p_class->used_traits[0].name.is_empty() && p_class->used_traits[0].name[0] != nullptr) {
+			uses_line = p_class->used_traits[0].name[0]->start_line;
+		}
+		if (uses_line > 0) {
+			flush_comments_until(uses_line);
+		}
+		for (int i = 0; i < p_class->used_traits.size(); i++) {
+			write(i == 0 ? "uses " : ", ");
+			print_trait_use(p_class->used_traits[i]);
+		}
+		finish_header_line(uses_line);
 	}
 }
 
@@ -1024,27 +1116,27 @@ void GDScriptPrinter::print_class_body(const GDScriptParser::ClassNode *p_class,
 void GDScriptPrinter::print_member(const GDScriptParser::ClassNode::Member &p_member) {
 	switch (p_member.type) {
 		case GDScriptParser::ClassNode::Member::CLASS:
-			print_annotations(p_member.m_class->annotations);
+			print_annotations(p_member.m_class->annotations, p_member.m_class->start_line);
 			print_class(p_member.m_class, false, false);
 			break;
 		case GDScriptParser::ClassNode::Member::CONSTANT:
-			print_annotations(p_member.constant->annotations);
+			print_annotations(p_member.constant->annotations, p_member.constant->start_line);
 			print_constant(p_member.constant);
 			break;
 		case GDScriptParser::ClassNode::Member::FUNCTION:
-			print_annotations(p_member.function->annotations);
+			print_annotations(p_member.function->annotations, p_member.function->start_line);
 			print_function(p_member.function);
 			break;
 		case GDScriptParser::ClassNode::Member::SIGNAL:
-			print_annotations(p_member.signal->annotations);
+			print_annotations(p_member.signal->annotations, p_member.signal->start_line);
 			print_signal(p_member.signal);
 			break;
 		case GDScriptParser::ClassNode::Member::VARIABLE:
-			print_annotations(p_member.variable->annotations);
+			print_annotations(p_member.variable->annotations, p_member.variable->start_line);
 			print_variable(p_member.variable);
 			break;
 		case GDScriptParser::ClassNode::Member::ENUM:
-			print_annotations(p_member.m_enum->annotations);
+			print_annotations(p_member.m_enum->annotations, p_member.m_enum->start_line);
 			print_enum(p_member.m_enum);
 			break;
 		case GDScriptParser::ClassNode::Member::ENUM_VALUE:
@@ -1065,11 +1157,30 @@ void GDScriptPrinter::print_member(const GDScriptParser::ClassNode::Member &p_me
 	}
 }
 
-void GDScriptPrinter::print_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations) {
+void GDScriptPrinter::print_annotations(const List<GDScriptParser::AnnotationNode *> &p_annotations, int p_target_line) {
 	for (const GDScriptParser::AnnotationNode *annotation : p_annotations) {
+		// Full-line comments that sit between the previous annotation and this one.
+		if (annotation->start_line > 0) {
+			flush_comments_until(annotation->start_line);
+		}
 		write_indent();
 		print_annotation_inline(annotation);
 		newline();
+		if (annotation->end_line > last_emitted_line) {
+			last_emitted_line = annotation->end_line;
+		}
+		// An inline comment on the annotation's own line. When the annotation shares
+		// its source line with the annotated node (`@export var x  # note`), the
+		// formatter splits them onto separate lines and the comment belongs to the
+		// node's line, which the node's own trailing-comment emission handles -- so
+		// emit it here only when the annotation occupies its own source line.
+		if (p_target_line == 0 || annotation->end_line < p_target_line) {
+			emit_trailing_comment(annotation->end_line);
+		}
+	}
+	// Full-line comments between the last annotation and the node it annotates.
+	if (p_target_line > 0) {
+		flush_comments_until(p_target_line);
 	}
 }
 
@@ -1191,6 +1302,7 @@ void GDScriptPrinter::print_function(const GDScriptParser::FunctionNode *p_funct
 		return;
 	}
 	last_emitted_line = p_function->start_line;
+	emit_trailing_comment(p_function->start_line);
 	indent_level++;
 	print_suite(p_function->body);
 	flush_block_tail_comments();
@@ -1233,19 +1345,25 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 	write(":");
 	newline();
 	last_emitted_line = p_variable->start_line;
+	emit_trailing_comment(p_variable->start_line);
 	indent_level++;
 	if (p_variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 		if (p_variable->getter != nullptr) {
+			// Full-line comments between the `var x:` line and the `get:` block.
+			flush_comments_until(p_variable->getter->start_line);
 			write_indent();
 			write("get:");
 			newline();
 			last_emitted_line = p_variable->getter->start_line;
+			emit_trailing_comment(p_variable->getter->start_line);
 			indent_level++;
 			print_suite(p_variable->getter->body);
 			flush_block_tail_comments();
 			indent_level--;
 		}
 		if (p_variable->setter != nullptr) {
+			// Full-line comments before the `set(...):` block (after `var x:` or the getter).
+			flush_comments_until(p_variable->setter->start_line);
 			write_indent();
 			write("set(");
 			if (p_variable->setter_parameter != nullptr) {
@@ -1254,6 +1372,7 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 			write("):");
 			newline();
 			last_emitted_line = p_variable->setter->start_line;
+			emit_trailing_comment(p_variable->setter->start_line);
 			indent_level++;
 			print_suite(p_variable->setter->body);
 			flush_block_tail_comments();
@@ -1262,7 +1381,12 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 	} else { // PROP_SETGET
 		// The `get = getter, set = setter` clauses share a single indented line;
 		// splitting them across lines ends the property block early ("Expected end
-		// of indented block for property.").
+		// of indented block for property."). Interior comments (between `var x:` and
+		// the clauses, or between the clauses) therefore have no place to interleave,
+		// so emit them all on their own lines *before* the single clause line. Doing
+		// it before (not after) keeps it idempotent: on a reformat those comments are
+		// already above the clause line and stay there.
+		flush_comments_until(p_variable->end_line);
 		write_indent();
 		bool wrote_clause = false;
 		if (p_variable->getter_pointer != nullptr) {
@@ -1278,6 +1402,9 @@ void GDScriptPrinter::print_variable(const GDScriptParser::VariableNode *p_varia
 			write(p_variable->setter_pointer->name);
 		}
 		newline();
+		if (p_variable->end_line > last_emitted_line) {
+			last_emitted_line = p_variable->end_line;
+		}
 	}
 	indent_level--;
 }
@@ -1325,19 +1452,24 @@ void GDScriptPrinter::print_enum(const GDScriptParser::EnumNode *p_enum) {
 		write(p_enum->identifier->name);
 		write(" ");
 	}
-	write("{");
-	for (int i = 0; i < p_enum->values.size(); i++) {
-		if (i > 0) {
-			write(", ");
-		}
-		const GDScriptParser::EnumNode::Value &value = p_enum->values[i];
-		write(value.identifier->name);
-		if (value.custom_value != nullptr) {
-			write(" = ");
-			print_expression(value.custom_value);
-		}
-	}
-	write("}");
+	// Keep an enum the author wrote across several lines multi-line, so comments
+	// and value doc comments between its values keep a place to live.
+	const bool multiline = node_was_authored_multiline(p_enum) && !p_enum->values.is_empty();
+	print_delimited_items(
+			"{", "}", p_enum->values.size(), multiline, p_enum->start_line, p_enum->end_line,
+			[&](int p_index) {
+				const GDScriptParser::EnumNode::Value &value = p_enum->values[p_index];
+				write(value.identifier->name);
+				if (value.custom_value != nullptr) {
+					write(" = ");
+					print_expression(value.custom_value);
+				}
+			},
+			[&](int p_index) { return p_enum->values[p_index].line; },
+			[&](int p_index) {
+				const GDScriptParser::EnumNode::Value &value = p_enum->values[p_index];
+				return value.custom_value != nullptr ? value.custom_value->end_line : value.line;
+			});
 	newline();
 }
 
@@ -1454,7 +1586,7 @@ void GDScriptPrinter::print_suite(const GDScriptParser::SuiteNode *p_suite) {
 void GDScriptPrinter::print_statement(const GDScriptParser::Node *p_statement) {
 	// Statement-level annotations (`@warning_ignore(...)`, ...) attach to the node
 	// and print on their own lines above it at the same indent.
-	print_annotations(p_statement->annotations);
+	print_annotations(p_statement->annotations, p_statement->start_line);
 	switch (p_statement->type) {
 		case GDScriptParser::Node::VARIABLE:
 			print_variable(static_cast<const GDScriptParser::VariableNode *>(p_statement));
@@ -1618,6 +1750,7 @@ void GDScriptPrinter::print_if(const GDScriptParser::IfNode *p_if, bool p_is_eli
 	write(":");
 	newline();
 	last_emitted_line = p_if->start_line;
+	emit_trailing_comment(p_if->start_line);
 	indent_level++;
 	print_suite(p_if->true_block);
 	flush_block_tail_comments();
@@ -1658,6 +1791,7 @@ void GDScriptPrinter::print_for(const GDScriptParser::ForNode *p_for) {
 	write(":");
 	newline();
 	last_emitted_line = p_for->start_line;
+	emit_trailing_comment(p_for->start_line);
 	indent_level++;
 	print_suite(p_for->loop);
 	flush_block_tail_comments();
@@ -1671,6 +1805,7 @@ void GDScriptPrinter::print_while(const GDScriptParser::WhileNode *p_while) {
 	write(":");
 	newline();
 	last_emitted_line = p_while->start_line;
+	emit_trailing_comment(p_while->start_line);
 	indent_level++;
 	print_suite(p_while->loop);
 	flush_block_tail_comments();
@@ -1684,6 +1819,7 @@ void GDScriptPrinter::print_match(const GDScriptParser::MatchNode *p_match) {
 	write(":");
 	newline();
 	last_emitted_line = p_match->start_line;
+	emit_trailing_comment(p_match->start_line);
 	indent_level++;
 	if (p_match->branches.is_empty()) {
 		// A branchless `match` still needs an indented body line (e.g. `pass`).
@@ -1706,7 +1842,7 @@ void GDScriptPrinter::print_match(const GDScriptParser::MatchNode *p_match) {
 
 void GDScriptPrinter::print_match_branch(const GDScriptParser::MatchBranchNode *p_branch) {
 	// A match branch may carry its own annotations (e.g. `@warning_ignore(...)`).
-	print_annotations(p_branch->annotations);
+	print_annotations(p_branch->annotations, p_branch->start_line);
 	write_indent();
 	for (int i = 0; i < p_branch->patterns.size(); i++) {
 		if (i > 0) {
@@ -1721,6 +1857,7 @@ void GDScriptPrinter::print_match_branch(const GDScriptParser::MatchBranchNode *
 	write(":");
 	newline();
 	last_emitted_line = p_branch->start_line;
+	emit_trailing_comment(p_branch->start_line);
 	indent_level++;
 	print_suite(p_branch->block);
 	flush_block_tail_comments();
