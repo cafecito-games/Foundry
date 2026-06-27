@@ -274,6 +274,17 @@ GDScriptTypeCompatibility::Result GDScriptTypeCompatibility::check(const GDScrip
 			} else if (p_target.has_method_signature && !p_source.has_method_signature) {
 				result.requires_runtime_check = true;
 			}
+			// Enforce the async marker even when only one side carries a method signature, so a bare
+			// `AsyncCallable` is still distinct from a bare `Callable`. An async target requires an
+			// async source, and a synchronous target that carries a signature rejects an async source.
+			// A bare, signatureless synchronous `Callable` target still accepts any callable (e.g. the
+			// `Callable` parameter of `Signal.connect`), so async-ness is only enforced when the target
+			// is itself async or carries an explicit signature.
+			if (result.compatible && p_target.builtin_type == Variant::CALLABLE &&
+					p_target.signature_is_async != p_source.signature_is_async &&
+					(p_target.signature_is_async || p_target.has_method_signature)) {
+				result.compatible = false;
+			}
 		}
 		if (result.compatible && p_target.builtin_type == Variant::ARRAY && p_source.builtin_type == Variant::ARRAY) {
 			if (p_target.has_container_element_type(0) && p_source.has_container_element_type(0)) {

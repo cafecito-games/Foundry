@@ -6915,6 +6915,11 @@ static bool _datatype_alpha_equal(const GDScriptParser::DataType &p_a, const GDS
 	if (p_a.has_method_signature != p_b.has_method_signature) {
 		return false;
 	}
+	// AsyncCallable and plain Callable are distinct signatures, so a generic trait requiring an
+	// async callable cannot be satisfied by a synchronous one (and vice versa).
+	if (p_a.signature_is_async != p_b.signature_is_async) {
+		return false;
+	}
 	if (p_a.container_element_types.size() != p_b.container_element_types.size() ||
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
@@ -10037,6 +10042,13 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		for (const MethodInfo &E : methods) {
 			if (E.name == p_function) {
 				function_signature_from_info(E, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
+				// Invoking a bare AsyncCallable (no explicit signature) still yields a coroutine, so
+				// its untyped result must be awaited. The explicit-signature path above handles the
+				// AsyncCallable[[...], ...] case; this covers the signatureless `var cb: AsyncCallable`.
+				if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.signature_is_async &&
+						(p_function == SNAME("call") || p_function == SNAME("callv"))) {
+					r_return_type.is_coroutine = true;
+				}
 				// Cannot use non-const methods on enums.
 				if (!r_method_flags.has_flag(METHOD_FLAG_STATIC) && was_enum && !(E.flags & METHOD_FLAG_CONST)) {
 					push_error(vformat(R"*(Cannot call non-const Dictionary function "%s()" on enum "%s".)*", p_function, p_base_type.enum_type), p_source);
