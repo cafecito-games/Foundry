@@ -55,7 +55,8 @@ String derive_bundle_identifier(const String &p_project_name);
 RunTarget make_default_target();
 
 // Writes `export_presets.cfg` (an `iOS` preset with the derived bundle id) and
-// `run_targets.cfg` (the default target) into `p_project_path`. Returns OK on
+// `run_targets.cfg` (the default target, plus a one-shot marker asking the editor
+// to reveal the Targets dock on first open) into `p_project_path`. Returns OK on
 // success, or the first underlying write error otherwise.
 Error seed(const String &p_project_path, const String &p_project_name);
 
