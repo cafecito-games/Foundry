@@ -58,6 +58,11 @@ constexpr const char *IOS_EXPORT_PLATFORM_OS_NAME = "iOS";
 constexpr const char *DEFAULT_SIGNING_MODE = "automatic";
 constexpr const char *AUTO_DEVICE_ID = "auto";
 
+// Item metadata marking the team picker's manual-entry escape hatch. A real
+// Apple team id is a non-empty alphanumeric string, so this sentinel can never
+// collide with one.
+constexpr const char *MANUAL_TEAM_ITEM = "\x01manual";
+
 // Maps the lowercase `RunTarget::platform` string to the export platform's
 // `get_os_name()` so a target can find its export platform. Only iOS exists
 // today; the layer admits more without touching the panel's call sites.
@@ -318,6 +323,7 @@ void RunTargetsPanel::_load_selection_into_fields() {
 	}
 	bundle_id_edit->set_text(bundle_id);
 	team_id_edit->set_text(team_id);
+	_refresh_team_options(target, team_id);
 
 	_refresh_device_options(target);
 
@@ -356,6 +362,52 @@ void RunTargetsPanel::_refresh_device_options(const RunTarget &p_target) {
 	}
 
 	device_option->select(select);
+}
+
+void RunTargetsPanel::_refresh_team_options(const RunTarget &p_target, const String &p_current_team_id) {
+	team_option->clear();
+	detected_teams.clear();
+
+	RunTargetPlatform *adapter = manager->get_platform(p_target.platform);
+	if (adapter != nullptr) {
+		detected_teams = adapter->list_signing_teams();
+	}
+
+	int select = -1;
+	bool current_present = false;
+	for (int i = 0; i < detected_teams.size(); i++) {
+		const SigningTeam &team = detected_teams[i];
+		const int item_index = team_option->get_item_count();
+		team_option->add_item(vformat("%s (%s)", team.name, team.id));
+		team_option->set_item_metadata(item_index, team.id);
+		if (team.id == p_current_team_id) {
+			select = item_index;
+			current_present = true;
+		}
+	}
+
+	// A remembered team that is not among the detected ones should still be shown
+	// so the selection is not silently dropped (mirrors the device picker).
+	if (!current_present && !p_current_team_id.is_empty()) {
+		const int item_index = team_option->get_item_count();
+		team_option->add_item(vformat(TTR("%s (not detected)"), p_current_team_id));
+		team_option->set_item_metadata(item_index, p_current_team_id);
+		select = item_index;
+	}
+
+	if (team_option->get_item_count() > 0) {
+		team_option->add_separator();
+	}
+	const int manual_index = team_option->get_item_count();
+	team_option->add_item(TTR("Enter Team ID manually…"));
+	team_option->set_item_metadata(manual_index, MANUAL_TEAM_ITEM);
+
+	// With no team chosen yet, land on manual entry so the field is available.
+	if (select < 0) {
+		select = manual_index;
+	}
+	team_option->select(select);
+	team_id_edit->set_visible(select == manual_index);
 }
 
 void RunTargetsPanel::_on_target_selected(int p_index) {
@@ -498,24 +550,57 @@ void RunTargetsPanel::_on_bundle_id_submitted() {
 	}
 }
 
-void RunTargetsPanel::_on_team_id_submitted() {
-	if (updating_fields) {
-		return;
-	}
+void RunTargetsPanel::_apply_team_id(const String &p_team_id) {
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
 	}
-	const String team_id = team_id_edit->get_text().strip_edges();
-
 	RunTarget target = manager->get_targets()[index];
-	target.team_id = team_id;
+	target.team_id = p_team_id;
 	_commit_target(index, target);
 
 	Ref<EditorExportPreset> preset = _resolve_preset(target);
 	if (preset.is_valid()) {
-		preset->set(PRESET_KEY_TEAM_ID, team_id);
+		preset->set(PRESET_KEY_TEAM_ID, p_team_id);
 	}
+}
+
+void RunTargetsPanel::_on_team_option_selected(int p_index) {
+	if (updating_fields) {
+		return;
+	}
+	const String team_id = team_option->get_item_metadata(p_index);
+	if (team_id == MANUAL_TEAM_ITEM) {
+		// Reveal the manual field and let the user type; nothing is committed until
+		// they submit so the remembered team is not cleared by merely switching here.
+		team_id_edit->set_visible(true);
+		team_id_edit->grab_focus();
+		return;
+	}
+
+	team_id_edit->set_visible(false);
+	team_id_edit->set_text(team_id);
+	_apply_team_id(team_id);
+	_reprobe_selected();
+}
+
+void RunTargetsPanel::_on_team_id_submitted() {
+	if (updating_fields) {
+		return;
+	}
+	// Only the visible manual field commits. When it is hidden the event is just a
+	// side effect of switching to a detected team, which commits on its own.
+	if (!team_id_edit->is_visible()) {
+		return;
+	}
+	const String team_id = team_id_edit->get_text().strip_edges();
+	if (team_id.is_empty()) {
+		// Treat an empty manual field as "no change" so simply tabbing through it
+		// never wipes a remembered team. The picker stays on manual entry.
+		return;
+	}
+	_apply_team_id(team_id);
+	_reprobe_selected();
 }
 
 void RunTargetsPanel::_on_device_changed(int p_index) {
@@ -754,8 +839,12 @@ RunTargetsPanel::RunTargetsPanel() {
 	details_container->add_child(bundle_id_status);
 
 	Label *team_label = memnew(Label);
-	team_label->set_text(TTR("Signing Team ID"));
+	team_label->set_text(TTR("Signing Team"));
 	details_container->add_child(team_label);
+
+	team_option = memnew(OptionButton);
+	team_option->connect(SceneStringName(item_selected), callable_mp(this, &RunTargetsPanel::_on_team_option_selected));
+	details_container->add_child(team_option);
 
 	team_id_edit = memnew(LineEdit);
 	team_id_edit->set_placeholder(TTR("Apple Developer team ID"));

@@ -113,8 +113,13 @@ private:
 	OptionButton *signing_mode_option = nullptr;
 	LineEdit *bundle_id_edit = nullptr;
 	Label *bundle_id_status = nullptr;
+	OptionButton *team_option = nullptr;
 	LineEdit *team_id_edit = nullptr;
 	OptionButton *device_option = nullptr;
+
+	// Signing teams detected for the selected target's platform, in picker order;
+	// refreshed whenever a selection is loaded.
+	Vector<SigningTeam> detected_teams;
 
 	// Readiness region.
 	VBoxContainer *readiness_container = nullptr;
@@ -130,6 +135,15 @@ private:
 	void _refresh_target_list(int p_select_index = -1);
 	void _load_selection_into_fields();
 	void _refresh_device_options(const RunTarget &p_target);
+
+	// Repopulates the team picker from the platform's detected teams, selecting the
+	// entry matching `p_current_team_id` (adding a "not detected" entry for a
+	// remembered team that is not currently installed), and shows the manual-entry
+	// field when manual entry is the active choice.
+	void _refresh_team_options(const RunTarget &p_target, const String &p_current_team_id);
+	// Writes `p_team_id` through to the selected target and its linked export
+	// preset (the signing-team source of truth).
+	void _apply_team_id(const String &p_team_id);
 
 	// Returns a copy of `p_target` with its `team_id` filled in from the linked
 	// export preset's signing team when the target itself has none, so a team
@@ -149,6 +163,7 @@ private:
 	void _on_signing_mode_changed(int p_index);
 	void _on_bundle_id_changed(const String &p_text);
 	void _on_bundle_id_submitted();
+	void _on_team_option_selected(int p_index);
 	void _on_team_id_submitted();
 	void _on_device_changed(int p_index);
 	void _on_recheck_pressed();
