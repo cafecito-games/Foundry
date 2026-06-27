@@ -36,6 +36,8 @@
 
 class GDScript;
 class GDScriptAnnotation;
+class GDScriptMethodDescriptor;
+class GDScriptPropertyDescriptor;
 
 // Read-only introspection surface for GDScript, exposed as `godot.reflection`.
 // The target of each call is a script type (a `Script`) or an instance whose
@@ -58,6 +60,17 @@ public:
 	TypedArray<Dictionary> get_methods(const Variant &p_target) const;
 	Dictionary get_method_info(const Variant &p_target, const StringName &p_method) const;
 	TypedArray<Dictionary> get_properties(const Variant &p_target) const;
+
+	// Structured equivalents of get_methods()/get_method_info()/get_properties(): each returns typed
+	// GDScriptMethodDescriptor / GDScriptPropertyDescriptor objects instead of loosely-keyed
+	// Dictionaries, giving consumers typed access to a member's metadata including its annotations. The
+	// Dictionary-returning APIs above are preserved for back-compat and now produce the same data via
+	// each descriptor's to_dictionary(). get_method_descriptor() returns a null Ref when the method is
+	// not declared by the target's script or its base scripts.
+	TypedArray<GDScriptMethodDescriptor> get_method_descriptors(const Variant &p_target) const;
+	Ref<GDScriptMethodDescriptor> get_method_descriptor(const Variant &p_target, const StringName &p_method) const;
+	TypedArray<GDScriptPropertyDescriptor> get_property_descriptors(const Variant &p_target) const;
+
 	bool implements_trait(const Variant &p_target, const Variant &p_trait) const;
 
 	// Passive custom annotation reflection. `target` may be a Script type or an instance. Matching by

@@ -137,6 +137,92 @@ void GDScriptAnnotation::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "builtin", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "is_builtin");
 }
 
+Ref<GDScriptMethodDescriptor> GDScriptMethodDescriptor::create(const MethodInfo &p_method_info, const TypedArray<GDScriptAnnotation> &p_annotations) {
+	Ref<GDScriptMethodDescriptor> descriptor;
+	descriptor.instantiate();
+	descriptor->method_info = p_method_info;
+	descriptor->annotations = p_annotations;
+	return descriptor;
+}
+
+TypedArray<Dictionary> GDScriptMethodDescriptor::get_arguments() const {
+	TypedArray<Dictionary> result;
+	for (const PropertyInfo &argument : method_info.arguments) {
+		result.push_back(Dictionary(argument));
+	}
+	return result;
+}
+
+Dictionary GDScriptMethodDescriptor::get_return_value() const {
+	return Dictionary(method_info.return_val);
+}
+
+Array GDScriptMethodDescriptor::get_default_arguments() const {
+	Array result;
+	for (const Variant &default_argument : method_info.default_arguments) {
+		result.push_back(default_argument);
+	}
+	return result;
+}
+
+Dictionary GDScriptMethodDescriptor::to_dictionary() const {
+	Dictionary descriptor(method_info);
+	// Mirror the loosely-keyed `get_methods()` descriptor, which always carries an `annotations` key.
+	descriptor["annotations"] = annotations;
+	return descriptor;
+}
+
+void GDScriptMethodDescriptor::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_method_name"), &GDScriptMethodDescriptor::get_method_name);
+	ClassDB::bind_method(D_METHOD("get_arguments"), &GDScriptMethodDescriptor::get_arguments);
+	ClassDB::bind_method(D_METHOD("get_return_value"), &GDScriptMethodDescriptor::get_return_value);
+	ClassDB::bind_method(D_METHOD("get_default_arguments"), &GDScriptMethodDescriptor::get_default_arguments);
+	ClassDB::bind_method(D_METHOD("get_flags"), &GDScriptMethodDescriptor::get_flags);
+	ClassDB::bind_method(D_METHOD("get_annotations"), &GDScriptMethodDescriptor::get_annotations);
+	ClassDB::bind_method(D_METHOD("to_dictionary"), &GDScriptMethodDescriptor::to_dictionary);
+
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_method_name");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "args", PROPERTY_HINT_ARRAY_TYPE, "Dictionary", PROPERTY_USAGE_READ_ONLY), "", "get_arguments");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "return_value", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_return_value");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "default_args", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_default_arguments");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "flags", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_flags");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "annotations", PROPERTY_HINT_ARRAY_TYPE, "GDScriptAnnotation", PROPERTY_USAGE_READ_ONLY), "", "get_annotations");
+}
+
+Ref<GDScriptPropertyDescriptor> GDScriptPropertyDescriptor::create(const PropertyInfo &p_property_info, const TypedArray<GDScriptAnnotation> &p_annotations) {
+	Ref<GDScriptPropertyDescriptor> descriptor;
+	descriptor.instantiate();
+	descriptor->property_info = p_property_info;
+	descriptor->annotations = p_annotations;
+	return descriptor;
+}
+
+Dictionary GDScriptPropertyDescriptor::to_dictionary() const {
+	Dictionary descriptor(property_info);
+	// Mirror the loosely-keyed `get_properties()` descriptor, which always carries an `annotations` key.
+	descriptor["annotations"] = annotations;
+	return descriptor;
+}
+
+void GDScriptPropertyDescriptor::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_property_name"), &GDScriptPropertyDescriptor::get_property_name);
+	ClassDB::bind_method(D_METHOD("get_property_type"), &GDScriptPropertyDescriptor::get_property_type);
+	ClassDB::bind_method(D_METHOD("get_property_class_name"), &GDScriptPropertyDescriptor::get_property_class_name);
+	ClassDB::bind_method(D_METHOD("get_property_hint"), &GDScriptPropertyDescriptor::get_property_hint);
+	ClassDB::bind_method(D_METHOD("get_property_hint_string"), &GDScriptPropertyDescriptor::get_property_hint_string);
+	ClassDB::bind_method(D_METHOD("get_property_usage"), &GDScriptPropertyDescriptor::get_property_usage);
+	ClassDB::bind_method(D_METHOD("get_annotations"), &GDScriptPropertyDescriptor::get_annotations);
+	ClassDB::bind_method(D_METHOD("to_dictionary"), &GDScriptPropertyDescriptor::to_dictionary);
+
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_name");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "type", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_type");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "class_name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_class_name");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "hint", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_hint");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "hint_string", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_hint_string");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "usage", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_usage");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "annotations", PROPERTY_HINT_ARRAY_TYPE, "GDScriptAnnotation", PROPERTY_USAGE_READ_ONLY), "", "get_annotations");
+}
+
 Variant GDScriptNativeClass::_new() {
 	Object *o = instantiate();
 	ERR_FAIL_NULL_V_MSG(o, Variant(), "Class type: '" + String(name) + "' is not instantiable.");

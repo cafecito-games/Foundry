@@ -534,6 +534,72 @@ public:
 	static Ref<GDScriptAnnotation> from_usage(const GDScript::AnnotationUsage &p_usage);
 };
 
+// Read-only structured descriptor for a single reflected GDScript method, returned by the GDScript
+// reflection APIs as a typed alternative to the loosely-keyed method descriptor Dictionary. It mirrors
+// the entries of `Object.get_method_list()` (name, arguments, return value, default arguments, flags)
+// and additionally carries the method's passive annotations. Each instance is an independent snapshot;
+// the accessors return copies, so callers cannot mutate the script's compiled metadata.
+class GDScriptMethodDescriptor : public RefCounted {
+	GDCLASS(GDScriptMethodDescriptor, RefCounted);
+
+	MethodInfo method_info;
+	TypedArray<GDScriptAnnotation> annotations;
+
+protected:
+	static void _bind_methods();
+
+public:
+	StringName get_method_name() const { return method_info.name; }
+	// Parameter descriptors as PropertyInfo Dictionaries, in declaration order.
+	TypedArray<Dictionary> get_arguments() const;
+	// The return value's PropertyInfo as a Dictionary.
+	Dictionary get_return_value() const;
+	// Trailing default argument values, in declaration order.
+	Array get_default_arguments() const;
+	int64_t get_flags() const { return method_info.flags; }
+	// Passive annotations applied to the method, as GDScriptAnnotation descriptors, in source order.
+	// Returns a fresh array so the caller cannot mutate the descriptor's stored annotations.
+	TypedArray<GDScriptAnnotation> get_annotations() const { return annotations.duplicate(); }
+	// The equivalent loosely-keyed descriptor Dictionary, matching `GDScriptReflection.get_methods()`
+	// entries (an `Object.get_method_list()` Dictionary plus an `annotations` key).
+	Dictionary to_dictionary() const;
+
+	// Builds a descriptor from a method's MethodInfo and its already-resolved annotation descriptors.
+	static Ref<GDScriptMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<GDScriptAnnotation> &p_annotations);
+};
+
+// Read-only structured descriptor for a single reflected GDScript member variable, returned by the
+// GDScript reflection APIs as a typed alternative to the loosely-keyed property descriptor Dictionary.
+// It mirrors the entries of `Object.get_property_list()` (name, type, class name, hint, hint string,
+// usage) and additionally carries the variable's passive annotations. Each instance is an independent
+// snapshot; the accessors return copies, so callers cannot mutate the script's compiled metadata.
+class GDScriptPropertyDescriptor : public RefCounted {
+	GDCLASS(GDScriptPropertyDescriptor, RefCounted);
+
+	PropertyInfo property_info;
+	TypedArray<GDScriptAnnotation> annotations;
+
+protected:
+	static void _bind_methods();
+
+public:
+	StringName get_property_name() const { return property_info.name; }
+	int64_t get_property_type() const { return property_info.type; }
+	StringName get_property_class_name() const { return property_info.class_name; }
+	int64_t get_property_hint() const { return property_info.hint; }
+	String get_property_hint_string() const { return property_info.hint_string; }
+	int64_t get_property_usage() const { return property_info.usage; }
+	// Passive annotations applied to the variable, as GDScriptAnnotation descriptors, in source order.
+	// Returns a fresh array so the caller cannot mutate the descriptor's stored annotations.
+	TypedArray<GDScriptAnnotation> get_annotations() const { return annotations.duplicate(); }
+	// The equivalent loosely-keyed descriptor Dictionary, matching `GDScriptReflection.get_properties()`
+	// entries (an `Object.get_property_list()` Dictionary plus an `annotations` key).
+	Dictionary to_dictionary() const;
+
+	// Builds a descriptor from a variable's PropertyInfo and its already-resolved annotation descriptors.
+	static Ref<GDScriptPropertyDescriptor> create(const PropertyInfo &p_property_info, const TypedArray<GDScriptAnnotation> &p_annotations);
+};
+
 class GDScriptInstance : public ScriptInstance {
 	friend class GDScript;
 	friend class GDScriptFunction;

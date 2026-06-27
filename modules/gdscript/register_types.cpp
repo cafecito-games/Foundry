@@ -159,6 +159,8 @@ void initialize_gdscript_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(GDScript);
 		GDREGISTER_CLASS(GDScriptTypeParameter);
 		GDREGISTER_CLASS(GDScriptAnnotation);
+		GDREGISTER_CLASS(GDScriptMethodDescriptor);
+		GDREGISTER_CLASS(GDScriptPropertyDescriptor);
 		GDREGISTER_CLASS(GDScriptReflection);
 		GDREGISTER_CLASS(GDScriptGodotNamespace);
 

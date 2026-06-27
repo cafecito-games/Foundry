@@ -91,6 +91,21 @@
 				Returns the annotations applied to the method named [param method], in source order, as [GDScriptAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective method view is used: a method declared on a base script carries its annotations when reflected from a derived script, a concrete trait method flattened into an implementer carries its declaration annotations, and an overriding method's annotations take precedence. When [code]false[/code] only annotations declared on [param target]'s exact script are returned (trait-flattened methods are owned by the implementer, so they remain visible). Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
+		<method name="get_method_descriptor" qualifiers="const">
+			<return type="GDScriptMethodDescriptor" />
+			<param index="0" name="target" type="Variant" />
+			<param index="1" name="method" type="StringName" />
+			<description>
+				Returns a structured [GDScriptMethodDescriptor] for the method named [param method] declared by [param target]'s script or one of its base scripts, or [code]null[/code] if the method is not declared. This is the typed equivalent of [method get_method_info]; the descriptor's [method GDScriptMethodDescriptor.to_dictionary] reproduces that method's [Dictionary]. For a GDScript target the descriptor's [member GDScriptMethodDescriptor.annotations] holds the effective annotations, matching [method get_method_annotations]. [param target] may be a [Script] type or an instance.
+			</description>
+		</method>
+		<method name="get_method_descriptors" qualifiers="const">
+			<return type="GDScriptMethodDescriptor[]" />
+			<param index="0" name="target" type="Variant" />
+			<description>
+				Returns structured [GDScriptMethodDescriptor] objects for every method declared by [param target]'s script and its base scripts. This is the typed equivalent of [method get_methods]; each descriptor's [method GDScriptMethodDescriptor.to_dictionary] reproduces that method's [Dictionary]. For a GDScript target each descriptor's [member GDScriptMethodDescriptor.annotations] holds the annotations of the exact declaration it represents. [param target] may be a [Script] type or an instance. Returns an empty array if [param target] has no script.
+			</description>
+		</method>
 		<method name="get_method_info" qualifiers="const">
 			<return type="Dictionary" />
 			<param index="0" name="target" type="Variant" />
@@ -106,6 +121,13 @@
 			<description>
 				Returns the descriptors of every method declared by [param target]'s script and its base scripts, in the same shape as [method Object.get_method_list]. [param target] may be a [Script] type or an instance. Returns an empty array if [param target] has no script.
 				For a GDScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [GDScriptAnnotation] array (empty when the method has none), matching [method get_method_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member GDScriptAnnotation.builtin] to tell them apart.
+			</description>
+		</method>
+		<method name="get_property_descriptors" qualifiers="const">
+			<return type="GDScriptPropertyDescriptor[]" />
+			<param index="0" name="target" type="Variant" />
+			<description>
+				Returns structured [GDScriptPropertyDescriptor] objects for the variables declared by [param target]'s script and its base scripts. This is the typed equivalent of [method get_properties]; each descriptor's [method GDScriptPropertyDescriptor.to_dictionary] reproduces that variable's [Dictionary]. Only declared [code]var[/code]s are returned (category and group headers are omitted). For a GDScript target each descriptor's [member GDScriptPropertyDescriptor.annotations] holds the effective annotations, matching [method get_variable_annotations]. [param target] may be a [Script] type or an instance.
 			</description>
 		</method>
 		<method name="get_properties" qualifiers="const">

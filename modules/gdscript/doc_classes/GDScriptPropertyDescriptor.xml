@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GDScriptPropertyDescriptor" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A read-only structured descriptor for a single reflected [GDScript] member variable.
+	</brief_description>
+	<description>
+		Describes one member variable declared by a [GDScript] type or its base scripts, as a typed alternative to the loosely-keyed [Dictionary] entries of [method GDScriptReflection.get_properties]. Instances are produced by [method GDScriptReflection.get_property_descriptors] and are immutable snapshots of the compiled property metadata.
+		Beyond the [method Object.get_property_list] fields it mirrors ([member name], [member type], [member class_name], [member hint], [member hint_string], and [member usage]), each descriptor carries the variable's passive [member annotations]. The accessors return copies, so mutating them does not change the script's stored metadata. Use [method to_dictionary] to obtain the equivalent loosely-keyed descriptor [Dictionary].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="to_dictionary" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns the equivalent loosely-keyed property descriptor [Dictionary], matching the entries of [method GDScriptReflection.get_properties]: an [method Object.get_property_list] [Dictionary] plus an [code]"annotations"[/code] key holding the [member annotations].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="annotations" type="GDScriptAnnotation[]" setter="" getter="get_annotations">
+			The passive annotations applied to the member variable, in source order, as [GDScriptAnnotation] descriptors. Empty when the variable has no annotations. Each call returns an independent snapshot.
+		</member>
+		<member name="class_name" type="StringName" setter="" getter="get_property_class_name">
+			The property's class name, as in an [method Object.get_property_list] entry. Empty unless the property's type carries a class.
+		</member>
+		<member name="hint" type="int" setter="" getter="get_property_hint">
+			The property's hint, one of the [enum PropertyHint] values.
+		</member>
+		<member name="hint_string" type="String" setter="" getter="get_property_hint_string">
+			The property's hint string, paired with [member hint].
+		</member>
+		<member name="name" type="StringName" setter="" getter="get_property_name">
+			The member variable's name.
+		</member>
+		<member name="type" type="int" setter="" getter="get_property_type">
+			The property's [enum Variant.Type].
+		</member>
+		<member name="usage" type="int" setter="" getter="get_property_usage">
+			The property's usage flags, a bitmask of [enum PropertyUsageFlags] values.
+		</member>
+	</members>
+</class>
