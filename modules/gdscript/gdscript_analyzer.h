@@ -150,6 +150,16 @@ class GDScriptAnalyzer {
 		STATIC_MEMBER,
 		LOCAL,
 	};
+	// The `final` variable nodes declared by the traits applied to the class whose flattened trait
+	// bodies are currently being scanned (instance finals during the member pass, static finals during
+	// the static pass), including ones the implementer shadows. A flattened trait body resolves a bare
+	// or `self` member reference against the trait's own AST, so a reference that resolves to one of
+	// these nodes carries a stale finality (the implementer may have shadowed that slot with a mutable
+	// member); it must be resolved by name instead. A bare/`self` reference to any *other* final (an
+	// inherited final the trait reaches through a base constraint) is reliable and is handled by the
+	// normal resolution. Populated for the duration of `check_final_member_assignments` /
+	// `check_final_static_assignments` and otherwise empty.
+	HashSet<const GDScriptParser::VariableNode *> flattened_trait_final_nodes;
 	void check_final_member_assignments(GDScriptParser::ClassNode *p_class);
 	void check_final_static_assignments(GDScriptParser::ClassNode *p_class);
 	void check_final_local_assignments(GDScriptParser::ClassNode *p_class);
@@ -160,24 +170,24 @@ class GDScriptAnalyzer {
 	static void merge_final_assignment_branches(const FinalAssignmentState &p_first, const FinalAssignmentState &p_second, FinalAssignmentState &r_out);
 	const GDScriptParser::VariableNode *final_member_assignment_target(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver = nullptr) const;
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver = nullptr, bool p_flattened_trait_body = false) const;
 	void scan_illegal_final_writes(const GDScriptParser::Node *p_node,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init, bool p_flattened_trait_body = false);
 	void analyze_final_definite_assignment_suite(const GDScriptParser::SuiteNode *p_suite,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
-			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
+			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
 	void analyze_final_definite_assignment_statement(const GDScriptParser::Node *p_statement,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
-			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
+			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
 	void check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
 	void check_final_reads_in_pattern(const GDScriptParser::PatternNode *p_pattern,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
 	void resolve_function_signature(GDScriptParser::FunctionNode *p_function, const GDScriptParser::Node *p_source = nullptr, bool p_is_lambda = false);
 	void resolve_function_body(GDScriptParser::FunctionNode *p_function, bool p_is_lambda = false);
 	void resolve_node(GDScriptParser::Node *p_node, bool p_is_root = true);
