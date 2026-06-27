@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+The "abstract" and "static" modifiers cannot be combined outside a trait.
