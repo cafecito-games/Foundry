@@ -732,7 +732,18 @@ TEST_CASE("[Modules][GDScript] Coroutine result type survives the PropertyInfo b
 	CHECK(decoded_void.get_container_element_type(0).builtin_type == Variant::NIL);
 	CHECK(decoded_void.to_string() == "Coroutine[void]");
 
-	// Coroutine without a result slot degrades to Coroutine[Variant] and stays awaitable.
+	// An explicit Coroutine[Variant] keeps a Variant result slot across the boundary.
+	GDScriptParser::DataType coroutine_variant = make_coroutine_type(make_variant_type());
+	const PropertyInfo variant_info = coroutine_variant.to_property_info("handle");
+	CHECK(variant_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
+	CHECK(variant_info.hint_string == "Variant");
+	const GDScriptParser::DataType decoded_variant = TestGDScriptAnalyzerAccessor::decode_property(variant_info);
+	CHECK(decoded_variant.is_coroutine);
+	REQUIRE(decoded_variant.has_container_element_type(0));
+	CHECK(decoded_variant.get_container_element_type(0).kind == GDScriptParser::DataType::VARIANT);
+
+	// A coroutine with no result slot round-trips as a result-less coroutine (empty hint), staying
+	// awaitable and gradually compatible rather than masquerading as a concrete Coroutine[Variant].
 	GDScriptParser::DataType coroutine_bare;
 	coroutine_bare.kind = GDScriptParser::DataType::NATIVE;
 	coroutine_bare.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -741,11 +752,23 @@ TEST_CASE("[Modules][GDScript] Coroutine result type survives the PropertyInfo b
 	coroutine_bare.is_coroutine = true;
 	const PropertyInfo bare_info = coroutine_bare.to_property_info("handle");
 	CHECK(bare_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
-	CHECK(bare_info.hint_string == "Variant");
+	CHECK(bare_info.hint_string == "");
 	const GDScriptParser::DataType decoded_bare = TestGDScriptAnalyzerAccessor::decode_property(bare_info);
 	CHECK(decoded_bare.is_coroutine);
-	REQUIRE(decoded_bare.has_container_element_type(0));
-	CHECK(decoded_bare.get_container_element_type(0).kind == GDScriptParser::DataType::VARIANT);
+	CHECK_FALSE(decoded_bare.has_container_element_type(0));
+
+	// A result type that cannot round-trip faithfully (here a type parameter) is dropped, so the handle
+	// crosses as a result-less coroutine instead of a fake Coroutine[Variant].
+	GDScriptParser::DataType type_parameter;
+	type_parameter.kind = GDScriptParser::DataType::TYPE_PARAMETER;
+	type_parameter.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	GDScriptParser::DataType coroutine_lossy = make_coroutine_type(type_parameter);
+	const PropertyInfo lossy_info = coroutine_lossy.to_property_info("handle");
+	CHECK(lossy_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
+	CHECK(lossy_info.hint_string == "");
+	const GDScriptParser::DataType decoded_lossy = TestGDScriptAnalyzerAccessor::decode_property(lossy_info);
+	CHECK(decoded_lossy.is_coroutine);
+	CHECK_FALSE(decoded_lossy.has_container_element_type(0));
 
 	// A nested Array result (Coroutine[Array[int]]) round-trips through the recursive grammar.
 	GDScriptParser::DataType array_int = make_builtin_type(Variant::ARRAY);

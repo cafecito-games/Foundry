@@ -6828,12 +6828,16 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 				// coroutine identity and the phantom result type T across the PropertyInfo boundary via a
 				// dedicated hint (mirroring PROPERTY_HINT_ARRAY_TYPE), decoded in type_from_property.
 				// Without this the skin leaks as a bare GDScriptFunctionState and a cross-script consumer
-				// loses T and awaitability. A result type that cannot round-trip degrades to Variant so the
-				// handle stays awaitable rather than crossing untyped.
+				// loses T and awaitability.
 				result.class_name = native_type;
 				result.hint = PROPERTY_HINT_COROUTINE_TYPE;
-				if (has_container_element_type(0) && !_signature_type_is_encodable(get_container_element_type(0))) {
-					result.hint_string = "Variant";
+				if (!has_container_element_type(0) || !_signature_type_is_encodable(get_container_element_type(0))) {
+					// A result type that cannot round-trip faithfully (e.g. a script class) is dropped: the
+					// handle crosses as a result-less coroutine rather than masquerading as a concrete
+					// Coroutine[Variant]. This stays gradually compatible at assignment while a signature
+					// slot carrying it is treated as comparison-unsafe (see _signature_slot_is_comparison_safe)
+					// so it crosses gradually instead of becoming a false strict mismatch.
+					result.hint_string = "";
 				} else {
 					result.hint_string = _encode_coroutine_result_element(*this);
 				}

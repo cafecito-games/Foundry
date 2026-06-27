@@ -310,14 +310,24 @@ static Vector<String> _split_signature_top_level(const String &p_text) {
 static GDScriptParser::DataType _decode_signature_type(const String &p_encoded);
 
 // Rebuilds a Coroutine[T] from its encoded result-type element (see _encode_coroutine_result_element).
-// An empty or "Variant" element yields Coroutine[Variant]; "void" yields a NIL result; anything else is
-// decoded through the shared signature grammar. The result is always wrapped via make_coroutine_type so
-// the coroutine identity and phantom result type survive the boundary.
+// An empty element yields a result-less coroutine (identity preserved, phantom result unknown because it
+// was lossy or unspecified); "Variant" yields Coroutine[Variant]; "void" yields a NIL result; anything
+// else is decoded through the shared signature grammar. Non-empty elements are wrapped via
+// make_coroutine_type so the coroutine identity and phantom result type survive the boundary.
 static GDScriptParser::DataType _decode_coroutine_result_element(const String &p_element) {
 	const String element = p_element.strip_edges();
+	if (element.is_empty()) {
+		GDScriptParser::DataType coroutine;
+		coroutine.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		coroutine.kind = GDScriptParser::DataType::NATIVE;
+		coroutine.builtin_type = Variant::OBJECT;
+		coroutine.native_type = SNAME("GDScriptFunctionState");
+		coroutine.is_coroutine = true;
+		return coroutine;
+	}
 	GDScriptParser::DataType result_type;
 	result_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
-	if (element.is_empty() || element == "Variant") {
+	if (element == "Variant") {
 		result_type.kind = GDScriptParser::DataType::VARIANT;
 	} else if (element == "void") {
 		result_type.kind = GDScriptParser::DataType::BUILTIN;
@@ -525,6 +535,13 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 // global/native/built-in enum is the exception: its identity round-trips through the hint grammar, so
 // it is safe to compare as a rich slot.
 static bool _signature_slot_is_comparison_safe(const GDScriptParser::DataType &p_type) {
+	// Coroutine[T] is a NATIVE skin, but unlike a plain native it carries a phantom result type that only
+	// survives the boundary when T itself round-trips. A result-less coroutine (its result was lossy and
+	// dropped on encode, see DataType::to_property_info) must cross gradually, so require a comparison-safe
+	// result element rather than falling through to the always-safe NATIVE case below.
+	if (p_type.is_coroutine) {
+		return p_type.has_container_element_type(0) && _signature_slot_is_comparison_safe(p_type.get_container_element_type(0));
+	}
 	switch (p_type.kind) {
 		case GDScriptParser::DataType::ENUM: {
 			GDScriptParser::DataType reconstructed;
