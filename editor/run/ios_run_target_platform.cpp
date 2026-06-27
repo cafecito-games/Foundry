@@ -290,6 +290,8 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 
 	// Hand off to the existing export-to-`.xcarchive` + `devicectl` deploy path,
 	// which already passes `-allowProvisioningUpdates` so automatic signing resolves
-	// certificates, profiles, and device registration.
+	// certificates, profiles, and device registration. The preset's
+	// `application/app_store_team_id` is the source of truth for the signing team;
+	// the run-target layer keeps readiness aligned with it rather than mutating it.
 	return platform->run_on_device(preset, device_id, p_debug_flags);
 }
