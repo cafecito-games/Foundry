@@ -1700,6 +1700,13 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 	bool class_end = false;
 	while (!class_end && !is_at_end()) {
 		DeclarationModifiers modifiers = collect_declaration_modifiers();
+		if (is_at_end()) {
+			// A modifier run at the very end of the stream has no declaration to apply to.
+			if (modifiers.has_any()) {
+				push_error(R"(Expected a declaration after the modifier.)");
+			}
+			break;
+		}
 		const bool in_trait = current_class != nullptr && current_class->is_trait;
 
 		GDScriptTokenizer::Token token = current;

@@ -1365,6 +1365,24 @@ static signal triggered
 			R"(The "static" modifier cannot be applied to signals.)");
 }
 
+TEST_CASE("[Modules][GDScript] Parser reports a trailing modifier at end of stream") {
+	// A modifier run that reaches the end of the token stream must surface a diagnostic
+	// rather than advancing past the end of the stream (which would be a parser bug).
+	for (const String &source : { String("class Broken: static"), String("class Broken: abstract") }) {
+		GDScriptParser parser;
+		Error err = parser.parse(source, "user://trailing_modifier.gd", false);
+		CHECK(err != OK);
+		bool found = false;
+		for (const GDScriptParser::ParserError &parser_error : parser.get_errors()) {
+			if (parser_error.message == "Expected a declaration after the modifier.") {
+				found = true;
+				break;
+			}
+		}
+		CHECK(found);
+	}
+}
+
 TEST_CASE("[Modules][GDScript] Parser recovery preserves a leading abstract modifier") {
 	// The malformed `var` aborts mid-declaration with `abstract` as the next token, so the
 	// recovery in `synchronize()` must stop at `abstract` rather than skipping over it.
