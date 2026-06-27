@@ -154,16 +154,33 @@ void GDScriptLanguageProtocol::on_client_disconnected(const int &p_client_id) {
 	EditorNode::get_log()->add_message("[LSP] Disconnected", EditorLog::MSG_TYPE_EDITOR);
 }
 
-bool GDScriptLanguageProtocol::is_path_managed_by_other_client(const String &p_path, const LSPeer *p_excluded_peer) const {
+void GDScriptLanguageProtocol::refresh_global_annotations_after_close(const String &p_path, const LSPeer *p_excluded_peer) {
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	if (language == nullptr) {
+		return;
+	}
+
+	// Prefer a buffer another client still has open so the index reflects live editor state rather
+	// than the buffer that was just closed; index it the same syntax-only way `parse_script` does.
 	for (const KeyValue<int, Ref<LSPeer>> &client : clients) {
 		if (client.value.ptr() == p_excluded_peer) {
 			continue;
 		}
-		if (client.value->managed_files.has(p_path)) {
-			return true;
+		const LSP::TextDocumentItem *document = client.value->managed_files.getptr(p_path);
+		if (document == nullptr || document->languageId != LSP::LanguageId::GDSCRIPT) {
+			continue;
 		}
+		List<StringName> annotations;
+		if (language->get_global_annotations_from_source(document->text, p_path, &annotations) == OK) {
+			language->replace_global_annotations(p_path, annotations);
+		} else {
+			language->update_global_class_annotations(p_path, p_path);
+		}
+		return;
 	}
-	return false;
+
+	// No client has it open anymore: fall back to the on-disk version.
+	language->update_global_class_annotations(p_path, p_path);
 }
 
 String GDScriptLanguageProtocol::process_message(const String &p_text) {
@@ -519,13 +536,9 @@ void GDScriptLanguageProtocol::lsp_did_close(const Dictionary &p_params) {
 
 	client->remove_cached_parser(path);
 
-	// The unsaved buffer is gone: re-sync the annotation index with the on-disk file so any
-	// declarations indexed only from the closed buffer are dropped and any on-disk declarations
-	// are restored. Skip this when another client still has the file open, so its in-memory
-	// declarations are not clobbered by the disk version.
-	if (!is_path_managed_by_other_client(path, client.ptr())) {
-		GDScriptLanguage::get_singleton()->update_global_class_annotations(path, path);
-	}
+	// The buffer is gone: re-sync the annotation index to a still-live source (another client's open
+	// buffer, or the on-disk file) so declarations indexed only from the closed buffer don't linger.
+	refresh_global_annotations_after_close(path, client.ptr());
 
 	/// A close notification requires a previous open notification to be sent.
 	ERR_FAIL_COND_MSG(!was_opened, "LSP: Client is closing file without opening it.");
@@ -599,15 +612,12 @@ GDScriptLanguageProtocol::LSPeer::~LSPeer() {
 	// buffers. Re-sync the global annotation index with the on-disk files so unsaved additions or
 	// removals indexed from those buffers do not linger as stale cross-file data. Guard the
 	// singleton in case the language is already torn down during editor shutdown.
-	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
-	if (GDScriptLanguage *language = GDScriptLanguage::get_singleton()) {
+	// `protocol` is null during protocol teardown (the singleton is cleared before clients.clear()),
+	// where the index no longer matters and iterating the half-cleared clients map would be unsafe;
+	// skip the refresh in that case. On a lone disconnect it re-syncs each path to a live source.
+	if (GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton()) {
 		for (const KeyValue<String, LSP::TextDocumentItem> &document : managed_files) {
-			// Leave the index alone for files another client still has open, so this peer's teardown
-			// does not clobber a live buffer's in-memory declarations.
-			if (protocol != nullptr && protocol->is_path_managed_by_other_client(document.key, this)) {
-				continue;
-			}
-			language->update_global_class_annotations(document.key, document.key);
+			protocol->refresh_global_annotations_after_close(document.key, this);
 		}
 	}
 
