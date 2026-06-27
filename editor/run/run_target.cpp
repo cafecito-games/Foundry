@@ -85,9 +85,12 @@ Vector<RunTarget> RunTarget::load_all(const String &p_path, Error *r_error) {
 
 	const Error err = config->load(p_path);
 	if (err != OK) {
-		// A missing or empty file is a valid "no targets" state, not an error.
+		// A missing file is a valid "no targets" state, not an error. Any other
+		// failure (e.g. a permission error or an unreadable file) is propagated
+		// so callers can tell it apart from a genuinely empty configuration and
+		// avoid clobbering existing targets on a later save.
 		if (r_error) {
-			*r_error = (err == ERR_FILE_NOT_FOUND || err == ERR_FILE_CANT_OPEN) ? OK : err;
+			*r_error = (err == ERR_FILE_NOT_FOUND) ? OK : err;
 		}
 		return targets;
 	}
