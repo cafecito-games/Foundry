@@ -64,6 +64,67 @@ static int count_comments(const String &p_text) {
 	return tokenizer.get_comments().size();
 }
 
+// True when `p_line` falls inside a non-class member of `p_class` (recursing into
+// nested classes). Mirrors the formatter's classifier so the invariant below
+// counts the same string comments the formatter recovers.
+static bool string_comment_line_inside_member(const GDScriptParser::ClassNode *p_class, int p_line) {
+	if (p_class == nullptr) {
+		return false;
+	}
+	for (int i = 0; i < p_class->members.size(); i++) {
+		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
+		const GDScriptParser::Node *node = member.get_source_node();
+		if (node == nullptr || node->start_line <= 0) {
+			continue;
+		}
+		int member_start = node->start_line;
+		for (const GDScriptParser::AnnotationNode *annotation : node->annotations) {
+			if (annotation->start_line > 0 && annotation->start_line < member_start) {
+				member_start = annotation->start_line;
+			}
+		}
+		if (p_line < member_start || p_line > node->end_line) {
+			continue;
+		}
+		if (member.type == GDScriptParser::ClassNode::Member::CLASS) {
+			return string_comment_line_inside_member(member.m_class, p_line);
+		}
+		return true;
+	}
+	return false;
+}
+
+// Counts class-body string comments: a standalone string literal (at a line start)
+// the parser does NOT place inside a member -- so it consumed it as a multi-line
+// comment with no AST node. This is layout-independent (it does not count
+// collection/argument/pattern element strings, which sit inside a member), so it
+// is the durable guard for the otherwise-invisible string-comment data-loss class.
+// Returns -1 when the text does not parse cleanly.
+static int count_class_body_string_comments(const String &p_text) {
+	GDScriptParser parser;
+	if (parser.parse(p_text, "string_comment_count.gd", false) != OK || !parser.get_errors().is_empty()) {
+		return -1;
+	}
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code(p_text);
+	int count = 0;
+	GDScriptTokenizer::Token::Type previous_type = GDScriptTokenizer::Token::NEWLINE;
+	for (GDScriptTokenizer::Token token = tokenizer.scan();
+			token.type != GDScriptTokenizer::Token::TK_EOF && token.type != GDScriptTokenizer::Token::ERROR;
+			token = tokenizer.scan()) {
+		const bool at_line_start = previous_type == GDScriptTokenizer::Token::NEWLINE ||
+				previous_type == GDScriptTokenizer::Token::INDENT ||
+				previous_type == GDScriptTokenizer::Token::DEDENT;
+		if (at_line_start && token.type == GDScriptTokenizer::Token::LITERAL &&
+				token.literal.get_type() == Variant::STRING &&
+				!string_comment_line_inside_member(parser.get_tree(), token.start_line)) {
+			count++;
+		}
+		previous_type = token.type;
+	}
+	return count;
+}
+
 // ---------------------------------------------------------------------------
 // Corpus collection helpers.
 // ---------------------------------------------------------------------------
@@ -886,6 +947,88 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		CHECK_EQ(options.paths[0], "file.gd");
 	}
 
+	TEST_CASE("[Format] Directory collection skips symlinked subdirectories") {
+		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(da.is_valid());
+		const String root = da->get_current_dir().path_join("gdfmt_fs_symtest");
+		const String relative_tree = "gdfmt_fs_symtest/tree";
+
+		const auto cleanup = [&]() {
+			da->remove(root.path_join("tree/link"));
+			da->remove(root.path_join("tree/keep.gd"));
+			da->remove(root.path_join("outside/outside.gd"));
+			da->remove(root.path_join("tree"));
+			da->remove(root.path_join("outside"));
+			da->remove(root);
+		};
+		cleanup(); // Clear any tree leaked by a previous crashed run.
+
+		REQUIRE(da->make_dir_recursive(root.path_join("tree")) == OK);
+		REQUIRE(da->make_dir_recursive(root.path_join("outside")) == OK);
+		{
+			Ref<FileAccess> file = FileAccess::open(root.path_join("tree/keep.gd"), FileAccess::WRITE);
+			REQUIRE(file.is_valid());
+			file->store_string("var a = 1\n");
+		}
+		{
+			Ref<FileAccess> file = FileAccess::open(root.path_join("outside/outside.gd"), FileAccess::WRITE);
+			REQUIRE(file.is_valid());
+			file->store_string("var b = 2\n");
+		}
+		// A directory symlink inside the scanned tree pointing at a sibling outside it.
+		REQUIRE(da->create_link(root.path_join("outside"), root.path_join("tree/link")) == OK);
+
+		const auto sees_outside = [](const Vector<String> &p_files) {
+			for (const String &collected : p_files) {
+				if (collected.ends_with("outside.gd")) {
+					return true;
+				}
+			}
+			return false;
+		};
+		const auto sees_keep = [](const Vector<String> &p_files) {
+			for (const String &collected : p_files) {
+				if (collected.ends_with("keep.gd")) {
+					return true;
+				}
+			}
+			return false;
+		};
+
+		// Relative root is the regression: `is_link` must be queried with the bare
+		// entry name, not the joined relative path.
+		{
+			Vector<String> paths;
+			paths.push_back(relative_tree);
+			bool had_error = false;
+			const Vector<String> files = GDScriptFormatterCLI::collect_files(paths, had_error);
+			CHECK(sees_keep(files));
+			CHECK_FALSE_MESSAGE(sees_outside(files), "Symlinked dir must not be followed (relative root).");
+			CHECK_FALSE(had_error);
+		}
+		// Absolute root.
+		{
+			Vector<String> paths;
+			paths.push_back(root.path_join("tree"));
+			bool had_error = false;
+			const Vector<String> files = GDScriptFormatterCLI::collect_files(paths, had_error);
+			CHECK(sees_keep(files));
+			CHECK_FALSE_MESSAGE(sees_outside(files), "Symlinked dir must not be followed (absolute root).");
+			CHECK_FALSE(had_error);
+		}
+
+		cleanup();
+	}
+
+	TEST_CASE("[Format] Directory collection flags a missing path") {
+		Vector<String> paths;
+		paths.push_back("gdfmt_this_path_does_not_exist_42/none.gd");
+		bool had_error = false;
+		const Vector<String> files = GDScriptFormatterCLI::collect_files(paths, had_error);
+		CHECK(files.is_empty());
+		CHECK_MESSAGE(had_error, "A missing path must mark the collection as failed.");
+	}
+
 	TEST_CASE("[Format] Class annotation is emitted after namespace and re-parses") {
 		// Regression: class-level annotations must follow `namespace`/`import`;
 		// emitting them first is rejected ("Class annotations must appear after
@@ -1098,6 +1241,37 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 			checked++;
 		}
 		MESSAGE("Comment preservation: checked ", checked, " parseable corpus scripts.");
+		CHECK(checked > 0);
+	}
+
+	TEST_CASE("[Format] Preserves class-body string comments") {
+		// String literals used as comments in a class/top-level body are consumed by
+		// the parser without an AST node, so they are invisible to the tree, comment-
+		// count, and (since consistently dropped) idempotency sweeps. This count guard
+		// catches dropping or duplicating any of them.
+		const String root = "modules/gdscript/tests/scripts";
+		int checked = 0;
+		for (const String &script : collect_gd_scripts(root)) {
+			if (is_narrow_skipped_fixture(script)) {
+				continue;
+			}
+			Error read_error = OK;
+			const String source = FileAccess::get_file_as_string(script, &read_error);
+			if (read_error != OK) {
+				continue;
+			}
+			GDScriptFormatter formatter;
+			GDScriptFormatter::Result result;
+			if (formatter.format(source, script, result) != OK) {
+				continue;
+			}
+			const int source_count = count_class_body_string_comments(source);
+			const int formatted_count = count_class_body_string_comments(result.formatted);
+			CHECK_MESSAGE(source_count == formatted_count,
+					vformat("String-comment count changed (%d -> %d) for: %s", source_count, formatted_count, script));
+			checked++;
+		}
+		MESSAGE("String-comment preservation: checked ", checked, " parseable corpus scripts.");
 		CHECK(checked > 0);
 	}
 }
