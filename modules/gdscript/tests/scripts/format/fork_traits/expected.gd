@@ -1,6 +1,5 @@
 extends RefCounted
 uses Left, Right
-
 trait Base:
 	var value: int = 10
 
