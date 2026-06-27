@@ -648,11 +648,13 @@ void ProjectDialog::ok_pressed() {
 
 		if (is_ios_template) {
 			// Seed the iOS export preset and default run target so the project is
-			// ready to run on a device once the user completes signing.
+			// ready to run on a device once the user completes signing. If this
+			// fails the user explicitly asked for the iOS template, so surface it
+			// rather than silently handing back a project without it.
 			const Error ios_err = IOSProjectTemplate::seed(path, project_name->get_text().strip_edges());
 			if (ios_err != OK) {
-				// Non-fatal: the project itself was created successfully.
-				ERR_PRINT("Couldn't seed the iOS run target template in project path.");
+				_set_message(TTRC("Couldn't create the iOS run target files in project path."), MESSAGE_ERROR);
+				return;
 			}
 		}
 	}
