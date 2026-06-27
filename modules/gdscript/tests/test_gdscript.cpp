@@ -2105,6 +2105,11 @@ annotation tags(...names: String) targets CLASS, METHOD
 		return;
 	}
 
+	// An annotation's doc comment must not leak into the script/class description, even when the
+	// script declares only annotations and no members.
+	CHECK(docs[0].brief_description.is_empty());
+	CHECK(docs[0].description.is_empty());
+
 	const DocData::MethodDoc *entry = nullptr;
 	const DocData::MethodDoc *timeout = nullptr;
 	const DocData::MethodDoc *tags = nullptr;

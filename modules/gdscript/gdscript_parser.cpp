@@ -976,8 +976,12 @@ void GDScriptParser::parse_program() {
 
 	int max_line = head->end_line;
 	if (!head->members.is_empty()) {
-		max_line = MIN(max_script_doc_line, head->members[0].get_line() - 1);
+		max_line = MIN(max_line, head->members[0].get_line() - 1);
 	}
+	// `max_script_doc_line` is lowered past any doc comment already consumed by a member or an
+	// annotation declaration. Clamp by it so those doc comments are never reused as the class
+	// description, including in scripts whose only declarations are annotations (no members).
+	max_line = MIN(max_line, max_script_doc_line);
 
 	int line = 0;
 	while (line <= max_line) {
