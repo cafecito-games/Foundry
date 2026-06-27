@@ -2680,13 +2680,16 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 	LocalVector<const GDScriptParser::VariableNode *> blank_finals;
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
-		if (member.type != GDScriptParser::ClassNode::Member::VARIABLE || member.variable->property != GDScriptParser::VariableNode::PROP_NONE) {
+		if (member.type != GDScriptParser::ClassNode::Member::VARIABLE) {
 			continue;
 		}
 		GDScriptParser::VariableNode *variable = member.variable;
+		// Any member initializer (including a property variable's) runs before the `_init` body, so
+		// reading a still-blank final from one is a use-before-assignment.
 		if (variable->initializer != nullptr) {
 			check_final_reads_in_expression(variable->initializer, finals, finals_by_name, init_state);
 		}
+		// A property variable is never itself a tracked final (those are rejected earlier).
 		if (!finals.has(variable)) {
 			continue;
 		}
