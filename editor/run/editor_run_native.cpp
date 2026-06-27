@@ -182,6 +182,12 @@ void EditorRunNative::_rebuild_popup() {
 
 	run_target_entries = build_menu_model(run_target_manager.get_targets(), devices_by_platform);
 
+	// The first four runnable rows (run-target rows first, then legacy device rows)
+	// share the existing remote_deploy/deploy_to_device_N shortcuts so Shift+F5 /
+	// Cmd+Shift+B keep triggering a deploy even when the iOS targets that own those
+	// shortcuts are rendered in the run-target section.
+	int device_shortcut_id = 1;
+
 	{
 		const String active = run_target_manager.get_active_target_name();
 		bool header_added = false;
@@ -209,6 +215,10 @@ void EditorRunNative::_rebuild_popup() {
 			if (entry.kind == RunTargetMenuEntry::TARGET && !entry.runnable) {
 				popup->set_item_tooltip(-1, TTRC("The device for this target is not connected."));
 			}
+			if (entry.kind == RunTargetMenuEntry::TARGET && entry.runnable && device_shortcut_id <= 4) {
+				popup->set_item_shortcut(-1, ED_GET_SHORTCUT(vformat("remote_deploy/deploy_to_device_%d", device_shortcut_id)), true);
+				device_shortcut_id += 1;
+			}
 		}
 	}
 
@@ -217,7 +227,6 @@ void EditorRunNative::_rebuild_popup() {
 	// exists), to avoid listing the same devices twice; visionOS and every other
 	// platform — and iOS itself when no run target is configured — keep their
 	// existing behavior unchanged.
-	int device_shortcut_id = 1;
 	for (int i = 0; i < EditorExport::get_singleton()->get_export_preset_count(); i++) {
 		Ref<EditorExportPreset> preset = EditorExport::get_singleton()->get_export_preset(i);
 		Ref<EditorExportPlatform> eep = preset->get_platform();
