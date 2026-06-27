@@ -288,26 +288,10 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 		device_id = runnable[0].id;
 	}
 
-	// The target remembers the signing team; the iOS export signs with the preset's
-	// `application/app_store_team_id`, and readiness reads the team from the target,
-	// so apply the target's team for the duration of this deploy and restore it
-	// afterward. This keeps readiness and the deploy in agreement without permanently
-	// rewriting the shared preset's signing team for normal exports or other targets.
-	// The deploy is synchronous, so no save scheduled by the override can observe the
-	// transient value before it is restored.
-	const Variant previous_team = preset->get("application/app_store_team_id");
-	const bool override_team = !p_target.team_id.is_empty() && String(previous_team) != p_target.team_id;
-	if (override_team) {
-		preset->set("application/app_store_team_id", p_target.team_id);
-	}
-
 	// Hand off to the existing export-to-`.xcarchive` + `devicectl` deploy path,
 	// which already passes `-allowProvisioningUpdates` so automatic signing resolves
-	// certificates, profiles, and device registration.
-	const Error run_error = platform->run_on_device(preset, device_id, p_debug_flags);
-
-	if (override_team) {
-		preset->set("application/app_store_team_id", previous_team);
-	}
-	return run_error;
+	// certificates, profiles, and device registration. The preset's
+	// `application/app_store_team_id` is the source of truth for the signing team;
+	// the run-target layer keeps readiness aligned with it rather than mutating it.
+	return platform->run_on_device(preset, device_id, p_debug_flags);
 }

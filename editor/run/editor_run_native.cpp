@@ -327,10 +327,17 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 		return OK;
 	}
 
+	// The export preset is the source of truth for the signing team. Probe (and run)
+	// against the team the deploy will actually use, so readiness can never report
+	// ready off a remembered team while the preset signs with a different one — and
+	// without mutating the shared preset.
+	RunTarget effective_target = p_target;
+	effective_target.team_id = resolved.preset->get("application/app_store_team_id");
+
 	// Surface the Doctor's next step instead of letting a deploy fail silently: if
 	// anything in the readiness ladder is unmet, show the first actionable rung and
 	// stop here so the user knows exactly what to fix.
-	const Vector<ReadinessStep> ladder = resolved.platform_adapter->probe_readiness(p_target);
+	const Vector<ReadinessStep> ladder = resolved.platform_adapter->probe_readiness(effective_target);
 	for (const ReadinessStep &step : ladder) {
 		if (step.status != ReadinessStep::OK) {
 			String message = vformat(TTR("\"%s\" is not ready to run yet.\n\n%s\n%s"), p_target.name, step.title, step.detail);
@@ -358,7 +365,7 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 		export_platform->clear_messages();
 	}
 
-	const Error run_error = resolved.platform_adapter->run(p_target, resolved.debug_flags);
+	const Error run_error = resolved.platform_adapter->run(effective_target, resolved.debug_flags);
 
 	result_dialog_log->clear();
 	if (export_platform.is_valid() && export_platform->fill_log_messages(result_dialog_log, run_error)) {
@@ -376,13 +383,17 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 Error EditorRunNative::start_run_native(int p_id) {
 	ERR_FAIL_COND_V(p_id < 0, FAILED);
 
+	// Remember the request for resume_run_native(): when a deploy is deferred because
+	// the user must first pick a main scene, EditorRunBar resumes by replaying this
+	// id, which must round-trip through the same (run-target or legacy) dispatch.
+	resume_id = p_id;
+
 	if (p_id >= RUN_TARGET_ID_BASE) {
 		return _start_run_target(p_id - RUN_TARGET_ID_BASE);
 	}
 
 	const int platform = EditorExport::decode_platform_from_id(p_id);
 	const int idx = EditorExport::decode_device_from_id(p_id);
-	resume_id = p_id;
 
 	if (!EditorNode::get_singleton()->ensure_main_scene(true)) {
 		return OK;
