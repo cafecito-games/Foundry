@@ -167,17 +167,17 @@ class GDScriptAnalyzer {
 	void analyze_final_definite_assignment_suite(const GDScriptParser::SuiteNode *p_suite,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
-			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
+			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
 	void analyze_final_definite_assignment_statement(const GDScriptParser::Node *p_statement,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
-			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
+			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
 	void check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
 	void check_final_reads_in_pattern(const GDScriptParser::PatternNode *p_pattern,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state);
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
 	void resolve_function_signature(GDScriptParser::FunctionNode *p_function, const GDScriptParser::Node *p_source = nullptr, bool p_is_lambda = false);
 	void resolve_function_body(GDScriptParser::FunctionNode *p_function, bool p_is_lambda = false);
 	void resolve_node(GDScriptParser::Node *p_node, bool p_is_root = true);
