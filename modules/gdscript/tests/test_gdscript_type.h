@@ -98,6 +98,19 @@ static GDScriptParser::DataType make_signature_builtin_type(Variant::Type p_buil
 	return type;
 }
 
+// Exposes the analyzer's private PropertyInfo decode path so the encode/decode round-trip used at the
+// MethodInfo/PropertyInfo (cross-script) boundary can be exercised directly, independent of the script
+// test runner (which parses referenced scripts in-batch and therefore never crosses the serialized
+// boundary). See the friend declaration in gdscript_analyzer.h.
+class TestGDScriptAnalyzerAccessor {
+public:
+	static GDScriptParser::DataType decode_property(const PropertyInfo &p_property) {
+		GDScriptParser parser;
+		GDScriptAnalyzer analyzer(&parser);
+		return analyzer.type_from_property(p_property);
+	}
+};
+
 static Error analyze_source(const String &p_source, bool p_strict_null_checks = false, bool p_strict_dynamic_checks = false) {
 	IgnoreWarningsScope ignore_warnings;
 	GDScriptParser parser;
@@ -574,6 +587,84 @@ TEST_CASE("[Modules][GDScript] AsyncCallable stringifies distinctly from Callabl
 	CHECK(bare_type.builtin_type == Variant::CALLABLE);
 	CHECK(bare_type.signature_is_async);
 	CHECK(bare_type.to_string() == "AsyncCallable");
+}
+
+TEST_CASE("[Modules][GDScript] AsyncCallable async marker survives the PropertyInfo boundary") {
+	// A typed AsyncCallable that crosses the MethodInfo/PropertyInfo boundary (e.g. exposed by another
+	// compiled script or round-tripped through a property hint string) must keep its async marker, so it
+	// stays distinct from a plain Callable. This exercises the encode (DataType::to_property_info) and
+	// decode (GDScriptAnalyzer::type_from_property) pair directly.
+
+	GDScriptParser::DataType async_callable = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::NIL);
+	async_callable.signature_is_async = true;
+
+	const PropertyInfo async_info = async_callable.to_property_info("handler");
+	CHECK(async_info.type == Variant::CALLABLE);
+	CHECK(async_info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+	// The async marker is encoded as a leading token on the hint string (the type name itself cannot
+	// express AsyncCallable through PropertyInfo).
+	CHECK(async_info.hint_string.begins_with("async "));
+
+	const GDScriptParser::DataType decoded_async = TestGDScriptAnalyzerAccessor::decode_property(async_info);
+	CHECK(decoded_async.builtin_type == Variant::CALLABLE);
+	CHECK(decoded_async.signature_is_async);
+	CHECK(decoded_async.has_explicit_method_signature);
+	REQUIRE(decoded_async.method_parameter_types.size() == 1);
+	CHECK(decoded_async.method_parameter_types[0].builtin_type == Variant::INT);
+
+	// A bare AsyncCallable (async marker, no explicit signature) also keeps its marker across the
+	// boundary even though it carries no signature suffix.
+	GDScriptParser::DataType bare_async = make_builtin_type(Variant::CALLABLE);
+	bare_async.signature_is_async = true;
+	const PropertyInfo bare_async_info = bare_async.to_property_info("handler");
+	CHECK(bare_async_info.type == Variant::CALLABLE);
+	CHECK(bare_async_info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+	CHECK(bare_async_info.hint_string == "async");
+	const GDScriptParser::DataType decoded_bare_async = TestGDScriptAnalyzerAccessor::decode_property(bare_async_info);
+	CHECK(decoded_bare_async.builtin_type == Variant::CALLABLE);
+	CHECK(decoded_bare_async.signature_is_async);
+	CHECK_FALSE(decoded_bare_async.has_explicit_method_signature);
+
+	// A bare (synchronous) Callable stays untyped with no hint and no marker.
+	const GDScriptParser::DataType bare_sync = make_builtin_type(Variant::CALLABLE);
+	const PropertyInfo bare_sync_info = bare_sync.to_property_info("handler");
+	CHECK(bare_sync_info.hint == PROPERTY_HINT_NONE);
+	const GDScriptParser::DataType decoded_bare_sync = TestGDScriptAnalyzerAccessor::decode_property(bare_sync_info);
+	CHECK_FALSE(decoded_bare_sync.signature_is_async);
+
+	// A plain (synchronous) Callable must not gain the marker on the same round-trip.
+	const GDScriptParser::DataType sync_callable = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::NIL);
+	const PropertyInfo sync_info = sync_callable.to_property_info("handler");
+	CHECK(sync_info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+	CHECK_FALSE(sync_info.hint_string.begins_with("async "));
+	const GDScriptParser::DataType decoded_sync = TestGDScriptAnalyzerAccessor::decode_property(sync_info);
+	CHECK(decoded_sync.builtin_type == Variant::CALLABLE);
+	CHECK_FALSE(decoded_sync.signature_is_async);
+
+	// After the round-trip the two signatures stay incompatible: an async value cannot satisfy a sync
+	// target, mirroring the in-memory rule.
+	CHECK_FALSE(GDScriptTypeCompatibility::check(decoded_sync, decoded_async).compatible);
+
+	// A nested AsyncCallable inside a Signal parameter keeps its async marker across the same boundary.
+	GDScriptParser::DataType signal_with_async = make_builtin_type(Variant::SIGNAL);
+	signal_with_async.has_method_signature = true;
+	signal_with_async.has_explicit_method_signature = true;
+	signal_with_async.method_parameter_types.push_back(async_callable);
+	signal_with_async.method_info.arguments.push_back(async_callable.to_property_info("cb"));
+
+	const PropertyInfo signal_info = signal_with_async.to_property_info("evt");
+	CHECK(signal_info.type == Variant::SIGNAL);
+	CHECK(signal_info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+	// Signals are never async, so the suffix carries the marker on the nested callable name instead.
+	CHECK_FALSE(signal_info.hint_string.begins_with("async "));
+	CHECK(signal_info.hint_string.contains("AsyncCallable"));
+
+	const GDScriptParser::DataType decoded_signal = TestGDScriptAnalyzerAccessor::decode_property(signal_info);
+	CHECK(decoded_signal.builtin_type == Variant::SIGNAL);
+	CHECK_FALSE(decoded_signal.signature_is_async);
+	REQUIRE(decoded_signal.method_parameter_types.size() == 1);
+	CHECK(decoded_signal.method_parameter_types[0].builtin_type == Variant::CALLABLE);
+	CHECK(decoded_signal.method_parameter_types[0].signature_is_async);
 }
 
 TEST_CASE("[Modules][GDScript] Async method reference infers a bare AsyncCallable type") {

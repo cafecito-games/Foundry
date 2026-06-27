@@ -38,6 +38,12 @@
 #include "core/object/ref_counted.h"
 #include "core/variant/container_type_validate.h"
 
+#ifdef TESTS_ENABLED
+namespace GDScriptTests {
+class TestGDScriptAnalyzerAccessor;
+}
+#endif // TESTS_ENABLED
+
 class GDScriptAnalyzer {
 	GDScriptParser *parser = nullptr;
 	GDScriptAutoloadIndex autoload_index;
@@ -355,4 +361,10 @@ public:
 	static bool class_exists(const StringName &p_class);
 
 	GDScriptAnalyzer(GDScriptParser *p_parser);
+
+#ifdef TESTS_ENABLED
+	// Grants unit tests access to the private PropertyInfo decode path so the encode/decode round-trip
+	// of typed callable/signal signatures can be exercised directly (see test_gdscript_type.h).
+	friend class GDScriptTests::TestGDScriptAnalyzerAccessor;
+#endif // TESTS_ENABLED
 };
