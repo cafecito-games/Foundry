@@ -245,6 +245,28 @@ public:
 	static void load_xml_buffer(const uint8_t *p_buffer, int p_size);
 	static void remove_class(const String &p_class);
 
+	// One renderable piece of a doc type's class-reference presentation. A type is
+	// broken into an ordered list of these so the renderer stays trivial and the
+	// link/recursion logic for nested containers can be unit-tested without a
+	// RichTextLabel or theme.
+	struct HelpTypeRenderSegment {
+		enum Kind {
+			TEXT, // Plain text, no hyperlink (container punctuation, synthetic wrappers, pointer types).
+			CLASS_LINK, // Hyperlink to a class help page ("#" target).
+			ENUM_LINK, // Hyperlink to an enum ("$" target).
+		};
+		Kind kind = TEXT;
+		String text; // Visible text.
+		String link; // Link target payload, without the "#"/"$" prefix.
+		bool dim = false; // Rendered with a dimmed type color (void, bitfield decoration).
+		String hint; // Optional hover tooltip.
+	};
+	// Decompose a documentation type spelling into ordered render segments,
+	// recursing through container element types (Array, Dictionary, Coroutine) with
+	// a nesting-aware split so any depth of nesting links each leaf correctly and
+	// pageless synthetic types (Coroutine[T]) never emit dead class links.
+	static Vector<HelpTypeRenderSegment> _build_type_render_segments(const String &p_type, const String &p_enum, bool p_is_bitfield, const String &p_class);
+
 	void go_to_help(const String &p_help);
 	void go_to_class(const String &p_class);
 	void update_doc();

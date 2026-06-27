@@ -43,6 +43,7 @@
 #include "tests/editor/run/test_run_target.h"
 #include "tests/editor/run/test_run_target_readiness.h"
 #include "tests/editor/run/test_run_targets_panel.h"
+#include "tests/editor/test_editor_help_type_links.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_refactor_diff_preview.h"
 #include "tests/editor/test_script_refactor_apply.h"
