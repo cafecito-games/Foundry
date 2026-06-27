@@ -526,6 +526,16 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 	return _decode_signature_type_base(text);
 }
 
+// A typed-container element hint encodes a Coroutine[T] element through the signature grammar (see
+// DataType::to_property_info's array/dictionary branches), distinct from the plain class-name leaf used
+// for every other element kind. The decoder routes such an element through _decode_signature_type so the
+// coroutine identity and phantom result T are rebuilt instead of resolving "Coroutine[...]" as a class.
+// Only the bracketed form is a coroutine: a bare "Coroutine" is an ordinary class name (the reserved
+// coroutine syntax always carries brackets), so the result-less element is encoded as "Coroutine[]".
+static bool _container_element_hint_is_coroutine(const String &p_hint) {
+	return p_hint.begins_with("Coroutine[") && p_hint.ends_with("]");
+}
+
 // A signature slot is comparison-safe across the script-API boundary when its kind survives a
 // PropertyInfo round-trip unambiguously. A user script/class surfaces as SCRIPT when rebuilt from
 // PropertyInfo but may be a CLASS handle in a local annotation, and the strict rich-slot comparator
@@ -11098,24 +11108,31 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 			GDScriptParser::DataType elem_type;
 			elem_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 
-			Variant::Type elem_builtin_type = GDScriptParser::get_builtin_type(elem_type_name);
-			if (elem_builtin_type < Variant::VARIANT_MAX) {
-				// Builtin type.
-				elem_type.kind = GDScriptParser::DataType::BUILTIN;
-				elem_type.builtin_type = elem_builtin_type;
-			} else if (class_exists(elem_type_name)) {
-				elem_type.kind = GDScriptParser::DataType::NATIVE;
-				elem_type.builtin_type = Variant::OBJECT;
-				elem_type.native_type = elem_type_name;
-			} else if (ScriptServer::is_global_class(elem_type_name)) {
-				// Just load this as it shouldn't be a GDScript.
-				Ref<Script> script = ResourceLoader::load(ScriptServer::get_global_class_path(elem_type_name));
-				elem_type.kind = GDScriptParser::DataType::SCRIPT;
-				elem_type.builtin_type = Variant::OBJECT;
-				elem_type.native_type = script->get_instance_base_type();
-				elem_type.script_type = script;
+			if (_container_element_hint_is_coroutine(p_property.hint_string)) {
+				// A Coroutine[T] array element is encoded via the signature grammar (see to_property_info),
+				// so decode it through the shared coroutine grammar to recover the coroutine identity and
+				// result type T instead of resolving "Coroutine[...]" as a bogus class name.
+				elem_type = _decode_signature_type(p_property.hint_string);
 			} else {
-				ERR_FAIL_V_MSG(result, "Could not find element type from property hint of a typed array.");
+				Variant::Type elem_builtin_type = GDScriptParser::get_builtin_type(elem_type_name);
+				if (elem_builtin_type < Variant::VARIANT_MAX) {
+					// Builtin type.
+					elem_type.kind = GDScriptParser::DataType::BUILTIN;
+					elem_type.builtin_type = elem_builtin_type;
+				} else if (class_exists(elem_type_name)) {
+					elem_type.kind = GDScriptParser::DataType::NATIVE;
+					elem_type.builtin_type = Variant::OBJECT;
+					elem_type.native_type = elem_type_name;
+				} else if (ScriptServer::is_global_class(elem_type_name)) {
+					// Just load this as it shouldn't be a GDScript.
+					Ref<Script> script = ResourceLoader::load(ScriptServer::get_global_class_path(elem_type_name));
+					elem_type.kind = GDScriptParser::DataType::SCRIPT;
+					elem_type.builtin_type = Variant::OBJECT;
+					elem_type.native_type = script->get_instance_base_type();
+					elem_type.script_type = script;
+				} else {
+					ERR_FAIL_V_MSG(result, "Could not find element type from property hint of a typed array.");
+				}
 			}
 			elem_type.is_constant = false;
 			result.set_container_element_type(0, elem_type);
@@ -11126,7 +11143,12 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 			key_elem_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 
 			Variant::Type key_elem_builtin_type = GDScriptParser::get_builtin_type(key_elem_type_name);
-			if (key_elem_builtin_type < Variant::VARIANT_MAX) {
+			if (_container_element_hint_is_coroutine(key_elem_type_name)) {
+				// A Coroutine[T] dictionary key is encoded via the signature grammar (see to_property_info),
+				// so decode it through the shared coroutine grammar to recover the coroutine identity and
+				// result type T instead of resolving it as a bogus class name.
+				key_elem_type = _decode_signature_type(key_elem_type_name);
+			} else if (key_elem_builtin_type < Variant::VARIANT_MAX) {
 				// Builtin type.
 				key_elem_type.kind = GDScriptParser::DataType::BUILTIN;
 				key_elem_type.builtin_type = key_elem_builtin_type;
@@ -11151,7 +11173,12 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 			value_elem_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 
 			Variant::Type value_elem_builtin_type = GDScriptParser::get_builtin_type(value_elem_type_name);
-			if (value_elem_builtin_type < Variant::VARIANT_MAX) {
+			if (_container_element_hint_is_coroutine(value_elem_type_name)) {
+				// A Coroutine[T] dictionary value is encoded via the signature grammar (see to_property_info),
+				// so decode it through the shared coroutine grammar to recover the coroutine identity and
+				// result type T instead of resolving it as a bogus class name.
+				value_elem_type = _decode_signature_type(value_elem_type_name);
+			} else if (value_elem_builtin_type < Variant::VARIANT_MAX) {
 				// Builtin type.
 				value_elem_type.kind = GDScriptParser::DataType::BUILTIN;
 				value_elem_type.builtin_type = value_elem_builtin_type;
