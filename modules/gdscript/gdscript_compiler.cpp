@@ -105,6 +105,23 @@ static bool _datatype_contains_type_parameter(const GDScriptParser::DataType &p_
 	return false;
 }
 
+static bool _datatype_contains_coroutine(const GDScriptParser::DataType &p_datatype) {
+	if (p_datatype.is_coroutine) {
+		return true;
+	}
+	for (const GDScriptParser::DataType &element : p_datatype.container_element_types) {
+		if (_datatype_contains_coroutine(element)) {
+			return true;
+		}
+	}
+	for (const GDScriptParser::DataType &argument : p_datatype.type_arguments) {
+		if (_datatype_contains_coroutine(argument)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::DataType &p_datatype, GDScript *p_owner, bool p_handle_metatype) {
 	if (!p_datatype.is_set() || !p_datatype.is_hard_type() || p_datatype.is_coroutine) {
 		return GDScriptDataType();
@@ -247,7 +264,12 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	// still enforces element types statically.
 	bool erases_container_element = false;
 	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
-		if (_datatype_contains_type_parameter(p_datatype.get_container_element_type_or_variant(i))) {
+		const GDScriptParser::DataType element = p_datatype.get_container_element_type_or_variant(i);
+		// Coroutine[T] is a phantom type whose runtime value is a GDScriptFunctionState, so a
+		// container of coroutines (`Array[Coroutine[String]]`) erases its element type to stay an
+		// untyped container at runtime, matching the erased type-parameter handling. The analyzer
+		// still enforces the element type statically.
+		if (_datatype_contains_type_parameter(element) || _datatype_contains_coroutine(element)) {
 			erases_container_element = true;
 			break;
 		}

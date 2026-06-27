@@ -178,6 +178,24 @@ static GDScriptParser::DataType make_callable_type(const MethodInfo &p_info, con
 	return type;
 }
 
+// Wraps a result type T into the honest awaitable type Coroutine[T]. The principal identity is the
+// native GDScriptFunctionState (the value an unawaited async call actually has at runtime), skinned
+// as "Coroutine" in to_string(); is_coroutine stays the discriminator reused by await / missing-await,
+// and the phantom result type lives in container_element_types[0].
+static GDScriptParser::DataType make_coroutine_type(const GDScriptParser::DataType &p_result_type) {
+	GDScriptParser::DataType type;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.kind = GDScriptParser::DataType::NATIVE;
+	type.builtin_type = Variant::OBJECT;
+	type.native_type = SNAME("GDScriptFunctionState");
+	type.is_coroutine = true;
+	GDScriptParser::DataType result_type = p_result_type;
+	result_type.is_constant = false;
+	result_type.is_meta_type = false;
+	type.set_container_element_type(0, result_type);
+	return type;
+}
+
 static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info) {
 	GDScriptParser::DataType type;
 	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -1536,6 +1554,22 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				}
 			}
 		}
+	}
+
+	if (!result.is_set() && p_type->is_coroutine) {
+		// Coroutine[T] is recognized in annotation position as a source-level skin over
+		// GDScriptFunctionState rather than as a real class. The parser guarantees the bracketed
+		// form carries exactly one result type in container_types[0]; route it into the phantom
+		// result slot via make_coroutine_type.
+		if (p_type->type_chain.size() != 1 || first != SNAME("Coroutine") || p_type->container_types.size() != 1) {
+			push_error("Coroutine[T] expects exactly one result type argument.", p_type);
+			return bad_type;
+		}
+		GDScriptParser::DataType result_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
+		if (reject_nested_type_handle(result_type, p_type->get_container_type_or_null(0))) {
+			return bad_type;
+		}
+		return finalize_datatype(make_coroutine_type(result_type));
 	}
 
 	if (!result.is_set() && first == SNAME("Type")) {
@@ -4278,6 +4312,13 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		GDScriptParser::ClassNode *parent_function_class = nullptr;
 		const bool has_parent_signature = !p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class);
 
+		// get_function_signature reports an async parent's return as Coroutine[T], but a function's own
+		// declared return type is the raw T. Async-ness is checked separately via METHOD_FLAG_ASYNC, so
+		// compare (and render) the underlying result type to keep override covariance honest.
+		if (parent_return_type.is_coroutine && parent_return_type.has_container_element_type(0)) {
+			parent_return_type = parent_return_type.get_container_element_type(0);
+		}
+
 		// A final method cannot be overridden in a subclass. Enforced in all builds (not just
 		// editor/tools), mirroring final-class enforcement, since it is a language rule rather
 		// than an editor diagnostic, and reported independently of signature compatibility so the
@@ -6203,16 +6244,36 @@ void GDScriptAnalyzer::reduce_await(GDScriptParser::AwaitNode *p_await) {
 		reduce_expression(p_await->to_await);
 	}
 
-	GDScriptParser::DataType await_type = p_await->to_await->get_datatype();
-	// We cannot infer the type of the result of waiting for a signal.
-	if (await_type.is_hard_type() && await_type.kind == GDScriptParser::DataType::BUILTIN && await_type.builtin_type == Variant::SIGNAL) {
+	GDScriptParser::DataType operand_type = p_await->to_await->get_datatype();
+	GDScriptParser::DataType await_type = operand_type;
+	if (operand_type.is_coroutine) {
+		// Awaiting a Coroutine[T] yields T from container_element_types[0]; a coroutine without a
+		// recorded result type (e.g. a bare AsyncCallable.call()) unwraps to Variant. This is a
+		// single-level unwrap: await Coroutine[Coroutine[U]] yields Coroutine[U].
+		if (operand_type.has_container_element_type(0)) {
+			await_type = operand_type.get_container_element_type(0);
+			if (operand_type.is_nullable && !await_type.is_variant() &&
+					!(await_type.kind == GDScriptParser::DataType::BUILTIN && await_type.builtin_type == Variant::NIL)) {
+				// Awaiting a nullable coroutine can observe a null handle (`await null` yields null at
+				// runtime), so the awaited result is nullable too.
+				await_type.is_nullable = true;
+			}
+		} else {
+			await_type = GDScriptParser::DataType();
+			await_type.kind = GDScriptParser::DataType::VARIANT;
+		}
+	} else if (operand_type.is_hard_type() && operand_type.kind == GDScriptParser::DataType::BUILTIN && operand_type.builtin_type == Variant::SIGNAL) {
+		// We cannot infer the type of the result of waiting for a signal.
 		await_type.kind = GDScriptParser::DataType::VARIANT;
 		await_type.type_source = GDScriptParser::DataType::UNDETECTED;
 	} else if (p_await->to_await->is_constant) {
 		p_await->is_constant = p_await->to_await->is_constant;
 		p_await->reduced_value = p_await->to_await->reduced_value;
+		// Awaiting a plain value yields it unchanged; a non-coroutine operand never carries the flag.
+		await_type.is_coroutine = false;
 	}
-	await_type.is_coroutine = false;
+	// The coroutine branch keeps the unwrapped result's own flag, so awaiting Coroutine[Coroutine[U]]
+	// correctly stays a Coroutine[U]; only the non-coroutine branches above can leave a stale flag.
 	p_await->set_datatype(await_type);
 
 #ifdef DEBUG_ENABLED
@@ -6394,7 +6455,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 #ifdef DEBUG_ENABLED
 		const auto warn_return_value_discarded = [&]() {
 			const GDScriptParser::DataType &return_type = p_call->get_datatype();
-			if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL) {
+			if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL && !return_type.is_coroutine) {
 				parser->push_warning(p_call, GDScriptWarning::RETURN_VALUE_DISCARDED, p_call->function_name);
 			}
 		};
@@ -6995,7 +7056,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 
 #ifdef DEBUG_ENABLED
-		if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL &&
+		if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL && !return_type.is_coroutine &&
 				!(p_call->is_super && p_call->function_name == GDScriptLanguage::get_singleton()->strings._init)) {
 			parser->push_warning(p_call, GDScriptWarning::RETURN_VALUE_DISCARDED, p_call->function_name);
 		}
@@ -7094,14 +7155,12 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 	}
 
-	if (call_type.is_coroutine && !p_is_await) {
-		if (p_is_root) {
+	if (call_type.is_coroutine && !p_is_await && p_is_root) {
+		// Honest Coroutine[T] typing makes a held or passed coroutine well-typed, so only a discarded
+		// coroutine *statement* (root position) still warns about a probably-forgotten "await".
 #ifdef DEBUG_ENABLED
-			parser->push_warning(p_call, GDScriptWarning::MISSING_AWAIT);
+		parser->push_warning(p_call, GDScriptWarning::MISSING_AWAIT);
 #endif // DEBUG_ENABLED
-		} else {
-			push_error(vformat(R"*(Function "%s()" is a coroutine, so it must be called with "await".)*", p_call->function_name), p_call);
-		}
 	}
 
 	p_call->set_datatype(call_type);
@@ -8972,6 +9031,13 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 		const bool was_meta_type = base.is_meta_type;
 		base = base.type_parameter_bound[0];
 		base.is_meta_type = was_meta_type;
+	}
+
+	if (base.is_coroutine) {
+		// Coroutine[T] is opaque: its only source operation is await, so it exposes no members. Leave
+		// the identifier unresolved instead of resolving against the GDScriptFunctionState skin, which
+		// is neither registered nor exposed in ClassDB.
+		return;
 	}
 
 	StringName name = p_identifier->name;
@@ -11018,7 +11084,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				// Synchronously invoking an AsyncCallable yields a coroutine, so the result must be awaited.
 				// Deferred/RPC dispatches do not return the callee's value, so they stay non-coroutine.
 				if (is_callable_call && p_base_type.signature_is_async) {
-					r_return_type.is_coroutine = true;
+					r_return_type = make_coroutine_type(r_return_type);
 				}
 				if (is_callable_rpc_id) {
 					r_par_types.push_back(type_from_property(PropertyInfo(Variant::INT, "peer_id"), true));
@@ -11036,7 +11102,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				r_return_type = p_base_type.method_return_type.is_empty() ? type_from_property(PropertyInfo(Variant::NIL, "")) : p_base_type.method_return_type[0];
 				// As with call(), invoking an AsyncCallable through callv() yields a coroutine.
 				if (p_base_type.signature_is_async) {
-					r_return_type.is_coroutine = true;
+					r_return_type = make_coroutine_type(r_return_type);
 				}
 				validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts, p_base_type.method_unbound_argument_count);
 				return true;
@@ -11295,7 +11361,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				// AsyncCallable[[...], ...] case; this covers the signatureless `var cb: AsyncCallable`.
 				if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.signature_is_async &&
 						(p_function == SNAME("call") || p_function == SNAME("callv"))) {
-					r_return_type.is_coroutine = true;
+					r_return_type = make_coroutine_type(r_return_type);
 				}
 				// Cannot use non-const methods on enums.
 				if (!r_method_flags.has_flag(METHOD_FLAG_STATIC) && was_enum && !(E.flags & METHOD_FLAG_CONST)) {
@@ -11305,6 +11371,13 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 			}
 		}
 
+		return false;
+	}
+
+	if (p_base_type.is_coroutine) {
+		// Coroutine[T] is opaque: its only source operation is await, so it exposes no callable
+		// members. Report it as "not found" via the caller's generic diagnostic rather than falling
+		// through to native resolution, which would leak the GDScriptFunctionState skin.
 		return false;
 	}
 
@@ -11419,7 +11492,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		}
 		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function);
 		r_return_type.is_meta_type = false;
-		r_return_type.is_coroutine = found_function->is_coroutine;
+		if (found_function->is_coroutine) {
+			r_return_type = make_coroutine_type(r_return_type);
+		}
 
 		return true;
 	}
@@ -11657,7 +11732,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 bool GDScriptAnalyzer::function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
 	r_return_type = type_from_property(p_info.return_val);
-	r_return_type.is_coroutine = (p_info.flags & METHOD_FLAG_ASYNC) != 0;
+	if ((p_info.flags & METHOD_FLAG_ASYNC) != 0) {
+		r_return_type = make_coroutine_type(r_return_type);
+	}
 	r_default_arg_count = p_info.default_arguments.size();
 	r_method_flags = p_info.flags;
 

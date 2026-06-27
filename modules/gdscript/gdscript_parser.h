@@ -261,6 +261,12 @@ public:
 					equal = builtin_type == p_other.builtin_type && container_element_types == p_other.container_element_types;
 					break;
 				case NATIVE:
+					// Coroutine[T] is a NATIVE skin over GDScriptFunctionState whose identity also
+					// depends on the phantom result type, so two coroutines differ when their result
+					// types differ and a coroutine is never equal to a plain native of the same class.
+					equal = native_type == p_other.native_type && is_coroutine == p_other.is_coroutine &&
+							container_element_types == p_other.container_element_types;
+					break;
 				case ENUM: // Enums use native_type to identify the enum and its base class.
 					equal = native_type == p_other.native_type;
 					break;
