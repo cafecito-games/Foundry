@@ -33,6 +33,12 @@
 #ifdef TOOLS_ENABLED
 
 #include "core/error/error_macros.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+#include "core/os/os.h"
+#include "core/templates/local_vector.h"
+
+#include <stdio.h>
 
 static String binary_operator_text(GDScriptParser::BinaryOpNode::OpType p_operation) {
 	switch (p_operation) {
@@ -1719,6 +1725,237 @@ void GDScriptPrinter::print_type_test(const GDScriptParser::TypeTestNode *p_test
 	print_operand(FPREC_TYPE_TEST, p_test->operand);
 	write(" is ");
 	print_type(p_test->test_type);
+}
+
+static String read_all_stdin() {
+	Vector<uint8_t> bytes;
+	uint8_t buffer[4096];
+	size_t read = 0;
+	while ((read = fread(buffer, 1, sizeof(buffer), stdin)) > 0) {
+		int previous = bytes.size();
+		bytes.resize(previous + (int)read);
+		memcpy(bytes.ptrw() + previous, buffer, read);
+	}
+	String result;
+	if (!bytes.is_empty()) {
+		result.append_utf8((const char *)bytes.ptr(), bytes.size());
+	}
+	return result;
+}
+
+void GDScriptFormatterCLI::print_raw(const String &p_text) {
+	const CharString utf8 = p_text.utf8();
+	if (utf8.length() > 0) {
+		fwrite(utf8.get_data(), 1, utf8.length(), stdout);
+	}
+	fflush(stdout);
+}
+
+GDScriptFormatterCLI::Options GDScriptFormatterCLI::parse_options(const List<String> &p_cmdline_args) {
+	Options options;
+	bool reached_command = false;
+	for (const String &argument : p_cmdline_args) {
+		if (!reached_command) {
+			if (argument == "--gdscript-format") {
+				reached_command = true;
+			}
+			continue;
+		}
+		if (argument == "--write" || argument == "-w") {
+			options.mode = MODE_WRITE;
+		} else if (argument == "--check") {
+			options.mode = MODE_CHECK;
+		} else if (argument == "--diff" || argument == "-d") {
+			options.mode = MODE_DIFF;
+		} else if (argument == "-") {
+			options.read_stdin = true;
+		} else {
+			options.paths.push_back(argument);
+		}
+	}
+	if (options.paths.is_empty()) {
+		options.read_stdin = true;
+	}
+	return options;
+}
+
+void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files) {
+	Ref<DirAccess> dir = DirAccess::open(p_dir);
+	if (dir.is_null()) {
+		return;
+	}
+	dir->list_dir_begin();
+	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+		if (entry == "." || entry == "..") {
+			continue;
+		}
+		const String full_path = p_dir.path_join(entry);
+		if (dir->current_is_dir()) {
+			collect_gd_scripts_recursive(full_path, r_files);
+		} else if (entry.get_extension() == "gd") {
+			r_files.push_back(full_path);
+		}
+	}
+	dir->list_dir_end();
+}
+
+Vector<String> GDScriptFormatterCLI::collect_files(const Vector<String> &p_paths, bool &r_had_error) {
+	Vector<String> files;
+	for (const String &path : p_paths) {
+		if (DirAccess::exists(path)) {
+			collect_gd_scripts_recursive(path, files);
+		} else if (FileAccess::exists(path)) {
+			files.push_back(path);
+		} else {
+			fprintf(stderr, "%s: no such file or directory\n", path.utf8().get_data());
+			r_had_error = true;
+		}
+	}
+	return files;
+}
+
+String GDScriptFormatterCLI::make_unified_diff(const String &p_path, const String &p_original, const String &p_formatted) {
+	const Vector<String> a = p_original.split("\n");
+	const Vector<String> b = p_formatted.split("\n");
+	const int n = a.size();
+	const int m = b.size();
+
+	// Longest common subsequence over lines; the table drives a simple unified
+	// diff that emits the whole file as a single hunk.
+	LocalVector<int> table;
+	table.resize((n + 1) * (m + 1));
+	for (uint32_t i = 0; i < table.size(); i++) {
+		table[i] = 0;
+	}
+	const auto at = [&](int p_i, int p_j) -> int & { return table[p_i * (m + 1) + p_j]; };
+	for (int i = n - 1; i >= 0; i--) {
+		for (int j = m - 1; j >= 0; j--) {
+			if (a[i] == b[j]) {
+				at(i, j) = at(i + 1, j + 1) + 1;
+			} else {
+				at(i, j) = MAX(at(i + 1, j), at(i, j + 1));
+			}
+		}
+	}
+
+	String result;
+	result += "--- " + p_path + "\n";
+	result += "+++ " + p_path + "\n";
+	result += "@@ -1," + itos(n) + " +1," + itos(m) + " @@\n";
+	int i = 0;
+	int j = 0;
+	while (i < n && j < m) {
+		if (a[i] == b[j]) {
+			result += " " + a[i] + "\n";
+			i++;
+			j++;
+		} else if (at(i + 1, j) >= at(i, j + 1)) {
+			result += "-" + a[i] + "\n";
+			i++;
+		} else {
+			result += "+" + b[j] + "\n";
+			j++;
+		}
+	}
+	while (i < n) {
+		result += "-" + a[i] + "\n";
+		i++;
+	}
+	while (j < m) {
+		result += "+" + b[j] + "\n";
+		j++;
+	}
+	return result;
+}
+
+void GDScriptFormatterCLI::run_from_cmdline() {
+	const Options options = parse_options(OS::get_singleton()->get_cmdline_args());
+
+	bool needs_change = false;
+	bool had_error = false;
+
+	if (options.read_stdin) {
+		const String source = read_all_stdin();
+		GDScriptFormatter formatter;
+		GDScriptFormatter::Result result;
+		if (formatter.format(source, "<stdin>", result) != OK) {
+			fprintf(stderr, "<stdin>:%d:%d: %s\n", result.error_line, result.error_column, result.error_message.utf8().get_data());
+			OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+			return;
+		}
+		const bool differs = result.formatted != source;
+		switch (options.mode) {
+			case MODE_CHECK:
+				if (differs) {
+					fprintf(stdout, "<stdin>\n");
+				}
+				break;
+			case MODE_DIFF:
+				if (differs) {
+					print_raw(make_unified_diff("<stdin>", source, result.formatted));
+				}
+				break;
+			default:
+				print_raw(result.formatted);
+				break;
+		}
+		const bool failure = (options.mode == MODE_CHECK || options.mode == MODE_DIFF) && differs;
+		OS::get_singleton()->set_exit_code(failure ? EXIT_FAILURE : EXIT_SUCCESS);
+		return;
+	}
+
+	const Vector<String> files = collect_files(options.paths, had_error);
+	for (const String &file : files) {
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(file, &read_error);
+		if (read_error != OK) {
+			fprintf(stderr, "%s: could not read file\n", file.utf8().get_data());
+			had_error = true;
+			continue;
+		}
+		GDScriptFormatter formatter;
+		GDScriptFormatter::Result result;
+		if (formatter.format(source, file, result) != OK) {
+			fprintf(stderr, "%s:%d:%d: %s\n", file.utf8().get_data(),
+					result.error_line, result.error_column, result.error_message.utf8().get_data());
+			had_error = true;
+			continue;
+		}
+		const bool differs = result.formatted != source;
+		if (differs) {
+			needs_change = true;
+		}
+		switch (options.mode) {
+			case MODE_STDOUT:
+				print_raw(result.formatted);
+				break;
+			case MODE_WRITE:
+				if (differs) {
+					Ref<FileAccess> output = FileAccess::open(file, FileAccess::WRITE);
+					if (output.is_null()) {
+						fprintf(stderr, "%s: could not write file\n", file.utf8().get_data());
+						had_error = true;
+					} else {
+						output->store_string(result.formatted);
+					}
+				}
+				break;
+			case MODE_CHECK:
+				if (differs) {
+					fprintf(stdout, "%s\n", file.utf8().get_data());
+				}
+				break;
+			case MODE_DIFF:
+				if (differs) {
+					print_raw(make_unified_diff(file, source, result.formatted));
+				}
+				break;
+		}
+	}
+	fflush(stdout);
+
+	const bool failure = had_error || ((options.mode == MODE_CHECK || options.mode == MODE_DIFF) && needs_change);
+	OS::get_singleton()->set_exit_code(failure ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
 #endif // TOOLS_ENABLED

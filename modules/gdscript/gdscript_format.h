@@ -192,4 +192,35 @@ private:
 	void print_type_test(const GDScriptParser::TypeTestNode *p_test);
 };
 
+// Headless command driving GDScriptFormatter over files, directories, and stdin
+// with CI-friendly exit codes. Registered as the `--gdscript-format` test command
+// and dispatched from the test-command entrypoint.
+class GDScriptFormatterCLI {
+public:
+	enum Mode {
+		MODE_STDOUT, // Default: write formatted text to stdout.
+		MODE_WRITE, // Rewrite each file in place.
+		MODE_CHECK, // List files that would change; exit non-zero if any differ.
+		MODE_DIFF, // Print a unified diff; exit non-zero if any differ.
+	};
+
+	struct Options {
+		Mode mode = MODE_STDOUT;
+		Vector<String> paths;
+		bool read_stdin = false;
+	};
+
+	static void run_from_cmdline();
+
+	// Parses the formatter arguments that follow `--gdscript-format`. Exposed for
+	// unit testing of the pure argument/mode parsing (no process side effects).
+	static Options parse_options(const List<String> &p_cmdline_args);
+
+private:
+	static Vector<String> collect_files(const Vector<String> &p_paths, bool &r_had_error);
+	static void collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files);
+	static String make_unified_diff(const String &p_path, const String &p_original, const String &p_formatted);
+	static void print_raw(const String &p_text);
+};
+
 #endif // TOOLS_ENABLED

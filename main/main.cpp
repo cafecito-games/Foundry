@@ -966,7 +966,8 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		// cleanly); accept it as a standalone flag too, for backwards compatibility.
 		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
 		const bool is_test_command = strcmp(argv[x], "--gdscript-generate-tests") == 0;
-		if (is_test || is_test_command) {
+		const bool is_format_command = strcmp(argv[x], "--gdscript-format") == 0;
+		if (is_test || is_test_command || is_format_command) {
 			tests_need_run = true;
 #ifdef TESTS_ENABLED
 			// TODO: need to come up with different test contexts.
