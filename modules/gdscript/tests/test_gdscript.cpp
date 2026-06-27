@@ -88,6 +88,24 @@ TEST_CASE("[Modules][GDScript] Tokenizer emits ABSTRACT for the abstract keyword
 	CHECK(token.type == GDScriptTokenizer::Token::ABSTRACT);
 }
 
+TEST_CASE("[Modules][GDScript] ABSTRACT keyword is still valid as a node name") {
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code("abstract");
+	GDScriptTokenizer::Token token = tokenizer.scan();
+	CHECK(token.type == GDScriptTokenizer::Token::ABSTRACT);
+	CHECK(token.is_node_name());
+
+	// `$abstract` must keep resolving to a node named `abstract` rather than
+	// producing a parse error now that `abstract` is a keyword.
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+func _ready():
+	return $abstract
+)",
+			"user://abstract_node_name.gd", false);
+	CHECK_EQ(err, OK);
+}
+
 static PackedStringArray parse_source_errors(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://namespace_import_test.gd", false);

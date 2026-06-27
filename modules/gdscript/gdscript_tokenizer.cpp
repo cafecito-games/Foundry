@@ -219,6 +219,7 @@ bool GDScriptTokenizer::Token::is_node_name() const {
 	// This is meant to allow keywords with the $ notation, but not as general identifiers.
 	switch (type) {
 		case IDENTIFIER:
+		case ABSTRACT:
 		case AND:
 		case AS:
 		case ASSERT:
