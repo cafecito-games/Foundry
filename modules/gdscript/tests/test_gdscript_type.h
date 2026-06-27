@@ -122,6 +122,24 @@ public:
 		GDScriptAnalyzer analyzer(&parser);
 		return analyzer.type_from_property(p_property);
 	}
+
+	// Resolves the call-result return type the analyzer derives for a method exposed through MethodInfo
+	// (the cross-script boundary), including the METHOD_FLAG_ASYNC coroutine wrap.
+	static GDScriptParser::DataType method_return_type(const PropertyInfo &p_return_val, bool p_async) {
+		GDScriptParser parser;
+		GDScriptAnalyzer analyzer(&parser);
+		MethodInfo info;
+		info.return_val = p_return_val;
+		if (p_async) {
+			info.flags |= METHOD_FLAG_ASYNC;
+		}
+		GDScriptParser::DataType return_type;
+		List<GDScriptParser::DataType> parameter_types;
+		int default_argument_count = 0;
+		BitField<MethodFlags> method_flags;
+		analyzer.function_signature_from_info(info, return_type, parameter_types, default_argument_count, method_flags);
+		return return_type;
+	}
 };
 
 static Error analyze_source(const String &p_source, bool p_strict_null_checks = false, bool p_strict_dynamic_checks = false) {
@@ -751,6 +769,37 @@ TEST_CASE("[Modules][GDScript] Coroutine result type survives the PropertyInfo b
 	const GDScriptParser::DataType decoded_native = TestGDScriptAnalyzerAccessor::decode_property(native_info);
 	CHECK(GDScriptTypeCompatibility::check(coroutine_native, decoded_native).compatible);
 	CHECK(GDScriptTypeCompatibility::check(decoded_native, coroutine_native).compatible);
+}
+
+TEST_CASE("[Modules][GDScript] Async MethodInfo wraps the declared return type in a coroutine") {
+	// METHOD_FLAG_ASYNC means the call result is Coroutine[declared return type]. The declared return type
+	// lives in MethodInfo::return_val, so the wrap is unconditional, mirroring the in-memory async call
+	// site. An async method declared `-> String` yields Coroutine[String]; one declared `-> Coroutine[T]`
+	// yields Coroutine[Coroutine[T]] (the wrap must not be suppressed just because the declared return
+	// already decodes as a coroutine via PROPERTY_HINT_COROUTINE_TYPE), while a synchronous method that
+	// returns a coroutine handle is not re-wrapped.
+	const PropertyInfo string_return = make_builtin_type(Variant::STRING).to_property_info("");
+	const GDScriptParser::DataType async_string = TestGDScriptAnalyzerAccessor::method_return_type(string_return, true);
+	CHECK(async_string.is_coroutine);
+	REQUIRE(async_string.has_container_element_type(0));
+	CHECK(async_string.get_container_element_type(0).builtin_type == Variant::STRING);
+	CHECK(async_string.to_string() == "Coroutine[String]");
+
+	const PropertyInfo coroutine_return = make_coroutine_type(make_builtin_type(Variant::STRING)).to_property_info("");
+	const GDScriptParser::DataType async_coroutine = TestGDScriptAnalyzerAccessor::method_return_type(coroutine_return, true);
+	CHECK(async_coroutine.is_coroutine);
+	REQUIRE(async_coroutine.has_container_element_type(0));
+	const GDScriptParser::DataType inner = async_coroutine.get_container_element_type(0);
+	CHECK(inner.is_coroutine);
+	REQUIRE(inner.has_container_element_type(0));
+	CHECK(inner.get_container_element_type(0).builtin_type == Variant::STRING);
+	CHECK(async_coroutine.to_string() == "Coroutine[Coroutine[String]]");
+
+	const GDScriptParser::DataType sync_coroutine = TestGDScriptAnalyzerAccessor::method_return_type(coroutine_return, false);
+	CHECK(sync_coroutine.is_coroutine);
+	REQUIRE(sync_coroutine.has_container_element_type(0));
+	CHECK(sync_coroutine.get_container_element_type(0).builtin_type == Variant::STRING);
+	CHECK(sync_coroutine.to_string() == "Coroutine[String]");
 }
 
 TEST_CASE("[Modules][GDScript] Async method reference infers a bare AsyncCallable type") {

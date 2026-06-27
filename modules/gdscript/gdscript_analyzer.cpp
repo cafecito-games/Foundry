@@ -11766,9 +11766,10 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 bool GDScriptAnalyzer::function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
 	r_return_type = type_from_property(p_info.return_val);
-	// METHOD_FLAG_ASYNC wraps a bare declared return type T into Coroutine[T]. Guard against double
-	// wrapping in case the return type already round-tripped as a coroutine via PROPERTY_HINT_COROUTINE_TYPE.
-	if ((p_info.flags & METHOD_FLAG_ASYNC) != 0 && !r_return_type.is_coroutine) {
+	// METHOD_FLAG_ASYNC wraps the declared return type into Coroutine[T]. MethodInfo stores the declared
+	// return type in return_val, so this wraps unconditionally to mirror the in-memory async call-site
+	// path: an async method declared `-> Coroutine[T]` yields Coroutine[Coroutine[T]], same as locally.
+	if ((p_info.flags & METHOD_FLAG_ASYNC) != 0) {
 		r_return_type = make_coroutine_type(r_return_type);
 	}
 	r_default_arg_count = p_info.default_arguments.size();
