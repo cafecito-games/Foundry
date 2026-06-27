@@ -150,16 +150,6 @@ class GDScriptAnalyzer {
 		STATIC_MEMBER,
 		LOCAL,
 	};
-	// The `final` variable nodes supplied by the traits applied to the class whose flattened trait
-	// bodies are currently being scanned (instance finals during the member pass, static finals during
-	// the static pass), including ones the implementer shadows. A flattened trait body resolves member
-	// references against the trait's own AST, so a reference that resolves to one of these nodes carries
-	// a stale finality (it may name a slot the implementer shadowed to a mutable member); a non-`self`
-	// write through it must be resolved by name rather than flagged via that source. A reference to any
-	// *other* final node (a genuinely external or inherited final that merely shares a name) is reliable
-	// and must still be flagged. Populated for the duration of `check_final_member_assignments` /
-	// `check_final_static_assignments` and otherwise empty.
-	HashSet<const GDScriptParser::VariableNode *> flattened_trait_final_nodes;
 	void check_final_member_assignments(GDScriptParser::ClassNode *p_class);
 	void check_final_static_assignments(GDScriptParser::ClassNode *p_class);
 	void check_final_local_assignments(GDScriptParser::ClassNode *p_class);
