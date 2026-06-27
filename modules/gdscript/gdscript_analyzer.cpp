@@ -1043,6 +1043,21 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 		return ERR_PARSE_ERROR;
 	}
 
+	// A final class cannot be extended. Covers every extend form: a named/inner base
+	// (CLASS) and a cross-file compiled base (SCRIPT).
+	bool base_is_final = false;
+	if (result.kind == GDScriptParser::DataType::CLASS && result.class_type != nullptr) {
+		base_is_final = result.class_type->is_final;
+	} else if (result.kind == GDScriptParser::DataType::SCRIPT) {
+		Ref<GDScript> base_script = result.script_type;
+		base_is_final = base_script.is_valid() && base_script->is_final();
+	}
+	if (base_is_final) {
+		const GDScriptParser::Node *source = p_class->extends.is_empty() ? static_cast<const GDScriptParser::Node *>(p_class) : p_class->extends[0];
+		push_error(vformat(R"(Cannot extend final class "%s".)", result.to_string()), source);
+		return ERR_PARSE_ERROR;
+	}
+
 	// Check for cyclic inheritance.
 	const GDScriptParser::ClassNode *base_class = result.class_type;
 	while (base_class) {

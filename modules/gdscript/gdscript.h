@@ -94,6 +94,7 @@ class GDScript : public Script {
 	bool valid = false;
 	bool reloading = false;
 	bool _is_abstract = false;
+	bool _is_final = false;
 	bool _is_trait_type = false;
 	StringName trait_type_name;
 
@@ -420,6 +421,7 @@ public:
 
 	bool is_tool() const override { return tool; }
 	bool is_abstract() const override { return _is_abstract; }
+	bool is_final() const { return _is_final; }
 	bool is_trait_type() const override { return _is_trait_type; }
 	StringName get_trait_type_name() const override { return trait_type_name; }
 	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments, Vector<bool> &r_argument_bound) const override;

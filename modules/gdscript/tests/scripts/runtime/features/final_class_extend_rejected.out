@@ -1,0 +1,4 @@
+GDTEST_RUNTIME_ERROR
+>> SCRIPT ERROR at res://runtime/features/final_derived.notest.gd:1 on GDScript::reload(): Parse Error: Cannot extend final class "res://runtime/features/final_base.notest.gd".
+>> ERROR: Failed to load script "res://runtime/features/final_derived.notest.gd" with error "Parse error".
+derived loaded: true
