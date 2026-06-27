@@ -1354,14 +1354,57 @@ abstract abstract func run() -> void
 			R"(The "abstract" modifier was already specified.)");
 
 	check_parse_source_error(R"(
-abstract async func run() -> void
-)",
-			R"(The "abstract" and "async" modifiers cannot be combined.)");
-
-	check_parse_source_error(R"(
 static signal triggered
 )",
 			R"(The "static" modifier cannot be applied to signals.)");
+}
+
+TEST_CASE("[Modules][GDScript] Parser accepts keyword abstract async functions") {
+	// The `abstract` keyword is a superset of the `@abstract` annotation, so the
+	// keyword form must accept `abstract async func` just like `@abstract async func`.
+	// Such a declaration is an async contract that forces overrides to be async.
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+abstract class AbstractAsync:
+	abstract async func fetch() -> String
+	async abstract func reload() -> String
+)",
+			"user://keyword_abstract_async.gd", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	const GDScriptParser::ClassNode *abstract_async = find_parser_class(root, SNAME("AbstractAsync"));
+	CHECK(abstract_async != nullptr);
+	if (abstract_async == nullptr) {
+		return;
+	}
+
+	const GDScriptParser::FunctionNode *fetch = find_parser_function(abstract_async, SNAME("fetch"));
+	CHECK(fetch != nullptr);
+	if (fetch != nullptr) {
+		CHECK(fetch->is_abstract);
+		CHECK(fetch->is_declared_async);
+		CHECK(fetch->is_coroutine);
+		CHECK(!fetch->is_static);
+	}
+
+	// Modifier order must not matter (`async abstract` parses identically).
+	const GDScriptParser::FunctionNode *reload = find_parser_function(abstract_async, SNAME("reload"));
+	CHECK(reload != nullptr);
+	if (reload != nullptr) {
+		CHECK(reload->is_abstract);
+		CHECK(reload->is_declared_async);
+		CHECK(reload->is_coroutine);
+		CHECK(!reload->is_static);
+	}
 }
 
 TEST_CASE("[Modules][GDScript] Parser keeps async usable as an identifier outside modifier positions") {
