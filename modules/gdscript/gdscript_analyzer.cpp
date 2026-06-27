@@ -2835,6 +2835,22 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 		}
 	}
 
+	// A bare or `self` reference in a flattened trait body resolves against the trait's own member, so
+	// its finality is stale when the implementer shadows that slot; record every final node any applied
+	// trait declares so such a reference can be told apart from a reliable inherited final reached
+	// through the trait's base constraint.
+	flattened_trait_final_nodes.clear();
+	for (const GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->is_final && !member.variable->is_static) {
+				flattened_trait_final_nodes.insert(member.variable);
+			}
+		}
+	}
+
 	// Reject every assignment to a final outside its legal slot. This runs for every class (even
 	// one with no finals of its own) because detection is global: a write to another class's or an
 	// inherited final from any method/initializer here must still be caught. The legal slot is this
@@ -3031,6 +3047,22 @@ void GDScriptAnalyzer::check_final_static_assignments(GDScriptParser::ClassNode 
 			if (static_init_function == nullptr && member.function->identifier != nullptr && member.function->identifier->name == SNAME("_static_init")) {
 				static_init_function = member.function;
 				static_init_function_from_trait = true;
+			}
+		}
+	}
+
+	// Record every static final node any applied trait declares (including ones the implementer
+	// shadows) so a bare/`self` reference to a trait-supplied static final's stale slot is resolved by
+	// name while a reliable inherited static final is handled by the normal resolution (see the member
+	// pass).
+	flattened_trait_final_nodes.clear();
+	for (const GDScriptParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::ClassNode::Member &member : trait->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->is_final && member.variable->is_static) {
+				flattened_trait_final_nodes.insert(member.variable);
 			}
 		}
 	}
@@ -3376,9 +3408,9 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 				default:
 					break;
 			}
-			// A bare member reference is implicitly `self.<name>`; resolve by name so a name the
-			// implementer shadows to a mutable (or absent) member is not treated as a final write, while
-			// its own tracked slot still is.
+			// A bare member reference is implicitly `self.<name>`; resolve the implementer's own tracked
+			// slot by name so a name it shadows to a mutable (or absent) member is not treated as a final
+			// write.
 			HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(identifier->name);
 			if (found) {
 				if (r_is_self_receiver != nullptr) {
@@ -3386,16 +3418,23 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 				}
 				return found->value;
 			}
-			return nullptr;
-		}
-		if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
+			// Not a tracked slot. If it resolves to a final an applied trait declares, the implementer
+			// shadowed that slot (its trait finality is stale), so it is not a final write here. Otherwise
+			// it is a reliable inherited final reached through the trait's base constraint; fall through to
+			// the normal resolution so that write is reported as it would be outside a trait body.
+			const bool is_member_kind = identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || identifier->source == GDScriptParser::IdentifierNode::INHERITED_VARIABLE || identifier->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE;
+			if (is_member_kind && identifier->variable_source != nullptr && flattened_trait_final_nodes.has(identifier->variable_source)) {
+				return nullptr;
+			}
+			// Otherwise fall through to the normal resolution (an inherited final).
+		} else if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
 			if (!subscript->is_attribute || subscript->attribute == nullptr) {
 				return nullptr;
 			}
 			if (subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF) {
-				// `self.<name>` designates this instance's slot; resolve by name so a name the implementer
-				// shadows to a mutable member is not treated as a final write, while its own slot still is.
+				// `self.<name>` designates this instance's slot; resolve the implementer's own tracked slot
+				// by name so a name it shadows to a mutable member is not treated as a final write.
 				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(subscript->attribute->name);
 				if (found) {
 					if (r_is_self_receiver != nullptr) {
@@ -3403,7 +3442,13 @@ const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_ta
 					}
 					return found->value;
 				}
-				return nullptr;
+				// Not a tracked slot: a trait-declared final the implementer shadowed is stale here, but a
+				// reliable inherited final (reached through the trait's base constraint) must fall through.
+				const bool attribute_is_member_kind = subscript->attribute->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::INHERITED_VARIABLE || subscript->attribute->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE;
+				if (attribute_is_member_kind && subscript->attribute->variable_source != nullptr && flattened_trait_final_nodes.has(subscript->attribute->variable_source)) {
+					return nullptr;
+				}
+				// Otherwise fall through to the normal `self.<inherited final>` resolution.
 			}
 			// A non-`self` receiver carries an explicit static type, so its attribute's `variable_source`
 			// is reliable — unlike a bare or `self` reference, which a flattened trait body resolves
