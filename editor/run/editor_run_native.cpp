@@ -327,27 +327,12 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 		return OK;
 	}
 
-	// The export preset is the source of truth for the signing team. Probe (and run)
-	// against the team the deploy will actually use, so readiness can never report
-	// ready off a remembered team while the preset signs with a different one — and
-	// without mutating the shared preset.
+	// The export preset is the source of truth for the signing team. Diagnose (and
+	// run) against the team the deploy will actually use, so a later readiness probe
+	// can never report ready off a remembered team while the preset signs with a
+	// different one — and without mutating the shared preset.
 	RunTarget effective_target = p_target;
 	effective_target.team_id = resolved.preset->get("application/app_store_team_id");
-
-	// Surface the Doctor's next step instead of letting a deploy fail silently: if
-	// anything in the readiness ladder is unmet, show the first actionable rung and
-	// stop here so the user knows exactly what to fix.
-	const Vector<ReadinessStep> ladder = resolved.platform_adapter->probe_readiness(effective_target);
-	for (const ReadinessStep &step : ladder) {
-		if (step.status != ReadinessStep::OK) {
-			String message = vformat(TTR("\"%s\" is not ready to run yet.\n\n%s\n%s"), p_target.name, step.title, step.detail);
-			if (!step.fix_hint.is_empty()) {
-				message += "\n\n" + step.fix_hint;
-			}
-			_show_result(message, true);
-			return ERR_UNAVAILABLE;
-		}
-	}
 
 	resolved.preset->update_value_overrides();
 
@@ -365,17 +350,44 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 		export_platform->clear_messages();
 	}
 
+	// Deploy is never pre-gated on readiness: the adapter may reach a device the
+	// readiness probe cannot see (e.g. an ios-deploy device absent from devicectl),
+	// so gating here would reject a target the deploy can actually run. Readiness is
+	// instead used to explain a failure.
 	const Error run_error = resolved.platform_adapter->run(effective_target, resolved.debug_flags);
 
 	result_dialog_log->clear();
-	if (export_platform.is_valid() && export_platform->fill_log_messages(result_dialog_log, run_error)) {
-		if (export_platform->get_worst_message_type() >= EditorExportPlatform::EXPORT_MESSAGE_ERROR) {
-			result_dialog->popup_centered_ratio(0.5);
+	const bool has_messages = export_platform.is_valid() && export_platform->fill_log_messages(result_dialog_log, run_error);
+	bool show_dialog = has_messages && export_platform->get_worst_message_type() >= EditorExportPlatform::EXPORT_MESSAGE_ERROR;
+
+	if (run_error != OK) {
+		// Surface the Doctor's next step alongside the export log so a failed deploy
+		// is never silent and always points at the thing to fix.
+		bool added_step = false;
+		for (const ReadinessStep &step : resolved.platform_adapter->probe_readiness(effective_target)) {
+			if (step.status != ReadinessStep::OK) {
+				if (has_messages) {
+					result_dialog_log->add_newline();
+					result_dialog_log->add_newline();
+				}
+				String detail = vformat(TTR("\"%s\" is not ready to run yet.\n\n%s\n%s"), p_target.name, step.title, step.detail);
+				if (!step.fix_hint.is_empty()) {
+					detail += "\n\n" + step.fix_hint;
+				}
+				result_dialog_log->add_text(detail);
+				added_step = true;
+				break;
+			}
 		}
-	} else if (run_error != OK) {
-		// The deploy failed but produced no structured messages: surface a note so
-		// the failure is never silent.
-		_show_result(vformat(TTR("Deploying \"%s\" failed. See the Output log for details."), p_target.name), true);
+		if (!has_messages && !added_step) {
+			// No export messages and no diagnosable step: still report the failure.
+			result_dialog_log->add_text(vformat(TTR("Deploying \"%s\" failed. See the Output log for details."), p_target.name));
+		}
+		show_dialog = true;
+	}
+
+	if (show_dialog) {
+		result_dialog->popup_centered_ratio(0.5);
 	}
 	return run_error;
 }
