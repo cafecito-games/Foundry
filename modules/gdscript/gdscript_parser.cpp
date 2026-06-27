@@ -4765,14 +4765,11 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		type->signature_is_async = true;
 	}
 
-	// Coroutine[T] is the typed handle to an in-flight async computation for structured concurrency.
-	if (type->type_chain.size() == 1 && type_element->name == SNAME("Coroutine")) {
-		type->is_coroutine = true;
-	}
-
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		const bool is_callable_type = type->type_chain.size() == 1 && (type_element->name == SNAME("Callable") || type_element->name == SNAME("AsyncCallable"));
 		const bool is_signal_type = type->type_chain.size() == 1 && type_element->name == SNAME("Signal");
+		// Coroutine[T] is the typed handle to an in-flight async computation for structured concurrency.
+		const bool is_coroutine_type = type->type_chain.size() == 1 && type_element->name == SNAME("Coroutine");
 		if ((is_callable_type || is_signal_type) && match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 			type->has_signature = true;
 			if (!check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
@@ -4807,11 +4804,12 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 
 		// Coroutine[T] carries exactly one phantom result type, unlike the variadic typed collections.
-		if (type->is_coroutine) {
+		if (is_coroutine_type) {
+			type->is_coroutine = true;
 			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
 				push_error(R"(Coroutine[T] expects a single result type parameter.)");
 			} else {
-				TypeNode *result_type = parse_type(false); // Don't allow void for the result type.
+				TypeNode *result_type = parse_type(true); // Allow void so void-returning async work is nameable as Coroutine[void].
 				if (result_type == nullptr) {
 					push_error(R"(Expected result type for Coroutine after "[".)");
 				} else {

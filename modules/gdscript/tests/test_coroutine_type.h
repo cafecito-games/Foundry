@@ -74,7 +74,9 @@ TEST_CASE("[Modules][GDScript] Coroutine[T] records its result type and coroutin
 	CHECK(type->container_types[0]->type_chain[0]->name == StringName("int"));
 }
 
-TEST_CASE("[Modules][GDScript] A bare Coroutine carries the coroutine marker without a result type") {
+TEST_CASE("[Modules][GDScript] A bare Coroutine is not marked as the Coroutine[T] form") {
+	// The coroutine marker is reserved for the bracketed generic form so it always
+	// implies a recorded result type; a bare Coroutine is just an ordinary type name.
 	GDScriptParser parser;
 	const Error error = parser.parse("func test():\n\tvar job: Coroutine\n", "user://test.gd", false);
 	REQUIRE(error == OK);
@@ -82,8 +84,21 @@ TEST_CASE("[Modules][GDScript] A bare Coroutine carries the coroutine marker wit
 
 	const GDScriptParser::TypeNode *type = first_variable_type(parser, "test");
 	REQUIRE(type != nullptr);
-	CHECK(type->is_coroutine);
+	CHECK_FALSE(type->is_coroutine);
 	CHECK(type->container_types.is_empty());
+}
+
+TEST_CASE("[Modules][GDScript] Coroutine[void] names a void-returning async result") {
+	GDScriptParser parser;
+	const Error error = parser.parse("func test():\n\tvar job: Coroutine[void]\n", "user://test.gd", false);
+	REQUIRE(error == OK);
+	REQUIRE(parser.get_errors().is_empty());
+
+	const GDScriptParser::TypeNode *type = first_variable_type(parser, "test");
+	REQUIRE(type != nullptr);
+	CHECK(type->is_coroutine);
+	REQUIRE(type->container_types.size() == 1);
+	CHECK(type->container_types[0]->type_chain.is_empty()); // `void` parses as a TypeNode with no type chain.
 }
 
 TEST_CASE("[Modules][GDScript] Coroutine[T] accepts the nullable variant") {
