@@ -276,27 +276,46 @@ TypedArray<GDScriptPropertyDescriptor> GDScriptReflection::get_property_descript
 
 TypedArray<Dictionary> GDScriptReflection::get_methods(const Variant &p_target) const {
 	// Preserve the loosely-keyed descriptor surface by projecting each structured descriptor down to
-	// its Dictionary form, so the two views never diverge.
+	// its Dictionary form, so the two views never diverge. Native (non-GDScript) scripts have no
+	// passive annotations, so the historical no-"annotations"-key shape is kept for them.
+	const bool is_gdscript = Object::cast_to<GDScript>(_resolve_script(p_target).ptr()) != nullptr;
 	TypedArray<GDScriptMethodDescriptor> descriptors = get_method_descriptors(p_target);
 	TypedArray<Dictionary> result;
 	for (int i = 0; i < descriptors.size(); i++) {
 		Ref<GDScriptMethodDescriptor> descriptor = descriptors[i];
-		result.push_back(descriptor->to_dictionary());
+		Dictionary entry = descriptor->to_dictionary();
+		if (!is_gdscript) {
+			entry.erase("annotations");
+		}
+		result.push_back(entry);
 	}
 	return result;
 }
 
 Dictionary GDScriptReflection::get_method_info(const Variant &p_target, const StringName &p_method) const {
 	Ref<GDScriptMethodDescriptor> descriptor = get_method_descriptor(p_target, p_method);
-	return descriptor.is_valid() ? descriptor->to_dictionary() : Dictionary();
+	if (descriptor.is_null()) {
+		return Dictionary();
+	}
+	Dictionary entry = descriptor->to_dictionary();
+	if (Object::cast_to<GDScript>(_resolve_script(p_target).ptr()) == nullptr) {
+		// Native scripts carry no passive annotations; preserve the historical no-key shape.
+		entry.erase("annotations");
+	}
+	return entry;
 }
 
 TypedArray<Dictionary> GDScriptReflection::get_properties(const Variant &p_target) const {
+	const bool is_gdscript = Object::cast_to<GDScript>(_resolve_script(p_target).ptr()) != nullptr;
 	TypedArray<GDScriptPropertyDescriptor> descriptors = get_property_descriptors(p_target);
 	TypedArray<Dictionary> result;
 	for (int i = 0; i < descriptors.size(); i++) {
 		Ref<GDScriptPropertyDescriptor> descriptor = descriptors[i];
-		result.push_back(descriptor->to_dictionary());
+		Dictionary entry = descriptor->to_dictionary();
+		if (!is_gdscript) {
+			entry.erase("annotations");
+		}
+		result.push_back(entry);
 	}
 	return result;
 }

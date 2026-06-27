@@ -168,7 +168,8 @@ Array GDScriptMethodDescriptor::get_default_arguments() const {
 Dictionary GDScriptMethodDescriptor::to_dictionary() const {
 	Dictionary descriptor(method_info);
 	// Mirror the loosely-keyed `get_methods()` descriptor, which always carries an `annotations` key.
-	descriptor["annotations"] = annotations;
+	// Duplicate so the returned Dictionary never aliases this read-only descriptor's stored array.
+	descriptor["annotations"] = annotations.duplicate();
 	return descriptor;
 }
 
@@ -200,7 +201,8 @@ Ref<GDScriptPropertyDescriptor> GDScriptPropertyDescriptor::create(const Propert
 Dictionary GDScriptPropertyDescriptor::to_dictionary() const {
 	Dictionary descriptor(property_info);
 	// Mirror the loosely-keyed `get_properties()` descriptor, which always carries an `annotations` key.
-	descriptor["annotations"] = annotations;
+	// Duplicate so the returned Dictionary never aliases this read-only descriptor's stored array.
+	descriptor["annotations"] = annotations.duplicate();
 	return descriptor;
 }
 
