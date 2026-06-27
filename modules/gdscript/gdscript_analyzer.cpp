@@ -2616,6 +2616,10 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 					// A getter/setter property has no single stored slot to write once, and its
 					// setter would make the value mutable, contradicting `final`.
 					push_error(vformat(R"(Final variable "%s" cannot declare a getter or setter.)", variable->identifier->name), variable);
+				} else if (variable->onready) {
+					// An `@onready` initializer runs in `_ready()`, after `_init()`, so it falls
+					// outside the declaration/`_init` assignment slot this analysis reasons about.
+					push_error(vformat(R"(Final variable "%s" cannot be annotated with "@onready".)", variable->identifier->name), variable);
 				} else {
 					finals.insert(variable);
 					finals_by_name[variable->identifier->name] = variable;
@@ -2658,13 +2662,16 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 	}
 
 	// Reject every assignment to a final outside its legal slot (any method other than `_init`,
-	// or a lambda even within `_init`).
+	// or a lambda even within `_init`, including lambdas nested in a member initializer).
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
 			GDScriptParser::FunctionNode *function = member.function;
 			scan_illegal_final_writes(function->body, finals, finals_by_name, function == init_function);
-		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property != GDScriptParser::VariableNode::PROP_NONE) {
+		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE) {
+			// A member initializer runs in the constructor prologue, not in the `_init` body, so a
+			// final written from a lambda nested in it is outside the legal slot.
+			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, false);
 			if (member.variable->getter != nullptr) {
 				scan_illegal_final_writes(member.variable->getter->body, finals, finals_by_name, false);
 			}
@@ -2680,6 +2687,12 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 	// not); `init_state.assigned` is the intersection that survives to normal completion, used to
 	// require every blank final is assigned.
 	if (init_function != nullptr) {
+		// A `_init` parameter's default value is evaluated before the body runs, when no blank
+		// final is assigned yet, so reading one through an omitted default is use-before-assignment.
+		for (int i = 0; i < init_function->parameters.size(); i++) {
+			check_final_reads_in_expression(init_function->parameters[i]->initializer, finals, finals_by_name, init_state);
+		}
+
 		HashSet<const GDScriptParser::VariableNode *> assigned_anywhere;
 		analyze_final_definite_assignment_suite(init_function->body, finals, finals_by_name, init_state, assigned_anywhere);
 		for (const GDScriptParser::VariableNode *variable : blank_finals) {
@@ -3008,7 +3021,7 @@ void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScrip
 			const GDScriptParser::MatchNode *match_node = static_cast<const GDScriptParser::MatchNode *>(p_statement);
 			check_final_reads_in_expression(match_node->test, p_finals, p_finals_by_name, r_state);
 
-			bool has_wildcard = false;
+			bool has_unguarded_catchall = false;
 			bool has_branch = false;
 			FinalAssignmentState merged;
 			merged.reachable = false; // Identity for intersection; replaced by the first branch.
@@ -3017,7 +3030,6 @@ void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScrip
 				if (branch == nullptr) {
 					continue;
 				}
-				has_wildcard = has_wildcard || branch->has_wildcard;
 				FinalAssignmentState branch_state = r_state;
 				// A `when` guard is evaluated with the branch's incoming state before its block.
 				analyze_final_definite_assignment_suite(branch->guard_body, p_finals, p_finals_by_name, branch_state, r_assigned_anywhere);
@@ -3030,14 +3042,20 @@ void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScrip
 					merge_final_assignment_branches(merged, branch_state, intersection);
 					merged = intersection;
 				}
+				// A guard-less wildcard always matches, so it closes the no-match path and makes any
+				// later branch unreachable; stop merging here.
+				if (branch->has_wildcard && branch->guard_body == nullptr) {
+					has_unguarded_catchall = true;
+					break;
+				}
 			}
 
 			if (!has_branch) {
 				break;
 			}
-			if (!has_wildcard) {
-				// The no-match path falls through with the incoming state, so nothing the branches
-				// assign can be guaranteed; intersect with the incoming (reachable) state.
+			if (!has_unguarded_catchall) {
+				// Without a guard-less wildcard the no-match path falls through with the incoming
+				// state, so nothing the branches assign can be guaranteed; intersect with it.
 				FinalAssignmentState fallthrough = r_state;
 				FinalAssignmentState intersection;
 				merge_final_assignment_branches(merged, fallthrough, intersection);
