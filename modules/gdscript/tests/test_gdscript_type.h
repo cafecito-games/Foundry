@@ -841,7 +841,8 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.bind signatures") 
 	CHECK(analyze_source(source_prefix + "\tvar result: String = callback.bind(\"ok\").call(1)\n") != OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bind(1, \"ok\").call()\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bind(\"ok\", 1)\n") != OK);
-	CHECK(analyze_source(source_prefix + "\tcallback.bind(1, \"ok\", false)\n") != OK);
+	// bind() is a variadic builtin: binding more arguments than the target's arity is accepted.
+	CHECK(analyze_source(source_prefix + "\tcallback.bind(1, \"ok\", false)\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bind(get_dynamic()).call(1)\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bind(get_dynamic()).call(1)\n", false, true) != OK);
 	CHECK(analyze_source(inferred_source_prefix + "\tcallback.bind(\"legacy dynamic\").call(\"legacy dynamic\")\n") == OK);
@@ -859,7 +860,8 @@ TEST_CASE("[Modules][GDScript] Analyzer checks typed Callable.bindv signatures")
 	CHECK(analyze_source(source_prefix + "\tvar result: String = callback.bindv([\"ok\"]).call(1)\n") != OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bindv([1, \"ok\"]).call()\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bindv([\"ok\", 1])\n") != OK);
-	CHECK(analyze_source(source_prefix + "\tcallback.bindv([1, \"ok\", false])\n") != OK);
+	// bindv() is variadic over the bound array: more elements than the target's arity is accepted.
+	CHECK(analyze_source(source_prefix + "\tcallback.bindv([1, \"ok\", false])\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bindv([get_dynamic()]).call(1)\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tcallback.bindv([get_dynamic()]).call(1)\n", false, true) != OK);
 	CHECK(analyze_source(inferred_source_prefix + "\tcallback.bindv([\"legacy dynamic\"]).call(\"legacy dynamic\")\n") == OK);

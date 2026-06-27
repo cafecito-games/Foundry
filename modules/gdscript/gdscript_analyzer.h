@@ -273,6 +273,7 @@ class GDScriptAnalyzer {
 	bool function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
 	bool callable_signature_from_type(const GDScriptParser::DataType &p_callable_type, Vector<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
 	GDScriptParser::DataType plain_callable_type() const;
+	GDScriptParser::DataType over_bound_callable_type(const GDScriptParser::DataType &p_source_callable_type) const;
 	GDScriptParser::DataType explicit_callable_type_from_signature(const GDScriptParser::DataType &p_return_type, const Vector<GDScriptParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg, bool p_is_async = false) const;
 	GDScriptParser::DataType transformed_callable_type(const GDScriptParser::DataType &p_source_callable_type, const Vector<GDScriptParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const;
 	GDScriptParser::DataType explicit_callable_type_from_info(const MethodInfo &p_info) const;
