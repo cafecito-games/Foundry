@@ -1,0 +1,2 @@
+GDTEST_RUNTIME_ERROR
+>> Test couldn't run: the head class is abstract and can't be instantiated.
