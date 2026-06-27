@@ -262,6 +262,90 @@ TEST_CASE("[Editor][IOSRunTarget] auto target with no runnable device diagnoses 
 	CHECK_EQ(developer_mode.status, ReadinessStep::ACTION_NEEDED); // ...but Developer Mode is off.
 }
 
+TEST_CASE("[Editor][IOSRunTarget] build_probe_devices passes through devicectl devices unchanged") {
+	const String json = make_devicectl_json("phone-A", "My iPhone", "paired", "disabled");
+
+	const Array devices = IOSRunTargetPlatform::build_probe_devices(json, Vector<IOSDeployDevice>());
+	REQUIRE_EQ(devices.size(), 1);
+
+	const Dictionary device = devices[0];
+	CHECK_EQ(String(device.get("identifier", String())), "phone-A");
+	const Dictionary connection_properties = device.get("connectionProperties", Dictionary());
+	CHECK_EQ(String(connection_properties.get("pairingState", String())), "paired");
+	const Dictionary device_properties = device.get("deviceProperties", Dictionary());
+	// A connected-but-not-runnable devicectl device is preserved so the ladder can
+	// still diagnose it (Developer Mode off here).
+	CHECK_EQ(String(device_properties.get("developerModeStatus", String())), "disabled");
+}
+
+TEST_CASE("[Editor][IOSRunTarget] build_probe_devices folds in ios_deploy devices as ready") {
+	Vector<IOSDeployDevice> ios_deploy_devices;
+	IOSDeployDevice legacy;
+	legacy.id = "legacy-phone";
+	legacy.name = "Legacy iPhone";
+	ios_deploy_devices.push_back(legacy);
+
+	// No modern devicectl devices: the only device comes from the legacy enumerator.
+	const Array devices = IOSRunTargetPlatform::build_probe_devices(String(), ios_deploy_devices);
+	REQUIRE_EQ(devices.size(), 1);
+
+	// The legacy device is reported in devicectl shape as paired with Developer
+	// Mode enabled, so the readiness ladder agrees with the device list.
+	const RunTargetReadiness::ProbeResult probe = RunTargetReadiness::parse_ios_probe(
+			Dictionary(), "legacy-phone");
+	CHECK_FALSE(probe.device_connected); // Sanity: an empty snapshot sees nothing.
+
+	Dictionary snapshot;
+	snapshot["xcode_select_path"] = "/Applications/Xcode.app/Contents/Developer";
+	snapshot["signing_team"] = "ABCDE12345";
+	snapshot["provisioning_stderr"] = String();
+	snapshot["devices"] = devices;
+
+	const RunTargetReadiness::ProbeResult ready = RunTargetReadiness::parse_ios_probe(snapshot, "legacy-phone");
+	CHECK(ready.device_connected);
+	CHECK(ready.device_trusted);
+	CHECK(ready.developer_mode_enabled);
+
+	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(ready);
+	for (const ReadinessStep &step : steps) {
+		CHECK_EQ(step.status, ReadinessStep::OK);
+	}
+}
+
+TEST_CASE("[Editor][IOSRunTarget] build_probe_devices orders ios_deploy devices before devicectl") {
+	// A devicectl device that is connected but has Developer Mode off, plus a
+	// legacy ios_deploy device. The ios_deploy device must come first so an "auto"
+	// target's readiness resolves to the same device Run would deploy to (the
+	// export poll lists ios_deploy devices first).
+	const String json = make_devicectl_json("modern-phone", "Modern iPhone", "paired", "disabled");
+
+	Vector<IOSDeployDevice> ios_deploy_devices;
+	IOSDeployDevice legacy;
+	legacy.id = "legacy-phone";
+	legacy.name = "Legacy iPhone";
+	ios_deploy_devices.push_back(legacy);
+
+	const Array devices = IOSRunTargetPlatform::build_probe_devices(json, ios_deploy_devices);
+	REQUIRE_EQ(devices.size(), 2);
+
+	const Dictionary first = devices[0];
+	CHECK_EQ(String(first.get("identifier", String())), "legacy-phone");
+	const Dictionary second = devices[1];
+	CHECK_EQ(String(second.get("identifier", String())), "modern-phone");
+
+	// "auto" readiness must pick the runnable ios_deploy device, not the
+	// Developer-Mode-off devicectl one, so the ladder reports ready.
+	Dictionary snapshot;
+	snapshot["xcode_select_path"] = "/Applications/Xcode.app/Contents/Developer";
+	snapshot["signing_team"] = "ABCDE12345";
+	snapshot["provisioning_stderr"] = String();
+	snapshot["devices"] = devices;
+
+	const RunTargetReadiness::ProbeResult probe = RunTargetReadiness::parse_ios_probe(snapshot, "auto");
+	CHECK(probe.device_connected);
+	CHECK(probe.developer_mode_enabled);
+}
+
 TEST_CASE("[Editor][IOSRunTarget] run fails gracefully without a registered export platform") {
 	// Headless tests have no `EditorExport` singleton, so the adapter cannot find
 	// the iOS export platform to deploy through; it must report that cleanly.

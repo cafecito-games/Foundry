@@ -66,13 +66,24 @@ public:
 class EditorExportPlatformAppleEmbedded;
 class EditorExportPreset;
 
+// A legacy `ios_deploy` (pre-Xcode 15) device carried from the export platform's
+// poll cache into the readiness probe. The legacy enumerator surfaces a device
+// only when it is paired and deployable and exposes no trust/Developer-Mode
+// detail, so readiness treats every such device as connected and ready.
+struct IOSDeployDevice {
+	String id;
+	String name;
+};
+
 // iOS adapter for the run-target layer. It does not reimplement device
 // enumeration or deploy: `list_devices()` parses `devicectl` output with the same
 // routine the export platform's poll thread now uses, and `run()` hands off to the
 // export platform's extracted `run_on_device` path (which already exports to a
 // `.xcarchive` with `-allowProvisioningUpdates` for automatic signing).
-// `probe_readiness()` gathers raw signals through the injectable `CommandRunner`
-// and lets `RunTargetReadiness` decide the ladder, keeping detection pure.
+// `probe_readiness()` gathers raw signals through the injectable `CommandRunner`,
+// merges in the legacy `ios_deploy` devices from the export poll cache so the
+// ladder agrees with the device list, and lets `RunTargetReadiness` decide the
+// ladder, keeping detection pure.
 class IOSRunTargetPlatform : public RunTargetPlatform {
 public:
 	// A device parsed from `xcrun devicectl list devices -j`. Carries the fields
@@ -90,6 +101,16 @@ public:
 	// device list. Shared by the export platform's poll thread and this adapter so
 	// enumeration is never duplicated. Returns an empty list for malformed input.
 	static Vector<DeviceInfo> parse_devicectl_devices(const String &p_json_text);
+
+	// Builds the readiness probe's `devices` array from the two enumeration
+	// sources the export poll also combines: the modern `devicectl` JSON and the
+	// legacy `ios_deploy` devices. The `ios_deploy` devices come first so they
+	// match the export poll's ordering (keeping "auto" readiness and Run on the
+	// same device) and are emitted in `devicectl` shape, reported as paired with
+	// Developer Mode enabled so the ladder agrees with the device list. Devices
+	// from `p_devicectl_json` follow in their native shape (including any that are
+	// connected but not yet runnable, so the ladder can still explain the blocker).
+	static Array build_probe_devices(const String &p_devicectl_json, const Vector<IOSDeployDevice> &p_ios_deploy_devices);
 
 	// Constructs the adapter with the production `OSCommandRunner`.
 	IOSRunTargetPlatform();
