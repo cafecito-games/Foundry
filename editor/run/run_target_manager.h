@@ -51,6 +51,14 @@ class EditorExportPreset;
 // fake adapter and a fake preset provider.
 class RunTargetManager {
 public:
+	// Process-wide accessor so editor surfaces (the run-bar target selector and
+	// the Targets dock) can reach the single manager that owns the project's run
+	// targets without threading it through constructors. The editor creates the
+	// manager once and installs it here; consumers read it and must tolerate a
+	// null result (e.g. headless tooling, or before the editor has set it up).
+	static RunTargetManager *get_singleton();
+	static void set_singleton(RunTargetManager *p_manager);
+
 	// Looks up the export preset a target links to by name. The default
 	// production source is `EditorExport`; tests inject a fake so resolution can
 	// be exercised without a running editor.
