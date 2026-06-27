@@ -34,6 +34,8 @@
 #include "editor/run/run_target.h"
 #include "editor/run/run_target_platform.h"
 
+#include "core/templates/hash_map.h"
+
 class Button;
 class LineEdit;
 class ItemList;
@@ -75,6 +77,19 @@ public:
 	// the rendering decision is testable independently of the widgets.
 	static int first_actionable_step_index(const Vector<ReadinessStep> &p_steps);
 
+	// Returns a target name based on `p_preferred` that no target in `p_existing`
+	// uses, appending " 2", " 3", … on collision (and substituting a generic label
+	// when `p_preferred` is blank). Targets are resolved by name, so generated
+	// names must never duplicate an existing one. Pure helper, unit-testable.
+	static String unique_target_name(const String &p_preferred, const Vector<RunTarget> &p_existing);
+
+	// Builds the RunTarget for one-click "Set up this device…": preselects the
+	// connected device's id and platform, uses automatic signing, links the given
+	// export preset, and derives a unique name from the device name (falling back
+	// to the device id, then a generic label). An empty device id becomes "auto".
+	// Pure so the setup mapping is testable without an editor or a real device.
+	static RunTarget make_device_setup_target(const String &p_platform, const String &p_device_id, const String &p_device_name, const String &p_export_preset, const Vector<RunTarget> &p_existing);
+
 	RunTargetsPanel();
 	~RunTargetsPanel();
 
@@ -108,6 +123,12 @@ private:
 	ConfirmationDialog *rename_dialog = nullptr;
 	LineEdit *rename_field = nullptr;
 
+	// Connected-but-unconfigured devices region: lists devices that no configured
+	// target claims and offers one-click "Set up this device…" to create a target
+	// for them. Reuses the same SETUP_DEVICE rows the run-bar selector derives.
+	VBoxContainer *devices_container = nullptr;
+	Label *devices_placeholder = nullptr;
+
 	// Signing & devices region.
 	VBoxContainer *details_container = nullptr;
 	OptionButton *signing_mode_option = nullptr;
@@ -135,6 +156,16 @@ private:
 	void _refresh_target_list(int p_select_index = -1);
 	void _load_selection_into_fields();
 	void _refresh_device_options(const RunTarget &p_target);
+
+	// Gathers live devices from every registered platform adapter, keyed by platform
+	// string, the same way the run-bar selector does. iOS is the only platform with
+	// an adapter today; the map admits more without changing call sites.
+	HashMap<String, Vector<RunTargetDevice>> _gather_devices_by_platform() const;
+	// Rebuilds the connected-devices section from the current targets and live
+	// devices: one "Set up this device…" row per device no configured target claims.
+	void _refresh_unconfigured_devices();
+	void _clear_device_rows();
+	void _on_setup_device_pressed(const String &p_platform, const String &p_device_id, const String &p_device_name);
 
 	// Repopulates the team picker from the platform's detected teams, selecting the
 	// entry matching `p_current_team_id` (adding a "not detected" entry for a
