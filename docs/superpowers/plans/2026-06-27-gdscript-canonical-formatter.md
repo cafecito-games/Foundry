@@ -918,6 +918,8 @@ git commit -m "test(gdscript): add formatter fixtures, idempotency, and semantic
 
 ## Task 6: Precommit hook + CI gate
 
+> **DEFERRED (2026-06-27, user decision).** Not implemented. Discovered constraint: this engine repo's `.gd` files are overwhelmingly *intentionally-messy* test fixtures under `modules/gdscript/tests/scripts/`, so a repo-wide `--check` would fail by design. The formatter's correctness is already gated in CI by the unit-test suite (the 1054-script parse-tree-preservation + idempotency sweeps in Task 5). When revisiting, scope the gate to **exclude fixture directories** and decide whether it targets the engine repo's own real `.gd` source or is published as a template for downstream projects using this fork's binary. Note the hook needs a built binary on PATH (`bin/godot.linuxbsd.editor.dev.x86_64` on Linux CI, `bin/godot.macos.editor.dev.arm64` locally).
+
 **Goal:** Enforce canonical formatting in precommit and CI via `--gdscript-format --check`.
 
 **Files:**
