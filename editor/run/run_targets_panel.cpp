@@ -203,12 +203,25 @@ Ref<EditorExportPreset> RunTargetsPanel::_get_or_create_preset_for_platform(cons
 		return Ref<EditorExportPreset>();
 	}
 
-	// Reuse an existing preset for the platform when one is present.
+	// Reuse an existing preset for the platform when one is present, preferring a
+	// runnable one. Device enumeration (and thus automatic-device run) only works
+	// against a runnable preset, so promote a non-runnable fallback if that is all
+	// the project has.
+	Ref<EditorExportPreset> fallback;
 	for (int i = 0; i < editor_export->get_export_preset_count(); i++) {
 		Ref<EditorExportPreset> preset = editor_export->get_export_preset(i);
 		if (preset.is_valid() && preset->get_platform().is_valid() && preset->get_platform()->get_os_name() == os_name) {
-			return preset;
+			if (preset->is_runnable()) {
+				return preset;
+			}
+			if (fallback.is_null()) {
+				fallback = preset;
+			}
 		}
+	}
+	if (fallback.is_valid()) {
+		fallback->set_runnable(true);
+		return fallback;
 	}
 
 	// Otherwise create one from the matching export platform.
@@ -410,11 +423,16 @@ void RunTargetsPanel::_on_rename_confirmed() {
 
 	RunTarget target = manager->get_targets()[index];
 	const String previous_name = target.name;
+	// Capture this before the commit: _commit_target() calls set_targets(), which
+	// drops the active selection once the renamed target no longer matches the
+	// stored active name.
+	const bool was_active = manager->get_active_target_name() == previous_name;
+
 	target.name = new_name;
 	_commit_target(index, target);
 
 	// Keep the active selection pointing at the same target after a rename.
-	if (manager->get_active_target_name() == previous_name) {
+	if (was_active) {
 		manager->set_active_target(new_name);
 		manager->save();
 	}
