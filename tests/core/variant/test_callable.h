@@ -194,4 +194,23 @@ TEST_CASE("[Callable] Bound and unbound argument count") {
 	memdelete(test_instance);
 }
 
+TEST_CASE("[Callable] Is async") {
+	TestClass *my_test = memnew(TestClass);
+
+	// Native methods are synchronous, so they are never async.
+	Callable native_callable = Callable(my_test, "test_func_1");
+	CHECK_FALSE(native_callable.is_async());
+
+	// Binding/unbinding a synchronous target keeps it synchronous.
+	CHECK_FALSE(native_callable.bind(1).is_async());
+	CHECK_FALSE(native_callable.unbind(1).is_async());
+	CHECK_FALSE(native_callable.bind(1, 2).unbind(1).is_async());
+
+	// Invalid and null callables are not async.
+	CHECK_FALSE(Callable(my_test, "nonexistent_method").is_async());
+	CHECK_FALSE(Callable().is_async());
+
+	memdelete(my_test);
+}
+
 } // namespace TestCallable

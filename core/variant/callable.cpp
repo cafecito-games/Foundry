@@ -30,11 +30,51 @@
 
 #include "callable.h"
 
+#include "core/object/class_db.h"
 #include "core/object/object.h"
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
 #include "core/variant/callable_bind.h"
 #include "core/variant/variant_callable.h"
+
+static bool _method_info_has_async_flag(Object *p_object, const StringName &p_method) {
+	// Script methods (including GDScript coroutines) carry METHOD_FLAG_ASYNC in their
+	// MethodInfo. Consult the instance's own method list so dynamically dispatched
+	// methods (such as trait-proxy contract methods) are covered alongside the
+	// script's compiled methods and any inherited ones.
+	if (ScriptInstance *script_instance = p_object->get_script_instance()) {
+		List<MethodInfo> methods;
+		script_instance->get_method_list(&methods);
+		for (const MethodInfo &method_info : methods) {
+			if (method_info.name == p_method) {
+				return (method_info.flags & METHOD_FLAG_ASYNC) != 0;
+			}
+		}
+	}
+
+	// The object may itself be a Script that exposes static methods. Only static
+	// methods are valid callable targets on a script object, so a non-static match
+	// is not a callable target at all and must not be reported as async.
+	const Script *script_object = Object::cast_to<Script>(p_object);
+	while (script_object != nullptr) {
+		MethodInfo method_info = script_object->get_method_info(p_method);
+		if (method_info.name == p_method) {
+			if ((method_info.flags & METHOD_FLAG_STATIC) == 0) {
+				return false;
+			}
+			return (method_info.flags & METHOD_FLAG_ASYNC) != 0;
+		}
+		script_object = script_object->get_base_script().ptr();
+	}
+
+	// Native methods.
+	MethodInfo method_info;
+	if (ClassDB::get_method_info(p_object->get_class_name(), p_method, &method_info)) {
+		return (method_info.flags & METHOD_FLAG_ASYNC) != 0;
+	}
+
+	return false;
+}
 
 void Callable::call_deferredp(const Variant **p_arguments, int p_argcount) const {
 	MessageQueue::get_singleton()->push_callablep(*this, p_arguments, p_argcount, true);
@@ -231,6 +271,24 @@ int Callable::get_unbound_arguments_count() const {
 	} else {
 		return 0;
 	}
+}
+
+bool Callable::is_async() const {
+	if (is_null()) {
+		return false;
+	}
+	if (is_custom()) {
+		return custom->is_async();
+	}
+	Object *obj = get_object();
+	if (!obj) {
+		return false;
+	}
+	// Do not gate on Object::has_method(): for a Script object it only checks
+	// static methods declared directly on that script, which would miss inherited
+	// static coroutines. The helper resolves the flag across the base-script chain
+	// and reports false for methods it cannot find.
+	return _method_info_has_async_flag(obj, method);
 }
 
 CallableCustom *Callable::get_custom() const {
@@ -480,6 +538,10 @@ void CallableCustom::get_bound_arguments(Vector<Variant> &r_arguments) const {
 
 int CallableCustom::get_unbound_arguments_count() const {
 	return 0;
+}
+
+bool CallableCustom::is_async() const {
+	return false;
 }
 
 CallableCustom::CallableCustom() {

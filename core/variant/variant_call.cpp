@@ -2481,6 +2481,7 @@ static void _register_variant_builtin_methods_misc() {
 	bind_method(Callable, get_bound_arguments_count, sarray(), varray());
 	bind_method(Callable, get_bound_arguments, sarray(), varray());
 	bind_method(Callable, get_unbound_arguments_count, sarray(), varray());
+	bind_method(Callable, is_async, sarray(), varray());
 	bind_method(Callable, hash, sarray(), varray());
 	bind_method(Callable, bindv, sarray("arguments"), varray());
 	bind_method(Callable, unbind, sarray("argcount"), varray());

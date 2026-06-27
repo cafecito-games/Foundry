@@ -138,6 +138,10 @@ int CallableCustomBind::get_unbound_arguments_count() const {
 	return MAX(0, callable.get_unbound_arguments_count() - binds.size());
 }
 
+bool CallableCustomBind::is_async() const {
+	return callable.is_async();
+}
+
 void CallableCustomBind::call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const {
 	const Variant **args = (const Variant **)alloca(sizeof(Variant *) * (binds.size() + p_argcount));
 	for (int i = 0; i < p_argcount; i++) {
@@ -246,6 +250,10 @@ void CallableCustomUnbind::get_bound_arguments(Vector<Variant> &r_arguments) con
 
 int CallableCustomUnbind::get_unbound_arguments_count() const {
 	return callable.get_unbound_arguments_count() + argcount;
+}
+
+bool CallableCustomUnbind::is_async() const {
+	return callable.is_async();
 }
 
 void CallableCustomUnbind::call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const {

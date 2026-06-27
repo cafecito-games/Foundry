@@ -204,6 +204,13 @@
 				[b]Note:[/b] [Callable]s with equal content will always produce identical hash values. However, the reverse is not true. Returning identical hash values does [i]not[/i] imply the callables are equal, because different callables can have identical hash values due to hash collisions. The engine uses a 32-bit hash algorithm for [method hash].
 			</description>
 		</method>
+		<method name="is_async" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if this [Callable]'s target method is asynchronous (a coroutine), meaning a call to it should be awaited. In GDScript, this is [code]true[/code] for methods declared with [code]async[/code] as well as methods whose body is inferred to be a coroutine (for example, because they contain an [code]await[/code]).
+				Binding or unbinding arguments (see [method bind] and [method unbind]) does not change the result, as the underlying target method is unaffected. Returns [code]false[/code] for synchronous methods, custom callables without an asynchronous target, and invalid callables.
+			</description>
+		</method>
 		<method name="is_custom" qualifiers="const">
 			<return type="bool" />
 			<description>
