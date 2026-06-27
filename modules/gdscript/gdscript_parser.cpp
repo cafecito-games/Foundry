@@ -6665,6 +6665,13 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 				if (builtin_type == Variant::CALLABLE && signature_is_async) {
 					result.hint_string = "async " + result.hint_string;
 				}
+			} else if (builtin_type == Variant::CALLABLE && signature_is_async) {
+				// A bare AsyncCallable (async marker without an explicit signature) gets no signature
+				// suffix, but still needs the marker so its async-ness survives the PropertyInfo boundary
+				// and it stays distinct from a plain Callable. The marker alone is decoded back into
+				// signature_is_async (see type_from_property).
+				result.hint = PROPERTY_HINT_CALLABLE_TYPE;
+				result.hint_string = "async";
 			} else if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 				const DataType elem_type = get_container_element_type(0);
 				switch (elem_type.kind) {

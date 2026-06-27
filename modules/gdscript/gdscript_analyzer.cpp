@@ -10404,13 +10404,19 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 		if ((p_property.type == Variant::CALLABLE || p_property.type == Variant::SIGNAL) &&
 				p_property.hint == PROPERTY_HINT_CALLABLE_TYPE && !p_property.hint_string.is_empty()) {
 			// The hint string is only the signature suffix; the leading type name is implied by the
-			// property type. An async callable is tagged with a leading "async " marker on encode (see
-			// DataType::to_property_info) because the property type alone cannot express AsyncCallable.
+			// property type. An async callable is tagged with an "async" marker on encode (see
+			// DataType::to_property_info) because the property type alone cannot express AsyncCallable:
+			// "async" alone for a bare AsyncCallable, or "async " followed by the signature suffix.
 			String suffix = p_property.hint_string;
 			bool is_async = false;
-			if (p_property.type == Variant::CALLABLE && suffix.begins_with("async ")) {
-				is_async = true;
-				suffix = suffix.substr(6);
+			if (p_property.type == Variant::CALLABLE) {
+				if (suffix == "async") {
+					is_async = true;
+					suffix = "";
+				} else if (suffix.begins_with("async ")) {
+					is_async = true;
+					suffix = suffix.substr(6);
+				}
 			}
 			const String encoded = (p_property.type == Variant::CALLABLE ? String("Callable") : String("Signal")) + suffix;
 			const GDScriptParser::DataType decoded = _decode_signature_type(encoded);

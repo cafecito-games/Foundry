@@ -612,6 +612,26 @@ TEST_CASE("[Modules][GDScript] AsyncCallable async marker survives the PropertyI
 	REQUIRE(decoded_async.method_parameter_types.size() == 1);
 	CHECK(decoded_async.method_parameter_types[0].builtin_type == Variant::INT);
 
+	// A bare AsyncCallable (async marker, no explicit signature) also keeps its marker across the
+	// boundary even though it carries no signature suffix.
+	GDScriptParser::DataType bare_async = make_builtin_type(Variant::CALLABLE);
+	bare_async.signature_is_async = true;
+	const PropertyInfo bare_async_info = bare_async.to_property_info("handler");
+	CHECK(bare_async_info.type == Variant::CALLABLE);
+	CHECK(bare_async_info.hint == PROPERTY_HINT_CALLABLE_TYPE);
+	CHECK(bare_async_info.hint_string == "async");
+	const GDScriptParser::DataType decoded_bare_async = TestGDScriptAnalyzerAccessor::decode_property(bare_async_info);
+	CHECK(decoded_bare_async.builtin_type == Variant::CALLABLE);
+	CHECK(decoded_bare_async.signature_is_async);
+	CHECK_FALSE(decoded_bare_async.has_explicit_method_signature);
+
+	// A bare (synchronous) Callable stays untyped with no hint and no marker.
+	const GDScriptParser::DataType bare_sync = make_builtin_type(Variant::CALLABLE);
+	const PropertyInfo bare_sync_info = bare_sync.to_property_info("handler");
+	CHECK(bare_sync_info.hint == PROPERTY_HINT_NONE);
+	const GDScriptParser::DataType decoded_bare_sync = TestGDScriptAnalyzerAccessor::decode_property(bare_sync_info);
+	CHECK_FALSE(decoded_bare_sync.signature_is_async);
+
 	// A plain (synchronous) Callable must not gain the marker on the same round-trip.
 	const GDScriptParser::DataType sync_callable = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::NIL);
 	const PropertyInfo sync_info = sync_callable.to_property_info("handler");
