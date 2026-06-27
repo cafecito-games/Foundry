@@ -108,8 +108,11 @@ protected:
 
 public:
 	// Popup item ids at or above this base index into `run_target_entries`; ids
-	// below it are legacy `EditorExport::encode_platform_device_id` device ids.
-	static constexpr int RUN_TARGET_ID_BASE = 1 << 20;
+	// below it are legacy `EditorExport::encode_platform_device_id` device ids
+	// (`platform_idx * 10000 + device_idx`). The base sits far above any reachable
+	// legacy id — it would take 10000 export platforms to collide — so the two id
+	// spaces never overlap, even with many GDExtension export platforms registered.
+	static constexpr int RUN_TARGET_ID_BASE = 100'000'000;
 
 	static EditorRunNative *get_singleton() { return singleton; }
 	RunTargetManager *get_run_target_manager() { return &run_target_manager; }

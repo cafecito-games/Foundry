@@ -341,17 +341,19 @@ bool EditorRunNative::_find_target(const String &p_name, RunTarget &r_target) co
 }
 
 bool EditorRunNative::_find_signing_target(const String &p_platform, RunTarget &r_target) const {
-	// Prefer the active target when it is on the requested platform, so a connected
-	// device deploys with the signing the user most recently chose.
+	// Prefer the active target when it is on the requested platform and still
+	// deployable, so a connected device deploys with the signing the user most
+	// recently chose. A target whose preset is gone is skipped so a usable
+	// same-platform target can still provide signing.
 	if (run_target_manager.has_active_target()) {
 		const RunTarget active = run_target_manager.get_active_target();
-		if (active.platform == p_platform) {
+		if (active.platform == p_platform && editor_has_export_preset(active.export_preset)) {
 			r_target = active;
 			return true;
 		}
 	}
 	for (const RunTarget &candidate : run_target_manager.get_targets()) {
-		if (candidate.platform == p_platform) {
+		if (candidate.platform == p_platform && editor_has_export_preset(candidate.export_preset)) {
 			r_target = candidate;
 			return true;
 		}
