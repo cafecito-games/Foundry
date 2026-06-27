@@ -119,12 +119,15 @@ class GDScriptAnalyzer {
 	void resolve_class_body(GDScriptParser::ClassNode *p_class, bool p_recursive);
 
 	// Write-once enforcement for `final` member variables (definite-assignment engine).
-	// `assigned` is the set of `final` members definitely assigned along the current path.
-	// `reachable` is false once a terminator (return/break/continue) has made the path
-	// unreachable; an unreachable path's assigned set is treated as the universal set (the
-	// neutral element for the branch-join intersection), per the JLS definite-assignment model.
+	// `assigned` is the set of `final` members *definitely* assigned along every path to this
+	// point (intersection at joins); a read requires definite assignment. `maybe_assigned` is the
+	// set assigned along *some* path (union at joins); a second write to a maybe-assigned final is
+	// a double-write. `reachable` is false once a terminator (return/break/continue) has made the
+	// path unreachable; an unreachable path's `assigned` set is the universal set (the neutral
+	// element for the intersection join), per the JLS definite-assignment model.
 	struct FinalAssignmentState {
 		HashSet<const GDScriptParser::VariableNode *> assigned;
+		HashSet<const GDScriptParser::VariableNode *> maybe_assigned;
 		bool reachable = true;
 	};
 	void check_final_member_assignments(GDScriptParser::ClassNode *p_class);
