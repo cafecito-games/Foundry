@@ -3757,6 +3757,32 @@ class Impl uses Mixin:
 		CHECK_EQ(reflection->get_variable_annotations(derived, SNAME("base_var")).size(), 1);
 	}
 
+	SUBCASE("the effective switch restricts results to the exact target script") {
+		// Effective (the default) walks the base chain; direct (false) restricts to the leaf script.
+		CHECK_EQ(reflection->get_method_annotations(derived, SNAME("base_method"), true).size(), 2);
+		CHECK(reflection->get_method_annotations(derived, SNAME("base_method"), false).is_empty());
+		CHECK_EQ(reflection->get_method_annotations(base, SNAME("base_method"), false).size(), 2);
+
+		CHECK_EQ(reflection->get_variable_annotations(derived, SNAME("base_var"), true).size(), 1);
+		CHECK(reflection->get_variable_annotations(derived, SNAME("base_var"), false).is_empty());
+		CHECK_EQ(reflection->get_variable_annotations(base, SNAME("base_var"), false).size(), 1);
+
+		// Trait-flattened members are owned by the implementer, so the direct view still sees them.
+		CHECK_EQ(reflection->get_method_annotations(impl, SNAME("mixin_method"), false).size(), 2);
+
+		// The generic accessors honor the flag too.
+		CHECK_EQ(reflection->get_annotations(derived, SNAME("base_method"), SNAME("method"), true).size(), 2);
+		CHECK(reflection->get_annotations(derived, SNAME("base_method"), SNAME("method"), false).is_empty());
+		CHECK(reflection->has_annotation(derived, SNAME("base_method"), SNAME("test"), SNAME("method"), true));
+		CHECK_FALSE(reflection->has_annotation(derived, SNAME("base_method"), SNAME("test"), SNAME("method"), false));
+		CHECK(reflection->get_annotation(derived, SNAME("base_method"), SNAME("test"), SNAME("method"), false).is_null());
+		CHECK(reflection->get_annotation(derived, SNAME("base_method"), SNAME("test"), SNAME("method"), true).is_valid());
+
+		// Class annotations stay direct-only regardless of the flag.
+		CHECK_EQ(reflection->get_annotations(base, SNAME(""), SNAME("class"), false).size(), 1);
+		CHECK_EQ(reflection->get_annotations(base, SNAME(""), SNAME("class"), true).size(), 1);
+	}
+
 	SUBCASE("repeated annotations are preserved in source order") {
 		TypedArray<GDScriptAnnotation> repeated = reflection->get_method_annotations(impl, SNAME("repeated"));
 		CHECK_EQ(repeated.size(), 2);
