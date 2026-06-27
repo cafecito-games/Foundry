@@ -4231,6 +4231,35 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				}
 				options.insert(option.display, option);
 			}
+
+			// Fully qualified custom annotation identities from the global index, including
+			// namespaces that are neither the current namespace nor explicitly imported. Offering
+			// the canonical identity lets the user complete `@namespace.name` (and the dotted prefix
+			// `@namespace.`) without an import, mirroring how the analyzer resolves qualified usages
+			// by canonical identity regardless of the active imports (see #428).
+			if (GDScriptLanguage *language = GDScriptLanguage::get_singleton()) {
+				List<StringName> global_annotation_identities;
+				language->get_global_annotation_list(&global_annotation_identities);
+				for (const StringName &identity : global_annotation_identities) {
+					const String qualified_name = identity;
+					if (qualified_name.rfind_char('.') < 0) {
+						// A global-namespace identity has no dotted path; it is already reachable as a
+						// short name through the visible-annotation collection above.
+						continue;
+					}
+					ScriptLanguage::CodeCompletionOption option(qualified_name, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+					// Append "(" only when the canonical identity resolves unambiguously to a
+					// declaration that takes arguments. An ambiguous or unresolved identity is still
+					// offered as a plain name, matching how the visible-name path degrades.
+					GDScriptVisibleAnnotation qualified;
+					if (_resolve_qualified_visible_annotation(parser, p_path, qualified_name, annotation_parser_refs, qualified) && qualified.declaration != nullptr) {
+						if (qualified.declaration->parameters.size() > 0 || qualified.declaration->is_variadic()) {
+							option.insert_text += "(";
+						}
+					}
+					options.insert(option.display, option);
+				}
+			}
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_ANNOTATION_ARGUMENTS: {

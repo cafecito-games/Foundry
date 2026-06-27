@@ -500,6 +500,13 @@ GDScriptTokenizer::Token GDScriptTokenizerText::annotation() {
 			_advance();
 		}
 	}
+	// During completion, a trailing "." sitting immediately before the cursor (e.g.
+	// `@namespace.|`) is kept as part of the annotation token so qualified-name completion can
+	// offer the declarations under that namespace. Outside completion (`cursor_line == -1`) the
+	// stray "." is still left to the regular tokenizer.
+	if (cursor_line == line && _peek() == '.' && cursor_column == column + 1) {
+		_advance(); // Consume the trailing ".".
+	}
 	Token annotation = make_token(Token::ANNOTATION);
 	annotation.literal = StringName(annotation.source);
 	return annotation;
