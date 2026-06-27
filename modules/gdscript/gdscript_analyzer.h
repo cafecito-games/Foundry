@@ -131,7 +131,7 @@ class GDScriptAnalyzer {
 	static void merge_final_assignment_branches(const FinalAssignmentState &p_first, const FinalAssignmentState &p_second, FinalAssignmentState &r_out);
 	const GDScriptParser::VariableNode *final_member_assignment_target(const GDScriptParser::ExpressionNode *p_expression,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name) const;
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, bool *r_is_self_receiver = nullptr) const;
 	void scan_illegal_final_writes(const GDScriptParser::Node *p_node,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, bool p_in_init);
@@ -144,6 +144,9 @@ class GDScriptAnalyzer {
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, FinalAssignmentState &r_state,
 			HashSet<const GDScriptParser::VariableNode *> &r_assigned_anywhere);
 	void check_final_reads_in_expression(const GDScriptParser::ExpressionNode *p_expression,
+			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
+			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, const FinalAssignmentState &p_state);
+	void check_final_reads_in_pattern(const GDScriptParser::PatternNode *p_pattern,
 			const HashSet<const GDScriptParser::VariableNode *> &p_finals,
 			const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, const FinalAssignmentState &p_state);
 	void resolve_function_signature(GDScriptParser::FunctionNode *p_function, const GDScriptParser::Node *p_source = nullptr, bool p_is_lambda = false);

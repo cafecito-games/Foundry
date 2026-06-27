@@ -2715,27 +2715,45 @@ void GDScriptAnalyzer::check_final_member_assignments(GDScriptParser::ClassNode 
 }
 
 // Returns the `final` member written by `p_expression` when used as an assignment target,
-// or `nullptr` if the expression does not designate a tracked `final` member. Recognizes a
-// bare member identifier (`id = ...`) and explicit self access (`self.id = ...`).
+// or `nullptr` if the expression does not designate a tracked `final` member. Recognizes a bare
+// member identifier (`id`), explicit self access (`self.id`), and attribute access through any
+// other receiver of the declaring type (`other.id`). `r_is_self_receiver` reports whether the
+// reference is to *this* instance's slot (bare or `self.`); a write through any other receiver is
+// never the legal slot, and a read through one is a different instance and not flow-tracked.
 const GDScriptParser::VariableNode *GDScriptAnalyzer::final_member_assignment_target(const GDScriptParser::ExpressionNode *p_expression,
 		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
-		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name) const {
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, bool *r_is_self_receiver) const {
+	if (r_is_self_receiver != nullptr) {
+		*r_is_self_receiver = false;
+	}
 	if (p_expression == nullptr) {
 		return nullptr;
 	}
 	if (p_expression->type == GDScriptParser::Node::IDENTIFIER) {
 		const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
 		if (identifier->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE && identifier->variable_source != nullptr && p_finals.has(identifier->variable_source)) {
+			if (r_is_self_receiver != nullptr) {
+				*r_is_self_receiver = true;
+			}
 			return identifier->variable_source;
 		}
 		return nullptr;
 	}
 	if (p_expression->type == GDScriptParser::Node::SUBSCRIPT) {
 		const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
-		if (subscript->is_attribute && subscript->attribute != nullptr && subscript->base != nullptr && subscript->base->type == GDScriptParser::Node::SELF) {
-			HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(subscript->attribute->name);
-			if (found) {
-				return found->value;
+		if (subscript->is_attribute && subscript->attribute != nullptr && subscript->base != nullptr) {
+			if (subscript->base->type == GDScriptParser::Node::SELF) {
+				HashMap<StringName, const GDScriptParser::VariableNode *>::ConstIterator found = p_finals_by_name.find(subscript->attribute->name);
+				if (found) {
+					if (r_is_self_receiver != nullptr) {
+						*r_is_self_receiver = true;
+					}
+					return found->value;
+				}
+			} else if (subscript->attribute->source == GDScriptParser::IdentifierNode::MEMBER_VARIABLE && subscript->attribute->variable_source != nullptr && p_finals.has(subscript->attribute->variable_source)) {
+				// `other.id` where `other` is statically of the declaring type: the attribute
+				// resolves to this class's final, but the receiver is not `self`.
+				return subscript->attribute->variable_source;
 			}
 		}
 	}
@@ -2752,8 +2770,11 @@ void GDScriptAnalyzer::check_final_reads_in_expression(const GDScriptParser::Exp
 		return;
 	}
 
-	const GDScriptParser::VariableNode *referenced = final_member_assignment_target(p_expression, p_finals, p_finals_by_name);
-	if (referenced != nullptr && !p_state.assigned.has(referenced)) {
+	bool is_self_receiver = false;
+	const GDScriptParser::VariableNode *referenced = final_member_assignment_target(p_expression, p_finals, p_finals_by_name, &is_self_receiver);
+	// Use-before-assignment only applies to this instance's own slot; reading another instance's
+	// final (`other.id`) is a separate, possibly fully constructed object.
+	if (referenced != nullptr && is_self_receiver && !p_state.assigned.has(referenced)) {
 		push_error(vformat(R"(Final variable "%s" may be used before assignment.)", referenced->identifier->name), p_expression);
 	}
 
@@ -2808,9 +2829,9 @@ void GDScriptAnalyzer::check_final_reads_in_expression(const GDScriptParser::Exp
 		} break;
 		case GDScriptParser::Node::SUBSCRIPT: {
 			const GDScriptParser::SubscriptNode *subscript = static_cast<const GDScriptParser::SubscriptNode *>(p_expression);
-			// `self.id` was already handled above via `final_member_assignment_target`; only recurse
-			// into the base/index for nested reads (e.g. `array[id]` or `other.id`).
-			if (referenced == nullptr) {
+			// A self-receiver final (`self.id`) was already handled above; for anything else recurse
+			// into the base/index for nested reads (e.g. `array[id]`, or the `other` in `other.id`).
+			if (referenced == nullptr || !is_self_receiver) {
 				check_final_reads_in_expression(subscript->base, p_finals, p_finals_by_name, p_state);
 				if (!subscript->is_attribute) {
 					check_final_reads_in_expression(subscript->index, p_finals, p_finals_by_name, p_state);
@@ -2820,6 +2841,34 @@ void GDScriptAnalyzer::check_final_reads_in_expression(const GDScriptParser::Exp
 		case GDScriptParser::Node::ASSIGNMENT: {
 			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_expression);
 			check_final_reads_in_expression(assignment->assigned_value, p_finals, p_finals_by_name, p_state);
+		} break;
+		default:
+			break;
+	}
+}
+
+// Reports reads of still-blank finals inside a `match` pattern (expression and dictionary-key
+// patterns can reference a final). Bind/literal/wildcard patterns reference nothing.
+void GDScriptAnalyzer::check_final_reads_in_pattern(const GDScriptParser::PatternNode *p_pattern,
+		const HashSet<const GDScriptParser::VariableNode *> &p_finals,
+		const HashMap<StringName, const GDScriptParser::VariableNode *> &p_finals_by_name, const FinalAssignmentState &p_state) {
+	if (p_pattern == nullptr) {
+		return;
+	}
+	switch (p_pattern->pattern_type) {
+		case GDScriptParser::PatternNode::PT_EXPRESSION: {
+			check_final_reads_in_expression(p_pattern->expression, p_finals, p_finals_by_name, p_state);
+		} break;
+		case GDScriptParser::PatternNode::PT_ARRAY: {
+			for (int i = 0; i < p_pattern->array.size(); i++) {
+				check_final_reads_in_pattern(p_pattern->array[i], p_finals, p_finals_by_name, p_state);
+			}
+		} break;
+		case GDScriptParser::PatternNode::PT_DICTIONARY: {
+			for (int i = 0; i < p_pattern->dictionary.size(); i++) {
+				check_final_reads_in_expression(p_pattern->dictionary[i].key, p_finals, p_finals_by_name, p_state);
+				check_final_reads_in_pattern(p_pattern->dictionary[i].value_pattern, p_finals, p_finals_by_name, p_state);
+			}
 		} break;
 		default:
 			break;
@@ -2871,8 +2920,12 @@ void GDScriptAnalyzer::scan_illegal_final_writes(const GDScriptParser::Node *p_n
 		} break;
 		case GDScriptParser::Node::ASSIGNMENT: {
 			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_node);
-			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name);
-			if (target != nullptr && !p_in_init) {
+			bool is_self_receiver = false;
+			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name, &is_self_receiver);
+			// A write to this instance's slot is legal only inside `_init`; a write through any
+			// other receiver (`other.id`, or an alias of `self`) is never the slot and is rejected
+			// everywhere.
+			if (target != nullptr && (!is_self_receiver || !p_in_init)) {
 				push_error(vformat(R"*(Final variable "%s" can only be assigned in its declaration or in "_init()".)*", target->identifier->name), assignment->assignee);
 			}
 			scan_illegal_final_writes(assignment->assignee, p_finals, p_finals_by_name, p_in_init);
@@ -2973,9 +3026,12 @@ void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScrip
 			const GDScriptParser::AssignmentNode *assignment = static_cast<const GDScriptParser::AssignmentNode *>(p_statement);
 			check_final_reads_in_expression(assignment->assigned_value, p_finals, p_finals_by_name, r_state);
 
-			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name);
-			if (target == nullptr) {
-				// Not a final target; the assignee may still read finals (e.g. `array[id] = x`).
+			bool is_self_receiver = false;
+			const GDScriptParser::VariableNode *target = final_member_assignment_target(assignment->assignee, p_finals, p_finals_by_name, &is_self_receiver);
+			if (target == nullptr || !is_self_receiver) {
+				// Not this instance's slot. A write through another receiver (`other.id`) is rejected
+				// by the illegal-write scan and never fills the slot here; the assignee may also read
+				// finals (e.g. `array[id] = x` or the `other` in `other.id = x`).
 				check_final_reads_in_expression(assignment->assignee, p_finals, p_finals_by_name, r_state);
 				break;
 			}
@@ -3031,7 +3087,11 @@ void GDScriptAnalyzer::analyze_final_definite_assignment_statement(const GDScrip
 					continue;
 				}
 				FinalAssignmentState branch_state = r_state;
-				// A `when` guard is evaluated with the branch's incoming state before its block.
+				// Patterns and the `when` guard are evaluated with the branch's incoming state
+				// before its block.
+				for (int p = 0; p < branch->patterns.size(); p++) {
+					check_final_reads_in_pattern(branch->patterns[p], p_finals, p_finals_by_name, branch_state);
+				}
 				analyze_final_definite_assignment_suite(branch->guard_body, p_finals, p_finals_by_name, branch_state, r_assigned_anywhere);
 				analyze_final_definite_assignment_suite(branch->block, p_finals, p_finals_by_name, branch_state, r_assigned_anywhere);
 				if (!has_branch) {
