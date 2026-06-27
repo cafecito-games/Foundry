@@ -3282,21 +3282,29 @@ void GDScriptLanguage::get_global_annotations(const String &p_path, List<StringN
 		return;
 	}
 
+	get_global_annotations_from_source(file->get_as_utf8_string(), p_path, r_annotations);
+}
+
+Error GDScriptLanguage::get_global_annotations_from_source(const String &p_source, const String &p_path, List<StringName> *r_annotations) const {
+	ERR_FAIL_NULL_V(r_annotations, ERR_INVALID_PARAMETER);
+
 	// Like `get_global_class_name`, this must not rely on the analyzer: annotation declarations
 	// are indexed before dependencies are guaranteed to be resolvable. Unlike class-name
-	// extraction, a file that fails to parse is not indexed: a broken source cannot be a
+	// extraction, a source that fails to parse is not indexed: a broken source cannot be a
 	// reliable annotation library, and indexing partial declarations would surface spurious
-	// duplicate-identity collisions.
+	// duplicate-identity collisions. Only the syntactic parse is consulted, so a source with
+	// valid declarations but unrelated analyzer errors is still indexed.
 	// The full body must be parsed because annotation declarations are root body declarations;
 	// the class-name fast path (which skips the body) would never see them.
 	GDScriptParser parser;
-	if (parser.parse(file->get_as_utf8_string(), p_path, false, true) != OK) {
-		return;
+	const Error parse_result = parser.parse(p_source, p_path, false, true);
+	if (parse_result != OK) {
+		return parse_result;
 	}
 
 	const GDScriptParser::ClassNode *root = parser.get_tree();
 	if (root == nullptr) {
-		return;
+		return ERR_PARSE_ERROR;
 	}
 
 	for (const GDScriptParser::AnnotationDeclarationNode *declaration : root->annotation_declarations) {
@@ -3305,12 +3313,31 @@ void GDScriptLanguage::get_global_annotations(const String &p_path, List<StringN
 		}
 		r_annotations->push_back(StringName(declaration->qualified_name));
 	}
+	return OK;
 }
 
 void GDScriptLanguage::replace_global_annotations(const String &p_path, const List<StringName> &p_annotations) {
-	remove_global_annotations_by_path(p_path);
+	// Drop every entry currently registered for this path and register the new set under a single
+	// lock, so a concurrent refresh of the same path (LSP reparse vs. editor scan with the threaded
+	// language server) cannot interleave the remove and add steps and strand an older parse's data.
+	MutexLock lock(annotation_index_mutex);
+
+	List<StringName> emptied;
+	for (KeyValue<StringName, Vector<String>> &entry : global_annotations) {
+		entry.value.erase(p_path);
+		if (entry.value.is_empty()) {
+			emptied.push_back(entry.key);
+		}
+	}
+	for (const StringName &name : emptied) {
+		global_annotations.erase(name);
+	}
+
 	for (const StringName &qualified_name : p_annotations) {
-		add_global_annotation(qualified_name, p_path);
+		Vector<String> &paths = global_annotations[qualified_name];
+		if (!paths.has(p_path)) {
+			paths.push_back(p_path);
+		}
 	}
 }
 

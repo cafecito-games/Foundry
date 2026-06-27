@@ -184,4 +184,38 @@ TEST_CASE("[Modules][GDScript] Annotation index refreshes from disk") {
 	dir->remove(root);
 }
 
+// `get_global_annotations_from_source` backs the LSP's indexing of open buffers. It must mirror the
+// editor scan: extract declarations from a syntactically valid source even when the analyzer would
+// reject the file, and reject only sources that fail to parse syntactically.
+TEST_CASE("[Modules][GDScript] Annotation source extraction is syntax-only") {
+	GDScriptLanguage *language = GDScriptLanguage::get_singleton();
+	REQUIRE(language != nullptr);
+
+	SUBCASE("Valid declarations are extracted despite unrelated analyzer errors") {
+		List<StringName> annotations;
+		// The `var` initializer is a type error the analyzer rejects, but the source parses, so the
+		// annotation declaration must still be indexed (the scan never runs the analyzer either).
+		const Error result = language->get_global_annotations_from_source(
+				"namespace cafecito.test\n"
+				"annotation suite targets CLASS\n"
+				"var broken: int = \"not an int\"\n",
+				"res://buffer.gd", &annotations);
+
+		CHECK_EQ(result, OK);
+		REQUIRE_EQ(annotations.size(), 1);
+		CHECK_EQ(annotations.front()->get(), SNAME("cafecito.test.suite"));
+	}
+
+	SUBCASE("A syntactically broken source extracts nothing") {
+		List<StringName> annotations;
+		const Error result = language->get_global_annotations_from_source(
+				"namespace cafecito.test\n"
+				"annotation suite targets\n", // Missing target list: a parse error.
+				"res://buffer.gd", &annotations);
+
+		CHECK_NE(result, OK);
+		CHECK(annotations.is_empty());
+	}
+}
+
 } // namespace GDScriptTests

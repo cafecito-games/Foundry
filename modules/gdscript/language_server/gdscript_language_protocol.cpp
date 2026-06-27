@@ -399,17 +399,12 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::LSPeer::parse_script(const Strin
 
 	// Keep the global custom annotation index in sync with the buffer the LSP just parsed, so
 	// annotation-only namespaces declared in open (possibly unsaved) files resolve cross-file for
-	// completion and lookup. A cleanly parsed buffer is the source of truth and is indexed directly;
-	// if it fails to parse, fall back to the on-disk version so a half-typed edit cannot leave stale
-	// buffer annotations behind (which mirrors the editor scan, never indexing a broken file).
-	if (parser->parse_result == OK && parser->get_tree() != nullptr) {
-		List<StringName> annotations;
-		for (const GDScriptParser::AnnotationDeclarationNode *declaration : parser->get_tree()->annotation_declarations) {
-			if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
-				continue;
-			}
-			annotations.push_back(StringName(declaration->qualified_name));
-		}
+	// completion and lookup. Extract from the buffer source with the same syntax-only parse the
+	// editor scan uses (so a buffer with valid declarations but unrelated analyzer errors is still
+	// indexed); if the buffer is syntactically broken, fall back to the on-disk version so a
+	// half-typed edit cannot strand stale buffer annotations.
+	List<StringName> annotations;
+	if (GDScriptLanguage::get_singleton()->get_global_annotations_from_source(content, p_path, &annotations) == OK) {
 		GDScriptLanguage::get_singleton()->replace_global_annotations(p_path, annotations);
 	} else {
 		GDScriptLanguage::get_singleton()->update_global_class_annotations(p_path, p_path);

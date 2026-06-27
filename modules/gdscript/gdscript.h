@@ -958,6 +958,11 @@ public:
 	// Parse `p_path` (without running the analyzer, mirroring `get_global_class_name`) and
 	// collect the canonical identities of every root-level custom annotation declaration.
 	void get_global_annotations(const String &p_path, List<StringName> *r_annotations) const;
+	// Syntax-only extraction (no analyzer, mirroring `get_global_annotations`) of canonical
+	// annotation identities from in-memory source, so the LSP can index open/unsaved buffers the
+	// same way the scan indexes files on disk. Returns the parse result; collects nothing when the
+	// source fails to parse.
+	Error get_global_annotations_from_source(const String &p_source, const String &p_path, List<StringName> *r_annotations) const;
 	// Replace every annotation declaration indexed for `p_path` with `p_annotations`, dropping any
 	// previously registered for that path. Refreshes the index from a freshly parsed file.
 	void replace_global_annotations(const String &p_path, const List<StringName> &p_annotations);
