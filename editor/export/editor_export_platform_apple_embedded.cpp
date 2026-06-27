@@ -2245,6 +2245,15 @@ int EditorExportPlatformAppleEmbedded::get_options_count() const {
 	return devices.size();
 }
 
+Vector<String> EditorExportPlatformAppleEmbedded::get_runnable_device_ids() const {
+	MutexLock lock(device_lock);
+	Vector<String> ids;
+	for (const Device &device : devices) {
+		ids.push_back(device.id);
+	}
+	return ids;
+}
+
 String EditorExportPlatformAppleEmbedded::get_options_tooltip() const {
 	return TTR("Select device from the list");
 }

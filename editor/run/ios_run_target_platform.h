@@ -37,6 +37,7 @@
 #include "core/string/ustring.h"
 #include "core/templates/list.h"
 #include "core/templates/vector.h"
+#include "core/variant/array.h"
 
 // Outcome of running a single command through a `CommandRunner`.
 struct CommandResult {
@@ -107,6 +108,12 @@ private:
 	// Runs `xcrun devicectl list devices` and returns its raw output, or an empty
 	// string when the tool is unavailable or fails.
 	String _query_devicectl();
+
+	// Resolves the device an "auto"/empty `p_requested` selection refers to, given a
+	// `devicectl`-shaped `p_devices` array: the first runnable (paired + Developer
+	// Mode) device, or the first connected device when none is runnable. A concrete
+	// `p_requested` is returned unchanged.
+	static String _resolve_auto_device_id(const Array &p_devices, const String &p_requested);
 
 	// Locates the registered iOS export platform (the deploy/enumeration owner), or
 	// nullptr when running headless or off macOS.

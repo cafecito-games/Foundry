@@ -123,6 +123,30 @@ String IOSRunTargetPlatform::_query_devicectl() {
 	return outcome.output;
 }
 
+String IOSRunTargetPlatform::_resolve_auto_device_id(const Array &p_devices, const String &p_requested) {
+	if (!p_requested.is_empty() && p_requested != "auto") {
+		return p_requested;
+	}
+
+	String first_connected;
+	for (int i = 0; i < p_devices.size(); i++) {
+		const Dictionary device = p_devices[i];
+		const String identifier = device.get("identifier", String());
+		if (first_connected.is_empty()) {
+			first_connected = identifier;
+		}
+		const Dictionary connection_properties = device.get("connectionProperties", Dictionary());
+		const Dictionary device_properties = device.get("deviceProperties", Dictionary());
+		const bool runnable = String(connection_properties.get("pairingState", String())) == "paired" &&
+				String(device_properties.get("developerModeStatus", String())) == "enabled";
+		if (runnable) {
+			return identifier;
+		}
+	}
+
+	return first_connected;
+}
+
 Vector<ReadinessStep> IOSRunTargetPlatform::probe_readiness(const RunTarget &p_target) {
 	ERR_FAIL_NULL_V(command_runner, Vector<ReadinessStep>());
 
@@ -163,7 +187,13 @@ Vector<ReadinessStep> IOSRunTargetPlatform::probe_readiness(const RunTarget &p_t
 	snapshot["signing_team"] = p_target.team_id;
 	snapshot["provisioning_stderr"] = String();
 
-	const RunTargetReadiness::ProbeResult probe = RunTargetReadiness::parse_ios_probe(snapshot, p_target.device_id);
+	// Diagnose the same device a Run would target. For an "auto" target that means
+	// the first runnable device, so readiness and Run agree; when none is runnable,
+	// fall back to the first connected device so the ladder can still explain what
+	// to fix (e.g. Developer Mode off) instead of silently inspecting the wrong one.
+	const String device_id = _resolve_auto_device_id(snapshot["devices"], p_target.device_id);
+
+	const RunTargetReadiness::ProbeResult probe = RunTargetReadiness::parse_ios_probe(snapshot, device_id);
 	return RunTargetReadiness::evaluate(probe);
 }
 
@@ -230,16 +260,18 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 	}
 
 	// Resolve the device to deploy to. A target may remember "auto" (or nothing),
-	// meaning "the connected device"; `run_on_device` only matches concrete UUIDs,
-	// so pick the first runnable device, matching how readiness treats "auto".
+	// meaning "the connected device"; `run_on_device` only matches concrete UUIDs.
+	// Resolve "auto" against the export platform's own poll cache (the exact list
+	// `run_on_device` searches) so the chosen device is guaranteed deployable and
+	// can't drift from a separately enumerated, possibly newer, devicectl query.
 	String device_id = p_target.device_id;
 	if (device_id.is_empty() || device_id == "auto") {
-		const Vector<RunTargetDevice> devices = list_devices();
-		if (devices.is_empty()) {
+		const Vector<String> runnable = platform->get_runnable_device_ids();
+		if (runnable.is_empty()) {
 			ERR_PRINT(vformat("Cannot run iOS target \"%s\": no runnable device is connected.", p_target.name));
 			return ERR_UNAVAILABLE;
 		}
-		device_id = devices[0].id;
+		device_id = runnable[0];
 	}
 
 	// Hand off to the existing export-to-`.xcarchive` + `devicectl` deploy path,

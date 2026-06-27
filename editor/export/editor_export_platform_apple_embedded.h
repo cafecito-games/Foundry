@@ -259,6 +259,12 @@ public:
 	// by menu index. Returns ERR_INVALID_PARAMETER when no connected device matches.
 	Error run_on_device(const Ref<EditorExportPreset> &p_preset, const String &p_device_id, BitField<EditorExportPlatform::DebugFlags> p_debug_flags);
 
+	// Returns the ids of the currently enumerated, runnable devices, in poll order.
+	// This is the same cache `run_on_device` matches against, so a run-target adapter
+	// can resolve an "auto" device to one this platform can actually deploy to
+	// without a separate, possibly out-of-sync, enumeration.
+	Vector<String> get_runnable_device_ids() const;
+
 	virtual bool poll_export() override {
 		bool dc = devices_changed.is_set();
 		if (dc) {

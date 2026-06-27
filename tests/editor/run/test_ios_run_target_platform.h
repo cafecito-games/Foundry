@@ -224,6 +224,44 @@ TEST_CASE("[Editor][IOSRunTarget] probe_readiness blocks on team when none is se
 	CHECK_EQ(provisioning.status, ReadinessStep::BLOCKED);
 }
 
+TEST_CASE("[Editor][IOSRunTarget] auto target diagnoses the first runnable device") {
+	// An unready device is listed before a ready one. "auto" readiness must follow
+	// the same rule as Run (first runnable device), so it reports the ready device.
+	FakeCommandRunner runner;
+	runner.devicectl_output =
+			"{\"result\":{\"devices\":["
+			"{\"identifier\":\"phone-off\",\"connectionProperties\":{\"pairingState\":\"paired\",\"transportType\":\"wired\"},\"deviceProperties\":{\"name\":\"DevMode-off iPhone\",\"developerModeStatus\":\"disabled\"}},"
+			"{\"identifier\":\"phone-ready\",\"connectionProperties\":{\"pairingState\":\"paired\",\"transportType\":\"wired\"},\"deviceProperties\":{\"name\":\"Ready iPhone\",\"developerModeStatus\":\"enabled\"}}"
+			"]}}";
+
+	IOSRunTargetPlatform adapter(&runner);
+	RunTarget target = make_ios_target();
+	target.device_id = "auto";
+
+	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
+	REQUIRE_EQ(steps.size(), 6);
+	for (const ReadinessStep &step : steps) {
+		CHECK_EQ(step.status, ReadinessStep::OK);
+	}
+}
+
+TEST_CASE("[Editor][IOSRunTarget] auto target with no runnable device diagnoses the first connected one") {
+	// Only an unready device is connected. "auto" readiness must fall back to it so
+	// the ladder explains the blocker rather than claiming nothing is connected.
+	FakeCommandRunner runner;
+	runner.devicectl_output = make_devicectl_json("phone-off", "DevMode-off iPhone", "paired", "disabled");
+
+	IOSRunTargetPlatform adapter(&runner);
+	RunTarget target = make_ios_target();
+	target.device_id = "auto";
+
+	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
+	const ReadinessStep device = step_by_id(steps, RunTargetReadiness::STEP_DEVICE);
+	CHECK_EQ(device.status, ReadinessStep::OK); // The device is connected and trusted.
+	const ReadinessStep developer_mode = step_by_id(steps, RunTargetReadiness::STEP_DEVELOPER_MODE);
+	CHECK_EQ(developer_mode.status, ReadinessStep::ACTION_NEEDED); // ...but Developer Mode is off.
+}
+
 TEST_CASE("[Editor][IOSRunTarget] run fails gracefully without a registered export platform") {
 	// Headless tests have no `EditorExport` singleton, so the adapter cannot find
 	// the iOS export platform to deploy through; it must report that cleanly.
