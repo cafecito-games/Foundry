@@ -38,6 +38,8 @@
 #include "gdscript_utility_functions.h"
 
 #ifdef TOOLS_ENABLED
+#include "gdscript_format.h"
+
 #include "editor/gdscript_highlighter.h"
 #include "editor/gdscript_migration_wizard_plugin.h"
 #include "editor/gdscript_translation_parser_plugin.h"
@@ -246,10 +248,15 @@ void generate_gdscript_tests() {
 	GDScriptTests::GDScriptTestRunner::generate_outputs_for_cmdline();
 }
 
+void gdscript_format_command() {
+	GDScriptFormatterCLI::run_from_cmdline();
+}
+
 REGISTER_TEST_COMMAND("gdscript-tokenizer", &test_tokenizer);
 REGISTER_TEST_COMMAND("gdscript-tokenizer-buffer", &test_tokenizer_buffer);
 REGISTER_TEST_COMMAND("gdscript-parser", &test_parser);
 REGISTER_TEST_COMMAND("gdscript-compiler", &test_compiler);
 REGISTER_TEST_COMMAND("gdscript-bytecode", &test_bytecode);
 REGISTER_TEST_COMMAND("--gdscript-generate-tests", &generate_gdscript_tests);
+REGISTER_TEST_COMMAND("--gdscript-format", &gdscript_format_command);
 #endif

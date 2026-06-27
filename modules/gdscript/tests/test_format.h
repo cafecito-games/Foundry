@@ -258,6 +258,45 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		CHECK_EQ(format_or_fail("var f: AsyncCallable[[int,String],bool]\n"),
 				"var f: AsyncCallable[[int, String], bool]\n");
 	}
+
+	TEST_CASE("[Format] CLI option parsing recognizes modes and paths") {
+		List<String> args;
+		args.push_back("--headless");
+		args.push_back("--gdscript-format");
+		args.push_back("--check");
+		args.push_back("a.gd");
+		args.push_back("dir");
+		GDScriptFormatterCLI::Options options = GDScriptFormatterCLI::parse_options(args);
+		CHECK_EQ(options.mode, GDScriptFormatterCLI::MODE_CHECK);
+		CHECK_FALSE(options.read_stdin);
+		REQUIRE_EQ(options.paths.size(), 2);
+		CHECK_EQ(options.paths[0], "a.gd");
+		CHECK_EQ(options.paths[1], "dir");
+	}
+
+	TEST_CASE("[Format] CLI option parsing defaults to stdin and write/diff flags") {
+		List<String> only_command;
+		only_command.push_back("--gdscript-format");
+		GDScriptFormatterCLI::Options defaulted = GDScriptFormatterCLI::parse_options(only_command);
+		CHECK(defaulted.read_stdin);
+		CHECK_EQ(defaulted.mode, GDScriptFormatterCLI::MODE_STDOUT);
+
+		List<String> dash;
+		dash.push_back("--gdscript-format");
+		dash.push_back("-w");
+		dash.push_back("-");
+		GDScriptFormatterCLI::Options stdin_write = GDScriptFormatterCLI::parse_options(dash);
+		CHECK_EQ(stdin_write.mode, GDScriptFormatterCLI::MODE_WRITE);
+		CHECK(stdin_write.read_stdin);
+
+		List<String> diff;
+		diff.push_back("--gdscript-format");
+		diff.push_back("--diff");
+		diff.push_back("x.gd");
+		GDScriptFormatterCLI::Options diff_options = GDScriptFormatterCLI::parse_options(diff);
+		CHECK_EQ(diff_options.mode, GDScriptFormatterCLI::MODE_DIFF);
+		CHECK_FALSE(diff_options.read_stdin);
+	}
 }
 
 } // namespace GDScriptTests
