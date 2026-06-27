@@ -1438,6 +1438,7 @@ public:
 		TypeNode *signature_return_type = nullptr;
 		bool has_signature = false;
 		bool signature_is_async = false; // Set when the type was written as AsyncCallable.
+		bool is_coroutine = false; // Set when the type was written as Coroutine[T].
 		bool is_nullable = false;
 
 		TypeNode *get_container_type_or_null(int p_index) const {
