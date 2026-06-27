@@ -1321,6 +1321,9 @@ static void _find_built_in_variants(HashMap<String, ScriptLanguage::CodeCompleti
 	// `AsyncCallable` is a GDScript-only spelling of `Callable` and isn't a Variant type.
 	ScriptLanguage::CodeCompletionOption async_callable_option("AsyncCallable", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
 	r_result.insert(async_callable_option.display, async_callable_option);
+	// `Coroutine` is a GDScript-only spelling over `GDScriptFunctionState` and isn't a Variant type.
+	ScriptLanguage::CodeCompletionOption coroutine_option("Coroutine", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+	r_result.insert(coroutine_option.display, coroutine_option);
 }
 
 static void _find_global_enums(HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {

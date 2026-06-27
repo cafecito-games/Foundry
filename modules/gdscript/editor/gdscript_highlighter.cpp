@@ -866,6 +866,8 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	class_names[SNAME("void")] = basetype_color;
 	// `AsyncCallable` is a GDScript-only spelling of the `Callable` type and isn't a core type word.
 	class_names[SNAME("AsyncCallable")] = basetype_color;
+	// `Coroutine` is a GDScript-only spelling over `GDScriptFunctionState` and isn't a core type word.
+	class_names[SNAME("Coroutine")] = basetype_color;
 	// `get_core_type_words()` doesn't return primitive types.
 	class_names[SNAME("bool")] = basetype_color;
 	class_names[SNAME("int")] = basetype_color;

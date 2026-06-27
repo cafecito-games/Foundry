@@ -397,6 +397,55 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 		return;
 	}
 
+	if (p_enum.is_empty() && p_type.begins_with("Coroutine[")) {
+		// `Coroutine[T]` is a synthetic GDScript type with no dedicated class page.
+		// Find the bracket that closes the leading `Coroutine[` so the array spelling
+		// docgen emits for `Array[Coroutine[T]]` (`Coroutine[T][]`) and other nested
+		// forms aren't misparsed as a top-level coroutine.
+		constexpr int coroutine_prefix_length = 10; // length of "Coroutine["
+		int depth = 0;
+		int close = -1;
+		for (int i = coroutine_prefix_length - 1; i < p_type.length(); i++) {
+			const char32_t character = p_type[i];
+			if (character == '[') {
+				depth++;
+			} else if (character == ']') {
+				depth--;
+				if (depth == 0) {
+					close = i;
+					break;
+				}
+			}
+		}
+		// Only the bare `Coroutine[T]` and its single-level array `Coroutine[T][]`
+		// are rendered here; anything else falls through to the generic handling.
+		const String trailing = close == -1 ? String() : p_type.substr(close + 1);
+		if (close != -1 && (trailing.is_empty() || trailing == "[]")) {
+			const String result_type = p_type.substr(coroutine_prefix_length, close - coroutine_prefix_length);
+			const bool is_array = trailing == "[]";
+			p_rt->push_color(type_color);
+			if (is_array) {
+				p_rt->push_meta("#Array", RichTextLabel::META_UNDERLINE_ON_HOVER); // class
+				p_rt->add_text("Array");
+				p_rt->pop(); // meta
+				p_rt->add_text("[");
+			}
+			// Render the wrapper as plain text and recurse on the result type so `T`
+			// links correctly while `void`/nested container/coroutine results stay safe
+			// instead of producing dead links to missing help pages.
+			p_rt->add_text("Coroutine[");
+			p_rt->pop(); // color
+			_add_type_to_rt(result_type, "", false, p_rt, p_owner_node, p_class);
+			p_rt->push_color(type_color);
+			p_rt->add_text("]");
+			if (is_array) {
+				p_rt->add_text("]");
+			}
+			p_rt->pop(); // color
+			return;
+		}
+	}
+
 	bool is_enum_type = !p_enum.is_empty();
 	bool is_bitfield = p_is_bitfield && is_enum_type;
 	bool can_ref = !p_type.contains_char('*') || is_enum_type;

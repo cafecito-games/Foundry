@@ -94,6 +94,30 @@ void GDScriptDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type
 		r_type = "Variant";
 		return;
 	}
+	if (p_gdtype.is_coroutine) {
+		// `Coroutine[T]` is a source-level skin over `GDScriptFunctionState`. Render the
+		// phantom result type from `container_element_types[0]` so the native class name
+		// never leaks into the class reference, mirroring `DataType::to_string()`.
+		String element = "Variant";
+		if (p_gdtype.has_container_element_type(0)) {
+			const GDType result_type = p_gdtype.get_container_element_type(0);
+			if (result_type.kind == GDType::BUILTIN && result_type.builtin_type == Variant::NIL) {
+				element = "void";
+			} else {
+				// An enum result collapses to its underlying `int` spelling, mirroring how
+				// `Array[Enum]` renders as `int[]` in the class reference: the enum name lives
+				// in a separate metadata field that the wrapped `Coroutine[T]` spelling cannot
+				// carry, and embedding it here would emit a dead class-style help link.
+				String element_enum;
+				_doctype_from_gdtype(result_type, element, element_enum);
+				if (element.is_empty()) {
+					element = "Variant";
+				}
+			}
+		}
+		r_type = "Coroutine[" + element + "]";
+		return;
+	}
 	switch (p_gdtype.kind) {
 		case GDType::BUILTIN:
 			if (p_gdtype.builtin_type == Variant::NIL) {
