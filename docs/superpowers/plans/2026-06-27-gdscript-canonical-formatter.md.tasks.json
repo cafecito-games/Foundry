@@ -17,7 +17,7 @@
     {
       "id": 3,
       "subject": "Task 3: Canonical style normalization",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [1],
       "description": "**Goal:** Apply non-structural canonical style: double-quote normalization, trailing commas, redundant-paren policy (preserve v1), numeric casing, fork-syntax spacing.\n\n**Files:**\n- Modify: modules/gdscript/gdscript_format.cpp\n- Test: modules/gdscript/tests/test_format.h\n\n**Verify:** ./bin/godot.* --headless --test --test-suite=\"*Format*\"\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_format.cpp\", \"modules/gdscript/tests/test_format.h\"], \"verifyCommand\": \"./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --test-suite=\\\"*Format*\\\"\", \"acceptanceCriteria\": [\"single->double quotes unless content has a double quote\", \"trailing comma in multi-line collections/args, none single-line\", \"numeric casing normalized (0xFF, lowercase 0x/0b/e)\", \"redundant parens preserved in v1 with locking test\", \"[T, U] / [T: Bound] / AsyncCallable spacing canonical\", \"no auto-wrap/auto-join\"]}\n```"
     },

@@ -26,7 +26,7 @@
 - `modules/gdscript/gdscript_format.cpp` — pipeline, token index, printer (all node print routines), comment interleaving, style normalization.
 - `modules/gdscript/register_types.cpp` — register the `--gdscript-format` and `--gdscript-generate-format-tests` commands (mirror `generate_gdscript_tests`).
 - `main/main.cpp` — route `--gdscript-format` into the test-command dispatch (one-line addition next to `is_test_command`).
-- `modules/gdscript/tests/test_format.h` — doctest suite: golden fixtures, idempotency, refuse-on-error, semantic (token-stream) preservation.
+- `modules/gdscript/tests/test_format.h` — doctest suite: golden fixtures, idempotency, refuse-on-error, semantic (parse-tree) preservation.
 - `modules/gdscript/tests/scripts/format/**` — `input.gd` / `expected.gd` fixture pairs.
 - `.pre-commit-config.yaml` — local hook running `--gdscript-format --check` on staged `*.gd`.
 - CI workflow (`.github/workflows/*`) — a `--check` gate step.
@@ -606,7 +606,7 @@ git commit -m "feat(gdscript): interleave comments and normalize blank lines in 
 - [ ] Single-quoted strings normalize to double quotes unless the content contains an unescaped `"` (then leave single). Escapes and contents are otherwise untouched.
 - [ ] Multi-line array/dictionary/argument literals get a trailing comma on the last element; single-line ones do not.
 - [ ] Numeric literals normalize casing: lowercase `0x`/`0b`/exponent `e`, hex digits uppercase (`0xFF`), preserve underscores.
-- [ ] Parentheses are reconstructed by precedence, not preserved from source. The parser discards original parentheses (the AST has no paren node), so "preserve as written" is impossible — instead emit the **minimal** parentheses required by operator precedence and associativity so the formatted text re-parses to an identical tree. A child operand is wrapped in `()` iff its operator binds looser than the parent context requires (lower precedence, or equal precedence on the associativity-wrong side; also wrap a ternary/`await`/cast operand where grammar demands). This is a hard semantic-preservation requirement that Task 5's token-stream test enforces (`(1 + 2) * 3` must stay parenthesized; `1 + (2 * 3)` must drop to `1 + 2 * 3`).
+- [ ] Parentheses are reconstructed by precedence, not preserved from source. The parser discards original parentheses (the AST has no paren node), so "preserve as written" is impossible — instead emit the **minimal** parentheses required by operator precedence and associativity so the formatted text re-parses to an identical tree. A child operand is wrapped in `()` iff its operator binds looser than the parent context requires (lower precedence, or equal precedence on the associativity-wrong side; also wrap a ternary/`await`/cast operand where grammar demands). This is a hard semantic-preservation requirement that Task 5's parse-tree equivalence test enforces (`(1 + 2) * 3` must stay parenthesized; `1 + (2 * 3)` must drop to `1 + 2 * 3`).
 - [ ] Fork syntax spacing: `[T, U]` with `, ` and no inner padding; `[T: Bound]`; `AsyncCallable[[int, String], bool]` / `async func(...) -> ...` signatures spaced canonically; trait `uses`/declaration spacing.
 - [ ] No auto-wrap/auto-join: existing author line breaks within an expression are preserved.
 
@@ -812,7 +812,7 @@ git commit -m "feat(gdscript): add --gdscript-format CLI with check/write/diff m
 
 ## Task 5: Test harness, fixtures, and property/semantic tests
 
-**Goal:** Golden-file fixtures plus corpus-wide property tests proving idempotency, refuse-on-error, and semantic (token-stream) preservation, with a regen command for intentional style changes.
+**Goal:** Golden-file fixtures plus corpus-wide property tests proving idempotency, refuse-on-error, and semantic (parse-tree) preservation, with a regen command for intentional style changes.
 
 **Files:**
 - Modify: `modules/gdscript/tests/test_format.h`
@@ -824,7 +824,7 @@ git commit -m "feat(gdscript): add --gdscript-format CLI with check/write/diff m
 - [ ] Fixture coverage: basics (spacing/indent/blanks), comments, strings/quotes, collections/trailing commas, and fork syntax (`final`, `abstract`, generics, `AsyncCallable`, traits).
 - [ ] Idempotency: for every `.gd` script under `modules/gdscript/tests/scripts/`, `format(x) == format(format(x))` (skipping known-bad/`errors` scripts).
 - [ ] Refuse-on-error: every script under `analyzer/errors/` and `runtime/errors/` that fails to parse is refused (returns error, empty output).
-- [ ] Semantic preservation: for each formattable script, the meaningful token stream (token types + literal values, excluding whitespace/newline/indent/comment trivia) is identical before and after formatting.
+- [ ] Semantic preservation: for each formattable script, the **parsed tree** is structurally equivalent before and after formatting. Use a parse-tree comparison, NOT a token-stream comparison — the formatter legitimately changes the token stream (reconstructs minimal parentheses, normalizes `not in`→prefix-`not`, `&&`/`||`→`and`/`or`, single→double quotes), all of which preserve the tree but alter tokens. A token-stream check would false-positive on every such case.
 - [ ] `--gdscript-generate-format-tests` rewrites each `expected.gd` from current formatter output.
 
 **Verify:** `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --test-suite="*Format*"` → all pass.
@@ -880,19 +880,19 @@ TEST_CASE("[Format] Refuses unparsable error fixtures") {
 	}
 }
 
-TEST_CASE("[Format] Preserves the meaningful token stream") {
+TEST_CASE("[Format] Preserves the parsed tree") {
 	for (const String &script : collect_gd_scripts("modules/gdscript/tests/scripts")) {
 		String source = FileAccess::get_file_as_string(script);
 		GDScriptFormatter formatter;
 		GDScriptFormatter::Result result;
 		if (formatter.format(source, script, result) != OK) { continue; }
-		CHECK_MESSAGE(significant_tokens(source) == significant_tokens(result.formatted),
-				"Token stream changed: " + script);
+		CHECK_MESSAGE(trees_equivalent(source, result.formatted, script),
+				"Tree changed by formatting: " + script);
 	}
 }
 ```
 
-`significant_tokens()` tokenizes via `GDScriptTokenizerText` and returns a vector of `(Token::Type, literal-as-string)` excluding `NEWLINE`/`INDENT`/`DEDENT`/whitespace and comment trivia.
+`trees_equivalent(a, b, path)` parses both `a` and `b` with `GDScriptParser` and walks the two `ClassNode` trees in lockstep, asserting structural equality while ignoring trivia: ignore `start_line`/`end_line`/columns, comments, and — critically — ignore the surface differences the formatter intentionally normalizes (it compares the post-parse AST, so original-vs-reconstructed parentheses already collapse to the same tree, and `not in`/`!`/`&&` fold to the same `OpType`). Compare node `type`, operator enums, identifier names, literal `Variant` values, child counts, and recurse. Implement it as a focused recursive comparator over the node types the printer emits; on any divergence return false (the `CHECK_MESSAGE` names the offending script). This is the real semantic-preservation invariant: a formatter must never change what the code parses to.
 
 - [ ] **Step 5: Run to confirm failures, then make fixtures/harness pass**
 
