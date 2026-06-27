@@ -234,10 +234,31 @@ Ref<EditorExportPreset> RunTargetsPanel::_get_or_create_preset_for_platform(cons
 		if (preset.is_null()) {
 			return Ref<EditorExportPreset>();
 		}
+
+		// Pick a name no existing preset uses; targets resolve their preset by name,
+		// so a collision (e.g. an unrelated preset already named "iOS") would let a
+		// target edit or run the wrong preset.
+		String preset_name = os_name;
+		int suffix = 2;
+		bool taken = true;
+		while (taken) {
+			taken = false;
+			for (int j = 0; j < editor_export->get_export_preset_count(); j++) {
+				Ref<EditorExportPreset> existing = editor_export->get_export_preset(j);
+				if (existing.is_valid() && existing->get_name() == preset_name) {
+					taken = true;
+					break;
+				}
+			}
+			if (taken) {
+				preset_name = os_name + " " + itos(suffix++);
+			}
+		}
+
 		// Register the preset first so the configuration setters below (each of
 		// which persists through to `export_presets.cfg`) write the new entry too.
 		editor_export->add_export_preset(preset);
-		preset->set_name(os_name);
+		preset->set_name(preset_name);
 		preset->set_runnable(true);
 		preset->set(PRESET_KEY_BUNDLE_ID, default_bundle_id_for_project(GLOBAL_GET("application/config/name")));
 		return preset;
