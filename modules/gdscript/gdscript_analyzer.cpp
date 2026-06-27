@@ -309,6 +309,35 @@ static Vector<String> _split_signature_top_level(const String &p_text) {
 
 static GDScriptParser::DataType _decode_signature_type(const String &p_encoded);
 
+// Rebuilds a Coroutine[T] from its encoded result-type element (see _encode_coroutine_result_element).
+// An empty element yields a result-less coroutine (identity preserved, phantom result unknown because it
+// was lossy or unspecified); "Variant" yields Coroutine[Variant]; "void" yields a NIL result; anything
+// else is decoded through the shared signature grammar. Non-empty elements are wrapped via
+// make_coroutine_type so the coroutine identity and phantom result type survive the boundary.
+static GDScriptParser::DataType _decode_coroutine_result_element(const String &p_element) {
+	const String element = p_element.strip_edges();
+	if (element.is_empty()) {
+		GDScriptParser::DataType coroutine;
+		coroutine.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		coroutine.kind = GDScriptParser::DataType::NATIVE;
+		coroutine.builtin_type = Variant::OBJECT;
+		coroutine.native_type = SNAME("GDScriptFunctionState");
+		coroutine.is_coroutine = true;
+		return coroutine;
+	}
+	GDScriptParser::DataType result_type;
+	result_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	if (element == "Variant") {
+		result_type.kind = GDScriptParser::DataType::VARIANT;
+	} else if (element == "void") {
+		result_type.kind = GDScriptParser::DataType::BUILTIN;
+		result_type.builtin_type = Variant::NIL;
+	} else {
+		result_type = _decode_signature_type(element);
+	}
+	return make_coroutine_type(result_type);
+}
+
 // Decodes a Callable/Signal signature suffix ("[[p0, p1], ret]" or "[[p0, p1]]") into r_type. Returns
 // false — leaving r_type untouched (a bare callable/signal) — when the suffix does not match the
 // expected grammar, so malformed external metadata degrades to gradual typing instead of a bogus
@@ -467,6 +496,13 @@ static GDScriptParser::DataType _decode_signature_type_base(const String &p_enco
 		}
 		return result;
 	}
+	if (text == "Coroutine" || (text.begins_with("Coroutine[") && text.ends_with("]"))) {
+		String element = "";
+		if (text.begins_with("Coroutine[")) {
+			element = text.substr(10, text.length() - 11); // between "Coroutine[" and trailing "]"
+		}
+		return _decode_coroutine_result_element(element);
+	}
 	if (_resolve_hint_leaf_type(text, result)) {
 		return result;
 	}
@@ -499,6 +535,13 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 // global/native/built-in enum is the exception: its identity round-trips through the hint grammar, so
 // it is safe to compare as a rich slot.
 static bool _signature_slot_is_comparison_safe(const GDScriptParser::DataType &p_type) {
+	// Coroutine[T] is a NATIVE skin, but unlike a plain native it carries a phantom result type that only
+	// survives the boundary when T itself round-trips. A result-less coroutine (its result was lossy and
+	// dropped on encode, see DataType::to_property_info) must cross gradually, so require a comparison-safe
+	// result element rather than falling through to the always-safe NATIVE case below.
+	if (p_type.is_coroutine) {
+		return p_type.has_container_element_type(0) && _signature_slot_is_comparison_safe(p_type.get_container_element_type(0));
+	}
 	switch (p_type.kind) {
 		case GDScriptParser::DataType::ENUM: {
 			GDScriptParser::DataType reconstructed;
@@ -10805,6 +10848,14 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 	}
 	result.builtin_type = p_property.type;
 	if (p_property.type == Variant::OBJECT) {
+		if (p_property.hint == PROPERTY_HINT_COROUTINE_TYPE) {
+			// Rebuild Coroutine[T] from the dedicated hint emitted by DataType::to_property_info, so the
+			// coroutine identity and phantom result type survive a cross-script PropertyInfo round-trip
+			// instead of degrading to a bare GDScriptFunctionState.
+			GDScriptParser::DataType coroutine = _decode_coroutine_result_element(p_property.hint_string);
+			coroutine.is_read_only = p_is_readonly;
+			return coroutine;
+		}
 		if (ScriptServer::is_global_class(p_property.class_name)) {
 			result.kind = GDScriptParser::DataType::SCRIPT;
 			result.script_path = ScriptServer::get_global_class_path(p_property.class_name);
@@ -11754,6 +11805,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 bool GDScriptAnalyzer::function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
 	r_return_type = type_from_property(p_info.return_val);
+	// METHOD_FLAG_ASYNC wraps the declared return type into Coroutine[T]. MethodInfo stores the declared
+	// return type in return_val, so this wraps unconditionally to mirror the in-memory async call-site
+	// path: an async method declared `-> Coroutine[T]` yields Coroutine[Coroutine[T]], same as locally.
 	if ((p_info.flags & METHOD_FLAG_ASYNC) != 0) {
 		r_return_type = make_coroutine_type(r_return_type);
 	}

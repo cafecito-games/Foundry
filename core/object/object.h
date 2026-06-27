@@ -94,6 +94,7 @@ enum PropertyHint {
 	PROPERTY_HINT_INPUT_NAME,
 	PROPERTY_HINT_FILE_PATH,
 	PROPERTY_HINT_CALLABLE_TYPE, // hint_string carries an encoded Callable/Signal method signature (see GDScript DataType::to_property_info).
+	PROPERTY_HINT_COROUTINE_TYPE, // hint_string carries the encoded result type of a GDScript Coroutine[T] (see GDScript DataType::to_property_info).
 	PROPERTY_HINT_MAX,
 };
 
