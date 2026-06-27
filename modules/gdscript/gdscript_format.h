@@ -138,6 +138,11 @@ private:
 	// True when a full-line comment sits strictly between `p_after` and `p_before`.
 	// Lets an *empty* multi-line collection keep an interior comment (`[\n\t# c\n]`).
 	bool has_full_line_comment_between(int p_after, int p_before) const;
+	// The source line of the `else` keyword, found as the only non-comment,
+	// non-blank line between the true block's end and the else block's first
+	// statement. The parser records no node for `else`, and the else suite's
+	// start_line is its first statement, not the `else` line.
+	int find_else_line(int p_true_block_end, int p_else_block_start) const;
 	// A trivia line is a full-line comment or a recovered standalone annotation;
 	// `emit_trivia_line` emits whichever sits at `p_line` and advances the cursor.
 	bool is_trivia_line(int p_line) const;
@@ -311,7 +316,7 @@ public:
 
 private:
 	static Vector<String> collect_files(const Vector<String> &p_paths, bool &r_had_error);
-	static void collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files);
+	static void collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files, bool &r_had_error);
 	static String make_unified_diff(const String &p_path, const String &p_original, const String &p_formatted);
 	static void print_raw(const String &p_text);
 };
