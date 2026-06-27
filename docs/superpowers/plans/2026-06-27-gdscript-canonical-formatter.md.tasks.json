@@ -24,7 +24,7 @@
     {
       "id": 4,
       "subject": "Task 4: Wire --gdscript-format CLI with check/write/diff modes",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [1],
       "description": "**Goal:** Headless command driving the formatter over files/dirs/stdin with CI exit codes, registered like --gdscript-generate-tests.\n\n**Files:**\n- Modify: main/main.cpp, modules/gdscript/register_types.cpp\n- Modify: modules/gdscript/gdscript_format.h/.cpp (GDScriptFormatterCLI)\n\n**Verify:** echo dirty script | godot --headless --gdscript-format - ; --gdscript-format --check <dirty> exits 1\n\n```json:metadata\n{\"files\": [\"main/main.cpp\", \"modules/gdscript/register_types.cpp\", \"modules/gdscript/gdscript_format.h\", \"modules/gdscript/gdscript_format.cpp\"], \"verifyCommand\": \"./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-format --check modules/gdscript/tests/scripts/format\", \"acceptanceCriteria\": [\"paths recurse for *.gd; - or no path = stdin->stdout\", \"default=stdout, --write/-w in place, --check lists diffs+exit1, --diff/-d unified diff+exit1\", \"parse errors print path:line:col to stderr, skip, non-zero exit\", \"all-formatted --check exits 0\"]}\n```"
     },
