@@ -46,24 +46,6 @@ EditorRunNative *EditorRunNative::singleton = nullptr;
 // Path to the project's run-target config, parallel to `export_presets.cfg`.
 static const char *RUN_TARGETS_CONFIG_PATH = "res://run_targets.cfg";
 
-// Whether an export preset with `p_name` exists and is marked runnable. Mirrors
-// the legacy menu, which only exposed `preset->is_runnable()` presets, so the menu
-// can tell — without emitting resolve errors every poll — whether a configured
-// target still points at a preset the user actually wants deployed.
-static bool editor_has_runnable_export_preset(const String &p_name) {
-	EditorExport *editor_export = EditorExport::get_singleton();
-	if (editor_export == nullptr) {
-		return false;
-	}
-	for (int i = 0; i < editor_export->get_export_preset_count(); i++) {
-		const Ref<EditorExportPreset> preset = editor_export->get_export_preset(i);
-		if (preset.is_valid() && preset->get_name() == p_name && preset->is_runnable()) {
-			return true;
-		}
-	}
-	return false;
-}
-
 Vector<RunTargetMenuEntry> EditorRunNative::build_menu_model(const Vector<RunTarget> &p_targets, const HashMap<String, Vector<RunTargetDevice>> &p_devices_by_platform) {
 	Vector<RunTargetMenuEntry> entries;
 
@@ -169,15 +151,12 @@ void EditorRunNative::_rebuild_popup() {
 	run_target_entries.clear();
 
 	// Gather live devices from every registered adapter, keyed by platform. Only
-	// platforms with an adapter (iOS on macOS today) contribute run-target rows;
-	// everything else still flows through the legacy per-platform enumeration below.
+	// platforms with an adapter (iOS on macOS today) contribute run-target rows.
 	HashMap<String, Vector<RunTargetDevice>> devices_by_platform;
-	// A platform is "owned" by the run-target section only once the project has at
-	// least one configured target for it (and an adapter is registered). For an
-	// owned platform the section renders setup rows and the legacy device rows are
-	// suppressed; a platform with no configured target keeps its legacy rows so an
-	// existing project with no run_targets.cfg deploys exactly as before.
-	HashMap<String, bool> owned_platforms;
+	// Only targets whose platform has a registered adapter can be deployed, so a
+	// build without that adapter (e.g. iOS targets on a non-macOS editor) does not
+	// surface dead, undeployable rows or enable the menu on their account.
+	Vector<RunTarget> renderable_targets;
 	{
 		HashMap<String, bool> candidate_platforms;
 		candidate_platforms["ios"] = true;
@@ -191,87 +170,55 @@ void EditorRunNative::_rebuild_popup() {
 			}
 			devices_by_platform[candidate.key] = adapter->list_devices();
 		}
-		// A platform is owned (its legacy device rows suppressed) only when it has a
-		// target that can actually deploy — adapter registered and its export preset
-		// still present. A stale target pointing at a deleted/renamed preset must not
-		// hide the working legacy rows that can still deploy the project.
 		for (const RunTarget &target : run_target_manager.get_targets()) {
-			if (run_target_manager.get_platform(target.platform) != nullptr && editor_has_runnable_export_preset(target.export_preset)) {
-				owned_platforms[target.platform] = true;
+			if (run_target_manager.get_platform(target.platform) != nullptr) {
+				renderable_targets.push_back(target);
 			}
-		}
-	}
-
-	// Only targets whose platform has a registered adapter can be deployed, so a
-	// build without that adapter (e.g. iOS targets on a non-macOS editor) does not
-	// surface dead, undeployable rows or enable the menu on their account.
-	Vector<RunTarget> renderable_targets;
-	for (const RunTarget &target : run_target_manager.get_targets()) {
-		if (run_target_manager.get_platform(target.platform) != nullptr) {
-			renderable_targets.push_back(target);
 		}
 	}
 
 	run_target_entries = build_menu_model(renderable_targets, devices_by_platform);
 
-	// The first four runnable rows (run-target rows first, then legacy device rows)
-	// share the existing remote_deploy/deploy_to_device_N shortcuts so Shift+F5 /
-	// Cmd+Shift+B keep triggering a deploy even when the iOS targets that own those
-	// shortcuts are rendered in the run-target section.
-	int device_shortcut_id = 1;
-
+	// The run-target section is purely additive: it renders the project's configured
+	// targets with readiness badges and the active-selection check on top of the
+	// unchanged legacy device rows below. The legacy rows keep deploying every
+	// connected device (and own the deploy shortcuts) exactly as before, so the
+	// enriched rows never remove a working deploy path — selecting one just routes
+	// through the run-target layer (active selection + readiness surfacing).
 	{
 		const String active = run_target_manager.get_active_target_name();
 		bool header_added = false;
 		for (int i = 0; i < run_target_entries.size(); i++) {
 			const RunTargetMenuEntry &entry = run_target_entries[i];
-			// A connected-but-unconfigured device only earns a "set up" row once its
-			// platform is owned; otherwise it is still reachable (and deployable)
-			// through the legacy rows below, so showing it twice would be redundant.
-			if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE && !owned_platforms.has(entry.platform)) {
+			// Connected-but-unconfigured devices are already listed (and deployable)
+			// through the legacy rows below; the guided "set up" affordance for them
+			// lives in the Targets dock, so only configured targets are enriched here.
+			if (entry.kind != RunTargetMenuEntry::TARGET) {
 				continue;
 			}
 			if (!header_added) {
 				popup->add_separator(TTRC("Run Targets"));
 				header_added = true;
 			}
-			String label = entry.label;
-			if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE) {
-				label = vformat(TTR("Set up this device… (%s)"), entry.label);
-			}
-			popup->add_icon_item(_badge_icon(entry.badge), label, RUN_TARGET_ID_BASE + i);
+			popup->add_icon_item(_badge_icon(entry.badge), entry.label, RUN_TARGET_ID_BASE + i);
 			popup->set_item_indent(-1, 2);
-			if (entry.kind == RunTargetMenuEntry::TARGET && entry.target_name == active) {
+			if (entry.target_name == active) {
 				popup->set_item_checked(-1, true);
 			}
-			if (entry.kind == RunTargetMenuEntry::TARGET && !entry.runnable) {
+			if (!entry.runnable) {
 				popup->set_item_tooltip(-1, TTRC("The device for this target is not connected."));
-			} else if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE) {
-				popup->set_item_tooltip(-1, TTRC("Deploys now using your configured signing. Open the Targets panel to save it as its own run target."));
-			}
-			// Share the deploy shortcuts with the first runnable rows (targets first,
-			// then setup-able connected devices), so the shortcuts keep deploying once
-			// the iOS rows that own them move into the run-target section.
-			const bool row_runnable = (entry.kind == RunTargetMenuEntry::TARGET && entry.runnable) || entry.kind == RunTargetMenuEntry::SETUP_DEVICE;
-			if (row_runnable && device_shortcut_id <= 4) {
-				popup->set_item_shortcut(-1, ED_GET_SHORTCUT(vformat("remote_deploy/deploy_to_device_%d", device_shortcut_id)), true);
-				device_shortcut_id += 1;
 			}
 		}
 	}
 
-	// Legacy per-export-platform device enumeration. The iOS platform is skipped
-	// only once it is owned by the run-target section (a configured iOS target
-	// exists), to avoid listing the same devices twice; visionOS and every other
-	// platform — and iOS itself when no run target is configured — keep their
-	// existing behavior unchanged.
+	// Legacy per-export-platform device enumeration, unchanged: every platform —
+	// including iOS — keeps its existing one-click deploy rows and shortcuts, so the
+	// additive run-target section never removes a working deploy path.
+	int device_shortcut_id = 1;
 	for (int i = 0; i < EditorExport::get_singleton()->get_export_preset_count(); i++) {
 		Ref<EditorExportPreset> preset = EditorExport::get_singleton()->get_export_preset(i);
 		Ref<EditorExportPlatform> eep = preset->get_platform();
 		if (eep.is_null()) {
-			continue;
-		}
-		if (owned_platforms.has("ios") && eep->get_name() == "iOS") {
 			continue;
 		}
 		const int platform_idx = EditorExport::get_singleton()->get_export_platform_index_by_name(eep->get_name());
@@ -341,48 +288,13 @@ bool EditorRunNative::_find_target(const String &p_name, RunTarget &r_target) co
 	return false;
 }
 
-bool EditorRunNative::_find_signing_target(const String &p_platform, RunTarget &r_target) const {
-	// Prefer the active target when it is on the requested platform and still
-	// deployable, so a connected device deploys with the signing the user most
-	// recently chose. A target whose preset is gone is skipped so a usable
-	// same-platform target can still provide signing.
-	if (run_target_manager.has_active_target()) {
-		const RunTarget active = run_target_manager.get_active_target();
-		if (active.platform == p_platform && editor_has_runnable_export_preset(active.export_preset)) {
-			r_target = active;
-			return true;
-		}
-	}
-	for (const RunTarget &candidate : run_target_manager.get_targets()) {
-		if (candidate.platform == p_platform && editor_has_runnable_export_preset(candidate.export_preset)) {
-			r_target = candidate;
-			return true;
-		}
-	}
-	return false;
-}
-
 Error EditorRunNative::_start_run_target(int p_entry_index) {
 	ERR_FAIL_INDEX_V(p_entry_index, run_target_entries.size(), ERR_INVALID_PARAMETER);
 	const RunTargetMenuEntry entry = run_target_entries[p_entry_index];
 
-	if (entry.kind == RunTargetMenuEntry::SETUP_DEVICE) {
-		// A connected device not yet saved as its own target. Let a setup surface (the
-		// Targets dock) react, then deploy to it right away by borrowing the signing of
-		// a configured target on the same platform — so a connected device stays
-		// one-click deployable even before it is configured, matching the legacy menu.
-		emit_signal(SNAME("setup_target_requested"), entry.platform, entry.device_id, entry.label);
-
-		RunTarget base;
-		if (!_find_signing_target(entry.platform, base)) {
-			_show_result(vformat(TTR("\"%s\" is connected but no run target provides signing for it yet.\nOpen the Targets panel to configure signing."), entry.label), true);
-			return ERR_UNAVAILABLE;
-		}
-		RunTarget ephemeral = base;
-		ephemeral.name = entry.label;
-		ephemeral.device_id = entry.device_id;
-		return _deploy_run_target(ephemeral);
-	}
+	// Only configured-target rows are rendered from the run-target section today;
+	// connected-but-unconfigured devices deploy through the legacy rows instead.
+	ERR_FAIL_COND_V(entry.kind != RunTargetMenuEntry::TARGET, ERR_INVALID_PARAMETER);
 
 	RunTarget target;
 	if (!_find_target(entry.target_name, target)) {
@@ -550,7 +462,6 @@ void EditorRunNative::resume_run_native() {
 
 void EditorRunNative::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("native_run", PropertyInfo(Variant::OBJECT, "preset", PROPERTY_HINT_RESOURCE_TYPE, "EditorExportPreset")));
-	ADD_SIGNAL(MethodInfo("setup_target_requested", PropertyInfo(Variant::STRING, "platform"), PropertyInfo(Variant::STRING, "device_id"), PropertyInfo(Variant::STRING, "device_name")));
 }
 
 bool EditorRunNative::is_deploy_debug_remote_enabled() const {

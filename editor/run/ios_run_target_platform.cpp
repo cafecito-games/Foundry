@@ -273,14 +273,6 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 		return ERR_DOES_NOT_EXIST;
 	}
 
-	// The target remembers the signing team; make it the team the export actually
-	// signs with. Readiness reads the team from the target, but the iOS export reads
-	// `application/app_store_team_id` from the preset, so without this a target with a
-	// team set could read ready and then deploy with a blank or stale preset team.
-	if (!p_target.team_id.is_empty()) {
-		preset->set("application/app_store_team_id", p_target.team_id);
-	}
-
 	// Resolve the device to deploy to. A target may remember "auto" (or nothing),
 	// meaning "the connected device"; `run_on_device` only matches concrete UUIDs.
 	// Resolve "auto" against the export platform's own poll cache (the exact list
@@ -296,8 +288,26 @@ Error IOSRunTargetPlatform::run(const RunTarget &p_target, int p_debug_flags) {
 		device_id = runnable[0].id;
 	}
 
+	// The target remembers the signing team; the iOS export signs with the preset's
+	// `application/app_store_team_id`, and readiness reads the team from the target,
+	// so apply the target's team for the duration of this deploy and restore it
+	// afterward. This keeps readiness and the deploy in agreement without permanently
+	// rewriting the shared preset's signing team for normal exports or other targets.
+	// The deploy is synchronous, so no save scheduled by the override can observe the
+	// transient value before it is restored.
+	const Variant previous_team = preset->get("application/app_store_team_id");
+	const bool override_team = !p_target.team_id.is_empty() && String(previous_team) != p_target.team_id;
+	if (override_team) {
+		preset->set("application/app_store_team_id", p_target.team_id);
+	}
+
 	// Hand off to the existing export-to-`.xcarchive` + `devicectl` deploy path,
 	// which already passes `-allowProvisioningUpdates` so automatic signing resolves
 	// certificates, profiles, and device registration.
-	return platform->run_on_device(preset, device_id, p_debug_flags);
+	const Error run_error = platform->run_on_device(preset, device_id, p_debug_flags);
+
+	if (override_team) {
+		preset->set("application/app_store_team_id", previous_team);
+	}
+	return run_error;
 }
