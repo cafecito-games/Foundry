@@ -9864,7 +9864,8 @@ void GDScriptAnalyzer::validate_trait_conflicts(GDScriptParser::ClassNode *p_cla
 					continue;
 				}
 
-				const GDScriptParser::DataType trait_type = member.get_datatype();
+				const GDScriptParser::DataType trait_type = _substitute_type_parameters_and_self(
+						member.get_datatype(), trait_type_argument_substitution(p_class, trait), _self_type_for_class(p_class));
 				const GDScriptParser::DataType class_type = class_member.get_datatype();
 				if (!_trait_state_type_is_compatible(trait_type, class_type)) {
 					push_error(vformat(R"(Class "%s" redeclares trait member "%s" from "%s" with incompatible type. Expected "%s", got "%s".)",
@@ -12711,12 +12712,12 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		// Specialize the signature against the receiver so inherited or directly-applied type
 		// arguments substitute `T`-typed parameters and return into concrete types.
 		const GDScriptParser::DataType specialized_base = specialize_ancestor_type(p_base_type, found_in_class);
-		// Parameter-position `Self` is an exact receiver contract. Keep it as a synthetic parameter
-		// for ordinary calls so validation can reject subtypes that a dynamic override may narrow.
-		// Override/trait signature validation passes an explicit concrete Self and keeps the old
-		// substitution behavior for comparing declarations.
+		// Parameter-position `Self` is an exact receiver contract for ordinary calls, where dynamic
+		// overrides may narrow it. Static calls and signature validation use concrete substitution.
+		const bool parameter_self_is_receiver_contract =
+				p_self_type_override == nullptr && !p_is_constructor && !found_function->is_static;
 		const GDScriptParser::DataType parameter_self_type =
-				p_self_type_override != nullptr ? self_type : _self_type_parameter_from_bound(self_type);
+				parameter_self_is_receiver_contract ? _self_type_parameter_from_bound(self_type) : self_type;
 		for (int i = 0; i < found_function->parameters.size(); i++) {
 			r_par_types.push_back(substitute_member_type(
 					found_function->parameters[i]->get_datatype(), specialized_base, found_function, &parameter_self_type));
