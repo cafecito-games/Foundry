@@ -31,6 +31,7 @@
 #include "gdscript.h"
 
 #include "gdscript_analyzer.h"
+#include "gdscript_autoload_index.h"
 #include "gdscript_parser.h"
 #include "gdscript_tokenizer.h"
 #include "gdscript_utility_functions.h"
@@ -1729,21 +1730,20 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 		_find_global_enums(r_result);
 	}
 
-	// Autoload singletons
-	HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
-
-	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : autoloads) {
-		const ProjectSettings::AutoloadInfo &info = E.value;
-		if (!info.is_singleton || !info.path.has_extension("gd")) {
+	// Autoload singletons.
+	GDScriptAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
+	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (!autoload.is_singleton || autoload.script_path.is_empty()) {
 			continue;
 		}
 		// A reserved named global (e.g. the `godot` reflection namespace) is not usable as
 		// a type/base, and the analyzer refuses to resolve such an autoload there, so don't
 		// suggest it.
-		if (GDScriptLanguage::get_singleton()->is_reserved_global_name(info.name)) {
+		if (GDScriptLanguage::get_singleton()->is_reserved_global_name(autoload.name)) {
 			continue;
 		}
-		ScriptLanguage::CodeCompletionOption option(info.name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		ScriptLanguage::CodeCompletionOption option(autoload.name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
 		r_result.insert(option.display, option);
 	}
 }
@@ -2280,16 +2280,18 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 		r_result.insert(option.display, option);
 	}
 
-	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
-		if (!E.value.is_singleton) {
+	GDScriptAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
+	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (!autoload.is_singleton) {
 			continue;
 		}
 		// A reserved named global (e.g. the `godot` reflection namespace) is not exposed
 		// as the autoload's global constant; the reserved global is suggested separately.
-		if (GDScriptLanguage::get_singleton()->is_reserved_global_name(E.key)) {
+		if (GDScriptLanguage::get_singleton()->is_reserved_global_name(autoload.name)) {
 			continue;
 		}
-		ScriptLanguage::CodeCompletionOption option(E.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
+		ScriptLanguage::CodeCompletionOption option(autoload.name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
 		r_result.insert(option.display, option);
 	}
 
@@ -3903,16 +3905,11 @@ static void _list_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				}
 
 				if (p_argidx == 0 && ClassDB::is_parent_class(class_name, SNAME("Node")) && (method == SNAME("get_node") || method == SNAME("has_node"))) {
-					// Get autoloads
-					List<PropertyInfo> props;
-					ProjectSettings::get_singleton()->get_property_list(&props);
-
-					for (const PropertyInfo &E : props) {
-						String s = E.name;
-						if (!s.begins_with("autoload/")) {
-							continue;
-						}
-						String name = s.get_slicec('/', 1);
+					// Get autoloads.
+					GDScriptAutoloadIndex autoload_index;
+					autoload_index.rebuild_from_project_settings();
+					for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+						String name = String(autoload.name);
 						String path = ("/root/" + name).quote(quote_style);
 						if (use_node_paths) {
 							if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == GDScriptParser::Node::LITERAL) {
@@ -4790,8 +4787,10 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 
 				if (!for_unique_name) {
 					// Get autoloads.
-					for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
-						String path = "/root/" + E.key;
+					GDScriptAutoloadIndex autoload_index;
+					autoload_index.rebuild_from_project_settings();
+					for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+						String path = "/root/" + String(autoload.name);
 						ScriptLanguage::CodeCompletionOption option(path.quote(quote_style), ScriptLanguage::CODE_COMPLETION_KIND_NODE_PATH);
 						options.insert(option.display, option);
 					}
@@ -5649,10 +5648,12 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			if (!is_function) {
 				// A reserved named global (e.g. the `godot` reflection namespace) wins over a
 				// same-named autoload, so symbol lookup must not navigate to that autoload.
-				if (ProjectSettings::get_singleton()->has_autoload(p_symbol) && !GDScriptLanguage::get_singleton()->is_reserved_global_name(p_symbol)) {
-					const ProjectSettings::AutoloadInfo &autoload = ProjectSettings::get_singleton()->get_autoload(p_symbol);
-					if (autoload.is_singleton) {
-						String scr_path = autoload.path;
+				if (!GDScriptLanguage::get_singleton()->is_reserved_global_name(p_symbol)) {
+					GDScriptAutoloadIndex autoload_index;
+					autoload_index.rebuild_from_project_settings();
+					const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
+					if (autoload != nullptr && autoload->is_singleton) {
+						String scr_path = !autoload->script_path.is_empty() ? autoload->script_path : autoload->path;
 						if (!scr_path.ends_with(".gd")) {
 							// Not a script, try find the script anyway, may have some success.
 							scr_path = scr_path.get_basename() + ".gd";

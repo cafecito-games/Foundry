@@ -45,6 +45,7 @@
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/resource_uid.h"
 #include "core/os/os.h"
 #include "core/string/string_builder.h"
 #include "tests/test_tools.h"
@@ -235,6 +236,54 @@ struct ScopedGDScriptNativeGlobals {
 		if (initialized) {
 			GDScriptLanguage::get_singleton()->finish();
 		}
+	}
+};
+
+struct ScopedGDScriptAutoloadSetting {
+	StringName name;
+
+	ScopedGDScriptAutoloadSetting(const StringName &p_name, const String &p_path, bool p_singleton = true, int p_order = 10) {
+		name = p_name;
+		clear();
+
+		const String setting = "autoload/" + String(name);
+		ProjectSettings::get_singleton()->set_setting(setting, p_singleton ? "*" + p_path : p_path);
+		ProjectSettings::get_singleton()->set_order(setting, p_order);
+	}
+
+	~ScopedGDScriptAutoloadSetting() {
+		clear();
+	}
+
+	void clear() {
+		ProjectSettings *project_settings = ProjectSettings::get_singleton();
+		const String setting = "autoload/" + String(name);
+		if (project_settings->has_setting(setting)) {
+			project_settings->clear(setting);
+		}
+		if (project_settings->has_autoload(name)) {
+			project_settings->remove_autoload(name);
+		}
+	}
+};
+
+struct ScopedResourceUIDRegistration {
+	ResourceUID::ID id = ResourceUID::INVALID_ID;
+
+	ScopedResourceUIDRegistration(const String &p_path) {
+		ResourceUID *resource_uid = ResourceUID::get_singleton();
+		id = resource_uid->create_id();
+		resource_uid->add_id(id, p_path);
+	}
+
+	~ScopedResourceUIDRegistration() {
+		if (id != ResourceUID::INVALID_ID && ResourceUID::get_singleton()->has_id(id)) {
+			ResourceUID::get_singleton()->remove_id(id);
+		}
+	}
+
+	String get_uid_path() const {
+		return ResourceUID::get_singleton()->id_to_text(id);
 	}
 };
 
@@ -545,6 +594,71 @@ func async() -> int:
 	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(1), 7), keyword_color);
 	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(2), 4), normal_color);
 	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(3), 5), function_definition_color);
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[Modules][GDScript][Editor] Completion suggests UID-backed autoloads as script types") {
+	ScopedGDScriptNativeGlobals native_globals;
+	TempScriptFile autoload_script("completion_uid_autoload.gd", "extends Node\n");
+	ScopedResourceUIDRegistration uid(autoload_script.path);
+	ScopedGDScriptAutoloadSetting autoload(SNAME("CompletionUidAutoload"), uid.get_uid_path());
+
+	List<ScriptLanguage::CodeCompletionOption> options;
+	bool forced = false;
+	String call_hint;
+	const String code = "class Child extends CompletionUid" + String::chr(0xFFFF);
+
+	const Error err = GDScriptLanguage::get_singleton()->complete_code(code, "user://completion_uid_consumer.gd", nullptr, &options, forced, call_hint);
+	CHECK_EQ(err, OK);
+
+	bool found_autoload_type = false;
+	for (const ScriptLanguage::CodeCompletionOption &option : options) {
+		if (option.display == "CompletionUidAutoload") {
+			found_autoload_type = option.kind == ScriptLanguage::CODE_COMPLETION_KIND_CLASS;
+			break;
+		}
+	}
+	CHECK(found_autoload_type);
+}
+
+TEST_CASE("[Modules][GDScript][Editor] Symbol lookup resolves UID-backed autoload singleton scripts") {
+	ScopedGDScriptNativeGlobals native_globals;
+	TempScriptFile autoload_script("lookup_uid_autoload.gd", "extends Node\n");
+	ScopedResourceUIDRegistration uid(autoload_script.path);
+	ScopedGDScriptAutoloadSetting autoload(SNAME("LookupUidAutoload"), uid.get_uid_path());
+
+	GDScriptLanguage::LookupResult result;
+	const Error err = GDScriptLanguage::get_singleton()->lookup_code(
+			"func _ready():\n\tLookupUidAutoload" + String::chr(0xFFFF) + "\n",
+			"LookupUidAutoload",
+			"user://lookup_uid_consumer.gd",
+			nullptr,
+			result);
+
+	CHECK_EQ(err, OK);
+	CHECK_EQ(result.type, ScriptLanguage::LOOKUP_RESULT_CLASS);
+	CHECK_EQ(result.class_name, "LookupUidAutoload");
+	CHECK_EQ(result.script_path, autoload_script.path);
+	CHECK_EQ(result.location, 0);
+}
+
+TEST_CASE("[Modules][GDScript][Editor] Syntax highlighter colors UID-backed autoload singletons") {
+	ScopedGDScriptNativeGlobals native_globals;
+	TempScriptFile autoload_script("highlight_uid_autoload.gd", "extends Node\n");
+	ScopedResourceUIDRegistration uid(autoload_script.path);
+	ScopedGDScriptAutoloadSetting autoload(SNAME("HighlightUidAutoload"), uid.get_uid_path());
+
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text("func _ready() -> void:\n\tHighlightUidAutoload\n");
+
+	Ref<GDScriptSyntaxHighlighter> highlighter;
+	highlighter.instantiate();
+	highlighter->set_text_edit(text_edit);
+	highlighter->_update_cache();
+
+	const Color usertype_color = EDITOR_GET("text_editor/theme/highlighting/user_type_color");
+	CHECK_EQ(get_highlighted_color_at(highlighter->_get_line_syntax_highlighting_impl(1), 1), usertype_color);
 
 	memdelete(text_edit);
 }
@@ -2322,6 +2436,42 @@ var map: Dictionary[String, DocTarget]
 	CHECK_EQ(docs[0].properties[0].type, "characters.DocTarget");
 	CHECK_EQ(docs[0].properties[1].type, "characters.DocTarget[]");
 	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
+}
+
+TEST_CASE("[Modules][GDScript] Docgen names UID-backed autoload scripts from the autoload index") {
+	ScopedGDScriptNativeGlobals native_globals;
+	TempScriptFile autoload_script("docgen_uid_autoload.gd", "extends Node\nvar count: int\n");
+	ScopedResourceUIDRegistration uid(autoload_script.path);
+	ScopedGDScriptAutoloadSetting autoload(SNAME("DocgenUidAutoload"), uid.get_uid_path());
+
+	GDScriptParser parser;
+	Error err = parser.parse("extends Node\nvar count: int\n", autoload_script.path, false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<GDScript> script;
+	script.instantiate();
+	script->set_path(autoload_script.path);
+	GDScriptCompiler::make_scripts(script.ptr(), root, false);
+	GDScriptDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	CHECK_EQ(docs[0].name, "DocgenUidAutoload");
+	CHECK_EQ(docs[0].script_path, autoload_script.path);
 }
 
 TEST_CASE("[Modules][GDScript] Docgen emits custom annotation declarations") {

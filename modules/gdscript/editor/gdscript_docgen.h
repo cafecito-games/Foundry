@@ -42,6 +42,7 @@ class GDScriptDocGen {
 
 	static String _get_script_name(const String &p_path);
 	static String _get_class_name(const GDP::ClassNode &p_class);
+	static void _populate_singletons_from_autoload_index();
 	static void _doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, bool p_is_return = false);
 	static String _docvalue_from_variant(const Variant &p_variant, int p_recursion_level = 1);
 	static void _generate_docs(GDScript *p_script, const GDP::ClassNode *p_class);

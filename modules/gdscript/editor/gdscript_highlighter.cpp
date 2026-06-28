@@ -31,9 +31,9 @@
 #include "gdscript_highlighter.h"
 
 #include "../gdscript.h"
+#include "../gdscript_autoload_index.h"
 #include "../gdscript_tokenizer.h"
 
-#include "core/config/project_settings.h"
 #include "core/core_constants.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_theme_manager.h"
@@ -846,10 +846,11 @@ void GDScriptSyntaxHighlighter::_update_cache() {
 	}
 
 	/* Autoloads. */
-	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
-		const ProjectSettings::AutoloadInfo &info = E.value;
-		if (info.is_singleton) {
-			class_names[info.name] = usertype_color;
+	GDScriptAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
+	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (autoload.is_singleton) {
+			class_names[autoload.name] = usertype_color;
 		}
 	}
 
