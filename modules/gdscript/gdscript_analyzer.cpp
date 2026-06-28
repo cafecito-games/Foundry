@@ -97,6 +97,10 @@ static bool _is_self_type_parameter(const GDScriptParser::DataType &p_type) {
 	return p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_type.type_parameter_name == SNAME("@Self");
 }
 
+static bool _is_bare_self_value_parameter(const GDScriptParser::DataType &p_type) {
+	return _is_self_type_parameter(p_type) && !p_type.is_type_handle_annotation;
+}
+
 static GDScriptParser::DataType _self_type_parameter_from_bound(const GDScriptParser::DataType &p_bound) {
 	GDScriptParser::DataType self_type;
 	self_type.kind = GDScriptParser::DataType::TYPE_PARAMETER;
@@ -14210,7 +14214,7 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 
 		if (_datatype_contains_self_type_parameter(par_type)) {
 			if (!_datatype_matches_self_parameter_contract(par_type, arg_type) &&
-					!call_argument_is_same_receiver(p_call, p_call->arguments[i])) {
+					!(_is_bare_self_value_parameter(par_type) && call_argument_is_same_receiver(p_call, p_call->arguments[i]))) {
 				push_error(make_invalid_argument_error(
 								   p_call->function_name,
 								   i + 1,
