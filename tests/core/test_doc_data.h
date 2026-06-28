@@ -87,7 +87,7 @@ TEST_CASE("[DocData] method qualifiers omit async method flag") {
 }
 
 TEST_CASE("[DocData] synthetic AsyncCallable type links to the Callable class page") {
-	// `AsyncCallable` is a GDScript-only spelling of `Callable` with no dedicated
+	// `AsyncCallable` is a FoundryScript-only spelling of `Callable` with no dedicated
 	// class help page. Its doc-type string must still render as written, but the
 	// hyperlink has to resolve to the real `Callable` page instead of a dead link.
 	CHECK(DocData::get_type_link_target("AsyncCallable") == "Callable");

@@ -845,8 +845,8 @@ Error ExportTemplateManager::install_android_template_from_file(const String &p_
 	Error err = da->make_dir_recursive(build_dir);
 	ERR_FAIL_COND_V(err != OK, err);
 	{
-		// Add an empty .gdignore file to avoid scan.
-		Ref<FileAccess> f = FileAccess::open(build_dir.path_join(".gdignore"), FileAccess::WRITE);
+		// Add an empty .fsignore file to avoid scan.
+		Ref<FileAccess> f = FileAccess::open(build_dir.path_join(".fsignore"), FileAccess::WRITE);
 		ERR_FAIL_COND_V(f.is_null(), ERR_CANT_CREATE);
 		f->store_line("");
 	}

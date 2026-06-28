@@ -179,7 +179,7 @@ Error PackedSceneEditorTranslationParserPlugin::parse_file(const String &p_path,
 					EditorTranslationParser::get_singleton()->get_parser(extension)->parse_file(s->get_path(), r_translations);
 				}
 			} else if ((node_type == "FileDialog" || node_type == "EditorFileDialog") && property_name == "filters") {
-				// Extract FileDialog's filters property with values in format "*.png ; PNG Images","*.gd ; GDScript Files".
+				// Extract FileDialog's filters property with values in format "*.png ; PNG Images","*.fs ; FoundryScript Files".
 				Vector<String> str_values = property_value;
 				for (int k = 0; k < str_values.size(); k++) {
 					String desc = str_values[k].get_slicec(';', 1).strip_edges();

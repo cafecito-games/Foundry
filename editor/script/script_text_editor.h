@@ -41,7 +41,7 @@
 #include "scene/gui/option_button.h"
 #include "scene/gui/tree.h"
 
-#include "modules/gdscript/editor/gdscript_refactoring.h"
+#include "modules/foundry_script/editor/fs_refactoring.h"
 
 class RichTextLabel;
 class RefactorDiffPreviewDialog;

@@ -77,7 +77,7 @@ XrStructureType OpenXRStructureBase::get_structure_type() {
 	}
 }
 
-// Return structure type as uint64_t to GDScript
+// Return structure type as uint64_t to FoundryScript
 uint64_t OpenXRStructureBase::_get_structure_type() {
 	return (uint64_t)get_structure_type();
 }

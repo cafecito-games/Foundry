@@ -105,13 +105,13 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>public.gd</string>
+			<string>public.fs</string>
 			<key>UTTypeReferenceURL</key>
 			<string></string>
 			<key>UTTypeDescription</key>
-			<string>GDScript script</string>
+			<string>FoundryScript script</string>
 			<key>UTTypeIconFile</key>
-			<string>GDScript.icns</string>
+			<string>FoundryScript.icns</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.script</string>
@@ -123,7 +123,7 @@
 					<string>gd</string>
 				</array>
 				<key>public.mime-type</key>
-				<string>application/x-gdscript</string>
+				<string>application/x-foundry_script</string>
 			</dict>
 		</dict>
 		<dict>

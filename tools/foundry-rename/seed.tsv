@@ -25,6 +25,8 @@ GDScriptLanguageServer	FSLanguageServer	A
 GDScriptWorkspace	FSWorkspace	A
 GDScriptTextDocument	FSTextDocument	A
 GDScript	FoundryScript	A	standalone language class (apply AFTER all GDScript* prefixes)
+gdscript_	fs_	A	lowercase file/include prefix (apply BEFORE gdscript via longest-first)
+gdscript	foundry_script	A	lowercase module dir, main file, setting keys (apply AFTER gdscript_)
 GDExtensionManager	FoundryExtensionManager	B
 GDExtensionLoader	FoundryExtensionLoader	B
 GDExtensionMethodBind	FoundryExtensionMethodBind	B

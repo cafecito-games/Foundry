@@ -85,7 +85,7 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] Dirty working tree warns") {
 	state.git_available = true;
 	state.inside_work_tree = true;
 	state.git_status_exit_code = 0;
-	state.git_status_output = " M player.gd\n?? new_file.gd\n";
+	state.git_status_output = " M player.fs\n?? new_file.fs\n";
 
 	const Result result = evaluate(state);
 	CHECK_EQ(result.status, Status::DIRTY);
@@ -173,7 +173,7 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project detects a real git w
 
 	// Add an untracked file -> dirty.
 	{
-		const String path = dir.path_join("player.gd");
+		const String path = dir.path_join("player.fs");
 		Error err = OK;
 		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE, &err);
 		REQUIRE_EQ(err, OK);
@@ -221,7 +221,7 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] inspect_project does not run shell c
 	inspect_project(dir);
 
 	Vector<String> targets;
-	targets.push_back(dir.path_join("x.gd"));
+	targets.push_back(dir.path_join("x.fs"));
 	bool ok = true;
 	find_ignored_targets(dir, targets, ok);
 
@@ -265,10 +265,10 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] find_ignored_targets reports only gi
 	REQUIRE(run_git_in({ "config", "user.email", "test@example.com" }));
 	REQUIRE(run_git_in({ "config", "user.name", "Test" }));
 
-	// generated.gd is git-ignored; tracked.gd is not.
-	write(dir.path_join(".gitignore"), "generated.gd\n");
-	const String tracked = dir.path_join("tracked.gd");
-	const String ignored = dir.path_join("generated.gd");
+	// generated.fs is git-ignored; tracked.fs is not.
+	write(dir.path_join(".gitignore"), "generated.fs\n");
+	const String tracked = dir.path_join("tracked.fs");
+	const String ignored = dir.path_join("generated.fs");
 	write(tracked, "var a := 1\n");
 	write(ignored, "var b := 2\n");
 
@@ -280,7 +280,7 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] find_ignored_targets reports only gi
 	const Vector<String> result = find_ignored_targets(dir, targets, check_succeeded);
 	CHECK(check_succeeded);
 	REQUIRE_EQ(result.size(), 1);
-	CHECK(result[0].ends_with("generated.gd"));
+	CHECK(result[0].ends_with("generated.fs"));
 
 	// No ignored targets -> empty result, but the check still succeeded.
 	Vector<String> only_tracked;
@@ -294,7 +294,7 @@ TEST_CASE("[Editor][ScriptRefactorVCSGuard] find_ignored_targets reports only gi
 	const String outside_dir = OS::get_singleton()->get_cache_path().path_join("vcs_guard_outside_" + itos(OS::get_singleton()->get_ticks_usec()));
 	REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(outside_dir), OK);
 	Vector<String> outside_targets;
-	outside_targets.push_back(outside_dir.path_join("x.gd"));
+	outside_targets.push_back(outside_dir.path_join("x.fs"));
 	bool outside_succeeded = true;
 	find_ignored_targets(outside_dir, outside_targets, outside_succeeded);
 	CHECK_FALSE(outside_succeeded);

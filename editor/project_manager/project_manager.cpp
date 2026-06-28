@@ -76,7 +76,7 @@
 #include "servers/physics_3d/physics_server_3d.h"
 #endif // PHYSICS_3D_DISABLED
 
-#include "modules/modules_enabled.gen.h" // For gdscript, mono. (For editor help highlighter).
+#include "modules/modules_enabled.gen.h" // For foundry_script, mono. (For editor help highlighter).
 
 constexpr int GODOT4_CONFIG_VERSION = 5;
 

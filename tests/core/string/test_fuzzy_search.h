@@ -43,7 +43,7 @@ struct FuzzySearchTestCase {
 // Ideally each of these test queries should represent a different aspect, and potentially bottleneck, of the search process.
 const FuzzySearchTestCase test_cases[] = {
 	// Short query, many matches, few adjacent characters
-	{ "///gd", "./menu/hud/hud.gd" },
+	{ "///gd", "./menu/hud/hud.fs" },
 	// Filename match with typo
 	{ "sm.png", "./entity/blood_sword/sam.png" },
 	// Multipart filename word matches
@@ -55,7 +55,7 @@ const FuzzySearchTestCase test_cases[] = {
 	// Many matches, many short tokens
 	{ "menu menu characters wav", "./menu/menu/characters/smoker/0.wav" },
 	// Maximize total matches
-	{ "entity gd", "./entity/entity_man.gd" }
+	{ "entity gd", "./entity/entity_man.fs" }
 };
 
 Vector<String> load_test_data() {

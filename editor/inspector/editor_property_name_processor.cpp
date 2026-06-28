@@ -190,7 +190,7 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["fs"] = "FS";
 	capitalize_string_remaps["fsr"] = "FSR";
 	capitalize_string_remaps["fxaa"] = "FXAA";
-	capitalize_string_remaps["gdscript"] = "GDScript";
+	capitalize_string_remaps["foundry_script"] = "FoundryScript";
 	capitalize_string_remaps["ggx"] = "GGX";
 	capitalize_string_remaps["gi"] = "GI";
 	capitalize_string_remaps["gl"] = "GL";

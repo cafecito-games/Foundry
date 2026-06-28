@@ -73,7 +73,7 @@
 #include "modules/modules_enabled.gen.h"
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript_autoload_index.h"
+#include "modules/foundry_script/fs_autoload_index.h"
 #endif
 #include "scene/gui/separator.h"
 #include "scene/gui/tab_container.h"
@@ -164,9 +164,9 @@ void EditorStandardSyntaxHighlighter::_update_cache() {
 
 	/* Autoloads. */
 #ifdef MODULE_GDSCRIPT_ENABLED
-	GDScriptAutoloadIndex autoload_index;
+	FSAutoloadIndex autoload_index;
 	autoload_index.rebuild_from_project_settings();
-	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+	for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
 		if (autoload.is_singleton) {
 			highlighter->add_keyword_color(autoload.name, usertype_color);
 		}
@@ -2851,7 +2851,7 @@ void ScriptEditor::save_current_script() {
 	}
 
 	// Format last so its canonical output is the final state of the buffer and
-	// matches the CLI byte-for-byte. No-op for non-GDScript buffers and on parse
+	// matches the CLI byte-for-byte. No-op for non-FoundryScript buffers and on parse
 	// error; the diagnostic is left to the live parser to avoid save-time noise.
 	if (format_on_save) {
 		current->format_document(false);
@@ -4218,7 +4218,7 @@ void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int li
 				return;
 			}
 
-			const char *scr_header = "[sub_resource type=\"GDScript\" id=\"";
+			const char *scr_header = "[sub_resource type=\"FoundryScript\" id=\"";
 			const char *source_header = "script/source = \"";
 			String script_id;
 

@@ -57,7 +57,7 @@ static String make_regex_gds_os_property_get(const String &name, const String &g
 
 class ProjectConverter3To4::RegExContainer {
 public:
-	// Custom GDScript.
+	// Custom FoundryScript.
 	RegEx reg_is_empty = RegEx("\\bempty\\(");
 	RegEx reg_super = RegEx("([\t ])\\.([a-zA-Z_])");
 	RegEx reg_json_to = RegEx("\\bto_json\\b");
@@ -106,7 +106,7 @@ public:
 	RegEx reg_os_get_borderless = RegEx("\\bOS\\.get_borderless_window\\s*\\(\\s*\\)");
 	RegEx reg_os_screen_orient_enum = RegEx("\\bOS\\.SCREEN_ORIENTATION_(\\w+)\\b"); // $1 - constant suffix
 
-	// GDScript keywords.
+	// FoundryScript keywords.
 	RegEx keyword_gdscript_tool = RegEx("^tool");
 	RegEx keyword_gdscript_export_single = RegEx("^export");
 	RegEx keyword_gdscript_export_multi = RegEx("([\t]+)export\\b");
@@ -120,7 +120,7 @@ public:
 	RegEx keyword_gdscript_master = RegEx("^master func");
 	RegEx keyword_gdscript_mastersync = RegEx("^mastersync func");
 
-	RegEx gdscript_comment = RegEx("^\\s*#");
+	RegEx fs_comment = RegEx("^\\s*#");
 	RegEx csharp_comment = RegEx("^\\s*\\/\\/");
 
 	// CSharp keywords.
@@ -161,7 +161,7 @@ public:
 	LocalVector<RegEx *> class_regexes;
 
 	RegEx class_temp_tscn = RegEx("\\bTEMP_RENAMED_CLASS.tscn\\b");
-	RegEx class_temp_gd = RegEx("\\bTEMP_RENAMED_CLASS.gd\\b");
+	RegEx class_temp_gd = RegEx("\\bTEMP_RENAMED_CLASS.fs\\b");
 	RegEx class_temp_shader = RegEx("\\bTEMP_RENAMED_CLASS.shader\\b");
 
 	LocalVector<String> class_temp_tscn_renames;
@@ -170,12 +170,12 @@ public:
 
 	// Common.
 	LocalVector<RegEx *> enum_regexes;
-	LocalVector<RegEx *> gdscript_function_regexes;
+	LocalVector<RegEx *> fs_function_regexes;
 	LocalVector<RegEx *> project_settings_regexes;
 	LocalVector<RegEx *> project_godot_regexes;
 	LocalVector<RegEx *> input_map_regexes;
-	LocalVector<RegEx *> gdscript_properties_regexes;
-	LocalVector<RegEx *> gdscript_signals_regexes;
+	LocalVector<RegEx *> fs_properties_regexes;
+	LocalVector<RegEx *> fs_signals_regexes;
 	LocalVector<RegEx *> shaders_regexes;
 	LocalVector<RegEx *> builtin_types_regexes;
 	LocalVector<RegEx *> theme_override_regexes;
@@ -190,9 +190,9 @@ public:
 			for (unsigned int current_index = 0; RenamesMap3To4::enum_renames[current_index][0]; current_index++) {
 				enum_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::enum_renames[current_index][0] + "\\b")));
 			}
-			// GDScript functions.
-			for (unsigned int current_index = 0; RenamesMap3To4::gdscript_function_renames[current_index][0]; current_index++) {
-				gdscript_function_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::gdscript_function_renames[current_index][0] + "\\b")));
+			// FoundryScript functions.
+			for (unsigned int current_index = 0; RenamesMap3To4::fs_function_renames[current_index][0]; current_index++) {
+				fs_function_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::fs_function_renames[current_index][0] + "\\b")));
 			}
 			// Project Settings in scripts.
 			for (unsigned int current_index = 0; RenamesMap3To4::project_settings_renames[current_index][0]; current_index++) {
@@ -206,13 +206,13 @@ public:
 			for (unsigned int current_index = 0; RenamesMap3To4::input_map_renames[current_index][0]; current_index++) {
 				input_map_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::input_map_renames[current_index][0] + "\\b")));
 			}
-			// GDScript properties.
-			for (unsigned int current_index = 0; RenamesMap3To4::gdscript_properties_renames[current_index][0]; current_index++) {
-				gdscript_properties_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::gdscript_properties_renames[current_index][0] + "\\b")));
+			// FoundryScript properties.
+			for (unsigned int current_index = 0; RenamesMap3To4::fs_properties_renames[current_index][0]; current_index++) {
+				fs_properties_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::fs_properties_renames[current_index][0] + "\\b")));
 			}
-			// GDScript Signals.
-			for (unsigned int current_index = 0; RenamesMap3To4::gdscript_signals_renames[current_index][0]; current_index++) {
-				gdscript_signals_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::gdscript_signals_renames[current_index][0] + "\\b")));
+			// FoundryScript Signals.
+			for (unsigned int current_index = 0; RenamesMap3To4::fs_signals_renames[current_index][0]; current_index++) {
+				fs_signals_regexes.push_back(memnew(RegEx(String("\\b") + RenamesMap3To4::fs_signals_renames[current_index][0] + "\\b")));
 			}
 			// Shaders.
 			for (unsigned int current_index = 0; RenamesMap3To4::shaders_renames[current_index][0]; current_index++) {
@@ -252,13 +252,13 @@ public:
 			for (unsigned int current_index = 0; RenamesMap3To4::class_renames[current_index][0]; current_index++) {
 				const String class_name = RenamesMap3To4::class_renames[current_index][0];
 				class_tscn_regexes.push_back(memnew(RegEx(String("\\b") + class_name + ".tscn\\b")));
-				class_gd_regexes.push_back(memnew(RegEx(String("\\b") + class_name + ".gd\\b")));
+				class_gd_regexes.push_back(memnew(RegEx(String("\\b") + class_name + ".fs\\b")));
 				class_shader_regexes.push_back(memnew(RegEx(String("\\b") + class_name + ".shader\\b")));
 
 				class_regexes.push_back(memnew(RegEx(String("\\b") + class_name + "\\b")));
 
 				class_temp_tscn_renames.push_back(class_name + ".tscn");
-				class_temp_gd_renames.push_back(class_name + ".gd");
+				class_temp_gd_renames.push_back(class_name + ".fs");
 				class_temp_shader_renames.push_back(class_name + ".shader");
 			}
 		}
@@ -276,7 +276,7 @@ public:
 		for (RegEx *regex : enum_regexes) {
 			memdelete(regex);
 		}
-		for (RegEx *regex : gdscript_function_regexes) {
+		for (RegEx *regex : fs_function_regexes) {
 			memdelete(regex);
 		}
 		for (RegEx *regex : project_settings_regexes) {
@@ -288,10 +288,10 @@ public:
 		for (RegEx *regex : input_map_regexes) {
 			memdelete(regex);
 		}
-		for (RegEx *regex : gdscript_properties_regexes) {
+		for (RegEx *regex : fs_properties_regexes) {
 			memdelete(regex);
 		}
-		for (RegEx *regex : gdscript_signals_regexes) {
+		for (RegEx *regex : fs_signals_regexes) {
 			memdelete(regex);
 		}
 		for (RegEx *regex : shaders_regexes) {
@@ -371,7 +371,7 @@ bool ProjectConverter3To4::convert() {
 
 				SourceLine source_line;
 				source_line.line = line;
-				source_line.is_comment = reg_container.gdscript_comment.search_all(line).size() > 0 || reg_container.csharp_comment.search_all(line).size() > 0;
+				source_line.is_comment = reg_container.fs_comment.search_all(line).size() > 0 || reg_container.csharp_comment.search_all(line).size() > 0;
 				source_lines.append(source_line);
 			}
 		}
@@ -390,8 +390,8 @@ bool ProjectConverter3To4::convert() {
 		}
 
 		if (file_size < uint64_t(maximum_file_size)) {
-			// ".tscn" must work exactly the same as ".gd" files because they may contain built-in Scripts.
-			if (file_name.ends_with(".gd")) {
+			// ".tscn" must work exactly the same as ".fs" files because they may contain built-in Scripts.
+			if (file_name.ends_with(".fs")) {
 				fix_tool_declaration(source_lines, reg_container);
 
 				rename_classes(source_lines, reg_container); // Using only specialized function.
@@ -399,13 +399,13 @@ bool ProjectConverter3To4::convert() {
 				rename_common(RenamesMap3To4::enum_renames, reg_container.enum_regexes, source_lines);
 				rename_colors(source_lines, reg_container); // Require to additional rename.
 
-				rename_common(RenamesMap3To4::gdscript_function_renames, reg_container.gdscript_function_regexes, source_lines);
+				rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, source_lines);
 				rename_gdscript_functions(source_lines, reg_container, false); // Require to additional rename.
 
 				rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, source_lines);
 				rename_gdscript_keywords(source_lines, reg_container, false);
-				rename_common(RenamesMap3To4::gdscript_properties_renames, reg_container.gdscript_properties_regexes, source_lines);
-				rename_common(RenamesMap3To4::gdscript_signals_renames, reg_container.gdscript_signals_regexes, source_lines);
+				rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, source_lines);
+				rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, source_lines);
 				rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, source_lines);
 				rename_common(RenamesMap3To4::builtin_types_renames, reg_container.builtin_types_regexes, source_lines);
 				rename_common(RenamesMap3To4::theme_override_renames, reg_container.theme_override_regexes, source_lines);
@@ -422,13 +422,13 @@ bool ProjectConverter3To4::convert() {
 				rename_common(RenamesMap3To4::enum_renames, reg_container.enum_regexes, source_lines);
 				rename_colors(source_lines, reg_container); // Require to do additional renames.
 
-				rename_common(RenamesMap3To4::gdscript_function_renames, reg_container.gdscript_function_regexes, source_lines);
+				rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, source_lines);
 				rename_gdscript_functions(source_lines, reg_container, true); // Require to do additional renames.
 
 				rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, source_lines);
 				rename_gdscript_keywords(source_lines, reg_container, true);
-				rename_common(RenamesMap3To4::gdscript_properties_renames, reg_container.gdscript_properties_regexes, source_lines);
-				rename_common(RenamesMap3To4::gdscript_signals_renames, reg_container.gdscript_signals_regexes, source_lines);
+				rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, source_lines);
+				rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, source_lines);
 				rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, source_lines);
 				rename_common(RenamesMap3To4::builtin_types_renames, reg_container.builtin_types_regexes, source_lines);
 				rename_common(RenamesMap3To4::theme_override_renames, reg_container.theme_override_regexes, source_lines);
@@ -587,19 +587,19 @@ bool ProjectConverter3To4::validate_conversion() {
 		}
 
 		if (file_size < uint64_t(maximum_file_size)) {
-			if (file_name.ends_with(".gd")) {
+			if (file_name.ends_with(".fs")) {
 				changed_elements.append_array(check_for_rename_classes(lines, reg_container));
 
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::enum_renames, reg_container.enum_regexes, lines));
 				changed_elements.append_array(check_for_rename_colors(lines, reg_container));
 
-				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::gdscript_function_renames, reg_container.gdscript_function_regexes, lines));
+				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, lines));
 				changed_elements.append_array(check_for_rename_gdscript_functions(lines, reg_container, false));
 
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, lines));
 				changed_elements.append_array(check_for_rename_gdscript_keywords(lines, reg_container, false));
-				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::gdscript_properties_renames, reg_container.gdscript_properties_regexes, lines));
-				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::gdscript_signals_renames, reg_container.gdscript_signals_regexes, lines));
+				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, lines));
+				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::builtin_types_renames, reg_container.builtin_types_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::theme_override_renames, reg_container.theme_override_regexes, lines));
@@ -612,13 +612,13 @@ bool ProjectConverter3To4::validate_conversion() {
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::enum_renames, reg_container.enum_regexes, lines));
 				changed_elements.append_array(check_for_rename_colors(lines, reg_container));
 
-				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::gdscript_function_renames, reg_container.gdscript_function_regexes, lines));
+				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, lines));
 				changed_elements.append_array(check_for_rename_gdscript_functions(lines, reg_container, true));
 
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, lines));
 				changed_elements.append_array(check_for_rename_gdscript_keywords(lines, reg_container, true));
-				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::gdscript_properties_renames, reg_container.gdscript_properties_regexes, lines));
-				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::gdscript_signals_renames, reg_container.gdscript_signals_regexes, lines));
+				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, lines));
+				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::builtin_types_renames, reg_container.builtin_types_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::theme_override_renames, reg_container.theme_override_regexes, lines));
@@ -719,7 +719,7 @@ Vector<String> ProjectConverter3To4::check_for_files() {
 					directories_to_check.append(current_dir.path_join(file_name) + "/");
 				} else {
 					bool proper_extension = false;
-					if (file_name.ends_with(".gd") || file_name.ends_with(".shader") || file_name.ends_with(".gdshader") || file_name.ends_with(".tscn") || file_name.ends_with(".tres") || file_name.ends_with(".godot") || file_name.ends_with(".cs") || file_name.ends_with(".csproj") || file_name.ends_with(".import")) {
+					if (file_name.ends_with(".fs") || file_name.ends_with(".shader") || file_name.ends_with(".gdshader") || file_name.ends_with(".tscn") || file_name.ends_with(".tres") || file_name.ends_with(".godot") || file_name.ends_with(".cs") || file_name.ends_with(".csproj") || file_name.ends_with(".import")) {
 						proper_extension = true;
 					}
 
@@ -749,7 +749,7 @@ Vector<SourceLine> ProjectConverter3To4::split_lines(const String &text) {
 	return source_lines;
 }
 
-// Test expected results of gdscript
+// Test expected results of foundry_script
 bool ProjectConverter3To4::test_conversion_gdscript_builtin(const String &name, const String &expected, void (ProjectConverter3To4::*func)(Vector<SourceLine> &, const RegExContainer &, bool), const String &what, const RegExContainer &reg_container, bool builtin_script) {
 	Vector<SourceLine> got = split_lines(name);
 
@@ -784,9 +784,9 @@ bool ProjectConverter3To4::test_conversion_basic(const String &name, const Strin
 bool ProjectConverter3To4::test_conversion(RegExContainer &reg_container) {
 	bool valid = true;
 
-	valid = valid && test_conversion_with_regex("tool", "@tool", &ProjectConverter3To4::fix_tool_declaration, "gdscript keyword", reg_container);
-	valid = valid && test_conversion_with_regex("\n    tool", "\n    tool", &ProjectConverter3To4::fix_tool_declaration, "gdscript keyword", reg_container);
-	valid = valid && test_conversion_with_regex("\n\ntool", "@tool\n\n", &ProjectConverter3To4::fix_tool_declaration, "gdscript keyword", reg_container);
+	valid = valid && test_conversion_with_regex("tool", "@tool", &ProjectConverter3To4::fix_tool_declaration, "foundry_script keyword", reg_container);
+	valid = valid && test_conversion_with_regex("\n    tool", "\n    tool", &ProjectConverter3To4::fix_tool_declaration, "foundry_script keyword", reg_container);
+	valid = valid && test_conversion_with_regex("\n\ntool", "@tool\n\n", &ProjectConverter3To4::fix_tool_declaration, "foundry_script keyword", reg_container);
 
 	valid = valid && test_conversion_with_regex("pause_mode = 2", "pause_mode = 3", &ProjectConverter3To4::fix_pause_mode, "pause_mode", reg_container);
 	valid = valid && test_conversion_with_regex("pause_mode = 1", "pause_mode = 1", &ProjectConverter3To4::fix_pause_mode, "pause_mode", reg_container);
@@ -796,17 +796,17 @@ bool ProjectConverter3To4::test_conversion(RegExContainer &reg_container) {
 
 	valid = valid && test_conversion_basic("TYPE_REAL", "TYPE_FLOAT", RenamesMap3To4::enum_renames, reg_container.enum_regexes, "enum");
 
-	valid = valid && test_conversion_basic("can_instance", "can_instantiate", RenamesMap3To4::gdscript_function_renames, reg_container.gdscript_function_regexes, "gdscript function");
+	valid = valid && test_conversion_basic("can_instance", "can_instantiate", RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, "foundry_script function");
 
 	valid = valid && test_conversion_basic("CanInstance", "CanInstantiate", RenamesMap3To4::csharp_function_renames, reg_container.csharp_function_regexes, "csharp function");
 
-	valid = valid && test_conversion_basic("translation", "position", RenamesMap3To4::gdscript_properties_renames, reg_container.gdscript_properties_regexes, "gdscript property");
+	valid = valid && test_conversion_basic("translation", "position", RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, "foundry_script property");
 
 	valid = valid && test_conversion_basic("Translation", "Position", RenamesMap3To4::csharp_properties_renames, reg_container.csharp_properties_regexes, "csharp property");
 
 	valid = valid && test_conversion_basic("NORMALMAP", "NORMAL_MAP", RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, "shader");
 
-	valid = valid && test_conversion_basic("text_entered", "text_submitted", RenamesMap3To4::gdscript_signals_renames, reg_container.gdscript_signals_regexes, "gdscript signal");
+	valid = valid && test_conversion_basic("text_entered", "text_submitted", RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, "foundry_script signal");
 
 	valid = valid && test_conversion_basic("TextEntered", "TextSubmitted", RenamesMap3To4::csharp_signals_renames, reg_container.csharp_signal_regexes, "csharp signal");
 
@@ -896,30 +896,30 @@ bool ProjectConverter3To4::test_conversion(RegExContainer &reg_container) {
 	valid = valid && test_conversion_with_regex("CSGBox", "CSGBox3D", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 	valid = valid && test_conversion_with_regex("Spatial", "Node3D", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 	valid = valid && test_conversion_with_regex("Spatial.tscn", "Spatial.tscn", &ProjectConverter3To4::rename_classes, "classes", reg_container);
-	valid = valid && test_conversion_with_regex("Spatial.gd", "Spatial.gd", &ProjectConverter3To4::rename_classes, "classes", reg_container);
+	valid = valid && test_conversion_with_regex("Spatial.fs", "Spatial.fs", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 	valid = valid && test_conversion_with_regex("Spatial.shader", "Spatial.shader", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 	valid = valid && test_conversion_with_regex("Spatial.other", "Node3D.other", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 
-	valid = valid && test_conversion_gdscript_builtin("\nonready", "\n@onready", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("onready", "@onready", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" onready", " onready", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\nexport", "\n@export", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\texport", "\t@export", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\texport_dialog", "\texport_dialog", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export", "@export", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" export", " export", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremote func", "\n\n@rpc(\"any_peer\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremote func", "\n\n@rpc(\\\"any_peer\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremotesync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremotesync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nsync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nsync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nslave func", "\n\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\npuppet func", "\n\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\npuppetsync func", "\n\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\npuppetsync func", "\n\n@rpc(\\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nmaster func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nmastersync func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "gdscript keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\nonready", "\n@onready", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("onready", "@onready", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin(" onready", " onready", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\nexport", "\n@export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\texport", "\t@export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\texport_dialog", "\texport_dialog", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("export", "@export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin(" export", " export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\nremote func", "\n\n@rpc(\"any_peer\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\nremote func", "\n\n@rpc(\\\"any_peer\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_gdscript_builtin("\n\nremotesync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\nremotesync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_gdscript_builtin("\n\nsync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\nsync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_gdscript_builtin("\n\nslave func", "\n\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\npuppet func", "\n\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\npuppetsync func", "\n\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\npuppetsync func", "\n\n@rpc(\\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_gdscript_builtin("\n\nmaster func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_gdscript_builtin("\n\nmastersync func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
 
 	valid = valid && test_conversion_gdscript_builtin("var size: Vector2 = Vector2() setget set_function, get_function", "var size: Vector2 = Vector2(): get = get_function, set = set_function", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
 	valid = valid && test_conversion_gdscript_builtin("var size: Vector2 = Vector2() setget set_function, ", "var size: Vector2 = Vector2(): set = set_function", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
@@ -1211,11 +1211,11 @@ bool ProjectConverter3To4::test_array_names() {
 		}
 
 		int current_element = 0;
-		while (RenamesMap3To4::gdscript_function_renames[current_element][0] != nullptr) {
-			String name_3_x = RenamesMap3To4::gdscript_function_renames[current_element][0];
-			String name_4_0 = RenamesMap3To4::gdscript_function_renames[current_element][1];
+		while (RenamesMap3To4::fs_function_renames[current_element][0] != nullptr) {
+			String name_3_x = RenamesMap3To4::fs_function_renames[current_element][0];
+			String name_4_0 = RenamesMap3To4::fs_function_renames[current_element][1];
 			if (!all_functions.has(name_4_0)) {
-				ERR_PRINT(vformat("Missing GDScript function in pair (%s - ===> %s <===)", name_3_x, name_4_0));
+				ERR_PRINT(vformat("Missing FoundryScript function in pair (%s - ===> %s <===)", name_3_x, name_4_0));
 				valid = false;
 			}
 			current_element++;
@@ -1227,12 +1227,12 @@ bool ProjectConverter3To4::test_array_names() {
 
 	valid = valid && test_single_array(RenamesMap3To4::enum_renames);
 	valid = valid && test_single_array(RenamesMap3To4::class_renames, true);
-	valid = valid && test_single_array(RenamesMap3To4::gdscript_function_renames, true);
+	valid = valid && test_single_array(RenamesMap3To4::fs_function_renames, true);
 	valid = valid && test_single_array(RenamesMap3To4::csharp_function_renames, true);
-	valid = valid && test_single_array(RenamesMap3To4::gdscript_properties_renames, true);
+	valid = valid && test_single_array(RenamesMap3To4::fs_properties_renames, true);
 	valid = valid && test_single_array(RenamesMap3To4::csharp_properties_renames, true);
 	valid = valid && test_single_array(RenamesMap3To4::shaders_renames, true);
-	valid = valid && test_single_array(RenamesMap3To4::gdscript_signals_renames);
+	valid = valid && test_single_array(RenamesMap3To4::fs_signals_renames);
 	valid = valid && test_single_array(RenamesMap3To4::project_settings_renames);
 	valid = valid && test_single_array(RenamesMap3To4::project_godot_renames);
 	valid = valid && test_single_array(RenamesMap3To4::input_map_renames);
@@ -1554,7 +1554,7 @@ void ProjectConverter3To4::rename_classes(Vector<SourceLine> &source_lines, cons
 					if (line.contains(String(RenamesMap3To4::class_renames[current_index][0]) + ".")) {
 						found_ignored_items = true;
 						line = reg_container.class_tscn_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.tscn", true);
-						line = reg_container.class_gd_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.gd", true);
+						line = reg_container.class_gd_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.fs", true);
 						line = reg_container.class_shader_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.shader", true);
 					}
 
@@ -1588,7 +1588,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_classes(Vector<String> &li
 					if (line.contains(String(RenamesMap3To4::class_renames[current_index][0]) + ".")) {
 						found_ignored_items = true;
 						line = reg_container.class_tscn_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.tscn", true);
-						line = reg_container.class_gd_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.gd", true);
+						line = reg_container.class_gd_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.fs", true);
 						line = reg_container.class_shader_regexes[current_index]->sub(line, "TEMP_RENAMED_CLASS.shader", true);
 					}
 
@@ -1659,7 +1659,7 @@ bool ProjectConverter3To4::contains_function_call(const String &line, const Stri
 	return (previous_char < '0' || previous_char > '9') && (previous_char < 'a' || previous_char > 'z') && (previous_char < 'A' || previous_char > 'Z') && previous_char != '_' && previous_char != '$' && previous_char != '@';
 }
 
-// TODO, this function should run only on all ".gd" files and also on lines in ".tscn" files which are parts of built-in Scripts.
+// TODO, this function should run only on all ".fs" files and also on lines in ".tscn" files which are parts of built-in Scripts.
 void ProjectConverter3To4::process_gdscript_line(String &line, const RegExContainer &reg_container, bool builtin) {
 	// In this and other functions, reg.sub() is used only after checking lines with str.contains().
 	// With longer lines, doing so can sometimes be significantly faster.
@@ -1712,9 +1712,9 @@ void ProjectConverter3To4::process_gdscript_line(String &line, const RegExContai
 		line = reg_container.reg_export_typed.sub(line, "export var $2: $1");
 		// 2. export(float) var lifetime := 3.0 -> export var lifetime := 3.0
 		line = reg_container.reg_export_inferred_type.sub(line, "export var $1 :=");
-		// 3. export(float) var lifetime = 3.0 -> export var lifetime: float = 3.0     GDScript
+		// 3. export(float) var lifetime = 3.0 -> export var lifetime: float = 3.0     FoundryScript
 		line = reg_container.reg_export_simple.sub(line, "export var $2: $1");
-		// 4. export(String, 'AnonymousPro', 'CourierPrime') var _font_name = 'AnonymousPro' -> export var _font_name = 'AnonymousPro' #(String, 'AnonymousPro', 'CourierPrime')   GDScript
+		// 4. export(String, 'AnonymousPro', 'CourierPrime') var _font_name = 'AnonymousPro' -> export var _font_name = 'AnonymousPro' #(String, 'AnonymousPro', 'CourierPrime')   FoundryScript
 		line = reg_container.reg_export_advanced.sub(line, "export var $2$3 # ($1)");
 	}
 
@@ -1989,7 +1989,7 @@ void ProjectConverter3To4::process_gdscript_line(String &line, const RegExContai
 		}
 	}
 
-	// -- yield(this, \"timeout\") -> await this.timeout         GDScript
+	// -- yield(this, \"timeout\") -> await this.timeout         FoundryScript
 	if (contains_function_call(line, "yield(")) {
 		int start = line.find("yield(");
 		int end = get_end_parenthesis(line.substr(start)) + 1;

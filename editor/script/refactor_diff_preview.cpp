@@ -34,7 +34,7 @@
 
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
-#include "modules/gdscript/editor/gdscript_refactoring_edits.h"
+#include "modules/foundry_script/editor/fs_refactoring_edits.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
@@ -280,7 +280,7 @@ String RefactorDiffPreviewModel::get_effective_after_source(int p_file_index) co
 	}
 
 	String after_source;
-	if (!GDScriptRefactorEdits::apply(file.before_source, accepted, after_source)) {
+	if (!FSRefactorEdits::apply(file.before_source, accepted, after_source)) {
 		return file.before_source;
 	}
 	return after_source;
@@ -328,7 +328,7 @@ ScriptRefactorApplyPlan RefactorDiffPreviewModel::get_accepted_apply_plan() cons
 				continue;
 			}
 			String after_source;
-			if (!GDScriptRefactorEdits::apply(file.before_source, accepted, after_source)) {
+			if (!FSRefactorEdits::apply(file.before_source, accepted, after_source)) {
 				continue;
 			}
 			file_plan.after_source = after_source;

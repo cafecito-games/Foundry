@@ -265,10 +265,10 @@ EditorPaths::EditorPaths() {
 			}
 		}
 
-		// Check that the project data directory `.gdignore` file exists.
-		String project_data_gdignore_file_path = project_data_dir.path_join(".gdignore");
+		// Check that the project data directory `.fsignore` file exists.
+		String project_data_gdignore_file_path = project_data_dir.path_join(".fsignore");
 		if (!FileAccess::exists(project_data_gdignore_file_path)) {
-			// Add an empty .gdignore file to avoid scan.
+			// Add an empty .fsignore file to avoid scan.
 			Ref<FileAccess> f = FileAccess::open(project_data_gdignore_file_path, FileAccess::WRITE);
 			if (f.is_valid()) {
 				f->store_line("");

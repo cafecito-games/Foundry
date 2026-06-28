@@ -124,8 +124,8 @@ DOCTEST_STRINGIFY_VARIANT(PackedColorArray);
 DOCTEST_STRINGIFY_VARIANT(PackedVector4Array);
 
 // Register test commands to be launched from the command-line.
-// For instance: REGISTER_TEST_COMMAND("gdscript-parser" &test_parser_func).
-// Example usage: `godot --test gdscript-parser`.
+// For instance: REGISTER_TEST_COMMAND("foundry_script-parser" &test_parser_func).
+// Example usage: `godot --test foundry_script-parser`.
 
 typedef void (*TestFunc)();
 extern HashMap<String, TestFunc> *test_commands;

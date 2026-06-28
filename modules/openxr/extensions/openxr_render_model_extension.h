@@ -148,7 +148,7 @@ private:
 	Ref<OpenXRRenderModelData> _load_asset(XrRenderModelAssetEXT p_asset, uint32_t p_animatable_node_count);
 	void _clear_render_model_data();
 
-	// GDScript/GDExtension passthroughs
+	// FoundryScript/GDExtension passthroughs
 	RID _render_model_create(uint64_t p_render_model_id);
 
 	// OpenXR API call wrappers

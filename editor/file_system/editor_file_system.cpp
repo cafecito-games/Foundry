@@ -2577,7 +2577,7 @@ void EditorFileSystem::_register_global_class_script(const String &p_search_path
 	// language by file extension, since a removed file carries no resource type to dispatch on. A
 	// rename can change the extension, so the language owning the new path (which re-indexes it) and
 	// the one that owned the old path (which must drop its stale entries) can differ; handle both so
-	// a `.gd` renamed to a non-script extension does not leave annotations behind.
+	// a `.fs` renamed to a non-script extension does not leave annotations behind.
 	const String search_extension = p_search_path.get_extension().to_lower();
 	const String target_extension = p_target_path.get_extension().to_lower();
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
@@ -3515,8 +3515,8 @@ bool EditorFileSystem::_should_skip_directory(const String &p_path) {
 		return true;
 	}
 
-	if (FileAccess::exists(p_path.path_join(".gdignore"))) {
-		// Skip if a `.gdignore` file is inside this.
+	if (FileAccess::exists(p_path.path_join(".fsignore"))) {
+		// Skip if a `.fsignore` file is inside this.
 		return true;
 	}
 

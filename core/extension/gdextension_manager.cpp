@@ -61,7 +61,7 @@ GDExtensionManager::LoadStatus GDExtensionManager::_load_extension_internal(cons
 
 void GDExtensionManager::_finish_load_extension(const Ref<GDExtension> &p_extension) {
 #ifdef TOOLS_ENABLED
-	// Signals that a new extension is loaded so GDScript can register new class names.
+	// Signals that a new extension is loaded so FoundryScript can register new class names.
 	emit_signal("extension_loaded", p_extension);
 #endif
 
@@ -76,7 +76,7 @@ void GDExtensionManager::_finish_load_extension(const Ref<GDExtension> &p_extens
 
 GDExtensionManager::LoadStatus GDExtensionManager::_unload_extension_internal(const Ref<GDExtension> &p_extension) {
 #ifdef TOOLS_ENABLED
-	// Signals that a new extension is unloading so GDScript can unregister class names.
+	// Signals that a new extension is unloading so FoundryScript can unregister class names.
 	emit_signal("extension_unloading", p_extension);
 #endif
 

@@ -1526,9 +1526,9 @@ Vector<String> ResourceLoader::list_directory(const String &p_directory) {
 				d = d.substr(0, d.rfind_char('.'));
 			}
 
-			if (d.ends_with(".gdc")) {
+			if (d.ends_with(".fsc")) {
 				d = d.substr(0, d.rfind_char('.'));
-				d += ".gd";
+				d += ".fs";
 			}
 
 			const String full_path = p_directory.path_join(d);

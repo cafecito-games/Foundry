@@ -31,11 +31,11 @@
 // macOS libFuzzer entry point. libFuzzer supplies main(); this translation unit
 // replaces the normal platform main() when the engine is built with
 // `use_fuzzer=yes`. It only constructs the headless OS and hands off to the
-// shared, platform-independent harness in modules/gdscript/tests/fuzz/.
+// shared, platform-independent harness in modules/foundry_script/tests/fuzz/.
 
 #include "os_macos.h"
 
-#include "modules/gdscript/tests/fuzz/gdscript_fuzzer.h"
+#include "modules/foundry_script/tests/fuzz/fs_fuzzer.h"
 
 extern "C" int LLVMFuzzerInitialize(int *p_argc, char ***p_argv) {
 	// The headless OS is used deliberately: OS_MacOS_NSApp::run() drives a Cocoa
@@ -47,7 +47,7 @@ extern "C" int LLVMFuzzerInitialize(int *p_argc, char ***p_argv) {
 	OS_MacOS_Headless *os = memnew(OS_MacOS_Headless("godot", 1, engine_argv));
 
 	@autoreleasepool {
-		gdscript_fuzzer_initialize_engine(os, 1, engine_argv);
+		fs_fuzzer_initialize_engine(os, 1, engine_argv);
 	}
 
 	return 0;

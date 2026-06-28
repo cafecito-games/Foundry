@@ -53,11 +53,11 @@
 #include "modules/modules_enabled.gen.h"
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript_autoload_index.h"
+#include "modules/foundry_script/fs_autoload_index.h"
 #endif
-#include "modules/gdscript/editor/gdscript_refactoring.h"
-#include "modules/gdscript/editor/gdscript_refactoring_edits.h"
-#include "modules/gdscript/editor/gdscript_refactoring_names.h"
+#include "modules/foundry_script/editor/fs_refactoring.h"
+#include "modules/foundry_script/editor/fs_refactoring_edits.h"
+#include "modules/foundry_script/editor/fs_refactoring_names.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/rich_text_label.h"
@@ -986,7 +986,7 @@ void ScriptTextEditor::_update_warnings() {
 
 	bool has_connections_table = false;
 	// Add missing connections.
-	if (GLOBAL_GET("debug/gdscript/warnings/enable")) {
+	if (GLOBAL_GET("debug/foundry_script/warnings/enable")) {
 		Node *base = get_tree()->get_edited_scene_root();
 		if (base && missing_connections.size() > 0) {
 			has_connections_table = true;
@@ -1449,9 +1449,9 @@ void ScriptTextEditor::_lookup_symbol(const String &p_symbol, int p_row, int p_c
 		bool loaded_autoload = false;
 		if (!script->get_language()->get_reserved_global_names().has(p_symbol)) {
 #ifdef MODULE_GDSCRIPT_ENABLED
-			GDScriptAutoloadIndex autoload_index;
+			FSAutoloadIndex autoload_index;
 			autoload_index.rebuild_from_project_settings();
-			const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
+			const FSAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
 			if (autoload != nullptr && autoload->is_singleton) {
 				EditorNode::get_singleton()->load_scene(autoload->path);
 				loaded_autoload = true;
@@ -1493,9 +1493,9 @@ void ScriptTextEditor::_validate_symbol(const String &p_symbol) {
 	bool is_singleton = false;
 	if (!script->get_language()->get_reserved_global_names().has(p_symbol)) {
 #ifdef MODULE_GDSCRIPT_ENABLED
-		GDScriptAutoloadIndex autoload_index;
+		FSAutoloadIndex autoload_index;
 		autoload_index.rebuild_from_project_settings();
-		const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
+		const FSAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
 		is_singleton = autoload != nullptr && autoload->is_singleton;
 #else
 		is_singleton = ProjectSettings::get_singleton()->has_autoload(p_symbol) && ProjectSettings::get_singleton()->get_autoload(p_symbol).is_singleton;
@@ -2985,7 +2985,7 @@ void ScriptTextEditor::_populate_refactor_submenu(PopupMenu *p_refactor_submenu)
 	p_refactor_submenu->clear();
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
-	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, loc);
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, loc);
 	for (const RefactorAvailability &availability : available) {
 		const int id = EDIT_REFACTOR_RENAME + (int)availability.kind;
 		p_refactor_submenu->add_item(availability.title, id);
@@ -3059,7 +3059,7 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::WIDEN_TO_NULLABLE == EDIT_REFACTOR_WIDEN_TO_NULLABLE, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE == EDIT_REFACTOR_SORT_MEMBERS_BY_STYLE_GUIDE, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 
-	if (!(script.is_valid() && script->get_language() && script->get_language()->get_name() == "GDScript")) {
+	if (!(script.is_valid() && script->get_language() && script->get_language()->get_name() == "FoundryScript")) {
 		return;
 	}
 
@@ -3073,7 +3073,7 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 	const RefactorLocation loc = _make_refactor_location();
 
 	if (kind == RefactorKind::RENAME) {
-		const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, loc);
+		const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, loc);
 		for (const RefactorAvailability &availability : available) {
 			if (availability.kind != RefactorKind::RENAME) {
 				continue;
@@ -3095,7 +3095,7 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 
 	if (kind == RefactorKind::EXTRACT_METHOD) {
 		RefactorParams params;
-		const RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, kind, params);
+		const RefactorResult result = FSRefactoring::prepare(ctx, loc, kind, params);
 		if (!result.ok) {
 			if (!result.error_message.is_empty()) {
 				EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
@@ -3108,7 +3108,7 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 	}
 
 	RefactorParams params;
-	const RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, kind, params);
+	const RefactorResult result = FSRefactoring::prepare(ctx, loc, kind, params);
 	if (!result.ok) {
 		if (!result.error_message.is_empty()) {
 			EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
@@ -3165,7 +3165,7 @@ void ScriptTextEditor::_apply_refactor_result(const RefactorResult &p_result, co
 	// against), so they must be applied to that same text rather than a possibly
 	// divergent re-read of the editor.
 	String applied;
-	if (!GDScriptRefactorEdits::apply(p_source, p_result.edits, applied)) {
+	if (!FSRefactorEdits::apply(p_source, p_result.edits, applied)) {
 		EditorToaster::get_singleton()->popup_str(TTR("Could not apply refactor edits."), EditorToaster::SEVERITY_ERROR);
 		return;
 	}
@@ -3253,7 +3253,7 @@ bool ScriptTextEditor::_try_start_inline_rename(const RefactorContext &p_context
 	RefactorParams params;
 	params.new_name = code_editor->get_text_editor()->get_word_under_caret();
 
-	const RefactorResult result = GDScriptRefactoring::prepare(p_context, p_location, RefactorKind::RENAME, params);
+	const RefactorResult result = FSRefactoring::prepare(p_context, p_location, RefactorKind::RENAME, params);
 	if (!_is_inline_rename_safe(result, p_context)) {
 		return false;
 	}
@@ -3284,7 +3284,7 @@ bool ScriptTextEditor::_is_inline_rename_safe(const RefactorResult &p_result, co
 }
 
 int ScriptTextEditor::_find_inline_rename_primary_occurrence(const Vector<RefactorTextEdit> &p_occurrences, const RefactorLocation &p_location) const {
-	const int occurrence = GDScriptRefactorEdits::find_edit_at_location(p_occurrences, p_location);
+	const int occurrence = FSRefactorEdits::find_edit_at_location(p_occurrences, p_location);
 	// Keep a deterministic topmost fallback if the invocation range cannot be mapped.
 	return occurrence >= 0 ? occurrence : 0;
 }
@@ -3368,7 +3368,7 @@ String ScriptTextEditor::_get_inline_rename_name() const {
 	}
 
 	const int line_idx = text_editor->get_caret_line(0);
-	return GDScriptRefactorNames::identifier_at_column(text_editor->get_line(line_idx), text_editor->get_caret_column(0));
+	return FSRefactorNames::identifier_at_column(text_editor->get_line(line_idx), text_editor->get_caret_column(0));
 }
 
 bool ScriptTextEditor::_commit_inline_rename(bool p_allow_dialog_fallback) {
@@ -3378,7 +3378,7 @@ bool ScriptTextEditor::_commit_inline_rename(bool p_allow_dialog_fallback) {
 
 	const String new_name = _get_inline_rename_name();
 	String reason;
-	if (!GDScriptRefactorNames::validate_identifier(new_name, reason)) {
+	if (!FSRefactorNames::validate_identifier(new_name, reason)) {
 		if (!p_allow_dialog_fallback) {
 			_cancel_inline_rename(false);
 			return true;
@@ -3389,7 +3389,7 @@ bool ScriptTextEditor::_commit_inline_rename(bool p_allow_dialog_fallback) {
 
 	RefactorParams params;
 	params.new_name = new_name;
-	const RefactorResult result = GDScriptRefactoring::prepare(inline_rename_context, inline_rename_location, RefactorKind::RENAME, params);
+	const RefactorResult result = FSRefactoring::prepare(inline_rename_context, inline_rename_location, RefactorKind::RENAME, params);
 	if (!result.ok) {
 		if (!p_allow_dialog_fallback) {
 			_cancel_inline_rename(false);
@@ -3409,7 +3409,7 @@ bool ScriptTextEditor::_commit_inline_rename(bool p_allow_dialog_fallback) {
 	}
 
 	String applied;
-	if (!GDScriptRefactorEdits::apply(inline_rename_context.source, result.edits, applied)) {
+	if (!FSRefactorEdits::apply(inline_rename_context.source, result.edits, applied)) {
 		if (!p_allow_dialog_fallback) {
 			_cancel_inline_rename(false);
 			return true;
@@ -3483,7 +3483,7 @@ void ScriptTextEditor::_on_rename_confirmed() {
 	RefactorParams params;
 	params.new_name = rename_line_edit->get_text();
 
-	const RefactorResult result = GDScriptRefactoring::prepare(ctx, loc, RefactorKind::RENAME, params);
+	const RefactorResult result = FSRefactoring::prepare(ctx, loc, RefactorKind::RENAME, params);
 	if (!result.ok) {
 		if (!result.error_message.is_empty()) {
 			EditorToaster::get_singleton()->popup_str(result.error_message, EditorToaster::SEVERITY_ERROR);
@@ -3496,7 +3496,7 @@ void ScriptTextEditor::_on_rename_confirmed() {
 
 void ScriptTextEditor::_on_rename_text_changed(const String &p_text) {
 	String reason;
-	const bool valid = GDScriptRefactorNames::validate_identifier(p_text, reason);
+	const bool valid = FSRefactorNames::validate_identifier(p_text, reason);
 	rename_error_label->set_text(valid ? String() : reason);
 	rename_dialog->get_ok_button()->set_disabled(!valid);
 }
@@ -3524,7 +3524,7 @@ void ScriptTextEditor::_on_extract_method_confirmed() {
 	params.new_name = method_name;
 	// The modal dialog keeps the buffer stable after name validation; rebuild
 	// the authoritative edits before applying them.
-	const RefactorResult result = GDScriptRefactoring::prepare(
+	const RefactorResult result = FSRefactoring::prepare(
 			ctx,
 			extract_method_name_prompt.get_location(),
 			RefactorKind::EXTRACT_METHOD,
@@ -3599,8 +3599,8 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 	const PackedStringArray paths = { String(code_editor->get_text_editor()->get_path()) };
 	EditorContextMenuPluginManager::get_singleton()->add_options_from_plugins(context_menu, EditorContextMenuPlugin::CONTEXT_SLOT_SCRIPT_EDITOR_CODE, paths);
 
-	// Refactors are GDScript-specific; only offer them when editing a GDScript file.
-	if (script.is_valid() && script->get_language() && script->get_language()->get_name() == "GDScript") {
+	// Refactors are FoundryScript-specific; only offer them when editing a FoundryScript file.
+	if (script.is_valid() && script->get_language() && script->get_language()->get_name() == "FoundryScript") {
 		// Ownership is transferred to context_menu when this becomes a submenu;
 		// the context_menu->clear() call above frees the previous submenu.
 		PopupMenu *refactor_submenu = memnew(PopupMenu);

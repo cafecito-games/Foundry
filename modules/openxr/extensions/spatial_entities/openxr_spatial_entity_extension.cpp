@@ -1074,7 +1074,7 @@ PackedInt32Array OpenXRSpatialEntityExtension::_get_uint32_buffer(RID p_spatial_
 	Vector<uint32_t> buffer = get_uint32_buffer(p_spatial_snapshot, (XrSpatialBufferIdEXT)p_buffer_id);
 
 	if (!buffer.is_empty()) {
-		// Note, we don't have a UINT32 array that we can use with GDScript and using an INT64 array is overkill.
+		// Note, we don't have a UINT32 array that we can use with FoundryScript and using an INT64 array is overkill.
 		// Bit wasteful this but...
 
 		ret.resize(buffer.size());

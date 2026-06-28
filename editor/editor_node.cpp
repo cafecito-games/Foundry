@@ -188,7 +188,7 @@
 #include "editor/shader/shader_baker/shader_baker_export_plugin_platform_metal.h"
 #endif
 
-#include "modules/modules_enabled.gen.h" // For gdscript, mono.
+#include "modules/modules_enabled.gen.h" // For foundry_script, mono.
 
 #ifndef PHYSICS_2D_DISABLED
 #include "servers/physics_2d/physics_server_2d.h"
@@ -575,7 +575,7 @@ void EditorNode::_gdextensions_reloaded() {
 	// In case the developer is inspecting an object that will be changed by the reload.
 	InspectorDock::get_inspector_singleton()->update_tree();
 
-	// Reload script editor to revalidate GDScript if classes are added or removed.
+	// Reload script editor to revalidate FoundryScript if classes are added or removed.
 	ScriptEditor::get_singleton()->reload_scripts(true);
 
 	// Regenerate documentation without using script documentation cache since that would
@@ -774,7 +774,7 @@ bool EditorNode::_is_project_data_missing() {
 		return true;
 	}
 
-	String project_data_gdignore_file_path = project_data_dir.path_join(".gdignore");
+	String project_data_gdignore_file_path = project_data_dir.path_join(".fsignore");
 	if (!FileAccess::exists(project_data_gdignore_file_path)) {
 		Ref<FileAccess> f = FileAccess::open(project_data_gdignore_file_path, FileAccess::WRITE);
 		if (f.is_valid()) {
@@ -6426,7 +6426,7 @@ void EditorNode::run_editor_script(const Ref<Script> &p_script) {
 	if (!p_script->is_tool()) {
 		is_runnable = false;
 
-		if (p_script->get_class() == "GDScript") {
+		if (p_script->get_class() == "FoundryScript") {
 			EditorToaster::get_singleton()->popup_str(TTR("Cannot run the script because it's not a tool script (add the @tool annotation at the top)."), EditorToaster::SEVERITY_WARNING);
 		} else if (p_script->get_class() == "CSharpScript") {
 			EditorToaster::get_singleton()->popup_str(TTR("Cannot run the script because it's not a tool script (add the [Tool] attribute above the class definition)."), EditorToaster::SEVERITY_WARNING);

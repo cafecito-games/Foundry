@@ -36,7 +36,7 @@
 #include "scene/gui/tree.h"
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript_autoload_index.h"
+#include "modules/foundry_script/fs_autoload_index.h"
 #endif
 
 class EditorFileDialog;
@@ -138,8 +138,8 @@ public:
 		String diagnostics_text;
 	};
 
-	static Vector<AutoloadViewEntry> build_autoload_view_entries(const GDScriptAutoloadIndex &p_index);
-	static GDScriptAutoloadIndex build_autoload_index_for_project_view(const String &p_root = "res://");
+	static Vector<AutoloadViewEntry> build_autoload_view_entries(const FSAutoloadIndex &p_index);
+	static FSAutoloadIndex build_autoload_index_for_project_view(const String &p_root = "res://");
 #endif
 
 	void init_autoloads();

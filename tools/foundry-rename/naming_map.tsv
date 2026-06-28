@@ -506,9 +506,11 @@ GODOT_IOS	FOUNDRY_IOS	D	code	generated
 GODOT_OSX	FOUNDRY_OSX	D	code	generated
 GODOT_URL	FOUNDRY_URL	D	code	generated
 GODOT_WEB	FOUNDRY_WEB	D	code	generated
+gdscript_	fs_	A	code	lowercase file/include prefix (apply BEFORE gdscript via longest-first)
 GDScript	FoundryScript	A	code	standalone language class (apply AFTER all GDScript* prefixes)
 GDScript	Foundry Script	D	prose	user-facing prose (handle in docs/translations pass)
 GODOT_PC	FOUNDRY_PC	D	code	generated
+gdscript	foundry_script	A	code	lowercase module dir, main file, setting keys (apply AFTER gdscript_)
 GDCLASS	FOUNDRY_CLASS	C	code	apply AFTER GDREGISTER_*/GDSOFTCLASS
 .gdc	.fsc	A	both	compiled script
 .gde	.fse	A	both	encrypted script

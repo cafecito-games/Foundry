@@ -143,13 +143,13 @@
 #endif
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript.h"
-#include "modules/gdscript/gdscript_autoload_index.h"
+#include "modules/foundry_script/foundry_script.h"
+#include "modules/foundry_script/fs_autoload_index.h"
 #ifdef TOOLS_ENABLED
-#include "modules/gdscript/editor/gdscript_migration_wizard.h"
+#include "modules/foundry_script/editor/fs_migration_wizard.h"
 #endif // TOOLS_ENABLED
 #if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
-#include "modules/gdscript/language_server/gdscript_language_server.h"
+#include "modules/foundry_script/language_server/fs_language_server.h"
 #endif // TOOLS_ENABLED && !GDSCRIPT_NO_LSP
 #endif // MODULE_GDSCRIPT_ENABLED
 
@@ -560,9 +560,9 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("-p, --project-manager", "Start the project manager, even if a project is auto-detected.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--recovery-mode", "Start the editor in recovery mode, which disables features that can typically cause startup crashes, such as tool scripts, editor plugins, GDExtension addons, and others.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--debug-server <uri>", "Start the editor debug server (<protocol>://<host/IP>[:port], e.g. tcp://127.0.0.1:6007)\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dap-port <port>", "Use the specified port for the GDScript Debug Adapter Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--dap-port <port>", "Use the specified port for the FoundryScript Debug Adapter Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #if defined(MODULE_GDSCRIPT_ENABLED) && !defined(GDSCRIPT_NO_LSP)
-	print_help_option("--lsp-port <port>", "Use the specified port for the GDScript Language Server Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--lsp-port <port>", "Use the specified port for the FoundryScript Language Server Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #endif // MODULE_GDSCRIPT_ENABLED && !GDSCRIPT_NO_LSP
 #endif
 	print_help_option("--quit", "Quit after the first iteration.\n");
@@ -712,16 +712,16 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--no-docbase", "Disallow dumping the base types (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--gdextension-docs", "Rather than dumping the engine API, generate API reference from all the GDExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #ifdef MODULE_GDSCRIPT_ENABLED
-	print_help_option("--gdscript-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the GDScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate <path>", "Run the GDScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --gdscript-migrate-apply to commit the inferred annotations, and the --gdscript-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-apply", "Commit the inferred type annotations to disk during --gdscript-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-strict-null-checks", "Project (and, with --gdscript-migrate-activate-strict, enable) strict null checks during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-strict-dynamic-checks", "Project (and, with --gdscript-migrate-activate-strict, enable) strict dynamic checks during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-activate-strict", "Flip the requested strict project settings during --gdscript-migrate. Requires --gdscript-migrate-confirm and a clean report (or --gdscript-migrate-allow-violations).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-confirm", "Confirm the gated strict-settings flip for --gdscript-migrate-activate-strict.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-allow-violations", "Allow the strict-settings flip even when violations remain (gradual adoption) during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-acknowledge-vcs", "Acknowledge the version-control safety warning so --gdscript-migrate-apply proceeds on an unversioned or dirty tree.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-follow-up <path>", "Write the manual follow-up punch-list from --gdscript-migrate to <path>.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the FoundryScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate <path>", "Run the FoundryScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --foundry_script-migrate-apply to commit the inferred annotations, and the --foundry_script-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-apply", "Commit the inferred type annotations to disk during --foundry_script-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-strict-null-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict null checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-strict-dynamic-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict dynamic checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-activate-strict", "Flip the requested strict project settings during --foundry_script-migrate. Requires --foundry_script-migrate-confirm and a clean report (or --foundry_script-migrate-allow-violations).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-confirm", "Confirm the gated strict-settings flip for --foundry_script-migrate-activate-strict.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-allow-violations", "Allow the strict-settings flip even when violations remain (gradual adoption) during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-acknowledge-vcs", "Acknowledge the version-control safety warning so --foundry_script-migrate-apply proceeds on an unversioned or dirty tree.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-follow-up <path>", "Write the manual follow-up punch-list from --foundry_script-migrate to <path>.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #endif
 	print_help_option("--build-solutions", "Build the scripting solutions (e.g. for C# projects). Implies --editor and requires a valid project to edit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--dump-gdextension-interface", "Generate a GDExtension header file \"gdextension_interface.h\" in the current folder. This file is the base file required to implement a GDExtension.\n", CLI_OPTION_AVAILABILITY_EDITOR);
@@ -962,13 +962,13 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			tests_need_run = false;
 			return EXIT_SUCCESS;
 		}
-		// `--gdscript-generate-tests` is a registered `--test` command (so it
+		// `--foundry_script-generate-tests` is a registered `--test` command (so it
 		// runs under `test_setup()`/`test_cleanup()` and the process shuts down
 		// cleanly); accept it as a standalone flag too, for backwards compatibility.
 		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
-		const bool is_test_command = strcmp(argv[x], "--gdscript-generate-tests") == 0;
-		const bool is_format_command = strcmp(argv[x], "--gdscript-format") == 0 ||
-				strcmp(argv[x], "--gdscript-generate-format-tests") == 0;
+		const bool is_test_command = strcmp(argv[x], "--foundry_script-generate-tests") == 0;
+		const bool is_format_command = strcmp(argv[x], "--foundry_script-format") == 0 ||
+				strcmp(argv[x], "--foundry_script-generate-format-tests") == 0;
 		if (is_test || is_test_command || is_format_command) {
 			tests_need_run = true;
 #ifdef TESTS_ENABLED
@@ -1717,21 +1717,21 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			display_driver = NULL_DISPLAY_DRIVER;
 			main_args.push_back(arg);
 #ifdef MODULE_GDSCRIPT_ENABLED
-		} else if (arg == "--gdscript-docs") {
+		} else if (arg == "--foundry_script-docs") {
 			if (N) {
 				project_path = N->get();
 				// Will be handled in start()
 				main_args.push_back(arg);
 				main_args.push_back(N->get());
 				N = N->next();
-				// GDScript docgen requires Autoloads, but loading those also creates a main loop.
-				// This forces main loop to quit without adding more GDScript-specific exceptions to setup.
+				// FoundryScript docgen requires Autoloads, but loading those also creates a main loop.
+				// This forces main loop to quit without adding more FoundryScript-specific exceptions to setup.
 				quit_after = 1;
 			} else {
-				OS::get_singleton()->print("Missing relative or absolute path to project for --gdscript-docs, aborting.\n");
+				OS::get_singleton()->print("Missing relative or absolute path to project for --foundry_script-docs, aborting.\n");
 				goto error;
 			}
-		} else if (arg == "--gdscript-migrate") {
+		} else if (arg == "--foundry_script-migrate") {
 			// Headless strict-typing migration wizard: runs the dry-run report and, when
 			// asked, the atomic apply and gated strict activation, then exits. Will be
 			// handled in start(); the modifier flags are read there from cmdline_args.
@@ -1746,14 +1746,14 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				main_args.push_back(arg);
 				main_args.push_back(N->get());
 				N = N->next();
-				// The wizard finishes its work in start() and exits; like --gdscript-docs it
+				// The wizard finishes its work in start() and exits; like --foundry_script-docs it
 				// does not need a running main loop.
 				quit_after = 1;
 			} else {
-				OS::get_singleton()->print("Missing relative or absolute path to project for --gdscript-migrate, aborting.\n");
+				OS::get_singleton()->print("Missing relative or absolute path to project for --foundry_script-migrate, aborting.\n");
 				goto error;
 			}
-		} else if (arg == "--gdscript-migrate-follow-up") {
+		} else if (arg == "--foundry_script-migrate-follow-up") {
 			// Validate the required path argument here (where end-of-command-line is detectable);
 			// the value itself is read in start(). Consume the path so it is not reparsed as a
 			// standalone option.
@@ -1762,7 +1762,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				main_args.push_back(N->get());
 				N = N->next();
 			} else {
-				OS::get_singleton()->print("Missing file path argument for --gdscript-migrate-follow-up, aborting.\n");
+				OS::get_singleton()->print("Missing file path argument for --foundry_script-migrate-follow-up, aborting.\n");
 				goto error;
 			}
 #endif // MODULE_GDSCRIPT_ENABLED
@@ -2030,7 +2030,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 					OS::get_singleton()->print("<port> argument for --lsp-port <port> must be between 0 and 65535.\n");
 					goto error;
 				}
-				GDScriptLanguageServer::port_override = port_override;
+				FSLanguageServer::port_override = port_override;
 				N = N->next();
 			} else {
 				OS::get_singleton()->print("Missing <port> argument for --lsp-port <port>.\n");
@@ -3990,16 +3990,16 @@ int Main::start() {
 	bool install_android_build_template = false;
 	bool export_patch = false;
 #ifdef MODULE_GDSCRIPT_ENABLED
-	String gdscript_docs_path;
-	String gdscript_migrate_path;
-	bool gdscript_migrate_apply = false;
-	bool gdscript_migrate_strict_null = false;
-	bool gdscript_migrate_strict_dynamic = false;
-	bool gdscript_migrate_activate_strict = false;
-	bool gdscript_migrate_confirm = false;
-	bool gdscript_migrate_allow_violations = false;
-	bool gdscript_migrate_acknowledge_vcs = false;
-	String gdscript_migrate_follow_up_path;
+	String fs_docs_path;
+	String fs_migrate_path;
+	bool fs_migrate_apply = false;
+	bool fs_migrate_strict_null = false;
+	bool fs_migrate_strict_dynamic = false;
+	bool fs_migrate_activate_strict = false;
+	bool fs_migrate_confirm = false;
+	bool fs_migrate_allow_violations = false;
+	bool fs_migrate_acknowledge_vcs = false;
+	String fs_migrate_follow_up_path;
 #endif
 #ifndef DISABLE_DEPRECATED
 	bool converting_project = false;
@@ -4038,20 +4038,20 @@ int Main::start() {
 		} else if (E->get() == "--install-android-build-template") {
 			install_android_build_template = true;
 #ifdef MODULE_GDSCRIPT_ENABLED
-		} else if (E->get() == "--gdscript-migrate-apply") {
-			gdscript_migrate_apply = true;
-		} else if (E->get() == "--gdscript-migrate-strict-null-checks") {
-			gdscript_migrate_strict_null = true;
-		} else if (E->get() == "--gdscript-migrate-strict-dynamic-checks") {
-			gdscript_migrate_strict_dynamic = true;
-		} else if (E->get() == "--gdscript-migrate-activate-strict") {
-			gdscript_migrate_activate_strict = true;
-		} else if (E->get() == "--gdscript-migrate-confirm") {
-			gdscript_migrate_confirm = true;
-		} else if (E->get() == "--gdscript-migrate-allow-violations") {
-			gdscript_migrate_allow_violations = true;
-		} else if (E->get() == "--gdscript-migrate-acknowledge-vcs") {
-			gdscript_migrate_acknowledge_vcs = true;
+		} else if (E->get() == "--foundry_script-migrate-apply") {
+			fs_migrate_apply = true;
+		} else if (E->get() == "--foundry_script-migrate-strict-null-checks") {
+			fs_migrate_strict_null = true;
+		} else if (E->get() == "--foundry_script-migrate-strict-dynamic-checks") {
+			fs_migrate_strict_dynamic = true;
+		} else if (E->get() == "--foundry_script-migrate-activate-strict") {
+			fs_migrate_activate_strict = true;
+		} else if (E->get() == "--foundry_script-migrate-confirm") {
+			fs_migrate_confirm = true;
+		} else if (E->get() == "--foundry_script-migrate-allow-violations") {
+			fs_migrate_allow_violations = true;
+		} else if (E->get() == "--foundry_script-migrate-acknowledge-vcs") {
+			fs_migrate_acknowledge_vcs = true;
 #endif // MODULE_GDSCRIPT_ENABLED
 #endif // TOOLS_ENABLED
 		} else if (E->get() == "--scene") {
@@ -4110,12 +4110,12 @@ int Main::start() {
 					parsed_pair = false;
 				}
 #ifdef MODULE_GDSCRIPT_ENABLED
-			} else if (E->get() == "--gdscript-docs") {
-				gdscript_docs_path = E->next()->get();
-			} else if (E->get() == "--gdscript-migrate") {
-				gdscript_migrate_path = E->next()->get();
-			} else if (E->get() == "--gdscript-migrate-follow-up") {
-				gdscript_migrate_follow_up_path = E->next()->get();
+			} else if (E->get() == "--foundry_script-docs") {
+				fs_docs_path = E->next()->get();
+			} else if (E->get() == "--foundry_script-migrate") {
+				fs_migrate_path = E->next()->get();
+			} else if (E->get() == "--foundry_script-migrate-follow-up") {
+				fs_migrate_follow_up_path = E->next()->get();
 #endif
 			} else if (E->get() == "--export-release") {
 				ERR_FAIL_COND_V_MSG(!editor && !found_project, EXIT_FAILURE, "Please provide a valid project path when exporting, aborting.");
@@ -4166,7 +4166,7 @@ int Main::start() {
 
 #ifdef TOOLS_ENABLED
 #ifdef MODULE_GDSCRIPT_ENABLED
-	if (!doc_tool_path.is_empty() && gdscript_docs_path.is_empty()) {
+	if (!doc_tool_path.is_empty() && fs_docs_path.is_empty()) {
 #else
 	if (!doc_tool_path.is_empty()) {
 #endif
@@ -4322,7 +4322,7 @@ int Main::start() {
 	// The migration command is handled before the game branch and never runs the main scene, so do
 	// not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a fresh
 	// CI/source checkout before the migration could even print its report.
-	skip_main_scene_resolution = !gdscript_migrate_path.is_empty();
+	skip_main_scene_resolution = !fs_migrate_path.is_empty();
 #endif
 
 	if (!skip_main_scene_resolution && script.is_empty() && game_path.is_empty()) {
@@ -4351,7 +4351,7 @@ int Main::start() {
 #endif
 
 #if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
-	if (!gdscript_migrate_path.is_empty()) {
+	if (!fs_migrate_path.is_empty()) {
 		// Headless strict-typing migration wizard. Reuses the same orchestrator the editor entry
 		// point drives (report -> apply -> gated strict activation), so a scripted or
 		// continuous-integration run produces the identical flow without a window. Handled here --
@@ -4364,27 +4364,27 @@ int Main::start() {
 		// have left res:// bound to the process working directory, and an --apply run could rewrite
 		// an unintended tree (and falsely report success).
 		ERR_FAIL_COND_V_MSG(!found_project, EXIT_FAILURE,
-				"--gdscript-migrate requires a valid project; none was found at the given path. Aborting.");
+				"--foundry_script-migrate requires a valid project; none was found at the given path. Aborting.");
 
-		// --gdscript-migrate-follow-up takes a path; reject a missing one (the next token was
+		// --foundry_script-migrate-follow-up takes a path; reject a missing one (the next token was
 		// another option, or the flag ended the command line) so the request is not silently
 		// dropped or made to consume an unrelated option as its path.
-		ERR_FAIL_COND_V_MSG(gdscript_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
-				"--gdscript-migrate-follow-up requires a file path argument. Aborting.");
+		ERR_FAIL_COND_V_MSG(fs_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
+				"--foundry_script-migrate-follow-up requires a file path argument. Aborting.");
 
 		MigrationWizardOptions options;
-		options.apply = gdscript_migrate_apply;
-		options.strict_null_checks = gdscript_migrate_strict_null;
-		options.strict_dynamic_checks = gdscript_migrate_strict_dynamic;
-		options.activate_strict = gdscript_migrate_activate_strict;
-		options.confirm_strict_activation = gdscript_migrate_confirm;
-		options.allow_strict_with_violations = gdscript_migrate_allow_violations;
-		options.acknowledge_vcs_warning = gdscript_migrate_acknowledge_vcs;
-		options.follow_up_path = gdscript_migrate_follow_up_path;
+		options.apply = fs_migrate_apply;
+		options.strict_null_checks = fs_migrate_strict_null;
+		options.strict_dynamic_checks = fs_migrate_strict_dynamic;
+		options.activate_strict = fs_migrate_activate_strict;
+		options.confirm_strict_activation = fs_migrate_confirm;
+		options.allow_strict_with_violations = fs_migrate_allow_violations;
+		options.acknowledge_vcs_warning = fs_migrate_acknowledge_vcs;
+		options.follow_up_path = fs_migrate_follow_up_path;
 
 		// The migration path was loaded as the project (project_path), so res:// resolves to it; the
 		// wizard scans the whole project tree.
-		const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
+		const MigrationWizardResult migration_result = FSMigrationWizard::run("res://", options);
 		OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
 		// succeeded() is stricter than ok: it also fails a gated strict activation and an activation
 		// that flipped but could not be persisted, so a scripted or CI run enforcing strict
@@ -4536,10 +4536,10 @@ int Main::start() {
 				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
 				Vector<ProjectSettings::AutoloadInfo> autoloads;
 #ifdef MODULE_GDSCRIPT_ENABLED
-				GDScriptAutoloadIndex autoload_index;
+				FSAutoloadIndex autoload_index;
 				const Error autoload_index_err = autoload_index.rebuild_for_runtime_startup();
 				if (autoload_index_err != OK) {
-					WARN_PRINT(vformat("Failed to load GDScript autoload index cache; falling back to project settings: %s.",
+					WARN_PRINT(vformat("Failed to load FoundryScript autoload index cache; falling back to project settings: %s.",
 							error_names[autoload_index_err]));
 					autoload_index.rebuild_from_project_settings();
 				}
@@ -4631,16 +4631,16 @@ int Main::start() {
 
 #ifdef TOOLS_ENABLED
 #ifdef MODULE_GDSCRIPT_ENABLED
-		if (!doc_tool_path.is_empty() && !gdscript_docs_path.is_empty()) {
+		if (!doc_tool_path.is_empty() && !fs_docs_path.is_empty()) {
 			DocTools docs;
 			Error err;
 
-			Vector<String> paths = get_files_with_extension(gdscript_docs_path, "gd");
-			ERR_FAIL_COND_V_MSG(paths.is_empty(), EXIT_FAILURE, "Couldn't find any GDScript files under the given directory: " + gdscript_docs_path);
+			Vector<String> paths = get_files_with_extension(fs_docs_path, "gd");
+			ERR_FAIL_COND_V_MSG(paths.is_empty(), EXIT_FAILURE, "Couldn't find any FoundryScript files under the given directory: " + fs_docs_path);
 
 			for (const String &path : paths) {
-				Ref<GDScript> gdscript = ResourceLoader::load(path);
-				for (const DocData::ClassDoc &class_doc : gdscript->get_documentation()) {
+				Ref<FoundryScript> foundry_script = ResourceLoader::load(path);
+				for (const DocData::ClassDoc &class_doc : foundry_script->get_documentation()) {
 					docs.add_doc(class_doc);
 				}
 			}
@@ -4651,11 +4651,11 @@ int Main::start() {
 
 			Ref<DirAccess> da = DirAccess::create_for_path(doc_tool_path);
 			err = da->make_dir_recursive(doc_tool_path);
-			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error: Can't create GDScript docs directory: " + doc_tool_path + ": " + itos(err));
+			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error: Can't create FoundryScript docs directory: " + doc_tool_path + ": " + itos(err));
 
 			HashMap<String, String> doc_data_classes;
 			err = docs.save_classes(doc_tool_path, doc_data_classes, false);
-			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error saving GDScript docs:" + itos(err));
+			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error saving FoundryScript docs:" + itos(err));
 
 			return EXIT_SUCCESS;
 		}

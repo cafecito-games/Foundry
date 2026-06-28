@@ -32,12 +32,12 @@
 // replaces the normal platform main() when the engine is built with
 // `use_fuzzer=yes` (which requires Clang, since libFuzzer ships with LLVM). It
 // only constructs the OS and hands off to the shared, platform-independent
-// harness in modules/gdscript/tests/fuzz/. The `--headless` argument selects the
+// harness in modules/foundry_script/tests/fuzz/. The `--headless` argument selects the
 // dummy display/audio servers so no GUI or device is needed.
 
 #include "os_linuxbsd.h"
 
-#include "modules/gdscript/tests/fuzz/gdscript_fuzzer.h"
+#include "modules/foundry_script/tests/fuzz/fs_fuzzer.h"
 
 extern "C" int LLVMFuzzerInitialize(int *p_argc, char ***p_argv) {
 	static char headless_arg[] = "--headless";
@@ -47,7 +47,7 @@ extern "C" int LLVMFuzzerInitialize(int *p_argc, char ***p_argv) {
 	// for the lifetime of the fuzzing process and torn down via _exit().
 	OS_LinuxBSD *os = new OS_LinuxBSD();
 
-	gdscript_fuzzer_initialize_engine(os, 1, engine_argv);
+	fs_fuzzer_initialize_engine(os, 1, engine_argv);
 
 	return 0;
 }

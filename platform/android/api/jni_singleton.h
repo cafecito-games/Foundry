@@ -64,7 +64,7 @@ public:
 		// This is done because JNISingletons register methods differently than wrapped JavaClass / JavaObject to allow
 		// for access to private methods annotated with the @UsedByGodot annotation.
 		// In the future, we should remove access to private methods and require that JNISingletons' methods exposed to
-		// GDScript be all public, similarly to what we do for wrapped JavaClass / JavaObject methods. Doing so will
+		// FoundryScript be all public, similarly to what we do for wrapped JavaClass / JavaObject methods. Doing so will
 		// also allow dropping and deprecating the @UsedByGodot annotation.
 		RBMap<StringName, MethodData>::Element *E = method_map.find(p_method);
 		if (E) {

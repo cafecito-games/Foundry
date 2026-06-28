@@ -1789,7 +1789,7 @@ ProjectExportDialog::ProjectExportDialog() {
 	patch_delta_include_filter = memnew(LineEdit);
 	patch_delta_include_filter->set_accessibility_name(TTRC("Delta Encoding Include Filters"));
 	patch_delta_include_filter->connect(SceneStringName(text_changed), callable_mp(this, &ProjectExportDialog::_patch_delta_include_filter_changed));
-	patch_vb->add_margin_child(TTRC("Filters to include files/folders from being delta-encoded\n(comma-separated, e.g: *.gdc, scripts/*)"), patch_delta_include_filter);
+	patch_vb->add_margin_child(TTRC("Filters to include files/folders from being delta-encoded\n(comma-separated, e.g: *.fsc, scripts/*)"), patch_delta_include_filter);
 
 	patch_delta_exclude_filter = memnew(LineEdit);
 	patch_delta_exclude_filter->set_accessibility_name(TTRC("Delta Encoding Exclude Filters"));
@@ -1915,8 +1915,8 @@ ProjectExportDialog::ProjectExportDialog() {
 	script_vb->set_name(TTR("Scripts"));
 
 	script_mode = memnew(OptionButton);
-	script_mode->set_accessibility_name(TTRC("GDScript Export Mode:"));
-	script_vb->add_margin_child(TTR("GDScript Export Mode:"), script_mode);
+	script_mode->set_accessibility_name(TTRC("FoundryScript Export Mode:"));
+	script_vb->add_margin_child(TTR("FoundryScript Export Mode:"), script_mode);
 	script_mode->add_item(TTR("Text (easier debugging)"), (int)EditorExportPreset::MODE_SCRIPT_TEXT);
 	script_mode->add_item(TTR("Binary tokens (faster loading)"), (int)EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS);
 	script_mode->add_item(TTR("Compressed binary tokens (smaller files)"), (int)EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED);

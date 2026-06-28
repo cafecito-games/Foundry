@@ -37,7 +37,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
-#include "modules/gdscript/editor/gdscript_refactoring.h"
+#include "modules/foundry_script/editor/fs_refactoring.h"
 #include "scene/gui/code_edit.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
@@ -80,12 +80,12 @@ void write_text_for_test(const String &p_path, const String &p_source) {
 
 TEST_CASE("[Editor][ScriptRefactorApply] Builds grouped before and after plan") {
 	RefactorFileEdit player_edits;
-	player_edits.path = "res://player.gd";
+	player_edits.path = "res://player.fs";
 	player_edits.edits.push_back(make_edit(0, 4, 9, "speed", "move_speed"));
 	player_edits.edits.push_back(make_edit(1, 6, 11, "speed", "move_speed"));
 
 	RefactorFileEdit enemy_edits;
-	enemy_edits.path = "res://enemy.gd";
+	enemy_edits.path = "res://enemy.fs";
 	enemy_edits.edits.push_back(make_edit(0, 7, 12, "speed", "move_speed"));
 
 	Vector<RefactorFileEdit> edits;
@@ -93,8 +93,8 @@ TEST_CASE("[Editor][ScriptRefactorApply] Builds grouped before and after plan") 
 	edits.push_back(enemy_edits);
 
 	Vector<ScriptRefactorSource> sources;
-	sources.push_back(make_source("res://player.gd", "var speed := 10\nprint(speed)\n"));
-	sources.push_back(make_source("res://enemy.gd", "target.speed += 1\n"));
+	sources.push_back(make_source("res://player.fs", "var speed := 10\nprint(speed)\n"));
+	sources.push_back(make_source("res://enemy.fs", "target.speed += 1\n"));
 
 	ScriptRefactorApplyPlan plan;
 	String error;
@@ -102,12 +102,12 @@ TEST_CASE("[Editor][ScriptRefactorApply] Builds grouped before and after plan") 
 	CHECK(error.is_empty());
 	REQUIRE_EQ(plan.files.size(), 2);
 
-	CHECK_EQ(plan.files[0].path, "res://player.gd");
+	CHECK_EQ(plan.files[0].path, "res://player.fs");
 	CHECK_EQ(plan.files[0].before_source, "var speed := 10\nprint(speed)\n");
 	CHECK_EQ(plan.files[0].after_source, "var move_speed := 10\nprint(move_speed)\n");
 	CHECK_EQ(plan.files[0].edit_count, 2);
 
-	CHECK_EQ(plan.files[1].path, "res://enemy.gd");
+	CHECK_EQ(plan.files[1].path, "res://enemy.fs");
 	CHECK_EQ(plan.files[1].before_source, "target.speed += 1\n");
 	CHECK_EQ(plan.files[1].after_source, "target.move_speed += 1\n");
 	CHECK_EQ(plan.files[1].edit_count, 1);
@@ -122,11 +122,11 @@ TEST_CASE("[Editor][ScriptRefactorApply] Builds grouped before and after plan") 
 
 TEST_CASE("[Editor][ScriptRefactorApply] Missing source fails before producing a partial plan") {
 	RefactorFileEdit player_edits;
-	player_edits.path = "res://player.gd";
+	player_edits.path = "res://player.fs";
 	player_edits.edits.push_back(make_edit(0, 4, 9, "speed", "move_speed"));
 
 	RefactorFileEdit missing_edits;
-	missing_edits.path = "res://missing.gd";
+	missing_edits.path = "res://missing.fs";
 	missing_edits.edits.push_back(make_edit(0, 4, 9, "speed", "move_speed"));
 
 	Vector<RefactorFileEdit> edits;
@@ -134,25 +134,25 @@ TEST_CASE("[Editor][ScriptRefactorApply] Missing source fails before producing a
 	edits.push_back(missing_edits);
 
 	Vector<ScriptRefactorSource> sources;
-	sources.push_back(make_source("res://player.gd", "var speed := 10\n"));
+	sources.push_back(make_source("res://player.fs", "var speed := 10\n"));
 
 	ScriptRefactorApplyPlan plan;
 	String error;
 	CHECK_FALSE(ScriptRefactorApply::build_plan(edits, sources, plan, error));
-	CHECK(error.contains("res://missing.gd"));
+	CHECK(error.contains("res://missing.fs"));
 	CHECK(plan.files.is_empty());
 }
 
 TEST_CASE("[Editor][ScriptRefactorApply] Stale source fails before producing a partial plan") {
 	RefactorFileEdit player_edits;
-	player_edits.path = "res://player.gd";
+	player_edits.path = "res://player.fs";
 	player_edits.edits.push_back(make_edit(0, 4, 9, "speed", "move_speed"));
 
 	Vector<RefactorFileEdit> edits;
 	edits.push_back(player_edits);
 
 	Vector<ScriptRefactorSource> sources;
-	sources.push_back(make_source("res://player.gd", "var sprint_speed := 10\n"));
+	sources.push_back(make_source("res://player.fs", "var sprint_speed := 10\n"));
 
 	ScriptRefactorApplyPlan plan;
 	String error;
@@ -187,7 +187,7 @@ TEST_CASE("[Editor][ScriptRefactorApply] Editor text replacement does not enter 
 
 TEST_CASE("[Editor][ScriptRefactorApply] Closed file write replaces through a temporary file") {
 	const String dir = make_temp_dir("script_refactor_apply_write");
-	const String path = dir.path_join("player.gd");
+	const String path = dir.path_join("player.fs");
 	write_text_for_test(path, "var speed := 10\n");
 
 	String error;
@@ -200,7 +200,7 @@ TEST_CASE("[Editor][ScriptRefactorApply] Closed file write replaces through a te
 
 	const PackedStringArray files = DirAccess::get_files_at(dir);
 	for (const String &file : files) {
-		CHECK_FALSE(file.begins_with("player.gd.tmp"));
+		CHECK_FALSE(file.begins_with("player.fs.tmp"));
 	}
 
 	DirAccess::remove_absolute(path);
@@ -210,7 +210,7 @@ TEST_CASE("[Editor][ScriptRefactorApply] Closed file write replaces through a te
 #ifdef UNIX_ENABLED
 TEST_CASE("[Editor][ScriptRefactorApply] Closed file write failure leaves original file untouched") {
 	const String dir = make_temp_dir("script_refactor_apply_write_fail");
-	const String path = dir.path_join("player.gd");
+	const String path = dir.path_join("player.fs");
 	write_text_for_test(path, "var speed := 10\n");
 	REQUIRE_EQ(FileAccess::set_unix_permissions(path, 0644), OK);
 	REQUIRE_EQ(FileAccess::set_unix_permissions(dir, 0555), OK);
@@ -240,7 +240,7 @@ TEST_CASE("[Editor][ScriptRefactorApply] Plan retains exact pre-apply source so 
 	// undoing restores the project exactly, exercised at the file-write layer
 	// (apply writes after_source; undo writes before_source).
 	const String dir = make_temp_dir("script_refactor_apply_roundtrip");
-	const String path = dir.path_join("player.gd");
+	const String path = dir.path_join("player.fs");
 	const String original = "var speed := 10\r\nprint(speed)\n";
 	write_text_for_test(path, original);
 

@@ -57,7 +57,7 @@ public:
 	ScopedScriptServerClass(const StringName &p_class_name, const String &p_base, const String &p_path) {
 		class_name = p_class_name;
 		ScriptServer::remove_global_class(class_name);
-		ScriptServer::add_global_class(class_name, p_base, SNAME("GDScript"), p_path, false, false, false);
+		ScriptServer::add_global_class(class_name, p_base, SNAME("FoundryScript"), p_path, false, false, false);
 	}
 
 	~ScopedScriptServerClass() {
@@ -158,7 +158,7 @@ public:
 TEST_CASE("[Editor][Export] Script-owned autoload cache write failure is a hard forced-file error") {
 	ScopedExportTempFiles files("editor_export_autoload_cache_failure");
 
-	const String script_path = files.write("export_cache_required.gd",
+	const String script_path = files.write("export_cache_required.fs",
 			"@autoload\n"
 			"class_name EditorExportAutoloadCacheRequired extends Node\n");
 	ScopedScriptServerClass registered_autoload(
@@ -182,7 +182,7 @@ TEST_CASE("[Editor][Export] Script-owned autoload cache write failure is a hard 
 TEST_CASE("[Editor][Export] Legacy forced-file helper rejects autoload index rebuild errors") {
 	ScopedExportTempFiles files("editor_export_legacy_autoload_rebuild_failure");
 
-	const String script_path = files.write("legacy_invalid_autoload.gd",
+	const String script_path = files.write("legacy_invalid_autoload.fs",
 			"@autoload\n"
 			"class_name EditorExportLegacyInvalidAutoload extends RefCounted\n");
 	ScopedScriptServerClass registered_autoload(
@@ -201,8 +201,8 @@ TEST_CASE("[Editor][Export] Selected autoload dependencies honor preset feature 
 	ScopedExportTempFiles files("editor_export_autoload_preset_override");
 	ScopedProjectSettings settings;
 
-	const String base_path = files.write("preset_override_base.gd", "extends Node\n");
-	const String override_path = files.write("preset_override_feature.gd", "extends Node\n");
+	const String base_path = files.write("preset_override_base.fs", "extends Node\n");
+	const String override_path = files.write("preset_override_feature.fs", "extends Node\n");
 
 	settings.set(SNAME("autoload/EditorExportPresetOverrideAutoload"), "*" + base_path);
 	settings.set(SNAME("autoload/EditorExportPresetOverrideAutoload.feature_override"), "*" + override_path);

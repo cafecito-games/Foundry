@@ -4422,7 +4422,7 @@ void EditorInspector::update_tree() {
 					if (scr.is_valid()) {
 						Vector<DocData::ClassDoc> docs = scr->get_documentation();
 						if (!docs.is_empty()) {
-							// The documentation of a GDScript's main class is at the end of the array.
+							// The documentation of a FoundryScript's main class is at the end of the array.
 							// Hacky because this isn't necessarily always guaranteed.
 							classname = docs[docs.size() - 1].name;
 						}

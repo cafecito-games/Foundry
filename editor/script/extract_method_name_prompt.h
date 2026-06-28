@@ -32,7 +32,7 @@
 
 #ifdef TOOLS_ENABLED
 
-#include "modules/gdscript/editor/gdscript_refactoring.h"
+#include "modules/foundry_script/editor/fs_refactoring.h"
 
 class ExtractMethodNamePromptModel {
 	bool pending = false;

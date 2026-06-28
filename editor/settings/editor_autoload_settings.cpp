@@ -42,9 +42,9 @@
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/settings/project_settings_editor.h"
 #ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/editor/gdscript_project_scan.h"
-#include "modules/gdscript/gdscript_analyzer.h"
-#include "modules/gdscript/gdscript_parser.h"
+#include "modules/foundry_script/editor/fs_project_scan.h"
+#include "modules/foundry_script/fs_analyzer.h"
+#include "modules/foundry_script/fs_parser.h"
 #endif
 #include "scene/main/window.h"
 #include "scene/resources/packed_scene.h"
@@ -54,19 +54,19 @@
 #ifdef MODULE_GDSCRIPT_ENABLED
 namespace {
 
-bool _autoload_diagnostic_is_conflict(const GDScriptAutoloadIndexDiagnostic &p_diagnostic) {
-	return p_diagnostic.code == GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH;
+bool _autoload_diagnostic_is_conflict(const FSAutoloadIndexDiagnostic &p_diagnostic) {
+	return p_diagnostic.code == FSAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH;
 }
 
-String _autoload_source_label(const GDScriptAutoloadIndexEntry &p_entry, bool p_has_conflict) {
+String _autoload_source_label(const FSAutoloadIndexEntry &p_entry, bool p_has_conflict) {
 	if (p_has_conflict) {
 		return "Conflict";
 	}
 
 	switch (p_entry.source) {
-		case GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS:
+		case FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS:
 			return "Project Settings";
-		case GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION:
+		case FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION:
 			return "Script";
 	}
 
@@ -86,9 +86,9 @@ String _autoload_diagnostics_summary(int p_count, bool p_has_conflict) {
 	return vformat("%d Issues", p_count);
 }
 
-String _autoload_diagnostics_text(const Vector<GDScriptAutoloadIndexDiagnostic> &p_diagnostics) {
+String _autoload_diagnostics_text(const Vector<FSAutoloadIndexDiagnostic> &p_diagnostics) {
 	String text;
-	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_diagnostics) {
+	for (const FSAutoloadIndexDiagnostic &diagnostic : p_diagnostics) {
 		if (!text.is_empty()) {
 			text += "\n";
 		}
@@ -138,11 +138,11 @@ bool _autoload_setting_supports_raw_project_editing(const String &p_setting_name
 	return p_setting_name.begins_with("autoload/");
 }
 
-Vector<GDScriptAutoloadIndexDiagnostic> _autoload_view_diagnostics_for_entry(const GDScriptAutoloadIndexEntry &p_entry) {
-	Vector<GDScriptAutoloadIndexDiagnostic> diagnostics;
-	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_entry.diagnostics) {
-		if (diagnostic.code == GDScriptAutoloadIndexDiagnostic::NON_SCRIPT_NON_SCENE_PATH &&
-				p_entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS &&
+Vector<FSAutoloadIndexDiagnostic> _autoload_view_diagnostics_for_entry(const FSAutoloadIndexEntry &p_entry) {
+	Vector<FSAutoloadIndexDiagnostic> diagnostics;
+	for (const FSAutoloadIndexDiagnostic &diagnostic : p_entry.diagnostics) {
+		if (diagnostic.code == FSAutoloadIndexDiagnostic::NON_SCRIPT_NON_SCENE_PATH &&
+				p_entry.source == FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS &&
 				_autoload_path_is_recognized_script(p_entry.path)) {
 			continue;
 		}
@@ -152,22 +152,22 @@ Vector<GDScriptAutoloadIndexDiagnostic> _autoload_view_diagnostics_for_entry(con
 	return diagnostics;
 }
 
-void _append_script_owned_autoload_entries(const String &p_path, Vector<GDScriptAutoloadIndexEntry> &r_entries) {
+void _append_script_owned_autoload_entries(const String &p_path, Vector<FSAutoloadIndexEntry> &r_entries) {
 	const String source = FileAccess::get_file_as_string(p_path);
 	if (!source.contains("@autoload")) {
 		return;
 	}
 
-	GDScriptParser parser;
+	FSParser parser;
 	if (parser.parse(source, p_path, false) != OK) {
 		return;
 	}
 
-	GDScriptAnalyzer analyzer(&parser);
+	FSAnalyzer analyzer(&parser);
 	analyzer.analyze();
 
-	for (const GDScriptAutoloadIndexEntry &entry : analyzer.get_autoload_index().get_entries()) {
-		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+	for (const FSAutoloadIndexEntry &entry : analyzer.get_autoload_index().get_entries()) {
+		if (entry.source == FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
 			r_entries.push_back(entry);
 		}
 	}
@@ -308,18 +308,18 @@ static bool _autoload_name_shadows_reserved_global(const String &p_name) {
 }
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_autoload_view_entries(const GDScriptAutoloadIndex &p_index) {
+Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_autoload_view_entries(const FSAutoloadIndex &p_index) {
 	Vector<AutoloadViewEntry> view_entries;
 
-	for (const GDScriptAutoloadIndexEntry &entry : p_index.get_entries()) {
+	for (const FSAutoloadIndexEntry &entry : p_index.get_entries()) {
 		AutoloadViewEntry view_entry;
 		view_entry.name = entry.name;
 		view_entry.path = entry.path;
 		view_entry.is_singleton = entry.is_singleton;
 		view_entry.order = entry.order;
 
-		const Vector<GDScriptAutoloadIndexDiagnostic> diagnostics = _autoload_view_diagnostics_for_entry(entry);
-		for (const GDScriptAutoloadIndexDiagnostic &diagnostic : diagnostics) {
+		const Vector<FSAutoloadIndexDiagnostic> diagnostics = _autoload_view_diagnostics_for_entry(entry);
+		for (const FSAutoloadIndexDiagnostic &diagnostic : diagnostics) {
 			if (_autoload_diagnostic_is_conflict(diagnostic)) {
 				view_entry.has_conflict = true;
 				break;
@@ -327,8 +327,8 @@ Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_
 		}
 
 		view_entry.source_label = _autoload_source_label(entry, view_entry.has_conflict);
-		view_entry.can_edit_project_settings = entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
-		view_entry.supports_manual_ordering = entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS && !view_entry.has_conflict;
+		view_entry.can_edit_project_settings = entry.source == FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
+		view_entry.supports_manual_ordering = entry.source == FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS && !view_entry.has_conflict;
 		view_entry.has_diagnostics = !diagnostics.is_empty();
 		view_entry.diagnostics_summary = _autoload_diagnostics_summary(diagnostics.size(), view_entry.has_conflict);
 		view_entry.diagnostics_text = _autoload_diagnostics_text(diagnostics);
@@ -342,7 +342,7 @@ Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_
 			view_entry.order = project_settings->get_order(project_setting_name);
 			view_entry.can_edit_project_settings = _autoload_setting_supports_raw_project_editing(project_setting_name);
 			view_entry.supports_manual_ordering = view_entry.can_edit_project_settings;
-			if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			if (entry.source == FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
 				view_entry.source_label = "Project Settings + Script";
 			}
 		}
@@ -353,15 +353,15 @@ Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_
 	return view_entries;
 }
 
-GDScriptAutoloadIndex EditorAutoloadSettings::build_autoload_index_for_project_view(const String &p_root) {
-	GDScriptAutoloadIndex index;
+FSAutoloadIndex EditorAutoloadSettings::build_autoload_index_for_project_view(const String &p_root) {
+	FSAutoloadIndex index;
 	index.rebuild_from_project_settings();
 
-	Vector<GDScriptAutoloadIndexEntry> entries = index.get_entries();
+	Vector<FSAutoloadIndexEntry> entries = index.get_entries();
 
 	ProjectScanOptions options;
 	options.include_addons = true;
-	const ProjectScanResult scan = GDScriptProjectScan::scan(p_root, options);
+	const ProjectScanResult scan = FSProjectScan::scan(p_root, options);
 	if (!scan.ok) {
 		return index;
 	}
@@ -382,7 +382,7 @@ void EditorAutoloadSettings::_autoload_add() {
 		if (!fpath.ends_with("/")) {
 			fpath = fpath.get_base_dir();
 		}
-		dialog->config("Node", fpath.path_join(vformat("%s.gd", autoload_add_name->get_text())), false, false);
+		dialog->config("Node", fpath.path_join(vformat("%s.fs", autoload_add_name->get_text())), false, false);
 		dialog->popup_centered();
 	} else {
 		if (autoload_add(autoload_add_name->get_text(), autoload_add_path->get_text())) {
@@ -602,7 +602,7 @@ void EditorAutoloadSettings::_autoload_open(const String &fpath) {
 }
 
 void EditorAutoloadSettings::_autoload_file_callback(const String &p_path) {
-	// Convert the file name to PascalCase, which is the convention for classes in GDScript.
+	// Convert the file name to PascalCase, which is the convention for classes in FoundryScript.
 	const String class_name = p_path.get_file().get_basename().to_pascal_case();
 
 	// If the name collides with a built-in class, prefix the name to make it possible to add without having to edit the name.
@@ -836,7 +836,7 @@ void EditorAutoloadSettings::update_autoload() {
 	};
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-	const GDScriptAutoloadIndex index = build_autoload_index_for_project_view();
+	const FSAutoloadIndex index = build_autoload_index_for_project_view();
 	const Vector<AutoloadViewEntry> view_entries = build_autoload_view_entries(index);
 	for (const AutoloadViewEntry &view_entry : view_entries) {
 		const bool runtime_enabled = ProjectSettings::get_singleton()->has_autoload(view_entry.name);

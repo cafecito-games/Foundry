@@ -62,13 +62,13 @@
 #include "scene/resources/texture.h"
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript_autoload_index.h"
+#include "modules/foundry_script/fs_autoload_index.h"
 #endif // MODULE_GDSCRIPT_ENABLED
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-static bool _has_script_owned_autoload_entries(const GDScriptAutoloadIndex &p_index) {
-	for (const GDScriptAutoloadIndexEntry &entry : p_index.get_entries()) {
-		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+static bool _has_script_owned_autoload_entries(const FSAutoloadIndex &p_index) {
+	for (const FSAutoloadIndexEntry &entry : p_index.get_entries()) {
+		if (entry.source == FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
 			return true;
 		}
 	}
@@ -1091,18 +1091,18 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 
 	r_files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
 #ifdef MODULE_GDSCRIPT_ENABLED
-	GDScriptAutoloadIndex autoload_index;
+	FSAutoloadIndex autoload_index;
 	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
 	if (autoload_index_err != OK) {
 		return autoload_index_err;
 	}
-	const String autoload_cache_path = p_autoload_cache_path.is_empty() ? GDScriptAutoloadIndex::get_cache_path() : p_autoload_cache_path;
+	const String autoload_cache_path = p_autoload_cache_path.is_empty() ? FSAutoloadIndex::get_cache_path() : p_autoload_cache_path;
 	const Error autoload_cache_err = autoload_index.save_to_cache(autoload_cache_path);
 	if (autoload_cache_err != OK) {
 		if (p_fail_on_required_autoload_cache && _has_script_owned_autoload_entries(autoload_index)) {
 			return autoload_cache_err;
 		}
-		WARN_PRINT(vformat("Could not save GDScript autoload index cache: %s.", error_names[autoload_cache_err]));
+		WARN_PRINT(vformat("Could not save FoundryScript autoload index cache: %s.", error_names[autoload_cache_err]));
 	} else {
 		r_files.push_back(autoload_cache_path);
 	}
@@ -1140,13 +1140,13 @@ Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExpor
 	r_paths.clear();
 
 #ifdef MODULE_GDSCRIPT_ENABLED
-	GDScriptAutoloadIndex autoload_index;
+	FSAutoloadIndex autoload_index;
 	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
 	if (autoload_index_err != OK) {
 		return autoload_index_err;
 	}
-	for (const GDScriptAutoloadIndexEntry &entry : autoload_index.get_entries()) {
-		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+	for (const FSAutoloadIndexEntry &entry : autoload_index.get_entries()) {
+		if (entry.source == FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
 			r_paths.push_back(entry.path);
 		}
 	}
@@ -1732,7 +1732,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	Vector<String> forced_export;
 	err = collect_forced_export_files(p_preset, forced_export, true);
 	if (err != OK) {
-		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not collect forced export files for GDScript autoload metadata: %s."), error_names[err]));
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not collect forced export files for FoundryScript autoload metadata: %s."), error_names[err]));
 		return err;
 	}
 	for (int i = 0; i < forced_export.size(); i++) {

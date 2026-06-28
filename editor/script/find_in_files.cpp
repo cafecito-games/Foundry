@@ -241,9 +241,9 @@ void FindInFiles::_scan_dir(const String &path, PackedStringArray &out_folders, 
 			break;
 		}
 
-		// If there is a .gdignore file in the directory, clear all the files/folders
+		// If there is a .fsignore file in the directory, clear all the files/folders
 		// to be searched on this path and skip searching the directory.
-		if (file == ".gdignore") {
+		if (file == ".fsignore") {
 			out_folders.clear();
 			out_files_to_scan.clear();
 			break;
@@ -425,7 +425,7 @@ FindInFilesDialog::FindInFilesDialog() {
 
 	_includes_line_edit = memnew(LineEdit);
 	_includes_line_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	_includes_line_edit->set_placeholder(TTRC("example: scripts,scenes/*/test.gd"));
+	_includes_line_edit->set_placeholder(TTRC("example: scripts,scenes/*/test.fs"));
 	_includes_line_edit->set_accessibility_name(TTRC("Includes:"));
 	_includes_line_edit->connect(SceneStringName(text_submitted), callable_mp(this, &FindInFilesDialog::_on_search_text_submitted));
 	gc->add_child(_includes_line_edit);
@@ -438,7 +438,7 @@ FindInFilesDialog::FindInFilesDialog() {
 
 	_excludes_line_edit = memnew(LineEdit);
 	_excludes_line_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	_excludes_line_edit->set_placeholder(TTRC("example: res://addons,scenes/test/*.gd"));
+	_excludes_line_edit->set_placeholder(TTRC("example: res://addons,scenes/test/*.fs"));
 	_excludes_line_edit->set_accessibility_name(TTRC("Excludes:"));
 	_excludes_line_edit->connect(SceneStringName(text_submitted), callable_mp(this, &FindInFilesDialog::_on_search_text_submitted));
 	gc->add_child(_excludes_line_edit);

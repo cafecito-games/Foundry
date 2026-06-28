@@ -1928,7 +1928,7 @@ void CSharpInstance::notification(int p_notification, bool p_reversed) {
 			// The RefCounted wouldn't have reached 0 otherwise, since the managed side
 			// references it and Dispose() needs to be called to release it.
 			// However, this means C# RefCounted scripts can't receive NOTIFICATION_PREDELETE, but
-			// this is likely the case with GDScript as well: https://github.com/godotengine/godot/issues/6784
+			// this is likely the case with FoundryScript as well: https://github.com/godotengine/godot/issues/6784
 			return;
 		}
 	} else if (p_notification == Object::NOTIFICATION_PREDELETE_CLEANUP) {

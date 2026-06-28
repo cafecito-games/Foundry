@@ -192,7 +192,7 @@ static void _append_method_qualifier(String &r_qualifiers, const char *p_qualifi
 }
 
 String DocData::get_type_link_target(const String &p_type) {
-	// GDScript renders async-typed callables as `AsyncCallable`, a synthetic
+	// FoundryScript renders async-typed callables as `AsyncCallable`, a synthetic
 	// spelling of the `Callable` builtin that has no class help page of its own.
 	// Link it to `Callable` so the type text stays accurate while the hyperlink
 	// resolves to a real page.
@@ -219,7 +219,7 @@ String DocData::get_method_qualifiers_from_methodinfo(const MethodInfo &p_method
 	if (p_methodinfo.flags & METHOD_FLAG_STATIC) {
 		_append_method_qualifier(qualifiers, "static");
 	}
-	// GDScript declares static async func; keep async last so doc XML stays in parser order.
+	// FoundryScript declares static async func; keep async last so doc XML stays in parser order.
 	if (p_methodinfo.flags & METHOD_FLAG_ASYNC) {
 		_append_method_qualifier(qualifiers, "async");
 	}

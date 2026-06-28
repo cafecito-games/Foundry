@@ -38,7 +38,7 @@
 #include "core/variant/variant_callable.h"
 
 static bool _method_info_has_async_flag(Object *p_object, const StringName &p_method) {
-	// Script methods (including GDScript coroutines) carry METHOD_FLAG_ASYNC in their
+	// Script methods (including FoundryScript coroutines) carry METHOD_FLAG_ASYNC in their
 	// MethodInfo. Consult the instance's own method list so dynamically dispatched
 	// methods (such as trait-proxy contract methods) are covered alongside the
 	// script's compiled methods and any inherited ones.

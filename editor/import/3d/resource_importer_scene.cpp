@@ -1363,7 +1363,7 @@ Node *ResourceImporterScene::_post_fix_animations(Node *p_node, Node *p_root, co
 }
 
 Node *ResourceImporterScene::_replace_node_with_type_and_script(Node *p_node, String p_node_type, Ref<Script> p_script) {
-	p_node_type = p_node_type.get_slicec(' ', 0); // Full root_type is "ClassName (filename.gd)" for a script global class.
+	p_node_type = p_node_type.get_slicec(' ', 0); // Full root_type is "ClassName (filename.fs)" for a script global class.
 	if (p_script.is_valid()) {
 		// Ensure the node type supports the script, or pick one that does.
 		String script_base_type = p_script->get_instance_base_type();

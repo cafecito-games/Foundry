@@ -1,4 +1,4 @@
-name: GDScript Fuzzing
+name: FoundryScript Fuzzing
 
 on:
   workflow_dispatch:
@@ -36,9 +36,9 @@ env:
   FUZZ_MAX_LEN: ${{ github.event.inputs.max_len || '8192' }}
 
 jobs:
-  fuzz-gdscript:
+  fuzz-foundry_script:
     runs-on: ubuntu-22.04
-    name: GDScript parser/analyzer fuzzing
+    name: FoundryScript parser/analyzer fuzzing
     timeout-minutes: 90
 
     steps:
@@ -61,7 +61,7 @@ jobs:
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore
         with:
-          cache-name: linux-gdscript-fuzzer
+          cache-name: linux-foundry_script-fuzzer
         continue-on-error: true
 
       - name: Setup Python and SCons
@@ -77,7 +77,7 @@ jobs:
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
         with:
-          cache-name: linux-gdscript-fuzzer
+          cache-name: linux-foundry_script-fuzzer
         continue-on-error: true
 
       - name: Fuzz
@@ -95,14 +95,14 @@ jobs:
 
           # Seed corpus from the existing script fixtures.
           mkdir -p corpus artifacts
-          find modules/gdscript/tests/scripts -name '*.gd' -exec cp -n {} corpus/ \; 2>/dev/null || true
+          find modules/foundry_script/tests/scripts -name '*.fs' -exec cp -n {} corpus/ \; 2>/dev/null || true
           echo "Seed corpus: $(find corpus -type f | wc -l) files"
 
           # A crash makes libFuzzer exit non-zero, failing the job and uploading
           # the reproducer below. NOTE: this is expected to surface the currently
           # open parser/tokenizer crashes until their fixes land.
           "${GODOT_BIN}" \
-            -dict=modules/gdscript/tests/fuzz/gdscript.dict \
+            -dict=modules/foundry_script/tests/fuzz/foundry_script.dict \
             -artifact_prefix=artifacts/ \
             -max_total_time="${FUZZ_DURATION}" \
             -max_len="${FUZZ_MAX_LEN}" \
@@ -115,5 +115,5 @@ jobs:
         if: failure()
         uses: ./.github/actions/upload-artifact
         with:
-          name: gdscript-fuzz-crashes
+          name: foundry_script-fuzz-crashes
           path: artifacts/

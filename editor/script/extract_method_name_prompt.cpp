@@ -40,7 +40,7 @@ void ExtractMethodNamePromptModel::_validate() {
 		return;
 	}
 
-	if (!GDScriptRefactoring::validate_extract_method_name(existing_member_names, name, error_message)) {
+	if (!FSRefactoring::validate_extract_method_name(existing_member_names, name, error_message)) {
 		return;
 	}
 

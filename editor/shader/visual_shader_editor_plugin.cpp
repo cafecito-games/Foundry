@@ -2161,7 +2161,7 @@ void VisualShaderEditor::_update_nodes() {
 	clear_custom_types();
 	Dictionary added;
 
-	// Add GDScript classes.
+	// Add FoundryScript classes.
 	{
 		LocalVector<StringName> class_list;
 		ScriptServer::get_global_class_list(class_list);
@@ -6289,7 +6289,7 @@ void VisualShaderEditor::drop_data_fw(const Point2 &p_point, const Variant &p_da
 				PackedStringArray arr = d["files"];
 				for (int i = 0; i < arr.size(); i++) {
 					String type = ResourceLoader::get_resource_type(arr[i]);
-					if (type == "GDScript") {
+					if (type == "FoundryScript") {
 						Ref<Script> scr = ResourceLoader::load(arr[i]);
 						if (scr->get_instance_base_type() == "VisualShaderNodeCustom") {
 							saved_node_pos = p_point + Vector2(0, i * 250 * EDSCALE);

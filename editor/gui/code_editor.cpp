@@ -1104,8 +1104,8 @@ void CodeTextEditor::update_editor_settings() {
 	// Theme: Highlighting
 	completion_font_color = EDITOR_GET("text_editor/theme/highlighting/completion_font_color");
 	completion_string_color = EDITOR_GET("text_editor/theme/highlighting/string_color");
-	completion_string_name_color = EDITOR_GET("text_editor/theme/highlighting/gdscript/string_name_color");
-	completion_node_path_color = EDITOR_GET("text_editor/theme/highlighting/gdscript/node_path_color");
+	completion_string_name_color = EDITOR_GET("text_editor/theme/highlighting/foundry_script/string_name_color");
+	completion_node_path_color = EDITOR_GET("text_editor/theme/highlighting/foundry_script/node_path_color");
 	completion_comment_color = EDITOR_GET("text_editor/theme/highlighting/comment_color");
 	completion_doc_comment_color = EDITOR_GET("text_editor/theme/highlighting/doc_comment_color");
 

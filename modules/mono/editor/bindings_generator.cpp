@@ -126,7 +126,7 @@ StringBuilder &operator<<(StringBuilder &r_sb, const char *p_cstring) {
 const Vector<String> ignored_types = {};
 
 // Special [code] keywords to wrap with <see langword="code"/> instead of <c>code</c>.
-// Don't check against all C# reserved words, as many cases are GDScript-specific.
+// Don't check against all C# reserved words, as many cases are FoundryScript-specific.
 const Vector<String> langword_check = { "true", "false", "null" };
 
 // The following properties currently need to be defined with `new` to avoid warnings. We treat
@@ -322,7 +322,7 @@ String BindingsGenerator::bbcode_to_text(const String &p_bbcode, const TypeInter
 			} else if (tag == "Nil") {
 				output.append("null");
 			} else if (tag.begins_with("@")) {
-				// @GlobalScope, @GDScript, etc.
+				// @GlobalScope, @FoundryScript, etc.
 				output.append("'" + tag + "'");
 			} else if (tag == "PackedByteArray") {
 				output.append("byte[]");
@@ -641,7 +641,7 @@ String BindingsGenerator::bbcode_to_xml(const String &p_bbcode, const TypeInterf
 			} else if (tag == "Nil") {
 				xml_output.append("<see langword=\"null\"/>");
 			} else if (tag.begins_with("@")) {
-				// @GlobalScope, @GDScript, etc.
+				// @GlobalScope, @FoundryScript, etc.
 				xml_output.append("<c>");
 				xml_output.append(tag);
 				xml_output.append("</c>");
@@ -3513,7 +3513,7 @@ Error BindingsGenerator::_generate_cs_native_calls(const InternalCall &p_icall, 
 			// VarArg methods always return Variant, but there are some cases in which MethodInfo provides
 			// a specific return type. We trust this information is valid. We need a temporary local to keep
 			// the Variant alive until the method returns. Otherwise, if the returned Variant holds a RefPtr,
-			// it could be deleted too early. This is the case with GDScript.new() which returns OBJECT.
+			// it could be deleted too early. This is the case with FoundryScript.new() which returns OBJECT.
 			// Alternatively, we could just return Variant, but that would result in a worse API.
 
 			if (!ret_void) {
