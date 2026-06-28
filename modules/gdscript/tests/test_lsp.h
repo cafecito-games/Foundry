@@ -1038,6 +1038,86 @@ func f():
 			CHECK_EQ(tag->detail, "func tag[A: Animal](value: A) -> A");
 		}
 
+		SUBCASE("Type[T] annotations are preserved across LSP surfaces") {
+			String path = "res://lsp/type_metatype_presentation.gd";
+			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+
+			const LSP::DocumentSymbol *user_type = parser->get_member_symbol("user_type");
+			REQUIRE(user_type);
+			CHECK_EQ(user_type->detail, "var user_type: Type[User] = User");
+
+			const LSP::DocumentSymbol *node_type = parser->get_member_symbol("node_type");
+			REQUIRE(node_type);
+			CHECK_EQ(node_type->detail, "var node_type: Type[Node] = Node");
+
+			const LSP::DocumentSymbol *int_box_type = parser->get_member_symbol("int_box_type");
+			REQUIRE(int_box_type);
+			CHECK_EQ(int_box_type->detail, "var int_box_type: Type[Box[int]] = Box[int]");
+
+			const LSP::DocumentSymbol *factory = parser->get_member_symbol("factory");
+			REQUIRE(factory);
+			CHECK_EQ(factory->detail, "func factory[T: Creatable](factory_type: Type[T]) -> T");
+
+			const LSP::DocumentSymbol *use_factory = parser->get_member_symbol("use_factory");
+			REQUIRE(use_factory);
+			CHECK_EQ(use_factory->detail, "func use_factory() -> User");
+
+			Variant hover_variant = text_document->hover(pos_in(uri, user_type->selectionRange.start).to_json());
+			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary hover = hover_variant;
+			Dictionary hover_contents = hover["contents"];
+			CHECK(String(hover_contents["value"]).contains("var user_type: Type[User] = User"));
+
+			const Array &completion_items = parser->get_member_completions();
+			Dictionary user_type_completion;
+			Dictionary factory_completion;
+			for (int i = 0; i < completion_items.size(); i++) {
+				Dictionary completion = completion_items[i];
+				const String label = completion["label"];
+				if (label == "user_type") {
+					user_type_completion = completion;
+				} else if (label == "factory") {
+					factory_completion = completion;
+				}
+			}
+			REQUIRE(!user_type_completion.is_empty());
+			REQUIRE(!factory_completion.is_empty());
+			Dictionary resolved_user_type_completion = text_document->resolve(user_type_completion);
+			Dictionary resolved_factory_completion = text_document->resolve(factory_completion);
+			CHECK_EQ(String(resolved_user_type_completion["detail"]), "var user_type: Type[User] = User");
+			CHECK_EQ(String(resolved_factory_completion["detail"]), "func factory[T: Creatable](factory_type: Type[T]) -> T");
+
+			LSP::SignatureHelp signature_help;
+			CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(16, 35)), signature_help), OK);
+			REQUIRE(signature_help.signatures.size() == 1);
+			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			CHECK_EQ(signature.label, "func factory[T: Creatable](factory_type: Type[T]) -> T");
+			REQUIRE(signature.parameters.size() == 1);
+			CHECK_EQ(signature.parameters[0].label, "factory_type: Type[T]");
+
+			Dictionary api = parser->generate_api();
+			Array methods = api["methods"];
+			Dictionary factory_api;
+			for (int i = 0; i < methods.size(); i++) {
+				Dictionary method = methods[i];
+				if (String(method["name"]) == "factory") {
+					factory_api = method;
+					break;
+				}
+			}
+			REQUIRE(!factory_api.is_empty());
+			CHECK_EQ(String(factory_api["return_type"]), "T");
+			CHECK_EQ(String(factory_api["signature"]), "func factory[T: Creatable](factory_type: Type[T]) -> T");
+			Array arguments = factory_api["arguments"];
+			REQUIRE(arguments.size() == 1);
+			Dictionary factory_type_argument = arguments[0];
+			CHECK_EQ(String(factory_type_argument["type"]), "Type[T]");
+		}
+
 		SUBCASE("Enum default values are shown as constant names") {
 			String path = "res://lsp/enum_default_values.gd";
 			assert_no_errors_in(path);

@@ -1327,6 +1327,9 @@ static void _find_built_in_variants(HashMap<String, ScriptLanguage::CodeCompleti
 	// `Coroutine` is a GDScript-only spelling over `GDScriptFunctionState` and isn't a Variant type.
 	ScriptLanguage::CodeCompletionOption coroutine_option("Coroutine", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
 	r_result.insert(coroutine_option.display, coroutine_option);
+	// `Type[T]` is a GDScript-only class-handle annotation and isn't a Variant type.
+	ScriptLanguage::CodeCompletionOption type_option("Type", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+	r_result.insert(type_option.display, type_option);
 }
 
 static void _find_global_enums(HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
@@ -1763,6 +1766,76 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 			continue;
 		}
 		ScriptLanguage::CodeCompletionOption option(autoload.name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		r_result.insert(option.display, option);
+	}
+}
+
+static void _add_type_parameter_completion_options(const GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	auto add_parameters = [&](const Vector<GDScriptParser::TypeParameterNode *> &p_parameters, ScriptLanguage::CodeCompletionLocation p_location) {
+		for (const GDScriptParser::TypeParameterNode *parameter : p_parameters) {
+			if (parameter == nullptr || parameter->identifier == nullptr) {
+				continue;
+			}
+			ScriptLanguage::CodeCompletionOption option(parameter->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, p_location);
+			r_result.insert(option.display, option);
+		}
+	};
+
+	if (p_context.current_function != nullptr) {
+		add_parameters(p_context.current_function->type_parameters, ScriptLanguage::LOCATION_LOCAL);
+	}
+	if (p_context.current_class != nullptr) {
+		add_parameters(p_context.current_class->type_parameters, ScriptLanguage::LOCATION_LOCAL);
+	}
+}
+
+static void _list_type_handle_argument_types(GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	LocalVector<StringName> native_types;
+	ClassDB::get_class_list(native_types);
+	for (const StringName &type : native_types) {
+		if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type)) {
+			ScriptLanguage::CodeCompletionOption option(type, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+			r_result.insert(option.display, option);
+		}
+	}
+
+	if (p_context.current_class != nullptr) {
+		ScriptLanguage::CodeCompletionOption self_option("Self", ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL);
+		r_result.insert(self_option.display, self_option);
+	}
+
+	_add_type_parameter_completion_options(p_context, r_result);
+
+	if (p_context.current_class) {
+		const GDScriptParser::ClassNode *current = p_context.current_class;
+		int location_offset = 0;
+		while (current) {
+			for (int i = 0; i < current->members.size(); i++) {
+				const GDScriptParser::ClassNode::Member &member = current->members[i];
+				switch (member.type) {
+					case GDScriptParser::ClassNode::Member::CLASS: {
+						ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+						r_result.insert(option.display, option);
+					} break;
+					case GDScriptParser::ClassNode::Member::CONSTANT: {
+						if (member.constant->get_datatype().is_meta_type) {
+							ScriptLanguage::CodeCompletionOption option(member.constant->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
+					} break;
+					default:
+						break;
+				}
+			}
+			location_offset += 1;
+			current = current->outer;
+		}
+	}
+
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	for (const StringName &class_name : global_classes) {
+		ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
 		r_result.insert(option.display, option);
 	}
 }
@@ -4450,6 +4523,11 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			_add_namespace_type_completion_options(namespace_cache, completion_context, false, options);
 			r_forced = true;
 		} break;
+		case GDScriptParser::COMPLETION_TYPE_HANDLE_ARGUMENT: {
+			_list_type_handle_argument_types(completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, false, options);
+			r_forced = true;
+		} break;
 		case GDScriptParser::COMPLETION_USES: {
 			if (completion_context.current_argument <= 0) {
 				// Leading name: inline traits plus globally registered traits, which
@@ -5877,6 +5955,7 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			}
 		} break;
 		case GDScriptParser::COMPLETION_PROPERTY_DECLARATION_OR_TYPE:
+		case GDScriptParser::COMPLETION_TYPE_HANDLE_ARGUMENT:
 		case GDScriptParser::COMPLETION_TYPE_NAME_OR_VOID:
 		case GDScriptParser::COMPLETION_TYPE_NAME: {
 			GDScriptParser::DataType base_type = context.current_class->get_datatype();

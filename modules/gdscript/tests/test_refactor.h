@@ -922,6 +922,49 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
 		}
+		SUBCASE("class-handle metatype renders as Type[T]") {
+			GDScriptParser::IdentifierNode class_identifier;
+			class_identifier.name = "User";
+			GDScriptParser::ClassNode class_node;
+			class_node.identifier = &class_identifier;
+
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::CLASS;
+			dt.type_source = GDScriptParser::DataType::INFERRED;
+			dt.class_type = &class_node;
+			dt.is_meta_type = true;
+			String rendered;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "Type[User]");
+		}
+		SUBCASE("Type[T] annotation renders with represented type") {
+			GDScriptParser::IdentifierNode class_identifier;
+			class_identifier.name = "Node";
+			GDScriptParser::ClassNode class_node;
+			class_node.identifier = &class_identifier;
+
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::NATIVE;
+			dt.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			dt.native_type = "Node";
+			dt.is_meta_type = true;
+			dt.is_type_handle_annotation = true;
+			String rendered;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "Type[Node]");
+		}
+		SUBCASE("nullable Type[T] annotation preserves nullability") {
+			GDScriptParser::DataType dt;
+			dt.kind = GDScriptParser::DataType::NATIVE;
+			dt.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			dt.native_type = "Node";
+			dt.is_meta_type = true;
+			dt.is_type_handle_annotation = true;
+			dt.is_nullable = true;
+			String rendered;
+			CHECK(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "Type[Node]?");
+		}
 	}
 
 	TEST_CASE("Namespace-aware type annotation rendering") {
@@ -4545,6 +4588,34 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		String out;
 		REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
 		CHECK(out.contains("func take_damage(amount: int = 1) -> void:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Add type annotation renders class-handle initializers as Type[T]") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		const RefactorContext ctx = make_context("res://refactor/type_metatype_annotation.gd");
+		GDScriptTests::assert_no_errors_in(ctx.path);
+		RefactorParams params;
+
+		SUBCASE("script class handle") {
+			String out;
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(9, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			REQUIRE(r.ok);
+			REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+			CHECK(out.contains("var user_type: Type[User] = User"));
+		}
+		SUBCASE("native class handle") {
+			String out;
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(10, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			REQUIRE(r.ok);
+			REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
+			CHECK(out.contains("var node_type: Type[Node] = Node"));
+		}
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

@@ -4871,7 +4871,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_invalid_token(ExpressionNo
 	return p_previous_operand;
 }
 
-GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
+GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void, CompletionType p_forced_completion) {
 	// Nested type annotations (e.g. `Array[Array[...]]`, Callable/Coroutine signatures)
 	// recurse through parse_type(); bound that depth so a pathologically nested type
 	// reports an error instead of overflowing the native stack.
@@ -4882,7 +4882,11 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	}
 
 	TypeNode *type = alloc_node<TypeNode>();
-	make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
+	if (p_forced_completion != COMPLETION_NONE) {
+		make_completion_context(p_forced_completion, type);
+	} else {
+		make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
+	}
 	if (!match(GDScriptTokenizer::Token::IDENTIFIER)) {
 		if (match(GDScriptTokenizer::Token::TK_VOID)) {
 			if (p_allow_void) {
@@ -4908,6 +4912,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	}
 
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		const bool is_type_handle = type->type_chain.size() == 1 && type_element->name == SNAME("Type");
 		const bool is_callable_type = type->type_chain.size() == 1 && (type_element->name == SNAME("Callable") || type_element->name == SNAME("AsyncCallable"));
 		const bool is_signal_type = type->type_chain.size() == 1 && type_element->name == SNAME("Signal");
 		// Coroutine[T] is the typed handle to an in-flight async computation for structured concurrency.
@@ -4965,6 +4970,32 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				}
 			}
 			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after Coroutine result type.)");
+			if (match(GDScriptTokenizer::Token::QUESTION_MARK)) {
+				type->is_nullable = true;
+			}
+			complete_extents(type);
+			return type;
+		}
+
+		// Type[T] carries exactly one represented instance type.
+		if (is_type_handle) {
+			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				push_error(R"(Type[T] expects exactly one type argument.)");
+			} else {
+				TypeNode *represented_type = parse_type(false, COMPLETION_TYPE_HANDLE_ARGUMENT);
+				if (represented_type == nullptr) {
+					push_error(R"(Expected represented instance type for Type after "[".)");
+				} else {
+					type->container_types.append(represented_type);
+				}
+				if (check(GDScriptTokenizer::Token::COMMA)) {
+					push_error(R"(Type[T] expects exactly one type argument, but more were given.)");
+					while (match(GDScriptTokenizer::Token::COMMA)) {
+						parse_type(false); // Consume the extra parameters so parsing stays aligned.
+					}
+				}
+			}
+			consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after Type argument.)");
 			if (match(GDScriptTokenizer::Token::QUESTION_MARK)) {
 				type->is_nullable = true;
 			}

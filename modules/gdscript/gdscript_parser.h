@@ -1577,6 +1577,7 @@ public:
 		COMPLETION_SUPER, // super(), used for lookup.
 		COMPLETION_SUPER_METHOD, // After super.
 		COMPLETION_TYPE_ATTRIBUTE, // Attribute in type name (Type.|).
+		COMPLETION_TYPE_HANDLE_ARGUMENT, // Represented instance type inside `Type[T]`.
 		COMPLETION_TYPE_NAME, // Name of type (after :).
 		COMPLETION_TYPE_NAME_OR_VOID, // Same as TYPE_NAME, but allows void (in function return type).
 		COMPLETION_USES, // Trait name after uses. Only traits are viable.
@@ -1937,7 +1938,7 @@ private:
 	ExpressionNode *parse_type_test(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_yield(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);
-	TypeNode *parse_type(bool p_allow_void = false);
+	TypeNode *parse_type(bool p_allow_void = false, CompletionType p_forced_completion = COMPLETION_NONE);
 
 #ifdef TOOLS_ENABLED
 	int max_script_doc_line = INT_MAX;
