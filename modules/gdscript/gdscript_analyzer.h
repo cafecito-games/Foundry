@@ -368,12 +368,14 @@ class GDScriptAnalyzer {
 	void update_array_literal_element_type(GDScriptParser::ArrayNode *p_array,
 			const GDScriptParser::DataType &p_element_type,
 			bool p_self_parameter_contract = false,
-			bool p_substitute_self_runtime_type = false);
+			bool p_substitute_self_runtime_type = false,
+			const GDScriptParser::CallNode *p_self_contract_call = nullptr);
 	void update_dictionary_literal_element_type(GDScriptParser::DictionaryNode *p_dictionary,
 			const GDScriptParser::DataType &p_key_element_type,
 			const GDScriptParser::DataType &p_value_element_type,
 			bool p_self_parameter_contract = false,
-			bool p_substitute_self_runtime_type = false);
+			bool p_substitute_self_runtime_type = false,
+			const GDScriptParser::CallNode *p_self_contract_call = nullptr);
 	bool is_type_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
 	void push_error(const String &p_message, const GDScriptParser::Node *p_origin = nullptr);
 	void mark_node_unsafe(const GDScriptParser::Node *p_node);
