@@ -1082,8 +1082,9 @@ Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExp
 	const Error autoload_cache_err = autoload_index.save_to_cache();
 	if (autoload_cache_err != OK) {
 		WARN_PRINT(vformat("Could not save GDScript autoload index cache: %s.", error_names[autoload_cache_err]));
+	} else {
+		files.push_back(GDScriptAutoloadIndex::get_cache_path());
 	}
-	files.push_back(GDScriptAutoloadIndex::get_cache_path());
 #endif // MODULE_GDSCRIPT_ENABLED
 
 	String icon = ResourceUID::ensure_path(get_project_setting(p_preset, "application/config/icon"));
