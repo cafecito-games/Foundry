@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 3: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
 ~~ WARNING at line 8: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
 ~~ WARNING at line 15: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.

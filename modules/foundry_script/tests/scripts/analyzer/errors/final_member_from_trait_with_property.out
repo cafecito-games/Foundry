@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 7: Final variable "id" cannot declare a getter or setter.

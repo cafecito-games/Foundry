@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 var test_1: Dictionary
   hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
 var test_2: TestExportEnumAsDictionary.MyEnum

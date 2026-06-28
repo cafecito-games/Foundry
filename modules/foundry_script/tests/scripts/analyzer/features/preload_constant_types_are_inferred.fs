@@ -1,4 +1,4 @@
-const Constants = preload("gdscript_to_preload.notest.gd")
+const Constants = preload("fs_to_preload.notest.fs")
 
 func test():
 	var a := Constants.A

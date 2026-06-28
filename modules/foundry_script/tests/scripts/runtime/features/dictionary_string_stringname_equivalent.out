@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 String key is TYPE_STRING: true
 StringName key is TYPE_STRING_NAME: true
 StringName gets String: 42

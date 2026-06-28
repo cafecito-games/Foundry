@@ -1,4 +1,4 @@
-const Provider = preload("external_signal_signature_mismatch_provider.notest.gd")
+const Provider = preload("external_signal_signature_mismatch_provider.notest.fs")
 
 func test() -> void:
 	var s: Signal[[String]] = Provider.new().get_signal()

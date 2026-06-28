@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 test ' \' \" \\ \n \t \u2023 test
 \n\\[\t ]*(\w+)
 

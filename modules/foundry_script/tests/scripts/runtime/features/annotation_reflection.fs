@@ -1,4 +1,4 @@
-# godot.reflection exposes passive custom annotation metadata as GDScriptAnnotation
+# godot.reflection exposes passive custom annotation metadata as FSAnnotation
 # descriptors: per class, method, and member variable, with effective base-chain and
 # trait-flattened views, plus annotations embedded in method/property descriptors.
 namespace cafecito.reflect_demo

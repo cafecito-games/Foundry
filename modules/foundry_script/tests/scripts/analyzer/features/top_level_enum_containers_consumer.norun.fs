@@ -1,4 +1,4 @@
-const Provider = preload("top_level_enum_containers_provider.notest.gd")
+const Provider = preload("top_level_enum_containers_provider.notest.fs")
 
 func check_containers() -> void:
 	var values: Array[TopLevelStandaloneEnum] = Provider.new().get_values()

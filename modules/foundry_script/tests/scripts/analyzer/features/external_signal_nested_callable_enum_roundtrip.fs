@@ -1,6 +1,6 @@
 # A built-in enum nested inside a Callable parameter of an external signal round-trips across the
 # script-API boundary, so binding the signal to the same annotated signature stays accepted.
-const Provider = preload("external_signal_nested_callable_enum_roundtrip_provider.notest.gd")
+const Provider = preload("external_signal_nested_callable_enum_roundtrip_provider.notest.fs")
 
 func test() -> void:
 	var s: Signal[[Callable[[Vector3.Axis], void]]] = Provider.new().get_signal()

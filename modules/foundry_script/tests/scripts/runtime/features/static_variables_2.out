@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 A _static_init begin: 1
 A _static_init end: -1
 B _static_init begin: -1

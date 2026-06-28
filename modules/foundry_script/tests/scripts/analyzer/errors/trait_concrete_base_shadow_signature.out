@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 4: The function "label()" signature does not match required trait method "Mixin.label()".

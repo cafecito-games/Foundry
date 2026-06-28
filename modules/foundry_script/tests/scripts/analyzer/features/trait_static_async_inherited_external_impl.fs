@@ -1,6 +1,6 @@
 # A static async method inherited from an external base class satisfies a
 # required static async trait method through the external MethodInfo path.
-extends "trait_static_async_inherited_external_impl_base.notest.gd"
+extends "trait_static_async_inherited_external_impl_base.notest.fs"
 uses RemoteLoadable
 
 trait RemoteLoadable:

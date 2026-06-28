@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 StringName in Array: true
 String in Array: true
 Arrays not equal: true

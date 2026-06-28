@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 9: Cannot assign a value of type Callable to variable "handler" with specified type Callable[[Callable[[Array[Array[int]]], void]], void].

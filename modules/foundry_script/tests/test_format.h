@@ -144,7 +144,7 @@ static void collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_
 		const String full_path = p_dir.path_join(entry);
 		if (dir->current_is_dir()) {
 			collect_gd_scripts_recursive(full_path, r_files);
-		} else if (entry.get_extension() == "gd") {
+		} else if (entry.get_extension() == "fs") {
 			r_files.push_back(full_path);
 		}
 	}

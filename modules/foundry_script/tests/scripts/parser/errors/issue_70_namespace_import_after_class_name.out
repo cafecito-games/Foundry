@@ -1,2 +1,2 @@
-GDTEST_PARSER_ERROR
+FS_TEST_PARSER_ERROR
 "import" declarations must appear before "class_name", "extends", and body declarations.

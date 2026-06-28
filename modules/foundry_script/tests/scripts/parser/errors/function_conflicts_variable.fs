@@ -2,6 +2,6 @@ func test():
 	pass
 
 
-# Error here. The difference with `variable-conflicts-function.gd` is that here,
+# Error here. The difference with `variable-conflicts-function.fs` is that here,
 # the function is defined *before* the variable.
 var test = 25

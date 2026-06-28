@@ -1,6 +1,6 @@
-extends "base_outer_resolution_base.notest.gd"
+extends "base_outer_resolution_base.notest.fs"
 
-const B: = preload("base_outer_resolution_b.notest.gd")
+const B: = preload("base_outer_resolution_b.notest.fs")
 
 static func test_a(a: A) -> void:
 	print(a is A)

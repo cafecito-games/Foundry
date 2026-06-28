@@ -1,4 +1,4 @@
-# See also `parser-errors/redefine-class-constant.gd`.
+# See also `parser-errors/redefine-class-constant.fs`.
 const TEST = 25
 
 

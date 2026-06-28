@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 28: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "int_func()" requires the subtype "int" but the supertype "Variant" was provided.
 ~~ WARNING at line 29: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "int_func()" requires the subtype "int" but the supertype "Variant" was provided.
 ~~ WARNING at line 30: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "int_func()" requires the subtype "int" but the supertype "Variant" was provided.

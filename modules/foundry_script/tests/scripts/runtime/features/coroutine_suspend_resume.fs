@@ -1,6 +1,6 @@
 # A genuinely suspending Coroutine[String]: the async job hits an internal `await` mid-body, so the
 # call does not run to completion. Awaiting the call (`await _job(1)`) connects to the still-live
-# GDScriptFunctionState's "completed" signal and parks the caller until the job is resumed later,
+# FSFunctionState's "completed" signal and parks the caller until the job is resumed later,
 # at which point the awaited expression yields the job's String result. This exercises the live
 # function-state handoff that the eager-completion fixtures (coroutine_fan_out, return_type_handoff)
 # deliberately avoid.

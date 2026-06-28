@@ -1,4 +1,4 @@
-const Provider = preload("external_callable_signature_nested_reference_provider.notest.gd")
+const Provider = preload("external_callable_signature_nested_reference_provider.notest.fs")
 
 func test() -> void:
 	var provider := Provider.new()

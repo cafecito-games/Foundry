@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 58: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
 ~~ WARNING at line 59: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
 ~~ WARNING at line 63: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).

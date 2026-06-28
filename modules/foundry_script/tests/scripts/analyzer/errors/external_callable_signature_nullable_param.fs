@@ -1,4 +1,4 @@
-const Provider = preload("external_callable_signature_nullable_param_provider.notest.gd")
+const Provider = preload("external_callable_signature_nullable_param_provider.notest.fs")
 
 func test() -> void:
 	var handler: Callable[[Node], void] = Provider.new().get_cb()

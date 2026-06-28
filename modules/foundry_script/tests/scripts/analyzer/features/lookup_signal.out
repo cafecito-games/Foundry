@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 hello == A.hello? false
 hello == A.B.hello? false
 hello == C.hello? false

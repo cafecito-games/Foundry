@@ -1,4 +1,4 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 32: A lambda function must have a ":" followed by a body.
 >> ERROR at line 33: A lambda function must have a ":" followed by a body.
 >> ERROR at line 11: Class "Test1" is not abstract but contains abstract methods. Mark the class as "abstract" or remove "abstract" from all methods in this class.

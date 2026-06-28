@@ -2,7 +2,7 @@
 # alias with `.new()`, exactly like the inner class name itself. The alias must resolve to the live
 # compiled subclass rather than the analyzer's shallow, uncompiled folded class object. The same
 # holds across compilation units: an alias of an *external* (preloaded) inner class also constructs,
-# resolving to the live external subclass held by GDScriptCache.
+# resolving to the live external subclass held by FSCache.
 # https://github.com/cafecito-games/godot/issues/377
 # https://github.com/cafecito-games/godot/issues/391
 
@@ -24,7 +24,7 @@ class Class:
 	var origin: String = "local"
 
 
-const External = preload("const_class_reference_external.notest.gd")
+const External = preload("const_class_reference_external.notest.fs")
 
 const Alias = Box
 const NestedAlias = Outer.Inner
@@ -61,7 +61,7 @@ func test() -> void:
 	print(Class.new().origin)
 
 	# Construction through the external alias works as well: the cross-unit external subclass is held
-	# live and valid by GDScriptCache, so the folded constant is already a compiled class and `.new()`
+	# live and valid by FSCache, so the folded constant is already a compiled class and `.new()`
 	# constructs it directly. This is the cross-unit companion to the same-unit case above (#391).
 	var from_external_alias = ExternalClassAlias.new()
 	print(from_external_alias.origin)

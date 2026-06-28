@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 6: Final variable "x" cannot be assigned inside a lambda.

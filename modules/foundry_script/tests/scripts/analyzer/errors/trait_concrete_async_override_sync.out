@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 8: The function "fetch()" must be async because it implements async trait method "Fetcher.fetch()".

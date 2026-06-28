@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 3: (UNUSED_PRIVATE_CLASS_VARIABLE) The class variable "_a" is declared but never used in the class.
 ~~ WARNING at line 8: (UNUSED_PRIVATE_CLASS_VARIABLE) The class variable "_d" is declared but never used in the class.
 ~~ WARNING at line 13: (UNUSED_VARIABLE) The local variable "a" is declared but never used in the block. If this is intended, prefix it with an underscore: "_a".

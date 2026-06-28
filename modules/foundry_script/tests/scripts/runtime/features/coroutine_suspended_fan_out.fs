@@ -1,5 +1,5 @@
 # Structured-concurrency fan-out where every job genuinely suspends. Each job parks on `await go`
-# before recording any result, so calling it yields an in-flight `GDScriptFunctionState`. All the
+# before recording any result, so calling it yields an in-flight `FSFunctionState`. All the
 # live handles are held together in an `Array[Coroutine[String]]` (start now), which no longer trips
 # the debug "async function without await" guard, then the jobs are resumed in one shot (await/finish
 # later). Results are observed through a member side effect because the test harness calls `test()`

@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 14: Type argument "Plain" does not satisfy the bound "Creatable" of type parameter "T" of generic method "make()".

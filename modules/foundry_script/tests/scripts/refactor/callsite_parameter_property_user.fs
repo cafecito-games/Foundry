@@ -1,6 +1,6 @@
 extends RefCounted
 
-const Target = preload("res://refactor/callsite_parameter_property_target.gd")
+const Target = preload("res://refactor/callsite_parameter_property_target.fs")
 
 var trigger:
 	set(value):

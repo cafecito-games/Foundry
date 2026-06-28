@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 2: Named arguments require a statically known GDScript function.
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 2: Named arguments require a statically known FoundryScript function.

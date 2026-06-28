@@ -341,7 +341,7 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 			} else if (binary_tokens && next.ends_with(".textonly.fs")) {
 				next = dir->get_next();
 				continue;
-			} else if (next.has_extension("gd")) {
+			} else if (next.has_extension("fs")) {
 #ifndef DEBUG_ENABLED
 				// On release builds, skip tests marked as debug only.
 				Error open_err = OK;
@@ -537,7 +537,7 @@ void FSTest::error_handler(void *p_this, const char *p_function, const char *p_f
 	FSTest *self = data->self;
 	TestResult *result = data->result;
 
-	result->status = GDTEST_RUNTIME_ERROR;
+	result->status = FS_TEST_RUNTIME_ERROR;
 
 	String header = _error_handler_type_string(p_type);
 
@@ -577,18 +577,18 @@ bool FSTest::check_output(const String &p_output) const {
 
 String FSTest::get_text_for_status(FSTest::TestStatus p_status) const {
 	switch (p_status) {
-		case GDTEST_OK:
-			return "GDTEST_OK";
-		case GDTEST_LOAD_ERROR:
-			return "GDTEST_LOAD_ERROR";
-		case GDTEST_PARSER_ERROR:
-			return "GDTEST_PARSER_ERROR";
-		case GDTEST_ANALYZER_ERROR:
-			return "GDTEST_ANALYZER_ERROR";
-		case GDTEST_COMPILER_ERROR:
-			return "GDTEST_COMPILER_ERROR";
-		case GDTEST_RUNTIME_ERROR:
-			return "GDTEST_RUNTIME_ERROR";
+		case FS_TEST_OK:
+			return "FS_TEST_OK";
+		case FS_TEST_LOAD_ERROR:
+			return "FS_TEST_LOAD_ERROR";
+		case FS_TEST_PARSER_ERROR:
+			return "FS_TEST_PARSER_ERROR";
+		case FS_TEST_ANALYZER_ERROR:
+			return "FS_TEST_ANALYZER_ERROR";
+		case FS_TEST_COMPILER_ERROR:
+			return "FS_TEST_COMPILER_ERROR";
+		case FS_TEST_RUNTIME_ERROR:
+			return "FS_TEST_RUNTIME_ERROR";
 	}
 	return "";
 }
@@ -597,7 +597,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	disable_stdout();
 
 	TestResult result;
-	result.status = GDTEST_OK;
+	result.status = FS_TEST_OK;
 	result.output = String();
 	result.passed = false;
 
@@ -618,7 +618,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	}
 	if (err != OK) {
 		enable_stdout();
-		result.status = GDTEST_LOAD_ERROR;
+		result.status = FS_TEST_LOAD_ERROR;
 		result.passed = false;
 		ERR_FAIL_V_MSG(result, "\nCould not load source code for: '" + source_file + "'");
 	}
@@ -632,7 +632,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	}
 	if (err != OK) {
 		enable_stdout();
-		result.status = GDTEST_PARSER_ERROR;
+		result.status = FS_TEST_PARSER_ERROR;
 		result.output = get_text_for_status(result.status) + "\n";
 
 		const List<FSParser::ParserError> &errors = parser.get_errors();
@@ -651,7 +651,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	err = analyzer.analyze();
 	if (err != OK) {
 		enable_stdout();
-		result.status = GDTEST_ANALYZER_ERROR;
+		result.status = FS_TEST_ANALYZER_ERROR;
 		result.output = get_text_for_status(result.status) + "\n";
 
 		StringBuilder error_string;
@@ -678,7 +678,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	err = compiler.compile(&parser, script.ptr(), false);
 	if (err != OK) {
 		enable_stdout();
-		result.status = GDTEST_COMPILER_ERROR;
+		result.status = FS_TEST_COMPILER_ERROR;
 		result.output = get_text_for_status(result.status) + "\n";
 		result.output += compiler.get_error() + "\n";
 		if (!p_is_generating) {
@@ -690,7 +690,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	// `*.norun.fs` files are allowed to not contain a `test()` function (no runtime testing).
 	if (source_file.ends_with(".norun.fs")) {
 		enable_stdout();
-		result.status = GDTEST_OK;
+		result.status = FS_TEST_OK;
 		result.output = get_text_for_status(result.status) + "\n" + result.output;
 		if (!p_is_generating) {
 			result.passed = check_output(result.output);
@@ -702,7 +702,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	const HashMap<StringName, FSFunction *>::ConstIterator test_function_element = script->get_member_functions().find(FSTestRunner::test_function_name);
 	if (!test_function_element) {
 		enable_stdout();
-		result.status = GDTEST_LOAD_ERROR;
+		result.status = FS_TEST_LOAD_ERROR;
 		result.output = "";
 		result.passed = false;
 		ERR_FAIL_V_MSG(result, "\nCould not find test function on: '" + source_file + "'");
@@ -719,7 +719,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	err = script->reload();
 	if (err) {
 		enable_stdout();
-		result.status = GDTEST_LOAD_ERROR;
+		result.status = FS_TEST_LOAD_ERROR;
 		result.output = "";
 		result.passed = false;
 		remove_print_handler(&_print_handler);
@@ -744,7 +744,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 		remove_print_handler(&_print_handler);
 		remove_error_handler(&_error_handler);
 
-		result.status = GDTEST_RUNTIME_ERROR;
+		result.status = FS_TEST_RUNTIME_ERROR;
 		result.output = get_text_for_status(result.status) + "\n";
 		if (script->is_abstract()) {
 			result.output += ">> Test couldn't run: the head class is abstract and can't be instantiated.\n";
@@ -775,7 +775,7 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	// Check results.
 	if (call_err.error != Callable::CallError::CALL_OK) {
 		enable_stdout();
-		result.status = GDTEST_LOAD_ERROR;
+		result.status = FS_TEST_LOAD_ERROR;
 		result.passed = false;
 		ERR_FAIL_V_MSG(result, "\nCould not call test function on: '" + source_file + "'");
 	}
@@ -802,7 +802,7 @@ FSTest::TestResult FSTest::run_test() {
 
 bool FSTest::generate_output() {
 	TestResult result = execute_test_code(true);
-	if (result.status == GDTEST_LOAD_ERROR) {
+	if (result.status == FS_TEST_LOAD_ERROR) {
 		return false;
 	}
 

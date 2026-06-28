@@ -1,6 +1,6 @@
 # A subclass in another file cannot reassign a final declared in its cross-file
 # base; the base script owns the single assignment slot.
-extends "res://analyzer/errors/final_member_inherited_base.notest.gd"
+extends "res://analyzer/errors/final_member_inherited_base.notest.fs"
 
 func reset() -> void:
 	id = 2

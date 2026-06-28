@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 user-7
 14
 ["get_name", "get_age"]

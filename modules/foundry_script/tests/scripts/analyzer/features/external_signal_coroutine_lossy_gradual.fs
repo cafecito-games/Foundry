@@ -3,8 +3,8 @@
 # gradually (via the MethodInfo fallback) instead of becoming a false strict mismatch against the same
 # annotated type. Direct signal-member access goes through the serialized boundary, unlike a method
 # return, so this exercises the result-less coroutine decode end-to-end.
-const Provider = preload("external_signal_coroutine_lossy_gradual_provider.notest.gd")
-const Helper = preload("coroutine_signal_lossy_helper.notest.gd")
+const Provider = preload("external_signal_coroutine_lossy_gradual_provider.notest.fs")
+const Helper = preload("coroutine_signal_lossy_helper.notest.fs")
 
 func test() -> void:
 	var s: Signal[[Coroutine[Helper]]] = Provider.new().evt

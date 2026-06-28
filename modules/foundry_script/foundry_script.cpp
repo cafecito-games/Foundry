@@ -1271,7 +1271,7 @@ String FoundryScript::get_script_path() const {
 }
 
 Error FoundryScript::load_source_code(const String &p_path) {
-	if (p_path.is_empty() || p_path.begins_with("foundry_script://") || ResourceLoader::get_resource_type(p_path.get_slice("::", 0)) == "PackedScene") {
+	if (p_path.is_empty() || p_path.begins_with("foundryscript://") || ResourceLoader::get_resource_type(p_path.get_slice("::", 0)) == "PackedScene") {
 		return OK;
 	}
 
@@ -1591,7 +1591,11 @@ FoundryScript::FoundryScript() :
 		FSLanguage::get_singleton()->script_list.add(&script_list);
 	}
 
-	path = vformat("foundry_script://%d.fs", get_instance_id());
+	// The scheme must be alphanumeric: String::simplify_path() only preserves the
+	// "://" protocol separator when every character before it is alphanumeric, so an
+	// underscore (foundry_script://) would be collapsed to a single slash and break
+	// the in-memory script check in load_source_code().
+	path = vformat("foundryscript://%d.fs", get_instance_id());
 }
 
 void FoundryScript::_save_orphaned_subclasses() {

@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 stubbed-find
 3
 ["find", "count"]

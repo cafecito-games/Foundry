@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 1: Class "trait_base_abstract_required.gd" must implement "AbstractBase.activate()" and other inherited abstract methods or be marked as "abstract".
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 1: Class "trait_base_abstract_required.fs" must implement "AbstractBase.activate()" and other inherited abstract methods or be marked as "abstract".

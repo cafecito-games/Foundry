@@ -1,4 +1,4 @@
-const EnumFile = preload("top_level_enum_standalone.notest.gd")
+const EnumFile = preload("top_level_enum_standalone.notest.fs")
 
 var direct_value: TopLevelStandaloneEnum = EnumFile.RED
 var direct_dictionary: Dictionary = EnumFile.TopLevelStandaloneEnum

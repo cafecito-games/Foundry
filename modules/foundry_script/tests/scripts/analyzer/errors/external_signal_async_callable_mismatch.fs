@@ -1,7 +1,7 @@
 # An AsyncCallable parameter on a signal exposed by another script stays distinct from a plain
 # Callable, so a mismatched binding is rejected. (The serialized MethodInfo/PropertyInfo round-trip
-# itself is covered by a C++ unit test in test_gdscript_type.h.)
-const Provider = preload("external_signal_async_callable_mismatch_provider.notest.gd")
+# itself is covered by a C++ unit test in test_foundry_script_type.h.)
+const Provider = preload("external_signal_async_callable_mismatch_provider.notest.fs")
 
 func test() -> void:
 	var s: Signal[[Callable[[int], void]]] = Provider.new().get_signal()

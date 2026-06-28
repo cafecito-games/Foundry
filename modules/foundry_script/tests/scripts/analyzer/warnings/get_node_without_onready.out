@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 5: (GET_NODE_DEFAULT_WITHOUT_ONREADY) The default value uses "$" which won't return nodes in the scene tree before "_ready()" is called. Use the "@onready" annotation to solve this.
 ~~ WARNING at line 6: (GET_NODE_DEFAULT_WITHOUT_ONREADY) The default value uses "get_node()" which won't return nodes in the scene tree before "_ready()" is called. Use the "@onready" annotation to solve this.
 ~~ WARNING at line 7: (GET_NODE_DEFAULT_WITHOUT_ONREADY) The default value uses "get_node()" which won't return nodes in the scene tree before "_ready()" is called. Use the "@onready" annotation to solve this.

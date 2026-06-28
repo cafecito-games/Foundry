@@ -1,6 +1,6 @@
 # https://github.com/godotengine/godot/issues/61636
 
-const External := preload("const_class_reference_external.notest.gd")
+const External := preload("const_class_reference_external.notest.fs")
 
 class Class1:
     class Class2:

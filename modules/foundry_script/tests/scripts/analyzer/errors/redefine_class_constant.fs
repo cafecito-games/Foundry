@@ -1,4 +1,4 @@
-# See also `parser-warnings/shadowed-constant.gd`.
+# See also `parser-warnings/shadowed-constant.fs`.
 const TEST = 25
 
 

@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 static var test_static_var_untyped: Variant
 static var test_static_var_weak_null: Variant
 static var test_static_var_weak_int: Variant

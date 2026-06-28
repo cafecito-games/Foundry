@@ -11,7 +11,7 @@ class Plain:
 	var value
 
 
-func _describe(script: GDScript) -> void:
+func _describe(script: FoundryScript) -> void:
 	print(script.is_generic())
 	var params := script.get_type_parameter_list()
 	print(params.size())

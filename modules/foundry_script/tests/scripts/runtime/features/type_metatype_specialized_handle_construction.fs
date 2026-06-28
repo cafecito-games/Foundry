@@ -1,4 +1,4 @@
-const External = preload("type_metatype_specialized_handle_external.notest.gd")
+const External = preload("type_metatype_specialized_handle_external.notest.fs")
 
 
 class Box[T]:

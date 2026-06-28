@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 Inner._static_init inner
 InnerInner._static_init inner inner
 data: data

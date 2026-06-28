@@ -1,4 +1,4 @@
-const Provider = preload("strict_external_signature_provider.notest.gd")
+const Provider = preload("strict_external_signature_provider.notest.fs")
 
 func test():
 	var provider := Provider.new()

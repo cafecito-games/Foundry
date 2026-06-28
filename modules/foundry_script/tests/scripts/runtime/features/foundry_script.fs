@@ -1,5 +1,5 @@
 func test():
-	var gdscr: = GDScript.new()
+	var gdscr: = FoundryScript.new()
 	gdscr.source_code = '''
 extends Resource
 

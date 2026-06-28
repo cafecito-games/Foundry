@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 5: (UNSAFE_CAST) Casting "Variant" to "int" is unsafe.
 ~~ WARNING at line 6: (UNSAFE_CAST) Casting "Variant" to "Node" is unsafe.
 ~~ WARNING at line 10: (UNSAFE_CAST) Casting "Variant" to "int" is unsafe.

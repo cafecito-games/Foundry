@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 19: (INTEGER_DIVISION) Integer division. Decimal part will be discarded.
 ~~ WARNING at line 19: (INTEGER_DIVISION) Integer division. Decimal part will be discarded.
 ~~ WARNING at line 19: (INTEGER_DIVISION) Integer division. Decimal part will be discarded.

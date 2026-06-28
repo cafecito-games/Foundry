@@ -1,6 +1,6 @@
 extends Node
 
-const Target = preload("res://refactor/rename_cross_file_target.gd")
+const Target = preload("res://refactor/rename_cross_file_target.fs")
 
 func use_target() -> int:
 	var target := Target.new()

@@ -1,4 +1,4 @@
-extends "trait_async_required_external_sync_impl_base.notest.gd"
+extends "trait_async_required_external_sync_impl_base.notest.fs"
 uses RemoteLoadable
 
 trait RemoteLoadable:

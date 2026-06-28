@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 9: Cannot assign a value of type Coroutine[String] to variable "result" with specified type String.

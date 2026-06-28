@@ -1,4 +1,4 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 4: Cannot pass a value of type "String" as "int".
 >> ERROR at line 4: Invalid argument for "append()" function: argument 1 should be "int" but is "String".
 >> ERROR at line 5: Cannot pass a value of type "String" as "int".

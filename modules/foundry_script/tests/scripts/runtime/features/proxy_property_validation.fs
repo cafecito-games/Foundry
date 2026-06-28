@@ -1,5 +1,5 @@
 # A dynamic proxy auto-backs declared `var`s, but writes must validate/coerce
-# against the declared type exactly as a normal GDScript instance does, so the
+# against the declared type exactly as a normal FoundryScript instance does, so the
 # proxy cannot violate the proxied type's property contract.
 trait Bag:
 	var count: int

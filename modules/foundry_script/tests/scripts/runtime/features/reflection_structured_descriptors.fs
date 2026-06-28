@@ -1,5 +1,5 @@
 # godot.reflection exposes structured method and property descriptors as typed
-# GDScriptMethodDescriptor / GDScriptPropertyDescriptor objects, giving typed access to a
+# FSMethodDescriptor / FSPropertyDescriptor objects, giving typed access to a
 # member's metadata (name, arguments, return value, flags) plus its passive annotations,
 # alongside the back-compatible loosely-keyed Dictionary form via to_dictionary().
 namespace cafecito.descriptors
@@ -22,9 +22,9 @@ class Derived extends Base:
 func test() -> void:
 	# Structured method descriptors carry typed metadata and embedded annotations.
 	var by_name := {}
-	for descriptor: GDScriptMethodDescriptor in godot.reflection.get_method_descriptors(Base):
+	for descriptor: FSMethodDescriptor in godot.reflection.get_method_descriptors(Base):
 		by_name[str(descriptor.name)] = descriptor
-	var attack: GDScriptMethodDescriptor = by_name["attack"]
+	var attack: FSMethodDescriptor = by_name["attack"]
 	print(attack.name)
 	print(attack.args.size())
 	print(attack.args[0]["name"])
@@ -48,7 +48,7 @@ func test() -> void:
 	print(embedded.size())
 
 	# Structured property descriptors carry typed metadata and embedded annotations.
-	for descriptor: GDScriptPropertyDescriptor in godot.reflection.get_property_descriptors(Base):
+	for descriptor: FSPropertyDescriptor in godot.reflection.get_property_descriptors(Base):
 		if str(descriptor.name) == "health":
 			print(descriptor.type == TYPE_INT)
 			print(descriptor.usage == descriptor.get_property_usage())

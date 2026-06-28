@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 3: (STANDALONE_EXPRESSION) Standalone expression (the line may have no effect).
 ~~ WARNING at line 4: (STANDALONE_EXPRESSION) Standalone expression (the line may have no effect).
 ~~ WARNING at line 5: (RETURN_VALUE_DISCARDED) The function "Color()" returns a value that will be discarded if not used.

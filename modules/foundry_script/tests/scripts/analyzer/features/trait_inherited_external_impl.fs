@@ -1,4 +1,4 @@
-extends "trait_inherited_external_impl_base.notest.gd"
+extends "trait_inherited_external_impl_base.notest.fs"
 uses Damageable
 
 trait Damageable:

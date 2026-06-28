@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 18: (UNSAFE_CAST) Casting "Variant" to "Box" is unsafe.
 ~~ WARNING at line 21: (UNSAFE_CAST) Casting "Variant" to "Box[int]" is unsafe.
 ~~ WARNING at line 24: (UNSAFE_CAST) Casting "Variant" to "Box[String]" is unsafe.

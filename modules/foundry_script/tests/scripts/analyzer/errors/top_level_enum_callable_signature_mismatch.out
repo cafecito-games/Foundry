@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 4: Cannot assign a value of type Callable[[TopLevelStandaloneEnum], void] to variable "handler" with specified type Callable[[String], void].

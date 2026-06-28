@@ -413,7 +413,7 @@ public:
 
 #ifdef TESTS_ENABLED
 	// Grants unit tests access to the private PropertyInfo decode path so the encode/decode round-trip
-	// of typed callable/signal signatures can be exercised directly (see test_gdscript_type.h).
+	// of typed callable/signal signatures can be exercised directly (see test_foundry_script_type.h).
 	friend class FSTests::TestFSAnalyzerAccessor;
 #endif // TESTS_ENABLED
 };

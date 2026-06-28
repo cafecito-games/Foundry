@@ -1,6 +1,6 @@
 # Epic capstone (fan-out): hold several genuinely suspending handles by name in an
 # `Array[Coroutine[String]]`, then await each one later. Every job parks on the shared `await go`
-# before producing a result, so each call yields an in-flight `GDScriptFunctionState`; collecting the
+# before producing a result, so each call yields an in-flight `FSFunctionState`; collecting the
 # live handles into the typed array no longer trips the debug "async function without await" guard.
 # Unlike the side-effect fan-out fixtures, every result is consumed by an actual `await jobs[i]`.
 #

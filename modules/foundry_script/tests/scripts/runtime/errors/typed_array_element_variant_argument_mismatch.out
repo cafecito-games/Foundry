@@ -1,4 +1,4 @@
-GDTEST_RUNTIME_ERROR
+FS_TEST_RUNTIME_ERROR
 ~~ WARNING at line 15: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "append()" requires the subtype "Box[int]" but the supertype "Variant" was provided.
 >> ERROR: Method/function failed. Returning: false
 >>   Attempted to push_back an object specialized as 'RefCounted[Variant]' into a TypedArray of 'RefCounted[int]'.

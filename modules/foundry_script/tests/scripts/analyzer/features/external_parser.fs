@@ -1,6 +1,6 @@
-extends "external_parser_base1.notest.gd"
+extends "external_parser_base1.notest.fs"
 
-const External1 = preload("external_parser_script1.notest.gd")
+const External1 = preload("external_parser_script1.notest.fs")
 
 func baz(e1: External1) -> void:
 	print(e1.e1c.bar)

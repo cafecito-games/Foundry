@@ -1,6 +1,6 @@
-GDTEST_OK
+FS_TEST_OK
 @GlobalScope::print
-@GDScript::len
+@FoundryScript::len
 1 2 3
 1
 3

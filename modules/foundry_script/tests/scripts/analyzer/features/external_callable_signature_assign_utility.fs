@@ -1,7 +1,7 @@
 # A variable inferred from an external Callable[[float], float] return keeps a MethodInfo mirror, and
 # signature compatibility ignores storage/editor usage flags, so a matching MethodInfo-only utility
 # function (`sin`, which is (float) -> float) remains assignable to it.
-const Provider = preload("external_callable_signature_assign_utility_provider.notest.gd")
+const Provider = preload("external_callable_signature_assign_utility_provider.notest.fs")
 
 func test() -> void:
 	var cb := Provider.new().get_cb()

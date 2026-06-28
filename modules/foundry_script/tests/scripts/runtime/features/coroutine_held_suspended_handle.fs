@@ -1,6 +1,6 @@
 # A genuinely *suspending* async job is started and its live `Coroutine[String]` handle is held in a
 # variable instead of being awaited in place. The job parks on `await go` before producing any
-# result, so capturing the call yields the in-flight `GDScriptFunctionState`. Holding that handle is
+# result, so capturing the call yields the in-flight `FSFunctionState`. Holding that handle is
 # intentional, not a missing-await bug, so storing it no longer trips the debug "async function
 # without await" guard. The job is resumed synchronously by emitting the signal it parked on; the
 # result is observed through a member side effect because the test harness calls `test()` once with

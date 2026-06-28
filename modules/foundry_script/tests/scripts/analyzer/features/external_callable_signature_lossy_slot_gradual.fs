@@ -1,7 +1,7 @@
 # An external Callable whose signature contains a slot the hint cannot round-trip (here an enum) crosses
 # the boundary untyped rather than as a lossy explicit signature, so assigning it to the same annotated
 # type stays accepted (gradual) instead of becoming a false strict mismatch.
-const Provider = preload("external_callable_signature_lossy_slot_gradual_provider.notest.gd")
+const Provider = preload("external_callable_signature_lossy_slot_gradual_provider.notest.fs")
 
 func test() -> void:
 	var handler: Callable[[Provider.Kind], void] = Provider.new().get_cb()

@@ -50,7 +50,7 @@
 #endif // TOOLS_ENABLED
 
 #ifdef TESTS_ENABLED
-#include "tests/test_gdscript.h"
+#include "tests/test_foundry_script.h"
 #endif
 
 #include "core/io/file_access.h"

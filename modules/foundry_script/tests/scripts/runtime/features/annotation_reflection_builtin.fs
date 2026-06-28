@@ -1,5 +1,5 @@
 # godot.reflection surfaces Godot's built-in annotations (@export, @export_range, @onready,
-# @rpc, @tool, ...) as GDScriptAnnotation metadata alongside custom annotations, distinguished
+# @rpc, @tool, ...) as FSAnnotation metadata alongside custom annotations, distinguished
 # by the is_builtin flag and preserving source order.
 @tool
 namespace cafecito.builtin_reflect_demo

@@ -2,7 +2,7 @@
 
 signal finished
 
-const scr: GDScript = preload("reload_suspended_function_helper.notest.gd")
+const scr: FoundryScript = preload("reload_suspended_function_helper.notest.fs")
 
 func test():
 	@warning_ignore("UNSAFE_METHOD_ACCESS")

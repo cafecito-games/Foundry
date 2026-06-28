@@ -1,12 +1,12 @@
-GDTEST_OK
-var test_native: GDScriptNativeClass
-var test_script: GDScript
-var test_class: GDScript
+FS_TEST_OK
+var test_native: FSNativeClass
+var test_script: FoundryScript
+var test_class: FoundryScript
 var test_enum: Dictionary
 ---
-GDScriptNativeClass
-GDScript
-GDScript
+FSNativeClass
+FoundryScript
+FoundryScript
 { "A": 0, "B": 1, "C": 2 }
 ---
 []

@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 23: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "append()" requires the subtype "int" but the supertype "Variant" was provided.
 ~~ WARNING at line 24: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "insert()" requires the subtype "int" but the supertype "Variant" was provided.
 ~~ WARNING at line 25: (UNSAFE_CALL_ARGUMENT) The argument 2 of the function "set()" requires the subtype "int" but the supertype "Variant" was provided.

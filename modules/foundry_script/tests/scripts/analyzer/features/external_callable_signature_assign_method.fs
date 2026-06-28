@@ -4,7 +4,7 @@
 # the decoded side would carry an empty MethodInfo and wrongly reject the assignment on argument count.
 extends Node
 
-const Provider = preload("external_callable_signature_assign_method_provider.notest.gd")
+const Provider = preload("external_callable_signature_assign_method_provider.notest.fs")
 
 func test() -> void:
 	var cb := Provider.new().get_cb()

@@ -2,8 +2,8 @@
 class_name ExportVariableTest
 extends Node
 
-const PreloadedGlobalClass = preload("./export_variable_global.notest.gd")
-const PreloadedUnnamedClass = preload("./export_variable_unnamed.notest.gd")
+const PreloadedGlobalClass = preload("./export_variable_global.notest.fs")
+const PreloadedUnnamedClass = preload("./export_variable_unnamed.notest.fs")
 
 # Built-in types.
 @export var test_weak_int = 1

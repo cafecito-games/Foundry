@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 15: Type argument "Stack[String]" does not satisfy the bound "List[int]" of type parameter "B".

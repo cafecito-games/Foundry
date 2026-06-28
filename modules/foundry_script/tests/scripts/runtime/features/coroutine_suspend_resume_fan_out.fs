@@ -1,7 +1,7 @@
 # Structured-concurrency fan-out over genuinely suspending jobs. Every job hits an internal `await`
 # on a shared signal mid-body, so all three are started and parked concurrently before any of them
 # resumes. Each is awaited from its own fire-and-forget runner (`await _job(value)`), which connects
-# to the job's still-live GDScriptFunctionState while it is suspended. A single `go.emit()` then
+# to the job's still-live FSFunctionState while it is suspended. A single `go.emit()` then
 # releases every job in start order, and each completion resumes its runner to collect the String
 # result. This exercises the live function-state handoff for a fan-out, which the eager-completion
 # coroutine_fan_out fixture deliberately avoids.

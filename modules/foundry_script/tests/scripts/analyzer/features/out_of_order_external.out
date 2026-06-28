@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 v1: p1=4, p2=3
 v1 is String: true
 v2: true

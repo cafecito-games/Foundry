@@ -1,4 +1,4 @@
-extends "res://analyzer/errors/final_method_base.notest.gd"
+extends "res://analyzer/errors/final_method_base.notest.fs"
 
 func locked() -> int:
 	return 2

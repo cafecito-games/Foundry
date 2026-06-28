@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 5: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Direction". Unhandled: WEST. Add the missing patterns or a "_" wildcard branch.
 north
 ok

@@ -1,4 +1,4 @@
-const EnumFile = preload("./top_level_enum_values.notest.gd")
+const EnumFile = preload("./top_level_enum_values.notest.fs")
 
 func test():
 	print(RuntimeTopLevelEnum.RED == 0)

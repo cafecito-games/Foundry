@@ -1,6 +1,6 @@
-# GDScript Benchmark Corpus
+# Foundry Script Benchmark Corpus
 
-Workloads and tooling for the GDScript performance harness (`--gdscript-benchmark`).
+Workloads and tooling for the Foundry Script performance harness (`--gdscript-benchmark`).
 See `docs/superpowers/specs/2026-06-25-gdscript-performance-harness-design.md` for
 the design and `docs/superpowers/plans/2026-06-25-gdscript-performance-harness.md`
 for the plan.
@@ -9,15 +9,15 @@ for the plan.
 
 Each *case* is a directory. A feature case is an A/B pair:
 
-- `feature.gd`  — uses a fork feature (generics, traits, proxies, validated writes).
-- `baseline.gd` — equivalent vanilla GDScript doing the same observable work.
+- `feature.fs`  — uses a fork feature (generics, traits, proxies, validated writes).
+- `baseline.fs` — equivalent vanilla Foundry Script doing the same observable work.
 - `case.cfg`    — per-case config (see schema below).
 
-`_baseline/` is special: a single `empty_loop.gd` measuring harness overhead.
+`_baseline/` is special: a single `empty_loop.fs` measuring harness overhead.
 
 ## Entry convention
 
-Every workload `.gd` extends `RefCounted` and defines exactly:
+Every workload `.fs` extends `RefCounted` and defines exactly:
 
     func run_benchmark(iterations: int) -> void:
         # do the measured work `iterations` times; never time internally.
@@ -48,7 +48,7 @@ Time Profiler via `xctrace`:
 
     xctrace record --template 'Time Profiler' --output proxy.trace --launch -- \
       ./bin/godot.macos.editor.dev.* --headless \
-      --gdscript-benchmark modules/gdscript/tests/benchmarks/proxy_dispatch
+      --gdscript-benchmark modules/foundry_script/tests/benchmarks/proxy_dispatch
 
 Open `proxy.trace` in Instruments and read the heaviest stack. Compare the
 `feature` vs `baseline` runs (run each case dir alone, or temporarily move the
@@ -57,7 +57,7 @@ other variant aside) — the frames that appear only in `feature` are the cost.
 Quick text alternative (no Instruments UI), sample a running invocation:
 
     ./bin/godot.macos.editor.dev.* --headless \
-      --gdscript-benchmark modules/gdscript/tests/benchmarks/proxy_dispatch &
+      --gdscript-benchmark modules/foundry_script/tests/benchmarks/proxy_dispatch &
     sample $! 5 -file proxy.sample.txt   # 5-second sample of native stacks
     cat proxy.sample.txt
 
@@ -67,7 +67,7 @@ window.
 ### Linux (secondary)
 
     perf record -g -- ./bin/godot.linuxbsd.editor.dev.x86_64 --headless \
-      --gdscript-benchmark modules/gdscript/tests/benchmarks/proxy_dispatch
+      --gdscript-benchmark modules/foundry_script/tests/benchmarks/proxy_dispatch
     perf report            # or pipe through a flamegraph generator
 
 ### Reading results
@@ -75,7 +75,7 @@ window.
 A real optimization target shows as a native frame whose share is large in
 `feature` and absent/small in `baseline`. Confirm it against the `report.py`
 overhead percentage and the `--gdscript-benchmark-profile` per-function data:
-the GDScript function profiler says which `.gd` function, the sampler says which
+the Foundry Script function profiler says which `.fs` function, the sampler says which
 C++ work inside it.
 
 ## Deferred: opcode-level profiling
@@ -90,7 +90,7 @@ add it behind a build flag (e.g. `gdscript_opcode_profile=yes`) so the dispatch
 loop is untouched in normal builds:
 
 - Gate a `uint64_t opcode_self_time[OPCODE_COUNT]` / `opcode_count[OPCODE_COUNT]`
-  accumulator behind `#ifdef GDSCRIPT_OPCODE_PROFILE` in `GDScriptFunction::call`.
+  accumulator behind `#ifdef FOUNDRY_SCRIPT_OPCODE_PROFILE` in `FSFunction::call`.
 - Prefer counting (cheap) over timing where possible; reserve timing for a short
   list of suspect opcodes to limit distortion.
 - Surface the totals through a new `--gdscript-benchmark-opcodes` output, parallel

@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 2: Class "trait_required_method.gd" must implement trait method "Damageable.take_damage()".
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 2: Class "trait_required_method.fs" must implement trait method "Damageable.take_damage()".

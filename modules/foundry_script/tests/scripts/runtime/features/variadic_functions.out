@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 func test_func(x: int, y: int = 0, ...args) -> void
 1 0 []
 1 2 []

@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 3: Ambiguous annotation "@shared": the canonical identity "cafecito.dupext.shared" is declared in multiple files.

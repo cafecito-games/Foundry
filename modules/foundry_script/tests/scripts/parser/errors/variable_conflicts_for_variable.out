@@ -1,2 +1,2 @@
-GDTEST_PARSER_ERROR
+FS_TEST_PARSER_ERROR
 There is already a variable named "TEST" declared in this scope.

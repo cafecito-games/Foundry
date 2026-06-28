@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 var test_dir: Array
   hint=TYPE_STRING hint_string="<String>/<DIR>:" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
 var test_dir_packed: PackedStringArray

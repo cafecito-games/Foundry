@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 TEST Callable::callv
 one two three four
 one two three four

@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 var test_untyped: int = null
   hint=ENUM hint_string="Red,Green,Blue" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
 var test_with_values: int = null

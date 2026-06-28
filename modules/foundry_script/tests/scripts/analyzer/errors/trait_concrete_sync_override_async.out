@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 8: The function "count()" cannot be async because it implements synchronous trait method "Counter.count()".

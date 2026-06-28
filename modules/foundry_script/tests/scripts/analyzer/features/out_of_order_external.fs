@@ -1,4 +1,4 @@
-const B = preload("out_of_order_external_a.notest.gd")
+const B = preload("out_of_order_external_a.notest.fs")
 
 func test():
 	print("v1: ", v1)

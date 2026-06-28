@@ -1,6 +1,6 @@
 extends Node
 
-const Target = preload("res://refactor/callsite_parameter_agree_target.gd")
+const Target = preload("res://refactor/callsite_parameter_agree_target.fs")
 
 func run() -> void:
 	var target := Target.new()

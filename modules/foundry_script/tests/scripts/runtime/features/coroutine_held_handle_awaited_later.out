@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 held a handle: true
 before resume: ''
 after resume: 'value:1'

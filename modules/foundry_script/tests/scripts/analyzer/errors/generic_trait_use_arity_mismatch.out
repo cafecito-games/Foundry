@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 6: Generic class "Holder" expects 1 type argument(s), but 2 were given.

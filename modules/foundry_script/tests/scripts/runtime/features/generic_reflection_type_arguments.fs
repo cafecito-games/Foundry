@@ -1,5 +1,5 @@
 # godot.reflection.get_type_arguments(instance) exposes the reified generic type arguments bound
-# onto a GDScript instance (the `int` in `Box[int].new()`), as container-type descriptors. A
+# onto a FoundryScript instance (the `int` in `Box[int].new()`), as container-type descriptors. A
 # non-generic or unspecialized instance reports no arguments.
 class Box[T]:
 	var value: T

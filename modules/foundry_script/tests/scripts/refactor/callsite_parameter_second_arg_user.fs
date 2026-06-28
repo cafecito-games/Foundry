@@ -1,6 +1,6 @@
 extends RefCounted
 
-const Target = preload("res://refactor/callsite_parameter_second_arg_target.gd")
+const Target = preload("res://refactor/callsite_parameter_second_arg_target.fs")
 
 func use_target() -> void:
 	var target := Target.new()

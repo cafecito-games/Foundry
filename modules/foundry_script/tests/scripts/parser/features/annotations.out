@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 var test_1: int = null
   hint=ENUM hint_string="A,B,C" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
 var test_2: int = null

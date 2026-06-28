@@ -1,7 +1,7 @@
 # A cross-script callable carrying default-argument arity (here handler's optional `_b`) cannot encode
 # that arity in the signature hint, so it crosses the boundary untyped and stays gradually compatible
 # with a narrower annotated type instead of being rejected on a rigid fixed-arity mismatch.
-const Provider = preload("external_callable_default_arg_gradual_provider.notest.gd")
+const Provider = preload("external_callable_default_arg_gradual_provider.notest.fs")
 
 func test() -> void:
 	var cb: Callable[[int], void] = Provider.new().get_cb()

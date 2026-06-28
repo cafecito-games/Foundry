@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_gdscript.cpp                                                     */
+/*  test_foundry_script.cpp                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "test_gdscript.h"
+#include "test_foundry_script.h"
 
 #include "../editor/fs_docgen.h"
 #ifdef TOOLS_ENABLED
@@ -357,17 +357,17 @@ public:
 	}
 };
 
-struct ScopedGDScriptNativeGlobals {
+struct ScopedFSNativeGlobals {
 	bool initialized = false;
 
-	ScopedGDScriptNativeGlobals() {
+	ScopedFSNativeGlobals() {
 		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
 			FSLanguage::get_singleton()->init();
 			initialized = true;
 		}
 	}
 
-	~ScopedGDScriptNativeGlobals() {
+	~ScopedFSNativeGlobals() {
 		// Some sibling FoundryScript doctests initialize the language without finishing it; only tear down state owned by this guard.
 		if (initialized) {
 			FSLanguage::get_singleton()->finish();
@@ -375,10 +375,10 @@ struct ScopedGDScriptNativeGlobals {
 	}
 };
 
-struct ScopedGDScriptAutoloadSetting {
+struct ScopedFSAutoloadSetting {
 	StringName name;
 
-	ScopedGDScriptAutoloadSetting(const StringName &p_name, const String &p_path, bool p_singleton = true, int p_order = 10) {
+	ScopedFSAutoloadSetting(const StringName &p_name, const String &p_path, bool p_singleton = true, int p_order = 10) {
 		name = p_name;
 		clear();
 
@@ -387,7 +387,7 @@ struct ScopedGDScriptAutoloadSetting {
 		ProjectSettings::get_singleton()->set_order(setting, p_order);
 	}
 
-	~ScopedGDScriptAutoloadSetting() {
+	~ScopedFSAutoloadSetting() {
 		clear();
 	}
 
@@ -604,7 +604,7 @@ static int count_parser_warnings(const FSParser &p_parser, FSWarning::Code p_cod
 
 static String write_temp_script(const String &p_file_name, const String &p_source) {
 	Error err = OK;
-	Ref<FileAccess> file = FileAccess::create_temp(FileAccess::WRITE, p_file_name.get_basename(), "gd", true, &err);
+	Ref<FileAccess> file = FileAccess::create_temp(FileAccess::WRITE, p_file_name.get_basename(), "fs", true, &err);
 	CHECK_EQ(err, OK);
 	CHECK(file.is_valid());
 	if (file.is_valid()) {
@@ -736,10 +736,10 @@ func async() -> int:
 }
 
 TEST_CASE("[Modules][FoundryScript][Editor] Completion suggests UID-backed autoloads as script types") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	TempScriptFile autoload_script("completion_uid_autoload.fs", "extends Node\n");
 	ScopedResourceUIDRegistration uid(autoload_script.path);
-	ScopedGDScriptAutoloadSetting autoload(SNAME("CompletionUidAutoload"), uid.get_uid_path());
+	ScopedFSAutoloadSetting autoload(SNAME("CompletionUidAutoload"), uid.get_uid_path());
 
 	List<ScriptLanguage::CodeCompletionOption> options;
 	bool forced = false;
@@ -760,10 +760,10 @@ TEST_CASE("[Modules][FoundryScript][Editor] Completion suggests UID-backed autol
 }
 
 TEST_CASE("[Modules][FoundryScript][Editor] Symbol lookup resolves UID-backed autoload singleton scripts") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	TempScriptFile autoload_script("lookup_uid_autoload.fs", "extends Node\n");
 	ScopedResourceUIDRegistration uid(autoload_script.path);
-	ScopedGDScriptAutoloadSetting autoload(SNAME("LookupUidAutoload"), uid.get_uid_path());
+	ScopedFSAutoloadSetting autoload(SNAME("LookupUidAutoload"), uid.get_uid_path());
 
 	FSLanguage::LookupResult result;
 	const Error err = FSLanguage::get_singleton()->lookup_code(
@@ -781,10 +781,10 @@ TEST_CASE("[Modules][FoundryScript][Editor] Symbol lookup resolves UID-backed au
 }
 
 TEST_CASE("[Modules][FoundryScript][Editor] Syntax highlighter colors UID-backed autoload singletons") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	TempScriptFile autoload_script("highlight_uid_autoload.fs", "extends Node\n");
 	ScopedResourceUIDRegistration uid(autoload_script.path);
-	ScopedGDScriptAutoloadSetting autoload(SNAME("HighlightUidAutoload"), uid.get_uid_path());
+	ScopedFSAutoloadSetting autoload(SNAME("HighlightUidAutoload"), uid.get_uid_path());
 
 	TextEdit *text_edit = memnew(TextEdit);
 	text_edit->set_text("func _ready() -> void:\n\tHighlightUidAutoload\n");
@@ -1959,7 +1959,7 @@ func synchronous() -> int:
 }
 
 TEST_CASE("[Modules][FoundryScript] Compiled coroutine functions reflect async method flags") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	FSParser parser;
 	Error err = parser.parse(R"(
 async func explicit_async() -> int:
@@ -2047,7 +2047,7 @@ func synchronous() -> int:
 }
 
 TEST_CASE("[Modules][FoundryScript] Compiled abstract functions reflect required method contracts") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	FSParser parser;
 	Error err = parser.parse(R"(
 abstract class_name RequiredMethodReflection
@@ -2172,7 +2172,7 @@ TEST_CASE("[Modules][FoundryScript] Scripts reflect trait identities") {
 }
 
 TEST_CASE("[Modules][FoundryScript] Scripts reflect declared generic type parameters") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 
 	SUBCASE("non-generic script reports no parameters") {
 		Ref<FoundryScript> script;
@@ -2774,10 +2774,10 @@ enum_name WeaponType {
 }
 
 TEST_CASE("[Modules][FoundryScript] Docgen names UID-backed autoload scripts from the autoload index") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	TempScriptFile autoload_script("docgen_uid_autoload.fs", "extends Node\nvar count: int\n");
 	ScopedResourceUIDRegistration uid(autoload_script.path);
-	ScopedGDScriptAutoloadSetting autoload(SNAME("DocgenUidAutoload"), uid.get_uid_path());
+	ScopedFSAutoloadSetting autoload(SNAME("DocgenUidAutoload"), uid.get_uid_path());
 
 	FSParser parser;
 	Error err = parser.parse("extends Node\nvar count: int\n", autoload_script.path, false);
@@ -4195,7 +4195,7 @@ static const Vector<FoundryScript::AnnotationUsage> *find_annotation_usages(cons
 }
 
 TEST_CASE("[Modules][FoundryScript] Compiled scripts persist custom annotation metadata") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	FSParser parser;
 	Error err = parser.parse(R"(
 namespace cafecito.persist_demo
@@ -4403,7 +4403,7 @@ class Inner:
 }
 
 TEST_CASE("[Modules][FoundryScript] Compiled scripts persist built-in annotation metadata") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	FSParser parser;
 	Error err = parser.parse(R"(
 @tool
@@ -4599,7 +4599,7 @@ static Dictionary find_descriptor_by_name(const TypedArray<Dictionary> &p_descri
 }
 
 TEST_CASE("[Modules][FoundryScript] FSReflection exposes custom annotation metadata") {
-	ScopedGDScriptNativeGlobals native_globals;
+	ScopedFSNativeGlobals native_globals;
 	FSParser parser;
 	Error err = parser.parse(R"(
 namespace cafecito.reflect_cpp

@@ -3,17 +3,17 @@ class MyClass:
 
 enum MyEnum {A, B, C}
 
-const Other = preload("./metatypes.notest.gd")
+const Other = preload("./metatypes.notest.fs")
 
 var test_native := JSON
 var test_script := Other
 var test_class := MyClass
 var test_enum := MyEnum
 
-func check_gdscript_native_class(value: Variant) -> void:
+func check_foundry_script_native_class(value: Variant) -> void:
 	print(var_to_str(value).get_slice(",", 0).trim_prefix("Object("))
 
-func check_gdscript(value: GDScript) -> void:
+func check_foundry_script(value: FoundryScript) -> void:
 	print(value.get_class())
 
 func check_enum(value: Dictionary) -> void:
@@ -25,9 +25,9 @@ func test():
 			print(Utils.get_property_signature(property))
 
 	print("---")
-	check_gdscript_native_class(test_native)
-	check_gdscript(test_script)
-	check_gdscript(test_class)
+	check_foundry_script_native_class(test_native)
+	check_foundry_script(test_script)
+	check_foundry_script(test_class)
 	check_enum(test_enum)
 
 	print("---")
@@ -38,9 +38,9 @@ func test():
 
 	print("---")
 	# Some users add unnecessary type hints to `const`-`preload`, which removes metatypes.
-	# For **constant** `GDScript` we still check the class members, despite the wider type.
-	const ScriptNoMeta: GDScript = Other
-	const ClassNoMeta: GDScript = MyClass
+	# For **constant** `FoundryScript` we still check the class members, despite the wider type.
+	const ScriptNoMeta: FoundryScript = Other
+	const ClassNoMeta: FoundryScript = MyClass
 	var a := ScriptNoMeta.TEST
 	var b := ClassNoMeta.TEST
 	print(a)

@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 ~~ WARNING at line 18: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
 hello
 This will match

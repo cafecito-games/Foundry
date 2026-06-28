@@ -1,2 +1,2 @@
-GDTEST_RUNTIME_ERROR
->> SCRIPT ERROR at runtime/errors/typed_array_subclass_element_reference_mismatch.gd:21 on test(): Invalid type in function 'take' in base 'RefCounted (typed_array_subclass_element_reference_mismatch.gd)'. The array of argument 1 (Array[StringBox]) does not have the same element type as the expected typed array argument.
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/typed_array_subclass_element_reference_mismatch.fs:21 on test(): Invalid type in function 'take' in base 'RefCounted (typed_array_subclass_element_reference_mismatch.fs)'. The array of argument 1 (Array[StringBox]) does not have the same element type as the expected typed array argument.

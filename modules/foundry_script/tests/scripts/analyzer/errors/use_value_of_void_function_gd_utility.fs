@@ -1,2 +1,2 @@
 func test():
-	print(print_debug()) # GDScript utility function.
+	print(print_debug()) # FoundryScript utility function.

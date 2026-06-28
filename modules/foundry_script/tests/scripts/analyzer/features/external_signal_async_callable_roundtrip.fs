@@ -1,7 +1,7 @@
 # An AsyncCallable nested inside a signal parameter exposed by another script keeps its async marker,
 # so binding the signal to the same AsyncCallable signature stays accepted. (The serialized
-# MethodInfo/PropertyInfo round-trip itself is covered by a C++ unit test in test_gdscript_type.h.)
-const Provider = preload("external_signal_async_callable_roundtrip_provider.notest.gd")
+# MethodInfo/PropertyInfo round-trip itself is covered by a C++ unit test in test_foundry_script_type.h.)
+const Provider = preload("external_signal_async_callable_roundtrip_provider.notest.fs")
 
 func test() -> void:
 	var s: Signal[[AsyncCallable[[int], void]]] = Provider.new().get_signal()

@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 15: Trait "Storage" is applied with conflicting type arguments ("int" and "String") through different traits used by "Bad".

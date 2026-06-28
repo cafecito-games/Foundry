@@ -3,7 +3,7 @@
 # compiles because both modifiers take effect (a bodiless non-abstract function
 # would be rejected), and it declares an async contract that a concrete override
 # must honor (the sync-override rejection lives in
-# analyzer/errors/abstract_async_method_implementation.gd). The async override is
+# analyzer/errors/abstract_async_method_implementation.fs). The async override is
 # reported as async via reflection and can be awaited.
 abstract class Loader:
 	abstract async func load_value() -> String

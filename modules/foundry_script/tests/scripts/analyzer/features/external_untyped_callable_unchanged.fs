@@ -1,4 +1,4 @@
-const Provider = preload("external_untyped_callable_unchanged_provider.notest.gd")
+const Provider = preload("external_untyped_callable_unchanged_provider.notest.fs")
 
 func test() -> void:
 	var typed: Callable[[int], void] = Provider.new().get_cb()

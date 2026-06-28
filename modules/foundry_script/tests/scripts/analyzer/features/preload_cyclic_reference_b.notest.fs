@@ -1,4 +1,4 @@
-const A = preload("preload_cyclic_reference_a.notest.gd")
+const A = preload("preload_cyclic_reference_a.notest.fs")
 
 static func test_cyclic_reference():
 	A.test_cyclic_reference_2()

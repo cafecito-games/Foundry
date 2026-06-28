@@ -1,4 +1,4 @@
-GDTEST_OK
+FS_TEST_OK
 holaaa
 [1, 2, 3]
 { "a": 1, "b": 2 }

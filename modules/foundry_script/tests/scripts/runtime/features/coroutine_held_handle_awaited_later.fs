@@ -1,7 +1,7 @@
 # Epic capstone: "start now, hold the handle, await later" end to end. A genuinely *suspending* async
 # job is started and its live `Coroutine[String]` handle is captured into a named variable (`handle`)
 # instead of being awaited in place. The job parks on `await go` before producing any result, so the
-# capture yields the in-flight `GDScriptFunctionState`; holding it no longer trips the debug "async
+# capture yields the in-flight `FSFunctionState`; holding it no longer trips the debug "async
 # function without await" guard. Unlike the side-effect fixtures, the result here is consumed by an
 # actual `await handle` rather than observed through a member write.
 #

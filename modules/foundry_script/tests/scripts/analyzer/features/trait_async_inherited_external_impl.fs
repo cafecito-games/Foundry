@@ -1,7 +1,7 @@
 # An async method inherited from an external base class satisfies a required async
 # trait method: async invariance is compared against the inherited method's
 # METHOD_FLAG_ASYNC reflection, not rejected outright.
-extends "trait_async_inherited_external_impl_base.notest.gd"
+extends "trait_async_inherited_external_impl_base.notest.fs"
 uses RemoteLoadable
 
 trait RemoteLoadable:

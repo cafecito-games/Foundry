@@ -42,9 +42,9 @@ func test() -> void:
 	var greeter = greeter_box.make_proxy()
 	print(greeter != null and greeter is Greeter)
 
-	# Erasure-on-widening: a handle widened to `GDScript` no longer names the argument, so the
+	# Erasure-on-widening: a handle widened to `FoundryScript` no longer names the argument, so the
 	# constructed instance carries none (mirrors `Array[int]` widening to `Array`).
-	var widened: GDScript = Box[int]
+	var widened: FoundryScript = Box[int]
 	print(godot.reflection.get_type_arguments(widened.new()).size())
 
 	print("aliased handle construction ok")

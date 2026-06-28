@@ -1,4 +1,4 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 15: Cannot invoke this Callable: it was over-bound (more arguments were bound than its target accepts), so the call can never succeed.
 >> ERROR at line 16: Cannot invoke this Callable: it was over-bound (more arguments were bound than its target accepts), so the call can never succeed.
 >> ERROR at line 17: Cannot invoke this Callable: it was over-bound (more arguments were bound than its target accepts), so the call can never succeed.

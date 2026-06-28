@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 5: Annotation "@test" takes at most 0 argument(s), but 1 were given.

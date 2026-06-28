@@ -116,7 +116,7 @@ bool FSBenchmarkRunner::collect_variants(const String &p_dir, Vector<WorkloadVar
 		case_dir->list_dir_begin();
 		String entry = case_dir->get_next();
 		while (!entry.is_empty()) {
-			if (!case_dir->current_is_dir() && entry.get_extension() == "gd") {
+			if (!case_dir->current_is_dir() && entry.get_extension() == "fs") {
 				WorkloadVariant variant;
 				variant.case_name = case_name;
 				variant.variant_name = entry.get_basename();

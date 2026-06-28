@@ -1,8 +1,8 @@
 # A Coroutine[T] nested as a container element exposed by another script keeps its result type, so the
 # returned Array[Coroutine[String]] / Dictionary[String, Coroutine[int]] stay assignable to the same
 # annotated container type. (The serialized MethodInfo/PropertyInfo round-trip itself is covered by a C++
-# unit test in test_gdscript_type.h, since the script test runner resolves referenced scripts in-batch.)
-const Provider = preload("external_array_coroutine_roundtrip_provider.notest.gd")
+# unit test in test_foundry_script_type.h, since the script test runner resolves referenced scripts in-batch.)
+const Provider = preload("external_array_coroutine_roundtrip_provider.notest.fs")
 
 func test() -> void:
 	var jobs: Array[Coroutine[String]] = Provider.new().get_jobs()

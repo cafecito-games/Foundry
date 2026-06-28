@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
+FS_TEST_ANALYZER_ERROR
 >> ERROR at line 7: Final variable "VALUE" can only be assigned in its declaration or in "_static_init()".

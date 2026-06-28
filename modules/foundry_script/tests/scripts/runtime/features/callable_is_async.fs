@@ -39,7 +39,7 @@ func test():
 
 	# Inherited static coroutine resolved through the base-script chain of a
 	# script object (the case Object.has_method() alone would miss).
-	var derived: Resource = load("res://runtime/features/callable_is_async_derived.notest.gd")
+	var derived: Resource = load("res://runtime/features/callable_is_async_derived.notest.fs")
 	print(Callable(derived, "inherited_static_async").is_async())
 	print(Callable(derived, "inherited_static_sync").is_async())
 	# A non-static method is not a valid callable target on a script object.

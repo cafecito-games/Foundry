@@ -15,7 +15,7 @@ class Outer:
 
 const Alias = Inner
 
-const External = preload("const_class_reference_external.notest.gd")
+const External = preload("const_class_reference_external.notest.fs")
 
 
 func make_inner(prefix: String, cls := Inner, count := 0) -> String:
@@ -46,5 +46,5 @@ func test():
 	# A nested inner class default constructs to the live nested class.
 	print(make_nested("nested:", count = 4))
 	# An external (preloaded) class default resolves to the live external
-	# subclass held by GDScriptCache.
+	# subclass held by FSCache.
 	print(make_external("external:", count = 5))

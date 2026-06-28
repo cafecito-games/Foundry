@@ -95,8 +95,8 @@ func test():
     var global_callable_2 = inverse_lerp
     print(global_callable_2.get_argument_count()) # Should print 3.
 
-    # Test GDScript methods.
-    var gdscript_callable_1 = char
-    print(gdscript_callable_1.get_argument_count()) # Should print 1.
-    var gdscript_callable_2 = is_instance_of
-    print(gdscript_callable_2.get_argument_count()) # Should print 2.
+    # Test FoundryScript methods.
+    var foundry_script_callable_1 = char
+    print(foundry_script_callable_1.get_argument_count()) # Should print 1.
+    var foundry_script_callable_2 = is_instance_of
+    print(foundry_script_callable_2.get_argument_count()) # Should print 2.

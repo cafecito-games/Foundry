@@ -1,2 +1,2 @@
-GDTEST_PARSER_ERROR
+FS_TEST_PARSER_ERROR
 Coroutine[T] expects a single result type parameter.

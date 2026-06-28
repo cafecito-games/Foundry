@@ -1,4 +1,4 @@
-const Provider = preload("top_level_enum_callable_signature_provider.notest.gd")
+const Provider = preload("top_level_enum_callable_signature_provider.notest.fs")
 
 func test() -> void:
 	var handler: Callable[[String], void] = Provider.new().get_cb()

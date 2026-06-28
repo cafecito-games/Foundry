@@ -1,17 +1,17 @@
-# GDScript parser fuzzing (libFuzzer prototype)
+# Foundry Script parser fuzzing (libFuzzer prototype)
 
-A coverage-guided libFuzzer harness that drives `GDScriptParser::parse()` (and,
-on a clean parse, `GDScriptAnalyzer::analyze()`) over mutated input. The parser's
+A coverage-guided libFuzzer harness that drives `FSParser::parse()` (and,
+on a clean parse, `FSAnalyzer::analyze()`) over mutated input. The parser's
 hard contract is that *any* byte sequence yields either a clean error list or a
-valid tree — never a crash. The editor and LSP parse untrusted/partial `.gd`
+valid tree — never a crash. The editor and LSP parse untrusted/partial `.fs`
 buffers, so robustness here is a real concern.
 
 When `use_fuzzer=yes` is passed, the platform `main()` is replaced by a small
 libFuzzer entry point. The build is split so the interesting logic is shared:
 
-- `modules/gdscript/tests/fuzz/gdscript_fuzzer.{h,cpp}` — platform-independent:
+- `modules/foundry_script/tests/fuzz/gdscript_fuzzer.{h,cpp}` — platform-independent:
   engine bring-up plus `LLVMFuzzerTestOneInput` (the parse/analyze loop).
-  Compiled into the GDScript module only when `use_fuzzer=yes`.
+  Compiled into the Foundry Script module only when `use_fuzzer=yes`.
 - `platform/<platform>/fuzz_gdscript_<platform>.{cpp,mm}` — a thin shim that
   constructs the headless OS and calls into the shared harness.
 
@@ -47,7 +47,7 @@ startup without a `.pck`, while the editor (tool) build boots without a project.
 
 ```sh
 # Seed corpus from the existing script fixtures (a keyword dictionary ships here).
-mkdir -p corpus && find ../scripts -name '*.gd' -exec cp {} corpus/ \;
+mkdir -p corpus && find ../scripts -name '*.fs' -exec cp {} corpus/ \;
 
 ASAN_OPTIONS=detect_leaks=0 \
   <path-to>/godot.<platform>...san.fuzz \
@@ -81,8 +81,8 @@ with `--headless`). Two engine interactions matter for any port:
   otherwise aborts at exit and is misattributed to the last input). Crashes
   during `LLVMFuzzerTestOneInput` are unaffected — ASan catches those mid-run.
 
-Each iteration also drops the `fuzz://input.gd` parser/script entries from
-`GDScriptCache` so a crash always reproduces from the single input that caused it.
+Each iteration also drops the `fuzz://input.fs` parser/script entries from
+`FSCache` so a crash always reproduces from the single input that caused it.
 
 ## Findings
 
@@ -96,7 +96,7 @@ the tokenizer read before the start of the source buffer (`make_token()` →
 `String::utf32(Span(_start, _current - _start))` with `_start < _source`). Root
 cause is `_advance()` re-entering `check_indent()` at EOF mid-token combined with
 `check_indent()`'s per-tab `column` inflation. Minimal trigger: `printf '\t\t\t\tt'`.
-Reproducer: `repro/deep_tab_indent_oob.gd`. Memory-safety bug on tiny, ordinary
+Reproducer: `repro/deep_tab_indent_oob.fs`. Memory-safety bug on tiny, ordinary
 input — found by the analyzer-enabled campaign.
 
 ### Unbounded parser recursion → stack overflow (crash)
@@ -112,12 +112,12 @@ Threshold is ~20k–30k nesting levels (ASan ~3x stack usage; the limit is highe
 in a non-ASan build but still finite and reachable).
 
 ```sh
-python3 -c "open('x.gd','w').write('var x = ' + '('*40000 + '1' + ')'*40000)"
-./bin/godot.macos.editor.dev.arm64.san.fuzz -runs=1 x.gd   # exit 139 (SIGSEGV)
+python3 -c "open('x.fs','w').write('var x = ' + '('*40000 + '1' + ')'*40000)"
+./bin/godot.macos.editor.dev.arm64.san.fuzz -runs=1 x.fs   # exit 139 (SIGSEGV)
 ```
 
-Reproducer: `repro/deeply_nested_parens.gd`.
+Reproducer: `repro/deeply_nested_parens.fs`.
 
-Impact: opening or completing a crafted/pathological `.gd` file crashes the
+Impact: opening or completing a crafted/pathological `.fs` file crashes the
 editor and the language server. Likely shared with upstream Godot. A fix would
 track nesting depth in the parser and surface a normal parse error past a limit.
