@@ -3189,6 +3189,14 @@ GDScriptParser::ForNode *GDScriptParser::parse_for() {
 }
 
 GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
+	// `elif` chains recurse directly through parse_if() (bypassing parse_statement()), so
+	// bound them with the statement depth counter to avoid overflowing the native stack.
+	RecursionDepthGuard depth_guard(statement_nesting_depth);
+	if (unlikely(statement_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Statement nesting is too deep.");
+		return nullptr;
+	}
+
 	IfNode *n_if = alloc_node<IfNode>();
 
 	n_if->condition = parse_expression(false);
@@ -3214,7 +3222,9 @@ GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
 		current_suite = else_block;
 
 		IfNode *elif = parse_if("elif");
-		else_block->statements.push_back(elif);
+		if (elif != nullptr) {
+			else_block->statements.push_back(elif);
+		}
 		complete_extents(else_block);
 		n_if->false_block = else_block;
 
@@ -3400,6 +3410,14 @@ GDScriptParser::MatchBranchNode *GDScriptParser::parse_match_branch() {
 }
 
 GDScriptParser::PatternNode *GDScriptParser::parse_match_pattern(PatternNode *p_root_pattern) {
+	// Array and dictionary patterns recurse through parse_match_pattern(); bound that
+	// depth so deeply nested patterns report an error instead of overflowing the stack.
+	RecursionDepthGuard depth_guard(pattern_nesting_depth);
+	if (unlikely(pattern_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Pattern nesting is too deep.");
+		return nullptr;
+	}
+
 	PatternNode *pattern = alloc_node<PatternNode>();
 	reset_extents(pattern, current);
 

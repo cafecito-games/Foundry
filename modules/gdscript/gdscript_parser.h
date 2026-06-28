@@ -1627,6 +1627,7 @@ private:
 	int expression_nesting_depth = 0;
 	int statement_nesting_depth = 0;
 	int type_nesting_depth = 0;
+	int pattern_nesting_depth = 0;
 
 	ClassNode *head = nullptr;
 	Node *list = nullptr;

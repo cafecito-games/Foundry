@@ -188,6 +188,29 @@ TEST_CASE("[Modules][GDScript] Parser bounds type nesting instead of crashing") 
 	CHECK(err != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Parser bounds elif-chain nesting instead of crashing") {
+	// `elif` chains recurse through parse_if() rather than parse_statement(); a long
+	// chain must report a parse error rather than overflowing the native stack.
+	const int depth = 50000;
+	String source = "func f():\n\tif false: pass\n";
+	source += String("\telif false: pass\n").repeat(depth);
+
+	GDScriptParser parser;
+	Error err = parser.parse(source, "user://deep_elif.gd", false);
+	CHECK(err != OK);
+}
+
+TEST_CASE("[Modules][GDScript] Parser bounds match-pattern nesting instead of crashing") {
+	// Nested array/dictionary match patterns recurse through parse_match_pattern(); a
+	// pathologically nested pattern must report a parse error rather than crashing.
+	const int depth = 50000;
+	String source = "func f():\n\tmatch x:\n\t\t" + String("[").repeat(depth) + "0" + String("]").repeat(depth) + ":\n\t\t\tpass\n";
+
+	GDScriptParser parser;
+	Error err = parser.parse(source, "user://deep_match_pattern.gd", false);
+	CHECK(err != OK);
+}
+
 static PackedStringArray parse_source_errors(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://namespace_import_test.gd", false);
