@@ -200,10 +200,12 @@ static GDScriptParser::DataType make_coroutine_type(const GDScriptParser::DataTy
 // `Coroutine[T]`-typed slot (variable/parameter/return value, or a `Coroutine[T]` container
 // element) is meant to be held and awaited later, not a forgotten `await`. Mark such a call so the
 // compiler emits `OPCODE_CALL_ASYNC` (store the handle, skip the debug missing-await guard), just as
-// it does for the operand of an `await`. Captures into a non-coroutine/Variant slot are left
-// unmarked, so the runtime guard still flags a genuinely missing `await`.
+// it does for the operand of an `await`. The target must be a *hard* `Coroutine[T]` slot: a weakly
+// inferred `var x = _job()` (no annotation, no `:=`) keeps a dynamic type and a capture into a
+// non-coroutine/Variant slot is left unmarked, so in both cases the runtime guard still flags a
+// genuinely missing `await`.
 static void mark_coroutine_handle_capture(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_target_type) {
-	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::CALL || !p_target_type.is_coroutine) {
+	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::CALL || !p_target_type.is_coroutine || !p_target_type.is_hard_type()) {
 		return;
 	}
 	GDScriptParser::CallNode *call = static_cast<GDScriptParser::CallNode *>(p_expression);
@@ -13692,6 +13694,8 @@ void GDScriptAnalyzer::validate_callable_array_literal_args(const Vector<GDScrip
 		GDScriptParser::ExpressionNode *argument = p_array->elements[i];
 		GDScriptParser::DataType par_type = p_par_types[i];
 
+		mark_coroutine_handle_capture(argument, par_type);
+
 		if (par_type.is_hard_type() && argument->is_constant) {
 			update_const_expression_builtin_type(argument, par_type, "pass");
 		}
@@ -13981,6 +13985,8 @@ void GDScriptAnalyzer::validate_signal_emit_args(const GDScriptParser::DataType 
 		const int emit_argument_index = p_first_emit_arg_index + i;
 		const GDScriptParser::DataType &signal_parameter_type = p_signal_type.method_parameter_types[i];
 		const GDScriptParser::DataType emit_argument_type = p_call->arguments[emit_argument_index]->get_datatype();
+
+		mark_coroutine_handle_capture(p_call->arguments[emit_argument_index], signal_parameter_type);
 
 		if (emit_argument_type.has_no_type()) {
 			mark_node_unsafe(p_call->arguments[emit_argument_index]);
