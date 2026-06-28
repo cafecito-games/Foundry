@@ -3,6 +3,11 @@
 # Applied LONGEST-MATCH-FIRST. Excludes thirdparty/** and .git/**.
 # This is a SEED for tools/foundry-rename/naming_map.tsv — expand during implementation.
 #
+# NOTE: identifier rows are matched with a trailing word boundary, so a bare
+# "prefix" row like GDVIRTUAL or GODOT_ only matches the bare token, never
+# GDVIRTUAL0 / GODOT_VERSION. The concrete variants are emitted explicitly by
+# generate_map.py from the live code, so no prefix-fallback rows are kept here.
+#
 # from	to	category	notes
 GDScriptParser	FSParser	A	gdscript family prefix GDScript->FS
 GDScriptCompiler	FSCompiler	A
@@ -25,7 +30,6 @@ GDExtensionLoader	FoundryExtensionLoader	B
 GDExtensionMethodBind	FoundryExtensionMethodBind	B
 GDExtensionInterface	FoundryExtensionInterface	B
 GDExtension	FoundryExtension	B	apply AFTER all GDExtension* compounds
-GDVIRTUAL	FOUNDRY_VIRTUAL	C	prefix; covers GDVIRTUAL0..N variants
 GDREGISTER_ABSTRACT_CLASS	FOUNDRY_REGISTER_ABSTRACT_CLASS	C
 GDREGISTER_CLASS	FOUNDRY_REGISTER_CLASS	C
 GDSOFTCLASS	FOUNDRY_SOFTCLASS	C
@@ -37,7 +41,6 @@ GDCLASS	FOUNDRY_CLASS	C	apply AFTER GDREGISTER_*/GDSOFTCLASS
 .gd	.fs	A	apply AFTER .gdc/.gde/.gdextension/.gdignore
 project.godot	project.foundry	D
 GODOT_VERSION	FOUNDRY_VERSION	D
-GODOT_	FOUNDRY_	D	macro/env prefix; apply AFTER named GODOT_* entries
 godotengine.org	cafecito.games	D
 Godot Engine	Foundry	D
 GDScript	Foundry Script	D	user-facing prose (handle in docs/translations pass)

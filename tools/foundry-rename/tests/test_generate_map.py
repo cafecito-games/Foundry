@@ -2,6 +2,8 @@
 # Copyright (c) 2026-present Cafecito Games. MIT License.
 # Foundry is a fork of Godot Engine 4.6.3-stable (MIT); see NOTICE.
 
+import subprocess
+
 import generate_map as gm
 
 # Real GDVIRTUAL / GDREGISTER spellings harvested from the frozen tree; the
@@ -142,3 +144,19 @@ def test_output_sorted_longest_source_first():
     merged = gm.merge_seed(generated, [])
     lengths = [len(r["from"]) for r in merged]
     assert lengths == sorted(lengths, reverse=True)
+
+
+def test_scan_excludes_nested_thirdparty(tmp_path):
+    # The generator-side scan must skip nested vendor trees, not just top-level.
+    root = str(tmp_path)
+    subprocess.check_call(["git", "init", "-q", root])
+    (tmp_path / "core").mkdir()
+    (tmp_path / "core" / "a.cpp").write_text("GDScriptParser p;\n")
+    nested = tmp_path / "modules" / "mono" / "thirdparty"
+    nested.mkdir(parents=True)
+    (nested / "b.cpp").write_text("GDExtensionManager m;\n")
+    subprocess.check_call(["git", "add", "-A"], cwd=root)
+
+    tokens = gm.scan_tokens(root)
+    assert "GDScriptParser" in tokens
+    assert "GDExtensionManager" not in tokens

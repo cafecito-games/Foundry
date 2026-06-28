@@ -4,6 +4,8 @@
 
 import os
 
+import common
+import pytest
 import rename
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "rules.tsv")
@@ -62,7 +64,19 @@ def test_thirdparty_and_git_excluded():
     assert rename.is_excluded("thirdparty/zlib/zlib.h")
     assert rename.is_excluded(".git/config")
     assert rename.is_excluded("modules/x/.git/info")
+    # Nested vendor trees must be excluded, not just the top-level thirdparty/.
+    assert rename.is_excluded("modules/mono/thirdparty/cli/x.cpp")
     assert not rename.is_excluded("core/object/object.h")
+    # A filename that merely contains "thirdparty" as a substring is not a dir.
+    assert not rename.is_excluded("core/thirdparty_notes.h")
+
+
+def test_exclusion_predicate_is_unified():
+    # generate_map and rename must share one definition of scope.
+    assert rename.is_excluded is common.is_excluded
+    import generate_map
+
+    assert generate_map.iter_tracked_files is common.iter_tracked_files
 
 
 def test_idempotence():
@@ -105,3 +119,46 @@ def test_moves_ignore_prose_rule():
     moves = dict(rename.plan_file_moves(["dir/GDScript"], rules))
     # "GDScript" maps via the code rule to "FoundryScript", never "Foundry Script".
     assert moves["dir/GDScript"] == "dir/FoundryScript"
+
+
+def test_content_pass_preserves_crlf(tmp_path):
+    rules = rename.load_rules(FIXTURE)
+    crlf = tmp_path / "win.props"
+    crlf.write_bytes(b"GDScript one\r\nGDScript two\r\n")
+    lf = tmp_path / "unix.cpp"
+    lf.write_bytes(b"GDScript one\nGDScript two\n")
+    rename.run_content_pass(str(tmp_path), rules, ("code", "both"), ["win.props", "unix.cpp"], dry_run=False)
+    # CRLF survives exactly; LF stays LF (no spurious CR introduced).
+    assert crlf.read_bytes() == b"FoundryScript one\r\nFoundryScript two\r\n"
+    assert lf.read_bytes() == b"FoundryScript one\nFoundryScript two\n"
+
+
+def test_content_pass_dry_run_writes_nothing(tmp_path):
+    rules = rename.load_rules(FIXTURE)
+    target = tmp_path / "a.cpp"
+    original = b"GDScript x\r\n"
+    target.write_bytes(original)
+    rename.run_content_pass(str(tmp_path), rules, ("code", "both"), ["a.cpp"], dry_run=True)
+    assert target.read_bytes() == original
+
+
+def test_move_collision_duplicate_destination(tmp_path):
+    with pytest.raises(ValueError):
+        rename.check_move_collisions([("a.gd", "x.fs"), ("b.gd", "x.fs")], str(tmp_path))
+
+
+def test_move_collision_existing_target(tmp_path):
+    (tmp_path / "exists.fs").write_text("present")
+    with pytest.raises(ValueError):
+        rename.check_move_collisions([("a.gd", "exists.fs")], str(tmp_path))
+
+
+def test_move_collisions_clean_plan_ok(tmp_path):
+    # Distinct destinations that do not pre-exist: no error.
+    rename.check_move_collisions([("a.gd", "a.fs"), ("b.gd", "b.fs")], str(tmp_path))
+
+
+def test_move_target_that_is_also_a_source_ok(tmp_path):
+    # "a.fs" exists but is itself being moved away, so it is not a clobber.
+    (tmp_path / "a.fs").write_text("present")
+    rename.check_move_collisions([("a.fs", "b.fs"), ("c.gd", "a.fs")], str(tmp_path))

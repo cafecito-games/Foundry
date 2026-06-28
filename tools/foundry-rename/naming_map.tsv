@@ -500,7 +500,7 @@ GODOT_ROOT	FOUNDRY_ROOT	D	code	generated
 GODOT_WASM	FOUNDRY_WASM	D	code	generated
 .gdignore	.fsignore	A	both
 GDScripts	FSs	A	code	generated
-GDVIRTUAL	FOUNDRY_VIRTUAL	C	code	prefix; covers GDVIRTUAL0..N variants
+GDVIRTUAL	FOUNDRY_VIRTUAL	C	code	generated
 GODOT_BIN	FOUNDRY_BIN	D	code	generated
 GODOT_IOS	FOUNDRY_IOS	D	code	generated
 GODOT_OSX	FOUNDRY_OSX	D	code	generated
@@ -510,7 +510,6 @@ GDScript	FoundryScript	A	code	standalone language class (apply AFTER all GDScrip
 GDScript	Foundry Script	D	prose	user-facing prose (handle in docs/translations pass)
 GODOT_PC	FOUNDRY_PC	D	code	generated
 GDCLASS	FOUNDRY_CLASS	C	code	apply AFTER GDREGISTER_*/GDSOFTCLASS
-GODOT_	FOUNDRY_	D	code	macro/env prefix; apply AFTER named GODOT_* entries
 .gdc	.fsc	A	both	compiled script
 .gde	.fse	A	both	encrypted script
 .gd	.fs	A	both	apply AFTER .gdc/.gde/.gdextension/.gdignore

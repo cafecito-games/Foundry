@@ -26,8 +26,9 @@ it deterministically.
 import argparse
 import os
 import re
-import subprocess
 import sys
+
+from common import iter_tracked_files
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -138,14 +139,12 @@ def is_source_file(path):
 
 
 def tracked_files(root):
-    """List git-tracked files under ``root``, excluding thirdparty/.git."""
-    output = subprocess.check_output(["git", "ls-files", "-z"], cwd=root).decode("utf-8")
-    for path in output.split("\0"):
-        if not path:
-            continue
-        if path.startswith("thirdparty/") or path.startswith(".git/"):
-            continue
-        yield path
+    """List git-tracked files under ``root``, excluding thirdparty/.git.
+
+    Delegates to the shared ``iter_tracked_files`` so the generated map and the
+    rename pass share one definition of scope.
+    """
+    return iter_tracked_files(root)
 
 
 def toolkit_prefix(root):

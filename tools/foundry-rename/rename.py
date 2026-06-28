@@ -14,7 +14,8 @@ Applies a generated ``naming_map.tsv`` to the source tree. The engine is:
   * literal for the rest -- tokens that start with ``.`` (file extensions) or
     contain a space (prose phrases) match literally, with extensions anchored
     to a word boundary so ``.gd`` does not eat ``.gdshader``;
-  * exclusion-aware      -- ``thirdparty/**`` and ``.git/**`` are never touched;
+  * exclusion-aware      -- any ``thirdparty/`` or ``.git/`` dir (nested too,
+    e.g. ``modules/mono/thirdparty/**``) is never touched;
   * idempotent           -- a second run is a no-op (no ``to`` value re-triggers
     any rule);
   * dry-runnable         -- ``--dry-run`` writes nothing;
@@ -26,6 +27,8 @@ import os
 import re
 import subprocess
 import sys
+
+from common import is_excluded, iter_tracked_files
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -86,7 +89,14 @@ def select_rules(rows, contexts):
 
 
 def replace_text(text, compiled_rules):
-    """Apply compiled rules to ``text`` in the given (longest-first) order."""
+    """Apply compiled rules to ``text`` in the given (longest-first) order.
+
+    Sequential-substitution invariant: correctness and idempotence rely on no
+    rule's ``from`` appearing inside any rule's ``to`` (e.g. ``FoundryScript``
+    must not contain ``GDScript``). Because the naming map satisfies this, a
+    later rule can never re-trigger on the output of an earlier one, so a second
+    pass is a guaranteed no-op.
+    """
     for kind, pattern, to, src in compiled_rules:
         if kind == "regex":
             text = pattern.sub(lambda match, to=to: to, text)
@@ -95,22 +105,9 @@ def replace_text(text, compiled_rules):
     return text
 
 
-def is_excluded(path):
-    """True if ``path`` lives under thirdparty/** (top level) or any .git/**."""
-    segments = path.replace("\\", "/").split("/")
-    if segments and segments[0] == "thirdparty":
-        return True
-    return ".git" in segments
-
-
 def tracked_files(root):
     """List git-tracked files under ``root`` (excluding thirdparty/.git)."""
-    output = subprocess.check_output(["git", "ls-files", "-z"], cwd=root).decode("utf-8")
-    files = []
-    for path in output.split("\0"):
-        if path and not is_excluded(path):
-            files.append(path)
-    return files
+    return list(iter_tracked_files(root))
 
 
 def plan_file_moves(paths, move_rules):
@@ -127,6 +124,13 @@ def plan_file_moves(paths, move_rules):
 
 
 def run_content_pass(root, rules, contexts, targets, dry_run):
+    """Rewrite the contents of ``targets`` using the rules for ``contexts``.
+
+    Files are opened with ``newline=""`` for both read and write so existing
+    line endings (e.g. the CRLF in ``.props``/``.sln``/``gradlew.bat``) survive
+    untouched -- the rebrand must produce a clean mechanical diff, not flip line
+    endings. Returns the number of files that changed (or would, when dry-run).
+    """
     compiled = select_rules(rules, contexts)
     changed = 0
     for path in targets:
@@ -134,7 +138,7 @@ def run_content_pass(root, rules, contexts, targets, dry_run):
             continue
         full = os.path.join(root, path)
         try:
-            with open(full, "r", encoding="utf-8") as handle:
+            with open(full, "r", encoding="utf-8", newline="") as handle:
                 text = handle.read()
         except (UnicodeDecodeError, OSError):
             continue
@@ -145,16 +149,37 @@ def run_content_pass(root, rules, contexts, targets, dry_run):
         if dry_run:
             sys.stdout.write("would edit %s\n" % path)
         else:
-            with open(full, "w", encoding="utf-8") as handle:
+            with open(full, "w", encoding="utf-8", newline="") as handle:
                 handle.write(new_text)
             sys.stdout.write("edited %s\n" % path)
     sys.stderr.write("%d file(s) %s\n" % (changed, "would change" if dry_run else "changed"))
     return changed
 
 
+def check_move_collisions(moves, root):
+    """Raise ``ValueError`` if any planned move would clobber another path.
+
+    Guards against two destinations colliding with each other, and against a
+    destination that already exists and is not itself being moved away. Called
+    before any ``git mv`` so a bad plan aborts before mutating the tree.
+    """
+    sources = {src for src, _ in moves}
+    seen = {}
+    for src, dst in moves:
+        if dst in seen:
+            raise ValueError("move collision: %r and %r both map to %r" % (seen[dst], src, dst))
+        seen[dst] = src
+        if os.path.exists(os.path.join(root, dst)) and dst not in sources:
+            raise ValueError("move target already exists: %r -> %r" % (src, dst))
+
+
 def run_move_pass(root, rules, dry_run):
+    """Rename files/dirs via ``git mv``, deepest paths first, after a collision
+    pre-flight that aborts the whole pass before any mutation if a target would
+    be clobbered."""
     compiled = select_rules(rules, MOVE_CONTEXTS)
     moves = plan_file_moves(tracked_files(root), compiled)
+    check_move_collisions(moves, root)
     for src, dst in moves:
         if dry_run:
             sys.stdout.write("git mv %s %s\n" % (src, dst))
