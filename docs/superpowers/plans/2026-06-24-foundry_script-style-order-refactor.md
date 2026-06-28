@@ -1,28 +1,28 @@
-# GDScript Style Order Refactor Implementation Plan
+# Foundry Script Style Order Refactor Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a GDScript refactor named `Sort Members by Style Guide` that reorders class and trait member declarations into style-guide buckets while preserving relative order inside each bucket.
+**Goal:** Add a Foundry Script refactor named `Sort Members by Style Guide` that reorders class and trait member declarations into style-guide buckets while preserving relative order inside each bucket.
 
-**Architecture:** Extend the existing GDScript refactor API with a new `RefactorKind`, reusing `RefactorAvailability`, `RefactorResult`, script-editor application, and LSP code-action resolution. Implement a syntax-first sorter in `gdscript_refactoring.cpp`: parse the current source, collect class/trait member text blocks, classify blocks into stable style buckets, and emit text edits only for spans whose bucket order changes. Attempt analyzer-enriched classification for custom overrides when analysis succeeds, but keep trait and namespace syntax sortable from parser data alone.
+**Architecture:** Extend the existing Foundry Script refactor API with a new `RefactorKind`, reusing `RefactorAvailability`, `RefactorResult`, script-editor application, and LSP code-action resolution. Implement a syntax-first sorter in `gdscript_refactoring.cpp`: parse the current source, collect class/trait member text blocks, classify blocks into stable style buckets, and emit text edits only for spans whose bucket order changes. Attempt analyzer-enriched classification for custom overrides when analysis succeeds, but keep trait and namespace syntax sortable from parser data alone.
 
-**Tech Stack:** Godot Engine C++ (`TOOLS_ENABLED`), `GDScriptParser`, optional `GDScriptAnalyzer`, existing `GDScriptRefactorEdits`, doctest-style C++ tests in `modules/gdscript/tests/test_refactor.h`, SCons test-enabled editor build.
+**Tech Stack:** Godot Engine C++ (`TOOLS_ENABLED`), `GDScriptParser`, optional `GDScriptAnalyzer`, existing `GDScriptRefactorEdits`, doctest-style C++ tests in `modules/foundry_script/tests/test_refactor.h`, SCons test-enabled editor build.
 
 ---
 
 ## File Structure
 
-- Modify `modules/gdscript/editor/gdscript_refactoring.h`
+- Modify `modules/foundry_script/editor/gdscript_refactoring.h`
   - Add `RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE`.
-- Modify `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify `modules/foundry_script/editor/gdscript_refactoring.cpp`
   - Add style-order block collection, classification, candidate preparation, availability, and dispatch.
 - Modify `editor/script/script_text_editor.h`
   - Add a matching `EDIT_REFACTOR_SORT_MEMBERS_BY_STYLE_GUIDE` enum value.
 - Modify `editor/script/script_text_editor.cpp`
   - Add the static assertion for the new enum mapping. Existing generic refactor dispatch handles the action after the enum mapping is correct.
-- Modify `modules/gdscript/language_server/gdscript_text_document.cpp`
+- Modify `modules/foundry_script/language_server/gdscript_text_document.cpp`
   - Map the new refactor to `refactor.rewrite` and make it resolvable.
-- Modify `modules/gdscript/tests/test_refactor.h`
+- Modify `modules/foundry_script/tests/test_refactor.h`
   - Add helper and focused tests for availability, sorting behavior, comments/annotations, fork syntax, nested types, and failure behavior.
 - Read-only verification reference: `docs/superpowers/specs/2026-06-24-gdscript-style-order-refactor-design.md`.
 
@@ -39,16 +39,16 @@
 ### Task 1: Add Public Refactor Kind And Disabled Availability
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_refactor.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/tests/test_refactor.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
 - Modify: `editor/script/script_text_editor.h`
 - Modify: `editor/script/script_text_editor.cpp`
-- Modify: `modules/gdscript/language_server/gdscript_text_document.cpp`
+- Modify: `modules/foundry_script/language_server/gdscript_text_document.cpp`
 
 - [ ] **Step 1: Write the failing availability test**
 
-In `modules/gdscript/tests/test_refactor.h`, update the first test case from five refactors to six. Replace the size check and add the new final assertions:
+In `modules/foundry_script/tests/test_refactor.h`, update the first test case from five refactors to six. Replace the size check and add the new final assertions:
 
 ```cpp
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
@@ -81,14 +81,14 @@ In `modules/gdscript/tests/test_refactor.h`, update the first test case from fiv
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
 Expected: compile fails with an error naming `SORT_MEMBERS_BY_STYLE_GUIDE` as a missing `RefactorKind`, or the test binary runs and reports `available.size()` as `5`.
 
 - [ ] **Step 3: Add the enum and disabled stub**
 
-In `modules/gdscript/editor/gdscript_refactoring.h`, add the new kind at the end of the enum:
+In `modules/foundry_script/editor/gdscript_refactoring.h`, add the new kind at the end of the enum:
 
 ```cpp
 enum class RefactorKind {
@@ -101,13 +101,13 @@ enum class RefactorKind {
 };
 ```
 
-In `modules/gdscript/editor/gdscript_refactoring.cpp`, add this helper before `GDScriptRefactoring::get_available_refactors()`:
+In `modules/foundry_script/editor/gdscript_refactoring.cpp`, add this helper before `GDScriptRefactoring::get_available_refactors()`:
 
 ```cpp
 RefactorResult prepare_sort_members_by_style_guide_stub() {
 	RefactorResult result;
 	result.ok = false;
-	result.error_message = "Members are already sorted by the GDScript style guide.";
+	result.error_message = "Members are already sorted by the Foundry Script style guide.";
 	return result;
 }
 ```
@@ -119,7 +119,7 @@ Then append a disabled availability entry before `return result;` in `GDScriptRe
 	sort_members.kind = RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE;
 	sort_members.title = "Sort Members by Style Guide";
 	sort_members.enabled = false;
-	sort_members.disabled_reason = "Members are already sorted by the GDScript style guide.";
+	sort_members.disabled_reason = "Members are already sorted by the Foundry Script style guide.";
 	result.push_back(sort_members);
 ```
 
@@ -147,7 +147,7 @@ In `editor/script/script_text_editor.cpp`, add the matching static assertion aft
 
 - [ ] **Step 5: Wire the LSP kind mapping**
 
-In `modules/gdscript/language_server/gdscript_text_document.cpp`, update `refactor_kind_to_lsp_kind()` so the new refactor maps to `refactor.rewrite`:
+In `modules/foundry_script/language_server/gdscript_text_document.cpp`, update `refactor_kind_to_lsp_kind()` so the new refactor maps to `refactor.rewrite`:
 
 ```cpp
 		case RefactorKind::ADD_TYPE_ANNOTATION:
@@ -164,14 +164,14 @@ Update `is_resolvable_code_action_kind()` so the new refactor resolves lazily:
 			return true;
 ```
 
-No change is needed in `modules/gdscript/language_server/godot_lsp.h` because `CodeActionOptions` already advertises `refactor.rewrite`.
+No change is needed in `modules/foundry_script/language_server/godot_lsp.h` because `CodeActionOptions` already advertises `refactor.rewrite`.
 
 - [ ] **Step 6: Run the test to verify it passes**
 
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
 Expected: the refactor test suite passes, with the new action present and disabled at the trivial location.
@@ -179,13 +179,13 @@ Expected: the refactor test suite passes, with the new action present and disabl
 - [ ] **Step 7: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_refactor.h \
-	modules/gdscript/editor/gdscript_refactoring.h \
-	modules/gdscript/editor/gdscript_refactoring.cpp \
+git add modules/foundry_script/tests/test_refactor.h \
+	modules/foundry_script/editor/gdscript_refactoring.h \
+	modules/foundry_script/editor/gdscript_refactoring.cpp \
 	editor/script/script_text_editor.h \
 	editor/script/script_text_editor.cpp \
-	modules/gdscript/language_server/gdscript_text_document.cpp
-git commit -m "Add GDScript style order refactor surface"
+	modules/foundry_script/language_server/gdscript_text_document.cpp
+git commit -m "Add Foundry Script style order refactor surface"
 ```
 
 ---
@@ -193,17 +193,17 @@ git commit -m "Add GDScript style order refactor surface"
 ### Task 2: Implement Stable Root Member Sorting
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_refactor.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/tests/test_refactor.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
 
 - [ ] **Step 1: Add a test helper**
 
-In `modules/gdscript/tests/test_refactor.h`, add this helper after `run_inline_variable()`:
+In `modules/foundry_script/tests/test_refactor.h`, add this helper after `run_inline_variable()`:
 
 ```cpp
 inline RefactorResult run_sort_members_by_style_guide(const String &p_source, String &r_out) {
 	RefactorContext ctx;
-	ctx.path = "user://style_order_refactor.gd";
+	ctx.path = "user://style_order_refactor.fs";
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(0, 0), RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE, params);
@@ -216,7 +216,7 @@ inline RefactorResult run_sort_members_by_style_guide(const String &p_source, St
 
 - [ ] **Step 2: Write the failing root sort test**
 
-Add this test case near the other non-LSP refactor tests in `TEST_SUITE("[Modules][GDScript][Refactor]")`:
+Add this test case near the other non-LSP refactor tests in `TEST_SUITE("[Modules][Foundry Script][Refactor]")`:
 
 ```cpp
 	TEST_CASE("Sort members by style guide reorders root members stably") {
@@ -267,7 +267,7 @@ Expected: FAIL because `prepare_sort_members_by_style_guide_stub()` returns `ok 
 
 - [ ] **Step 4: Add root sorting data structures**
 
-In `modules/gdscript/editor/gdscript_refactoring.cpp`, replace `prepare_sort_members_by_style_guide_stub()` with these declarations inside the anonymous namespace:
+In `modules/foundry_script/editor/gdscript_refactoring.cpp`, replace `prepare_sort_members_by_style_guide_stub()` with these declarations inside the anonymous namespace:
 
 ```cpp
 enum StyleOrderBucket {
@@ -315,7 +315,7 @@ struct StyleOrderBlockComparator {
 
 - [ ] **Step 5: Add line-span helpers**
 
-Still in `modules/gdscript/editor/gdscript_refactoring.cpp`, add these helpers near the style-order structs:
+Still in `modules/foundry_script/editor/gdscript_refactoring.cpp`, add these helpers near the style-order structs:
 
 ```cpp
 String get_line_span_text(const Vector<String> &p_lines, int p_start_line, int p_end_line) {
@@ -448,7 +448,7 @@ bool make_style_order_edit_for_class(
 	}
 
 	if (blocks.size() < 2) {
-		r_disabled_reason = "Members are already sorted by the GDScript style guide.";
+		r_disabled_reason = "Members are already sorted by the Foundry Script style guide.";
 		return false;
 	}
 
@@ -469,7 +469,7 @@ bool make_style_order_edit_for_class(
 		}
 	}
 	if (!changed) {
-		r_disabled_reason = "Members are already sorted by the GDScript style guide.";
+		r_disabled_reason = "Members are already sorted by the Foundry Script style guide.";
 		return false;
 	}
 
@@ -489,7 +489,7 @@ StyleOrderCandidate find_style_order_candidate(const RefactorContext &p_context)
 	StyleOrderCandidate candidate;
 	const Vector<String> lines = p_context.source.split("\n");
 	if (lines.is_empty()) {
-		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		candidate.disabled_reason = "Members are already sorted by the Foundry Script style guide.";
 		return candidate;
 	}
 
@@ -562,7 +562,7 @@ Expected: PASS.
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
 Expected: PASS.
@@ -570,8 +570,8 @@ Expected: PASS.
 - [ ] **Step 11: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_refactor.h modules/gdscript/editor/gdscript_refactoring.cpp
-git commit -m "Implement stable GDScript member sorting"
+git add modules/foundry_script/tests/test_refactor.h modules/foundry_script/editor/gdscript_refactoring.cpp
+git commit -m "Implement stable Foundry Script member sorting"
 ```
 
 ---
@@ -579,8 +579,8 @@ git commit -m "Implement stable GDScript member sorting"
 ### Task 3: Complete Style Bucket Classification
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_refactor.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/tests/test_refactor.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
 
 - [ ] **Step 1: Write the failing bucket classification test**
 
@@ -662,7 +662,7 @@ Expected: FAIL because variables and methods are not classified into their detai
 
 - [ ] **Step 3: Add member-name helpers and built-in callback ordering**
 
-In `modules/gdscript/editor/gdscript_refactoring.cpp`, add these helpers near `get_basic_style_order_bucket()`:
+In `modules/foundry_script/editor/gdscript_refactoring.cpp`, add these helpers near `get_basic_style_order_bucket()`:
 
 ```cpp
 String style_order_member_name(const GDScriptParser::ClassNode::Member &p_member) {
@@ -776,7 +776,7 @@ Expected: PASS.
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
 Expected: PASS.
@@ -784,8 +784,8 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_refactor.h modules/gdscript/editor/gdscript_refactoring.cpp
-git commit -m "Classify GDScript style order buckets"
+git add modules/foundry_script/tests/test_refactor.h modules/foundry_script/editor/gdscript_refactoring.cpp
+git commit -m "Classify Foundry Script style order buckets"
 ```
 
 ---
@@ -793,8 +793,8 @@ git commit -m "Classify GDScript style order buckets"
 ### Task 4: Preserve Attached Comments, Annotations, And Export Groups
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_refactor.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/tests/test_refactor.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
 
 - [ ] **Step 1: Write the failing attachment test**
 
@@ -848,7 +848,7 @@ Expected: FAIL because block start lines do not expand to attached comments and 
 
 - [ ] **Step 3: Add attached block start detection**
 
-In `modules/gdscript/editor/gdscript_refactoring.cpp`, add this helper near the line-span helpers:
+In `modules/foundry_script/editor/gdscript_refactoring.cpp`, add this helper near the line-span helpers:
 
 ```cpp
 bool is_annotation_or_doc_comment_line(const String &p_line) {
@@ -998,7 +998,7 @@ Expected: both tests pass.
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
 Expected: PASS.
@@ -1006,8 +1006,8 @@ Expected: PASS.
 - [ ] **Step 11: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_refactor.h modules/gdscript/editor/gdscript_refactoring.cpp
-git commit -m "Preserve GDScript style order member blocks"
+git add modules/foundry_script/tests/test_refactor.h modules/foundry_script/editor/gdscript_refactoring.cpp
+git commit -m "Preserve Foundry Script style order member blocks"
 ```
 
 ---
@@ -1015,8 +1015,8 @@ git commit -m "Preserve GDScript style order member blocks"
 ### Task 5: Support Nested Classes, Inline Traits, And Fork Header Syntax
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_refactor.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/tests/test_refactor.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
 
 - [ ] **Step 1: Write the failing fork syntax and nested-type test**
 
@@ -1141,7 +1141,7 @@ Then update `find_style_order_candidate()`:
 		return candidate;
 	}
 	if (edits.is_empty()) {
-		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		candidate.disabled_reason = "Members are already sorted by the Foundry Script style guide.";
 		return candidate;
 	}
 
@@ -1191,7 +1191,7 @@ Use it in `find_style_order_candidate()`:
 ```cpp
 	candidate.edits = remove_nested_style_order_edits(edits);
 	if (candidate.edits.is_empty()) {
-		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		candidate.disabled_reason = "Members are already sorted by the Foundry Script style guide.";
 		return candidate;
 	}
 	candidate.enabled = true;
@@ -1225,7 +1225,7 @@ RefactorTextEdit make_whole_source_style_order_edit(const String &p_original_sou
 bool apply_style_order_pass(const String &p_source, String &r_transformed, String &r_disabled_reason) {
 	const Vector<String> lines = p_source.split("\n");
 	GDScriptParser parser;
-	const Error parse_err = parser.parse(p_source, "user://style_order_refactor_pass.gd", false);
+	const Error parse_err = parser.parse(p_source, "user://style_order_refactor_pass.fs", false);
 	if (parse_err != OK) {
 		r_disabled_reason = "Cannot parse this script.";
 		return false;
@@ -1274,7 +1274,7 @@ StyleOrderCandidate find_style_order_candidate(const RefactorContext &p_context)
 	}
 
 	if (transformed == p_context.source) {
-		candidate.disabled_reason = "Members are already sorted by the GDScript style guide.";
+		candidate.disabled_reason = "Members are already sorted by the Foundry Script style guide.";
 		return candidate;
 	}
 
@@ -1301,7 +1301,7 @@ Expected: PASS.
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
 Expected: PASS.
@@ -1309,8 +1309,8 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_refactor.h modules/gdscript/editor/gdscript_refactoring.cpp
-git commit -m "Support nested GDScript style order sorting"
+git add modules/foundry_script/tests/test_refactor.h modules/foundry_script/editor/gdscript_refactoring.cpp
+git commit -m "Support nested Foundry Script style order sorting"
 ```
 
 ---
@@ -1318,8 +1318,8 @@ git commit -m "Support nested GDScript style order sorting"
 ### Task 6: Add Custom Override Classification When Analysis Succeeds
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_refactor.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/tests/test_refactor.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
 
 - [ ] **Step 1: Write the failing custom override test**
 
@@ -1450,7 +1450,7 @@ bool class_has_base_function(const GDScriptParser::ClassNode *p_class, const Str
 }
 ```
 
-Add the required include near the top of `modules/gdscript/editor/gdscript_refactoring.cpp`:
+Add the required include near the top of `modules/foundry_script/editor/gdscript_refactoring.cpp`:
 
 ```cpp
 #include "core/object/class_db.h"
@@ -1496,7 +1496,7 @@ Expected: PASS.
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
 Expected: PASS.
@@ -1504,8 +1504,8 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_refactor.h modules/gdscript/editor/gdscript_refactoring.cpp
-git commit -m "Classify GDScript custom override methods"
+git add modules/foundry_script/tests/test_refactor.h modules/foundry_script/editor/gdscript_refactoring.cpp
+git commit -m "Classify Foundry Script custom override methods"
 ```
 
 ---
@@ -1530,10 +1530,10 @@ Expected: exit code `0`, producing `bin/godot.linuxbsd.editor.dev.x86_64`.
 Run:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][GDScript][Refactor]*"
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case="*[Modules][Foundry Script][Refactor]*"
 ```
 
-Expected: exit code `0`, all GDScript refactor tests pass.
+Expected: exit code `0`, all Foundry Script refactor tests pass.
 
 - [ ] **Step 3: Run full engine tests when build time allows**
 
@@ -1543,7 +1543,7 @@ Run:
 ./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors
 ```
 
-Expected: exit code `0`, full C++ and GDScript test suite passes.
+Expected: exit code `0`, full C++ and Foundry Script test suite passes.
 
 - [ ] **Step 4: Check formatting and local diff**
 
@@ -1561,13 +1561,13 @@ Expected: `git diff --check` exits `0`; `git status --short` lists only intentio
 If verification required a small corrective edit, commit it:
 
 ```bash
-git add modules/gdscript/tests/test_refactor.h \
-	modules/gdscript/editor/gdscript_refactoring.h \
-	modules/gdscript/editor/gdscript_refactoring.cpp \
+git add modules/foundry_script/tests/test_refactor.h \
+	modules/foundry_script/editor/gdscript_refactoring.h \
+	modules/foundry_script/editor/gdscript_refactoring.cpp \
 	editor/script/script_text_editor.h \
 	editor/script/script_text_editor.cpp \
-	modules/gdscript/language_server/gdscript_text_document.cpp
-git commit -m "Polish GDScript style order refactor"
+	modules/foundry_script/language_server/gdscript_text_document.cpp
+git commit -m "Polish Foundry Script style order refactor"
 ```
 
 If no corrective edit was needed, do not create an empty commit.

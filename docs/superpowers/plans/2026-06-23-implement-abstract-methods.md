@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a GDScript refactor that generates concrete stub methods for inherited `@abstract` methods a class has not yet implemented, surfaced in the script editor's refactor submenu and over LSP.
+**Goal:** Add a Foundry Script refactor that generates concrete stub methods for inherited `@abstract` methods a class has not yet implemented, surfaced in the script editor's refactor submenu and over LSP.
 
 **Architecture:** A new `RefactorKind::IMPLEMENT_ABSTRACT_METHODS` in the existing `GDScriptRefactoring` module. It follows the established `find_*_candidate` (cached availability + collection) → `prepare_*` (edit production) pattern. Detection walks the analyzer-resolved base-class chain to find un-overridden abstract methods; rendering reuses `GDScriptRefactorTypes::render_annotatable_type`. Both the editor and LSP go through `get_available_refactors`/`prepare`, so both surfaces, undo/redo, and caching come for free.
 
-**Tech Stack:** C++ (Godot engine module), SCons build, doctest unit tests (`tests/test_macros.h`), GDScript AST (`GDScriptParser` / `GDScriptAnalyzer`).
+**Tech Stack:** C++ (Godot engine module), SCons build, doctest unit tests (`tests/test_macros.h`), Foundry Script AST (`GDScriptParser` / `GDScriptAnalyzer`).
 
 **Spec:** `docs/superpowers/specs/2026-06-23-implement-abstract-methods-design.md`
 
@@ -27,11 +27,11 @@ Binary: `bin/godot.macos.editor.dev.<arch>` (e.g. `arm64`). Substitute the match
 
 | File | Responsibility | Change |
 |------|----------------|--------|
-| `modules/gdscript/editor/gdscript_refactoring.h` | Public refactor API + `RefactorKind` enum | Modify: add enum value |
-| `modules/gdscript/editor/gdscript_refactoring.cpp` | All refactor logic | Modify: add candidate struct, cache, detection, rendering, prepare, availability |
+| `modules/foundry_script/editor/gdscript_refactoring.h` | Public refactor API + `RefactorKind` enum | Modify: add enum value |
+| `modules/foundry_script/editor/gdscript_refactoring.cpp` | All refactor logic | Modify: add candidate struct, cache, detection, rendering, prepare, availability |
 | `editor/script/script_text_editor.h` | Script editor menu IDs | Modify: add `EDIT_REFACTOR_IMPLEMENT_ABSTRACT_METHODS` |
 | `editor/script/script_text_editor.cpp` | Script editor menu wiring | Modify: route new id + add static_assert |
-| `modules/gdscript/tests/test_refactor.h` | Refactor unit tests | Modify: helpers, availability-count fixes, new test cases |
+| `modules/foundry_script/tests/test_refactor.h` | Refactor unit tests | Modify: helpers, availability-count fixes, new test cases |
 
 All new logic lives inside the existing anonymous namespace in `gdscript_refactoring.cpp`, co-located with the other refactors it mirrors.
 
@@ -42,11 +42,11 @@ All new logic lives inside the existing anonymous namespace in `gdscript_refacto
 **Goal:** Wire a new `IMPLEMENT_ABSTRACT_METHODS` refactor end-to-end as an inert, always-disabled entry so the engine builds, the menu shows it, LSP lists it, and existing tests are updated for the new count.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_refactoring.h` (RefactorKind enum)
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp` (candidate struct, cache, stub finder, availability entry, prepare case)
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.h` (RefactorKind enum)
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp` (candidate struct, cache, stub finder, availability entry, prepare case)
 - Modify: `editor/script/script_text_editor.h` (menu id)
 - Modify: `editor/script/script_text_editor.cpp` (switch route + static_assert)
-- Modify: `modules/gdscript/tests/test_refactor.h` (update `available.size()` assertions 5 → 6)
+- Modify: `modules/foundry_script/tests/test_refactor.h` (update `available.size()` assertions 5 → 6)
 
 **Acceptance Criteria:**
 - [ ] Engine builds with `dev_build=yes tests=yes`.
@@ -57,7 +57,7 @@ All new logic lives inside the existing anonymous namespace in `gdscript_refacto
 
 **Steps:**
 
-- [ ] **Step 1: Add the enum value (header).** In `modules/gdscript/editor/gdscript_refactoring.h`, append to `enum class RefactorKind` (keep it LAST so the editor id mapping stays valid):
+- [ ] **Step 1: Add the enum value (header).** In `modules/foundry_script/editor/gdscript_refactoring.h`, append to `enum class RefactorKind` (keep it LAST so the editor id mapping stays valid):
 
 ```cpp
 enum class RefactorKind {
@@ -222,10 +222,10 @@ And add the matching static_assert in `_run_refactor` after the `INLINE_VARIABLE
 
 No new dialog is needed: the generic path in `_run_refactor` (`prepare` → `_apply_refactor_result`) already handles a no-parameter refactor.
 
-- [ ] **Step 10: Update existing test count assertions.** In `modules/gdscript/tests/test_refactor.h`, every assertion of the form `CHECK_EQ(available.size(), 5)` (and any `if (available.size() < 5)` guard) must become `6`. Find them:
+- [ ] **Step 10: Update existing test count assertions.** In `modules/foundry_script/tests/test_refactor.h`, every assertion of the form `CHECK_EQ(available.size(), 5)` (and any `if (available.size() < 5)` guard) must become `6`. Find them:
 
 ```bash
-grep -n "available.size()" modules/gdscript/tests/test_refactor.h
+grep -n "available.size()" modules/foundry_script/tests/test_refactor.h
 ```
 
 Update each `5` to `6`. Example edit:
@@ -238,11 +238,11 @@ Update each `5` to `6`. Example edit:
 	}
 ```
 
-- [ ] **Step 11: Add an availability test for the new entry.** In `test_refactor.h`, inside `TEST_SUITE("[Modules][GDScript][Refactor]")`, add:
+- [ ] **Step 11: Add an availability test for the new entry.** In `test_refactor.h`, inside `TEST_SUITE("[Modules][Foundry Script][Refactor]")`, add:
 
 ```cpp
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
-		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/empty.gd");
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(0, 0));
 		const RefactorAvailability *entry = nullptr;
 		for (const RefactorAvailability &a : available) {
@@ -270,12 +270,12 @@ Expected: build succeeds; all refactor tests pass.
 - [ ] **Step 13: Commit.**
 
 ```bash
-git add modules/gdscript/editor/gdscript_refactoring.h modules/gdscript/editor/gdscript_refactoring.cpp editor/script/script_text_editor.h editor/script/script_text_editor.cpp modules/gdscript/tests/test_refactor.h
+git add modules/foundry_script/editor/gdscript_refactoring.h modules/foundry_script/editor/gdscript_refactoring.cpp editor/script/script_text_editor.h editor/script/script_text_editor.cpp modules/foundry_script/tests/test_refactor.h
 git commit -m "feat(gdscript): Scaffold implement-abstract-methods refactor"
 ```
 
 ```json:metadata
-{"files": ["modules/gdscript/editor/gdscript_refactoring.h", "modules/gdscript/editor/gdscript_refactoring.cpp", "editor/script/script_text_editor.h", "editor/script/script_text_editor.cpp", "modules/gdscript/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --test-case=\"*Refactor*\" --force-colors", "acceptanceCriteria": ["Builds with dev_build=yes tests=yes", "get_available_refactors returns 6 entries, 6th is disabled IMPLEMENT_ABSTRACT_METHODS", "Existing refactor tests pass after count update"]}
+{"files": ["modules/foundry_script/editor/gdscript_refactoring.h", "modules/foundry_script/editor/gdscript_refactoring.cpp", "editor/script/script_text_editor.h", "editor/script/script_text_editor.cpp", "modules/foundry_script/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --test-case=\"*Refactor*\" --force-colors", "acceptanceCriteria": ["Builds with dev_build=yes tests=yes", "get_available_refactors returns 6 entries, 6th is disabled IMPLEMENT_ABSTRACT_METHODS", "Existing refactor tests pass after count update"]}
 ```
 
 ---
@@ -285,8 +285,8 @@ git commit -m "feat(gdscript): Scaffold implement-abstract-methods refactor"
 **Goal:** Implement real detection: walk the analyzer-resolved base chain, collect the abstract methods the target class still owes, set availability accordingly, and handle the abstract-target-class and inner-class edge cases. (Same-file / analyzer-resolved bases only; cross-file fallback is Task 4.)
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp` (replace the stub `find_implement_abstract_candidate` body with real detection + helpers)
-- Modify: `modules/gdscript/tests/test_refactor.h` (availability test cases)
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp` (replace the stub `find_implement_abstract_candidate` body with real detection + helpers)
+- Modify: `modules/foundry_script/tests/test_refactor.h` (availability test cases)
 
 **Acceptance Criteria:**
 - [ ] Availability is `enabled` when the enclosing class has ≥1 un-overridden inherited `@abstract` method, regardless of caret position within the class.
@@ -300,10 +300,10 @@ git commit -m "feat(gdscript): Scaffold implement-abstract-methods refactor"
 
 **Steps:**
 
-- [ ] **Step 1: Determine whether a `FunctionNode` is abstract.** GDScript marks abstract methods via `FunctionNode::is_abstract` (`modules/gdscript/gdscript_parser.h:908`) and abstract classes via the `@abstract` annotation on the class. Confirm the class-level abstract flag name before coding:
+- [ ] **Step 1: Determine whether a `FunctionNode` is abstract.** Foundry Script marks abstract methods via `FunctionNode::is_abstract` (`modules/foundry_script/gdscript_parser.h:908`) and abstract classes via the `@abstract` annotation on the class. Confirm the class-level abstract flag name before coding:
 
 ```bash
-grep -n "is_abstract" modules/gdscript/gdscript_parser.h
+grep -n "is_abstract" modules/foundry_script/gdscript_parser.h
 ```
 Expected: `ClassNode` carries `bool is_abstract = false;` (line ~783) and `FunctionNode` carries `bool is_abstract = false;` (line ~908). Use `ClassNode::is_abstract` for the abstract-class guard.
 
@@ -336,8 +336,8 @@ const GDScriptParser::ClassNode *find_enclosing_class(const GDScriptParser::Clas
 	return best;
 }
 
-// Next GDScript class up the inheritance chain, or nullptr when the base is not a
-// resolved GDScript class reachable in-tree (native bases / unresolved). Cross-file
+// Next Foundry Script class up the inheritance chain, or nullptr when the base is not a
+// resolved Foundry Script class reachable in-tree (native bases / unresolved). Cross-file
 // resolution is added in Task 4.
 const GDScriptParser::ClassNode *resolve_base_class(const GDScriptParser::ClassNode *p_class) {
 	if (p_class == nullptr) {
@@ -480,7 +480,7 @@ ImplementAbstractCandidate find_implement_abstract_candidate(
 - [ ] **Step 5: Add `HashSet` include if missing.** Confirm `core/templates/hash_set.h` is available in the translation unit:
 
 ```bash
-grep -n "hash_set.h\|HashSet" modules/gdscript/editor/gdscript_refactoring.cpp | head
+grep -n "hash_set.h\|HashSet" modules/foundry_script/editor/gdscript_refactoring.cpp | head
 ```
 If `HashSet` is not already used/included, add `#include "core/templates/hash_set.h"` with the other core includes at the top of the file.
 
@@ -498,7 +498,7 @@ inline const RefactorAvailability *find_availability(const Vector<RefactorAvaila
 
 inline bool implement_abstract_enabled(const String &p_source, int p_line, int p_column) {
 	RefactorContext ctx;
-	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.path = "user://implement_abstract_refactor.fs";
 	ctx.source = p_source;
 	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
 	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
@@ -507,7 +507,7 @@ inline bool implement_abstract_enabled(const String &p_source, int p_line, int p
 
 inline String implement_abstract_reason(const String &p_source, int p_line, int p_column) {
 	RefactorContext ctx;
-	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.path = "user://implement_abstract_refactor.fs";
 	ctx.source = p_source;
 	const Vector<RefactorAvailability> available = GDScriptRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
 	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
@@ -563,7 +563,7 @@ Add test cases inside the suite (inline sources keep abstract base + derived in 
 	}
 ```
 
-> If the inline `@abstract class` / `@abstract func` syntax differs in this fork, confirm against an existing fixture: `grep -rn "@abstract" modules/gdscript/tests/scripts | head`. Adjust the fixture source to the real syntax; the assertions stay the same.
+> If the inline `@abstract class` / `@abstract func` syntax differs in this fork, confirm against an existing fixture: `grep -rn "@abstract" modules/foundry_script/tests/scripts | head`. Adjust the fixture source to the real syntax; the assertions stay the same.
 
 - [ ] **Step 7: Build and run.**
 
@@ -577,12 +577,12 @@ Expected: all detection cases pass.
 - [ ] **Step 8: Commit.**
 
 ```bash
-git add modules/gdscript/editor/gdscript_refactoring.cpp modules/gdscript/tests/test_refactor.h
+git add modules/foundry_script/editor/gdscript_refactoring.cpp modules/foundry_script/tests/test_refactor.h
 git commit -m "feat(gdscript): Detect owed abstract methods for implement refactor"
 ```
 
 ```json:metadata
-{"files": ["modules/gdscript/editor/gdscript_refactoring.cpp", "modules/gdscript/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --test-case=\"*Refactor*\" --force-colors", "acceptanceCriteria": ["Enabled when class owes an inherited abstract method", "Disabled with correct reason when none owed", "Abstract target class disabled", "Parse failure disabled", "Intermediate concrete override excluded", "Inner classes resolve relative to caret"]}
+{"files": ["modules/foundry_script/editor/gdscript_refactoring.cpp", "modules/foundry_script/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --test-case=\"*Refactor*\" --force-colors", "acceptanceCriteria": ["Enabled when class owes an inherited abstract method", "Disabled with correct reason when none owed", "Abstract target class disabled", "Parse failure disabled", "Intermediate concrete override excluded", "Inner classes resolve relative to caret"]}
 ```
 
 ---
@@ -592,8 +592,8 @@ git commit -m "feat(gdscript): Detect owed abstract methods for implement refact
 **Goal:** Generate concrete stub methods for the owed abstract methods and emit a single insertion edit at the end of the target class body, so the refactor produces correct text.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp` (render stubs, build edit, finish `prepare_implement_abstract`)
-- Modify: `modules/gdscript/tests/test_refactor.h` (output snapshot tests)
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp` (render stubs, build edit, finish `prepare_implement_abstract`)
+- Modify: `modules/foundry_script/tests/test_refactor.h` (output snapshot tests)
 
 **Acceptance Criteria:**
 - [ ] Each owed method is rendered as `func <name>(<params>) -> <ret>:` (or no `-> ret` for void), preserving `static`, parameter names, annotated parameter/return types, and base default values.
@@ -608,7 +608,7 @@ git commit -m "feat(gdscript): Detect owed abstract methods for implement refact
 - [ ] **Step 1: Add a literal-default helper.** Add above `find_implement_abstract_in_tree`:
 
 ```cpp
-// Returns the GDScript literal default for a return type, or false when the type
+// Returns the Foundry Script literal default for a return type, or false when the type
 // has no clean literal (objects, custom classes) so the caller emits `pass`.
 bool default_return_literal(const GDScriptParser::DataType &p_type, String &r_literal) {
 	if (p_type.kind != GDScriptParser::DataType::BUILTIN) {
@@ -708,7 +708,7 @@ String render_abstract_stub(
 
 > `render_node_source` returns the original source text of an expression node from its `[start_line/start_column, end_line/end_column]` span. Check whether a helper already exists before adding one:
 > ```bash
-> grep -n "node_source\|source_span\|slice_source\|get_source_text\|extract_source" modules/gdscript/editor/gdscript_refactoring.cpp
+> grep -n "node_source\|source_span\|slice_source\|get_source_text\|extract_source" modules/foundry_script/editor/gdscript_refactoring.cpp
 > ```
 > If none exists, add a small helper that slices `p_lines` using the node's `start_line`/`start_column`/`end_line`/`end_column` (1-based lines, mirroring how extract-variable reads spans around `gdscript_refactoring.cpp:1690`). It needs `p_lines`, so thread the `Vector<String> &p_lines` through `render_abstract_stub` and `find_implement_abstract_in_tree`. If recovering the span is not feasible for a given initializer, return false and omit the default (the stub still compiles; the developer re-adds the default if needed) — note this in a `RefactorResult::warning` via the candidate.
 
@@ -775,7 +775,7 @@ RefactorResult prepare_implement_abstract(
 ```cpp
 inline RefactorResult run_implement_abstract(const String &p_source, int p_line, int p_column, String &r_out) {
 	RefactorContext ctx;
-	ctx.path = "user://implement_abstract_refactor.gd";
+	ctx.path = "user://implement_abstract_refactor.fs";
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
@@ -861,7 +861,7 @@ inline RefactorResult run_implement_abstract(const String &p_source, int p_line,
 	}
 ```
 
-> Confirm the exact `@abstract` syntax against a real fixture (`grep -rn "@abstract" modules/gdscript/tests/scripts`). If the renderer's whitespace differs from these `contains` checks, the `contains` assertions are intentionally lenient about surrounding indentation — keep them substring-based rather than full-buffer equality to avoid brittleness.
+> Confirm the exact `@abstract` syntax against a real fixture (`grep -rn "@abstract" modules/foundry_script/tests/scripts`). If the renderer's whitespace differs from these `contains` checks, the `contains` assertions are intentionally lenient about surrounding indentation — keep them substring-based rather than full-buffer equality to avoid brittleness.
 
 - [ ] **Step 7: Build and run.**
 
@@ -875,12 +875,12 @@ Expected: all rendering cases pass.
 - [ ] **Step 8: Commit.**
 
 ```bash
-git add modules/gdscript/editor/gdscript_refactoring.cpp modules/gdscript/tests/test_refactor.h
+git add modules/foundry_script/editor/gdscript_refactoring.cpp modules/foundry_script/tests/test_refactor.h
 git commit -m "feat(gdscript): Render abstract method stubs and insertion edit"
 ```
 
 ```json:metadata
-{"files": ["modules/gdscript/editor/gdscript_refactoring.cpp", "modules/gdscript/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --test-case=\"*Refactor*\" --force-colors", "acceptanceCriteria": ["Typed return -> literal; void -> no return; object -> pass", "Preserves static, params, annotated types, defaults", "All owed methods generated at end of class with separators", "Applied source matches expectations"]}
+{"files": ["modules/foundry_script/editor/gdscript_refactoring.cpp", "modules/foundry_script/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --test-case=\"*Refactor*\" --force-colors", "acceptanceCriteria": ["Typed return -> literal; void -> no return; object -> pass", "Preserves static, params, annotated types, defaults", "All owed methods generated at end of class with separators", "Applied source matches expectations"]}
 ```
 
 ---
@@ -890,11 +890,11 @@ git commit -m "feat(gdscript): Render abstract method stubs and insertion edit"
 **Goal:** Ensure abstract methods inherited from a base class in a *separate* file are detected and stubbed, and verify the refactor over the LSP surface (availability + workspace edit).
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp` (cross-file fallback in `resolve_base_class`)
-- Modify: `modules/gdscript/tests/test_refactor.h` (cross-file + LSP test cases)
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp` (cross-file fallback in `resolve_base_class`)
+- Modify: `modules/foundry_script/tests/test_refactor.h` (cross-file + LSP test cases)
 
 **Acceptance Criteria:**
-- [ ] A class extending an `@abstract` base defined in another `.gd` file is offered the refactor and stubs the inherited abstract methods.
+- [ ] A class extending an `@abstract` base defined in another `.fs` file is offered the refactor and stubs the inherited abstract methods.
 - [ ] The refactor surfaces over LSP `get_available_refactors`/`prepare` and produces an applicable edit.
 - [ ] No regression in same-file behavior from Task 2/3.
 
@@ -902,9 +902,9 @@ git commit -m "feat(gdscript): Render abstract method stubs and insertion edit"
 
 **Steps:**
 
-- [ ] **Step 1: Verify what `base_type` carries for a cross-file base.** Before adding a fallback, check whether the analyzer already populates `class_type` for a GDScript base loaded from another file. Add a temporary debug test (or inspect) using a `TemporaryScriptFile` base and assert `implement_abstract_enabled` is already true. If it is, the existing `resolve_base_class` (Task 2) already handles cross-file and you only add tests (skip Step 2). If detection fails, proceed to Step 2.
+- [ ] **Step 1: Verify what `base_type` carries for a cross-file base.** Before adding a fallback, check whether the analyzer already populates `class_type` for a Foundry Script base loaded from another file. Add a temporary debug test (or inspect) using a `TemporaryScriptFile` base and assert `implement_abstract_enabled` is already true. If it is, the existing `resolve_base_class` (Task 2) already handles cross-file and you only add tests (skip Step 2). If detection fails, proceed to Step 2.
 
-- [ ] **Step 2: Add a cross-file fallback to `resolve_base_class`.** When `base_type.kind` indicates a GDScript base but `class_type` is null (base lives in another file), resolve the base's parsed tree via the parse-result provider. Thread the provider into the walk. Change `resolve_base_class` to:
+- [ ] **Step 2: Add a cross-file fallback to `resolve_base_class`.** When `base_type.kind` indicates a Foundry Script base but `class_type` is null (base lives in another file), resolve the base's parsed tree via the parse-result provider. Thread the provider into the walk. Change `resolve_base_class` to:
 
 ```cpp
 const GDScriptParser::ClassNode *resolve_base_class(
@@ -931,7 +931,7 @@ const GDScriptParser::ClassNode *resolve_base_class(
 
 > Confirm the correct DataType field for the base script path before coding:
 > ```bash
-> grep -n "script_path\|String script\|Ref<Script>\|get_path" modules/gdscript/gdscript_parser.h | head
+> grep -n "script_path\|String script\|Ref<Script>\|get_path" modules/foundry_script/gdscript_parser.h | head
 > ```
 > Use whatever the analyzer populates for a SCRIPT-kind DataType (e.g. `script_path`). Thread `p_parse_results` through `collect_owed_abstract_methods` and `find_implement_abstract_in_tree` so the fallback is reachable. Note the analyzer must already have analyzed the base for `base.script_path` to be set — the `parse_result_provider` parses the base file from disk on demand (`RefactorParseResultProvider::get_parse_result`, `gdscript_refactoring.cpp:133`).
 
@@ -941,12 +941,12 @@ const GDScriptParser::ClassNode *resolve_base_class(
 #ifndef GDSCRIPT_NO_LSP
 	TEST_CASE("Implement abstract: detects abstract base defined in another file") {
 		TemporaryScriptFile base_file(
-				"user://implement_abstract_base.gd",
+				"user://implement_abstract_base.fs",
 				"@abstract class_name AbstractShape\n"
 				"@abstract func area() -> float\n");
 
 		const String derived =
-				"extends \"user://implement_abstract_base.gd\"\n"
+				"extends \"user://implement_abstract_base.fs\"\n"
 				"var radius := 1.0\n";
 		String out;
 		RefactorResult r = GDScriptTests::run_implement_abstract(derived, 1, 0, out);
@@ -957,12 +957,12 @@ const GDScriptParser::ClassNode *resolve_base_class(
 #endif
 ```
 
-> Confirm the fork's syntax for a standalone abstract class file (`@abstract class_name X` vs `@abstract extends Y`). Check existing scripts: `grep -rn "@abstract" modules/gdscript/tests/scripts modules/gdscript/tests`. Match the real syntax; the assertions stay the same. If LSP/workspace is required for cross-file parse-result resolution, this case is correctly guarded by `#ifndef GDSCRIPT_NO_LSP`.
+> Confirm the fork's syntax for a standalone abstract class file (`@abstract class_name X` vs `@abstract extends Y`). Check existing scripts: `grep -rn "@abstract" modules/foundry_script/tests/scripts modules/foundry_script/tests`. Match the real syntax; the assertions stay the same. If LSP/workspace is required for cross-file parse-result resolution, this case is correctly guarded by `#ifndef GDSCRIPT_NO_LSP`.
 
 - [ ] **Step 4: Add an LSP availability test.** Mirror existing LSP-based refactor tests in `test_refactor.h` (they `#include "test_lsp.h"` and use the workspace). Find a template:
 
 ```bash
-grep -n "GDSCRIPT_NO_LSP\|workspace\|test_lsp" modules/gdscript/tests/test_refactor.h | head
+grep -n "GDSCRIPT_NO_LSP\|workspace\|test_lsp" modules/foundry_script/tests/test_refactor.h | head
 ```
 Add a case that loads a derived script through the workspace and asserts `get_available_refactors` reports `IMPLEMENT_ABSTRACT_METHODS` enabled and `prepare` returns `ok` with a non-empty edit. Keep it guarded by `#ifndef GDSCRIPT_NO_LSP`.
 
@@ -972,24 +972,24 @@ Add a case that loads a derived script through the workspace and asserts `get_av
 scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)
 ./bin/godot.macos.editor.dev.* --headless --test --force-colors
 ```
-Expected: full C++ + GDScript suite passes.
+Expected: full C++ + Foundry Script suite passes.
 
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add modules/gdscript/editor/gdscript_refactoring.cpp modules/gdscript/tests/test_refactor.h
+git add modules/foundry_script/editor/gdscript_refactoring.cpp modules/foundry_script/tests/test_refactor.h
 git commit -m "feat(gdscript): Resolve cross-file abstract bases and add LSP tests"
 ```
 
 ```json:metadata
-{"files": ["modules/gdscript/editor/gdscript_refactoring.cpp", "modules/gdscript/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --force-colors", "acceptanceCriteria": ["Cross-file abstract base detected and stubbed", "Refactor works over LSP availability + prepare", "No regression in same-file behavior", "Full test suite passes"]}
+{"files": ["modules/foundry_script/editor/gdscript_refactoring.cpp", "modules/foundry_script/tests/test_refactor.h"], "verifyCommand": "./bin/godot.macos.editor.dev.* --headless --test --force-colors", "acceptanceCriteria": ["Cross-file abstract base detected and stubbed", "Refactor works over LSP availability + prepare", "No regression in same-file behavior", "Full test suite passes"]}
 ```
 
 ---
 
 ## Self-Review Notes
 
-- **Spec coverage:** scope (GDScript `@abstract` only) → Task 2 detection; stub body (push_error + return/pass) → Task 3 Steps 1–2; insertion at end of class → Task 3 Step 4; all-at-once → Task 3 Step 6; availability anywhere-in-class + disabled reasons → Task 2; cross-file + LSP surfaces → Task 4; testing plan → tests in every task.
+- **Spec coverage:** scope (Foundry Script `@abstract` only) → Task 2 detection; stub body (push_error + return/pass) → Task 3 Steps 1–2; insertion at end of class → Task 3 Step 4; all-at-once → Task 3 Step 6; availability anywhere-in-class + disabled reasons → Task 2; cross-file + LSP surfaces → Task 4; testing plan → tests in every task.
 - **Pointer-safety:** addressed explicitly — text is finalized during detection (Task 3 Step 3) and live `FunctionNode *` pointers are cleared before caching.
 - **Editor-count coupling:** Task 1 Step 10 updates every `available.size()` assertion; the static_assert chain enforces the enum/menu-id ordering invariant.
 - **Open confirmations the implementer must check against the live tree** (each has a `grep` in-step): exact `@abstract` source syntax, the `ClassNode::is_abstract` flag name, the SCRIPT-kind `DataType` path field, and whether a source-span slice helper already exists. These are verifications, not unknowns that block the design.

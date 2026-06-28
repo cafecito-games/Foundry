@@ -6,14 +6,14 @@
 
 ## Summary
 
-Add a GDScript refactor that automatically generates concrete stub methods for
+Add a Foundry Script refactor that automatically generates concrete stub methods for
 inherited `@abstract` methods a class has not yet implemented. The refactor is
 offered in the script editor's refactor submenu and over the language server,
 reusing the existing `GDScriptRefactoring` infrastructure.
 
 ## Goals
 
-- Let a developer extending an abstract GDScript class fill in all owed abstract
+- Let a developer extending an abstract Foundry Script class fill in all owed abstract
   method stubs in one action.
 - Generate signatures that faithfully mirror the base declaration (parameters,
   types, defaults, `static`, return type).
@@ -23,7 +23,7 @@ reusing the existing `GDScriptRefactoring` infrastructure.
 ## Non-Goals
 
 - Native engine virtual methods (e.g. `_input`, `_draw`) are out of scope. Only
-  GDScript `@abstract`-annotated methods are considered.
+  Foundry Script `@abstract`-annotated methods are considered.
 - No checklist/picker UI: all unimplemented abstract methods are generated at
   once.
 - No cross-file edits. The refactor only edits the current script.
@@ -39,10 +39,10 @@ the fork.
 
 ## Touchpoints
 
-- **`modules/gdscript/editor/gdscript_refactoring.h`** — append
+- **`modules/foundry_script/editor/gdscript_refactoring.h`** — append
   `IMPLEMENT_ABSTRACT_METHODS` to the `RefactorKind` enum (appended last so the
   editor's `EDIT_REFACTOR_*` ordering static_asserts remain valid).
-- **`modules/gdscript/editor/gdscript_refactoring.cpp`**
+- **`modules/foundry_script/editor/gdscript_refactoring.cpp`**
   - `find_implement_abstract_candidate(context, location, parse_results)` —
     cached availability + collection, mirroring `find_inline_variable_candidate`.
     Runs the analyzer (or reuses the LSP `ExtendGDScriptParser` parse result),
@@ -64,7 +64,7 @@ the fork.
 After analysis, starting from the `ClassNode` enclosing the caret:
 
 1. **Walk the base chain** via `class_node->base_type`. For each ancestor that
-   resolves to a GDScript class, obtain its `ClassNode` — from the analyzer's
+   resolves to a Foundry Script class, obtain its `ClassNode` — from the analyzer's
    resolved tree for same-file bases, or via `GDScriptCache` / the parse-result
    provider for bases in other files (already resolved during `analyze()`).
 2. **Collect abstract methods** — `FunctionNode`s with `is_abstract == true`,
@@ -136,7 +136,7 @@ func _compute_total() -> int:
 
 ## Testing
 
-- **`modules/gdscript/tests/test_refactor.h`** — cases mirroring existing
+- **`modules/foundry_script/tests/test_refactor.h`** — cases mirroring existing
   refactor tests:
   - single abstract method; multiple methods
   - multi-level inheritance
@@ -148,8 +148,8 @@ func _compute_total() -> int:
   - inner class
   - abstract target class → disabled
   - no missing methods → disabled
-- **`modules/gdscript/tests/scripts/`** — paired `.gd` fixtures with expected
+- **`modules/foundry_script/tests/scripts/`** — paired `.fs` fixtures with expected
   output where the runner expects them, regenerated via
   `--gdscript-generate-tests`.
-- **`modules/gdscript/tests/test_lsp.h`** — the refactor surfaces as an available
+- **`modules/foundry_script/tests/test_lsp.h`** — the refactor surfaces as an available
   code action and produces the expected workspace edit over the LSP path.

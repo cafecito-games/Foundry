@@ -12,9 +12,9 @@
 
 This fork is an experiment to see how far I can push the Godot Engine in a few areas:
 
-1. Enhancing the GDScript language for type safety
+1. Enhancing the Foundry Script language for type safety
 2. Better editor tooling for scripting (e.g. Refactoring support)
-3. Adding features to GDScript like Traits, async keyword on coroutine functions and other things of that nature.
+3. Adding features to Foundry Script like Traits, async keyword on coroutine functions and other things of that nature.
 
 This might be useful to others, or it might not be. For the time being it is unclear to me how far to push this experiment, for now I am using AI to help implement a good amount of this and seeing how effective AI is at working in this codebase.
 

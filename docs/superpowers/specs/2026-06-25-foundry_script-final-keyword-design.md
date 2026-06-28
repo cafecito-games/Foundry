@@ -1,4 +1,4 @@
-# GDScript `final` Keyword — Design
+# Foundry Script `final` Keyword — Design
 
 **Status:** Approved design, ready for implementation planning
 **Date:** 2026-06-25
@@ -6,7 +6,7 @@
 
 ## Summary
 
-Add a `final` keyword to GDScript, modeled on Java's `final`. It applies to four
+Add a `final` keyword to Foundry Script, modeled on Java's `final`. It applies to four
 targets: classes (cannot be extended), methods (cannot be overridden), member
 variables (write-once), and local variables (write-once). `final` is a true
 tokenizer keyword used as a leading modifier, not an annotation.
@@ -37,7 +37,7 @@ blank final member, in `_init()` — and is read-only thereafter. Enforcement is
   Dynamic write paths such as `Object.set("id", v)` or reflection are therefore
   **not** caught — a known and accepted gap. (The one runtime check we do keep is
   rejecting extension of a `final` base at script load, see "Runtime".)
-- Multiple-constructor definite-assignment (GDScript has a single `_init`).
+- Multiple-constructor definite-assignment (Foundry Script has a single `_init`).
 
 ## Surface Syntax
 
@@ -75,12 +75,12 @@ func _ready():
 
 ### Final classes
 
-- `is_final` is stored on `ClassNode` and copied to the runtime `GDScript`.
+- `is_final` is stored on `ClassNode` and copied to the runtime `Foundry Script`.
 - During class-resolution in the analyzer (where the `extends` chain is
   resolved), if a class's resolved base has `is_final` set:
   **"Cannot extend final class 'X'."**
 - Covers all extend forms: `extends Base`, inner `class Foo extends Base`, and
-  cross-file `extends "res://base.gd"` / `extends BaseClassName`.
+  cross-file `extends "res://base.fs"` / `extends BaseClassName`.
 
 ### Final methods
 
@@ -128,7 +128,7 @@ used before assignment". Same engine, scoped to the enclosing block/function.
 
 A structural recursion over the AST following the Java Language Spec
 definite-assignment model. No control-flow graph and no fixpoint are needed —
-GDScript's control flow is fully structured (no `goto`), so a single pass over
+Foundry Script's control flow is fully structured (no `goto`), so a single pass over
 the AST is sufficient.
 
 **State.** Thread a set `assigned` (the `final` targets definitely assigned so
@@ -199,8 +199,8 @@ is needed at runtime (to reject extension at load).
 
 ## Testing Strategy
 
-Primary coverage is script fixtures in `modules/gdscript/tests/scripts/`
-(paired `.gd` + `.out`), matching how `abstract` is tested. Generate/verify with
+Primary coverage is script fixtures in `modules/foundry_script/tests/scripts/`
+(paired `.fs` + `.out`), matching how `abstract` is tested. Generate/verify with
 the headless runner.
 
 **Error fixtures (must fail with the right message):**
@@ -225,7 +225,7 @@ the headless runner.
 - `final func` overriding a non-final parent; `final static var` with
   initializer; `final` local assigned once then read.
 
-**Runtime fixture:** a `.gd` that dynamically `load()`s and tries to extend a
+**Runtime fixture:** a `.fs` that dynamically `load()`s and tries to extend a
 final base, asserting the load-time rejection (the one path not covered by pure
 static analysis).
 

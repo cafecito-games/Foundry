@@ -1,10 +1,10 @@
-# GDScript Generics Design
+# Foundry Script Generics Design
 
 Date: 2026-06-24
 
 ## Summary
 
-Add **generic classes and generic methods** to GDScript: classes and methods
+Add **generic classes and generic methods** to Foundry Script: classes and methods
 parameterized by one or more type parameters, declared and applied with the same
 bracket convention already used by `Array[T]` and `Dictionary[K, V]`.
 
@@ -102,7 +102,7 @@ user-defined classes and methods rather than introducing a parallel system.
 
 ## Approach
 
-We chose a **reified, single-script** strategy (one compiled `GDScript` per file;
+We chose a **reified, single-script** strategy (one compiled `Foundry Script` per file;
 type arguments are reified descriptors carried on instances) over monomorphization
 (a distinct compiled script per instantiation) and over a hybrid that selectively
 specializes hot paths. The single-script model:
@@ -115,7 +115,7 @@ specializes hot paths. The single-script model:
 - is the direct generalization of how `Array[int]` already works.
 
 Monomorphization was rejected for its combinatorial script explosion, compile-time
-and memory blowup, and its conflict with GDScript's single-script-per-file model and
+and memory blowup, and its conflict with Foundry Script's single-script-per-file model and
 `.tres` serialization. Selective monomorphization was rejected as premature; it can
 be layered on later behind the same surface.
 
@@ -246,12 +246,12 @@ This layer is what makes the generics reified.
 - **Serialization / hot-reload**: a reified instance persists as base script path +
   type-argument descriptors (each descriptor is the existing builtin/class/script triple,
   recursively). `.tres`/scene save and load round-trip the `type_arguments`. Hot-reload
-  keeps one `GDScript` per file, so reload semantics are unchanged; only the per-instance
+  keeps one `Foundry Script` per file, so reload semantics are unchanged; only the per-instance
   binding vector must survive, which it does as plain serialized data.
 
 ## Tooling (LSP)
 
-In `modules/gdscript/language_server/`:
+In `modules/foundry_script/language_server/`:
 
 - **Completion**: after `Box[`, suggest type arguments; on a `Box[int]` value, list members
   with `T` shown as `int`. Generic methods surface their `[T]` parameters in signature help.
@@ -265,7 +265,7 @@ follows the analyzer's rather than duplicating logic.
 
 ## Testing Strategy
 
-Using the `.gd` + `.out` fixture pattern under `modules/gdscript/tests/scripts/`:
+Using the `.fs` + `.out` fixture pattern under `modules/foundry_script/tests/scripts/`:
 
 - `analyzer/features/`: generic class declaration/use; generic methods with inference and
   explicit application; class and trait bounds; generic inheritance; nested specialization
@@ -277,11 +277,11 @@ Using the `.gd` + `.out` fixture pattern under `modules/gdscript/tests/scripts/`
   against specialized types; serialization round-trip.
 - `completion/` and `lsp/`: substituted-type completion and hover fixtures.
 - C++ unit tests (`tests/`) for `substitute()` and `ContainerType` specialization
-  round-trips where pure-GDScript fixtures cannot reach the internals.
+  round-trips where pure-Foundry Script fixtures cannot reach the internals.
 
 ## Work Breakdown
 
-Epic: **Generic classes and generic methods for GDScript**.
+Epic: **Generic classes and generic methods for Foundry Script**.
 
 In-scope sub-issues:
 
@@ -300,7 +300,7 @@ In-scope sub-issues:
 10. Runtime: `T`-member write validation via `ContainerTypeValidate`.
 11. Serialization: `.tres`/scene round-trip and hot-reload of reified instances.
 12. LSP: completion, hover, and signature help for generics.
-13. Docs: GDScript reference and `doc/` updates.
+13. Docs: Foundry Script reference and `doc/` updates.
 14. Tests: analyzer, runtime, and completion fixtures plus C++ unit tests for `substitute()`.
 
 Deferred follow-up sub-issues (filed, out of this epic's critical path):

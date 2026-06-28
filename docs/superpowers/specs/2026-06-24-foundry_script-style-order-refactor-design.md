@@ -1,12 +1,12 @@
-# GDScript Style Order Refactor Design
+# Foundry Script Style Order Refactor Design
 
 ## Goal
 
-Add a GDScript refactoring option that sorts script members according to the official GDScript style guide while preserving the original relative order inside each style category.
+Add a Foundry Script refactoring option that sorts script members according to the official Foundry Script style guide while preserving the original relative order inside each style category.
 
 ## Context
 
-The existing refactor system lives in `modules/gdscript/editor/gdscript_refactoring.*` and already serves both the script editor refactor submenu and GDScript LSP code actions. It returns `RefactorResult` objects with text edits that are applied through the existing script editor and LSP paths.
+The existing refactor system lives in `modules/foundry_script/editor/gdscript_refactoring.*` and already serves both the script editor refactor submenu and Foundry Script LSP code actions. It returns `RefactorResult` objects with text edits that are applied through the existing script editor and LSP paths.
 
 The official style guide recommends this member order:
 
@@ -30,13 +30,13 @@ The official style guide recommends this member order:
 
 The refactor will implement the member ordering portion. It will not alphabetize within a bucket because declaration order can affect variable initialization and readability.
 
-This CafecitoGames fork supports GDScript declarations that the upstream style guide does not cover yet: `namespace`, `import`, `trait_name`, inline `trait` declarations, and `uses`. The refactor must treat those as fork-specific syntax with an explicit local policy instead of forcing them into upstream-only categories.
+This CafecitoGames fork supports Foundry Script declarations that the upstream style guide does not cover yet: `namespace`, `import`, `trait_name`, inline `trait` declarations, and `uses`. The refactor must treat those as fork-specific syntax with an explicit local policy instead of forcing them into upstream-only categories.
 
 ## User Experience
 
-The script editor will expose a new GDScript-only refactor menu item named `Sort Members by Style Guide`.
+The script editor will expose a new Foundry Script-only refactor menu item named `Sort Members by Style Guide`.
 
-The action will be available for a GDScript file when the script parses successfully and at least one class in the file has reorderable members. It does not depend on the caret being on a specific symbol. If the current file is already in style-guide order, the action should be disabled with a clear reason such as `Members are already sorted by the GDScript style guide.`
+The action will be available for a Foundry Script file when the script parses successfully and at least one class in the file has reorderable members. It does not depend on the caret being on a specific symbol. If the current file is already in style-guide order, the action should be disabled with a clear reason such as `Members are already sorted by the Foundry Script style guide.`
 
 The language server will expose the same operation as a rewrite code action so external LSP clients can request it. The action should resolve lazily like the existing extract, add type annotation, and inline refactors.
 
@@ -105,15 +105,15 @@ The operation should fail safely with a user-facing error when the script cannot
 
 Add a `RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE` entry after the existing refactor kinds. Update the script editor enum mapping and static assertions accordingly.
 
-Add the availability entry to `GDScriptRefactoring::get_available_refactors()`. It should be disabled for invalid scripts, non-GDScript scripts, or already sorted scripts.
+Add the availability entry to `GDScriptRefactoring::get_available_refactors()`. It should be disabled for invalid scripts, non-Foundry Script scripts, or already sorted scripts.
 
 Add preparation logic to `GDScriptRefactoring::prepare()` that returns the reorder edits.
 
-Update `modules/gdscript/language_server/gdscript_text_document.cpp` so the new refactor maps to `refactor.rewrite`. No new source-action kind is required for the first implementation.
+Update `modules/foundry_script/language_server/gdscript_text_document.cpp` so the new refactor maps to `refactor.rewrite`. No new source-action kind is required for the first implementation.
 
 ## Testing
 
-Add focused C++ tests in `modules/gdscript/tests/test_refactor.h` for:
+Add focused C++ tests in `modules/foundry_script/tests/test_refactor.h` for:
 
 - availability reports the new refactor and disables it when the file is already sorted
 - variables, constants, signals, functions, static members, exported members, and onready members reorder into the style-guide bucket order
@@ -130,7 +130,7 @@ Add focused C++ tests in `modules/gdscript/tests/test_refactor.h` for:
 Run targeted tests through the Godot test binary after building:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case='*[Modules][GDScript][Refactor]*'
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors --test-case='*[Modules][Foundry Script][Refactor]*'
 ```
 
 If the local binary is not built yet, build it with:
@@ -141,4 +141,4 @@ python3 -m SCons platform=linuxbsd target=editor dev_build=yes tests=yes module_
 
 ## Non-Goals
 
-This feature will not implement a full GDScript formatter. It will not rename members to match naming conventions, change whitespace broadly, alphabetize declarations, sort local variables, or reorder statements inside function bodies.
+This feature will not implement a full Foundry Script formatter. It will not rename members to match naming conventions, change whitespace broadly, alphabetize declarations, sort local variables, or reorder statements inside function bodies.

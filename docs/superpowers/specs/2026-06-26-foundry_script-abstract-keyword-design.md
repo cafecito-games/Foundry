@@ -1,4 +1,4 @@
-# GDScript `abstract` Keyword — Design
+# Foundry Script `abstract` Keyword — Design
 
 **Status:** Approved design, ready for implementation planning
 **Date:** 2026-06-26
@@ -192,29 +192,29 @@ reads. Everything downstream is untouched:
 | Parser | `gdscript_parser.h` | Declare `DeclarationModifiers`; remove the `abstract_annotation` declaration. |
 | Reserved words | `gdscript.cpp` | Add `"abstract"` under the "Declarations" group in `get_reserved_words()` (hand-maintained; alphabetical, before `"class"`). `async` stays out, as today. |
 | Analyzer / Compiler / Runtime | — | No change (consume existing `is_abstract` flags). |
-| Docs | `modules/gdscript/doc_classes/@GDScript.xml` | Remove the `@abstract` annotation entry. |
-| Docs | GDScript language docs / class reference | Update abstract-class prose and examples to keyword syntax. |
+| Docs | `modules/foundry_script/doc_classes/@Foundry Script.xml` | Remove the `@abstract` annotation entry. |
+| Docs | Foundry Script language docs / class reference | Update abstract-class prose and examples to keyword syntax. |
 
 ## Testing Strategy
 
-Primary coverage is script fixtures in `modules/gdscript/tests/scripts/` and
-`tests/scripts/` (paired `.gd` + expected-output). Regenerate affected `.out`
+Primary coverage is script fixtures in `modules/foundry_script/tests/scripts/` and
+`tests/scripts/` (paired `.fs` + expected-output). Regenerate affected `.out`
 files with the headless runner
-(`--headless --gdscript-generate-tests modules/gdscript/tests/scripts`) after the
+(`--headless --gdscript-generate-tests modules/foundry_script/tests/scripts`) after the
 intentional behavior change, then run the full `--headless --test` suite and the
 `*Refactor*` suite for parity.
 
 **Fixture migration** — rewrite every `@abstract` fixture to keyword syntax and
 regenerate outputs:
 
-- analyzer/errors: `abstract_methods.gd`, `construct_abstract_class.gd`,
-  `construct_abstract_script.notest.gd`, `abstract_class_instantiate.gd`,
-  `abstract_async_method_implementation.gd`, `trait_base_abstract_required.gd`,
-  `trait_abstract_method_requirement.gd`,
-  `trait_conflict_deferred_by_abstract.gd`
-- `refactor/implement_abstract_*.gd`,
-  `completion/common/override_function_abstract.gd`,
-  `runtime/features/abstract_methods.gd`
+- analyzer/errors: `abstract_methods.fs`, `construct_abstract_class.fs`,
+  `construct_abstract_script.notest.fs`, `abstract_class_instantiate.fs`,
+  `abstract_async_method_implementation.fs`, `trait_base_abstract_required.fs`,
+  `trait_abstract_method_requirement.fs`,
+  `trait_conflict_deferred_by_abstract.fs`
+- `refactor/implement_abstract_*.fs`,
+  `completion/common/override_function_abstract.fs`,
+  `runtime/features/abstract_methods.fs`
 
 **New fixtures (keyword-specific behavior):**
 

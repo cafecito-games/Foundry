@@ -1,4 +1,4 @@
-# GDScript Custom Annotations Design
+# Foundry Script Custom Annotations Design
 
 Date: 2026-06-26
 Status: Approved brainstorm - pending implementation plan
@@ -6,7 +6,7 @@ Fork: CafecitoGames / Godot Engine
 
 ## Purpose
 
-GDScript should support first-class, user-declared, passive custom annotations that attach
+Foundry Script should support first-class, user-declared, passive custom annotations that attach
 static metadata to classes, methods, and member variables. Runtime code should be able to
 read that metadata through `godot.reflection` without executing annotation code or adding
 per-call overhead.
@@ -36,7 +36,7 @@ annotation arguments.
 
 ## Goals
 
-- Let libraries declare annotation symbols in GDScript.
+- Let libraries declare annotation symbols in Foundry Script.
 - Validate annotation use statically: unknown names, ambiguous imports, wrong targets,
   wrong arity, wrong argument names, wrong argument types, and non-constant arguments are
   errors.
@@ -44,7 +44,7 @@ annotation arguments.
   variables.
 - Support marker annotations, positional arguments, named arguments, defaults, variadic
   positional arguments, stacking, and repeated annotation uses.
-- Store resolved custom annotation metadata on compiled GDScript scripts.
+- Store resolved custom annotation metadata on compiled Foundry Script scripts.
 - Expose annotation metadata at runtime through structured reflection objects, not raw
   dictionaries.
 - Preserve the current behavior of built-in annotations while keeping built-in annotation
@@ -239,7 +239,7 @@ error for built-ins should behave the same for custom annotations.
 
 Only passive custom annotation usages are persisted. Built-in annotations are excluded.
 
-Compiled `GDScript` stores compact metadata tables:
+Compiled `Foundry Script` stores compact metadata tables:
 
 ```cpp
 Vector<GDScriptAnnotationUsage> class_annotations;
@@ -363,7 +363,7 @@ arrays, a null `GDScriptAnnotation` reference, or `false`, without crashes.
 ### Descriptor Embedding
 
 `get_methods()` and `get_method_info()` continue returning method descriptor
-dictionaries for compatibility, but each GDScript method descriptor gains:
+dictionaries for compatibility, but each Foundry Script method descriptor gains:
 
 ```gdscript
 "annotations": Array[GDScriptAnnotation]
@@ -377,7 +377,7 @@ dictionaries for compatibility, but each GDScript method descriptor gains:
 
 Native methods/properties and unsupported targets omit the key or use an empty typed
 array. The implementation should prefer consistency within `godot.reflection`: every
-GDScript descriptor returned there can include an `annotations` key even when it is empty.
+Foundry Script descriptor returned there can include an `annotations` key even when it is empty.
 
 ## Parser Touchpoints
 
@@ -430,7 +430,7 @@ reused rather than reimplemented.
 
 Required compiler/runtime changes:
 
-1. Add `GDScriptAnnotationUsage` storage to `GDScript`.
+1. Add `GDScriptAnnotationUsage` storage to `Foundry Script`.
 2. Add helper conversion from resolved AST annotation usage to runtime metadata.
 3. Populate class metadata from class annotation nodes.
 4. Populate method metadata while compiling method functions.
@@ -472,7 +472,7 @@ Add or update:
 
 - `GDScriptAnnotation` doc class.
 - `GDScriptReflection` doc methods.
-- GDScript syntax/reference docs for custom annotation declarations.
+- Foundry Script syntax/reference docs for custom annotation declarations.
 - Examples for class, method, and member-variable annotations.
 - Explanation that custom annotations are passive static metadata.
 - Explanation that annotation arguments must be constant expressions.
@@ -551,7 +551,7 @@ criteria unless explicitly reprioritized:
 - Repeated same-name annotations are legal and reflected in source order.
 - Reflection returns `GDScriptAnnotation` objects for classes, methods, and variables.
 - `get_methods()`, `get_method_info()`, and `get_properties()` include annotation objects
-  for GDScript declarations.
+  for Foundry Script declarations.
 - Effective method/variable annotation reflection includes base and trait-flattened
   members; class annotations remain direct-only.
 - Built-in annotations keep existing behavior and are not reflected as passive custom

@@ -2,11 +2,11 @@
 
 ## Goal
 
-Replace the modal rename prompt with an inline multi-caret rename experience when a GDScript rename can be handled entirely in the current file. Preserve the existing modal and diff-preview paths for renames that need extra user input, validation, or cross-file review.
+Replace the modal rename prompt with an inline multi-caret rename experience when a Foundry Script rename can be handled entirely in the current file. Preserve the existing modal and diff-preview paths for renames that need extra user input, validation, or cross-file review.
 
 ## User Experience
 
-Pressing F2 on a renameable GDScript symbol starts inline rename if the resolved rename only affects the active file and has no unresolved references. The editor selects every resolved in-file occurrence with multiple carets, preselects the current symbol text, and lets the user type the replacement once. Typing updates every selected occurrence live through the existing `TextEdit` multi-caret editing behavior.
+Pressing F2 on a renameable Foundry Script symbol starts inline rename if the resolved rename only affects the active file and has no unresolved references. The editor selects every resolved in-file occurrence with multiple carets, preselects the current symbol text, and lets the user type the replacement once. Typing updates every selected occurrence live through the existing `TextEdit` multi-caret editing behavior.
 
 Enter commits the rename. Escape cancels it and restores the original buffer text and caret state. Losing focus does not implicitly commit; the mode remains explicit so users do not accidentally apply a partial rename.
 
@@ -22,10 +22,10 @@ The existing file-edit apply path stays responsible for cross-file and diff-prev
 
 ## Components
 
-- `modules/gdscript/editor/gdscript_refactoring.h`: extend `RefactorResult` with current-file rename occurrence ranges, or add an equivalent inline-rename preparation result that reuses `RefactorTextEdit` ranges.
-- `modules/gdscript/editor/gdscript_refactoring.cpp`: populate occurrence ranges from the same resolved references used by rename edits. The ranges must cover declarations and references only, excluding comments, strings, dynamic references, and unrelated same-name symbols.
+- `modules/foundry_script/editor/gdscript_refactoring.h`: extend `RefactorResult` with current-file rename occurrence ranges, or add an equivalent inline-rename preparation result that reuses `RefactorTextEdit` ranges.
+- `modules/foundry_script/editor/gdscript_refactoring.cpp`: populate occurrence ranges from the same resolved references used by rename edits. The ranges must cover declarations and references only, excluding comments, strings, dynamic references, and unrelated same-name symbols.
 - `editor/script/script_text_editor.h/.cpp`: add inline rename state and handlers for start, commit, cancel, and text-editor input interception.
-- `modules/gdscript/tests/test_refactor.h`: cover occurrence range extraction and inline-safe classification at the refactor layer.
+- `modules/foundry_script/tests/test_refactor.h`: cover occurrence range extraction and inline-safe classification at the refactor layer.
 
 ## Data Flow
 
@@ -34,7 +34,7 @@ The existing file-edit apply path stays responsible for cross-file and diff-prev
 3. The editor asks the refactor engine for occurrences using the current context and caret location.
 4. If the result is single-file and warning-free, the editor enters inline mode by selecting each occurrence range in the active `CodeEdit`.
 5. The user edits the selections using existing multi-caret typing.
-6. On Enter, the editor reads the replacement from the primary occurrence, validates it as a GDScript identifier, then runs normal rename preparation with that final name.
+6. On Enter, the editor reads the replacement from the primary occurrence, validates it as a Foundry Script identifier, then runs normal rename preparation with that final name.
 7. If validation succeeds and the prepared result still applies only to the active file, the editor leaves the already-edited text in place and ends the inline rename as one undoable action.
 8. On Escape, the editor restores the original source and exits inline mode.
 

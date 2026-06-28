@@ -1,10 +1,10 @@
-# GDScript Async Function Contracts
+# Foundry Script Async Function Contracts
 
 Date: 2026-06-22
 
 ## Summary
 
-Add `async` as a reflected GDScript function contract for methods that must be awaited by callers. The feature lets abstract classes declare coroutine requirements directly:
+Add `async` as a reflected Foundry Script function contract for methods that must be awaited by callers. The feature lets abstract classes declare coroutine requirements directly:
 
 ```gdscript
 @abstract
@@ -19,7 +19,7 @@ The first implementation focuses on method contracts, reflection, diagnostics, a
 
 ## Goals
 
-- Allow `async func` declarations in GDScript.
+- Allow `async func` declarations in Foundry Script.
 - Allow `@abstract async func` declarations with no body.
 - Reflect coroutine methods through `MethodInfo` using a new `METHOD_FLAG_ASYNC`.
 - Preserve compatibility for existing functions whose coroutine status is inferred from `await` in the body.
@@ -91,9 +91,9 @@ Add a core method flag:
 METHOD_FLAG_ASYNC = 256
 ```
 
-Bind the flag in core constants so it is visible to GDScript reflection. Update method documentation generation and method-list formatting to render `async` when this flag is present.
+Bind the flag in core constants so it is visible to Foundry Script reflection. Update method documentation generation and method-list formatting to render `async` when this flag is present.
 
-GDScript analyzer/compiler method metadata should set `METHOD_FLAG_ASYNC` when `FunctionNode::is_coroutine` is true. This intentionally reflects both explicit `async func` declarations and legacy body-inferred coroutines.
+Foundry Script analyzer/compiler method metadata should set `METHOD_FLAG_ASYNC` when `FunctionNode::is_coroutine` is true. This intentionally reflects both explicit `async func` declarations and legacy body-inferred coroutines.
 
 ## Analyzer Design
 
@@ -115,7 +115,7 @@ No VM behavior change is required for this first pass.
 
 The VM already supports:
 
-- awaiting a real suspended GDScript function state;
+- awaiting a real suspended Foundry Script function state;
 - awaiting a signal;
 - awaiting a synchronous value, which returns immediately.
 
@@ -131,11 +131,11 @@ func test() -> void:
 
 ## Tooling Design
 
-Update GDScript tooling to surface async contracts consistently:
+Update Foundry Script tooling to surface async contracts consistently:
 
 - syntax highlighting recognizes contextual `async` as a declaration modifier;
 - completion suggests `async func` and `static async func` where appropriate;
-- override completion includes `async` for async GDScript methods;
+- override completion includes `async` for async Foundry Script methods;
 - method argument/signature hints display `async` for reflected async methods;
 - docs generation adds `async` to method qualifiers;
 - LSP document symbols, completion details, and signature help include `async`;
@@ -179,7 +179,7 @@ Add or update tests for:
 Create one tracking epic with native subissues:
 
 1. Core reflection: add `METHOD_FLAG_ASYNC` and docs/constants plumbing.
-2. GDScript parser/AST: contextual `async` modifier and signature capture.
+2. Foundry Script parser/AST: contextual `async` modifier and signature capture.
 3. Analyzer: async propagation, call enforcement, and override invariance.
 4. Compiler/runtime metadata: set reflected async flags without VM behavior changes.
 5. Editor/LSP/docs: render async in completions, signatures, docs, and symbols.

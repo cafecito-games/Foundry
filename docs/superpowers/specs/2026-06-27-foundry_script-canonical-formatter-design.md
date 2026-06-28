@@ -1,4 +1,4 @@
-# Canonical GDScript Formatter — Design
+# Canonical Foundry Script Formatter — Design
 
 **Date:** 2026-06-27
 **Status:** Approved design, ready for implementation planning
@@ -7,9 +7,9 @@ may surface the analyzer's existing warning system via CLI).
 
 ## Goal
 
-Provide a **canonical, built-in formatter** for this fork's dialect of GDScript — `gofmt`/`rustfmt`
+Provide a **canonical, built-in formatter** for this fork's dialect of Foundry Script — `gofmt`/`rustfmt`
 style: one official style, no configuration, shipped with the toolchain. The formatter is usable from
-CI/CD pipelines and precommit hooks so that all committed GDScript looks identical.
+CI/CD pipelines and precommit hooks so that all committed Foundry Script looks identical.
 
 The formatter must structurally match the fork's evolving dialect (`final`, `abstract`, generics /
 type parameters, traits, `AsyncCallable[[Args], Return]`, stricter typing). It achieves this by
@@ -27,7 +27,7 @@ maintaining a separate grammar that would inevitably drift.
 
 ## Architecture
 
-One reusable **formatter core** with thin front-ends. All new code lives in `modules/gdscript/`.
+One reusable **formatter core** with thin front-ends. All new code lives in `modules/foundry_script/`.
 
 ```
 gdscript_format.h / .cpp        ← GDScriptFormatter core (the only place style lives)
@@ -102,7 +102,7 @@ headless binary.
 godot --headless --gdscript-format [MODE] [paths...]
 ```
 
-- `paths` — files or directories (recursed for `*.gd`). No path or `-` reads stdin → writes stdout.
+- `paths` — files or directories (recursed for `*.fs`). No path or `-` reads stdin → writes stdout.
 
 | Flag                | Behavior                                              | Exit code                          |
 |---------------------|-------------------------------------------------------|------------------------------------|
@@ -118,16 +118,16 @@ developer to run `--write`.
 overall exit is non-zero, so malformed files surface loudly rather than being silently passed through.
 
 **Precommit:** a local hook in `.pre-commit-config.yaml` runs
-`godot --headless --gdscript-format --check` on staged `*.gd` files. Formatting is single-file and
+`godot --headless --gdscript-format --check` on staged `*.fs` files. Formatting is single-file and
 syntactic, so it is fast enough for precommit. The hook documents the binary path, consistent with how
 the repo already invokes the binary.
 
 **CI:** a job step runs the same `--check` over the tree — the canonical gate keeping all committed
-GDScript in one style.
+Foundry Script in one style.
 
 ## Canonical Style Rules
 
-Based on the official Godot GDScript style guide, made stricter where the guide is silent or
+Based on the official Godot Foundry Script style guide, made stricter where the guide is silent or
 permissive. The full rule table lives here; the implementation plan refines edge cases.
 
 ### From the official guide (enforced)
@@ -159,21 +159,21 @@ permissive. The full rule table lives here; the implementation plan refines edge
 ### Line wrapping
 **No auto-wrap or auto-join in v1.** Respect the author's line breaks for long expressions; only
 normalize spacing and indentation within them. Auto-wrapping is the riskiest formatter behavior given
-GDScript's fragile line-continuation rules, and is deferred to a possible later phase.
+Foundry Script's fragile line-continuation rules, and is deferred to a possible later phase.
 
 ## Testing Strategy
 
-Tests live under `modules/gdscript/tests/scripts/` (new `format/` area) plus a C++ harness in `tests/`
+Tests live under `modules/foundry_script/tests/scripts/` (new `format/` area) plus a C++ harness in `tests/`
 following the existing doctest pattern.
 
-1. **Golden-file fixtures (the bulk).** Each case is `input.gd` → `expected.gd`, organized by feature:
+1. **Golden-file fixtures (the bulk).** Each case is `input.fs` → `expected.fs`, organized by feature:
    basics (spacing, blanks, indent), comments (full-line, inline, comment-only files, comments in odd
    positions), strings/quotes, collections/trailing commas, and a dedicated **fork-syntax** set
-   (`final`, `abstract`, generics, `AsyncCallable`, traits). A runner formats `input.gd` and diffs
-   against `expected.gd`. A regen path (mirroring the existing `.out` regeneration workflow) rewrites
-   `expected.gd` from current output for intentional style changes.
+   (`final`, `abstract`, generics, `AsyncCallable`, traits). A runner formats `input.fs` and diffs
+   against `expected.fs`. A regen path (mirroring the existing `.out` regeneration workflow) rewrites
+   `expected.fs` from current output for intentional style changes.
 
-2. **Property tests over the whole corpus** (run against *all* existing `.gd` test scripts, a large
+2. **Property tests over the whole corpus** (run against *all* existing `.fs` test scripts, a large
    real-world set):
    - **Idempotency:** `format(x) == format(format(x))` for every script.
    - **Refuse-on-error:** known-bad scripts (the `analyzer/errors/` set) must be refused, not

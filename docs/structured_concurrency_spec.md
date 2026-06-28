@@ -1,6 +1,6 @@
-# GDScript Structured Concurrency — Specification
+# Foundry Script Structured Concurrency — Specification
 
-Source-level structured-concurrency typing for GDScript. Builds on the reflected
+Source-level structured-concurrency typing for Foundry Script. Builds on the reflected
 `async func` contracts from epic #54 and the typed-callable work, adding two
 first-class, statically-typed concepts so async work can be passed around and
 held as typed values.
@@ -49,7 +49,7 @@ and #340 (analyzer threading).
 Today an unawaited async call is represented as **`T` decorated with an
 `is_coroutine` flag** — the `DataType` *is* the return type. The flag is set in
 five places in `gdscript_analyzer.cpp` (the AsyncCallable `.call`/`.callv`
-sites, the GDScript async-function call site, and the native
+sites, the Foundry Script async-function call site, and the native
 `METHOD_FLAG_ASYNC` site) and cleared in exactly one (`reduce_await`). That
 representation is unsound: `var x = coro()` statically claims to be the return
 type, but at runtime `x` is a `GDScriptFunctionState`.

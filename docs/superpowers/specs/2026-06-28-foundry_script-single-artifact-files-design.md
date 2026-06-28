@@ -1,4 +1,4 @@
-# GDScript Single-Artifact Namespace Files
+# Foundry Script Single-Artifact Namespace Files
 
 ## Status
 
@@ -10,7 +10,7 @@ baseline behavior to generalize.
 
 ## Goals
 
-- Make each `.gd` file declare exactly one top-level exported artifact.
+- Make each `.fs` file declare exactly one top-level exported artifact.
 - Replace `class_name`, `trait_name`, and `enum_name` with plain top-level `class`, `trait`, and `enum`.
 - Add top-level `annotation` as a first-class file artifact.
 - Keep `namespace` and `import` as file header declarations.
@@ -28,7 +28,7 @@ baseline behavior to generalize.
 
 ## File Shape
 
-A `.gd` file is a single-artifact namespace file:
+A `.fs` file is a single-artifact namespace file:
 
 ```text
 namespace_decl?
@@ -96,7 +96,7 @@ one file path = one exported artifact identity
 ### Class Files
 
 A top-level `class` artifact replaces `class_name`. It is the only file artifact kind that can be loaded as a
-`GDScript`/`Script` resource, attached to a scene node, assigned to an object's script property, or registered as an
+`Foundry Script`/`Script` resource, attached to a scene node, assigned to an object's script property, or registered as an
 autoload script.
 
 Top-level class files may declare inheritance, traits, generic parameters, annotations, variables, constants,
@@ -160,7 +160,7 @@ var request := games.services.LoginService.Request.new()
 ## Script Resource Eligibility
 
 Path-based loading remains only as a class-script bridge for Godot editor/runtime systems that operate on `Script`
-resources. Normal GDScript code should prefer namespace references over `load()`/`preload()` when referring to artifact
+resources. Normal Foundry Script code should prefer namespace references over `load()`/`preload()` when referring to artifact
 types.
 
 Hard rule:
@@ -172,20 +172,20 @@ Only class artifact files can load as Script resources.
 Allowed:
 
 ```gdscript
-const LoginService = preload("res://services/login_service.gd")
+const LoginService = preload("res://services/login_service.fs")
 var service := LoginService.new()
 ```
 
 Rejected:
 
 ```gdscript
-const CombatType = preload("res://dtos/combat_type.gd")
+const CombatType = preload("res://dtos/combat_type.fs")
 ```
 
 Diagnostic:
 
 ```text
-Cannot load "res://dtos/combat_type.gd" as a Script because it declares enum
+Cannot load "res://dtos/combat_type.fs" as a Script because it declares enum
 "games.dtos.CombatType". Only class artifacts can be loaded as scripts.
 ```
 
@@ -230,7 +230,7 @@ can_use_as_script(path, required_base):
 ```
 
 This predicate gates both resource loading and editor affordances. For example, dragging a scene node into a script to
-generate an `@onready var` should be available only when the currently edited `.gd` file is a class artifact. Trait,
+generate an `@onready var` should be available only when the currently edited `.fs` file is a class artifact. Trait,
 enum, and annotation files should hide the action or show a direct diagnostic such as:
 
 ```text
@@ -262,7 +262,7 @@ single-artifact restrictions for `enum`.
 
 ## Indexing And Registration
 
-The global artifact index remains path-keyed with one artifact per `.gd` file. Compared with a multi-symbol namespace
+The global artifact index remains path-keyed with one artifact per `.fs` file. Compared with a multi-symbol namespace
 module design, this avoids indexing multiple unrelated exported symbols from one source path.
 
 The registered artifact metadata must include kind:
@@ -290,7 +290,7 @@ Only one top-level artifact declaration is allowed per file.
 Expected a top-level artifact declaration after the namespace/import header.
 Top-level functions are not supported; declare functions inside a class or trait.
 Top-level variables are not supported; declare variables inside a class.
-Cannot attach "res://dtos/combat_type.gd" because it declares enum "games.dtos.CombatType".
+Cannot attach "res://dtos/combat_type.fs" because it declares enum "games.dtos.CombatType".
 Only class artifacts can be attached as scripts.
 Cannot generate "@onready" members in an enum file. This action requires a class script.
 ```

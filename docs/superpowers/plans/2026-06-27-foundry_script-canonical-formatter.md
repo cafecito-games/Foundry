@@ -1,18 +1,18 @@
-# GDScript Canonical Formatter Implementation Plan
+# Foundry Script Canonical Formatter Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a `gofmt`-style canonical formatter for this fork's GDScript, exposed as a headless CLI for CI/precommit, reusing the engine's real tokenizer and parser as the single source of truth.
+**Goal:** Build a `gofmt`-style canonical formatter for this fork's Foundry Script, exposed as a headless CLI for CI/precommit, reusing the engine's real tokenizer and parser as the single source of truth.
 
 **Architecture:** A new `GDScriptFormatter` core (text in, text out) runs its own tokenize pass (to capture comments and original literal source text), then a separate `parse()` pass, then a recursive `GDScriptPrinter` walk that emits canonical text with structural indentation, interleaving comments by line number. A `--gdscript-format` command (registered the same way as `--gdscript-generate-tests`) drives it over files/dirs/stdin with `--check`/`--write`/`--diff` modes and CI exit codes.
 
-**Tech Stack:** C++ (Godot engine module conventions, tabs/width-4, 120 col), doctest tests, the existing `.gd`/golden fixture infrastructure under `modules/gdscript/tests/scripts/`.
+**Tech Stack:** C++ (Godot engine module conventions, tabs/width-4, 120 col), doctest tests, the existing `.fs`/golden fixture infrastructure under `modules/foundry_script/tests/scripts/`.
 
 **Spec:** `docs/superpowers/specs/2026-06-27-gdscript-canonical-formatter-design.md`
 
 **Key facts established during research (use verbatim):**
 - Whole feature lives under `#ifdef TOOLS_ENABLED` — the tokenizer only records comments under `TOOLS_ENABLED` (`gdscript_tokenizer.cpp:1237,1368`). Editor and `tests=yes` builds satisfy this.
-- `modules/gdscript/SCsub` globs `*.cpp`, so `gdscript_format.cpp` is compiled automatically. No SCsub edit needed for the core.
+- `modules/foundry_script/SCsub` globs `*.cpp`, so `gdscript_format.cpp` is compiled automatically. No SCsub edit needed for the core.
 - Tokenizer API: `GDScriptTokenizerText`, `void set_source_code(const String &)`, `Token scan()`, `const HashMap<int, CommentData> &get_comments() const`. `Token` has `Type type; Variant literal; String source; int start_line, end_line, start_column, end_column;`.
 - `CommentData { String comment; bool new_line; }` — `new_line == true` means full-line (or after indentation only); `false` means inline (after code). `comment` includes the leading `#`.
 - Parser API: `Error parse(const String &p_source_code, const String &p_script_path, bool p_for_completion, bool p_parse_body = true)`, `ClassNode *get_tree() const`, `const List<ParserError> &get_errors() const`. `ParserError { String message; int line; int column; }`.
@@ -22,13 +22,13 @@
 
 ## File Structure
 
-- `modules/gdscript/gdscript_format.h` — public `GDScriptFormatter` API + `GDScriptPrinter` declaration + result/options structs.
-- `modules/gdscript/gdscript_format.cpp` — pipeline, token index, printer (all node print routines), comment interleaving, style normalization.
-- `modules/gdscript/register_types.cpp` — register the `--gdscript-format` and `--gdscript-generate-format-tests` commands (mirror `generate_gdscript_tests`).
+- `modules/foundry_script/gdscript_format.h` — public `GDScriptFormatter` API + `GDScriptPrinter` declaration + result/options structs.
+- `modules/foundry_script/gdscript_format.cpp` — pipeline, token index, printer (all node print routines), comment interleaving, style normalization.
+- `modules/foundry_script/register_types.cpp` — register the `--gdscript-format` and `--gdscript-generate-format-tests` commands (mirror `generate_gdscript_tests`).
 - `main/main.cpp` — route `--gdscript-format` into the test-command dispatch (one-line addition next to `is_test_command`).
-- `modules/gdscript/tests/test_format.h` — doctest suite: golden fixtures, idempotency, refuse-on-error, semantic (parse-tree) preservation.
-- `modules/gdscript/tests/scripts/format/**` — `input.gd` / `expected.gd` fixture pairs.
-- `.pre-commit-config.yaml` — local hook running `--gdscript-format --check` on staged `*.gd`.
+- `modules/foundry_script/tests/test_format.h` — doctest suite: golden fixtures, idempotency, refuse-on-error, semantic (parse-tree) preservation.
+- `modules/foundry_script/tests/scripts/format/**` — `input.fs` / `expected.fs` fixture pairs.
+- `.pre-commit-config.yaml` — local hook running `--gdscript-format --check` on staged `*.fs`.
 - CI workflow (`.github/workflows/*`) — a `--check` gate step.
 
 ---
@@ -38,9 +38,9 @@
 **Goal:** A `GDScriptFormatter` that turns source text into canonical text (default spacing, structural indentation), refusing to format on parse error, with full node coverage and faithful literals.
 
 **Files:**
-- Create: `modules/gdscript/gdscript_format.h`
-- Create: `modules/gdscript/gdscript_format.cpp`
-- Test: `modules/gdscript/tests/test_format.h` (foundation cases only; expanded in Task 5)
+- Create: `modules/foundry_script/gdscript_format.h`
+- Create: `modules/foundry_script/gdscript_format.cpp`
+- Test: `modules/foundry_script/tests/test_format.h` (foundation cases only; expanded in Task 5)
 
 **Acceptance Criteria:**
 - [ ] `GDScriptFormatter::format(source, path, &out_result)` returns success + canonical text, or failure with `file:line:col` diagnostics on parse error (and leaves no partial output).
@@ -55,7 +55,7 @@
 
 - [ ] **Step 1: Write the failing foundation test**
 
-Add `modules/gdscript/tests/test_format.h`:
+Add `modules/foundry_script/tests/test_format.h`:
 
 ```cpp
 #ifndef TEST_FORMAT_H
@@ -72,12 +72,12 @@ namespace GDScriptTests {
 static String format_or_fail(const String &p_source) {
 	GDScriptFormatter formatter;
 	GDScriptFormatter::Result result;
-	Error err = formatter.format(p_source, "test.gd", result);
+	Error err = formatter.format(p_source, "test.fs", result);
 	CHECK_MESSAGE(err == OK, "Source must format without parse errors.");
 	return result.formatted;
 }
 
-TEST_SUITE("[Modules][GDScript][Format]") {
+TEST_SUITE("[Modules][Foundry Script][Format]") {
 	TEST_CASE("[Format] Reindents structurally with tabs") {
 		String source = "func f():\n        return     1+2\n";
 		String expected = "func f():\n\treturn 1 + 2\n";
@@ -87,7 +87,7 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 	TEST_CASE("[Format] Refuses to format on parse error") {
 		GDScriptFormatter formatter;
 		GDScriptFormatter::Result result;
-		Error err = formatter.format("func (:\n", "bad.gd", result);
+		Error err = formatter.format("func (:\n", "bad.fs", result);
 		CHECK(err != OK);
 		CHECK(result.formatted.is_empty());
 		CHECK(result.error_line > 0);
@@ -113,7 +113,7 @@ Expected: build failure — `gdscript_format.h` does not exist yet.
 
 - [ ] **Step 3: Declare the formatter API**
 
-Create `modules/gdscript/gdscript_format.h`:
+Create `modules/foundry_script/gdscript_format.h`:
 
 ```cpp
 #ifndef GDSCRIPT_FORMAT_H
@@ -203,7 +203,7 @@ private:
 
 - [ ] **Step 4: Implement the pipeline (tokenize pass → parse pass → print)**
 
-Create `modules/gdscript/gdscript_format.cpp` starting with the driver:
+Create `modules/foundry_script/gdscript_format.cpp` starting with the driver:
 
 ```cpp
 #include "gdscript_format.h"
@@ -466,7 +466,7 @@ Expected: the three foundation cases PASS.
 - [ ] **Step 11: Commit**
 
 ```bash
-git add modules/gdscript/gdscript_format.h modules/gdscript/gdscript_format.cpp modules/gdscript/tests/test_format.h
+git add modules/foundry_script/gdscript_format.h modules/foundry_script/gdscript_format.cpp modules/foundry_script/tests/test_format.h
 git commit -m "feat(gdscript): add canonical formatter core and printer"
 ```
 
@@ -477,9 +477,9 @@ git commit -m "feat(gdscript): add canonical formatter core and printer"
 **Goal:** Interleave comments (from the line-keyed map) into output at the right indent, and normalize blank lines per canonical style.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_format.cpp`
-- Modify: `modules/gdscript/gdscript_format.h` (helpers: `flush_comments_before`, `emit_trailing_comment`, `blank_line_bookkeeping`)
-- Test: `modules/gdscript/tests/test_format.h`
+- Modify: `modules/foundry_script/gdscript_format.cpp`
+- Modify: `modules/foundry_script/gdscript_format.h` (helpers: `flush_comments_before`, `emit_trailing_comment`, `blank_line_bookkeeping`)
+- Test: `modules/foundry_script/tests/test_format.h`
 
 **Acceptance Criteria:**
 - [ ] Full-line comments (`CommentData.new_line == true`) are emitted before the next node at that node's indent.
@@ -588,7 +588,7 @@ Expected: all comment/blank-line cases PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add modules/gdscript/gdscript_format.cpp modules/gdscript/gdscript_format.h modules/gdscript/tests/test_format.h
+git add modules/foundry_script/gdscript_format.cpp modules/foundry_script/gdscript_format.h modules/foundry_script/tests/test_format.h
 git commit -m "feat(gdscript): interleave comments and normalize blank lines in formatter"
 ```
 
@@ -599,8 +599,8 @@ git commit -m "feat(gdscript): interleave comments and normalize blank lines in 
 **Goal:** Apply the canonical-style decisions that are not purely structural: double-quote normalization, trailing commas, redundant-paren policy, numeric casing, and fork-syntax spacing nuances.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_format.cpp`
-- Test: `modules/gdscript/tests/test_format.h`
+- Modify: `modules/foundry_script/gdscript_format.cpp`
+- Test: `modules/foundry_script/tests/test_format.h`
 
 **Acceptance Criteria:**
 - [ ] Single-quoted strings normalize to double quotes unless the content contains an unescaped `"` (then leave single). Escapes and contents are otherwise untouched.
@@ -698,7 +698,7 @@ Expected: all style cases PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add modules/gdscript/gdscript_format.cpp modules/gdscript/tests/test_format.h
+git add modules/foundry_script/gdscript_format.cpp modules/foundry_script/tests/test_format.h
 git commit -m "feat(gdscript): apply canonical style normalization in formatter"
 ```
 
@@ -710,11 +710,11 @@ git commit -m "feat(gdscript): apply canonical style normalization in formatter"
 
 **Files:**
 - Modify: `main/main.cpp` (route `--gdscript-format` into the existing test-command dispatch)
-- Modify: `modules/gdscript/register_types.cpp` (register the command handler)
+- Modify: `modules/foundry_script/register_types.cpp` (register the command handler)
 - Create: handler `gdscript_format_command()` (in `register_types.cpp` or a small `gdscript_format.cpp` free function)
 
 **Acceptance Criteria:**
-- [ ] `godot --headless --gdscript-format [MODE] [paths...]`; directories recurse for `*.gd`; no path or `-` reads stdin and writes stdout.
+- [ ] `godot --headless --gdscript-format [MODE] [paths...]`; directories recurse for `*.fs`; no path or `-` reads stdin and writes stdout.
 - [ ] Default mode writes formatted text to stdout; `--write`/`-w` rewrites in place; `--check` lists files that would change and exits 1 if any differ; `--diff`/`-d` prints a unified diff and exits 1 if any differ.
 - [ ] Parse errors print `path:line:col: message` to stderr, skip that file, and force a non-zero overall exit.
 - [ ] An all-formatted `--check` run exits 0.
@@ -742,11 +742,11 @@ and include it in the dispatch condition:
 if (is_test || is_test_command || is_format_command) {
 ```
 
-(The handler runs under `test_setup()`/`test_cleanup()` like `--gdscript-generate-tests`, so the GDScript language is initialized and the process shuts down cleanly.)
+(The handler runs under `test_setup()`/`test_cleanup()` like `--gdscript-generate-tests`, so the Foundry Script language is initialized and the process shuts down cleanly.)
 
 - [ ] **Step 2: Register the command handler**
 
-In `modules/gdscript/register_types.cpp`, near `generate_gdscript_tests` (line ~245), add under `#ifdef TOOLS_ENABLED` + `TESTS_ENABLED`:
+In `modules/foundry_script/register_types.cpp`, near `generate_gdscript_tests` (line ~245), add under `#ifdef TOOLS_ENABLED` + `TESTS_ENABLED`:
 
 ```cpp
 void gdscript_format_command() {
@@ -764,7 +764,7 @@ Add to `gdscript_format.{h,cpp}` a `GDScriptFormatterCLI` with `static void run_
 1. Reads `OS::get_singleton()->get_cmdline_args()`.
 2. Parses mode flags (`--write`/`-w`, `--check`, `--diff`/`-d`) and collects path args after `--gdscript-format`.
 3. For `-`/no path: read stdin, format, write stdout.
-4. For each path: if directory, recurse collecting `*.gd`; format each file.
+4. For each path: if directory, recurse collecting `*.fs`; format each file.
 5. Apply the mode (stdout / in-place write / list-on-diff / unified diff).
 6. On parse error: print `path:line:col: message` to stderr; mark failure.
 7. `OS::get_singleton()->set_exit_code(any_diff_or_error ? EXIT_FAILURE : EXIT_SUCCESS)`.
@@ -804,7 +804,7 @@ Run the two `Verify` commands above on a hand-made clean file and a dirty file; 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add main/main.cpp modules/gdscript/register_types.cpp modules/gdscript/gdscript_format.h modules/gdscript/gdscript_format.cpp
+git add main/main.cpp modules/foundry_script/register_types.cpp modules/foundry_script/gdscript_format.h modules/foundry_script/gdscript_format.cpp
 git commit -m "feat(gdscript): add --gdscript-format CLI with check/write/diff modes"
 ```
 
@@ -815,17 +815,17 @@ git commit -m "feat(gdscript): add --gdscript-format CLI with check/write/diff m
 **Goal:** Golden-file fixtures plus corpus-wide property tests proving idempotency, refuse-on-error, and semantic (parse-tree) preservation, with a regen command for intentional style changes.
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_format.h`
-- Create: `modules/gdscript/tests/scripts/format/**` (`input.gd`/`expected.gd` pairs)
-- Modify: `modules/gdscript/register_types.cpp` (add `--gdscript-generate-format-tests`)
+- Modify: `modules/foundry_script/tests/test_format.h`
+- Create: `modules/foundry_script/tests/scripts/format/**` (`input.fs`/`expected.fs` pairs)
+- Modify: `modules/foundry_script/register_types.cpp` (add `--gdscript-generate-format-tests`)
 
 **Acceptance Criteria:**
-- [ ] A fixture runner formats each `format/**/input.gd` and compares byte-for-byte to its `expected.gd`.
+- [ ] A fixture runner formats each `format/**/input.fs` and compares byte-for-byte to its `expected.fs`.
 - [ ] Fixture coverage: basics (spacing/indent/blanks), comments, strings/quotes, collections/trailing commas, and fork syntax (`final`, `abstract`, generics, `AsyncCallable`, traits).
-- [ ] Idempotency: for every `.gd` script under `modules/gdscript/tests/scripts/`, `format(x) == format(format(x))` (skipping known-bad/`errors` scripts).
+- [ ] Idempotency: for every `.fs` script under `modules/foundry_script/tests/scripts/`, `format(x) == format(format(x))` (skipping known-bad/`errors` scripts).
 - [ ] Refuse-on-error: every script under `analyzer/errors/` and `runtime/errors/` that fails to parse is refused (returns error, empty output).
 - [ ] Semantic preservation: for each formattable script, the **parsed tree** is structurally equivalent before and after formatting. Use a parse-tree comparison, NOT a token-stream comparison — the formatter legitimately changes the token stream (reconstructs minimal parentheses, normalizes `not in`→prefix-`not`, `&&`/`||`→`and`/`or`, single→double quotes), all of which preserve the tree but alter tokens. A token-stream check would false-positive on every such case.
-- [ ] `--gdscript-generate-format-tests` rewrites each `expected.gd` from current formatter output.
+- [ ] `--gdscript-generate-format-tests` rewrites each `expected.fs` from current formatter output.
 
 **Verify:** `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --test-suite="*Format*"` → all pass.
 
@@ -835,9 +835,9 @@ git commit -m "feat(gdscript): add --gdscript-format CLI with check/write/diff m
 
 ```cpp
 TEST_CASE("[Format] Golden fixtures round-trip") {
-	const String root = "modules/gdscript/tests/scripts/format";
+	const String root = "modules/foundry_script/tests/scripts/format";
 	for (const String &input : collect_fixture_inputs(root)) {
-		String expected_path = input.replace("input.gd", "expected.gd");
+		String expected_path = input.replace("input.fs", "expected.fs");
 		String formatted = format_or_fail(FileAccess::get_file_as_string(input));
 		String expected = FileAccess::get_file_as_string(expected_path);
 		CHECK_MESSAGE(formatted == expected, "Fixture mismatch: " + input);
@@ -847,13 +847,13 @@ TEST_CASE("[Format] Golden fixtures round-trip") {
 
 - [ ] **Step 2: Author the first fixtures**
 
-Create at least one pair per category, e.g. `modules/gdscript/tests/scripts/format/basics/spacing/input.gd` + `expected.gd`, ..., `format/fork/generics/input.gd` + `expected.gd`. Write `expected.gd` by hand for the first pair to anchor correctness, then use Step 6's generator for the rest after eyeballing.
+Create at least one pair per category, e.g. `modules/foundry_script/tests/scripts/format/basics/spacing/input.fs` + `expected.fs`, ..., `format/fork/generics/input.fs` + `expected.fs`. Write `expected.fs` by hand for the first pair to anchor correctness, then use Step 6's generator for the rest after eyeballing.
 
 - [ ] **Step 3: Add the idempotency property test**
 
 ```cpp
 TEST_CASE("[Format] Idempotent over the whole corpus") {
-	for (const String &script : collect_gd_scripts("modules/gdscript/tests/scripts")) {
+	for (const String &script : collect_gd_scripts("modules/foundry_script/tests/scripts")) {
 		if (is_known_unparseable(script)) { continue; }
 		String source = FileAccess::get_file_as_string(script);
 		GDScriptFormatter formatter;
@@ -869,7 +869,7 @@ TEST_CASE("[Format] Idempotent over the whole corpus") {
 
 ```cpp
 TEST_CASE("[Format] Refuses unparsable error fixtures") {
-	for (const String &script : collect_gd_scripts("modules/gdscript/tests/scripts/analyzer/errors")) {
+	for (const String &script : collect_gd_scripts("modules/foundry_script/tests/scripts/analyzer/errors")) {
 		String source = FileAccess::get_file_as_string(script);
 		GDScriptFormatter formatter;
 		GDScriptFormatter::Result result;
@@ -881,7 +881,7 @@ TEST_CASE("[Format] Refuses unparsable error fixtures") {
 }
 
 TEST_CASE("[Format] Preserves the parsed tree") {
-	for (const String &script : collect_gd_scripts("modules/gdscript/tests/scripts")) {
+	for (const String &script : collect_gd_scripts("modules/foundry_script/tests/scripts")) {
 		String source = FileAccess::get_file_as_string(script);
 		GDScriptFormatter formatter;
 		GDScriptFormatter::Result result;
@@ -901,7 +901,7 @@ Expected first: FAIL on missing fixtures/helpers. Implement the helper functions
 
 - [ ] **Step 6: Add the fixture regeneration command**
 
-In `register_types.cpp`, register `REGISTER_TEST_COMMAND("--gdscript-generate-format-tests", &gdscript_generate_format_tests)`. The handler walks `format/**/input.gd`, formats each, and writes the sibling `expected.gd`. Wire `--gdscript-generate-format-tests` into the same main.cpp dispatch condition as Task 4 Step 1.
+In `register_types.cpp`, register `REGISTER_TEST_COMMAND("--gdscript-generate-format-tests", &gdscript_generate_format_tests)`. The handler walks `format/**/input.fs`, formats each, and writes the sibling `expected.fs`. Wire `--gdscript-generate-format-tests` into the same main.cpp dispatch condition as Task 4 Step 1.
 
 Run after authoring inputs:
 `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-format-tests`
@@ -910,7 +910,7 @@ Then review the diff before committing.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_format.h modules/gdscript/tests/scripts/format modules/gdscript/register_types.cpp main/main.cpp
+git add modules/foundry_script/tests/test_format.h modules/foundry_script/tests/scripts/format modules/foundry_script/register_types.cpp main/main.cpp
 git commit -m "test(gdscript): add formatter fixtures, idempotency, and semantic-preservation tests"
 ```
 
@@ -918,7 +918,7 @@ git commit -m "test(gdscript): add formatter fixtures, idempotency, and semantic
 
 ## Task 6: Precommit hook + CI gate
 
-> **DEFERRED (2026-06-27, user decision).** Not implemented. Discovered constraint: this engine repo's `.gd` files are overwhelmingly *intentionally-messy* test fixtures under `modules/gdscript/tests/scripts/`, so a repo-wide `--check` would fail by design. The formatter's correctness is already gated in CI by the unit-test suite (the 1054-script parse-tree-preservation + idempotency sweeps in Task 5). When revisiting, scope the gate to **exclude fixture directories** and decide whether it targets the engine repo's own real `.gd` source or is published as a template for downstream projects using this fork's binary. Note the hook needs a built binary on PATH (`bin/godot.linuxbsd.editor.dev.x86_64` on Linux CI, `bin/godot.macos.editor.dev.arm64` locally).
+> **DEFERRED (2026-06-27, user decision).** Not implemented. Discovered constraint: this engine repo's `.fs` files are overwhelmingly *intentionally-messy* test fixtures under `modules/foundry_script/tests/scripts/`, so a repo-wide `--check` would fail by design. The formatter's correctness is already gated in CI by the unit-test suite (the 1054-script parse-tree-preservation + idempotency sweeps in Task 5). When revisiting, scope the gate to **exclude fixture directories** and decide whether it targets the engine repo's own real `.fs` source or is published as a template for downstream projects using this fork's binary. Note the hook needs a built binary on PATH (`bin/godot.linuxbsd.editor.dev.x86_64` on Linux CI, `bin/godot.macos.editor.dev.arm64` locally).
 
 **Goal:** Enforce canonical formatting in precommit and CI via `--gdscript-format --check`.
 
@@ -927,11 +927,11 @@ git commit -m "test(gdscript): add formatter fixtures, idempotency, and semantic
 - Modify/Create: CI workflow under `.github/workflows/`
 
 **Acceptance Criteria:**
-- [ ] A local precommit hook runs `--gdscript-format --check` on staged `*.gd` files and fails on any diff.
-- [ ] A CI job step runs `--check` over the GDScript tree and fails on any diff.
+- [ ] A local precommit hook runs `--gdscript-format --check` on staged `*.fs` files and fails on any diff.
+- [ ] A CI job step runs `--check` over the Foundry Script tree and fails on any diff.
 - [ ] The expected binary path is documented, consistent with the repo's existing binary-invocation conventions.
 
-**Verify:** Mis-format a tracked `.gd` file; confirm the hook and the CI step both fail; reformat with `--write`; confirm both pass.
+**Verify:** Mis-format a tracked `.fs` file; confirm the hook and the CI step both fail; reformat with `--write`; confirm both pass.
 
 **Steps:**
 
@@ -943,10 +943,10 @@ Add to `.pre-commit-config.yaml` a `repo: local` hook:
   - repo: local
     hooks:
       - id: gdscript-format
-        name: GDScript canonical format
+        name: Foundry Script canonical format
         entry: bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-format --check
         language: system
-        files: \.gd$
+        files: \.fs$
         pass_filenames: true
 ```
 
@@ -960,7 +960,7 @@ Add a step to the relevant workflow (after the build that produces the editor bi
 ./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-format --check .
 ```
 
-so the job fails if any committed `.gd` is unformatted.
+so the job fails if any committed `.fs` is unformatted.
 
 - [ ] **Step 3: Verify the gate**
 
@@ -978,7 +978,7 @@ git commit -m "ci(gdscript): enforce canonical formatting in precommit and CI"
 ## Notes for the implementer
 
 - **Build:** `python3 -m SCons platform=linuxbsd target=editor dev_build=yes tests=yes module_text_server_fb_enabled=yes -j$(nproc)` (mirrors CI; binary at `bin/godot.linuxbsd.editor.dev.x86_64`). On macOS use `platform=macos`.
-- **Test filter:** `--test-suite="*Format*"` runs only this suite (per repo memory, suite filters are reliable here; the suite tag is `[Modules][GDScript][Format]`).
+- **Test filter:** `--test-suite="*Format*"` runs only this suite (per repo memory, suite filters are reliable here; the suite tag is `[Modules][Foundry Script][Format]`).
 - **Enum spellings:** verify `Token::Type` identifiers (EOF/ERROR/LITERAL/NEWLINE/INDENT/DEDENT) and `BinaryOpNode::OpType`/`AssignmentNode::Operation` spellings against the headers while implementing — the plan uses representative names.
 - **Parser unmodified:** the formatter does its own tokenize pass for comments + literal sources; do not add getters to or otherwise change the parser/tokenizer.
 - **TOOLS_ENABLED:** keep the whole feature (and its test header body) under `#ifdef TOOLS_ENABLED`.

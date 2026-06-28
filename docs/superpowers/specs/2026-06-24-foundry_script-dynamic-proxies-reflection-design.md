@@ -1,12 +1,12 @@
-# GDScript Dynamic Proxies & Reflection — Design
+# Foundry Script Dynamic Proxies & Reflection — Design
 
 **Status:** Approved (spec only; implementation tracked via GitHub epic)
 **Date:** 2026-06-24
-**Depends on:** Epic #125 (reified generics), traits + abstract methods (landed), GDScript namespaces (`2026-06-22-gdscript-namespaces-design.md`)
+**Depends on:** Epic #125 (reified generics), traits + abstract methods (landed), Foundry Script namespaces (`2026-06-22-gdscript-namespaces-design.md`)
 
 ## 1. Summary
 
-Add a runtime capability to GDScript for creating **dynamic proxies**: synthetic
+Add a runtime capability to Foundry Script for creating **dynamic proxies**: synthetic
 objects that statically satisfy a trait or abstract type `T` and route every call
 to `T`'s contract through a user-supplied handler `Callable`. The same primitive
 serves two families of use cases with no special-casing:
@@ -27,7 +27,7 @@ primitive end-to-end.
 
 ## 2. Motivation
 
-GDScript has no method-interception hook. Method dispatch is a direct lookup in the
+Foundry Script has no method-interception hook. Method dispatch is a direct lookup in the
 script's method table (walking the base chain), with `_get`/`_set` fallback for
 *properties only*. There is no `_call`/`method_missing` analog. This makes it
 impossible today to write a stand-in object that satisfies a typed interface and
@@ -58,14 +58,14 @@ class Mock[T]:
 - `is` / trait-conformance correctness for synthetic proxy instances.
 - Handler contract, return-value coercion/validation, and error paths.
 - A read-only `godot.reflection` introspection API.
-- A GDScript stdlib delegation helper for the "intercept some, pass the rest through"
+- A Foundry Script stdlib delegation helper for the "intercept some, pass the rest through"
   AOP pattern.
 - Documentation and tests (including a mock-like validation fixture).
 
 ### Out of scope
 - A general-purpose mocking library (`Mock[T]` with matchers/verification). It is a
   downstream consumer; only a minimal mock-like *test fixture* is built here.
-- A general GDScript `_call` / method-missing hook on ordinary classes. The proxy is
+- A general Foundry Script `_call` / method-missing hook on ordinary classes. The proxy is
   a dedicated `ScriptInstance`, not a language-level fallback. (Could be a future,
   separate feature.)
 - Proxying **concrete classes that have no trait or abstract supertype** (the
@@ -83,7 +83,7 @@ codegen, and it fits the reified model directly.
 
 ## 5. Architecture
 
-### 5.1 `ProxyScriptInstance` (C++, `modules/gdscript/`)
+### 5.1 `ProxyScriptInstance` (C++, `modules/foundry_script/`)
 
 A custom implementation of the `ScriptInstance` interface
 (`core/object/script_instance.h`), hosted on a `RefCounted` Object so its lifetime is
@@ -189,9 +189,9 @@ func(method_name: StringName, args: Array) -> Variant
   - handler raises → propagated to the caller as a normal call error;
   - method not in contract → standard "invalid method" (falls through to native).
 
-### 5.5 Delegation helper (GDScript stdlib)
+### 5.5 Delegation helper (Foundry Script stdlib)
 
-A pure-GDScript convenience built on the core, for the common AOP shape of
+A pure-Foundry Script convenience built on the core, for the common AOP shape of
 "intercept a few methods, pass everything else through to a real object":
 
 ```gdscript
@@ -252,7 +252,7 @@ the reified type-argument access added by Epic #125.
 - **C++ doctest** (`tests/` / module tests) for `ProxyScriptInstance`: dispatch
   precedence (contract vs. native), `get_script`/`is` identity, property backing,
   handler errors, return coercion, instantiation bypass.
-- **GDScript fixtures** under `modules/gdscript/tests/scripts/` for end-to-end
+- **Foundry Script fixtures** under `modules/foundry_script/tests/scripts/` for end-to-end
   behavior: proxying a trait, `is`-checks against the trait and its bases, property
   read/write, the delegation helper, and a **mock-like fixture** (record calls, stub
   returns, verify) that demonstrates the primitive without shipping a mock library.

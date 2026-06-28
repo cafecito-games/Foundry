@@ -1,4 +1,4 @@
-# GDScript `Type[T]` Metatype Design
+# Foundry Script `Type[T]` Metatype Design
 
 Date: 2026-06-27
 Status: Approved brainstorm - spec PR
@@ -6,7 +6,7 @@ Fork: CafecitoGames / Godot Engine
 
 ## Summary
 
-Add `Type[T]` as the user-facing static type for GDScript class handles. A value of
+Add `Type[T]` as the user-facing static type for Foundry Script class handles. A value of
 type `Type[T]` represents a runtime type object whose produced instances are
 assignable to `T`.
 
@@ -25,7 +25,7 @@ is the annotation that describes that handle. This design intentionally does not
 add `User.self` in v1.
 
 Runtime values stay compatible with the existing engine model. A `Type[T]` value is
-the existing class-handle value: a `GDScript`/`Script` object for script classes, a
+the existing class-handle value: a `Foundry Script`/`Script` object for script classes, a
 native class handle for native classes, and the existing specialized generic class
 handle shape for `Box[int]`. The new feature gives those values a precise static
 type and a documented reflection contract.
@@ -192,7 +192,7 @@ static trait member calls as a follow-up.
 
 There is no new runtime wrapper in v1. Runtime values remain:
 
-- `GDScript`/`Script` objects for script classes and traits.
+- `Foundry Script`/`Script` objects for script classes and traits.
 - Existing native class-handle objects for native classes.
 - Existing specialized generic class-handle metadata for forms such as `Box[int]`.
 
@@ -335,7 +335,7 @@ This feature is large enough to track as an epic with native subissues:
 
 ## Testing Strategy
 
-Use GDScript fixture tests for the language surface and analyzer behavior:
+Use Foundry Script fixture tests for the language surface and analyzer behavior:
 
 - `Type[User] = User` success.
 - `Type[Base] = Derived` success.

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a headless orchestrator that drives the existing Add Type Annotation refactor to a fixpoint across a set of GDScript files, so typing a leaf unlocks its callers across iterations.
+**Goal:** Add a headless orchestrator that drives the existing Add Type Annotation refactor to a fixpoint across a set of Foundry Script files, so typing a leaf unlocks its callers across iterations.
 
-**Architecture:** A new `GDScriptFixpointInference::run()` in `modules/gdscript/editor/` composes existing primitives — `GDScriptRefactoring::find_candidates` (collect), `GDScriptRefactorEdits::apply` (apply), re-parse + `GDScriptAnalyzer::analyze()` (verify) — and writes accepted files to disk, invalidating `GDScriptCache` so dependents re-read them on the next pass. Each pass snapshots all sources and commits writes at pass end, advancing one dependency layer per iteration. No new refactor primitive.
+**Architecture:** A new `GDScriptFixpointInference::run()` in `modules/foundry_script/editor/` composes existing primitives — `GDScriptRefactoring::find_candidates` (collect), `GDScriptRefactorEdits::apply` (apply), re-parse + `GDScriptAnalyzer::analyze()` (verify) — and writes accepted files to disk, invalidating `GDScriptCache` so dependents re-read them on the next pass. Each pass snapshots all sources and commits writes at pass end, advancing one dependency layer per iteration. No new refactor primitive.
 
 **Tech Stack:** C++17, Godot module code under `#ifdef TOOLS_ENABLED`, SCons build, doctest tests via `modules/*/tests/*.h` (auto-globbed into `modules_tests.gen.h`).
 
@@ -12,9 +12,9 @@
 
 ## File Structure
 
-- `modules/gdscript/editor/gdscript_fixpoint_inference.h` — public types (`FixpointInferenceOptions`, `FixpointFileChange`, `FixpointSkipped`, `FixpointInferenceResult`) and the `GDScriptFixpointInference::run` entry point.
-- `modules/gdscript/editor/gdscript_fixpoint_inference.cpp` — the fixpoint loop and its file/cache/verify helpers. Auto-compiled by `modules/gdscript/SCsub` (`./editor/*.cpp` glob); no SCsub edit needed.
-- `modules/gdscript/tests/test_fixpoint_inference.h` — doctest suite. Auto-included by the `modules/*/tests/*.h` glob in `modules/SCsub`; no registration edit needed. Reuses `GDScriptTests::TemporaryScriptFile` and `make_context` from `test_refactor.h`.
+- `modules/foundry_script/editor/gdscript_fixpoint_inference.h` — public types (`FixpointInferenceOptions`, `FixpointFileChange`, `FixpointSkipped`, `FixpointInferenceResult`) and the `GDScriptFixpointInference::run` entry point.
+- `modules/foundry_script/editor/gdscript_fixpoint_inference.cpp` — the fixpoint loop and its file/cache/verify helpers. Auto-compiled by `modules/foundry_script/SCsub` (`./editor/*.cpp` glob); no SCsub edit needed.
+- `modules/foundry_script/tests/test_fixpoint_inference.h` — doctest suite. Auto-included by the `modules/*/tests/*.h` glob in `modules/SCsub`; no registration edit needed. Reuses `GDScriptTests::TemporaryScriptFile` and `make_context` from `test_refactor.h`.
 
 ---
 
@@ -23,9 +23,9 @@
 **Goal:** Implement `GDScriptFixpointInference::run()` end to end (snapshot → collect → apply → verify → commit-with-cache-invalidation → report), proven on a single file whose two functions both get typed.
 
 **Files:**
-- Create: `modules/gdscript/editor/gdscript_fixpoint_inference.h`
-- Create: `modules/gdscript/editor/gdscript_fixpoint_inference.cpp`
-- Create: `modules/gdscript/tests/test_fixpoint_inference.h`
+- Create: `modules/foundry_script/editor/gdscript_fixpoint_inference.h`
+- Create: `modules/foundry_script/editor/gdscript_fixpoint_inference.cpp`
+- Create: `modules/foundry_script/tests/test_fixpoint_inference.h`
 
 **Acceptance Criteria:**
 - [ ] `GDScriptFixpointInference::run()` exists with the public API below.
@@ -39,7 +39,7 @@
 
 - [ ] **Step 1: Write the header**
 
-Create `modules/gdscript/editor/gdscript_fixpoint_inference.h`:
+Create `modules/foundry_script/editor/gdscript_fixpoint_inference.h`:
 
 ```cpp
 /**************************************************************************/
@@ -99,7 +99,7 @@ public:
 
 - [ ] **Step 2: Write the implementation**
 
-Create `modules/gdscript/editor/gdscript_fixpoint_inference.cpp`:
+Create `modules/foundry_script/editor/gdscript_fixpoint_inference.cpp`:
 
 ```cpp
 /**************************************************************************/
@@ -306,7 +306,7 @@ FixpointInferenceResult GDScriptFixpointInference::run(const Vector<String> &p_p
 
 - [ ] **Step 3: Write the failing test**
 
-Create `modules/gdscript/tests/test_fixpoint_inference.h`:
+Create `modules/foundry_script/tests/test_fixpoint_inference.h`:
 
 ```cpp
 /**************************************************************************/
@@ -329,9 +329,9 @@ Create `modules/gdscript/tests/test_fixpoint_inference.h`:
 
 namespace GDScriptTests {
 
-TEST_SUITE("[Modules][GDScript][Fixpoint]") {
+TEST_SUITE("[Modules][Foundry Script][Fixpoint]") {
 	TEST_CASE("Single-file run types every resolvable declaration and is idempotent") {
-		const String path = "res://refactor/fixpoint_single.gd";
+		const String path = "res://refactor/fixpoint_single.fs";
 		const String source =
 				"func compute():\n"
 				"\treturn inner()\n"
@@ -373,9 +373,9 @@ Expected: the `[Fixpoint]` suite passes. (If the orchestrator were stubbed, the 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_fixpoint_inference.h \
-        modules/gdscript/editor/gdscript_fixpoint_inference.cpp \
-        modules/gdscript/tests/test_fixpoint_inference.h
+git add modules/foundry_script/editor/gdscript_fixpoint_inference.h \
+        modules/foundry_script/editor/gdscript_fixpoint_inference.cpp \
+        modules/foundry_script/tests/test_fixpoint_inference.h
 git commit -m "feat(gdscript): Headless fixpoint inference orchestrator (#32)"
 ```
 
@@ -386,7 +386,7 @@ git commit -m "feat(gdscript): Headless fixpoint inference orchestrator (#32)"
 **Goal:** Prove the fixpoint types an A→B→C chain across three separate files, whereas a single pass types only the leaf.
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_fixpoint_inference.h` (add a `TEST_CASE`)
+- Modify: `modules/foundry_script/tests/test_fixpoint_inference.h` (add a `TEST_CASE`)
 
 **Acceptance Criteria:**
 - [ ] A run with `max_iterations = 1` types only the leaf C; A and B remain untyped.
@@ -399,13 +399,13 @@ git commit -m "feat(gdscript): Headless fixpoint inference orchestrator (#32)"
 
 - [ ] **Step 1: Add the cross-file test case**
 
-Add inside the `TEST_SUITE("[Modules][GDScript][Fixpoint]")` block in `modules/gdscript/tests/test_fixpoint_inference.h`:
+Add inside the `TEST_SUITE("[Modules][Foundry Script][Fixpoint]")` block in `modules/foundry_script/tests/test_fixpoint_inference.h`:
 
 ```cpp
 	TEST_CASE("Cross-file chain converges past the leaf; one pass types only the leaf") {
-		const String path_a = "res://refactor/fixpoint_chain_a.gd";
-		const String path_b = "res://refactor/fixpoint_chain_b.gd";
-		const String path_c = "res://refactor/fixpoint_chain_c.gd";
+		const String path_a = "res://refactor/fixpoint_chain_a.fs";
+		const String path_b = "res://refactor/fixpoint_chain_b.fs";
+		const String path_c = "res://refactor/fixpoint_chain_c.fs";
 
 		// C is the leaf; B relays C; A reads B. Each layer needs the one below it
 		// typed and written before its own return/var becomes inferable.
@@ -413,11 +413,11 @@ Add inside the `TEST_SUITE("[Modules][GDScript][Fixpoint]")` block in `modules/g
 				"static func value():\n"
 				"\treturn 42\n";
 		const String source_b =
-				"const C = preload(\"res://refactor/fixpoint_chain_c.gd\")\n"
+				"const C = preload(\"res://refactor/fixpoint_chain_c.fs\")\n"
 				"static func relay():\n"
 				"\treturn C.value()\n";
 		const String source_a =
-				"const B = preload(\"res://refactor/fixpoint_chain_b.gd\")\n"
+				"const B = preload(\"res://refactor/fixpoint_chain_b.fs\")\n"
 				"var x = B.relay()\n";
 
 		Vector<String> paths;
@@ -466,7 +466,7 @@ Expected: both subcases pass.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_fixpoint_inference.h
+git add modules/foundry_script/tests/test_fixpoint_inference.h
 git commit -m "test(gdscript): Cross-file fixpoint convergence acceptance test (#32)"
 ```
 
@@ -477,7 +477,7 @@ git commit -m "test(gdscript): Cross-file fixpoint convergence acceptance test (
 **Goal:** Guarantee the loop terminates on a dependency cycle without crashing, and assert the change report counts are honest.
 
 **Files:**
-- Modify: `modules/gdscript/tests/test_fixpoint_inference.h` (add a `TEST_CASE`)
+- Modify: `modules/foundry_script/tests/test_fixpoint_inference.h` (add a `TEST_CASE`)
 
 **Acceptance Criteria:**
 - [ ] A run over two mutually-referencing files terminates (does not hit the hard ceiling, does not crash) and types what is provable.
@@ -489,23 +489,23 @@ git commit -m "test(gdscript): Cross-file fixpoint convergence acceptance test (
 
 - [ ] **Step 1: Add the cycle + reporting test case**
 
-Add inside the `TEST_SUITE("[Modules][GDScript][Fixpoint]")` block:
+Add inside the `TEST_SUITE("[Modules][Foundry Script][Fixpoint]")` block:
 
 ```cpp
 	TEST_CASE("Mutually-referencing files terminate and report honest counts") {
-		const String path_a = "res://refactor/fixpoint_cycle_a.gd";
-		const String path_b = "res://refactor/fixpoint_cycle_b.gd";
+		const String path_a = "res://refactor/fixpoint_cycle_a.fs";
+		const String path_b = "res://refactor/fixpoint_cycle_b.fs";
 
 		// A and B reference each other; each also has an independently-typable leaf
 		// so the run produces some annotations and then converges.
 		const String source_a =
-				"const B = preload(\"res://refactor/fixpoint_cycle_b.gd\")\n"
+				"const B = preload(\"res://refactor/fixpoint_cycle_b.fs\")\n"
 				"static func a_leaf():\n"
 				"\treturn 1\n"
 				"static func uses_b():\n"
 				"\treturn B.b_leaf()\n";
 		const String source_b =
-				"const A = preload(\"res://refactor/fixpoint_cycle_a.gd\")\n"
+				"const A = preload(\"res://refactor/fixpoint_cycle_a.fs\")\n"
 				"static func b_leaf():\n"
 				"\treturn 2\n"
 				"static func uses_a():\n"
@@ -551,7 +551,7 @@ Expected: no regressions (the new module compiles alongside existing refactor te
 - [ ] **Step 4: Commit**
 
 ```bash
-git add modules/gdscript/tests/test_fixpoint_inference.h
+git add modules/foundry_script/tests/test_fixpoint_inference.h
 git commit -m "test(gdscript): Fixpoint termination on cycles and report consistency (#32)"
 ```
 
@@ -560,6 +560,6 @@ git commit -m "test(gdscript): Fixpoint termination on cycles and report consist
 ## Notes for the implementer
 
 - All new code is editor-only: keep everything under `#ifdef TOOLS_ENABLED`. The test header additionally guards with `#ifndef GDSCRIPT_NO_LSP` because it reuses `TemporaryScriptFile` from `test_refactor.h`, which lives under that guard.
-- `res://` resolves to `modules/gdscript/tests/scripts` in the test runner, so `res://refactor/...` temp paths land in the committed fixtures directory. `TemporaryScriptFile` deletes them on scope exit; do not commit any `fixpoint_*.gd` fixture files — the sources are generated inline by the tests.
+- `res://` resolves to `modules/foundry_script/tests/scripts` in the test runner, so `res://refactor/...` temp paths land in the committed fixtures directory. `TemporaryScriptFile` deletes them on scope exit; do not commit any `fixpoint_*.fs` fixture files — the sources are generated inline by the tests.
 - The orchestrator writes to disk by design (cross-file analysis reads dependencies from disk only). The wizard (#41/#42) will wrap this with undo using the captured `before_source`; that wrapping is out of scope here.
 - If CI parity is needed, also build with `dev_mode=yes` to catch warnings-as-errors.

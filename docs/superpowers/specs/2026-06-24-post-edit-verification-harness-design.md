@@ -2,7 +2,7 @@
 
 ## Goal
 
-Given a set of candidate annotation edits across a batch of GDScript files, apply
+Given a set of candidate annotation edits across a batch of Foundry Script files, apply
 them, re-run the analyzer over the affected dependency closure, and keep only the
 edits that introduce no new analyzer errors. Drop any edit (or minimal edit subset)
 that increases the error count and report it with its diagnostics. Additionally,
@@ -18,7 +18,7 @@ re-analyzes inverse dependents and rolls back conflicting changes.
 
 ## Background
 
-- `GDScriptFixpointInference` (#32, `modules/gdscript/editor/gdscript_fixpoint_inference.*`)
+- `GDScriptFixpointInference` (#32, `modules/foundry_script/editor/gdscript_fixpoint_inference.*`)
   drives Add Type Annotation to a fixpoint. Its `verify_source` re-parses and
   analyzes only the edited file. Its header documents the deferral: "Re-analyzing
   inverse dependents and rolling back conflicting changes is deferred to issue #34."
@@ -68,7 +68,7 @@ closure itself from these direct edges.
 
 ### 2. `GDScriptVerificationHarness` (new)
 
-`modules/gdscript/editor/gdscript_verification_harness.{h,cpp}`, guarded by
+`modules/foundry_script/editor/gdscript_verification_harness.{h,cpp}`, guarded by
 `#ifdef TOOLS_ENABLED`, mirroring the structure and conventions of
 `GDScriptFixpointInference`.
 
@@ -274,8 +274,8 @@ migration path set ─┐
 
 ## Testing
 
-C++ tests under `modules/gdscript/tests/test_verification_harness.h`, registered in
-the GDScript test suite, using on-disk temp files + `EditorFileSystem` (the
+C++ tests under `modules/foundry_script/tests/test_verification_harness.h`, registered in
+the Foundry Script test suite, using on-disk temp files + `EditorFileSystem` (the
 `test_fixpoint_inference.h` pattern, `TemporaryScriptFile`):
 
 1. **Dependent-breaking edit dropped (acceptance criterion 1):** file A defines

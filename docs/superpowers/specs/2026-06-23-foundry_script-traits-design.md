@@ -1,10 +1,10 @@
-# GDScript Traits Design
+# Foundry Script Traits Design
 
 Date: 2026-06-23
 
 ## Summary
 
-Add **traits** to GDScript: reusable units of state and behavior that classes mix
+Add **traits** to Foundry Script: reusable units of state and behavior that classes mix
 in with the `uses` keyword. Traits are nominal types, so they participate fully in
 the type system — `is`, `as`, type annotations, parameters, return types, typed
 containers, and flow-sensitive narrowing all work with traits exactly as they do
@@ -26,7 +26,7 @@ trait Damageable:
 ```
 
 Global traits, declared at file level and globally named (parallel to `class_name`),
-living in normal `.gd` files:
+living in normal `.fs` files:
 
 ```gdscript
 trait_name Damageable
@@ -67,7 +67,7 @@ stricter, statically-typed direction.
   This is tracked as a follow-up and may replace the flattening model later.
 - Structural / duck typing. Trait identity is nominal: a class satisfies a trait
   only if it explicitly applies that trait (directly or transitively).
-- Separate `.gdt` trait files. Global traits live in `.gd` files via `trait_name`.
+- Separate `.gdt` trait files. Global traits live in `.fs` files via `trait_name`.
 - Generic traits.
 
 ## Declaration Model
@@ -78,7 +78,7 @@ Inline traits are class members, declared with the `trait` keyword and an indent
 body, similar to an inner class. They are addressable from outside via the
 enclosing class using qualified syntax (`MyClass.MyTrait`).
 
-Global traits are declared with a `trait_name` header at the top of a `.gd` file,
+Global traits are declared with a `trait_name` header at the top of a `.fs` file,
 parallel to `class_name`. A global trait is registered in the global script class
 registry under its name (and qualified namespace name when a `namespace` is
 present — see Namespace Interop). A file declares at most one global trait via
@@ -239,11 +239,11 @@ reassignment, consistent with current behavior for classes.
 The runtime model is member flattening with nominal trait identity, borrowing
 upstream PR 107227 for flattening and PR 112933 for type tests.
 
-- Flattening: copy trait members into each implementing `GDScript` at compile time.
+- Flattening: copy trait members into each implementing `Foundry Script` at compile time.
   To limit code bloat, identical method bytecode points at a single shared
   `GDScriptTrait` function object rather than being physically duplicated; state is
   recompiled per implementer for correct construction.
-- Trait set: each compiled `GDScript` records its transitive set of trait
+- Trait set: each compiled `Foundry Script` records its transitive set of trait
   identities. `is` and `as` test membership across the script inheritance chain.
 - Cache: `GDScriptCache` manages trait compilation artifacts and purges them after
   compilation to avoid stale cross-file caches (a lesson from proposal 6416).
@@ -359,7 +359,7 @@ recompiles the implementer through the normal reload path.
 - Negative: confirm structural typing is rejected — a class with matching members
   that does not apply a trait is not an implementer.
 
-Use GDScript script fixtures under `modules/gdscript/tests/scripts/` plus C++ tests
+Use Foundry Script script fixtures under `modules/foundry_script/tests/scripts/` plus C++ tests
 where needed.
 
 ## GitHub Epic Breakdown

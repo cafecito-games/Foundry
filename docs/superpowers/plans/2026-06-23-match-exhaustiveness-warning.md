@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add two GDScript compiler warnings — `NON_EXHAUSTIVE_MATCH` (an enum/`bool` `match` that misses values with no `_` branch) and `MATCH_WITHOUT_DEFAULT` (any other `match` with no `_` branch).
+**Goal:** Add two Foundry Script compiler warnings — `NON_EXHAUSTIVE_MATCH` (an enum/`bool` `match` that misses values with no `_` branch) and `MATCH_WITHOUT_DEFAULT` (any other `match` with no `_` branch).
 
-**Architecture:** Register two new codes in the existing `GDScriptWarning` enum/tables, then add a `#ifdef DEBUG_ENABLED` analysis pass `check_match_exhaustiveness()` called at the end of `GDScriptAnalyzer::resolve_match`. The pass reads the already-reduced match-test `DataType`, classifies its domain (enum / `bool` = finite; everything else = non-finite), and emits the appropriate warning. Project settings auto-register via the existing `WARNING_MAX` loop. Behavior is validated with GDScript `.gd`/`.out` fixtures.
+**Architecture:** Register two new codes in the existing `GDScriptWarning` enum/tables, then add a `#ifdef DEBUG_ENABLED` analysis pass `check_match_exhaustiveness()` called at the end of `GDScriptAnalyzer::resolve_match`. The pass reads the already-reduced match-test `DataType`, classifies its domain (enum / `bool` = finite; everything else = non-finite), and emits the appropriate warning. Project settings auto-register via the existing `WARNING_MAX` loop. Behavior is validated with Foundry Script `.fs`/`.out` fixtures.
 
-**Tech Stack:** C++ (Godot engine), SCons build, GDScript analyzer test-runner fixtures.
+**Tech Stack:** C++ (Godot engine), SCons build, Foundry Script analyzer test-runner fixtures.
 
 **Reference spec:** `docs/superpowers/specs/2026-06-23-match-exhaustiveness-warning-design.md`
 
@@ -21,12 +21,12 @@ In all commands below, `./bin/godot.<...>` means whichever of these binaries you
 
 | File | Responsibility | Change |
 | --- | --- | --- |
-| `modules/gdscript/gdscript_warning.h` | Warning code enum + default levels | Add 2 codes + 2 default-level entries |
-| `modules/gdscript/gdscript_warning.cpp` | Warning names + messages | Add 2 names + 2 message cases |
-| `modules/gdscript/gdscript_analyzer.h` | Analyzer method declarations | Declare `check_match_exhaustiveness` (DEBUG only) |
-| `modules/gdscript/gdscript_analyzer.cpp` | Match analysis | Implement helper + call from `resolve_match` |
+| `modules/foundry_script/gdscript_warning.h` | Warning code enum + default levels | Add 2 codes + 2 default-level entries |
+| `modules/foundry_script/gdscript_warning.cpp` | Warning names + messages | Add 2 names + 2 message cases |
+| `modules/foundry_script/gdscript_analyzer.h` | Analyzer method declarations | Declare `check_match_exhaustiveness` (DEBUG only) |
+| `modules/foundry_script/gdscript_analyzer.cpp` | Match analysis | Implement helper + call from `resolve_match` |
 | `doc/classes/ProjectSettings.xml` | Setting documentation | Add 2 `<member>` entries (alphabetical) |
-| `modules/gdscript/tests/scripts/analyzer/warnings/*.gd` + `*.out` | Behavior fixtures | Add 7 fixture pairs |
+| `modules/foundry_script/tests/scripts/analyzer/warnings/*.fs` + `*.out` | Behavior fixtures | Add 7 fixture pairs |
 
 ---
 
@@ -35,8 +35,8 @@ In all commands below, `./bin/godot.<...>` means whichever of these binaries you
 **Goal:** Add `NON_EXHAUSTIVE_MATCH` and `MATCH_WITHOUT_DEFAULT` to the warning enum, default-level table, name table, and message switch so the engine compiles with the new codes available (no behavior yet).
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_warning.h` (enum near line 93; `default_warning_levels[]` near line 152)
-- Modify: `modules/gdscript/gdscript_warning.cpp` (`get_message()` near line 169; `names[]` near line 247)
+- Modify: `modules/foundry_script/gdscript_warning.h` (enum near line 93; `default_warning_levels[]` near line 152)
+- Modify: `modules/foundry_script/gdscript_warning.cpp` (`get_message()` near line 169; `names[]` near line 247)
 
 **Acceptance Criteria:**
 - [ ] Both codes exist in the `Code` enum, inserted **after** `ONREADY_WITH_EXPORT` and **before** the `#ifndef DISABLE_DEPRECATED` block (so the deprecated codes stay contiguous at the end and `FIRST_DEPRECATED_WARNING` is unaffected).
@@ -50,7 +50,7 @@ In all commands below, `./bin/godot.<...>` means whichever of these binaries you
 
 **Steps:**
 
-- [ ] **Step 1: Add enum entries** in `modules/gdscript/gdscript_warning.h`. Find this region (line ~93):
+- [ ] **Step 1: Add enum entries** in `modules/foundry_script/gdscript_warning.h`. Find this region (line ~93):
 
 ```cpp
 		ONREADY_WITH_EXPORT, // The `@onready` annotation will set the value after `@export` which is likely not intended.
@@ -84,7 +84,7 @@ Change to:
 		WARN, // PROPERTY_USED_AS_FUNCTION
 ```
 
-- [ ] **Step 3: Add name entries** in `modules/gdscript/gdscript_warning.cpp`. Find (line ~247):
+- [ ] **Step 3: Add name entries** in `modules/foundry_script/gdscript_warning.cpp`. Find (line ~247):
 
 ```cpp
 			PNAME("ONREADY_WITH_EXPORT"),
@@ -131,7 +131,7 @@ Expected: build completes with no errors (in particular no "Amount of default le
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_warning.h modules/gdscript/gdscript_warning.cpp
+git add modules/foundry_script/gdscript_warning.h modules/foundry_script/gdscript_warning.cpp
 git commit -m "feat(gdscript): Register match exhaustiveness warning codes"
 ```
 
@@ -142,8 +142,8 @@ git commit -m "feat(gdscript): Register match exhaustiveness warning codes"
 **Goal:** Add `check_match_exhaustiveness()` and call it from `resolve_match`, so the two warnings are actually emitted according to the spec's rules (finite-domain coverage, guard exclusion, constant-only coverage, safe bail-out).
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_analyzer.h` (private method declarations, near line 98)
-- Modify: `modules/gdscript/gdscript_analyzer.cpp` (`resolve_match`, line ~2733; add helper just after it)
+- Modify: `modules/foundry_script/gdscript_analyzer.h` (private method declarations, near line 98)
+- Modify: `modules/foundry_script/gdscript_analyzer.cpp` (`resolve_match`, line ~2733; add helper just after it)
 
 **Acceptance Criteria:**
 - [ ] `resolve_match` calls `check_match_exhaustiveness(p_match)` inside `#ifdef DEBUG_ENABLED` after all branches are resolved.
@@ -159,7 +159,7 @@ git commit -m "feat(gdscript): Register match exhaustiveness warning codes"
 
 **Steps:**
 
-- [ ] **Step 1: Declare the helper** in `modules/gdscript/gdscript_analyzer.h`. Find (line ~98):
+- [ ] **Step 1: Declare the helper** in `modules/foundry_script/gdscript_analyzer.h`. Find (line ~98):
 
 ```cpp
 	void resolve_match(GDScriptParser::MatchNode *p_match);
@@ -174,7 +174,7 @@ Insert immediately after it:
 #endif
 ```
 
-- [ ] **Step 2: Ensure `HashSet` is available.** Check the top of `modules/gdscript/gdscript_analyzer.cpp` for `#include "core/templates/hash_set.h"`. If it is not present, add it alongside the other `core/templates/...` includes. (`HashMap` is already used by the analyzer.)
+- [ ] **Step 2: Ensure `HashSet` is available.** Check the top of `modules/foundry_script/gdscript_analyzer.cpp` for `#include "core/templates/hash_set.h"`. If it is not present, add it alongside the other `core/templates/...` includes. (`HashMap` is already used by the analyzer.)
 
 - [ ] **Step 3: Call the helper from `resolve_match`.** Find (line ~2733):
 
@@ -309,36 +309,36 @@ Expected: build completes with no errors or warnings-as-errors.
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_analyzer.h modules/gdscript/gdscript_analyzer.cpp
+git add modules/foundry_script/gdscript_analyzer.h modules/foundry_script/gdscript_analyzer.cpp
 git commit -m "feat(gdscript): Analyze match exhaustiveness and emit warnings"
 ```
 
 ---
 
-### Task 3: Add GDScript fixtures and verify behavior
+### Task 3: Add Foundry Script fixtures and verify behavior
 
-**Goal:** Add `.gd`/`.out` fixture pairs that exercise each rule, generate expected output with the engine, verify it matches intent, and confirm the full test suite passes.
+**Goal:** Add `.fs`/`.out` fixture pairs that exercise each rule, generate expected output with the engine, verify it matches intent, and confirm the full test suite passes.
 
-**Files (all under `modules/gdscript/tests/scripts/analyzer/warnings/`):**
-- Create: `match_non_exhaustive_enum.gd` + `.out`
-- Create: `match_exhaustive_enum_no_warning.gd` + `.out`
-- Create: `match_non_exhaustive_enum_with_wildcard.gd` + `.out`
-- Create: `match_enum_guarded_branch.gd` + `.out`
-- Create: `match_enum_non_constant_pattern.gd` + `.out`
-- Create: `match_bool_non_exhaustive.gd` + `.out`
-- Create: `match_without_default.gd` + `.out`
+**Files (all under `modules/foundry_script/tests/scripts/analyzer/warnings/`):**
+- Create: `match_non_exhaustive_enum.fs` + `.out`
+- Create: `match_exhaustive_enum_no_warning.fs` + `.out`
+- Create: `match_non_exhaustive_enum_with_wildcard.fs` + `.out`
+- Create: `match_enum_guarded_branch.fs` + `.out`
+- Create: `match_enum_non_constant_pattern.fs` + `.out`
+- Create: `match_bool_non_exhaustive.fs` + `.out`
+- Create: `match_without_default.fs` + `.out`
 
 **Acceptance Criteria:**
-- [ ] Each `.gd` has a `func test():` entry point and produces only the intended warning(s) — no incidental `UNUSED_*` warnings (the runner forces all warnings except `UNTYPED_DECLARATION`/`INFERRED_DECLARATION` to `Warn`).
+- [ ] Each `.fs` has a `func test():` entry point and produces only the intended warning(s) — no incidental `UNUSED_*` warnings (the runner forces all warnings except `UNTYPED_DECLARATION`/`INFERRED_DECLARATION` to `Warn`).
 - [ ] `.out` files contain `GDTEST_OK`, the expected `~~ WARNING ... (CODE) ...` lines, then program output.
 - [ ] The non-exhaustive enum fixture lists unhandled enumerators in declaration order.
 - [ ] The full-coverage, wildcard, and non-constant-pattern fixtures emit no match warning.
 - [ ] `match_without_default` fixture emits `MATCH_WITHOUT_DEFAULT` (runner forces its level to `Warn` despite the `Ignore` default).
-- [ ] Full GDScript + C++ test suite passes.
+- [ ] Full Foundry Script + C++ test suite passes.
 
 **Verify:** `./bin/godot.<...> --headless --test --force-colors` → all tests pass (look for the analyzer warning suite passing, no failures).
 
-**Background on fixtures:** The test runner (`modules/gdscript/tests/gdscript_test_runner.cpp`) forces every warning level to `Warn` (except `UNTYPED_DECLARATION`/`INFERRED_DECLARATION`). The expected-output format is, e.g.:
+**Background on fixtures:** The test runner (`modules/foundry_script/tests/gdscript_test_runner.cpp`) forces every warning level to `Warn` (except `UNTYPED_DECLARATION`/`INFERRED_DECLARATION`). The expected-output format is, e.g.:
 
 ```
 GDTEST_OK
@@ -346,14 +346,14 @@ GDTEST_OK
 ok
 ```
 
-**Pitfalls to avoid in `.gd` files:**
+**Pitfalls to avoid in `.fs` files:**
 - Match enums using enum-member references (`Direction.NORTH`), not bare ints, to avoid `INT_AS_ENUM_WITHOUT_MATCH`/`INT_AS_ENUM_WITHOUT_CAST`.
 - Prefix unused binds with `_` and `print()` any locals to avoid `UNUSED_VARIABLE`/`UNUSED_PARAMETER`.
 - Keep each file minimal so the `.out` is stable.
 
 **Steps:**
 
-- [ ] **Step 1: Write `match_non_exhaustive_enum.gd`** (partial enum, no wildcard → warning).
+- [ ] **Step 1: Write `match_non_exhaustive_enum.fs`** (partial enum, no wildcard → warning).
 
 ```gdscript
 enum Direction { NORTH, EAST, SOUTH, WEST }
@@ -368,7 +368,7 @@ func test():
 	print("ok")
 ```
 
-- [ ] **Step 2: Write `match_exhaustive_enum_no_warning.gd`** (full coverage, no wildcard → no warning).
+- [ ] **Step 2: Write `match_exhaustive_enum_no_warning.fs`** (full coverage, no wildcard → no warning).
 
 ```gdscript
 enum Direction { NORTH, EAST, SOUTH, WEST }
@@ -387,7 +387,7 @@ func test():
 	print("ok")
 ```
 
-- [ ] **Step 3: Write `match_non_exhaustive_enum_with_wildcard.gd`** (partial + `_` → no warning).
+- [ ] **Step 3: Write `match_non_exhaustive_enum_with_wildcard.fs`** (partial + `_` → no warning).
 
 ```gdscript
 enum Direction { NORTH, EAST, SOUTH, WEST }
@@ -402,7 +402,7 @@ func test():
 	print("ok")
 ```
 
-- [ ] **Step 4: Write `match_enum_guarded_branch.gd`** (guarded branch does not count → warning still fires for the guarded value, and the guarded wildcard is not a default).
+- [ ] **Step 4: Write `match_enum_guarded_branch.fs`** (guarded branch does not count → warning still fires for the guarded value, and the guarded wildcard is not a default).
 
 ```gdscript
 enum Direction { NORTH, EAST, SOUTH, WEST }
@@ -421,7 +421,7 @@ func test():
 	print("ok")
 ```
 
-- [ ] **Step 5: Write `match_enum_non_constant_pattern.gd`** (unguarded non-constant pattern → bail out, no warning). `other` is a non-constant local used as an expression pattern.
+- [ ] **Step 5: Write `match_enum_non_constant_pattern.fs`** (unguarded non-constant pattern → bail out, no warning). `other` is a non-constant local used as an expression pattern.
 
 ```gdscript
 enum Direction { NORTH, EAST, SOUTH, WEST }
@@ -437,7 +437,7 @@ func test():
 	print("ok")
 ```
 
-- [ ] **Step 6: Write `match_bool_non_exhaustive.gd`** (bool missing `false` → warning, unhandled: false).
+- [ ] **Step 6: Write `match_bool_non_exhaustive.fs`** (bool missing `false` → warning, unhandled: false).
 
 ```gdscript
 func test():
@@ -448,7 +448,7 @@ func test():
 	print("ok")
 ```
 
-- [ ] **Step 7: Write `match_without_default.gd`** (non-finite domain, no wildcard → `MATCH_WITHOUT_DEFAULT`).
+- [ ] **Step 7: Write `match_without_default.fs`** (non-finite domain, no wildcard → `MATCH_WITHOUT_DEFAULT`).
 
 ```gdscript
 func test():
@@ -461,9 +461,9 @@ func test():
 	print("ok")
 ```
 
-- [ ] **Step 8: Generate the `.out` files** with the engine (it writes one `.out` per `.gd`).
+- [ ] **Step 8: Generate the `.out` files** with the engine (it writes one `.out` per `.fs`).
 
-Run: `./bin/godot.<...> --headless --gdscript-generate-tests modules/gdscript/tests/scripts`
+Run: `./bin/godot.<...> --headless --gdscript-generate-tests modules/foundry_script/tests/scripts`
 
 - [ ] **Step 9: Manually review each generated `.out`** — do NOT blindly trust generation. Confirm:
   - `match_non_exhaustive_enum.out` contains a `(NON_EXHAUSTIVE_MATCH)` line for `Direction` with `Unhandled: EAST, WEST`.
@@ -471,19 +471,19 @@ Run: `./bin/godot.<...> --headless --gdscript-generate-tests modules/gdscript/te
   - `match_enum_guarded_branch.out` contains a `(NON_EXHAUSTIVE_MATCH)` line with `Unhandled: WEST`.
   - `match_bool_non_exhaustive.out` contains a `(NON_EXHAUSTIVE_MATCH)` line for `bool` with `Unhandled: false`.
   - `match_without_default.out` contains a `(MATCH_WITHOUT_DEFAULT)` line.
-  - No file contains unexpected `UNUSED_*` or `INT_AS_ENUM_*` warnings. If any do, fix the `.gd` (prefix unused vars with `_`, use enum-member references) and regenerate.
+  - No file contains unexpected `UNUSED_*` or `INT_AS_ENUM_*` warnings. If any do, fix the `.fs` (prefix unused vars with `_`, use enum-member references) and regenerate.
 
   If any expectation is wrong because of an implementation bug (not a fixture bug), return to Task 2, fix, rebuild, and regenerate.
 
 - [ ] **Step 10: Run the full suite to confirm green.**
 
 Run: `./bin/godot.<...> --headless --test --force-colors`
-Expected: all tests pass; no failures in the GDScript analyzer warning suite.
+Expected: all tests pass; no failures in the Foundry Script analyzer warning suite.
 
 - [ ] **Step 11: Commit.**
 
 ```bash
-git add modules/gdscript/tests/scripts/analyzer/warnings/match_*.gd modules/gdscript/tests/scripts/analyzer/warnings/match_*.out
+git add modules/foundry_script/tests/scripts/analyzer/warnings/match_*.fs modules/foundry_script/tests/scripts/analyzer/warnings/match_*.out
 git commit -m "test(gdscript): Cover match exhaustiveness warnings"
 ```
 

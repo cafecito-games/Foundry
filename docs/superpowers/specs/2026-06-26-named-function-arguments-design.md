@@ -1,12 +1,12 @@
-# Named function-call arguments in GDScript — Design
+# Named function-call arguments in Foundry Script — Design
 
 **Status:** Approved design, pending implementation
 **Date:** 2026-06-26
-**Scope:** GDScript module (`modules/gdscript/`)
+**Scope:** Foundry Script module (`modules/foundry_script/`)
 
 ## Summary
 
-Allow GDScript function calls to pass arguments by parameter name, so argument
+Allow Foundry Script function calls to pass arguments by parameter name, so argument
 order does not matter:
 
 ```gdscript
@@ -28,7 +28,7 @@ binary-compatibility impact.
 
 ## Goals
 
-- Pass arguments to GDScript-defined functions by name, in any order.
+- Pass arguments to Foundry Script-defined functions by name, in any order.
 - Mix positional and named arguments under the Python rule (positional first).
 - Skip optional (defaulted) parameters in the middle of the signature when the
   skipped parameter's default value is a compile-time constant.
@@ -37,8 +37,8 @@ binary-compatibility impact.
 ## Non-goals
 
 - Named arguments for engine/native methods, built-in utility functions, or any
-  call whose target the analyzer cannot statically resolve to a GDScript
-  function. Parameter names are only reliably available for GDScript-defined
+  call whose target the analyzer cannot statically resolve to a Foundry Script
+  function. Parameter names are only reliably available for Foundry Script-defined
   functions; everything else stays positional-only.
 - Skipping a middle defaulted parameter whose default is a **non-constant**
   expression. This is a precise compile error, not silent or wrong behavior.
@@ -53,11 +53,11 @@ Findings from the existing code that shape the design:
   simple comma loop in `parse_call` (`gdscript_parser.cpp` ~4017–4051).
 - **Analyzer.** Call arguments are matched to parameters strictly by index in
   `validate_call_arg` (`gdscript_analyzer.cpp` ~10511–10562). Parameter names
-  are available: GDScript functions expose
+  are available: Foundry Script functions expose
   `FunctionNode.parameters_indices: HashMap<StringName, int>`.
 - **Codegen / VM.** Every call opcode pushes arguments positionally
   (`gdscript_byte_codegen.cpp` `write_call`). The VM never sees argument names.
-- **Default values.** A GDScript default value can be an **arbitrary runtime
+- **Default values.** A Foundry Script default value can be an **arbitrary runtime
   expression** evaluated in the **callee's scope**, with access to `self`, class
   members, and earlier parameters (e.g. `func f(a, b = a + 1)`). The analyzer
   stores a constant-folded `reduced_value` in `FunctionNode.default_arg_values`
@@ -79,7 +79,7 @@ the call site.
    every following argument must be named. A positional argument after a named
    argument is an error.
 2. **Eligibility.** Named arguments are allowed only when the analyzer
-   statically resolves the callee to a known GDScript function/method: self
+   statically resolves the callee to a known Foundry Script function/method: self
    calls `f(...)`, instance calls `obj.method(...)`, static calls
    `Type.method(...)`, and the constructor `_init`. On an unresolved /
    `Callable` / untyped target, a named argument is an error.
@@ -177,7 +177,7 @@ argument's default is likewise determined by the **compile-time** receiver type
 rather than its runtime type. Making the middle-gap path honor the runtime
 override would require the presence-bitmask calling convention this design rules
 out (see Follow-ups). This behavior is locked in by the runtime fixture
-`named_call_argument_middle_gap_static_default.gd`.
+`named_call_argument_middle_gap_static_default.fs`.
 
 ## Architecture
 
@@ -200,7 +200,7 @@ record the name; then parse the value expression. Otherwise parse positionally
 and push an empty `StringName`. The two vectors are kept exactly aligned in
 length.
 
-Disambiguation is unambiguous: GDScript assignment is a statement, never an
+Disambiguation is unambiguous: Foundry Script assignment is a statement, never an
 expression, so `IDENTIFIER` followed by `EQUAL` inside an argument can only be a
 named argument. `f(a == b)` uses `EQUAL_EQUAL`; `f(a)` has no following `=`.
 Neither is affected.
@@ -212,7 +212,7 @@ by the analyzer.
 ### Analyzer
 
 A canonicalization pass runs during call resolution, after the callee signature
-is known. For any resolved-GDScript call that has at least one named argument:
+is known. For any resolved-Foundry Script call that has at least one named argument:
 
 1. **Validate ordering** (rule 1); reject named arguments on unresolved targets
    (rule 2) and the rest parameter (rule 5).
@@ -276,7 +276,7 @@ All are analyzer compile errors, each naming the offending parameter:
 
 ## Testing
 
-Following repo fixture conventions under `modules/gdscript/tests/scripts/`:
+Following repo fixture conventions under `modules/foundry_script/tests/scripts/`:
 
 **Runtime feature fixtures** (`runtime/features/`):
 
@@ -298,17 +298,17 @@ in place, and run the suite headless with `dev_mode=yes` for CI parity.
 
 Named arguments are only useful if they are discoverable, so call-site
 completion of `name =` is part of delivering the feature (not a follow-up). In
-`modules/gdscript/language_server/` and the completion path in
+`modules/foundry_script/language_server/` and the completion path in
 `gdscript_editor.cpp`:
 
 - When the cursor is inside a call's argument list and the callee resolves to a
-  known GDScript function, offer the declared parameter names as `name = `
+  known Foundry Script function, offer the declared parameter names as `name = `
   completion entries.
 - Mirror the analyzer's acceptance rules so completion never suggests something
   that would error: only parameters not already supplied (positionally or by
   name), keep offering names once a named argument has appeared
   (positional-then-named), and never offer the rest parameter.
-- Scope to statically resolved GDScript targets, matching the runtime feature;
+- Scope to statically resolved Foundry Script targets, matching the runtime feature;
   dynamic / `Callable` targets get no name completion.
 
 The resolved parameter list and `FunctionNode.parameters_indices` already

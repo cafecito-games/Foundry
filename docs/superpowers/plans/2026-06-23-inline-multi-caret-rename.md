@@ -2,20 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the GDScript modal rename prompt with inline multi-caret rename for safe single-file renames, while preserving the existing modal and diff-preview fallback paths.
+**Goal:** Replace the Foundry Script modal rename prompt with inline multi-caret rename for safe single-file renames, while preserving the existing modal and diff-preview fallback paths.
 
 **Architecture:** The refactor engine will expose resolved current-file rename occurrence ranges on `RefactorResult`. `ScriptTextEditor` will use those ranges to enter a small inline rename state that configures `CodeEdit` selections, intercepts Enter/Escape, validates final names against the original source, and falls back to the existing modal flow when the rename is not inline-safe.
 
-**Tech Stack:** Godot C++, GDScript refactoring/LSP helpers, `CodeEdit`/`TextEdit` multi-caret APIs, doctest-based engine tests in `modules/gdscript/tests/test_refactor.h`.
+**Tech Stack:** Godot C++, Foundry Script refactoring/LSP helpers, `CodeEdit`/`TextEdit` multi-caret APIs, doctest-based engine tests in `modules/foundry_script/tests/test_refactor.h`.
 
 ---
 
 ### Task 1: Expose Rename Occurrence Ranges
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_refactoring.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
-- Test: `modules/gdscript/tests/test_refactor.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
+- Test: `modules/foundry_script/tests/test_refactor.h`
 
 - [ ] **Step 1: Write the failing refactor tests**
 
@@ -24,7 +24,7 @@ Add these subcases inside `TEST_CASE("Rename refactor")`, after the existing `"s
 ```cpp
 		SUBCASE("local variable exposes current-file occurrence ranges for inline rename") {
 			String out;
-			RefactorResult r = run_rename("res://refactor/rename_local.gd", 3, 5, "total", out); // caret on `total`
+			RefactorResult r = run_rename("res://refactor/rename_local.fs", 3, 5, "total", out); // caret on `total`
 			REQUIRE(r.ok);
 			REQUIRE_EQ(r.rename_occurrences.size(), 3);
 
@@ -46,7 +46,7 @@ Add these subcases inside `TEST_CASE("Rename refactor")`, after the existing `"s
 		}
 		SUBCASE("inline rename occurrence ranges ignore strings and comments") {
 			String out;
-			RefactorResult r = run_rename("res://refactor/rename_strings_comments.gd", 3, 5, "total", out); // caret on `total`
+			RefactorResult r = run_rename("res://refactor/rename_strings_comments.fs", 3, 5, "total", out); // caret on `total`
 			REQUIRE(r.ok);
 			REQUIRE_EQ(r.rename_occurrences.size(), 2);
 			for (const RefactorTextEdit &occurrence : r.rename_occurrences) {
@@ -73,7 +73,7 @@ scons platform=macos target=editor dev_build=yes tests=yes
 
 - [ ] **Step 3: Add the result field**
 
-In `modules/gdscript/editor/gdscript_refactoring.h`, extend `RefactorResult` after `unresolved_references`:
+In `modules/foundry_script/editor/gdscript_refactoring.h`, extend `RefactorResult` after `unresolved_references`:
 
 ```cpp
 	Vector<RefactorTextEdit> rename_occurrences;
@@ -108,7 +108,7 @@ Expected: the rename refactor tests pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_refactoring.h modules/gdscript/editor/gdscript_refactoring.cpp modules/gdscript/tests/test_refactor.h
+git add modules/foundry_script/editor/gdscript_refactoring.h modules/foundry_script/editor/gdscript_refactoring.cpp modules/foundry_script/tests/test_refactor.h
 git commit -m "Expose rename occurrence ranges"
 ```
 
@@ -487,9 +487,9 @@ Run:
 pre-commit run --files \
   docs/superpowers/specs/2026-06-23-inline-multi-caret-rename-design.md \
   docs/superpowers/plans/2026-06-23-inline-multi-caret-rename.md \
-  modules/gdscript/editor/gdscript_refactoring.h \
-  modules/gdscript/editor/gdscript_refactoring.cpp \
-  modules/gdscript/tests/test_refactor.h \
+  modules/foundry_script/editor/gdscript_refactoring.h \
+  modules/foundry_script/editor/gdscript_refactoring.cpp \
+  modules/foundry_script/tests/test_refactor.h \
   editor/script/script_text_editor.h \
   editor/script/script_text_editor.cpp
 ```

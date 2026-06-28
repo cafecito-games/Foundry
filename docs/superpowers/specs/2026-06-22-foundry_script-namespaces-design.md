@@ -1,8 +1,8 @@
-# GDScript Namespaces Design
+# Foundry Script Namespaces Design
 
 ## Overview
 
-GDScript should support Java/C#-style namespace declarations for globally named script classes while keeping the first version intentionally restricted. A script without a namespace remains in the global namespace and behaves like current GDScript. A script with a namespace uses the namespace plus its `class_name` as its canonical script class identity.
+Foundry Script should support Java/C#-style namespace declarations for globally named script classes while keeping the first version intentionally restricted. A script without a namespace remains in the global namespace and behaves like current Foundry Script. A script with a namespace uses the namespace plus its `class_name` as its canonical script class identity.
 
 Example:
 
@@ -46,7 +46,7 @@ The canonical script class name is `characters.controllers.MyCharacterController
 
 ## Language Semantics
 
-A GDScript file may declare one optional top-level namespace:
+A Foundry Script file may declare one optional top-level namespace:
 
 ```gdscript
 namespace characters.controllers
@@ -165,7 +165,7 @@ Warning:
 
 - Mixed namespaces in one folder.
 
-A directory is expected to contain either all global-namespace script classes or all script classes in the same namespace. Mixing `characters`, `characters.controllers`, and global namespace script classes in one folder triggers the warning. The warning should be added to the normal GDScript warning system so projects can promote it to an error.
+A directory is expected to contain either all global-namespace script classes or all script classes in the same namespace. Mixing `characters`, `characters.controllers`, and global namespace script classes in one folder triggers the warning. The warning should be added to the normal Foundry Script warning system so projects can promote it to an error.
 
 ## Editor And LSP
 

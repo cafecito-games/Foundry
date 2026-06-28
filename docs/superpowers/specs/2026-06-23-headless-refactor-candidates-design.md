@@ -1,6 +1,6 @@
 # Headless, caret-independent Add Type Annotation candidates
 
-**Issue:** cafecito-games/godot#30 (parent epic #29 — GDScript Migration Wizard)
+**Issue:** cafecito-games/godot#30 (parent epic #29 — Foundry Script Migration Wizard)
 **Date:** 2026-06-23
 
 ## Goal
@@ -16,7 +16,7 @@ to the same underlying logic.
 
 Refactors are driven through `GDScriptRefactoring::get_available_refactors()` /
 `prepare()` keyed on a `RefactorLocation` (caret/selection) in
-`modules/gdscript/editor/gdscript_refactoring.cpp`. The Add Type Annotation
+`modules/foundry_script/editor/gdscript_refactoring.cpp`. The Add Type Annotation
 logic walks the whole tree (`find_type_annotation_in_class` / `_in_function` /
 `_in_suite`) but short-circuits the moment a declaration's span contains the
 caret, via `caret_on_segment(...)` inside the leaf functions
@@ -48,7 +48,7 @@ Out of scope:
 
 ## Public API
 
-Added to `modules/gdscript/editor/gdscript_refactoring.h`:
+Added to `modules/foundry_script/editor/gdscript_refactoring.h`:
 
 ```cpp
 // One independently-applicable refactor opportunity found without a caret.
@@ -139,7 +139,7 @@ added later if a profile shows it is needed.
 
 ## Testing
 
-C++ unit tests in `modules/gdscript/tests/test_refactor.h`:
+C++ unit tests in `modules/foundry_script/tests/test_refactor.h`:
 
 - A `find_candidates` test helper.
 - A fixture with multiple annotatable declarations — a member `var`, a local in
@@ -154,9 +154,9 @@ C++ unit tests in `modules/gdscript/tests/test_refactor.h`:
 - An unsupported-kind assertion (`RENAME` → `ok = false` with the
   not-implemented message).
 
-New fixtures live under `modules/gdscript/tests/scripts/refactor/`.
+New fixtures live under `modules/foundry_script/tests/scripts/refactor/`.
 
-Run: `./bin/godot.* --headless --test "[Modules][GDScript]"`.
+Run: `./bin/godot.* --headless --test "[Modules][Foundry Script]"`.
 
 ## Acceptance criteria (from the issue)
 

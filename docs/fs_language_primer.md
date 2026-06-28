@@ -1,12 +1,12 @@
-# Cafecito GDScript Language Primer
+# Cafecito Foundry Script Language Primer
 
-This primer describes the GDScript dialect in this Godot fork. It is written as a compact reference for people and
-code-generating models that need to produce valid, idiomatic `.gd` files for this repository.
+This primer describes the Foundry Script dialect in this Godot fork. It is written as a compact reference for people and
+code-generating models that need to produce valid, idiomatic `.fs` files for this repository.
 
 ## Paradigm
 
-GDScript is an imperative, object-oriented, event-driven scripting language integrated with Godot's scene tree and
-resource system. Every `.gd` file defines a script class, scripts usually extend engine classes such as `Node`,
+Foundry Script is an imperative, object-oriented, event-driven scripting language integrated with Godot's scene tree and
+resource system. Every `.fs` file defines a script class, scripts usually extend engine classes such as `Node`,
 `Resource`, or `RefCounted`, and behavior is commonly driven by callbacks, signals, and per-frame methods.
 
 It is gradually typed: type annotations are optional, but typed code gets stronger static analysis and better bytecode.
@@ -86,7 +86,7 @@ abstract func take_damage(amount: int) -> void
 
 #### Global Enum Names
 
-`enum_name` declares a project-global enum type. It uses the normal GDScript enum body syntax, but the declaration is a
+`enum_name` declares a project-global enum type. It uses the normal Foundry Script enum body syntax, but the declaration is a
 file-level artifact rather than a member inside a class.
 
 ```gdscript
@@ -111,7 +111,7 @@ func set_state(next_state: CharacterState) -> void:
 	state = next_state
 ```
 
-The enum name also evaluates to a read-only dictionary of its members, matching regular GDScript enum behavior:
+The enum name also evaluates to a read-only dictionary of its members, matching regular Foundry Script enum behavior:
 
 ```gdscript
 print(CharacterState.RUNNING)
@@ -170,7 +170,7 @@ func example(flag: bool) -> void:
 ```
 
 - Blocks start with `:` and are delimited by indentation, like Python.
-- Use newlines to end statements. Do not emit semicolon-terminated GDScript.
+- Use newlines to end statements. Do not emit semicolon-terminated Foundry Script.
 - Use `#` for normal comments and `##` for generated documentation comments.
 - Use `pass` for an intentionally empty function, class, branch, or loop body.
 
@@ -502,7 +502,7 @@ async func load_payload() -> void:
 
 ## Common Pitfalls
 
-- Do not write C-style or JavaScript-style blocks. GDScript uses `:` plus indentation, not braces.
+- Do not write C-style or JavaScript-style blocks. Foundry Script uses `:` plus indentation, not braces.
 - Do not generate semicolon-terminated statements. Use one statement per line.
 - Do not put `namespace` or `import` after `class_name`, `trait_name`, `extends`, `uses`, or body declarations.
 - Do not put class-level annotations before `namespace` or `import`.

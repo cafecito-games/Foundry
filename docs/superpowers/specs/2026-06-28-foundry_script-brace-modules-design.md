@@ -1,4 +1,4 @@
-# GDScript Brace Blocks And Namespace Modules
+# Foundry Script Brace Blocks And Namespace Modules
 
 ## Status
 
@@ -7,9 +7,9 @@ declarations are already a valid declaration kind and participate in namespace i
 
 ## Goals
 
-- Make brace-delimited blocks the only supported block syntax in this fork's GDScript dialect.
+- Make brace-delimited blocks the only supported block syntax in this fork's Foundry Script dialect.
 - Replace the implicit file script class plus `class_name`/`trait_name` model with explicit namespace module files.
-- Let one `.gd` file contribute multiple public top-level namespace members.
+- Let one `.fs` file contribute multiple public top-level namespace members.
 - Keep scene script attachment and `load()`/`preload()` resource loading unambiguous with `default class`.
 - Preserve current namespace/import behavior where top-level symbols are public by default.
 
@@ -23,7 +23,7 @@ declarations are already a valid declaration kind and participate in namespace i
 
 ## Source Model
 
-A `.gd` file is a namespace module. Its root is a declaration container, not a script class. The root owns:
+A `.fs` file is a namespace module. Its root is a declaration container, not a script class. The root owns:
 
 - one optional `namespace` declaration,
 - zero or more `import` declarations,
@@ -79,8 +79,8 @@ Rules:
 - `default class` is also a normal public namespace class and is addressable as `namespace.Name`.
 - Non-default top-level classes are public, instantiable with `.new()`, and valid as type annotations once indexed.
 - Files without a `default class` are valid namespace modules but cannot be attached to scenes or loaded as a
-  `GDScript` resource.
-- `load("res://path/file.gd")`, `preload(...)`, and scene script attachment succeed as script-resource operations only
+  `Foundry Script` resource.
+- `load("res://path/file.fs")`, `preload(...)`, and scene script attachment succeed as script-resource operations only
   when the file declares exactly one `default class`.
 - Files containing only traits, annotations, enums, functions, variables, constants, or non-default classes are indexed
   for symbols but rejected when a `Script` resource is required.
@@ -143,7 +143,7 @@ storage and are initialized once per project/script load, not per instance of an
 
 ## Parser And AST Design
 
-Introduce an explicit module/root AST node for `.gd` files. The module node owns namespace/import metadata and
+Introduce an explicit module/root AST node for `.fs` files. The module node owns namespace/import metadata and
 top-level declarations. `ClassNode` continues to represent actual classes only, including `default class`, and no longer
 doubles as the file root.
 
@@ -186,7 +186,7 @@ The compiler compiles a module as a set of namespace declarations plus optional 
 Namespace-level variables become static module storage initialized once per project/script load. A `default class`
 compiles as a normal class and is also recorded as the file's script-resource entry point.
 
-Resource loading asks the parsed module for its default class when a `GDScript` resource is requested. If none exists,
+Resource loading asks the parsed module for its default class when a `Foundry Script` resource is requested. If none exists,
 loading fails with a clear resource error rather than silently manufacturing an implicit root class.
 
 ## Editor, LSP, And Formatter

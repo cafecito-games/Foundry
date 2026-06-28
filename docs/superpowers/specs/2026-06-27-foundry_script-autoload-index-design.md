@@ -1,4 +1,4 @@
-# GDScript Autoload Index And Script-Owned Autoloads Design
+# Foundry Script Autoload Index And Script-Owned Autoloads Design
 
 Date: 2026-06-27
 Status: Runtime/export migration in progress
@@ -6,9 +6,9 @@ Fork: CafecitoGames / Godot Engine
 
 ## Purpose
 
-Godot autoloads are currently owned by `project.godot` settings under
+Godot autoloads are currently owned by `project.foundry` settings under
 `autoload/<Name>`. That makes autoload declarations live outside the scripts they
-instantiate, and it forces GDScript analysis, editor completion, LSP lookups, doc
+instantiate, and it forces Foundry Script analysis, editor completion, LSP lookups, doc
 generation, and runtime startup to ask project settings directly.
 
 The long-term goal is to let scripts declare that they are autoloads:
@@ -37,7 +37,7 @@ rewrite.
 - Resolve each autoload to script-aware metadata when possible: name, path,
   singleton/global flag, order, root script class, native base, `Node`
   validity, and diagnostics.
-- Make GDScript analyzer/editor/LSP code consume the index for autoload lookup
+- Make Foundry Script analyzer/editor/LSP code consume the index for autoload lookup
   and type metadata.
 - Support the intentional dual identity needed by future script-owned autoloads:
   the same name can denote a type in type positions and a singleton instance in
@@ -50,9 +50,9 @@ rewrite.
 ## Non-Goals
 
 - Implement `@autoload` in the first milestone.
-- Remove or rewrite `project.godot` autoload settings in the first milestone.
+- Remove or rewrite `project.foundry` autoload settings in the first milestone.
 - Change runtime autoload startup order in the first milestone.
-- Add a new `autoload` GDScript keyword.
+- Add a new `autoload` Foundry Script keyword.
 - Scan every script at game startup.
 - Require full analyzer dependency resolution during the existing global-class
   metadata scan.
@@ -64,7 +64,7 @@ rewrite.
 Autoload configuration is represented by project settings:
 
 ```text
-autoload/EventBus = "*res://event_bus.gd"
+autoload/EventBus = "*res://event_bus.fs"
 ```
 
 `ProjectSettings::_set()` turns these settings into
@@ -83,7 +83,7 @@ global classes. Exported projects already rely on saved script metadata, such as
 `global_script_class_cache.cfg`, because they cannot reconstruct all global
 class metadata by scanning scripts at runtime.
 
-GDScript analyzer and editor code currently read project settings directly in
+Foundry Script analyzer and editor code currently read project settings directly in
 several places to resolve autoload singleton names, type autoload references, and
 navigate to autoload symbols. The analyzer also rejects `class_name X` when an
 autoload singleton named `X` already exists. That rule is correct for today's
@@ -184,22 +184,22 @@ use it for invalidation.
 
 ## Index Ownership And Placement
 
-The index should live close to GDScript language/editor infrastructure, not in
+The index should live close to Foundry Script language/editor infrastructure, not in
 `ProjectSettings`. `ProjectSettings` should remain a producer of raw autoload
-configuration, not the semantic owner of GDScript-specific type metadata.
+configuration, not the semantic owner of Foundry Script-specific type metadata.
 
 Reasonable placement:
 
-- `modules/gdscript/gdscript_autoload_index.{h,cpp}` for language-facing
+- `modules/foundry_script/gdscript_autoload_index.{h,cpp}` for language-facing
   metadata and analyzer queries.
-- Editor-only hooks in `modules/gdscript/editor/` if the index needs richer
+- Editor-only hooks in `modules/foundry_script/editor/` if the index needs richer
   editor diagnostics or filesystem integration.
 - Thin integration from `ProjectSettings` settings-changed events to refresh or
   invalidate the index.
 
-The index should be language-aware enough to handle GDScript entries well, but it
+The index should be language-aware enough to handle Foundry Script entries well, but it
 must not prevent other script languages from continuing to work through the
-existing autoload path. V1 may limit script-aware metadata to GDScript while
+existing autoload path. V1 may limit script-aware metadata to Foundry Script while
 preserving generic autoload name/path/singleton/order entries for all autoloads.
 
 ## V1: Project-Settings-Backed Read-Only Index
@@ -211,7 +211,7 @@ For each entry:
 
 1. Copy name, path, singleton flag, and project-settings order.
 2. Resolve UID paths with the same rules startup/editor code use.
-3. If the path is a GDScript resource, parse enough metadata to identify:
+3. If the path is a Foundry Script resource, parse enough metadata to identify:
    - root `class_name`, including namespace-qualified names;
    - native base, using the same tolerant global-class extraction path where
      possible;
@@ -274,7 +274,7 @@ Move existing editor consumers to the index in stages:
 - script editor symbol lookup;
 - LSP document symbols, definitions, hover/type surfaces where autoloads appear;
 - docgen behavior that currently reads autoload settings;
-- GDScript test runner startup parity.
+- Foundry Script test runner startup parity.
 
 The first change should be consumer-neutral: outputs should match current
 project-settings behavior. Tests should prove the index is not changing name
@@ -388,7 +388,7 @@ Long-term:
 - Script-owned entries are primary.
 - Project-settings entries are compatibility/migration warnings.
 - Drag ordering writes source-owned metadata where possible, such as
-  `order_id` constants in a generated `Autoloads.gd` ordering file.
+  `order_id` constants in a generated `Autoloads.fs` ordering file.
 
 The generated ordering file idea is viable:
 
@@ -445,13 +445,13 @@ Final migration target:
 
 | Layer | File(s) | Change |
 | --- | --- | --- |
-| Index | `modules/gdscript/gdscript_autoload_index.{h,cpp}` | Add index entry model, build/invalidate API, and lookup queries. |
-| Project settings integration | `core/config/project_settings.*`, GDScript/editor hooks | Invalidate or rebuild the index when autoload settings change. |
-| Analyzer | `modules/gdscript/gdscript_analyzer.cpp` | Replace direct autoload settings lookups with index queries; allow same-script `class_name`/autoload dual identity. |
-| Editor support | `modules/gdscript/gdscript_editor.cpp`, `editor/script/script_text_editor.cpp`, highlighter | Move completion/navigation/highlighting to the index. |
-| LSP | `modules/gdscript/language_server/` | Use the index for autoload definitions and type metadata. |
-| Docgen/test runner | `modules/gdscript/editor/gdscript_docgen.cpp`, `modules/gdscript/tests/gdscript_test_runner.cpp` | Preserve behavior while routing metadata through the index where appropriate. |
-| Future annotation | `modules/gdscript/gdscript_parser.*`, `modules/gdscript/gdscript_analyzer.cpp` | Add `@autoload` built-in annotation and analyzer-backed metadata extraction. |
+| Index | `modules/foundry_script/gdscript_autoload_index.{h,cpp}` | Add index entry model, build/invalidate API, and lookup queries. |
+| Project settings integration | `core/config/project_settings.*`, Foundry Script/editor hooks | Invalidate or rebuild the index when autoload settings change. |
+| Analyzer | `modules/foundry_script/gdscript_analyzer.cpp` | Replace direct autoload settings lookups with index queries; allow same-script `class_name`/autoload dual identity. |
+| Editor support | `modules/foundry_script/gdscript_editor.cpp`, `editor/script/script_text_editor.cpp`, highlighter | Move completion/navigation/highlighting to the index. |
+| LSP | `modules/foundry_script/language_server/` | Use the index for autoload definitions and type metadata. |
+| Docgen/test runner | `modules/foundry_script/editor/gdscript_docgen.cpp`, `modules/foundry_script/tests/gdscript_test_runner.cpp` | Preserve behavior while routing metadata through the index where appropriate. |
+| Future annotation | `modules/foundry_script/gdscript_parser.*`, `modules/foundry_script/gdscript_analyzer.cpp` | Add `@autoload` built-in annotation and analyzer-backed metadata extraction. |
 | Export/runtime | `main/main.cpp`, `editor/export/editor_export_platform.cpp` | Persist/load resolved autoload index metadata and make runtime startup consume it, with project settings as compatibility input. |
 
 ## Testing Strategy
@@ -498,7 +498,7 @@ python3 -m SCons platform=linuxbsd target=editor dev_build=yes tests=yes module_
 For fixture behavior changes:
 
 ```bash
-./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-tests modules/gdscript/tests/scripts
+./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-tests modules/foundry_script/tests/scripts
 ```
 
 ## Risks
