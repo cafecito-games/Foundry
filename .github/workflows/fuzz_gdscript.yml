@@ -1,0 +1,119 @@
+name: GDScript Fuzzing
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Total fuzzing time in seconds.
+        required: false
+        default: "300"
+        type: string
+      max_len:
+        description: Maximum input length in bytes (bounds nesting depth so the run is not dominated by a single deep-recursion crash).
+        required: false
+        default: "8192"
+        type: string
+  schedule:
+    # Weekly run on the default branch. Manual dispatch for ad-hoc/longer runs.
+    - cron: "0 10 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}|${{ github.ref_name }}
+  cancel-in-progress: true
+
+# libFuzzer ships with LLVM, so use_fuzzer requires use_llvm. The single LLVM
+# toolchain means ASan and libFuzzer runtimes match (no macOS-style reduction
+# workaround needed). target=editor is required: export-template builds exit at
+# startup without a .pck.
+env:
+  SCONS_FLAGS: >-
+    dev_build=yes
+    use_llvm=yes
+    use_fuzzer=yes
+    use_asan=yes
+    module_text_server_fb_enabled=yes
+  FUZZ_DURATION: ${{ github.event.inputs.duration || '300' }}
+  FUZZ_MAX_LEN: ${{ github.event.inputs.max_len || '8192' }}
+
+jobs:
+  fuzz-gdscript:
+    runs-on: ubuntu-22.04
+    name: GDScript parser/analyzer fuzzing
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwayland-bin
+
+      - name: Free disk space on runner
+        run: |
+          echo "Disk usage before:" && df -h
+          sudo rm -rf /usr/local/lib/android
+          echo "Disk usage after:" && df -h
+
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: linux-gdscript-fuzzer
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Compilation
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }}
+          platform: linuxbsd
+          target: editor
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: linux-gdscript-fuzzer
+        continue-on-error: true
+
+      - name: Fuzz
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          GODOT_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*fuzz*' -perm -111 | head -n 1)"
+          if [ -z "${GODOT_BIN}" ]; then
+            echo "Could not find fuzzer-enabled Godot binary in bin/." >&2
+            ls -l bin/
+            exit 1
+          fi
+          echo "Fuzzer binary: ${GODOT_BIN}"
+
+          # Seed corpus from the existing script fixtures.
+          mkdir -p corpus artifacts
+          find modules/gdscript/tests/scripts -name '*.gd' -exec cp -n {} corpus/ \; 2>/dev/null || true
+          echo "Seed corpus: $(find corpus -type f | wc -l) files"
+
+          # A crash makes libFuzzer exit non-zero, failing the job and uploading
+          # the reproducer below. NOTE: this is expected to surface the currently
+          # open parser/tokenizer crashes until their fixes land.
+          "${GODOT_BIN}" \
+            -dict=modules/gdscript/tests/fuzz/gdscript.dict \
+            -artifact_prefix=artifacts/ \
+            -max_total_time="${FUZZ_DURATION}" \
+            -max_len="${FUZZ_MAX_LEN}" \
+            -timeout=25 \
+            -rss_limit_mb=4096 \
+            -print_final_stats=1 \
+            corpus
+
+      - name: Upload crash reproducers
+        if: failure()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: gdscript-fuzz-crashes
+          path: artifacts/
