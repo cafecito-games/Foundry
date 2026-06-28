@@ -51,6 +51,7 @@
 namespace TestGltf {
 
 TEST_CASE("[SceneTree][Node] GLTF test mesh and material meta export and import") {
+	ResourcePathGuard resource_path_guard;
 	init("gltf_mesh_material_extras");
 	// Setup scene.
 	Ref<StandardMaterial3D> original_material = memnew(StandardMaterial3D);
@@ -113,6 +114,7 @@ TEST_CASE("[SceneTree][Node] GLTF test mesh and material meta export and import"
 }
 
 TEST_CASE("[SceneTree][Node] GLTF test skeleton and bone export and import") {
+	ResourcePathGuard resource_path_guard;
 	init("gltf_skeleton_extras");
 	// Setup scene.
 	Skeleton3D *skeleton = memnew(Skeleton3D);

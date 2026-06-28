@@ -3841,4 +3841,17 @@ EditorFileSystem::~EditorFileSystem() {
 	}
 	filesystem = nullptr;
 	ResourceSaver::set_get_resource_id_for_path(nullptr);
+
+	// Undo the process-global callbacks installed by the constructor. These point at
+	// static members that dereference `singleton`; leaving them dangling after this
+	// instance is freed causes a use-after-free the next time a resource is imported.
+	if (ResourceLoader::import == _resource_import) {
+		ResourceLoader::import = nullptr;
+	}
+	if (ResourceImporter::load_on_startup == _load_resource_on_startup) {
+		ResourceImporter::load_on_startup = nullptr;
+	}
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }
