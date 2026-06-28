@@ -10,7 +10,72 @@ vice versa. Both import the single ``is_excluded`` / ``iter_tracked_files`` pair
 defined here so their notion of scope can never drift apart.
 """
 
+import os
 import subprocess
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Source-code file types that may legitimately *define* one of the tokens.
+# Prose/translation files (.po, .md, .xml docs, ...) are intentionally excluded:
+# they only ever reference tokens already discovered in code, and they introduce
+# false tokens such as the Czech declension "GDScriptu" in editor .po catalogs.
+# The content pass uses the same set so it never rewrites prose/translation
+# surfaces, which are handled separately in the prose context.
+SOURCE_EXTENSIONS = {
+    ".h",
+    ".hpp",
+    ".hh",
+    ".hxx",
+    ".inc",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".m",
+    ".mm",
+    ".py",
+    ".pyi",
+    ".java",
+    ".kt",
+    ".kts",
+    ".js",
+    ".cjs",
+    ".mjs",
+    ".glsl",
+    ".json",
+    ".gradle",
+    ".yml",
+    ".yaml",
+    ".rc",
+    ".props",
+    ".targets",
+    ".plist",
+    ".sh",
+    ".fish",
+    ".template",
+}
+SOURCE_FILENAMES = {"SConstruct", "SCsub"}
+
+
+def is_source_file(path):
+    """True if ``path`` is an engine source file (vs. prose/translation/data)."""
+    base = os.path.basename(path)
+    if base in SOURCE_FILENAMES:
+        return True
+    return os.path.splitext(base)[1] in SOURCE_EXTENSIONS
+
+
+def toolkit_prefix(root):
+    """Path prefix of this toolkit, relative to ``root`` (or None if outside).
+
+    The toolkit's own sources and test fixtures contain example tokens (e.g. the
+    Czech declension "GDScriptu"); they must never be scanned or rewritten as
+    engine source.
+    """
+    rel = os.path.relpath(HERE, root).replace(os.sep, "/")
+    if rel.startswith(".."):
+        return None
+    return rel.rstrip("/") + "/"
 
 
 def is_excluded(path):

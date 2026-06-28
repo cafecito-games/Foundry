@@ -28,7 +28,12 @@ import os
 import re
 import sys
 
-from common import iter_tracked_files
+from common import SOURCE_EXTENSIONS, SOURCE_FILENAMES, is_source_file, iter_tracked_files, toolkit_prefix
+
+# Re-exported for callers/tests that reference these via generate_map; the
+# canonical definitions live in common so the scan and rename passes can never
+# disagree on scope.
+__all__ = ["SOURCE_EXTENSIONS", "SOURCE_FILENAMES", "is_source_file", "toolkit_prefix"]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -59,45 +64,6 @@ TOKEN_RE = re.compile(
     r")"
     r"(?![A-Za-z0-9_])"
 )
-
-# Source-code file types that may legitimately *define* one of the tokens.
-# Prose/translation files (.po, .md, .xml docs, ...) are intentionally excluded:
-# they only ever reference tokens already discovered in code, and they introduce
-# false tokens such as the Czech declension "GDScriptu" in editor .po catalogs.
-SOURCE_EXTENSIONS = {
-    ".h",
-    ".hpp",
-    ".hh",
-    ".hxx",
-    ".inc",
-    ".c",
-    ".cc",
-    ".cpp",
-    ".cxx",
-    ".m",
-    ".mm",
-    ".py",
-    ".pyi",
-    ".java",
-    ".kt",
-    ".kts",
-    ".js",
-    ".cjs",
-    ".mjs",
-    ".glsl",
-    ".json",
-    ".gradle",
-    ".yml",
-    ".yaml",
-    ".rc",
-    ".props",
-    ".targets",
-    ".plist",
-    ".sh",
-    ".fish",
-    ".template",
-}
-SOURCE_FILENAMES = {"SConstruct", "SCsub"}
 
 
 def classify_token(token):
@@ -131,13 +97,6 @@ def scan_text(text):
     return set(TOKEN_RE.findall(text))
 
 
-def is_source_file(path):
-    base = os.path.basename(path)
-    if base in SOURCE_FILENAMES:
-        return True
-    return os.path.splitext(base)[1] in SOURCE_EXTENSIONS
-
-
 def tracked_files(root):
     """List git-tracked files under ``root``, excluding thirdparty/.git.
 
@@ -145,18 +104,6 @@ def tracked_files(root):
     rename pass share one definition of scope.
     """
     return iter_tracked_files(root)
-
-
-def toolkit_prefix(root):
-    """Path prefix of this toolkit, relative to ``root`` (or None if outside).
-
-    The toolkit's own sources and test fixtures contain example tokens (this very
-    docstring mentions GDScriptu); they must never be scanned as engine source.
-    """
-    rel = os.path.relpath(HERE, root).replace(os.sep, "/")
-    if rel.startswith(".."):
-        return None
-    return rel.rstrip("/") + "/"
 
 
 def scan_tokens(root):

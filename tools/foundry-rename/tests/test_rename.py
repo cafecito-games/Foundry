@@ -3,6 +3,7 @@
 # Foundry is a fork of Godot Engine 4.6.3-stable (MIT); see NOTICE.
 
 import os
+import subprocess
 
 import common
 import pytest
@@ -176,3 +177,37 @@ def test_move_target_that_is_also_a_source_ok(tmp_path):
     # "a.fs" exists but is itself being moved away, so it is not a clobber.
     (tmp_path / "a.fs").write_text("present")
     rename.check_move_collisions([("a.fs", "b.fs"), ("c.gd", "a.fs")], str(tmp_path))
+
+
+def test_is_source_file():
+    assert common.is_source_file("modules/x/foo.cpp")
+    assert common.is_source_file("modules/x/foo.h")
+    assert common.is_source_file("modules/x/config.py")
+    assert common.is_source_file("modules/x/SCsub")
+    # Prose / translation / data surfaces are not source.
+    assert not common.is_source_file("modules/x/doc_classes/Foo.xml")
+    assert not common.is_source_file("editor/translations/x.po")
+    assert not common.is_source_file("modules/x/tests/a.out")
+    assert not common.is_source_file("modules/x/tests/a.gd")
+    assert not common.is_source_file("docs/notes.md")
+
+
+def test_code_content_pass_skips_prose_surfaces(tmp_path):
+    # The code content pass must rewrite engine source only, leaving prose and
+    # translation surfaces (doc XML, .po, .out) for the prose pass.
+    root = str(tmp_path)
+    subprocess.check_call(["git", "init", "-q", root])
+    (tmp_path / "mod").mkdir()
+    (tmp_path / "mod" / "a.cpp").write_text("GDScriptParser p;\n")
+    (tmp_path / "mod" / "doc.xml").write_text('<class name="GDScript">\n')
+    (tmp_path / "mod" / "expected.out").write_text("GDScript error\n")
+    (tmp_path / "mod" / "lang.po").write_text('msgid "GDScript"\n')
+    subprocess.check_call(["git", "add", "-A"], cwd=root)
+
+    rename.main(["--map", FIXTURE, "--root", root, "--context", "code", "--content"])
+
+    assert (tmp_path / "mod" / "a.cpp").read_text() == "FSParser p;\n"
+    # Prose surfaces are untouched by the code pass.
+    assert (tmp_path / "mod" / "doc.xml").read_text() == '<class name="GDScript">\n'
+    assert (tmp_path / "mod" / "expected.out").read_text() == "GDScript error\n"
+    assert (tmp_path / "mod" / "lang.po").read_text() == 'msgid "GDScript"\n'

@@ -28,7 +28,7 @@ import re
 import subprocess
 import sys
 
-from common import is_excluded, iter_tracked_files
+from common import is_excluded, is_source_file, iter_tracked_files, toolkit_prefix
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -223,7 +223,17 @@ def main(argv=None):
         # The "both" context rules (file extensions, URLs) always apply on top
         # of the selected code/prose rules.
         contexts = (args.context, "both")
-        targets = args.paths if args.paths else tracked_files(root)
+        if args.paths:
+            targets = args.paths
+        else:
+            targets = tracked_files(root)
+            if args.context == "code":
+                # The code pass rewrites engine source only. Prose/translation
+                # surfaces (doc XML, .po, .out, .md, ...) and the toolkit's own
+                # sources are out of scope -- the same scope generate_map scans,
+                # so the map and the rename pass agree on what "code" means.
+                skip = toolkit_prefix(root)
+                targets = [path for path in targets if is_source_file(path) and not (skip and path.startswith(skip))]
         run_content_pass(root, rules, contexts, targets, args.dry_run)
 
     if args.moves:
