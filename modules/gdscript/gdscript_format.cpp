@@ -2473,6 +2473,13 @@ static bool write_file_atomic(const String &p_path, const String &p_content, Str
 	Ref<FileAccess> output;
 	for (int attempt = 0; attempt < 4096; attempt++) {
 		const String candidate = p_path + ".gdformat-tmp." + itos(process_id) + "." + itos(temp_counter++);
+		// A directory at the candidate path is a name collision, not a writable
+		// target. The exclusive open reports it as a generic open failure (the
+		// backend's stat guard rejects non-regular files before O_EXCL runs), so
+		// skip it here to advance to the next name instead of aborting.
+		if (DirAccess::exists(candidate)) {
+			continue;
+		}
 		Error open_error = OK;
 		output = FileAccess::open(candidate, FileAccess::WRITE | FileAccess::WRITE_EXCL, &open_error);
 		if (output.is_valid()) {
