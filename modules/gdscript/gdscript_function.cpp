@@ -32,6 +32,39 @@
 
 #include "gdscript.h"
 
+static GDScriptDataType _gdtype_from_container_type(const ContainerType &p_container_type, bool p_is_type_handle) {
+	GDScriptDataType type;
+	type.is_type_handle = p_is_type_handle;
+
+	if (p_container_type.script.is_valid()) {
+		type.kind = Object::cast_to<GDScript>(p_container_type.script.ptr()) != nullptr ? GDScriptDataType::GDSCRIPT : GDScriptDataType::SCRIPT;
+		type.builtin_type = Variant::OBJECT;
+		type.native_type = p_container_type.script->get_instance_base_type();
+		type.script_type_ref = p_container_type.script;
+		type.script_type = type.script_type_ref.ptr();
+		type.is_script_trait = p_container_type.script->is_trait_type();
+		type.script_trait = p_container_type.script->get_trait_type_name();
+	} else if (p_container_type.builtin_type == Variant::OBJECT) {
+		type.kind = GDScriptDataType::NATIVE;
+		type.builtin_type = Variant::OBJECT;
+		type.native_type = p_container_type.class_name != StringName() ? p_container_type.class_name : Object::get_class_static();
+	} else if (p_container_type.builtin_type != Variant::NIL) {
+		type.kind = GDScriptDataType::BUILTIN;
+		type.builtin_type = p_container_type.builtin_type;
+	} else {
+		type.kind = GDScriptDataType::VARIANT;
+	}
+
+	for (const ContainerType &element_type : p_container_type.element_types) {
+		type.container_element_types.push_back(_gdtype_from_container_type(element_type, false));
+	}
+	for (const ContainerType &argument_type : p_container_type.type_arguments) {
+		type.type_arguments.push_back(_gdtype_from_container_type(argument_type, false));
+	}
+
+	return type;
+}
+
 bool GDScriptDataType::is_type_handle_type(const Variant &p_variant) const {
 	if (p_variant.get_type() == Variant::NIL) {
 		return true;
@@ -77,29 +110,7 @@ bool GDScriptDataType::is_type_handle_type(const Variant &p_variant) const {
 }
 
 GDScriptDataType GDScriptDataType::from_type_handle_container_type(const ContainerType &p_container_type) {
-	GDScriptDataType type;
-	type.is_type_handle = true;
-
-	if (p_container_type.script.is_valid()) {
-		type.kind = Object::cast_to<GDScript>(p_container_type.script.ptr()) != nullptr ? GDSCRIPT : SCRIPT;
-		type.builtin_type = Variant::OBJECT;
-		type.native_type = p_container_type.script->get_instance_base_type();
-		type.script_type_ref = p_container_type.script;
-		type.script_type = type.script_type_ref.ptr();
-		type.is_script_trait = p_container_type.script->is_trait_type();
-		type.script_trait = p_container_type.script->get_trait_type_name();
-	} else if (p_container_type.builtin_type == Variant::OBJECT) {
-		type.kind = NATIVE;
-		type.builtin_type = Variant::OBJECT;
-		type.native_type = p_container_type.class_name != StringName() ? p_container_type.class_name : Object::get_class_static();
-	} else if (p_container_type.builtin_type != Variant::NIL) {
-		type.kind = BUILTIN;
-		type.builtin_type = p_container_type.builtin_type;
-	} else {
-		type.kind = VARIANT;
-	}
-
-	return type;
+	return _gdtype_from_container_type(p_container_type, true);
 }
 
 Variant GDScriptFunction::get_constant(int p_idx) const {

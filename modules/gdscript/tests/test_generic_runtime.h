@@ -375,4 +375,28 @@ TEST_CASE("[Modules][GDScript][Generics] GDScriptDataType lowers type arguments 
 	CHECK(lowered.type_arguments[0].builtin_type == Variant::STRING);
 }
 
+TEST_CASE("[Modules][GDScript][Generics] Type handle ContainerType restores type arguments") {
+	ContainerType argument;
+	argument.builtin_type = Variant::INT;
+
+	ContainerType expected;
+	expected.builtin_type = Variant::OBJECT;
+	expected.class_name = SNAME("RefCounted");
+	expected.type_arguments.push_back(argument);
+
+	const GDScriptDataType handle = GDScriptDataType::from_type_handle_container_type(expected);
+
+	CHECK(handle.is_type_handle);
+	CHECK(handle.kind == GDScriptDataType::NATIVE);
+	CHECK(handle.builtin_type == Variant::OBJECT);
+	CHECK(handle.native_type == SNAME("RefCounted"));
+	REQUIRE(handle.type_arguments.size() == 1);
+	if (handle.type_arguments.size() != 1) {
+		return;
+	}
+	CHECK(handle.type_arguments[0].kind == GDScriptDataType::BUILTIN);
+	CHECK(handle.type_arguments[0].builtin_type == Variant::INT);
+	CHECK_FALSE(handle.type_arguments[0].is_type_handle);
+}
+
 } // namespace GDScriptTests

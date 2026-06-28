@@ -734,9 +734,11 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				int type_argument_count = _code_ptr[ip + 2 + instr_var_args];
 
 				text += "construct_specialized ";
-				text += DADDR(argc + type_argument_count + 2); // target
+				text += DADDR(argc + type_argument_count + 3); // target
 				text += " = ";
 				text += DADDR(argc + type_argument_count + 1); // base script
+				text += " as ";
+				text += DADDR(argc + type_argument_count + 2); // expected base script
 				text += "[";
 				for (int i = 0; i < type_argument_count; i++) {
 					if (i > 0) {
@@ -753,7 +755,7 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				}
 				text += ")";
 
-				incr += 5 + argc + type_argument_count;
+				incr += 6 + argc + type_argument_count;
 			} break;
 			case OPCODE_CALL:
 			case OPCODE_CALL_RETURN:
