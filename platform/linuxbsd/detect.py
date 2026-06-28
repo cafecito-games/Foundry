@@ -34,6 +34,9 @@ def get_opts():
         BoolVariable("use_llvm", "Use the LLVM compiler", False),
         BoolVariable("use_static_cpp", "Link libgcc and libstdc++ statically for better portability", True),
         BoolVariable("use_coverage", "Test Godot coverage", False),
+        BoolVariable(
+            "use_fuzzer", "Build a libFuzzer harness instead of the normal entry point (requires use_llvm)", False
+        ),
         BoolVariable("use_ubsan", "Use LLVM/GCC compiler undefined behavior sanitizer (UBSAN)", False),
         BoolVariable("use_asan", "Use LLVM/GCC compiler address sanitizer (ASAN)", False),
         BoolVariable("use_lsan", "Use LLVM/GCC compiler leak sanitizer (LSAN)", False),
@@ -141,6 +144,16 @@ def configure(env: "SConsEnvironment"):
     if env["use_coverage"]:
         env.Append(CCFLAGS=["-ftest-coverage", "-fprofile-arcs"])
         env.Append(LINKFLAGS=["-ftest-coverage", "-fprofile-arcs"])
+
+    if env["use_fuzzer"]:
+        if not env["use_llvm"]:
+            print_error("use_fuzzer=yes requires use_llvm=yes (libFuzzer ships with Clang/LLVM).")
+            sys.exit(255)
+        env.extra_suffix += ".fuzz"
+        # Instrument every translation unit for coverage-guided fuzzing; libFuzzer
+        # (and its main()) is linked into the final binary by -fsanitize=fuzzer.
+        env.Append(CCFLAGS=["-fsanitize=fuzzer-no-link"])
+        env.Append(LINKFLAGS=["-fsanitize=fuzzer"])
 
     if env["use_ubsan"] or env["use_asan"] or env["use_lsan"] or env["use_tsan"] or env["use_msan"]:
         env.extra_suffix += ".san"

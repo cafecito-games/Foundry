@@ -27,3 +27,8 @@ if env.editor_build:
 if env["tests"]:
     env_gdscript.Append(CPPDEFINES=["TESTS_ENABLED"])
     env_gdscript.add_source_files(env.modules_sources, "./tests/*.cpp")
+
+# Platform-independent libFuzzer harness (parser/analyzer). Compiled only for
+# fuzzing builds; the platform-specific entry point lives under platform/.
+if env.get("use_fuzzer", False):
+    env_gdscript.add_source_files(env.modules_sources, "./tests/fuzz/*.cpp")

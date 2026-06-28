@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fuzz_gdscript_macos.mm                                                */
+/*  gdscript_fuzzer.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,27 +28,14 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-// macOS libFuzzer entry point. libFuzzer supplies main(); this translation unit
-// replaces the normal platform main() when the engine is built with
-// `use_fuzzer=yes`. It only constructs the headless OS and hands off to the
-// shared, platform-independent harness in modules/gdscript/tests/fuzz/.
+#pragma once
 
-#include "os_macos.h"
+class OS;
 
-#include "modules/gdscript/tests/fuzz/gdscript_fuzzer.h"
-
-extern "C" int LLVMFuzzerInitialize(int *p_argc, char ***p_argv) {
-	// The headless OS is used deliberately: OS_MacOS_NSApp::run() drives a Cocoa
-	// loop that never returns, whereas the fuzzer only needs the engine
-	// initialized, not running.
-	static char headless_arg[] = "--headless";
-	static char *engine_argv[] = { headless_arg };
-
-	OS_MacOS_Headless *os = memnew(OS_MacOS_Headless("godot", 1, engine_argv));
-
-	@autoreleasepool {
-		gdscript_fuzzer_initialize_engine(os, 1, engine_argv);
-	}
-
-	return 0;
-}
+// Brings the engine up once for the GDScript fuzzers. The platform-specific
+// libFuzzer entry point constructs the appropriate headless OS and passes it
+// here; everything after that (engine setup, parser/analyzer fuzzing) is
+// platform independent and lives in gdscript_fuzzer.cpp. `p_argv` is the
+// argument vector passed to Main::setup() (without the executable name) and
+// must outlive the call.
+void gdscript_fuzzer_initialize_engine(OS *p_os, int p_argc, char **p_argv);

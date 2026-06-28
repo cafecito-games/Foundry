@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fuzz_gdscript_macos.mm                                                */
+/*  fuzz_gdscript_linuxbsd.cpp                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,27 +28,26 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-// macOS libFuzzer entry point. libFuzzer supplies main(); this translation unit
+// Linux libFuzzer entry point. libFuzzer supplies main(); this translation unit
 // replaces the normal platform main() when the engine is built with
-// `use_fuzzer=yes`. It only constructs the headless OS and hands off to the
-// shared, platform-independent harness in modules/gdscript/tests/fuzz/.
+// `use_fuzzer=yes` (which requires Clang, since libFuzzer ships with LLVM). It
+// only constructs the OS and hands off to the shared, platform-independent
+// harness in modules/gdscript/tests/fuzz/. The `--headless` argument selects the
+// dummy display/audio servers so no GUI or device is needed.
 
-#include "os_macos.h"
+#include "os_linuxbsd.h"
 
 #include "modules/gdscript/tests/fuzz/gdscript_fuzzer.h"
 
 extern "C" int LLVMFuzzerInitialize(int *p_argc, char ***p_argv) {
-	// The headless OS is used deliberately: OS_MacOS_NSApp::run() drives a Cocoa
-	// loop that never returns, whereas the fuzzer only needs the engine
-	// initialized, not running.
 	static char headless_arg[] = "--headless";
 	static char *engine_argv[] = { headless_arg };
 
-	OS_MacOS_Headless *os = memnew(OS_MacOS_Headless("godot", 1, engine_argv));
+	// Heap-allocated and intentionally never freed: the engine is brought up once
+	// for the lifetime of the fuzzing process and torn down via _exit().
+	OS_LinuxBSD *os = new OS_LinuxBSD();
 
-	@autoreleasepool {
-		gdscript_fuzzer_initialize_engine(os, 1, engine_argv);
-	}
+	gdscript_fuzzer_initialize_engine(os, 1, engine_argv);
 
 	return 0;
 }

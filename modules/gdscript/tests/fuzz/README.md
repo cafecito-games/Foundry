@@ -1,69 +1,88 @@
 # GDScript parser fuzzing (libFuzzer prototype)
 
-A coverage-guided libFuzzer harness that drives `GDScriptParser::parse()` over
-mutated input. The parser's hard contract is that *any* byte sequence yields
-either a clean error list or a valid tree — never a crash. The editor and LSP
-parse untrusted/partial `.gd` buffers, so robustness here is a real concern.
+A coverage-guided libFuzzer harness that drives `GDScriptParser::parse()` (and,
+on a clean parse, `GDScriptAnalyzer::analyze()`) over mutated input. The parser's
+hard contract is that *any* byte sequence yields either a clean error list or a
+valid tree — never a crash. The editor and LSP parse untrusted/partial `.gd`
+buffers, so robustness here is a real concern.
 
-## Building (macOS)
+When `use_fuzzer=yes` is passed, the platform `main()` is replaced by a small
+libFuzzer entry point. The build is split so the interesting logic is shared:
 
-The harness replaces the platform `main()` with a libFuzzer entry point when
-`use_fuzzer=yes` is passed. Apple's clang does not ship the libFuzzer runtime,
-so the engine is compiled with Apple clang and linked against the runtime from a
-Homebrew LLVM of a matching major version (`brew install llvm`).
+- `modules/gdscript/tests/fuzz/gdscript_fuzzer.{h,cpp}` — platform-independent:
+  engine bring-up plus `LLVMFuzzerTestOneInput` (the parse/analyze loop).
+  Compiled into the GDScript module only when `use_fuzzer=yes`.
+- `platform/<platform>/fuzz_gdscript_<platform>.{cpp,mm}` — a thin shim that
+  constructs the headless OS and calls into the shared harness.
+
+## Building
+
+### Linux (used by CI)
+
+libFuzzer ships with LLVM, so `use_fuzzer` requires `use_llvm=yes`; the runtime
+is linked automatically by `-fsanitize=fuzzer`.
+
+```sh
+scons platform=linuxbsd target=editor dev_build=yes \
+  use_fuzzer=yes use_llvm=yes use_asan=yes -j$(nproc)
+# -> bin/godot.linuxbsd.editor.dev.x86_64.san.fuzz
+```
+
+### macOS
+
+Apple's clang does not ship the libFuzzer runtime, so the engine is compiled
+with Apple clang and linked against the runtime from a Homebrew LLVM of a
+matching major version (`brew install llvm`); the build picks it up
+automatically.
 
 ```sh
 scons platform=macos target=editor dev_build=yes use_fuzzer=yes use_asan=yes -j$(sysctl -n hw.ncpu)
+# -> bin/godot.macos.editor.dev.<arch>.san.fuzz
 ```
 
-`target=editor` is required: export-template builds exit at startup without a
-`.pck`, while the editor (tool) build boots without a project.
+`target=editor` is required on both platforms: export-template builds exit at
+startup without a `.pck`, while the editor (tool) build boots without a project.
 
 ## Running
 
 ```sh
-# Seed corpus from the existing script fixtures, plus a keyword dictionary.
+# Seed corpus from the existing script fixtures (a keyword dictionary ships here).
 mkdir -p corpus && find ../scripts -name '*.gd' -exec cp {} corpus/ \;
 
 ASAN_OPTIONS=detect_leaks=0 \
-  ../../../../bin/godot.macos.editor.dev.arm64.san.fuzz \
-  -dict=gdscript.dict -timeout=25 -rss_limit_mb=4096 -reduce_inputs=0 \
+  <path-to>/godot.<platform>...san.fuzz \
+  -dict=gdscript.dict -timeout=25 -rss_limit_mb=4096 \
   -jobs=6 -workers=6 corpus
 ```
 
-`-reduce_inputs=0 -shrink=0` is currently required for a stable run. Without it,
-libFuzzer's corpus-reduction path (`InputCorpus::Replace`) crashes after a few
-hundred iterations inside its own `std::string` bookkeeping — an artifact of
-mixing Apple clang's AddressSanitizer runtime with the Homebrew LLVM libFuzzer
-runtime, not a Godot bug (proven: with reduction disabled the same build runs
-30k+ iterations clean). The proper fix is to build the whole engine with a
-single LLVM toolchain (Homebrew clang for both compile and link) so the ASan and
-libFuzzer runtimes match; the crash should then disappear and `-reduce_inputs`
-can be left on.
+Observed: ~310 exec/s/worker parser-only, ~95–200 exec/s/worker with the
+analyzer; ~6.5k edges parser-only rising to ~19k edges with the analyzer pass.
 
-Observed on an M-series laptop: ~310 exec/s/worker parser-only, ~95–200
-exec/s/worker with the analyzer enabled; ~3.5M coverage counters; ~6.5k edges
-parser-only rising to ~19k edges with the analyzer pass.
+**macOS only — add `-reduce_inputs=0 -shrink=0`.** On macOS the corpus-reduction
+path (`InputCorpus::Replace`) crashes after a few hundred iterations inside
+libFuzzer's own `std::string` bookkeeping — an artifact of mixing Apple clang's
+AddressSanitizer runtime with the Homebrew LLVM libFuzzer runtime, not a Godot
+bug (with reduction disabled the same build runs 30k+ iterations clean). The
+Linux/CI build uses a single LLVM toolchain for both ASan and libFuzzer, so this
+does not occur there and input reduction can be left on.
 
 ## Harness notes
 
-The harness (`platform/macos/fuzz_gdscript_macos.mm`) boots the engine once via
-`Main::setup(..., /*second_phase=*/true)` using `OS_MacOS_Headless` (the NSApp OS
-runs a Cocoa loop that never returns). Two interactions with the engine are
-worth knowing for any future port:
+The shared harness boots the engine once via `Main::setup(..., /*second_phase=*/
+true)`. The platform shim chooses a headless OS (`OS_MacOS_Headless`, since
+`OS_MacOS_NSApp::run()` drives a Cocoa loop that never returns; `OS_LinuxBSD`
+with `--headless`). Two engine interactions matter for any port:
 
 - Godot installs its own crash handler during setup, which shadows the
-  libFuzzer/ASan signal handlers; the harness calls `disable_crash_handler()`.
+  libFuzzer/sanitizer signal handlers; the harness calls `disable_crash_handler()`.
 - The engine expects an orderly `Main::cleanup()`. Since the process only ever
   fuzzes, the harness registers a late `atexit()` that `_exit()`s, skipping the
   static-destructor teardown of the global `StringName`/`ClassDB` tables (which
   otherwise aborts at exit and is misattributed to the last input). Crashes
   during `LLVMFuzzerTestOneInput` are unaffected — ASan catches those mid-run.
 
-The harness parses every input, and on a clean parse also runs `GDScriptAnalyzer`
-(this fork's stricter typing / generics / traits live there). The `fuzz://input.gd`
-parser and script entries are dropped from `GDScriptCache` each iteration so a
-crash always reproduces from the single input that caused it.
+Each iteration also drops the `fuzz://input.gd` parser/script entries from
+`GDScriptCache` so a crash always reproduces from the single input that caused it.
 
 ## Findings
 
