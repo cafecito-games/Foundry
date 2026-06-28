@@ -1,2 +1,2 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 1: Type[T] expects exactly one type argument.
+GDTEST_PARSER_ERROR
+Type[T] expects exactly one type argument, but more were given.

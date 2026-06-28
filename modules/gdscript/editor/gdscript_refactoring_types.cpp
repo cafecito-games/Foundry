@@ -38,6 +38,26 @@
 
 namespace {
 
+bool is_usable_spelling(const String &p_rendered) {
+	// A concrete, non-Variant type can still stringify to empty or placeholder
+	// text (e.g. an invalid script reference), which is not a usable annotation.
+	return !p_rendered.is_empty() && p_rendered != "null" && !p_rendered.contains("<unresolved type>");
+}
+
+bool is_class_handle_metatype(const GDScriptParser::DataType &p_type) {
+	return p_type.is_type_handle_annotation;
+}
+
+GDScriptParser::DataType type_handle_represented_type(const GDScriptParser::DataType &p_type) {
+	GDScriptParser::DataType result = p_type;
+	result.is_meta_type = false;
+	result.is_type_handle_annotation = false;
+	result.is_pseudo_type = false;
+	result.is_constant = false;
+	result.is_nullable = false;
+	return result;
+}
+
 bool is_renderable_type(const GDScriptParser::DataType &p_type) {
 	if (!p_type.is_set() || p_type.is_variant()) {
 		return false;
@@ -45,16 +65,16 @@ bool is_renderable_type(const GDScriptParser::DataType &p_type) {
 	if (p_type.kind == GDScriptParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL) {
 		return false;
 	}
-	if (p_type.is_meta_type || p_type.is_pseudo_type) {
+	if (p_type.is_pseudo_type) {
+		return false;
+	}
+	if (p_type.is_type_handle_annotation) {
+		return true;
+	}
+	if (p_type.is_meta_type) {
 		return false;
 	}
 	return true;
-}
-
-bool is_usable_spelling(const String &p_rendered) {
-	// A concrete, non-Variant type can still stringify to empty or placeholder
-	// text (e.g. an invalid script reference), which is not a usable annotation.
-	return !p_rendered.is_empty() && p_rendered != "null" && !p_rendered.contains("<unresolved type>");
 }
 
 // Returns the namespace and bare class name of a CLASS/SCRIPT type that refers to
@@ -192,6 +212,20 @@ struct RenderState {
 // structure, but renders each CLASS/SCRIPT leaf with the minimal in-scope
 // spelling.
 bool render_scoped(const GDScriptParser::DataType &p_type, const GDScriptRefactorTypes::AnnotationScope &p_scope, String &r_rendered, RenderState &r_state) {
+	if (is_class_handle_metatype(p_type)) {
+		GDScriptParser::DataType represented_type = type_handle_represented_type(p_type);
+		String rendered_argument;
+		if (!render_scoped(represented_type, p_scope, rendered_argument, r_state)) {
+			return false;
+		}
+		String rendered = vformat("Type[%s]", rendered_argument);
+		if (p_type.is_nullable) {
+			rendered += "?";
+		}
+		r_rendered = rendered;
+		return true;
+	}
+
 	String target_namespace;
 	String class_name;
 	if (get_global_class_namespace(p_type, target_namespace, class_name)) {
@@ -340,7 +374,11 @@ bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataTy
 	if (!is_renderable_type(p_type)) {
 		return false;
 	}
-	const String rendered = p_type.to_string();
+	String rendered;
+	RenderState state;
+	if (!render_scoped(p_type, AnnotationScope(), rendered, state)) {
+		return false;
+	}
 	if (!is_usable_spelling(rendered)) {
 		return false;
 	}

@@ -292,13 +292,22 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 				if (m.get_datatype().is_hard_type()) {
 					symbol.detail += ": " + m.get_datatype().to_string();
 				}
-				if (m.variable->initializer != nullptr && m.variable->initializer->is_constant) {
-					// Render the constant through the shared doc-value formatter rather than
-					// JSON. JSON cannot represent non-finite floats, so a valid GDScript
-					// constant like `const X = NAN` would otherwise emit a spurious engine
-					// warning and render as a value-losing `null`; the doc formatter prints
-					// `nan`/`inf` and keeps enum values rendered by name.
-					symbol.detail += " = " + GDScriptDocGen::docvalue_from_expression(m.variable->initializer, m.get_datatype());
+				if (m.variable->initializer != nullptr) {
+					String value_text;
+					if (m.variable->initializer->is_constant) {
+						// Render the constant through the shared doc-value formatter rather than
+						// JSON. JSON cannot represent non-finite floats, so a valid GDScript
+						// constant like `const X = NAN` would otherwise emit a spurious engine
+						// warning and render as a value-losing `null`; the doc formatter prints
+						// `nan`/`inf` and keeps enum values rendered by name.
+						value_text = GDScriptDocGen::docvalue_from_expression(m.variable->initializer, m.get_datatype());
+					} else if (m.variable->initializer->type == GDScriptParser::Node::IDENTIFIER &&
+							m.variable->initializer->get_datatype().is_meta_type) {
+						value_text = static_cast<const GDScriptParser::IdentifierNode *>(m.variable->initializer)->name;
+					}
+					if (!value_text.is_empty()) {
+						symbol.detail += " = " + value_text;
+					}
 				}
 
 				symbol.documentation = m.variable->doc_data.description;
