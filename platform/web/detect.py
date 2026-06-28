@@ -51,7 +51,9 @@ def get_opts():
         # eval() can be a security concern, so it can be disabled.
         BoolVariable("javascript_eval", "Enable JavaScript eval interface", True),
         BoolVariable(
-            "dlink_enabled", "Enable WebAssembly dynamic linking (GDExtension support). Produces bigger binaries", False
+            "dlink_enabled",
+            "Enable WebAssembly dynamic linking (FoundryExtension support). Produces bigger binaries",
+            False,
         ),
         BoolVariable("use_closure_compiler", "Use closure compiler to minimize JavaScript code", False),
         BoolVariable(
@@ -285,7 +287,7 @@ def configure(env: "SConsEnvironment"):
 
     if env["dlink_enabled"]:
         if env["proxy_to_pthread"]:
-            print_warning("GDExtension support requires proxy_to_pthread=no, disabling proxy to pthread.")
+            print_warning("FoundryExtension support requires proxy_to_pthread=no, disabling proxy to pthread.")
             env["proxy_to_pthread"] = False
 
         env.Append(CPPDEFINES=["WEB_DLINK_ENABLED"])

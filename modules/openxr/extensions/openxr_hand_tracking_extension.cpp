@@ -192,7 +192,7 @@ void OpenXRHandTrackingExtension::on_process() {
 					next_pointer = &hand_trackers[i].data_source;
 				}
 
-				// Needed for vendor hand tracking extensions implemented from GDExtension.
+				// Needed for vendor hand tracking extensions implemented from FoundryExtension.
 				for (OpenXRExtensionWrapper *wrapper : OpenXRAPI::get_singleton()->get_registered_extension_wrappers()) {
 					void *np = wrapper->set_hand_joint_locations_and_get_next_pointer(i, next_pointer);
 					if (np != nullptr) {

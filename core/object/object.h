@@ -30,7 +30,7 @@
 
 #pragma once
 
-#include "core/extension/gdextension_interface.gen.h"
+#include "core/extension/foundry_extension_interface.gen.h"
 #include "core/object/gdtype.h"
 #include "core/object/message_queue.h"
 #include "core/object/object_id.h"
@@ -197,7 +197,7 @@ struct PropertyInfo {
 			type(Variant::OBJECT),
 			class_name(p_class_name) {}
 
-	explicit PropertyInfo(const GDExtensionPropertyInfo &pinfo) :
+	explicit PropertyInfo(const FoundryExtensionPropertyInfo &pinfo) :
 			type((Variant::Type)pinfo.type),
 			name(*reinterpret_cast<StringName *>(pinfo.name)),
 			class_name(*reinterpret_cast<StringName *>(pinfo.class_name)),
@@ -268,7 +268,7 @@ struct MethodInfo {
 
 	MethodInfo() {}
 
-	explicit MethodInfo(const GDExtensionMethodInfo &pinfo) :
+	explicit MethodInfo(const FoundryExtensionMethodInfo &pinfo) :
 			name(*reinterpret_cast<StringName *>(pinfo.name)),
 			return_val(PropertyInfo(pinfo.return_value)),
 			flags(pinfo.flags),
@@ -316,14 +316,14 @@ struct MethodInfo {
 	}
 };
 
-// API used to extend in GDExtension and other C compatible compiled languages.
+// API used to extend in FoundryExtension and other C compatible compiled languages.
 class MethodBind;
-class GDExtension;
+class FoundryExtension;
 
-struct ObjectGDExtension {
-	GDExtension *library = nullptr;
-	ObjectGDExtension *parent = nullptr;
-	List<ObjectGDExtension *> children;
+struct ObjectFoundryExtension {
+	FoundryExtension *library = nullptr;
+	ObjectFoundryExtension *parent = nullptr;
+	List<ObjectFoundryExtension *> children;
 	StringName parent_class_name;
 	StringName class_name;
 	bool editor_class = false;
@@ -338,38 +338,38 @@ struct ObjectGDExtension {
 #ifndef DISABLE_DEPRECATED
 	bool legacy_unexposed_class = false;
 #endif // DISABLE_DEPRECATED
-	GDExtensionClassSet set;
-	GDExtensionClassGet get;
-	GDExtensionClassGetPropertyList get_property_list;
-	GDExtensionClassFreePropertyList2 free_property_list2;
-	GDExtensionClassPropertyCanRevert property_can_revert;
-	GDExtensionClassPropertyGetRevert property_get_revert;
-	GDExtensionClassValidateProperty validate_property;
+	FoundryExtensionClassSet set;
+	FoundryExtensionClassGet get;
+	FoundryExtensionClassGetPropertyList get_property_list;
+	FoundryExtensionClassFreePropertyList2 free_property_list2;
+	FoundryExtensionClassPropertyCanRevert property_can_revert;
+	FoundryExtensionClassPropertyGetRevert property_get_revert;
+	FoundryExtensionClassValidateProperty validate_property;
 #ifndef DISABLE_DEPRECATED
-	GDExtensionClassNotification notification;
-	GDExtensionClassFreePropertyList free_property_list;
+	FoundryExtensionClassNotification notification;
+	FoundryExtensionClassFreePropertyList free_property_list;
 #endif // DISABLE_DEPRECATED
-	GDExtensionClassNotification2 notification2;
-	GDExtensionClassToString to_string;
-	GDExtensionClassReference reference;
-	GDExtensionClassReference unreference;
-	GDExtensionClassGetRID get_rid;
+	FoundryExtensionClassNotification2 notification2;
+	FoundryExtensionClassToString to_string;
+	FoundryExtensionClassReference reference;
+	FoundryExtensionClassReference unreference;
+	FoundryExtensionClassGetRID get_rid;
 
 	void *class_userdata = nullptr;
 
 #ifndef DISABLE_DEPRECATED
-	GDExtensionClassCreateInstance create_instance;
+	FoundryExtensionClassCreateInstance create_instance;
 #endif // DISABLE_DEPRECATED
-	GDExtensionClassCreateInstance2 create_instance2;
-	GDExtensionClassFreeInstance free_instance;
+	FoundryExtensionClassCreateInstance2 create_instance2;
+	FoundryExtensionClassFreeInstance free_instance;
 #ifndef DISABLE_DEPRECATED
-	GDExtensionClassGetVirtual get_virtual;
-	GDExtensionClassGetVirtualCallData get_virtual_call_data;
+	FoundryExtensionClassGetVirtual get_virtual;
+	FoundryExtensionClassGetVirtualCallData get_virtual_call_data;
 #endif // DISABLE_DEPRECATED
-	GDExtensionClassGetVirtual2 get_virtual2;
-	GDExtensionClassGetVirtualCallData2 get_virtual_call_data2;
-	GDExtensionClassCallVirtualWithData call_virtual_with_data;
-	GDExtensionClassRecreateInstance recreate_instance;
+	FoundryExtensionClassGetVirtual2 get_virtual2;
+	FoundryExtensionClassGetVirtualCallData2 get_virtual_call_data2;
+	FoundryExtensionClassCallVirtualWithData call_virtual_with_data;
+	FoundryExtensionClassRecreateInstance recreate_instance;
 
 #ifdef TOOLS_ENABLED
 	void *tracking_userdata = nullptr;
@@ -378,12 +378,12 @@ struct ObjectGDExtension {
 #endif
 
 	/// A type for this Object extension.
-	/// This is not exposed through the GDExtension API (yet) so it is inferred from above parameters.
+	/// This is not exposed through the FoundryExtension API (yet) so it is inferred from above parameters.
 	const GDType *gdtype;
 	void create_gdtype();
 	void destroy_gdtype();
 
-	~ObjectGDExtension();
+	~ObjectFoundryExtension();
 };
 
 #define GDVIRTUAL_CALL(m_name, ...) _gdvirtual_##m_name##_call(__VA_ARGS__)
@@ -632,8 +632,8 @@ private:
 	friend bool predelete_handler(Object *);
 	friend void postinitialize_handler(Object *);
 
-	ObjectGDExtension *_extension = nullptr;
-	GDExtensionClassInstancePtr _extension_instance = nullptr;
+	ObjectFoundryExtension *_extension = nullptr;
+	FoundryExtensionClassInstancePtr _extension_instance = nullptr;
 
 	struct SignalData {
 		struct Slot {
@@ -700,8 +700,8 @@ private:
 	struct InstanceBinding {
 		void *binding = nullptr;
 		void *token = nullptr;
-		GDExtensionInstanceBindingFreeCallback free_callback = nullptr;
-		GDExtensionInstanceBindingReferenceCallback reference_callback = nullptr;
+		FoundryExtensionInstanceBindingFreeCallback free_callback = nullptr;
+		FoundryExtensionInstanceBindingReferenceCallback reference_callback = nullptr;
 	};
 	InstanceBinding *_instance_bindings = nullptr;
 	uint32_t _instance_binding_count = 0;
@@ -729,9 +729,9 @@ protected:
 	// Used in gdvirtual.gen.inc
 	void _gdvirtual_init_method_ptr(uint32_t p_compat_hash, void *&r_fn_ptr, const StringName &p_fn_name, bool p_compat) const;
 
-	friend class GDExtensionMethodBind;
-	_ALWAYS_INLINE_ const ObjectGDExtension *_get_extension() const { return _extension; }
-	_ALWAYS_INLINE_ GDExtensionClassInstancePtr _get_extension_instance() const { return _extension_instance; }
+	friend class FoundryExtensionMethodBind;
+	_ALWAYS_INLINE_ const ObjectFoundryExtension *_get_extension() const { return _extension; }
+	_ALWAYS_INLINE_ FoundryExtensionClassInstancePtr _get_extension_instance() const { return _extension_instance; }
 	virtual void _initialize_classv() { initialize_class(); }
 	virtual bool _setv(const StringName &p_name, const Variant &p_property) { return false; }
 	virtual bool _getv(const StringName &p_name, Variant &r_property) const { return false; }
@@ -893,7 +893,7 @@ public:
 
 	const StringName &get_class_name() const;
 
-	StringName get_class_name_for_extension(const GDExtension *p_library) const;
+	StringName get_class_name_for_extension(const FoundryExtension *p_library) const;
 
 	/* IAPI */
 
@@ -1032,15 +1032,15 @@ public:
 #endif
 
 	// Used by script languages to store binding data.
-	void *get_instance_binding(void *p_token, const GDExtensionInstanceBindingCallbacks *p_callbacks);
+	void *get_instance_binding(void *p_token, const FoundryExtensionInstanceBindingCallbacks *p_callbacks);
 	// Used on creation by binding only.
-	void set_instance_binding(void *p_token, void *p_binding, const GDExtensionInstanceBindingCallbacks *p_callbacks);
+	void set_instance_binding(void *p_token, void *p_binding, const FoundryExtensionInstanceBindingCallbacks *p_callbacks);
 	bool has_instance_binding(void *p_token);
 	void free_instance_binding(void *p_token);
 
 #ifdef TOOLS_ENABLED
 	void clear_internal_extension();
-	void reset_internal_extension(ObjectGDExtension *p_extension);
+	void reset_internal_extension(ObjectFoundryExtension *p_extension);
 	bool is_extension_placeholder() const { return _extension && _extension->is_placeholder; }
 #endif
 
@@ -1145,7 +1145,7 @@ public:
 };
 
 // Using `RequiredResult<T>` as the return type indicates that null will only be returned in the case of an error.
-// This allows GDExtension language bindings to use the appropriate error handling mechanism for that language
+// This allows FoundryExtension language bindings to use the appropriate error handling mechanism for that language
 // when null is returned (for example, throwing an exception), rather than simply returning the value.
 template <typename T>
 class RequiredResult {
@@ -1258,7 +1258,7 @@ public:
 
 // Using `RequiredParam<T>` as an argument type indicates that passing null as that parameter is an error,
 // that will prevent the method from doing its intended function.
-// This allows GDExtension bindings to use language-specific mechanisms to prevent users from passing null,
+// This allows FoundryExtension bindings to use language-specific mechanisms to prevent users from passing null,
 // because it is never valid to do so.
 template <typename T>
 class RequiredParam {

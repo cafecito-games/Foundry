@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_manager.cpp                                               */
+/*  foundry_extension_manager.cpp                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,38 +28,38 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "gdextension_manager.h"
+#include "foundry_extension_manager.h"
 
-#include "core/extension/gdextension_function_loader.h"
-#include "core/extension/gdextension_library_loader.h"
-#include "core/extension/gdextension_special_compat_hashes.h"
+#include "core/extension/foundry_extension_function_loader.h"
+#include "core/extension/foundry_extension_library_loader.h"
+#include "core/extension/foundry_extension_special_compat_hashes.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/object/script_language.h"
 
-GDExtensionManager::LoadStatus GDExtensionManager::_load_extension_internal(const Ref<GDExtension> &p_extension, bool p_first_load) {
+FoundryExtensionManager::LoadStatus FoundryExtensionManager::_load_extension_internal(const Ref<FoundryExtension> &p_extension, bool p_first_load) {
 	if (level >= 0) { // Already initialized up to some level.
 		int32_t minimum_level = 0;
 		if (!p_first_load) {
 			minimum_level = p_extension->get_minimum_library_initialization_level();
-			if (minimum_level < MIN(level, GDExtension::INITIALIZATION_LEVEL_SCENE)) {
+			if (minimum_level < MIN(level, FoundryExtension::INITIALIZATION_LEVEL_SCENE)) {
 				return LOAD_STATUS_NEEDS_RESTART;
 			}
 		}
 		// Initialize up to current level.
 		for (int32_t i = minimum_level; i <= level; i++) {
-			p_extension->initialize_library(GDExtension::InitializationLevel(i));
+			p_extension->initialize_library(FoundryExtension::InitializationLevel(i));
 		}
 	}
 
 	for (const KeyValue<String, String> &kv : p_extension->class_icon_paths) {
-		gdextension_class_icon_paths[kv.key] = kv.value;
+		foundry_extension_class_icon_paths[kv.key] = kv.value;
 	}
 
 	return LOAD_STATUS_OK;
 }
 
-void GDExtensionManager::_finish_load_extension(const Ref<GDExtension> &p_extension) {
+void FoundryExtensionManager::_finish_load_extension(const Ref<FoundryExtension> &p_extension) {
 #ifdef TOOLS_ENABLED
 	// Signals that a new extension is loaded so FoundryScript can register new class names.
 	emit_signal("extension_loaded", p_extension);
@@ -74,7 +74,7 @@ void GDExtensionManager::_finish_load_extension(const Ref<GDExtension> &p_extens
 	}
 }
 
-GDExtensionManager::LoadStatus GDExtensionManager::_unload_extension_internal(const Ref<GDExtension> &p_extension) {
+FoundryExtensionManager::LoadStatus FoundryExtensionManager::_unload_extension_internal(const Ref<FoundryExtension> &p_extension) {
 #ifdef TOOLS_ENABLED
 	// Signals that a new extension is unloading so FoundryScript can unregister class names.
 	emit_signal("extension_unloading", p_extension);
@@ -91,13 +91,13 @@ GDExtensionManager::LoadStatus GDExtensionManager::_unload_extension_internal(co
 
 	if (level >= 0) { // Already initialized up to some level.
 		// Deinitialize down from current level.
-		for (int32_t i = level; i >= GDExtension::INITIALIZATION_LEVEL_CORE; i--) {
-			p_extension->deinitialize_library(GDExtension::InitializationLevel(i));
+		for (int32_t i = level; i >= FoundryExtension::INITIALIZATION_LEVEL_CORE; i--) {
+			p_extension->deinitialize_library(FoundryExtension::InitializationLevel(i));
 		}
 	}
 
 	for (const KeyValue<String, String> &kv : p_extension->class_icon_paths) {
-		gdextension_class_icon_paths.erase(kv.key);
+		foundry_extension_class_icon_paths.erase(kv.key);
 	}
 
 	// Clear main loop callbacks.
@@ -108,31 +108,31 @@ GDExtensionManager::LoadStatus GDExtensionManager::_unload_extension_internal(co
 	return LOAD_STATUS_OK;
 }
 
-GDExtensionManager::LoadStatus GDExtensionManager::load_extension(const String &p_path) {
+FoundryExtensionManager::LoadStatus FoundryExtensionManager::load_extension(const String &p_path) {
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return LOAD_STATUS_FAILED;
 	}
 
-	Ref<GDExtensionLibraryLoader> loader;
+	Ref<FoundryExtensionLibraryLoader> loader;
 	loader.instantiate();
 	return load_extension_with_loader(p_path, loader);
 }
 
-GDExtensionManager::LoadStatus GDExtensionManager::load_extension_from_function(const String &p_path, GDExtensionConstPtr<const GDExtensionInitializationFunction> p_init_func) {
-	Ref<GDExtensionFunctionLoader> func_loader;
+FoundryExtensionManager::LoadStatus FoundryExtensionManager::load_extension_from_function(const String &p_path, FoundryExtensionConstPtr<const FoundryExtensionInitializationFunction> p_init_func) {
+	Ref<FoundryExtensionFunctionLoader> func_loader;
 	func_loader.instantiate();
-	func_loader->set_initialization_function((GDExtensionInitializationFunction)*p_init_func.data);
+	func_loader->set_initialization_function((FoundryExtensionInitializationFunction)*p_init_func.data);
 	return load_extension_with_loader(p_path, func_loader);
 }
 
-GDExtensionManager::LoadStatus GDExtensionManager::load_extension_with_loader(const String &p_path, const Ref<GDExtensionLoader> &p_loader) {
+FoundryExtensionManager::LoadStatus FoundryExtensionManager::load_extension_with_loader(const String &p_path, const Ref<FoundryExtensionLoader> &p_loader) {
 	DEV_ASSERT(p_loader.is_valid());
 
-	if (gdextension_map.has(p_path)) {
+	if (foundry_extension_map.has(p_path)) {
 		return LOAD_STATUS_ALREADY_LOADED;
 	}
 
-	Ref<GDExtension> extension;
+	Ref<FoundryExtension> extension;
 	extension.instantiate();
 	Error err = extension->open_library(p_path, p_loader);
 	if (err != OK) {
@@ -147,26 +147,26 @@ GDExtensionManager::LoadStatus GDExtensionManager::load_extension_with_loader(co
 	_finish_load_extension(extension);
 
 	extension->set_path(p_path);
-	gdextension_map[p_path] = extension;
+	foundry_extension_map[p_path] = extension;
 	return LOAD_STATUS_OK;
 }
 
-GDExtensionManager::LoadStatus GDExtensionManager::reload_extension(const String &p_path) {
+FoundryExtensionManager::LoadStatus FoundryExtensionManager::reload_extension(const String &p_path) {
 #ifndef TOOLS_ENABLED
-	ERR_FAIL_V_MSG(LOAD_STATUS_FAILED, "GDExtensions can only be reloaded in an editor build.");
+	ERR_FAIL_V_MSG(LOAD_STATUS_FAILED, "FoundryExtensions can only be reloaded in an editor build.");
 #else
-	ERR_FAIL_COND_V_MSG(!Engine::get_singleton()->is_extension_reloading_enabled(), LOAD_STATUS_FAILED, "GDExtension reloading is disabled.");
+	ERR_FAIL_COND_V_MSG(!Engine::get_singleton()->is_extension_reloading_enabled(), LOAD_STATUS_FAILED, "FoundryExtension reloading is disabled.");
 
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return LOAD_STATUS_FAILED;
 	}
 
-	if (!gdextension_map.has(p_path)) {
+	if (!foundry_extension_map.has(p_path)) {
 		return LOAD_STATUS_NOT_LOADED;
 	}
 
-	Ref<GDExtension> extension = gdextension_map[p_path];
-	ERR_FAIL_COND_V_MSG(!extension->is_reloadable(), LOAD_STATUS_FAILED, vformat("This GDExtension is not marked as 'reloadable' or doesn't support reloading: %s.", p_path));
+	Ref<FoundryExtension> extension = foundry_extension_map[p_path];
+	ERR_FAIL_COND_V_MSG(!extension->is_reloadable(), LOAD_STATUS_FAILED, vformat("This FoundryExtension is not marked as 'reloadable' or doesn't support reloading: %s.", p_path));
 
 	LoadStatus status;
 
@@ -206,89 +206,89 @@ GDExtensionManager::LoadStatus GDExtensionManager::reload_extension(const String
 #endif
 }
 
-GDExtensionManager::LoadStatus GDExtensionManager::unload_extension(const String &p_path) {
+FoundryExtensionManager::LoadStatus FoundryExtensionManager::unload_extension(const String &p_path) {
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return LOAD_STATUS_FAILED;
 	}
 
-	if (!gdextension_map.has(p_path)) {
+	if (!foundry_extension_map.has(p_path)) {
 		return LOAD_STATUS_NOT_LOADED;
 	}
 
-	Ref<GDExtension> extension = gdextension_map[p_path];
+	Ref<FoundryExtension> extension = foundry_extension_map[p_path];
 
 	LoadStatus status = _unload_extension_internal(extension);
 	if (status != LOAD_STATUS_OK) {
 		return status;
 	}
 
-	gdextension_map.erase(p_path);
+	foundry_extension_map.erase(p_path);
 	return LOAD_STATUS_OK;
 }
 
-bool GDExtensionManager::is_extension_loaded(const String &p_path) const {
-	return gdextension_map.has(p_path);
+bool FoundryExtensionManager::is_extension_loaded(const String &p_path) const {
+	return foundry_extension_map.has(p_path);
 }
 
-Vector<String> GDExtensionManager::get_loaded_extensions() const {
+Vector<String> FoundryExtensionManager::get_loaded_extensions() const {
 	Vector<String> ret;
-	for (const KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
+	for (const KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
 		ret.push_back(E.key);
 	}
 	return ret;
 }
-Ref<GDExtension> GDExtensionManager::get_extension(const String &p_path) {
-	HashMap<String, Ref<GDExtension>>::Iterator E = gdextension_map.find(p_path);
-	ERR_FAIL_COND_V(!E, Ref<GDExtension>());
+Ref<FoundryExtension> FoundryExtensionManager::get_extension(const String &p_path) {
+	HashMap<String, Ref<FoundryExtension>>::Iterator E = foundry_extension_map.find(p_path);
+	ERR_FAIL_COND_V(!E, Ref<FoundryExtension>());
 	return E->value;
 }
 
-bool GDExtensionManager::class_has_icon_path(const String &p_class) const {
+bool FoundryExtensionManager::class_has_icon_path(const String &p_class) const {
 	// TODO: Check that the icon belongs to a registered class somehow.
-	return gdextension_class_icon_paths.has(p_class);
+	return foundry_extension_class_icon_paths.has(p_class);
 }
 
-String GDExtensionManager::class_get_icon_path(const String &p_class) const {
+String FoundryExtensionManager::class_get_icon_path(const String &p_class) const {
 	// TODO: Check that the icon belongs to a registered class somehow.
-	if (gdextension_class_icon_paths.has(p_class)) {
-		return gdextension_class_icon_paths[p_class];
+	if (foundry_extension_class_icon_paths.has(p_class)) {
+		return foundry_extension_class_icon_paths[p_class];
 	}
 	return "";
 }
 
-void GDExtensionManager::initialize_extensions(GDExtension::InitializationLevel p_level) {
+void FoundryExtensionManager::initialize_extensions(FoundryExtension::InitializationLevel p_level) {
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return;
 	}
 
 	ERR_FAIL_COND(int32_t(p_level) - 1 != level);
-	for (KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
+	for (KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
 		E.value->initialize_library(p_level);
 
-		if (p_level == GDExtension::INITIALIZATION_LEVEL_EDITOR) {
+		if (p_level == FoundryExtension::INITIALIZATION_LEVEL_EDITOR) {
 			for (const KeyValue<String, String> &kv : E.value->class_icon_paths) {
-				gdextension_class_icon_paths[kv.key] = kv.value;
+				foundry_extension_class_icon_paths[kv.key] = kv.value;
 			}
 		}
 	}
 	level = p_level;
 }
 
-void GDExtensionManager::deinitialize_extensions(GDExtension::InitializationLevel p_level) {
+void FoundryExtensionManager::deinitialize_extensions(FoundryExtension::InitializationLevel p_level) {
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return;
 	}
 
 	ERR_FAIL_COND(int32_t(p_level) != level);
-	for (KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
+	for (KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
 		E.value->deinitialize_library(p_level);
 	}
 	level = int32_t(p_level) - 1;
 }
 
 #ifdef TOOLS_ENABLED
-void GDExtensionManager::track_instance_binding(void *p_token, Object *p_object) {
-	for (KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
+void FoundryExtensionManager::track_instance_binding(void *p_token, Object *p_object) {
+	for (KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
 		if (E.value.ptr() == p_token) {
 			if (E.value->is_reloadable()) {
 				E.value->track_instance_binding(p_object);
@@ -298,8 +298,8 @@ void GDExtensionManager::track_instance_binding(void *p_token, Object *p_object)
 	}
 }
 
-void GDExtensionManager::untrack_instance_binding(void *p_token, Object *p_object) {
-	for (KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
+void FoundryExtensionManager::untrack_instance_binding(void *p_token, Object *p_object) {
+	for (KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
 		if (E.value.ptr() == p_token) {
 			if (E.value->is_reloadable()) {
 				E.value->untrack_instance_binding(p_object);
@@ -309,19 +309,19 @@ void GDExtensionManager::untrack_instance_binding(void *p_token, Object *p_objec
 	}
 }
 
-void GDExtensionManager::_reload_all_scripts() {
+void FoundryExtensionManager::_reload_all_scripts() {
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 		ScriptServer::get_language(i)->reload_all_scripts();
 	}
 }
 #endif // TOOLS_ENABLED
 
-void GDExtensionManager::load_extensions() {
+void FoundryExtensionManager::load_extensions() {
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return;
 	}
 
-	Ref<FileAccess> f = FileAccess::open(GDExtension::get_extension_list_config_file(), FileAccess::READ);
+	Ref<FileAccess> f = FileAccess::open(FoundryExtension::get_extension_list_config_file(), FileAccess::READ);
 	while (f.is_valid() && !f->eof_reached()) {
 		String s = f->get_line().strip_edges();
 		if (!s.is_empty()) {
@@ -330,16 +330,16 @@ void GDExtensionManager::load_extensions() {
 		}
 	}
 
-	OS::get_singleton()->load_platform_gdextensions();
+	OS::get_singleton()->load_platform_foundry_extensions();
 }
 
-void GDExtensionManager::reload_extensions() {
+void FoundryExtensionManager::reload_extensions() {
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return;
 	}
 	bool reloaded = false;
-	for (const KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
+	for (const KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
 		if (!E.value->is_reloadable()) {
 			continue;
 		}
@@ -354,12 +354,12 @@ void GDExtensionManager::reload_extensions() {
 		emit_signal("extensions_reloaded");
 
 		// Reload all scripts to clear out old references.
-		callable_mp_static(&GDExtensionManager::_reload_all_scripts).call_deferred();
+		callable_mp_static(&FoundryExtensionManager::_reload_all_scripts).call_deferred();
 	}
 #endif
 }
 
-bool GDExtensionManager::ensure_extensions_loaded(const HashSet<String> &p_extensions) {
+bool FoundryExtensionManager::ensure_extensions_loaded(const HashSet<String> &p_extensions) {
 	Vector<String> extensions_added;
 	Vector<String> extensions_removed;
 
@@ -372,15 +372,15 @@ bool GDExtensionManager::ensure_extensions_loaded(const HashSet<String> &p_exten
 	Vector<String> loaded_extensions = get_loaded_extensions();
 	for (const String &loaded_extension : loaded_extensions) {
 		if (!p_extensions.has(loaded_extension)) {
-			// The extension may not have a .gdextension file.
-			const Ref<GDExtension> extension = GDExtensionManager::get_singleton()->get_extension(loaded_extension);
+			// The extension may not have a .foundryextension file.
+			const Ref<FoundryExtension> extension = FoundryExtensionManager::get_singleton()->get_extension(loaded_extension);
 			if (!extension->get_loader()->library_exists()) {
 				extensions_removed.push_back(loaded_extension);
 			}
 		}
 	}
 
-	String extension_list_config_file = GDExtension::get_extension_list_config_file();
+	String extension_list_config_file = FoundryExtension::get_extension_list_config_file();
 	if (p_extensions.size()) {
 		if (extensions_added.size() || extensions_removed.size()) {
 			// Extensions were added or removed.
@@ -399,15 +399,15 @@ bool GDExtensionManager::ensure_extensions_loaded(const HashSet<String> &p_exten
 
 	bool needs_restart = false;
 	for (const String &extension : extensions_added) {
-		GDExtensionManager::LoadStatus st = GDExtensionManager::get_singleton()->load_extension(extension);
-		if (st == GDExtensionManager::LOAD_STATUS_NEEDS_RESTART) {
+		FoundryExtensionManager::LoadStatus st = FoundryExtensionManager::get_singleton()->load_extension(extension);
+		if (st == FoundryExtensionManager::LOAD_STATUS_NEEDS_RESTART) {
 			needs_restart = true;
 		}
 	}
 
 	for (const String &extension : extensions_removed) {
-		GDExtensionManager::LoadStatus st = GDExtensionManager::get_singleton()->unload_extension(extension);
-		if (st == GDExtensionManager::LOAD_STATUS_NEEDS_RESTART) {
+		FoundryExtensionManager::LoadStatus st = FoundryExtensionManager::get_singleton()->unload_extension(extension);
+		if (st == FoundryExtensionManager::LOAD_STATUS_NEEDS_RESTART) {
 			needs_restart = true;
 		}
 	}
@@ -418,57 +418,57 @@ bool GDExtensionManager::ensure_extensions_loaded(const HashSet<String> &p_exten
 		emit_signal("extensions_reloaded");
 
 		// Reload all scripts to clear out old references.
-		callable_mp_static(&GDExtensionManager::_reload_all_scripts).call_deferred();
+		callable_mp_static(&FoundryExtensionManager::_reload_all_scripts).call_deferred();
 	}
 #endif
 
 	return needs_restart;
 }
 
-void GDExtensionManager::startup() {
+void FoundryExtensionManager::startup() {
 	startup_callback_called = true;
 
-	for (const KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
-		const Ref<GDExtension> &extension = E.value;
+	for (const KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
+		const Ref<FoundryExtension> &extension = E.value;
 		if (extension->startup_callback) {
 			extension->startup_callback();
 		}
 	}
 }
 
-void GDExtensionManager::shutdown() {
+void FoundryExtensionManager::shutdown() {
 	shutdown_callback_called = true;
 
-	for (const KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
-		const Ref<GDExtension> &extension = E.value;
+	for (const KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
+		const Ref<FoundryExtension> &extension = E.value;
 		if (extension->shutdown_callback) {
 			extension->shutdown_callback();
 		}
 	}
 }
 
-void GDExtensionManager::frame() {
-	for (const KeyValue<String, Ref<GDExtension>> &E : gdextension_map) {
-		const Ref<GDExtension> &extension = E.value;
+void FoundryExtensionManager::frame() {
+	for (const KeyValue<String, Ref<FoundryExtension>> &E : foundry_extension_map) {
+		const Ref<FoundryExtension> &extension = E.value;
 		if (extension->frame_callback) {
 			extension->frame_callback();
 		}
 	}
 }
 
-GDExtensionManager *GDExtensionManager::get_singleton() {
+FoundryExtensionManager *FoundryExtensionManager::get_singleton() {
 	return singleton;
 }
 
-void GDExtensionManager::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("load_extension", "path"), &GDExtensionManager::load_extension);
-	ClassDB::bind_method(D_METHOD("load_extension_from_function", "path", "init_func"), &GDExtensionManager::load_extension_from_function);
-	ClassDB::bind_method(D_METHOD("reload_extension", "path"), &GDExtensionManager::reload_extension);
-	ClassDB::bind_method(D_METHOD("unload_extension", "path"), &GDExtensionManager::unload_extension);
-	ClassDB::bind_method(D_METHOD("is_extension_loaded", "path"), &GDExtensionManager::is_extension_loaded);
+void FoundryExtensionManager::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("load_extension", "path"), &FoundryExtensionManager::load_extension);
+	ClassDB::bind_method(D_METHOD("load_extension_from_function", "path", "init_func"), &FoundryExtensionManager::load_extension_from_function);
+	ClassDB::bind_method(D_METHOD("reload_extension", "path"), &FoundryExtensionManager::reload_extension);
+	ClassDB::bind_method(D_METHOD("unload_extension", "path"), &FoundryExtensionManager::unload_extension);
+	ClassDB::bind_method(D_METHOD("is_extension_loaded", "path"), &FoundryExtensionManager::is_extension_loaded);
 
-	ClassDB::bind_method(D_METHOD("get_loaded_extensions"), &GDExtensionManager::get_loaded_extensions);
-	ClassDB::bind_method(D_METHOD("get_extension", "path"), &GDExtensionManager::get_extension);
+	ClassDB::bind_method(D_METHOD("get_loaded_extensions"), &FoundryExtensionManager::get_loaded_extensions);
+	ClassDB::bind_method(D_METHOD("get_extension", "path"), &FoundryExtensionManager::get_extension);
 
 	BIND_ENUM_CONSTANT(LOAD_STATUS_OK);
 	BIND_ENUM_CONSTANT(LOAD_STATUS_FAILED);
@@ -477,24 +477,24 @@ void GDExtensionManager::_bind_methods() {
 	BIND_ENUM_CONSTANT(LOAD_STATUS_NEEDS_RESTART);
 
 	ADD_SIGNAL(MethodInfo("extensions_reloaded"));
-	ADD_SIGNAL(MethodInfo("extension_loaded", PropertyInfo(Variant::OBJECT, "extension", PROPERTY_HINT_RESOURCE_TYPE, "GDExtension")));
-	ADD_SIGNAL(MethodInfo("extension_unloading", PropertyInfo(Variant::OBJECT, "extension", PROPERTY_HINT_RESOURCE_TYPE, "GDExtension")));
+	ADD_SIGNAL(MethodInfo("extension_loaded", PropertyInfo(Variant::OBJECT, "extension", PROPERTY_HINT_RESOURCE_TYPE, "FoundryExtension")));
+	ADD_SIGNAL(MethodInfo("extension_unloading", PropertyInfo(Variant::OBJECT, "extension", PROPERTY_HINT_RESOURCE_TYPE, "FoundryExtension")));
 }
 
-GDExtensionManager::GDExtensionManager() {
+FoundryExtensionManager::FoundryExtensionManager() {
 	ERR_FAIL_COND(singleton != nullptr);
 	singleton = this;
 
 #ifndef DISABLE_DEPRECATED
-	GDExtensionSpecialCompatHashes::initialize();
+	FoundryExtensionSpecialCompatHashes::initialize();
 #endif
 }
 
-GDExtensionManager::~GDExtensionManager() {
+FoundryExtensionManager::~FoundryExtensionManager() {
 	if (singleton == this) {
 		singleton = nullptr;
 	}
 #ifndef DISABLE_DEPRECATED
-	GDExtensionSpecialCompatHashes::finalize();
+	FoundryExtensionSpecialCompatHashes::finalize();
 #endif
 }

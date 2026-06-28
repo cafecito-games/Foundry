@@ -224,7 +224,7 @@ static const char *ANDROID_PERMS[] = {
 
 static const char *MISMATCHED_VERSIONS_MESSAGE = "Android build version mismatch:\n| Template installed: %s\n| Requested version: %s\nPlease reinstall Android build template from 'Project' menu.";
 
-static const char *GDEXTENSION_LIBS_PATH = "libs/gdextensionlibs.json";
+static const char *FOUNDRY_EXTENSION_LIBS_PATH = "libs/foundryextensionlibs.json";
 
 // This template string must be in sync with the content of 'platform/android/java/lib/src/main/java/res/mipmap-anydpi-v26/icon.xml'.
 static const String ICON_XML_TEMPLATE =
@@ -3412,10 +3412,10 @@ void EditorExportPlatformAndroid::_clear_assets_directory(const Ref<EditorExport
 	}
 }
 
-void EditorExportPlatformAndroid::_remove_copied_libs(String p_gdextension_libs_path) {
+void EditorExportPlatformAndroid::_remove_copied_libs(String p_foundry_extension_libs_path) {
 	print_verbose("Removing previously installed libraries...");
 	Error error;
-	String libs_json = FileAccess::get_file_as_string(p_gdextension_libs_path, &error);
+	String libs_json = FileAccess::get_file_as_string(p_foundry_extension_libs_path, &error);
 	if (error || libs_json.is_empty()) {
 		print_verbose("No previously installed libraries found");
 		return;
@@ -3431,7 +3431,7 @@ void EditorExportPlatformAndroid::_remove_copied_libs(String p_gdextension_libs_
 		print_verbose("Removing previously installed library " + libs[i]);
 		da->remove(libs[i]);
 	}
-	da->remove(p_gdextension_libs_path);
+	da->remove(p_foundry_extension_libs_path);
 }
 
 String EditorExportPlatformAndroid::join_list(const List<String> &p_parts, const String &p_separator) {
@@ -3738,8 +3738,8 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 		//stores all the project files inside the Gradle project directory. Also includes all ABIs
 		_clear_assets_directory(p_preset);
-		String gdextension_libs_path = gradle_build_directory.path_join(GDEXTENSION_LIBS_PATH);
-		_remove_copied_libs(gdextension_libs_path);
+		String foundry_extension_libs_path = gradle_build_directory.path_join(FOUNDRY_EXTENSION_LIBS_PATH);
+		_remove_copied_libs(foundry_extension_libs_path);
 		if (!apk_expansion) {
 			print_verbose("Exporting project files...");
 			CustomExportData user_data;
@@ -3771,7 +3771,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 				return err;
 			}
 			if (user_data.libs.size() > 0) {
-				Ref<FileAccess> fa = FileAccess::open(gdextension_libs_path, FileAccess::WRITE);
+				Ref<FileAccess> fa = FileAccess::open(foundry_extension_libs_path, FileAccess::WRITE);
 				fa->store_string(JSON::stringify(user_data.libs, "\t"));
 			}
 		} else {

@@ -2191,7 +2191,7 @@ void VisualShaderEditor::_update_nodes() {
 		}
 	}
 
-	// Add GDExtension classes.
+	// Add FoundryExtension classes.
 	{
 		LocalVector<StringName> class_list;
 		ClassDB::get_class_list(class_list);

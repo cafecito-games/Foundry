@@ -62,7 +62,7 @@
 #include "scene/scene_string_names.h"
 
 #ifdef TOOLS_ENABLED
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "editor/file_system/editor_paths.h"
 #endif
 
@@ -2536,8 +2536,8 @@ void FSLanguage::init() {
 
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
-		GDExtensionManager::get_singleton()->connect("extension_loaded", callable_mp(this, &FSLanguage::_extension_loaded));
-		GDExtensionManager::get_singleton()->connect("extension_unloading", callable_mp(this, &FSLanguage::_extension_unloading));
+		FoundryExtensionManager::get_singleton()->connect("extension_loaded", callable_mp(this, &FSLanguage::_extension_loaded));
+		FoundryExtensionManager::get_singleton()->connect("extension_unloading", callable_mp(this, &FSLanguage::_extension_unloading));
 	}
 #endif // TOOLS_ENABLED
 
@@ -2561,7 +2561,7 @@ void FSLanguage::init() {
 }
 
 #ifdef TOOLS_ENABLED
-void FSLanguage::_extension_loaded(const Ref<GDExtension> &p_extension) {
+void FSLanguage::_extension_loaded(const Ref<FoundryExtension> &p_extension) {
 	List<StringName> class_list;
 	ClassDB::get_extension_class_list(p_extension, &class_list);
 	for (const StringName &n : class_list) {
@@ -2573,7 +2573,7 @@ void FSLanguage::_extension_loaded(const Ref<GDExtension> &p_extension) {
 	}
 }
 
-void FSLanguage::_extension_unloading(const Ref<GDExtension> &p_extension) {
+void FSLanguage::_extension_unloading(const Ref<FoundryExtension> &p_extension) {
 	List<StringName> class_list;
 	ClassDB::get_extension_class_list(p_extension, &class_list);
 	for (const StringName &n : class_list) {

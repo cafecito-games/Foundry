@@ -1875,10 +1875,10 @@ void OpenXRAPI::register_extension_metadata() {
 void OpenXRAPI::cleanup_extension_wrappers() {
 	for (OpenXRExtensionWrapper *extension_wrapper : registered_extension_wrappers) {
 #ifndef DISABLE_DEPRECATED
-		// Fix crash when the extension wrapper comes from GDExtension.
-		OpenXRExtensionWrapperExtension *gdextension_extension_wrapper = dynamic_cast<OpenXRExtensionWrapperExtension *>(extension_wrapper);
-		if (gdextension_extension_wrapper) {
-			memdelete(gdextension_extension_wrapper);
+		// Fix crash when the extension wrapper comes from FoundryExtension.
+		OpenXRExtensionWrapperExtension *foundry_extension_extension_wrapper = dynamic_cast<OpenXRExtensionWrapperExtension *>(extension_wrapper);
+		if (foundry_extension_extension_wrapper) {
+			memdelete(foundry_extension_extension_wrapper);
 		} else
 #endif
 		{

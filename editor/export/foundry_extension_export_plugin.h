@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_export_plugin.h                                           */
+/*  foundry_extension_export_plugin.h                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,19 +30,19 @@
 
 #pragma once
 
-#include "core/extension/gdextension_library_loader.h"
+#include "core/extension/foundry_extension_library_loader.h"
 #include "editor/export/editor_export.h"
 
-class GDExtensionExportPlugin : public EditorExportPlugin {
-	GDSOFTCLASS(GDExtensionExportPlugin, EditorExportPlugin);
+class FoundryExtensionExportPlugin : public EditorExportPlugin {
+	GDSOFTCLASS(FoundryExtensionExportPlugin, EditorExportPlugin);
 
 protected:
 	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) override;
-	virtual String get_name() const override { return "GDExtension"; }
+	virtual String get_name() const override { return "FoundryExtension"; }
 };
 
-void GDExtensionExportPlugin::_export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) {
-	if (p_type != "GDExtension") {
+void FoundryExtensionExportPlugin::_export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) {
+	if (p_type != "FoundryExtension") {
 		return;
 	}
 
@@ -50,18 +50,18 @@ void GDExtensionExportPlugin::_export_file(const String &p_path, const String &p
 	config.instantiate();
 
 	Error err = config->load(p_path);
-	ERR_FAIL_COND_MSG(err, "Failed to load GDExtension file: " + p_path);
+	ERR_FAIL_COND_MSG(err, "Failed to load FoundryExtension file: " + p_path);
 
-	// Check whether this GDExtension should be exported.
+	// Check whether this FoundryExtension should be exported.
 	bool android_aar_plugin = config->get_value("configuration", "android_aar_plugin", false);
 	if (android_aar_plugin && p_features.has("android")) {
-		// The gdextension configuration and Android .so files will be provided by the Android aar
+		// The foundry_extension configuration and Android .so files will be provided by the Android aar
 		// plugin it's part of, so we abort here.
 		skip();
 		return;
 	}
 
-	ERR_FAIL_COND_MSG(!config->has_section_key("configuration", "entry_symbol"), "Failed to export GDExtension file, missing entry symbol: " + p_path);
+	ERR_FAIL_COND_MSG(!config->has_section_key("configuration", "entry_symbol"), "Failed to export FoundryExtension file, missing entry symbol: " + p_path);
 
 	String entry_symbol = config->get_value("configuration", "entry_symbol");
 
@@ -106,7 +106,7 @@ void GDExtensionExportPlugin::_export_file(const String &p_path, const String &p
 
 	for (const String &arch_tag : archs) {
 		PackedStringArray tags;
-		String library_path = GDExtensionLibraryLoader::find_extension_library(
+		String library_path = FoundryExtensionLibraryLoader::find_extension_library(
 				p_path, config, [features_wo_arch, arch_tag](const String &p_feature) { return features_wo_arch.has(p_feature) || (p_feature == arch_tag); }, &tags);
 
 		if (libs_added.has(library_path)) {
@@ -151,7 +151,7 @@ void GDExtensionExportPlugin::_export_file(const String &p_path, const String &p
 			}
 		}
 
-		Vector<SharedObject> dependencies_shared_objects = GDExtensionLibraryLoader::find_extension_dependencies(
+		Vector<SharedObject> dependencies_shared_objects = FoundryExtensionLibraryLoader::find_extension_dependencies(
 				p_path, config, [features_wo_arch, arch_tag](String p_feature) { return features_wo_arch.has(p_feature) || (p_feature == arch_tag); });
 		for (const SharedObject &shared_object : dependencies_shared_objects) {
 			_add_shared_object(shared_object);
@@ -161,11 +161,11 @@ void GDExtensionExportPlugin::_export_file(const String &p_path, const String &p
 	for (const KeyValue<String, FoundLibInfo> &E : libs_found) {
 		if (E.value.count == 0) {
 			if (get_export_platform().is_valid()) {
-				get_export_platform()->add_message(EditorExportPlatform::EXPORT_MESSAGE_WARNING, TTR("GDExtension"), vformat(TTR("No \"%s\" library found for GDExtension: \"%s\". Possible feature flags for your platform: %s"), E.key, p_path, String(", ").join(features_vector)));
+				get_export_platform()->add_message(EditorExportPlatform::EXPORT_MESSAGE_WARNING, TTR("FoundryExtension"), vformat(TTR("No \"%s\" library found for FoundryExtension: \"%s\". Possible feature flags for your platform: %s"), E.key, p_path, String(", ").join(features_vector)));
 			}
 		} else if (E.value.count > 1) {
 			if (get_export_platform().is_valid()) {
-				get_export_platform()->add_message(EditorExportPlatform::EXPORT_MESSAGE_WARNING, TTR("GDExtension"), vformat(TTR("Multiple \"%s\" libraries found for GDExtension: \"%s\": \"%s\"."), E.key, p_path, String(", ").join(E.value.libs)));
+				get_export_platform()->add_message(EditorExportPlatform::EXPORT_MESSAGE_WARNING, TTR("FoundryExtension"), vformat(TTR("Multiple \"%s\" libraries found for FoundryExtension: \"%s\": \"%s\"."), E.key, p_path, String(", ").join(E.value.libs)));
 			}
 		}
 	}

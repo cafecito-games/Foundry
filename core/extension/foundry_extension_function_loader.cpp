@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_function_loader.cpp                                       */
+/*  foundry_extension_function_loader.cpp                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,47 +28,47 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "gdextension_function_loader.h"
+#include "foundry_extension_function_loader.h"
 
-#include "gdextension.h"
+#include "foundry_extension.h"
 
-Error GDExtensionFunctionLoader::open_library(const String &p_path) {
-	ERR_FAIL_COND_V_MSG(!p_path.begins_with("libgodot://"), ERR_FILE_NOT_FOUND, "Function based GDExtensions should have a path starting with libgodot://");
-	ERR_FAIL_COND_V_MSG(!initialization_function, ERR_DOES_NOT_EXIST, "Initialization function is required for function based GDExtensions.");
+Error FoundryExtensionFunctionLoader::open_library(const String &p_path) {
+	ERR_FAIL_COND_V_MSG(!p_path.begins_with("libgodot://"), ERR_FILE_NOT_FOUND, "Function based FoundryExtensions should have a path starting with libgodot://");
+	ERR_FAIL_COND_V_MSG(!initialization_function, ERR_DOES_NOT_EXIST, "Initialization function is required for function based FoundryExtensions.");
 
 	library_path = p_path;
 
 	return OK;
 }
 
-Error GDExtensionFunctionLoader::initialize(GDExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<GDExtension> &p_extension, GDExtensionInitialization *r_initialization) {
-	ERR_FAIL_COND_V_MSG(!initialization_function, ERR_DOES_NOT_EXIST, "Initialization function is required for function based GDExtensions.");
-	GDExtensionBool ret = initialization_function(p_get_proc_address, p_extension.ptr(), r_initialization);
+Error FoundryExtensionFunctionLoader::initialize(FoundryExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<FoundryExtension> &p_extension, FoundryExtensionInitialization *r_initialization) {
+	ERR_FAIL_COND_V_MSG(!initialization_function, ERR_DOES_NOT_EXIST, "Initialization function is required for function based FoundryExtensions.");
+	FoundryExtensionBool ret = initialization_function(p_get_proc_address, p_extension.ptr(), r_initialization);
 
 	if (ret) {
 		return OK;
 	} else {
-		ERR_FAIL_V_MSG(FAILED, "GDExtension initialization function for '" + library_path + "' returned an error.");
+		ERR_FAIL_V_MSG(FAILED, "FoundryExtension initialization function for '" + library_path + "' returned an error.");
 	}
 }
 
-void GDExtensionFunctionLoader::close_library() {
+void FoundryExtensionFunctionLoader::close_library() {
 	initialization_function = nullptr;
 	library_path.clear();
 }
 
-bool GDExtensionFunctionLoader::is_library_open() const {
+bool FoundryExtensionFunctionLoader::is_library_open() const {
 	return !library_path.is_empty();
 }
 
-bool GDExtensionFunctionLoader::has_library_changed() const {
+bool FoundryExtensionFunctionLoader::has_library_changed() const {
 	return false;
 }
 
-bool GDExtensionFunctionLoader::library_exists() const {
+bool FoundryExtensionFunctionLoader::library_exists() const {
 	return true;
 }
 
-void GDExtensionFunctionLoader::set_initialization_function(GDExtensionInitializationFunction p_initialization_function) {
+void FoundryExtensionFunctionLoader::set_initialization_function(FoundryExtensionInitializationFunction p_initialization_function) {
 	initialization_function = p_initialization_function;
 }

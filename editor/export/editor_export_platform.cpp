@@ -34,7 +34,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"
-#include "core/extension/gdextension.h"
+#include "core/extension/foundry_extension.h"
 #include "core/io/delta_encoding.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access_encrypted.h"
@@ -1121,7 +1121,7 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 		r_files.push_back(resource_cache_file);
 	}
 
-	String extension_list_config_file = GDExtension::get_extension_list_config_file();
+	String extension_list_config_file = FoundryExtension::get_extension_list_config_file();
 	if (FileAccess::exists(extension_list_config_file)) {
 		r_files.push_back(extension_list_config_file);
 	}
@@ -1737,7 +1737,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	}
 	for (int i = 0; i < forced_export.size(); i++) {
 		Vector<uint8_t> array;
-		if (GDExtension::get_extension_list_config_file() == forced_export[i]) {
+		if (FoundryExtension::get_extension_list_config_file() == forced_export[i]) {
 			array = _filter_extension_list_config_file(forced_export[i], paths);
 			if (array.is_empty()) {
 				continue;

@@ -39,7 +39,7 @@ static OS_Windows *os = nullptr;
 
 static GodotInstance *instance = nullptr;
 
-GDExtensionObjectPtr libgodot_create_godot_instance(int p_argc, char *p_argv[], GDExtensionInitializationFunction p_init_func) {
+FoundryExtensionObjectPtr libgodot_create_godot_instance(int p_argc, char *p_argv[], FoundryExtensionInitializationFunction p_init_func) {
 	ERR_FAIL_COND_V_MSG(instance != nullptr, nullptr, "Only one Godot Instance may be created at a time.");
 
 	os = new OS_Windows(GetModuleHandle(nullptr));
@@ -56,10 +56,10 @@ GDExtensionObjectPtr libgodot_create_godot_instance(int p_argc, char *p_argv[], 
 		return nullptr;
 	}
 
-	return (GDExtensionObjectPtr)instance;
+	return (FoundryExtensionObjectPtr)instance;
 }
 
-void libgodot_destroy_godot_instance(GDExtensionObjectPtr p_godot_instance) {
+void libgodot_destroy_godot_instance(FoundryExtensionObjectPtr p_godot_instance) {
 	GodotInstance *godot_instance = (GodotInstance *)p_godot_instance;
 	if (instance == godot_instance) {
 		godot_instance->stop();

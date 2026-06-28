@@ -31,7 +31,7 @@
 #include "editor_file_system.h"
 
 #include "core/config/project_settings.h"
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_saver.h"
@@ -307,16 +307,16 @@ void EditorFileSystem::_first_scan_filesystem() {
 		_load_first_scan_root_dir();
 	}
 
-	// Preloading GDExtensions file extensions to prevent looping on all the resource loaders
+	// Preloading FoundryExtensions file extensions to prevent looping on all the resource loaders
 	// for each files in _first_scan_process_scripts.
-	List<String> gdextension_extensions;
-	ResourceLoader::get_recognized_extensions_for_type("GDExtension", &gdextension_extensions);
+	List<String> foundry_extension_extensions;
+	ResourceLoader::get_recognized_extensions_for_type("FoundryExtension", &foundry_extension_extensions);
 
 	// This loads the global class names from the scripts and ensures that even if the
 	// global_script_class_cache.cfg was missing or invalid, the global class names are valid in ScriptServer.
 	// At the same time, to prevent looping multiple times in all files, it looks for extensions.
 	ep.step(TTR("Loading global class names..."), 1, true);
-	_first_scan_process_scripts(first_scan_root_dir, gdextension_extensions, existing_class_names, extensions);
+	_first_scan_process_scripts(first_scan_root_dir, foundry_extension_extensions, existing_class_names, extensions);
 
 	// Removing invalid global class to prevent having invalid paths in ScriptServer.
 	bool save_scripts = _remove_invalid_global_class_names(existing_class_names);
@@ -330,8 +330,8 @@ void EditorFileSystem::_first_scan_filesystem() {
 	// Important to do it in the first scan so custom types, new class names, custom importers, etc...
 	// from extensions are ready to go before plugins, autoloads and resources validation/importation.
 	// At this point, a restart of the editor should not be needed so we don't use the return value.
-	ep.step(TTR("Verifying GDExtensions..."), 2, true);
-	GDExtensionManager::get_singleton()->ensure_extensions_loaded(extensions);
+	ep.step(TTR("Verifying FoundryExtensions..."), 2, true);
+	FoundryExtensionManager::get_singleton()->ensure_extensions_loaded(extensions);
 
 	// Now that all the global class names should be loaded, create autoloads and plugins.
 	// This is done after loading the global class names because autoloads and plugins can use
@@ -345,9 +345,9 @@ void EditorFileSystem::_first_scan_filesystem() {
 	ep.step(TTR("Starting file scan..."), 5, true);
 }
 
-void EditorFileSystem::_first_scan_process_scripts(const ScannedDirectory *p_scan_dir, List<String> &p_gdextension_extensions, HashSet<String> &p_existing_class_names, HashSet<String> &p_extensions) {
+void EditorFileSystem::_first_scan_process_scripts(const ScannedDirectory *p_scan_dir, List<String> &p_foundry_extension_extensions, HashSet<String> &p_existing_class_names, HashSet<String> &p_extensions) {
 	for (ScannedDirectory *scan_sub_dir : p_scan_dir->subdirs) {
-		_first_scan_process_scripts(scan_sub_dir, p_gdextension_extensions, p_existing_class_names, p_extensions);
+		_first_scan_process_scripts(scan_sub_dir, p_foundry_extension_extensions, p_existing_class_names, p_extensions);
 	}
 
 	for (const String &scan_file : p_scan_dir->files) {
@@ -378,11 +378,11 @@ void EditorFileSystem::_first_scan_process_scripts(const ScannedDirectory *p_sca
 			}
 		}
 
-		// Check for GDExtensions.
-		if (p_gdextension_extensions.find(ext)) {
+		// Check for FoundryExtensions.
+		if (p_foundry_extension_extensions.find(ext)) {
 			const String path = p_scan_dir->full_path.path_join(scan_file);
 			const String type = ResourceLoader::get_resource_type(path);
-			if (type == SNAME("GDExtension")) {
+			if (type == SNAME("FoundryExtension")) {
 				p_extensions.insert(path);
 			}
 		}
@@ -3718,7 +3718,7 @@ ResourceUID::ID EditorFileSystem::_resource_saver_get_resource_id_for_path(const
 static void _scan_extensions_dir(EditorFileSystemDirectory *d, HashSet<String> &extensions) {
 	int fc = d->get_file_count();
 	for (int i = 0; i < fc; i++) {
-		if (d->get_file_type(i) == SNAME("GDExtension")) {
+		if (d->get_file_type(i) == SNAME("FoundryExtension")) {
 			extensions.insert(d->get_file_path(i));
 		}
 	}
@@ -3733,7 +3733,7 @@ bool EditorFileSystem::_scan_extensions() {
 
 	_scan_extensions_dir(d, extensions);
 
-	return GDExtensionManager::get_singleton()->ensure_extensions_loaded(extensions);
+	return FoundryExtensionManager::get_singleton()->ensure_extensions_loaded(extensions);
 }
 
 void EditorFileSystem::_bind_methods() {

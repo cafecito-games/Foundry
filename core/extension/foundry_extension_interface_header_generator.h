@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_interface_header_generator.h                              */
+/*  foundry_extension_interface_header_generator.h                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -34,9 +34,9 @@
 
 #include "core/io/file_access.h"
 
-class GDExtensionInterfaceHeaderGenerator {
+class FoundryExtensionInterfaceHeaderGenerator {
 public:
-	static void generate_gdextension_interface_header(const String &p_path);
+	static void generate_foundry_extension_interface_header(const String &p_path);
 
 private:
 	static void write_doc(const Ref<FileAccess> &p_fa, const Array &p_doc, const String &p_indent = "");

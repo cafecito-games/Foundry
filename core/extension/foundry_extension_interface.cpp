@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_interface.cpp                                             */
+/*  foundry_extension_interface.cpp                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,11 +28,11 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "gdextension_interface.gen.h"
+#include "foundry_extension_interface.gen.h"
 
 #include "core/config/engine.h"
-#include "core/extension/gdextension.h"
-#include "core/extension/gdextension_special_compat_hashes.h"
+#include "core/extension/foundry_extension.h"
+#include "core/extension/foundry_extension_special_compat_hashes.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
 #include "core/io/xml_parser.h"
@@ -50,16 +50,16 @@ class CallableCustomExtension : public CallableCustom {
 
 	ObjectID object;
 
-	GDExtensionCallableCustomCall call_func;
-	GDExtensionCallableCustomIsValid is_valid_func;
-	GDExtensionCallableCustomFree free_func;
+	FoundryExtensionCallableCustomCall call_func;
+	FoundryExtensionCallableCustomIsValid is_valid_func;
+	FoundryExtensionCallableCustomFree free_func;
 
-	GDExtensionCallableCustomEqual equal_func;
-	GDExtensionCallableCustomLessThan less_than_func;
+	FoundryExtensionCallableCustomEqual equal_func;
+	FoundryExtensionCallableCustomLessThan less_than_func;
 
-	GDExtensionCallableCustomToString to_string_func;
+	FoundryExtensionCallableCustomToString to_string_func;
 
-	GDExtensionCallableCustomGetArgumentCount get_argument_count_func;
+	FoundryExtensionCallableCustomGetArgumentCount get_argument_count_func;
 
 	uint32_t _hash;
 
@@ -111,9 +111,9 @@ public:
 	String get_as_text() const override {
 		if (to_string_func != nullptr) {
 			String out;
-			GDExtensionBool is_valid = false;
+			FoundryExtensionBool is_valid = false;
 
-			to_string_func(userdata, &is_valid, (GDExtensionStringPtr)&out);
+			to_string_func(userdata, &is_valid, (FoundryExtensionStringPtr)&out);
 
 			if (is_valid) {
 				return out;
@@ -147,9 +147,9 @@ public:
 
 	int get_argument_count(bool &r_is_valid) const override {
 		if (get_argument_count_func != nullptr) {
-			GDExtensionBool is_valid = false;
+			FoundryExtensionBool is_valid = false;
 
-			GDExtensionInt ret = get_argument_count_func(userdata, &is_valid);
+			FoundryExtensionInt ret = get_argument_count_func(userdata, &is_valid);
 
 			if (is_valid) {
 				r_is_valid = true;
@@ -165,9 +165,9 @@ public:
 	}
 
 	void call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const override {
-		GDExtensionCallError error;
+		FoundryExtensionCallError error;
 
-		call_func(userdata, (GDExtensionConstVariantPtr *)p_arguments, p_argcount, (GDExtensionVariantPtr)&r_return_value, &error);
+		call_func(userdata, (FoundryExtensionConstVariantPtr *)p_arguments, p_argcount, (FoundryExtensionVariantPtr)&r_return_value, &error);
 
 		r_call_error.error = (Callable::CallError::Error)error.error;
 		r_call_error.argument = error.argument;
@@ -175,7 +175,7 @@ public:
 	}
 
 #ifndef DISABLE_DEPRECATED
-	CallableCustomExtension(GDExtensionCallableCustomInfo *p_info) {
+	CallableCustomExtension(FoundryExtensionCallableCustomInfo *p_info) {
 		userdata = p_info->callable_userdata;
 		token = p_info->token;
 
@@ -202,7 +202,7 @@ public:
 	}
 #endif
 
-	CallableCustomExtension(GDExtensionCallableCustomInfo2 *p_info) {
+	CallableCustomExtension(FoundryExtensionCallableCustomInfo2 *p_info) {
 		userdata = p_info->callable_userdata;
 		token = p_info->token;
 
@@ -236,12 +236,12 @@ public:
 };
 
 // Core interface functions.
-GDExtensionInterfaceFunctionPtr gdextension_get_proc_address(const char *p_name) {
-	return GDExtension::get_interface_function(p_name);
+FoundryExtensionInterfaceFunctionPtr foundry_extension_get_proc_address(const char *p_name) {
+	return FoundryExtension::get_interface_function(p_name);
 }
 
 #ifndef DISABLE_DEPRECATED
-static void gdextension_get_godot_version(GDExtensionGodotVersion *r_godot_version) {
+static void foundry_extension_get_godot_version(FoundryExtensionGodotVersion *r_godot_version) {
 	r_godot_version->major = GODOT_VERSION_MAJOR;
 	r_godot_version->minor = GODOT_VERSION_MINOR;
 	r_godot_version->patch = GODOT_VERSION_PATCH;
@@ -249,7 +249,7 @@ static void gdextension_get_godot_version(GDExtensionGodotVersion *r_godot_versi
 }
 #endif
 
-static void gdextension_get_godot_version2(GDExtensionGodotVersion2 *r_godot_version) {
+static void foundry_extension_get_godot_version2(FoundryExtensionGodotVersion2 *r_godot_version) {
 	r_godot_version->major = GODOT_VERSION_MAJOR;
 	r_godot_version->minor = GODOT_VERSION_MINOR;
 	r_godot_version->patch = GODOT_VERSION_PATCH;
@@ -263,71 +263,71 @@ static void gdextension_get_godot_version2(GDExtensionGodotVersion2 *r_godot_ver
 
 // Memory Functions
 #ifndef DISABLE_DEPRECATED
-static void *gdextension_mem_alloc(size_t p_size) {
+static void *foundry_extension_mem_alloc(size_t p_size) {
 	return memalloc(p_size);
 }
 
-static void *gdextension_mem_realloc(void *p_mem, size_t p_size) {
+static void *foundry_extension_mem_realloc(void *p_mem, size_t p_size) {
 	return memrealloc(p_mem, p_size);
 }
 
-static void gdextension_mem_free(void *p_mem) {
+static void foundry_extension_mem_free(void *p_mem) {
 	memfree(p_mem);
 }
 #endif
 
-static void *gdextension_mem_alloc2(size_t p_size, GDExtensionBool p_prepad_align) {
+static void *foundry_extension_mem_alloc2(size_t p_size, FoundryExtensionBool p_prepad_align) {
 	return Memory::alloc_static(p_size, p_prepad_align);
 }
 
-static void *gdextension_mem_realloc2(void *p_mem, size_t p_size, GDExtensionBool p_prepad_align) {
+static void *foundry_extension_mem_realloc2(void *p_mem, size_t p_size, FoundryExtensionBool p_prepad_align) {
 	return Memory::realloc_static(p_mem, p_size, p_prepad_align);
 }
 
-static void gdextension_mem_free2(void *p_mem, GDExtensionBool p_prepad_align) {
+static void foundry_extension_mem_free2(void *p_mem, FoundryExtensionBool p_prepad_align) {
 	Memory::free_static(p_mem, p_prepad_align);
 }
 
 // Helper print functions.
-static void gdextension_print_error(const char *p_description, const char *p_function, const char *p_file, int32_t p_line, GDExtensionBool p_editor_notify) {
+static void foundry_extension_print_error(const char *p_description, const char *p_function, const char *p_file, int32_t p_line, FoundryExtensionBool p_editor_notify) {
 	_err_print_error(p_function, p_file, p_line, p_description, p_editor_notify, ERR_HANDLER_ERROR);
 }
-static void gdextension_print_error_with_message(const char *p_description, const char *p_message, const char *p_function, const char *p_file, int32_t p_line, GDExtensionBool p_editor_notify) {
+static void foundry_extension_print_error_with_message(const char *p_description, const char *p_message, const char *p_function, const char *p_file, int32_t p_line, FoundryExtensionBool p_editor_notify) {
 	_err_print_error(p_function, p_file, p_line, p_description, p_message, p_editor_notify, ERR_HANDLER_ERROR);
 }
-static void gdextension_print_warning(const char *p_description, const char *p_function, const char *p_file, int32_t p_line, GDExtensionBool p_editor_notify) {
+static void foundry_extension_print_warning(const char *p_description, const char *p_function, const char *p_file, int32_t p_line, FoundryExtensionBool p_editor_notify) {
 	_err_print_error(p_function, p_file, p_line, p_description, p_editor_notify, ERR_HANDLER_WARNING);
 }
-static void gdextension_print_warning_with_message(const char *p_description, const char *p_message, const char *p_function, const char *p_file, int32_t p_line, GDExtensionBool p_editor_notify) {
+static void foundry_extension_print_warning_with_message(const char *p_description, const char *p_message, const char *p_function, const char *p_file, int32_t p_line, FoundryExtensionBool p_editor_notify) {
 	_err_print_error(p_function, p_file, p_line, p_description, p_message, p_editor_notify, ERR_HANDLER_WARNING);
 }
-static void gdextension_print_script_error(const char *p_description, const char *p_function, const char *p_file, int32_t p_line, GDExtensionBool p_editor_notify) {
+static void foundry_extension_print_script_error(const char *p_description, const char *p_function, const char *p_file, int32_t p_line, FoundryExtensionBool p_editor_notify) {
 	_err_print_error(p_function, p_file, p_line, p_description, p_editor_notify, ERR_HANDLER_SCRIPT);
 }
-static void gdextension_print_script_error_with_message(const char *p_description, const char *p_message, const char *p_function, const char *p_file, int32_t p_line, GDExtensionBool p_editor_notify) {
+static void foundry_extension_print_script_error_with_message(const char *p_description, const char *p_message, const char *p_function, const char *p_file, int32_t p_line, FoundryExtensionBool p_editor_notify) {
 	_err_print_error(p_function, p_file, p_line, p_description, p_message, p_editor_notify, ERR_HANDLER_SCRIPT);
 }
 
-uint64_t gdextension_get_native_struct_size(GDExtensionConstStringNamePtr p_name) {
+uint64_t foundry_extension_get_native_struct_size(FoundryExtensionConstStringNamePtr p_name) {
 	const StringName name = *reinterpret_cast<const StringName *>(p_name);
 	return ClassDB::get_native_struct_size(name);
 }
 
 // Variant functions
 
-static void gdextension_variant_new_copy(GDExtensionUninitializedVariantPtr r_dest, GDExtensionConstVariantPtr p_src) {
+static void foundry_extension_variant_new_copy(FoundryExtensionUninitializedVariantPtr r_dest, FoundryExtensionConstVariantPtr p_src) {
 	memnew_placement(reinterpret_cast<Variant *>(r_dest), Variant(*reinterpret_cast<const Variant *>(p_src)));
 }
-static void gdextension_variant_new_nil(GDExtensionUninitializedVariantPtr r_dest) {
+static void foundry_extension_variant_new_nil(FoundryExtensionUninitializedVariantPtr r_dest) {
 	memnew_placement(reinterpret_cast<Variant *>(r_dest), Variant);
 }
-static void gdextension_variant_destroy(GDExtensionVariantPtr p_self) {
+static void foundry_extension_variant_destroy(FoundryExtensionVariantPtr p_self) {
 	reinterpret_cast<Variant *>(p_self)->~Variant();
 }
 
 // variant type
 
-static void gdextension_variant_call(GDExtensionVariantPtr p_self, GDExtensionConstStringNamePtr p_method, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argcount, GDExtensionUninitializedVariantPtr r_return, GDExtensionCallError *r_error) {
+static void foundry_extension_variant_call(FoundryExtensionVariantPtr p_self, FoundryExtensionConstStringNamePtr p_method, const FoundryExtensionConstVariantPtr *p_args, FoundryExtensionInt p_argcount, FoundryExtensionUninitializedVariantPtr r_return, FoundryExtensionCallError *r_error) {
 	Variant *self = (Variant *)p_self;
 	const StringName method = *reinterpret_cast<const StringName *>(p_method);
 	const Variant **args = (const Variant **)p_args;
@@ -337,13 +337,13 @@ static void gdextension_variant_call(GDExtensionVariantPtr p_self, GDExtensionCo
 	self->callp(method, args, p_argcount, *ret, error);
 
 	if (r_error) {
-		r_error->error = (GDExtensionCallErrorType)(error.error);
+		r_error->error = (FoundryExtensionCallErrorType)(error.error);
 		r_error->argument = error.argument;
 		r_error->expected = error.expected;
 	}
 }
 
-static void gdextension_variant_call_static(GDExtensionVariantType p_type, GDExtensionConstStringNamePtr p_method, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argcount, GDExtensionUninitializedVariantPtr r_return, GDExtensionCallError *r_error) {
+static void foundry_extension_variant_call_static(FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_method, const FoundryExtensionConstVariantPtr *p_args, FoundryExtensionInt p_argcount, FoundryExtensionUninitializedVariantPtr r_return, FoundryExtensionCallError *r_error) {
 	Variant::Type type = (Variant::Type)p_type;
 	const StringName method = *reinterpret_cast<const StringName *>(p_method);
 	const Variant **args = (const Variant **)p_args;
@@ -353,13 +353,13 @@ static void gdextension_variant_call_static(GDExtensionVariantType p_type, GDExt
 	Variant::call_static(type, method, args, p_argcount, *ret, error);
 
 	if (r_error) {
-		r_error->error = (GDExtensionCallErrorType)error.error;
+		r_error->error = (FoundryExtensionCallErrorType)error.error;
 		r_error->argument = error.argument;
 		r_error->expected = error.expected;
 	}
 }
 
-static void gdextension_variant_evaluate(GDExtensionVariantOperator p_op, GDExtensionConstVariantPtr p_a, GDExtensionConstVariantPtr p_b, GDExtensionUninitializedVariantPtr r_return, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_evaluate(FoundryExtensionVariantOperator p_op, FoundryExtensionConstVariantPtr p_a, FoundryExtensionConstVariantPtr p_b, FoundryExtensionUninitializedVariantPtr r_return, FoundryExtensionBool *r_valid) {
 	Variant::Operator op = (Variant::Operator)p_op;
 	const Variant *a = (const Variant *)p_a;
 	const Variant *b = (const Variant *)p_b;
@@ -370,7 +370,7 @@ static void gdextension_variant_evaluate(GDExtensionVariantOperator p_op, GDExte
 	*r_valid = valid;
 }
 
-static void gdextension_variant_set(GDExtensionVariantPtr p_self, GDExtensionConstVariantPtr p_key, GDExtensionConstVariantPtr p_value, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_set(FoundryExtensionVariantPtr p_self, FoundryExtensionConstVariantPtr p_key, FoundryExtensionConstVariantPtr p_value, FoundryExtensionBool *r_valid) {
 	Variant *self = (Variant *)p_self;
 	const Variant *key = (const Variant *)p_key;
 	const Variant *value = (const Variant *)p_value;
@@ -380,7 +380,7 @@ static void gdextension_variant_set(GDExtensionVariantPtr p_self, GDExtensionCon
 	*r_valid = valid;
 }
 
-static void gdextension_variant_set_named(GDExtensionVariantPtr p_self, GDExtensionConstStringNamePtr p_key, GDExtensionConstVariantPtr p_value, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_set_named(FoundryExtensionVariantPtr p_self, FoundryExtensionConstStringNamePtr p_key, FoundryExtensionConstVariantPtr p_value, FoundryExtensionBool *r_valid) {
 	Variant *self = (Variant *)p_self;
 	const StringName *key = (const StringName *)p_key;
 	const Variant *value = (const Variant *)p_value;
@@ -390,7 +390,7 @@ static void gdextension_variant_set_named(GDExtensionVariantPtr p_self, GDExtens
 	*r_valid = valid;
 }
 
-static void gdextension_variant_set_keyed(GDExtensionVariantPtr p_self, GDExtensionConstVariantPtr p_key, GDExtensionConstVariantPtr p_value, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_set_keyed(FoundryExtensionVariantPtr p_self, FoundryExtensionConstVariantPtr p_key, FoundryExtensionConstVariantPtr p_value, FoundryExtensionBool *r_valid) {
 	Variant *self = (Variant *)p_self;
 	const Variant *key = (const Variant *)p_key;
 	const Variant *value = (const Variant *)p_value;
@@ -400,7 +400,7 @@ static void gdextension_variant_set_keyed(GDExtensionVariantPtr p_self, GDExtens
 	*r_valid = valid;
 }
 
-static void gdextension_variant_set_indexed(GDExtensionVariantPtr p_self, GDExtensionInt p_index, GDExtensionConstVariantPtr p_value, GDExtensionBool *r_valid, GDExtensionBool *r_oob) {
+static void foundry_extension_variant_set_indexed(FoundryExtensionVariantPtr p_self, FoundryExtensionInt p_index, FoundryExtensionConstVariantPtr p_value, FoundryExtensionBool *r_valid, FoundryExtensionBool *r_oob) {
 	Variant *self = (Variant *)p_self;
 	const Variant *value = (const Variant *)p_value;
 
@@ -411,7 +411,7 @@ static void gdextension_variant_set_indexed(GDExtensionVariantPtr p_self, GDExte
 	*r_oob = oob;
 }
 
-static void gdextension_variant_get(GDExtensionConstVariantPtr p_self, GDExtensionConstVariantPtr p_key, GDExtensionUninitializedVariantPtr r_ret, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_get(FoundryExtensionConstVariantPtr p_self, FoundryExtensionConstVariantPtr p_key, FoundryExtensionUninitializedVariantPtr r_ret, FoundryExtensionBool *r_valid) {
 	const Variant *self = (const Variant *)p_self;
 	const Variant *key = (const Variant *)p_key;
 
@@ -420,7 +420,7 @@ static void gdextension_variant_get(GDExtensionConstVariantPtr p_self, GDExtensi
 	*r_valid = valid;
 }
 
-static void gdextension_variant_get_named(GDExtensionConstVariantPtr p_self, GDExtensionConstStringNamePtr p_key, GDExtensionUninitializedVariantPtr r_ret, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_get_named(FoundryExtensionConstVariantPtr p_self, FoundryExtensionConstStringNamePtr p_key, FoundryExtensionUninitializedVariantPtr r_ret, FoundryExtensionBool *r_valid) {
 	const Variant *self = (const Variant *)p_self;
 	const StringName *key = (const StringName *)p_key;
 
@@ -429,7 +429,7 @@ static void gdextension_variant_get_named(GDExtensionConstVariantPtr p_self, GDE
 	*r_valid = valid;
 }
 
-static void gdextension_variant_get_keyed(GDExtensionConstVariantPtr p_self, GDExtensionConstVariantPtr p_key, GDExtensionUninitializedVariantPtr r_ret, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_get_keyed(FoundryExtensionConstVariantPtr p_self, FoundryExtensionConstVariantPtr p_key, FoundryExtensionUninitializedVariantPtr r_ret, FoundryExtensionBool *r_valid) {
 	const Variant *self = (const Variant *)p_self;
 	const Variant *key = (const Variant *)p_key;
 
@@ -438,7 +438,7 @@ static void gdextension_variant_get_keyed(GDExtensionConstVariantPtr p_self, GDE
 	*r_valid = valid;
 }
 
-static void gdextension_variant_get_indexed(GDExtensionConstVariantPtr p_self, GDExtensionInt p_index, GDExtensionUninitializedVariantPtr r_ret, GDExtensionBool *r_valid, GDExtensionBool *r_oob) {
+static void foundry_extension_variant_get_indexed(FoundryExtensionConstVariantPtr p_self, FoundryExtensionInt p_index, FoundryExtensionUninitializedVariantPtr r_ret, FoundryExtensionBool *r_valid, FoundryExtensionBool *r_oob) {
 	const Variant *self = (const Variant *)p_self;
 
 	bool valid;
@@ -449,7 +449,7 @@ static void gdextension_variant_get_indexed(GDExtensionConstVariantPtr p_self, G
 }
 
 /// Iteration.
-static GDExtensionBool gdextension_variant_iter_init(GDExtensionConstVariantPtr p_self, GDExtensionUninitializedVariantPtr r_iter, GDExtensionBool *r_valid) {
+static FoundryExtensionBool foundry_extension_variant_iter_init(FoundryExtensionConstVariantPtr p_self, FoundryExtensionUninitializedVariantPtr r_iter, FoundryExtensionBool *r_valid) {
 	const Variant *self = (const Variant *)p_self;
 	memnew_placement(r_iter, Variant);
 	Variant *iter = reinterpret_cast<Variant *>(r_iter);
@@ -460,7 +460,7 @@ static GDExtensionBool gdextension_variant_iter_init(GDExtensionConstVariantPtr 
 	return ret;
 }
 
-static GDExtensionBool gdextension_variant_iter_next(GDExtensionConstVariantPtr p_self, GDExtensionVariantPtr r_iter, GDExtensionBool *r_valid) {
+static FoundryExtensionBool foundry_extension_variant_iter_next(FoundryExtensionConstVariantPtr p_self, FoundryExtensionVariantPtr r_iter, FoundryExtensionBool *r_valid) {
 	const Variant *self = (const Variant *)p_self;
 	Variant *iter = (Variant *)r_iter;
 
@@ -470,7 +470,7 @@ static GDExtensionBool gdextension_variant_iter_next(GDExtensionConstVariantPtr 
 	return ret;
 }
 
-static void gdextension_variant_iter_get(GDExtensionConstVariantPtr p_self, GDExtensionVariantPtr r_iter, GDExtensionUninitializedVariantPtr r_ret, GDExtensionBool *r_valid) {
+static void foundry_extension_variant_iter_get(FoundryExtensionConstVariantPtr p_self, FoundryExtensionVariantPtr r_iter, FoundryExtensionUninitializedVariantPtr r_ret, FoundryExtensionBool *r_valid) {
 	const Variant *self = (const Variant *)p_self;
 	Variant *iter = (Variant *)r_iter;
 
@@ -480,53 +480,53 @@ static void gdextension_variant_iter_get(GDExtensionConstVariantPtr p_self, GDEx
 }
 
 /// Variant functions.
-static GDExtensionInt gdextension_variant_hash(GDExtensionConstVariantPtr p_self) {
+static FoundryExtensionInt foundry_extension_variant_hash(FoundryExtensionConstVariantPtr p_self) {
 	const Variant *self = (const Variant *)p_self;
 	return self->hash();
 }
 
-static GDExtensionInt gdextension_variant_recursive_hash(GDExtensionConstVariantPtr p_self, GDExtensionInt p_recursion_count) {
+static FoundryExtensionInt foundry_extension_variant_recursive_hash(FoundryExtensionConstVariantPtr p_self, FoundryExtensionInt p_recursion_count) {
 	const Variant *self = (const Variant *)p_self;
 	return self->recursive_hash(p_recursion_count);
 }
 
-static GDExtensionBool gdextension_variant_hash_compare(GDExtensionConstVariantPtr p_self, GDExtensionConstVariantPtr p_other) {
+static FoundryExtensionBool foundry_extension_variant_hash_compare(FoundryExtensionConstVariantPtr p_self, FoundryExtensionConstVariantPtr p_other) {
 	const Variant *self = (const Variant *)p_self;
 	const Variant *other = (const Variant *)p_other;
 	return self->hash_compare(*other);
 }
 
-static GDExtensionBool gdextension_variant_booleanize(GDExtensionConstVariantPtr p_self) {
+static FoundryExtensionBool foundry_extension_variant_booleanize(FoundryExtensionConstVariantPtr p_self) {
 	const Variant *self = (const Variant *)p_self;
 	return self->booleanize();
 }
 
-static void gdextension_variant_duplicate(GDExtensionConstVariantPtr p_self, GDExtensionUninitializedVariantPtr r_ret, GDExtensionBool p_deep) {
+static void foundry_extension_variant_duplicate(FoundryExtensionConstVariantPtr p_self, FoundryExtensionUninitializedVariantPtr r_ret, FoundryExtensionBool p_deep) {
 	const Variant *self = (const Variant *)p_self;
 	memnew_placement(r_ret, Variant(self->duplicate(p_deep)));
 }
 
-static void gdextension_variant_stringify(GDExtensionConstVariantPtr p_self, GDExtensionUninitializedVariantPtr r_ret) {
+static void foundry_extension_variant_stringify(FoundryExtensionConstVariantPtr p_self, FoundryExtensionUninitializedVariantPtr r_ret) {
 	const Variant *self = (const Variant *)p_self;
 	memnew_placement(r_ret, String(*self));
 }
 
-static GDExtensionVariantType gdextension_variant_get_type(GDExtensionConstVariantPtr p_self) {
+static FoundryExtensionVariantType foundry_extension_variant_get_type(FoundryExtensionConstVariantPtr p_self) {
 	const Variant *self = (const Variant *)p_self;
-	return (GDExtensionVariantType)self->get_type();
+	return (FoundryExtensionVariantType)self->get_type();
 }
 
-static GDExtensionBool gdextension_variant_has_method(GDExtensionConstVariantPtr p_self, GDExtensionConstStringNamePtr p_method) {
+static FoundryExtensionBool foundry_extension_variant_has_method(FoundryExtensionConstVariantPtr p_self, FoundryExtensionConstStringNamePtr p_method) {
 	const Variant *self = (const Variant *)p_self;
 	const StringName *method = (const StringName *)p_method;
 	return self->has_method(*method);
 }
 
-static GDExtensionBool gdextension_variant_has_member(GDExtensionVariantType p_type, GDExtensionConstStringNamePtr p_member) {
+static FoundryExtensionBool foundry_extension_variant_has_member(FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_member) {
 	return Variant::has_member((Variant::Type)p_type, *((const StringName *)p_member));
 }
 
-static GDExtensionBool gdextension_variant_has_key(GDExtensionConstVariantPtr p_self, GDExtensionConstVariantPtr p_key, GDExtensionBool *r_valid) {
+static FoundryExtensionBool foundry_extension_variant_has_key(FoundryExtensionConstVariantPtr p_self, FoundryExtensionConstVariantPtr p_key, FoundryExtensionBool *r_valid) {
 	const Variant *self = (const Variant *)p_self;
 	const Variant *key = (const Variant *)p_key;
 	bool valid;
@@ -535,7 +535,7 @@ static GDExtensionBool gdextension_variant_has_key(GDExtensionConstVariantPtr p_
 	return ret;
 }
 
-static GDObjectInstanceID gdextension_variant_get_object_instance_id(GDExtensionConstVariantPtr p_self) {
+static GDObjectInstanceID foundry_extension_variant_get_object_instance_id(FoundryExtensionConstVariantPtr p_self) {
 	const Variant *self = (const Variant *)p_self;
 	if (likely(self->get_type() == Variant::OBJECT)) {
 		return self->operator ObjectID();
@@ -543,294 +543,294 @@ static GDObjectInstanceID gdextension_variant_get_object_instance_id(GDExtension
 	return 0;
 }
 
-static void gdextension_variant_get_type_name(GDExtensionVariantType p_type, GDExtensionUninitializedVariantPtr r_ret) {
+static void foundry_extension_variant_get_type_name(FoundryExtensionVariantType p_type, FoundryExtensionUninitializedVariantPtr r_ret) {
 	String name = Variant::get_type_name((Variant::Type)p_type);
 	memnew_placement(r_ret, String(name));
 }
 
-static GDExtensionBool gdextension_variant_can_convert(GDExtensionVariantType p_from, GDExtensionVariantType p_to) {
+static FoundryExtensionBool foundry_extension_variant_can_convert(FoundryExtensionVariantType p_from, FoundryExtensionVariantType p_to) {
 	return Variant::can_convert((Variant::Type)p_from, (Variant::Type)p_to);
 }
 
-static GDExtensionBool gdextension_variant_can_convert_strict(GDExtensionVariantType p_from, GDExtensionVariantType p_to) {
+static FoundryExtensionBool foundry_extension_variant_can_convert_strict(FoundryExtensionVariantType p_from, FoundryExtensionVariantType p_to) {
 	return Variant::can_convert_strict((Variant::Type)p_from, (Variant::Type)p_to);
 }
 
 // Variant interaction.
-static GDExtensionVariantFromTypeConstructorFunc gdextension_get_variant_from_type_constructor(GDExtensionVariantType p_type) {
+static FoundryExtensionVariantFromTypeConstructorFunc foundry_extension_get_variant_from_type_constructor(FoundryExtensionVariantType p_type) {
 	switch (p_type) {
-		case GDEXTENSION_VARIANT_TYPE_BOOL:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_BOOL:
 			return VariantTypeConstructor<bool>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_INT:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_INT:
 			return VariantTypeConstructor<int64_t>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_FLOAT:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_FLOAT:
 			return VariantTypeConstructor<double>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_STRING:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_STRING:
 			return VariantTypeConstructor<String>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR2:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR2:
 			return VariantTypeConstructor<Vector2>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR2I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR2I:
 			return VariantTypeConstructor<Vector2i>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_RECT2:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RECT2:
 			return VariantTypeConstructor<Rect2>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_RECT2I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RECT2I:
 			return VariantTypeConstructor<Rect2i>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR3:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR3:
 			return VariantTypeConstructor<Vector3>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR3I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR3I:
 			return VariantTypeConstructor<Vector3i>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_TRANSFORM2D:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_TRANSFORM2D:
 			return VariantTypeConstructor<Transform2D>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR4:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR4:
 			return VariantTypeConstructor<Vector4>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR4I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR4I:
 			return VariantTypeConstructor<Vector4i>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PLANE:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PLANE:
 			return VariantTypeConstructor<Plane>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_QUATERNION:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_QUATERNION:
 			return VariantTypeConstructor<Quaternion>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_AABB:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_AABB:
 			return VariantTypeConstructor<AABB>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_BASIS:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_BASIS:
 			return VariantTypeConstructor<Basis>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_TRANSFORM3D:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_TRANSFORM3D:
 			return VariantTypeConstructor<Transform3D>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PROJECTION:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PROJECTION:
 			return VariantTypeConstructor<Projection>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_COLOR:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_COLOR:
 			return VariantTypeConstructor<Color>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_STRING_NAME:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_STRING_NAME:
 			return VariantTypeConstructor<StringName>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_NODE_PATH:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_NODE_PATH:
 			return VariantTypeConstructor<NodePath>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_RID:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RID:
 			return VariantTypeConstructor<RID>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_OBJECT:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_OBJECT:
 			return VariantTypeConstructor<Object *>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_CALLABLE:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_CALLABLE:
 			return VariantTypeConstructor<Callable>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_SIGNAL:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_SIGNAL:
 			return VariantTypeConstructor<Signal>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_DICTIONARY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_DICTIONARY:
 			return VariantTypeConstructor<Dictionary>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_ARRAY:
 			return VariantTypeConstructor<Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_BYTE_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_BYTE_ARRAY:
 			return VariantTypeConstructor<PackedByteArray>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_INT32_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_INT32_ARRAY:
 			return VariantTypeConstructor<PackedInt32Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_INT64_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_INT64_ARRAY:
 			return VariantTypeConstructor<PackedInt64Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_FLOAT32_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_FLOAT32_ARRAY:
 			return VariantTypeConstructor<PackedFloat32Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_FLOAT64_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_FLOAT64_ARRAY:
 			return VariantTypeConstructor<PackedFloat64Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_STRING_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_STRING_ARRAY:
 			return VariantTypeConstructor<PackedStringArray>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR2_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR2_ARRAY:
 			return VariantTypeConstructor<PackedVector2Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR3_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR3_ARRAY:
 			return VariantTypeConstructor<PackedVector3Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY:
 			return VariantTypeConstructor<PackedVector4Array>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
 			return VariantTypeConstructor<PackedColorArray>::variant_from_type;
-		case GDEXTENSION_VARIANT_TYPE_NIL:
-		case GDEXTENSION_VARIANT_TYPE_VARIANT_MAX:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_NIL:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX:
 			ERR_FAIL_V_MSG(nullptr, "Getting Variant conversion function with invalid type");
 	}
 	ERR_FAIL_V_MSG(nullptr, "Getting Variant conversion function with invalid type");
 }
 
-static GDExtensionTypeFromVariantConstructorFunc gdextension_get_variant_to_type_constructor(GDExtensionVariantType p_type) {
+static FoundryExtensionTypeFromVariantConstructorFunc foundry_extension_get_variant_to_type_constructor(FoundryExtensionVariantType p_type) {
 	switch (p_type) {
-		case GDEXTENSION_VARIANT_TYPE_BOOL:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_BOOL:
 			return VariantTypeConstructor<bool>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_INT:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_INT:
 			return VariantTypeConstructor<int64_t>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_FLOAT:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_FLOAT:
 			return VariantTypeConstructor<double>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_STRING:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_STRING:
 			return VariantTypeConstructor<String>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR2:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR2:
 			return VariantTypeConstructor<Vector2>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR2I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR2I:
 			return VariantTypeConstructor<Vector2i>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_RECT2:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RECT2:
 			return VariantTypeConstructor<Rect2>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_RECT2I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RECT2I:
 			return VariantTypeConstructor<Rect2i>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR3:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR3:
 			return VariantTypeConstructor<Vector3>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR3I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR3I:
 			return VariantTypeConstructor<Vector3i>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_TRANSFORM2D:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_TRANSFORM2D:
 			return VariantTypeConstructor<Transform2D>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR4:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR4:
 			return VariantTypeConstructor<Vector4>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_VECTOR4I:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR4I:
 			return VariantTypeConstructor<Vector4i>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PLANE:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PLANE:
 			return VariantTypeConstructor<Plane>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_QUATERNION:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_QUATERNION:
 			return VariantTypeConstructor<Quaternion>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_AABB:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_AABB:
 			return VariantTypeConstructor<AABB>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_BASIS:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_BASIS:
 			return VariantTypeConstructor<Basis>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_TRANSFORM3D:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_TRANSFORM3D:
 			return VariantTypeConstructor<Transform3D>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PROJECTION:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PROJECTION:
 			return VariantTypeConstructor<Projection>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_COLOR:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_COLOR:
 			return VariantTypeConstructor<Color>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_STRING_NAME:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_STRING_NAME:
 			return VariantTypeConstructor<StringName>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_NODE_PATH:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_NODE_PATH:
 			return VariantTypeConstructor<NodePath>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_RID:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RID:
 			return VariantTypeConstructor<RID>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_OBJECT:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_OBJECT:
 			return VariantTypeConstructor<Object *>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_CALLABLE:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_CALLABLE:
 			return VariantTypeConstructor<Callable>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_SIGNAL:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_SIGNAL:
 			return VariantTypeConstructor<Signal>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_DICTIONARY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_DICTIONARY:
 			return VariantTypeConstructor<Dictionary>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_ARRAY:
 			return VariantTypeConstructor<Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_BYTE_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_BYTE_ARRAY:
 			return VariantTypeConstructor<PackedByteArray>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_INT32_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_INT32_ARRAY:
 			return VariantTypeConstructor<PackedInt32Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_INT64_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_INT64_ARRAY:
 			return VariantTypeConstructor<PackedInt64Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_FLOAT32_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_FLOAT32_ARRAY:
 			return VariantTypeConstructor<PackedFloat32Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_FLOAT64_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_FLOAT64_ARRAY:
 			return VariantTypeConstructor<PackedFloat64Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_STRING_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_STRING_ARRAY:
 			return VariantTypeConstructor<PackedStringArray>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR2_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR2_ARRAY:
 			return VariantTypeConstructor<PackedVector2Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR3_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR3_ARRAY:
 			return VariantTypeConstructor<PackedVector3Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY:
 			return VariantTypeConstructor<PackedVector4Array>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
 			return VariantTypeConstructor<PackedColorArray>::type_from_variant;
-		case GDEXTENSION_VARIANT_TYPE_NIL:
-		case GDEXTENSION_VARIANT_TYPE_VARIANT_MAX:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_NIL:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX:
 			ERR_FAIL_V_MSG(nullptr, "Getting Variant conversion function with invalid type");
 	}
 	ERR_FAIL_V_MSG(nullptr, "Getting Variant conversion function with invalid type");
 }
 
-static GDExtensionVariantGetInternalPtrFunc gdextension_variant_get_ptr_internal_getter(GDExtensionVariantType p_type) {
+static FoundryExtensionVariantGetInternalPtrFunc foundry_extension_variant_get_ptr_internal_getter(FoundryExtensionVariantType p_type) {
 	switch (p_type) {
-		case GDEXTENSION_VARIANT_TYPE_BOOL:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<bool *(*)(Variant *)>(VariantInternal::get_bool));
-		case GDEXTENSION_VARIANT_TYPE_INT:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<int64_t *(*)(Variant *)>(VariantInternal::get_int));
-		case GDEXTENSION_VARIANT_TYPE_FLOAT:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<double *(*)(Variant *)>(VariantInternal::get_float));
-		case GDEXTENSION_VARIANT_TYPE_STRING:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<String *(*)(Variant *)>(VariantInternal::get_string));
-		case GDEXTENSION_VARIANT_TYPE_VECTOR2:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Vector2 *(*)(Variant *)>(VariantInternal::get_vector2));
-		case GDEXTENSION_VARIANT_TYPE_VECTOR2I:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Vector2i *(*)(Variant *)>(VariantInternal::get_vector2i));
-		case GDEXTENSION_VARIANT_TYPE_RECT2:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Rect2 *(*)(Variant *)>(VariantInternal::get_rect2));
-		case GDEXTENSION_VARIANT_TYPE_RECT2I:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Rect2i *(*)(Variant *)>(VariantInternal::get_rect2i));
-		case GDEXTENSION_VARIANT_TYPE_VECTOR3:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Vector3 *(*)(Variant *)>(VariantInternal::get_vector3));
-		case GDEXTENSION_VARIANT_TYPE_VECTOR3I:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Vector3i *(*)(Variant *)>(VariantInternal::get_vector3i));
-		case GDEXTENSION_VARIANT_TYPE_TRANSFORM2D:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Transform2D *(*)(Variant *)>(VariantInternal::get_transform2d));
-		case GDEXTENSION_VARIANT_TYPE_VECTOR4:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Vector4 *(*)(Variant *)>(VariantInternal::get_vector4));
-		case GDEXTENSION_VARIANT_TYPE_VECTOR4I:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Vector4i *(*)(Variant *)>(VariantInternal::get_vector4i));
-		case GDEXTENSION_VARIANT_TYPE_PLANE:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Plane *(*)(Variant *)>(VariantInternal::get_plane));
-		case GDEXTENSION_VARIANT_TYPE_QUATERNION:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Quaternion *(*)(Variant *)>(VariantInternal::get_quaternion));
-		case GDEXTENSION_VARIANT_TYPE_AABB:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<AABB *(*)(Variant *)>(VariantInternal::get_aabb));
-		case GDEXTENSION_VARIANT_TYPE_BASIS:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Basis *(*)(Variant *)>(VariantInternal::get_basis));
-		case GDEXTENSION_VARIANT_TYPE_TRANSFORM3D:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Transform3D *(*)(Variant *)>(VariantInternal::get_transform));
-		case GDEXTENSION_VARIANT_TYPE_PROJECTION:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Projection *(*)(Variant *)>(VariantInternal::get_projection));
-		case GDEXTENSION_VARIANT_TYPE_COLOR:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Color *(*)(Variant *)>(VariantInternal::get_color));
-		case GDEXTENSION_VARIANT_TYPE_STRING_NAME:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<StringName *(*)(Variant *)>(VariantInternal::get_string_name));
-		case GDEXTENSION_VARIANT_TYPE_NODE_PATH:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<NodePath *(*)(Variant *)>(VariantInternal::get_node_path));
-		case GDEXTENSION_VARIANT_TYPE_RID:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<RID *(*)(Variant *)>(VariantInternal::get_rid));
-		case GDEXTENSION_VARIANT_TYPE_OBJECT:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Object **(*)(Variant *)>(VariantInternal::get_object));
-		case GDEXTENSION_VARIANT_TYPE_CALLABLE:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Callable *(*)(Variant *)>(VariantInternal::get_callable));
-		case GDEXTENSION_VARIANT_TYPE_SIGNAL:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Signal *(*)(Variant *)>(VariantInternal::get_signal));
-		case GDEXTENSION_VARIANT_TYPE_DICTIONARY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Dictionary *(*)(Variant *)>(VariantInternal::get_dictionary));
-		case GDEXTENSION_VARIANT_TYPE_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<Array *(*)(Variant *)>(VariantInternal::get_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_BYTE_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedByteArray *(*)(Variant *)>(VariantInternal::get_byte_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_INT32_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedInt32Array *(*)(Variant *)>(VariantInternal::get_int32_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_INT64_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedInt64Array *(*)(Variant *)>(VariantInternal::get_int64_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_FLOAT32_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedFloat32Array *(*)(Variant *)>(VariantInternal::get_float32_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_FLOAT64_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedFloat64Array *(*)(Variant *)>(VariantInternal::get_float64_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_STRING_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedStringArray *(*)(Variant *)>(VariantInternal::get_string_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR2_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedVector2Array *(*)(Variant *)>(VariantInternal::get_vector2_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR3_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedVector3Array *(*)(Variant *)>(VariantInternal::get_vector3_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedColorArray *(*)(Variant *)>(VariantInternal::get_color_array));
-		case GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY:
-			return reinterpret_cast<GDExtensionVariantGetInternalPtrFunc>(static_cast<PackedVector4Array *(*)(Variant *)>(VariantInternal::get_vector4_array));
-		case GDEXTENSION_VARIANT_TYPE_NIL:
-		case GDEXTENSION_VARIANT_TYPE_VARIANT_MAX:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_BOOL:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<bool *(*)(Variant *)>(VariantInternal::get_bool));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_INT:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<int64_t *(*)(Variant *)>(VariantInternal::get_int));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_FLOAT:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<double *(*)(Variant *)>(VariantInternal::get_float));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_STRING:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<String *(*)(Variant *)>(VariantInternal::get_string));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR2:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Vector2 *(*)(Variant *)>(VariantInternal::get_vector2));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR2I:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Vector2i *(*)(Variant *)>(VariantInternal::get_vector2i));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RECT2:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Rect2 *(*)(Variant *)>(VariantInternal::get_rect2));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RECT2I:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Rect2i *(*)(Variant *)>(VariantInternal::get_rect2i));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR3:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Vector3 *(*)(Variant *)>(VariantInternal::get_vector3));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR3I:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Vector3i *(*)(Variant *)>(VariantInternal::get_vector3i));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_TRANSFORM2D:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Transform2D *(*)(Variant *)>(VariantInternal::get_transform2d));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR4:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Vector4 *(*)(Variant *)>(VariantInternal::get_vector4));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VECTOR4I:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Vector4i *(*)(Variant *)>(VariantInternal::get_vector4i));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PLANE:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Plane *(*)(Variant *)>(VariantInternal::get_plane));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_QUATERNION:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Quaternion *(*)(Variant *)>(VariantInternal::get_quaternion));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_AABB:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<AABB *(*)(Variant *)>(VariantInternal::get_aabb));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_BASIS:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Basis *(*)(Variant *)>(VariantInternal::get_basis));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_TRANSFORM3D:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Transform3D *(*)(Variant *)>(VariantInternal::get_transform));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PROJECTION:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Projection *(*)(Variant *)>(VariantInternal::get_projection));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_COLOR:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Color *(*)(Variant *)>(VariantInternal::get_color));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_STRING_NAME:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<StringName *(*)(Variant *)>(VariantInternal::get_string_name));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_NODE_PATH:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<NodePath *(*)(Variant *)>(VariantInternal::get_node_path));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_RID:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<RID *(*)(Variant *)>(VariantInternal::get_rid));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_OBJECT:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Object **(*)(Variant *)>(VariantInternal::get_object));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_CALLABLE:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Callable *(*)(Variant *)>(VariantInternal::get_callable));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_SIGNAL:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Signal *(*)(Variant *)>(VariantInternal::get_signal));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_DICTIONARY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Dictionary *(*)(Variant *)>(VariantInternal::get_dictionary));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<Array *(*)(Variant *)>(VariantInternal::get_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_BYTE_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedByteArray *(*)(Variant *)>(VariantInternal::get_byte_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_INT32_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedInt32Array *(*)(Variant *)>(VariantInternal::get_int32_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_INT64_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedInt64Array *(*)(Variant *)>(VariantInternal::get_int64_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_FLOAT32_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedFloat32Array *(*)(Variant *)>(VariantInternal::get_float32_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_FLOAT64_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedFloat64Array *(*)(Variant *)>(VariantInternal::get_float64_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_STRING_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedStringArray *(*)(Variant *)>(VariantInternal::get_string_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR2_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedVector2Array *(*)(Variant *)>(VariantInternal::get_vector2_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR3_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedVector3Array *(*)(Variant *)>(VariantInternal::get_vector3_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedColorArray *(*)(Variant *)>(VariantInternal::get_color_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedVector4Array *(*)(Variant *)>(VariantInternal::get_vector4_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_NIL:
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX:
 			ERR_FAIL_V_MSG(nullptr, "Getting Variant get internal pointer function with invalid type.");
 	}
 	ERR_FAIL_V_MSG(nullptr, "Getting Variant get internal pointer function with invalid type.");
 }
 
 // ptrcalls
-static GDExtensionPtrOperatorEvaluator gdextension_variant_get_ptr_operator_evaluator(GDExtensionVariantOperator p_operator, GDExtensionVariantType p_type_a, GDExtensionVariantType p_type_b) {
-	return (GDExtensionPtrOperatorEvaluator)Variant::get_ptr_operator_evaluator(Variant::Operator(p_operator), Variant::Type(p_type_a), Variant::Type(p_type_b));
+static FoundryExtensionPtrOperatorEvaluator foundry_extension_variant_get_ptr_operator_evaluator(FoundryExtensionVariantOperator p_operator, FoundryExtensionVariantType p_type_a, FoundryExtensionVariantType p_type_b) {
+	return (FoundryExtensionPtrOperatorEvaluator)Variant::get_ptr_operator_evaluator(Variant::Operator(p_operator), Variant::Type(p_type_a), Variant::Type(p_type_b));
 }
-static GDExtensionPtrBuiltInMethod gdextension_variant_get_ptr_builtin_method(GDExtensionVariantType p_type, GDExtensionConstStringNamePtr p_method, GDExtensionInt p_hash) {
+static FoundryExtensionPtrBuiltInMethod foundry_extension_variant_get_ptr_builtin_method(FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_method, FoundryExtensionInt p_hash) {
 	const StringName method = *reinterpret_cast<const StringName *>(p_method);
-	GDExtensionPtrBuiltInMethod ptr = (GDExtensionPtrBuiltInMethod)Variant::get_ptr_builtin_method_with_compatibility(Variant::Type(p_type), method, p_hash);
+	FoundryExtensionPtrBuiltInMethod ptr = (FoundryExtensionPtrBuiltInMethod)Variant::get_ptr_builtin_method_with_compatibility(Variant::Type(p_type), method, p_hash);
 	if (!ptr) {
 		ERR_PRINT("Error getting method " + method + ", missing or hash mismatch.");
 	}
 	return ptr;
 }
-static GDExtensionPtrConstructor gdextension_variant_get_ptr_constructor(GDExtensionVariantType p_type, int32_t p_constructor) {
-	return (GDExtensionPtrConstructor)Variant::get_ptr_constructor(Variant::Type(p_type), p_constructor);
+static FoundryExtensionPtrConstructor foundry_extension_variant_get_ptr_constructor(FoundryExtensionVariantType p_type, int32_t p_constructor) {
+	return (FoundryExtensionPtrConstructor)Variant::get_ptr_constructor(Variant::Type(p_type), p_constructor);
 }
-static GDExtensionPtrDestructor gdextension_variant_get_ptr_destructor(GDExtensionVariantType p_type) {
-	return (GDExtensionPtrDestructor)Variant::get_ptr_destructor(Variant::Type(p_type));
+static FoundryExtensionPtrDestructor foundry_extension_variant_get_ptr_destructor(FoundryExtensionVariantType p_type) {
+	return (FoundryExtensionPtrDestructor)Variant::get_ptr_destructor(Variant::Type(p_type));
 }
-static void gdextension_variant_construct(GDExtensionVariantType p_type, GDExtensionUninitializedVariantPtr r_base, const GDExtensionConstVariantPtr *p_args, int32_t p_argument_count, GDExtensionCallError *r_error) {
+static void foundry_extension_variant_construct(FoundryExtensionVariantType p_type, FoundryExtensionUninitializedVariantPtr r_base, const FoundryExtensionConstVariantPtr *p_args, int32_t p_argument_count, FoundryExtensionCallError *r_error) {
 	memnew_placement(r_base, Variant);
 	Variant *base = reinterpret_cast<Variant *>(r_base);
 
@@ -838,71 +838,71 @@ static void gdextension_variant_construct(GDExtensionVariantType p_type, GDExten
 	Variant::construct(Variant::Type(p_type), *base, (const Variant **)p_args, p_argument_count, error);
 
 	if (r_error) {
-		r_error->error = (GDExtensionCallErrorType)(error.error);
+		r_error->error = (FoundryExtensionCallErrorType)(error.error);
 		r_error->argument = error.argument;
 		r_error->expected = error.expected;
 	}
 }
-static GDExtensionPtrSetter gdextension_variant_get_ptr_setter(GDExtensionVariantType p_type, GDExtensionConstStringNamePtr p_member) {
+static FoundryExtensionPtrSetter foundry_extension_variant_get_ptr_setter(FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_member) {
 	const StringName member = *reinterpret_cast<const StringName *>(p_member);
-	return (GDExtensionPtrSetter)Variant::get_member_ptr_setter(Variant::Type(p_type), member);
+	return (FoundryExtensionPtrSetter)Variant::get_member_ptr_setter(Variant::Type(p_type), member);
 }
-static GDExtensionPtrGetter gdextension_variant_get_ptr_getter(GDExtensionVariantType p_type, GDExtensionConstStringNamePtr p_member) {
+static FoundryExtensionPtrGetter foundry_extension_variant_get_ptr_getter(FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_member) {
 	const StringName member = *reinterpret_cast<const StringName *>(p_member);
-	return (GDExtensionPtrGetter)Variant::get_member_ptr_getter(Variant::Type(p_type), member);
+	return (FoundryExtensionPtrGetter)Variant::get_member_ptr_getter(Variant::Type(p_type), member);
 }
-static GDExtensionPtrIndexedSetter gdextension_variant_get_ptr_indexed_setter(GDExtensionVariantType p_type) {
-	return (GDExtensionPtrIndexedSetter)Variant::get_member_ptr_indexed_setter(Variant::Type(p_type));
+static FoundryExtensionPtrIndexedSetter foundry_extension_variant_get_ptr_indexed_setter(FoundryExtensionVariantType p_type) {
+	return (FoundryExtensionPtrIndexedSetter)Variant::get_member_ptr_indexed_setter(Variant::Type(p_type));
 }
-static GDExtensionPtrIndexedGetter gdextension_variant_get_ptr_indexed_getter(GDExtensionVariantType p_type) {
-	return (GDExtensionPtrIndexedGetter)Variant::get_member_ptr_indexed_getter(Variant::Type(p_type));
+static FoundryExtensionPtrIndexedGetter foundry_extension_variant_get_ptr_indexed_getter(FoundryExtensionVariantType p_type) {
+	return (FoundryExtensionPtrIndexedGetter)Variant::get_member_ptr_indexed_getter(Variant::Type(p_type));
 }
-static GDExtensionPtrKeyedSetter gdextension_variant_get_ptr_keyed_setter(GDExtensionVariantType p_type) {
-	return (GDExtensionPtrKeyedSetter)Variant::get_member_ptr_keyed_setter(Variant::Type(p_type));
+static FoundryExtensionPtrKeyedSetter foundry_extension_variant_get_ptr_keyed_setter(FoundryExtensionVariantType p_type) {
+	return (FoundryExtensionPtrKeyedSetter)Variant::get_member_ptr_keyed_setter(Variant::Type(p_type));
 }
-static GDExtensionPtrKeyedGetter gdextension_variant_get_ptr_keyed_getter(GDExtensionVariantType p_type) {
-	return (GDExtensionPtrKeyedGetter)Variant::get_member_ptr_keyed_getter(Variant::Type(p_type));
+static FoundryExtensionPtrKeyedGetter foundry_extension_variant_get_ptr_keyed_getter(FoundryExtensionVariantType p_type) {
+	return (FoundryExtensionPtrKeyedGetter)Variant::get_member_ptr_keyed_getter(Variant::Type(p_type));
 }
-static GDExtensionPtrKeyedChecker gdextension_variant_get_ptr_keyed_checker(GDExtensionVariantType p_type) {
-	return (GDExtensionPtrKeyedChecker)Variant::get_member_ptr_keyed_checker(Variant::Type(p_type));
+static FoundryExtensionPtrKeyedChecker foundry_extension_variant_get_ptr_keyed_checker(FoundryExtensionVariantType p_type) {
+	return (FoundryExtensionPtrKeyedChecker)Variant::get_member_ptr_keyed_checker(Variant::Type(p_type));
 }
-static void gdextension_variant_get_constant_value(GDExtensionVariantType p_type, GDExtensionConstStringNamePtr p_constant, GDExtensionUninitializedVariantPtr r_ret) {
+static void foundry_extension_variant_get_constant_value(FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_constant, FoundryExtensionUninitializedVariantPtr r_ret) {
 	StringName constant = *reinterpret_cast<const StringName *>(p_constant);
 	memnew_placement(r_ret, Variant(Variant::get_constant_value(Variant::Type(p_type), constant)));
 }
-static GDExtensionPtrUtilityFunction gdextension_variant_get_ptr_utility_function(GDExtensionConstStringNamePtr p_function, GDExtensionInt p_hash) {
+static FoundryExtensionPtrUtilityFunction foundry_extension_variant_get_ptr_utility_function(FoundryExtensionConstStringNamePtr p_function, FoundryExtensionInt p_hash) {
 	StringName function = *reinterpret_cast<const StringName *>(p_function);
 	uint32_t hash = Variant::get_utility_function_hash(function);
 	if (hash != p_hash) {
 		ERR_PRINT_ONCE("Error getting utility function " + function + ", hash mismatch.");
 		return nullptr;
 	}
-	return (GDExtensionPtrUtilityFunction)Variant::get_ptr_utility_function(function);
+	return (FoundryExtensionPtrUtilityFunction)Variant::get_ptr_utility_function(function);
 }
 
 //string helpers
 
-static void gdextension_string_new_with_latin1_chars(GDExtensionUninitializedStringPtr r_dest, const char *p_contents) {
+static void foundry_extension_string_new_with_latin1_chars(FoundryExtensionUninitializedStringPtr r_dest, const char *p_contents) {
 	String *dest = memnew_placement(r_dest, String);
 	dest->append_latin1(Span<char>(p_contents, p_contents ? strlen(p_contents) : 0));
 }
 
-static void gdextension_string_new_with_utf8_chars(GDExtensionUninitializedStringPtr r_dest, const char *p_contents) {
+static void foundry_extension_string_new_with_utf8_chars(FoundryExtensionUninitializedStringPtr r_dest, const char *p_contents) {
 	String *dest = memnew_placement(r_dest, String);
 	dest->append_utf8(p_contents);
 }
 
-static void gdextension_string_new_with_utf16_chars(GDExtensionUninitializedStringPtr r_dest, const char16_t *p_contents) {
+static void foundry_extension_string_new_with_utf16_chars(FoundryExtensionUninitializedStringPtr r_dest, const char16_t *p_contents) {
 	String *dest = memnew_placement(r_dest, String);
 	dest->append_utf16(p_contents);
 }
 
-static void gdextension_string_new_with_utf32_chars(GDExtensionUninitializedStringPtr r_dest, const char32_t *p_contents) {
+static void foundry_extension_string_new_with_utf32_chars(FoundryExtensionUninitializedStringPtr r_dest, const char32_t *p_contents) {
 	String *dest = memnew_placement(r_dest, String);
 	dest->append_utf32(Span(p_contents, p_contents ? strlen(p_contents) : 0));
 }
 
-static void gdextension_string_new_with_wide_chars(GDExtensionUninitializedStringPtr r_dest, const wchar_t *p_contents) {
+static void foundry_extension_string_new_with_wide_chars(FoundryExtensionUninitializedStringPtr r_dest, const wchar_t *p_contents) {
 	if constexpr (sizeof(wchar_t) == 2) {
 		// wchar_t is 16 bit (UTF-16).
 		String *dest = memnew_placement(r_dest, String);
@@ -914,39 +914,39 @@ static void gdextension_string_new_with_wide_chars(GDExtensionUninitializedStrin
 	}
 }
 
-static void gdextension_string_new_with_latin1_chars_and_len(GDExtensionUninitializedStringPtr r_dest, const char *p_contents, GDExtensionInt p_size) {
+static void foundry_extension_string_new_with_latin1_chars_and_len(FoundryExtensionUninitializedStringPtr r_dest, const char *p_contents, FoundryExtensionInt p_size) {
 	const size_t string_length = p_contents ? (p_size < 0 ? strlen(p_contents) : strnlen(p_contents, p_size)) : 0;
 	String *dest = memnew_placement(r_dest, String);
 	dest->append_latin1(Span(p_contents, string_length));
 }
 
-static void gdextension_string_new_with_utf8_chars_and_len(GDExtensionUninitializedStringPtr r_dest, const char *p_contents, GDExtensionInt p_size) {
+static void foundry_extension_string_new_with_utf8_chars_and_len(FoundryExtensionUninitializedStringPtr r_dest, const char *p_contents, FoundryExtensionInt p_size) {
 	String *dest = memnew_placement(r_dest, String);
 	dest->append_utf8(p_contents, p_size);
 }
 
-static GDExtensionInt gdextension_string_new_with_utf8_chars_and_len2(GDExtensionUninitializedStringPtr r_dest, const char *p_contents, GDExtensionInt p_size) {
+static FoundryExtensionInt foundry_extension_string_new_with_utf8_chars_and_len2(FoundryExtensionUninitializedStringPtr r_dest, const char *p_contents, FoundryExtensionInt p_size) {
 	String *dest = memnew_placement(r_dest, String);
-	return (GDExtensionInt)dest->append_utf8(p_contents, p_size);
+	return (FoundryExtensionInt)dest->append_utf8(p_contents, p_size);
 }
 
-static void gdextension_string_new_with_utf16_chars_and_len(GDExtensionUninitializedStringPtr r_dest, const char16_t *p_contents, GDExtensionInt p_char_count) {
+static void foundry_extension_string_new_with_utf16_chars_and_len(FoundryExtensionUninitializedStringPtr r_dest, const char16_t *p_contents, FoundryExtensionInt p_char_count) {
 	String *dest = memnew_placement(r_dest, String);
 	dest->append_utf16(p_contents, p_char_count);
 }
 
-static GDExtensionInt gdextension_string_new_with_utf16_chars_and_len2(GDExtensionUninitializedStringPtr r_dest, const char16_t *p_contents, GDExtensionInt p_char_count, GDExtensionBool p_default_little_endian) {
+static FoundryExtensionInt foundry_extension_string_new_with_utf16_chars_and_len2(FoundryExtensionUninitializedStringPtr r_dest, const char16_t *p_contents, FoundryExtensionInt p_char_count, FoundryExtensionBool p_default_little_endian) {
 	String *dest = memnew_placement(r_dest, String);
-	return (GDExtensionInt)dest->append_utf16(p_contents, p_char_count, p_default_little_endian);
+	return (FoundryExtensionInt)dest->append_utf16(p_contents, p_char_count, p_default_little_endian);
 }
 
-static void gdextension_string_new_with_utf32_chars_and_len(GDExtensionUninitializedStringPtr r_dest, const char32_t *p_contents, GDExtensionInt p_char_count) {
+static void foundry_extension_string_new_with_utf32_chars_and_len(FoundryExtensionUninitializedStringPtr r_dest, const char32_t *p_contents, FoundryExtensionInt p_char_count) {
 	const size_t string_length = p_contents ? (p_char_count < 0 ? strlen(p_contents) : strnlen(p_contents, p_char_count)) : 0;
 	String *string = memnew_placement(r_dest, String);
 	string->append_utf32(Span(p_contents, string_length));
 }
 
-static void gdextension_string_new_with_wide_chars_and_len(GDExtensionUninitializedStringPtr r_dest, const wchar_t *p_contents, GDExtensionInt p_char_count) {
+static void foundry_extension_string_new_with_wide_chars_and_len(FoundryExtensionUninitializedStringPtr r_dest, const wchar_t *p_contents, FoundryExtensionInt p_char_count) {
 	if constexpr (sizeof(wchar_t) == 2) {
 		// wchar_t is 16 bit (UTF-16).
 		String *dest = memnew_placement(r_dest, String);
@@ -959,62 +959,62 @@ static void gdextension_string_new_with_wide_chars_and_len(GDExtensionUninitiali
 	}
 }
 
-static GDExtensionInt gdextension_string_to_latin1_chars(GDExtensionConstStringPtr p_self, char *r_text, GDExtensionInt p_max_write_length) {
+static FoundryExtensionInt foundry_extension_string_to_latin1_chars(FoundryExtensionConstStringPtr p_self, char *r_text, FoundryExtensionInt p_max_write_length) {
 	String *self = (String *)p_self;
 	CharString cs = self->latin1();
-	GDExtensionInt len = cs.length();
+	FoundryExtensionInt len = cs.length();
 	if (r_text) {
 		const char *s_text = cs.ptr();
-		for (GDExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
+		for (FoundryExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
 			r_text[i] = s_text[i];
 		}
 	}
 	return len;
 }
-static GDExtensionInt gdextension_string_to_utf8_chars(GDExtensionConstStringPtr p_self, char *r_text, GDExtensionInt p_max_write_length) {
+static FoundryExtensionInt foundry_extension_string_to_utf8_chars(FoundryExtensionConstStringPtr p_self, char *r_text, FoundryExtensionInt p_max_write_length) {
 	String *self = (String *)p_self;
 	CharString cs = self->utf8();
-	GDExtensionInt len = cs.length();
+	FoundryExtensionInt len = cs.length();
 	if (r_text) {
 		const char *s_text = cs.ptr();
-		for (GDExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
+		for (FoundryExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
 			r_text[i] = s_text[i];
 		}
 	}
 	return len;
 }
-static GDExtensionInt gdextension_string_to_utf16_chars(GDExtensionConstStringPtr p_self, char16_t *r_text, GDExtensionInt p_max_write_length) {
+static FoundryExtensionInt foundry_extension_string_to_utf16_chars(FoundryExtensionConstStringPtr p_self, char16_t *r_text, FoundryExtensionInt p_max_write_length) {
 	String *self = (String *)p_self;
 	Char16String cs = self->utf16();
-	GDExtensionInt len = cs.length();
+	FoundryExtensionInt len = cs.length();
 	if (r_text) {
 		const char16_t *s_text = cs.ptr();
-		for (GDExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
+		for (FoundryExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
 			r_text[i] = s_text[i];
 		}
 	}
 	return len;
 }
-static GDExtensionInt gdextension_string_to_utf32_chars(GDExtensionConstStringPtr p_self, char32_t *r_text, GDExtensionInt p_max_write_length) {
+static FoundryExtensionInt foundry_extension_string_to_utf32_chars(FoundryExtensionConstStringPtr p_self, char32_t *r_text, FoundryExtensionInt p_max_write_length) {
 	String *self = (String *)p_self;
-	GDExtensionInt len = self->length();
+	FoundryExtensionInt len = self->length();
 	if (r_text) {
 		const char32_t *s_text = self->ptr();
-		for (GDExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
+		for (FoundryExtensionInt i = 0; i < MIN(len, p_max_write_length); i++) {
 			r_text[i] = s_text[i];
 		}
 	}
 	return len;
 }
-static GDExtensionInt gdextension_string_to_wide_chars(GDExtensionConstStringPtr p_self, wchar_t *r_text, GDExtensionInt p_max_write_length) {
+static FoundryExtensionInt foundry_extension_string_to_wide_chars(FoundryExtensionConstStringPtr p_self, wchar_t *r_text, FoundryExtensionInt p_max_write_length) {
 	if constexpr (sizeof(wchar_t) == 4) {
-		return gdextension_string_to_utf32_chars(p_self, (char32_t *)r_text, p_max_write_length);
+		return foundry_extension_string_to_utf32_chars(p_self, (char32_t *)r_text, p_max_write_length);
 	} else {
-		return gdextension_string_to_utf16_chars(p_self, (char16_t *)r_text, p_max_write_length);
+		return foundry_extension_string_to_utf16_chars(p_self, (char16_t *)r_text, p_max_write_length);
 	}
 }
 
-static char32_t *gdextension_string_operator_index(GDExtensionStringPtr p_self, GDExtensionInt p_index) {
+static char32_t *foundry_extension_string_operator_index(FoundryExtensionStringPtr p_self, FoundryExtensionInt p_index) {
 	String *self = (String *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->length() + 1)) {
 		return nullptr;
@@ -1022,7 +1022,7 @@ static char32_t *gdextension_string_operator_index(GDExtensionStringPtr p_self, 
 	return &self->ptrw()[p_index];
 }
 
-static const char32_t *gdextension_string_operator_index_const(GDExtensionConstStringPtr p_self, GDExtensionInt p_index) {
+static const char32_t *foundry_extension_string_operator_index_const(FoundryExtensionConstStringPtr p_self, FoundryExtensionInt p_index) {
 	const String *self = (const String *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->length() + 1)) {
 		return nullptr;
@@ -1030,83 +1030,83 @@ static const char32_t *gdextension_string_operator_index_const(GDExtensionConstS
 	return &self->ptr()[p_index];
 }
 
-static void gdextension_string_operator_plus_eq_string(GDExtensionStringPtr p_self, GDExtensionConstStringPtr p_b) {
+static void foundry_extension_string_operator_plus_eq_string(FoundryExtensionStringPtr p_self, FoundryExtensionConstStringPtr p_b) {
 	String *self = (String *)p_self;
 	const String *b = (const String *)p_b;
 	*self += *b;
 }
 
-static void gdextension_string_operator_plus_eq_char(GDExtensionStringPtr p_self, char32_t p_b) {
+static void foundry_extension_string_operator_plus_eq_char(FoundryExtensionStringPtr p_self, char32_t p_b) {
 	String *self = (String *)p_self;
 	*self += p_b;
 }
 
-static void gdextension_string_operator_plus_eq_cstr(GDExtensionStringPtr p_self, const char *p_b) {
+static void foundry_extension_string_operator_plus_eq_cstr(FoundryExtensionStringPtr p_self, const char *p_b) {
 	String *self = (String *)p_self;
 	*self += p_b;
 }
 
-static void gdextension_string_operator_plus_eq_wcstr(GDExtensionStringPtr p_self, const wchar_t *p_b) {
+static void foundry_extension_string_operator_plus_eq_wcstr(FoundryExtensionStringPtr p_self, const wchar_t *p_b) {
 	String *self = (String *)p_self;
 	*self += p_b;
 }
 
-static void gdextension_string_operator_plus_eq_c32str(GDExtensionStringPtr p_self, const char32_t *p_b) {
+static void foundry_extension_string_operator_plus_eq_c32str(FoundryExtensionStringPtr p_self, const char32_t *p_b) {
 	String *self = (String *)p_self;
 	*self += p_b;
 }
 
-static GDExtensionInt gdextension_string_resize(GDExtensionStringPtr p_self, GDExtensionInt p_length) {
+static FoundryExtensionInt foundry_extension_string_resize(FoundryExtensionStringPtr p_self, FoundryExtensionInt p_length) {
 	String *self = (String *)p_self;
 	return (*self).resize_uninitialized(p_length);
 }
 
-static void gdextension_string_name_new_with_latin1_chars(GDExtensionUninitializedStringNamePtr r_dest, const char *p_contents, GDExtensionBool p_is_static) {
+static void foundry_extension_string_name_new_with_latin1_chars(FoundryExtensionUninitializedStringNamePtr r_dest, const char *p_contents, FoundryExtensionBool p_is_static) {
 	memnew_placement(r_dest, StringName(p_contents, static_cast<bool>(p_is_static)));
 }
 
-static void gdextension_string_name_new_with_utf8_chars(GDExtensionUninitializedStringNamePtr r_dest, const char *p_contents) {
+static void foundry_extension_string_name_new_with_utf8_chars(FoundryExtensionUninitializedStringNamePtr r_dest, const char *p_contents) {
 	String tmp = String::utf8(p_contents);
 	memnew_placement(r_dest, StringName(tmp));
 }
 
-static void gdextension_string_name_new_with_utf8_chars_and_len(GDExtensionUninitializedStringNamePtr r_dest, const char *p_contents, GDExtensionInt p_size) {
+static void foundry_extension_string_name_new_with_utf8_chars_and_len(FoundryExtensionUninitializedStringNamePtr r_dest, const char *p_contents, FoundryExtensionInt p_size) {
 	String tmp = String::utf8(p_contents, p_size);
 	memnew_placement(r_dest, StringName(tmp));
 }
 
-static GDExtensionInt gdextension_xml_parser_open_buffer(GDExtensionObjectPtr p_instance, const uint8_t *p_buffer, size_t p_size) {
+static FoundryExtensionInt foundry_extension_xml_parser_open_buffer(FoundryExtensionObjectPtr p_instance, const uint8_t *p_buffer, size_t p_size) {
 	XMLParser *xml = (XMLParser *)p_instance;
-	return (GDExtensionInt)xml->_open_buffer(p_buffer, p_size);
+	return (FoundryExtensionInt)xml->_open_buffer(p_buffer, p_size);
 }
 
-static void gdextension_file_access_store_buffer(GDExtensionObjectPtr p_instance, const uint8_t *p_src, uint64_t p_length) {
+static void foundry_extension_file_access_store_buffer(FoundryExtensionObjectPtr p_instance, const uint8_t *p_src, uint64_t p_length) {
 	FileAccess *fa = (FileAccess *)p_instance;
 	fa->store_buffer(p_src, p_length);
 }
 
-static uint64_t gdextension_file_access_get_buffer(GDExtensionConstObjectPtr p_instance, uint8_t *p_dst, uint64_t p_length) {
+static uint64_t foundry_extension_file_access_get_buffer(FoundryExtensionConstObjectPtr p_instance, uint8_t *p_dst, uint64_t p_length) {
 	const FileAccess *fa = (FileAccess *)p_instance;
 	return fa->get_buffer(p_dst, p_length);
 }
 
-static uint8_t *gdextension_image_ptrw(GDExtensionObjectPtr p_instance) {
+static uint8_t *foundry_extension_image_ptrw(FoundryExtensionObjectPtr p_instance) {
 	Image *img = (Image *)p_instance;
 	return img->ptrw();
 }
 
-static const uint8_t *gdextension_image_ptr(GDExtensionObjectPtr p_instance) {
+static const uint8_t *foundry_extension_image_ptr(FoundryExtensionObjectPtr p_instance) {
 	Image *img = (Image *)p_instance;
 	return img->ptr();
 }
 
-static int64_t gdextension_worker_thread_pool_add_native_group_task(GDExtensionObjectPtr p_instance, void (*p_func)(void *, uint32_t), void *p_userdata, int p_elements, int p_tasks, GDExtensionBool p_high_priority, GDExtensionConstStringPtr p_description) {
+static int64_t foundry_extension_worker_thread_pool_add_native_group_task(FoundryExtensionObjectPtr p_instance, void (*p_func)(void *, uint32_t), void *p_userdata, int p_elements, int p_tasks, FoundryExtensionBool p_high_priority, FoundryExtensionConstStringPtr p_description) {
 	WorkerThreadPool *p = (WorkerThreadPool *)p_instance;
 	const String *description = (const String *)p_description;
 	return (int64_t)p->add_native_group_task(p_func, p_userdata, p_elements, p_tasks, static_cast<bool>(p_high_priority), *description);
 }
 
-static int64_t gdextension_worker_thread_pool_add_native_task(GDExtensionObjectPtr p_instance, void (*p_func)(void *), void *p_userdata, GDExtensionBool p_high_priority, GDExtensionConstStringPtr p_description) {
+static int64_t foundry_extension_worker_thread_pool_add_native_task(FoundryExtensionObjectPtr p_instance, void (*p_func)(void *), void *p_userdata, FoundryExtensionBool p_high_priority, FoundryExtensionConstStringPtr p_description) {
 	WorkerThreadPool *p = (WorkerThreadPool *)p_instance;
 	const String *description = (const String *)p_description;
 	return (int64_t)p->add_native_task(p_func, p_userdata, static_cast<bool>(p_high_priority), *description);
@@ -1114,7 +1114,7 @@ static int64_t gdextension_worker_thread_pool_add_native_task(GDExtensionObjectP
 
 /* Packed array functions */
 
-static uint8_t *gdextension_packed_byte_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static uint8_t *foundry_extension_packed_byte_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedByteArray *self = (PackedByteArray *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1122,7 +1122,7 @@ static uint8_t *gdextension_packed_byte_array_operator_index(GDExtensionTypePtr 
 	return &self->ptrw()[p_index];
 }
 
-static const uint8_t *gdextension_packed_byte_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static const uint8_t *foundry_extension_packed_byte_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedByteArray *self = (const PackedByteArray *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1130,23 +1130,23 @@ static const uint8_t *gdextension_packed_byte_array_operator_index_const(GDExten
 	return &self->ptr()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_color_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_color_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedColorArray *self = (PackedColorArray *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptrw()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptrw()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_color_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_color_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedColorArray *self = (const PackedColorArray *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptr()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptr()[p_index];
 }
 
-static float *gdextension_packed_float32_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static float *foundry_extension_packed_float32_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedFloat32Array *self = (PackedFloat32Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1154,7 +1154,7 @@ static float *gdextension_packed_float32_array_operator_index(GDExtensionTypePtr
 	return &self->ptrw()[p_index];
 }
 
-static const float *gdextension_packed_float32_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static const float *foundry_extension_packed_float32_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedFloat32Array *self = (const PackedFloat32Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1162,7 +1162,7 @@ static const float *gdextension_packed_float32_array_operator_index_const(GDExte
 	return &self->ptr()[p_index];
 }
 
-static double *gdextension_packed_float64_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static double *foundry_extension_packed_float64_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedFloat64Array *self = (PackedFloat64Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1170,7 +1170,7 @@ static double *gdextension_packed_float64_array_operator_index(GDExtensionTypePt
 	return &self->ptrw()[p_index];
 }
 
-static const double *gdextension_packed_float64_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static const double *foundry_extension_packed_float64_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedFloat64Array *self = (const PackedFloat64Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1178,7 +1178,7 @@ static const double *gdextension_packed_float64_array_operator_index_const(GDExt
 	return &self->ptr()[p_index];
 }
 
-static int32_t *gdextension_packed_int32_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static int32_t *foundry_extension_packed_int32_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedInt32Array *self = (PackedInt32Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1186,7 +1186,7 @@ static int32_t *gdextension_packed_int32_array_operator_index(GDExtensionTypePtr
 	return &self->ptrw()[p_index];
 }
 
-static const int32_t *gdextension_packed_int32_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static const int32_t *foundry_extension_packed_int32_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedInt32Array *self = (const PackedInt32Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1194,7 +1194,7 @@ static const int32_t *gdextension_packed_int32_array_operator_index_const(GDExte
 	return &self->ptr()[p_index];
 }
 
-static int64_t *gdextension_packed_int64_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static int64_t *foundry_extension_packed_int64_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedInt64Array *self = (PackedInt64Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1202,7 +1202,7 @@ static int64_t *gdextension_packed_int64_array_operator_index(GDExtensionTypePtr
 	return &self->ptrw()[p_index];
 }
 
-static const int64_t *gdextension_packed_int64_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static const int64_t *foundry_extension_packed_int64_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedInt64Array *self = (const PackedInt64Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
@@ -1210,102 +1210,102 @@ static const int64_t *gdextension_packed_int64_array_operator_index_const(GDExte
 	return &self->ptr()[p_index];
 }
 
-static GDExtensionStringPtr gdextension_packed_string_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionStringPtr foundry_extension_packed_string_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedStringArray *self = (PackedStringArray *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionStringPtr)&self->ptrw()[p_index];
+	return (FoundryExtensionStringPtr)&self->ptrw()[p_index];
 }
 
-static GDExtensionStringPtr gdextension_packed_string_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionStringPtr foundry_extension_packed_string_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedStringArray *self = (const PackedStringArray *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionStringPtr)&self->ptr()[p_index];
+	return (FoundryExtensionStringPtr)&self->ptr()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_vector2_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_vector2_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedVector2Array *self = (PackedVector2Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptrw()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptrw()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_vector2_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_vector2_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedVector2Array *self = (const PackedVector2Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptr()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptr()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_vector3_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_vector3_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedVector3Array *self = (PackedVector3Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptrw()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptrw()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_vector3_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_vector3_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedVector3Array *self = (const PackedVector3Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptr()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptr()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_vector4_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_vector4_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	PackedVector4Array *self = (PackedVector4Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptrw()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptrw()[p_index];
 }
 
-static GDExtensionTypePtr gdextension_packed_vector4_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionTypePtr foundry_extension_packed_vector4_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const PackedVector4Array *self = (const PackedVector4Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionTypePtr)&self->ptr()[p_index];
+	return (FoundryExtensionTypePtr)&self->ptr()[p_index];
 }
 
-static GDExtensionVariantPtr gdextension_array_operator_index(GDExtensionTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionVariantPtr foundry_extension_array_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionInt p_index) {
 	Array *self = (Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionVariantPtr)&self->operator[](p_index);
+	return (FoundryExtensionVariantPtr)&self->operator[](p_index);
 }
 
-static GDExtensionVariantPtr gdextension_array_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionInt p_index) {
+static FoundryExtensionVariantPtr foundry_extension_array_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionInt p_index) {
 	const Array *self = (const Array *)p_self;
 	if (unlikely(p_index < 0 || p_index >= self->size())) {
 		return nullptr;
 	}
-	return (GDExtensionVariantPtr)&self->operator[](p_index);
+	return (FoundryExtensionVariantPtr)&self->operator[](p_index);
 }
 
 #ifndef DISABLE_DEPRECATED
-void gdextension_array_ref(GDExtensionTypePtr p_self, GDExtensionConstTypePtr p_from) {
+void foundry_extension_array_ref(FoundryExtensionTypePtr p_self, FoundryExtensionConstTypePtr p_from) {
 	Array *self = (Array *)p_self;
 	const Array *from = (const Array *)p_from;
 	self->Array::operator=(*from);
 }
 #endif // DISABLE_DEPRECATED
 
-void gdextension_array_set_typed(GDExtensionTypePtr p_self, GDExtensionVariantType p_type, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstVariantPtr p_script) {
+void foundry_extension_array_set_typed(FoundryExtensionTypePtr p_self, FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstVariantPtr p_script) {
 	Array *self = reinterpret_cast<Array *>(p_self);
 	const StringName *class_name = reinterpret_cast<const StringName *>(p_class_name);
 	const Variant *script = reinterpret_cast<const Variant *>(p_script);
 	self->set_typed((uint32_t)p_type, *class_name, *script);
 }
 
-static GDExtensionBool gdextension_array_set_typed_by_descriptor(GDExtensionTypePtr p_self, GDExtensionConstVariantPtr p_element_type_descriptor) {
+static FoundryExtensionBool foundry_extension_array_set_typed_by_descriptor(FoundryExtensionTypePtr p_self, FoundryExtensionConstVariantPtr p_element_type_descriptor) {
 	Array *self = reinterpret_cast<Array *>(p_self);
 	const Variant *element_type_descriptor = reinterpret_cast<const Variant *>(p_element_type_descriptor);
 	ContainerType element_type;
@@ -1318,24 +1318,24 @@ static GDExtensionBool gdextension_array_set_typed_by_descriptor(GDExtensionType
 	return true;
 }
 
-static void gdextension_array_get_typed_element_type_descriptor(GDExtensionConstTypePtr p_self, GDExtensionUninitializedVariantPtr r_element_type_descriptor) {
+static void foundry_extension_array_get_typed_element_type_descriptor(FoundryExtensionConstTypePtr p_self, FoundryExtensionUninitializedVariantPtr r_element_type_descriptor) {
 	const Array *self = reinterpret_cast<const Array *>(p_self);
 	memnew_placement(r_element_type_descriptor, Variant(ContainerTypeDescriptor::to_variant(self->get_element_type())));
 }
 
 /* Dictionary functions */
 
-static GDExtensionVariantPtr gdextension_dictionary_operator_index(GDExtensionTypePtr p_self, GDExtensionConstVariantPtr p_key) {
+static FoundryExtensionVariantPtr foundry_extension_dictionary_operator_index(FoundryExtensionTypePtr p_self, FoundryExtensionConstVariantPtr p_key) {
 	Dictionary *self = (Dictionary *)p_self;
-	return (GDExtensionVariantPtr)&self->operator[](*(const Variant *)p_key);
+	return (FoundryExtensionVariantPtr)&self->operator[](*(const Variant *)p_key);
 }
 
-static GDExtensionVariantPtr gdextension_dictionary_operator_index_const(GDExtensionConstTypePtr p_self, GDExtensionConstVariantPtr p_key) {
+static FoundryExtensionVariantPtr foundry_extension_dictionary_operator_index_const(FoundryExtensionConstTypePtr p_self, FoundryExtensionConstVariantPtr p_key) {
 	const Dictionary *self = (const Dictionary *)p_self;
-	return (GDExtensionVariantPtr)&self->operator[](*(const Variant *)p_key);
+	return (FoundryExtensionVariantPtr)&self->operator[](*(const Variant *)p_key);
 }
 
-void gdextension_dictionary_set_typed(GDExtensionTypePtr p_self, GDExtensionVariantType p_key_type, GDExtensionConstStringNamePtr p_key_class_name, GDExtensionConstVariantPtr p_key_script, GDExtensionVariantType p_value_type, GDExtensionConstStringNamePtr p_value_class_name, GDExtensionConstVariantPtr p_value_script) {
+void foundry_extension_dictionary_set_typed(FoundryExtensionTypePtr p_self, FoundryExtensionVariantType p_key_type, FoundryExtensionConstStringNamePtr p_key_class_name, FoundryExtensionConstVariantPtr p_key_script, FoundryExtensionVariantType p_value_type, FoundryExtensionConstStringNamePtr p_value_class_name, FoundryExtensionConstVariantPtr p_value_script) {
 	Dictionary *self = reinterpret_cast<Dictionary *>(p_self);
 	const StringName *key_class_name = reinterpret_cast<const StringName *>(p_key_class_name);
 	const Variant *key_script = reinterpret_cast<const Variant *>(p_key_script);
@@ -1344,7 +1344,7 @@ void gdextension_dictionary_set_typed(GDExtensionTypePtr p_self, GDExtensionVari
 	self->set_typed((uint32_t)p_key_type, *key_class_name, *key_script, (uint32_t)p_value_type, *value_class_name, *value_script);
 }
 
-static GDExtensionBool gdextension_dictionary_set_typed_by_descriptor(GDExtensionTypePtr p_self, GDExtensionConstVariantPtr p_key_type_descriptor, GDExtensionConstVariantPtr p_value_type_descriptor) {
+static FoundryExtensionBool foundry_extension_dictionary_set_typed_by_descriptor(FoundryExtensionTypePtr p_self, FoundryExtensionConstVariantPtr p_key_type_descriptor, FoundryExtensionConstVariantPtr p_value_type_descriptor) {
 	Dictionary *self = reinterpret_cast<Dictionary *>(p_self);
 	const Variant *key_type_descriptor = reinterpret_cast<const Variant *>(p_key_type_descriptor);
 	const Variant *value_type_descriptor = reinterpret_cast<const Variant *>(p_value_type_descriptor);
@@ -1366,19 +1366,19 @@ static GDExtensionBool gdextension_dictionary_set_typed_by_descriptor(GDExtensio
 	return true;
 }
 
-static void gdextension_dictionary_get_typed_key_type_descriptor(GDExtensionConstTypePtr p_self, GDExtensionUninitializedVariantPtr r_key_type_descriptor) {
+static void foundry_extension_dictionary_get_typed_key_type_descriptor(FoundryExtensionConstTypePtr p_self, FoundryExtensionUninitializedVariantPtr r_key_type_descriptor) {
 	const Dictionary *self = reinterpret_cast<const Dictionary *>(p_self);
 	memnew_placement(r_key_type_descriptor, Variant(ContainerTypeDescriptor::to_variant(self->get_key_type())));
 }
 
-static void gdextension_dictionary_get_typed_value_type_descriptor(GDExtensionConstTypePtr p_self, GDExtensionUninitializedVariantPtr r_value_type_descriptor) {
+static void foundry_extension_dictionary_get_typed_value_type_descriptor(FoundryExtensionConstTypePtr p_self, FoundryExtensionUninitializedVariantPtr r_value_type_descriptor) {
 	const Dictionary *self = reinterpret_cast<const Dictionary *>(p_self);
 	memnew_placement(r_value_type_descriptor, Variant(ContainerTypeDescriptor::to_variant(self->get_value_type())));
 }
 
 /* OBJECT API */
 
-static void gdextension_object_method_bind_call(GDExtensionMethodBindPtr p_method_bind, GDExtensionObjectPtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_arg_count, GDExtensionUninitializedVariantPtr r_return, GDExtensionCallError *r_error) {
+static void foundry_extension_object_method_bind_call(FoundryExtensionMethodBindPtr p_method_bind, FoundryExtensionObjectPtr p_instance, const FoundryExtensionConstVariantPtr *p_args, FoundryExtensionInt p_arg_count, FoundryExtensionUninitializedVariantPtr r_return, FoundryExtensionCallError *r_error) {
 	const MethodBind *mb = reinterpret_cast<const MethodBind *>(p_method_bind);
 	Object *o = (Object *)p_instance;
 	const Variant **args = (const Variant **)p_args;
@@ -1387,53 +1387,53 @@ static void gdextension_object_method_bind_call(GDExtensionMethodBindPtr p_metho
 	memnew_placement(r_return, Variant(mb->call(o, args, p_arg_count, error)));
 
 	if (r_error) {
-		r_error->error = (GDExtensionCallErrorType)(error.error);
+		r_error->error = (FoundryExtensionCallErrorType)(error.error);
 		r_error->argument = error.argument;
 		r_error->expected = error.expected;
 	}
 }
 
-static void gdextension_object_method_bind_ptrcall(GDExtensionMethodBindPtr p_method_bind, GDExtensionObjectPtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr p_ret) {
+static void foundry_extension_object_method_bind_ptrcall(FoundryExtensionMethodBindPtr p_method_bind, FoundryExtensionObjectPtr p_instance, const FoundryExtensionConstTypePtr *p_args, FoundryExtensionTypePtr p_ret) {
 	const MethodBind *mb = reinterpret_cast<const MethodBind *>(p_method_bind);
 	Object *o = (Object *)p_instance;
 	mb->ptrcall(o, (const void **)p_args, p_ret);
 }
 
-static void gdextension_object_destroy(GDExtensionObjectPtr p_o) {
+static void foundry_extension_object_destroy(FoundryExtensionObjectPtr p_o) {
 	memdelete((Object *)p_o);
 }
 
-static GDExtensionObjectPtr gdextension_global_get_singleton(GDExtensionConstStringNamePtr p_name) {
+static FoundryExtensionObjectPtr foundry_extension_global_get_singleton(FoundryExtensionConstStringNamePtr p_name) {
 	const StringName name = *reinterpret_cast<const StringName *>(p_name);
-	return (GDExtensionObjectPtr)Engine::get_singleton()->get_singleton_object(name);
+	return (FoundryExtensionObjectPtr)Engine::get_singleton()->get_singleton_object(name);
 }
 
-static void *gdextension_object_get_instance_binding(GDExtensionObjectPtr p_object, void *p_token, const GDExtensionInstanceBindingCallbacks *p_callbacks) {
+static void *foundry_extension_object_get_instance_binding(FoundryExtensionObjectPtr p_object, void *p_token, const FoundryExtensionInstanceBindingCallbacks *p_callbacks) {
 	Object *o = (Object *)p_object;
 	return o->get_instance_binding(p_token, p_callbacks);
 }
 
-static void gdextension_object_set_instance_binding(GDExtensionObjectPtr p_object, void *p_token, void *p_binding, const GDExtensionInstanceBindingCallbacks *p_callbacks) {
+static void foundry_extension_object_set_instance_binding(FoundryExtensionObjectPtr p_object, void *p_token, void *p_binding, const FoundryExtensionInstanceBindingCallbacks *p_callbacks) {
 	Object *o = (Object *)p_object;
 	o->set_instance_binding(p_token, p_binding, p_callbacks);
 }
 
-static void gdextension_object_free_instance_binding(GDExtensionObjectPtr p_object, void *p_token) {
+static void foundry_extension_object_free_instance_binding(FoundryExtensionObjectPtr p_object, void *p_token) {
 	Object *o = (Object *)p_object;
 	o->free_instance_binding(p_token);
 }
 
-static void gdextension_object_set_instance(GDExtensionObjectPtr p_object, GDExtensionConstStringNamePtr p_classname, GDExtensionClassInstancePtr p_instance) {
+static void foundry_extension_object_set_instance(FoundryExtensionObjectPtr p_object, FoundryExtensionConstStringNamePtr p_classname, FoundryExtensionClassInstancePtr p_instance) {
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
 	Object *o = (Object *)p_object;
 	ClassDB::set_object_extension_instance(o, classname, p_instance);
 }
 
-static GDExtensionObjectPtr gdextension_object_get_instance_from_id(GDObjectInstanceID p_instance_id) {
-	return (GDExtensionObjectPtr)ObjectDB::get_instance(ObjectID(p_instance_id));
+static FoundryExtensionObjectPtr foundry_extension_object_get_instance_from_id(GDObjectInstanceID p_instance_id) {
+	return (FoundryExtensionObjectPtr)ObjectDB::get_instance(ObjectID(p_instance_id));
 }
 
-static GDExtensionBool gdextension_object_get_class_name(GDExtensionConstObjectPtr p_object, GDExtensionClassLibraryPtr p_library, GDExtensionUninitializedStringNamePtr r_class_name) {
+static FoundryExtensionBool foundry_extension_object_get_class_name(FoundryExtensionConstObjectPtr p_object, FoundryExtensionClassLibraryPtr p_library, FoundryExtensionUninitializedStringNamePtr r_class_name) {
 	if (!p_object) {
 		return false;
 	}
@@ -1441,26 +1441,26 @@ static GDExtensionBool gdextension_object_get_class_name(GDExtensionConstObjectP
 
 	memnew_placement(r_class_name, StringName);
 	StringName *class_name = reinterpret_cast<StringName *>(r_class_name);
-	*class_name = o->get_class_name_for_extension((GDExtension *)p_library);
+	*class_name = o->get_class_name_for_extension((FoundryExtension *)p_library);
 
 	return true;
 }
 
-static GDExtensionObjectPtr gdextension_object_cast_to(GDExtensionConstObjectPtr p_object, void *p_class_tag) {
+static FoundryExtensionObjectPtr foundry_extension_object_cast_to(FoundryExtensionConstObjectPtr p_object, void *p_class_tag) {
 	if (!p_object) {
 		return nullptr;
 	}
 	Object *o = (Object *)p_object;
 
-	return o->is_class_ptr(p_class_tag) ? (GDExtensionObjectPtr)o : (GDExtensionObjectPtr) nullptr;
+	return o->is_class_ptr(p_class_tag) ? (FoundryExtensionObjectPtr)o : (FoundryExtensionObjectPtr) nullptr;
 }
 
-static GDObjectInstanceID gdextension_object_get_instance_id(GDExtensionConstObjectPtr p_object) {
+static GDObjectInstanceID foundry_extension_object_get_instance_id(FoundryExtensionConstObjectPtr p_object) {
 	const Object *o = (const Object *)p_object;
 	return (GDObjectInstanceID)o->get_instance_id();
 }
 
-static GDExtensionBool gdextension_object_has_script_method(GDExtensionConstObjectPtr p_object, GDExtensionConstStringNamePtr p_method) {
+static FoundryExtensionBool foundry_extension_object_has_script_method(FoundryExtensionConstObjectPtr p_object, FoundryExtensionConstStringNamePtr p_method) {
 	Object *o = (Object *)p_object;
 	const StringName method = *reinterpret_cast<const StringName *>(p_method);
 
@@ -1471,7 +1471,7 @@ static GDExtensionBool gdextension_object_has_script_method(GDExtensionConstObje
 	return false;
 }
 
-static void gdextension_object_call_script_method(GDExtensionObjectPtr p_object, GDExtensionConstStringNamePtr p_method, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionUninitializedVariantPtr r_return, GDExtensionCallError *r_error) {
+static void foundry_extension_object_call_script_method(FoundryExtensionObjectPtr p_object, FoundryExtensionConstStringNamePtr p_method, const FoundryExtensionConstVariantPtr *p_args, FoundryExtensionInt p_argument_count, FoundryExtensionUninitializedVariantPtr r_return, FoundryExtensionCallError *r_error) {
 	Object *o = (Object *)p_object;
 	const StringName method = *reinterpret_cast<const StringName *>(p_method);
 	const Variant **args = (const Variant **)p_args;
@@ -1481,22 +1481,22 @@ static void gdextension_object_call_script_method(GDExtensionObjectPtr p_object,
 	*(Variant *)r_return = o->callp(method, args, p_argument_count, error);
 
 	if (r_error) {
-		r_error->error = (GDExtensionCallErrorType)(error.error);
+		r_error->error = (FoundryExtensionCallErrorType)(error.error);
 		r_error->argument = error.argument;
 		r_error->expected = error.expected;
 	}
 }
 
-static GDExtensionObjectPtr gdextension_ref_get_object(GDExtensionConstRefPtr p_ref) {
+static FoundryExtensionObjectPtr foundry_extension_ref_get_object(FoundryExtensionConstRefPtr p_ref) {
 	const Ref<RefCounted> *ref = (const Ref<RefCounted> *)p_ref;
 	if (ref == nullptr || ref->is_null()) {
-		return (GDExtensionObjectPtr) nullptr;
+		return (FoundryExtensionObjectPtr) nullptr;
 	} else {
-		return (GDExtensionObjectPtr)ref->ptr();
+		return (FoundryExtensionObjectPtr)ref->ptr();
 	}
 }
 
-static void gdextension_ref_set_object(GDExtensionRefPtr p_ref, GDExtensionObjectPtr p_object) {
+static void foundry_extension_ref_set_object(FoundryExtensionRefPtr p_ref, FoundryExtensionObjectPtr p_object) {
 	Ref<RefCounted> *ref = (Ref<RefCounted> *)p_ref;
 	ERR_FAIL_NULL(ref);
 
@@ -1505,8 +1505,8 @@ static void gdextension_ref_set_object(GDExtensionRefPtr p_ref, GDExtensionObjec
 }
 
 #ifndef DISABLE_DEPRECATED
-static GDExtensionScriptInstancePtr gdextension_script_instance_create(const GDExtensionScriptInstanceInfo *p_info, GDExtensionScriptInstanceDataPtr p_instance_data) {
-	GDExtensionScriptInstanceInfo3 *info_3 = memnew(GDExtensionScriptInstanceInfo3);
+static FoundryExtensionScriptInstancePtr foundry_extension_script_instance_create(const FoundryExtensionScriptInstanceInfo *p_info, FoundryExtensionScriptInstanceDataPtr p_instance_data) {
+	FoundryExtensionScriptInstanceInfo3 *info_3 = memnew(FoundryExtensionScriptInstanceInfo3);
 	info_3->set_func = p_info->set_func;
 	info_3->get_func = p_info->get_func;
 	info_3->get_property_list_func = p_info->get_property_list_func;
@@ -1542,11 +1542,11 @@ static GDExtensionScriptInstancePtr gdextension_script_instance_create(const GDE
 	script_instance_extension->deprecated_native_info->notification_func = p_info->notification_func;
 	script_instance_extension->deprecated_native_info->free_property_list_func = p_info->free_property_list_func;
 	script_instance_extension->deprecated_native_info->free_method_list_func = p_info->free_method_list_func;
-	return reinterpret_cast<GDExtensionScriptInstancePtr>(script_instance_extension);
+	return reinterpret_cast<FoundryExtensionScriptInstancePtr>(script_instance_extension);
 }
 
-static GDExtensionScriptInstancePtr gdextension_script_instance_create2(const GDExtensionScriptInstanceInfo2 *p_info, GDExtensionScriptInstanceDataPtr p_instance_data) {
-	GDExtensionScriptInstanceInfo3 *info_3 = memnew(GDExtensionScriptInstanceInfo3);
+static FoundryExtensionScriptInstancePtr foundry_extension_script_instance_create2(const FoundryExtensionScriptInstanceInfo2 *p_info, FoundryExtensionScriptInstanceDataPtr p_instance_data) {
+	FoundryExtensionScriptInstanceInfo3 *info_3 = memnew(FoundryExtensionScriptInstanceInfo3);
 	info_3->set_func = p_info->set_func;
 	info_3->get_func = p_info->get_func;
 	info_3->get_property_list_func = p_info->get_property_list_func;
@@ -1581,28 +1581,28 @@ static GDExtensionScriptInstancePtr gdextension_script_instance_create2(const GD
 	script_instance_extension->deprecated_native_info = memnew(ScriptInstanceExtension::DeprecatedNativeInfo);
 	script_instance_extension->deprecated_native_info->free_property_list_func = p_info->free_property_list_func;
 	script_instance_extension->deprecated_native_info->free_method_list_func = p_info->free_method_list_func;
-	return reinterpret_cast<GDExtensionScriptInstancePtr>(script_instance_extension);
+	return reinterpret_cast<FoundryExtensionScriptInstancePtr>(script_instance_extension);
 }
 #endif // DISABLE_DEPRECATED
 
-static GDExtensionScriptInstancePtr gdextension_script_instance_create3(const GDExtensionScriptInstanceInfo3 *p_info, GDExtensionScriptInstanceDataPtr p_instance_data) {
+static FoundryExtensionScriptInstancePtr foundry_extension_script_instance_create3(const FoundryExtensionScriptInstanceInfo3 *p_info, FoundryExtensionScriptInstanceDataPtr p_instance_data) {
 	ScriptInstanceExtension *script_instance_extension = memnew(ScriptInstanceExtension);
 	script_instance_extension->instance = p_instance_data;
 	script_instance_extension->native_info = p_info;
-	return reinterpret_cast<GDExtensionScriptInstancePtr>(script_instance_extension);
+	return reinterpret_cast<FoundryExtensionScriptInstancePtr>(script_instance_extension);
 }
 
-static GDExtensionScriptInstancePtr gdextension_placeholder_script_instance_create(GDExtensionObjectPtr p_language, GDExtensionObjectPtr p_script, GDExtensionObjectPtr p_owner) {
+static FoundryExtensionScriptInstancePtr foundry_extension_placeholder_script_instance_create(FoundryExtensionObjectPtr p_language, FoundryExtensionObjectPtr p_script, FoundryExtensionObjectPtr p_owner) {
 	ScriptLanguage *language = (ScriptLanguage *)p_language;
 	Ref<Script> script;
 	script.reference_ptr((Script *)p_script);
 	Object *owner = (Object *)p_owner;
 
 	PlaceHolderScriptInstance *placeholder = memnew(PlaceHolderScriptInstance(language, script, owner));
-	return reinterpret_cast<GDExtensionScriptInstancePtr>(placeholder);
+	return reinterpret_cast<FoundryExtensionScriptInstancePtr>(placeholder);
 }
 
-static void gdextension_placeholder_script_instance_update(GDExtensionScriptInstancePtr p_placeholder, GDExtensionConstTypePtr p_properties, GDExtensionConstTypePtr p_values) {
+static void foundry_extension_placeholder_script_instance_update(FoundryExtensionScriptInstancePtr p_placeholder, FoundryExtensionConstTypePtr p_properties, FoundryExtensionConstTypePtr p_values) {
 	PlaceHolderScriptInstance *placeholder = dynamic_cast<PlaceHolderScriptInstance *>(reinterpret_cast<ScriptInstance *>(p_placeholder));
 	ERR_FAIL_NULL_MSG(placeholder, "Unable to update placeholder, expected a PlaceHolderScriptInstance but received an invalid type.");
 
@@ -1624,7 +1624,7 @@ static void gdextension_placeholder_script_instance_update(GDExtensionScriptInst
 	placeholder->update(properties_list, values_map);
 }
 
-static GDExtensionScriptInstancePtr gdextension_object_get_script_instance(GDExtensionConstObjectPtr p_object, GDExtensionConstObjectPtr p_language) {
+static FoundryExtensionScriptInstancePtr foundry_extension_object_get_script_instance(FoundryExtensionConstObjectPtr p_object, FoundryExtensionConstObjectPtr p_language) {
 	if (!p_object || !p_language) {
 		return nullptr;
 	}
@@ -1643,7 +1643,7 @@ static GDExtensionScriptInstancePtr gdextension_object_get_script_instance(GDExt
 	return script_instance_extension->instance;
 }
 
-static void gdextension_object_set_script_instance(GDExtensionObjectPtr p_object, GDExtensionScriptInstancePtr p_script_instance) {
+static void foundry_extension_object_set_script_instance(FoundryExtensionObjectPtr p_object, FoundryExtensionScriptInstancePtr p_script_instance) {
 	ERR_FAIL_NULL(p_object);
 
 	Object *o = (Object *)p_object;
@@ -1653,16 +1653,16 @@ static void gdextension_object_set_script_instance(GDExtensionObjectPtr p_object
 }
 
 #ifndef DISABLE_DEPRECATED
-static void gdextension_callable_custom_create(GDExtensionUninitializedTypePtr r_callable, GDExtensionCallableCustomInfo *p_custom_callable_info) {
+static void foundry_extension_callable_custom_create(FoundryExtensionUninitializedTypePtr r_callable, FoundryExtensionCallableCustomInfo *p_custom_callable_info) {
 	memnew_placement(r_callable, Callable(memnew(CallableCustomExtension(p_custom_callable_info))));
 }
 #endif
 
-static void gdextension_callable_custom_create2(GDExtensionUninitializedTypePtr r_callable, GDExtensionCallableCustomInfo2 *p_custom_callable_info) {
+static void foundry_extension_callable_custom_create2(FoundryExtensionUninitializedTypePtr r_callable, FoundryExtensionCallableCustomInfo2 *p_custom_callable_info) {
 	memnew_placement(r_callable, Callable(memnew(CallableCustomExtension(p_custom_callable_info))));
 }
 
-static void *gdextension_callable_custom_get_userdata(GDExtensionTypePtr p_callable, void *p_token) {
+static void *foundry_extension_callable_custom_get_userdata(FoundryExtensionTypePtr p_callable, void *p_token) {
 	const Callable &callable = *reinterpret_cast<const Callable *>(p_callable);
 	if (!callable.is_custom()) {
 		return nullptr;
@@ -1674,7 +1674,7 @@ static void *gdextension_callable_custom_get_userdata(GDExtensionTypePtr p_calla
 	return custom_callable->get_userdata(p_token);
 }
 
-static GDExtensionMethodBindPtr gdextension_classdb_get_method_bind(GDExtensionConstStringNamePtr p_classname, GDExtensionConstStringNamePtr p_methodname, GDExtensionInt p_hash) {
+static FoundryExtensionMethodBindPtr foundry_extension_classdb_get_method_bind(FoundryExtensionConstStringNamePtr p_classname, FoundryExtensionConstStringNamePtr p_methodname, FoundryExtensionInt p_hash) {
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
 	const StringName methodname = *reinterpret_cast<const StringName *>(p_methodname);
 	bool exists = false;
@@ -1684,7 +1684,7 @@ static GDExtensionMethodBindPtr gdextension_classdb_get_method_bind(GDExtensionC
 	// If lookup failed, see if this is one of the broken hashes from issue #81386.
 	if (!mb && exists) {
 		uint32_t mapped_hash;
-		if (GDExtensionSpecialCompatHashes::lookup_current_hash(classname, methodname, p_hash, &mapped_hash)) {
+		if (FoundryExtensionSpecialCompatHashes::lookup_current_hash(classname, methodname, p_hash, &mapped_hash)) {
 			mb = ClassDB::get_method_with_compatibility(classname, methodname, mapped_hash, &exists);
 		}
 	}
@@ -1695,57 +1695,57 @@ static GDExtensionMethodBindPtr gdextension_classdb_get_method_bind(GDExtensionC
 		return nullptr;
 	}
 	ERR_FAIL_NULL_V(mb, nullptr);
-	return (GDExtensionMethodBindPtr)mb;
+	return (FoundryExtensionMethodBindPtr)mb;
 }
 
 #ifndef DISABLE_DEPRECATED
-static GDExtensionObjectPtr gdextension_classdb_construct_object(GDExtensionConstStringNamePtr p_classname) {
+static FoundryExtensionObjectPtr foundry_extension_classdb_construct_object(FoundryExtensionConstStringNamePtr p_classname) {
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
-	return (GDExtensionObjectPtr)ClassDB::instantiate_no_placeholders(classname);
+	return (FoundryExtensionObjectPtr)ClassDB::instantiate_no_placeholders(classname);
 }
 #endif
 
-static GDExtensionObjectPtr gdextension_classdb_construct_object2(GDExtensionConstStringNamePtr p_classname) {
+static FoundryExtensionObjectPtr foundry_extension_classdb_construct_object2(FoundryExtensionConstStringNamePtr p_classname) {
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
-	return (GDExtensionObjectPtr)ClassDB::instantiate_without_postinitialization(classname);
+	return (FoundryExtensionObjectPtr)ClassDB::instantiate_without_postinitialization(classname);
 }
 
-static void *gdextension_classdb_get_class_tag(GDExtensionConstStringNamePtr p_classname) {
+static void *foundry_extension_classdb_get_class_tag(FoundryExtensionConstStringNamePtr p_classname) {
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
 	ClassDB::ClassInfo *class_info = ClassDB::classes.getptr(classname);
 	return class_info ? class_info->class_ptr : nullptr;
 }
 
-static void gdextension_editor_add_plugin(GDExtensionConstStringNamePtr p_classname) {
+static void foundry_extension_editor_add_plugin(FoundryExtensionConstStringNamePtr p_classname) {
 #ifdef TOOLS_ENABLED
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
-	GDExtensionEditorPlugins::add_extension_class(classname);
+	FoundryExtensionEditorPlugins::add_extension_class(classname);
 #endif
 }
 
-static void gdextension_editor_remove_plugin(GDExtensionConstStringNamePtr p_classname) {
+static void foundry_extension_editor_remove_plugin(FoundryExtensionConstStringNamePtr p_classname) {
 #ifdef TOOLS_ENABLED
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
-	GDExtensionEditorPlugins::remove_extension_class(classname);
+	FoundryExtensionEditorPlugins::remove_extension_class(classname);
 #endif
 }
 
-static void gdextension_editor_help_load_xml_from_utf8_chars_and_len(const char *p_data, GDExtensionInt p_size) {
+static void foundry_extension_editor_help_load_xml_from_utf8_chars_and_len(const char *p_data, FoundryExtensionInt p_size) {
 #ifdef TOOLS_ENABLED
-	GDExtensionEditorHelp::load_xml_buffer((const uint8_t *)p_data, p_size);
+	FoundryExtensionEditorHelp::load_xml_buffer((const uint8_t *)p_data, p_size);
 #endif
 }
 
-static void gdextension_editor_help_load_xml_from_utf8_chars(const char *p_data) {
+static void foundry_extension_editor_help_load_xml_from_utf8_chars(const char *p_data) {
 #ifdef TOOLS_ENABLED
 	size_t len = strlen(p_data);
-	gdextension_editor_help_load_xml_from_utf8_chars_and_len(p_data, len);
+	foundry_extension_editor_help_load_xml_from_utf8_chars_and_len(p_data, len);
 #endif
 }
 
-#define REGISTER_INTERFACE_FUNC(m_name) GDExtension::register_interface_function(#m_name, (GDExtensionInterfaceFunctionPtr) & gdextension_##m_name)
+#define REGISTER_INTERFACE_FUNC(m_name) FoundryExtension::register_interface_function(#m_name, (FoundryExtensionInterfaceFunctionPtr) & foundry_extension_##m_name)
 
-void gdextension_setup_interface() {
+void foundry_extension_setup_interface() {
 #ifndef DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(get_godot_version);
 #endif // DISABLE_DEPRECATED

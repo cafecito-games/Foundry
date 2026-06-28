@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_special_compat_hashes.h                                   */
+/*  foundry_extension_special_compat_hashes.h                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -42,7 +42,7 @@ class Array;
 //       This class is only meant to be used in exceptional circumstances, for example, when Godot's hashing
 //       algorithm changes and registering compatibility methods for all affect methods would be onerous.
 
-class GDExtensionSpecialCompatHashes {
+class FoundryExtensionSpecialCompatHashes {
 	struct Mapping {
 		StringName method;
 		uint32_t legacy_hash;

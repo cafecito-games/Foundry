@@ -37,8 +37,8 @@
 #include "core/crypto/crypto.h"
 #include "core/crypto/hashing_context.h"
 #include "core/debugger/engine_profiler.h"
-#include "core/extension/gdextension.h"
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/extension/godot_instance.h"
 #include "core/input/input.h"
 #include "core/input/input_map.h"
@@ -93,7 +93,7 @@ static Ref<ResourceFormatLoaderImage> resource_format_image;
 static Ref<TranslationLoaderPO> resource_format_po;
 static Ref<ResourceFormatSaverCrypto> resource_format_saver_crypto;
 static Ref<ResourceFormatLoaderCrypto> resource_format_loader_crypto;
-static Ref<GDExtensionResourceLoader> resource_loader_gdextension;
+static Ref<FoundryExtensionResourceLoader> resource_loader_foundry_extension;
 static Ref<ResourceFormatSaverJSON> resource_saver_json;
 static Ref<ResourceFormatLoaderJSON> resource_loader_json;
 
@@ -115,7 +115,7 @@ static WorkerThreadPool *worker_thread_pool = nullptr;
 
 extern Mutex _global_mutex;
 
-static GDExtensionManager *gdextension_manager = nullptr;
+static FoundryExtensionManager *foundry_extension_manager = nullptr;
 
 extern void register_global_constants();
 extern void unregister_global_constants();
@@ -285,11 +285,11 @@ void register_core_types() {
 	GDREGISTER_CLASS(ImageFormatLoaderExtension);
 	GDREGISTER_ABSTRACT_CLASS(ResourceImporter);
 
-	GDREGISTER_CLASS(GDExtension);
+	GDREGISTER_CLASS(FoundryExtension);
 
 	GDREGISTER_ABSTRACT_CLASS(GodotInstance);
 
-	GDREGISTER_ABSTRACT_CLASS(GDExtensionManager);
+	GDREGISTER_ABSTRACT_CLASS(FoundryExtensionManager);
 
 	GDREGISTER_ABSTRACT_CLASS(ResourceUID);
 
@@ -297,11 +297,11 @@ void register_core_types() {
 
 	resource_uid = memnew(ResourceUID);
 
-	gdextension_manager = memnew(GDExtensionManager);
+	foundry_extension_manager = memnew(FoundryExtensionManager);
 
-	if constexpr (GD_IS_CLASS_ENABLED(GDExtension)) {
-		resource_loader_gdextension.instantiate();
-		ResourceLoader::add_resource_format_loader(resource_loader_gdextension);
+	if constexpr (GD_IS_CLASS_ENABLED(FoundryExtension)) {
+		resource_loader_foundry_extension.instantiate();
+		ResourceLoader::add_resource_format_loader(resource_loader_foundry_extension);
 	}
 
 	GDREGISTER_ABSTRACT_CLASS(IP);
@@ -375,7 +375,7 @@ void register_core_singletons() {
 	Engine::get_singleton()->add_singleton(Engine::Singleton("Input", Input::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("InputMap", InputMap::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("EngineDebugger", CoreBind::EngineDebugger::get_singleton()));
-	Engine::get_singleton()->add_singleton(Engine::Singleton("GDExtensionManager", GDExtensionManager::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("FoundryExtensionManager", FoundryExtensionManager::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("ResourceUID", ResourceUID::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("WorkerThreadPool", worker_thread_pool));
 
@@ -386,9 +386,9 @@ void register_core_extensions() {
 	OS::get_singleton()->benchmark_begin_measure("Core", "Register Extensions");
 
 	// Hardcoded for now.
-	GDExtension::initialize_gdextensions();
-	gdextension_manager->load_extensions();
-	gdextension_manager->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_CORE);
+	FoundryExtension::initialize_foundry_extensions();
+	foundry_extension_manager->load_extensions();
+	foundry_extension_manager->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_CORE);
 	_is_core_extensions_registered = true;
 
 	OS::get_singleton()->benchmark_end_measure("Core", "Register Extensions");
@@ -398,9 +398,9 @@ void unregister_core_extensions() {
 	OS::get_singleton()->benchmark_begin_measure("Core", "Unregister Extensions");
 
 	if (_is_core_extensions_registered) {
-		gdextension_manager->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_CORE);
+		foundry_extension_manager->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_CORE);
 	}
-	GDExtension::finalize_gdextensions();
+	FoundryExtension::finalize_foundry_extensions();
 
 	OS::get_singleton()->benchmark_end_measure("Core", "Unregister Extensions");
 }
@@ -423,7 +423,7 @@ void unregister_core_types() {
 	memdelete(_geometry_3d);
 	memdelete(_geometry_2d);
 
-	memdelete(gdextension_manager);
+	memdelete(foundry_extension_manager);
 
 	memdelete(resource_uid);
 
@@ -469,9 +469,9 @@ void unregister_core_types() {
 		resource_loader_json.unref();
 	}
 
-	if constexpr (GD_IS_CLASS_ENABLED(GDExtension)) {
-		ResourceLoader::remove_resource_format_loader(resource_loader_gdextension);
-		resource_loader_gdextension.unref();
+	if constexpr (GD_IS_CLASS_ENABLED(FoundryExtension)) {
+		ResourceLoader::remove_resource_format_loader(resource_loader_foundry_extension);
+		resource_loader_foundry_extension.unref();
 	}
 
 	ResourceLoader::finalize();

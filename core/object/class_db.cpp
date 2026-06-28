@@ -67,7 +67,7 @@ HashMap<StringName, StringName> ClassDB::resource_base_extensions;
 HashMap<StringName, StringName> ClassDB::compat_classes;
 
 #ifdef TOOLS_ENABLED
-HashMap<StringName, ObjectGDExtension> ClassDB::placeholder_extensions;
+HashMap<StringName, ObjectFoundryExtension> ClassDB::placeholder_extensions;
 
 class PlaceholderExtensionInstance {
 	StringName class_name;
@@ -117,7 +117,7 @@ public:
 		return ret;
 	}
 
-	static GDExtensionBool placeholder_instance_set(GDExtensionClassInstancePtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionConstVariantPtr p_value) {
+	static FoundryExtensionBool placeholder_instance_set(FoundryExtensionClassInstancePtr p_instance, FoundryExtensionConstStringNamePtr p_name, FoundryExtensionConstVariantPtr p_value) {
 		PlaceholderExtensionInstance *self = (PlaceholderExtensionInstance *)p_instance;
 		const StringName &name = *(StringName *)p_name;
 		const Variant &value = *(const Variant *)p_value;
@@ -128,7 +128,7 @@ public:
 		return valid;
 	}
 
-	static GDExtensionBool placeholder_instance_get(GDExtensionClassInstancePtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionVariantPtr r_ret) {
+	static FoundryExtensionBool placeholder_instance_get(FoundryExtensionClassInstancePtr p_instance, FoundryExtensionConstStringNamePtr p_name, FoundryExtensionVariantPtr r_ret) {
 		PlaceholderExtensionInstance *self = (PlaceholderExtensionInstance *)p_instance;
 		const StringName &name = *(StringName *)p_name;
 		Variant *value = (Variant *)r_ret;
@@ -139,49 +139,49 @@ public:
 		return valid;
 	}
 
-	static const GDExtensionPropertyInfo *placeholder_instance_get_property_list(GDExtensionClassInstancePtr p_instance, uint32_t *r_count) {
+	static const FoundryExtensionPropertyInfo *placeholder_instance_get_property_list(FoundryExtensionClassInstancePtr p_instance, uint32_t *r_count) {
 		*r_count = 0;
 		return nullptr;
 	}
 
-	static void placeholder_instance_free_property_list(GDExtensionClassInstancePtr p_instance, const GDExtensionPropertyInfo *p_list, uint32_t p_count) {
+	static void placeholder_instance_free_property_list(FoundryExtensionClassInstancePtr p_instance, const FoundryExtensionPropertyInfo *p_list, uint32_t p_count) {
 	}
 
-	static GDExtensionBool placeholder_instance_property_can_revert(GDExtensionClassInstancePtr p_instance, GDExtensionConstStringNamePtr p_name) {
+	static FoundryExtensionBool placeholder_instance_property_can_revert(FoundryExtensionClassInstancePtr p_instance, FoundryExtensionConstStringNamePtr p_name) {
 		return false;
 	}
 
-	static GDExtensionBool placeholder_instance_property_get_revert(GDExtensionClassInstancePtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionVariantPtr r_ret) {
+	static FoundryExtensionBool placeholder_instance_property_get_revert(FoundryExtensionClassInstancePtr p_instance, FoundryExtensionConstStringNamePtr p_name, FoundryExtensionVariantPtr r_ret) {
 		return false;
 	}
 
-	static GDExtensionBool placeholder_instance_validate_property(GDExtensionClassInstancePtr p_instance, GDExtensionPropertyInfo *p_property) {
+	static FoundryExtensionBool placeholder_instance_validate_property(FoundryExtensionClassInstancePtr p_instance, FoundryExtensionPropertyInfo *p_property) {
 		return false;
 	}
 
-	static void placeholder_instance_notification(GDExtensionClassInstancePtr p_instance, int32_t p_what, GDExtensionBool p_reversed) {
+	static void placeholder_instance_notification(FoundryExtensionClassInstancePtr p_instance, int32_t p_what, FoundryExtensionBool p_reversed) {
 	}
 
-	static void placeholder_instance_to_string(GDExtensionClassInstancePtr p_instance, GDExtensionBool *r_is_valid, GDExtensionStringPtr p_out) {
+	static void placeholder_instance_to_string(FoundryExtensionClassInstancePtr p_instance, FoundryExtensionBool *r_is_valid, FoundryExtensionStringPtr p_out) {
 		*r_is_valid = true;
 	}
 
-	static void placeholder_instance_reference(GDExtensionClassInstancePtr p_instance) {
+	static void placeholder_instance_reference(FoundryExtensionClassInstancePtr p_instance) {
 	}
 
-	static void placeholder_instance_unreference(GDExtensionClassInstancePtr p_instance) {
+	static void placeholder_instance_unreference(FoundryExtensionClassInstancePtr p_instance) {
 	}
 
-	static uint64_t placeholder_instance_get_rid(GDExtensionClassInstancePtr p_instance) {
+	static uint64_t placeholder_instance_get_rid(FoundryExtensionClassInstancePtr p_instance) {
 		return 0;
 	}
 
-	static GDExtensionObjectPtr placeholder_class_create_instance(void *p_class_userdata, GDExtensionBool p_notify_postinitialize) {
+	static FoundryExtensionObjectPtr placeholder_class_create_instance(void *p_class_userdata, FoundryExtensionBool p_notify_postinitialize) {
 		ClassDB::ClassInfo *ti = (ClassDB::ClassInfo *)p_class_userdata;
 
 		// Find the closest native parent, that isn't a runtime class.
 		ClassDB::ClassInfo *native_parent = ti->inherits_ptr;
-		while (native_parent->gdextension || native_parent->is_runtime) {
+		while (native_parent->foundry_extension || native_parent->is_runtime) {
 			native_parent = native_parent->inherits_ptr;
 		}
 		ERR_FAIL_NULL_V(native_parent->creation_func, nullptr);
@@ -207,17 +207,17 @@ public:
 		return obj;
 	}
 
-	static GDExtensionObjectPtr placeholder_class_recreate_instance(void *p_class_userdata, GDExtensionObjectPtr p_object) {
+	static FoundryExtensionObjectPtr placeholder_class_recreate_instance(void *p_class_userdata, FoundryExtensionObjectPtr p_object) {
 		ClassDB::ClassInfo *ti = (ClassDB::ClassInfo *)p_class_userdata;
 		return memnew(PlaceholderExtensionInstance(ti->name));
 	}
 
-	static void placeholder_class_free_instance(void *p_class_userdata, GDExtensionClassInstancePtr p_instance) {
+	static void placeholder_class_free_instance(void *p_class_userdata, FoundryExtensionClassInstancePtr p_instance) {
 		PlaceholderExtensionInstance *instance = (PlaceholderExtensionInstance *)p_instance;
 		memdelete(instance);
 	}
 
-	static GDExtensionClassCallVirtual placeholder_class_get_virtual(void *p_class_userdata, GDExtensionConstStringNamePtr p_name, uint32_t p_hash) {
+	static FoundryExtensionClassCallVirtual placeholder_class_get_virtual(void *p_class_userdata, FoundryExtensionConstStringNamePtr p_name, uint32_t p_hash) {
 		return nullptr;
 	}
 };
@@ -283,14 +283,14 @@ void ClassDB::get_extensions_class_list(LocalVector<StringName> &p_classes) {
 	sorter.sort(&p_classes[original_size], p_classes.size() - original_size);
 }
 
-void ClassDB::get_extension_class_list(const Ref<GDExtension> &p_extension, List<StringName> *p_classes) {
+void ClassDB::get_extension_class_list(const Ref<FoundryExtension> &p_extension, List<StringName> *p_classes) {
 	Locker::Lock lock(Locker::STATE_READ);
 
 	for (const KeyValue<StringName, ClassInfo> &E : classes) {
 		if (E.value.api != API_EXTENSION && E.value.api != API_EDITOR_EXTENSION) {
 			continue;
 		}
-		if (!E.value.gdextension || E.value.gdextension->library != p_extension.ptr()) {
+		if (!E.value.foundry_extension || E.value.foundry_extension->library != p_extension.ptr()) {
 			continue;
 		}
 		p_classes->push_back(E.key);
@@ -566,7 +566,7 @@ Object *ClassDB::_instantiate_internal(const StringName &p_class, bool p_require
 		ERR_FAIL_COND_V_MSG(ti->disabled, nullptr, vformat("Class '%s' is disabled.", String(p_class)));
 #ifndef DISABLE_DEPRECATED
 		// Force legacy unexposed classes to skip the exposed check to preserve backcompat.
-		if (ti->gdextension && ti->gdextension->legacy_unexposed_class) {
+		if (ti->foundry_extension && ti->foundry_extension->legacy_unexposed_class) {
 			p_exposed_only = false;
 		}
 #endif // DISABLE_DEPRECATED
@@ -587,12 +587,12 @@ Object *ClassDB::_instantiate_internal(const StringName &p_class, bool p_require
 	// Try to create placeholder.
 	if (!p_require_real_class && ti->is_runtime && Engine::get_singleton()->is_editor_hint()) {
 		bool can_create_placeholder = false;
-		if (ti->gdextension) {
-			if (ti->gdextension->create_instance2) {
+		if (ti->foundry_extension) {
+			if (ti->foundry_extension->create_instance2) {
 				can_create_placeholder = true;
 			}
 #ifndef DISABLE_DEPRECATED
-			else if (ti->gdextension->create_instance) {
+			else if (ti->foundry_extension->create_instance) {
 				can_create_placeholder = true;
 			}
 #endif // DISABLE_DEPRECATED
@@ -603,19 +603,19 @@ Object *ClassDB::_instantiate_internal(const StringName &p_class, bool p_require
 		}
 
 		if (can_create_placeholder) {
-			ObjectGDExtension *extension = get_placeholder_extension(ti->name);
+			ObjectFoundryExtension *extension = get_placeholder_extension(ti->name);
 			return (Object *)extension->create_instance2(extension->class_userdata, p_notify_postinitialize);
 		}
 	}
 #endif // TOOLS_ENABLED
 
-	if (ti->gdextension && ti->gdextension->create_instance2) {
-		ObjectGDExtension *extension = ti->gdextension;
+	if (ti->foundry_extension && ti->foundry_extension->create_instance2) {
+		ObjectFoundryExtension *extension = ti->foundry_extension;
 		return (Object *)extension->create_instance2(extension->class_userdata, p_notify_postinitialize);
 	}
 #ifndef DISABLE_DEPRECATED
-	else if (ti->gdextension && ti->gdextension->create_instance) {
-		ObjectGDExtension *extension = ti->gdextension;
+	else if (ti->foundry_extension && ti->foundry_extension->create_instance) {
+		ObjectFoundryExtension *extension = ti->foundry_extension;
 		return (Object *)extension->create_instance(extension->class_userdata);
 	}
 #endif // DISABLE_DEPRECATED
@@ -631,7 +631,7 @@ bool ClassDB::_can_instantiate(ClassInfo *p_class_info, bool p_exposed_only) {
 
 #ifndef DISABLE_DEPRECATED
 	// Force legacy unexposed classes to skip the exposed check to preserve backcompat.
-	if (p_class_info->gdextension && p_class_info->gdextension->legacy_unexposed_class) {
+	if (p_class_info->foundry_extension && p_class_info->foundry_extension->legacy_unexposed_class) {
 		p_exposed_only = false;
 	}
 #endif // DISABLE_DEPRECATED
@@ -644,16 +644,16 @@ bool ClassDB::_can_instantiate(ClassInfo *p_class_info, bool p_exposed_only) {
 		return false;
 	}
 
-	if (!p_class_info->gdextension) {
+	if (!p_class_info->foundry_extension) {
 		return true;
 	}
 
-	if (p_class_info->gdextension->create_instance2) {
+	if (p_class_info->foundry_extension->create_instance2) {
 		return true;
 	}
 
 #ifndef DISABLE_DEPRECATED
-	if (p_class_info->gdextension->create_instance) {
+	if (p_class_info->foundry_extension->create_instance) {
 		return true;
 	}
 #endif //  DISABLE_DEPRECATED
@@ -673,8 +673,8 @@ Object *ClassDB::instantiate_without_postinitialization(const StringName &p_clas
 }
 
 #ifdef TOOLS_ENABLED
-ObjectGDExtension *ClassDB::get_placeholder_extension(const StringName &p_class) {
-	ObjectGDExtension *placeholder_extension = placeholder_extensions.getptr(p_class);
+ObjectFoundryExtension *ClassDB::get_placeholder_extension(const StringName &p_class) {
+	ObjectFoundryExtension *placeholder_extension = placeholder_extensions.getptr(p_class);
 	if (placeholder_extension) {
 		return placeholder_extension;
 	}
@@ -693,27 +693,27 @@ ObjectGDExtension *ClassDB::get_placeholder_extension(const StringName &p_class)
 	}
 
 	// Make a "fake" extension to act as a placeholder.
-	placeholder_extensions[p_class] = ObjectGDExtension();
+	placeholder_extensions[p_class] = ObjectFoundryExtension();
 	placeholder_extension = placeholder_extensions.getptr(p_class);
 
 	placeholder_extension->is_runtime = true;
 	placeholder_extension->is_placeholder = true;
 
-	if (ti->gdextension) {
-		placeholder_extension->library = ti->gdextension->library;
-		placeholder_extension->parent = ti->gdextension->parent;
-		placeholder_extension->children = ti->gdextension->children;
-		placeholder_extension->parent_class_name = ti->gdextension->parent_class_name;
-		placeholder_extension->class_name = ti->gdextension->class_name;
-		placeholder_extension->editor_class = ti->gdextension->editor_class;
-		placeholder_extension->reloadable = ti->gdextension->reloadable;
-		placeholder_extension->is_virtual = ti->gdextension->is_virtual;
-		placeholder_extension->is_abstract = ti->gdextension->is_abstract;
-		placeholder_extension->is_exposed = ti->gdextension->is_exposed;
+	if (ti->foundry_extension) {
+		placeholder_extension->library = ti->foundry_extension->library;
+		placeholder_extension->parent = ti->foundry_extension->parent;
+		placeholder_extension->children = ti->foundry_extension->children;
+		placeholder_extension->parent_class_name = ti->foundry_extension->parent_class_name;
+		placeholder_extension->class_name = ti->foundry_extension->class_name;
+		placeholder_extension->editor_class = ti->foundry_extension->editor_class;
+		placeholder_extension->reloadable = ti->foundry_extension->reloadable;
+		placeholder_extension->is_virtual = ti->foundry_extension->is_virtual;
+		placeholder_extension->is_abstract = ti->foundry_extension->is_abstract;
+		placeholder_extension->is_exposed = ti->foundry_extension->is_exposed;
 
-		placeholder_extension->tracking_userdata = ti->gdextension->tracking_userdata;
-		placeholder_extension->track_instance = ti->gdextension->track_instance;
-		placeholder_extension->untrack_instance = ti->gdextension->untrack_instance;
+		placeholder_extension->tracking_userdata = ti->foundry_extension->tracking_userdata;
+		placeholder_extension->track_instance = ti->foundry_extension->track_instance;
+		placeholder_extension->untrack_instance = ti->foundry_extension->untrack_instance;
 	} else {
 		placeholder_extension->library = nullptr;
 		placeholder_extension->parent = nullptr;
@@ -771,7 +771,7 @@ const GDType *ClassDB::get_gdtype(const StringName &p_class) {
 	return type->gdtype;
 }
 
-void ClassDB::set_object_extension_instance(Object *p_object, const StringName &p_class, GDExtensionClassInstancePtr p_instance) {
+void ClassDB::set_object_extension_instance(Object *p_object, const StringName &p_class, FoundryExtensionClassInstancePtr p_instance) {
 	ERR_FAIL_NULL(p_object);
 	ClassInfo *ti;
 	{
@@ -784,10 +784,10 @@ void ClassDB::set_object_extension_instance(Object *p_object, const StringName &
 		}
 		ERR_FAIL_NULL_MSG(ti, vformat("Cannot get class '%s'.", String(p_class)));
 		ERR_FAIL_COND_MSG(ti->disabled, vformat("Class '%s' is disabled.", String(p_class)));
-		ERR_FAIL_NULL_MSG(ti->gdextension, vformat("Class '%s' has no native extension.", String(p_class)));
+		ERR_FAIL_NULL_MSG(ti->foundry_extension, vformat("Class '%s' has no native extension.", String(p_class)));
 	}
 
-	p_object->_extension = ti->gdextension;
+	p_object->_extension = ti->foundry_extension;
 	p_object->_extension_instance = p_instance;
 
 	p_object->_reset_gdtype();
@@ -842,13 +842,13 @@ bool ClassDB::is_abstract(const StringName &p_class) {
 		if (ti->creation_func != nullptr) {
 			return false;
 		}
-		if (!ti->gdextension) {
+		if (!ti->foundry_extension) {
 			return true;
 		}
 #ifndef DISABLE_DEPRECATED
-		return ti->gdextension->create_instance2 == nullptr && ti->gdextension->create_instance == nullptr;
+		return ti->foundry_extension->create_instance2 == nullptr && ti->foundry_extension->create_instance == nullptr;
 #else
-		return ti->gdextension->create_instance2 == nullptr;
+		return ti->foundry_extension->create_instance2 == nullptr;
 #endif //  DISABLE_DEPRECATED
 	}
 
@@ -2127,7 +2127,7 @@ Vector<uint32_t> ClassDB::get_virtual_method_compatibility_hashes(const StringNa
 	return Vector<uint32_t>();
 }
 
-void ClassDB::add_extension_class_virtual_method(const StringName &p_class, const GDExtensionClassVirtualMethodInfo *p_method_info) {
+void ClassDB::add_extension_class_virtual_method(const StringName &p_class, const FoundryExtensionClassVirtualMethodInfo *p_method_info) {
 	ERR_FAIL_COND_MSG(!classes.has(p_class), vformat("Request for nonexistent class '%s'.", p_class));
 
 #ifdef DEBUG_ENABLED
@@ -2321,7 +2321,7 @@ Variant ClassDB::class_get_default_property_value(const StringName &p_class, con
 	return var;
 }
 
-void ClassDB::register_extension_class(ObjectGDExtension *p_extension) {
+void ClassDB::register_extension_class(ObjectFoundryExtension *p_extension) {
 	GLOBAL_LOCK_FUNCTION;
 
 	ERR_FAIL_COND_MSG(classes.has(p_extension->class_name), vformat("Class already registered: '%s'.", String(p_extension->class_name)));
@@ -2331,12 +2331,12 @@ void ClassDB::register_extension_class(ObjectGDExtension *p_extension) {
 
 #ifdef TOOLS_ENABLED
 	// @todo This is a limitation of the current implementation, but it should be possible to remove.
-	ERR_FAIL_COND_MSG(p_extension->is_runtime && parent->gdextension && !parent->is_runtime, vformat("Extension runtime class '%s' cannot descend from '%s' which isn't also a runtime class.", String(p_extension->class_name), parent->name));
+	ERR_FAIL_COND_MSG(p_extension->is_runtime && parent->foundry_extension && !parent->is_runtime, vformat("Extension runtime class '%s' cannot descend from '%s' which isn't also a runtime class.", String(p_extension->class_name), parent->name));
 #endif
 
 	ClassInfo c;
 	c.api = p_extension->editor_class ? API_EDITOR_EXTENSION : API_EXTENSION;
-	c.gdextension = p_extension;
+	c.foundry_extension = p_extension;
 	c.name = p_extension->class_name;
 	c.is_virtual = p_extension->is_virtual;
 	if (!p_extension->is_abstract) {
@@ -2344,7 +2344,7 @@ void ClassDB::register_extension_class(ObjectGDExtension *p_extension) {
 		ClassInfo *concrete_ancestor = parent;
 		while (concrete_ancestor->creation_func == nullptr &&
 				concrete_ancestor->inherits_ptr != nullptr &&
-				concrete_ancestor->gdextension != nullptr) {
+				concrete_ancestor->foundry_extension != nullptr) {
 			concrete_ancestor = concrete_ancestor->inherits_ptr;
 		}
 		ERR_FAIL_NULL_MSG(concrete_ancestor->creation_func, vformat("Extension class '%s' cannot extend native abstract class '%s'.", String(p_extension->class_name), String(concrete_ancestor->name)));

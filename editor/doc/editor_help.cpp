@@ -32,7 +32,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
-#include "core/extension/gdextension.h"
+#include "core/extension/foundry_extension.h"
 #include "core/input/input.h"
 #include "core/io/json.h"
 #include "core/object/script_language.h"
@@ -3578,8 +3578,8 @@ void EditorHelp::_bind_methods() {
 }
 
 void EditorHelp::init_gdext_pointers() {
-	GDExtensionEditorHelp::editor_help_load_xml_buffer = &EditorHelp::load_xml_buffer;
-	GDExtensionEditorHelp::editor_help_remove_class = &EditorHelp::remove_class;
+	FoundryExtensionEditorHelp::editor_help_load_xml_buffer = &EditorHelp::load_xml_buffer;
+	FoundryExtensionEditorHelp::editor_help_remove_class = &EditorHelp::remove_class;
 }
 
 EditorHelp::EditorHelp() {

@@ -758,8 +758,8 @@ class FSLanguage : public ScriptLanguage {
 	HashMap<String, ObjectID> orphan_subclasses;
 
 #ifdef TOOLS_ENABLED
-	void _extension_loaded(const Ref<GDExtension> &p_extension);
-	void _extension_unloading(const Ref<GDExtension> &p_extension);
+	void _extension_loaded(const Ref<FoundryExtension> &p_extension);
+	void _extension_unloading(const Ref<FoundryExtension> &p_extension);
 #endif
 
 public:

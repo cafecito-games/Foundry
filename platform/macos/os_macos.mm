@@ -394,7 +394,7 @@ _FORCE_INLINE_ String OS_MacOS::get_framework_executable(const String &p_path) {
 	return p_path;
 }
 
-Error OS_MacOS::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_MacOS::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	String path = get_framework_executable(p_path);
 
 	if (!FileAccess::exists(path)) {

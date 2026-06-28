@@ -1,7 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://godotengine.org/gdextension_interface.schema.json",
-    "title": "GDExtension Interface",
+    "$id": "https://godotengine.org/foundry_extension_interface.schema.json",
+    "title": "FoundryExtension Interface",
     "type": "object",
     "properties": {
         "_copyright": {
@@ -16,7 +16,7 @@
         },
         "$schema": {
             "type": "string",
-            "const": "./gdextension_interface.schema.json"
+            "const": "./foundry_extension_interface.schema.json"
         },
         "types": {
             "type": "array",

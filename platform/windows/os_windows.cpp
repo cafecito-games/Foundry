@@ -474,11 +474,11 @@ void debug_dynamic_library_check_dependencies(const String &p_path, HashSet<Stri
 }
 #endif
 
-Error OS_Windows::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_Windows::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	String path = p_path;
 
 	if (!FileAccess::exists(path)) {
-		//this code exists so gdextension can load .dll files from within the executable path
+		//this code exists so foundry_extension can load .dll files from within the executable path
 		path = get_executable_path().get_base_dir().path_join(p_path.get_file());
 	}
 	// Path to load from may be different from original if we make copies.

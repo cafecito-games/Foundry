@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_manager.h                                                 */
+/*  foundry_extension_manager.h                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,24 +30,24 @@
 
 #pragma once
 
-#include "core/extension/gdextension.h"
+#include "core/extension/foundry_extension.h"
 #include "core/variant/native_ptr.h"
 
-GDVIRTUAL_NATIVE_PTR(GDExtensionInitializationFunction)
+GDVIRTUAL_NATIVE_PTR(FoundryExtensionInitializationFunction)
 
-class GDExtensionManager : public Object {
-	GDCLASS(GDExtensionManager, Object);
+class FoundryExtensionManager : public Object {
+	GDCLASS(FoundryExtensionManager, Object);
 
 	int32_t level = -1;
-	HashMap<String, Ref<GDExtension>> gdextension_map;
-	HashMap<String, String> gdextension_class_icon_paths;
+	HashMap<String, Ref<FoundryExtension>> foundry_extension_map;
+	HashMap<String, String> foundry_extension_class_icon_paths;
 
 	bool startup_callback_called = false;
 	bool shutdown_callback_called = false;
 
 	static void _bind_methods();
 
-	static inline GDExtensionManager *singleton = nullptr;
+	static inline FoundryExtensionManager *singleton = nullptr;
 
 public:
 	enum LoadStatus {
@@ -59,9 +59,9 @@ public:
 	};
 
 private:
-	LoadStatus _load_extension_internal(const Ref<GDExtension> &p_extension, bool p_first_load);
-	void _finish_load_extension(const Ref<GDExtension> &p_extension);
-	LoadStatus _unload_extension_internal(const Ref<GDExtension> &p_extension);
+	LoadStatus _load_extension_internal(const Ref<FoundryExtension> &p_extension, bool p_first_load);
+	void _finish_load_extension(const Ref<FoundryExtension> &p_extension);
+	LoadStatus _unload_extension_internal(const Ref<FoundryExtension> &p_extension);
 
 #ifdef TOOLS_ENABLED
 	static void _reload_all_scripts();
@@ -69,26 +69,26 @@ private:
 
 public:
 	LoadStatus load_extension(const String &p_path);
-	LoadStatus load_extension_from_function(const String &p_path, GDExtensionConstPtr<const GDExtensionInitializationFunction> p_init_func);
-	LoadStatus load_extension_with_loader(const String &p_path, const Ref<GDExtensionLoader> &p_loader);
+	LoadStatus load_extension_from_function(const String &p_path, FoundryExtensionConstPtr<const FoundryExtensionInitializationFunction> p_init_func);
+	LoadStatus load_extension_with_loader(const String &p_path, const Ref<FoundryExtensionLoader> &p_loader);
 	LoadStatus reload_extension(const String &p_path);
 	LoadStatus unload_extension(const String &p_path);
 	bool is_extension_loaded(const String &p_path) const;
 	Vector<String> get_loaded_extensions() const;
-	Ref<GDExtension> get_extension(const String &p_path);
+	Ref<FoundryExtension> get_extension(const String &p_path);
 
 	bool class_has_icon_path(const String &p_class) const;
 	String class_get_icon_path(const String &p_class) const;
 
-	void initialize_extensions(GDExtension::InitializationLevel p_level);
-	void deinitialize_extensions(GDExtension::InitializationLevel p_level);
+	void initialize_extensions(FoundryExtension::InitializationLevel p_level);
+	void deinitialize_extensions(FoundryExtension::InitializationLevel p_level);
 
 #ifdef TOOLS_ENABLED
 	void track_instance_binding(void *p_token, Object *p_object);
 	void untrack_instance_binding(void *p_token, Object *p_object);
 #endif
 
-	static GDExtensionManager *get_singleton();
+	static FoundryExtensionManager *get_singleton();
 
 	void load_extensions();
 	void reload_extensions();
@@ -98,8 +98,8 @@ public:
 	void shutdown();
 	void frame();
 
-	GDExtensionManager();
-	~GDExtensionManager();
+	FoundryExtensionManager();
+	~FoundryExtensionManager();
 };
 
-VARIANT_ENUM_CAST(GDExtensionManager::LoadStatus)
+VARIANT_ENUM_CAST(FoundryExtensionManager::LoadStatus)

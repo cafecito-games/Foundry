@@ -743,7 +743,7 @@ if env["platform"] == "windows":
 lib = env_icu.Library(f"icu_builtin{env['suffix']}{env['LIBSUFFIX']}", thirdparty_icu_sources)
 env.Append(LIBS=[lib])
 
-env.Append(CPPDEFINES=["GDEXTENSION"])
+env.Append(CPPDEFINES=["FOUNDRY_EXTENSION"])
 env.Append(CPPPATH=["../"])
 sources = Glob("../*.cpp")
 

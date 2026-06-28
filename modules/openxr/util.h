@@ -59,14 +59,14 @@
 
 #define EXT_TRY_INIT_XR_FUNC(name) TRY_INIT_XR_FUNC(OpenXRAPI::get_singleton(), name)
 #define OPENXR_TRY_API_INIT_XR_FUNC(name) TRY_INIT_XR_FUNC(this, name)
-#define GDEXTENSION_INIT_XR_FUNC(name)                                                              \
+#define FOUNDRY_EXTENSION_INIT_XR_FUNC(name)                                                        \
 	if constexpr (true) {                                                                           \
 		name##_ptr = reinterpret_cast<PFN_##name>(get_openxr_api()->get_instance_proc_addr(#name)); \
 		ERR_FAIL_NULL(name##_ptr);                                                                  \
 	} else                                                                                          \
 		((void)0)
 
-#define GDEXTENSION_INIT_XR_FUNC_V(name)                                                            \
+#define FOUNDRY_EXTENSION_INIT_XR_FUNC_V(name)                                                      \
 	if constexpr (true) {                                                                           \
 		name##_ptr = reinterpret_cast<PFN_##name>(get_openxr_api()->get_instance_proc_addr(#name)); \
 		ERR_FAIL_NULL_V(name##_ptr, false);                                                         \

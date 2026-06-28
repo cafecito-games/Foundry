@@ -1261,8 +1261,8 @@ void ResourceFormatLoaderBinary::get_recognized_extensions_for_type(const String
 		return;
 	}
 
-	// res files not supported for GDExtension.
-	if (p_type == "GDExtension") {
+	// res files not supported for FoundryExtension.
+	if (p_type == "FoundryExtension") {
 		return;
 	}
 

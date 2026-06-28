@@ -42,7 +42,7 @@ class ScriptExtension : public Script {
 protected:
 	EXBIND0R(bool, editor_can_reload_from_file)
 
-	GDVIRTUAL1(_placeholder_erased, GDExtensionPtr<void>)
+	GDVIRTUAL1(_placeholder_erased, FoundryExtensionPtr<void>)
 	virtual void _placeholder_erased(PlaceHolderScriptInstance *p_placeholder) override {
 		GDVIRTUAL_CALL(_placeholder_erased, p_placeholder);
 	}
@@ -56,15 +56,15 @@ public:
 	EXBIND1RC(bool, inherits_script, const Ref<Script> &)
 	EXBIND0RC(StringName, get_instance_base_type)
 
-	GDVIRTUAL1RC_REQUIRED(GDExtensionPtr<void>, _instance_create, Object *)
+	GDVIRTUAL1RC_REQUIRED(FoundryExtensionPtr<void>, _instance_create, Object *)
 	virtual ScriptInstance *instance_create(Object *p_this) override {
-		GDExtensionPtr<void> ret = nullptr;
+		FoundryExtensionPtr<void> ret = nullptr;
 		GDVIRTUAL_CALL(_instance_create, p_this, ret);
 		return reinterpret_cast<ScriptInstance *>(ret.operator void *());
 	}
-	GDVIRTUAL1RC_REQUIRED(GDExtensionPtr<void>, _placeholder_instance_create, Object *)
+	GDVIRTUAL1RC_REQUIRED(FoundryExtensionPtr<void>, _placeholder_instance_create, Object *)
 	PlaceHolderScriptInstance *placeholder_instance_create(Object *p_this) override {
-		GDExtensionPtr<void> ret = nullptr;
+		FoundryExtensionPtr<void> ret = nullptr;
 		GDVIRTUAL_CALL(_placeholder_instance_create, p_this, ret);
 		return reinterpret_cast<PlaceHolderScriptInstance *>(ret.operator void *());
 	}
@@ -548,10 +548,10 @@ public:
 			}
 		}
 	}
-	GDVIRTUAL1R_REQUIRED(GDExtensionPtr<void>, _debug_get_stack_level_instance, int)
+	GDVIRTUAL1R_REQUIRED(FoundryExtensionPtr<void>, _debug_get_stack_level_instance, int)
 
 	virtual ScriptInstance *debug_get_stack_level_instance(int p_level) override {
-		GDExtensionPtr<void> ret = nullptr;
+		FoundryExtensionPtr<void> ret = nullptr;
 		GDVIRTUAL_CALL(_debug_get_stack_level_instance, p_level, ret);
 		return reinterpret_cast<ScriptInstance *>(ret.operator void *());
 	}
@@ -646,7 +646,7 @@ public:
 	EXBIND0(profiling_stop)
 	EXBIND1(profiling_set_save_native_calls, bool)
 
-	GDVIRTUAL2R_REQUIRED(int, _profiling_get_accumulated_data, GDExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
+	GDVIRTUAL2R_REQUIRED(int, _profiling_get_accumulated_data, FoundryExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
 
 	virtual int profiling_get_accumulated_data(ProfilingInfo *p_info_arr, int p_info_max) override {
 		int ret = 0;
@@ -654,7 +654,7 @@ public:
 		return ret;
 	}
 
-	GDVIRTUAL2R_REQUIRED(int, _profiling_get_frame_data, GDExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
+	GDVIRTUAL2R_REQUIRED(int, _profiling_get_frame_data, FoundryExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
 
 	virtual int profiling_get_frame_data(ProfilingInfo *p_info_arr, int p_info_max) override {
 		int ret = 0;
@@ -702,43 +702,43 @@ VARIANT_ENUM_CAST(ScriptLanguageExtension::CodeCompletionLocation)
 
 class ScriptInstanceExtension : public ScriptInstance {
 public:
-	const GDExtensionScriptInstanceInfo3 *native_info;
+	const FoundryExtensionScriptInstanceInfo3 *native_info;
 
 #ifndef DISABLE_DEPRECATED
 	bool free_native_info = false;
 	struct DeprecatedNativeInfo {
-		GDExtensionScriptInstanceNotification notification_func = nullptr;
-		GDExtensionScriptInstanceFreePropertyList free_property_list_func = nullptr;
-		GDExtensionScriptInstanceFreeMethodList free_method_list_func = nullptr;
+		FoundryExtensionScriptInstanceNotification notification_func = nullptr;
+		FoundryExtensionScriptInstanceFreePropertyList free_property_list_func = nullptr;
+		FoundryExtensionScriptInstanceFreeMethodList free_method_list_func = nullptr;
 	};
 	DeprecatedNativeInfo *deprecated_native_info = nullptr;
 #endif // DISABLE_DEPRECATED
 
-	GDExtensionScriptInstanceDataPtr instance = nullptr;
+	FoundryExtensionScriptInstanceDataPtr instance = nullptr;
 
 	GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wignored-qualifiers") // There should not be warnings on explicit casts.
 
 	virtual bool set(const StringName &p_name, const Variant &p_value) override {
 		if (native_info->set_func) {
-			return native_info->set_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionConstVariantPtr)&p_value);
+			return native_info->set_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionConstVariantPtr)&p_value);
 		}
 		return false;
 	}
 	virtual bool get(const StringName &p_name, Variant &r_ret) const override {
 		if (native_info->get_func) {
-			return native_info->get_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&r_ret);
+			return native_info->get_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&r_ret);
 		}
 		return false;
 	}
 	virtual void get_property_list(List<PropertyInfo> *p_list) const override {
 		if (native_info->get_property_list_func) {
 			uint32_t pcount;
-			const GDExtensionPropertyInfo *pinfo = native_info->get_property_list_func(instance, &pcount);
+			const FoundryExtensionPropertyInfo *pinfo = native_info->get_property_list_func(instance, &pcount);
 
 #ifdef TOOLS_ENABLED
 			if (pcount > 0) {
 				if (native_info->get_class_category_func) {
-					GDExtensionPropertyInfo gdext_class_category;
+					FoundryExtensionPropertyInfo gdext_class_category;
 					if (native_info->get_class_category_func(instance, &gdext_class_category)) {
 						p_list->push_back(PropertyInfo(gdext_class_category));
 					}
@@ -765,8 +765,8 @@ public:
 	}
 	virtual Variant::Type get_property_type(const StringName &p_name, bool *r_is_valid = nullptr) const override {
 		if (native_info->get_property_type_func) {
-			GDExtensionBool is_valid = 0;
-			GDExtensionVariantType type = native_info->get_property_type_func(instance, (GDExtensionConstStringNamePtr)&p_name, &is_valid);
+			FoundryExtensionBool is_valid = 0;
+			FoundryExtensionVariantType type = native_info->get_property_type_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, &is_valid);
 			if (r_is_valid) {
 				*r_is_valid = is_valid != 0;
 			}
@@ -776,10 +776,10 @@ public:
 	}
 	virtual void validate_property(PropertyInfo &p_property) const override {
 		if (native_info->validate_property_func) {
-			// GDExtension uses a StringName rather than a String for property name.
+			// FoundryExtension uses a StringName rather than a String for property name.
 			StringName prop_name = p_property.name;
-			GDExtensionPropertyInfo gdext_prop = {
-				(GDExtensionVariantType)p_property.type,
+			FoundryExtensionPropertyInfo gdext_prop = {
+				(FoundryExtensionVariantType)p_property.type,
 				&prop_name,
 				&p_property.class_name,
 				(uint32_t)p_property.hint,
@@ -799,13 +799,13 @@ public:
 
 	virtual bool property_can_revert(const StringName &p_name) const override {
 		if (native_info->property_can_revert_func) {
-			return native_info->property_can_revert_func(instance, (GDExtensionConstStringNamePtr)&p_name);
+			return native_info->property_can_revert_func(instance, (FoundryExtensionConstStringNamePtr)&p_name);
 		}
 		return false;
 	}
 	virtual bool property_get_revert(const StringName &p_name, Variant &r_ret) const override {
 		if (native_info->property_get_revert_func) {
-			return native_info->property_get_revert_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&r_ret);
+			return native_info->property_get_revert_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&r_ret);
 		}
 		return false;
 	}
@@ -816,7 +816,7 @@ public:
 		}
 		return nullptr;
 	}
-	static void _add_property_with_state(GDExtensionConstStringNamePtr p_name, GDExtensionConstVariantPtr p_value, void *p_userdata) {
+	static void _add_property_with_state(FoundryExtensionConstStringNamePtr p_name, FoundryExtensionConstVariantPtr p_value, void *p_userdata) {
 		List<Pair<StringName, Variant>> *state = (List<Pair<StringName, Variant>> *)p_userdata;
 		state->push_back(Pair<StringName, Variant>(*(const StringName *)p_name, *(const Variant *)p_value));
 	}
@@ -831,7 +831,7 @@ public:
 	virtual void get_method_list(List<MethodInfo> *p_list) const override {
 		if (native_info->get_method_list_func) {
 			uint32_t mcount;
-			const GDExtensionMethodInfo *minfo = native_info->get_method_list_func(instance, &mcount);
+			const FoundryExtensionMethodInfo *minfo = native_info->get_method_list_func(instance, &mcount);
 			for (uint32_t i = 0; i < mcount; i++) {
 				p_list->push_back(MethodInfo(minfo[i]));
 			}
@@ -846,15 +846,15 @@ public:
 	}
 	virtual bool has_method(const StringName &p_method) const override {
 		if (native_info->has_method_func) {
-			return native_info->has_method_func(instance, (GDExtensionStringNamePtr)&p_method);
+			return native_info->has_method_func(instance, (FoundryExtensionStringNamePtr)&p_method);
 		}
 		return false;
 	}
 
 	virtual int get_method_argument_count(const StringName &p_method, bool *r_is_valid = nullptr) const override {
 		if (native_info->get_method_argument_count_func) {
-			GDExtensionBool is_valid = 0;
-			GDExtensionInt ret = native_info->get_method_argument_count_func(instance, (GDExtensionStringNamePtr)&p_method, &is_valid);
+			FoundryExtensionBool is_valid = 0;
+			FoundryExtensionInt ret = native_info->get_method_argument_count_func(instance, (FoundryExtensionStringNamePtr)&p_method, &is_valid);
 			if (r_is_valid) {
 				*r_is_valid = is_valid != 0;
 			}
@@ -867,8 +867,8 @@ public:
 	virtual Variant callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) override {
 		Variant ret;
 		if (native_info->call_func) {
-			GDExtensionCallError ce;
-			native_info->call_func(instance, (GDExtensionConstStringNamePtr)&p_method, (GDExtensionConstVariantPtr *)p_args, p_argcount, (GDExtensionVariantPtr)&ret, &ce);
+			FoundryExtensionCallError ce;
+			native_info->call_func(instance, (FoundryExtensionConstStringNamePtr)&p_method, (FoundryExtensionConstVariantPtr *)p_args, p_argcount, (FoundryExtensionVariantPtr)&ret, &ce);
 			r_error.error = Callable::CallError::Error(ce.error);
 			r_error.argument = ce.argument;
 			r_error.expected = ce.expected;
@@ -888,9 +888,9 @@ public:
 
 	virtual String to_string(bool *r_valid) override {
 		if (native_info->to_string_func) {
-			GDExtensionBool valid;
+			FoundryExtensionBool valid;
 			String ret;
-			native_info->to_string_func(instance, &valid, reinterpret_cast<GDExtensionStringPtr>(&ret));
+			native_info->to_string_func(instance, &valid, reinterpret_cast<FoundryExtensionStringPtr>(&ret));
 			if (r_valid) {
 				*r_valid = valid != 0;
 			}
@@ -913,7 +913,7 @@ public:
 
 	virtual Ref<Script> get_script() const override {
 		if (native_info->get_script_func) {
-			GDExtensionObjectPtr script = native_info->get_script_func(instance);
+			FoundryExtensionObjectPtr script = native_info->get_script_func(instance);
 			return Ref<Script>(reinterpret_cast<Script *>(script));
 		}
 		return Ref<Script>();
@@ -928,7 +928,7 @@ public:
 
 	virtual void property_set_fallback(const StringName &p_name, const Variant &p_value, bool *r_valid) override {
 		if (native_info->set_fallback_func) {
-			bool ret = native_info->set_fallback_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionConstVariantPtr)&p_value);
+			bool ret = native_info->set_fallback_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionConstVariantPtr)&p_value);
 			if (r_valid) {
 				*r_valid = ret;
 			}
@@ -937,7 +937,7 @@ public:
 	virtual Variant property_get_fallback(const StringName &p_name, bool *r_valid) override {
 		Variant ret;
 		if (native_info->get_fallback_func) {
-			bool valid = native_info->get_fallback_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&ret);
+			bool valid = native_info->get_fallback_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&ret);
 			if (r_valid) {
 				*r_valid = valid;
 			}
@@ -947,7 +947,7 @@ public:
 
 	virtual ScriptLanguage *get_language() override {
 		if (native_info->get_language_func) {
-			GDExtensionScriptLanguagePtr lang = native_info->get_language_func(instance);
+			FoundryExtensionScriptLanguagePtr lang = native_info->get_language_func(instance);
 			return reinterpret_cast<ScriptLanguage *>(lang);
 		}
 		return nullptr;
@@ -958,7 +958,7 @@ public:
 		}
 #ifndef DISABLE_DEPRECATED
 		if (free_native_info) {
-			memfree(const_cast<GDExtensionScriptInstanceInfo3 *>(native_info));
+			memfree(const_cast<FoundryExtensionScriptInstanceInfo3 *>(native_info));
 		}
 		if (deprecated_native_info) {
 			memfree(deprecated_native_info);

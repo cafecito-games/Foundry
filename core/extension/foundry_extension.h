@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension.h                                                         */
+/*  foundry_extension.h                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,29 +30,29 @@
 
 #pragma once
 
-#include "core/extension/gdextension_interface.gen.h"
-#include "core/extension/gdextension_loader.h"
+#include "core/extension/foundry_extension_interface.gen.h"
+#include "core/extension/foundry_extension_loader.h"
 #include "core/io/config_file.h"
 #include "core/io/resource_loader.h"
 #include "core/object/ref_counted.h"
 
-class GDExtensionMethodBind;
+class FoundryExtensionMethodBind;
 
-class GDExtension : public Resource {
-	GDCLASS(GDExtension, Resource)
+class FoundryExtension : public Resource {
+	GDCLASS(FoundryExtension, Resource)
 
-	friend class GDExtensionManager;
+	friend class FoundryExtensionManager;
 
-	Ref<GDExtensionLoader> loader;
+	Ref<FoundryExtensionLoader> loader;
 
 	bool reloadable = false;
 
 	struct Extension {
-		ObjectGDExtension gdextension;
+		ObjectFoundryExtension foundry_extension;
 
 #ifdef TOOLS_ENABLED
 		bool is_reloading = false;
-		HashMap<StringName, GDExtensionMethodBind *> methods;
+		HashMap<StringName, FoundryExtensionMethodBind *> methods;
 		HashSet<ObjectID> instances;
 
 		struct InstanceState {
@@ -68,61 +68,61 @@ class GDExtension : public Resource {
 	struct ClassCreationDeprecatedInfo {
 #ifndef DISABLE_DEPRECATED
 		bool legacy_unexposed_class = false;
-		GDExtensionClassNotification notification_func = nullptr;
-		GDExtensionClassFreePropertyList free_property_list_func = nullptr;
-		GDExtensionClassCreateInstance create_instance_func = nullptr;
-		GDExtensionClassGetRID get_rid_func = nullptr;
-		GDExtensionClassGetVirtual get_virtual_func = nullptr;
-		GDExtensionClassGetVirtualCallData get_virtual_call_data_func = nullptr;
+		FoundryExtensionClassNotification notification_func = nullptr;
+		FoundryExtensionClassFreePropertyList free_property_list_func = nullptr;
+		FoundryExtensionClassCreateInstance create_instance_func = nullptr;
+		FoundryExtensionClassGetRID get_rid_func = nullptr;
+		FoundryExtensionClassGetVirtual get_virtual_func = nullptr;
+		FoundryExtensionClassGetVirtualCallData get_virtual_call_data_func = nullptr;
 #endif // DISABLE_DEPRECATED
 	};
 
 #ifndef DISABLE_DEPRECATED
-	static void _register_extension_class(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_parent_class_name, const GDExtensionClassCreationInfo *p_extension_funcs);
-	static void _register_extension_class2(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_parent_class_name, const GDExtensionClassCreationInfo2 *p_extension_funcs);
-	static void _register_extension_class3(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_parent_class_name, const GDExtensionClassCreationInfo3 *p_extension_funcs);
-	static void _register_extension_class4(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_parent_class_name, const GDExtensionClassCreationInfo4 *p_extension_funcs);
+	static void _register_extension_class(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo *p_extension_funcs);
+	static void _register_extension_class2(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo2 *p_extension_funcs);
+	static void _register_extension_class3(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo3 *p_extension_funcs);
+	static void _register_extension_class4(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo4 *p_extension_funcs);
 #endif // DISABLE_DEPRECATED
-	static void _register_extension_class5(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_parent_class_name, const GDExtensionClassCreationInfo5 *p_extension_funcs);
-	static void _register_extension_class_internal(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_parent_class_name, const GDExtensionClassCreationInfo5 *p_extension_funcs, const ClassCreationDeprecatedInfo *p_deprecated_funcs = nullptr);
-	static void _register_extension_class_method(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, const GDExtensionClassMethodInfo *p_method_info);
-	static void _register_extension_class_virtual_method(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, const GDExtensionClassVirtualMethodInfo *p_method_info);
-	static void _register_extension_class_integer_constant(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_enum_name, GDExtensionConstStringNamePtr p_constant_name, GDExtensionInt p_constant_value, GDExtensionBool p_is_bitfield);
-	static void _register_extension_class_property(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, const GDExtensionPropertyInfo *p_info, GDExtensionConstStringNamePtr p_setter, GDExtensionConstStringNamePtr p_getter);
-	static void _register_extension_class_property_indexed(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, const GDExtensionPropertyInfo *p_info, GDExtensionConstStringNamePtr p_setter, GDExtensionConstStringNamePtr p_getter, GDExtensionInt p_index);
-	static void _register_extension_class_property_group(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_group_name, GDExtensionConstStringNamePtr p_prefix);
-	static void _register_extension_class_property_subgroup(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_subgroup_name, GDExtensionConstStringNamePtr p_prefix);
-	static void _register_extension_class_signal(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, GDExtensionConstStringNamePtr p_signal_name, const GDExtensionPropertyInfo *p_argument_info, GDExtensionInt p_argument_count);
-	static void _unregister_extension_class(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name);
-	static void _get_library_path(GDExtensionClassLibraryPtr p_library, GDExtensionStringPtr r_path);
-	static void _register_get_classes_used_callback(GDExtensionClassLibraryPtr p_library, GDExtensionEditorGetClassesUsedCallback p_callback);
-	static void _register_main_loop_callbacks(GDExtensionClassLibraryPtr p_library, const GDExtensionMainLoopCallbacks *p_callbacks);
+	static void _register_extension_class5(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo5 *p_extension_funcs);
+	static void _register_extension_class_internal(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo5 *p_extension_funcs, const ClassCreationDeprecatedInfo *p_deprecated_funcs = nullptr);
+	static void _register_extension_class_method(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, const FoundryExtensionClassMethodInfo *p_method_info);
+	static void _register_extension_class_virtual_method(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, const FoundryExtensionClassVirtualMethodInfo *p_method_info);
+	static void _register_extension_class_integer_constant(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_enum_name, FoundryExtensionConstStringNamePtr p_constant_name, FoundryExtensionInt p_constant_value, FoundryExtensionBool p_is_bitfield);
+	static void _register_extension_class_property(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, const FoundryExtensionPropertyInfo *p_info, FoundryExtensionConstStringNamePtr p_setter, FoundryExtensionConstStringNamePtr p_getter);
+	static void _register_extension_class_property_indexed(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, const FoundryExtensionPropertyInfo *p_info, FoundryExtensionConstStringNamePtr p_setter, FoundryExtensionConstStringNamePtr p_getter, FoundryExtensionInt p_index);
+	static void _register_extension_class_property_group(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_group_name, FoundryExtensionConstStringNamePtr p_prefix);
+	static void _register_extension_class_property_subgroup(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_subgroup_name, FoundryExtensionConstStringNamePtr p_prefix);
+	static void _register_extension_class_signal(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_signal_name, const FoundryExtensionPropertyInfo *p_argument_info, FoundryExtensionInt p_argument_count);
+	static void _unregister_extension_class(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name);
+	static void _get_library_path(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionStringPtr r_path);
+	static void _register_get_classes_used_callback(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionEditorGetClassesUsedCallback p_callback);
+	static void _register_main_loop_callbacks(FoundryExtensionClassLibraryPtr p_library, const FoundryExtensionMainLoopCallbacks *p_callbacks);
 
-	GDExtensionInitialization initialization;
+	FoundryExtensionInitialization initialization;
 	int32_t level_initialized = -1;
 
 #ifdef TOOLS_ENABLED
 	bool is_reloading = false;
-	Vector<GDExtensionMethodBind *> invalid_methods;
+	Vector<FoundryExtensionMethodBind *> invalid_methods;
 	Vector<ObjectID> instance_bindings;
-	GDExtensionEditorGetClassesUsedCallback get_classes_used_callback = nullptr;
+	FoundryExtensionEditorGetClassesUsedCallback get_classes_used_callback = nullptr;
 
 	static void _track_instance(void *p_user_data, void *p_instance);
 	static void _untrack_instance(void *p_user_data, void *p_instance);
 
 	void _clear_extension(Extension *p_extension);
 
-	// Only called by GDExtensionManager during the reload process.
+	// Only called by FoundryExtensionManager during the reload process.
 	void prepare_reload();
 	void finish_reload();
 	void clear_instance_bindings();
 #endif
 
-	GDExtensionMainLoopStartupCallback startup_callback = nullptr;
-	GDExtensionMainLoopShutdownCallback shutdown_callback = nullptr;
-	GDExtensionMainLoopFrameCallback frame_callback = nullptr;
+	FoundryExtensionMainLoopStartupCallback startup_callback = nullptr;
+	FoundryExtensionMainLoopShutdownCallback shutdown_callback = nullptr;
+	FoundryExtensionMainLoopFrameCallback frame_callback = nullptr;
 
-	static inline HashMap<StringName, GDExtensionInterfaceFunctionPtr> gdextension_interface_functions;
+	static inline HashMap<StringName, FoundryExtensionInterfaceFunctionPtr> foundry_extension_interface_functions;
 
 protected:
 	static void _bind_methods();
@@ -134,17 +134,17 @@ public:
 
 	static String get_extension_list_config_file();
 
-	const Ref<GDExtensionLoader> get_loader() const { return loader; }
+	const Ref<FoundryExtensionLoader> get_loader() const { return loader; }
 
-	Error open_library(const String &p_path, const Ref<GDExtensionLoader> &p_loader);
+	Error open_library(const String &p_path, const Ref<FoundryExtensionLoader> &p_loader);
 	void close_library();
 	bool is_library_open() const;
 
 	enum InitializationLevel {
-		INITIALIZATION_LEVEL_CORE = GDEXTENSION_INITIALIZATION_CORE,
-		INITIALIZATION_LEVEL_SERVERS = GDEXTENSION_INITIALIZATION_SERVERS,
-		INITIALIZATION_LEVEL_SCENE = GDEXTENSION_INITIALIZATION_SCENE,
-		INITIALIZATION_LEVEL_EDITOR = GDEXTENSION_INITIALIZATION_EDITOR
+		INITIALIZATION_LEVEL_CORE = FOUNDRY_EXTENSION_INITIALIZATION_CORE,
+		INITIALIZATION_LEVEL_SERVERS = FOUNDRY_EXTENSION_INITIALIZATION_SERVERS,
+		INITIALIZATION_LEVEL_SCENE = FOUNDRY_EXTENSION_INITIALIZATION_SCENE,
+		INITIALIZATION_LEVEL_EDITOR = FOUNDRY_EXTENSION_INITIALIZATION_EDITOR
 	};
 
 protected:
@@ -172,21 +172,21 @@ public:
 	void initialize_library(InitializationLevel p_level);
 	void deinitialize_library(InitializationLevel p_level);
 
-	static void register_interface_function(const StringName &p_function_name, GDExtensionInterfaceFunctionPtr p_function_pointer);
-	static GDExtensionInterfaceFunctionPtr get_interface_function(const StringName &p_function_name);
-	static void initialize_gdextensions();
-	static void finalize_gdextensions();
+	static void register_interface_function(const StringName &p_function_name, FoundryExtensionInterfaceFunctionPtr p_function_pointer);
+	static FoundryExtensionInterfaceFunctionPtr get_interface_function(const StringName &p_function_name);
+	static void initialize_foundry_extensions();
+	static void finalize_foundry_extensions();
 
-	~GDExtension();
+	~FoundryExtension();
 };
 
-VARIANT_ENUM_CAST(GDExtension::InitializationLevel)
+VARIANT_ENUM_CAST(FoundryExtension::InitializationLevel)
 
-class GDExtensionResourceLoader : public ResourceFormatLoader {
-	GDSOFTCLASS(GDExtensionResourceLoader, ResourceFormatLoader);
+class FoundryExtensionResourceLoader : public ResourceFormatLoader {
+	GDSOFTCLASS(FoundryExtensionResourceLoader, ResourceFormatLoader);
 
 public:
-	static Error load_gdextension_resource(const String &p_path, Ref<GDExtension> &p_extension);
+	static Error load_foundry_extension_resource(const String &p_path, Ref<FoundryExtension> &p_extension);
 
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
 	virtual void get_recognized_extensions(List<String> *p_extensions) const override;
@@ -198,7 +198,7 @@ public:
 };
 
 #ifdef TOOLS_ENABLED
-class GDExtensionEditorPlugins {
+class FoundryExtensionEditorPlugins {
 private:
 	static inline Vector<StringName> extension_classes;
 
@@ -220,7 +220,7 @@ public:
 	}
 };
 
-class GDExtensionEditorHelp {
+class FoundryExtensionEditorHelp {
 protected:
 	friend class EditorHelp;
 

@@ -1039,7 +1039,7 @@ String OS_Unix::get_locale() const {
 	return locale;
 }
 
-Error OS_Unix::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_Unix::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	String path = p_path;
 
 	if (FileAccess::exists(path) && path.is_relative_path()) {
@@ -1049,12 +1049,12 @@ Error OS_Unix::open_dynamic_library(const String &p_path, void *&p_library_handl
 	}
 
 	if (!FileAccess::exists(path)) {
-		// This code exists so GDExtension can load .so files from within the executable path.
+		// This code exists so FoundryExtension can load .so files from within the executable path.
 		path = get_executable_path().get_base_dir().path_join(p_path.get_file());
 	}
 
 	if (!FileAccess::exists(path)) {
-		// This code exists so GDExtension can load .so files from a standard unix location.
+		// This code exists so FoundryExtension can load .so files from a standard unix location.
 		path = get_executable_path().get_base_dir().path_join("../lib").path_join(p_path.get_file());
 	}
 

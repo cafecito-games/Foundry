@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension.compat.inc                                                */
+/*  foundry_extension.compat.inc                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,20 +30,20 @@
 
 #ifndef DISABLE_DEPRECATED
 
-Error GDExtension::_open_library_bind_compat_88418(const String &p_path, const String &p_entry_symbol) {
+Error FoundryExtension::_open_library_bind_compat_88418(const String &p_path, const String &p_entry_symbol) {
 	return ERR_UNAVAILABLE;
 }
 
-void GDExtension::_close_library_bind_compat_88418() {
+void FoundryExtension::_close_library_bind_compat_88418() {
 }
 
-void GDExtension::_initialize_library_bind_compat_88418(InitializationLevel p_level) {
+void FoundryExtension::_initialize_library_bind_compat_88418(InitializationLevel p_level) {
 }
 
-void GDExtension::_bind_compatibility_methods() {
-	ClassDB::bind_compatibility_method(D_METHOD("open_library", "path", "entry_symbol"), &GDExtension::_open_library_bind_compat_88418);
-	ClassDB::bind_compatibility_method(D_METHOD("close_library"), &GDExtension::_close_library_bind_compat_88418);
-	ClassDB::bind_compatibility_method(D_METHOD("initialize_library", "level"), &GDExtension::_initialize_library_bind_compat_88418);
+void FoundryExtension::_bind_compatibility_methods() {
+	ClassDB::bind_compatibility_method(D_METHOD("open_library", "path", "entry_symbol"), &FoundryExtension::_open_library_bind_compat_88418);
+	ClassDB::bind_compatibility_method(D_METHOD("close_library"), &FoundryExtension::_close_library_bind_compat_88418);
+	ClassDB::bind_compatibility_method(D_METHOD("initialize_library", "level"), &FoundryExtension::_initialize_library_bind_compat_88418);
 }
 
 #endif

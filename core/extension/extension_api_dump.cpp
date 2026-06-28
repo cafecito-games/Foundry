@@ -32,7 +32,7 @@
 
 #include "core/config/engine.h"
 #include "core/core_constants.h"
-#include "core/extension/gdextension_special_compat_hashes.h"
+#include "core/extension/foundry_extension_special_compat_hashes.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/templates/pair.h"
@@ -100,7 +100,7 @@ static String fix_doc_description(const String &p_bbcode) {
 			.strip_edges();
 }
 
-Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
+Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 	Dictionary api_dump;
 
 	{
@@ -202,8 +202,8 @@ Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 		};
 
 		// Validate sizes at compile time for the current build configuration.
-		static_assert(type_size_array[Variant::BOOL][sizeof(void *)] == sizeof(GDExtensionBool), "Size of bool mismatch");
-		static_assert(type_size_array[Variant::INT][sizeof(void *)] == sizeof(GDExtensionInt), "Size of int mismatch");
+		static_assert(type_size_array[Variant::BOOL][sizeof(void *)] == sizeof(FoundryExtensionBool), "Size of bool mismatch");
+		static_assert(type_size_array[Variant::INT][sizeof(void *)] == sizeof(FoundryExtensionInt), "Size of int mismatch");
 		static_assert(type_size_array[Variant::FLOAT][sizeof(void *)] == sizeof(double), "Size of float mismatch");
 		static_assert(type_size_array[Variant::STRING][sizeof(void *)] == sizeof(String), "Size of String mismatch");
 		static_assert(type_size_array[Variant::VECTOR2][sizeof(void *)] == sizeof(Vector2), "Size of Vector2 mismatch");
@@ -1119,7 +1119,7 @@ Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 						}
 
 #ifndef DISABLE_DEPRECATED
-						GDExtensionSpecialCompatHashes::get_legacy_hashes(class_name, method_name, compatibility);
+						FoundryExtensionSpecialCompatHashes::get_legacy_hashes(class_name, method_name, compatibility);
 #endif
 
 						if (compatibility.size() > 0) {
@@ -1328,7 +1328,7 @@ Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 	return api_dump;
 }
 
-void GDExtensionAPIDump::generate_extension_json_file(const String &p_path, bool p_include_docs) {
+void FoundryExtensionAPIDump::generate_extension_json_file(const String &p_path, bool p_include_docs) {
 	Dictionary api = generate_extension_api(p_include_docs);
 	Ref<JSON> json;
 	json.instantiate();
@@ -1588,7 +1588,7 @@ static bool compare_sub_dict_array(HashSet<String> &r_removed_classes_registered
 	return !failed;
 }
 
-Error GDExtensionAPIDump::validate_extension_json_file(const String &p_path) {
+Error FoundryExtensionAPIDump::validate_extension_json_file(const String &p_path) {
 	Error error;
 	String text = FileAccess::get_file_as_string(p_path, &error);
 	if (error != OK) {

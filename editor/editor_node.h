@@ -621,7 +621,7 @@ private:
 
 	void _update_vsync_mode();
 	void _update_from_settings();
-	void _gdextensions_reloaded();
+	void _foundry_extensions_reloaded();
 	void _update_translations();
 	void _translation_resources_changed();
 	void _queue_translation_notification();

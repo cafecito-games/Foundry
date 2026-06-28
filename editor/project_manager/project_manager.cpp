@@ -887,7 +887,7 @@ void ProjectManager::_open_recovery_mode_ask(bool manual) {
 			TTR("Recovery Mode is a special mode that may help to recover projects that crash the engine during initialization. This mode temporarily disables the following features:") +
 			String::utf8("\n\n•  ") + TTR("Tool scripts") +
 			String::utf8("\n•  ") + TTR("Editor plugins") +
-			String::utf8("\n•  ") + TTR("GDExtension addons") +
+			String::utf8("\n•  ") + TTR("FoundryExtension addons") +
 			String::utf8("\n•  ") + TTR("Automatic scene restoring") +
 			String::utf8("\n\n") + TTR("This mode is intended only for basic editing to troubleshoot such issues, and therefore it will not be possible to run the project during this mode. It is also a good idea to make a backup of your project before proceeding.") +
 			String::utf8("\n\n") + TTR("Edit the project in Recovery Mode?");

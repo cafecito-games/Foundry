@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_loader.h                                                  */
+/*  foundry_extension_loader.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -32,14 +32,14 @@
 
 #include "core/object/ref_counted.h"
 
-class GDExtension;
+class FoundryExtension;
 
-class GDExtensionLoader : public RefCounted {
-	GDSOFTCLASS(GDExtensionLoader, RefCounted);
+class FoundryExtensionLoader : public RefCounted {
+	GDSOFTCLASS(FoundryExtensionLoader, RefCounted);
 
 public:
 	virtual Error open_library(const String &p_path) = 0;
-	virtual Error initialize(GDExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<GDExtension> &p_extension, GDExtensionInitialization *r_initialization) = 0;
+	virtual Error initialize(FoundryExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<FoundryExtension> &p_extension, FoundryExtensionInitialization *r_initialization) = 0;
 	virtual void close_library() = 0;
 	virtual bool is_library_open() const = 0;
 	virtual bool has_library_changed() const = 0;

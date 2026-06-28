@@ -30,7 +30,7 @@
 
 #pragma once
 
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 #include <godot_cpp/core/class_db.hpp>
 using namespace godot;
 #elif defined(GODOT_MODULE)

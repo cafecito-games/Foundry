@@ -9,13 +9,13 @@ import make_wrappers
 
 env.CommandNoCache(["ext_wrappers.gen.inc"], "make_wrappers.py", env.Run(make_wrappers.run))
 env.CommandNoCache(
-    "gdextension_interface_dump.gen.h",
-    ["gdextension_interface.json", "make_interface_dumper.py"],
+    "foundry_extension_interface_dump.gen.h",
+    ["foundry_extension_interface.json", "make_interface_dumper.py"],
     env.Run(make_interface_dumper.run),
 )
 env.CommandNoCache(
-    "gdextension_interface.gen.h",
-    ["gdextension_interface.json", "make_interface_header.py"],
+    "foundry_extension_interface.gen.h",
+    ["foundry_extension_interface.json", "make_interface_header.py"],
     env.Run(make_interface_header.run),
 )
 

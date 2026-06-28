@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_library_loader.h                                          */
+/*  foundry_extension_library_loader.h                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -32,15 +32,15 @@
 
 #include <functional>
 
-#include "core/extension/gdextension_loader.h"
+#include "core/extension/foundry_extension_loader.h"
 #include "core/io/config_file.h"
 #include "core/os/shared_object.h"
 
-class GDExtensionLibraryLoader : public GDExtensionLoader {
-	GDSOFTCLASS(GDExtensionLibraryLoader, GDExtensionLoader);
+class FoundryExtensionLibraryLoader : public FoundryExtensionLoader {
+	GDSOFTCLASS(FoundryExtensionLibraryLoader, FoundryExtensionLoader);
 
-	friend class GDExtensionManager;
-	friend class GDExtension;
+	friend class FoundryExtensionManager;
+	friend class FoundryExtension;
 
 private:
 	String resource_path;
@@ -72,11 +72,11 @@ public:
 	static Vector<SharedObject> find_extension_dependencies(const String &p_path, Ref<ConfigFile> p_config, std::function<bool(String)> p_has_feature);
 
 	virtual Error open_library(const String &p_path) override;
-	virtual Error initialize(GDExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<GDExtension> &p_extension, GDExtensionInitialization *r_initialization) override;
+	virtual Error initialize(FoundryExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<FoundryExtension> &p_extension, FoundryExtensionInitialization *r_initialization) override;
 	virtual void close_library() override;
 	virtual bool is_library_open() const override;
 	virtual bool has_library_changed() const override;
 	virtual bool library_exists() const override;
 
-	Error parse_gdextension_file(const String &p_path);
+	Error parse_foundry_extension_file(const String &p_path);
 };

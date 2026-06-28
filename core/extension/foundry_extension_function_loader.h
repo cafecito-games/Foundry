@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_function_loader.h                                         */
+/*  foundry_extension_function_loader.h                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,25 +30,25 @@
 
 #pragma once
 
-#include "core/extension/gdextension_loader.h"
+#include "core/extension/foundry_extension_loader.h"
 #include "core/os/shared_object.h"
 
-class GDExtension;
+class FoundryExtension;
 
-class GDExtensionFunctionLoader : public GDExtensionLoader {
-	friend class GDExtensionManager;
-	friend class GDExtension;
+class FoundryExtensionFunctionLoader : public FoundryExtensionLoader {
+	friend class FoundryExtensionManager;
+	friend class FoundryExtension;
 
 	String library_path;
-	GDExtensionInitializationFunction initialization_function = nullptr;
+	FoundryExtensionInitializationFunction initialization_function = nullptr;
 
 public:
 	virtual Error open_library(const String &p_path) override;
-	virtual Error initialize(GDExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<GDExtension> &p_extension, GDExtensionInitialization *r_initialization) override;
+	virtual Error initialize(FoundryExtensionInterfaceGetProcAddress p_get_proc_address, const Ref<FoundryExtension> &p_extension, FoundryExtensionInitialization *r_initialization) override;
 	virtual void close_library() override;
 	virtual bool is_library_open() const override;
 	virtual bool has_library_changed() const override;
 	virtual bool library_exists() const override;
 
-	void set_initialization_function(GDExtensionInitializationFunction p_initialization_function);
+	void set_initialization_function(FoundryExtensionInitializationFunction p_initialization_function);
 };

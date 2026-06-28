@@ -286,7 +286,7 @@ if env["freetype_enabled"]:
     env.Append(LIBS=[lib])
 
 
-env.Append(CPPDEFINES=["GDEXTENSION"])
+env.Append(CPPDEFINES=["FOUNDRY_EXTENSION"])
 env.Append(CPPPATH=["../"])
 sources = Glob("../*.cpp")
 

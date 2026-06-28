@@ -30,7 +30,7 @@
 
 #pragma once
 
-#include "gdextension_interface.gen.h"
+#include "foundry_extension_interface.gen.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,11 +53,11 @@ extern "C" {
  *
  * @param p_argc The number of command line arguments.
  * @param p_argv The C-style array of command line arguments.
- * @param p_init_func GDExtension initialization function of the host application.
+ * @param p_init_func FoundryExtension initialization function of the host application.
  *
- * @return A pointer to created \ref GodotInstance GDExtension object or nullptr if there was an error.
+ * @return A pointer to created \ref GodotInstance FoundryExtension object or nullptr if there was an error.
  */
-LIBGODOT_API GDExtensionObjectPtr libgodot_create_godot_instance(int p_argc, char *p_argv[], GDExtensionInitializationFunction p_init_func);
+LIBGODOT_API FoundryExtensionObjectPtr libgodot_create_godot_instance(int p_argc, char *p_argv[], FoundryExtensionInitializationFunction p_init_func);
 
 /**
  * @name libgodot_destroy_godot_instance
@@ -68,7 +68,7 @@ LIBGODOT_API GDExtensionObjectPtr libgodot_create_godot_instance(int p_argc, cha
  * @param p_godot_instance The reference to the GodotInstance object to destroy.
  *
  */
-LIBGODOT_API void libgodot_destroy_godot_instance(GDExtensionObjectPtr p_godot_instance);
+LIBGODOT_API void libgodot_destroy_godot_instance(FoundryExtensionObjectPtr p_godot_instance);
 
 #ifdef __cplusplus
 }

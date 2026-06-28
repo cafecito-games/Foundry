@@ -30,8 +30,8 @@
 
 #include "text_server_fb.h"
 
-#ifdef GDEXTENSION
-// Headers for building as GDExtension plug-in.
+#ifdef FOUNDRY_EXTENSION
+// Headers for building as FoundryExtension plug-in.
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
@@ -104,8 +104,8 @@ bool TextServerFallback::_has_feature(Feature p_feature) const {
 }
 
 String TextServerFallback::_get_name() const {
-#ifdef GDEXTENSION
-	return "Fallback (GDExtension)";
+#ifdef FOUNDRY_EXTENSION
+	return "Fallback (FoundryExtension)";
 #elif defined(GODOT_MODULE)
 	return "Fallback (Built-in)";
 #endif
@@ -4459,7 +4459,7 @@ RID TextServerFallback::_find_sys_font_for_text(const RID &p_fdef, const String 
 
 		String locale = (p_language.is_empty()) ? TranslationServer::get_singleton()->get_tool_locale() : p_language;
 		PackedStringArray fallback_font_name = OS::get_singleton()->get_system_font_path_for_text(font_name, p_text, locale, p_script_code, font_weight, font_stretch, font_style & TextServer::FONT_ITALIC);
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 		for (int fb = 0; fb < fallback_font_name.size(); fb++) {
 			const String &E = fallback_font_name[fb];
 #elif defined(GODOT_MODULE)
@@ -5220,7 +5220,7 @@ PackedInt32Array TextServerFallback::_shaped_text_get_character_breaks(const RID
 	if (size > 0) {
 		ret.resize(size);
 		for (int i = 0; i < size; i++) {
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 			ret[i] = i + 1 + sd->start;
 #else
 			ret.write[i] = i + 1 + sd->start;

@@ -79,7 +79,7 @@ static bool _create_project_solution_if_needed() {
 
 CSharpLanguage *CSharpLanguage::singleton = nullptr;
 
-GDExtensionInstanceBindingCallbacks CSharpLanguage::_instance_binding_callbacks = {
+FoundryExtensionInstanceBindingCallbacks CSharpLanguage::_instance_binding_callbacks = {
 	&_instance_binding_create_callback,
 	&_instance_binding_free_callback,
 	&_instance_binding_reference_callback
@@ -1151,11 +1151,11 @@ bool CSharpLanguage::setup_csharp_script_binding(CSharpScriptBinding &r_script_b
 
 	const ClassDB::ClassInfo *classinfo = ClassDB::classes.getptr(type_name);
 
-	// This skipping of GDExtension classes, as well as whatever classes are in this list of ignored types, is a
-	// workaround to allow GDExtension classes to be used from C# so long as they're only used through base classes that
-	// are registered from the engine. This will likely need to be removed whenever proper support for GDExtension
+	// This skipping of FoundryExtension classes, as well as whatever classes are in this list of ignored types, is a
+	// workaround to allow FoundryExtension classes to be used from C# so long as they're only used through base classes that
+	// are registered from the engine. This will likely need to be removed whenever proper support for FoundryExtension
 	// classes is added to C#. See #75955 for more details.
-	while (classinfo && (!classinfo->exposed || classinfo->gdextension || ignored_types.has(classinfo->name))) {
+	while (classinfo && (!classinfo->exposed || classinfo->foundry_extension || ignored_types.has(classinfo->name))) {
 		classinfo = classinfo->inherits_ptr;
 	}
 
@@ -1252,7 +1252,7 @@ void CSharpLanguage::_instance_binding_free_callback(void *, void *, void *p_bin
 	}
 }
 
-GDExtensionBool CSharpLanguage::_instance_binding_reference_callback(void *p_token, void *p_binding, GDExtensionBool p_reference) {
+FoundryExtensionBool CSharpLanguage::_instance_binding_reference_callback(void *p_token, void *p_binding, FoundryExtensionBool p_reference) {
 	// Instance bindings callbacks can only be called if the C# language is available.
 	// Failing this assert usually means that we didn't clear the instance binding in some Object
 	// and the C# language has already been finalized.
@@ -2258,7 +2258,7 @@ void CSharpScript::reload_registered_script(Ref<CSharpScript> p_script) {
 void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 	TypeInfo type_info;
 
-	// TODO: Use GDExtension godot_dictionary
+	// TODO: Use FoundryExtension godot_dictionary
 	Array methods_array;
 	methods_array.~Array();
 	Dictionary rpc_functions_dict;

@@ -30,8 +30,8 @@
 
 #include "text_server_adv.h"
 
-#ifdef GDEXTENSION
-// Headers for building as GDExtension plug-in.
+#ifdef FOUNDRY_EXTENSION
+// Headers for building as FoundryExtension plug-in.
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
@@ -380,8 +380,8 @@ bool TextServerAdvanced::_has_feature(Feature p_feature) const {
 }
 
 String TextServerAdvanced::_get_name() const {
-#ifdef GDEXTENSION
-	return "ICU / HarfBuzz / Graphite (GDExtension)";
+#ifdef FOUNDRY_EXTENSION
+	return "ICU / HarfBuzz / Graphite (FoundryExtension)";
 #elif defined(GODOT_MODULE)
 	return "ICU / HarfBuzz / Graphite (Built-in)";
 #endif
@@ -5773,7 +5773,7 @@ RID TextServerAdvanced::_find_sys_font_for_text(const RID &p_fdef, const String 
 
 	String locale = (p_language.is_empty()) ? TranslationServer::get_singleton()->get_tool_locale() : p_language;
 	PackedStringArray fallback_font_name = OS::get_singleton()->get_system_font_path_for_text(font_name, p_text, locale, p_script_code, font_weight, font_stretch, font_style & TextServer::FONT_ITALIC);
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 	for (int fb = 0; fb < fallback_font_name.size(); fb++) {
 		const String &E = fallback_font_name[fb];
 #elif defined(GODOT_MODULE)
@@ -7697,7 +7697,7 @@ String TextServerAdvanced::_strip_diacritics(const String &p_string) const {
 	String result;
 	for (int i = 0; i < normalized_string.length(); i++) {
 		if (u_getCombiningClass(normalized_string[i]) == 0) {
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 			result = result + String::chr(normalized_string[i]);
 #elif defined(GODOT_MODULE)
 			result = result + normalized_string[i];

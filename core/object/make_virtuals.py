@@ -30,7 +30,7 @@ proto = """#define GDVIRTUAL$VER($ALIAS $RET m_name $ARG)\\
 					_get_extension()->call_virtual_with_data(_get_extension_instance(), &_gdvirtual_##$VARNAME##_sn, _gdvirtual_##$VARNAME, $CALLPTRARGPASS, $CALLPTRRETPASS);\\
 					$CALLPTRRET\\
 				} else {\\
-					((GDExtensionClassCallVirtual)_gdvirtual_##$VARNAME)(_get_extension_instance(), $CALLPTRARGPASS, $CALLPTRRETPASS);\\
+					((FoundryExtensionClassCallVirtual)_gdvirtual_##$VARNAME)(_get_extension_instance(), $CALLPTRARGPASS, $CALLPTRRETPASS);\\
 					$CALLPTRRET\\
 				}\\
 				return true;\\
@@ -126,7 +126,7 @@ def generate_version(argcount, const=False, returns=False, required=False, compa
         argtext += ", "
         callsiargs = f"Variant vargs[{argcount}] = {{ "
         callsiargptrs = f"\t\t\tconst Variant *vargptrs[{argcount}] = {{ "
-        callptrargsptr = f"\t\t\tGDExtensionConstTypePtr argptrs[{argcount}] = {{ "
+        callptrargsptr = f"\t\t\tFoundryExtensionConstTypePtr argptrs[{argcount}] = {{ "
 
         if method_info:
             method_info += "\\\n\t\t"
@@ -159,7 +159,7 @@ def generate_version(argcount, const=False, returns=False, required=False, compa
         s = s.replace("$CALLSIARGPASS", f"(const Variant **)vargptrs, {argcount}")
         callptrargsptr += " };"
         s = s.replace("$CALLPTRARGS", callptrargs + callptrargsptr)
-        s = s.replace("$CALLPTRARGPASS", "reinterpret_cast<GDExtensionConstTypePtr *>(argptrs)")
+        s = s.replace("$CALLPTRARGPASS", "reinterpret_cast<FoundryExtensionConstTypePtr *>(argptrs)")
     else:
         s = s.replace("\t\t\t$CALLSIARGS\\\n", "")
         s = s.replace("$CALLSIARGPASS", "nullptr, 0")

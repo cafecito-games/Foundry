@@ -255,7 +255,7 @@ _FORCE_INLINE_ String OS_AppleEmbedded::get_framework_executable(const String &p
 	return p_path;
 }
 
-Error OS_AppleEmbedded::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_AppleEmbedded::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	if (p_path.length() == 0) {
 		// Static xcframework.
 		p_library_handle = RTLD_SELF;

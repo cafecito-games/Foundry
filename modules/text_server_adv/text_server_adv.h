@@ -37,8 +37,8 @@
 
 #include "script_iterator.h"
 
-#ifdef GDEXTENSION
-// Headers for building as GDExtension plug-in.
+#ifdef FOUNDRY_EXTENSION
+// Headers for building as FoundryExtension plug-in.
 
 #include <godot_cpp/godot.hpp>
 

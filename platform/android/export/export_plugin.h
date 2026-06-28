@@ -278,7 +278,7 @@ public:
 
 	void _clear_assets_directory(const Ref<EditorExportPreset> &p_preset);
 
-	void _remove_copied_libs(String p_gdextension_libs_path);
+	void _remove_copied_libs(String p_foundry_extension_libs_path);
 
 	static String join_list(const List<String> &p_parts, const String &p_separator);
 	static String join_abis(const Vector<ABI> &p_parts, const String &p_separator, bool p_use_arch);

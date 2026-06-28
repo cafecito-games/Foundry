@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdextension_interface_header_generator.cpp                            */
+/*  foundry_extension_interface_header_generator.cpp                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,14 +30,14 @@
 
 #ifdef TOOLS_ENABLED
 
-#include "gdextension_interface_header_generator.h"
+#include "foundry_extension_interface_header_generator.h"
 
 #include "core/io/json.h"
-#include "gdextension_interface_dump.gen.h"
+#include "foundry_extension_interface_dump.gen.h"
 
 static const char *FILE_HEADER =
 		"/**************************************************************************/\n"
-		"/*  gdextension_interface.h                                               */\n";
+		"/*  foundry_extension_interface.h                                               */\n";
 
 static const char *INTRO =
 		"\n"
@@ -66,11 +66,11 @@ static const char *OUTRO =
 		"}\n"
 		"#endif\n";
 
-void GDExtensionInterfaceHeaderGenerator::generate_gdextension_interface_header(const String &p_path) {
+void FoundryExtensionInterfaceHeaderGenerator::generate_foundry_extension_interface_header(const String &p_path) {
 	Ref<FileAccess> fa = FileAccess::open(p_path, FileAccess::WRITE);
 	ERR_FAIL_COND_MSG(fa.is_null(), vformat("Cannot open file '%s' for writing.", p_path));
 
-	Vector<uint8_t> bytes = GDExtensionInterfaceDump::load_gdextension_interface_file();
+	Vector<uint8_t> bytes = FoundryExtensionInterfaceDump::load_foundry_extension_interface_file();
 	String json_string = String::utf8(Span<char>((char *)bytes.ptr(), bytes.size()));
 
 	Ref<JSON> json;
@@ -118,7 +118,7 @@ void GDExtensionInterfaceHeaderGenerator::generate_gdextension_interface_header(
 	fa->store_string(OUTRO);
 }
 
-void GDExtensionInterfaceHeaderGenerator::write_doc(const Ref<FileAccess> &p_fa, const Array &p_doc, const String &p_indent) {
+void FoundryExtensionInterfaceHeaderGenerator::write_doc(const Ref<FileAccess> &p_fa, const Array &p_doc, const String &p_indent) {
 	if (p_doc.size() == 1) {
 		p_fa->store_string(vformat("%s/* %s */\n", p_indent, p_doc[0]));
 		return;
@@ -143,12 +143,12 @@ void GDExtensionInterfaceHeaderGenerator::write_doc(const Ref<FileAccess> &p_fa,
 	p_fa->store_string(p_indent + " */\n");
 }
 
-void GDExtensionInterfaceHeaderGenerator::write_simple_type(const Ref<FileAccess> &p_fa, const Dictionary &p_type) {
+void FoundryExtensionInterfaceHeaderGenerator::write_simple_type(const Ref<FileAccess> &p_fa, const Dictionary &p_type) {
 	String type_and_name = format_type_and_name(p_type["type"], p_type["name"]);
 	p_fa->store_string(vformat("typedef %s;%s\n", type_and_name, make_deprecated_comment_for_type(p_type)));
 }
 
-void GDExtensionInterfaceHeaderGenerator::write_enum_type(const Ref<FileAccess> &p_fa, const Dictionary &p_enum) {
+void FoundryExtensionInterfaceHeaderGenerator::write_enum_type(const Ref<FileAccess> &p_fa, const Dictionary &p_enum) {
 	p_fa->store_string("typedef enum {\n");
 	Array values = p_enum["values"];
 	for (Dictionary value_dict : values) {
@@ -160,7 +160,7 @@ void GDExtensionInterfaceHeaderGenerator::write_enum_type(const Ref<FileAccess> 
 	p_fa->store_string(vformat("} %s;%s\n\n", p_enum["name"], make_deprecated_comment_for_type(p_enum)));
 }
 
-void GDExtensionInterfaceHeaderGenerator::write_function_type(const Ref<FileAccess> &p_fa, const Dictionary &p_func) {
+void FoundryExtensionInterfaceHeaderGenerator::write_function_type(const Ref<FileAccess> &p_fa, const Dictionary &p_func) {
 	String args_text = p_func.has("arguments") ? make_args_text(p_func["arguments"]) : "";
 	String name_and_args = vformat("(*%s)(%s)", p_func["name"], args_text);
 	String return_type;
@@ -173,7 +173,7 @@ void GDExtensionInterfaceHeaderGenerator::write_function_type(const Ref<FileAcce
 	p_fa->store_string(vformat("typedef %s;%s\n", format_type_and_name(return_type, name_and_args), make_deprecated_comment_for_type(p_func)));
 }
 
-void GDExtensionInterfaceHeaderGenerator::write_struct_type(const Ref<FileAccess> &p_fa, const Dictionary &p_struct) {
+void FoundryExtensionInterfaceHeaderGenerator::write_struct_type(const Ref<FileAccess> &p_fa, const Dictionary &p_struct) {
 	p_fa->store_string("typedef struct {\n");
 	Array members = p_struct["members"];
 	for (Dictionary member_dict : members) {
@@ -185,7 +185,7 @@ void GDExtensionInterfaceHeaderGenerator::write_struct_type(const Ref<FileAccess
 	p_fa->store_string(vformat("} %s;%s\n\n", p_struct["name"], make_deprecated_comment_for_type(p_struct)));
 }
 
-String GDExtensionInterfaceHeaderGenerator::format_type_and_name(const String &p_type, const String &p_name) {
+String FoundryExtensionInterfaceHeaderGenerator::format_type_and_name(const String &p_type, const String &p_name) {
 	String ret = p_type;
 	bool is_pointer = false;
 	if (ret.ends_with("*")) {
@@ -202,7 +202,7 @@ String GDExtensionInterfaceHeaderGenerator::format_type_and_name(const String &p
 	return ret;
 }
 
-String GDExtensionInterfaceHeaderGenerator::make_deprecated_message(const Dictionary &p_data) {
+String FoundryExtensionInterfaceHeaderGenerator::make_deprecated_message(const Dictionary &p_data) {
 	PackedStringArray parts;
 	parts.push_back(vformat("Deprecated in Godot %s.", p_data["since"]));
 	if (p_data.has("message")) {
@@ -214,14 +214,14 @@ String GDExtensionInterfaceHeaderGenerator::make_deprecated_message(const Dictio
 	return String(" ").join(parts);
 }
 
-String GDExtensionInterfaceHeaderGenerator::make_deprecated_comment_for_type(const Dictionary &p_type) {
+String FoundryExtensionInterfaceHeaderGenerator::make_deprecated_comment_for_type(const Dictionary &p_type) {
 	if (!p_type.has("deprecated")) {
 		return "";
 	}
 	return vformat(" /* %s */", make_deprecated_message(p_type["deprecated"]));
 }
 
-String GDExtensionInterfaceHeaderGenerator::make_args_text(const Array &p_args) {
+String FoundryExtensionInterfaceHeaderGenerator::make_args_text(const Array &p_args) {
 	Vector<String> combined;
 	for (Dictionary arg_dict : p_args) {
 		combined.push_back(format_type_and_name(arg_dict["type"], arg_dict.get("name", String())));
@@ -229,7 +229,7 @@ String GDExtensionInterfaceHeaderGenerator::make_args_text(const Array &p_args) 
 	return String(", ").join(combined);
 }
 
-void GDExtensionInterfaceHeaderGenerator::write_interface(const Ref<FileAccess> &p_fa, const Dictionary &p_interface) {
+void FoundryExtensionInterfaceHeaderGenerator::write_interface(const Ref<FileAccess> &p_fa, const Dictionary &p_interface) {
 	Vector<String> doc;
 
 	doc.push_back(String("@name ") + (String)p_interface["name"]);
@@ -310,7 +310,7 @@ void GDExtensionInterfaceHeaderGenerator::write_interface(const Ref<FileAccess> 
 			// Cannot use `capitalize()` on the whole string, because it'll separate numbers with a space.
 			word[0] = String::char_uppercase(word[0]);
 		}
-		func["name"] = String("GDExtensionInterface") + String().join(words);
+		func["name"] = String("FoundryExtensionInterface") + String().join(words);
 	}
 	write_function_type(p_fa, func);
 

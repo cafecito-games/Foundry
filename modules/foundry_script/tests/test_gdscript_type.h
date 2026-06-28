@@ -927,7 +927,7 @@ TEST_CASE("[Modules][FoundryScript] Callable/Signal signature with a class named
 	// treat only the bracketed form as a coroutine, so a class literally named "Coroutine" round-trips as
 	// that class while a genuine Coroutine[T] still round-trips as the coroutine skin.
 
-	// A real, exposed native class literally named "Coroutine" (e.g. a GDExtension class) is the only kind of
+	// A real, exposed native class literally named "Coroutine" (e.g. a FoundryExtension class) is the only kind of
 	// "Coroutine"-named slot the signature grammar actually encodes: script/class leaves cross untyped, and a
 	// bare native name only round-trips when ClassDB knows it. Such a native serializes to the bare leaf
 	// "Coroutine" (the reserved coroutine syntax always carries brackets), so its cross-script PropertyInfo

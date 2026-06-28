@@ -31,7 +31,7 @@
 #include "editor_data.h"
 
 #include "core/config/project_settings.h"
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "editor/editor_node.h"
@@ -1114,8 +1114,8 @@ void EditorData::script_class_load_icon_paths() {
 }
 
 Ref<Texture2D> EditorData::extension_class_get_icon(const String &p_class) const {
-	if (GDExtensionManager::get_singleton()->class_has_icon_path(p_class)) {
-		String icon_path = GDExtensionManager::get_singleton()->class_get_icon_path(p_class);
+	if (FoundryExtensionManager::get_singleton()->class_has_icon_path(p_class)) {
+		String icon_path = FoundryExtensionManager::get_singleton()->class_get_icon_path(p_class);
 		Ref<Texture2D> icon = _load_script_icon(icon_path);
 		if (icon.is_valid()) {
 			return icon;
