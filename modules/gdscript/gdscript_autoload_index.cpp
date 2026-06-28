@@ -79,6 +79,36 @@ void sort_entries_by_order(Vector<GDScriptAutoloadIndexEntry> &r_entries) {
 	}
 }
 
+#ifdef TOOLS_ENABLED
+Error collect_script_annotation_autoload_entries(const String &p_script_path, Vector<GDScriptAutoloadIndexEntry> &r_entries) {
+	GDScriptParser parser;
+	const String source = GDScriptCache::get_source_code(ResourceLoader::path_remap(p_script_path));
+	Error err = parser.parse(source, p_script_path, false);
+	if (err != OK) {
+		return err;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.resolve_inheritance();
+	if (err != OK) {
+		return err;
+	}
+	err = analyzer.resolve_interface();
+	if (err != OK) {
+		return err;
+	}
+
+	const GDScriptAutoloadIndex &script_index = analyzer.get_autoload_index();
+	for (const GDScriptAutoloadIndexEntry &entry : script_index.get_entries()) {
+		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			r_entries.push_back(entry);
+		}
+	}
+
+	return OK;
+}
+#endif // TOOLS_ENABLED
+
 void add_diagnostic(GDScriptAutoloadIndexEntry &r_entry, GDScriptAutoloadIndexDiagnostic::Code p_code, const String &p_message) {
 	GDScriptAutoloadIndexDiagnostic diagnostic;
 	diagnostic.code = p_code;
@@ -892,18 +922,7 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings_and_script_annotations
 			}
 
 			const String script_path = ScriptServer::get_global_class_path(global_class);
-			Error parser_err = OK;
-			Ref<GDScriptParserRef> parser_ref = GDScriptCache::get_parser(script_path, GDScriptParserRef::FULLY_SOLVED, parser_err);
-			if (parser_err != OK || parser_ref.is_null() || parser_ref->get_analyzer() == nullptr) {
-				continue;
-			}
-
-			const GDScriptAutoloadIndex &script_index = parser_ref->get_analyzer()->get_autoload_index();
-			for (const GDScriptAutoloadIndexEntry &entry : script_index.get_entries()) {
-				if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
-					merged_entries.push_back(entry);
-				}
-			}
+			collect_script_annotation_autoload_entries(script_path, merged_entries);
 		}
 	}
 

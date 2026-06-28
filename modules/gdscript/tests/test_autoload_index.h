@@ -1203,6 +1203,43 @@ TEST_CASE("[Modules][GDScript] Runtime startup preparation rebuilds script annot
 	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
 	CHECK(loaded.has_autoload(SNAME("IndexRuntimeToolCached")));
 }
+
+TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery does not require body analysis") {
+	ScopedTempFiles files("gdscript_autoload_index_export_body_reference");
+
+	const String service_source =
+			"@autoload(order_id = 1)\n"
+			"class_name IndexExportBodyService extends Node\n"
+			"func ping() -> void:\n"
+			"\tpass\n";
+	const String consumer_source =
+			"@autoload(order_id = 2)\n"
+			"class_name IndexExportBodyConsumer extends Node\n"
+			"func _ready() -> void:\n"
+			"\tIndexExportBodyService.ping()\n";
+
+	const String service_path = files.write("export_body_service.gd", service_source);
+	const String consumer_path = files.write("export_body_consumer.gd", consumer_source);
+	ScopedScriptServerClass registered_service(SNAME("IndexExportBodyService"), "Node", service_path);
+	ScopedScriptServerClass registered_consumer(SNAME("IndexExportBodyConsumer"), "Node", consumer_path);
+
+	GDScriptCache::remove_parser(service_path);
+	GDScriptCache::remove_parser(consumer_path);
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_project_settings_and_script_annotations();
+
+	CHECK(index.has_autoload(SNAME("IndexExportBodyService")));
+	CHECK(index.has_autoload(SNAME("IndexExportBodyConsumer")));
+
+	const String cache_path = files.reserve("export_body_reference_autoload_index_cache.cfg");
+	CHECK_EQ(index.save_to_cache(cache_path), OK);
+
+	GDScriptAutoloadIndex loaded;
+	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
+	CHECK(loaded.has_autoload(SNAME("IndexExportBodyService")));
+	CHECK(loaded.has_autoload(SNAME("IndexExportBodyConsumer")));
+}
 #endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][GDScript] Analyzer allows same-script class name and autoload singleton names") {
