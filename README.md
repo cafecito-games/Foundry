@@ -1,5 +1,7 @@
 # Enhanced Godot Engine
 
+> **Foundry is a fork of Godot Engine 4.6.3 (MIT).** See [NOTICE](NOTICE) and [LICENSE.txt](LICENSE.txt) for attribution and license details.
+
 <p align="center">
   <a href="https://godotengine.org">
     <img src="logo_outlined.svg" width="400" alt="Godot Engine logo">
