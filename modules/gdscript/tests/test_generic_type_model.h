@@ -125,6 +125,27 @@ TEST_CASE("[Modules][GDScript][GenericTypeModel] substitute preserves Type wrapp
 	CHECK(result.to_string() == "Type[Node]?");
 }
 
+TEST_CASE("[Modules][GDScript][GenericTypeModel] substitute keeps Type handle nullability on wrapper") {
+	DataType type_of_t = make_type_parameter("T");
+	type_of_t.is_meta_type = true;
+	type_of_t.is_type_handle_annotation = true;
+
+	DataType nullable_node = make_native("Node");
+	nullable_node.is_nullable = true;
+
+	HashMap<StringName, DataType> bindings;
+	bindings.insert("T", nullable_node);
+
+	const DataType result = DataType::substitute(type_of_t, bindings);
+
+	CHECK(result.kind == DataType::NATIVE);
+	CHECK(result.native_type == StringName("Node"));
+	CHECK(result.is_meta_type);
+	CHECK(result.is_type_handle_annotation);
+	CHECK(!result.is_nullable);
+	CHECK(result.to_string() == "Type[Node]");
+}
+
 TEST_CASE("[Modules][GDScript][GenericTypeModel] substitute recurses into type arguments") {
 	// Models Box[T] as a native handle carrying a single type argument.
 	DataType box_of_t;

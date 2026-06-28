@@ -2389,18 +2389,25 @@ static GDScriptCompletionIdentifier _type_from_property(const PropertyInfo &p_pr
 	ci.type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	ci.type.builtin_type = p_property.type;
 	if (p_property.type == Variant::OBJECT) {
-		if (ScriptServer::is_global_class(p_property.class_name)) {
+		StringName class_name = p_property.class_name;
+		if (String(class_name).ends_with("?")) {
+			String nullable_class_name = class_name;
+			nullable_class_name = nullable_class_name.substr(0, nullable_class_name.length() - 1);
+			class_name = nullable_class_name;
+			ci.type.is_nullable = true;
+		}
+		if (ScriptServer::is_global_class(class_name)) {
 			ci.type.kind = GDScriptParser::DataType::SCRIPT;
-			ci.type.script_path = ScriptServer::get_global_class_path(p_property.class_name);
-			ci.type.native_type = ScriptServer::get_global_class_native_base(p_property.class_name);
+			ci.type.script_path = ScriptServer::get_global_class_path(class_name);
+			ci.type.native_type = ScriptServer::get_global_class_native_base(class_name);
 
-			Ref<Script> scr = ResourceLoader::load(ScriptServer::get_global_class_path(p_property.class_name));
+			Ref<Script> scr = ResourceLoader::load(ScriptServer::get_global_class_path(class_name));
 			if (scr.is_valid()) {
 				ci.type.script_type = scr;
 			}
 		} else {
 			ci.type.kind = GDScriptParser::DataType::NATIVE;
-			ci.type.native_type = p_property.class_name == StringName() ? "Object" : p_property.class_name;
+			ci.type.native_type = class_name == StringName() ? "Object" : class_name;
 		}
 	} else {
 		ci.type.kind = GDScriptParser::DataType::BUILTIN;

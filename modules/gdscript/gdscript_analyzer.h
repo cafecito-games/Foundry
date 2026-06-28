@@ -78,6 +78,7 @@ class GDScriptAnalyzer {
 	bool static_context = false;
 	bool strict_null_checks = false;
 	bool strict_dynamic_checks = false;
+	bool resolving_function_signature_type = false;
 
 	struct SuiteExitState {
 		bool always_terminates = false;
@@ -98,7 +99,11 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType resolve_datatype(GDScriptParser::TypeNode *p_type);
 	bool resolve_type_parameter(const StringName &p_name, GDScriptParser::DataType &r_type);
 	GDScriptParser::FunctionNode *find_generic_method(GDScriptParser::ClassNode *p_class, const StringName &p_name, bool &r_found_member);
-	GDScriptParser::DataType substitute_member_type(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base, const GDScriptParser::FunctionNode *p_shadowing_method = nullptr);
+	GDScriptParser::DataType substitute_member_type(
+			const GDScriptParser::DataType &p_member_type,
+			const GDScriptParser::DataType &p_base,
+			const GDScriptParser::FunctionNode *p_shadowing_method = nullptr,
+			const GDScriptParser::DataType *p_self_type = nullptr);
 	bool apply_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::TypeNode *> &p_argument_nodes, const GDScriptParser::Node *p_source, bool p_check_bounds = true, Vector<bool> *r_argument_failed = nullptr);
 	bool bind_class_type_arguments(GDScriptParser::DataType &r_type, const Vector<GDScriptParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources, const GDScriptParser::Node *p_source, bool p_check_bounds = true);
 	bool check_class_type_argument_bounds(GDScriptParser::DataType &r_type, const Vector<bool> &p_argument_failed, const Vector<const GDScriptParser::Node *> &p_argument_sources);
@@ -275,10 +280,10 @@ class GDScriptAnalyzer {
 			TraitMethodImplementation &r_implementation);
 	HashMap<StringName, GDScriptParser::DataType> trait_type_argument_substitution(GDScriptParser::ClassNode *p_class, GDScriptParser::ClassNode *p_trait);
 	bool validate_trait_method_signature(GDScriptParser::ClassNode *p_trait,
-			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
+			GDScriptParser::ClassNode *p_implementing_class, GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
 			const HashMap<StringName, GDScriptParser::DataType> &p_trait_substitution = HashMap<StringName, GDScriptParser::DataType>());
 	bool validate_trait_method_info_signature(GDScriptParser::ClassNode *p_trait,
-			GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
+			GDScriptParser::ClassNode *p_implementing_class, GDScriptParser::FunctionNode *p_required_function, const TraitMethodImplementation &p_implementation,
 			const HashMap<StringName, GDScriptParser::DataType> &p_trait_substitution = HashMap<StringName, GDScriptParser::DataType>());
 	Error validate_imports();
 	Error validate_annotation_declarations();
@@ -292,7 +297,8 @@ class GDScriptAnalyzer {
 			int &r_default_arg_count, BitField<MethodFlags> &r_method_flags,
 			StringName *r_native_class = nullptr, bool *r_is_noreturn = nullptr,
 			GDScriptParser::FunctionNode **r_found_function = nullptr,
-			GDScriptParser::ClassNode **r_found_in_class = nullptr);
+			GDScriptParser::ClassNode **r_found_in_class = nullptr,
+			const GDScriptParser::DataType *p_self_type_override = nullptr);
 	void collect_type_parameter_bindings(const GDScriptParser::DataType &p_parameter_type, const GDScriptParser::DataType &p_argument_type,
 			HashMap<StringName, GDScriptParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts);
 	bool merge_inferred_type_argument(const GDScriptParser::DataType &p_existing, const GDScriptParser::DataType &p_candidate, GDScriptParser::DataType &r_merged);
@@ -359,8 +365,15 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType get_operation_type(Variant::Operator p_operation, const GDScriptParser::DataType &p_a, const GDScriptParser::DataType &p_b, bool &r_valid, const GDScriptParser::Node *p_source);
 	GDScriptParser::DataType get_operation_type(Variant::Operator p_operation, const GDScriptParser::DataType &p_a, bool &r_valid, const GDScriptParser::Node *p_source);
 	void update_const_expression_builtin_type(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_type, const char *p_usage, bool p_is_cast = false);
-	void update_array_literal_element_type(GDScriptParser::ArrayNode *p_array, const GDScriptParser::DataType &p_element_type);
-	void update_dictionary_literal_element_type(GDScriptParser::DictionaryNode *p_dictionary, const GDScriptParser::DataType &p_key_element_type, const GDScriptParser::DataType &p_value_element_type);
+	void update_array_literal_element_type(GDScriptParser::ArrayNode *p_array,
+			const GDScriptParser::DataType &p_element_type,
+			bool p_self_parameter_contract = false,
+			bool p_substitute_self_runtime_type = false);
+	void update_dictionary_literal_element_type(GDScriptParser::DictionaryNode *p_dictionary,
+			const GDScriptParser::DataType &p_key_element_type,
+			const GDScriptParser::DataType &p_value_element_type,
+			bool p_self_parameter_contract = false,
+			bool p_substitute_self_runtime_type = false);
 	bool is_type_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
 	void push_error(const String &p_message, const GDScriptParser::Node *p_origin = nullptr);
 	void mark_node_unsafe(const GDScriptParser::Node *p_node);

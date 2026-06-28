@@ -73,6 +73,7 @@ public:
 	// already do at runtime, but the flag keeps the information available for them too.
 	bool is_nullable = false;
 	bool is_type_handle = false;
+	bool is_self_type = false;
 	bool is_script_trait = false;
 	StringName script_trait;
 
@@ -265,6 +266,7 @@ public:
 				native_type == p_other.native_type &&
 				is_nullable == p_other.is_nullable &&
 				is_type_handle == p_other.is_type_handle &&
+				is_self_type == p_other.is_self_type &&
 				(script_type == p_other.script_type || script_type_ref == p_other.script_type_ref) &&
 				is_script_trait == p_other.is_script_trait &&
 				script_trait == p_other.script_trait &&
@@ -287,6 +289,7 @@ public:
 		script_type_ref = p_other.script_type_ref;
 		is_nullable = p_other.is_nullable;
 		is_type_handle = p_other.is_type_handle;
+		is_self_type = p_other.is_self_type;
 		is_script_trait = p_other.is_script_trait;
 		script_trait = p_other.script_trait;
 		container_element_types = p_other.container_element_types;

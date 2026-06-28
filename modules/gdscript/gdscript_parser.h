@@ -154,6 +154,7 @@ public:
 		bool signature_is_async = false; // Whether the callable type was written as AsyncCallable rather than Callable.
 		Vector<DataType> method_parameter_types; // Rich GDScript signature preserving metadata MethodInfo cannot store.
 		Vector<DataType> method_return_type; // Empty for signals, one element for callables.
+		bool method_return_is_erased_container = false; // Callable return needs typed-container conversion after call/callv.
 		Vector<int> method_extra_allowed_argument_counts; // Extra exact arities not expressible by default arguments, for transformed Callables.
 		int method_unbound_argument_count = 0; // Trailing arguments ignored by transformed Callables.
 		bool callable_is_over_bound = false; // Set when bind()/bindv() bound more arguments than a fixed-arity target accepts, making any invocation fail.
@@ -322,6 +323,7 @@ public:
 			signature_is_async = p_other.signature_is_async;
 			method_parameter_types = p_other.method_parameter_types;
 			method_return_type = p_other.method_return_type;
+			method_return_is_erased_container = p_other.method_return_is_erased_container;
 			method_extra_allowed_argument_counts = p_other.method_extra_allowed_argument_counts;
 			method_unbound_argument_count = p_other.method_unbound_argument_count;
 			callable_is_over_bound = p_other.callable_is_over_bound;
@@ -649,10 +651,10 @@ public:
 		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script
 		// from the `[T]` type argument.
 		bool is_proxy_construct = false;
-		// Set by the analyzer when this calls a generic method whose return type is a typed container
-		// with a type-parameter element (`-> Array[T]`). That element is erased at runtime, so the value
-		// is an untyped container even though the substituted static return type is concrete; an
-		// assignment to a concrete typed container must convert (retype) the result.
+		// Set by the analyzer when this calls a method whose typed-container return needs retyping at the
+		// assignment target. Generic method elements (`-> Array[T]`) are erased at runtime; inherited
+		// `Self` container returns are compiled against the declaring class while the static call type is
+		// receiver-specialized.
 		bool returns_erased_container = false;
 		// Set by the analyzer when this coroutine call's result is captured into a statically
 		// `Coroutine[T]`-typed slot (a `Coroutine[T]` variable/parameter/return, or a
@@ -1109,6 +1111,7 @@ public:
 
 		bool resolved_signature = false;
 		bool resolved_body = false;
+		bool uses_receiver_relative_self = false;
 
 		_FORCE_INLINE_ bool is_vararg() const { return rest_parameter != nullptr; }
 

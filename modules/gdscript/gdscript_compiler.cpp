@@ -73,6 +73,46 @@ bool GDScriptCompiler::_is_local_or_parameter(CodeGen &codegen, const StringName
 	return codegen.parameters.has(p_name) || codegen.locals.has(p_name);
 }
 
+static GDScriptParser::DataType _class_type_parameter_handle(const GDScriptParser::TypeParameterNode *p_parameter, int p_index) {
+	GDScriptParser::DataType type;
+	type.kind = GDScriptParser::DataType::TYPE_PARAMETER;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	if (p_parameter != nullptr && p_parameter->identifier != nullptr) {
+		type.type_parameter_name = p_parameter->identifier->name;
+	}
+	type.type_parameter_scope = GDScriptParser::DataType::TYPE_PARAMETER_CLASS;
+	type.type_parameter_index = p_index;
+	if (p_parameter != nullptr && !p_parameter->resolved_bound.has_no_type()) {
+		type.type_parameter_bound.push_back(p_parameter->resolved_bound);
+	}
+	return type;
+}
+
+static GDScriptParser::DataType _self_type_for_class(const GDScriptParser::ClassNode *p_class) {
+	GDScriptParser::DataType self_type;
+	if (p_class != nullptr) {
+		self_type = p_class->get_datatype();
+		self_type.is_meta_type = false;
+		self_type.type_arguments.clear();
+		for (int i = 0; i < p_class->type_parameters.size(); i++) {
+			self_type.type_arguments.push_back(_class_type_parameter_handle(p_class->type_parameters[i], i));
+		}
+	}
+	return self_type;
+}
+
+static GDScriptParser::DataType _substitute_self_type_parameter_for_class(
+		const GDScriptParser::DataType &p_type,
+		const GDScriptParser::ClassNode *p_class) {
+	GDScriptParser::DataType self_type = _self_type_for_class(p_class);
+	if (!self_type.is_set()) {
+		return p_type;
+	}
+	HashMap<StringName, GDScriptParser::DataType> bindings;
+	bindings.insert(SNAME("@Self"), self_type);
+	return GDScriptParser::DataType::substitute(p_type, bindings);
+}
+
 void GDScriptCompiler::_set_error(const String &p_error, const GDScriptParser::Node *p_node) {
 	if (!error.is_empty()) {
 		return;
@@ -88,17 +128,17 @@ void GDScriptCompiler::_set_error(const String &p_error, const GDScriptParser::N
 	}
 }
 
-static bool _datatype_contains_type_parameter(const GDScriptParser::DataType &p_datatype) {
+static bool _datatype_contains_erased_type_parameter(const GDScriptParser::DataType &p_datatype) {
 	if (p_datatype.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
-		return true;
+		return p_datatype.type_parameter_name != SNAME("@Self");
 	}
 	for (const GDScriptParser::DataType &element : p_datatype.container_element_types) {
-		if (_datatype_contains_type_parameter(element)) {
+		if (_datatype_contains_erased_type_parameter(element)) {
 			return true;
 		}
 	}
 	for (const GDScriptParser::DataType &argument : p_datatype.type_arguments) {
-		if (_datatype_contains_type_parameter(argument)) {
+		if (_datatype_contains_erased_type_parameter(argument)) {
 			return true;
 		}
 	}
@@ -234,6 +274,14 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.builtin_type = p_datatype.builtin_type;
 			break;
 		case GDScriptParser::DataType::TYPE_PARAMETER: {
+			if (p_datatype.type_parameter_name == SNAME("@Self") && p_owner != nullptr) {
+				result.kind = GDScriptDataType::GDSCRIPT;
+				result.builtin_type = Variant::OBJECT;
+				result.script_type = p_owner;
+				result.native_type = p_owner->get_instance_base_type();
+				result.is_self_type = true;
+				break;
+			}
 			// Plain `T` is erased to Variant. `Type[T]` cannot preserve the represented method parameter
 			// at runtime, but it can still enforce that the value is a class handle.
 			if (p_handle_metatype && p_datatype.is_type_handle_annotation) {
@@ -257,19 +305,20 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	result.is_nullable = p_datatype.is_nullable && !(p_handle_metatype && p_datatype.is_meta_type);
 
 	// A container whose element type (transitively) involves an erased type parameter — `Array[T]`,
-	// `Dictionary[K, int]`, `Array[Array[T]]` — leaves all of its element types unset so the runtime
-	// treats it as a fully untyped container. The VM compares typed-container element metadata
-	// exactly (and a partially-set typed container backfills the missing slot with Variant), so a
-	// typed-but-erased element would still reject a concrete argument like `Array[int]`. The analyzer
+	// `Dictionary[K, int]`, `Array[Array[T]]` — or a coroutine leaves all of its element types unset so
+	// the runtime treats it as a fully untyped container. The VM compares typed-container element
+	// metadata exactly (and a partially-set typed container backfills the missing slot with Variant), so
+	// a typed-but-erased element would still reject a concrete argument like `Array[int]`. Synthetic
+	// `@Self` is reified against the owner script, so it can preserve runtime metadata. The analyzer
 	// still enforces element types statically.
 	bool erases_container_element = false;
 	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
 		const GDScriptParser::DataType element = p_datatype.get_container_element_type_or_variant(i);
 		// Coroutine[T] is a phantom type whose runtime value is a GDScriptFunctionState, so a
 		// container of coroutines (`Array[Coroutine[String]]`) erases its element type to stay an
-		// untyped container at runtime, matching the erased type-parameter handling. The analyzer
-		// still enforces the element type statically.
-		if (_datatype_contains_type_parameter(element) || _datatype_contains_coroutine(element)) {
+		// untyped container at runtime, matching erased type-parameter handling. Synthetic `@Self`
+		// stays reified against the owner script and can preserve runtime metadata.
+		if (_datatype_contains_erased_type_parameter(element) || _datatype_contains_coroutine(element)) {
 			erases_container_element = true;
 			break;
 		}
@@ -294,9 +343,30 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	return result;
 }
 
-// A generic method returning `Array[T]` yields an untyped array at runtime (the element is erased),
-// so assigning its result to a concrete typed array needs a converting retype rather than the strict
-// validate that an ordinary typed-array assignment emits.
+static void _rebind_self_data_type(GDScriptDataType &p_type, GDScript *p_owner) {
+	if (p_owner == nullptr) {
+		return;
+	}
+	if (p_type.is_self_type) {
+		p_type.kind = GDScriptDataType::GDSCRIPT;
+		p_type.builtin_type = Variant::OBJECT;
+		p_type.script_type = p_owner;
+		p_type.script_type_ref = Ref<Script>();
+		p_type.native_type = p_owner->get_instance_base_type();
+		p_type.is_script_trait = p_owner->is_trait_type();
+		p_type.script_trait = p_owner->get_trait_type_name();
+	}
+	for (GDScriptDataType &element_type : p_type.container_element_types) {
+		_rebind_self_data_type(element_type, p_owner);
+	}
+	for (GDScriptDataType &argument_type : p_type.type_arguments) {
+		_rebind_self_data_type(argument_type, p_owner);
+	}
+}
+
+// Some typed-container calls need a converting retype rather than the strict validate that an ordinary
+// typed-array assignment emits: generic method `Array[T]` returns are runtime-erased, and inherited
+// `Array[Self]` returns are compiled with the declaring class while statically receiver-specialized.
 static bool _is_erased_container_call_to_typed_array(const GDScriptParser::ExpressionNode *p_source, const GDScriptDataType &p_target_type) {
 	return p_source != nullptr && p_source->type == GDScriptParser::Node::CALL &&
 			static_cast<const GDScriptParser::CallNode *>(p_source)->returns_erased_container &&
@@ -304,9 +374,7 @@ static bool _is_erased_container_call_to_typed_array(const GDScriptParser::Expre
 			p_target_type.has_container_element_type(0);
 }
 
-// A generic method returning `Dictionary[K, V]` yields an untyped dictionary at runtime (the key/value
-// types are erased), so assigning its result to a concrete typed dictionary needs a converting retype
-// rather than the strict validate that an ordinary typed-dictionary assignment emits.
+// Same as above for typed dictionaries.
 static bool _is_erased_container_call_to_typed_dictionary(const GDScriptParser::ExpressionNode *p_source, const GDScriptDataType &p_target_type) {
 	return p_source != nullptr && p_source->type == GDScriptParser::Node::CALL &&
 			static_cast<const GDScriptParser::CallNode *>(p_source)->returns_erased_container &&
@@ -775,13 +843,22 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					continue;
 				}
 				const GDScriptDataType parameter_type = _gdtype_from_datatype(call->resolved_parameter_types[i], codegen.script);
-				if (!parameter_type.is_type_handle) {
-					continue;
+				if (parameter_type.is_type_handle) {
+					GDScriptCodeGenerator::Address checked_argument = codegen.add_temporary(parameter_type);
+					argument_temporaries_to_pop++;
+					gen->write_assign_with_conversion(checked_argument, arguments[i]);
+					arguments.write[i] = checked_argument;
+				} else if (_is_erased_container_call_to_typed_array(call->arguments[i], parameter_type)) {
+					GDScriptCodeGenerator::Address checked_argument = codegen.add_temporary(parameter_type);
+					argument_temporaries_to_pop++;
+					gen->write_assign_typed_array_convert(checked_argument, arguments[i]);
+					arguments.write[i] = checked_argument;
+				} else if (_is_erased_container_call_to_typed_dictionary(call->arguments[i], parameter_type)) {
+					GDScriptCodeGenerator::Address checked_argument = codegen.add_temporary(parameter_type);
+					argument_temporaries_to_pop++;
+					gen->write_assign_typed_dictionary_convert(checked_argument, arguments[i]);
+					arguments.write[i] = checked_argument;
 				}
-				GDScriptCodeGenerator::Address checked_argument = codegen.add_temporary(parameter_type);
-				argument_temporaries_to_pop++;
-				gen->write_assign_with_conversion(checked_argument, arguments[i]);
-				arguments.write[i] = checked_argument;
 			}
 
 			if (call->is_proxy_construct) {
@@ -1496,13 +1573,31 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					assigned = op_result;
 				}
 
+				GDScriptCodeGenerator::Address value_to_set = assigned;
+				bool converted_value_to_set = false;
+				if (assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
+					const GDScriptDataType target_type = _gdtype_from_datatype(subscript->get_datatype(), codegen.script);
+					if (_is_erased_container_call_to_typed_array(assignment->assigned_value, target_type)) {
+						value_to_set = codegen.add_temporary(target_type);
+						gen->write_assign_typed_array_convert(value_to_set, assigned);
+						converted_value_to_set = true;
+					} else if (_is_erased_container_call_to_typed_dictionary(assignment->assigned_value, target_type)) {
+						value_to_set = codegen.add_temporary(target_type);
+						gen->write_assign_typed_dictionary_convert(value_to_set, assigned);
+						converted_value_to_set = true;
+					}
+				}
+
 				// Perform assignment.
 				if (subscript->is_attribute) {
-					gen->write_set_named(prev_base, name, assigned);
+					gen->write_set_named(prev_base, name, value_to_set);
 				} else {
-					gen->write_set(prev_base, key, assigned);
+					gen->write_set(prev_base, key, value_to_set);
 				}
 				if (key.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+				if (converted_value_to_set) {
 					gen->pop_temporary();
 				}
 				if (assigned.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
@@ -1705,10 +1800,26 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 				if (has_setter && !is_in_setter) {
 					// Call setter.
+					GDScriptCodeGenerator::Address setter_argument = to_assign;
+					bool converted_setter_argument = false;
+					if (!has_operation) {
+						if (_is_erased_container_call_to_typed_array(assignment->assigned_value, target.type)) {
+							setter_argument = codegen.add_temporary(target.type);
+							gen->write_assign_typed_array_convert(setter_argument, to_assign);
+							converted_setter_argument = true;
+						} else if (_is_erased_container_call_to_typed_dictionary(assignment->assigned_value, target.type)) {
+							setter_argument = codegen.add_temporary(target.type);
+							gen->write_assign_typed_dictionary_convert(setter_argument, to_assign);
+							converted_setter_argument = true;
+						}
+					}
 					Vector<GDScriptCodeGenerator::Address> args;
-					args.push_back(to_assign);
+					args.push_back(setter_argument);
 					GDScriptCodeGenerator::Address call_base = is_static ? GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::CLASS) : GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::SELF);
 					gen->write_call(GDScriptCodeGenerator::Address(), call_base, setter_function, args);
+					if (converted_setter_argument) {
+						gen->pop_temporary();
+					}
 				} else if (is_static) {
 					GDScriptCodeGenerator::Address temp = codegen.add_temporary(static_var_data_type);
 					if (assignment->use_conversion_assign) {
@@ -2519,6 +2630,8 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				const GDScriptParser::ReturnNode *return_n = static_cast<const GDScriptParser::ReturnNode *>(s);
 
 				GDScriptCodeGenerator::Address return_value;
+				GDScriptCodeGenerator::Address return_target;
+				bool pop_return_target = false;
 
 				if (return_n->return_value != nullptr) {
 					return_value = _parse_expression(codegen, err, return_n->return_value);
@@ -2531,7 +2644,23 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					// Always return "null", even if the expression is a call to a void function.
 					gen->write_return(codegen.add_constant(Variant()));
 				} else {
-					gen->write_return(return_value);
+					return_target = return_value;
+					if (codegen.function_node != nullptr && return_n->return_value != nullptr) {
+						const GDScriptDataType return_type = _gdtype_from_datatype(codegen.function_node->get_datatype(), codegen.script);
+						if (_is_erased_container_call_to_typed_array(return_n->return_value, return_type)) {
+							return_target = codegen.add_temporary(return_type);
+							gen->write_assign_typed_array_convert(return_target, return_value);
+							pop_return_target = true;
+						} else if (_is_erased_container_call_to_typed_dictionary(return_n->return_value, return_type)) {
+							return_target = codegen.add_temporary(return_type);
+							gen->write_assign_typed_dictionary_convert(return_target, return_value);
+							pop_return_target = true;
+						}
+					}
+					gen->write_return(return_target);
+				}
+				if (pop_return_target) {
+					codegen.generator->pop_temporary();
 				}
 				if (return_value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 					codegen.generator->pop_temporary();
@@ -2881,7 +3010,8 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 			}
 			for (int i = 0; i < function->parameters.size(); i++) {
 				const GDScriptParser::ParameterNode *parameter = function->parameters[i];
-				method_info.arguments.push_back(parameter->get_datatype().to_property_info(parameter->identifier->name));
+				const GDScriptParser::DataType parameter_datatype = _substitute_self_type_parameter_for_class(parameter->get_datatype(), p_class);
+				method_info.arguments.push_back(parameter_datatype.to_property_info(parameter->identifier->name));
 			}
 			if (function->is_vararg()) {
 				method_info.flags |= METHOD_FLAG_VARARG;
@@ -2893,8 +3023,9 @@ void GDScriptCompiler::_collect_trait_abstract_requirements(const GDScriptParser
 			// returning body); an unannotated requirement is `void`, not `Variant`, so
 			// the handler's value is ignored just as for the compiled function.
 			if ((function->is_abstract && function->return_type != nullptr) || function->body->has_return) {
-				requirement.return_type = _gdtype_from_datatype(function->get_datatype(), p_script);
-				method_info.return_val = function->get_datatype().to_property_info(String());
+				const GDScriptParser::DataType return_datatype = _substitute_self_type_parameter_for_class(function->get_datatype(), p_class);
+				requirement.return_type = _gdtype_from_datatype(return_datatype, p_script);
+				method_info.return_val = return_datatype.to_property_info(String());
 			} else {
 				requirement.return_type.kind = GDScriptDataType::BUILTIN;
 				requirement.return_type.builtin_type = Variant::NIL;
@@ -2919,6 +3050,7 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	bool is_static = false;
 	Variant rpc_config;
 	GDScriptDataType return_type;
+	GDScriptParser::DataType function_datatype;
 	return_type.kind = GDScriptDataType::BUILTIN;
 	return_type.builtin_type = Variant::NIL;
 
@@ -2931,7 +3063,8 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 		is_abstract = p_func->is_abstract;
 		is_static = p_func->is_static;
 		rpc_config = p_func->rpc_config;
-		return_type = _gdtype_from_datatype(p_func->get_datatype(), p_script);
+		function_datatype = _substitute_self_type_parameter_for_class(p_func->get_datatype(), p_class);
+		return_type = _gdtype_from_datatype(function_datatype, p_script);
 	} else {
 		if (p_for_ready) {
 			func_name = "@implicit_ready";
@@ -2962,11 +3095,12 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	if (p_func) {
 		for (int i = 0; i < p_func->parameters.size(); i++) {
 			const GDScriptParser::ParameterNode *parameter = p_func->parameters[i];
-			GDScriptDataType par_type = _gdtype_from_datatype(parameter->get_datatype(), p_script);
+			const GDScriptParser::DataType parameter_datatype = _substitute_self_type_parameter_for_class(parameter->get_datatype(), p_class);
+			GDScriptDataType par_type = _gdtype_from_datatype(parameter_datatype, p_script);
 			uint32_t par_addr = codegen.generator->add_parameter(parameter->identifier->name, parameter->initializer != nullptr, par_type);
 			codegen.parameters[parameter->identifier->name] = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::FUNCTION_PARAMETER, par_addr, par_type);
 
-			method_info.arguments.push_back(parameter->get_datatype().to_property_info(parameter->identifier->name));
+			method_info.arguments.push_back(parameter_datatype.to_property_info(parameter->identifier->name));
 
 			if (parameter->initializer != nullptr) {
 				optional_parameters++;
@@ -3165,8 +3299,8 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	if (p_func) {
 		// Abstract functions have no executable body, but MethodInfo must still expose annotated return contracts.
 		if ((p_func->is_abstract && p_func->return_type != nullptr) || p_func->body->has_return) {
-			gd_function->return_type = _gdtype_from_datatype(p_func->get_datatype(), p_script);
-			method_info.return_val = p_func->get_datatype().to_property_info(String());
+			gd_function->return_type = _gdtype_from_datatype(function_datatype, p_script);
+			method_info.return_val = function_datatype.to_property_info(String());
 		} else {
 			// If no `return` statement, then return type is `void`, not `Variant`.
 			gd_function->return_type = GDScriptDataType();
@@ -3381,7 +3515,7 @@ void GDScriptCompiler::_specialize_type_argument_binding(GDScript::TypeArgumentB
 		// A composite argument that still mentions an open parameter (`extends Box[Array[T]]`) is erased
 		// by `_gdtype_from_datatype`, so the baked type no longer reflects the dependent reification. Flag
 		// it so the leaf-to-base projection refrains from validating that slot rather than rejecting it.
-		r_binding.fixed_is_dependent = _datatype_contains_type_parameter(argument);
+		r_binding.fixed_is_dependent = _datatype_contains_erased_type_parameter(argument);
 		r_binding.leaf_ordinal = -1;
 	}
 }
@@ -3569,6 +3703,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 			// reifies against the correct argument rather than blindly indexing the leaf's own.
 			const Vector<GDScriptParser::DataType> &base_specialization = p_class->base_type.type_arguments;
 			for (KeyValue<StringName, GDScript::MemberInfo> &E : p_script->member_indices) {
+				_rebind_self_data_type(E.value.data_type, p_script);
 				_specialize_type_argument_binding(E.value.type_argument_binding, base_specialization, p_script);
 			}
 
@@ -3672,9 +3807,9 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 						}
 						break;
 				}
-				minfo.data_type = _gdtype_from_datatype(variable->get_datatype(), p_script);
+				const GDScriptParser::DataType member_datatype = _substitute_self_type_parameter_for_class(variable->get_datatype(), p_class);
+				minfo.data_type = _gdtype_from_datatype(member_datatype, p_script);
 
-				const GDScriptParser::DataType member_datatype = variable->get_datatype();
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
 						member_datatype.kind == GDScriptParser::DataType::TYPE_PARAMETER &&
 						member_datatype.type_parameter_scope == GDScriptParser::DataType::TYPE_PARAMETER_CLASS) {
@@ -3688,7 +3823,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 					minfo.type_argument_binding.leaf_ordinal = member_datatype.type_parameter_index;
 				}
 
-				PropertyInfo prop_info = variable->get_datatype().to_property_info(name);
+				PropertyInfo prop_info = member_datatype.to_property_info(name);
 				PropertyInfo export_info = variable->export_info;
 
 				if (variable->exported) {
