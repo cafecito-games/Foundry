@@ -156,3 +156,15 @@ GODOT_VERSION	FOUNDRY_VERSION	D
 godotengine.org	cafecito.games	D
 Godot Engine	Foundry	D
 GDScript	Foundry Script	D	user-facing prose (handle in docs/translations pass)
+# glTF/FBX vendor-extension and additional-data interop strings (Category D
+# exclusions). These GODOT_-prefixed tokens are on-disk glTF vendor extension
+# names or in-memory additional_data dictionary keys shared across the glTF/FBX
+# importers and third-party GLTFDocumentExtensions. Renaming them would break
+# reading/writing real glTF files and the importer interop contract, so they are
+# excluded from every rename context.
+GODOT_single_root	!EXCLUDE	D	glTF vendor extension name (on-disk interop)
+GODOT_rest_transform	!EXCLUDE	D	glTF/FBX additional_data interop key
+GODOT_animation_time_begin_time_end	!EXCLUDE	D	FBX additional_data interop key
+GODOT_blend_shape_animations	!EXCLUDE	D	FBX additional_data interop key
+GODOT_mesh_blend_channels	!EXCLUDE	D	FBX additional_data interop key
+GODOT_fbx_light	!EXCLUDE	D	FBX additional_data interop key
