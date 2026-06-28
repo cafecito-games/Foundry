@@ -966,16 +966,19 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 							// handle expression itself, whose static type is the specialized meta-type. A handle widened to
 							// `GDScript`/`Object`/... carries no type arguments and falls through to plain construction.
 							const GDScriptParser::ExpressionNode *specialized_base = nullptr;
+							GDScriptCodeGenerator::Address expected_base;
 							Vector<GDScriptDataType> specialized_type_arguments;
+							GDScriptParser::DataType specialized_static_type;
 							if (specialization != nullptr) {
 								const GDScriptDataType specialization_type = _gdtype_from_datatype(specialization->get_datatype(), codegen.script);
 								if (!specialization_type.type_arguments.is_empty()) {
 									specialized_base = specialization->base;
+									specialized_static_type = specialization->get_datatype();
 									specialized_type_arguments = specialization_type.type_arguments;
 								}
 							} else if (!call->is_super && call->function_name == SNAME("new") && subscript->base != nullptr) {
 								const GDScriptParser::DataType base_static = subscript->base->get_datatype();
-								if (base_static.is_set() && base_static.is_meta_type &&
+								if (base_static.is_set() && (base_static.is_meta_type || base_static.is_type_handle_annotation) &&
 										(base_static.kind == GDScriptParser::DataType::CLASS || base_static.kind == GDScriptParser::DataType::SCRIPT) &&
 										!base_static.type_arguments.is_empty()) {
 									// The handle's own type may be weakly inferred (an untyped `var h = Box[int]`), which would
@@ -986,7 +989,30 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 										reified_arguments.push_back(_gdtype_from_datatype(base_static.type_arguments[i], codegen.script));
 									}
 									specialized_base = subscript->base;
+									specialized_static_type = base_static;
 									specialized_type_arguments = reified_arguments;
+								}
+							}
+
+							if (specialized_base != nullptr) {
+								GDScript *expected_class = nullptr;
+								if (specialized_static_type.kind == GDScriptParser::DataType::CLASS && specialized_static_type.class_type != nullptr && main_script != nullptr) {
+									if (parser->has_class(specialized_static_type.class_type)) {
+										expected_class = main_script->find_class(specialized_static_type.class_type->fqcn);
+									} else {
+										Error err = OK;
+										Ref<GDScript> script = GDScriptCache::get_shallow_script(specialized_static_type.script_path, err, codegen.script != nullptr ? codegen.script->path : String());
+										if (err == OK && script.is_valid()) {
+											expected_class = script->find_class(specialized_static_type.class_type->fqcn);
+										}
+									}
+								} else if (specialized_static_type.kind == GDScriptParser::DataType::SCRIPT && specialized_static_type.script_type.is_valid()) {
+									expected_class = Object::cast_to<GDScript>(specialized_static_type.script_type.ptr());
+								}
+								if (expected_class != nullptr) {
+									expected_base = codegen.add_constant(Ref<GDScript>(expected_class));
+								} else {
+									specialized_base = nullptr;
 								}
 							}
 
@@ -1014,7 +1040,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 										return GDScriptCodeGenerator::Address();
 									}
 								}
-								gen->write_construct_specialized(result, base, specialized_type_arguments, arguments);
+								gen->write_construct_specialized(result, base, expected_base, specialized_type_arguments, arguments);
 								if (base.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 									gen->pop_temporary();
 								}

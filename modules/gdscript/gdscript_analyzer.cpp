@@ -8039,7 +8039,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	List<GDScriptParser::DataType> par_types;
 	bool is_noreturn = false;
 
-	bool is_constructor = (base_type.is_meta_type || (p_call->callee && p_call->callee->type == GDScriptParser::Node::IDENTIFIER)) && p_call->function_name == SNAME("new");
+	bool is_constructor = (base_type.is_meta_type || base_type.is_type_handle_annotation || (p_call->callee && p_call->callee->type == GDScriptParser::Node::IDENTIFIER)) && p_call->function_name == SNAME("new");
 
 	if (is_constructor) {
 		if (base_type.kind == GDScriptParser::DataType::CLASS && base_type.class_type != nullptr && base_type.class_type->is_trait) {
@@ -8197,6 +8197,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			}
 		}
 #endif // DEBUG_ENABLED
+
+		if (is_constructor && base_type.is_type_handle_annotation) {
+			return_type = type_handle_represented_type(base_type);
+		}
 
 		// Constructing a specialized generic class (`Box[int].new()`) yields a specialized instance,
 		// so the call's result carries the reified type arguments supplied at the base.
@@ -11852,6 +11856,9 @@ ContainerType GDScriptAnalyzer::make_container_type_from_datatype(const GDScript
 	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
 		type.element_types.push_back(make_container_type_from_datatype(p_datatype.container_element_types[i], p_source_node));
 	}
+	for (const GDScriptParser::DataType &argument_type : p_datatype.type_arguments) {
+		type.type_arguments.push_back(make_container_type_from_datatype(argument_type, p_source_node));
+	}
 	return type;
 }
 
@@ -11912,6 +11919,9 @@ static GDScriptParser::DataType _type_from_container_type(const ContainerType &p
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	for (const ContainerType &element_type : p_type.element_types) {
 		result.set_container_element_type(result.get_container_element_type_count(), _type_from_container_type(element_type));
+	}
+	for (const ContainerType &argument_type : p_type.type_arguments) {
+		result.type_arguments.push_back(_type_from_container_type(argument_type));
 	}
 	return result;
 }

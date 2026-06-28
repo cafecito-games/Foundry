@@ -2251,20 +2251,24 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				int type_argument_count = _code_ptr[ip + 2];
 				GD_ERR_BREAK(type_argument_count < 0);
 
-				// Instruction args: [ctor args..., type-argument descriptors..., base script, target].
+				// Instruction args: [ctor args..., type-argument descriptors..., base script, expected base script, target].
 				GET_INSTRUCTION_ARG(base, argc + type_argument_count);
-				GET_INSTRUCTION_ARG(dst, argc + type_argument_count + 1);
+				GET_INSTRUCTION_ARG(expected_base, argc + type_argument_count + 1);
+				GET_INSTRUCTION_ARG(dst, argc + type_argument_count + 2);
 
 				Ref<GDScript> gdscript = *base;
 				if (gdscript.is_null()) {
 					err_text = "Cannot instantiate a specialized type whose base is not a GDScript.";
 					OPCODE_BREAK;
 				}
+				Ref<GDScript> expected_gdscript = *expected_base;
 
 				Vector<ContainerType> type_arguments;
-				for (int i = 0; i < type_argument_count; i++) {
-					GET_INSTRUCTION_ARG(type_info, argc + i);
-					type_arguments.push_back(_container_type_from_type_info(*type_info, Variant::NIL, StringName()));
+				if (expected_gdscript.is_null() || gdscript == expected_gdscript) {
+					for (int i = 0; i < type_argument_count; i++) {
+						GET_INSTRUCTION_ARG(type_info, argc + i);
+						type_arguments.push_back(_container_type_from_type_info(*type_info, Variant::NIL, StringName()));
+					}
 				}
 
 				Variant **argptrs = instruction_args;
