@@ -828,6 +828,12 @@ void ScriptTextEditor::format_document(bool p_notify_on_error) {
 	text_editor->set_caret_column(MIN(caret_column, text_editor->get_line(clamped_line).length()), false);
 	text_editor->set_h_scroll(h_scroll);
 	text_editor->set_v_scroll(v_scroll);
+
+	// set_text() does not emit text_changed, so the debounced validate that
+	// normally syncs the buffer into the script never runs for this change. Push
+	// it explicitly so the formatted text reaches the resource before a save
+	// persists it -- including tool scripts, which _validate_script() skips.
+	apply_code();
 }
 
 void ScriptTextEditor::tag_saved_version() {
