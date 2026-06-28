@@ -964,6 +964,8 @@ public:
 		// True for inline TraitNode declarations and root ClassNode declarations created by `trait_name`.
 		// Do not infer the dynamic node type from this flag.
 		bool is_trait = false;
+		bool is_enum_file = false; // Root class only. File declares a top-level enum_name.
+		EnumNode *enum_file_decl = nullptr; // Root class only. The enum declared by enum_name.
 		bool trait_name_used = false;
 		bool uses_used = false;
 		String extends_path;
@@ -1849,6 +1851,7 @@ private:
 	void parse_import();
 	void parse_class_name();
 	void parse_trait_name();
+	void parse_enum_name();
 	void parse_extends();
 	void parse_uses();
 	void parse_type_parameters(Vector<TypeParameterNode *> &r_type_parameters);
