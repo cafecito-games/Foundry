@@ -82,6 +82,48 @@ TEST_CASE("[Modules][GDScript] Tokenizer emits ENUM_NAME for the enum_name keywo
 	CHECK(token.is_node_name());
 }
 
+TEST_CASE("[Modules][GDScript] Parser does not publish invalid enum_name identity") {
+	struct Case {
+		const char *source;
+		StringName expected_name;
+	};
+
+	const Case cases[] = {
+		{ "class_name Existing\nenum_name Invalid { A }\n", SNAME("Existing") },
+		{ "trait_name Existing\nenum_name Invalid { A }\n", SNAME("Existing") },
+		{ "extends RefCounted\nenum_name Invalid { A }\n", StringName() },
+		{ "uses Existing\nenum_name Invalid { A }\n", StringName() },
+		{ "@tool\nenum_name Invalid { A }\n", StringName() },
+	};
+
+	for (const Case &test_case : cases) {
+		GDScriptParser parser;
+		const Error error = parser.parse(test_case.source, "user://invalid_enum_name_identity.gd", false, false);
+		CHECK(error != OK);
+
+		const GDScriptParser::ClassNode *root = parser.get_tree();
+		CHECK(root != nullptr);
+		if (root == nullptr) {
+			continue;
+		}
+		CHECK_FALSE(root->is_enum_file);
+		CHECK(root->enum_file_decl == nullptr);
+		if (test_case.expected_name == StringName()) {
+			CHECK(root->identifier == nullptr);
+			CHECK(root->qualified_global_name.is_empty());
+			CHECK_EQ(root->fqcn, "user://invalid_enum_name_identity.gd");
+		} else {
+			CHECK(root->identifier != nullptr);
+			if (root->identifier == nullptr) {
+				continue;
+			}
+			CHECK_EQ(root->identifier->name, test_case.expected_name);
+			CHECK_EQ(root->qualified_global_name, String(test_case.expected_name));
+			CHECK_EQ(root->fqcn, String(test_case.expected_name));
+		}
+	}
+}
+
 TEST_CASE("[Modules][GDScript] Language reserved words include abstract but not async") {
 	Vector<String> reserved_words = GDScriptLanguage::get_singleton()->get_reserved_words();
 	int abstract_count = 0;

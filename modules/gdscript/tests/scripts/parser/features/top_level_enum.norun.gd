@@ -4,6 +4,3 @@ enum_name TopLevelParserEnum {
 	## Stored on the second enum value.
 	B,
 }
-
-func test():
-	pass
