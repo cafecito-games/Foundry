@@ -7,9 +7,9 @@
 		A dialog used for confirmation of actions. This window is similar to [AcceptDialog], but pressing its Cancel button can have a different outcome from pressing the OK button. The order of the two buttons varies depending on the host OS.
 		To get cancel action, you can use:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		get_cancel_button().pressed.connect(_on_canceled)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		GetCancelButton().Pressed += OnCanceled;
 		[/csharp]

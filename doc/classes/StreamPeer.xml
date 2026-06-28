@@ -189,9 +189,9 @@
 				Puts a zero-terminated ASCII string into the stream prepended by a 32-bit unsigned integer representing its size.
 				[b]Note:[/b] To put an ASCII string without prepending its size, you can use [method put_data]:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				put_data("Hello world".to_ascii_buffer())
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				PutData("Hello World".ToAsciiBuffer());
 				[/csharp]
@@ -233,9 +233,9 @@
 				Puts a zero-terminated UTF-8 string into the stream prepended by a 32 bits unsigned integer representing its size.
 				[b]Note:[/b] To put a UTF-8 string without prepending its size, you can use [method put_data]:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				put_data("Hello world".to_utf8_buffer())
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				PutData("Hello World".ToUtf8Buffer());
 				[/csharp]

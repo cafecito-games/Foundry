@@ -573,13 +573,13 @@
 			<description>
 				Sets the [Color] of the pixel at [code](x, y)[/code] to [param color].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var img_width = 10
 				var img_height = 5
 				var img = Image.create(img_width, img_height, false, Image.FORMAT_RGBA8)
 
 				img.set_pixel(1, 2, Color.RED) # Sets the color at (1, 2) to red.
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				int imgWidth = 10;
 				int imgHeight = 5;
@@ -600,13 +600,13 @@
 			<description>
 				Sets the [Color] of the pixel at [param point] to [param color].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var img_width = 10
 				var img_height = 5
 				var img = Image.create(img_width, img_height, false, Image.FORMAT_RGBA8)
 
 				img.set_pixelv(Vector2i(1, 2), Color.RED) # Sets the color at (1, 2) to red.
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				int imgWidth = 10;
 				int imgHeight = 5;

@@ -68,7 +68,7 @@
 			<return type="StringName" />
 			<param index="0" name="idx" type="int" />
 			<description>
-				Returns the resource type of the file at index [param idx]. This returns a string such as [code]"Resource"[/code] or [code]"GDScript"[/code], [i]not[/i] a file extension such as [code]".gd"[/code].
+				Returns the resource type of the file at index [param idx]. This returns a string such as [code]"Resource"[/code] or [code]"FoundryScript"[/code], [i]not[/i] a file extension such as [code]".fs"[/code].
 			</description>
 		</method>
 		<method name="get_name">

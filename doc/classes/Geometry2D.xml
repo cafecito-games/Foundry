@@ -143,7 +143,7 @@
 				Returns the point of intersection between the two lines ([param from_a], [param dir_a]) and ([param from_b], [param dir_b]). Returns a [Vector2], or [code]null[/code] if the lines are parallel.
 				[code]from[/code] and [code]dir[/code] are [i]not[/i] endpoints of a line segment or ray but the slope ([code]dir[/code]) and a known point ([code]from[/code]) on that line.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var from_a = Vector2.ZERO
 				var dir_a = Vector2.RIGHT
 				var from_b = Vector2.DOWN
@@ -154,7 +154,7 @@
 				Geometry2D.line_intersects_line(from_a, dir_a, from_b, Vector2(-1, -1))
 				# Returns null
 				Geometry2D.line_intersects_line(from_a, dir_a, from_b, Vector2.RIGHT)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var fromA = Vector2.Zero;
 				var dirA = Vector2.Right;
@@ -197,12 +197,12 @@
 				The operation may result in an outer polygon (boundary) and inner polygon (hole) produced which could be distinguished by calling [method is_polygon_clockwise].
 				[b]Note:[/b] To translate the polygon's vertices specifically, multiply them to a [Transform2D]:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var polygon = PackedVector2Array([Vector2(0, 0), Vector2(100, 0), Vector2(100, 100), Vector2(0, 100)])
 				var offset = Vector2(50, 50)
 				polygon = Transform2D(0, offset) * polygon
 				print(polygon) # Prints [(50.0, 50.0), (150.0, 50.0), (150.0, 150.0), (50.0, 150.0)]
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				Vector2[] polygon = [new Vector2(0, 0), new Vector2(100, 0), new Vector2(100, 100), new Vector2(0, 100)];
 				var offset = new Vector2(50, 50);

@@ -133,7 +133,7 @@
 				Waits for a packet to arrive on the bound address. See [method bind].
 				[b]Note:[/b] [method wait] can't be interrupted once it has been called. This can be worked around by allowing the other party to send a specific "death pill" packet like this:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				socket = PacketPeerUDP.new()
 				# Server
 				socket.set_dest_address("127.0.0.1", 789)
@@ -144,7 +144,7 @@
 					var data = socket.get_packet().get_string_from_ascii()
 					if data == "Time to stop":
 						return
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var socket = new PacketPeerUdp();
 				// Server

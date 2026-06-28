@@ -4,7 +4,7 @@
 		Stores globally-accessible variables.
 	</brief_description>
 	<description>
-		Stores variables that can be accessed from everywhere. Use [method get_setting], [method set_setting] or [method has_setting] to access them. Variables stored in [code]project.godot[/code] are also loaded into [ProjectSettings], making this object very useful for reading custom game configuration options.
+		Stores variables that can be accessed from everywhere. Use [method get_setting], [method set_setting] or [method has_setting] to access them. Variables stored in [code]project.foundry[/code] are also loaded into [ProjectSettings], making this object very useful for reading custom game configuration options.
 		When naming a Project Settings property, use the full path to the setting including the category. For example, [code]"application/config/name"[/code] for the project name. Category and property names can be viewed in the Project Settings dialog.
 		[b]Feature tags:[/b] Project settings can be overridden for specific platforms and configurations (debug, release, ...) using [url=$DOCS_URL/tutorials/export/feature_tags.html]feature tags[/url].
 		[b]Overriding:[/b] Any project setting can be overridden by creating a file named [code]override.cfg[/code] in the project's root directory. This can also be used in exported projects by placing this file in the same directory as the project binary. Overriding will still take the base project settings' [url=$DOCS_URL/tutorials/export/feature_tags.html]feature tags[/url] in account. Therefore, make sure to [i]also[/i] override the setting with the desired feature tags if you want them to override base project settings on all platforms and configurations.
@@ -25,7 +25,7 @@
 				- [code]"type"[/code]: [int] (see [enum Variant.Type])
 				- optionally [code]"hint"[/code]: [int] (see [enum PropertyHint]) and [code]"hint_string"[/code]: [String]
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				ProjectSettings.set("category/property_name", 0)
 
 				var property_info = {
@@ -36,7 +36,7 @@
 				}
 
 				ProjectSettings.add_property_info(property_info)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				ProjectSettings.Singleton.Set("category/property_name", 0);
 
@@ -100,10 +100,10 @@
 			<description>
 				Returns the value of the setting identified by [param name]. If the setting doesn't exist and [param default_value] is specified, the value of [param default_value] is returned. Otherwise, [code]null[/code] is returned.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				print(ProjectSettings.get_setting("application/config/name"))
 				print(ProjectSettings.get_setting("application/config/custom_description", "No description specified."))
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.Print(ProjectSettings.GetSetting("application/config/name"));
 				GD.Print(ProjectSettings.GetSetting("application/config/custom_description", "No description specified."));
@@ -120,9 +120,9 @@
 				Similar to [method get_setting], but applies feature tag overrides if any exists and is valid.
 				[b]Example:[/b] If the setting override [code]"application/config/name.windows"[/code] exists, and the following code is executed on a [i]Windows[/i] operating system, the overridden setting is printed instead:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				print(ProjectSettings.get_setting_with_override("application/config/name"))
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.Print(ProjectSettings.GetSettingWithOverride("application/config/name"));
 				[/csharp]
@@ -163,7 +163,7 @@
 			<param index="0" name="name" type="String" />
 			<description>
 				Returns [code]true[/code] if a configuration value is present.
-				[b]Note:[/b] In order to be be detected, custom settings have to be either defined with [method set_setting], or exist in the [code]project.godot[/code] file. This is especially relevant when using [method set_initial_value].
+				[b]Note:[/b] In order to be be detected, custom settings have to be either defined with [method set_setting], or exist in the [code]project.foundry[/code] file. This is especially relevant when using [method set_initial_value].
 			</description>
 		</method>
 		<method name="load_resource_pack">
@@ -188,7 +188,7 @@
 		<method name="save">
 			<return type="int" enum="Error" />
 			<description>
-				Saves the configuration to the [code]project.godot[/code] file.
+				Saves the configuration to the [code]project.foundry[/code] file.
 				[b]Note:[/b] This method is intended to be used by editor plugins, as modified [ProjectSettings] can't be loaded back in the running app. If you want to change project settings in exported projects, use [method save_custom] to save [code]override.cfg[/code] file.
 			</description>
 		</method>
@@ -260,9 +260,9 @@
 			<description>
 				Sets the value of a setting.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				ProjectSettings.set_setting("application/config/name", "Example")
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				ProjectSettings.SetSetting("application/config/name", "Example");
 				[/csharp]
@@ -533,171 +533,171 @@
 			Specifies the maximum number of log files allowed (used for rotation). Set to [code]1[/code] to disable log file rotation.
 			If the [code]--log-file &lt;file&gt;[/code] [url=$DOCS_URL/tutorials/editor/command_line_tutorial.html]command line argument[/url] is used, log rotation is always disabled.
 		</member>
-		<member name="debug/gdscript/analysis/strict_dynamic_checks" type="bool" setter="" getter="" default="false">
-			If [code]true[/code], the GDScript analyzer rejects dynamic [Variant] values where a statically typed non-[Variant] value is required. This includes passing dynamic values to typed function, [Callable], or [Signal] parameters, assigning or returning them as non-[Variant] types, inserting them into typed containers, and using dynamic fallback operations that cannot be checked statically.
-			If [code]false[/code], GDScript keeps its legacy gradual typing behavior and leaves these cases to runtime checks.
+		<member name="debug/foundry_script/analysis/strict_dynamic_checks" type="bool" setter="" getter="" default="false">
+			If [code]true[/code], the FoundryScript analyzer rejects dynamic [Variant] values where a statically typed non-[Variant] value is required. This includes passing dynamic values to typed function, [Callable], or [Signal] parameters, assigning or returning them as non-[Variant] types, inserting them into typed containers, and using dynamic fallback operations that cannot be checked statically.
+			If [code]false[/code], FoundryScript keeps its legacy gradual typing behavior and leaves these cases to runtime checks.
 		</member>
-		<member name="debug/gdscript/analysis/strict_null_checks" type="bool" setter="" getter="" default="false">
-			If [code]true[/code], the GDScript analyzer treats nullable and non-nullable static types as distinct. A [code]null[/code] value, or a value typed as nullable with [code]T?[/code], cannot be assigned, passed, or returned where a non-nullable [code]T[/code] is required unless flow analysis has proven that the value is not [code]null[/code].
+		<member name="debug/foundry_script/analysis/strict_null_checks" type="bool" setter="" getter="" default="false">
+			If [code]true[/code], the FoundryScript analyzer treats nullable and non-nullable static types as distinct. A [code]null[/code] value, or a value typed as nullable with [code]T?[/code], cannot be assigned, passed, or returned where a non-nullable [code]T[/code] is required unless flow analysis has proven that the value is not [code]null[/code].
 			If [code]false[/code], [code]null[/code] remains compatible with object types for legacy scripts.
 		</member>
-		<member name="debug/gdscript/warnings/assert_always_false" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/assert_always_false" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an [code]assert[/code] call always evaluates to [code]false[/code].
 		</member>
-		<member name="debug/gdscript/warnings/assert_always_true" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/assert_always_true" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an [code]assert[/code] call always evaluates to [code]true[/code].
 		</member>
-		<member name="debug/gdscript/warnings/confusable_capture_reassignment" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/confusable_capture_reassignment" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a local variable captured by a lambda is reassigned, since this does not modify the outer local variable.
 		</member>
-		<member name="debug/gdscript/warnings/confusable_identifier" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/confusable_identifier" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an identifier contains characters that can be confused with something else, like when mixing different alphabets.
 		</member>
-		<member name="debug/gdscript/warnings/confusable_local_declaration" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/confusable_local_declaration" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an identifier declared in the nested block has the same name as an identifier declared below in the parent block.
 		</member>
-		<member name="debug/gdscript/warnings/confusable_local_usage" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/confusable_local_usage" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an identifier that will be shadowed below in the block is used.
 		</member>
-		<member name="debug/gdscript/warnings/deprecated_keyword" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/deprecated_keyword" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when deprecated keywords are used.
 			[b]Note:[/b] There are currently no deprecated keywords, so this warning is never produced.
 		</member>
-		<member name="debug/gdscript/warnings/directory_rules" type="Dictionary" setter="" getter="" default="{ &quot;res://addons&quot;: 0 }">
-			The rules for including or excluding scripts when generating warnings, as a dictionary. Each rule is an entry consisting of a directory path (key) and a decision (value). When trying to generate a warning, the GDScript parser chooses the most specific rule, i.e. the most nested directory containing the script. If the decision is [b]Exclude[/b], warnings are not generated for this script. If the decision is [b]Include[/b] or the script doesn't satisfy any of the rules, the warning configuration specified in the Project Settings is applied.
+		<member name="debug/foundry_script/warnings/directory_rules" type="Dictionary" setter="" getter="" default="{ &quot;res://addons&quot;: 0 }">
+			The rules for including or excluding scripts when generating warnings, as a dictionary. Each rule is an entry consisting of a directory path (key) and a decision (value). When trying to generate a warning, the FoundryScript parser chooses the most specific rule, i.e. the most nested directory containing the script. If the decision is [b]Exclude[/b], warnings are not generated for this script. If the decision is [b]Include[/b] or the script doesn't satisfy any of the rules, the warning configuration specified in the Project Settings is applied.
 			It is recommended to include your own addons/libraries, either project-specific or actively being developed at the moment. Third-party or project-agnostic addons/libraries should be excluded, as they may be incompatible with the project's warning configuration.
 			[b]Note:[/b] It is not recommended to remove or change the rule for [code]"res://addons"[/code] as the project's warning configuration may break third-party addons. Instead, consider including individual addons, if necessary.
 			[b]Note:[/b] The editor does not check whether the specified paths are existing directories. It also does not automatically update these paths when directories are moved.
 		</member>
-		<member name="debug/gdscript/warnings/empty_file" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/empty_file" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an empty file is parsed.
 		</member>
-		<member name="debug/gdscript/warnings/enable" type="bool" setter="" getter="" default="true">
-			If [code]true[/code], enables specific GDScript warnings (see [code]debug/gdscript/warnings/*[/code] settings). If [code]false[/code], disables all GDScript warnings.
+		<member name="debug/foundry_script/warnings/enable" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], enables specific FoundryScript warnings (see [code]debug/foundry_script/warnings/*[/code] settings). If [code]false[/code], disables all FoundryScript warnings.
 		</member>
-		<member name="debug/gdscript/warnings/enum_variable_without_default" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/enum_variable_without_default" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a variable has an enum type but no explicit default value, but only if the enum does not contain [code]0[/code] as a valid value.
 		</member>
-		<member name="debug/gdscript/warnings/get_node_default_without_onready" type="int" setter="" getter="" default="2">
+		<member name="debug/foundry_script/warnings/get_node_default_without_onready" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when [method Node.get_node] (or the shorthand [code]$[/code]) is used as default value of a class variable without the [code]@onready[/code] annotation.
 		</member>
-		<member name="debug/gdscript/warnings/incompatible_ternary" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/incompatible_ternary" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a ternary operator may emit values with incompatible types.
 		</member>
-		<member name="debug/gdscript/warnings/inference_on_variant" type="int" setter="" getter="" default="2">
+		<member name="debug/foundry_script/warnings/inference_on_variant" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a static inferred type uses a [Variant] as initial value, which makes the static type to also be Variant.
 		</member>
-		<member name="debug/gdscript/warnings/inferred_declaration" type="int" setter="" getter="" default="0">
-			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a variable, constant, or parameter has an implicitly inferred static type. In GDScript, type inference is performed by declaring a variable with [code]:=[/code] instead of [code]=[/code] and leaving out the type specifier. For example, [code]var x := 1[/code] will [i]infer[/i] the [int] type, while [code]var x: int = 1[/code] explicitly declares the variable as [int].
-			[b]Note:[/b] This warning is recommended [i]in addition[/i] to [member debug/gdscript/warnings/untyped_declaration] if you want to always specify the type explicitly. Having [code]INFERRED_DECLARATION[/code] warning level higher than [code]UNTYPED_DECLARATION[/code] warning level makes little sense and is not recommended.
+		<member name="debug/foundry_script/warnings/inferred_declaration" type="int" setter="" getter="" default="0">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a variable, constant, or parameter has an implicitly inferred static type. In FoundryScript, type inference is performed by declaring a variable with [code]:=[/code] instead of [code]=[/code] and leaving out the type specifier. For example, [code]var x := 1[/code] will [i]infer[/i] the [int] type, while [code]var x: int = 1[/code] explicitly declares the variable as [int].
+			[b]Note:[/b] This warning is recommended [i]in addition[/i] to [member debug/foundry_script/warnings/untyped_declaration] if you want to always specify the type explicitly. Having [code]INFERRED_DECLARATION[/code] warning level higher than [code]UNTYPED_DECLARATION[/code] warning level makes little sense and is not recommended.
 		</member>
-		<member name="debug/gdscript/warnings/int_as_enum_without_cast" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/int_as_enum_without_cast" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when trying to use an integer as an enum without an explicit cast.
 		</member>
-		<member name="debug/gdscript/warnings/int_as_enum_without_match" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/int_as_enum_without_match" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when trying to use an integer as an enum when there is no matching enum member for that numeric value.
 		</member>
-		<member name="debug/gdscript/warnings/integer_division" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/integer_division" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when dividing an integer by another integer (the decimal part will be discarded).
 		</member>
-		<member name="debug/gdscript/warnings/match_without_default" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/match_without_default" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [code]match[/code] statement over a value without a finite set of cases has no [code]_[/code] wildcard (default) branch. Disabled by default.
 		</member>
-		<member name="debug/gdscript/warnings/missing_await" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/missing_await" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling a coroutine without [code]await[/code].
 		</member>
-		<member name="debug/gdscript/warnings/missing_tool" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/missing_tool" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when the base class script has the [code]@tool[/code] annotation, but the current class script does not have it.
 		</member>
-		<member name="debug/gdscript/warnings/mixed_namespace_directory" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/mixed_namespace_directory" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively for each analyzed global script class in a directory whose global script classes declare different namespaces.
 		</member>
-		<member name="debug/gdscript/warnings/narrowing_conversion" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/narrowing_conversion" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when passing a floating-point value to a function that expects an integer (it will be converted and lose precision).
 		</member>
-		<member name="debug/gdscript/warnings/native_method_override" type="int" setter="" getter="" default="2">
+		<member name="debug/foundry_script/warnings/native_method_override" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a method in the script overrides a native method, because it may not behave as expected.
 		</member>
-		<member name="debug/gdscript/warnings/non_exhaustive_match" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/non_exhaustive_match" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [code]match[/code] statement over an enum or [bool] does not handle all possible values and has no [code]_[/code] wildcard (default) branch.
 		</member>
-		<member name="debug/gdscript/warnings/onready_with_export" type="int" setter="" getter="" default="2">
+		<member name="debug/foundry_script/warnings/onready_with_export" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when the [code]@onready[/code] annotation is used together with the [code]@export[/code] annotation, since it may not behave as expected.
 		</member>
-		<member name="debug/gdscript/warnings/redundant_await" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/redundant_await" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a function that is not a coroutine is called with await.
 		</member>
-		<member name="debug/gdscript/warnings/redundant_static_unload" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/redundant_static_unload" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when the [code]@static_unload[/code] annotation is used in a script without any static variables.
 		</member>
-		<member name="debug/gdscript/warnings/renamed_in_godot_4_hint" type="bool" setter="" getter="" default="true">
+		<member name="debug/foundry_script/warnings/renamed_in_godot_4_hint" type="bool" setter="" getter="" default="true">
 			When enabled, using a property, enum, or function that was renamed since Godot 3 will produce a hint if an error occurs.
 		</member>
-		<member name="debug/gdscript/warnings/return_value_discarded" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/return_value_discarded" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling a function without using its return value (by assigning it to a variable or using it as a function argument). These return values are sometimes used to indicate possible errors using the [enum Error] enum.
 		</member>
-		<member name="debug/gdscript/warnings/shadowed_global_identifier" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/shadowed_global_identifier" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when defining a local or member variable, signal, or enum that would have the same name as a built-in function or global class name, thus shadowing it.
 		</member>
-		<member name="debug/gdscript/warnings/shadowed_variable" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/shadowed_variable" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a local variable or local constant shadows a member declared in the current class.
 		</member>
-		<member name="debug/gdscript/warnings/shadowed_variable_base_class" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/shadowed_variable_base_class" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a local variable or local constant shadows a member declared in a base class.
 		</member>
-		<member name="debug/gdscript/warnings/standalone_expression" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/standalone_expression" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling an expression that may have no effect on the surrounding code, such as writing [code]2 + 2[/code] as a statement.
 		</member>
-		<member name="debug/gdscript/warnings/standalone_ternary" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/standalone_ternary" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling a ternary expression that may have no effect on the surrounding code, such as writing [code]42 if active else 0[/code] as a statement.
 		</member>
-		<member name="debug/gdscript/warnings/static_called_on_instance" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/static_called_on_instance" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling a static method from an instance of a class instead of from the class directly.
 		</member>
-		<member name="debug/gdscript/warnings/unassigned_variable" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unassigned_variable" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when using a variable that wasn't previously assigned.
 		</member>
-		<member name="debug/gdscript/warnings/unassigned_variable_op_assign" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unassigned_variable_op_assign" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when assigning a variable using an assignment operator like [code]+=[/code] if the variable wasn't previously assigned.
 		</member>
-		<member name="debug/gdscript/warnings/unreachable_code" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unreachable_code" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when unreachable code is detected (such as after a [code]return[/code] statement that will always be executed).
 		</member>
-		<member name="debug/gdscript/warnings/unreachable_pattern" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unreachable_pattern" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an unreachable [code]match[/code] pattern is detected.
 		</member>
-		<member name="debug/gdscript/warnings/unsafe_call_argument" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/unsafe_call_argument" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when using an expression whose type may not be compatible with the function parameter expected.
 		</member>
-		<member name="debug/gdscript/warnings/unsafe_cast" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/unsafe_cast" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [Variant] value is cast to a non-Variant.
 		</member>
-		<member name="debug/gdscript/warnings/unsafe_method_access" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/unsafe_method_access" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling a method whose presence is not guaranteed at compile-time in the class.
 		</member>
-		<member name="debug/gdscript/warnings/unsafe_property_access" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/unsafe_property_access" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when accessing a property whose presence is not guaranteed at compile-time in the class.
 		</member>
-		<member name="debug/gdscript/warnings/unsafe_void_return" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unsafe_void_return" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when returning a call from a [code]void[/code] function when such call cannot be guaranteed to be also [code]void[/code].
 		</member>
-		<member name="debug/gdscript/warnings/untyped_declaration" type="int" setter="" getter="" default="0">
+		<member name="debug/foundry_script/warnings/untyped_declaration" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a variable or parameter has no static type, or if a function has no static return type.
 			[b]Note:[/b] This warning is recommended together with [member EditorSettings.text_editor/completion/add_type_hints] to help achieve type safety.
 		</member>
-		<member name="debug/gdscript/warnings/unused_local_constant" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unused_local_constant" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a local constant is never used.
 		</member>
-		<member name="debug/gdscript/warnings/unused_parameter" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unused_parameter" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a function parameter is never used.
 		</member>
-		<member name="debug/gdscript/warnings/unused_private_class_variable" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unused_private_class_variable" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a private member variable is never used.
 		</member>
-		<member name="debug/gdscript/warnings/unused_signal" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unused_signal" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a signal is declared but never explicitly used in the class.
 		</member>
-		<member name="debug/gdscript/warnings/unused_variable" type="int" setter="" getter="" default="1">
+		<member name="debug/foundry_script/warnings/unused_variable" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a local variable is unused.
 		</member>
 		<member name="debug/settings/crash_handler/message" type="String" setter="" getter="" default="&quot;Please include this when reporting the bug to the project developer.&quot;">
@@ -706,17 +706,17 @@
 		<member name="debug/settings/crash_handler/message.editor" type="String" setter="" getter="" default="&quot;Please include this when reporting the bug on: https://github.com/godotengine/godot/issues&quot;">
 			Editor-only override for [member debug/settings/crash_handler/message]. Does not affect exported projects in debug or release mode.
 		</member>
-		<member name="debug/settings/gdscript/always_track_call_stacks" type="bool" setter="" getter="" default="false">
-			Whether GDScript call stacks will be tracked in release builds, thus allowing [method Engine.capture_script_backtraces] to function.
-			[b]Note:[/b] This setting has no effect on editor builds or debug builds, where GDScript call stacks are tracked regardless.
+		<member name="debug/settings/foundry_script/always_track_call_stacks" type="bool" setter="" getter="" default="false">
+			Whether FoundryScript call stacks will be tracked in release builds, thus allowing [method Engine.capture_script_backtraces] to function.
+			[b]Note:[/b] This setting has no effect on editor builds or debug builds, where FoundryScript call stacks are tracked regardless.
 		</member>
-		<member name="debug/settings/gdscript/always_track_local_variables" type="bool" setter="" getter="" default="false">
-			Whether GDScript local variables will be tracked in all builds, including export builds, thus allowing [method Engine.capture_script_backtraces] to capture them when enabling its [code]include_variables[/code] parameter.
+		<member name="debug/settings/foundry_script/always_track_local_variables" type="bool" setter="" getter="" default="false">
+			Whether FoundryScript local variables will be tracked in all builds, including export builds, thus allowing [method Engine.capture_script_backtraces] to capture them when enabling its [code]include_variables[/code] parameter.
 			Enabling this comes at the cost of roughly 50 bytes of memory per local variable, for every compiled class in the entire project, so can be several MiB in larger projects.
-			[b]Note:[/b] This setting has no effect when running the game from the editor, where GDScript local variables are tracked regardless.
+			[b]Note:[/b] This setting has no effect when running the game from the editor, where FoundryScript local variables are tracked regardless.
 		</member>
-		<member name="debug/settings/gdscript/max_call_stack" type="int" setter="" getter="" default="1024">
-			Maximum call stack allowed for debugging GDScript.
+		<member name="debug/settings/foundry_script/max_call_stack" type="int" setter="" getter="" default="1024">
+			Maximum call stack allowed for debugging FoundryScript.
 		</member>
 		<member name="debug/settings/physics_interpolation/enable_warnings" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings which can help pinpoint where nodes are being incorrectly updated, which will result in incorrect interpolation and visual glitches.
@@ -1124,13 +1124,13 @@
 			Number of times to attempt assembly reloading after rebuilding .NET assemblies. Effectively also the timeout in seconds to wait for unloading of script assemblies to finish.
 		</member>
 		<member name="dotnet/project/solution_directory" type="String" setter="" getter="" default="&quot;&quot;">
-			Directory that contains the [code].sln[/code] file. By default, the [code].sln[/code] files is in the root of the project directory, next to the [code]project.godot[/code] and [code].csproj[/code] files.
-			Changing this value allows setting up a multi-project scenario where there are multiple [code].csproj[/code]. Keep in mind that the Godot project is considered one of the C# projects in the workspace and it's root directory should contain the [code]project.godot[/code] and [code].csproj[/code] next to each other.
+			Directory that contains the [code].sln[/code] file. By default, the [code].sln[/code] files is in the root of the project directory, next to the [code]project.foundry[/code] and [code].csproj[/code] files.
+			Changing this value allows setting up a multi-project scenario where there are multiple [code].csproj[/code]. Keep in mind that the Godot project is considered one of the C# projects in the workspace and it's root directory should contain the [code]project.foundry[/code] and [code].csproj[/code] next to each other.
 		</member>
 		<member name="editor/export/convert_text_resources_to_binary" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], text resource ([code]tres[/code]) and text scene ([code]tscn[/code]) files are converted to their corresponding binary format on export. This decreases file sizes and speeds up loading slightly.
-			[b]Note:[/b] Because a resource's file extension may change in an exported project, it is heavily recommended to use [method @GDScript.load] or [ResourceLoader] instead of [FileAccess] to load resources dynamically.
-			[b]Note:[/b] The project settings file ([code]project.godot[/code]) will always be converted to binary on export, regardless of this setting.
+			[b]Note:[/b] Because a resource's file extension may change in an exported project, it is heavily recommended to use [method @FoundryScript.load] or [ResourceLoader] instead of [FileAccess] to load resources dynamically.
+			[b]Note:[/b] The project settings file ([code]project.foundry[/code]) will always be converted to binary on export, regardless of this setting.
 		</member>
 		<member name="editor/import/atlas_max_width" type="int" setter="" getter="" default="2048">
 			The maximum width to use when importing textures as an atlas. The value will be rounded to the nearest power of two when used. Use this to prevent imported textures from growing too large in the other direction.
@@ -2515,10 +2515,10 @@
 			The default gravity strength in 2D (in pixels per second squared).
 			[b]Note:[/b] This property is only read when the project starts. To change the default gravity at runtime, use the following code sample:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			# Set the default gravity strength to 980.
 			PhysicsServer2D.area_set_param(get_viewport().find_world_2d().space, PhysicsServer2D.AREA_PARAM_GRAVITY, 980)
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			// Set the default gravity strength to 980.
 			PhysicsServer2D.AreaSetParam(GetViewport().FindWorld2D().Space, PhysicsServer2D.AreaParameter.Gravity, 980);
@@ -2529,10 +2529,10 @@
 			The default gravity direction in 2D.
 			[b]Note:[/b] This property is only read when the project starts. To change the default gravity vector at runtime, use the following code sample:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			# Set the default gravity direction to `Vector2(0, 1)`.
 			PhysicsServer2D.area_set_param(get_viewport().find_world_2d().space, PhysicsServer2D.AREA_PARAM_GRAVITY_VECTOR, Vector2.DOWN)
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			// Set the default gravity direction to `Vector2(0, 1)`.
 			PhysicsServer2D.AreaSetParam(GetViewport().FindWorld2D().Space, PhysicsServer2D.AreaParameter.GravityVector, Vector2.Down)
@@ -2596,10 +2596,10 @@
 			The default gravity strength in 3D (in meters per second squared).
 			[b]Note:[/b] This property is only read when the project starts. To change the default gravity at runtime, use the following code sample:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			# Set the default gravity strength to 9.8.
 			PhysicsServer3D.area_set_param(get_viewport().find_world_3d().space, PhysicsServer3D.AREA_PARAM_GRAVITY, 9.8)
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			// Set the default gravity strength to 9.8.
 			PhysicsServer3D.AreaSetParam(GetViewport().FindWorld3D().Space, PhysicsServer3D.AreaParameter.Gravity, 9.8);
@@ -2610,10 +2610,10 @@
 			The default gravity direction in 3D.
 			[b]Note:[/b] This property is only read when the project starts. To change the default gravity vector at runtime, use the following code sample:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			# Set the default gravity direction to `Vector3(0, -1, 0)`.
 			PhysicsServer3D.area_set_param(get_viewport().find_world_3d().space, PhysicsServer3D.AREA_PARAM_GRAVITY_VECTOR, Vector3.DOWN)
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			// Set the default gravity direction to `Vector3(0, -1, 0)`.
 			PhysicsServer3D.AreaSetParam(GetViewport().FindWorld3D().Space, PhysicsServer3D.AreaParameter.GravityVector, Vector3.Down)

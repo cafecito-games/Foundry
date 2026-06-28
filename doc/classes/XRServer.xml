@@ -78,7 +78,7 @@
 		<method name="get_reference_frame" qualifiers="const">
 			<return type="Transform3D" />
 			<description>
-				Returns the reference frame transform. Mostly used internally and exposed for GDExtension build interfaces.
+				Returns the reference frame transform. Mostly used internally and exposed for FoundryExtension build interfaces.
 			</description>
 		</method>
 		<method name="get_tracker" qualifiers="const">
@@ -120,7 +120,7 @@
 		</member>
 		<member name="world_origin" type="Transform3D" setter="set_world_origin" getter="get_world_origin" default="Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)">
 			The current origin of our tracking space in the virtual world. This is used by the renderer to properly position the camera with new tracking data.
-			[b]Note:[/b] This property is managed by the current [XROrigin3D] node. It is exposed for access from GDExtensions.
+			[b]Note:[/b] This property is managed by the current [XROrigin3D] node. It is exposed for access from FoundryExtensions.
 		</member>
 		<member name="world_scale" type="float" setter="set_world_scale" getter="get_world_scale" default="1.0">
 			The scale of the game world compared to the real world. By default, most AR/VR platforms assume that 1 game unit corresponds to 1 real world meter.

@@ -6,16 +6,16 @@
 	<description>
 		[Callable] is a built-in [Variant] type that represents a function. It can either be a method within an [Object] instance, or a custom callable used for different purposes (see [method is_custom]). Like all [Variant] types, it can be stored in variables and passed to other functions. It is most commonly used for signal callbacks.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		func print_args(arg1, arg2, arg3 = ""):
 			prints(arg1, arg2, arg3)
 
 		func test():
 			var callable = Callable(self, "print_args")
 			callable.call("hello", "world")  # Prints "hello world ".
-			callable.call(Vector2.UP, 42, callable)  # Prints "(0.0, -1.0) 42 Node(node.gd)::print_args"
+			callable.call(Vector2.UP, 42, callable)  # Prints "(0.0, -1.0) 42 Node(node.fs)::print_args"
 			callable.call("invalid")  # Invalid call, should have at least 2 arguments.
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		// Default parameter values are not supported.
 		public void PrintArgs(Variant arg1, Variant arg2, Variant arg3 = default)
@@ -33,7 +33,7 @@
 		}
 		[/csharp]
 		[/codeblocks]
-		In GDScript, it's possible to create lambda functions within a method. Lambda functions are custom callables that are not associated with an [Object] instance. Optionally, lambda functions can also be named. The name will be displayed in the debugger, or when calling [method get_method].
+		In FoundryScript, it's possible to create lambda functions within a method. Lambda functions are custom callables that are not associated with an [Object] instance. Optionally, lambda functions can also be named. The name will be displayed in the debugger, or when calling [method get_method].
 		[codeblock]
 		func _init():
 			var my_lambda = func (message):
@@ -45,7 +45,7 @@
 			# Prints "Attack!", when the button_pressed signal is emitted.
 			button_pressed.connect(func(): print("Attack!"))
 		[/codeblock]
-		In GDScript, you can access methods and global functions as [Callable]s:
+		In FoundryScript, you can access methods and global functions as [Callable]s:
 		[codeblock]
 		tween.tween_callback(node.queue_free)  # Object methods.
 		tween.tween_callback(array.clear)  # Methods of built-in types.
@@ -115,10 +115,10 @@
 			<description>
 				Calls the method represented by this [Callable] in deferred mode, i.e. at the end of the current frame. Arguments can be passed and should match the method's signature.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _ready():
 					grab_focus.call_deferred()
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override void _Ready()
 				{
@@ -175,7 +175,7 @@
 		<method name="get_method" qualifiers="const">
 			<return type="StringName" />
 			<description>
-				Returns the name of the method represented by this [Callable]. If the callable is a GDScript lambda function, returns the function's name or [code]"&lt;anonymous lambda&gt;"[/code].
+				Returns the name of the method represented by this [Callable]. If the callable is a FoundryScript lambda function, returns the function's name or [code]"&lt;anonymous lambda&gt;"[/code].
 			</description>
 		</method>
 		<method name="get_object" qualifiers="const">
@@ -207,7 +207,7 @@
 		<method name="is_async" qualifiers="const">
 			<return type="bool" />
 			<description>
-				Returns [code]true[/code] if this [Callable]'s target method is asynchronous (a coroutine), meaning a call to it should be awaited. In GDScript, this is [code]true[/code] for methods declared with [code]async[/code] as well as methods whose body is inferred to be a coroutine (for example, because they contain an [code]await[/code]).
+				Returns [code]true[/code] if this [Callable]'s target method is asynchronous (a coroutine), meaning a call to it should be awaited. In FoundryScript, this is [code]true[/code] for methods declared with [code]async[/code] as well as methods whose body is inferred to be a coroutine (for example, because they contain an [code]await[/code]).
 				Binding or unbinding arguments (see [method bind] and [method unbind]) does not change the result, as the underlying target method is unaffected. Returns [code]false[/code] for synchronous methods, custom callables without an asynchronous target, and invalid callables.
 			</description>
 		</method>
@@ -217,8 +217,8 @@
 				Returns [code]true[/code] if this [Callable] is a custom callable. Custom callables are used:
 				- for binding/unbinding arguments (see [method bind] and [method unbind]);
 				- for representing methods of built-in [Variant] types (see [method create]);
-				- for representing global, lambda, and RPC functions in GDScript;
-				- for other purposes in the core, GDExtension, and C#.
+				- for representing global, lambda, and RPC functions in FoundryScript;
+				- for other purposes in the core, FoundryExtension, and C#.
 			</description>
 		</method>
 		<method name="is_null" qualifiers="const">
@@ -243,14 +243,14 @@
 		<method name="rpc" qualifiers="vararg const">
 			<return type="void" />
 			<description>
-				Perform an RPC (Remote Procedure Call) on all connected peers. This is used for multiplayer and is normally not available, unless the function being called has been marked as [i]RPC[/i] (using [annotation @GDScript.@rpc] or [method Node.rpc_config]). Calling this method on unsupported functions will result in an error. See [method Node.rpc].
+				Perform an RPC (Remote Procedure Call) on all connected peers. This is used for multiplayer and is normally not available, unless the function being called has been marked as [i]RPC[/i] (using [annotation @FoundryScript.@rpc] or [method Node.rpc_config]). Calling this method on unsupported functions will result in an error. See [method Node.rpc].
 			</description>
 		</method>
 		<method name="rpc_id" qualifiers="vararg const">
 			<return type="void" />
 			<param index="0" name="peer_id" type="int" />
 			<description>
-				Perform an RPC (Remote Procedure Call) on a specific peer ID (see multiplayer documentation for reference). This is used for multiplayer and is normally not available unless the function being called has been marked as [i]RPC[/i] (using [annotation @GDScript.@rpc] or [method Node.rpc_config]). Calling this method on unsupported functions will result in an error. See [method Node.rpc_id].
+				Perform an RPC (Remote Procedure Call) on a specific peer ID (see multiplayer documentation for reference). This is used for multiplayer and is normally not available unless the function being called has been marked as [i]RPC[/i] (using [annotation @FoundryScript.@rpc] or [method Node.rpc_config]). Calling this method on unsupported functions will result in an error. See [method Node.rpc_id].
 			</description>
 		</method>
 		<method name="unbind" qualifiers="const">

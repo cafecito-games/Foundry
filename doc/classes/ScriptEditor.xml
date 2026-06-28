@@ -68,9 +68,9 @@
 				class_signal:BaseButton:pressed
 				# Shows help for the CanvasItem property visible.
 				class_property:CanvasItem:visible
-				# Shows help for the GDScript annotation export.
+				# Shows help for the FoundryScript annotation export.
 				# Annotations should be prefixed with the `@` symbol in the descriptor, as shown here.
-				class_annotation:@GDScript:@export
+				class_annotation:@FoundryScript:@export
 				# Shows help for the GraphNode theme item named panel_selected.
 				class_theme_item:GraphNode:panel_selected
 				[/codeblock]

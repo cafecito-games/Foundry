@@ -94,7 +94,7 @@
 				Returns the [PopupMenu] of this [LineEdit]. By default, this menu is displayed when right-clicking on the [LineEdit].
 				You can add custom menu items or remove standard ones. Make sure your IDs don't conflict with the standard ones (see [enum MenuItems]). For example:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _ready():
 					var menu = get_menu()
 					# Remove all items after "Redo".
@@ -108,7 +108,7 @@
 				func _on_item_pressed(id):
 					if id == MENU_MAX + 1:
 						insert_text_at_caret(Time.get_date_string_from_system())
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override void _Ready()
 				{
@@ -231,12 +231,12 @@
 			<description>
 				Selects characters inside [LineEdit] between [param from] and [param to]. By default, [param from] is at the beginning and [param to] at the end.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				text = "Welcome"
 				select() # Will select "Welcome".
 				select(4) # Will select "ome".
 				select(2, 5) # Will select "lco".
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				Text = "Welcome";
 				Select(); // Will select "Welcome".
@@ -324,7 +324,7 @@
 			When a limit is defined, characters that would exceed [member max_length] are truncated. This happens both for existing [member text] contents when setting the max length, or for new text inserted in the [LineEdit], including pasting.
 			If any input text is truncated, the [signal text_change_rejected] signal is emitted with the truncated substring as a parameter:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			text = "Hello world"
 			max_length = 5
 			# `text` becomes "Hello".
@@ -332,7 +332,7 @@
 			text += " goodbye"
 			# `text` becomes "Hello good".
 			# `text_change_rejected` is emitted with "bye" as a parameter.
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			Text = "Hello world";
 			MaxLength = 5;

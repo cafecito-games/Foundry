@@ -2055,7 +2055,7 @@ static String marked_documentation(const String &p_bbcode) {
 	bool in_codeblock_tag = false;
 	// This is for handling the special [codeblocks] syntax used by the built-in class reference.
 	bool in_codeblocks_tag = false;
-	bool in_codeblocks_gdscript_tag = false;
+	bool in_codeblocks_foundry_script_tag = false;
 
 	markdown = "";
 	for (int i = 0; i < lines.size(); i++) {
@@ -2074,12 +2074,12 @@ static String marked_documentation(const String &p_bbcode) {
 		}
 		if (in_codeblocks_tag) {
 			if (line.contains("[foundry_script]")) {
-				in_codeblocks_gdscript_tag = true;
+				in_codeblocks_foundry_script_tag = true;
 				line = "```foundry_script";
-			} else if (in_codeblocks_gdscript_tag && line.contains("[/foundry_script]")) {
+			} else if (in_codeblocks_foundry_script_tag && line.contains("[/foundry_script]")) {
 				line = "```";
-				in_codeblocks_gdscript_tag = false;
-			} else if (!in_codeblocks_gdscript_tag) {
+				in_codeblocks_foundry_script_tag = false;
+			} else if (!in_codeblocks_foundry_script_tag) {
 				continue;
 			}
 		}

@@ -14,7 +14,7 @@
 		The stored data can be saved to or parsed from a file, though ConfigFile objects can also be used directly without accessing the filesystem.
 		The following example shows how to create a simple [ConfigFile] and save it on disc:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		# Create new ConfigFile object.
 		var config = ConfigFile.new()
 
@@ -26,7 +26,7 @@
 
 		# Save it to a file (overwrite if already exists).
 		config.save("user://scores.cfg")
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		// Create new ConfigFile object.
 		var config = new ConfigFile();
@@ -43,7 +43,7 @@
 		[/codeblocks]
 		This example shows how the above file could be loaded:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var score_data = {}
 		var config = ConfigFile.new()
 
@@ -60,7 +60,7 @@
 			var player_name = config.get_value(player, "player_name")
 			var player_score = config.get_value(player, "best_score")
 			score_data[player_name] = player_score
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var score_data = new Godot.Collections.Dictionary();
 		var config = new ConfigFile();

@@ -7,7 +7,7 @@
 		The Crypto class provides access to advanced cryptographic functionalities.
 		Currently, this includes asymmetric key encryption/decryption, signing/verification, and generating cryptographically secure random bytes, RSA keys, HMAC digests, and self-signed [X509Certificate]s.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var crypto = Crypto.new()
 
 		# Generate new RSA key.
@@ -36,7 +36,7 @@
 		# Checks
 		assert(verified)
 		assert(data.to_utf8_buffer() == decrypted)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 		using System.Diagnostics;
@@ -126,13 +126,13 @@
 				Generates a self-signed [X509Certificate] from the given [CryptoKey] and [param issuer_name]. The certificate validity will be defined by [param not_before] and [param not_after] (first valid date and last valid date). The [param issuer_name] must contain at least "CN=" (common name, i.e. the domain name), "O=" (organization, i.e. your company name), "C=" (country, i.e. 2 lettered ISO-3166 code of the country the organization is based in).
 				A small example to generate an RSA key and an X509 self-signed certificate.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var crypto = Crypto.new()
 				# Generate 4096 bits RSA key.
 				var key = crypto.generate_rsa(4096)
 				# Generate self-signed certificate using the given key.
 				var cert = crypto.generate_self_signed_certificate(key, "CN=example.com,O=A Game Company,C=IT")
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var crypto = new Crypto();
 				// Generate 4096 bits RSA key.

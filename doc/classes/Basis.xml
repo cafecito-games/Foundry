@@ -87,12 +87,12 @@
 				- The [member Vector3.y] should contain the angle around the [member y] axis (yaw);
 				- The [member Vector3.z] should contain the angle around the [member z] axis (roll).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				# Creates a Basis whose z axis points down.
 				var my_basis = Basis.from_euler(Vector3(TAU / 4, 0, 0))
 
 				print(my_basis.z) # Prints (0.0, -1.0, 0.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				// Creates a Basis whose z axis points down.
 				var myBasis = Basis.FromEuler(new Vector3(Mathf.Tau / 4.0f, 0.0f, 0.0f));
@@ -109,13 +109,13 @@
 			<description>
 				Constructs a new [Basis] that only represents scale, with no rotation or shear, from the given [param scale] vector.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_basis = Basis.from_scale(Vector3(2, 4, 8))
 
 				print(my_basis.x) # Prints (2.0, 0.0, 0.0)
 				print(my_basis.y) # Prints (0.0, 4.0, 0.0)
 				print(my_basis.z) # Prints (0.0, 0.0, 8.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myBasis = Basis.FromScale(new Vector3(2.0f, 4.0f, 8.0f));
 
@@ -153,7 +153,7 @@
 			<description>
 				Returns the length of each axis of this basis, as a [Vector3]. If the basis is not sheared, this value is the scaling factor. It is not affected by rotation.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_basis = Basis(
 					Vector3(2, 0, 0),
 					Vector3(0, 4, 0),
@@ -164,7 +164,7 @@
 				my_basis = my_basis.rotated(Vector3.RIGHT, TAU / 4)
 
 				print(my_basis.get_scale()) # Prints (2.0, 4.0, 8.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myBasis = new Basis(
 					Vector3(2.0f, 0.0f, 0.0f),
@@ -224,13 +224,13 @@
 				Returns the orthonormalized version of this basis. An orthonormal basis is both [i]orthogonal[/i] (the axes are perpendicular to each other) and [i]normalized[/i] (the axes have a length of [code]1.0[/code]), which also means it can only represent a rotation.
 				It is often useful to call this method to avoid rounding errors on a rotating basis:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				# Rotate this Node3D every frame.
 				func _process(delta):
 					basis = basis.rotated(Vector3.UP, TAU * delta)
 					basis = basis.rotated(Vector3.RIGHT, TAU * delta)
 					basis = basis.orthonormalized()
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				// Rotate this Node3D every frame.
 				public override void _Process(double delta)
@@ -251,14 +251,14 @@
 				Returns a copy of this basis rotated around the given [param axis] by the given [param angle] (in radians).
 				The [param axis] must be a normalized vector (see [method Vector3.normalized]). If [param angle] is positive, the basis is rotated counter-clockwise around the axis.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_basis = Basis.IDENTITY
 				var angle = TAU / 2
 
 				my_basis = my_basis.rotated(Vector3.UP, angle)    # Rotate around the up axis (yaw).
 				my_basis = my_basis.rotated(Vector3.RIGHT, angle) # Rotate around the right axis (pitch).
 				my_basis = my_basis.rotated(Vector3.BACK, angle)  # Rotate around the back axis (roll).
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myBasis = Basis.Identity;
 				var angle = Mathf.Tau / 2.0f;
@@ -277,7 +277,7 @@
 				Returns this basis with each axis's components scaled by the given [param scale]'s components.
 				The basis matrix's rows are multiplied by [param scale]'s components. This operation is a global scale (relative to the parent).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_basis = Basis(
 					Vector3(1, 1, 1),
 					Vector3(2, 2, 2),
@@ -288,7 +288,7 @@
 				print(my_basis.x) # Prints (0.0, 2.0, -2.0)
 				print(my_basis.y) # Prints (0.0, 4.0, -4.0)
 				print(my_basis.z) # Prints (0.0, 6.0, -6.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myBasis = new Basis(
 					new Vector3(1.0f, 1.0f, 1.0f),
@@ -311,7 +311,7 @@
 				Returns this basis with each axis scaled by the corresponding component in the given [param scale].
 				The basis matrix's columns are multiplied by [param scale]'s components. This operation is a local scale (relative to self).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_basis = Basis(
 				    Vector3(1, 1, 1),
 				    Vector3(2, 2, 2),
@@ -322,7 +322,7 @@
 				print(my_basis.x) # Prints (0.0, 0.0, 0.0)
 				print(my_basis.y) # Prints (4.0, 4.0, 4.0)
 				print(my_basis.z) # Prints (-6.0, -6.0, -6.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myBasis = new Basis(
 				    new Vector3(1.0f, 1.0f, 1.0f),
@@ -386,7 +386,7 @@
 			<description>
 				Returns the transposed version of this basis. This turns the basis matrix's columns into rows, and its rows into columns.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_basis = Basis(
 					Vector3(1, 2, 3),
 					Vector3(4, 5, 6),
@@ -397,7 +397,7 @@
 				print(my_basis.x) # Prints (1.0, 4.0, 7.0)
 				print(my_basis.y) # Prints (2.0, 5.0, 8.0)
 				print(my_basis.z) # Prints (3.0, 6.0, 9.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myBasis = new Basis(
 					new Vector3(1.0f, 2.0f, 3.0f),
@@ -447,7 +447,7 @@
 			# | 0 | 0 | 1
 			[/codeblock]
 			If a [Vector3] or another [Basis] is transformed (multiplied) by this constant, no transformation occurs.
-			[b]Note:[/b] In GDScript, this constant is equivalent to creating a [constructor Basis] without any arguments. It can be used to make your code clearer, and for consistency with C#.
+			[b]Note:[/b] In FoundryScript, this constant is equivalent to creating a [constructor Basis] without any arguments. It can be used to make your code clearer, and for consistency with C#.
 		</constant>
 		<constant name="FLIP_X" value="Basis(-1, 0, 0, 0, 1, 0, 0, 0, 1)">
 			When any basis is multiplied by [constant FLIP_X], it negates all components of the [member x] axis (the X column).
@@ -485,11 +485,11 @@
 			<description>
 				Transforms (multiplies) the [param right] vector by this basis, returning a [Vector3].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				# Basis that swaps the X/Z axes and doubles the scale.
 				var my_basis = Basis(Vector3(0, 2, 0), Vector3(2, 0, 0), Vector3(0, 0, 2))
 				print(my_basis * Vector3(1, 2, 3)) # Prints (4.0, 2.0, 6.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				// Basis that swaps the X/Z axes and doubles the scale.
 				var myBasis = new Basis(new Vector3(0, 2, 0), new Vector3(2, 0, 0), new Vector3(0, 0, 2));

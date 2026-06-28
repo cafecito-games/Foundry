@@ -7,13 +7,13 @@
 		A navigation mesh can be created either by baking it with the help of the [NavigationServer2D], or by adding vertices and convex polygon indices arrays manually.
 		To bake a navigation mesh at least one outline needs to be added that defines the outer bounds of the baked area.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var new_navigation_mesh = NavigationPolygon.new()
 		var bounding_outline = PackedVector2Array([Vector2(0, 0), Vector2(0, 50), Vector2(50, 50), Vector2(50, 0)])
 		new_navigation_mesh.add_outline(bounding_outline)
 		NavigationServer2D.bake_from_source_geometry_data(new_navigation_mesh, NavigationMeshSourceGeometryData2D.new());
 		$NavigationRegion2D.navigation_polygon = new_navigation_mesh
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var newNavigationMesh = new NavigationPolygon();
 		Vector2[] boundingOutline = [new Vector2(0, 0), new Vector2(0, 50), new Vector2(50, 50), new Vector2(50, 0)];
@@ -24,14 +24,14 @@
 		[/codeblocks]
 		Adding vertices and polygon indices manually.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var new_navigation_mesh = NavigationPolygon.new()
 		var new_vertices = PackedVector2Array([Vector2(0, 0), Vector2(0, 50), Vector2(50, 50), Vector2(50, 0)])
 		new_navigation_mesh.vertices = new_vertices
 		var new_polygon_indices = PackedInt32Array([0, 1, 2, 3])
 		new_navigation_mesh.add_polygon(new_polygon_indices)
 		$NavigationRegion2D.navigation_polygon = new_navigation_mesh
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var newNavigationMesh = new NavigationPolygon();
 		Vector2[] newVertices = [new Vector2(0, 0), new Vector2(0, 50), new Vector2(50, 50), new Vector2(50, 0)];

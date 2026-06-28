@@ -8,13 +8,13 @@
 		Additionally, mathematical expressions can be entered. These are evaluated when the user presses [kbd]Enter[/kbd] while editing the [SpinBox]'s text field. This uses the [Expression] class to parse and evaluate the expression. The result of the expression is then set as the value of the [SpinBox]. Some examples of valid expressions are [code]5 + 2 * 3[/code], [code]pow(2, 4)[/code], and [code]PI + sin(0.5)[/code]. Expressions are case-sensitive.
 		[b]Example:[/b] Create a [SpinBox], disable its context menu and set its text alignment to right.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var spin_box = SpinBox.new()
 		add_child(spin_box)
 		var line_edit = spin_box.get_line_edit()
 		line_edit.context_menu_enabled = false
 		spin_box.horizontal_alignment = LineEdit.HORIZONTAL_ALIGNMENT_RIGHT
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var spinBox = new SpinBox();
 		AddChild(spinBox);

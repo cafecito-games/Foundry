@@ -7,7 +7,7 @@
 		[Button] is the standard themed button. It can contain text and an icon, and it will display them according to the current [Theme].
 		[b]Example:[/b] Create a button and connect a method that will be called when the button is pressed:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		func _ready():
 			var button = Button.new()
 			button.text = "Click me"
@@ -16,7 +16,7 @@
 
 		func _button_pressed():
 			print("Hello world!")
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		public override void _Ready()
 		{

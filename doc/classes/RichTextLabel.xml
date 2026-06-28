@@ -162,7 +162,7 @@
 				Returns the [PopupMenu] of this [RichTextLabel]. By default, this menu is displayed when right-clicking on the [RichTextLabel].
 				You can add custom menu items or remove standard ones. Make sure your IDs don't conflict with the standard ones (see [enum MenuItems]). For example:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _ready():
 					var menu = get_menu()
 					# Remove "Select All" item.
@@ -176,7 +176,7 @@
 				func _on_item_pressed(id):
 					if id == MENU_MAX + 1:
 						add_text("\n" + get_parsed_text())
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override void _Ready()
 				{
@@ -265,7 +265,7 @@
 				Returns the bounding rectangle of the visible content.
 				[b]Note:[/b] This method returns a correct value only after the label has been drawn.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				extends RichTextLabel
 
 				@export var background_panel: Panel
@@ -274,7 +274,7 @@
 					await draw
 					background_panel.position = get_visible_content_rect().position
 					background_panel.size = get_visible_content_rect().size
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public partial class TestLabel : RichTextLabel
 				{
@@ -315,7 +315,7 @@
 				Installs a custom effect. This can also be done in the Inspector through the [member custom_effects] property. [param effect] should be a valid [RichTextEffect].
 				[b]Example:[/b] With the following script extending from [RichTextEffect]:
 				[codeblock]
-				# effect.gd
+				# effect.fs
 				class_name MyCustomEffect
 				extends RichTextEffect
 
@@ -325,14 +325,14 @@
 				[/codeblock]
 				The above effect can be installed in [RichTextLabel] from a script:
 				[codeblock]
-				# rich_text_label.gd
+				# rich_text_label.fs
 				extends RichTextLabel
 
 				func _ready():
 					install_effect(MyCustomEffect.new())
 
 					# Alternatively, if not using `class_name` in the script that extends RichTextEffect:
-					install_effect(preload("res://effect.gd").new())
+					install_effect(preload("res://effect.fs").new())
 				[/codeblock]
 			</description>
 		</method>
@@ -826,13 +826,13 @@
 				Triggered when the user clicks on content between meta (URL) tags. If the meta is defined in BBCode, e.g. [code skip-lint][url={"key": "value"}]Text[/url][/code], then the parameter for this signal will always be a [String] type. If a particular type or an object is desired, the [method push_meta] method must be used to manually insert the data into the tag stack. Alternatively, you can convert the [String] input to the desired type based on its contents (such as calling [method JSON.parse] on it).
 				For example, the following method can be connected to [signal meta_clicked] to open clicked URLs using the user's default web browser:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				# This assumes RichTextLabel's `meta_clicked` signal was connected to
 				# the function below using the signal connection dialog.
 				func _richtextlabel_on_meta_clicked(meta):
 					# `meta` is of Variant type, so convert it to a String to avoid script errors at run-time.
 					OS.shell_open(str(meta))
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</signal>

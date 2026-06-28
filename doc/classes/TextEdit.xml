@@ -464,7 +464,7 @@
 				Returns the [PopupMenu] of this [TextEdit]. By default, this menu is displayed when right-clicking on the [TextEdit].
 				You can add custom menu items or remove standard ones. Make sure your IDs don't conflict with the standard ones (see [enum MenuItems]). For example:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _ready():
 					var menu = get_menu()
 					# Remove all items after "Redo".
@@ -478,7 +478,7 @@
 				func _on_item_pressed(id):
 					if id == MENU_MAX + 1:
 						insert_text_at_caret(Time.get_date_string_from_system())
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override void _Ready()
 				{
@@ -968,13 +968,13 @@
 				Perform a search inside the text. Search flags can be specified in the [enum SearchFlags] enum.
 				In the returned vector, [code]x[/code] is the column, [code]y[/code] is the line. If no results are found, both are equal to [code]-1[/code].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var result = search("print", SEARCH_WHOLE_WORDS, 0, 0)
 				if result.x != -1:
 					# Result found.
 					var line_number = result.y
 					var column_number = result.x
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				Vector2I result = Search("print", (uint)TextEdit.SearchFlags.WholeWords, 0, 0);
 				if (result.X != -1)

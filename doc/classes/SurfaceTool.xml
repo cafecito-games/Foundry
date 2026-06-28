@@ -6,13 +6,13 @@
 	<description>
 		The [SurfaceTool] is used to construct a [Mesh] by specifying vertex attributes individually. It can be used to construct a [Mesh] from a script. All properties except indices need to be added before calling [method add_vertex]. For example, to add vertex colors and UVs:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var st = SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		st.set_color(Color(1, 0, 0))
 		st.set_uv(Vector2(0, 0))
 		st.add_vertex(Vector3(0, 0, 0))
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var st = new SurfaceTool();
 		st.Begin(Mesh.PrimitiveType.Triangles);

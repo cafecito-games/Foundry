@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="GDScriptTypeParameter" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="FSTypeParameter" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		A read-only description of a generic type parameter declared on a [GDScript] class.
+		A read-only description of a generic type parameter declared on a [FoundryScript] class.
 	</brief_description>
 	<description>
-		Describes a single generic type parameter declared directly on a class, such as [code]T[/code] in [code]class Box[T][/code] or [code]K[/code]/[code]V[/code] in [code]class_name Pair[K, V: RefCounted][/code]. Instances are produced by [method GDScript.get_type_parameter_list] and are immutable snapshots of the reflected data.
+		Describes a single generic type parameter declared directly on a class, such as [code]T[/code] in [code]class Box[T][/code] or [code]K[/code]/[code]V[/code] in [code]class_name Pair[K, V: RefCounted][/code]. Instances are produced by [method FoundryScript.get_type_parameter_list] and are immutable snapshots of the reflected data.
 	</description>
 	<tutorials>
 	</tutorials>

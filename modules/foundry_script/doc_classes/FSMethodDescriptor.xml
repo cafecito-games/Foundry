@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="GDScriptMethodDescriptor" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="FSMethodDescriptor" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		A read-only structured descriptor for a single reflected [GDScript] method.
+		A read-only structured descriptor for a single reflected [FoundryScript] method.
 	</brief_description>
 	<description>
-		Describes one method declared by a [GDScript] type or its base scripts, as a typed alternative to the loosely-keyed [Dictionary] entries of [method GDScriptReflection.get_methods]. Instances are produced by [method GDScriptReflection.get_method_descriptors] and [method GDScriptReflection.get_method_descriptor] and are immutable snapshots of the compiled method metadata.
+		Describes one method declared by a [FoundryScript] type or its base scripts, as a typed alternative to the loosely-keyed [Dictionary] entries of [method FSReflection.get_methods]. Instances are produced by [method FSReflection.get_method_descriptors] and [method FSReflection.get_method_descriptor] and are immutable snapshots of the compiled method metadata.
 		Beyond the [method Object.get_method_list] fields it mirrors ([member name], [member args], [member return_value], [member default_args], and [member flags]), each descriptor carries the method's passive [member annotations]. The accessors return copies, so mutating them does not change the script's stored metadata. Use [method to_dictionary] to obtain the equivalent loosely-keyed descriptor [Dictionary].
 	</description>
 	<tutorials>
@@ -13,13 +13,13 @@
 		<method name="to_dictionary" qualifiers="const">
 			<return type="Dictionary" />
 			<description>
-				Returns the equivalent loosely-keyed method descriptor [Dictionary], matching the entries of [method GDScriptReflection.get_methods]: an [method Object.get_method_list] [Dictionary] plus an [code]"annotations"[/code] key holding the [member annotations].
+				Returns the equivalent loosely-keyed method descriptor [Dictionary], matching the entries of [method FSReflection.get_methods]: an [method Object.get_method_list] [Dictionary] plus an [code]"annotations"[/code] key holding the [member annotations].
 			</description>
 		</method>
 	</methods>
 	<members>
-		<member name="annotations" type="GDScriptAnnotation[]" setter="" getter="get_annotations">
-			The passive annotations applied to the method, in source order, as [GDScriptAnnotation] descriptors. Empty when the method has no annotations. Each call returns an independent snapshot.
+		<member name="annotations" type="FSAnnotation[]" setter="" getter="get_annotations">
+			The passive annotations applied to the method, in source order, as [FSAnnotation] descriptors. Empty when the method has no annotations. Each call returns an independent snapshot.
 		</member>
 		<member name="args" type="Dictionary[]" setter="" getter="get_arguments">
 			The method's parameter descriptors, in declaration order, each in the same [Dictionary] shape as an [method Object.get_method_list] argument.

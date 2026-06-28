@@ -17,7 +17,7 @@
 			<param index="2" name="frame_count" type="int" />
 			<description>
 				Called by the [AudioServer] to process this effect. When [method _process_silence] is not overridden or it returns [code]false[/code], this method is called only when the bus is active.
-				[b]Note:[/b] It is not useful to override this method in GDScript or C#. Only GDExtension can take advantage of it.
+				[b]Note:[/b] It is not useful to override this method in FoundryScript or C#. Only FoundryExtension can take advantage of it.
 			</description>
 		</method>
 		<method name="_process_silence" qualifiers="virtual const">

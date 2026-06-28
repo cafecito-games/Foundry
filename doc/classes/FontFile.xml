@@ -15,11 +15,11 @@
 		[b]Note:[/b] A glyph is a bitmap or a shape used to draw one or more characters in a context-dependent manner. Glyph indices are bound to the specific font data source.
 		[b]Note:[/b] If none of the font data sources contain glyphs for a character used in a string, the character in question will be replaced with a box displaying its hexadecimal code.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var f = load("res://BarlowCondensed-Bold.ttf")
 		$Label.add_theme_font_override("font", f)
 		$Label.add_theme_font_size_override("font_size", 64)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var f = ResourceLoader.Load&lt;FontFile&gt;("res://BarlowCondensed-Bold.ttf");
 		GetNode("Label").AddThemeFontOverride("font", f);

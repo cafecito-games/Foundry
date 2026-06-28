@@ -8,7 +8,7 @@
 		EditorImportPlugins work by associating with specific file extensions and a resource type. See [method _get_recognized_extensions] and [method _get_resource_type]. They may optionally specify some import presets that affect the import process. EditorImportPlugins are responsible for creating the resources and saving them in the [code].godot/imported[/code] directory (see [member ProjectSettings.application/config/use_hidden_project_data_directory]).
 		Below is an example EditorImportPlugin that imports a [Mesh] from a file with the extension ".special" or ".spec":
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		@tool
 		extends EditorImportPlugin
 
@@ -45,7 +45,7 @@
 
 			var filename = save_path + "." + _get_save_extension()
 			return ResourceSaver.save(mesh, filename)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 
@@ -163,14 +163,14 @@
 			<description>
 				Gets whether the import option specified by [param option_name] should be visible in the Import dock. The default implementation always returns [code]true[/code], making all options visible. This is mainly useful for hiding options that depend on others if one of them is disabled.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _get_option_visibility(path, option_name, options):
 					# Only show the lossy quality setting if the compression mode is set to "Lossy".
 					if option_name == "compress/lossy_quality" and options.has("compress/mode"):
 						return int(options["compress/mode"]) == COMPRESS_LOSSY # This is a constant that you set
 
 					return true
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override bool _GetOptionVisibility(string path, StringName optionName, Godot.Collections.Dictionary options)
 				{

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="AnimationNodeExtension" inherits="AnimationNode" experimental="" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
-		Base class for extending [AnimationRootNode]s from GDScript, C#, or C++.
+		Base class for extending [AnimationRootNode]s from FoundryScript, C#, or C++.
 	</brief_description>
 	<description>
-		[AnimationNodeExtension] exposes the APIs of [AnimationRootNode] to allow users to extend it from GDScript, C#, or C++. This class is not meant to be used directly, but to be extended by other classes. It is used to create custom nodes for the [AnimationTree] system.
+		[AnimationNodeExtension] exposes the APIs of [AnimationRootNode] to allow users to extend it from FoundryScript, C#, or C++. This class is not meant to be used directly, but to be extended by other classes. It is used to create custom nodes for the [AnimationTree] system.
 	</description>
 	<tutorials>
 	</tutorials>

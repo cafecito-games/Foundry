@@ -57,12 +57,12 @@
 				Sets [member frame] and [member frame_progress] to the given values. Unlike setting [member frame], this method does not reset the [member frame_progress] to [code]0.0[/code] implicitly.
 				[b]Example:[/b] Change the animation while keeping the same [member frame] and [member frame_progress]:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var current_frame = animated_sprite.get_frame()
 				var current_progress = animated_sprite.get_frame_progress()
 				animated_sprite.play("walk_another_skin")
 				animated_sprite.set_frame_and_progress(current_frame, current_progress)
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>

@@ -8,7 +8,7 @@
 		When an action is committed, all of the [code]do_*[/code] methods will run. If the [method undo] method is used, the [code]undo_*[/code] methods will run. If the [method redo] method is used, once again, all of the [code]do_*[/code] methods will run.
 		Here's an example on how to add an action:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var undo_redo = UndoRedo.new()
 
 		func do_something():
@@ -25,7 +25,7 @@
 			undo_redo.add_do_property(node, "position", Vector2(100, 100))
 			undo_redo.add_undo_property(node, "position", node.position)
 			undo_redo.commit_action()
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		private UndoRedo _undoRedo;
 
@@ -61,7 +61,7 @@
 		If you are making an [EditorPlugin] and want to integrate into the editor's undo history, use [EditorUndoRedoManager] instead.
 		If you are registering multiple properties/method which depend on one another, be aware that by default undo operation are called in the same order they have been added. Therefore instead of grouping do operation with their undo operations it is better to group do on one side and undo on the other as shown below.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		undo_redo.create_action("Add object")
 
 		# DO
@@ -73,7 +73,7 @@
 		undo_redo.add_undo_method(_destroy_that_object)
 
 		undo_redo.commit_action()
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		_undo_redo.CreateAction("Add object");
 

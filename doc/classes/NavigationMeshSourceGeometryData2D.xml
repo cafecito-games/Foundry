@@ -109,10 +109,10 @@
 			<description>
 				Sets the projected obstructions with an Array of Dictionaries with the following key value pairs:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				"vertices" : PackedFloat32Array
 				"carve" : bool
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>

@@ -199,7 +199,7 @@
 			# | 0 | 0 | 1 | 0
 			[/codeblock]
 			If a [Vector3], an [AABB], a [Plane], a [PackedVector3Array], or another [Transform3D] is transformed (multiplied) by this constant, no transformation occurs.
-			[b]Note:[/b] In GDScript, this constant is equivalent to creating a [constructor Transform3D] without any arguments. It can be used to make your code clearer, and for consistency with C#.
+			[b]Note:[/b] In FoundryScript, this constant is equivalent to creating a [constructor Transform3D] without any arguments. It can be used to make your code clearer, and for consistency with C#.
 		</constant>
 		<constant name="FLIP_X" value="Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)">
 			[Transform3D] with mirroring applied perpendicular to the YZ plane. Its [member basis] is equal to [constant Basis.FLIP_X].

@@ -30,7 +30,7 @@
 		[/codeblock]
 		In some situations, it's possible to omit the leading [code]:[/code] when pointing to an object's property. As an example, this is the case with [method Object.set_indexed] and [method Tween.tween_property], as those methods call [method NodePath.get_as_property_path] under the hood. However, it's generally recommended to keep the [code]:[/code] prefix.
 		Node paths cannot check whether they are valid and may point to nodes or properties that do not exist. Their meaning depends entirely on the context in which they're used.
-		You usually do not have to worry about the [NodePath] type, as strings are automatically converted to the type when necessary. There are still times when defining node paths is useful. For example, exported [NodePath] properties allow you to easily select any node within the currently edited scene. They are also automatically updated when moving, renaming or deleting nodes in the scene tree editor. See also [annotation @GDScript.@export_node_path].
+		You usually do not have to worry about the [NodePath] type, as strings are automatically converted to the type when necessary. There are still times when defining node paths is useful. For example, exported [NodePath] properties allow you to easily select any node within the currently edited scene. They are also automatically updated when moving, renaming or deleting nodes in the scene tree editor. See also [annotation @FoundryScript.@export_node_path].
 		See also [StringName], which is a similar type designed for optimized strings.
 		[b]Note:[/b] In a boolean context, a [NodePath] will evaluate to [code]false[/code] if it is empty ([code]NodePath("")[/code]). Otherwise, a [NodePath] will always evaluate to [code]true[/code].
 	</description>
@@ -76,7 +76,7 @@
 				# Points to the RigidBody2D node as an absolute path beginning from the SceneTree.
 				"/root/Level/RigidBody2D"
 				[/codeblock]
-				[b]Note:[/b] In GDScript, it's also possible to convert a constant string into a node path by prefixing it with [code]^[/code]. [code]^"path/to/node"[/code] is equivalent to [code]NodePath("path/to/node")[/code].
+				[b]Note:[/b] In FoundryScript, it's also possible to convert a constant string into a node path by prefixing it with [code]^[/code]. [code]^"path/to/node"[/code] is equivalent to [code]NodePath("path/to/node")[/code].
 			</description>
 		</constructor>
 	</constructors>
@@ -86,14 +86,14 @@
 			<description>
 				Returns a copy of this node path with a colon character ([code]:[/code]) prefixed, transforming it to a pure property path with no node names (relative to the current node).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				# node_path points to the "x" property of the child node named "position".
 				var node_path = ^"position:x"
 
 				# property_path points to the "position" in the "x" axis of this node.
 				var property_path = node_path.get_as_property_path()
 				print(property_path) # Prints ":position:x"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				// nodePath points to the "x" property of the child node named "position".
 				var nodePath = new NodePath("position:x");
@@ -116,10 +116,10 @@
 			<description>
 				Returns all property subnames concatenated with a colon character ([code]:[/code]) as a single [StringName].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var node_path = ^"Sprite2D:texture:resource_name"
 				print(node_path.get_concatenated_subnames()) # Prints "texture:resource_name"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var nodePath = new NodePath("Sprite2D:texture:resource_name");
 				GD.Print(nodePath.GetConcatenatedSubnames()); // Prints "texture:resource_name"
@@ -133,12 +133,12 @@
 			<description>
 				Returns the node name indicated by [param idx], starting from 0. If [param idx] is out of bounds, an error is generated. See also [method get_subname_count] and [method get_name_count].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var sprite_path = NodePath("../RigidBody2D/Sprite2D")
 				print(sprite_path.get_name(0)) # Prints ".."
 				print(sprite_path.get_name(1)) # Prints "RigidBody2D"
 				print(sprite_path.get_name(2)) # Prints "Sprite"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var spritePath = new NodePath("../RigidBody2D/Sprite2D");
 				GD.Print(spritePath.GetName(0)); // Prints ".."
@@ -161,11 +161,11 @@
 			<description>
 				Returns the property name indicated by [param idx], starting from 0. If [param idx] is out of bounds, an error is generated. See also [method get_subname_count].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var path_to_name = NodePath("Sprite2D:texture:resource_name")
 				print(path_to_name.get_subname(0)) # Prints "texture"
 				print(path_to_name.get_subname(1)) # Prints "resource_name"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var pathToName = new NodePath("Sprite2D:texture:resource_name");
 				GD.Print(pathToName.GetSubname(0)); // Prints "texture"

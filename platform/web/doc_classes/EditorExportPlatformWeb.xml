@@ -88,7 +88,7 @@
 			When using threads, this size needs to be large enough to accommodate features that rely on having a dedicated thread like [member ProjectSettings.physics/2d/run_on_separate_thread] or [member ProjectSettings.rendering/driver/threads/thread_model]. In general, it is best to ensure that this is at least [code]4[/code] and is at least [code]2[/code] or [code]3[/code] less than [member threads/emscripten_pool_size].
 		</member>
 		<member name="variant/extensions_support" type="bool" setter="" getter="">
-			If [code]true[/code] enables [GDExtension] support for this web build.
+			If [code]true[/code] enables [FoundryExtension] support for this web build.
 		</member>
 		<member name="variant/thread_support" type="bool" setter="" getter="">
 			If [code]true[/code], the exported game will support threads. It requires [url=https://web.dev/articles/coop-coep]a "cross-origin isolated" website[/url], which may be difficult to set up and is limited for security reasons (such as not being able to communicate with third-party websites).

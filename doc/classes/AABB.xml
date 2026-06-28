@@ -43,12 +43,12 @@
 			<description>
 				Returns an [AABB] equivalent to this bounding box, with its width, height, and depth modified to be non-negative values.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var box = AABB(Vector3(5, 0, 5), Vector3(-20, -10, -5))
 				var absolute = box.abs()
 				print(absolute.position) # Prints (-15.0, -10.0, 0.0)
 				print(absolute.size)     # Prints (20.0, 10.0, 5.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var box = new Aabb(new Vector3(5, 0, 5), new Vector3(-20, -10, -5));
 				var absolute = box.Abs();
@@ -65,7 +65,7 @@
 			<description>
 				Returns [code]true[/code] if this bounding box [i]completely[/i] encloses the [param with] box. The edges of both boxes are included.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var a = AABB(Vector3(0, 0, 0), Vector3(4, 4, 4))
 				var b = AABB(Vector3(1, 1, 1), Vector3(3, 3, 3))
 				var c = AABB(Vector3(2, 2, 2), Vector3(8, 8, 8))
@@ -73,7 +73,7 @@
 				print(a.encloses(a)) # Prints true
 				print(a.encloses(b)) # Prints true
 				print(a.encloses(c)) # Prints false
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var a = new Aabb(new Vector3(0, 0, 0), new Vector3(4, 4, 4));
 				var b = new Aabb(new Vector3(1, 1, 1), new Vector3(3, 3, 3));
@@ -92,7 +92,7 @@
 			<description>
 				Returns a copy of this bounding box expanded to align the edges with the given [param to_point], if necessary.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var box = AABB(Vector3(0, 0, 0), Vector3(5, 2, 5))
 
 				box = box.expand(Vector3(10, 0, 0))
@@ -102,7 +102,7 @@
 				box = box.expand(Vector3(-5, 0, 5))
 				print(box.position) # Prints (-5.0, 0.0, 0.0)
 				print(box.size)     # Prints (15.0, 2.0, 5.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var box = new Aabb(new Vector3(0, 0, 0), new Vector3(5, 2, 5));
 
@@ -135,13 +135,13 @@
 			<description>
 				Returns the longest normalized axis of this bounding box's [member size], as a [Vector3] ([constant Vector3.RIGHT], [constant Vector3.UP], or [constant Vector3.BACK]).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var box = AABB(Vector3(0, 0, 0), Vector3(2, 4, 8))
 
 				print(box.get_longest_axis())       # Prints (0.0, 0.0, 1.0)
 				print(box.get_longest_axis_index()) # Prints 2
 				print(box.get_longest_axis_size())  # Prints 8.0
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var box = new Aabb(new Vector3(0, 0, 0), new Vector3(2, 4, 8));
 
@@ -172,13 +172,13 @@
 			<description>
 				Returns the shortest normalized axis of this bounding box's [member size], as a [Vector3] ([constant Vector3.RIGHT], [constant Vector3.UP], or [constant Vector3.BACK]).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var box = AABB(Vector3(0, 0, 0), Vector3(2, 4, 8))
 
 				print(box.get_shortest_axis())       # Prints (1.0, 0.0, 0.0)
 				print(box.get_shortest_axis_index()) # Prints 0
 				print(box.get_shortest_axis_size())  # Prints 2.0
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var box = new Aabb(new Vector3(0, 0, 0), new Vector3(2, 4, 8));
 
@@ -223,7 +223,7 @@
 			<description>
 				Returns a copy of this bounding box extended on all sides by the given amount [param by]. A negative amount shrinks the box instead.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var a = AABB(Vector3(4, 4, 4), Vector3(8, 8, 8)).grow(4)
 				print(a.position) # Prints (0.0, 0.0, 0.0)
 				print(a.size)     # Prints (16.0, 16.0, 16.0)
@@ -231,7 +231,7 @@
 				var b = AABB(Vector3(0, 0, 0), Vector3(8, 4, 2)).grow(2)
 				print(b.position) # Prints (-2.0, -2.0, -2.0)
 				print(b.size)     # Prints (12.0, 8.0, 6.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var a = new Aabb(new Vector3(4, 4, 4), new Vector3(8, 8, 8)).Grow(4);
 				GD.Print(a.Position); // Prints (0, 0, 0)
@@ -270,14 +270,14 @@
 			<description>
 				Returns the intersection between this bounding box and [param with]. If the boxes do not intersect, returns an empty [AABB]. If the boxes intersect at the edge, returns a flat [AABB] with no volume (see [method has_surface] and [method has_volume]).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var box1 = AABB(Vector3(0, 0, 0), Vector3(5, 2, 8))
 				var box2 = AABB(Vector3(2, 0, 2), Vector3(8, 4, 4))
 
 				var intersection = box1.intersection(box2)
 				print(intersection.position) # Prints (2.0, 0.0, 2.0)
 				print(intersection.size)     # Prints (3.0, 2.0, 4.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var box1 = new Aabb(new Vector3(0, 0, 0), new Vector3(5, 2, 8));
 				var box2 = new Aabb(new Vector3(2, 0, 2), new Vector3(8, 4, 4));

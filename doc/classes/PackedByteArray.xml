@@ -406,10 +406,10 @@
 			<description>
 				Returns a hexadecimal representation of this array as a [String].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var array = PackedByteArray([11, 46, 255])
 				print(array.hex_encode()) # Prints "0b2eff"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				byte[] array = [11, 46, 255];
 				GD.Print(array.HexEncode()); // Prints "0b2eff"

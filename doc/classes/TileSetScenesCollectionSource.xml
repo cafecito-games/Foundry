@@ -9,7 +9,7 @@
 		[b]Note:[/b] Scene tiles all occupy one tile slot and instead use alternate tile ID to identify scene index. [method TileSetSource.get_tiles_count] will always return [code]1[/code]. Use [method get_scene_tiles_count] to get a number of scenes in a [TileSetScenesCollectionSource].
 		Use this code if you want to find the scene path at a given tile in [TileMapLayer]:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var source_id = tile_map_layer.get_cell_source_id(Vector2i(x, y))
 		if source_id &gt; -1:
 			var scene_source = tile_map_layer.tile_set.get_source(source_id)
@@ -17,7 +17,7 @@
 				var alt_id = tile_map_layer.get_cell_alternative_tile(Vector2i(x, y))
 				# The assigned PackedScene.
 				var scene = scene_source.get_scene_tile_scene(alt_id)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		int sourceId = tileMapLayer.GetCellSourceId(new Vector2I(x, y));
 		if (sourceId &gt; -1)

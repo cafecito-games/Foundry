@@ -8,7 +8,7 @@
 		You can send WebSocket binary frames using [method PacketPeer.put_packet], and WebSocket text frames using [method send] (prefer text frames when interacting with text-based API). You can check the frame type of the last packet via [method was_string_packet].
 		To start a WebSocket client, first call [method connect_to_url], then regularly call [method poll] (e.g. during [Node] process). You can query the socket state via [method get_ready_state], get the number of pending packets using [method PacketPeer.get_available_packet_count], and retrieve them via [method PacketPeer.get_packet].
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		extends Node
 
 		var socket = WebSocketPeer.new()
@@ -30,7 +30,7 @@
 				var reason = socket.get_close_reason()
 				print("WebSocket closed with code: %d, reason %s. Clean: %s" % [code, reason, code != -1])
 				set_process(false) # Stop processing.
-		[/gdscript]
+		[/foundry_script]
 		[/codeblocks]
 		To use the peer as part of a WebSocket server refer to [method accept_stream] and the online tutorial.
 	</description>

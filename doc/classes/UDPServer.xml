@@ -8,8 +8,8 @@
 		After starting the server ([method listen]), you will need to [method poll] it at regular intervals (e.g. inside [method Node._process]) for it to process new packets, delivering them to the appropriate [PacketPeerUDP], and taking new connections.
 		Below a small example of how it can be used:
 		[codeblocks]
-		[gdscript]
-		# server_node.gd
+		[foundry_script]
+		# server_node.fs
 		class_name ServerNode
 		extends Node
 
@@ -33,7 +33,7 @@
 
 			for i in range(0, peers.size()):
 				pass # Do something with the connected peers.
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		// ServerNode.cs
 		using Godot;
@@ -72,8 +72,8 @@
 		[/csharp]
 		[/codeblocks]
 		[codeblocks]
-		[gdscript]
-		# client_node.gd
+		[foundry_script]
+		# client_node.fs
 		class_name ClientNode
 		extends Node
 
@@ -90,7 +90,7 @@
 			if udp.get_available_packet_count() &gt; 0:
 				print("Connected: %s" % udp.get_packet().get_string_from_utf8())
 				connected = true
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		// ClientNode.cs
 		using Godot;

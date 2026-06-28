@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="GDScript" inherits="Script" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="FoundryScript" inherits="Script" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		A script implemented in the GDScript programming language.
+		A script implemented in the FoundryScript programming language.
 	</brief_description>
 	<description>
-		A script implemented in the GDScript programming language, saved with the [code].gd[/code] extension. The script extends the functionality of all objects that instantiate it.
+		A script implemented in the FoundryScript programming language, saved with the [code].fs[/code] extension. The script extends the functionality of all objects that instantiate it.
 		Calling [method new] creates a new instance of the script. [method Object.set_script] extends an existing object, if that object's class matches one of the script's base classes.
-		If you are looking for GDScript's built-in functions, see [@GDScript] instead.
-		[b]Strict type analysis:[/b] GDScript supports nullable annotations, typed callable and signal signatures, and nested typed containers. Nullable object types use [code]T?[/code], while plain [code]T[/code] can be checked as non-nullable when [member ProjectSettings.debug/gdscript/analysis/strict_null_checks] is enabled. [Callable] and [Signal] signatures can be written as [code]Callable[[ArgType, ...], ReturnType][/code] and [code]Signal[[ArgType, ...]][/code]. [Array] and [Dictionary] annotations can contain nested typed containers such as [code]Dictionary[String, Array[int]][/code].
+		If you are looking for FoundryScript's built-in functions, see [@FoundryScript] instead.
+		[b]Strict type analysis:[/b] FoundryScript supports nullable annotations, typed callable and signal signatures, and nested typed containers. Nullable object types use [code]T?[/code], while plain [code]T[/code] can be checked as non-nullable when [member ProjectSettings.debug/foundry_script/analysis/strict_null_checks] is enabled. [Callable] and [Signal] signatures can be written as [code]Callable[[ArgType, ...], ReturnType][/code] and [code]Signal[[ArgType, ...]][/code]. [Array] and [Dictionary] annotations can contain nested typed containers such as [code]Dictionary[String, Array[int]][/code].
 		[codeblock]
 		signal renamed_to(new_name: String)
 
@@ -49,7 +49,7 @@
 			# Rejected when strict_dynamic_checks is enabled:
 			# var typed_value: int = get_dynamic_value()
 		[/codeblock]
-		Most callable and signal signature checks run as part of normal static analysis. [member ProjectSettings.debug/gdscript/analysis/strict_dynamic_checks] adds stricter checks at dynamic boundaries by rejecting [Variant] values where a non-[Variant] static type is required.
+		Most callable and signal signature checks run as part of normal static analysis. [member ProjectSettings.debug/foundry_script/analysis/strict_dynamic_checks] adds stricter checks at dynamic boundaries by rejecting [Variant] values where a non-[Variant] static type is required.
 		[b]Abstract classes and methods:[/b] the contextual [code]abstract[/code] keyword marks a class or a method as abstract. It is written as a prefix on the declaration: [code]abstract func[/code] for a method, [code]abstract class[/code] for an inner class, and, at the top level of a file, [code]abstract class_name Shape[/code] or [code]abstract extends RefCounted[/code] for the script's own class.
 		An abstract class cannot be instantiated directly; it is meant to be inherited, and attempting to call [method new] on it results in an error. An abstract method has no implementation, so a newline or a semicolon is expected after its header. An abstract method defines a contract that inheriting classes must conform to, because the method signature must be compatible when overriding. Inheriting classes must either provide implementations for all inherited abstract methods or be marked as abstract themselves. If a class has at least one abstract method (its own or an unimplemented inherited one), then it must also be marked as abstract. The reverse is not required: an abstract class is allowed to have no abstract methods.
 		[codeblock]
@@ -108,7 +108,7 @@
 		[b]Reified runtime model:[/b] generic [i]class instances[/i] are [i]reified[/i] — their type arguments survive to runtime. A [code]Box[int][/code] instance carries its bound type arguments, and writes to a [code]T[/code]-typed member are validated against them exactly as [Array] element insertion is, so assigning an incompatible value through a dynamic reference fails at runtime (values that convert, such as a [float] written to an [code skip-lint]int[/code] slot, are coerced). The reified arguments round-trip through [code].tres[/code]/scene save-load, resource duplication, and hot-reload. A generic class named without type arguments is a [i]raw[/i] generic (like an untyped [Array]): [code]var b: Box[/code] is a permissive supertype that any [code]Box[X][/code] assigns to, and its members are dynamic, with writes still validated against the instance's reified argument at runtime.
 		Generic [i]methods[/i], by contrast, are a static inference and checking device: their type parameters are [i]not[/i] reified and are erased at runtime. A generic method that returns a container whose element is a type parameter ([code]func singleton[T](...) -> Array[T][/code]) produces an untyped array at runtime; the element type is recovered from the target's concrete type at the assignment site, so assigning the result to an [code]Array[int][/code] retypes it while assigning to an untyped [Array] leaves it untyped.
 		[b]Generic traits:[/b] traits can be generic ([code]trait Holder[T][/code]) and applied with type arguments ([code]class IntBox uses Holder[int][/code]); conformance is checked under substitution, so the implementation must satisfy every required member with the argument applied. Traits can also require generic methods ([code]abstract func transform[U](value: U) -> Array[U][/code]), which an implementation satisfies up to type-parameter renaming (alpha-equivalence by ordinal position).
-		[b]Reflection:[/b] generic type information is available at runtime. [method is_generic] and [method get_type_parameter_list] report a class's declared type parameters (as [GDScriptTypeParameter] descriptors), and [method GDScriptReflection.get_type_arguments] returns the reified type arguments bound onto an instance.
+		[b]Reflection:[/b] generic type information is available at runtime. [method is_generic] and [method get_type_parameter_list] report a class's declared type parameters (as [FSTypeParameter] descriptors), and [method FSReflection.get_type_arguments] returns the reified type arguments bound onto an instance.
 		[b]Custom annotations:[/b] a script can declare its own [i]passive[/i] annotations and attach them to classes, methods, and member variables. Custom annotations are static metadata only: they are never executed and add no per-call runtime cost. They do not introduce decorators, interceptors, AST transforms, or code generation. A declaration is written at the root of a script with the contextual [code]annotation[/code] keyword, names the parameters it accepts, and lists the targets it may be applied to with [code]targets[/code]. The valid targets are [code]CLASS[/code] (root and inner classes), [code]METHOD[/code] (including static, abstract, and trait methods), and [code]VARIABLE[/code] (member [code]var[/code] declarations, including static member variables). Declarations are root-only; they are not allowed inside inner classes, traits, or functions, and they do not become members, constants, or callables.
 		[codeblock]
 		namespace cafecito.test
@@ -137,7 +137,7 @@
 				pass
 		[/codeblock]
 		[b]Name resolution:[/b] custom annotations live in a separate annotation-symbol space and are resolved by short name against the current file's namespace first, then explicitly [code]import[/code]ed namespaces, and finally the built-in annotation registry. A short name provided by two imported namespaces is an ambiguity error. Namespaces that contain only annotation declarations are visible to imports, so a pure annotation library needs no [code]class_name[/code]. A custom annotation may not reuse a built-in annotation name such as [code]export[/code] or [code]rpc[/code], and duplicate canonical declarations are errors. An annotation can also be applied by its fully qualified name, such as [code]@cafecito.test.timeout(...)[/code]; a qualified usage names the canonical identity directly and resolves without an [code]import[/code], which sidesteps short-name import ambiguity. Unknown name, ambiguous name, wrong target, wrong arity, unknown or duplicate named argument, non-constant argument, and non-convertible argument uses are all analyzer errors. Built-in annotations such as [code]@export[/code] and [code]@tool[/code] keep their existing behavior and are not exposed as custom annotation metadata.
-		[b]Reflection:[/b] applied custom annotations are read back at runtime through [GDScriptReflection] (reached via [code]godot.reflection[/code]) as immutable [GDScriptAnnotation] descriptors. Each descriptor exposes the short [member GDScriptAnnotation.name], the namespaced [member GDScriptAnnotation.qualified_name], the positional [member GDScriptAnnotation.args], and the named [member GDScriptAnnotation.kwargs]. Use [method GDScriptReflection.get_class_annotations], [method GDScriptReflection.get_method_annotations], and [method GDScriptReflection.get_variable_annotations] for the kind-specific queries, or [method GDScriptReflection.get_annotations], [method GDScriptReflection.has_annotation], and [method GDScriptReflection.get_annotation] (which match either the short or qualified name) for parameterized lookups. Method and property descriptors from [method GDScriptReflection.get_methods], [method GDScriptReflection.get_method_info], and [method GDScriptReflection.get_properties] also embed an [code]"annotations"[/code] key for GDScript declarations.
+		[b]Reflection:[/b] applied custom annotations are read back at runtime through [FSReflection] (reached via [code]godot.reflection[/code]) as immutable [FSAnnotation] descriptors. Each descriptor exposes the short [member FSAnnotation.name], the namespaced [member FSAnnotation.qualified_name], the positional [member FSAnnotation.args], and the named [member FSAnnotation.kwargs]. Use [method FSReflection.get_class_annotations], [method FSReflection.get_method_annotations], and [method FSReflection.get_variable_annotations] for the kind-specific queries, or [method FSReflection.get_annotations], [method FSReflection.has_annotation], and [method FSReflection.get_annotation] (which match either the short or qualified name) for parameterized lookups. Method and property descriptors from [method FSReflection.get_methods], [method FSReflection.get_method_info], and [method FSReflection.get_properties] also embed an [code]"annotations"[/code] key for FoundryScript declarations.
 		[codeblock]
 		# Class annotations are direct-only and are not inherited.
 		for annotation in godot.reflection.get_class_annotations(CombatTests):
@@ -155,19 +155,19 @@
 		for annotation in godot.reflection.get_variable_annotations(CombatTests, "world"):
 			print(annotation.name) # e.g. &amp;"fixture"
 		[/codeblock]
-		Effective views match the rest of GDScript reflection: methods and member variables declared on a base script carry their annotations when reflected through a derived script, and concrete trait members flattened into an implementer carry their declaration annotations; an overriding or shadowing member's annotations take precedence. Class annotations are the exception and remain direct-only. Invalid, freed, or non-script targets return empty arrays, a [code]null[/code] descriptor, or [code]false[/code] without errors.
+		Effective views match the rest of FoundryScript reflection: methods and member variables declared on a base script carry their annotations when reflected through a derived script, and concrete trait members flattened into an implementer carry their declaration annotations; an overriding or shadowing member's annotations take precedence. Class annotations are the exception and remain direct-only. Invalid, freed, or non-script targets return empty arrays, a [code]null[/code] descriptor, or [code]false[/code] without errors.
 	</description>
 	<tutorials>
-		<link title="GDScript documentation index">$DOCS_URL/tutorials/scripting/gdscript/index.html</link>
+		<link title="FoundryScript documentation index">$DOCS_URL/tutorials/scripting/foundry_script/index.html</link>
 	</tutorials>
 	<methods>
 		<method name="get_type_parameter_list" qualifiers="const">
-			<return type="GDScriptTypeParameter[]" />
+			<return type="FSTypeParameter[]" />
 			<description>
-				Returns the generic type parameters declared directly on this script's class, in declaration order, as an array of [GDScriptTypeParameter] descriptors. Returns an empty array for non-generic classes. This is part of the runtime reflection surface for GDScript generics.
+				Returns the generic type parameters declared directly on this script's class, in declaration order, as an array of [FSTypeParameter] descriptors. Returns an empty array for non-generic classes. This is part of the runtime reflection surface for FoundryScript generics.
 				[codeblock]
 				# class Box[T]: ...
-				var Box = load("box.gd")
+				var Box = load("box.fs")
 				for parameter in Box.get_type_parameter_list():
 					print(parameter.name) # Prints &amp;"T"
 				[/codeblock]
@@ -184,7 +184,7 @@
 			<description>
 				Returns a new instance of the script.
 				[codeblock]
-				var MyClass = load("myclass.gd")
+				var MyClass = load("myclass.fs")
 				var instance = MyClass.new()
 				print(instance.get_script() == MyClass) # Prints true
 				[/codeblock]

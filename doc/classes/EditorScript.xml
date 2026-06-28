@@ -9,13 +9,13 @@
 		[b]Note:[/b] Extending scripts need to have [code]tool[/code] mode enabled.
 		[b]Example:[/b] Running the following script prints "Hello from the Godot Editor!":
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		@tool
 		extends EditorScript
 
 		func _run():
 			print("Hello from the Godot Editor!")
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 

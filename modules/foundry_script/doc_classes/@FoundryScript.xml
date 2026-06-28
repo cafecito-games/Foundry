@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="@GDScript" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="@FoundryScript" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		Built-in GDScript constants, functions, and annotations.
+		Built-in FoundryScript constants, functions, and annotations.
 	</brief_description>
 	<description>
-		A list of utility functions and annotations accessible from any script written in GDScript.
+		A list of utility functions and annotations accessible from any script written in FoundryScript.
 		For the list of global functions and constants that can be accessed in any scripting language, see [@GlobalScope].
-		GDScript files can declare a namespace with [code]namespace a.b.c[/code] at the top of the file. The declaration applies to the root script class defined by that file and must appear before [code]import[/code], [code]class_name[/code], [code]extends[/code], annotations that describe the script class, and body declarations. Scripts without a [code]namespace[/code] declaration remain in the global namespace.
+		FoundryScript files can declare a namespace with [code]namespace a.b.c[/code] at the top of the file. The declaration applies to the root script class defined by that file and must appear before [code]import[/code], [code]class_name[/code], [code]extends[/code], annotations that describe the script class, and body declarations. Scripts without a [code]namespace[/code] declaration remain in the global namespace.
 		When a script declares both [code]namespace[/code] and [code]class_name[/code], the canonical script class name is fully qualified. For example:
 		[codeblock]
 		namespace game.characters
@@ -21,10 +21,10 @@
 		var player: Player # Direct class from game.characters.
 		var controller: controllers.PlayerController # Child namespace game.characters.controllers.
 		[/codeblock]
-		Current namespace restrictions: aliases, wildcards, relative imports, and namespace blocks are not supported. Namespace declarations apply only at file level, and [code]class_name[/code] can only define the root script class. In debug builds, GDScript warns when global script classes in the same directory use mixed namespaces, including a mix of namespaced and global-namespace classes.
+		Current namespace restrictions: aliases, wildcards, relative imports, and namespace blocks are not supported. Namespace declarations apply only at file level, and [code]class_name[/code] can only define the root script class. In debug builds, FoundryScript warns when global script classes in the same directory use mixed namespaces, including a mix of namespaced and global-namespace classes.
 	</description>
 	<tutorials>
-		<link title="GDScript exports">$DOCS_URL/tutorials/scripting/gdscript/gdscript_exports.html</link>
+		<link title="FoundryScript exports">$DOCS_URL/tutorials/scripting/foundry_script/fs_exports.html</link>
 	</tutorials>
 	<methods>
 		<method name="Color8" deprecated="Use [method Color.from_rgba8] instead.">
@@ -113,10 +113,10 @@
 				[/codeblock]
 				Starting from [code]_ready()[/code], [code]bar()[/code] would print:
 				[codeblock lang=text]
-				[{function:bar, line:12, source:res://script.gd}, {function:foo, line:9, source:res://script.gd}, {function:_ready, line:6, source:res://script.gd}]
+				[{function:bar, line:12, source:res://script.fs}, {function:foo, line:9, source:res://script.fs}, {function:_ready, line:6, source:res://script.fs}]
 				[/codeblock]
 				See also [method print_debug], [method print_stack], and [method Engine.capture_script_backtraces].
-				[b]Note:[/b] By default, backtraces are only available in editor builds and debug builds. To enable them for release builds as well, you need to enable [member ProjectSettings.debug/settings/gdscript/always_track_call_stacks].
+				[b]Note:[/b] By default, backtraces are only available in editor builds and debug builds. To enable them for release builds as well, you need to enable [member ProjectSettings.debug/settings/foundry_script/always_track_call_stacks].
 			</description>
 		</method>
 		<method name="inst_to_dict" deprecated="Consider using [method JSON.from_native] or [method Object.get_property_list] instead.">
@@ -134,9 +134,9 @@
 				Prints out:
 				[codeblock lang=text]
 				[@subpath, @path, foo]
-				[, res://test.gd, bar]
+				[, res://test.fs, bar]
 				[/codeblock]
-				[b]Note:[/b] This function can only be used to serialize objects with an attached [GDScript] stored in a separate file. Objects without an attached script, with a script written in another language, or with a built-in script are not supported.
+				[b]Note:[/b] This function can only be used to serialize objects with an attached [FoundryScript] stored in a separate file. Objects without an attached script, with a script written in another language, or with a built-in script are not supported.
 				[b]Note:[/b] This function is not recursive, which means that nested objects will not be represented as dictionaries. Also, properties passed by reference ([Object], [Dictionary], [Array], and packed arrays) are copied by reference, not duplicated.
 			</description>
 		</method>
@@ -188,7 +188,7 @@
 				[b]Important:[/b] Relative paths are [i]not[/i] relative to the script calling this method, instead it is prefixed with [code]"res://"[/code]. Loading from relative paths might not work as expected.
 				This function is a simplified version of [method ResourceLoader.load], which can be used for more advanced scenarios.
 				[b]Note:[/b] Files have to be imported into the engine first to load them using this function. If you want to load [Image]s at run-time, you may use [method Image.load]. If you want to import audio files, you can use the snippet described in [member AudioStreamMP3.data].
-				[b]Note:[/b] If [member ProjectSettings.editor/export/convert_text_resources_to_binary] is [code]true[/code], [method @GDScript.load] will not be able to read converted files in an exported project. If you rely on run-time loading of files present within the PCK, set [member ProjectSettings.editor/export/convert_text_resources_to_binary] to [code]false[/code].
+				[b]Note:[/b] If [member ProjectSettings.editor/export/convert_text_resources_to_binary] is [code]true[/code], [method @FoundryScript.load] will not be able to read converted files in an exported project. If you rely on run-time loading of files present within the PCK, set [member ProjectSettings.editor/export/convert_text_resources_to_binary] to [code]false[/code].
 			</description>
 		</method>
 		<method name="ord">
@@ -223,10 +223,10 @@
 				The output in the console may look like the following:
 				[codeblock lang=text]
 				Test print
-				At: res://test.gd:15:_process()
+				At: res://test.fs:15:_process()
 				[/codeblock]
 				See also [method print_stack], [method get_stack], and [method Engine.capture_script_backtraces].
-				[b]Note:[/b] By default, backtraces are only available in editor builds and debug builds. To enable them for release builds as well, you need to enable [member ProjectSettings.debug/settings/gdscript/always_track_call_stacks].
+				[b]Note:[/b] By default, backtraces are only available in editor builds and debug builds. To enable them for release builds as well, you need to enable [member ProjectSettings.debug/settings/foundry_script/always_track_call_stacks].
 			</description>
 		</method>
 		<method name="print_stack">
@@ -235,10 +235,10 @@
 				Prints a stack trace at the current code location.
 				The output in the console may look like the following:
 				[codeblock lang=text]
-				Frame 0 - res://test.gd:16 in function '_process'
+				Frame 0 - res://test.fs:16 in function '_process'
 				[/codeblock]
 				See also [method print_debug], [method get_stack], and [method Engine.capture_script_backtraces].
-				[b]Note:[/b] By default, backtraces are only available in editor builds and debug builds. To enable them for release builds as well, you need to enable [member ProjectSettings.debug/settings/gdscript/always_track_call_stacks].
+				[b]Note:[/b] By default, backtraces are only available in editor builds and debug builds. To enable them for release builds as well, you need to enable [member ProjectSettings.debug/settings/foundry_script/always_track_call_stacks].
 			</description>
 		</method>
 		<method name="range" qualifiers="vararg" keywords="seq">
@@ -399,7 +399,7 @@
 			<param index="1" name="hint_string" type="String" />
 			<param index="2" name="usage" type="int" enum="PropertyUsageFlags" is_bitfield="true" default="PROPERTY_USAGE_DEFAULT" />
 			<description>
-				Allows you to set a custom hint, hint string, and usage flags for the exported property. Note that there's no validation done in GDScript, it will just pass the parameters to the editor.
+				Allows you to set a custom hint, hint string, and usage flags for the exported property. Note that there's no validation done in FoundryScript, it will just pass the parameters to the editor.
 				[codeblock]
 				@export_custom(PROPERTY_HINT_NONE, "suffix:m") var suffix: Vector3
 				[/codeblock]
@@ -435,7 +435,7 @@
 				[codeblock]
 				@export_enum("Rebecca", "Mary", "Leah") var character_name: String = "Rebecca"
 				[/codeblock]
-				If you want to use named GDScript enums, then use [annotation @export] instead:
+				If you want to use named FoundryScript enums, then use [annotation @export] instead:
 				[codeblock]
 				enum CharacterName {REBECCA, MARY, LEAH}
 				@export var character_name: CharacterName
@@ -847,7 +847,7 @@
 			<return type="void" />
 			<param index="0" name="warning" type="String" />
 			<description>
-				Mark the following statement to ignore the specified [param warning]. See [url=$DOCS_URL/tutorials/scripting/gdscript/warning_system.html]GDScript warning system[/url].
+				Mark the following statement to ignore the specified [param warning]. See [url=$DOCS_URL/tutorials/scripting/foundry_script/warning_system.html]FoundryScript warning system[/url].
 				[codeblock]
 				func test():
 					print("hello")

@@ -107,7 +107,7 @@
 			<description>
 				Returns the length of both [member x] and [member y], as a [Vector2]. If this transform's basis is not skewed, this value is the scaling factor. It is not affected by rotation.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_transform = Transform2D(
 					Vector2(2, 0),
 					Vector2(0, 4),
@@ -117,7 +117,7 @@
 				my_transform = my_transform.rotated(TAU / 2)
 
 				print(my_transform.get_scale()) # Prints (2.0, 4.0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myTransform = new Transform2D(
 					Vector3(2.0f, 0.0f),
@@ -272,7 +272,7 @@
 			# | 0 | 1 | 0
 			[/codeblock]
 			If a [Vector2], a [Rect2], a [PackedVector2Array], or another [Transform2D] is transformed (multiplied) by this constant, no transformation occurs.
-			[b]Note:[/b] In GDScript, this constant is equivalent to creating a [constructor Transform2D] without any arguments. It can be used to make your code clearer, and for consistency with C#.
+			[b]Note:[/b] In FoundryScript, this constant is equivalent to creating a [constructor Transform2D] without any arguments. It can be used to make your code clearer, and for consistency with C#.
 		</constant>
 		<constant name="FLIP_X" value="Transform2D(-1, 0, 0, 1, 0, 0)">
 			When any transform is multiplied by [constant FLIP_X], it negates all components of the [member x] axis (the X column).

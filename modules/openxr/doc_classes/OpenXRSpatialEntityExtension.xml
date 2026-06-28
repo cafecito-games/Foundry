@@ -82,7 +82,7 @@
 			<param index="0" name="spatial_context" type="RID" />
 			<description>
 				Returns the OpenXR spatial context handle for this snapshot.
-				[b]Note:[/b] This method is intended to be used from GDExtensions that implement spatial entity capability handlers.
+				[b]Note:[/b] This method is intended to be used from FoundryExtensions that implement spatial entity capability handlers.
 			</description>
 		</method>
 		<method name="get_spatial_context_ready" qualifiers="const">
@@ -118,7 +118,7 @@
 			<param index="0" name="spatial_snapshot" type="RID" />
 			<description>
 				Returns the OpenXR spatial snapshot handle for this snapshot.
-				[b]Note:[/b] This method is intended to be used from GDExtensions that implement spatial entity capability handlers.
+				[b]Note:[/b] This method is intended to be used from FoundryExtensions that implement spatial entity capability handlers.
 			</description>
 		</method>
 		<method name="get_string" qualifiers="const">

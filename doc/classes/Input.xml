@@ -326,12 +326,12 @@
 			<description>
 				Feeds an [InputEvent] to the game. Can be used to artificially trigger input events from code. Also generates [method Node._input] calls.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var cancel_event = InputEventAction.new()
 				cancel_event.action = "ui_cancel"
 				cancel_event.pressed = true
 				Input.parse_input_event(cancel_event)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var cancelEvent = new InputEventAction();
 				cancelEvent.Action = "ui_cancel";

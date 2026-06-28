@@ -10,7 +10,7 @@
 		[b]Note:[/b] When exporting to Android, make sure to enable the [code]INTERNET[/code] permission in the Android export preset before exporting the project or using one-click deploy. Otherwise, network communication of any kind will be blocked by Android.
 		[b]Example:[/b] Contact a REST API and print one of its returned fields:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		func _ready():
 			# Create an HTTP request node and connect its completion signal.
 			var http_request = HTTPRequest.new()
@@ -38,7 +38,7 @@
 
 			# Will print the user agent string used by the HTTPRequest node (as recognized by httpbin.org).
 			print(response.headers["User-Agent"])
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		public override void _Ready()
 		{
@@ -82,7 +82,7 @@
 		[/codeblocks]
 		[b]Example:[/b] Load an image using [HTTPRequest] and display it:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		func _ready():
 			# Create an HTTP request node and connect its completion signal.
 			var http_request = HTTPRequest.new()
@@ -110,7 +110,7 @@
 			var texture_rect = TextureRect.new()
 			add_child(texture_rect)
 			texture_rect.texture = texture
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		public override void _Ready()
 		{

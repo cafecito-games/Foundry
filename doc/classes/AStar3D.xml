@@ -9,7 +9,7 @@
 		It is also possible to use non-Euclidean distances. To do so, create a script that extends [AStar3D] and override the methods [method _compute_cost] and [method _estimate_cost]. Both should take two point IDs and return the distance between the corresponding points.
 		[b]Example:[/b] Use Manhattan distance instead of Euclidean distance:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		class_name MyAStar3D
 		extends AStar3D
 
@@ -22,7 +22,7 @@
 			var u_pos = get_point_position(u)
 			var v_pos = get_point_position(v)
 			return abs(u_pos.x - v_pos.x) + abs(u_pos.y - v_pos.y) + abs(u_pos.z - v_pos.z)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 
@@ -88,10 +88,10 @@
 				Adds a new point at the given position with the given identifier. The [param id] must be 0 or larger, and the [param weight_scale] must be 0.0 or greater.
 				The [param weight_scale] is multiplied by the result of [method _compute_cost] when determining the overall cost of traveling across a segment from a neighboring point to this point. Thus, all else being equal, the algorithm prefers points with lower [param weight_scale]s to form a path.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var astar = AStar3D.new()
 				astar.add_point(1, Vector3(1, 0, 0), 4) # Adds the point (1, 0, 0) with weight_scale 4 and id 1
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var astar = new AStar3D();
 				astar.AddPoint(1, new Vector3(1, 0, 0), 4); // Adds the point (1, 0, 0) with weight_scale 4 and id 1
@@ -123,12 +123,12 @@
 			<description>
 				Creates a segment between the given points. If [param bidirectional] is [code]false[/code], only movement from [param id] to [param to_id] is allowed, not the reverse direction.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var astar = AStar3D.new()
 				astar.add_point(1, Vector3(1, 1, 0))
 				astar.add_point(2, Vector3(0, 5, 0))
 				astar.connect_points(1, 2, false)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var astar = new AStar3D();
 				astar.AddPoint(1, new Vector3(1, 1, 0));
@@ -168,13 +168,13 @@
 			<description>
 				Returns the closest position to [param to_position] that resides inside a segment between two connected points.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var astar = AStar3D.new()
 				astar.add_point(1, Vector3(0, 0, 0))
 				astar.add_point(2, Vector3(0, 5, 0))
 				astar.connect_points(1, 2)
 				var res = astar.get_closest_position_in_segment(Vector3(3, 3, 0)) # Returns (0, 3, 0)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var astar = new AStar3D();
 				astar.AddPoint(1, new Vector3(0, 0, 0));
@@ -197,7 +197,7 @@
 				If [param from_id] point is not disabled, there is no valid path to the target, and [param allow_partial_path] is [code]true[/code], returns a path to the point closest to the target that can be reached.
 				[b]Note:[/b] When [param allow_partial_path] is [code]true[/code] and [param to_id] is disabled the search may take an unusually long time to finish.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var astar = AStar3D.new()
 				astar.add_point(1, Vector3(0, 0, 0))
 				astar.add_point(2, Vector3(0, 1, 0), 1) # Default weight is 1
@@ -210,7 +210,7 @@
 				astar.connect_points(1, 4, false)
 
 				var res = astar.get_id_path(1, 3) # Returns [1, 2, 3]
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var astar = new AStar3D();
 				astar.AddPoint(1, new Vector3(0, 0, 0));
@@ -239,7 +239,7 @@
 			<description>
 				Returns an array with the IDs of the points that form the connection with the given point.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var astar = AStar3D.new()
 				astar.add_point(1, Vector3(0, 0, 0))
 				astar.add_point(2, Vector3(0, 1, 0))
@@ -250,7 +250,7 @@
 				astar.connect_points(1, 3, true)
 
 				var neighbors = astar.get_point_connections(1) # Returns [2, 3]
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var astar = new AStar3D();
 				astar.AddPoint(1, new Vector3(0, 0, 0));
