@@ -275,12 +275,6 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			break;
 		case GDScriptParser::DataType::TYPE_PARAMETER: {
 			if (p_datatype.type_parameter_name == SNAME("@Self") && p_owner != nullptr) {
-				if (p_handle_metatype && p_datatype.is_type_handle_annotation) {
-					result.kind = GDScriptDataType::NATIVE;
-					result.builtin_type = Variant::OBJECT;
-					result.native_type = Object::get_class_static();
-					break;
-				}
 				result.kind = GDScriptDataType::GDSCRIPT;
 				result.builtin_type = Variant::OBJECT;
 				result.script_type = p_owner;

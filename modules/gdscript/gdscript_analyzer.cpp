@@ -13242,6 +13242,21 @@ bool GDScriptAnalyzer::resolve_explicit_type_argument(GDScriptParser::Expression
 			return true;
 		}
 
+		if (identifier->name == SNAME("Self") && parser->current_class != nullptr) {
+			const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
+			if (receiver_relative_self) {
+				if (parser->current_function != nullptr) {
+					parser->current_function->uses_receiver_relative_self = true;
+				}
+				r_type_argument = _self_type_parameter_for_class(parser->current_class);
+			} else {
+				GDScriptParser::DataType self_type = _self_type_for_class(parser->current_class);
+				self_type.is_meta_type = true;
+				r_type_argument = type_from_metatype(self_type);
+			}
+			return true;
+		}
+
 		reduce_identifier(identifier, true);
 		GDScriptParser::DataType identifier_type = identifier->get_datatype();
 		if (identifier_type.is_set() && identifier_type.is_meta_type) {
