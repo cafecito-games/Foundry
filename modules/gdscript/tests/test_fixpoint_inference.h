@@ -320,7 +320,11 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 			paths.push_back(path_broken);
 			paths.push_back(path_good);
 
+			// Analyzing the malformed sibling emits an expected "Parse Error" script
+			// error; silence it so the deliberate bad input doesn't pollute the log.
+			ERR_PRINT_OFF;
 			FixpointInferenceResult result = GDScriptFixpointInference::run(paths);
+			ERR_PRINT_ON;
 			REQUIRE(result.ok);
 
 			// The valid leaf is still typed despite the broken sibling.
