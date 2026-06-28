@@ -53,8 +53,12 @@ class ScopedAutoloadSettings {
 	void clear_name(const StringName &p_name) {
 		ProjectSettings *project_settings = ProjectSettings::get_singleton();
 		const String setting = "autoload/" + String(p_name);
+		const String prepend_setting = "autoload_prepend/" + String(p_name);
 		if (project_settings->has_setting(setting)) {
 			project_settings->clear(setting);
+		}
+		if (project_settings->has_setting(prepend_setting)) {
+			project_settings->clear(prepend_setting);
 		}
 		if (project_settings->has_autoload(p_name)) {
 			project_settings->remove_autoload(p_name);
@@ -75,6 +79,20 @@ public:
 		const String setting = "autoload/" + String(p_name);
 		ProjectSettings::get_singleton()->set_setting(setting, p_singleton ? "*" + p_path : p_path);
 		ProjectSettings::get_singleton()->set_order(setting, p_order);
+	}
+
+	void set_prepend(const StringName &p_name, const String &p_path, bool p_singleton, int p_order) {
+		clear_name(p_name);
+		names.push_back(p_name);
+
+		const String setting = "autoload_prepend/" + String(p_name);
+		ProjectSettings::get_singleton()->set_setting(setting, p_singleton ? "*" + p_path : p_path);
+		ProjectSettings::get_singleton()->set_order(setting, p_order);
+	}
+
+	void track(const StringName &p_name) {
+		clear_name(p_name);
+		names.push_back(p_name);
 	}
 };
 
@@ -127,6 +145,12 @@ public:
 	String missing(const String &p_file_name) const {
 		return root.path_join(p_file_name);
 	}
+
+	String reserve(const String &p_file_name) {
+		const String path = root.path_join(p_file_name);
+		files.push_back(path);
+		return path;
+	}
 };
 
 bool has_diagnostic(const GDScriptAutoloadIndexEntry &p_entry, GDScriptAutoloadIndexDiagnostic::Code p_code) {
@@ -177,6 +201,13 @@ void check_entry_order(const GDScriptAutoloadIndex &p_index, const Vector<String
 	REQUIRE_EQ(entries.size(), p_expected_names.size());
 	for (int i = 0; i < p_expected_names.size(); i++) {
 		CHECK_EQ(entries[i].name, p_expected_names[i]);
+	}
+}
+
+void check_startup_info_order(const Vector<ProjectSettings::AutoloadInfo> &p_infos, const Vector<StringName> &p_expected_names) {
+	REQUIRE_EQ(p_infos.size(), p_expected_names.size());
+	for (int i = 0; i < p_expected_names.size(); i++) {
+		CHECK_EQ(p_infos[i].name, p_expected_names[i]);
 	}
 }
 
@@ -284,6 +315,25 @@ TEST_CASE("[Modules][GDScript] Autoload index builds project settings entries in
 	}
 	CHECK_EQ(index.get_by_global_class(SNAME("IndexEarlier"))->name, SNAME("IndexEarlier"));
 	CHECK(index.get_version() > 0);
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index preserves project settings prepend order") {
+	ScopedTempFiles files("gdscript_autoload_index_prepend_order");
+	ScopedAutoloadSettings autoloads;
+
+	const String normal_path = files.write("autoload_normal.gd", "extends Node\n");
+	const String prepended_path = files.write("autoload_prepended.gd", "extends Node\n");
+
+	autoloads.set(SNAME("IndexNormalAutoload"), normal_path, true, 10);
+	autoloads.set_prepend(SNAME("IndexPrependedAutoload"), prepended_path, true, 20);
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_project_settings();
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("IndexPrependedAutoload"));
+	expected_order.push_back(SNAME("IndexNormalAutoload"));
+	check_entry_order(index, expected_order);
 }
 
 TEST_CASE("[Modules][GDScript] Autoload index sorts dependencies before dependents") {
@@ -896,6 +946,8 @@ TEST_CASE("[Modules][GDScript] Autoload index diagnoses same-name different-path
 	REQUIRE_EQ(indexed_entries.size(), 1);
 	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("IndexMigrationConflict"));
 	REQUIRE(entry != nullptr);
+	CHECK_EQ(entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(entry->path, "res://migration_script.gd");
 	CHECK(has_hard_diagnostic_containing(
 			*entry,
 			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
@@ -905,6 +957,356 @@ TEST_CASE("[Modules][GDScript] Autoload index diagnoses same-name different-path
 			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
 			"res://migration_script.gd"));
 }
+
+TEST_CASE("[Modules][GDScript] Autoload index saves and loads script-owned runtime metadata") {
+	ScopedTempFiles files("gdscript_autoload_index_cache_roundtrip");
+
+	Vector<GDScriptAutoloadIndexDependency> consumer_dependencies;
+	consumer_dependencies.push_back(make_dependency(SNAME("IndexCachedService")));
+
+	GDScriptAutoloadIndexEntry consumer = make_dependency_entry(SNAME("IndexCachedConsumer"), 5, consumer_dependencies);
+	consumer.path = "res://exported/missing_consumer.gd";
+	consumer.script_path = consumer.path;
+	consumer.global_class_name = SNAME("IndexCachedNamespace.IndexCachedConsumer");
+	consumer.native_base = SNAME("Node");
+	consumer.is_tool = true;
+	consumer.is_same_script_global_class = false;
+
+	GDScriptAutoloadIndexEntry service = make_dependency_entry(SNAME("IndexCachedService"), 10);
+	service.path = "res://exported/missing_service.gd";
+	service.script_path = service.path;
+	service.global_class_name = SNAME("IndexCachedService");
+	service.native_base = SNAME("Node");
+	service.is_same_script_global_class = true;
+
+	Vector<GDScriptAutoloadIndexEntry> entries;
+	entries.push_back(consumer);
+	entries.push_back(service);
+
+	GDScriptAutoloadIndex saved;
+	saved.rebuild_from_entries(entries);
+
+	const String cache_path = files.reserve("autoload_index_cache.cfg");
+	CHECK_EQ(saved.save_to_cache(cache_path), OK);
+
+	GDScriptAutoloadIndex loaded;
+	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("IndexCachedService"));
+	expected_order.push_back(SNAME("IndexCachedConsumer"));
+	check_entry_order(loaded, expected_order);
+
+	const GDScriptAutoloadIndexEntry *loaded_consumer = loaded.get_by_name(SNAME("IndexCachedConsumer"));
+	REQUIRE(loaded_consumer != nullptr);
+	CHECK_EQ(loaded_consumer->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(loaded_consumer->path, "res://exported/missing_consumer.gd");
+	CHECK_EQ(loaded_consumer->script_path, "res://exported/missing_consumer.gd");
+	CHECK_EQ(loaded_consumer->global_class_name, SNAME("IndexCachedNamespace.IndexCachedConsumer"));
+	CHECK_EQ(loaded_consumer->native_base, SNAME("Node"));
+	CHECK(loaded_consumer->is_node);
+	CHECK(loaded_consumer->is_tool);
+	CHECK_FALSE(loaded_consumer->is_same_script_global_class);
+	REQUIRE_EQ(loaded_consumer->dependencies.size(), 1);
+	CHECK_EQ(loaded_consumer->dependencies[0].name, SNAME("IndexCachedService"));
+	CHECK_FALSE(has_diagnostic(*loaded_consumer, GDScriptAutoloadIndexDiagnostic::MISSING_PATH));
+}
+
+TEST_CASE("[Modules][GDScript] Autoload index merges runtime cache with project settings compatibility entries") {
+	ScopedTempFiles files("gdscript_autoload_index_runtime_merge");
+	ScopedAutoloadSettings autoloads;
+
+	GDScriptAutoloadIndexEntry cached = make_dependency_entry(SNAME("IndexRuntimeCached"), 20);
+	cached.path = "res://runtime_cached.gd";
+	cached.script_path = cached.path;
+	cached.global_class_name = SNAME("IndexRuntimeCached");
+	cached.native_base = SNAME("Node");
+	cached.is_same_script_global_class = true;
+
+	Vector<GDScriptAutoloadIndexEntry> cache_entries;
+	cache_entries.push_back(cached);
+
+	GDScriptAutoloadIndex saved;
+	saved.rebuild_from_entries(cache_entries);
+	const String cache_path = files.reserve("runtime_autoload_index_cache.cfg");
+	CHECK_EQ(saved.save_to_cache(cache_path), OK);
+
+	const String legacy_path = files.write("legacy_autoload.gd", "extends Node\n");
+	autoloads.set(SNAME("IndexRuntimeLegacy"), legacy_path, true, 10);
+
+	GDScriptAutoloadIndex runtime;
+	CHECK_EQ(runtime.rebuild_from_cache_and_project_settings(cache_path), OK);
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("IndexRuntimeLegacy"));
+	expected_order.push_back(SNAME("IndexRuntimeCached"));
+	check_entry_order(runtime, expected_order);
+
+	Vector<ProjectSettings::AutoloadInfo> startup_infos = runtime.get_startup_autoloads();
+	check_startup_info_order(startup_infos, expected_order);
+	CHECK_EQ(startup_infos[0].path, legacy_path);
+	CHECK_EQ(startup_infos[1].path, "res://runtime_cached.gd");
+}
+
+TEST_CASE("[Modules][GDScript] Runtime merge prefers current project settings over stale cached settings") {
+	ScopedTempFiles files("gdscript_autoload_index_runtime_stale_settings");
+	ScopedAutoloadSettings autoloads;
+
+	GDScriptAutoloadIndexEntry stale_settings = make_dependency_entry(SNAME("IndexRuntimeCurrentSettings"), 5);
+	stale_settings.path = "res://stale_cached_settings.gd";
+	stale_settings.source = GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
+
+	GDScriptAutoloadIndexEntry cached_script = make_dependency_entry(SNAME("IndexRuntimeCachedScriptOwned"), 10);
+	cached_script.path = "res://cached_script_owned.gd";
+	cached_script.source = GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION;
+
+	Vector<GDScriptAutoloadIndexEntry> cache_entries;
+	cache_entries.push_back(stale_settings);
+	cache_entries.push_back(cached_script);
+
+	GDScriptAutoloadIndex saved;
+	saved.rebuild_from_entries(cache_entries);
+	const String cache_path = files.reserve("runtime_stale_settings_autoload_index_cache.cfg");
+	CHECK_EQ(saved.save_to_cache(cache_path), OK);
+
+	const String current_settings_path = files.write("current_settings.gd", "extends Node\n");
+	autoloads.set(SNAME("IndexRuntimeCurrentSettings"), current_settings_path, true, 1);
+
+	GDScriptAutoloadIndex runtime;
+	CHECK_EQ(runtime.rebuild_from_cache_and_project_settings(cache_path), OK);
+
+	const GDScriptAutoloadIndexEntry *current_settings = runtime.get_by_name(SNAME("IndexRuntimeCurrentSettings"));
+	REQUIRE(current_settings != nullptr);
+	CHECK_EQ(current_settings->source, GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS);
+	CHECK_EQ(current_settings->path, current_settings_path);
+	CHECK_FALSE(has_diagnostic(*current_settings, GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH));
+
+	const GDScriptAutoloadIndexEntry *script_owned = runtime.get_by_name(SNAME("IndexRuntimeCachedScriptOwned"));
+	REQUIRE(script_owned != nullptr);
+	CHECK_EQ(script_owned->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(script_owned->path, "res://cached_script_owned.gd");
+}
+
+TEST_CASE("[Modules][GDScript] Runtime autoload metadata preserves dependency startup order") {
+	ScopedTempFiles files("gdscript_autoload_index_runtime_dependency_order");
+
+	Vector<GDScriptAutoloadIndexDependency> consumer_dependencies;
+	consumer_dependencies.push_back(make_dependency(SNAME("IndexRuntimeDependency")));
+
+	GDScriptAutoloadIndexEntry consumer = make_dependency_entry(SNAME("IndexRuntimeDependent"), 5, consumer_dependencies);
+	consumer.path = "res://runtime_dependent.gd";
+	GDScriptAutoloadIndexEntry dependency = make_dependency_entry(SNAME("IndexRuntimeDependency"), 50);
+	dependency.path = "res://runtime_dependency.gd";
+
+	Vector<GDScriptAutoloadIndexEntry> cache_entries;
+	cache_entries.push_back(consumer);
+	cache_entries.push_back(dependency);
+
+	GDScriptAutoloadIndex saved;
+	saved.rebuild_from_entries(cache_entries);
+	const String cache_path = files.reserve("runtime_dependency_autoload_index_cache.cfg");
+	CHECK_EQ(saved.save_to_cache(cache_path), OK);
+
+	GDScriptAutoloadIndex runtime;
+	CHECK_EQ(runtime.rebuild_from_cache_and_project_settings(cache_path), OK);
+
+	Vector<StringName> expected_order;
+	expected_order.push_back(SNAME("IndexRuntimeDependency"));
+	expected_order.push_back(SNAME("IndexRuntimeDependent"));
+	check_entry_order(runtime, expected_order);
+	check_startup_info_order(runtime.get_startup_autoloads(), expected_order);
+}
+
+TEST_CASE("[Modules][GDScript] Script-owned runtime autoload metadata wins project-settings conflicts") {
+	ScopedTempFiles files("gdscript_autoload_index_runtime_conflict_precedence");
+	ScopedAutoloadSettings autoloads;
+
+	GDScriptAutoloadIndexEntry script_entry = make_dependency_entry(SNAME("IndexRuntimeConflict"), 10);
+	script_entry.path = "res://script_owned_conflict.gd";
+	script_entry.script_path = script_entry.path;
+	script_entry.global_class_name = SNAME("IndexRuntimeConflict");
+
+	Vector<GDScriptAutoloadIndexEntry> cache_entries;
+	cache_entries.push_back(script_entry);
+
+	GDScriptAutoloadIndex saved;
+	saved.rebuild_from_entries(cache_entries);
+	const String cache_path = files.reserve("runtime_conflict_autoload_index_cache.cfg");
+	CHECK_EQ(saved.save_to_cache(cache_path), OK);
+
+	const String settings_path = files.write("settings_conflict.gd", "extends Node\n");
+	autoloads.set(SNAME("IndexRuntimeConflict"), settings_path, true, 5);
+
+	GDScriptAutoloadIndex runtime;
+	CHECK_EQ(runtime.rebuild_from_cache_and_project_settings(cache_path), OK);
+
+	const GDScriptAutoloadIndexEntry *entry = runtime.get_by_name(SNAME("IndexRuntimeConflict"));
+	REQUIRE(entry != nullptr);
+	CHECK_EQ(entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(entry->path, "res://script_owned_conflict.gd");
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			"res://script_owned_conflict.gd"));
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			settings_path));
+
+	Vector<ProjectSettings::AutoloadInfo> startup_infos = runtime.get_startup_autoloads();
+	REQUIRE_EQ(startup_infos.size(), 1);
+	CHECK_EQ(startup_infos[0].name, SNAME("IndexRuntimeConflict"));
+	CHECK_EQ(startup_infos[0].path, "res://script_owned_conflict.gd");
+}
+
+TEST_CASE("[Modules][GDScript] Runtime startup registers index autoloads for compiler compatibility") {
+	ScopedAutoloadSettings autoloads;
+	autoloads.track(SNAME("IndexRuntimeCompilerVisible"));
+
+	GDScriptAutoloadIndexEntry script_entry = make_dependency_entry(SNAME("IndexRuntimeCompilerVisible"), 10);
+	script_entry.path = "res://script_owned_compiler_visible.gd";
+	script_entry.script_path = script_entry.path;
+	script_entry.global_class_name = SNAME("IndexRuntimeCompilerVisible");
+
+	Vector<GDScriptAutoloadIndexEntry> entries;
+	entries.push_back(script_entry);
+
+	GDScriptAutoloadIndex runtime;
+	runtime.rebuild_from_entries(entries);
+	runtime.register_startup_autoloads_in_project_settings();
+
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	REQUIRE(project_settings->has_autoload(SNAME("IndexRuntimeCompilerVisible")));
+	const ProjectSettings::AutoloadInfo info = project_settings->get_autoload(SNAME("IndexRuntimeCompilerVisible"));
+	CHECK_EQ(info.name, SNAME("IndexRuntimeCompilerVisible"));
+	CHECK_EQ(info.path, "res://script_owned_compiler_visible.gd");
+	CHECK(info.is_singleton);
+}
+
+#ifdef TOOLS_ENABLED
+TEST_CASE("[Modules][GDScript] Runtime startup preparation rebuilds script annotations when cache is absent") {
+	ScopedTempFiles files("gdscript_autoload_index_runtime_tool_rebuild");
+
+	const String source =
+			"@autoload\n"
+			"class_name IndexRuntimeToolCached extends Node\n";
+	const String script_path = files.write("runtime_tool_cached.gd", source);
+	ScopedScriptServerClass registered_tool_cached(SNAME("IndexRuntimeToolCached"), "Node", script_path);
+
+	const String cache_path = files.reserve("runtime_tool_autoload_index_cache.cfg");
+	CHECK_FALSE(FileAccess::exists(cache_path));
+
+	GDScriptAutoloadIndex runtime;
+	CHECK_EQ(runtime.rebuild_for_runtime_startup(cache_path), OK);
+	CHECK(runtime.has_autoload(SNAME("IndexRuntimeToolCached")));
+	CHECK(FileAccess::exists(cache_path));
+
+	GDScriptAutoloadIndex loaded;
+	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
+	CHECK(loaded.has_autoload(SNAME("IndexRuntimeToolCached")));
+}
+
+TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery does not require body analysis") {
+	ScopedTempFiles files("gdscript_autoload_index_export_body_reference");
+
+	const String service_source =
+			"@autoload(order_id = 1)\n"
+			"class_name IndexExportBodyService extends Node\n"
+			"func ping() -> void:\n"
+			"\tpass\n";
+	const String consumer_source =
+			"@autoload(order_id = 2)\n"
+			"class_name IndexExportBodyConsumer extends Node\n"
+			"func _ready() -> void:\n"
+			"\tIndexExportBodyService.ping()\n";
+
+	const String service_path = files.write("export_body_service.gd", service_source);
+	const String consumer_path = files.write("export_body_consumer.gd", consumer_source);
+	ScopedScriptServerClass registered_service(SNAME("IndexExportBodyService"), "Node", service_path);
+	ScopedScriptServerClass registered_consumer(SNAME("IndexExportBodyConsumer"), "Node", consumer_path);
+
+	GDScriptCache::remove_parser(service_path);
+	GDScriptCache::remove_parser(consumer_path);
+
+	GDScriptAutoloadIndex index;
+	CHECK_EQ(index.rebuild_from_project_settings_and_script_annotations(), OK);
+
+	CHECK(index.has_autoload(SNAME("IndexExportBodyService")));
+	CHECK(index.has_autoload(SNAME("IndexExportBodyConsumer")));
+
+	const String cache_path = files.reserve("export_body_reference_autoload_index_cache.cfg");
+	CHECK_EQ(index.save_to_cache(cache_path), OK);
+
+	GDScriptAutoloadIndex loaded;
+	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
+	CHECK(loaded.has_autoload(SNAME("IndexExportBodyService")));
+	CHECK(loaded.has_autoload(SNAME("IndexExportBodyConsumer")));
+}
+
+TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery wins project-settings conflicts") {
+	ScopedTempFiles files("gdscript_autoload_index_export_conflict_precedence");
+	ScopedAutoloadSettings autoloads;
+
+	const String settings_path = files.write("export_conflict_settings.gd", "extends Node\n");
+	autoloads.set(SNAME("IndexExportConflict"), settings_path, true, 5);
+
+	const String script_source =
+			"@autoload\n"
+			"class_name IndexExportConflict extends Node\n";
+	const String script_path = files.write("export_conflict_script.gd", script_source);
+	ScopedScriptServerClass registered_conflict(SNAME("IndexExportConflict"), "Node", script_path);
+
+	GDScriptCache::remove_parser(script_path);
+
+	GDScriptAutoloadIndex index;
+	CHECK_EQ(index.rebuild_from_project_settings_and_script_annotations(), OK);
+
+	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("IndexExportConflict"));
+	CHECK(entry != nullptr);
+	if (entry == nullptr) {
+		return;
+	}
+	CHECK_EQ(entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(entry->path, script_path);
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			script_path));
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			settings_path));
+
+	const String cache_path = files.reserve("export_conflict_autoload_index_cache.cfg");
+	CHECK_EQ(index.save_to_cache(cache_path), OK);
+
+	GDScriptAutoloadIndex loaded;
+	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
+	const GDScriptAutoloadIndexEntry *loaded_entry = loaded.get_by_name(SNAME("IndexExportConflict"));
+	CHECK(loaded_entry != nullptr);
+	if (loaded_entry == nullptr) {
+		return;
+	}
+	CHECK_EQ(loaded_entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(loaded_entry->path, script_path);
+}
+
+TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery reports invalid annotations") {
+	ScopedTempFiles files("gdscript_autoload_index_export_invalid_annotation");
+
+	const String invalid_source =
+			"@autoload\n"
+			"class_name IndexExportInvalidAutoload extends RefCounted\n";
+	const String invalid_path = files.write("export_invalid_autoload.gd", invalid_source);
+	ScopedScriptServerClass registered_invalid(SNAME("IndexExportInvalidAutoload"), "RefCounted", invalid_path);
+
+	GDScriptCache::remove_parser(invalid_path);
+
+	GDScriptAutoloadIndex index;
+	CHECK_NE(index.rebuild_from_project_settings_and_script_annotations(), OK);
+	CHECK_FALSE(index.has_autoload(SNAME("IndexExportInvalidAutoload")));
+}
+#endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][GDScript] Analyzer allows same-script class name and autoload singleton names") {
 	ScopedTempFiles files("gdscript_analyzer_autoload_same_script");

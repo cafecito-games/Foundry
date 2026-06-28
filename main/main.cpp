@@ -144,6 +144,7 @@
 
 #ifdef MODULE_GDSCRIPT_ENABLED
 #include "modules/gdscript/gdscript.h"
+#include "modules/gdscript/gdscript_autoload_index.h"
 #ifdef TOOLS_ENABLED
 #include "modules/gdscript/editor/gdscript_migration_wizard.h"
 #endif // TOOLS_ENABLED
@@ -4533,12 +4534,25 @@ int Main::start() {
 			if (!game_path.is_empty() || !script.is_empty()) {
 				//autoload
 				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
-				HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
+				Vector<ProjectSettings::AutoloadInfo> autoloads;
+#ifdef MODULE_GDSCRIPT_ENABLED
+				GDScriptAutoloadIndex autoload_index;
+				const Error autoload_index_err = autoload_index.rebuild_for_runtime_startup();
+				if (autoload_index_err != OK) {
+					WARN_PRINT(vformat("Failed to load GDScript autoload index cache; falling back to project settings: %s.",
+							error_names[autoload_index_err]));
+					autoload_index.rebuild_from_project_settings();
+				}
+				autoload_index.register_startup_autoloads_in_project_settings();
+				autoloads = autoload_index.get_startup_autoloads();
+#else
+				for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
+					autoloads.push_back(E.value);
+				}
+#endif // MODULE_GDSCRIPT_ENABLED
 
 				//first pass, add the constants so they exist before any script is loaded
-				for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : autoloads) {
-					const ProjectSettings::AutoloadInfo &info = E.value;
-
+				for (const ProjectSettings::AutoloadInfo &info : autoloads) {
 					if (info.is_singleton) {
 						for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 							ScriptLanguage *language = ScriptServer::get_language(i);
@@ -4555,9 +4569,7 @@ int Main::start() {
 
 				//second pass, load into global constants
 				List<Node *> to_add;
-				for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : autoloads) {
-					const ProjectSettings::AutoloadInfo &info = E.value;
-
+				for (const ProjectSettings::AutoloadInfo &info : autoloads) {
 					Node *n = nullptr;
 					if (ResourceLoader::get_resource_type(info.path) == "PackedScene") {
 						// Cache the scene reference before loading it (for cyclic references)

@@ -55,10 +55,26 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "editor_export_plugin.h"
+#include "modules/modules_enabled.gen.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/main/node.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/texture.h"
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+#include "modules/gdscript/gdscript_autoload_index.h"
+#endif // MODULE_GDSCRIPT_ENABLED
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+static bool _has_script_owned_autoload_entries(const GDScriptAutoloadIndex &p_index) {
+	for (const GDScriptAutoloadIndexEntry &entry : p_index.get_entries()) {
+		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif // MODULE_GDSCRIPT_ENABLED
 
 class EditorExportSaveProxy {
 	HashSet<String> saved_paths;
@@ -485,9 +501,12 @@ Ref<EditorExportPreset> EditorExportPlatform::create_preset() {
 	List<ExportOption> options;
 	get_export_options(&options);
 
-	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
-	for (int i = 0; i < export_plugins.size(); i++) {
-		export_plugins.write[i]->_get_export_options(Ref<EditorExportPlatform>(this), &options);
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		Vector<Ref<EditorExportPlugin>> export_plugins = editor_export->get_export_plugins();
+		for (int i = 0; i < export_plugins.size(); i++) {
+			export_plugins.write[i]->_get_export_options(Ref<EditorExportPlatform>(this), &options);
+		}
 	}
 
 	for (const ExportOption &E : options) {
@@ -1067,30 +1086,97 @@ Dictionary EditorExportPlatform::get_internal_export_files(const Ref<EditorExpor
 	return files;
 }
 
-Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExportPreset> &p_preset) {
-	Vector<String> files;
+Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_files, bool p_fail_on_required_autoload_cache, const String &p_autoload_cache_path) {
+	r_files.clear();
 
-	files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
+	r_files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
+#ifdef MODULE_GDSCRIPT_ENABLED
+	GDScriptAutoloadIndex autoload_index;
+	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
+	if (autoload_index_err != OK) {
+		return autoload_index_err;
+	}
+	const String autoload_cache_path = p_autoload_cache_path.is_empty() ? GDScriptAutoloadIndex::get_cache_path() : p_autoload_cache_path;
+	const Error autoload_cache_err = autoload_index.save_to_cache(autoload_cache_path);
+	if (autoload_cache_err != OK) {
+		if (p_fail_on_required_autoload_cache && _has_script_owned_autoload_entries(autoload_index)) {
+			return autoload_cache_err;
+		}
+		WARN_PRINT(vformat("Could not save GDScript autoload index cache: %s.", error_names[autoload_cache_err]));
+	} else {
+		r_files.push_back(autoload_cache_path);
+	}
+#endif // MODULE_GDSCRIPT_ENABLED
 
 	String icon = ResourceUID::ensure_path(get_project_setting(p_preset, "application/config/icon"));
 	String splash = ResourceUID::ensure_path(get_project_setting(p_preset, "application/boot_splash/image"));
 	if (!icon.is_empty() && FileAccess::exists(icon)) {
-		files.push_back(icon);
+		r_files.push_back(icon);
 	}
 	if (!splash.is_empty() && FileAccess::exists(splash) && icon != splash) {
-		files.push_back(splash);
+		r_files.push_back(splash);
 	}
 	String resource_cache_file = ResourceUID::get_cache_file();
 	if (FileAccess::exists(resource_cache_file)) {
-		files.push_back(resource_cache_file);
+		r_files.push_back(resource_cache_file);
 	}
 
 	String extension_list_config_file = GDExtension::get_extension_list_config_file();
 	if (FileAccess::exists(extension_list_config_file)) {
-		files.push_back(extension_list_config_file);
+		r_files.push_back(extension_list_config_file);
 	}
 
+	return OK;
+}
+
+Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExportPreset> &p_preset) {
+	Vector<String> files;
+	const Error err = collect_forced_export_files(p_preset, files, true);
+	ERR_FAIL_COND_V_MSG(err != OK, Vector<String>(), vformat("Could not collect forced export files: %s.", error_names[err]));
 	return files;
+}
+
+Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths) {
+	r_paths.clear();
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+	GDScriptAutoloadIndex autoload_index;
+	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
+	if (autoload_index_err != OK) {
+		return autoload_index_err;
+	}
+	for (const GDScriptAutoloadIndexEntry &entry : autoload_index.get_entries()) {
+		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			r_paths.push_back(entry.path);
+		}
+	}
+#endif // MODULE_GDSCRIPT_ENABLED
+
+	List<PropertyInfo> props;
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	project_settings->get_property_list(&props);
+
+	for (const PropertyInfo &pi : props) {
+		const String setting_name = pi.name;
+		if (!setting_name.begins_with("autoload/") && !setting_name.begins_with("autoload_prepend/")) {
+			continue;
+		}
+
+		const int override_separator = setting_name.rfind_char('.');
+		if (override_separator != -1 && project_settings->has_setting(setting_name.substr(0, override_separator))) {
+			continue;
+		}
+
+		String autoload_path = get_project_setting(p_preset, setting_name);
+
+		if (autoload_path.begins_with("*")) {
+			autoload_path = autoload_path.substr(1);
+		}
+
+		r_paths.push_back(autoload_path);
+	}
+
+	return OK;
 }
 
 Error EditorExportPlatform::_script_save_file(const Ref<EditorExportPreset> &p_preset, void *p_userdata, const String &p_path, const Vector<uint8_t> &p_data, int p_file, int p_total, const Vector<String> &p_enc_in_filters, const Vector<String> &p_enc_ex_filters, const Vector<uint8_t> &p_key, uint64_t p_seed, bool p_delta) {
@@ -1173,20 +1259,12 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 
 		// Add autoload resources and their dependencies
-		List<PropertyInfo> props;
-		ProjectSettings::get_singleton()->get_property_list(&props);
-
-		for (const PropertyInfo &pi : props) {
-			if (!pi.name.begins_with("autoload/")) {
-				continue;
-			}
-
-			String autoload_path = get_project_setting(p_preset, pi.name);
-
-			if (autoload_path.begins_with("*")) {
-				autoload_path = autoload_path.substr(1);
-			}
-
+		Vector<String> autoload_paths;
+		const Error autoload_paths_err = _collect_autoload_export_paths(p_preset, autoload_paths);
+		if (autoload_paths_err != OK) {
+			return autoload_paths_err;
+		}
+		for (const String &autoload_path : autoload_paths) {
 			_export_find_dependencies(autoload_path, paths);
 		}
 	}
@@ -1261,7 +1339,11 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	EditorExportSaveProxy save_proxy(p_save_func, p_remove_func != nullptr);
 
 	Error err = OK;
-	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
+	Vector<Ref<EditorExportPlugin>> export_plugins;
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		export_plugins = editor_export->get_export_plugins();
+	}
 
 	struct SortByName {
 		bool operator()(const Ref<EditorExportPlugin> &left, const Ref<EditorExportPlugin> &right) const {
@@ -1647,7 +1729,12 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	}
 
-	Vector<String> forced_export = get_forced_export_files(p_preset);
+	Vector<String> forced_export;
+	err = collect_forced_export_files(p_preset, forced_export, true);
+	if (err != OK) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not collect forced export files for GDScript autoload metadata: %s."), error_names[err]));
+		return err;
+	}
 	for (int i = 0; i < forced_export.size(); i++) {
 		Vector<uint8_t> array;
 		if (GDExtension::get_extension_list_config_file() == forced_export[i]) {

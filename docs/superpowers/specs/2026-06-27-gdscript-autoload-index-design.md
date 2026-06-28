@@ -1,7 +1,7 @@
 # GDScript Autoload Index And Script-Owned Autoloads Design
 
 Date: 2026-06-27
-Status: Approved brainstorm - pending implementation plan
+Status: Runtime/export migration in progress
 Fork: CafecitoGames / Godot Engine
 
 ## Purpose
@@ -404,11 +404,34 @@ future editor-authoring convenience, not a V1 requirement.
 
 ## Runtime Migration Path
 
-V1 runtime startup continues to read project settings directly. This keeps the
-index introduction low risk.
+Runtime startup now reads the autoload index. Editor/tools builds rebuild the
+index from project settings and script annotations before local project runs and
+refresh the saved cache. Export/runtime builds read saved script-owned entries
+from the cache and merge current project settings afterward as compatibility
+input, so exported projects do not scan every script to discover script-owned
+autoloads at startup and stale cached project-settings entries cannot override
+the exported settings or runtime overrides.
 
-Later milestones can change runtime startup to read the autoload index once the
-index is saved/exported and has parity with project settings.
+Index-backed startup registers the selected startup entries back into the
+process-local `ProjectSettings` autoload list before scripts compile. This keeps
+existing compiler/runtime singleton deferral behavior compatible while the
+autoload index becomes the startup source.
+
+Project-settings order remains compatibility input. `autoload_prepend/<Name>`
+entries keep their legacy front-insert precedence ahead of regular
+`autoload/<Name>` entries, then dependency ordering may move entries earlier
+when another autoload depends on them.
+
+Migration conflict precedence:
+
+- Saved script-owned index entries are the primary runtime source.
+- Project-settings autoloads are merged afterward as compatibility entries.
+- If a project-settings entry has the same name and canonical path as a
+  script-owned entry, the script-owned metadata wins and project settings remain
+  a compatibility input.
+- If a project-settings entry has the same name but a different path, the
+  script-owned entry still wins and the merged index records a hard
+  `CONFLICTING_AUTOLOAD_PATH` diagnostic that names both paths.
 
 Final migration target:
 
@@ -429,7 +452,7 @@ Final migration target:
 | LSP | `modules/gdscript/language_server/` | Use the index for autoload definitions and type metadata. |
 | Docgen/test runner | `modules/gdscript/editor/gdscript_docgen.cpp`, `modules/gdscript/tests/gdscript_test_runner.cpp` | Preserve behavior while routing metadata through the index where appropriate. |
 | Future annotation | `modules/gdscript/gdscript_parser.*`, `modules/gdscript/gdscript_analyzer.cpp` | Add `@autoload` built-in annotation and analyzer-backed metadata extraction. |
-| Future export/runtime | `core/config/project_settings.cpp`, `main/main.cpp`, export code | Persist/load resolved autoload index metadata and optionally make runtime startup consume it. |
+| Export/runtime | `main/main.cpp`, `editor/export/editor_export_platform.cpp` | Persist/load resolved autoload index metadata and make runtime startup consume it, with project settings as compatibility input. |
 
 ## Testing Strategy
 

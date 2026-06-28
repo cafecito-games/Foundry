@@ -165,6 +165,7 @@ protected:
 	};
 
 	HashSet<String> get_features(const Ref<EditorExportPreset> &p_preset, bool p_debug) const;
+	static Error _collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths);
 
 	Dictionary _find_export_template(const String &p_template_file_name) const {
 		Dictionary ret;
@@ -293,6 +294,7 @@ public:
 
 	Dictionary get_internal_export_files(const Ref<EditorExportPreset> &p_preset, bool p_debug);
 
+	static Error collect_forced_export_files(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_files, bool p_fail_on_required_autoload_cache = false, const String &p_autoload_cache_path = String());
 	static Vector<String> get_forced_export_files(const Ref<EditorExportPreset> &p_preset);
 
 	virtual bool fill_log_messages(RichTextLabel *p_log, Error p_err);
