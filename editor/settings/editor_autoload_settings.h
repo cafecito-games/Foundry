@@ -30,14 +30,29 @@
 
 #pragma once
 
+#include "modules/modules_enabled.gen.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/tree.h"
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+#include "modules/gdscript/gdscript_autoload_index.h"
+#endif
 
 class EditorFileDialog;
 
 class EditorAutoloadSettings : public VBoxContainer {
 	GDCLASS(EditorAutoloadSettings, VBoxContainer);
+
+	enum Column {
+		COLUMN_NAME,
+		COLUMN_PATH,
+		COLUMN_SOURCE,
+		COLUMN_GLOBAL_VARIABLE,
+		COLUMN_DIAGNOSTICS,
+		COLUMN_ACTIONS,
+		COLUMN_MAX
+	};
 
 	enum {
 		BUTTON_OPEN,
@@ -56,9 +71,12 @@ class EditorAutoloadSettings : public VBoxContainer {
 		bool in_editor = false;
 		int order = 0;
 		Node *node = nullptr;
+		bool runtime_enabled = true;
+		bool can_edit_project_settings = true;
+		bool supports_manual_ordering = true;
 
 		bool operator==(const AutoloadInfo &p_info) const {
-			return order == p_info.order;
+			return name == p_info.name;
 		}
 	};
 
@@ -88,6 +106,8 @@ class EditorAutoloadSettings : public VBoxContainer {
 	void _autoload_open(const String &fpath);
 	void _autoload_file_callback(const String &p_path);
 	Node *_create_autoload(const String &p_path);
+	AutoloadInfo *_find_cached_autoload(const String &p_name);
+	const AutoloadInfo *_find_cached_autoload(const String &p_name) const;
 
 	void _script_created(Ref<Script> p_script);
 
@@ -103,6 +123,25 @@ protected:
 	static void _bind_methods();
 
 public:
+#ifdef MODULE_GDSCRIPT_ENABLED
+	struct AutoloadViewEntry {
+		StringName name;
+		String path;
+		bool is_singleton = false;
+		int order = 0;
+		String source_label;
+		bool can_edit_project_settings = false;
+		bool supports_manual_ordering = false;
+		bool has_diagnostics = false;
+		bool has_conflict = false;
+		String diagnostics_summary = "OK";
+		String diagnostics_text;
+	};
+
+	static Vector<AutoloadViewEntry> build_autoload_view_entries(const GDScriptAutoloadIndex &p_index);
+	static GDScriptAutoloadIndex build_autoload_index_for_project_view(const String &p_root = "res://");
+#endif
+
 	void init_autoloads();
 	void update_autoload();
 	bool autoload_add(const String &p_name, const String &p_path);
