@@ -41,6 +41,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <fcntl.h> // _O_WRONLY, _O_BINARY
 #include <io.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -108,6 +109,16 @@ Error FileAccessWindows::open_internal(const String &p_path, int p_mode_flags) {
 	}
 
 	_close();
+
+	// Exclusive create (WRITE | WRITE_EXCL): create the file atomically, failing
+	// if it exists. CreateFileW with CREATE_NEW also fails if a symlink occupies
+	// the path, so a planted symlink cannot redirect the write. Strip the flag so
+	// the rest of the mode handling sees a plain WRITE.
+	const bool exclusive_create = (p_mode_flags & WRITE_EXCL) != 0;
+	p_mode_flags &= ~WRITE_EXCL;
+	if (exclusive_create && p_mode_flags != WRITE) {
+		return ERR_INVALID_PARAMETER;
+	}
 
 	path_src = p_path;
 	path = fix_path(p_path);
@@ -193,7 +204,29 @@ Error FileAccessWindows::open_internal(const String &p_path, int p_mode_flags) {
 	}
 #endif
 
-	if (is_backup_save_enabled() && p_mode_flags == WRITE) {
+	if (exclusive_create) {
+		// CREATE_NEW fails if the path already exists (a regular file or a
+		// symlink), closing the existence-check race. The atomic temp-then-rename
+		// is left to the caller, so backup-save's rename-on-close is bypassed.
+		HANDLE handle = CreateFileW((LPCWSTR)path.utf16().get_data(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (handle == INVALID_HANDLE_VALUE) {
+			last_error = (GetLastError() == ERROR_FILE_EXISTS) ? ERR_ALREADY_EXISTS : ERR_FILE_CANT_OPEN;
+			return last_error;
+		}
+		const int fd = _open_osfhandle((intptr_t)handle, _O_WRONLY | _O_BINARY);
+		if (fd == -1) {
+			CloseHandle(handle);
+			last_error = ERR_FILE_CANT_OPEN;
+			return last_error;
+		}
+		f = _wfdopen(fd, mode_string);
+		if (f == nullptr) {
+			// Closing the fd also closes the underlying handle.
+			::_close(fd);
+			last_error = ERR_FILE_CANT_OPEN;
+			return last_error;
+		}
+	} else if (is_backup_save_enabled() && p_mode_flags == WRITE) {
 		save_path = path;
 		// Create a temporary file in the same directory as the target file.
 		// Note: do not use GetTempFileNameW, it's not long path aware!
@@ -214,7 +247,9 @@ Error FileAccessWindows::open_internal(const String &p_path, int p_mode_flags) {
 		path = tmpfile;
 	}
 
-	f = _wfsopen((LPCWSTR)(path.utf16().get_data()), mode_string, is_backup_save_enabled() ? ((p_mode_flags == READ) ? _SH_DENYWR : _SH_DENYRW) : _SH_DENYNO);
+	if (!exclusive_create) {
+		f = _wfsopen((LPCWSTR)(path.utf16().get_data()), mode_string, is_backup_save_enabled() ? ((p_mode_flags == READ) ? _SH_DENYWR : _SH_DENYRW) : _SH_DENYNO);
+	}
 
 	if (f == nullptr) {
 		switch (errno) {

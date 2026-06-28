@@ -201,7 +201,9 @@ Ref<FileAccess> FileAccess::open_encrypted(const String &p_path, ModeFlags p_mod
 
 	Ref<FileAccessEncrypted> fae;
 	fae.instantiate();
-	Error err = fae->open_and_parse(fa, p_key, (p_mode_flags == WRITE) ? FileAccessEncrypted::MODE_WRITE_AES256 : FileAccessEncrypted::MODE_READ, true, p_iv);
+	// Mask WRITE_EXCL so an exclusive-create write (WRITE | WRITE_EXCL) still
+	// selects write mode; the exclusive create itself already happened in _open().
+	Error err = fae->open_and_parse(fa, p_key, ((p_mode_flags & ~WRITE_EXCL) == WRITE) ? FileAccessEncrypted::MODE_WRITE_AES256 : FileAccessEncrypted::MODE_READ, true, p_iv);
 	last_file_open_error = err;
 	if (err) {
 		return Ref<FileAccess>();
@@ -217,7 +219,9 @@ Ref<FileAccess> FileAccess::open_encrypted_pass(const String &p_path, ModeFlags 
 
 	Ref<FileAccessEncrypted> fae;
 	fae.instantiate();
-	Error err = fae->open_and_parse_password(fa, p_pass, (p_mode_flags == WRITE) ? FileAccessEncrypted::MODE_WRITE_AES256 : FileAccessEncrypted::MODE_READ);
+	// Mask WRITE_EXCL so an exclusive-create write (WRITE | WRITE_EXCL) still
+	// selects write mode; the exclusive create itself already happened in _open().
+	Error err = fae->open_and_parse_password(fa, p_pass, ((p_mode_flags & ~WRITE_EXCL) == WRITE) ? FileAccessEncrypted::MODE_WRITE_AES256 : FileAccessEncrypted::MODE_READ);
 	last_file_open_error = err;
 	if (err) {
 		return Ref<FileAccess>();

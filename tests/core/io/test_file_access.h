@@ -30,11 +30,92 @@
 
 #pragma once
 
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/os/os.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
 
+#ifdef UNIX_ENABLED
+#include <unistd.h>
+#endif
+
 namespace TestFileAccess {
+
+TEST_CASE("[FileAccess] Exclusive create (WRITE_EXCL)") {
+	const String base_dir = TestUtils::get_temp_path("file_access_excl");
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(dir.is_valid());
+	dir->make_dir_recursive(base_dir);
+
+	SUBCASE("Creates a new file when none exists") {
+		const String target = base_dir.path_join("fresh.txt");
+		dir->remove(target);
+
+		Error err = ERR_BUG;
+		Ref<FileAccess> f = FileAccess::open(target, FileAccess::WRITE | FileAccess::WRITE_EXCL, &err);
+		REQUIRE(f.is_valid());
+		CHECK(err == OK);
+		f->store_string("formatted");
+		f->close();
+
+		CHECK(FileAccess::exists(target));
+		CHECK(FileAccess::get_file_as_string(target) == "formatted");
+
+		dir->remove(target);
+	}
+
+	SUBCASE("Refuses to open and never truncates an existing file") {
+		const String target = base_dir.path_join("existing.txt");
+		{
+			Ref<FileAccess> seed = FileAccess::open(target, FileAccess::WRITE);
+			REQUIRE(seed.is_valid());
+			seed->store_string("original");
+			seed->close();
+		}
+
+		Error err = OK;
+		Ref<FileAccess> f = FileAccess::open(target, FileAccess::WRITE | FileAccess::WRITE_EXCL, &err);
+		CHECK(f.is_null());
+		CHECK(err != OK);
+		// The pre-existing content must remain intact (no truncation).
+		CHECK(FileAccess::get_file_as_string(target) == "original");
+
+		dir->remove(target);
+	}
+
+#ifdef UNIX_ENABLED
+	SUBCASE("Refuses to follow a planted symlink (TOCTOU)") {
+		const String victim = base_dir.path_join("victim.txt");
+		const String link = base_dir.path_join("planted_link.txt");
+		{
+			Ref<FileAccess> seed = FileAccess::open(victim, FileAccess::WRITE);
+			REQUIRE(seed.is_valid());
+			seed->store_string("victim-data");
+			seed->close();
+		}
+		dir->remove(link);
+
+		// Simulate an attacker planting a symlink at the temp path after the
+		// existence check: the exclusive/no-follow open must refuse to write
+		// through it, leaving the victim untouched.
+		const CharString victim_native = victim.utf8();
+		const CharString link_native = link.utf8();
+		REQUIRE(symlink(victim_native.get_data(), link_native.get_data()) == 0);
+
+		Error err = OK;
+		Ref<FileAccess> f = FileAccess::open(link, FileAccess::WRITE | FileAccess::WRITE_EXCL, &err);
+		CHECK(f.is_null());
+		CHECK(err != OK);
+		CHECK(FileAccess::get_file_as_string(victim) == "victim-data");
+
+		dir->remove(link);
+		dir->remove(victim);
+	}
+#endif
+
+	dir->remove(base_dir);
+}
 
 TEST_CASE("[FileAccess] CSV read") {
 	Ref<FileAccess> f = FileAccess::open(TestUtils::get_data_path("testdata.csv"), FileAccess::READ);
