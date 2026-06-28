@@ -37,7 +37,7 @@ static FSDataType _gdtype_from_container_type(const ContainerType &p_container_t
 	type.is_type_handle = p_is_type_handle;
 
 	if (p_container_type.script.is_valid()) {
-		type.kind = Object::cast_to<FoundryScript>(p_container_type.script.ptr()) != nullptr ? FSDataType::GDSCRIPT : FSDataType::SCRIPT;
+		type.kind = Object::cast_to<FoundryScript>(p_container_type.script.ptr()) != nullptr ? FSDataType::FOUNDRY_SCRIPT : FSDataType::SCRIPT;
 		type.builtin_type = Variant::OBJECT;
 		type.native_type = p_container_type.script->get_instance_base_type();
 		type.script_type_ref = p_container_type.script;
@@ -94,7 +94,7 @@ bool FSDataType::is_type_handle_type(const Variant &p_variant) const {
 		return script_native != StringName() && ClassDB::is_parent_class(script_native, native_type);
 	}
 
-	if (kind == SCRIPT || kind == GDSCRIPT) {
+	if (kind == SCRIPT || kind == FOUNDRY_SCRIPT) {
 		if (is_script_trait) {
 			return script->has_script_trait(script_trait);
 		}

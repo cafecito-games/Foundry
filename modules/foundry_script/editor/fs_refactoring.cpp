@@ -47,7 +47,7 @@
 #include "core/string/char_utils.h"
 #include "core/templates/hash_set.h"
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
 
@@ -55,11 +55,11 @@
 #include "../language_server/fs_language_protocol.h"
 #include "../language_server/fs_workspace.h"
 #include "../language_server/godot_lsp.h"
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
-#ifdef GDSCRIPT_NO_LSP
+#ifdef FOUNDRY_SCRIPT_NO_LSP
 class FSParseResultProvider;
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 namespace {
 
@@ -255,16 +255,16 @@ struct StyleOrderBlockComparator {
 	}
 };
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 class RefactorParseResultProvider : public FSParseResultProvider {
-	mutable HashMap<String, ExtendGDScriptParser *> parse_results;
+	mutable HashMap<String, ExtendFSParser *> parse_results;
 
 	void parse_source(const String &p_path, const String &p_source) const {
 		if (!p_path.has_extension("fs")) {
 			return;
 		}
 
-		parse_results[p_path] = ExtendGDScriptParser::parse_source(p_source, p_path);
+		parse_results[p_path] = ExtendFSParser::parse_source(p_source, p_path);
 	}
 
 public:
@@ -273,13 +273,13 @@ public:
 	}
 
 	~RefactorParseResultProvider() {
-		for (KeyValue<String, ExtendGDScriptParser *> &E : parse_results) {
+		for (KeyValue<String, ExtendFSParser *> &E : parse_results) {
 			memdelete(E.value);
 		}
 	}
 
-	const ExtendGDScriptParser *get_parse_result(const String &p_path) const override {
-		ExtendGDScriptParser **existing = parse_results.getptr(p_path);
+	const ExtendFSParser *get_parse_result(const String &p_path) const override {
+		ExtendFSParser **existing = parse_results.getptr(p_path);
 		if (existing != nullptr) {
 			return *existing;
 		}
@@ -287,15 +287,15 @@ public:
 		// Cross-file refactors intentionally parse non-active scripts from disk
 		// instead of consulting connected clients' unsaved buffers or the shared
 		// protocol cache.
-		ExtendGDScriptParser *parser = ExtendGDScriptParser::parse_file(p_path);
+		ExtendFSParser *parser = ExtendFSParser::parse_file(p_path);
 		if (parser != nullptr) {
 			parse_results[p_path] = parser;
 		}
 		return parser;
 	}
 
-	const ExtendGDScriptParser *peek_parse_result(const String &p_path) const override {
-		ExtendGDScriptParser **existing = parse_results.getptr(p_path);
+	const ExtendFSParser *peek_parse_result(const String &p_path) const override {
+		ExtendFSParser **existing = parse_results.getptr(p_path);
 		return existing != nullptr ? *existing : nullptr;
 	}
 };
@@ -325,7 +325,7 @@ public:
 		return parse_results;
 	}
 };
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 struct TypeAnnotationCandidateCache {
 	bool valid = false;
@@ -1282,7 +1282,7 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const FSPars
 		// A member variable is analyzed class-wide (including project-wide subclass
 		// writers); a local is analyzed against its function body. Member inference
 		// requires the subclass closure to bound the open world: when it is absent
-		// (no workspace, or a GDSCRIPT_NO_LSP build that cannot scan the project),
+		// (no workspace, or a FOUNDRY_SCRIPT_NO_LSP build that cannot scan the project),
 		// completeness cannot be proven, so the inference must bail conservatively.
 		const Vector<const FSParser::ClassNode *> subclasses =
 				p_member_subclasses != nullptr ? p_member_subclasses->subclasses : Vector<const FSParser::ClassNode *>();
@@ -1423,7 +1423,7 @@ bool find_function_return_type_annotation(const Vector<String> &p_lines, const F
 	return true;
 }
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 struct CallsiteParameterTypeState {
 	bool has_call = false;
 	bool failed = false;
@@ -1461,7 +1461,7 @@ const FSParser::IdentifierNode *get_call_identifier(const FSParser::CallNode *p_
 bool call_resolves_to_symbol(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::CallNode *p_call,
 		const LSP::DocumentSymbol *p_target_symbol,
 		const FSParseResultProvider *p_parse_results) {
@@ -1484,7 +1484,7 @@ bool call_resolves_to_symbol(
 void collect_callsite_parameter_type_in_expression(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::ExpressionNode *p_expression,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1494,7 +1494,7 @@ void collect_callsite_parameter_type_in_expression(
 void collect_callsite_parameter_type_in_suite(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::SuiteNode *p_suite,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1504,7 +1504,7 @@ void collect_callsite_parameter_type_in_suite(
 void collect_callsite_parameter_type_in_variable(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::VariableNode *p_variable,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1529,7 +1529,7 @@ void collect_callsite_parameter_type_in_variable(
 void collect_callsite_parameter_type_from_call(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::CallNode *p_call,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1572,7 +1572,7 @@ void collect_callsite_parameter_type_from_call(
 void collect_callsite_parameter_type_in_expression(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::ExpressionNode *p_expression,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1655,7 +1655,7 @@ void collect_callsite_parameter_type_in_expression(
 void collect_callsite_parameter_type_in_node(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::Node *p_node,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1716,7 +1716,7 @@ void collect_callsite_parameter_type_in_node(
 void collect_callsite_parameter_type_in_suite(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::SuiteNode *p_suite,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1733,7 +1733,7 @@ void collect_callsite_parameter_type_in_suite(
 void collect_callsite_parameter_type_in_class(
 		const Ref<FSWorkspace> &p_workspace,
 		const String &p_path,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParser::ClassNode *p_class,
 		const LSP::DocumentSymbol *p_target_symbol,
 		int p_parameter_index,
@@ -1801,7 +1801,7 @@ bool infer_parameter_type_from_call_sites(
 		const FSParser::FunctionNode *p_function,
 		int p_parameter_index,
 		const Ref<FSWorkspace> &p_workspace,
-		const ExtendGDScriptParser *p_target_parser,
+		const ExtendFSParser *p_target_parser,
 		const FSParseResultProvider *p_parse_results,
 		String &r_rendered_type,
 		FSParser::DataType &r_datatype,
@@ -1838,7 +1838,7 @@ bool infer_parameter_type_from_call_sites(
 		if (!p_workspace->source_may_reference_symbol(path, function_name, p_parse_results)) {
 			continue;
 		}
-		const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(path);
+		const ExtendFSParser *parser = p_parse_results->get_parse_result(path);
 		if (parser == nullptr || parser->parse_result != OK) {
 			continue;
 		}
@@ -1878,7 +1878,7 @@ void apply_callsite_parameter_type_annotation(
 		const FSParser::ParameterNode *p_parameter,
 		int p_parameter_index,
 		const Ref<FSWorkspace> &p_workspace,
-		const ExtendGDScriptParser *p_target_parser,
+		const ExtendFSParser *p_target_parser,
 		const FSParseResultProvider *p_parse_results,
 		TypeAnnotationCandidate &r_candidate,
 		const TypeAnnotationRenderContext *p_render_context) {
@@ -1920,7 +1920,7 @@ void apply_callsite_parameter_type_annotation(
 	r_candidate.enabled = true;
 	r_candidate.disabled_reason = String();
 }
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Vector<String> &p_lines, const FSParser::SuiteNode *p_suite, ExtractVariableCandidate &r_candidate);
 
@@ -4893,12 +4893,12 @@ void collect_type_annotation_in_function(
 		const RefactorLocation *p_location,
 		Vector<TypeAnnotationCandidate> &r_candidates,
 		const TypeAnnotationRenderContext *p_render_context
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 		,
 		const Ref<FSWorkspace> &p_workspace,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParseResultProvider *p_parse_results
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 ) {
 	if (p_function == nullptr) {
 		return;
@@ -4936,11 +4936,11 @@ void collect_type_annotation_in_function(
 		const FSParser::ParameterNode *parameter = p_function->parameters[i];
 		TypeAnnotationCandidate candidate;
 		if (find_assignable_type_annotation(p_lines, parameter, "parameter", false, candidate, nullptr, nullptr, render_context) && candidate.matched) {
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 			if (p_location == nullptr || caret_on_segment(*p_location, candidate.line, candidate.caret_span_start, candidate.caret_span_end)) {
 				apply_callsite_parameter_type_annotation(p_class, p_function, parameter, i, p_workspace, p_parser, p_parse_results, candidate, render_context);
 			}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 			r_candidates.push_back(candidate);
 		}
 	}
@@ -4956,7 +4956,7 @@ void collect_type_annotation_in_function(
 	collect_type_annotation_in_suite(p_lines, p_function->body, r_candidates, p_function->body, render_context);
 }
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 // True when `p_descendant` derives (transitively) from the class identified by
 // `p_base_fqcn`, by walking its resolved base-class chain. `p_descendant` itself is
 // not considered its own subclass.
@@ -5025,7 +5025,7 @@ bool source_could_extend_base(const Vector<String> &p_lines, const Vector<String
 MemberSubclassClosure discover_member_subclasses(
 		const FSParser::ClassNode *p_class,
 		const Ref<FSWorkspace> &p_workspace,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParseResultProvider *p_parse_results) {
 	MemberSubclassClosure closure;
 	if (p_class == nullptr || p_workspace.is_null() || p_parse_results == nullptr) {
@@ -5067,7 +5067,7 @@ MemberSubclassClosure discover_member_subclasses(
 	List<String> paths;
 	p_workspace->list_project_script_files(paths);
 	for (const String &path : paths) {
-		const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(path);
+		const ExtendFSParser *parser = p_parse_results->get_parse_result(path);
 		if (parser == nullptr) {
 			// The script is listed in the project but could not be read or parsed at
 			// all. Its contents are unknown, so fall back to reading the raw text; a
@@ -5101,7 +5101,7 @@ MemberSubclassClosure discover_member_subclasses(
 	}
 	return closure;
 }
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 void collect_type_annotation_in_class(
 		const Vector<String> &p_lines,
@@ -5110,12 +5110,12 @@ void collect_type_annotation_in_class(
 		Vector<TypeAnnotationCandidate> &r_candidates,
 		bool p_allow_member_inference,
 		const TypeAnnotationRenderContext *p_render_context
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 		,
 		const Ref<FSWorkspace> &p_workspace,
-		const ExtendGDScriptParser *p_parser,
+		const ExtendFSParser *p_parser,
 		const FSParseResultProvider *p_parse_results
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 ) {
 	if (p_class == nullptr) {
 		return;
@@ -5136,13 +5136,13 @@ void collect_type_annotation_in_class(
 	// rather than relying solely on the post-edit verifier (computed lazily, only
 	// for the verified migration path).
 	const MemberSubclassClosure *member_subclasses = nullptr;
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	MemberSubclassClosure subclass_closure;
 	if (p_allow_member_inference) {
 		subclass_closure = discover_member_subclasses(p_class, p_workspace, p_parser, p_parse_results);
 		member_subclasses = &subclass_closure;
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	for (const FSParser::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
@@ -5159,18 +5159,18 @@ void collect_type_annotation_in_class(
 				break;
 			case FSParser::ClassNode::Member::FUNCTION:
 				collect_type_annotation_in_function(p_lines, p_class, member.function, p_location, r_candidates, render_context
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 				);
 				break;
 			case FSParser::ClassNode::Member::CLASS:
 				collect_type_annotation_in_class(p_lines, member.m_class, p_location, r_candidates, p_allow_member_inference, render_context
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 						,
 						p_workspace, p_parser, p_parse_results
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 				);
 				break;
 			default:
@@ -5239,19 +5239,19 @@ Vector<TypeAnnotationCandidate> collect_type_annotation_candidates_in_tree(
 		const RefactorLocation *p_location = nullptr,
 		bool p_allow_member_inference = false,
 		const TypeAnnotationRenderContext *p_render_context = nullptr
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 		,
 		const Ref<FSWorkspace> &p_workspace = Ref<FSWorkspace>(),
-		const ExtendGDScriptParser *p_parser = nullptr,
+		const ExtendFSParser *p_parser = nullptr,
 		const FSParseResultProvider *p_parse_results = nullptr
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 ) {
 	Vector<TypeAnnotationCandidate> candidates;
 	collect_type_annotation_in_class(p_lines, p_tree, p_location, candidates, p_allow_member_inference, p_render_context
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 	);
 	return candidates;
 }
@@ -5260,21 +5260,21 @@ TypeAnnotationCandidate find_type_annotation_candidate_in_tree(
 		const RefactorLocation &p_location,
 		const Vector<String> &p_lines,
 		const FSParser::ClassNode *p_tree
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 		,
 		const Ref<FSWorkspace> &p_workspace = Ref<FSWorkspace>(),
-		const ExtendGDScriptParser *p_parser = nullptr,
+		const ExtendFSParser *p_parser = nullptr,
 		const FSParseResultProvider *p_parse_results = nullptr
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 ) {
 	// The interactive caret-located refactor applies edits directly without the
 	// verification harness, so member container inference is left disabled here.
 	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(p_tree);
 	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(p_lines, p_tree, &p_location, /* allow_member_inference */ false, &render_context
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 			,
 			p_workspace, p_parser, p_parse_results
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 	);
 	for (const TypeAnnotationCandidate &candidate : candidates) {
 		const int caret_span_end_line = candidate.caret_span_end_line < 0 ? candidate.line : candidate.caret_span_end_line;
@@ -5327,9 +5327,9 @@ ExtractVariableCandidate find_extract_variable_candidate_uncached(
 		const RefactorLocation &p_location,
 		const Vector<String> &p_lines,
 		const FSParseResultProvider *p_parse_results) {
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr) {
-		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		const ExtendFSParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
 		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
 			if (lsp_parser->parse_result != OK) {
 				ExtractVariableCandidate candidate;
@@ -5339,7 +5339,7 @@ ExtractVariableCandidate find_extract_variable_candidate_uncached(
 			return find_extract_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 		}
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	FSParser parser;
 	Error err = parser.parse(p_context.source, p_context.path, false);
@@ -5363,9 +5363,9 @@ ExtractMethodCandidate find_extract_method_candidate_uncached(
 		const FSParseResultProvider *p_parse_results,
 		const String &p_requested_name) {
 	const bool source_has_final_newline = p_context.source.ends_with("\n");
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr) {
-		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		const ExtendFSParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
 		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
 			if (lsp_parser->parse_result != OK) {
 				ExtractMethodCandidate candidate;
@@ -5380,7 +5380,7 @@ ExtractMethodCandidate find_extract_method_candidate_uncached(
 					p_requested_name);
 		}
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	FSParser parser;
 	Error err = parser.parse(p_context.source, p_context.path, false);
@@ -5407,9 +5407,9 @@ InlineVariableCandidate find_inline_variable_candidate_uncached(
 		const RefactorLocation &p_location,
 		const Vector<String> &p_lines,
 		const FSParseResultProvider *p_parse_results) {
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr) {
-		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		const ExtendFSParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
 		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
 			if (lsp_parser->parse_result != OK) {
 				InlineVariableCandidate candidate;
@@ -5419,7 +5419,7 @@ InlineVariableCandidate find_inline_variable_candidate_uncached(
 			return find_inline_variable_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree());
 		}
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	FSParser parser;
 	Error err = parser.parse(p_context.source, p_context.path, false);
@@ -5595,9 +5595,9 @@ TypeAnnotationCandidate find_type_annotation_candidate_uncached(
 		const RefactorLocation &p_location,
 		const Vector<String> &p_lines,
 		const FSParseResultProvider *p_parse_results) {
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr) {
-		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		const ExtendFSParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
 		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
 			if (lsp_parser->parse_result != OK) {
 				TypeAnnotationCandidate candidate;
@@ -5609,7 +5609,7 @@ TypeAnnotationCandidate find_type_annotation_candidate_uncached(
 			return find_type_annotation_candidate_in_tree(p_location, p_lines, lsp_parser->get_tree(), workspace, lsp_parser, p_parse_results);
 		}
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	FSParser parser;
 	Error err = parser.parse(p_context.source, p_context.path, false);
@@ -5673,7 +5673,7 @@ const FSParser::ClassNode *find_enclosing_class(const FSParser::ClassNode *p_cla
 	return best;
 }
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 // Depth-first search for the class node with the given fully-qualified name within a
 // parse tree, used to re-resolve a cross-file base against a freshly parsed file so the
 // returned node and its source lines come from the same parse.
@@ -5694,7 +5694,7 @@ const FSParser::ClassNode *find_class_node_by_fqcn(const FSParser::ClassNode *p_
 	}
 	return nullptr;
 }
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 // Next FoundryScript class up the inheritance chain, or nullptr when the base is not a
 // resolved FoundryScript class reachable in-tree (native bases / unresolved). A base resolved
@@ -5735,9 +5735,9 @@ const FSParser::ClassNode *resolve_base_class(
 		return base.class_type;
 	}
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr && !base.script_path.is_empty()) {
-		const ExtendGDScriptParser *base_parser = p_parse_results->get_parse_result(base.script_path);
+		const ExtendFSParser *base_parser = p_parse_results->get_parse_result(base.script_path);
 		if (base_parser != nullptr) {
 			const FSParser::ClassNode *resolved = base_parser->get_tree();
 			if (is_class && resolved != nullptr && base.class_type->fqcn != resolved->fqcn) {
@@ -5755,7 +5755,7 @@ const FSParser::ClassNode *resolve_base_class(
 	}
 #else
 	(void)p_parse_results;
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	// Cross-file base without a usable provider parse: follow the resolved node so
 	// detection still finds the owed methods, but report no lines so any default value
@@ -5801,7 +5801,7 @@ const Vector<String> *resolve_trait_declaring_lines(
 	if (tree_contains_class(p_root, p_trait)) {
 		return &p_root_lines;
 	}
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr) {
 		// An inline trait declared inside another file has the fqcn "<path>::Trait", so its
 		// path is the leading segment. A root trait declared with `trait_name` has the bare
@@ -5812,7 +5812,7 @@ const Vector<String> *resolve_trait_declaring_lines(
 			trait_path = global_name != StringName() ? ScriptServer::get_global_class_path(global_name) : String();
 		}
 		if (trait_path.begins_with("res://")) {
-			const ExtendGDScriptParser *trait_parser = p_parse_results->get_parse_result(trait_path);
+			const ExtendFSParser *trait_parser = p_parse_results->get_parse_result(trait_path);
 			if (trait_parser != nullptr && find_class_node_by_fqcn(trait_parser->get_tree(), p_trait->fqcn) != nullptr) {
 				return &trait_parser->get_lines();
 			}
@@ -5820,7 +5820,7 @@ const Vector<String> *resolve_trait_declaring_lines(
 	}
 #else
 	(void)p_parse_results;
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 	return nullptr;
 }
 
@@ -6230,9 +6230,9 @@ ImplementAbstractCandidate find_implement_abstract_candidate_uncached(
 		const RefactorLocation &p_location,
 		const Vector<String> &p_lines,
 		const FSParseResultProvider *p_parse_results) {
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr) {
-		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		const ExtendFSParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
 		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
 			// A class that still owes abstract methods makes the analyzer report an
 			// error, so `parse_result` is not OK even though the tree is fully built
@@ -6247,7 +6247,7 @@ ImplementAbstractCandidate find_implement_abstract_candidate_uncached(
 			return find_implement_abstract_in_tree(p_location, p_context.path, p_lines, tree, p_parse_results);
 		}
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	FSParser parser;
 	Error err = parser.parse(p_context.source, p_context.path, false);
@@ -6347,9 +6347,9 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 	const Vector<String> lines = p_context.source.split("\n");
 
 	const FSParser::ClassNode *tree = nullptr;
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	if (p_parse_results != nullptr) {
-		const ExtendGDScriptParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		const ExtendFSParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
 		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), lines)) {
 			if (lsp_parser->parse_result != OK) {
 				result.error_message = "Cannot analyze this script.";
@@ -6358,7 +6358,7 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 			tree = lsp_parser->get_tree();
 		}
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	FSParser parser;
 	if (tree == nullptr) {
@@ -6374,22 +6374,22 @@ RefactorCandidatesResult collect_type_annotation_candidates(
 		tree = parser.get_tree();
 	}
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	Ref<FSWorkspace> workspace;
-	const ExtendGDScriptParser *lsp_parser = nullptr;
+	const ExtendFSParser *lsp_parser = nullptr;
 	if (p_parse_results != nullptr) {
 		FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
 		workspace = protocol ? protocol->get_workspace() : Ref<FSWorkspace>();
 		lsp_parser = p_parse_results->get_parse_result(p_context.path);
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	const TypeAnnotationRenderContext render_context = make_type_annotation_render_context(tree);
 	const Vector<TypeAnnotationCandidate> candidates = collect_type_annotation_candidates_in_tree(lines, tree, nullptr, p_context.allow_member_container_inference, &render_context
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 			,
 			workspace, lsp_parser, p_parse_results
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 	);
 	for (const TypeAnnotationCandidate &candidate : candidates) {
 		RefactorCandidate public_candidate;
@@ -7130,7 +7130,7 @@ bool FSRefactoring::validate_extract_method_name(
 	return true;
 }
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 static LSP::TextDocumentPositionParams make_document_position(const Ref<FSWorkspace> &p_workspace, const RefactorContext &p_context, const RefactorLocation &p_location) {
 	LSP::TextDocumentPositionParams doc_position;
 	doc_position.textDocument.uri = p_workspace->get_file_uri(p_context.path);
@@ -7143,7 +7143,7 @@ static bool is_string_literal_usage(
 		const String &p_path,
 		const LSP::Location &p_usage,
 		const FSParseResultProvider &p_parse_results) {
-	const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(p_path);
+	const ExtendFSParser *parser = p_parse_results.get_parse_result(p_path);
 	if (!parser) {
 		return false;
 	}
@@ -7174,7 +7174,7 @@ static void collect_dynamic_string_references(
 		if (!p_workspace->source_may_reference_symbol(path, p_symbol.name, &p_parse_results)) {
 			continue;
 		}
-		const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(path);
+		const ExtendFSParser *parser = p_parse_results.get_parse_result(path);
 		if (!parser) {
 			continue;
 		}
@@ -7214,7 +7214,7 @@ static void collect_parse_error_textual_references(
 		if (!p_workspace->source_may_reference_symbol(path, p_symbol.name, &p_parse_results)) {
 			continue;
 		}
-		const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(path);
+		const ExtendFSParser *parser = p_parse_results.get_parse_result(path);
 		if (parser == nullptr || parser->parse_result == OK) {
 			continue;
 		}
@@ -7236,7 +7236,7 @@ static void collect_parse_error_textual_references(
 		}
 	}
 }
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 static RefactorResult prepare_rename(
 		const RefactorContext &p_context,
@@ -7245,7 +7245,7 @@ static RefactorResult prepare_rename(
 		const FSParseResultProvider *p_parse_results) {
 	RefactorResult result;
 
-#ifdef GDSCRIPT_NO_LSP
+#ifdef FOUNDRY_SCRIPT_NO_LSP
 	result.ok = false;
 	result.error_message = "Rename requires the language server, which is not available in this build.";
 	return result;
@@ -7290,7 +7290,7 @@ static RefactorResult prepare_rename(
 		return result;
 	}
 
-	const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(p_context.path);
+	const ExtendFSParser *parser = p_parse_results->get_parse_result(p_context.path);
 	if (parser) {
 		String collision_reason;
 		if (FSRefactorNames::has_scope_collision(parser->get_symbols(), resolved_symbol, p_params.new_name, collision_reason)) {
@@ -7371,7 +7371,7 @@ static RefactorResult prepare_rename(
 	result.rename_anchor_line = identifier_range.start.line;
 	result.rename_anchor_column = identifier_range.start.character;
 	return result;
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 }
 
 constexpr int STYLE_ORDER_MAX_CONVERGENCE_PASSES = 16;
@@ -7443,18 +7443,18 @@ RefactorResult prepare_sort_members_by_style_guide(const RefactorContext &p_cont
 Vector<RefactorAvailability> FSRefactoring::get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	Vector<RefactorAvailability> result;
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	RefactorParseResultProviderScope parse_results(p_context);
 	const FSParseResultProvider *parse_result_provider = parse_results.get();
 #else
 	const FSParseResultProvider *parse_result_provider = nullptr;
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	RefactorAvailability rename;
 	rename.kind = RefactorKind::RENAME;
 	rename.title = "Rename Symbol";
 
-#ifdef GDSCRIPT_NO_LSP
+#ifdef FOUNDRY_SCRIPT_NO_LSP
 	rename.enabled = false;
 	rename.disabled_reason = "Rename requires the language server.";
 #else
@@ -7475,7 +7475,7 @@ Vector<RefactorAvailability> FSRefactoring::get_available_refactors(const Refact
 			rename.disabled_reason = "Place the caret on a renameable symbol.";
 		}
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	result.push_back(rename);
 
@@ -7563,12 +7563,12 @@ Vector<RefactorAvailability> FSRefactoring::get_available_refactors(const Refact
 }
 
 RefactorResult FSRefactoring::prepare(const RefactorContext &p_context, const RefactorLocation &p_location, RefactorKind p_kind, const RefactorParams &p_params) {
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	RefactorParseResultProviderScope parse_results(p_context);
 	const FSParseResultProvider *parse_result_provider = parse_results.get();
 #else
 	const FSParseResultProvider *parse_result_provider = nullptr;
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	switch (p_kind) {
 		case RefactorKind::RENAME:
@@ -7647,12 +7647,12 @@ RefactorCandidatesResult FSRefactoring::find_candidates(const RefactorContext &p
 		return result;
 	}
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	RefactorParseResultProviderScope parse_results(p_context);
 	const FSParseResultProvider *parse_result_provider = parse_results.get();
 #else
 	const FSParseResultProvider *parse_result_provider = nullptr;
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 	return collect_type_annotation_candidates(p_context, parse_result_provider);
 }

@@ -824,7 +824,7 @@ namespace Godot
 
         /// <summary>
         /// The identity projection, with no distortion applied.
-        /// This is used as a replacement for <c>Projection()</c> in GDScript.
+        /// This is used as a replacement for <c>Projection()</c> in FoundryScript.
         /// Do not use <c>new Projection()</c> with no arguments in C#, because it sets all values to zero.
         /// </summary>
         /// <value>Equivalent to <c>new Projection(new Vector4(1, 0, 0, 0), new Vector4(0, 1, 0, 0), new Vector4(0, 0, 1, 0), new Vector4(0, 0, 0, 1))</c>.</value>

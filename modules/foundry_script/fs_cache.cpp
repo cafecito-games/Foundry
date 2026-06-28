@@ -144,12 +144,12 @@ FSParserRef::~FSParserRef() {
 
 FSCache *FSCache::singleton = nullptr;
 
-SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG> &_get_gdscript_cache_mutex() {
+SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG> &_get_fs_cache_mutex() {
 	return FSCache::mutex;
 }
 
 template <>
-thread_local SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG>::TLSData SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG>::tls_data(_get_gdscript_cache_mutex());
+thread_local SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG>::TLSData SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG>::tls_data(_get_fs_cache_mutex());
 SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG> FSCache::mutex;
 
 void FSCache::move_script(const String &p_from, const String &p_to) {
@@ -165,15 +165,15 @@ void FSCache::move_script(const String &p_from, const String &p_to) {
 
 	remove_parser(p_from);
 
-	if (singleton->shallow_gdscript_cache.has(p_from) && !p_from.is_empty()) {
-		singleton->shallow_gdscript_cache[p_to] = singleton->shallow_gdscript_cache[p_from];
+	if (singleton->shallow_fs_cache.has(p_from) && !p_from.is_empty()) {
+		singleton->shallow_fs_cache[p_to] = singleton->shallow_fs_cache[p_from];
 	}
-	singleton->shallow_gdscript_cache.erase(p_from);
+	singleton->shallow_fs_cache.erase(p_from);
 
-	if (singleton->full_gdscript_cache.has(p_from) && !p_from.is_empty()) {
-		singleton->full_gdscript_cache[p_to] = singleton->full_gdscript_cache[p_from];
+	if (singleton->full_fs_cache.has(p_from) && !p_from.is_empty()) {
+		singleton->full_fs_cache[p_to] = singleton->full_fs_cache[p_from];
 	}
-	singleton->full_gdscript_cache.erase(p_from);
+	singleton->full_fs_cache.erase(p_from);
 }
 
 void FSCache::remove_script(const String &p_path) {
@@ -205,8 +205,8 @@ void FSCache::remove_script(const String &p_path) {
 	remove_parser(p_path);
 
 	singleton->dependencies.erase(p_path);
-	singleton->shallow_gdscript_cache.erase(p_path);
-	singleton->full_gdscript_cache.erase(p_path);
+	singleton->shallow_fs_cache.erase(p_path);
+	singleton->full_fs_cache.erase(p_path);
 }
 
 Ref<FSParserRef> FSCache::get_parser(const String &p_path, FSParserRef::Status p_status, Error &r_error, const String &p_owner) {
@@ -357,11 +357,11 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 	if (!p_owner.is_empty() && p_path != p_owner) {
 		singleton->dependencies[p_owner].insert(p_path);
 	}
-	if (singleton->full_gdscript_cache.has(p_path)) {
-		return singleton->full_gdscript_cache[p_path];
+	if (singleton->full_fs_cache.has(p_path)) {
+		return singleton->full_fs_cache[p_path];
 	}
-	if (singleton->shallow_gdscript_cache.has(p_path)) {
-		return singleton->shallow_gdscript_cache[p_path];
+	if (singleton->shallow_fs_cache.has(p_path)) {
+		return singleton->shallow_fs_cache[p_path];
 	}
 
 	const String remapped_path = ResourceLoader::path_remap(p_path);
@@ -392,7 +392,7 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 		FSCompiler::make_scripts(script.ptr(), parser_ref->get_parser()->get_tree(), true);
 	}
 
-	singleton->shallow_gdscript_cache[p_path] = script;
+	singleton->shallow_fs_cache[p_path] = script;
 
 	return script;
 }
@@ -406,8 +406,8 @@ Ref<FoundryScript> FSCache::get_full_script(const String &p_path, Error &r_error
 
 	Ref<FoundryScript> script;
 	r_error = OK;
-	if (singleton->full_gdscript_cache.has(p_path)) {
-		script = singleton->full_gdscript_cache[p_path];
+	if (singleton->full_fs_cache.has(p_path)) {
+		script = singleton->full_fs_cache[p_path];
 		if (!p_update_from_disk) {
 			return script;
 		}
@@ -450,8 +450,8 @@ Ref<FoundryScript> FSCache::get_full_script(const String &p_path, Error &r_error
 	}
 
 finish:
-	singleton->full_gdscript_cache[p_path] = script;
-	singleton->shallow_gdscript_cache.erase(p_path);
+	singleton->full_fs_cache[p_path] = script;
+	singleton->shallow_fs_cache.erase(p_path);
 
 	// Add the script to the resource cache. Usually ResourceLoader would take care of it, but cyclic references can break that sometimes so we do it ourselves.
 	// Resources don't know whether they are cached, so using `set_path()` after `set_path_cache()` does not add the resource to the cache if the path is the same.
@@ -465,12 +465,12 @@ finish:
 Ref<FoundryScript> FSCache::get_cached_script(const String &p_path) {
 	MutexLock lock(singleton->mutex);
 
-	if (singleton->full_gdscript_cache.has(p_path)) {
-		return singleton->full_gdscript_cache[p_path];
+	if (singleton->full_fs_cache.has(p_path)) {
+		return singleton->full_fs_cache[p_path];
 	}
 
-	if (singleton->shallow_gdscript_cache.has(p_path)) {
-		return singleton->shallow_gdscript_cache[p_path];
+	if (singleton->shallow_fs_cache.has(p_path)) {
+		return singleton->shallow_fs_cache[p_path];
 	}
 
 	return Ref<FoundryScript>();
@@ -481,8 +481,8 @@ Error FSCache::finish_compiling(const String &p_owner) {
 
 	// Mark this as compiled.
 	Ref<FoundryScript> script = get_cached_script(p_owner);
-	singleton->full_gdscript_cache[p_owner] = script;
-	singleton->shallow_gdscript_cache.erase(p_owner);
+	singleton->full_fs_cache[p_owner] = script;
+	singleton->shallow_fs_cache.erase(p_owner);
 
 	HashSet<String> depends = singleton->dependencies[p_owner];
 
@@ -505,11 +505,11 @@ Error FSCache::finish_compiling(const String &p_owner) {
 void FSCache::add_static_script(Ref<FoundryScript> p_script) {
 	ERR_FAIL_COND_MSG(p_script.is_null(), "Trying to cache empty script as static.");
 	ERR_FAIL_COND_MSG(!p_script->is_valid(), "Trying to cache non-compiled script as static.");
-	singleton->static_gdscript_cache[p_script->get_fully_qualified_name()] = p_script;
+	singleton->static_fs_cache[p_script->get_fully_qualified_name()] = p_script;
 }
 
 void FSCache::remove_static_script(const String &p_fqcn) {
-	singleton->static_gdscript_cache.erase(p_fqcn);
+	singleton->static_fs_cache.erase(p_fqcn);
 }
 
 void FSCache::invalidate_analysis() {
@@ -538,9 +538,9 @@ void FSCache::invalidate_analysis() {
 	// Drop the analyzed-script artifacts so a subsequent load rebuilds them under the new settings.
 	// Source overrides are intentionally preserved: an in-progress edit's buffer must outlive a
 	// settings flip so the re-analysis still sees the unsaved source.
-	singleton->shallow_gdscript_cache.clear();
-	singleton->full_gdscript_cache.clear();
-	singleton->static_gdscript_cache.clear();
+	singleton->shallow_fs_cache.clear();
+	singleton->full_fs_cache.clear();
+	singleton->static_fs_cache.clear();
 }
 
 void FSCache::clear() {
@@ -583,9 +583,9 @@ void FSCache::clear() {
 
 	parser_map_refs.clear();
 	singleton->source_overrides.clear();
-	singleton->shallow_gdscript_cache.clear();
-	singleton->full_gdscript_cache.clear();
-	singleton->static_gdscript_cache.clear();
+	singleton->shallow_fs_cache.clear();
+	singleton->full_fs_cache.clear();
+	singleton->static_fs_cache.clear();
 
 	// `cleared` only guards against re-entrant `remove_script()`/`move_script()`
 	// calls triggered while the caches above are being emptied. Once that is done

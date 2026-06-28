@@ -35,7 +35,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/tree.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/fs_autoload_index.h"
 #endif
 
@@ -123,7 +123,7 @@ protected:
 	static void _bind_methods();
 
 public:
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	struct AutoloadViewEntry {
 		StringName name;
 		String path;

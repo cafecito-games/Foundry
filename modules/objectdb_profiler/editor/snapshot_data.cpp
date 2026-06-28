@@ -35,7 +35,7 @@
 #include "core/object/script_language.h"
 #include "scene/debugger/scene_debugger.h"
 
-#if defined(MODULE_GDSCRIPT_ENABLED) && defined(DEBUG_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(DEBUG_ENABLED)
 #include "modules/foundry_script/foundry_script.h"
 #endif
 
@@ -149,7 +149,7 @@ String SnapshotDataObject::get_node_path() {
 }
 
 String SnapshotDataObject::_get_script_name(Ref<Script> p_script) {
-#if defined(MODULE_GDSCRIPT_ENABLED) && defined(DEBUG_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && defined(DEBUG_ENABLED)
 	// FSs have more specific names than base scripts, so use those names if possible.
 	return FoundryScript::debug_get_script_name(p_script);
 #else

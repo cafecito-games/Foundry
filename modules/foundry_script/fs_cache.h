@@ -81,7 +81,7 @@ public:
 
 #ifdef TESTS_ENABLED
 namespace FSTests {
-class TestGDScriptCacheAccessor;
+class TestFSCacheAccessor;
 }
 #endif // TESTS_ENABLED
 
@@ -89,9 +89,9 @@ class FSCache {
 	// String key is full path.
 	HashMap<String, FSParserRef *> parser_map;
 	HashMap<String, Vector<ObjectID>> abandoned_parser_map;
-	HashMap<String, Ref<FoundryScript>> shallow_gdscript_cache;
-	HashMap<String, Ref<FoundryScript>> full_gdscript_cache;
-	HashMap<String, Ref<FoundryScript>> static_gdscript_cache;
+	HashMap<String, Ref<FoundryScript>> shallow_fs_cache;
+	HashMap<String, Ref<FoundryScript>> full_fs_cache;
+	HashMap<String, Ref<FoundryScript>> static_fs_cache;
 	HashMap<String, HashSet<String>> dependencies;
 	HashMap<String, HashSet<String>> parser_inverse_dependencies;
 
@@ -104,7 +104,7 @@ class FSCache {
 	friend class FSParserRef;
 	friend class FSInstance;
 #ifdef TESTS_ENABLED
-	friend class FSTests::TestGDScriptCacheAccessor;
+	friend class FSTests::TestFSCacheAccessor;
 #endif // TESTS_ENABLED
 
 	static FSCache *singleton;
@@ -116,7 +116,7 @@ public:
 
 private:
 	static SafeBinaryMutex<BINARY_MUTEX_TAG> mutex;
-	friend SafeBinaryMutex<BINARY_MUTEX_TAG> &_get_gdscript_cache_mutex();
+	friend SafeBinaryMutex<BINARY_MUTEX_TAG> &_get_fs_cache_mutex();
 
 public:
 	static void move_script(const String &p_from, const String &p_to);

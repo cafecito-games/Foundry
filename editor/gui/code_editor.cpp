@@ -1894,7 +1894,7 @@ CodeTextEditor::CodeTextEditor() {
 	text_editor = memnew(CodeEdit);
 	add_child(text_editor);
 	text_editor->set_v_size_flags(SIZE_EXPAND_FILL);
-	text_editor->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_GDSCRIPT);
+	text_editor->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FOUNDRY_SCRIPT);
 	text_editor->set_draw_bookmarks_gutter(true);
 
 	text_editor->set_virtual_keyboard_show_on_focus(false);

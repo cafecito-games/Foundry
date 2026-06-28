@@ -42,7 +42,7 @@
 
 #include "test_refactor.h" // FSTests::TemporaryScriptFile, make_context
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 
 #include "editor/file_system/editor_file_system.h"
 
@@ -735,6 +735,6 @@ TEST_SUITE("[Modules][FoundryScript][Verification]") {
 
 } // namespace FSTests
 
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 #endif // TOOLS_ENABLED

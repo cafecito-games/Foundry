@@ -1024,7 +1024,7 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr = 4 + argc;
 			} break;
-			case OPCODE_CALL_GDSCRIPT_UTILITY: {
+			case OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY: {
 				int instr_var_args = _code_ptr[++ip];
 
 				text += "call-foundry_script-utility ";

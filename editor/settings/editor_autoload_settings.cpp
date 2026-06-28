@@ -41,7 +41,7 @@
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/settings/project_settings_editor.h"
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/editor/fs_project_scan.h"
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_parser.h"
@@ -51,7 +51,7 @@
 
 #define PREVIEW_LIST_MAX_SIZE 10
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 namespace {
 
 bool _autoload_diagnostic_is_conflict(const FSAutoloadIndexDiagnostic &p_diagnostic) {
@@ -307,7 +307,7 @@ static bool _autoload_name_shadows_reserved_global(const String &p_name) {
 	return false;
 }
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_autoload_view_entries(const FSAutoloadIndex &p_index) {
 	Vector<AutoloadViewEntry> view_entries;
 
@@ -749,7 +749,7 @@ void EditorAutoloadSettings::update_autoload() {
 	tree->clear();
 	TreeItem *root = tree->create_item();
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	const Color diagnostics_color = get_theme_color(SNAME("warning_color"), EditorStringName(Editor));
 	const Color conflict_color = get_theme_color(SNAME("error_color"), EditorStringName(Editor));
 #endif
@@ -822,7 +822,7 @@ void EditorAutoloadSettings::update_autoload() {
 		item->set_text(COLUMN_DIAGNOSTICS, p_diagnostics_summary);
 		item->set_selectable(COLUMN_DIAGNOSTICS, true);
 		item->set_tooltip_text(COLUMN_DIAGNOSTICS, p_has_diagnostics ? p_diagnostics_text : TTR("No autoload index diagnostics."));
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 		if (p_has_diagnostics) {
 			item->set_custom_color(COLUMN_DIAGNOSTICS, p_has_conflict ? conflict_color : diagnostics_color);
 		}
@@ -835,7 +835,7 @@ void EditorAutoloadSettings::update_autoload() {
 		item->set_selectable(COLUMN_ACTIONS, false);
 	};
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	const FSAutoloadIndex index = build_autoload_index_for_project_view();
 	const Vector<AutoloadViewEntry> view_entries = build_autoload_view_entries(index);
 	for (const AutoloadViewEntry &view_entry : view_entries) {

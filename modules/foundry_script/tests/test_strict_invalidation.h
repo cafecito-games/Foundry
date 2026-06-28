@@ -39,11 +39,11 @@
 
 #include "core/config/project_settings.h"
 
-#include "fs_test_runner_suite.h" // FSTests::TestGDScriptCacheAccessor
+#include "fs_test_runner_suite.h" // FSTests::TestFSCacheAccessor
 #include "test_refactor.h" // FSTests::TemporaryScriptFile, initialize, root, finish_language
 #include "test_strict_activation.h" // FSTests::StrictSettingsGuard
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 
 #include "editor/file_system/editor_file_system.h"
 
@@ -71,7 +71,7 @@ bool reports_error(const Ref<FSParserRef> &p_parser_ref) {
 
 // Counts only error-severity LSP diagnostics, so warnings (which may exist regardless of strict
 // mode) do not mask whether the strict violation is being reported.
-int error_diagnostic_count(const ExtendGDScriptParser *p_parser) {
+int error_diagnostic_count(const ExtendFSParser *p_parser) {
 	if (p_parser == nullptr) {
 		return 0;
 	}
@@ -112,7 +112,7 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		// to it is held (as a live session would hold its open scripts).
 		Ref<FSParserRef> first = analyze(path);
 		CHECK_FALSE(reports_error(first));
-		CHECK(TestGDScriptCacheAccessor::has_parser(path));
+		CHECK(TestFSCacheAccessor::has_parser(path));
 
 		// Flip the setting on and run the shared invalidation hook.
 		settings->set_setting("debug/foundry_script/analysis/strict_dynamic_checks", true);
@@ -121,7 +121,7 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 
 		// The previously-cached parser was abandoned, so the live cache no longer maps the path to
 		// the stale entry even though our Ref is still alive.
-		CHECK_FALSE(TestGDScriptCacheAccessor::has_parser(path));
+		CHECK_FALSE(TestFSCacheAccessor::has_parser(path));
 
 		// Re-analysis under strict ON now reports the violation within the same session.
 		Ref<FSParserRef> second = analyze(path);
@@ -153,14 +153,14 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 
 		Ref<FSParserRef> parser_ref = analyze(path);
 		CHECK_FALSE(reports_error(parser_ref));
-		CHECK(TestGDScriptCacheAccessor::has_parser(path));
+		CHECK(TestFSCacheAccessor::has_parser(path));
 
 		// Change an unrelated setting; the strict flags are unchanged, so nothing is invalidated and
 		// the cached parser is left in place.
 		settings->set_setting("debug/foundry_script/warnings/enable", true);
 		const bool invalidated = FSParser::invalidate_analysis_on_strict_settings_change();
 		CHECK_FALSE(invalidated);
-		CHECK(TestGDScriptCacheAccessor::has_parser(path));
+		CHECK(TestFSCacheAccessor::has_parser(path));
 
 		parser_ref.unref();
 		FSCache::clear();
@@ -192,7 +192,7 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		const String path = FSLanguageProtocol::get_singleton()->get_workspace()->get_file_path(uri);
 
 		// Under strict OFF the open document reports no diagnostics.
-		ExtendGDScriptParser *before = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+		ExtendFSParser *before = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 		REQUIRE(before);
 		CHECK_EQ(error_diagnostic_count(before), 0);
 
@@ -203,7 +203,7 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		protocol->reparse_open_scripts();
 
 		// The re-parse used the in-memory buffer and now reports the strict violation as a diagnostic.
-		ExtendGDScriptParser *after = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+		ExtendFSParser *after = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 		REQUIRE(after);
 		CHECK_GT(error_diagnostic_count(after), 0);
 
@@ -215,6 +215,6 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 
 } // namespace FSTests
 
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 #endif // TOOLS_ENABLED

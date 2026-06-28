@@ -32,7 +32,7 @@
 
 #ifdef TOOLS_ENABLED
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 
 #include "tests/test_macros.h"
 
@@ -55,7 +55,7 @@
 
 #include "thirdparty/doctest/doctest.h"
 
-class TestGDScriptLanguageProtocolInitializer {
+class TestFSLanguageProtocolInitializer {
 public:
 	static void setup_client() {
 		FSLanguageProtocol *proto = FSLanguageProtocol::get_singleton();
@@ -144,7 +144,7 @@ FSLanguageProtocol *initialize(const String &p_root) {
 	init_language(absolute_root);
 
 	FSLanguageProtocol *proto = memnew(FSLanguageProtocol);
-	TestGDScriptLanguageProtocolInitializer::setup_client();
+	TestFSLanguageProtocolInitializer::setup_client();
 
 	Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
 	workspace->root = absolute_root;
@@ -701,7 +701,7 @@ func f():
 
 			for (const String &path : paths) {
 				assert_no_errors_in(path);
-				ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+				ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 				REQUIRE(parser);
 				LSP::DocumentSymbol cls = parser->get_symbols();
 
@@ -713,7 +713,7 @@ func f():
 		SUBCASE("Traits are reported with the trait symbol kind and detail") {
 			String path = "res://lsp/traits.fs";
 			assert_no_errors_in(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 
 			const LSP::DocumentSymbol *drawable = parser->get_member_symbol("Drawable");
@@ -730,7 +730,7 @@ func f():
 		SUBCASE("A global trait_name file is reported as a trait") {
 			String path = "res://lsp/global_trait.fs";
 			assert_no_errors_in(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			LSP::DocumentSymbol cls = parser->get_symbols();
 			CHECK_EQ(cls.kind, LSP::SymbolKind::Interface);
@@ -747,7 +747,7 @@ func f():
 			ScriptServer::add_global_class("LspGlobalEnum", String(), language, path, false, false, false, true);
 			assert_no_errors_in(path);
 
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			LSP::DocumentSymbol cls = parser->get_symbols();
 			CHECK_EQ(cls.name, "LspGlobalEnum");
@@ -813,7 +813,7 @@ func f():
 			assert_no_errors_in(path);
 			assert_no_errors_in(user_path);
 
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			LSP::DocumentSymbol cls = parser->get_symbols();
 			CHECK_EQ(cls.name, "lsp.enums.LspNamespacedGlobalEnum");
@@ -892,7 +892,7 @@ func f():
 		SUBCASE("Documentation is correctly set") {
 			String path = "res://lsp/doc_comments.fs";
 			assert_no_errors_in(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			LSP::DocumentSymbol cls = parser->get_symbols();
 			REQUIRE(cls.documentation.contains("brief"));
@@ -906,7 +906,7 @@ func f():
 			String path = "res://lsp/strict_type_presentation.fs";
 			assert_no_errors_in(path);
 			String uri = workspace->get_file_uri(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			Ref<FSTextDocument> text_document = proto->get_text_document();
 
@@ -1022,7 +1022,7 @@ func f():
 		SUBCASE("Generic method symbols show the type-parameter list and unsubstituted return") {
 			String path = "res://lsp/generic_presentation.fs";
 			assert_no_errors_in(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 
 			const LSP::DocumentSymbol *swap = parser->get_member_symbol("swap");
@@ -1042,7 +1042,7 @@ func f():
 			String path = "res://lsp/type_metatype_presentation.fs";
 			assert_no_errors_in(path);
 			String uri = workspace->get_file_uri(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			Ref<FSTextDocument> text_document = proto->get_text_document();
 
@@ -1129,7 +1129,7 @@ func f():
 		SUBCASE("Enum default values are shown as constant names") {
 			String path = "res://lsp/enum_default_values.fs";
 			assert_no_errors_in(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 
 			// A property typed with a script enum shows the constant name, not the integer.
@@ -1157,7 +1157,7 @@ func f():
 			String path = "res://lsp/async_callable_presentation.fs";
 			assert_no_errors_in(path);
 			String uri = workspace->get_file_uri(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			Ref<FSTextDocument> text_document = proto->get_text_document();
 
@@ -1211,7 +1211,7 @@ func f():
 			String path = "res://lsp/coroutine_presentation.fs";
 			assert_no_errors_in(path);
 			String uri = workspace->get_file_uri(path);
-			ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
 			Ref<FSTextDocument> text_document = proto->get_text_document();
 
@@ -1432,7 +1432,7 @@ func f():
 		Ref<FSTextDocument> text_document = proto->get_text_document();
 
 		SUBCASE("server capabilities advertise code actions") {
-			TestGDScriptLanguageProtocolInitializer::mark_initialized(proto);
+			TestFSLanguageProtocolInitializer::mark_initialized(proto);
 
 			Dictionary init_params;
 			init_params["rootUri"] = workspace->root_uri;
@@ -1496,7 +1496,7 @@ func f():
 			Dictionary resolved = text_document->resolveCodeAction(action);
 			CHECK_FALSE(resolved.has("edit"));
 
-			Array notifications = TestGDScriptLanguageProtocolInitializer::take_client_notifications(
+			Array notifications = TestFSLanguageProtocolInitializer::take_client_notifications(
 					proto, "window/showMessage");
 			CHECK_FALSE(notifications.is_empty());
 			if (!notifications.is_empty()) {
@@ -1558,7 +1558,7 @@ func f():
 			Dictionary changes = edit["changes"];
 			CHECK_FALSE(changes.has(scene_uri));
 
-			Array notifications = TestGDScriptLanguageProtocolInitializer::take_client_notifications(
+			Array notifications = TestFSLanguageProtocolInitializer::take_client_notifications(
 					proto, "window/showMessage");
 			CHECK_FALSE(notifications.is_empty());
 			if (!notifications.is_empty()) {
@@ -1581,7 +1581,7 @@ func f():
 		Ref<FSTextDocument> text_document = proto->get_text_document();
 
 		SUBCASE("server capabilities advertise document formatting") {
-			TestGDScriptLanguageProtocolInitializer::mark_initialized(proto);
+			TestFSLanguageProtocolInitializer::mark_initialized(proto);
 
 			Dictionary init_params;
 			init_params["rootUri"] = workspace->root_uri;
@@ -1713,6 +1713,6 @@ func f():
 
 } // namespace FSTests
 
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 #endif // TOOLS_ENABLED

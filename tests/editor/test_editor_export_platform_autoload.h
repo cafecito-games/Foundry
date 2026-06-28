@@ -34,7 +34,7 @@
 
 #include "modules/modules_enabled.gen.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 
 #include "editor/export/editor_export_platform.h"
 
@@ -232,6 +232,6 @@ TEST_CASE("[Editor][Export] Selected autoload dependencies honor preset feature 
 
 } // namespace TestEditorExportPlatformAutoload
 
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 #endif // TOOLS_ENABLED

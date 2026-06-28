@@ -89,7 +89,7 @@ GodotRange GodotRange::from_lsp(const LSP::Range &p_range, const Vector<String> 
 	return GodotRange(start, end);
 }
 
-void ExtendGDScriptParser::update_diagnostics() {
+void ExtendFSParser::update_diagnostics() {
 	diagnostics.clear();
 
 	const List<ParserError> &parser_errors = get_errors();
@@ -134,7 +134,7 @@ void ExtendGDScriptParser::update_diagnostics() {
 	}
 }
 
-void ExtendGDScriptParser::update_symbols() {
+void ExtendFSParser::update_symbols() {
 	members.clear();
 
 	if (const FSParser::ClassNode *gdclass = dynamic_cast<const FSParser::ClassNode *>(get_tree())) {
@@ -164,7 +164,7 @@ void ExtendGDScriptParser::update_symbols() {
 	}
 }
 
-void ExtendGDScriptParser::update_document_links(const String &p_code) {
+void ExtendFSParser::update_document_links(const String &p_code) {
 	document_links.clear();
 
 	FSTokenizerText scr_tokenizer;
@@ -195,13 +195,13 @@ void ExtendGDScriptParser::update_document_links(const String &p_code) {
 	}
 }
 
-LSP::Range ExtendGDScriptParser::range_of_node(const FSParser::Node *p_node) const {
+LSP::Range ExtendFSParser::range_of_node(const FSParser::Node *p_node) const {
 	GodotPosition start(p_node->start_line, p_node->start_column);
 	GodotPosition end(p_node->end_line, p_node->end_column);
 	return GodotRange(start, end).to_lsp(lines);
 }
 
-void ExtendGDScriptParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP::DocumentSymbol &r_symbol) {
+void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP::DocumentSymbol &r_symbol) {
 	const String uri = get_uri();
 
 	r_symbol.uri = uri;
@@ -361,7 +361,7 @@ void ExtendGDScriptParser::parse_class_symbol(const FSParser::ClassNode *p_class
 					if (res.is_valid() && !res->get_path().is_empty()) {
 						value_text = "preload(\"" + res->get_path() + "\")";
 						if (symbol.documentation.is_empty()) {
-							ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(res->get_path());
+							ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(res->get_path());
 							if (parser) {
 								symbol.documentation = parser->class_symbol.documentation;
 							}
@@ -513,7 +513,7 @@ void ExtendGDScriptParser::parse_class_symbol(const FSParser::ClassNode *p_class
 	}
 }
 
-void ExtendGDScriptParser::parse_function_symbol(const FSParser::FunctionNode *p_func, LSP::DocumentSymbol &r_symbol, const FSParser::ClassNode *p_owner_class) {
+void ExtendFSParser::parse_function_symbol(const FSParser::FunctionNode *p_func, LSP::DocumentSymbol &r_symbol, const FSParser::ClassNode *p_owner_class) {
 	const String uri = get_uri();
 
 	bool is_named = p_func->identifier != nullptr;
@@ -723,7 +723,7 @@ void ExtendGDScriptParser::parse_function_symbol(const FSParser::FunctionNode *p
 	}
 }
 
-String ExtendGDScriptParser::get_text_for_completion(const LSP::Position &p_cursor) const {
+String ExtendFSParser::get_text_for_completion(const LSP::Position &p_cursor) const {
 	String longthing;
 	int len = lines.size();
 	for (int i = 0; i < len; i++) {
@@ -743,7 +743,7 @@ String ExtendGDScriptParser::get_text_for_completion(const LSP::Position &p_curs
 	return longthing;
 }
 
-String ExtendGDScriptParser::get_text_for_lookup_symbol(const LSP::Position &p_cursor, const String &p_symbol, bool p_func_required) const {
+String ExtendFSParser::get_text_for_lookup_symbol(const LSP::Position &p_cursor, const String &p_symbol, bool p_func_required) const {
 	String longthing;
 	int len = lines.size();
 	for (int i = 0; i < len; i++) {
@@ -790,7 +790,7 @@ String ExtendGDScriptParser::get_text_for_lookup_symbol(const LSP::Position &p_c
 	return longthing;
 }
 
-String ExtendGDScriptParser::get_identifier_under_position(const LSP::Position &p_position, LSP::Range &r_range) const {
+String ExtendFSParser::get_identifier_under_position(const LSP::Position &p_position, LSP::Range &r_range) const {
 	ERR_FAIL_INDEX_V(p_position.line, lines.size(), "");
 	String line = lines[p_position.line];
 	if (line.is_empty()) {
@@ -856,11 +856,11 @@ String ExtendGDScriptParser::get_identifier_under_position(const LSP::Position &
 	return "";
 }
 
-String ExtendGDScriptParser::get_uri() const {
+String ExtendFSParser::get_uri() const {
 	return FSLanguageProtocol::get_singleton()->get_workspace()->get_file_uri(path);
 }
 
-const LSP::DocumentSymbol *ExtendGDScriptParser::search_symbol_defined_at_line(int p_line, const LSP::DocumentSymbol &p_parent, const String &p_symbol_name) const {
+const LSP::DocumentSymbol *ExtendFSParser::search_symbol_defined_at_line(int p_line, const LSP::DocumentSymbol &p_parent, const String &p_symbol_name) const {
 	const LSP::DocumentSymbol *ret = nullptr;
 	if (p_line < p_parent.range.start.line) {
 		return ret;
@@ -877,7 +877,7 @@ const LSP::DocumentSymbol *ExtendGDScriptParser::search_symbol_defined_at_line(i
 	return ret;
 }
 
-Error ExtendGDScriptParser::get_left_function_call(const LSP::Position &p_position, LSP::Position &r_func_pos, int &r_arg_index) const {
+Error ExtendFSParser::get_left_function_call(const LSP::Position &p_position, LSP::Position &r_func_pos, int &r_arg_index) const {
 	ERR_FAIL_INDEX_V(p_position.line, lines.size(), ERR_INVALID_PARAMETER);
 
 	int bracket_stack = 0;
@@ -921,7 +921,7 @@ Error ExtendGDScriptParser::get_left_function_call(const LSP::Position &p_positi
 	return ERR_METHOD_NOT_FOUND;
 }
 
-const LSP::DocumentSymbol *ExtendGDScriptParser::get_symbol_defined_at_line(int p_line, const String &p_symbol_name) const {
+const LSP::DocumentSymbol *ExtendFSParser::get_symbol_defined_at_line(int p_line, const String &p_symbol_name) const {
 	// A negative line is the location-0 root sentinel (e.g. autoload singletons), which always
 	// resolves to the script root. Line 0 is a genuine first source line: it resolves to the root
 	// only for a whole-line lookup or the root class itself, so a declaration on the first line
@@ -935,7 +935,7 @@ const LSP::DocumentSymbol *ExtendGDScriptParser::get_symbol_defined_at_line(int 
 	return search_symbol_defined_at_line(p_line, class_symbol, p_symbol_name);
 }
 
-const LSP::DocumentSymbol *ExtendGDScriptParser::get_member_symbol(const String &p_name, const String &p_subclass) const {
+const LSP::DocumentSymbol *ExtendFSParser::get_member_symbol(const String &p_name, const String &p_subclass) const {
 	if (p_subclass.is_empty()) {
 		const LSP::DocumentSymbol *const *ptr = members.getptr(p_name);
 		if (ptr) {
@@ -953,11 +953,11 @@ const LSP::DocumentSymbol *ExtendGDScriptParser::get_member_symbol(const String 
 	return nullptr;
 }
 
-const List<LSP::DocumentLink> &ExtendGDScriptParser::get_document_links() const {
+const List<LSP::DocumentLink> &ExtendFSParser::get_document_links() const {
 	return document_links;
 }
 
-const Array &ExtendGDScriptParser::get_member_completions() {
+const Array &ExtendFSParser::get_member_completions() {
 	if (member_completions.is_empty()) {
 		for (const KeyValue<String, const LSP::DocumentSymbol *> &E : members) {
 			const LSP::DocumentSymbol *symbol = E.value;
@@ -981,7 +981,7 @@ const Array &ExtendGDScriptParser::get_member_completions() {
 	return member_completions;
 }
 
-Dictionary ExtendGDScriptParser::dump_function_api(const FSParser::FunctionNode *p_func) const {
+Dictionary ExtendFSParser::dump_function_api(const FSParser::FunctionNode *p_func) const {
 	ERR_FAIL_NULL_V(p_func, Dictionary());
 	Dictionary func;
 	func["name"] = p_func->identifier->name;
@@ -1005,7 +1005,7 @@ Dictionary ExtendGDScriptParser::dump_function_api(const FSParser::FunctionNode 
 	return func;
 }
 
-Dictionary ExtendGDScriptParser::dump_class_api(const FSParser::ClassNode *p_class) const {
+Dictionary ExtendFSParser::dump_class_api(const FSParser::ClassNode *p_class) const {
 	ERR_FAIL_NULL_V(p_class, Dictionary());
 	Dictionary class_api;
 
@@ -1127,7 +1127,7 @@ Dictionary ExtendGDScriptParser::dump_class_api(const FSParser::ClassNode *p_cla
 	return class_api;
 }
 
-Dictionary ExtendGDScriptParser::generate_api() const {
+Dictionary ExtendFSParser::generate_api() const {
 	Dictionary api;
 	if (const FSParser::ClassNode *gdclass = dynamic_cast<const FSParser::ClassNode *>(get_tree())) {
 		api = dump_class_api(gdclass);
@@ -1135,8 +1135,8 @@ Dictionary ExtendGDScriptParser::generate_api() const {
 	return api;
 }
 
-ExtendGDScriptParser *ExtendGDScriptParser::parse_source(const String &p_code, const String &p_path) {
-	ExtendGDScriptParser *parser = memnew(ExtendGDScriptParser);
+ExtendFSParser *ExtendFSParser::parse_source(const String &p_code, const String &p_path) {
+	ExtendFSParser *parser = memnew(ExtendFSParser);
 	parser->parse(p_code, p_path);
 	return parser;
 }
@@ -1144,16 +1144,16 @@ ExtendGDScriptParser *ExtendGDScriptParser::parse_source(const String &p_code, c
 #ifdef TESTS_ENABLED
 static uint64_t parse_file_count_for_test = 0;
 
-uint64_t ExtendGDScriptParser::get_parse_file_count_for_test() {
+uint64_t ExtendFSParser::get_parse_file_count_for_test() {
 	return parse_file_count_for_test;
 }
 
-void ExtendGDScriptParser::reset_parse_file_count_for_test() {
+void ExtendFSParser::reset_parse_file_count_for_test() {
 	parse_file_count_for_test = 0;
 }
 #endif // TESTS_ENABLED
 
-ExtendGDScriptParser *ExtendGDScriptParser::parse_file(const String &p_path) {
+ExtendFSParser *ExtendFSParser::parse_file(const String &p_path) {
 	if (!p_path.has_extension("fs")) {
 		return nullptr;
 	}
@@ -1171,7 +1171,7 @@ ExtendGDScriptParser *ExtendGDScriptParser::parse_file(const String &p_path) {
 	return parse_source(source, p_path);
 }
 
-void ExtendGDScriptParser::parse(const String &p_code, const String &p_path) {
+void ExtendFSParser::parse(const String &p_code, const String &p_path) {
 	path = p_path;
 	lines = p_code.split("\n");
 

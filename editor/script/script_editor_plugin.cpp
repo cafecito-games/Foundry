@@ -72,7 +72,7 @@
 #include "editor/themes/editor_theme_manager.h"
 #include "modules/modules_enabled.gen.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/fs_autoload_index.h"
 #endif
 #include "scene/gui/separator.h"
@@ -163,7 +163,7 @@ void EditorStandardSyntaxHighlighter::_update_cache() {
 	}
 
 	/* Autoloads. */
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	FSAutoloadIndex autoload_index;
 	autoload_index.rebuild_from_project_settings();
 	for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {

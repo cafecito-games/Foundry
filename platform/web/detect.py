@@ -344,4 +344,4 @@ def configure(env: "SConsEnvironment"):
     env.Append(LINKFLAGS=["-sGL_WORKAROUND_SAFARI_GETCONTEXT_BUG=0"])
 
     # Disable FoundryScript LSP (as the Web platform is not compatible with TCP).
-    env.Append(CPPDEFINES=["GDSCRIPT_NO_LSP"])
+    env.Append(CPPDEFINES=["FOUNDRY_SCRIPT_NO_LSP"])

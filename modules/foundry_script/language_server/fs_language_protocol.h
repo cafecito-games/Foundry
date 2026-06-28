@@ -47,7 +47,7 @@ class FSLanguageProtocol : public JSONRPC {
 	GDCLASS(FSLanguageProtocol, JSONRPC)
 
 #ifdef TESTS_ENABLED
-	friend class TestGDScriptLanguageProtocolInitializer;
+	friend class TestFSLanguageProtocolInitializer;
 #endif
 
 private:
@@ -70,10 +70,10 @@ private:
 		 * to the server the `text` might not be persisted.
 		 */
 		HashMap<String, LSP::TextDocumentItem> managed_files;
-		HashMap<String, ExtendGDScriptParser *> parse_results;
+		HashMap<String, ExtendFSParser *> parse_results;
 
 		void remove_cached_parser(const String &p_path);
-		ExtendGDScriptParser *parse_script(const String &p_path);
+		ExtendFSParser *parse_script(const String &p_path);
 
 		~LSPeer();
 
@@ -148,14 +148,14 @@ public:
 	 * Returns parse results for the given path, using the cache if available.
 	 * If no such file exists, or the file is not a FoundryScript file a `nullptr` is returned.
 	 */
-	ExtendGDScriptParser *get_parse_result(const String &p_path);
+	ExtendFSParser *get_parse_result(const String &p_path);
 
 	/**
 	 * Returns the cached parse result for the given path without triggering a
 	 * parse, or `nullptr` when nothing is cached. Used by the raw-text pre-filter
 	 * to inspect already-open documents cheaply.
 	 */
-	ExtendGDScriptParser *peek_parse_result(const String &p_path);
+	ExtendFSParser *peek_parse_result(const String &p_path);
 
 	// Re-parses every open (client-managed) document from its in-memory buffer and re-publishes its
 	// diagnostics. Used when an analysis-affecting project setting (e.g. the strict-mode flags)

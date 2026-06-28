@@ -139,7 +139,7 @@ const LSP::DocumentSymbol *FSWorkspace::get_native_symbol(const String &p_class,
 	return nullptr;
 }
 
-const ExtendGDScriptParser *FSWorkspace::get_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const {
+const ExtendFSParser *FSWorkspace::get_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const {
 	if (p_parse_result_provider != nullptr) {
 		return p_parse_result_provider->get_parse_result(p_path);
 	}
@@ -148,7 +148,7 @@ const ExtendGDScriptParser *FSWorkspace::get_parse_result(const String &p_path, 
 	return protocol != nullptr ? protocol->get_parse_result(p_path) : nullptr;
 }
 
-const ExtendGDScriptParser *FSWorkspace::peek_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const {
+const ExtendFSParser *FSWorkspace::peek_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const {
 	if (p_parse_result_provider != nullptr) {
 		return p_parse_result_provider->peek_parse_result(p_path);
 	}
@@ -167,7 +167,7 @@ bool FSWorkspace::source_may_reference_symbol(
 
 	// An already-parsed result may reflect an unsaved editor buffer, so trust it
 	// over the on-disk text and avoid re-reading the file.
-	if (const ExtendGDScriptParser *cached = peek_parse_result(p_path, p_parse_result_provider)) {
+	if (const ExtendFSParser *cached = peek_parse_result(p_path, p_parse_result_provider)) {
 		for (const String &line : cached->get_lines()) {
 			if (line.contains(p_symbol_name)) {
 				return true;
@@ -186,7 +186,7 @@ bool FSWorkspace::source_may_reference_symbol(
 }
 
 const LSP::DocumentSymbol *FSWorkspace::get_script_symbol(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const {
-	const ExtendGDScriptParser *parser = get_parse_result(p_path, p_parse_result_provider);
+	const ExtendFSParser *parser = get_parse_result(p_path, p_parse_result_provider);
 	if (parser) {
 		return &(parser->get_symbols());
 	}
@@ -204,7 +204,7 @@ const LSP::DocumentSymbol *FSWorkspace::get_parameter_symbol(const LSP::Document
 	return nullptr;
 }
 
-const LSP::DocumentSymbol *FSWorkspace::get_local_symbol_at(const ExtendGDScriptParser *p_parser, const String &p_symbol_identifier, const LSP::Position p_position) {
+const LSP::DocumentSymbol *FSWorkspace::get_local_symbol_at(const ExtendFSParser *p_parser, const String &p_symbol_identifier, const LSP::Position p_position) {
 	// Go down and pick closest `DocumentSymbol` with `p_symbol_identifier`.
 
 	const LSP::DocumentSymbol *current = &p_parser->get_symbols();
@@ -237,7 +237,7 @@ void FSWorkspace::reload_all_workspace_scripts() {
 	List<String> paths;
 	list_script_files("res://", paths);
 	for (const String &path : paths) {
-		ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+		ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 		if (parser == nullptr || parser->parse_result != OK) {
 			String err_msg = "LSP: Failed to parse script: " + path;
 			if (parser) {
@@ -470,7 +470,7 @@ bool FSWorkspace::can_rename(
 	}
 
 	String path = get_file_path(p_doc_pos.textDocument.uri);
-	const ExtendGDScriptParser *parser = get_parse_result(path, p_parse_result_provider);
+	const ExtendFSParser *parser = get_parse_result(path, p_parse_result_provider);
 	if (parser) {
 		_ALLOW_DISCARD_ parser->get_identifier_under_position(p_doc_pos.position, r_range);
 		r_symbol = *reference_symbol;
@@ -491,7 +491,7 @@ Vector<LSP::Location> FSWorkspace::find_usages_in_file(
 	if (!source_may_reference_symbol(p_file_path, identifier, p_parse_result_provider)) {
 		return usages;
 	}
-	const ExtendGDScriptParser *parser = get_parse_result(p_file_path, p_parse_result_provider);
+	const ExtendFSParser *parser = get_parse_result(p_file_path, p_parse_result_provider);
 	if (parser) {
 		const PackedStringArray &content = parser->get_lines();
 		for (int i = 0; i < content.size(); ++i) {
@@ -636,7 +636,7 @@ void FSWorkspace::publish_diagnostics(const String &p_path) {
 	Dictionary params;
 	Array errors;
 
-	const ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(p_path);
+	const ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(p_path);
 	if (parser) {
 		const Vector<LSP::Diagnostic> &list = parser->get_diagnostics();
 		errors.resize(list.size());
@@ -699,7 +699,7 @@ void FSWorkspace::completion(const LSP::CompletionParams &p_params, List<ScriptL
 	String call_hint;
 	bool forced = false;
 
-	const ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+	const ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 	if (parser) {
 		Node *owner_scene_node = _get_owner_scene_node(path);
 
@@ -742,7 +742,7 @@ const LSP::DocumentSymbol *FSWorkspace::resolve_symbol(
 
 	String path = get_file_path(p_doc_pos.textDocument.uri);
 
-	const ExtendGDScriptParser *parser = get_parse_result(path, p_parse_result_provider);
+	const ExtendFSParser *parser = get_parse_result(path, p_parse_result_provider);
 	if (parser) {
 		String symbol_identifier = p_symbol_name;
 		if (symbol_identifier.get_slice_count("(") > 0) {
@@ -775,7 +775,7 @@ const LSP::DocumentSymbol *FSWorkspace::resolve_symbol(
 							target_script_path = ret.script_path;
 						}
 
-						const ExtendGDScriptParser *target_parser = get_parse_result(target_script_path, p_parse_result_provider);
+						const ExtendFSParser *target_parser = get_parse_result(target_script_path, p_parse_result_provider);
 						if (target_parser) {
 							symbol = target_parser->get_symbol_defined_at_line(LINE_NUMBER_TO_INDEX(ret.location), symbol_identifier);
 
@@ -827,7 +827,7 @@ const LSP::DocumentSymbol *FSWorkspace::resolve_native_symbol(const LSP::NativeS
 }
 
 void FSWorkspace::resolve_document_links(const String &p_uri, List<LSP::DocumentLink> &r_list) {
-	const ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(get_file_path(p_uri));
+	const ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(get_file_path(p_uri));
 	if (parser && parser->parse_result == Error::OK) {
 		const List<LSP::DocumentLink> &links = parser->get_document_links();
 		for (const LSP::DocumentLink &E : links) {
@@ -839,7 +839,7 @@ void FSWorkspace::resolve_document_links(const String &p_uri, List<LSP::Document
 Dictionary FSWorkspace::generate_script_api(const String &p_path) {
 	Dictionary api;
 
-	const ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(p_path);
+	const ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(p_path);
 	if (parser) {
 		api = parser->generate_api();
 	}
@@ -847,7 +847,7 @@ Dictionary FSWorkspace::generate_script_api(const String &p_path) {
 }
 
 Error FSWorkspace::resolve_signature(const LSP::TextDocumentPositionParams &p_doc_pos, LSP::SignatureHelp &r_signature) {
-	const ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(get_file_path(p_doc_pos.textDocument.uri));
+	const ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(get_file_path(p_doc_pos.textDocument.uri));
 	if (parser) {
 		LSP::TextDocumentPositionParams text_pos;
 		text_pos.textDocument = p_doc_pos.textDocument;

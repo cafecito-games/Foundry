@@ -110,7 +110,7 @@ struct GodotRange {
 	}
 };
 
-class ExtendGDScriptParser : public FSParser {
+class ExtendFSParser : public FSParser {
 	String path;
 	Vector<String> lines;
 
@@ -145,8 +145,8 @@ public:
 	_FORCE_INLINE_ const HashMap<String, ClassMembers> &get_inner_classes() const { return inner_classes; }
 	Error parse_result;
 
-	static ExtendGDScriptParser *parse_source(const String &p_code, const String &p_path);
-	static ExtendGDScriptParser *parse_file(const String &p_path);
+	static ExtendFSParser *parse_source(const String &p_code, const String &p_path);
+	static ExtendFSParser *parse_file(const String &p_path);
 
 #ifdef TESTS_ENABLED
 	// Counts disk-backed parses so tests can assert that project-wide refactors

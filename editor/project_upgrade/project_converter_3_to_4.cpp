@@ -107,18 +107,18 @@ public:
 	RegEx reg_os_screen_orient_enum = RegEx("\\bOS\\.SCREEN_ORIENTATION_(\\w+)\\b"); // $1 - constant suffix
 
 	// FoundryScript keywords.
-	RegEx keyword_gdscript_tool = RegEx("^tool");
-	RegEx keyword_gdscript_export_single = RegEx("^export");
-	RegEx keyword_gdscript_export_multi = RegEx("([\t]+)export\\b");
-	RegEx keyword_gdscript_onready = RegEx("^onready");
-	RegEx keyword_gdscript_remote = RegEx("^remote func");
-	RegEx keyword_gdscript_remotesync = RegEx("^remotesync func");
-	RegEx keyword_gdscript_sync = RegEx("^sync func");
-	RegEx keyword_gdscript_slave = RegEx("^slave func");
-	RegEx keyword_gdscript_puppet = RegEx("^puppet func");
-	RegEx keyword_gdscript_puppetsync = RegEx("^puppetsync func");
-	RegEx keyword_gdscript_master = RegEx("^master func");
-	RegEx keyword_gdscript_mastersync = RegEx("^mastersync func");
+	RegEx keyword_foundry_script_tool = RegEx("^tool");
+	RegEx keyword_foundry_script_export_single = RegEx("^export");
+	RegEx keyword_foundry_script_export_multi = RegEx("([\t]+)export\\b");
+	RegEx keyword_foundry_script_onready = RegEx("^onready");
+	RegEx keyword_foundry_script_remote = RegEx("^remote func");
+	RegEx keyword_foundry_script_remotesync = RegEx("^remotesync func");
+	RegEx keyword_foundry_script_sync = RegEx("^sync func");
+	RegEx keyword_foundry_script_slave = RegEx("^slave func");
+	RegEx keyword_foundry_script_puppet = RegEx("^puppet func");
+	RegEx keyword_foundry_script_puppetsync = RegEx("^puppetsync func");
+	RegEx keyword_foundry_script_master = RegEx("^master func");
+	RegEx keyword_foundry_script_mastersync = RegEx("^mastersync func");
 
 	RegEx fs_comment = RegEx("^\\s*#");
 	RegEx csharp_comment = RegEx("^\\s*\\/\\/");
@@ -400,10 +400,10 @@ bool ProjectConverter3To4::convert() {
 				rename_colors(source_lines, reg_container); // Require to additional rename.
 
 				rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, source_lines);
-				rename_gdscript_functions(source_lines, reg_container, false); // Require to additional rename.
+				rename_foundry_script_functions(source_lines, reg_container, false); // Require to additional rename.
 
 				rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, source_lines);
-				rename_gdscript_keywords(source_lines, reg_container, false);
+				rename_foundry_script_keywords(source_lines, reg_container, false);
 				rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, source_lines);
 				rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, source_lines);
 				rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, source_lines);
@@ -423,10 +423,10 @@ bool ProjectConverter3To4::convert() {
 				rename_colors(source_lines, reg_container); // Require to do additional renames.
 
 				rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, source_lines);
-				rename_gdscript_functions(source_lines, reg_container, true); // Require to do additional renames.
+				rename_foundry_script_functions(source_lines, reg_container, true); // Require to do additional renames.
 
 				rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, source_lines);
-				rename_gdscript_keywords(source_lines, reg_container, true);
+				rename_foundry_script_keywords(source_lines, reg_container, true);
 				rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, source_lines);
 				rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, source_lines);
 				rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, source_lines);
@@ -594,10 +594,10 @@ bool ProjectConverter3To4::validate_conversion() {
 				changed_elements.append_array(check_for_rename_colors(lines, reg_container));
 
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, lines));
-				changed_elements.append_array(check_for_rename_gdscript_functions(lines, reg_container, false));
+				changed_elements.append_array(check_for_rename_foundry_script_functions(lines, reg_container, false));
 
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, lines));
-				changed_elements.append_array(check_for_rename_gdscript_keywords(lines, reg_container, false));
+				changed_elements.append_array(check_for_rename_foundry_script_keywords(lines, reg_container, false));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, lines));
@@ -613,10 +613,10 @@ bool ProjectConverter3To4::validate_conversion() {
 				changed_elements.append_array(check_for_rename_colors(lines, reg_container));
 
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_function_renames, reg_container.fs_function_regexes, lines));
-				changed_elements.append_array(check_for_rename_gdscript_functions(lines, reg_container, true));
+				changed_elements.append_array(check_for_rename_foundry_script_functions(lines, reg_container, true));
 
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::project_settings_renames, reg_container.project_settings_regexes, lines));
-				changed_elements.append_array(check_for_rename_gdscript_keywords(lines, reg_container, true));
+				changed_elements.append_array(check_for_rename_foundry_script_keywords(lines, reg_container, true));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_properties_renames, reg_container.fs_properties_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::fs_signals_renames, reg_container.fs_signals_regexes, lines));
 				changed_elements.append_array(check_for_rename_common(RenamesMap3To4::shaders_renames, reg_container.shaders_regexes, lines));
@@ -750,7 +750,7 @@ Vector<SourceLine> ProjectConverter3To4::split_lines(const String &text) {
 }
 
 // Test expected results of foundry_script
-bool ProjectConverter3To4::test_conversion_gdscript_builtin(const String &name, const String &expected, void (ProjectConverter3To4::*func)(Vector<SourceLine> &, const RegExContainer &, bool), const String &what, const RegExContainer &reg_container, bool builtin_script) {
+bool ProjectConverter3To4::test_conversion_foundry_script_builtin(const String &name, const String &expected, void (ProjectConverter3To4::*func)(Vector<SourceLine> &, const RegExContainer &, bool), const String &what, const RegExContainer &reg_container, bool builtin_script) {
 	Vector<SourceLine> got = split_lines(name);
 
 	(this->*func)(got, reg_container, builtin_script);
@@ -833,64 +833,64 @@ bool ProjectConverter3To4::test_conversion(RegExContainer &reg_container) {
 	valid = valid && test_conversion_with_regex("[Master]", "The master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using Multiplayer.GetRemoteSenderId()\n[RPC]", &ProjectConverter3To4::rename_csharp_attributes, "custom rename csharp", reg_container);
 	valid = valid && test_conversion_with_regex("[MasterSync]", "The master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using Multiplayer.GetRemoteSenderId()\n[RPC(CallLocal = true)]", &ProjectConverter3To4::rename_csharp_attributes, "custom rename csharp", reg_container);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.window_resizable: pass", "\tif (not get_window().unresizable): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.is_window_resizable(): pass", "\tif (not get_window().unresizable): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_window_resizable(Settings.resizable)", "\tget_window().unresizable = not (Settings.resizable)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.window_resizable = Settings.resizable", "\tget_window().unresizable = not (Settings.resizable)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.window_resizable: pass", "\tif (not get_window().unresizable): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.is_window_resizable(): pass", "\tif (not get_window().unresizable): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_window_resizable(Settings.resizable)", "\tget_window().unresizable = not (Settings.resizable)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.window_resizable = Settings.resizable", "\tget_window().unresizable = not (Settings.resizable)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.window_fullscreen: pass", "\tif ((get_window().mode == Window.MODE_EXCLUSIVE_FULLSCREEN) or (get_window().mode == Window.MODE_FULLSCREEN)): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.is_window_fullscreen(): pass", "\tif ((get_window().mode == Window.MODE_EXCLUSIVE_FULLSCREEN) or (get_window().mode == Window.MODE_FULLSCREEN)): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_window_fullscreen(Settings.fullscreen)", "\tget_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN if (Settings.fullscreen) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.window_fullscreen = Settings.fullscreen", "\tget_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN if (Settings.fullscreen) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.window_fullscreen: pass", "\tif ((get_window().mode == Window.MODE_EXCLUSIVE_FULLSCREEN) or (get_window().mode == Window.MODE_FULLSCREEN)): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.is_window_fullscreen(): pass", "\tif ((get_window().mode == Window.MODE_EXCLUSIVE_FULLSCREEN) or (get_window().mode == Window.MODE_FULLSCREEN)): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_window_fullscreen(Settings.fullscreen)", "\tget_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN if (Settings.fullscreen) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.window_fullscreen = Settings.fullscreen", "\tget_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN if (Settings.fullscreen) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.window_maximized: pass", "\tif (get_window().mode == Window.MODE_MAXIMIZED): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.is_window_maximized(): pass", "\tif (get_window().mode == Window.MODE_MAXIMIZED): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_window_maximized(Settings.maximized)", "\tget_window().mode = Window.MODE_MAXIMIZED if (Settings.maximized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.window_maximized = Settings.maximized", "\tget_window().mode = Window.MODE_MAXIMIZED if (Settings.maximized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.window_maximized: pass", "\tif (get_window().mode == Window.MODE_MAXIMIZED): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.is_window_maximized(): pass", "\tif (get_window().mode == Window.MODE_MAXIMIZED): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_window_maximized(Settings.maximized)", "\tget_window().mode = Window.MODE_MAXIMIZED if (Settings.maximized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.window_maximized = Settings.maximized", "\tget_window().mode = Window.MODE_MAXIMIZED if (Settings.maximized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.window_minimized: pass", "\tif (get_window().mode == Window.MODE_MINIMIZED): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.is_window_minimized(): pass", "\tif (get_window().mode == Window.MODE_MINIMIZED): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_window_minimized(Settings.minimized)", "\tget_window().mode = Window.MODE_MINIMIZED if (Settings.minimized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.window_minimized = Settings.minimized", "\tget_window().mode = Window.MODE_MINIMIZED if (Settings.minimized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.window_minimized: pass", "\tif (get_window().mode == Window.MODE_MINIMIZED): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.is_window_minimized(): pass", "\tif (get_window().mode == Window.MODE_MINIMIZED): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_window_minimized(Settings.minimized)", "\tget_window().mode = Window.MODE_MINIMIZED if (Settings.minimized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.window_minimized = Settings.minimized", "\tget_window().mode = Window.MODE_MINIMIZED if (Settings.minimized) else Window.MODE_WINDOWED", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.vsync_enabled: pass", "\tif (DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.is_vsync_enabled(): pass", "\tif (DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED): pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_use_vsync(Settings.vsync)", "\tDisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if (Settings.vsync) else DisplayServer.VSYNC_DISABLED)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.vsync_enabled = Settings.vsync", "\tDisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if (Settings.vsync) else DisplayServer.VSYNC_DISABLED)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.vsync_enabled: pass", "\tif (DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.is_vsync_enabled(): pass", "\tif (DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED): pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_use_vsync(Settings.vsync)", "\tDisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if (Settings.vsync) else DisplayServer.VSYNC_DISABLED)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.vsync_enabled = Settings.vsync", "\tDisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if (Settings.vsync) else DisplayServer.VSYNC_DISABLED)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.screen_orientation = OS.SCREEN_ORIENTATION_VERTICAL: pass", "\tif DisplayServer.screen_get_orientation() = DisplayServer.SCREEN_VERTICAL: pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.get_screen_orientation() = OS.SCREEN_ORIENTATION_LANDSCAPE: pass", "\tif DisplayServer.screen_get_orientation() = DisplayServer.SCREEN_LANDSCAPE: pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_screen_orientation(Settings.orient)", "\tDisplayServer.screen_set_orientation(Settings.orient)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.screen_orientation = Settings.orient", "\tDisplayServer.screen_set_orientation(Settings.orient)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.screen_orientation = OS.SCREEN_ORIENTATION_VERTICAL: pass", "\tif DisplayServer.screen_get_orientation() = DisplayServer.SCREEN_VERTICAL: pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.get_screen_orientation() = OS.SCREEN_ORIENTATION_LANDSCAPE: pass", "\tif DisplayServer.screen_get_orientation() = DisplayServer.SCREEN_LANDSCAPE: pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_screen_orientation(Settings.orient)", "\tDisplayServer.screen_set_orientation(Settings.orient)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.screen_orientation = Settings.orient", "\tDisplayServer.screen_set_orientation(Settings.orient)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.is_window_always_on_top(): pass", "\tif get_window().always_on_top: pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_window_always_on_top(Settings.alwaystop)", "\tget_window().always_on_top = (Settings.alwaystop)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.is_window_always_on_top(): pass", "\tif get_window().always_on_top: pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_window_always_on_top(Settings.alwaystop)", "\tget_window().always_on_top = (Settings.alwaystop)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tif OS.get_borderless_window(): pass", "\tif get_window().borderless: pass", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tOS.set_borderless_window(Settings.borderless)", "\tget_window().borderless = (Settings.borderless)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tif OS.get_borderless_window(): pass", "\tif get_window().borderless: pass", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tOS.set_borderless_window(Settings.borderless)", "\tget_window().borderless = (Settings.borderless)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\tvar aa = roman(r.move_and_slide( a, b, c, d, e, f )) # Roman", "\tr.set_velocity(a)\n\tr.set_up_direction(b)\n\tr.set_floor_stop_on_slope_enabled(c)\n\tr.set_max_slides(d)\n\tr.set_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tr.move_and_slide()\n\tvar aa = roman(r.velocity) # Roman", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tmove_and_slide( a, b, c, d, e, f ) # Roman", "\tset_velocity(a)\n\tset_up_direction(b)\n\tset_floor_stop_on_slope_enabled(c)\n\tset_max_slides(d)\n\tset_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tmove_and_slide() # Roman", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tvar aa = roman(r.move_and_slide_with_snap( a, g, b, c, d, e, f )) # Roman", "\tr.set_velocity(a)\n\t# TODOConverter3To4 looks that snap in Godot 4 is float, not vector like in Godot 3 - previous value `g`\n\tr.set_up_direction(b)\n\tr.set_floor_stop_on_slope_enabled(c)\n\tr.set_max_slides(d)\n\tr.set_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tr.move_and_slide()\n\tvar aa = roman(r.velocity) # Roman", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tmove_and_slide_with_snap( a, g, b, c, d, e, f ) # Roman", "\tset_velocity(a)\n\t# TODOConverter3To4 looks that snap in Godot 4 is float, not vector like in Godot 3 - previous value `g`\n\tset_up_direction(b)\n\tset_floor_stop_on_slope_enabled(c)\n\tset_max_slides(d)\n\tset_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tmove_and_slide() # Roman", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tvar aa = roman(r.move_and_slide( a, b, c, d, e, f )) # Roman", "\tr.set_velocity(a)\n\tr.set_up_direction(b)\n\tr.set_floor_stop_on_slope_enabled(c)\n\tr.set_max_slides(d)\n\tr.set_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tr.move_and_slide()\n\tvar aa = roman(r.velocity) # Roman", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tmove_and_slide( a, b, c, d, e, f ) # Roman", "\tset_velocity(a)\n\tset_up_direction(b)\n\tset_floor_stop_on_slope_enabled(c)\n\tset_max_slides(d)\n\tset_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tmove_and_slide() # Roman", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tvar aa = roman(r.move_and_slide_with_snap( a, g, b, c, d, e, f )) # Roman", "\tr.set_velocity(a)\n\t# TODOConverter3To4 looks that snap in Godot 4 is float, not vector like in Godot 3 - previous value `g`\n\tr.set_up_direction(b)\n\tr.set_floor_stop_on_slope_enabled(c)\n\tr.set_max_slides(d)\n\tr.set_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tr.move_and_slide()\n\tvar aa = roman(r.velocity) # Roman", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tmove_and_slide_with_snap( a, g, b, c, d, e, f ) # Roman", "\tset_velocity(a)\n\t# TODOConverter3To4 looks that snap in Godot 4 is float, not vector like in Godot 3 - previous value `g`\n\tset_up_direction(b)\n\tset_floor_stop_on_slope_enabled(c)\n\tset_max_slides(d)\n\tset_floor_max_angle(e)\n\t# TODOConverter3To4 infinite_inertia were removed in Godot 4 - previous value `f`\n\tmove_and_slide() # Roman", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("remove_and_slide(a,b,c,d,e,f)", "remove_and_slide(a,b,c,d,e,f)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("remove_and_slide(a,b,c,d,e,f)", "remove_and_slide(a,b,c,d,e,f)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("list_dir_begin( a , b )", "list_dir_begin() # TODOConverter3To4 fill missing arguments https://github.com/godotengine/godot/pull/40547", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("list_dir_begin( a )", "list_dir_begin() # TODOConverter3To4 fill missing arguments https://github.com/godotengine/godot/pull/40547", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("list_dir_begin( )", "list_dir_begin() # TODOConverter3To4 fill missing arguments https://github.com/godotengine/godot/pull/40547", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("list_dir_begin( a , b )", "list_dir_begin() # TODOConverter3To4 fill missing arguments https://github.com/godotengine/godot/pull/40547", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("list_dir_begin( a )", "list_dir_begin() # TODOConverter3To4 fill missing arguments https://github.com/godotengine/godot/pull/40547", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("list_dir_begin( )", "list_dir_begin() # TODOConverter3To4 fill missing arguments https://github.com/godotengine/godot/pull/40547", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("sort_custom( a , b )", "sort_custom(Callable(a, b))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("sort_custom( a , b )", "sort_custom(Callable(a, b))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("func c(var a, var b)", "func c(a, b)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("func c(var a, var b)", "func c(a, b)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("draw_line(1, 2, 3, 4, 5)", "draw_line(1, 2, 3, 4)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("draw_line(1, 2, 3, 4, 5)", "draw_line(1, 2, 3, 4)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("\timage.lock()", "\tfalse # image.lock() # TODOConverter3To4, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\timage.unlock()", "\tfalse # image.unlock() # TODOConverter3To4, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\troman.image.unlock()", "\tfalse # roman.image.unlock() # TODOConverter3To4, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tmtx.lock()", "\tmtx.lock()", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tmutex.unlock()", "\tmutex.unlock()", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\timage.lock()", "\tfalse # image.lock() # TODOConverter3To4, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\timage.unlock()", "\tfalse # image.unlock() # TODOConverter3To4, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\troman.image.unlock()", "\tfalse # roman.image.unlock() # TODOConverter3To4, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tmtx.lock()", "\tmtx.lock()", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tmutex.unlock()", "\tmutex.unlock()", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
 	valid = valid && test_conversion_with_regex("extends CSGBox", "extends CSGBox3D", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 	valid = valid && test_conversion_with_regex("CSGBox", "CSGBox3D", &ProjectConverter3To4::rename_classes, "classes", reg_container);
@@ -900,122 +900,122 @@ bool ProjectConverter3To4::test_conversion(RegExContainer &reg_container) {
 	valid = valid && test_conversion_with_regex("Spatial.shader", "Spatial.shader", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 	valid = valid && test_conversion_with_regex("Spatial.other", "Node3D.other", &ProjectConverter3To4::rename_classes, "classes", reg_container);
 
-	valid = valid && test_conversion_gdscript_builtin("\nonready", "\n@onready", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("onready", "@onready", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" onready", " onready", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\nexport", "\n@export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\texport", "\t@export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\texport_dialog", "\texport_dialog", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export", "@export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" export", " export", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremote func", "\n\n@rpc(\"any_peer\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremote func", "\n\n@rpc(\\\"any_peer\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremotesync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nremotesync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nsync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nsync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nslave func", "\n\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\npuppet func", "\n\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\npuppetsync func", "\n\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\npuppetsync func", "\n\n@rpc(\\\"call_local\\\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, true);
-	valid = valid && test_conversion_gdscript_builtin("\n\nmaster func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\n\nmastersync func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_gdscript_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\nonready", "\n@onready", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("onready", "@onready", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(" onready", " onready", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\nexport", "\n@export", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\texport", "\t@export", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\texport_dialog", "\texport_dialog", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export", "@export", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(" export", " export", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nremote func", "\n\n@rpc(\"any_peer\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nremote func", "\n\n@rpc(\\\"any_peer\\\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nremotesync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nremotesync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nsync func", "\n\n@rpc(\"any_peer\", \"call_local\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nsync func", "\n\n@rpc(\\\"any_peer\\\", \\\"call_local\\\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nslave func", "\n\n@rpc func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\npuppet func", "\n\n@rpc func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\npuppetsync func", "\n\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\npuppetsync func", "\n\n@rpc(\\\"call_local\\\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, true);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nmaster func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\n\nmastersync func", "\n\nThe master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n@rpc(\"call_local\") func", &ProjectConverter3To4::rename_foundry_script_keywords, "foundry_script keyword", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("var size: Vector2 = Vector2() setget set_function, get_function", "var size: Vector2 = Vector2(): get = get_function, set = set_function", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("var size: Vector2 = Vector2() setget set_function, ", "var size: Vector2 = Vector2(): set = set_function", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("var size: Vector2 = Vector2() setget set_function", "var size: Vector2 = Vector2(): set = set_function", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("var size: Vector2 = Vector2() setget , get_function", "var size: Vector2 = Vector2(): get = get_function", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("var size: Vector2 = Vector2() setget set_function, get_function", "var size: Vector2 = Vector2(): get = get_function, set = set_function", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("var size: Vector2 = Vector2() setget set_function, ", "var size: Vector2 = Vector2(): set = set_function", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("var size: Vector2 = Vector2() setget set_function", "var size: Vector2 = Vector2(): set = set_function", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("var size: Vector2 = Vector2() setget , get_function", "var size: Vector2 = Vector2(): get = get_function", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("get_node(@", "get_node(", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("get_node(@", "get_node(", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("yield(this, \"timeout\")", "await this.timeout", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("yield(this, \\\"timeout\\\")", "await this.timeout", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, true);
+	valid = valid && test_conversion_foundry_script_builtin("yield(this, \"timeout\")", "await this.timeout", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("yield(this, \\\"timeout\\\")", "await this.timeout", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, true);
 
-	valid = valid && test_conversion_gdscript_builtin(" Transform.xform(Vector3(a,b,c) + Vector3.UP) ", " Transform * (Vector3(a,b,c) + Vector3.UP) ", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" Transform.xform_inv(Vector3(a,b,c) + Vector3.UP) ", " (Vector3(a,b,c) + Vector3.UP) * Transform ", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(" Transform.xform(Vector3(a,b,c) + Vector3.UP) ", " Transform * (Vector3(a,b,c) + Vector3.UP) ", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(" Transform.xform_inv(Vector3(a,b,c) + Vector3.UP) ", " (Vector3(a,b,c) + Vector3.UP) * Transform ", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("export(float) var lifetime = 3.0", "export var lifetime: float = 3.0", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export (int)var spaces=1", "export var spaces: int=1", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export(String, 'AnonymousPro', 'CourierPrime') var _font_name = 'AnonymousPro'", "export var _font_name = 'AnonymousPro' # (String, 'AnonymousPro', 'CourierPrime')", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false); // TODO, this is only a workaround
-	valid = valid && test_conversion_gdscript_builtin("export(PackedScene) var mob_scene", "export var mob_scene: PackedScene", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export(float) var lifetime: float = 3.0", "export var lifetime: float = 3.0", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export var lifetime: float = 3.0", "export var lifetime: float = 3.0", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export var lifetime := 3.0", "export var lifetime := 3.0", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("export(float) var lifetime := 3.0", "export var lifetime := 3.0", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export(float) var lifetime = 3.0", "export var lifetime: float = 3.0", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export (int)var spaces=1", "export var spaces: int=1", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export(String, 'AnonymousPro', 'CourierPrime') var _font_name = 'AnonymousPro'", "export var _font_name = 'AnonymousPro' # (String, 'AnonymousPro', 'CourierPrime')", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false); // TODO, this is only a workaround
+	valid = valid && test_conversion_foundry_script_builtin("export(PackedScene) var mob_scene", "export var mob_scene: PackedScene", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export(float) var lifetime: float = 3.0", "export var lifetime: float = 3.0", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export var lifetime: float = 3.0", "export var lifetime: float = 3.0", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export var lifetime := 3.0", "export var lifetime := 3.0", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("export(float) var lifetime := 3.0", "export var lifetime := 3.0", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("var d = parse_json(roman(sfs))", "var test_json_conv = JSON.new()\ntest_json_conv.parse(roman(sfs))\nvar d = test_json_conv.get_data()", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("var d = parse_json(roman(sfs))", "var test_json_conv = JSON.new()\ntest_json_conv.parse(roman(sfs))\nvar d = test_json_conv.get_data()", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("to_json( AA ) szon", "JSON.new().stringify( AA ) szon", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("s to_json", "s JSON.new().stringify", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("AF to_json2", "AF to_json2", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("var rr = JSON.parse(a)", "var test_json_conv = JSON.new()\ntest_json_conv.parse(a)\nvar rr = test_json_conv.get_data()", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("to_json( AA ) szon", "JSON.new().stringify( AA ) szon", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("s to_json", "s JSON.new().stringify", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("AF to_json2", "AF to_json2", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("var rr = JSON.parse(a)", "var test_json_conv = JSON.new()\ntest_json_conv.parse(a)\nvar rr = test_json_conv.get_data()", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("empty()", "is_empty()", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(".empty", ".empty", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("empty()", "is_empty()", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(".empty", ".empty", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin(").roman(", ").roman(", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\t.roman(", "\tsuper.roman(", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" .roman(", " super.roman(", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(".1", ".1", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" .1", " .1", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("'.'", "'.'", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("'.a'", "'.a'", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\t._input(_event)", "\tsuper._input(_event)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(").roman(", ").roman(", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\t.roman(", "\tsuper.roman(", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(" .roman(", " super.roman(", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(".1", ".1", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(" .1", " .1", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("'.'", "'.'", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("'.a'", "'.a'", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\t._input(_event)", "\tsuper._input(_event)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("(connect(A,B,C) != OK):", "(connect(A, Callable(B, C)) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(connect(A,B,C,D) != OK):", "(connect(A, Callable(B, C).bind(D)) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(connect(A,B,C,[D]) != OK):", "(connect(A, Callable(B, C).bind(D)) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(connect(A,B,C,[D,E]) != OK):", "(connect(A, Callable(B, C).bind(D,E)) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(connect(A,B,C,[D,E],F) != OK):", "(connect(A, Callable(B, C).bind(D,E), F) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(connect(A,B,C,D,E) != OK):", "(connect(A, Callable(B, C).bind(D), E) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(connect(A,B,C) != OK):", "(connect(A, Callable(B, C)) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(connect(A,B,C,D) != OK):", "(connect(A, Callable(B, C).bind(D)) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(connect(A,B,C,[D]) != OK):", "(connect(A, Callable(B, C).bind(D)) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(connect(A,B,C,[D,E]) != OK):", "(connect(A, Callable(B, C).bind(D,E)) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(connect(A,B,C,[D,E],F) != OK):", "(connect(A, Callable(B, C).bind(D,E), F) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(connect(A,B,C,D,E) != OK):", "(connect(A, Callable(B, C).bind(D), E) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin(".connect(A,B,C)", ".connect(A, Callable(B, C))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("abc.connect(A,B,C)", "abc.connect(A, Callable(B, C))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("\tconnect(A,B,C)", "\tconnect(A, Callable(B, C))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin(" connect(A,B,C)", " connect(A, Callable(B, C))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("_connect(A,B,C)", "_connect(A,B,C)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("do_connect(A,B,C)", "do_connect(A,B,C)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("$connect(A,B,C)", "$connect(A,B,C)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("@connect(A,B,C)", "@connect(A,B,C)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(".connect(A,B,C)", ".connect(A, Callable(B, C))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("abc.connect(A,B,C)", "abc.connect(A, Callable(B, C))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("\tconnect(A,B,C)", "\tconnect(A, Callable(B, C))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin(" connect(A,B,C)", " connect(A, Callable(B, C))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("_connect(A,B,C)", "_connect(A,B,C)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("do_connect(A,B,C)", "do_connect(A,B,C)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("$connect(A,B,C)", "$connect(A,B,C)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("@connect(A,B,C)", "@connect(A,B,C)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("(start(A,B) != OK):", "(start(Callable(A, B)) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("func start(A,B):", "func start(A,B):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(start(A,B,C,D,E,F,G) != OK):", "(start(Callable(A, B).bind(C), D, E, F, G) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("disconnect(A,B,C) != OK):", "disconnect(A, Callable(B, C)) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("is_connected(A,B,C) != OK):", "is_connected(A, Callable(B, C)) != OK):", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("is_connected(A,B,C))", "is_connected(A, Callable(B, C)))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(start(A,B) != OK):", "(start(Callable(A, B)) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("func start(A,B):", "func start(A,B):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(start(A,B,C,D,E,F,G) != OK):", "(start(Callable(A, B).bind(C), D, E, F, G) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("disconnect(A,B,C) != OK):", "disconnect(A, Callable(B, C)) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("is_connected(A,B,C) != OK):", "is_connected(A, Callable(B, C)) != OK):", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("is_connected(A,B,C))", "is_connected(A, Callable(B, C)))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("(tween_method(A,B,C,D,E).foo())", "(tween_method(Callable(A, B), C, D, E).foo())", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(tween_method(A,B,C,D,E,[F,G]).foo())", "(tween_method(Callable(A, B).bind(F,G), C, D, E).foo())", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(tween_callback(A,B).foo())", "(tween_callback(Callable(A, B)).foo())", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("(tween_callback(A,B,[C,D]).foo())", "(tween_callback(Callable(A, B).bind(C,D)).foo())", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(tween_method(A,B,C,D,E).foo())", "(tween_method(Callable(A, B), C, D, E).foo())", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(tween_method(A,B,C,D,E,[F,G]).foo())", "(tween_method(Callable(A, B).bind(F,G), C, D, E).foo())", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(tween_callback(A,B).foo())", "(tween_callback(Callable(A, B)).foo())", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("(tween_callback(A,B,[C,D]).foo())", "(tween_callback(Callable(A, B).bind(C,D)).foo())", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("func _init(", "func _init(", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("func _init(a,b,c).(d,e,f):", "func _init(a,b,c):\n\tsuper(d,e,f)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("func _init(a,b,c).(a.b(),c.d()):", "func _init(a,b,c):\n\tsuper(a.b(),c.d())", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("func _init(p_x:int)->void:", "func _init(p_x:int)->void:", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("func _init(a: int).(d,e,f) -> void:", "func _init(a: int) -> void:\n\tsuper(d,e,f)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("q_PackedDataContainer._iter_init(variable1)", "q_PackedDataContainer._iter_init(variable1)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("func _init(", "func _init(", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("func _init(a,b,c).(d,e,f):", "func _init(a,b,c):\n\tsuper(d,e,f)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("func _init(a,b,c).(a.b(),c.d()):", "func _init(a,b,c):\n\tsuper(a.b(),c.d())", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("func _init(p_x:int)->void:", "func _init(p_x:int)->void:", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("func _init(a: int).(d,e,f) -> void:", "func _init(a: int) -> void:\n\tsuper(d,e,f)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("q_PackedDataContainer._iter_init(variable1)", "q_PackedDataContainer._iter_init(variable1)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("create_from_image(aa, bb)", "create_from_image(aa) #,bb", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("q_ImageTexture.create_from_image(variable1, variable2)", "q_ImageTexture.create_from_image(variable1) #,variable2", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("create_from_image(aa, bb)", "create_from_image(aa) #,bb", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("q_ImageTexture.create_from_image(variable1, variable2)", "q_ImageTexture.create_from_image(variable1) #,variable2", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("set_cell_item(a, b, c, d ,e) # AA", "set_cell_item(Vector3(a, b, c), d, e) # AA", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("set_cell_item(a, b)", "set_cell_item(a, b)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("get_cell_item_orientation(a, b,c)", "get_cell_item_orientation(Vector3i(a, b, c))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("get_cell_item(a, b,c)", "get_cell_item(Vector3i(a, b, c))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("map_to_world(a, b,c)", "map_to_local(Vector3i(a, b, c))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("set_cell_item(a, b, c, d ,e) # AA", "set_cell_item(Vector3(a, b, c), d, e) # AA", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("set_cell_item(a, b)", "set_cell_item(a, b)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("get_cell_item_orientation(a, b,c)", "get_cell_item_orientation(Vector3i(a, b, c))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("get_cell_item(a, b,c)", "get_cell_item(Vector3i(a, b, c))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("map_to_world(a, b,c)", "map_to_local(Vector3i(a, b, c))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("PackedStringArray(req_godot).join('.')", "'.'.join(PackedStringArray(req_godot))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("=PackedStringArray(req_godot).join('.')", "='.'.join(PackedStringArray(req_godot))", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("PackedStringArray(req_godot).join('.')", "'.'.join(PackedStringArray(req_godot))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("=PackedStringArray(req_godot).join('.')", "='.'.join(PackedStringArray(req_godot))", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
-	valid = valid && test_conversion_gdscript_builtin("apply_force(position, impulse)", "apply_force(impulse, position)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("apply_impulse(position, impulse)", "apply_impulse(impulse, position)", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("draw_rect(a,b,c,d,e).abc", "draw_rect(a, b, c, d).abc# e) TODOConverter3To4 Antialiasing argument is missing", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("get_focus_owner()", "get_viewport().gui_get_focus_owner()", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("button.pressed = 1", "button.button_pressed = 1", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("button.pressed=1", "button.button_pressed=1", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
-	valid = valid && test_conversion_gdscript_builtin("button.pressed SF", "button.pressed SF", &ProjectConverter3To4::rename_gdscript_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("apply_force(position, impulse)", "apply_force(impulse, position)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("apply_impulse(position, impulse)", "apply_impulse(impulse, position)", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("draw_rect(a,b,c,d,e).abc", "draw_rect(a, b, c, d).abc# e) TODOConverter3To4 Antialiasing argument is missing", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("get_focus_owner()", "get_viewport().gui_get_focus_owner()", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("button.pressed = 1", "button.button_pressed = 1", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("button.pressed=1", "button.button_pressed=1", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
+	valid = valid && test_conversion_foundry_script_builtin("button.pressed SF", "button.pressed SF", &ProjectConverter3To4::rename_foundry_script_functions, "custom rename", reg_container, false);
 
 	valid = valid && test_conversion_with_regex("Color(\"#f47d\")", "Color(\"#47df\")", &ProjectConverter3To4::convert_hexadecimal_colors, "color literals", reg_container);
 	valid = valid && test_conversion_with_regex("Color(\"#ff478cbf\")", "Color(\"#478cbfff\")", &ProjectConverter3To4::convert_hexadecimal_colors, "color literals", reg_container);
@@ -1612,7 +1612,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_classes(Vector<String> &li
 	return found_renames;
 }
 
-void ProjectConverter3To4::rename_gdscript_functions(Vector<SourceLine> &source_lines, const RegExContainer &reg_container, bool builtin) {
+void ProjectConverter3To4::rename_foundry_script_functions(Vector<SourceLine> &source_lines, const RegExContainer &reg_container, bool builtin) {
 	for (SourceLine &source_line : source_lines) {
 		if (source_line.is_comment) {
 			continue;
@@ -1620,12 +1620,12 @@ void ProjectConverter3To4::rename_gdscript_functions(Vector<SourceLine> &source_
 
 		String &line = source_line.line;
 		if (uint64_t(line.length()) <= maximum_line_length) {
-			process_gdscript_line(line, reg_container, builtin);
+			process_foundry_script_line(line, reg_container, builtin);
 		}
 	}
 }
 
-Vector<String> ProjectConverter3To4::check_for_rename_gdscript_functions(Vector<String> &lines, const RegExContainer &reg_container, bool builtin) {
+Vector<String> ProjectConverter3To4::check_for_rename_foundry_script_functions(Vector<String> &lines, const RegExContainer &reg_container, bool builtin) {
 	int current_line = 1;
 
 	Vector<String> found_renames;
@@ -1633,7 +1633,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_functions(Vector<
 	for (String &line : lines) {
 		if (uint64_t(line.length()) <= maximum_line_length) {
 			String old_line = line;
-			process_gdscript_line(line, reg_container, builtin);
+			process_foundry_script_line(line, reg_container, builtin);
 			if (old_line != line) {
 				found_renames.append(simple_line_formatter(current_line, old_line, line));
 			}
@@ -1660,7 +1660,7 @@ bool ProjectConverter3To4::contains_function_call(const String &line, const Stri
 }
 
 // TODO, this function should run only on all ".fs" files and also on lines in ".tscn" files which are parts of built-in Scripts.
-void ProjectConverter3To4::process_gdscript_line(String &line, const RegExContainer &reg_container, bool builtin) {
+void ProjectConverter3To4::process_foundry_script_line(String &line, const RegExContainer &reg_container, bool builtin) {
 	// In this and other functions, reg.sub() is used only after checking lines with str.contains().
 	// With longer lines, doing so can sometimes be significantly faster.
 
@@ -2541,7 +2541,7 @@ _FORCE_INLINE_ static String builtin_escape(const String &p_str, bool p_builtin)
 	}
 }
 
-void ProjectConverter3To4::rename_gdscript_keywords(Vector<SourceLine> &source_lines, const RegExContainer &reg_container, bool builtin) {
+void ProjectConverter3To4::rename_foundry_script_keywords(Vector<SourceLine> &source_lines, const RegExContainer &reg_container, bool builtin) {
 	static String error_message = "The master and mastersync rpc behavior is not officially supported anymore. Try using another keyword or making custom logic using get_multiplayer().get_remote_sender_id()\n";
 
 	for (SourceLine &source_line : source_lines) {
@@ -2552,43 +2552,43 @@ void ProjectConverter3To4::rename_gdscript_keywords(Vector<SourceLine> &source_l
 		String &line = source_line.line;
 		if (uint64_t(line.length()) <= maximum_line_length) {
 			if (line.contains("export")) {
-				line = reg_container.keyword_gdscript_export_single.sub(line, "@export", true);
+				line = reg_container.keyword_foundry_script_export_single.sub(line, "@export", true);
 			}
 			if (line.contains("export")) {
-				line = reg_container.keyword_gdscript_export_multi.sub(line, "$1@export", true);
+				line = reg_container.keyword_foundry_script_export_multi.sub(line, "$1@export", true);
 			}
 			if (line.contains("onready")) {
-				line = reg_container.keyword_gdscript_onready.sub(line, "@onready", true);
+				line = reg_container.keyword_foundry_script_onready.sub(line, "@onready", true);
 			}
 			if (line.contains("remote")) {
-				line = reg_container.keyword_gdscript_remote.sub(line, builtin_escape("@rpc(\"any_peer\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_remote.sub(line, builtin_escape("@rpc(\"any_peer\") func", builtin), true);
 			}
 			if (line.contains("remote")) {
-				line = reg_container.keyword_gdscript_remotesync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_remotesync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\") func", builtin), true);
 			}
 			if (line.contains("sync")) {
-				line = reg_container.keyword_gdscript_sync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_sync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\") func", builtin), true);
 			}
 			if (line.contains("slave")) {
-				line = reg_container.keyword_gdscript_slave.sub(line, "@rpc func", true);
+				line = reg_container.keyword_foundry_script_slave.sub(line, "@rpc func", true);
 			}
 			if (line.contains("puppet")) {
-				line = reg_container.keyword_gdscript_puppet.sub(line, "@rpc func", true);
+				line = reg_container.keyword_foundry_script_puppet.sub(line, "@rpc func", true);
 			}
 			if (line.contains("puppet")) {
-				line = reg_container.keyword_gdscript_puppetsync.sub(line, builtin_escape("@rpc(\"call_local\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_puppetsync.sub(line, builtin_escape("@rpc(\"call_local\") func", builtin), true);
 			}
 			if (line.contains("master")) {
-				line = reg_container.keyword_gdscript_master.sub(line, error_message + "@rpc func", true);
+				line = reg_container.keyword_foundry_script_master.sub(line, error_message + "@rpc func", true);
 			}
 			if (line.contains("master")) {
-				line = reg_container.keyword_gdscript_mastersync.sub(line, error_message + builtin_escape("@rpc(\"call_local\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_mastersync.sub(line, error_message + builtin_escape("@rpc(\"call_local\") func", builtin), true);
 			}
 		}
 	}
 }
 
-Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<String> &lines, const RegExContainer &reg_container, bool builtin) {
+Vector<String> ProjectConverter3To4::check_for_rename_foundry_script_keywords(Vector<String> &lines, const RegExContainer &reg_container, bool builtin) {
 	Vector<String> found_renames;
 
 	int current_line = 1;
@@ -2598,7 +2598,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("tool")) {
 				old = line;
-				line = reg_container.keyword_gdscript_tool.sub(line, "@tool", true);
+				line = reg_container.keyword_foundry_script_tool.sub(line, "@tool", true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "tool", "@tool", line));
 				}
@@ -2606,7 +2606,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("export")) {
 				old = line;
-				line = reg_container.keyword_gdscript_export_single.sub(line, "$1@export", true);
+				line = reg_container.keyword_foundry_script_export_single.sub(line, "$1@export", true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "export", "@export", line));
 				}
@@ -2614,7 +2614,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("export")) {
 				old = line;
-				line = reg_container.keyword_gdscript_export_multi.sub(line, "@export", true);
+				line = reg_container.keyword_foundry_script_export_multi.sub(line, "@export", true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "export", "@export", line));
 				}
@@ -2622,7 +2622,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("onready")) {
 				old = line;
-				line = reg_container.keyword_gdscript_tool.sub(line, "@onready", true);
+				line = reg_container.keyword_foundry_script_tool.sub(line, "@onready", true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "onready", "@onready", line));
 				}
@@ -2630,7 +2630,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("remote")) {
 				old = line;
-				line = reg_container.keyword_gdscript_remote.sub(line, builtin_escape("@rpc(\"any_peer\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_remote.sub(line, builtin_escape("@rpc(\"any_peer\") func", builtin), true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "remote func", builtin_escape("@rpc(\"any_peer\") func", builtin), line));
 				}
@@ -2638,7 +2638,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("remote")) {
 				old = line;
-				line = reg_container.keyword_gdscript_remotesync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\")) func", builtin), true);
+				line = reg_container.keyword_foundry_script_remotesync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\")) func", builtin), true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "remotesync func", builtin_escape("@rpc(\"any_peer\", \"call_local\")) func", builtin), line));
 				}
@@ -2646,7 +2646,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("sync")) {
 				old = line;
-				line = reg_container.keyword_gdscript_sync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\")) func", builtin), true);
+				line = reg_container.keyword_foundry_script_sync.sub(line, builtin_escape("@rpc(\"any_peer\", \"call_local\")) func", builtin), true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "sync func", builtin_escape("@rpc(\"any_peer\", \"call_local\")) func", builtin), line));
 				}
@@ -2654,7 +2654,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("slave")) {
 				old = line;
-				line = reg_container.keyword_gdscript_slave.sub(line, "@rpc func", true);
+				line = reg_container.keyword_foundry_script_slave.sub(line, "@rpc func", true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "slave func", "@rpc func", line));
 				}
@@ -2662,7 +2662,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("puppet")) {
 				old = line;
-				line = reg_container.keyword_gdscript_puppet.sub(line, "@rpc func", true);
+				line = reg_container.keyword_foundry_script_puppet.sub(line, "@rpc func", true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "puppet func", "@rpc func", line));
 				}
@@ -2670,7 +2670,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("puppet")) {
 				old = line;
-				line = reg_container.keyword_gdscript_puppetsync.sub(line, builtin_escape("@rpc(\"call_local\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_puppetsync.sub(line, builtin_escape("@rpc(\"call_local\") func", builtin), true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "puppetsync func", builtin_escape("@rpc(\"call_local\") func", builtin), line));
 				}
@@ -2678,7 +2678,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("master")) {
 				old = line;
-				line = reg_container.keyword_gdscript_master.sub(line, "@rpc func", true);
+				line = reg_container.keyword_foundry_script_master.sub(line, "@rpc func", true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "master func", "@rpc func", line));
 				}
@@ -2686,7 +2686,7 @@ Vector<String> ProjectConverter3To4::check_for_rename_gdscript_keywords(Vector<S
 
 			if (line.contains("master")) {
 				old = line;
-				line = reg_container.keyword_gdscript_master.sub(line, builtin_escape("@rpc(\"call_local\") func", builtin), true);
+				line = reg_container.keyword_foundry_script_master.sub(line, builtin_escape("@rpc(\"call_local\") func", builtin), true);
 				if (old != line) {
 					found_renames.append(line_formatter(current_line, "mastersync func", builtin_escape("@rpc(\"call_local\") func", builtin), line));
 				}

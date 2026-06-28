@@ -42,8 +42,8 @@ if env.editor_build:
 if env["library_type"] == "executable":
     if env["use_fuzzer"]:
         # libFuzzer provides its own main(); swap the platform entry point for
-        # the FoundryScript fuzzing harness in fuzz_gdscript_macos.mm.
-        files += ["fuzz_gdscript_macos.mm"]
+        # the FoundryScript fuzzing harness in fuzz_foundry_script_macos.mm.
+        files += ["fuzz_foundry_script_macos.mm"]
     else:
         files += ["godot_main_macos.mm"]
 else:

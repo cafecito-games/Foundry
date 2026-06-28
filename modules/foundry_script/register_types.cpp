@@ -44,7 +44,7 @@
 #include "editor/fs_migration_wizard_plugin.h"
 #include "editor/fs_translation_parser_plugin.h"
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 #include "language_server/fs_language_server.h"
 #endif
 #endif // TOOLS_ENABLED
@@ -61,7 +61,7 @@
 #include "editor/export/editor_export.h"
 #include "editor/translations/editor_translation_parser.h"
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 #include "core/config/engine.h"
 #endif
 #endif // TOOLS_ENABLED
@@ -71,16 +71,16 @@
 #endif
 
 FSLanguage *script_language_gd = nullptr;
-Ref<ResourceFormatLoaderGDScript> resource_loader_gd;
-Ref<ResourceFormatSaverGDScript> resource_saver_gd;
+Ref<ResourceFormatLoaderFoundryScript> resource_loader_gd;
+Ref<ResourceFormatSaverFoundryScript> resource_saver_gd;
 FSCache *fs_cache = nullptr;
 
 #ifdef TOOLS_ENABLED
 
 Ref<FSEditorTranslationParserPlugin> fs_translation_parser_plugin;
 
-class EditorExportGDScript : public EditorExportPlugin {
-	GDCLASS(EditorExportGDScript, EditorExportPlugin);
+class EditorExportFoundryScript : public EditorExportPlugin {
+	GDCLASS(EditorExportFoundryScript, EditorExportPlugin);
 
 	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
 	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
@@ -121,14 +121,14 @@ public:
 
 static FSMigrationWizardDialog *fs_migration_wizard_dialog = nullptr;
 
-static void _open_gdscript_migration_wizard() {
+static void _open_foundry_script_migration_wizard() {
 	if (fs_migration_wizard_dialog) {
 		fs_migration_wizard_dialog->popup_wizard();
 	}
 }
 
 static void _editor_init() {
-	Ref<EditorExportGDScript> gd_export;
+	Ref<EditorExportFoundryScript> gd_export;
 	gd_export.instantiate();
 	EditorExport::get_singleton()->add_export_plugin(gd_export);
 
@@ -143,15 +143,15 @@ static void _editor_init() {
 	EditorNode::get_singleton()->get_gui_base()->add_child(fs_migration_wizard_dialog);
 	EditorNode::get_singleton()->add_tool_menu_item(
 			TTR("Migrate to Strict Typing..."),
-			callable_mp_static(&_open_gdscript_migration_wizard));
+			callable_mp_static(&_open_foundry_script_migration_wizard));
 #endif
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	register_lsp_types();
 	FSLanguageServer *lsp_plugin = memnew(FSLanguageServer);
 	EditorNode::get_singleton()->add_editor_plugin(lsp_plugin);
 	Engine::get_singleton()->add_singleton(Engine::Singleton("FSLanguageProtocol", FSLanguageProtocol::get_singleton()));
-#endif // !GDSCRIPT_NO_LSP
+#endif // !FOUNDRY_SCRIPT_NO_LSP
 }
 
 #endif // TOOLS_ENABLED
@@ -244,7 +244,7 @@ void test_bytecode() {
 	FSTests::test(FSTests::TestType::TEST_BYTECODE);
 }
 
-void generate_gdscript_tests() {
+void generate_foundry_script_tests() {
 	FSTests::FSTestRunner::generate_outputs_for_cmdline();
 }
 
@@ -266,7 +266,7 @@ REGISTER_TEST_COMMAND("foundry_script-tokenizer-buffer", &test_tokenizer_buffer)
 REGISTER_TEST_COMMAND("foundry_script-parser", &test_parser);
 REGISTER_TEST_COMMAND("foundry_script-compiler", &test_compiler);
 REGISTER_TEST_COMMAND("foundry_script-bytecode", &test_bytecode);
-REGISTER_TEST_COMMAND("--foundry_script-generate-tests", &generate_gdscript_tests);
+REGISTER_TEST_COMMAND("--foundry_script-generate-tests", &generate_foundry_script_tests);
 #ifdef TOOLS_ENABLED
 REGISTER_TEST_COMMAND("--foundry_script-format", &fs_format_command);
 REGISTER_TEST_COMMAND("--foundry_script-generate-format-tests", &fs_generate_format_tests);

@@ -61,11 +61,11 @@
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/texture.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/fs_autoload_index.h"
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 static bool _has_script_owned_autoload_entries(const FSAutoloadIndex &p_index) {
 	for (const FSAutoloadIndexEntry &entry : p_index.get_entries()) {
 		if (entry.source == FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
@@ -74,7 +74,7 @@ static bool _has_script_owned_autoload_entries(const FSAutoloadIndex &p_index) {
 	}
 	return false;
 }
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 class EditorExportSaveProxy {
 	HashSet<String> saved_paths;
@@ -1090,7 +1090,7 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 	r_files.clear();
 
 	r_files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	FSAutoloadIndex autoload_index;
 	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
 	if (autoload_index_err != OK) {
@@ -1106,7 +1106,7 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 	} else {
 		r_files.push_back(autoload_cache_path);
 	}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	String icon = ResourceUID::ensure_path(get_project_setting(p_preset, "application/config/icon"));
 	String splash = ResourceUID::ensure_path(get_project_setting(p_preset, "application/boot_splash/image"));
@@ -1139,7 +1139,7 @@ Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExp
 Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths) {
 	r_paths.clear();
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	FSAutoloadIndex autoload_index;
 	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
 	if (autoload_index_err != OK) {
@@ -1150,7 +1150,7 @@ Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExpor
 			r_paths.push_back(entry.path);
 		}
 	}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	List<PropertyInfo> props;
 	ProjectSettings *project_settings = ProjectSettings::get_singleton();

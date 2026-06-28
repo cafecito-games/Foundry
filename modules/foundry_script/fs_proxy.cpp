@@ -514,19 +514,19 @@ ScriptLanguage *FSProxyInstance::get_language() {
 	return FSLanguage::get_singleton();
 }
 
-// Validates that `p_gdscript` is a proxyable trait/abstract type rooted on
+// Validates that `p_foundry_script` is a proxyable trait/abstract type rooted on
 // RefCounted (shared by both construction paths). Returns false with a filled
 // error message otherwise.
-static bool _validate_proxy_target(const Ref<FoundryScript> &p_gdscript, String &r_error_message) {
-	if (p_gdscript.is_null()) {
+static bool _validate_proxy_target(const Ref<FoundryScript> &p_foundry_script, String &r_error_message) {
+	if (p_foundry_script.is_null()) {
 		r_error_message = RTR("Proxy target must be a FoundryScript trait or abstract type.");
 		return false;
 	}
-	if (!p_gdscript->is_valid()) {
+	if (!p_foundry_script->is_valid()) {
 		r_error_message = RTR("Proxy target script is not compiled/valid.");
 		return false;
 	}
-	if (!p_gdscript->is_trait_type() && !p_gdscript->is_abstract()) {
+	if (!p_foundry_script->is_trait_type() && !p_foundry_script->is_abstract()) {
 		r_error_message = RTR("Proxy target must be a trait or an abstract type.");
 		return false;
 	}
@@ -535,7 +535,7 @@ static bool _validate_proxy_target(const Ref<FoundryScript> &p_gdscript, String 
 	// host is instantiated as that exact native base, so `is`-checks and native-method
 	// dispatch against it hold. Non-reference-counted bases (`Object`, `Node`, ...) have
 	// manual lifetimes the `Ref`-returning API cannot manage and remain unsupported.
-	const StringName native_base = p_gdscript->get_instance_base_type();
+	const StringName native_base = p_foundry_script->get_instance_base_type();
 	if (!ClassDB::is_parent_class(native_base, SNAME("RefCounted"))) {
 		r_error_message = vformat(RTR("Proxy target's native base \"%s\" is not supported; only RefCounted-derived bases (such as Resource) can be proxied, because the proxy host is reference-counted."), String(native_base));
 		return false;
@@ -551,8 +551,8 @@ static bool _validate_proxy_target(const Ref<FoundryScript> &p_gdscript, String 
 // and instantiable by `_validate_proxy_target`). Both construction paths host the
 // synthetic instance on this object, so a `Resource`-rooted proxy is a real `Resource`,
 // etc. Returns null with a filled message if instantiation unexpectedly fails.
-static RefCounted *_instantiate_proxy_host(const Ref<FoundryScript> &p_gdscript, String &r_error_message) {
-	const StringName native_base = p_gdscript->get_instance_base_type();
+static RefCounted *_instantiate_proxy_host(const Ref<FoundryScript> &p_foundry_script, String &r_error_message) {
+	const StringName native_base = p_foundry_script->get_instance_base_type();
 	Object *host_object = ClassDB::instantiate_no_placeholders(native_base);
 	RefCounted *host = Object::cast_to<RefCounted>(host_object);
 	if (host == nullptr) {
@@ -588,11 +588,11 @@ Ref<RefCounted> FSProxy::create_proxy(const Ref<Script> &p_type, const Callable 
 	return Ref<RefCounted>(proxy_owner);
 }
 
-// True when `p_target`'s script conforms to `p_gdscript` (the proxied type):
+// True when `p_target`'s script conforms to `p_foundry_script` (the proxied type):
 // trait targets must declare the trait identity, abstract/class targets must
-// have `p_gdscript` in their script base chain. Mirrors OPCODE_TYPE_TEST_SCRIPT,
+// have `p_foundry_script` in their script base chain. Mirrors OPCODE_TYPE_TEST_SCRIPT,
 // so it agrees with `target is T`.
-static bool _target_conforms_to(const Ref<FoundryScript> &p_gdscript, Object *p_target) {
+static bool _target_conforms_to(const Ref<FoundryScript> &p_foundry_script, Object *p_target) {
 	ScriptInstance *target_instance = p_target->get_script_instance();
 	if (target_instance == nullptr) {
 		return false;
@@ -601,12 +601,12 @@ static bool _target_conforms_to(const Ref<FoundryScript> &p_gdscript, Object *p_
 	if (target_script.is_null()) {
 		return false;
 	}
-	if (p_gdscript->is_trait_type()) {
-		return target_script->has_script_trait(p_gdscript->get_trait_type_name());
+	if (p_foundry_script->is_trait_type()) {
+		return target_script->has_script_trait(p_foundry_script->get_trait_type_name());
 	}
 	Script *current = target_script.ptr();
 	while (current != nullptr) {
-		if (current == p_gdscript.ptr()) {
+		if (current == p_foundry_script.ptr()) {
 			return true;
 		}
 		current = current->get_base_script().ptr();

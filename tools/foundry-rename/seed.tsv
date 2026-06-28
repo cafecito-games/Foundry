@@ -27,6 +27,67 @@ GDScriptTextDocument	FSTextDocument	A
 GDScript	FoundryScript	A	standalone language class (apply AFTER all GDScript* prefixes)
 gdscript_	fs_	A	lowercase file/include prefix (apply BEFORE gdscript via longest-first)
 gdscript	foundry_script	A	lowercase module dir, main file, setting keys (apply AFTER gdscript_)
+# Category-A residuals: embedded / all-caps GDScript tokens the word-boundary
+# engine cannot reach via the family prefixes. Explicit full-identifier rules.
+# All-caps GDSCRIPT -> FOUNDRY_SCRIPT (forced by module-macro naming).
+MODULE_GDSCRIPT_ENABLED	MODULE_FOUNDRY_SCRIPT_ENABLED	A	module enable macro (build-critical)
+GDSCRIPT_NO_LSP	FOUNDRY_SCRIPT_NO_LSP	A	build define
+GDSCRIPT_REFLECTION_NAMESPACE	FOUNDRY_SCRIPT_REFLECTION_NAMESPACE	A
+OPCODE_CALL_GDSCRIPT_UTILITY	OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY	A
+STRUCTURED_TEXT_GDSCRIPT	STRUCTURED_TEXT_FOUNDRY_SCRIPT	A	TextServer enum
+LANGUAGE_GDSCRIPT	LANGUAGE_FOUNDRY_SCRIPT	A	editor_help enum
+TYPE_GDSCRIPT	TYPE_FOUNDRY_SCRIPT	A
+GDSCRIPT	FOUNDRY_SCRIPT	A	bare all-caps enum value (FSDataType/LanguageId)
+# Embedded CamelCase: GDScript segment -> FoundryScript (terminal) or FS (mid).
+ResourceFormatLoaderGDScript	ResourceFormatLoaderFoundryScript	A
+ResourceFormatSaverGDScript	ResourceFormatSaverFoundryScript	A
+EditorExportGDScript	EditorExportFoundryScript	A
+ExtendGDScriptParser	ExtendFSParser	A
+ScopedGDScriptLanguage	ScopedFSLanguage	A
+_GDScriptMemberSort	_FSMemberSort	A
+TestGDScriptCacheAccessor	TestFSCacheAccessor	A
+TestGDScriptAnalyzerAccessor	TestFSAnalyzerAccessor	A
+TestGDScriptTraitReflectionAccessor	TestFSTraitReflectionAccessor	A
+TestGDScriptGenericReflectionAccessor	TestFSGenericReflectionAccessor	A
+TestGDScriptLanguageProtocolInitializer	TestFSLanguageProtocolInitializer	A
+GDSCriptFunctionState	FSFunctionState	A	comment typo for GDScriptFunctionState
+GDSCript	FoundryScript	A	comment typo for GDScript
+# Embedded snake_case: cache/member mirrors -> fs_; conceptual -> foundry_script.
+shallow_gdscript_cache	shallow_fs_cache	A
+full_gdscript_cache	full_fs_cache	A
+static_gdscript_cache	static_fs_cache	A
+_get_gdscript_cache_mutex	_get_fs_cache_mutex	A
+p_gdscript_member	p_fs_member	A
+p_gdscript	p_foundry_script	A
+write_call_gdscript_utility	write_call_foundry_script_utility	A
+is_gdscript_path	is_foundry_script_path	A
+base_is_gdscript	base_is_foundry_script	A
+expected_gdscript	expected_foundry_script	A
+populate_gdscript_metadata	populate_foundry_script_metadata	A
+generate_gdscript_tests	generate_foundry_script_tests	A
+_open_gdscript_migration_wizard	_open_foundry_script_migration_wizard	A
+test_conversion_gdscript_builtin	test_conversion_foundry_script_builtin	A
+rename_gdscript_functions	rename_foundry_script_functions	A
+rename_gdscript_keywords	rename_foundry_script_keywords	A
+check_for_rename_gdscript_functions	check_for_rename_foundry_script_functions	A
+check_for_rename_gdscript_keywords	check_for_rename_foundry_script_keywords	A
+process_gdscript_line	process_foundry_script_line	A
+_gdscript_type_arguments_property_name	_foundry_script_type_arguments_property_name	A
+__gdscript_type_arguments__	__foundry_script_type_arguments__	A	internal metadata key
+keyword_gdscript_master	keyword_foundry_script_master	A
+keyword_gdscript_mastersync	keyword_foundry_script_mastersync	A
+keyword_gdscript_puppet	keyword_foundry_script_puppet	A
+keyword_gdscript_puppetsync	keyword_foundry_script_puppetsync	A
+keyword_gdscript_remote	keyword_foundry_script_remote	A
+keyword_gdscript_remotesync	keyword_foundry_script_remotesync	A
+keyword_gdscript_slave	keyword_foundry_script_slave	A
+keyword_gdscript_sync	keyword_foundry_script_sync	A
+keyword_gdscript_tool	keyword_foundry_script_tool	A
+keyword_gdscript_onready	keyword_foundry_script_onready	A
+keyword_gdscript_export_single	keyword_foundry_script_export_single	A
+keyword_gdscript_export_multi	keyword_foundry_script_export_multi	A
+fuzz_gdscript_linuxbsd	fuzz_foundry_script_linuxbsd	A	fuzz harness (file + symbol)
+fuzz_gdscript_macos	fuzz_foundry_script_macos	A	fuzz harness (file + symbol)
 GDExtensionManager	FoundryExtensionManager	B
 GDExtensionLoader	FoundryExtensionLoader	B
 GDExtensionMethodBind	FoundryExtensionMethodBind	B

@@ -371,7 +371,7 @@ bool FSLanguageProtocol::is_goto_native_symbols_enabled() const {
 	return bool(_EDITOR_GET("network/language_server/show_native_symbols_in_editor"));
 }
 
-ExtendGDScriptParser *FSLanguageProtocol::LSPeer::parse_script(const String &p_path) {
+ExtendFSParser *FSLanguageProtocol::LSPeer::parse_script(const String &p_path) {
 	remove_cached_parser(p_path);
 
 	String content;
@@ -386,7 +386,7 @@ ExtendGDScriptParser *FSLanguageProtocol::LSPeer::parse_script(const String &p_p
 			return nullptr;
 		}
 	} else {
-		if (document->languageId != LSP::LanguageId::GDSCRIPT) {
+		if (document->languageId != LSP::LanguageId::FOUNDRY_SCRIPT) {
 			return nullptr;
 		}
 		content = document->text;
@@ -399,7 +399,7 @@ ExtendGDScriptParser *FSLanguageProtocol::LSPeer::parse_script(const String &p_p
 	// annotations whose declaration cannot yet be loaded. This mirrors the editor file-system scan.
 	FSLanguage::get_singleton()->update_global_class_annotations(p_path, p_path);
 
-	ExtendGDScriptParser *parser = memnew(ExtendGDScriptParser);
+	ExtendFSParser *parser = memnew(ExtendFSParser);
 	parse_results[p_path] = parser;
 
 	parser->parse(content, p_path);
@@ -421,7 +421,7 @@ void FSLanguageProtocol::LSPeer::clear_stale_parsers() {
 }
 
 void FSLanguageProtocol::LSPeer::remove_cached_parser(const String &p_path) {
-	HashMap<String, ExtendGDScriptParser *>::Iterator cached = parse_results.find(p_path);
+	HashMap<String, ExtendFSParser *>::Iterator cached = parse_results.find(p_path);
 	if (cached) {
 		memdelete(cached->value);
 		parse_results.remove(cached);
@@ -430,20 +430,20 @@ void FSLanguageProtocol::LSPeer::remove_cached_parser(const String &p_path) {
 	stale_parsers.erase(p_path);
 }
 
-ExtendGDScriptParser *FSLanguageProtocol::get_parse_result(const String &p_path) {
+ExtendFSParser *FSLanguageProtocol::get_parse_result(const String &p_path) {
 	LSP_CLIENT_V(nullptr);
 
-	ExtendGDScriptParser **cached_parser = client->parse_results.getptr(p_path);
+	ExtendFSParser **cached_parser = client->parse_results.getptr(p_path);
 	if (cached_parser == nullptr) {
 		return client->parse_script(p_path);
 	}
 	return *cached_parser;
 }
 
-ExtendGDScriptParser *FSLanguageProtocol::peek_parse_result(const String &p_path) {
+ExtendFSParser *FSLanguageProtocol::peek_parse_result(const String &p_path) {
 	LSP_CLIENT_V(nullptr);
 
-	ExtendGDScriptParser **cached_parser = client->parse_results.getptr(p_path);
+	ExtendFSParser **cached_parser = client->parse_results.getptr(p_path);
 	return cached_parser != nullptr ? *cached_parser : nullptr;
 }
 
@@ -454,7 +454,7 @@ void FSLanguageProtocol::lsp_did_open(const Dictionary &p_params) {
 	document.load(p_params["textDocument"]);
 
 	// We keep track of non FoundryScript files that the client owns, but we are not interested in the content.
-	if (document.languageId != LSP::LanguageId::GDSCRIPT) {
+	if (document.languageId != LSP::LanguageId::FOUNDRY_SCRIPT) {
 		document.text = "";
 	}
 
@@ -479,7 +479,7 @@ void FSLanguageProtocol::lsp_did_change(const Dictionary &p_params) {
 	/// Before a client can change a text document it must claim ownership of its content using the textDocument/didOpen notification.
 	ERR_FAIL_COND_MSG(document == nullptr, "LSP: Client is changing file without opening it.");
 
-	if (document->languageId != LSP::LanguageId::GDSCRIPT) {
+	if (document->languageId != LSP::LanguageId::FOUNDRY_SCRIPT) {
 		return;
 	}
 
@@ -517,7 +517,7 @@ void FSLanguageProtocol::resolve_related_symbols(const LSP::TextDocumentPosition
 
 	String path = workspace->get_file_path(p_doc_pos.textDocument.uri);
 
-	const ExtendGDScriptParser *parser = get_parse_result(path);
+	const ExtendFSParser *parser = get_parse_result(path);
 	if (!parser) {
 		return;
 	}
@@ -532,8 +532,8 @@ void FSLanguageProtocol::resolve_related_symbols(const LSP::TextDocumentPosition
 		}
 	}
 
-	for (const KeyValue<String, ExtendGDScriptParser *> &E : client->parse_results) {
-		const ExtendGDScriptParser *scr = E.value;
+	for (const KeyValue<String, ExtendFSParser *> &E : client->parse_results) {
+		const ExtendFSParser *scr = E.value;
 		const ClassMembers &members = scr->get_members();
 		if (const LSP::DocumentSymbol *const *symbol = members.getptr(symbol_identifier)) {
 			r_list.push_back(*symbol);

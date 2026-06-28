@@ -135,7 +135,7 @@ static FSDataType _make_native_type_handle_type(FSNativeClass *p_native_class) {
 
 static FSDataType _make_script_type_handle_type(Script *p_script) {
 	FSDataType type;
-	type.kind = Object::cast_to<FoundryScript>(p_script) != nullptr ? FSDataType::GDSCRIPT : FSDataType::SCRIPT;
+	type.kind = Object::cast_to<FoundryScript>(p_script) != nullptr ? FSDataType::FOUNDRY_SCRIPT : FSDataType::SCRIPT;
 	type.builtin_type = Variant::OBJECT;
 	type.native_type = p_script->get_instance_base_type();
 	type.script_type = p_script;
@@ -386,7 +386,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CALL_ASYNC,                             \
 		&&OPCODE_CALL_UTILITY,                           \
 		&&OPCODE_CALL_UTILITY_VALIDATED,                 \
-		&&OPCODE_CALL_GDSCRIPT_UTILITY,                  \
+		&&OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY,            \
 		&&OPCODE_CALL_BUILTIN_TYPE_VALIDATED,            \
 		&&OPCODE_CALL_SELF_BASE,                         \
 		&&OPCODE_CALL_METHOD_BIND,                       \
@@ -2261,10 +2261,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					err_text = "Cannot instantiate a specialized type whose base is not a FoundryScript.";
 					OPCODE_BREAK;
 				}
-				Ref<FoundryScript> expected_gdscript = *expected_base;
+				Ref<FoundryScript> expected_foundry_script = *expected_base;
 
 				Vector<ContainerType> type_arguments;
-				if (expected_gdscript.is_null() || foundry_script == expected_gdscript) {
+				if (expected_foundry_script.is_null() || foundry_script == expected_foundry_script) {
 					for (int i = 0; i < type_argument_count; i++) {
 						GET_INSTRUCTION_ARG(type_info, argc + i);
 						type_arguments.push_back(_container_type_from_type_info(*type_info, Variant::NIL, StringName()));
@@ -2846,7 +2846,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			}
 			DISPATCH_OPCODE;
 
-			OPCODE(OPCODE_CALL_GDSCRIPT_UTILITY) {
+			OPCODE(OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY) {
 				LOAD_INSTRUCTION_ARGS
 				CHECK_SPACE(3 + instr_arg_count);
 

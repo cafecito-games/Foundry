@@ -43,7 +43,7 @@
 #include "editor/fs_docgen.h"
 #endif
 
-#if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+#if defined(TOOLS_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 #include "language_server/fs_language_protocol.h"
 #endif
 
@@ -137,12 +137,12 @@ void FSAnnotation::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "builtin", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "is_builtin");
 }
 
-Ref<FSMethodDescriptor> FSMethodDescriptor::create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_gdscript_member) {
+Ref<FSMethodDescriptor> FSMethodDescriptor::create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member) {
 	Ref<FSMethodDescriptor> descriptor;
 	descriptor.instantiate();
 	descriptor->method_info = p_method_info;
 	descriptor->annotations = p_annotations;
-	descriptor->fs_member = p_gdscript_member;
+	descriptor->fs_member = p_fs_member;
 	return descriptor;
 }
 
@@ -200,12 +200,12 @@ void FSMethodDescriptor::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "annotations", PROPERTY_HINT_ARRAY_TYPE, "FSAnnotation", PROPERTY_USAGE_READ_ONLY), "", "get_annotations");
 }
 
-Ref<FSPropertyDescriptor> FSPropertyDescriptor::create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_gdscript_member) {
+Ref<FSPropertyDescriptor> FSPropertyDescriptor::create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member) {
 	Ref<FSPropertyDescriptor> descriptor;
 	descriptor.instantiate();
 	descriptor->property_info = p_property_info;
 	descriptor->annotations = p_annotations;
-	descriptor->fs_member = p_gdscript_member;
+	descriptor->fs_member = p_fs_member;
 	return descriptor;
 }
 
@@ -434,10 +434,10 @@ StringName FoundryScript::get_instance_base_type() const {
 	return StringName();
 }
 
-struct _GDScriptMemberSort {
+struct _FSMemberSort {
 	int index = 0;
 	StringName name;
-	_FORCE_INLINE_ bool operator<(const _GDScriptMemberSort &p_member) const { return index < p_member.index; }
+	_FORCE_INLINE_ bool operator<(const _FSMemberSort &p_member) const { return index < p_member.index; }
 };
 
 #ifdef TOOLS_ENABLED
@@ -472,12 +472,12 @@ void FoundryScript::_get_script_property_list(List<PropertyInfo> *r_list, bool p
 	List<PropertyInfo> props;
 
 	while (sptr) {
-		Vector<_GDScriptMemberSort> msort;
+		Vector<_FSMemberSort> msort;
 		for (const KeyValue<StringName, MemberInfo> &E : sptr->member_indices) {
 			if (!sptr->members.has(E.key)) {
 				continue; // Skip base class members.
 			}
-			_GDScriptMemberSort ms;
+			_FSMemberSort ms;
 			ms.index = E.value.index;
 			ms.name = E.key;
 			msort.push_back(ms);
@@ -941,7 +941,7 @@ Error FoundryScript::reload(bool p_keep_state) {
 		if (!source_path.is_empty()) {
 			if (FSCache::get_cached_script(source_path).is_null()) {
 				MutexLock lock(FSCache::singleton->mutex);
-				FSCache::singleton->shallow_gdscript_cache[source_path] = Ref<FoundryScript>(this);
+				FSCache::singleton->shallow_fs_cache[source_path] = Ref<FoundryScript>(this);
 			}
 			if (FSCache::has_parser(source_path)) {
 				Error err = OK;
@@ -1214,9 +1214,9 @@ void FoundryScript::_get_property_list(List<PropertyInfo> *p_properties) const {
 	}
 
 	for (const List<const FoundryScript *>::Element *E = classes.back(); E; E = E->prev()) {
-		Vector<_GDScriptMemberSort> msort;
+		Vector<_FSMemberSort> msort;
 		for (const KeyValue<StringName, MemberInfo> &F : E->get()->static_variables_indices) {
-			_GDScriptMemberSort ms;
+			_FSMemberSort ms;
 			ms.index = F.value.index;
 			ms.name = F.key;
 			msort.push_back(ms);
@@ -1829,8 +1829,8 @@ FoundryScript::~FoundryScript() {
 // `int` in `Box[int].new()`) across `.tres`/scene save-load and resource duplication. Member
 // metadata and `is`/`as` resolution read these arguments dynamically, so restoring the vector is
 // sufficient to make a reloaded instance behave like a freshly constructed one.
-static const StringName &_gdscript_type_arguments_property_name() {
-	static const StringName name = StringName("__gdscript_type_arguments__");
+static const StringName &_foundry_script_type_arguments_property_name() {
+	static const StringName name = StringName("__foundry_script_type_arguments__");
 	return name;
 }
 
@@ -1862,7 +1862,7 @@ static Vector<ContainerType> _deserialize_type_arguments(const Array &p_array) {
 bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 	// Handle the hidden storage property only when it does not shadow a real member, so a user
 	// variable that happens to share the reserved name keeps its normal behavior.
-	if (p_name == _gdscript_type_arguments_property_name() && !script->member_indices.has(p_name)) {
+	if (p_name == _foundry_script_type_arguments_property_name() && !script->member_indices.has(p_name)) {
 		if (p_value.get_type() == Variant::ARRAY) {
 			const Vector<ContainerType> restored = _deserialize_type_arguments(p_value);
 			// Reject a payload whose arity does not match the class's type parameters (e.g. a
@@ -1980,7 +1980,7 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 }
 
 bool FSInstance::get(const StringName &p_name, Variant &r_ret) const {
-	if (p_name == _gdscript_type_arguments_property_name() && !script->member_indices.has(p_name)) {
+	if (p_name == _foundry_script_type_arguments_property_name() && !script->member_indices.has(p_name)) {
 		r_ret = _serialize_type_arguments(type_arguments);
 		return true;
 	}
@@ -2111,8 +2111,8 @@ void FSInstance::get_property_list(List<PropertyInfo> *p_properties) const {
 	// Persist reified generic type arguments so a specialized instance (`Box[int].new()`) round-trips
 	// through `.tres`/scene save-load and duplication. Only emitted when present, so non-generic or
 	// unspecialized instances serialize unchanged.
-	if (!type_arguments.is_empty() && !script->member_indices.has(_gdscript_type_arguments_property_name())) {
-		p_properties->push_back(PropertyInfo(Variant::ARRAY, _gdscript_type_arguments_property_name(), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_NO_EDITOR));
+	if (!type_arguments.is_empty() && !script->member_indices.has(_foundry_script_type_arguments_property_name())) {
+		p_properties->push_back(PropertyInfo(Variant::ARRAY, _foundry_script_type_arguments_property_name(), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_NO_EDITOR));
 	}
 
 	const FoundryScript *sptr = script.ptr();
@@ -2160,12 +2160,12 @@ void FSInstance::get_property_list(List<PropertyInfo> *p_properties) const {
 
 		//instance a fake script for editing the values
 
-		Vector<_GDScriptMemberSort> msort;
+		Vector<_FSMemberSort> msort;
 		for (const KeyValue<StringName, FoundryScript::MemberInfo> &F : sptr->member_indices) {
 			if (!sptr->members.has(F.key)) {
 				continue; // Skip base class members.
 			}
-			_GDScriptMemberSort ms;
+			_FSMemberSort ms;
 			ms.index = F.value.index;
 			ms.name = F.key;
 			msort.push_back(ms);
@@ -2413,7 +2413,7 @@ FSInstance::~FSInstance() {
 
 	while (SelfList<FSFunctionState> *E = pending_func_states.first()) {
 		// Order matters since clearing the stack may already cause
-		// the GDSCriptFunctionState to be destroyed and thus removed from the list.
+		// the FSFunctionState to be destroyed and thus removed from the list.
 		pending_func_states.remove(E);
 		FSFunctionState *state = E->self();
 		ObjectID state_id = state->get_instance_id();
@@ -2492,7 +2492,7 @@ void FSLanguage::remove_named_global_constant(const StringName &p_name) {
 // The reflection API is exposed as the `godot` named global (see `init`/`finish`).
 // `get_reserved_global_names` reports it so the editor rejects a project autoload that
 // would shadow it; reflection wins by construction. Single source for the three sites.
-static const char *GDSCRIPT_REFLECTION_NAMESPACE = "godot";
+static const char *FOUNDRY_SCRIPT_REFLECTION_NAMESPACE = "godot";
 
 void FSLanguage::init() {
 	//populate global constants
@@ -2532,7 +2532,7 @@ void FSLanguage::init() {
 	reflection_singleton.instantiate();
 	godot_namespace_singleton.instantiate();
 	godot_namespace_singleton->set_reflection(reflection_singleton);
-	add_named_global_constant(GDSCRIPT_REFLECTION_NAMESPACE, godot_namespace_singleton);
+	add_named_global_constant(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE, godot_namespace_singleton);
 
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
@@ -2645,10 +2645,10 @@ void FSLanguage::finish() {
 	// Tear down the reflection singletons exposed via the `godot` global. Only
 	// remove the named global if it still points to our singleton: a project
 	// autoload could have overwritten the `godot` entry, and we must not clobber it.
-	if (godot_namespace_singleton.is_valid() && named_globals.has(GDSCRIPT_REFLECTION_NAMESPACE)) {
-		const Object *registered = named_globals[GDSCRIPT_REFLECTION_NAMESPACE].get_validated_object();
+	if (godot_namespace_singleton.is_valid() && named_globals.has(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE)) {
+		const Object *registered = named_globals[FOUNDRY_SCRIPT_REFLECTION_NAMESPACE].get_validated_object();
 		if (registered == godot_namespace_singleton.ptr()) {
-			remove_named_global_constant(GDSCRIPT_REFLECTION_NAMESPACE);
+			remove_named_global_constant(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE);
 		}
 	}
 	godot_namespace_singleton.unref();
@@ -2833,7 +2833,7 @@ void FSLanguage::_on_settings_changed() {
 		// pass, which now resolves against the invalidated cache and reports under the new flags.
 		print_verbose("FoundryScript: Strict analysis settings changed; invalidated analysis cache.");
 
-#if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+#if defined(TOOLS_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 		// The language server caches its own parsers per open document and would otherwise keep
 		// publishing diagnostics from the old strict mode until an edit/reopen. Re-parse the open
 		// documents from their in-memory buffers so the LSP re-publishes under the new flags too.
@@ -3120,7 +3120,7 @@ Vector<String> FSLanguage::get_reserved_global_names() const {
 	// non-tools runtime the reflection namespace is not compiler-visible anyway, so
 	// reserving the name would only strip a project autoload of its sole binding.
 #ifdef TOOLS_ENABLED
-	static const Vector<String> ret = { GDSCRIPT_REFLECTION_NAMESPACE };
+	static const Vector<String> ret = { FOUNDRY_SCRIPT_REFLECTION_NAMESPACE };
 	return ret;
 #else
 	return Vector<String>();
@@ -3129,7 +3129,7 @@ Vector<String> FSLanguage::get_reserved_global_names() const {
 
 bool FSLanguage::is_reserved_global_name(const StringName &p_name) const {
 #ifdef TOOLS_ENABLED
-	return p_name == StringName(GDSCRIPT_REFLECTION_NAMESPACE);
+	return p_name == StringName(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE);
 #else
 	return false;
 #endif
@@ -3551,7 +3551,7 @@ Ref<FoundryScript> FSLanguage::get_script_by_fully_qualified_name(const String &
 
 /*************** RESOURCE ***************/
 
-Ref<Resource> ResourceFormatLoaderGDScript::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
+Ref<Resource> ResourceFormatLoaderFoundryScript::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
 	Error err;
 	bool ignoring = p_cache_mode == CACHE_MODE_IGNORE || p_cache_mode == CACHE_MODE_IGNORE_DEEP;
 	Ref<FoundryScript> scr = FSCache::get_full_script(p_original_path, err, "", ignoring);
@@ -3569,16 +3569,16 @@ Ref<Resource> ResourceFormatLoaderGDScript::load(const String &p_path, const Str
 	return scr;
 }
 
-void ResourceFormatLoaderGDScript::get_recognized_extensions(List<String> *p_extensions) const {
+void ResourceFormatLoaderFoundryScript::get_recognized_extensions(List<String> *p_extensions) const {
 	p_extensions->push_back("fs");
 	p_extensions->push_back("fsc");
 }
 
-bool ResourceFormatLoaderGDScript::handles_type(const String &p_type) const {
+bool ResourceFormatLoaderFoundryScript::handles_type(const String &p_type) const {
 	return (p_type == "Script" || p_type == "FoundryScript");
 }
 
-String ResourceFormatLoaderGDScript::get_resource_type(const String &p_path) const {
+String ResourceFormatLoaderFoundryScript::get_resource_type(const String &p_path) const {
 	String el = p_path.get_extension().to_lower();
 	if (el == "fs" || el == "fsc") {
 		return "FoundryScript";
@@ -3586,7 +3586,7 @@ String ResourceFormatLoaderGDScript::get_resource_type(const String &p_path) con
 	return "";
 }
 
-void ResourceFormatLoaderGDScript::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
+void ResourceFormatLoaderFoundryScript::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ);
 	ERR_FAIL_COND_MSG(file.is_null(), "Cannot open file '" + p_path + "'.");
 
@@ -3605,7 +3605,7 @@ void ResourceFormatLoaderGDScript::get_dependencies(const String &p_path, List<S
 	}
 }
 
-void ResourceFormatLoaderGDScript::get_classes_used(const String &p_path, HashSet<StringName> *r_classes) {
+void ResourceFormatLoaderFoundryScript::get_classes_used(const String &p_path, HashSet<StringName> *r_classes) {
 	Ref<FoundryScript> scr = ResourceLoader::load(p_path);
 	if (scr.is_null()) {
 		return;
@@ -3661,7 +3661,7 @@ void ResourceFormatLoaderGDScript::get_classes_used(const String &p_path, HashSe
 	}
 }
 
-Error ResourceFormatSaverGDScript::save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags) {
+Error ResourceFormatSaverFoundryScript::save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags) {
 	Ref<FoundryScript> sqscr = p_resource;
 	ERR_FAIL_COND_V(sqscr.is_null(), ERR_INVALID_PARAMETER);
 
@@ -3686,12 +3686,12 @@ Error ResourceFormatSaverGDScript::save(const Ref<Resource> &p_resource, const S
 	return OK;
 }
 
-void ResourceFormatSaverGDScript::get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const {
+void ResourceFormatSaverFoundryScript::get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const {
 	if (Object::cast_to<FoundryScript>(*p_resource)) {
 		p_extensions->push_back("fs");
 	}
 }
 
-bool ResourceFormatSaverGDScript::recognize(const Ref<Resource> &p_resource) const {
+bool ResourceFormatSaverFoundryScript::recognize(const Ref<Resource> &p_resource) const {
 	return Object::cast_to<FoundryScript>(*p_resource) != nullptr;
 }

@@ -41,9 +41,9 @@
 
 #include "test_refactor.h" // FSTests::TemporaryScriptFile, make_context.
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 #include "editor/file_system/editor_file_system.h"
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 namespace FSTests {
 
@@ -1490,7 +1490,7 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference][Member]") {
 	}
 }
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 
 // Locates the Add Type Annotation candidate anchored at p_line.
 static const RefactorCandidate *inference_candidate_at_line(const RefactorCandidatesResult &p_result, int p_line) {
@@ -2014,7 +2014,7 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference]") {
 	}
 }
 
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 } // namespace FSTests
 

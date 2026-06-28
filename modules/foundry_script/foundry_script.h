@@ -83,8 +83,8 @@ public:
 
 #ifdef TESTS_ENABLED
 namespace FSTests {
-class TestGDScriptTraitReflectionAccessor;
-class TestGDScriptGenericReflectionAccessor;
+class TestFSTraitReflectionAccessor;
+class TestFSGenericReflectionAccessor;
 } //namespace FSTests
 #endif // TESTS_ENABLED
 
@@ -190,8 +190,8 @@ private:
 	friend class FSLanguage;
 	friend struct FSUtilityFunctionsDefinitions;
 #ifdef TESTS_ENABLED
-	friend class FSTests::TestGDScriptTraitReflectionAccessor;
-	friend class FSTests::TestGDScriptGenericReflectionAccessor;
+	friend class FSTests::TestFSTraitReflectionAccessor;
+	friend class FSTests::TestFSGenericReflectionAccessor;
 #endif // TESTS_ENABLED
 
 	Ref<FSNativeClass> native;
@@ -574,9 +574,9 @@ public:
 	Dictionary to_dictionary() const;
 
 	// Builds a descriptor from a method's MethodInfo and its already-resolved annotation descriptors.
-	// `p_gdscript_member` is false for native (non-FoundryScript) methods, which omit the Dictionary's
+	// `p_fs_member` is false for native (non-FoundryScript) methods, which omit the Dictionary's
 	// `annotations` key.
-	static Ref<FSMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_gdscript_member = true);
+	static Ref<FSMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member = true);
 };
 
 // Read-only structured descriptor for a single reflected FoundryScript member variable, returned by the
@@ -612,9 +612,9 @@ public:
 	Dictionary to_dictionary() const;
 
 	// Builds a descriptor from a variable's PropertyInfo and its already-resolved annotation descriptors.
-	// `p_gdscript_member` is false for native (non-FoundryScript) variables, which omit the Dictionary's
+	// `p_fs_member` is false for native (non-FoundryScript) variables, which omit the Dictionary's
 	// `annotations` key.
-	static Ref<FSPropertyDescriptor> create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_gdscript_member = true);
+	static Ref<FSPropertyDescriptor> create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member = true);
 };
 
 class FSInstance : public ScriptInstance {
@@ -999,8 +999,8 @@ public:
 	~FSLanguage();
 };
 
-class ResourceFormatLoaderGDScript : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderGDScript, ResourceFormatLoader);
+class ResourceFormatLoaderFoundryScript : public ResourceFormatLoader {
+	GDSOFTCLASS(ResourceFormatLoaderFoundryScript, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -1011,8 +1011,8 @@ public:
 	virtual void get_classes_used(const String &p_path, HashSet<StringName> *r_classes) override;
 };
 
-class ResourceFormatSaverGDScript : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceFormatSaverGDScript, ResourceFormatSaver);
+class ResourceFormatSaverFoundryScript : public ResourceFormatSaver {
+	GDSOFTCLASS(ResourceFormatSaverFoundryScript, ResourceFormatSaver);
 
 public:
 	virtual Error save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags = 0) override;

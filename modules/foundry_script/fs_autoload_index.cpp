@@ -527,7 +527,7 @@ StringName get_native_base(const StringName &p_base) {
 	return p_base;
 }
 
-bool is_gdscript_path(const String &p_path, const String &p_resource_type) {
+bool is_foundry_script_path(const String &p_path, const String &p_resource_type) {
 	FSLanguage *language = FSLanguage::get_singleton();
 	return p_resource_type == "FoundryScript" || (language != nullptr && p_path.get_extension() == language->get_extension());
 }
@@ -536,7 +536,7 @@ bool is_scene_path(const String &p_path, const String &p_resource_type) {
 	return p_resource_type == "PackedScene" || p_path.get_extension() == "tscn" || p_path.get_extension() == "scn";
 }
 
-void populate_gdscript_metadata(FSAutoloadIndexEntry &r_entry) {
+void populate_foundry_script_metadata(FSAutoloadIndexEntry &r_entry) {
 	FSLanguage *language = FSLanguage::get_singleton();
 	if (language == nullptr) {
 		return;
@@ -569,8 +569,8 @@ void populate_resource_metadata(FSAutoloadIndexEntry &r_entry) {
 	}
 
 	const String resource_type = ResourceLoader::get_resource_type(r_entry.path);
-	if (is_gdscript_path(r_entry.path, resource_type)) {
-		populate_gdscript_metadata(r_entry);
+	if (is_foundry_script_path(r_entry.path, resource_type)) {
+		populate_foundry_script_metadata(r_entry);
 		return;
 	}
 

@@ -42,7 +42,7 @@
 // generated against an isolated res:// subtree.
 #include "test_migration_driver.h"
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 
 namespace FSTests {
 
@@ -637,6 +637,6 @@ TEST_SUITE("[Modules][FoundryScript][MigrationReport]") {
 
 } // namespace FSTests
 
-#endif // !GDSCRIPT_NO_LSP
+#endif // !FOUNDRY_SCRIPT_NO_LSP
 
 #endif // TOOLS_ENABLED

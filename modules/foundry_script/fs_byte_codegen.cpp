@@ -712,7 +712,7 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 			append(p_type.is_type_handle);
 		} break;
 		case FSDataType::SCRIPT:
-		case FSDataType::GDSCRIPT: {
+		case FSDataType::FOUNDRY_SCRIPT: {
 			const Variant &script = p_type.script_type;
 			append_opcode(FSFunction::OPCODE_TYPE_TEST_SCRIPT);
 			append(p_target);
@@ -990,7 +990,7 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 			append(p_target.type.is_type_handle);
 		} break;
 		case FSDataType::SCRIPT:
-		case FSDataType::GDSCRIPT: {
+		case FSDataType::FOUNDRY_SCRIPT: {
 			Variant script = p_target.type.script_type;
 			int idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 
@@ -1033,7 +1033,7 @@ void FSByteCodeGenerator::write_assign(const Address &p_target, const Address &p
 				return;
 			}
 			case FSDataType::SCRIPT:
-			case FSDataType::GDSCRIPT: {
+			case FSDataType::FOUNDRY_SCRIPT: {
 				Variant script = p_target.type.script_type;
 				int idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 				append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_SCRIPT);
@@ -1163,7 +1163,7 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 			index = get_constant_pos(nc) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 		} break;
 		case FSDataType::SCRIPT:
-		case FSDataType::GDSCRIPT: {
+		case FSDataType::FOUNDRY_SCRIPT: {
 			Variant script = p_type.script_type;
 			int idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 			append_opcode(FSFunction::OPCODE_CAST_TO_SCRIPT);
@@ -1177,7 +1177,7 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 	append(p_source);
 	append(p_target);
 	append(index);
-	if (p_type.kind == FSDataType::NATIVE || p_type.kind == FSDataType::SCRIPT || p_type.kind == FSDataType::GDSCRIPT) {
+	if (p_type.kind == FSDataType::NATIVE || p_type.kind == FSDataType::SCRIPT || p_type.kind == FSDataType::FOUNDRY_SCRIPT) {
 		append(p_type.is_type_handle);
 	}
 }
@@ -1234,8 +1234,8 @@ void FSByteCodeGenerator::write_call_async(const Address &p_target, const Addres
 	ct.cleanup();
 }
 
-void FSByteCodeGenerator::write_call_gdscript_utility(const Address &p_target, const StringName &p_function, const Vector<Address> &p_arguments) {
-	append_opcode_and_argcount(FSFunction::OPCODE_CALL_GDSCRIPT_UTILITY, 1 + p_arguments.size());
+void FSByteCodeGenerator::write_call_foundry_script_utility(const Address &p_target, const StringName &p_function, const Vector<Address> &p_arguments) {
+	append_opcode_and_argcount(FSFunction::OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY, 1 + p_arguments.size());
 	FSUtilityFunctions::FunctionPtr gds_function = FSUtilityFunctions::get_function(p_function);
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1980,7 +1980,7 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 				class_idx = get_constant_pos(nc) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 				append(class_idx);
 				append(true);
-			} else if (function->return_type.is_type_handle && (function->return_type.kind == FSDataType::SCRIPT || function->return_type.kind == FSDataType::GDSCRIPT)) {
+			} else if (function->return_type.is_type_handle && (function->return_type.kind == FSDataType::SCRIPT || function->return_type.kind == FSDataType::FOUNDRY_SCRIPT)) {
 				Variant script = function->return_type.script_type;
 				int script_idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 
@@ -2059,7 +2059,7 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 				append(class_idx);
 				append(function->return_type.is_type_handle);
 			} break;
-			case FSDataType::GDSCRIPT:
+			case FSDataType::FOUNDRY_SCRIPT:
 			case FSDataType::SCRIPT: {
 				Variant script = function->return_type.script_type;
 				int script_idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);

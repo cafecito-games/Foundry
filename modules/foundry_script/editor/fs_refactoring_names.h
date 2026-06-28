@@ -34,7 +34,7 @@
 
 #include "core/string/ustring.h"
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 #include "../language_server/godot_lsp.h"
 #endif
 
@@ -45,7 +45,7 @@ namespace FSRefactorNames {
 bool validate_identifier(const String &p_name, String &r_reason);
 String identifier_at_column(const String &p_line, int p_column);
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 // Returns true when renaming p_target to p_new_name would collide with another
 // symbol declared in the same scope (the same parent in the document-symbol tree).
 //
@@ -57,7 +57,7 @@ String identifier_at_column(const String &p_line, int p_column);
 // the tree, it returns false (no collision). A genuine name clash that slips
 // through is still surfaced by the editor's re-parse after the edit is applied.
 bool has_scope_collision(const LSP::DocumentSymbol &p_root, const LSP::DocumentSymbol *p_target, const String &p_new_name, String &r_reason);
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 } // namespace FSRefactorNames
 

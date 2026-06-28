@@ -53,7 +53,7 @@ bool is_reserved_keyword(const String &p_name) {
 
 } // namespace
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 namespace {
 
 // Locates the parent symbol whose `children` Vector directly contains p_target,
@@ -97,7 +97,7 @@ bool FSRefactorNames::has_scope_collision(const LSP::DocumentSymbol &p_root, con
 	}
 	return false;
 }
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 bool FSRefactorNames::validate_identifier(const String &p_name, String &r_reason) {
 	if (p_name.is_empty()) {

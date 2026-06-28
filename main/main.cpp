@@ -142,16 +142,16 @@
 #include "modules/mono/editor/bindings_generator.h"
 #endif
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_autoload_index.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/editor/fs_migration_wizard.h"
 #endif // TOOLS_ENABLED
-#if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+#if defined(TOOLS_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 #include "modules/foundry_script/language_server/fs_language_server.h"
-#endif // TOOLS_ENABLED && !GDSCRIPT_NO_LSP
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // TOOLS_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 /* Static members */
 
@@ -327,7 +327,7 @@ static String get_full_version_string() {
 	return String(GODOT_VERSION_FULL_BUILD) + hash;
 }
 
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 static Vector<String> get_files_with_extension(const String &p_root, const String &p_extension) {
 	Vector<String> paths;
 
@@ -561,9 +561,9 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--recovery-mode", "Start the editor in recovery mode, which disables features that can typically cause startup crashes, such as tool scripts, editor plugins, GDExtension addons, and others.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--debug-server <uri>", "Start the editor debug server (<protocol>://<host/IP>[:port], e.g. tcp://127.0.0.1:6007)\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--dap-port <port>", "Use the specified port for the FoundryScript Debug Adapter Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#if defined(MODULE_GDSCRIPT_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 	print_help_option("--lsp-port <port>", "Use the specified port for the FoundryScript Language Server Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#endif // MODULE_GDSCRIPT_ENABLED && !GDSCRIPT_NO_LSP
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
 #endif
 	print_help_option("--quit", "Quit after the first iteration.\n");
 	print_help_option("--quit-after <int>", "Quit after the given number of iterations. Set to 0 to disable.\n");
@@ -711,7 +711,7 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--doctool [path]", "Dump the engine API reference to the given <path> (defaults to current directory) in XML format, merging if existing files are found.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--no-docbase", "Disallow dumping the base types (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--gdextension-docs", "Rather than dumping the engine API, generate API reference from all the GDExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	print_help_option("--foundry_script-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the FoundryScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate <path>", "Run the FoundryScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --foundry_script-migrate-apply to commit the inferred annotations, and the --foundry_script-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate-apply", "Commit the inferred type annotations to disk during --foundry_script-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
@@ -1716,7 +1716,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			audio_driver = NULL_AUDIO_DRIVER;
 			display_driver = NULL_DISPLAY_DRIVER;
 			main_args.push_back(arg);
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 		} else if (arg == "--foundry_script-docs") {
 			if (N) {
 				project_path = N->get();
@@ -1765,7 +1765,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing file path argument for --foundry_script-migrate-follow-up, aborting.\n");
 				goto error;
 			}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 #endif // TOOLS_ENABLED
 
 		} else if (arg == "--path") { // set path of project to start or edit
@@ -2022,7 +2022,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing <path> argument for --benchmark-file <path>.\n");
 				goto error;
 			}
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 		} else if (arg == "--lsp-port") {
 			if (N) {
 				int port_override = N->get().to_int();
@@ -2036,7 +2036,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing <port> argument for --lsp-port <port>.\n");
 				goto error;
 			}
-#endif // TOOLS_ENABLED && MODULE_GDSCRIPT_ENABLED && !GDSCRIPT_NO_LSP
+#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
 #if defined(TOOLS_ENABLED)
 		} else if (arg == "--dap-port") {
 			if (N) {
@@ -3989,7 +3989,7 @@ int Main::start() {
 	bool export_pack_only = false;
 	bool install_android_build_template = false;
 	bool export_patch = false;
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	String fs_docs_path;
 	String fs_migrate_path;
 	bool fs_migrate_apply = false;
@@ -4037,7 +4037,7 @@ int Main::start() {
 			recovery_mode = true;
 		} else if (E->get() == "--install-android-build-template") {
 			install_android_build_template = true;
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 		} else if (E->get() == "--foundry_script-migrate-apply") {
 			fs_migrate_apply = true;
 		} else if (E->get() == "--foundry_script-migrate-strict-null-checks") {
@@ -4052,7 +4052,7 @@ int Main::start() {
 			fs_migrate_allow_violations = true;
 		} else if (E->get() == "--foundry_script-migrate-acknowledge-vcs") {
 			fs_migrate_acknowledge_vcs = true;
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 #endif // TOOLS_ENABLED
 		} else if (E->get() == "--scene") {
 #if defined(OVERRIDE_PATH_ENABLED)
@@ -4109,7 +4109,7 @@ int Main::start() {
 					doc_tool_implicit_cwd = true;
 					parsed_pair = false;
 				}
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 			} else if (E->get() == "--foundry_script-docs") {
 				fs_docs_path = E->next()->get();
 			} else if (E->get() == "--foundry_script-migrate") {
@@ -4165,7 +4165,7 @@ int Main::start() {
 	}
 
 #ifdef TOOLS_ENABLED
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	if (!doc_tool_path.is_empty() && fs_docs_path.is_empty()) {
 #else
 	if (!doc_tool_path.is_empty()) {
@@ -4318,7 +4318,7 @@ int Main::start() {
 #endif // defined(OVERRIDE_PATH_ENABLED)
 
 	bool skip_main_scene_resolution = false;
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 	// The migration command is handled before the game branch and never runs the main scene, so do
 	// not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a fresh
 	// CI/source checkout before the migration could even print its report.
@@ -4350,7 +4350,7 @@ int Main::start() {
 	}
 #endif
 
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 	if (!fs_migrate_path.is_empty()) {
 		// Headless strict-typing migration wizard. Reuses the same orchestrator the editor entry
 		// point drives (report -> apply -> gated strict activation), so a scripted or
@@ -4391,7 +4391,7 @@ int Main::start() {
 		// activation never mistakes a blocked or unsaved flip for success.
 		return migration_result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
 	}
-#endif // TOOLS_ENABLED && MODULE_GDSCRIPT_ENABLED
+#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	MainLoop *main_loop = nullptr;
 	if (editor) {
@@ -4535,7 +4535,7 @@ int Main::start() {
 				//autoload
 				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
 				Vector<ProjectSettings::AutoloadInfo> autoloads;
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 				FSAutoloadIndex autoload_index;
 				const Error autoload_index_err = autoload_index.rebuild_for_runtime_startup();
 				if (autoload_index_err != OK) {
@@ -4549,7 +4549,7 @@ int Main::start() {
 				for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
 					autoloads.push_back(E.value);
 				}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 				//first pass, add the constants so they exist before any script is loaded
 				for (const ProjectSettings::AutoloadInfo &info : autoloads) {
@@ -4630,7 +4630,7 @@ int Main::start() {
 		}
 
 #ifdef TOOLS_ENABLED
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 		if (!doc_tool_path.is_empty() && !fs_docs_path.is_empty()) {
 			DocTools docs;
 			Error err;
@@ -4659,7 +4659,7 @@ int Main::start() {
 
 			return EXIT_SUCCESS;
 		}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 		EditorNode *editor_node = nullptr;
 		if (editor) {

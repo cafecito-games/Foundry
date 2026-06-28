@@ -39,7 +39,7 @@ class FSUtilityCallable : public CallableCustom {
 	enum Type {
 		TYPE_INVALID,
 		TYPE_GLOBAL,
-		TYPE_GDSCRIPT,
+		TYPE_FOUNDRY_SCRIPT,
 	};
 	Type type = TYPE_INVALID;
 	FSUtilityFunctions::FunctionPtr fs_function = nullptr;

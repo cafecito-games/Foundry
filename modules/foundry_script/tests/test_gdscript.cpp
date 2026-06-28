@@ -339,7 +339,7 @@ static Vector<StringName> get_script_trait_vector(const Ref<Script> &p_script) {
 	return traits;
 }
 
-class TestGDScriptTraitReflectionAccessor {
+class TestFSTraitReflectionAccessor {
 public:
 	static void set_base(const Ref<FoundryScript> &p_script, const Ref<FoundryScript> &p_base) {
 		p_script->base = p_base;
@@ -350,7 +350,7 @@ public:
 	}
 };
 
-class TestGDScriptGenericReflectionAccessor {
+class TestFSGenericReflectionAccessor {
 public:
 	static void set_type_parameters(const Ref<FoundryScript> &p_script, const Vector<FoundryScript::TypeParameter> &p_parameters) {
 		p_script->type_parameters = p_parameters;
@@ -2135,13 +2135,13 @@ TEST_CASE("[Modules][FoundryScript] Scripts reflect trait identities") {
 		Vector<StringName> base_traits;
 		base_traits.push_back(SNAME("Damageable"));
 		base_traits.push_back(SNAME("Trackable"));
-		TestGDScriptTraitReflectionAccessor::set_script_trait_list(base, base_traits);
+		TestFSTraitReflectionAccessor::set_script_trait_list(base, base_traits);
 
 		Vector<StringName> script_traits;
 		script_traits.push_back(SNAME("characters.Movable"));
 		script_traits.push_back(SNAME("Damageable"));
-		TestGDScriptTraitReflectionAccessor::set_script_trait_list(script, script_traits);
-		TestGDScriptTraitReflectionAccessor::set_base(script, base);
+		TestFSTraitReflectionAccessor::set_script_trait_list(script, script_traits);
+		TestFSTraitReflectionAccessor::set_base(script, base);
 
 		Vector<StringName> reflected_traits = get_script_trait_vector(script);
 		CHECK_EQ(reflected_traits.size(), 3);
@@ -2206,7 +2206,7 @@ TEST_CASE("[Modules][FoundryScript] Scripts reflect declared generic type parame
 		value.bound = PropertyInfo(Variant::OBJECT, "", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE, "RefCounted");
 		parameters.push_back(value);
 
-		TestGDScriptGenericReflectionAccessor::set_type_parameters(script, parameters);
+		TestFSGenericReflectionAccessor::set_type_parameters(script, parameters);
 
 		CHECK(script->is_generic());
 		CHECK_EQ(script->get_type_parameters().size(), 2);

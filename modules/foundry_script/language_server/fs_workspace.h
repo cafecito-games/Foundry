@@ -39,11 +39,11 @@
 
 class FSParseResultProvider {
 public:
-	virtual const ExtendGDScriptParser *get_parse_result(const String &p_path) const = 0;
+	virtual const ExtendFSParser *get_parse_result(const String &p_path) const = 0;
 	// Return an already-parsed result for p_path without triggering a parse, or
 	// nullptr when nothing is cached. Lets the raw-text pre-filter honor unsaved
 	// buffers while avoiding a fresh parse just to inspect a file's contents.
-	virtual const ExtendGDScriptParser *peek_parse_result(const String &p_path) const { return nullptr; }
+	virtual const ExtendFSParser *peek_parse_result(const String &p_path) const { return nullptr; }
 	virtual ~FSParseResultProvider() = default;
 };
 
@@ -75,11 +75,11 @@ protected:
 	HashSet<String> absolute_res_paths;
 
 	const LSP::DocumentSymbol *get_native_symbol(const String &p_class, const String &p_member = "") const;
-	const ExtendGDScriptParser *get_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const;
-	const ExtendGDScriptParser *peek_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const;
+	const ExtendFSParser *get_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const;
+	const ExtendFSParser *peek_parse_result(const String &p_path, const FSParseResultProvider *p_parse_result_provider) const;
 	const LSP::DocumentSymbol *get_script_symbol(const String &p_path, const FSParseResultProvider *p_parse_result_provider = nullptr) const;
 	const LSP::DocumentSymbol *get_parameter_symbol(const LSP::DocumentSymbol *p_parent, const String &symbol_identifier);
-	const LSP::DocumentSymbol *get_local_symbol_at(const ExtendGDScriptParser *p_parser, const String &p_symbol_identifier, const LSP::Position p_position);
+	const LSP::DocumentSymbol *get_local_symbol_at(const ExtendFSParser *p_parser, const String &p_symbol_identifier, const LSP::Position p_position);
 
 	void reload_all_workspace_scripts();
 

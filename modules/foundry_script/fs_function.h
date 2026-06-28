@@ -53,7 +53,7 @@ public:
 		BUILTIN,
 		NATIVE,
 		SCRIPT,
-		GDSCRIPT,
+		FOUNDRY_SCRIPT,
 		TYPE_PARAMETER, // Generic type parameter, erased before execution.
 	};
 
@@ -141,7 +141,7 @@ public:
 				return true;
 			} break;
 			case SCRIPT:
-			case GDSCRIPT: {
+			case FOUNDRY_SCRIPT: {
 				if (p_variant.get_type() == Variant::NIL) {
 					return true;
 				}
@@ -363,7 +363,7 @@ public:
 		OPCODE_CALL_ASYNC,
 		OPCODE_CALL_UTILITY,
 		OPCODE_CALL_UTILITY_VALIDATED,
-		OPCODE_CALL_GDSCRIPT_UTILITY,
+		OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY,
 		OPCODE_CALL_BUILTIN_TYPE_VALIDATED,
 		OPCODE_CALL_SELF_BASE,
 		OPCODE_CALL_METHOD_BIND,

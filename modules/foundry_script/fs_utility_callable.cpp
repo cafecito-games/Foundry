@@ -51,7 +51,7 @@ String FSUtilityCallable::get_as_text() const {
 		case TYPE_GLOBAL:
 			scope = "@GlobalScope";
 			break;
-		case TYPE_GDSCRIPT:
+		case TYPE_FOUNDRY_SCRIPT:
 			scope = "@FoundryScript";
 			break;
 	}
@@ -86,7 +86,7 @@ int FSUtilityCallable::get_argument_count(bool &r_is_valid) const {
 		case TYPE_GLOBAL:
 			r_is_valid = true;
 			return Variant::get_utility_function_argument_count(function_name);
-		case TYPE_GDSCRIPT:
+		case TYPE_FOUNDRY_SCRIPT:
 			r_is_valid = true;
 			return FSUtilityFunctions::get_function_argument_count(function_name);
 	}
@@ -104,7 +104,7 @@ void FSUtilityCallable::call(const Variant **p_arguments, int p_argcount, Varian
 		case TYPE_GLOBAL:
 			Variant::call_utility_function(function_name, &r_return_value, p_arguments, p_argcount, r_call_error);
 			break;
-		case TYPE_GDSCRIPT:
+		case TYPE_FOUNDRY_SCRIPT:
 			fs_function(&r_return_value, p_arguments, p_argcount, r_call_error);
 			break;
 	}
@@ -113,7 +113,7 @@ void FSUtilityCallable::call(const Variant **p_arguments, int p_argcount, Varian
 FSUtilityCallable::FSUtilityCallable(const StringName &p_function_name) {
 	function_name = p_function_name;
 	if (FSUtilityFunctions::function_exists(p_function_name)) {
-		type = TYPE_GDSCRIPT;
+		type = TYPE_FOUNDRY_SCRIPT;
 		fs_function = FSUtilityFunctions::get_function(p_function_name);
 	} else if (Variant::has_utility_function(p_function_name)) {
 		type = TYPE_GLOBAL;

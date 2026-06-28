@@ -786,7 +786,7 @@ struct DocumentOnTypeFormattingOptions {
 };
 
 enum class LanguageId {
-	GDSCRIPT,
+	FOUNDRY_SCRIPT,
 	OTHER,
 };
 
@@ -823,7 +823,7 @@ struct TextDocumentItem {
 		// Kate: "godot"
 		String rawLanguageId = p_dict["languageId"];
 		if (rawLanguageId == "foundry_script" || rawLanguageId == "gd" || rawLanguageId == "godot") {
-			languageId = LanguageId::GDSCRIPT;
+			languageId = LanguageId::FOUNDRY_SCRIPT;
 		} else {
 			languageId = LanguageId::OTHER;
 		}

@@ -52,7 +52,7 @@
 #include "editor/themes/editor_scale.h"
 #include "modules/modules_enabled.gen.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/fs_autoload_index.h"
 #endif
 #include "modules/foundry_script/editor/fs_refactoring.h"
@@ -1448,7 +1448,7 @@ void ScriptTextEditor::_lookup_symbol(const String &p_symbol, int p_row, int p_c
 		// so symbol lookup must not navigate to that autoload's scene.
 		bool loaded_autoload = false;
 		if (!script->get_language()->get_reserved_global_names().has(p_symbol)) {
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 			FSAutoloadIndex autoload_index;
 			autoload_index.rebuild_from_project_settings();
 			const FSAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
@@ -1492,7 +1492,7 @@ void ScriptTextEditor::_validate_symbol(const String &p_symbol) {
 	// navigable autoload symbol — matching the lookup guard above.
 	bool is_singleton = false;
 	if (!script->get_language()->get_reserved_global_names().has(p_symbol)) {
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 		FSAutoloadIndex autoload_index;
 		autoload_index.rebuild_from_project_settings();
 		const FSAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);

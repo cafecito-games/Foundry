@@ -115,7 +115,7 @@ static FSParser::DataType make_signature_builtin_type(Variant::Type p_builtin_ty
 // MethodInfo/PropertyInfo (cross-script) boundary can be exercised directly, independent of the script
 // test runner (which parses referenced scripts in-batch and therefore never crosses the serialized
 // boundary). See the friend declaration in fs_analyzer.h.
-class TestGDScriptAnalyzerAccessor {
+class TestFSAnalyzerAccessor {
 public:
 	static FSParser::DataType decode_property(const PropertyInfo &p_property) {
 		FSParser parser;
@@ -636,7 +636,7 @@ TEST_CASE("[Modules][FoundryScript] AsyncCallable async marker survives the Prop
 	// express AsyncCallable through PropertyInfo).
 	CHECK(async_info.hint_string.begins_with("async "));
 
-	const FSParser::DataType decoded_async = TestGDScriptAnalyzerAccessor::decode_property(async_info);
+	const FSParser::DataType decoded_async = TestFSAnalyzerAccessor::decode_property(async_info);
 	CHECK(decoded_async.builtin_type == Variant::CALLABLE);
 	CHECK(decoded_async.signature_is_async);
 	CHECK(decoded_async.has_explicit_method_signature);
@@ -651,7 +651,7 @@ TEST_CASE("[Modules][FoundryScript] AsyncCallable async marker survives the Prop
 	CHECK(bare_async_info.type == Variant::CALLABLE);
 	CHECK(bare_async_info.hint == PROPERTY_HINT_CALLABLE_TYPE);
 	CHECK(bare_async_info.hint_string == "async");
-	const FSParser::DataType decoded_bare_async = TestGDScriptAnalyzerAccessor::decode_property(bare_async_info);
+	const FSParser::DataType decoded_bare_async = TestFSAnalyzerAccessor::decode_property(bare_async_info);
 	CHECK(decoded_bare_async.builtin_type == Variant::CALLABLE);
 	CHECK(decoded_bare_async.signature_is_async);
 	CHECK_FALSE(decoded_bare_async.has_explicit_method_signature);
@@ -660,7 +660,7 @@ TEST_CASE("[Modules][FoundryScript] AsyncCallable async marker survives the Prop
 	const FSParser::DataType bare_sync = make_builtin_type(Variant::CALLABLE);
 	const PropertyInfo bare_sync_info = bare_sync.to_property_info("handler");
 	CHECK(bare_sync_info.hint == PROPERTY_HINT_NONE);
-	const FSParser::DataType decoded_bare_sync = TestGDScriptAnalyzerAccessor::decode_property(bare_sync_info);
+	const FSParser::DataType decoded_bare_sync = TestFSAnalyzerAccessor::decode_property(bare_sync_info);
 	CHECK_FALSE(decoded_bare_sync.signature_is_async);
 
 	// A plain (synchronous) Callable must not gain the marker on the same round-trip.
@@ -668,7 +668,7 @@ TEST_CASE("[Modules][FoundryScript] AsyncCallable async marker survives the Prop
 	const PropertyInfo sync_info = sync_callable.to_property_info("handler");
 	CHECK(sync_info.hint == PROPERTY_HINT_CALLABLE_TYPE);
 	CHECK_FALSE(sync_info.hint_string.begins_with("async "));
-	const FSParser::DataType decoded_sync = TestGDScriptAnalyzerAccessor::decode_property(sync_info);
+	const FSParser::DataType decoded_sync = TestFSAnalyzerAccessor::decode_property(sync_info);
 	CHECK(decoded_sync.builtin_type == Variant::CALLABLE);
 	CHECK_FALSE(decoded_sync.signature_is_async);
 
@@ -690,7 +690,7 @@ TEST_CASE("[Modules][FoundryScript] AsyncCallable async marker survives the Prop
 	CHECK_FALSE(signal_info.hint_string.begins_with("async "));
 	CHECK(signal_info.hint_string.contains("AsyncCallable"));
 
-	const FSParser::DataType decoded_signal = TestGDScriptAnalyzerAccessor::decode_property(signal_info);
+	const FSParser::DataType decoded_signal = TestFSAnalyzerAccessor::decode_property(signal_info);
 	CHECK(decoded_signal.builtin_type == Variant::SIGNAL);
 	CHECK_FALSE(decoded_signal.signature_is_async);
 	REQUIRE(decoded_signal.method_parameter_types.size() == 1);
@@ -713,7 +713,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine result type survives the PropertyI
 	CHECK(string_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
 	CHECK(string_info.hint_string == "String");
 
-	const FSParser::DataType decoded_string = TestGDScriptAnalyzerAccessor::decode_property(string_info);
+	const FSParser::DataType decoded_string = TestFSAnalyzerAccessor::decode_property(string_info);
 	CHECK(decoded_string.kind == FSParser::DataType::NATIVE);
 	CHECK(decoded_string.is_coroutine);
 	CHECK(decoded_string.native_type == StringName("FSFunctionState"));
@@ -726,7 +726,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine result type survives the PropertyI
 	const PropertyInfo void_info = coroutine_void.to_property_info("handle");
 	CHECK(void_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
 	CHECK(void_info.hint_string == "void");
-	const FSParser::DataType decoded_void = TestGDScriptAnalyzerAccessor::decode_property(void_info);
+	const FSParser::DataType decoded_void = TestFSAnalyzerAccessor::decode_property(void_info);
 	CHECK(decoded_void.is_coroutine);
 	REQUIRE(decoded_void.has_container_element_type(0));
 	CHECK(decoded_void.get_container_element_type(0).builtin_type == Variant::NIL);
@@ -737,7 +737,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine result type survives the PropertyI
 	const PropertyInfo variant_info = coroutine_variant.to_property_info("handle");
 	CHECK(variant_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
 	CHECK(variant_info.hint_string == "Variant");
-	const FSParser::DataType decoded_variant = TestGDScriptAnalyzerAccessor::decode_property(variant_info);
+	const FSParser::DataType decoded_variant = TestFSAnalyzerAccessor::decode_property(variant_info);
 	CHECK(decoded_variant.is_coroutine);
 	REQUIRE(decoded_variant.has_container_element_type(0));
 	CHECK(decoded_variant.get_container_element_type(0).kind == FSParser::DataType::VARIANT);
@@ -753,7 +753,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine result type survives the PropertyI
 	const PropertyInfo bare_info = coroutine_bare.to_property_info("handle");
 	CHECK(bare_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
 	CHECK(bare_info.hint_string == "");
-	const FSParser::DataType decoded_bare = TestGDScriptAnalyzerAccessor::decode_property(bare_info);
+	const FSParser::DataType decoded_bare = TestFSAnalyzerAccessor::decode_property(bare_info);
 	CHECK(decoded_bare.is_coroutine);
 	CHECK_FALSE(decoded_bare.has_container_element_type(0));
 
@@ -766,7 +766,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine result type survives the PropertyI
 	const PropertyInfo lossy_info = coroutine_lossy.to_property_info("handle");
 	CHECK(lossy_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
 	CHECK(lossy_info.hint_string == "");
-	const FSParser::DataType decoded_lossy = TestGDScriptAnalyzerAccessor::decode_property(lossy_info);
+	const FSParser::DataType decoded_lossy = TestFSAnalyzerAccessor::decode_property(lossy_info);
 	CHECK(decoded_lossy.is_coroutine);
 	CHECK_FALSE(decoded_lossy.has_container_element_type(0));
 
@@ -777,7 +777,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine result type survives the PropertyI
 	const PropertyInfo array_info = coroutine_array.to_property_info("handle");
 	CHECK(array_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
 	CHECK(array_info.hint_string == "Array[int]");
-	const FSParser::DataType decoded_array = TestGDScriptAnalyzerAccessor::decode_property(array_info);
+	const FSParser::DataType decoded_array = TestFSAnalyzerAccessor::decode_property(array_info);
 	CHECK(decoded_array.is_coroutine);
 	REQUIRE(decoded_array.has_container_element_type(0));
 	CHECK(decoded_array.get_container_element_type(0).builtin_type == Variant::ARRAY);
@@ -789,7 +789,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine result type survives the PropertyI
 	const PropertyInfo native_info = coroutine_native.to_property_info("handle");
 	CHECK(native_info.hint == PROPERTY_HINT_COROUTINE_TYPE);
 	CHECK(native_info.hint_string == "RefCounted");
-	const FSParser::DataType decoded_native = TestGDScriptAnalyzerAccessor::decode_property(native_info);
+	const FSParser::DataType decoded_native = TestFSAnalyzerAccessor::decode_property(native_info);
 	CHECK(FSTypeCompatibility::check(coroutine_native, decoded_native).compatible);
 	CHECK(FSTypeCompatibility::check(decoded_native, coroutine_native).compatible);
 }
@@ -823,7 +823,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	CHECK(array_info.hint == PROPERTY_HINT_ARRAY_TYPE);
 	CHECK(array_info.hint_string == "Coroutine[String]");
 
-	const FSParser::DataType decoded_array = TestGDScriptAnalyzerAccessor::decode_property(array_info);
+	const FSParser::DataType decoded_array = TestFSAnalyzerAccessor::decode_property(array_info);
 	CHECK(decoded_array.builtin_type == Variant::ARRAY);
 	REQUIRE(decoded_array.has_container_element_type(0));
 	const FSParser::DataType decoded_element = decoded_array.get_container_element_type(0);
@@ -838,7 +838,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	const FSParser::DataType array_coroutine_void = make_array_of(make_coroutine_type(make_builtin_type(Variant::NIL)));
 	const PropertyInfo void_info = array_coroutine_void.to_property_info("jobs");
 	CHECK(void_info.hint_string == "Coroutine[void]");
-	const FSParser::DataType decoded_void = TestGDScriptAnalyzerAccessor::decode_property(void_info);
+	const FSParser::DataType decoded_void = TestFSAnalyzerAccessor::decode_property(void_info);
 	REQUIRE(decoded_void.has_container_element_type(0));
 	CHECK(decoded_void.get_container_element_type(0).is_coroutine);
 	CHECK(decoded_void.to_string() == "Array[Coroutine[void]]");
@@ -849,7 +849,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	const FSParser::DataType array_coroutine_array = make_array_of(make_coroutine_type(array_int));
 	const PropertyInfo nested_info = array_coroutine_array.to_property_info("jobs");
 	CHECK(nested_info.hint_string == "Coroutine[Array[int]]");
-	const FSParser::DataType decoded_nested = TestGDScriptAnalyzerAccessor::decode_property(nested_info);
+	const FSParser::DataType decoded_nested = TestFSAnalyzerAccessor::decode_property(nested_info);
 	CHECK(decoded_nested.to_string() == "Array[Coroutine[Array[int]]]");
 
 	// Array[Coroutine] (no result slot) round-trips as a result-less coroutine element. It is encoded as
@@ -863,7 +863,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	bare_coroutine.is_coroutine = true;
 	const PropertyInfo bare_info = make_array_of(bare_coroutine).to_property_info("jobs");
 	CHECK(bare_info.hint_string == "Coroutine[]");
-	const FSParser::DataType decoded_bare = TestGDScriptAnalyzerAccessor::decode_property(bare_info);
+	const FSParser::DataType decoded_bare = TestFSAnalyzerAccessor::decode_property(bare_info);
 	REQUIRE(decoded_bare.has_container_element_type(0));
 	CHECK(decoded_bare.get_container_element_type(0).is_coroutine);
 	CHECK_FALSE(decoded_bare.get_container_element_type(0).has_container_element_type(0));
@@ -875,7 +875,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	type_parameter.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 	const PropertyInfo lossy_info = make_array_of(make_coroutine_type(type_parameter)).to_property_info("jobs");
 	CHECK(lossy_info.hint_string == "Coroutine[]");
-	const FSParser::DataType decoded_lossy = TestGDScriptAnalyzerAccessor::decode_property(lossy_info);
+	const FSParser::DataType decoded_lossy = TestFSAnalyzerAccessor::decode_property(lossy_info);
 	REQUIRE(decoded_lossy.has_container_element_type(0));
 	CHECK(decoded_lossy.get_container_element_type(0).is_coroutine);
 	CHECK_FALSE(decoded_lossy.get_container_element_type(0).has_container_element_type(0));
@@ -886,7 +886,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	CHECK(dict_value_info.type == Variant::DICTIONARY);
 	CHECK(dict_value_info.hint == PROPERTY_HINT_DICTIONARY_TYPE);
 	CHECK(dict_value_info.hint_string == "String;Coroutine[int]");
-	const FSParser::DataType decoded_dict_value = TestGDScriptAnalyzerAccessor::decode_property(dict_value_info);
+	const FSParser::DataType decoded_dict_value = TestFSAnalyzerAccessor::decode_property(dict_value_info);
 	REQUIRE(decoded_dict_value.has_container_element_types());
 	CHECK(decoded_dict_value.get_container_element_type(0).builtin_type == Variant::STRING);
 	CHECK(decoded_dict_value.get_container_element_type(1).is_coroutine);
@@ -896,7 +896,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	const FSParser::DataType dict_key_coroutine = make_dictionary_of(make_coroutine_type(make_builtin_type(Variant::INT)), make_builtin_type(Variant::STRING));
 	const PropertyInfo dict_key_info = dict_key_coroutine.to_property_info("table");
 	CHECK(dict_key_info.hint_string == "Coroutine[int];String");
-	const FSParser::DataType decoded_dict_key = TestGDScriptAnalyzerAccessor::decode_property(dict_key_info);
+	const FSParser::DataType decoded_dict_key = TestFSAnalyzerAccessor::decode_property(dict_key_info);
 	REQUIRE(decoded_dict_key.has_container_element_types());
 	CHECK(decoded_dict_key.get_container_element_type(0).is_coroutine);
 	CHECK(decoded_dict_key.get_container_element_type(1).builtin_type == Variant::STRING);
@@ -908,7 +908,7 @@ TEST_CASE("[Modules][FoundryScript] Coroutine container element types survive th
 	const FSParser::DataType array_native = make_array_of(make_native_type(SNAME("RefCounted")));
 	const PropertyInfo native_array_info = array_native.to_property_info("handles");
 	CHECK(native_array_info.hint_string == "RefCounted");
-	const FSParser::DataType decoded_native_array = TestGDScriptAnalyzerAccessor::decode_property(native_array_info);
+	const FSParser::DataType decoded_native_array = TestFSAnalyzerAccessor::decode_property(native_array_info);
 	REQUIRE(decoded_native_array.has_container_element_type(0));
 	CHECK(decoded_native_array.get_container_element_type(0).kind == FSParser::DataType::NATIVE);
 	CHECK_FALSE(decoded_native_array.get_container_element_type(0).is_coroutine);
@@ -952,7 +952,7 @@ TEST_CASE("[Modules][FoundryScript] Callable/Signal signature with a class named
 	// A Callable whose single parameter is the class named "Coroutine" must not decode back as the coroutine
 	// skin: the bare leaf is an ordinary class name, never a result-less coroutine.
 	const FSParser::DataType decoded_callable_class =
-			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[Coroutine], void]"));
+			TestFSAnalyzerAccessor::decode_property(make_callable_signature("[[Coroutine], void]"));
 	CHECK(decoded_callable_class.builtin_type == Variant::CALLABLE);
 	REQUIRE(decoded_callable_class.method_parameter_types.size() == 1);
 	const FSParser::DataType decoded_class_param = decoded_callable_class.method_parameter_types[0];
@@ -961,14 +961,14 @@ TEST_CASE("[Modules][FoundryScript] Callable/Signal signature with a class named
 
 	// The same class as a Callable return slot must also stay un-skinned.
 	const FSParser::DataType decoded_callable_return =
-			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[], Coroutine]"));
+			TestFSAnalyzerAccessor::decode_property(make_callable_signature("[[], Coroutine]"));
 	REQUIRE(decoded_callable_return.method_return_type.size() == 1);
 	CHECK_FALSE(decoded_callable_return.method_return_type[0].is_coroutine);
 	CHECK(decoded_callable_return.method_return_type[0].native_type != StringName("FSFunctionState"));
 
 	// A Signal carrying the class named "Coroutine" as a parameter keeps the same disambiguation.
 	const FSParser::DataType decoded_signal_class =
-			TestGDScriptAnalyzerAccessor::decode_property(make_signal_signature("[[Coroutine]]"));
+			TestFSAnalyzerAccessor::decode_property(make_signal_signature("[[Coroutine]]"));
 	CHECK(decoded_signal_class.builtin_type == Variant::SIGNAL);
 	REQUIRE(decoded_signal_class.method_parameter_types.size() == 1);
 	CHECK_FALSE(decoded_signal_class.method_parameter_types[0].is_coroutine);
@@ -977,7 +977,7 @@ TEST_CASE("[Modules][FoundryScript] Callable/Signal signature with a class named
 	// A genuine Coroutine[Variant] parameter is always bracketed and must still decode as the coroutine skin,
 	// so the disambiguation does not regress real coroutine signature slots.
 	const FSParser::DataType decoded_callable_coroutine =
-			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[Coroutine[Variant]], void]"));
+			TestFSAnalyzerAccessor::decode_property(make_callable_signature("[[Coroutine[Variant]], void]"));
 	REQUIRE(decoded_callable_coroutine.method_parameter_types.size() == 1);
 	const FSParser::DataType decoded_coroutine_param = decoded_callable_coroutine.method_parameter_types[0];
 	CHECK(decoded_coroutine_param.is_coroutine);
@@ -987,7 +987,7 @@ TEST_CASE("[Modules][FoundryScript] Callable/Signal signature with a class named
 
 	// A genuine bracketed Coroutine[String] result also still round-trips as the coroutine skin.
 	const FSParser::DataType decoded_callable_coroutine_ret =
-			TestGDScriptAnalyzerAccessor::decode_property(make_callable_signature("[[], Coroutine[String]]"));
+			TestFSAnalyzerAccessor::decode_property(make_callable_signature("[[], Coroutine[String]]"));
 	REQUIRE(decoded_callable_coroutine_ret.method_return_type.size() == 1);
 	const FSParser::DataType decoded_coroutine_ret = decoded_callable_coroutine_ret.method_return_type[0];
 	CHECK(decoded_coroutine_ret.is_coroutine);
@@ -1003,14 +1003,14 @@ TEST_CASE("[Modules][FoundryScript] Async MethodInfo wraps the declared return t
 	// already decodes as a coroutine via PROPERTY_HINT_COROUTINE_TYPE), while a synchronous method that
 	// returns a coroutine handle is not re-wrapped.
 	const PropertyInfo string_return = make_builtin_type(Variant::STRING).to_property_info("");
-	const FSParser::DataType async_string = TestGDScriptAnalyzerAccessor::method_return_type(string_return, true);
+	const FSParser::DataType async_string = TestFSAnalyzerAccessor::method_return_type(string_return, true);
 	CHECK(async_string.is_coroutine);
 	REQUIRE(async_string.has_container_element_type(0));
 	CHECK(async_string.get_container_element_type(0).builtin_type == Variant::STRING);
 	CHECK(async_string.to_string() == "Coroutine[String]");
 
 	const PropertyInfo coroutine_return = make_coroutine_type(make_builtin_type(Variant::STRING)).to_property_info("");
-	const FSParser::DataType async_coroutine = TestGDScriptAnalyzerAccessor::method_return_type(coroutine_return, true);
+	const FSParser::DataType async_coroutine = TestFSAnalyzerAccessor::method_return_type(coroutine_return, true);
 	CHECK(async_coroutine.is_coroutine);
 	REQUIRE(async_coroutine.has_container_element_type(0));
 	const FSParser::DataType inner = async_coroutine.get_container_element_type(0);
@@ -1019,7 +1019,7 @@ TEST_CASE("[Modules][FoundryScript] Async MethodInfo wraps the declared return t
 	CHECK(inner.get_container_element_type(0).builtin_type == Variant::STRING);
 	CHECK(async_coroutine.to_string() == "Coroutine[Coroutine[String]]");
 
-	const FSParser::DataType sync_coroutine = TestGDScriptAnalyzerAccessor::method_return_type(coroutine_return, false);
+	const FSParser::DataType sync_coroutine = TestFSAnalyzerAccessor::method_return_type(coroutine_return, false);
 	CHECK(sync_coroutine.is_coroutine);
 	REQUIRE(sync_coroutine.has_container_element_type(0));
 	CHECK(sync_coroutine.get_container_element_type(0).builtin_type == Variant::STRING);

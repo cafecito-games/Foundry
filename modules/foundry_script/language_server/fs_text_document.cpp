@@ -125,7 +125,7 @@ RefactorLocation refactor_location_from_lsp(const LSP::Range &p_range) {
 	return loc;
 }
 
-String source_from_parser(const ExtendGDScriptParser *p_parser) {
+String source_from_parser(const ExtendFSParser *p_parser) {
 	return String("\n").join(p_parser->get_lines());
 }
 
@@ -143,7 +143,7 @@ bool make_refactor_context(const String &p_uri, RefactorContext &r_context) {
 
 	r_context.path = path;
 
-	if (const ExtendGDScriptParser *parser = protocol->get_parse_result(path)) {
+	if (const ExtendFSParser *parser = protocol->get_parse_result(path)) {
 		r_context.source = source_from_parser(parser);
 		return true;
 	}
@@ -346,7 +346,7 @@ Array FSTextDocument::documentSymbol(const Dictionary &p_params) {
 	String path = FSLanguageProtocol::get_singleton()->get_workspace()->get_file_path(uri);
 	Array arr;
 
-	ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+	ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 	if (parser) {
 		LSP::DocumentSymbol symbol = parser->get_symbols();
 		arr.push_back(symbol.to_json(true));
@@ -599,7 +599,7 @@ Dictionary FSTextDocument::resolve(const Dictionary &p_params) {
 			}
 
 			if (!symbol) {
-				ExtendGDScriptParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(class_name);
+				ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(class_name);
 				if (parser) {
 					symbol = parser->get_member_symbol(member_name, inner_class_name);
 				}

@@ -56,7 +56,7 @@
 #include "modules/modules_enabled.gen.h" // For foundry_script, mono.
 
 // For syntax highlighting.
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/editor/fs_highlighter.h"
 #include "modules/foundry_script/foundry_script.h"
 #endif
@@ -2912,9 +2912,9 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 
 			bool codeblock_printed = false;
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 			if (!codeblock_printed && (lang.is_empty() || lang == "foundry_script")) {
-				EditorHelpHighlighter::get_singleton()->highlight(p_rt, EditorHelpHighlighter::LANGUAGE_GDSCRIPT, codeblock_text, is_native);
+				EditorHelpHighlighter::get_singleton()->highlight(p_rt, EditorHelpHighlighter::LANGUAGE_FOUNDRY_SCRIPT, codeblock_text, is_native);
 				codeblock_printed = true;
 			}
 #endif
@@ -3441,7 +3441,7 @@ void EditorHelp::_notification(int p_what) {
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("text_editor/help")) {
 				need_update = true;
 			}
-#if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 			if (!need_update && EditorSettings::get_singleton()->check_changed_settings_in_group("text_editor/theme/highlighting")) {
 				need_update = true;
 			}
@@ -4944,8 +4944,8 @@ EditorHelpHighlighter *EditorHelpHighlighter::get_singleton() {
 
 EditorHelpHighlighter::HighlightData EditorHelpHighlighter::_get_highlight_data(Language p_language, const String &p_source, bool p_use_cache) {
 	switch (p_language) {
-		case LANGUAGE_GDSCRIPT:
-#ifndef MODULE_GDSCRIPT_ENABLED
+		case LANGUAGE_FOUNDRY_SCRIPT:
+#ifndef MODULE_FOUNDRY_SCRIPT_ENABLED
 			ERR_FAIL_V_MSG(HighlightData(), "FoundryScript module is disabled.");
 #endif
 			break;
@@ -5027,9 +5027,9 @@ void EditorHelpHighlighter::highlight(RichTextLabel *p_rich_text_label, Language
 void EditorHelpHighlighter::reset_cache() {
 	const Color text_color = EDITOR_GET("text_editor/theme/highlighting/text_color");
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-	highlight_data_caches[LANGUAGE_GDSCRIPT].clear();
-	text_edits[LANGUAGE_GDSCRIPT]->add_theme_color_override(SceneStringName(font_color), text_color);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	highlight_data_caches[LANGUAGE_FOUNDRY_SCRIPT].clear();
+	text_edits[LANGUAGE_FOUNDRY_SCRIPT]->add_theme_color_override(SceneStringName(font_color), text_color);
 #endif
 
 #ifdef MODULE_MONO_ENABLED
@@ -5041,7 +5041,7 @@ void EditorHelpHighlighter::reset_cache() {
 EditorHelpHighlighter::EditorHelpHighlighter() {
 	const Color text_color = EDITOR_GET("text_editor/theme/highlighting/text_color");
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	TextEdit *fs_text_edit = memnew(TextEdit);
 	fs_text_edit->add_theme_color_override(SceneStringName(font_color), text_color);
 
@@ -5053,9 +5053,9 @@ EditorHelpHighlighter::EditorHelpHighlighter() {
 	fs_highlighter->set_text_edit(fs_text_edit);
 	fs_highlighter->_set_edited_resource(foundry_script);
 
-	text_edits[LANGUAGE_GDSCRIPT] = fs_text_edit;
-	scripts[LANGUAGE_GDSCRIPT] = foundry_script;
-	highlighters[LANGUAGE_GDSCRIPT] = fs_highlighter;
+	text_edits[LANGUAGE_FOUNDRY_SCRIPT] = fs_text_edit;
+	scripts[LANGUAGE_FOUNDRY_SCRIPT] = foundry_script;
+	highlighters[LANGUAGE_FOUNDRY_SCRIPT] = fs_highlighter;
 #endif
 
 #ifdef MODULE_MONO_ENABLED
@@ -5079,8 +5079,8 @@ EditorHelpHighlighter::EditorHelpHighlighter() {
 }
 
 EditorHelpHighlighter::~EditorHelpHighlighter() {
-#ifdef MODULE_GDSCRIPT_ENABLED
-	memdelete(text_edits[LANGUAGE_GDSCRIPT]);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	memdelete(text_edits[LANGUAGE_FOUNDRY_SCRIPT]);
 #endif
 
 #ifdef MODULE_MONO_ENABLED

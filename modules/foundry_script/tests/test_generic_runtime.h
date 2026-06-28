@@ -272,7 +272,7 @@ TEST_CASE("[Modules][FoundryScript][Generics] Reified type arguments round-trip 
 	REQUIRE(pair.is_valid());
 
 	// Stable serialized name of the hidden storage property persisted into `.tres`/scene files.
-	const StringName type_arguments_property = SNAME("__gdscript_type_arguments__");
+	const StringName type_arguments_property = SNAME("__foundry_script_type_arguments__");
 
 	// A nested container argument (`Array[int]`) and a script-typed argument (`Pair`) cover both
 	// descriptor branches: recursive element metadata and a Script resource reference.
@@ -366,7 +366,7 @@ TEST_CASE("[Modules][FoundryScript][Generics] FSDataType lowers type arguments t
 	argument.builtin_type = Variant::STRING;
 
 	FSDataType handle;
-	handle.kind = FSDataType::GDSCRIPT;
+	handle.kind = FSDataType::FOUNDRY_SCRIPT;
 	handle.builtin_type = Variant::OBJECT;
 	handle.type_arguments.push_back(argument);
 

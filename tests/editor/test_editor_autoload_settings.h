@@ -32,7 +32,7 @@
 
 #include "modules/modules_enabled.gen.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 
 #include "editor/settings/editor_autoload_settings.h"
 
@@ -158,17 +158,17 @@ public:
 	}
 };
 
-struct ScopedGDScriptLanguage {
+struct ScopedFSLanguage {
 	bool initialized = false;
 
-	ScopedGDScriptLanguage() {
+	ScopedFSLanguage() {
 		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
 			FSLanguage::get_singleton()->init();
 			initialized = true;
 		}
 	}
 
-	~ScopedGDScriptLanguage() {
+	~ScopedFSLanguage() {
 		if (initialized) {
 			FSLanguage::get_singleton()->finish();
 		}
@@ -348,7 +348,7 @@ TEST_CASE("[Editor][AutoloadSettings] Project script autoloads do not show Found
 }
 
 TEST_CASE("[Editor][AutoloadSettings] Project view index includes script-owned annotations") {
-	ScopedGDScriptLanguage language;
+	ScopedFSLanguage language;
 	TemporaryAutoloadProject project("editor_autoload_settings_script_scan");
 	project.write_file("autoloaded.fs",
 			"@autoload\n"
@@ -364,4 +364,4 @@ TEST_CASE("[Editor][AutoloadSettings] Project view index includes script-owned a
 
 } // namespace TestEditorAutoloadSettings
 
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED

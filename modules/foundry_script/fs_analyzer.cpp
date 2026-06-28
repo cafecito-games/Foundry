@@ -11321,11 +11321,11 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 		// If the base is a metatype, use the analyzer instead.
 		if (p_subscript->base->is_constant && !base_type.is_meta_type) {
 			// GH-92534. If the base is a FoundryScript, use the analyzer instead.
-			bool base_is_gdscript = false;
+			bool base_is_foundry_script = false;
 			if (p_subscript->base->reduced_value.get_type() == Variant::OBJECT) {
 				Ref<FoundryScript> foundry_script = Object::cast_to<FoundryScript>(p_subscript->base->reduced_value.get_validated_object());
 				if (foundry_script.is_valid()) {
-					base_is_gdscript = true;
+					base_is_foundry_script = true;
 					// Makes a metatype from a constant FoundryScript, since `base_type` is not a metatype.
 					FSParser::DataType base_type_meta = type_from_variant(foundry_script, p_subscript);
 					// First try to reduce the attribute from the metatype.
@@ -11343,7 +11343,7 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 					}
 				}
 			}
-			if (!base_is_gdscript) {
+			if (!base_is_foundry_script) {
 				// Just try to get it.
 				Variant value = p_subscript->base->reduced_value.get_named(p_subscript->attribute->name, valid);
 				if (valid) {

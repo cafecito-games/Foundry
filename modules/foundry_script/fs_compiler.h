@@ -114,7 +114,7 @@ class FSCompiler {
 						type.script_type = scr.ptr();
 						Ref<FoundryScript> foundry_script = scr;
 						if (foundry_script.is_valid()) {
-							type.kind = FSDataType::GDSCRIPT;
+							type.kind = FSDataType::FOUNDRY_SCRIPT;
 						} else {
 							type.kind = FSDataType::SCRIPT;
 						}

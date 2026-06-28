@@ -38,14 +38,14 @@
 
 namespace FSTests {
 
-class TestGDScriptCacheAccessor {
+class TestFSCacheAccessor {
 public:
 	static bool has_shallow(String p_path) {
-		return FSCache::singleton->shallow_gdscript_cache.has(p_path);
+		return FSCache::singleton->shallow_fs_cache.has(p_path);
 	}
 
 	static bool has_full(String p_path) {
-		return FSCache::singleton->full_gdscript_cache.has(p_path);
+		return FSCache::singleton->full_fs_cache.has(p_path);
 	}
 
 	static bool has_parser(String p_path) {
@@ -99,14 +99,14 @@ TEST_CASE("[Modules][FoundryScript] Loading keeps ResourceCache and FSCache in s
 	}
 
 	CHECK(!ResourceCache::has(path));
-	CHECK(!TestGDScriptCacheAccessor::has_shallow(path));
-	CHECK(!TestGDScriptCacheAccessor::has_full(path));
+	CHECK(!TestFSCacheAccessor::has_shallow(path));
+	CHECK(!TestFSCacheAccessor::has_full(path));
 
 	Ref<FoundryScript> loaded = ResourceLoader::load(path);
 
 	CHECK(ResourceCache::has(path));
-	CHECK(!TestGDScriptCacheAccessor::has_shallow(path));
-	CHECK(TestGDScriptCacheAccessor::has_full(path));
+	CHECK(!TestFSCacheAccessor::has_shallow(path));
+	CHECK(TestFSCacheAccessor::has_full(path));
 }
 
 TEST_CASE("[Modules][FoundryScript] Source override map shadows disk in get_source_code") {

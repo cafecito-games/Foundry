@@ -44,7 +44,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 #include "test_lsp.h"
 
 #include "editor/file_system/editor_file_system.h"
@@ -255,7 +255,7 @@ inline String widen_nullable_reason(const String &p_source, int p_line, int p_co
 	return entry != nullptr ? entry->disabled_reason : String();
 }
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 struct TemporaryScriptFile {
 	String path;
 
@@ -270,7 +270,7 @@ struct TemporaryScriptFile {
 		DirAccess::remove_absolute(ProjectSettings::get_singleton()->globalize_path(path));
 	}
 };
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 
 TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
@@ -4064,7 +4064,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		}
 	}
 
-#ifndef GDSCRIPT_NO_LSP
+#ifndef FOUNDRY_SCRIPT_NO_LSP
 	TEST_CASE("Rename file-local symbols") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
@@ -4468,9 +4468,9 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			return FSRefactoring::prepare(ctx, caret(2, 5), RefactorKind::RENAME, params); // caret on `helper` decl
 		};
 
-		ExtendGDScriptParser::reset_parse_file_count_for_test();
+		ExtendFSParser::reset_parse_file_count_for_test();
 		REQUIRE(run_rename_helper().ok);
-		const uint64_t baseline_parses = ExtendGDScriptParser::get_parse_file_count_for_test();
+		const uint64_t baseline_parses = ExtendFSParser::get_parse_file_count_for_test();
 
 		SUBCASE("a file whose text never mentions the symbol is not parsed") {
 			TemporaryScriptFile unrelated(
@@ -4478,9 +4478,9 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 					"extends Node\n"
 					"func untouched() -> void:\n"
 					"\tpass\n");
-			ExtendGDScriptParser::reset_parse_file_count_for_test();
+			ExtendFSParser::reset_parse_file_count_for_test();
 			REQUIRE(run_rename_helper().ok);
-			CHECK_EQ(ExtendGDScriptParser::get_parse_file_count_for_test(), baseline_parses);
+			CHECK_EQ(ExtendFSParser::get_parse_file_count_for_test(), baseline_parses);
 		}
 
 		SUBCASE("a file whose text mentions the symbol is parsed") {
@@ -4490,9 +4490,9 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 					"# helper appears only in this comment\n"
 					"func other() -> void:\n"
 					"\tpass\n");
-			ExtendGDScriptParser::reset_parse_file_count_for_test();
+			ExtendFSParser::reset_parse_file_count_for_test();
 			REQUIRE(run_rename_helper().ok);
-			CHECK_EQ(ExtendGDScriptParser::get_parse_file_count_for_test(), baseline_parses + 1);
+			CHECK_EQ(ExtendFSParser::get_parse_file_count_for_test(), baseline_parses + 1);
 		}
 
 		memdelete(protocol);
@@ -4927,7 +4927,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		memdelete(protocol);
 		memdelete(editor_file_system);
 	}
-#endif // GDSCRIPT_NO_LSP
+#endif // FOUNDRY_SCRIPT_NO_LSP
 }
 
 } // namespace FSTests

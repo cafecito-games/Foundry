@@ -222,7 +222,7 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 				break;
 			}
 
-			result.kind = FSDataType::GDSCRIPT;
+			result.kind = FSDataType::FOUNDRY_SCRIPT;
 			result.builtin_type = p_datatype.builtin_type;
 			result.native_type = p_datatype.native_type;
 
@@ -275,7 +275,7 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			break;
 		case FSParser::DataType::TYPE_PARAMETER: {
 			if (p_datatype.type_parameter_name == SNAME("@Self") && p_owner != nullptr) {
-				result.kind = FSDataType::GDSCRIPT;
+				result.kind = FSDataType::FOUNDRY_SCRIPT;
 				result.builtin_type = Variant::OBJECT;
 				result.script_type = p_owner;
 				result.native_type = p_owner->get_instance_base_type();
@@ -348,7 +348,7 @@ static void _rebind_self_data_type(FSDataType &p_type, FoundryScript *p_owner) {
 		return;
 	}
 	if (p_type.is_self_type) {
-		p_type.kind = FSDataType::GDSCRIPT;
+		p_type.kind = FSDataType::FOUNDRY_SCRIPT;
 		p_type.builtin_type = Variant::OBJECT;
 		p_type.script_type = p_owner;
 		p_type.script_type_ref = Ref<Script>();
@@ -891,7 +891,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				for (int i = 0; i < arguments.size(); i++) {
 					proxy_arguments.push_back(arguments[i]);
 				}
-				gen->write_call_gdscript_utility(result, SNAME("create_proxy_dynamic"), proxy_arguments);
+				gen->write_call_foundry_script_utility(result, SNAME("create_proxy_dynamic"), proxy_arguments);
 				if (type_arg.mode == FSCodeGenerator::Address::TEMPORARY) {
 					gen->pop_temporary();
 				}
@@ -902,7 +902,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				gen->write_call_utility(result, call->function_name, arguments);
 			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && FSUtilityFunctions::function_exists(call->function_name)) {
 				// FoundryScript utility function.
-				gen->write_call_gdscript_utility(result, call->function_name, arguments);
+				gen->write_call_foundry_script_utility(result, call->function_name, arguments);
 			} else {
 				// Regular function.
 				const FSParser::ExpressionNode *callee = call->callee;
@@ -2121,7 +2121,7 @@ FSCodeGenerator::Address FSCompiler::_parse_match_pattern(CodeGen &codegen, Erro
 			FSCodeGenerator::Address value_length_addr = codegen.add_temporary(temp_type);
 			Vector<FSCodeGenerator::Address> len_args;
 			len_args.push_back(p_value_addr);
-			codegen.generator->write_call_gdscript_utility(value_length_addr, "len", len_args);
+			codegen.generator->write_call_foundry_script_utility(value_length_addr, "len", len_args);
 
 			// Test length compatibility.
 			temp_type.builtin_type = Variant::BOOL;
@@ -2218,7 +2218,7 @@ FSCodeGenerator::Address FSCompiler::_parse_match_pattern(CodeGen &codegen, Erro
 			FSCodeGenerator::Address value_length_addr = codegen.add_temporary(temp_type);
 			Vector<FSCodeGenerator::Address> func_args;
 			func_args.push_back(p_value_addr);
-			codegen.generator->write_call_gdscript_utility(value_length_addr, "len", func_args);
+			codegen.generator->write_call_foundry_script_utility(value_length_addr, "len", func_args);
 
 			// Test length compatibility.
 			temp_type.builtin_type = Variant::BOOL;
@@ -3677,7 +3677,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 		case FSDataType::NATIVE:
 			// Nothing more to do.
 			break;
-		case FSDataType::GDSCRIPT: {
+		case FSDataType::FOUNDRY_SCRIPT: {
 			Ref<FoundryScript> base = Ref<FoundryScript>(base_type.script_type);
 			if (base.is_null()) {
 				_set_error("Compiler bug (please report): base script type is null.", nullptr);
@@ -3751,7 +3751,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 
 	// Duplicate RPC information from base FoundryScript
 	// Base script isn't valid because it should not have been compiled yet, but the reference contains relevant info.
-	if (base_type.kind == FSDataType::GDSCRIPT && p_script->base.is_valid()) {
+	if (base_type.kind == FSDataType::FOUNDRY_SCRIPT && p_script->base.is_valid()) {
 		p_script->rpc_config = p_script->base->rpc_config.duplicate();
 	}
 
