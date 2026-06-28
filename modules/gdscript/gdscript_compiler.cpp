@@ -3805,6 +3805,14 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	}
 	_collect_flattened_trait_members(p_class, members_to_compile);
 
+	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr && p_class->enum_file_decl->identifier != nullptr) {
+		const GDScriptParser::EnumNode *enum_n = p_class->enum_file_decl;
+		for (const GDScriptParser::EnumNode::Value &enum_value : enum_n->values) {
+			p_script->constants.insert(enum_value.identifier->name, enum_value.value);
+		}
+		p_script->constants.insert(enum_n->identifier->name, enum_n->dictionary);
+	}
+
 	for (int i = 0; i < members_to_compile.size(); i++) {
 		const GDScriptParser::ClassNode::Member &member = *members_to_compile[i];
 		switch (member.type) {
