@@ -81,7 +81,6 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Duplicate input paths are collapsed and reported once") {
@@ -109,7 +108,6 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Cross-file chain converges past the leaf; one pass types only the leaf") {
@@ -174,7 +172,6 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Mutually-referencing files terminate and report honest counts") {
@@ -229,7 +226,6 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Run does not commit an edit that would break a dependent") {
@@ -283,7 +279,6 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Edge cases: empty input, unreadable path, unanalyzable file") {
@@ -389,7 +384,6 @@ TEST_SUITE("[Modules][GDScript][Fixpoint]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

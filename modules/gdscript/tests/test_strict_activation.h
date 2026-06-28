@@ -110,7 +110,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Evaluate reports the gate is not clean when violations remain") {
@@ -136,7 +135,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Activation without explicit confirmation never flips the settings") {
@@ -171,7 +169,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Confirmed activation on a clean project flips the settings and the post-flip report is clean") {
@@ -214,7 +211,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Confirmed activation on a dirty project is blocked unless violations are explicitly allowed") {
@@ -246,7 +242,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Gradual activation flips on a dirty project and the post-flip report matches the strict preview") {
@@ -299,7 +294,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Activation only flips the flags the request asks for") {
@@ -334,7 +328,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A feature override that masks the flipped setting is reported, not claimed live") {
@@ -381,7 +374,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("An empty request flips nothing and is reported as a no-op") {
@@ -399,7 +391,6 @@ TEST_SUITE("[Modules][GDScript][StrictActivation]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

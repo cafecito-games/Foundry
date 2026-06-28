@@ -1529,7 +1529,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Candidate collection keeps a mixed local array as bare Array") {
@@ -1557,7 +1556,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Candidate collection upgrades a provable local dictionary") {
@@ -1586,7 +1584,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Candidate collection keeps a mixed local dictionary as bare Dictionary") {
@@ -1614,7 +1611,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Candidate collection upgrades a provable member array to Array[int]") {
@@ -1644,7 +1640,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Candidate collection keeps an escaping member array as bare Array") {
@@ -1676,7 +1671,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Candidate collection upgrades a provable member dictionary") {
@@ -1706,7 +1700,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A subclass writing a matching element type keeps the member inferred") {
@@ -1744,7 +1737,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A subclass writing a conflicting element type keeps the member bare") {
@@ -1783,7 +1775,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("An overridable self call whose override matches keeps the member inferred") {
@@ -1826,7 +1817,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("An overridable self call whose override conflicts keeps the member bare") {
@@ -1868,7 +1858,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("An inherited base method called on self keeps the member bare") {
@@ -1911,7 +1900,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A subclass escaping the inherited member keeps it bare") {
@@ -1950,7 +1938,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("An unparsable plausible subclass keeps the member bare") {
@@ -1992,7 +1979,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Interactive collection keeps a member array bare without verification") {
@@ -2025,7 +2011,6 @@ TEST_SUITE("[Modules][GDScript][ContainerInference]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

@@ -32,6 +32,7 @@
 
 #include "../gdscript.h"
 #include "../gdscript_analyzer.h"
+#include "../gdscript_cache.h"
 #include "../gdscript_compiler.h"
 #include "../gdscript_parser.h"
 #include "../gdscript_tokenizer_buffer.h"
@@ -121,7 +122,22 @@ void init_autoloads() {
 	}
 }
 
+// Tracks whether the GDScript language has been brought up by `init_language()`
+// so the heavy setup can be hoisted to once-per-`TEST_SUITE` (see
+// `test_suite_language_fixture.h`) instead of running once per `TEST_CASE`.
+static bool language_initialized = false;
+
+// Counts how many times the heavy language setup actually ran. Suite fixtures
+// assert this stays at one per suite; it is purely test instrumentation.
+static uint64_t init_language_count = 0;
+
 void init_language(const String &p_base_path) {
+	// Idempotent so repeated `initialize()` calls within a suite reuse the
+	// already-initialized language instead of paying the setup cost each case.
+	if (language_initialized) {
+		return;
+	}
+
 	// Setup project settings since it's needed by the languages to get the global scripts.
 	// This also sets up the base resource path.
 	Error err = ProjectSettings::get_singleton()->setup(p_base_path, String(), true);
@@ -133,12 +149,40 @@ void init_language(const String &p_base_path) {
 	// Initialize the language for the test routine.
 	GDScriptLanguage::get_singleton()->init();
 	init_autoloads();
+
+	language_initialized = true;
+	init_language_count++;
 }
 
 void finish_language() {
+	if (!language_initialized) {
+		return;
+	}
 	GDScriptLanguage::get_singleton()->clear_global_annotations();
 	GDScriptLanguage::get_singleton()->finish();
 	ScriptServer::global_classes_clear();
+	language_initialized = false;
+}
+
+void reset_language_state() {
+	// Per-case isolation seam for suites that share a hoisted language: clear
+	// everything a fresh `finish_language()` / `init_language()` pair used to
+	// reset between cases, except the stable globals (native classes,
+	// singletons, the reflection namespace) that never change case to case.
+	if (!language_initialized) {
+		return;
+	}
+	GDScriptLanguage::get_singleton()->clear_global_annotations();
+	GDScriptCache::clear();
+	ScriptServer::global_classes_clear();
+}
+
+bool is_language_initialized() {
+	return language_initialized;
+}
+
+uint64_t get_init_language_count() {
+	return init_language_count;
 }
 
 StringName GDScriptTestRunner::test_function_name;

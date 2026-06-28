@@ -113,7 +113,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Report excludes third-party code and records the skipped directory") {
@@ -147,7 +146,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Report projects strict-mode violations only when requested") {
@@ -188,7 +186,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Report counts nullable violations the satisfier can prove as auto-fixable") {
@@ -227,7 +224,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Report counts compatible-but-not-identical nullable boundaries as auto-fixable") {
@@ -264,7 +260,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Report records an unanalyzable file without aborting the rest") {
@@ -292,7 +287,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Projection report counts a cascade-only annotation the single-pass report under-counts") {
@@ -357,7 +351,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Projection report drops a verification-rejected annotation the single-pass report over-counts") {
@@ -403,7 +396,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Follow-up report lists skipped sites grouped by category with file and line") {
@@ -469,7 +461,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Follow-up report records strict violations as manual sites") {
@@ -508,7 +499,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Follow-up report excludes nullable violations the satisfier can auto-fix") {
@@ -542,7 +532,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Follow-up report is regenerable: writes to a known location and overwrites in place") {
@@ -587,7 +576,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Follow-up report does not claim a clean bill of health when a file is unanalyzable") {
@@ -618,7 +606,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Report edge cases: empty project and unreadable root") {
@@ -645,7 +632,6 @@ TEST_SUITE("[Modules][GDScript][MigrationReport]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

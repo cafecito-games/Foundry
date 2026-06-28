@@ -43,6 +43,19 @@ void init_autoloads();
 void init_language(const String &p_base_path);
 void finish_language();
 
+// Resets the per-case GDScript state (cache, global classes, annotations) that
+// is shared when `init_language()` is hoisted to once-per-`TEST_SUITE`, without
+// tearing down the stable language globals. No-op when the language is down.
+void reset_language_state();
+
+// Whether `init_language()` currently holds the language up. Used by the
+// per-suite test fixture to decide between resetting and tearing down.
+bool is_language_initialized();
+
+// Number of times the heavy language setup has actually run; test-only
+// instrumentation used to assert the per-suite hoist holds.
+uint64_t get_init_language_count();
+
 // Single test instance in a suite.
 class GDScriptTest {
 public:
