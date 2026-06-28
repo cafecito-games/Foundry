@@ -1,0 +1,19 @@
+# ===========================================================================
+# Foundry license header templates.
+#
+# Use the "#" form below verbatim at the top of Python / shell / SCons files.
+# Use the "/* */" box form for C / C++ / Objective-C sources and headers.
+# Keep the wording identical across both so a single sed/grep can audit them.
+# ===========================================================================
+
+# --- Python / "#" form -----------------------------------------------------
+# This file is part of Foundry — https://www.cafecito.games/
+# Copyright (c) 2026-present Cafecito Games. MIT License.
+# Foundry is a fork of Godot Engine 4.6.3-stable (MIT); see NOTICE.
+
+# --- C / C++ "/* */" box form ----------------------------------------------
+/**************************************************************************/
+/* This file is part of Foundry — https://www.cafecito.games/            */
+/* Copyright (c) 2026-present Cafecito Games. MIT License.                */
+/* Foundry is a fork of Godot Engine 4.6.3-stable (MIT); see NOTICE.      */
+/**************************************************************************/

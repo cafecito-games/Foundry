@@ -1,0 +1,43 @@
+# Foundry rename naming map (seed)
+# Tab-separated: from<TAB>to<TAB>category<TAB>notes
+# Applied LONGEST-MATCH-FIRST. Excludes thirdparty/** and .git/**.
+# This is a SEED for tools/foundry-rename/naming_map.tsv — expand during implementation.
+#
+# from	to	category	notes
+GDScriptParser	FSParser	A	gdscript family prefix GDScript->FS
+GDScriptCompiler	FSCompiler	A
+GDScriptAnalyzer	FSAnalyzer	A
+GDScriptLanguage	FSLanguage	A
+GDScriptInstance	FSInstance	A
+GDScriptFunction	FSFunction	A
+GDScriptTokenizer	FSTokenizer	A
+GDScriptCache	FSCache	A
+GDScriptByteCodeGenerator	FSByteCodeGenerator	A
+GDScriptNativeClass	FSNativeClass	A
+GDScriptSyntaxHighlighter	FSSyntaxHighlighter	A
+GDScriptLanguageProtocol	FSLanguageProtocol	A
+GDScriptLanguageServer	FSLanguageServer	A
+GDScriptWorkspace	FSWorkspace	A
+GDScriptTextDocument	FSTextDocument	A
+GDScript	FoundryScript	A	standalone language class (apply AFTER all GDScript* prefixes)
+GDExtensionManager	FoundryExtensionManager	B
+GDExtensionLoader	FoundryExtensionLoader	B
+GDExtensionMethodBind	FoundryExtensionMethodBind	B
+GDExtensionInterface	FoundryExtensionInterface	B
+GDExtension	FoundryExtension	B	apply AFTER all GDExtension* compounds
+GDVIRTUAL	FOUNDRY_VIRTUAL	C	prefix; covers GDVIRTUAL0..N variants
+GDREGISTER_ABSTRACT_CLASS	FOUNDRY_REGISTER_ABSTRACT_CLASS	C
+GDREGISTER_CLASS	FOUNDRY_REGISTER_CLASS	C
+GDSOFTCLASS	FOUNDRY_SOFTCLASS	C
+GDCLASS	FOUNDRY_CLASS	C	apply AFTER GDREGISTER_*/GDSOFTCLASS
+.gdextension	.foundryextension	B	file format extension
+.gdignore	.fsignore	A
+.gdc	.fsc	A	compiled script
+.gde	.fse	A	encrypted script
+.gd	.fs	A	apply AFTER .gdc/.gde/.gdextension/.gdignore
+project.godot	project.foundry	D
+GODOT_VERSION	FOUNDRY_VERSION	D
+GODOT_	FOUNDRY_	D	macro/env prefix; apply AFTER named GODOT_* entries
+godotengine.org	cafecito.games	D
+Godot Engine	Foundry	D
+GDScript	Foundry Script	D	user-facing prose (handle in docs/translations pass)

@@ -1,0 +1,13 @@
+# from	to	category	context	notes
+GDScriptParser	FSParser	A	code
+GDScript	FoundryScript	A	code
+GDScript	Foundry Script	D	prose	user-facing
+GDExtensionManager	FoundryExtensionManager	B	code
+GDExtension	FoundryExtension	B	code
+GDVIRTUAL1R_REQUIRED	FOUNDRY_VIRTUAL1R_REQUIRED	C	code
+GDCLASS	FOUNDRY_CLASS	C	code
+Godot Engine	Foundry	D	prose
+.gdextension	.foundryextension	B	both
+.gd	.fs	A	both
+project.godot	project.foundry	D	both
+godotengine.org	cafecito.games	D	both
