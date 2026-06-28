@@ -154,6 +154,7 @@ public:
 		bool signature_is_async = false; // Whether the callable type was written as AsyncCallable rather than Callable.
 		Vector<DataType> method_parameter_types; // Rich GDScript signature preserving metadata MethodInfo cannot store.
 		Vector<DataType> method_return_type; // Empty for signals, one element for callables.
+		bool method_return_is_erased_container = false; // Callable return needs typed-container conversion after call/callv.
 		Vector<int> method_extra_allowed_argument_counts; // Extra exact arities not expressible by default arguments, for transformed Callables.
 		int method_unbound_argument_count = 0; // Trailing arguments ignored by transformed Callables.
 		bool callable_is_over_bound = false; // Set when bind()/bindv() bound more arguments than a fixed-arity target accepts, making any invocation fail.
@@ -322,6 +323,7 @@ public:
 			signature_is_async = p_other.signature_is_async;
 			method_parameter_types = p_other.method_parameter_types;
 			method_return_type = p_other.method_return_type;
+			method_return_is_erased_container = p_other.method_return_is_erased_container;
 			method_extra_allowed_argument_counts = p_other.method_extra_allowed_argument_counts;
 			method_unbound_argument_count = p_other.method_unbound_argument_count;
 			callable_is_over_bound = p_other.callable_is_over_bound;

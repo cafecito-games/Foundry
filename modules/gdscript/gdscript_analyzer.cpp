@@ -141,6 +141,15 @@ static bool _datatype_contains_self_type_parameter(const GDScriptParser::DataTyp
 	return false;
 }
 
+static bool _datatype_container_element_contains_self_type_parameter(const GDScriptParser::DataType &p_type) {
+	for (const GDScriptParser::DataType &element : p_type.container_element_types) {
+		if (_datatype_contains_self_type_parameter(element)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool _datatype_represents_final_class(const GDScriptParser::DataType &p_type) {
 	return p_type.kind == GDScriptParser::DataType::CLASS && p_type.class_type != nullptr && p_type.class_type->is_final;
 }
@@ -10395,8 +10404,17 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 						// Substitute the method's `T`-typed parameters and return through the inheritance
 						// chain, so `IntList extends List[int]` sees `func get() -> T` as `-> int`. The
 						// method's own type parameters shadow same-named class ones and are left intact.
+						const GDScriptParser::DataType specialized_base = specialize_ancestor_type(base, script_class);
+						const GDScriptParser::DataType parameter_self_type = _self_type_parameter_from_bound(self_type);
 						callable_type = substitute_member_type(
-								callable_type, specialize_ancestor_type(base, script_class), member.function, &self_type);
+								callable_type, specialized_base, member.function, &parameter_self_type);
+						callable_type.method_return_type.clear();
+						callable_type.method_return_type.push_back(substitute_member_type(
+								member.function->get_datatype(), specialized_base, member.function, &self_type));
+						if (base_class != nullptr && script_class != base_class && !script_class->is_trait &&
+								_datatype_container_element_contains_self_type_parameter(member.function->get_datatype())) {
+							callable_type.method_return_is_erased_container = true;
+						}
 						if (p_base != nullptr) {
 							callable_type.has_explicit_method_signature = true;
 						}
@@ -12283,6 +12301,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
 				}
 				r_return_type = is_callable_call_deferred || is_callable_rpc || is_callable_rpc_id || p_base_type.method_return_type.is_empty() ? type_from_property(PropertyInfo(Variant::NIL, "")) : p_base_type.method_return_type[0];
+				if (call != nullptr && is_callable_call && p_base_type.method_return_is_erased_container) {
+					static_cast<GDScriptParser::CallNode *>(p_source)->returns_erased_container = true;
+				}
 				// Synchronously invoking an AsyncCallable yields a coroutine, so the result must be awaited.
 				// Deferred/RPC dispatches do not return the callee's value, so they stay non-coroutine.
 				if (is_callable_call && p_base_type.signature_is_async) {
@@ -12302,6 +12323,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_par_types.push_back(type_from_property(PropertyInfo(Variant::ARRAY, "arguments"), true));
 				r_return_type = p_base_type.method_return_type.is_empty() ? type_from_property(PropertyInfo(Variant::NIL, "")) : p_base_type.method_return_type[0];
+				if (call != nullptr && p_base_type.method_return_is_erased_container) {
+					static_cast<GDScriptParser::CallNode *>(p_source)->returns_erased_container = true;
+				}
 				// As with call(), invoking an AsyncCallable through callv() yields a coroutine.
 				if (p_base_type.signature_is_async) {
 					r_return_type = make_coroutine_type(r_return_type);
@@ -12702,11 +12726,8 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		if (p_source != nullptr && p_source->type == GDScriptParser::Node::CALL &&
 				original_base_class != nullptr && found_in_class != nullptr && found_in_class != original_base_class &&
 				!found_in_class->is_trait) {
-			for (const GDScriptParser::DataType &element_type : found_function->get_datatype().container_element_types) {
-				if (_datatype_contains_self_type_parameter(element_type)) {
-					static_cast<GDScriptParser::CallNode *>(p_source)->returns_erased_container = true;
-					break;
-				}
+			if (_datatype_container_element_contains_self_type_parameter(found_function->get_datatype())) {
+				static_cast<GDScriptParser::CallNode *>(p_source)->returns_erased_container = true;
 			}
 		}
 		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function, &self_type);
