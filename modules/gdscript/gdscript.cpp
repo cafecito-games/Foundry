@@ -3067,6 +3067,7 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 		"class_name",
 		"const",
 		"enum",
+		"enum_name",
 		"extends",
 		"final",
 		"func",

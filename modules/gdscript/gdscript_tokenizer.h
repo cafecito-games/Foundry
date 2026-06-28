@@ -113,6 +113,7 @@ public:
 			BREAKPOINT,
 			CLASS,
 			CLASS_NAME,
+			ENUM_NAME,
 			TK_CONST, // Conflict with WinAPI.
 			ENUM,
 			EXTENDS,

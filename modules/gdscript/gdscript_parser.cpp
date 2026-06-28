@@ -5254,6 +5254,7 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // BREAKPOINT,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // CLASS,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // CLASS_NAME,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // ENUM_NAME,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TK_CONST,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // ENUM,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // EXTENDS,
