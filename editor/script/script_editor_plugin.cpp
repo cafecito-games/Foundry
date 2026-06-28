@@ -70,6 +70,11 @@
 #include "editor/shader/text_shader_editor.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
+#include "modules/modules_enabled.gen.h"
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+#include "modules/gdscript/gdscript_autoload_index.h"
+#endif
 #include "scene/gui/separator.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/texture_rect.h"
@@ -158,6 +163,15 @@ void EditorStandardSyntaxHighlighter::_update_cache() {
 	}
 
 	/* Autoloads. */
+#ifdef MODULE_GDSCRIPT_ENABLED
+	GDScriptAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
+	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (autoload.is_singleton) {
+			highlighter->add_keyword_color(autoload.name, usertype_color);
+		}
+	}
+#else
 	HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
 	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : autoloads) {
 		const ProjectSettings::AutoloadInfo &info = E.value;
@@ -165,6 +179,7 @@ void EditorStandardSyntaxHighlighter::_update_cache() {
 			highlighter->add_keyword_color(info.name, usertype_color);
 		}
 	}
+#endif
 
 	const ScriptLanguage *scr_lang = script_language;
 	StringName instance_base;

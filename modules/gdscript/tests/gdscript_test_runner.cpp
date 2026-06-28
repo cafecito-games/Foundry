@@ -32,6 +32,7 @@
 
 #include "../gdscript.h"
 #include "../gdscript_analyzer.h"
+#include "../gdscript_autoload_index.h"
 #include "../gdscript_cache.h"
 #include "../gdscript_compiler.h"
 #include "../gdscript_parser.h"
@@ -51,55 +52,52 @@
 namespace GDScriptTests {
 
 void init_autoloads() {
-	HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
+	GDScriptAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
 
 	// First pass, add the constants so they exist before any script is loaded.
-	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
-		const ProjectSettings::AutoloadInfo &info = E.value;
-
-		if (info.is_singleton) {
+	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (autoload.is_singleton) {
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 				ScriptLanguage *language = ScriptServer::get_language(i);
 				// A reserved named global (e.g. the `godot` reflection namespace) wins over
 				// an autoload of the same name, mirroring main.cpp.
-				if (language->get_reserved_global_names().has(String(info.name))) {
+				if (language->get_reserved_global_names().has(String(autoload.name))) {
 					continue;
 				}
-				language->add_global_constant(info.name, Variant());
+				language->add_global_constant(autoload.name, Variant());
 			}
 		}
 	}
 
 	// Second pass, load into global constants.
-	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
-		const ProjectSettings::AutoloadInfo &info = E.value;
-
-		if (!info.is_singleton) {
+	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (!autoload.is_singleton) {
 			// Skip non-singletons since we don't have a scene tree here anyway.
 			continue;
 		}
 
 		Node *n = nullptr;
-		if (ResourceLoader::get_resource_type(info.path) == "PackedScene") {
+		if (ResourceLoader::get_resource_type(autoload.path) == "PackedScene") {
 			// Cache the scene reference before loading it (for cyclic references)
 			Ref<PackedScene> scn;
 			scn.instantiate();
-			scn->set_path(ResourceUID::ensure_path(info.path));
+			scn->set_path(autoload.path);
 			scn->reload_from_file();
-			ERR_CONTINUE_MSG(scn.is_null(), vformat("Failed to instantiate an autoload, can't load from path: %s.", info.path));
+			ERR_CONTINUE_MSG(scn.is_null(), vformat("Failed to instantiate an autoload, can't load from path: %s.", autoload.path));
 
 			if (scn.is_valid()) {
 				n = scn->instantiate();
 			}
 		} else {
-			Ref<Resource> res = ResourceLoader::load(info.path);
-			ERR_CONTINUE_MSG(res.is_null(), vformat("Failed to instantiate an autoload, can't load from path: %s.", info.path));
+			Ref<Resource> res = ResourceLoader::load(autoload.path);
+			ERR_CONTINUE_MSG(res.is_null(), vformat("Failed to instantiate an autoload, can't load from path: %s.", autoload.path));
 
 			Ref<Script> scr = res;
 			if (scr.is_valid()) {
 				StringName ibt = scr->get_instance_base_type();
 				bool valid_type = ClassDB::is_parent_class(ibt, "Node");
-				ERR_CONTINUE_MSG(!valid_type, vformat("Failed to instantiate an autoload, script '%s' does not inherit from 'Node'.", info.path));
+				ERR_CONTINUE_MSG(!valid_type, vformat("Failed to instantiate an autoload, script '%s' does not inherit from 'Node'.", autoload.path));
 
 				Object *obj = ClassDB::instantiate(ibt);
 				ERR_CONTINUE_MSG(!obj, vformat("Failed to instantiate an autoload, cannot instantiate '%s'.", ibt));
@@ -109,15 +107,15 @@ void init_autoloads() {
 			}
 		}
 
-		ERR_CONTINUE_MSG(!n, vformat("Failed to instantiate an autoload, path is not pointing to a scene or a script: %s.", info.path));
-		n->set_name(info.name);
+		ERR_CONTINUE_MSG(!n, vformat("Failed to instantiate an autoload, path is not pointing to a scene or a script: %s.", autoload.path));
+		n->set_name(autoload.name);
 
 		for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 			ScriptLanguage *language = ScriptServer::get_language(i);
-			if (language->get_reserved_global_names().has(String(info.name))) {
+			if (language->get_reserved_global_names().has(String(autoload.name))) {
 				continue;
 			}
-			language->add_global_constant(info.name, n);
+			language->add_global_constant(autoload.name, n);
 		}
 	}
 }

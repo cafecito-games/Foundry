@@ -32,8 +32,8 @@
 
 #include "../gdscript.h"
 #include "../gdscript_analyzer.h"
+#include "../gdscript_autoload_index.h"
 
-#include "core/config/project_settings.h"
 #include "core/variant/container_type_validate.h"
 
 HashMap<String, String> GDScriptDocGen::singletons;
@@ -61,6 +61,21 @@ String GDScriptDocGen::_get_class_name(const GDP::ClassNode &p_class) {
 		full_name = vformat("%s.%s", curr_class->identifier->name, full_name);
 	}
 	return full_name;
+}
+
+void GDScriptDocGen::_populate_singletons_from_autoload_index() {
+	GDScriptAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
+
+	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (!autoload.is_singleton) {
+			continue;
+		}
+		singletons[autoload.path] = autoload.name;
+		if (!autoload.script_path.is_empty()) {
+			singletons[autoload.script_path] = autoload.name;
+		}
+	}
 }
 
 static String _doccontainer_type_from_container_type(const ContainerType &p_type) {
@@ -710,22 +725,14 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 }
 
 void GDScriptDocGen::generate_docs(GDScript *p_script, const GDP::ClassNode *p_class) {
-	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
-		if (E.value.is_singleton) {
-			singletons[E.value.path] = E.key;
-		}
-	}
+	_populate_singletons_from_autoload_index();
 	_generate_docs(p_script, p_class);
 	singletons.clear();
 }
 
 // This method is needed for the editor, since during autocompletion the script is not compiled, only analyzed.
 void GDScriptDocGen::doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, bool p_is_return) {
-	for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
-		if (E.value.is_singleton) {
-			singletons[E.value.path] = E.key;
-		}
-	}
+	_populate_singletons_from_autoload_index();
 	_doctype_from_gdtype(p_gdtype, r_type, r_enum, p_is_return);
 	singletons.clear();
 }

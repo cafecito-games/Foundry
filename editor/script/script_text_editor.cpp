@@ -50,6 +50,11 @@
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "modules/modules_enabled.gen.h"
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+#include "modules/gdscript/gdscript_autoload_index.h"
+#endif
 #include "modules/gdscript/editor/gdscript_refactoring.h"
 #include "modules/gdscript/editor/gdscript_refactoring_edits.h"
 #include "modules/gdscript/editor/gdscript_refactoring_names.h"
@@ -1437,19 +1442,36 @@ void ScriptTextEditor::_lookup_symbol(const String &p_symbol, int p_row, int p_c
 				goto_line_centered(result.location - 1);
 			}
 		}
-	} else if (ProjectSettings::get_singleton()->has_autoload(p_symbol) && !script->get_language()->get_reserved_global_names().has(p_symbol)) {
+	} else {
 		// Check for Autoload scenes. A name the script's language reserves as a built-in
 		// global (e.g. the `godot` reflection namespace) wins over a same-named autoload,
 		// so symbol lookup must not navigate to that autoload's scene.
-		const ProjectSettings::AutoloadInfo &info = ProjectSettings::get_singleton()->get_autoload(p_symbol);
-		if (info.is_singleton) {
-			EditorNode::get_singleton()->load_scene(info.path);
+		bool loaded_autoload = false;
+		if (!script->get_language()->get_reserved_global_names().has(p_symbol)) {
+#ifdef MODULE_GDSCRIPT_ENABLED
+			GDScriptAutoloadIndex autoload_index;
+			autoload_index.rebuild_from_project_settings();
+			const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
+			if (autoload != nullptr && autoload->is_singleton) {
+				EditorNode::get_singleton()->load_scene(autoload->path);
+				loaded_autoload = true;
+			}
+#else
+			if (ProjectSettings::get_singleton()->has_autoload(p_symbol)) {
+				const ProjectSettings::AutoloadInfo &info = ProjectSettings::get_singleton()->get_autoload(p_symbol);
+				if (info.is_singleton) {
+					EditorNode::get_singleton()->load_scene(info.path);
+					loaded_autoload = true;
+				}
+			}
+#endif
 		}
-	} else if (p_symbol.is_relative_path()) {
-		// Every symbol other than absolute path is relative path so keep this condition at last.
-		String path = _get_absolute_path(p_symbol);
-		if (FileAccess::exists(path)) {
-			EditorNode::get_singleton()->load_scene_or_resource(path);
+		if (!loaded_autoload && p_symbol.is_relative_path()) {
+			// Every symbol other than absolute path is relative path so keep this condition at last.
+			String path = _get_absolute_path(p_symbol);
+			if (FileAccess::exists(path)) {
+				EditorNode::get_singleton()->load_scene_or_resource(path);
+			}
 		}
 	}
 }
@@ -1468,7 +1490,17 @@ void ScriptTextEditor::_validate_symbol(const String &p_symbol) {
 	// A name the script's language reserves as a built-in global (e.g. the `godot`
 	// reflection namespace) wins over a same-named autoload, so it is not treated as a
 	// navigable autoload symbol — matching the lookup guard above.
-	bool is_singleton = ProjectSettings::get_singleton()->has_autoload(p_symbol) && ProjectSettings::get_singleton()->get_autoload(p_symbol).is_singleton && !script->get_language()->get_reserved_global_names().has(p_symbol);
+	bool is_singleton = false;
+	if (!script->get_language()->get_reserved_global_names().has(p_symbol)) {
+#ifdef MODULE_GDSCRIPT_ENABLED
+		GDScriptAutoloadIndex autoload_index;
+		autoload_index.rebuild_from_project_settings();
+		const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
+		is_singleton = autoload != nullptr && autoload->is_singleton;
+#else
+		is_singleton = ProjectSettings::get_singleton()->has_autoload(p_symbol) && ProjectSettings::get_singleton()->get_autoload(p_symbol).is_singleton;
+#endif
+	}
 	if (lc_error == OK || is_singleton || ScriptServer::is_global_class(p_symbol) || p_symbol.is_resource_file() || p_symbol.begins_with("uid://")) {
 		text_edit->set_symbol_lookup_word_as_valid(true);
 	} else if (p_symbol.is_relative_path()) {
