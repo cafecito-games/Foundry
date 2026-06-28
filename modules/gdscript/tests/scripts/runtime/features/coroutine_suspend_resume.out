@@ -1,0 +1,4 @@
+GDTEST_OK
+before resume
+drained: value:1
+after resume
