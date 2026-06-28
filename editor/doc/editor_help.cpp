@@ -1088,7 +1088,9 @@ void EditorHelp::_update_doc() {
 
 	_push_title_font();
 
-	class_desc->add_text((cd.is_trait ? TTR("Trait:") : TTR("Class:")) + " ");
+	const String class_doc_kind = cd.is_enum ? TTR("Enum:") : cd.is_trait ? TTR("Trait:")
+																		  : TTR("Class:");
+	class_desc->add_text(class_doc_kind + " ");
 	_add_type_icon(edited_class, theme_cache.doc_title_font_size, "");
 	class_desc->add_text(nbsp);
 
@@ -1829,7 +1831,7 @@ void EditorHelp::_update_doc() {
 		}
 
 		// Enums
-		bool has_enums = enums.size() && !cd.is_script_doc;
+		bool has_enums = enums.size() && (!cd.is_script_doc || cd.is_enum);
 		if (enums.size() && !has_enums) {
 			for (KeyValue<String, DocData::EnumDoc> &E : cd.enums) {
 				const bool is_documented = E.value.is_deprecated || E.value.is_experimental || !E.value.description.strip_edges().is_empty();
@@ -1963,13 +1965,15 @@ void EditorHelp::_update_doc() {
 					class_desc->add_text(enum_value.name);
 					class_desc->pop(); // color
 
-					class_desc->push_color(theme_cache.symbol_color);
-					class_desc->add_text(nbsp_equal_nbsp);
-					class_desc->pop(); // color
+					if (enum_value.is_value_valid) {
+						class_desc->push_color(theme_cache.symbol_color);
+						class_desc->add_text(nbsp_equal_nbsp);
+						class_desc->pop(); // color
 
-					class_desc->push_color(theme_cache.value_color);
-					class_desc->add_text(_fix_constant(enum_value.value));
-					class_desc->pop(); // color
+						class_desc->push_color(theme_cache.value_color);
+						class_desc->add_text(_fix_constant(enum_value.value));
+						class_desc->pop(); // color
+					}
 
 					_pop_code_font();
 
