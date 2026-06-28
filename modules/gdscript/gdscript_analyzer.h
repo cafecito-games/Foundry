@@ -253,6 +253,10 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType type_from_variant(const Variant &p_value, const GDScriptParser::Node *p_source);
 	GDScriptParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false) const;
 	GDScriptParser::DataType make_global_class_meta_type(const StringName &p_class_name, const GDScriptParser::Node *p_source);
+	GDScriptParser::DataType make_global_enum_type_from_path(
+			const StringName &p_global_name, const String &p_path, const GDScriptParser::Node *p_source);
+	GDScriptParser::DataType make_global_enum_type_from_current_parser(
+			const StringName &p_global_name, const GDScriptParser::Node *p_source);
 	uint32_t get_autoload_settings_hash() const;
 	void ensure_autoload_index_current();
 	bool get_autoload_singleton_value_type(const StringName &p_name, GDScriptParser::DataType &r_type);
