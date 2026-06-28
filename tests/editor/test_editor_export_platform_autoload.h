@@ -179,6 +179,24 @@ TEST_CASE("[Editor][Export] Script-owned autoload cache write failure is a hard 
 	CHECK_EQ(forced_files.find(blocked_cache_path), -1);
 }
 
+TEST_CASE("[Editor][Export] Legacy forced-file helper rejects autoload index rebuild errors") {
+	ScopedExportTempFiles files("editor_export_legacy_autoload_rebuild_failure");
+
+	const String script_path = files.write("legacy_invalid_autoload.gd",
+			"@autoload\n"
+			"class_name EditorExportLegacyInvalidAutoload extends RefCounted\n");
+	ScopedScriptServerClass registered_autoload(
+			SNAME("EditorExportLegacyInvalidAutoload"),
+			"RefCounted",
+			script_path);
+
+	ERR_PRINT_OFF;
+	Vector<String> forced_files = EditorExportPlatform::get_forced_export_files(Ref<EditorExportPreset>());
+	ERR_PRINT_ON;
+
+	CHECK(forced_files.is_empty());
+}
+
 TEST_CASE("[Editor][Export] Selected autoload dependencies honor preset feature overrides") {
 	ScopedExportTempFiles files("editor_export_autoload_preset_override");
 	ScopedProjectSettings settings;

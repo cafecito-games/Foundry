@@ -1131,7 +1131,8 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 
 Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExportPreset> &p_preset) {
 	Vector<String> files;
-	collect_forced_export_files(p_preset, files);
+	const Error err = collect_forced_export_files(p_preset, files, true);
+	ERR_FAIL_COND_V_MSG(err != OK, Vector<String>(), vformat("Could not collect forced export files: %s.", error_names[err]));
 	return files;
 }
 
