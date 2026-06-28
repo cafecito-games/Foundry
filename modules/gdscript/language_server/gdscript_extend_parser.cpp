@@ -242,6 +242,38 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 		r_symbol.documentation = doc;
 	}
 
+	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
+		const GDScriptParser::EnumNode *enum_node = p_class->enum_file_decl;
+		const StringName global_name = p_class->get_global_name();
+		if (global_name != StringName()) {
+			r_symbol.name = global_name;
+		}
+		r_symbol.kind = LSP::SymbolKind::Enum;
+		r_symbol.range = range_of_node(enum_node);
+		if (enum_node->identifier != nullptr) {
+			r_symbol.selectionRange = range_of_node(enum_node->identifier);
+		}
+		r_symbol.detail = "enum " + r_symbol.name;
+
+		for (const GDScriptParser::EnumNode::Value &value : enum_node->values) {
+			LSP::DocumentSymbol child;
+
+			child.name = value.identifier->name;
+			child.kind = LSP::SymbolKind::EnumMember;
+			child.deprecated = false;
+			child.range.start = GodotPosition(value.line, value.start_column).to_lsp(lines);
+			child.range.end = GodotPosition(value.line, value.end_column).to_lsp(lines);
+			child.selectionRange = range_of_node(value.identifier);
+			child.documentation = value.doc_data.description;
+			child.uri = uri;
+			child.script_path = path;
+			child.detail = child.name + " = " + itos(value.value);
+
+			r_symbol.children.push_back(child);
+		}
+		return;
+	}
+
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const ClassNode::Member &m = p_class->members[i];
 
