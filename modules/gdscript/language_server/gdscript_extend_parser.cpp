@@ -1101,6 +1101,18 @@ ExtendGDScriptParser *ExtendGDScriptParser::parse_source(const String &p_code, c
 	return parser;
 }
 
+#ifdef TESTS_ENABLED
+static uint64_t parse_file_count_for_test = 0;
+
+uint64_t ExtendGDScriptParser::get_parse_file_count_for_test() {
+	return parse_file_count_for_test;
+}
+
+void ExtendGDScriptParser::reset_parse_file_count_for_test() {
+	parse_file_count_for_test = 0;
+}
+#endif // TESTS_ENABLED
+
 ExtendGDScriptParser *ExtendGDScriptParser::parse_file(const String &p_path) {
 	if (!p_path.has_extension("gd")) {
 		return nullptr;
@@ -1111,6 +1123,10 @@ ExtendGDScriptParser *ExtendGDScriptParser::parse_file(const String &p_path) {
 	if (err != OK) {
 		return nullptr;
 	}
+
+#ifdef TESTS_ENABLED
+	parse_file_count_for_test++;
+#endif // TESTS_ENABLED
 
 	return parse_source(source, p_path);
 }

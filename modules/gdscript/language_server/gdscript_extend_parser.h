@@ -148,6 +148,13 @@ public:
 	static ExtendGDScriptParser *parse_source(const String &p_code, const String &p_path);
 	static ExtendGDScriptParser *parse_file(const String &p_path);
 
+#ifdef TESTS_ENABLED
+	// Counts disk-backed parses so tests can assert that project-wide refactors
+	// pre-filter files by raw text and skip parsing files that cannot match.
+	static uint64_t get_parse_file_count_for_test();
+	static void reset_parse_file_count_for_test();
+#endif // TESTS_ENABLED
+
 	Error get_left_function_call(const LSP::Position &p_position, LSP::Position &r_func_pos, int &r_arg_index) const;
 
 	String get_text_for_completion(const LSP::Position &p_cursor) const;

@@ -148,6 +148,43 @@ const ExtendGDScriptParser *GDScriptWorkspace::get_parse_result(const String &p_
 	return protocol != nullptr ? protocol->get_parse_result(p_path) : nullptr;
 }
 
+const ExtendGDScriptParser *GDScriptWorkspace::peek_parse_result(const String &p_path, const GDScriptParseResultProvider *p_parse_result_provider) const {
+	if (p_parse_result_provider != nullptr) {
+		return p_parse_result_provider->peek_parse_result(p_path);
+	}
+
+	GDScriptLanguageProtocol *protocol = GDScriptLanguageProtocol::get_singleton();
+	return protocol != nullptr ? protocol->peek_parse_result(p_path) : nullptr;
+}
+
+bool GDScriptWorkspace::source_may_reference_symbol(
+		const String &p_path,
+		const String &p_symbol_name,
+		const GDScriptParseResultProvider *p_parse_result_provider) const {
+	if (p_symbol_name.is_empty()) {
+		return true;
+	}
+
+	// An already-parsed result may reflect an unsaved editor buffer, so trust it
+	// over the on-disk text and avoid re-reading the file.
+	if (const ExtendGDScriptParser *cached = peek_parse_result(p_path, p_parse_result_provider)) {
+		for (const String &line : cached->get_lines()) {
+			if (line.contains(p_symbol_name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	Error read_error = OK;
+	const String contents = FileAccess::get_file_as_string(p_path, &read_error);
+	if (read_error != OK) {
+		// Contents unknown: keep the file so the caller's existing fallbacks decide.
+		return true;
+	}
+	return contents.contains(p_symbol_name);
+}
+
 const LSP::DocumentSymbol *GDScriptWorkspace::get_script_symbol(const String &p_path, const GDScriptParseResultProvider *p_parse_result_provider) const {
 	const ExtendGDScriptParser *parser = get_parse_result(p_path, p_parse_result_provider);
 	if (parser) {
@@ -450,6 +487,10 @@ Vector<LSP::Location> GDScriptWorkspace::find_usages_in_file(
 	Vector<LSP::Location> usages;
 
 	String identifier = p_symbol.name;
+	// Skip files whose raw text cannot mention the symbol before paying to parse them.
+	if (!source_may_reference_symbol(p_file_path, identifier, p_parse_result_provider)) {
+		return usages;
+	}
 	const ExtendGDScriptParser *parser = get_parse_result(p_file_path, p_parse_result_provider);
 	if (parser) {
 		const PackedStringArray &content = parser->get_lines();

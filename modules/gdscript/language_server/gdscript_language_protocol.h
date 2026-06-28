@@ -150,6 +150,13 @@ public:
 	 */
 	ExtendGDScriptParser *get_parse_result(const String &p_path);
 
+	/**
+	 * Returns the cached parse result for the given path without triggering a
+	 * parse, or `nullptr` when nothing is cached. Used by the raw-text pre-filter
+	 * to inspect already-open documents cheaply.
+	 */
+	ExtendGDScriptParser *peek_parse_result(const String &p_path);
+
 	// Re-parses every open (client-managed) document from its in-memory buffer and re-publishes its
 	// diagnostics. Used when an analysis-affecting project setting (e.g. the strict-mode flags)
 	// changes, so already-open documents are re-reported under the new flags without waiting for an
