@@ -182,7 +182,7 @@ namespace GodotTools.Internals
             {
                 if (_projectCsProjPath == null)
                     DetermineProjectLocation();
-                return Path.Combine(Path.GetDirectoryName(_projectCsProjPath)!, ".godot", "mono", "temp", "bin");
+                return Path.Combine(Path.GetDirectoryName(_projectCsProjPath)!, ".foundry", "mono", "temp", "bin");
             }
         }
 
