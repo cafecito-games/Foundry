@@ -1,0 +1,2 @@
+namespace completion.global_enum
+extends NamespacedCompletionGlobalEnum➡

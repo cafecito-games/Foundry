@@ -1347,6 +1347,13 @@ static void _insert_namespace_completion_option(const String &p_display, ScriptL
 	r_result.insert(option.display, option);
 }
 
+static ScriptLanguage::CodeCompletionKind _get_global_class_completion_kind(const StringName &p_global_class) {
+	if (ScriptServer::is_global_class_enum(p_global_class)) {
+		return ScriptLanguage::CODE_COMPLETION_KIND_ENUM;
+	}
+	return ScriptLanguage::CODE_COMPLETION_KIND_CLASS;
+}
+
 struct GDScriptNamespaceCompletionCache {
 	HashSet<String> namespaces;
 	HashMap<String, LocalVector<StringName>> direct_classes_by_namespace;
@@ -1409,7 +1416,7 @@ static void _list_importable_namespaces(GDScriptNamespaceCompletionCache &r_cach
 	}
 }
 
-static void _add_direct_global_classes_in_namespace(GDScriptNamespaceCompletionCache &r_cache, const String &p_namespace, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+static void _add_direct_global_classes_in_namespace(GDScriptNamespaceCompletionCache &r_cache, const String &p_namespace, bool p_inherit_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	r_cache.ensure_populated();
 	const LocalVector<StringName> *classes = r_cache.direct_classes_by_namespace.getptr(p_namespace);
 	if (classes == nullptr) {
@@ -1417,7 +1424,11 @@ static void _add_direct_global_classes_in_namespace(GDScriptNamespaceCompletionC
 	}
 
 	for (const StringName &class_name : *classes) {
-		_insert_namespace_completion_option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, r_result);
+		const StringName global_class = p_namespace + "." + String(class_name);
+		if (p_inherit_only && ScriptServer::is_global_class_enum(global_class)) {
+			continue;
+		}
+		_insert_namespace_completion_option(class_name, _get_global_class_completion_kind(global_class), r_result);
 	}
 }
 
@@ -1446,7 +1457,7 @@ static void _add_direct_child_namespaces(GDScriptNamespaceCompletionCache &r_cac
 	}
 }
 
-static void _add_imported_global_classes_in_namespaces(GDScriptNamespaceCompletionCache &r_cache, const Vector<String> &p_imports, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+static void _add_imported_global_classes_in_namespaces(GDScriptNamespaceCompletionCache &r_cache, const Vector<String> &p_imports, bool p_inherit_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	r_cache.ensure_populated();
 
 	HashMap<StringName, String> imported_class_namespaces;
@@ -1478,7 +1489,11 @@ static void _add_imported_global_classes_in_namespaces(GDScriptNamespaceCompleti
 		if (ambiguous_class_names.has(E.key)) {
 			continue;
 		}
-		_insert_namespace_completion_option(E.key, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, r_result);
+		const StringName global_class = E.value + "." + String(E.key);
+		if (p_inherit_only && ScriptServer::is_global_class_enum(global_class)) {
+			continue;
+		}
+		_insert_namespace_completion_option(E.key, _get_global_class_completion_kind(global_class), r_result);
 	}
 }
 
@@ -1530,15 +1545,15 @@ static const GDScriptParser::ClassNode *_get_completion_root_class(const GDScrip
 	return current_class;
 }
 
-static void _add_namespace_type_completion_options(GDScriptNamespaceCompletionCache &r_cache, const GDScriptParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+static void _add_namespace_type_completion_options(GDScriptNamespaceCompletionCache &r_cache, const GDScriptParser::CompletionContext &p_context, bool p_inherit_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	const GDScriptParser::ClassNode *root = _get_completion_root_class(p_context);
 	if (root == nullptr) {
 		return;
 	}
 
-	_add_direct_global_classes_in_namespace(r_cache, root->namespace_name, r_result);
+	_add_direct_global_classes_in_namespace(r_cache, root->namespace_name, p_inherit_only, r_result);
 	_add_direct_child_namespaces(r_cache, root->namespace_name, r_result);
-	_add_imported_global_classes_in_namespaces(r_cache, root->imports, r_result);
+	_add_imported_global_classes_in_namespaces(r_cache, root->imports, p_inherit_only, r_result);
 	_add_imported_child_namespaces(r_cache, root->imports, r_result);
 }
 
@@ -1613,7 +1628,7 @@ static void _add_namespace_type_attribute_completion_options(GDScriptNamespaceCo
 		return;
 	}
 
-	_add_direct_global_classes_in_namespace(r_cache, namespace_name, r_result);
+	_add_direct_global_classes_in_namespace(r_cache, namespace_name, false, r_result);
 	_add_direct_child_namespaces(r_cache, namespace_name, r_result);
 }
 
@@ -1721,7 +1736,11 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 	LocalVector<StringName> global_classes;
 	ScriptServer::get_global_class_list(global_classes);
 	for (const StringName &class_name : global_classes) {
-		ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		if (p_inherit_only && ScriptServer::is_global_class_enum(class_name)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(
+				class_name, _get_global_class_completion_kind(class_name), ScriptLanguage::LOCATION_OTHER_USER_CODE);
 		r_result.insert(option.display, option);
 	}
 
@@ -2096,28 +2115,46 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 				}
 
 				String type_str = base_type.native_type;
+				bool completed_native_enum = false;
 
 				if (type_str.contains_char('.')) {
 					StringName type = type_str.get_slicec('.', 0);
 					StringName type_enum = base_type.enum_type;
 
-					List<StringName> enum_values;
+					if (GDScriptAnalyzer::class_exists(type) && ClassDB::has_enum(type, type_enum)) {
+						List<StringName> enum_values;
 
-					ClassDB::get_enum_constants(type, type_enum, &enum_values);
+						ClassDB::get_enum_constants(type, type_enum, &enum_values);
 
-					for (const StringName &E : enum_values) {
-						int location = p_recursion_depth + _get_enum_constant_location(type, E);
-						ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
-						r_result.insert(option.display, option);
+						for (const StringName &E : enum_values) {
+							int location = p_recursion_depth + _get_enum_constant_location(type, E);
+							ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+							r_result.insert(option.display, option);
+						}
+						completed_native_enum = true;
 					}
-				} else if (CoreConstants::is_global_enum(base_type.enum_type)) {
-					HashMap<StringName, int64_t> enum_values;
-					CoreConstants::get_enum_values(base_type.enum_type, &enum_values);
+				}
 
-					for (const KeyValue<StringName, int64_t> &enum_value : enum_values) {
-						int location = p_recursion_depth + ScriptLanguage::LOCATION_OTHER;
-						ScriptLanguage::CodeCompletionOption option(enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
-						r_result.insert(option.display, option);
+				if (!completed_native_enum) {
+					if (base_type.class_type == nullptr && CoreConstants::is_global_enum(base_type.native_type)) {
+						HashMap<StringName, int64_t> enum_values;
+						CoreConstants::get_enum_values(base_type.native_type, &enum_values);
+
+						for (const KeyValue<StringName, int64_t> &enum_value : enum_values) {
+							int location = p_recursion_depth + ScriptLanguage::LOCATION_OTHER;
+							ScriptLanguage::CodeCompletionOption option(
+									enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+							r_result.insert(option.display, option);
+						}
+					} else if (!type_str.contains_char('.') ||
+							(ScriptServer::is_global_class(base_type.native_type) &&
+									ScriptServer::is_global_class_enum(base_type.native_type))) {
+						for (const KeyValue<StringName, int64_t> &enum_value : base_type.enum_values) {
+							int location = p_recursion_depth + ScriptLanguage::LOCATION_OTHER_USER_CODE;
+							ScriptLanguage::CodeCompletionOption option(
+									enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+							r_result.insert(option.display, option);
+						}
 					}
 				}
 			}
@@ -2156,6 +2193,9 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 							}
 							if (GDScriptParser::theme_color_names.has(E.name)) {
 								option.theme_color_name = GDScriptParser::theme_color_names[E.name];
+							}
+							if (r_result.has(option.display)) {
+								continue;
 							}
 							r_result.insert(option.display, option);
 						}
@@ -2313,7 +2353,8 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 	LocalVector<StringName> global_classes;
 	ScriptServer::get_global_class_list(global_classes);
 	for (const StringName &class_name : global_classes) {
-		ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		ScriptLanguage::CodeCompletionOption option(
+				class_name, _get_global_class_completion_kind(class_name), ScriptLanguage::LOCATION_OTHER_USER_CODE);
 		r_result.insert(option.display, option);
 	}
 }
@@ -2573,6 +2614,38 @@ static HashMap<String, Dictionary> make_structure_samples() {
 
 static const HashMap<String, Dictionary> structure_examples = make_structure_samples();
 
+static void _populate_global_enum_completion_values(
+		GDScriptParser::CompletionContext &p_context, GDScriptParser::DataType &r_type) {
+	if (r_type.kind != GDScriptParser::DataType::ENUM || !r_type.enum_values.is_empty()) {
+		return;
+	}
+
+	GDScriptParser::ClassNode *enum_class = r_type.class_type;
+	if (enum_class == nullptr && p_context.parser != nullptr && r_type.native_type != StringName()) {
+		if (ScriptServer::is_global_class(r_type.native_type) && ScriptServer::is_global_class_enum(r_type.native_type)) {
+			const String script = ScriptServer::get_global_class_path(r_type.native_type);
+			Ref<GDScriptParserRef> parser = p_context.parser->get_depended_parser_for(script);
+			if (parser.is_valid() && parser->raise_status(GDScriptParserRef::INHERITANCE_SOLVED) == OK) {
+				enum_class = parser->get_parser()->get_tree();
+				r_type.class_type = enum_class;
+				r_type.script_path = script;
+			}
+		}
+	}
+
+	const GDScriptParser::EnumNode *enum_node = enum_class != nullptr ? enum_class->enum_file_decl : nullptr;
+	if (enum_node == nullptr) {
+		return;
+	}
+
+	for (const GDScriptParser::EnumNode::Value &element : enum_node->values) {
+		if (element.identifier == nullptr) {
+			continue;
+		}
+		r_type.enum_values[element.identifier->name] = element.value;
+	}
+}
+
 static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context, const GDScriptParser::ExpressionNode *p_expression, GDScriptCompletionIdentifier &r_type) {
 	bool found = false;
 
@@ -2593,6 +2666,7 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 			case GDScriptParser::DataType::ENUM:
 			case GDScriptParser::DataType::CLASS:
 				r_type.type = p_expression->get_datatype();
+				_populate_global_enum_completion_values(p_context, r_type.type);
 				break;
 			default:
 				break;
@@ -3169,6 +3243,32 @@ static bool _guess_identifier_type(GDScriptParser::CompletionContext &p_context,
 	// Check global scripts.
 	if (ScriptServer::is_global_class(p_identifier->name)) {
 		String script = ScriptServer::get_global_class_path(p_identifier->name);
+		if (ScriptServer::is_global_class_enum(p_identifier->name)) {
+			Ref<GDScriptParserRef> parser = p_context.parser->get_depended_parser_for(script);
+			if (parser.is_valid() && parser->raise_status(GDScriptParserRef::INHERITANCE_SOLVED) == OK) {
+				GDScriptParser::ClassNode *enum_class = parser->get_parser()->get_tree();
+				const GDScriptParser::EnumNode *enum_node = enum_class != nullptr ? enum_class->enum_file_decl : nullptr;
+				if (enum_node == nullptr) {
+					return false;
+				}
+				r_type.type = enum_node->get_datatype();
+				if (!r_type.type.is_set() || r_type.type.kind != GDScriptParser::DataType::ENUM) {
+					r_type.type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+					r_type.type.kind = GDScriptParser::DataType::ENUM;
+					r_type.type.builtin_type = Variant::DICTIONARY;
+					r_type.type.enum_type = p_identifier->name;
+					r_type.type.native_type = p_identifier->name;
+					r_type.type.is_constant = true;
+					r_type.type.is_meta_type = true;
+				}
+				r_type.type.class_type = enum_class;
+				r_type.type.script_path = script;
+				_populate_global_enum_completion_values(p_context, r_type.type);
+				r_type.value = Variant();
+				return r_type.type.is_set() && r_type.type.kind == GDScriptParser::DataType::ENUM;
+			}
+			return false;
+		}
 		if (script.to_lower().ends_with(".gd")) {
 			Ref<GDScriptParserRef> parser = p_context.parser->get_depended_parser_for(script);
 			if (parser.is_valid() && parser->raise_status(GDScriptParserRef::INTERFACE_SOLVED) == OK) {
@@ -4337,7 +4437,7 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 		} break;
 		case GDScriptParser::COMPLETION_INHERIT_TYPE: {
 			_list_available_types(true, completion_context, options);
-			_add_namespace_type_completion_options(namespace_cache, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, true, options);
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_TYPE_NAME_OR_VOID: {
@@ -4347,7 +4447,7 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			[[fallthrough]];
 		case GDScriptParser::COMPLETION_TYPE_NAME: {
 			_list_available_types(false, completion_context, options);
-			_add_namespace_type_completion_options(namespace_cache, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, false, options);
 			r_forced = true;
 		} break;
 		case GDScriptParser::COMPLETION_USES: {
@@ -4369,7 +4469,7 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 		} break;
 		case GDScriptParser::COMPLETION_PROPERTY_DECLARATION_OR_TYPE: {
 			_list_available_types(false, completion_context, options);
-			_add_namespace_type_completion_options(namespace_cache, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, false, options);
 			ScriptLanguage::CodeCompletionOption get("get", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
 			options.insert(get.display, get);
 			ScriptLanguage::CodeCompletionOption set("set", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
