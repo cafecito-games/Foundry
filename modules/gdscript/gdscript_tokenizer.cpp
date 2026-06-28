@@ -108,6 +108,7 @@ static const char *token_names[] = {
 	"breakpoint", // BREAKPOINT,
 	"class", // CLASS,
 	"class_name", // CLASS_NAME,
+	"enum_name", // ENUM_NAME,
 	"const", // TK_CONST,
 	"enum", // ENUM,
 	"extends", // EXTENDS,
@@ -229,6 +230,7 @@ bool GDScriptTokenizer::Token::is_node_name() const {
 		case BREAKPOINT:
 		case CLASS_NAME:
 		case CLASS:
+		case ENUM_NAME:
 		case TK_CONST:
 		case CONST_PI:
 		case CONST_INF:
@@ -533,6 +535,7 @@ GDScriptTokenizer::Token GDScriptTokenizerText::annotation() {
 	KEYWORD("elif", Token::ELIF)             \
 	KEYWORD("else", Token::ELSE)             \
 	KEYWORD("enum", Token::ENUM)             \
+	KEYWORD("enum_name", Token::ENUM_NAME)   \
 	KEYWORD("extends", Token::EXTENDS)       \
 	KEYWORD_GROUP('f')                       \
 	KEYWORD("final", Token::FINAL)           \

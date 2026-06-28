@@ -65,9 +65,21 @@ TEST_CASE("[Modules][GDScript] Language reserved words include namespace declara
 
 TEST_CASE("[Modules][GDScript] Language reserved words include hard trait declarations") {
 	Vector<String> reserved_words = GDScriptLanguage::get_singleton()->get_reserved_words();
+	CHECK(reserved_words.has("enum_name"));
 	CHECK(reserved_words.has("trait"));
 	CHECK(reserved_words.has("trait_name"));
 	CHECK_FALSE(reserved_words.has("uses"));
+}
+
+TEST_CASE("[Modules][GDScript] Tokenizer emits ENUM_NAME for the enum_name keyword") {
+	CHECK_EQ(GDScriptTokenizerBuffer::TOKENIZER_VERSION, 106);
+
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code("enum_name");
+	GDScriptTokenizer::Token token = tokenizer.scan();
+	CHECK(token.type == GDScriptTokenizer::Token::ENUM_NAME);
+	CHECK_EQ(token.get_name(), String("enum_name"));
+	CHECK(token.is_node_name());
 }
 
 TEST_CASE("[Modules][GDScript] Language reserved words include abstract but not async") {
