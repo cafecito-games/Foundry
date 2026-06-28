@@ -139,6 +139,13 @@ GDREGISTER_ABSTRACT_CLASS	FOUNDRY_REGISTER_ABSTRACT_CLASS	C
 GDREGISTER_CLASS	FOUNDRY_REGISTER_CLASS	C
 GDSOFTCLASS	FOUNDRY_SOFTCLASS	C
 GDCLASS	FOUNDRY_CLASS	C	apply AFTER GDREGISTER_*/GDSOFTCLASS
+# Internal sentinel for the virtual-call machinery, emitted by
+# core/object/make_virtuals.py. Preceded by an underscore, so the auto-scan
+# word-boundary token regex cannot reach it; needs an explicit full-token rule.
+_INVALID_GDVIRTUAL_FUNC_ADDR	_INVALID_FOUNDRY_VIRTUAL_FUNC_ADDR	C	gdvirtual sentinel constant
+# Member flag in AnimationMixer that embeds the GDVIRTUAL_CALL macro name mid-
+# identifier (preceded by "is_"), so the word-boundary engine cannot reach it.
+is_GDVIRTUAL_CALL_post_process_key_value	is_FOUNDRY_VIRTUAL_CALL_post_process_key_value	C	embedded macro name in member flag
 .gdextension	.foundryextension	B	file format extension
 .gdignore	.fsignore	A
 .gdc	.fsc	A	compiled script
