@@ -673,7 +673,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 	TEST_CASE("[workspace][document_symbol]") {
 		EditorFileSystem *efs = memnew(EditorFileSystem);
@@ -1051,7 +1050,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("[textDocument][definition] resolves GDScript namespaces") {
@@ -1078,7 +1076,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("[textDocument][definition] leaves ambiguous GDScript namespace imports unresolved") {
@@ -1101,7 +1098,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("[textDocument][rename] updates GDScript namespace references") {
@@ -1135,7 +1131,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("[textDocument][definition] resolves trait references") {
@@ -1156,7 +1151,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("[textDocument][definition] resolves custom annotation references") {
@@ -1190,7 +1184,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("[textDocument][rename] updates trait declarations and uses references") {
@@ -1216,7 +1209,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("[textDocument][codeAction] exposes refactors") {
@@ -1366,7 +1358,6 @@ func f():
 
 		memdelete(proto);
 		memdelete(efs);
-		finish_language();
 	}
 
 	TEST_CASE("BBCode to markdown conversion") {

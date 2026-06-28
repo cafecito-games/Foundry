@@ -95,7 +95,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Cross-file verification runs purely in memory and leaves no residual override or disk state") {
@@ -143,7 +142,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A candidate that breaks a dependent is rejected with a diagnostic") {
@@ -185,7 +183,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Bisection drops only the offending candidate and keeps the rest") {
@@ -242,7 +239,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A batch above the bisection ceiling still drops only the offending candidates") {
@@ -294,7 +290,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Offenders are isolated independently across multiple file chunks") {
@@ -369,7 +364,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Dependent-break rejection is stable across repeated verify calls") {
@@ -416,7 +410,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Dependent rejection survives a provider edited on disk between verify calls") {
@@ -478,7 +471,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Dependent rejection survives a universe expanded between verify calls") {
@@ -525,7 +517,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Dependent rejection holds when the touched provider is outside the universe") {
@@ -564,7 +555,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A candidate with an out-of-range edit is rejected with 'could not be applied'") {
@@ -613,7 +603,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A net-zero diagnostic swap is rejected, not accepted") {
@@ -678,7 +667,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Strict preview lists violations without modifying files") {
@@ -712,7 +700,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Strict preview categorizes nullable violations") {
@@ -743,7 +730,6 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

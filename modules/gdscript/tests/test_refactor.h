@@ -4363,7 +4363,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Rename uses caller source over stale protocol cache") {
@@ -4397,7 +4396,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Implement abstract recovers a cross-file base default from the base file") {
@@ -4419,7 +4417,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Implement abstract recomputes cross-file base stubs after the base changes") {
@@ -4473,7 +4470,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Implement abstract recovers a cross-file trait default from the trait file") {
@@ -4504,7 +4500,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Add type annotation renders namespaced classes with the minimal in-scope spelling") {
@@ -4599,7 +4594,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Add type annotation infers parameters from resolved call sites") {
@@ -4693,7 +4687,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Implement abstract methods resolves a base defined in another file") {
@@ -4735,7 +4728,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Implement abstract methods resolves a multi-level cross-file base chain") {
@@ -4770,7 +4762,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Implement abstract: root class with only header lines appends at end of file") {
@@ -4806,7 +4797,6 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 #endif // GDSCRIPT_NO_LSP
 }

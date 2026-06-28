@@ -184,7 +184,6 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Driver excludes third-party code by default and reports it as skipped") {
@@ -225,7 +224,6 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Driver reports a scanned file it cannot analyze instead of dropping it") {
@@ -269,7 +267,6 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Driver does not commit an edit that would break a dependent and reports the skip") {
@@ -312,7 +309,6 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Driver edge cases: empty project and unreadable root") {
@@ -339,7 +335,6 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Driver's VCS safety guard blocks writes on a dirty working tree, then proceeds once acknowledged (issue #42)") {
@@ -390,7 +385,6 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Driver's VCS safety guard proceeds on a clean working tree without consulting git (issue #42)") {
@@ -425,7 +419,6 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

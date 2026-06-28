@@ -1,0 +1,94 @@
+/**************************************************************************/
+/*  test_suite_language_hoist.h                                           */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#pragma once
+
+#ifdef TOOLS_ENABLED
+
+#include "tests/test_macros.h"
+
+#include "gdscript_test_runner.h"
+#include "test_refactor.h" // GDScriptTests::initialize, root.
+
+#ifndef GDSCRIPT_NO_LSP
+
+#include "editor/file_system/editor_file_system.h"
+
+namespace GDScriptTests {
+
+namespace {
+// Mirrors the standard protocol-using case shape (EditorFileSystem + protocol
+// per case) and asserts the heavy language setup is shared, not paid again, when
+// a case re-enters `initialize()` after the suite already brought the language
+// up. Phrased as an in-case invariant so it holds under any test ordering
+// (`--order-by=rand` interleaves suites, legitimately tearing the language down
+// and back up between this suite's cases).
+void check_language_setup_is_shared() {
+	EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+
+	GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+	REQUIRE(protocol);
+	CHECK(GDScriptTests::is_language_initialized());
+
+	// A redundant `init_language()` while the language is already up must be a
+	// no-op: the expensive setup counter does not move. This is the per-suite
+	// hoist in miniature — every case after the first in a suite hits this fast
+	// path instead of tearing the language down and rebuilding it.
+	const uint64_t count_before = GDScriptTests::get_init_language_count();
+	GDScriptTests::init_language(GDScriptTests::root);
+	CHECK_EQ(GDScriptTests::get_init_language_count(), count_before);
+	CHECK(GDScriptTests::is_language_initialized());
+
+	memdelete(protocol);
+	memdelete(editor_file_system);
+}
+} // namespace
+
+TEST_SUITE("[Modules][GDScript][SuiteLanguageHoist]") {
+	TEST_CASE("Redundant language setup is skipped while the language is up") {
+		check_language_setup_is_shared();
+	}
+
+	// Running the same check across several cases also exercises the per-suite
+	// fixture's between-case reset: the language must stay usable afterwards.
+	TEST_CASE("Language stays shared across a second case in the suite") {
+		check_language_setup_is_shared();
+	}
+
+	TEST_CASE("Language stays shared across a third case in the suite") {
+		check_language_setup_is_shared();
+	}
+}
+
+} // namespace GDScriptTests
+
+#endif // GDSCRIPT_NO_LSP
+
+#endif // TOOLS_ENABLED

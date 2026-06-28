@@ -141,7 +141,6 @@ TEST_SUITE("[Modules][GDScript][BatchCandidates]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Collapses duplicate input paths to a single entry") {
@@ -163,7 +162,6 @@ TEST_SUITE("[Modules][GDScript][BatchCandidates]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Reports an unreadable file without aborting the batch") {
@@ -203,7 +201,6 @@ TEST_SUITE("[Modules][GDScript][BatchCandidates]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Reports an unanalyzable file without aborting the batch") {
@@ -247,7 +244,6 @@ TEST_SUITE("[Modules][GDScript][BatchCandidates]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Rejects unsupported refactor kinds") {
@@ -303,7 +299,6 @@ TEST_SUITE("[Modules][GDScript][BatchCandidates]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

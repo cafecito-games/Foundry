@@ -106,7 +106,6 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Apply run commits the inferred annotations to disk") {
@@ -139,7 +138,6 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Strict request is evaluated without flipping settings when activation is off") {
@@ -170,7 +168,6 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Unconfirmed strict activation is a no-op that reports why it was blocked") {
@@ -208,7 +205,6 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Confirmed activation on a clean project flips and is not flagged blocked") {
@@ -255,7 +251,6 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A fatal report (unreadable root) short-circuits the wizard") {
@@ -273,7 +268,6 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Follow-up report is persisted when a path is requested") {
@@ -297,7 +291,6 @@ TEST_SUITE("[Modules][GDScript][MigrationWizard]") {
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 

@@ -132,7 +132,6 @@ TEST_SUITE("[Modules][GDScript][StrictInvalidation]") {
 		GDScriptCache::clear();
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("A settings change that leaves the strict flags untouched does not invalidate") {
@@ -167,7 +166,6 @@ TEST_SUITE("[Modules][GDScript][StrictInvalidation]") {
 		GDScriptCache::clear();
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 
 	TEST_CASE("Flipping a strict flag re-publishes diagnostics for an open LSP document") {
@@ -212,7 +210,6 @@ TEST_SUITE("[Modules][GDScript][StrictInvalidation]") {
 		GDScriptCache::clear();
 		memdelete(protocol);
 		memdelete(editor_file_system);
-		GDScriptTests::finish_language();
 	}
 }
 
