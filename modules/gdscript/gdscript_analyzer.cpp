@@ -359,31 +359,6 @@ static bool call_argument_is_same_receiver(
 	return expression_is_same_reference(subscript->base, p_argument);
 }
 
-static bool self_container_literal_argument_was_validated(
-		const GDScriptParser::DataType &p_parameter_type,
-		const GDScriptParser::ExpressionNode *p_argument,
-		const GDScriptParser::DataType &p_argument_type) {
-	if (p_argument == nullptr || !_datatype_contains_self_type_parameter(p_parameter_type)) {
-		return false;
-	}
-	if (p_parameter_type.kind != GDScriptParser::DataType::BUILTIN) {
-		return false;
-	}
-	if (p_parameter_type.builtin_type == Variant::ARRAY) {
-		if (p_argument->type != GDScriptParser::Node::ARRAY || !p_parameter_type.has_container_element_type(0)) {
-			return false;
-		}
-	} else if (p_parameter_type.builtin_type == Variant::DICTIONARY) {
-		if (p_argument->type != GDScriptParser::Node::DICTIONARY || !p_parameter_type.has_container_element_types()) {
-			return false;
-		}
-	} else {
-		return false;
-	}
-
-	return _datatype_strict_identity_equal(_substitute_self_type_parameter_with_bounds(p_parameter_type), p_argument_type);
-}
-
 static String callable_type_string_with_signature(
 		const GDScriptParser::DataType &p_callable_type,
 		const Vector<GDScriptParser::DataType> &p_callable_parameter_types) {
@@ -6826,8 +6801,7 @@ void GDScriptAnalyzer::update_const_expression_builtin_type(GDScriptParser::Expr
 void GDScriptAnalyzer::update_array_literal_element_type(GDScriptParser::ArrayNode *p_array,
 		const GDScriptParser::DataType &p_element_type,
 		bool p_self_parameter_contract,
-		bool p_substitute_self_runtime_type,
-		const GDScriptParser::CallNode *p_self_contract_call) {
+		bool p_substitute_self_runtime_type) {
 	GDScriptParser::DataType expected_type = p_element_type;
 
 	for (int i = 0; i < p_array->elements.size(); i++) {
@@ -6837,15 +6811,13 @@ void GDScriptAnalyzer::update_array_literal_element_type(GDScriptParser::ArrayNo
 					static_cast<GDScriptParser::ArrayNode *>(element_node),
 					expected_type.get_container_element_type(0),
 					p_self_parameter_contract,
-					p_substitute_self_runtime_type,
-					p_self_contract_call);
+					p_substitute_self_runtime_type);
 		} else if (expected_type.kind == GDScriptParser::DataType::BUILTIN && expected_type.builtin_type == Variant::DICTIONARY && expected_type.has_container_element_types() && element_node->type == GDScriptParser::Node::DICTIONARY) {
 			update_dictionary_literal_element_type(static_cast<GDScriptParser::DictionaryNode *>(element_node),
 					expected_type.get_container_element_type_or_variant(0),
 					expected_type.get_container_element_type_or_variant(1),
 					p_self_parameter_contract,
-					p_substitute_self_runtime_type,
-					p_self_contract_call);
+					p_substitute_self_runtime_type);
 		}
 		if (element_node->is_constant) {
 			update_const_expression_builtin_type(element_node, expected_type, "include");
@@ -6878,8 +6850,7 @@ void GDScriptAnalyzer::update_array_literal_element_type(GDScriptParser::ArrayNo
 			continue;
 		}
 		if (_datatype_contains_self_type_parameter(expected_type)) {
-			const bool valid_self_element = (p_self_parameter_contract && call_argument_is_same_receiver(p_self_contract_call, element_node)) ||
-					(p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_type, actual_type) : _datatype_matches_self_return_contract(expected_type, actual_type));
+			const bool valid_self_element = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_type, actual_type) : _datatype_matches_self_return_contract(expected_type, actual_type);
 			if (!valid_self_element) {
 				push_error(vformat(R"(Cannot have an element of type "%s" in an array of type "Array[%s]".)", actual_type.to_string(), expected_type.to_string()), element_node);
 				return;
@@ -6908,8 +6879,7 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 		const GDScriptParser::DataType &p_key_element_type,
 		const GDScriptParser::DataType &p_value_element_type,
 		bool p_self_parameter_contract,
-		bool p_substitute_self_runtime_type,
-		const GDScriptParser::CallNode *p_self_contract_call) {
+		bool p_substitute_self_runtime_type) {
 	GDScriptParser::DataType expected_key_type = p_key_element_type;
 	GDScriptParser::DataType expected_value_type = p_value_element_type;
 
@@ -6920,15 +6890,13 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 					static_cast<GDScriptParser::ArrayNode *>(key_element_node),
 					expected_key_type.get_container_element_type(0),
 					p_self_parameter_contract,
-					p_substitute_self_runtime_type,
-					p_self_contract_call);
+					p_substitute_self_runtime_type);
 		} else if (expected_key_type.kind == GDScriptParser::DataType::BUILTIN && expected_key_type.builtin_type == Variant::DICTIONARY && expected_key_type.has_container_element_types() && key_element_node->type == GDScriptParser::Node::DICTIONARY) {
 			update_dictionary_literal_element_type(static_cast<GDScriptParser::DictionaryNode *>(key_element_node),
 					expected_key_type.get_container_element_type_or_variant(0),
 					expected_key_type.get_container_element_type_or_variant(1),
 					p_self_parameter_contract,
-					p_substitute_self_runtime_type,
-					p_self_contract_call);
+					p_substitute_self_runtime_type);
 		}
 		if (key_element_node->is_constant) {
 			update_const_expression_builtin_type(key_element_node, expected_key_type, "include");
@@ -6957,8 +6925,7 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 			}
 			mark_node_unsafe(key_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_key_type)) {
-			const bool valid_self_key = (p_self_parameter_contract && call_argument_is_same_receiver(p_self_contract_call, key_element_node)) ||
-					(p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_key_type, actual_key_type) : _datatype_matches_self_return_contract(expected_key_type, actual_key_type));
+			const bool valid_self_key = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_key_type, actual_key_type) : _datatype_matches_self_return_contract(expected_key_type, actual_key_type);
 			if (!valid_self_key) {
 				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
 				return;
@@ -6978,15 +6945,13 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 					static_cast<GDScriptParser::ArrayNode *>(value_element_node),
 					expected_value_type.get_container_element_type(0),
 					p_self_parameter_contract,
-					p_substitute_self_runtime_type,
-					p_self_contract_call);
+					p_substitute_self_runtime_type);
 		} else if (expected_value_type.kind == GDScriptParser::DataType::BUILTIN && expected_value_type.builtin_type == Variant::DICTIONARY && expected_value_type.has_container_element_types() && value_element_node->type == GDScriptParser::Node::DICTIONARY) {
 			update_dictionary_literal_element_type(static_cast<GDScriptParser::DictionaryNode *>(value_element_node),
 					expected_value_type.get_container_element_type_or_variant(0),
 					expected_value_type.get_container_element_type_or_variant(1),
 					p_self_parameter_contract,
-					p_substitute_self_runtime_type,
-					p_self_contract_call);
+					p_substitute_self_runtime_type);
 		}
 		if (value_element_node->is_constant) {
 			update_const_expression_builtin_type(value_element_node, expected_value_type, "include");
@@ -7014,8 +6979,7 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 			}
 			mark_node_unsafe(value_element_node);
 		} else if (_datatype_contains_self_type_parameter(expected_value_type)) {
-			const bool valid_self_value = (p_self_parameter_contract && call_argument_is_same_receiver(p_self_contract_call, value_element_node)) ||
-					(p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_value_type, actual_value_type) : _datatype_matches_self_return_contract(expected_value_type, actual_value_type));
+			const bool valid_self_value = p_self_parameter_contract ? _datatype_matches_self_parameter_contract(expected_value_type, actual_value_type) : _datatype_matches_self_return_contract(expected_value_type, actual_value_type);
 			if (!valid_self_value) {
 				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
 				return;
@@ -8095,12 +8059,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			int index = E.key;
 			if (index < par_types.size() && par_types.get(index).is_hard_type() && par_types.get(index).has_container_element_type(0)) {
 				const GDScriptParser::DataType par_type = par_types.get(index);
-				const bool self_parameter_contract = _datatype_contains_self_type_parameter(par_type);
 				update_array_literal_element_type(E.value,
 						par_type.get_container_element_type(0),
-						self_parameter_contract,
-						false,
-						self_parameter_contract ? p_call : nullptr);
+						_datatype_contains_self_type_parameter(par_type));
 			}
 		}
 		for (const KeyValue<int, GDScriptParser::DictionaryNode *> &E : dictionaries) {
@@ -8109,8 +8070,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				const GDScriptParser::DataType par_type = par_types.get(index);
 				GDScriptParser::DataType key = par_type.get_container_element_type_or_variant(0);
 				GDScriptParser::DataType value = par_type.get_container_element_type_or_variant(1);
-				const bool self_parameter_contract = _datatype_contains_self_type_parameter(par_type);
-				update_dictionary_literal_element_type(E.value, key, value, self_parameter_contract, false, self_parameter_contract ? p_call : nullptr);
+				update_dictionary_literal_element_type(E.value, key, value, _datatype_contains_self_type_parameter(par_type));
 			}
 		}
 		p_call->resolved_parameter_types.clear();
@@ -10459,7 +10419,8 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 						// chain, so `IntList extends List[int]` sees `func get() -> T` as `-> int`. The
 						// method's own type parameters shadow same-named class ones and are left intact.
 						const GDScriptParser::DataType specialized_base = specialize_ancestor_type(base, script_class);
-						const GDScriptParser::DataType parameter_self_type = _self_type_parameter_from_bound(self_type);
+						const GDScriptParser::DataType parameter_self_type =
+								member.function->is_static ? self_type : _self_type_parameter_from_bound(self_type);
 						callable_type = substitute_member_type(
 								callable_type, specialized_base, member.function, &parameter_self_type);
 						callable_type.method_return_type.clear();
@@ -14279,7 +14240,6 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 
 		if (_datatype_contains_self_type_parameter(par_type)) {
 			if (!_datatype_matches_self_parameter_contract(par_type, arg_type) &&
-					!self_container_literal_argument_was_validated(par_type, p_call->arguments[i], arg_type) &&
 					!(_is_bare_self_value_parameter(par_type) && call_argument_is_same_receiver(p_call, p_call->arguments[i]))) {
 				push_error(make_invalid_argument_error(
 								   p_call->function_name,

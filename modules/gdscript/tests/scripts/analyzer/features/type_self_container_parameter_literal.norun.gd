@@ -1,8 +1,8 @@
-class Base:
-	func take_items(_items: Array[Self]) -> void:
+final class Base:
+	final func take_items(_items: Array[Self]) -> void:
 		pass
 
-	func take_mapping(_mapping: Dictionary[String, Self]) -> void:
+	final func take_mapping(_mapping: Dictionary[String, Self]) -> void:
 		pass
 
 	func check() -> void:
@@ -10,10 +10,5 @@ class Base:
 		take_mapping({ "item": self })
 
 
-class Child:
-	extends Base
-
-
 func test() -> void:
 	Base.new().check()
-	Child.new().check()
