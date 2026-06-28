@@ -31,8 +31,12 @@
 #include "gdscript_autoload_index.h"
 
 #include "gdscript.h"
+#include "gdscript_analyzer.h"
+#include "gdscript_cache.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/config_file.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_uid.h"
@@ -40,6 +44,10 @@
 #include "core/object/script_language.h"
 
 namespace {
+
+static constexpr const char *AUTOLOAD_INDEX_CACHE_FILE = "autoload_index_cache.cfg";
+static constexpr const char *AUTOLOAD_INDEX_CACHE_SECTION = "";
+static constexpr const char *AUTOLOAD_INDEX_CACHE_ENTRIES_KEY = "entries";
 
 struct OrderedAutoloadEntry {
 	GDScriptAutoloadIndexEntry entry;
@@ -76,6 +84,118 @@ void add_diagnostic(GDScriptAutoloadIndexEntry &r_entry, GDScriptAutoloadIndexDi
 	diagnostic.code = p_code;
 	diagnostic.message = p_message;
 	r_entry.diagnostics.push_back(diagnostic);
+}
+
+String source_to_string(GDScriptAutoloadIndexEntry::Source p_source) {
+	switch (p_source) {
+		case GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS:
+			return "project_settings";
+		case GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION:
+			return "script_annotation";
+	}
+	return "project_settings";
+}
+
+GDScriptAutoloadIndexEntry::Source source_from_string(const String &p_source) {
+	if (p_source == "script_annotation") {
+		return GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION;
+	}
+	return GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
+}
+
+Dictionary dependency_to_dictionary(const GDScriptAutoloadIndexDependency &p_dependency) {
+	Dictionary dictionary;
+	dictionary["name"] = p_dependency.name;
+	dictionary["is_autoload"] = p_dependency.is_autoload;
+	return dictionary;
+}
+
+GDScriptAutoloadIndexDependency dependency_from_dictionary(const Dictionary &p_dictionary) {
+	GDScriptAutoloadIndexDependency dependency;
+	dependency.name = StringName(String(p_dictionary.get("name", String())));
+	dependency.is_autoload = p_dictionary.get("is_autoload", true);
+	return dependency;
+}
+
+Dictionary diagnostic_to_dictionary(const GDScriptAutoloadIndexDiagnostic &p_diagnostic) {
+	Dictionary dictionary;
+	dictionary["code"] = p_diagnostic.code;
+	dictionary["message"] = p_diagnostic.message;
+	dictionary["is_error"] = p_diagnostic.is_error;
+	return dictionary;
+}
+
+GDScriptAutoloadIndexDiagnostic diagnostic_from_dictionary(const Dictionary &p_dictionary) {
+	GDScriptAutoloadIndexDiagnostic diagnostic;
+	diagnostic.code = static_cast<GDScriptAutoloadIndexDiagnostic::Code>(int(p_dictionary.get("code", 0)));
+	diagnostic.message = p_dictionary.get("message", String());
+	diagnostic.is_error = p_dictionary.get("is_error", true);
+	return diagnostic;
+}
+
+Dictionary entry_to_dictionary(const GDScriptAutoloadIndexEntry &p_entry) {
+	Dictionary dictionary;
+	dictionary["name"] = p_entry.name;
+	dictionary["path"] = p_entry.path;
+	dictionary["is_singleton"] = p_entry.is_singleton;
+	dictionary["order"] = p_entry.order;
+	dictionary["source"] = source_to_string(p_entry.source);
+	dictionary["global_class_name"] = p_entry.global_class_name;
+	dictionary["script_path"] = p_entry.script_path;
+	dictionary["native_base"] = p_entry.native_base;
+	dictionary["is_node"] = p_entry.is_node;
+	dictionary["is_tool"] = p_entry.is_tool;
+	dictionary["is_same_script_global_class"] = p_entry.is_same_script_global_class;
+
+	Array dependencies;
+	for (const GDScriptAutoloadIndexDependency &dependency : p_entry.dependencies) {
+		dependencies.push_back(dependency_to_dictionary(dependency));
+	}
+	dictionary["dependencies"] = dependencies;
+
+	Array diagnostics;
+	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_entry.diagnostics) {
+		diagnostics.push_back(diagnostic_to_dictionary(diagnostic));
+	}
+	dictionary["diagnostics"] = diagnostics;
+
+	return dictionary;
+}
+
+bool entry_from_dictionary(const Dictionary &p_dictionary, GDScriptAutoloadIndexEntry &r_entry) {
+	if (!p_dictionary.has("name") || !p_dictionary.has("path")) {
+		return false;
+	}
+
+	r_entry.name = StringName(String(p_dictionary["name"]));
+	r_entry.path = p_dictionary["path"];
+	r_entry.is_singleton = p_dictionary.get("is_singleton", true);
+	r_entry.order = p_dictionary.get("order", 0);
+	r_entry.source = source_from_string(p_dictionary.get("source", "project_settings"));
+	r_entry.global_class_name = StringName(String(p_dictionary.get("global_class_name", String())));
+	r_entry.script_path = p_dictionary.get("script_path", String());
+	r_entry.native_base = StringName(String(p_dictionary.get("native_base", String())));
+	r_entry.is_node = p_dictionary.get("is_node", false);
+	r_entry.is_tool = p_dictionary.get("is_tool", false);
+	r_entry.is_same_script_global_class = p_dictionary.get("is_same_script_global_class", false);
+
+	Array dependencies = p_dictionary.get("dependencies", Array());
+	for (const Variant &dependency_variant : dependencies) {
+		if (dependency_variant.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		r_entry.dependencies.push_back(dependency_from_dictionary(dependency_variant));
+	}
+
+	Array diagnostics = p_dictionary.get("diagnostics", Array());
+	for (const Variant &diagnostic_variant : diagnostics) {
+		if (diagnostic_variant.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		r_entry.diagnostics.push_back(diagnostic_from_dictionary(diagnostic_variant));
+	}
+
+	return r_entry.name != StringName();
 }
 
 bool is_dependency_diagnostic(GDScriptAutoloadIndexDiagnostic::Code p_code) {
@@ -598,6 +718,7 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings() {
 	}
 
 	HashMap<StringName, int> settings_order;
+	HashMap<StringName, bool> prepended_settings;
 	List<PropertyInfo> properties;
 	project_settings->get_property_list(&properties);
 	for (const PropertyInfo &property : properties) {
@@ -606,6 +727,9 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings() {
 		}
 		const StringName autoload_name = property.name.get_slicec('/', 1);
 		settings_order[autoload_name] = project_settings->get_order(property.name);
+		if (property.name.begins_with("autoload_prepend/")) {
+			prepended_settings[autoload_name] = true;
+		}
 	}
 
 	Vector<OrderedAutoloadEntry> ordered_entries;
@@ -621,7 +745,8 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings() {
 		ordered.entry.source = GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
 
 		const int *setting_order = settings_order.getptr(autoload.name);
-		ordered.entry.order = setting_order != nullptr ? *setting_order : source_index;
+		const int order = setting_order != nullptr ? *setting_order : source_index;
+		ordered.entry.order = prepended_settings.has(autoload.name) ? -order - 1 : order;
 
 		populate_resource_metadata(ordered.entry);
 		populate_name_diagnostics(ordered.entry);
@@ -640,6 +765,48 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings() {
 	version++;
 }
 
+Error GDScriptAutoloadIndex::rebuild_from_cache_and_project_settings(const String &p_cache_path) {
+	Vector<GDScriptAutoloadIndexEntry> merged_entries;
+
+	const String cache_path = p_cache_path.is_empty() ? get_cache_path() : p_cache_path;
+	if (!cache_path.is_empty() && FileAccess::exists(cache_path)) {
+		GDScriptAutoloadIndex cached_index;
+		const Error cache_err = cached_index.load_from_cache(cache_path);
+		if (cache_err != OK) {
+			return cache_err;
+		}
+		for (const GDScriptAutoloadIndexEntry &entry : cached_index.get_entries()) {
+			merged_entries.push_back(entry);
+		}
+	}
+
+	GDScriptAutoloadIndex project_settings_index;
+	project_settings_index.rebuild_from_project_settings();
+	for (const GDScriptAutoloadIndexEntry &entry : project_settings_index.get_entries()) {
+		merged_entries.push_back(entry);
+	}
+
+	rebuild_from_entries(merged_entries);
+	return OK;
+}
+
+Error GDScriptAutoloadIndex::rebuild_for_runtime_startup(const String &p_cache_path) {
+#ifdef TOOLS_ENABLED
+	rebuild_from_project_settings_and_script_annotations();
+
+	const String cache_path = p_cache_path.is_empty() ? get_cache_path() : p_cache_path;
+	if (!cache_path.is_empty()) {
+		const Error cache_err = save_to_cache(cache_path);
+		if (cache_err != OK) {
+			WARN_PRINT(vformat("Failed to save GDScript autoload index cache to \"%s\".", cache_path));
+		}
+	}
+	return OK;
+#else
+	return rebuild_from_cache_and_project_settings(p_cache_path);
+#endif // TOOLS_ENABLED
+}
+
 void GDScriptAutoloadIndex::rebuild_from_entries(const Vector<GDScriptAutoloadIndexEntry> &p_entries) {
 	clear();
 	entries = p_entries;
@@ -652,6 +819,101 @@ void GDScriptAutoloadIndex::rebuild_from_entries(const Vector<GDScriptAutoloadIn
 	rebuild_lookups();
 	version++;
 }
+
+String GDScriptAutoloadIndex::get_cache_path() {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings == nullptr) {
+		return String();
+	}
+	return project_settings->get_project_data_path().path_join(AUTOLOAD_INDEX_CACHE_FILE);
+}
+
+Error GDScriptAutoloadIndex::save_to_cache(const String &p_cache_path) const {
+	const String cache_path = p_cache_path.is_empty() ? get_cache_path() : p_cache_path;
+	ERR_FAIL_COND_V(cache_path.is_empty(), ERR_FILE_BAD_PATH);
+
+	const Error dir_err = DirAccess::make_dir_recursive_absolute(cache_path.get_base_dir());
+	ERR_FAIL_COND_V(dir_err != OK, dir_err);
+
+	Array serialized_entries;
+	for (const GDScriptAutoloadIndexEntry &entry : entries) {
+		serialized_entries.push_back(entry_to_dictionary(entry));
+	}
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->set_value(AUTOLOAD_INDEX_CACHE_SECTION, AUTOLOAD_INDEX_CACHE_ENTRIES_KEY, serialized_entries);
+	return config->save(cache_path);
+}
+
+Error GDScriptAutoloadIndex::load_from_cache(const String &p_cache_path) {
+	const String cache_path = p_cache_path.is_empty() ? get_cache_path() : p_cache_path;
+	ERR_FAIL_COND_V(cache_path.is_empty(), ERR_FILE_BAD_PATH);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const Error load_err = config->load(cache_path);
+	if (load_err != OK) {
+		return load_err;
+	}
+
+	Vector<GDScriptAutoloadIndexEntry> loaded_entries;
+	const Array serialized_entries = config->get_value(AUTOLOAD_INDEX_CACHE_SECTION, AUTOLOAD_INDEX_CACHE_ENTRIES_KEY, Array());
+	for (const Variant &entry_variant : serialized_entries) {
+		if (entry_variant.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+
+		GDScriptAutoloadIndexEntry entry;
+		if (entry_from_dictionary(entry_variant, entry)) {
+			loaded_entries.push_back(entry);
+		}
+	}
+
+	rebuild_from_entries(loaded_entries);
+	return OK;
+}
+
+#ifdef TOOLS_ENABLED
+void GDScriptAutoloadIndex::rebuild_from_project_settings_and_script_annotations() {
+	Vector<GDScriptAutoloadIndexEntry> merged_entries;
+
+	GDScriptLanguage *gdscript = GDScriptLanguage::get_singleton();
+	if (gdscript != nullptr) {
+		const StringName gdscript_language_name = gdscript->get_name();
+		LocalVector<StringName> global_classes;
+		ScriptServer::get_global_class_list(global_classes);
+
+		for (const StringName &global_class : global_classes) {
+			if (ScriptServer::get_global_class_language(global_class) != gdscript_language_name) {
+				continue;
+			}
+
+			const String script_path = ScriptServer::get_global_class_path(global_class);
+			Error parser_err = OK;
+			Ref<GDScriptParserRef> parser_ref = GDScriptCache::get_parser(script_path, GDScriptParserRef::FULLY_SOLVED, parser_err);
+			if (parser_err != OK || parser_ref.is_null() || parser_ref->get_analyzer() == nullptr) {
+				continue;
+			}
+
+			const GDScriptAutoloadIndex &script_index = parser_ref->get_analyzer()->get_autoload_index();
+			for (const GDScriptAutoloadIndexEntry &entry : script_index.get_entries()) {
+				if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+					merged_entries.push_back(entry);
+				}
+			}
+		}
+	}
+
+	GDScriptAutoloadIndex project_settings_index;
+	project_settings_index.rebuild_from_project_settings();
+	for (const GDScriptAutoloadIndexEntry &entry : project_settings_index.get_entries()) {
+		merged_entries.push_back(entry);
+	}
+
+	rebuild_from_entries(merged_entries);
+}
+#endif // TOOLS_ENABLED
 
 bool GDScriptAutoloadIndex::has_autoload(const StringName &p_name) const {
 	return name_lookup.has(p_name);
@@ -670,4 +932,31 @@ const GDScriptAutoloadIndexEntry *GDScriptAutoloadIndex::get_by_path(const Strin
 const GDScriptAutoloadIndexEntry *GDScriptAutoloadIndex::get_by_global_class(const StringName &p_global_class_name) const {
 	const int *index = global_class_lookup.getptr(p_global_class_name);
 	return index != nullptr ? &entries[*index] : nullptr;
+}
+
+Vector<ProjectSettings::AutoloadInfo> GDScriptAutoloadIndex::get_startup_autoloads() const {
+	Vector<ProjectSettings::AutoloadInfo> autoloads;
+	for (const GDScriptAutoloadIndexEntry &entry : entries) {
+		if (entry.path.is_empty()) {
+			continue;
+		}
+
+		ProjectSettings::AutoloadInfo info;
+		info.name = entry.name;
+		info.path = entry.path;
+		info.is_singleton = entry.is_singleton;
+		autoloads.push_back(info);
+	}
+	return autoloads;
+}
+
+void GDScriptAutoloadIndex::register_startup_autoloads_in_project_settings() const {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings == nullptr) {
+		return;
+	}
+
+	for (const ProjectSettings::AutoloadInfo &info : get_startup_autoloads()) {
+		project_settings->add_autoload(info);
+	}
 }

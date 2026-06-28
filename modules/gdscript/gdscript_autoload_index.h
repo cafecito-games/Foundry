@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/config/project_settings.h"
 #include "core/string/string_name.h"
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
@@ -95,11 +96,22 @@ class GDScriptAutoloadIndex {
 public:
 	void rebuild_from_project_settings();
 	void rebuild_from_entries(const Vector<GDScriptAutoloadIndexEntry> &p_entries);
+	Error rebuild_from_cache_and_project_settings(const String &p_cache_path = String());
+	Error rebuild_for_runtime_startup(const String &p_cache_path = String());
+
+	static String get_cache_path();
+	Error save_to_cache(const String &p_cache_path = String()) const;
+	Error load_from_cache(const String &p_cache_path = String());
+#ifdef TOOLS_ENABLED
+	void rebuild_from_project_settings_and_script_annotations();
+#endif // TOOLS_ENABLED
 
 	bool has_autoload(const StringName &p_name) const;
 	const GDScriptAutoloadIndexEntry *get_by_name(const StringName &p_name) const;
 	const GDScriptAutoloadIndexEntry *get_by_path(const String &p_path) const;
 	const GDScriptAutoloadIndexEntry *get_by_global_class(const StringName &p_global_class_name) const;
+	Vector<ProjectSettings::AutoloadInfo> get_startup_autoloads() const;
+	void register_startup_autoloads_in_project_settings() const;
 
 	const Vector<GDScriptAutoloadIndexEntry> &get_entries() const { return entries; }
 	uint64_t get_version() const { return version; }

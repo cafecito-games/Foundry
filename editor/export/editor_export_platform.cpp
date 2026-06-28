@@ -55,10 +55,15 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "editor_export_plugin.h"
+#include "modules/modules_enabled.gen.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/main/node.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/texture.h"
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+#include "modules/gdscript/gdscript_autoload_index.h"
+#endif // MODULE_GDSCRIPT_ENABLED
 
 class EditorExportSaveProxy {
 	HashSet<String> saved_paths;
@@ -1071,6 +1076,15 @@ Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExp
 	Vector<String> files;
 
 	files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
+#ifdef MODULE_GDSCRIPT_ENABLED
+	GDScriptAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings_and_script_annotations();
+	const Error autoload_cache_err = autoload_index.save_to_cache();
+	if (autoload_cache_err != OK) {
+		WARN_PRINT(vformat("Could not save GDScript autoload index cache: %s.", error_names[autoload_cache_err]));
+	}
+	files.push_back(GDScriptAutoloadIndex::get_cache_path());
+#endif // MODULE_GDSCRIPT_ENABLED
 
 	String icon = ResourceUID::ensure_path(get_project_setting(p_preset, "application/config/icon"));
 	String splash = ResourceUID::ensure_path(get_project_setting(p_preset, "application/boot_splash/image"));
@@ -1173,11 +1187,18 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 
 		// Add autoload resources and their dependencies
+#ifdef MODULE_GDSCRIPT_ENABLED
+		GDScriptAutoloadIndex autoload_index;
+		autoload_index.rebuild_from_project_settings_and_script_annotations();
+		for (const ProjectSettings::AutoloadInfo &info : autoload_index.get_startup_autoloads()) {
+			_export_find_dependencies(info.path, paths);
+		}
+#else
 		List<PropertyInfo> props;
 		ProjectSettings::get_singleton()->get_property_list(&props);
 
 		for (const PropertyInfo &pi : props) {
-			if (!pi.name.begins_with("autoload/")) {
+			if (!pi.name.begins_with("autoload/") && !pi.name.begins_with("autoload_prepend/")) {
 				continue;
 			}
 
@@ -1189,6 +1210,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 			_export_find_dependencies(autoload_path, paths);
 		}
+#endif // MODULE_GDSCRIPT_ENABLED
 	}
 
 	//add native icons to non-resource include list
