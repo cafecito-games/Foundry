@@ -45,6 +45,8 @@
 // as `Variant nil;` inside the GDScript headers. Suppress it for the include.
 #pragma push_macro("nil")
 #undef nil
+#include "modules/gdscript/gdscript_analyzer.h"
+#include "modules/gdscript/gdscript_cache.h"
 #include "modules/gdscript/gdscript_parser.h"
 #pragma pop_macro("nil")
 
@@ -103,9 +105,25 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *p_data, size_t p_size) {
 	}
 
 	const String source = String::utf8(reinterpret_cast<const char *>(p_data), p_size);
+	const String path = "fuzz://input.gd";
 
 	GDScriptParser parser;
-	parser.parse(source, "fuzz://input.gd", false);
+	const Error parse_error = parser.parse(source, path, false);
+
+	// Only feed a clean parse tree to the analyzer; on a parse error the tree is
+	// in a recovery state the analyzer is not expected to handle. The analyzer is
+	// where this fork's stricter typing, generics, and trait resolution live, so
+	// it is the more interesting target once parsing succeeds.
+	if (parse_error == OK) {
+		GDScriptAnalyzer analyzer(&parser);
+		analyzer.analyze();
+	}
+
+	// The analyzer can register the script and its parser under `path` in the
+	// global GDScriptCache. Drop them so each iteration starts from a clean cache
+	// and a crash always reproduces from the single input that caused it.
+	GDScriptCache::remove_parser(path);
+	GDScriptCache::remove_script(path);
 
 	return 0;
 }
