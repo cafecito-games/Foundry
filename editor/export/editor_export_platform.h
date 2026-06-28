@@ -293,6 +293,7 @@ public:
 
 	Dictionary get_internal_export_files(const Ref<EditorExportPreset> &p_preset, bool p_debug);
 
+	static Error collect_forced_export_files(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_files, bool p_fail_on_required_autoload_cache = false, const String &p_autoload_cache_path = String());
 	static Vector<String> get_forced_export_files(const Ref<EditorExportPreset> &p_preset);
 
 	virtual bool fill_log_messages(RichTextLabel *p_log, Error p_err);

@@ -1046,6 +1046,45 @@ TEST_CASE("[Modules][GDScript] Autoload index merges runtime cache with project 
 	CHECK_EQ(startup_infos[1].path, "res://runtime_cached.gd");
 }
 
+TEST_CASE("[Modules][GDScript] Runtime merge prefers current project settings over stale cached settings") {
+	ScopedTempFiles files("gdscript_autoload_index_runtime_stale_settings");
+	ScopedAutoloadSettings autoloads;
+
+	GDScriptAutoloadIndexEntry stale_settings = make_dependency_entry(SNAME("IndexRuntimeCurrentSettings"), 5);
+	stale_settings.path = "res://stale_cached_settings.gd";
+	stale_settings.source = GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
+
+	GDScriptAutoloadIndexEntry cached_script = make_dependency_entry(SNAME("IndexRuntimeCachedScriptOwned"), 10);
+	cached_script.path = "res://cached_script_owned.gd";
+	cached_script.source = GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION;
+
+	Vector<GDScriptAutoloadIndexEntry> cache_entries;
+	cache_entries.push_back(stale_settings);
+	cache_entries.push_back(cached_script);
+
+	GDScriptAutoloadIndex saved;
+	saved.rebuild_from_entries(cache_entries);
+	const String cache_path = files.reserve("runtime_stale_settings_autoload_index_cache.cfg");
+	CHECK_EQ(saved.save_to_cache(cache_path), OK);
+
+	const String current_settings_path = files.write("current_settings.gd", "extends Node\n");
+	autoloads.set(SNAME("IndexRuntimeCurrentSettings"), current_settings_path, true, 1);
+
+	GDScriptAutoloadIndex runtime;
+	CHECK_EQ(runtime.rebuild_from_cache_and_project_settings(cache_path), OK);
+
+	const GDScriptAutoloadIndexEntry *current_settings = runtime.get_by_name(SNAME("IndexRuntimeCurrentSettings"));
+	REQUIRE(current_settings != nullptr);
+	CHECK_EQ(current_settings->source, GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS);
+	CHECK_EQ(current_settings->path, current_settings_path);
+	CHECK_FALSE(has_diagnostic(*current_settings, GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH));
+
+	const GDScriptAutoloadIndexEntry *script_owned = runtime.get_by_name(SNAME("IndexRuntimeCachedScriptOwned"));
+	REQUIRE(script_owned != nullptr);
+	CHECK_EQ(script_owned->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(script_owned->path, "res://cached_script_owned.gd");
+}
+
 TEST_CASE("[Modules][GDScript] Runtime autoload metadata preserves dependency startup order") {
 	ScopedTempFiles files("gdscript_autoload_index_runtime_dependency_order");
 

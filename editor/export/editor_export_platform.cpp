@@ -65,6 +65,17 @@
 #include "modules/gdscript/gdscript_autoload_index.h"
 #endif // MODULE_GDSCRIPT_ENABLED
 
+#ifdef MODULE_GDSCRIPT_ENABLED
+static bool _has_script_owned_autoload_entries(const GDScriptAutoloadIndex &p_index) {
+	for (const GDScriptAutoloadIndexEntry &entry : p_index.get_entries()) {
+		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif // MODULE_GDSCRIPT_ENABLED
+
 class EditorExportSaveProxy {
 	HashSet<String> saved_paths;
 	EditorExportPlatform::EditorExportSaveFunction save_func;
@@ -1072,39 +1083,49 @@ Dictionary EditorExportPlatform::get_internal_export_files(const Ref<EditorExpor
 	return files;
 }
 
-Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExportPreset> &p_preset) {
-	Vector<String> files;
+Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_files, bool p_fail_on_required_autoload_cache, const String &p_autoload_cache_path) {
+	r_files.clear();
 
-	files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
+	r_files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
 #ifdef MODULE_GDSCRIPT_ENABLED
 	GDScriptAutoloadIndex autoload_index;
 	autoload_index.rebuild_from_project_settings_and_script_annotations();
-	const Error autoload_cache_err = autoload_index.save_to_cache();
+	const String autoload_cache_path = p_autoload_cache_path.is_empty() ? GDScriptAutoloadIndex::get_cache_path() : p_autoload_cache_path;
+	const Error autoload_cache_err = autoload_index.save_to_cache(autoload_cache_path);
 	if (autoload_cache_err != OK) {
+		if (p_fail_on_required_autoload_cache && _has_script_owned_autoload_entries(autoload_index)) {
+			return autoload_cache_err;
+		}
 		WARN_PRINT(vformat("Could not save GDScript autoload index cache: %s.", error_names[autoload_cache_err]));
 	} else {
-		files.push_back(GDScriptAutoloadIndex::get_cache_path());
+		r_files.push_back(autoload_cache_path);
 	}
 #endif // MODULE_GDSCRIPT_ENABLED
 
 	String icon = ResourceUID::ensure_path(get_project_setting(p_preset, "application/config/icon"));
 	String splash = ResourceUID::ensure_path(get_project_setting(p_preset, "application/boot_splash/image"));
 	if (!icon.is_empty() && FileAccess::exists(icon)) {
-		files.push_back(icon);
+		r_files.push_back(icon);
 	}
 	if (!splash.is_empty() && FileAccess::exists(splash) && icon != splash) {
-		files.push_back(splash);
+		r_files.push_back(splash);
 	}
 	String resource_cache_file = ResourceUID::get_cache_file();
 	if (FileAccess::exists(resource_cache_file)) {
-		files.push_back(resource_cache_file);
+		r_files.push_back(resource_cache_file);
 	}
 
 	String extension_list_config_file = GDExtension::get_extension_list_config_file();
 	if (FileAccess::exists(extension_list_config_file)) {
-		files.push_back(extension_list_config_file);
+		r_files.push_back(extension_list_config_file);
 	}
 
+	return OK;
+}
+
+Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExportPreset> &p_preset) {
+	Vector<String> files;
+	collect_forced_export_files(p_preset, files);
 	return files;
 }
 
@@ -1670,7 +1691,12 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	}
 
-	Vector<String> forced_export = get_forced_export_files(p_preset);
+	Vector<String> forced_export;
+	err = collect_forced_export_files(p_preset, forced_export, true);
+	if (err != OK) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not save GDScript autoload index cache: %s."), error_names[err]));
+		return err;
+	}
 	for (int i = 0; i < forced_export.size(); i++) {
 		Vector<uint8_t> array;
 		if (GDExtension::get_extension_list_config_file() == forced_export[i]) {

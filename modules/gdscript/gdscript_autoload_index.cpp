@@ -776,7 +776,9 @@ Error GDScriptAutoloadIndex::rebuild_from_cache_and_project_settings(const Strin
 			return cache_err;
 		}
 		for (const GDScriptAutoloadIndexEntry &entry : cached_index.get_entries()) {
-			merged_entries.push_back(entry);
+			if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+				merged_entries.push_back(entry);
+			}
 		}
 	}
 

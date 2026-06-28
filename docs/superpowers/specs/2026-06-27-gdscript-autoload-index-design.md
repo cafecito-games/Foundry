@@ -406,9 +406,11 @@ future editor-authoring convenience, not a V1 requirement.
 
 Runtime startup now reads the autoload index. Editor/tools builds rebuild the
 index from project settings and script annotations before local project runs and
-refresh the saved cache. Export/runtime builds read the saved cache and merge
-project settings afterward as compatibility input, so exported projects do not
-scan every script to discover script-owned autoloads at startup.
+refresh the saved cache. Export/runtime builds read saved script-owned entries
+from the cache and merge current project settings afterward as compatibility
+input, so exported projects do not scan every script to discover script-owned
+autoloads at startup and stale cached project-settings entries cannot override
+the exported settings or runtime overrides.
 
 Index-backed startup registers the selected startup entries back into the
 process-local `ProjectSettings` autoload list before scripts compile. This keeps
