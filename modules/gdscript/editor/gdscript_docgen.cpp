@@ -334,6 +334,15 @@ String GDScriptDocGen::docvalue_from_expression(const GDP::ExpressionNode *p_exp
 		if (p_type.kind == GDType::ENUM && !p_type.enum_values.is_empty() && p_expression->reduced_value.get_type() == Variant::INT) {
 			return docvalue_from_enum_value(p_expression->reduced_value, p_type.enum_values);
 		}
+		if (p_expression->get_datatype().is_meta_type) {
+			if (p_expression->type == GDP::Node::IDENTIFIER) {
+				return static_cast<const GDP::IdentifierNode *>(p_expression)->name;
+			}
+			const String metatype_spelling = p_expression->get_datatype().to_string();
+			if (!metatype_spelling.is_empty() && metatype_spelling != GDScriptNativeClass::get_class_static() && metatype_spelling != "Object") {
+				return metatype_spelling;
+			}
+		}
 		return _docvalue_from_variant(p_expression->reduced_value);
 	}
 

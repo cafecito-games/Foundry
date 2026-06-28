@@ -1,11 +1,11 @@
 trait Creatable:
-	static func create() -> Self
+	abstract func label() -> String
 
 class User:
 	uses Creatable
 
-	static func create() -> User:
-		return User.new()
+	func label() -> String:
+		return "user"
 
 class Box[T]:
 	var value: T
@@ -14,8 +14,12 @@ var user_type: Type[User] = User
 var node_type: Type[Node] = Node
 var int_box_type: Type[Box[int]] = Box[int]
 
-func factory[T: Creatable](factory_type: Type[T]) -> T:
-	return factory_type.create()
+func accept[T](klass: Type[T], value: T) -> T:
+	return value
 
-func use_factory() -> User:
-	return factory(User)
+func id_type[T](t: Type[T]) -> Type[T]:
+	return t
+
+func use_handles() -> void:
+	var inferred_user: Type[User] = id_type(User)
+	accept(User, User.new())

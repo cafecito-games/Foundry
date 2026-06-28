@@ -4604,14 +4604,14 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 
 		SUBCASE("script class handle") {
 			String out;
-			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(9, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(3, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
 			REQUIRE(r.ok);
 			REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
 			CHECK(out.contains("var user_type: Type[User] = User"));
 		}
 		SUBCASE("native class handle") {
 			String out;
-			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(10, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			RefactorResult r = GDScriptRefactoring::prepare(ctx, caret(4, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
 			REQUIRE(r.ok);
 			REQUIRE(GDScriptRefactorEdits::apply(ctx.source, r.edits, out));
 			CHECK(out.contains("var node_type: Type[Node] = Node"));

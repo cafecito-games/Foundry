@@ -67,6 +67,7 @@ GDScriptParser::DataType type_handle_represented_type(const GDScriptParser::Data
 	result.is_type_handle_annotation = false;
 	result.is_pseudo_type = false;
 	result.is_constant = false;
+	result.is_nullable = false;
 	return result;
 }
 
@@ -386,7 +387,11 @@ bool GDScriptRefactorTypes::render_annotatable_type(const GDScriptParser::DataTy
 	if (!is_renderable_type(p_type)) {
 		return false;
 	}
-	const String rendered = p_type.to_string();
+	String rendered;
+	RenderState state;
+	if (!render_scoped(p_type, AnnotationScope(), rendered, state)) {
+		return false;
+	}
 	if (!is_usable_spelling(rendered)) {
 		return false;
 	}
