@@ -29,10 +29,10 @@
     <glob pattern="*.gdshader"/>
   </mime-type>
 
-  <mime-type type="application/x-gdscript">
-    <comment>GDScript script</comment>
+  <mime-type type="application/x-foundryscript">
+    <comment>FoundryScript script</comment>
     <sub-class-of type="text/plain"/>
-    <icon name="x-gdscript"/>
-    <glob pattern="*.gd"/>
+    <icon name="x-foundryscript"/>
+    <glob pattern="*.fs"/>
   </mime-type>
 </mime-info>

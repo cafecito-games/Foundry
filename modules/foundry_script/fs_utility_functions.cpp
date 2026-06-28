@@ -91,7 +91,7 @@
 		return;                                                           \
 	}
 
-#define GDFUNC_FAIL_COND_MSG(m_cond, m_msg)                             \
+#define FS_FUNC_FAIL_COND_MSG(m_cond, m_msg)                             \
 	if (unlikely(m_cond)) {                                             \
 		*r_ret = m_msg;                                                 \
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD; \
@@ -148,9 +148,9 @@ struct FSUtilityFunctionsDefinitions {
 					return;
 				}
 
-				GDFUNC_FAIL_COND_MSG(count > INT32_MAX, RTR("Range too big."));
+				FS_FUNC_FAIL_COND_MSG(count > INT32_MAX, RTR("Range too big."));
 				Error err = arr.resize(count);
-				GDFUNC_FAIL_COND_MSG(err != OK, RTR("Cannot resize array."));
+				FS_FUNC_FAIL_COND_MSG(err != OK, RTR("Cannot resize array."));
 
 				for (int64_t i = 0; i < count; i++) {
 					arr[i] = i;
@@ -171,9 +171,9 @@ struct FSUtilityFunctionsDefinitions {
 					return;
 				}
 
-				GDFUNC_FAIL_COND_MSG(to - from > INT32_MAX, RTR("Range too big."));
+				FS_FUNC_FAIL_COND_MSG(to - from > INT32_MAX, RTR("Range too big."));
 				Error err = arr.resize(to - from);
-				GDFUNC_FAIL_COND_MSG(err != OK, RTR("Cannot resize array."));
+				FS_FUNC_FAIL_COND_MSG(err != OK, RTR("Cannot resize array."));
 
 				for (int64_t i = from; i < to; i++) {
 					arr[i - from] = i;
@@ -210,9 +210,9 @@ struct FSUtilityFunctionsDefinitions {
 					count = Math::division_round_up(from - to, -incr);
 				}
 
-				GDFUNC_FAIL_COND_MSG(count > INT32_MAX, RTR("Range too big."));
+				FS_FUNC_FAIL_COND_MSG(count > INT32_MAX, RTR("Range too big."));
 				Error err = arr.resize(count);
-				GDFUNC_FAIL_COND_MSG(err != OK, RTR("Cannot resize array."));
+				FS_FUNC_FAIL_COND_MSG(err != OK, RTR("Cannot resize array."));
 
 				if (incr > 0) {
 					int64_t idx = 0;

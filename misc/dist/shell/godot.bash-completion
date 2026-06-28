@@ -89,7 +89,7 @@ _complete_godot_options() {
 --doctool
 --no-docbase
 --build-solutions
---dump-gdextension-interface
+--dump-foundryextension-interface
 --dump-extension-api
 --benchmark
 --benchmark-file
