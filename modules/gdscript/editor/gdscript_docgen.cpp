@@ -398,6 +398,16 @@ static String _annotation_qualifiers(const GDScriptParser::AnnotationDeclaration
 	return qualifiers;
 }
 
+static String _description_from_class_doc_data(const GDScriptParser::ClassDocData &p_doc_data) {
+	if (p_doc_data.brief.is_empty()) {
+		return p_doc_data.description;
+	}
+	if (p_doc_data.description.is_empty()) {
+		return p_doc_data.brief;
+	}
+	return p_doc_data.brief + "\n\n" + p_doc_data.description;
+}
+
 void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_class) {
 	p_script->_clear_doc();
 
@@ -405,6 +415,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 
 	doc.is_script_doc = true;
 	doc.is_trait = p_class->is_trait;
+	doc.is_enum = p_class->is_enum_file;
 	for (const GDP::ClassNode::TraitUse &trait_use : p_class->used_traits) {
 		if (trait_use.resolved_trait != nullptr) {
 			String trait_type;
@@ -418,7 +429,9 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 		doc.used_traits.push_back(trait_use.to_string());
 	}
 
-	if (p_script->local_name == StringName()) {
+	if (p_class->is_enum_file && p_class->get_global_name() != StringName()) {
+		doc.name = p_class->get_global_name();
+	} else if (p_script->local_name == StringName()) {
 		// This is an outer unnamed class.
 		doc.name = _get_script_name(p_script->get_script_path());
 	} else {
@@ -431,14 +444,16 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 
 	doc.script_path = p_script->get_script_path();
 
-	if (p_script->base.is_valid() && p_script->base->is_valid()) {
-		if (!p_script->base->doc.name.is_empty()) {
-			doc.inherits = p_script->base->doc.name;
-		} else {
-			doc.inherits = p_script->base->get_instance_base_type();
+	if (!p_class->is_enum_file) {
+		if (p_script->base.is_valid() && p_script->base->is_valid()) {
+			if (!p_script->base->doc.name.is_empty()) {
+				doc.inherits = p_script->base->doc.name;
+			} else {
+				doc.inherits = p_script->base->get_instance_base_type();
+			}
+		} else if (p_script->native.is_valid()) {
+			doc.inherits = p_script->native->get_name();
 		}
-	} else if (p_script->native.is_valid()) {
-		doc.inherits = p_script->native->get_name();
 	}
 
 	doc.brief_description = p_class->doc_data.brief;
@@ -453,6 +468,47 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 	doc.deprecated_message = p_class->doc_data.deprecated_message;
 	doc.is_experimental = p_class->doc_data.is_experimental;
 	doc.experimental_message = p_class->doc_data.experimental_message;
+
+	auto add_enum_docs = [&](const GDP::EnumNode *p_enum, const String &p_description_fallback = String(), bool p_requires_resolved_values = false) {
+		ERR_FAIL_NULL(p_enum);
+		ERR_FAIL_NULL(p_enum->identifier);
+
+		StringName name = p_enum->identifier->name;
+
+		p_script->member_lines[name] = p_enum->start_line;
+
+		DocData::EnumDoc enum_doc;
+		enum_doc.description = p_enum->doc_data.description.is_empty() ? p_description_fallback : p_enum->doc_data.description;
+		enum_doc.is_deprecated = p_enum->doc_data.is_deprecated;
+		enum_doc.deprecated_message = p_enum->doc_data.deprecated_message;
+		enum_doc.is_experimental = p_enum->doc_data.is_experimental;
+		enum_doc.experimental_message = p_enum->doc_data.experimental_message;
+		doc.enums[name] = enum_doc;
+
+		for (const GDP::EnumNode::Value &val : p_enum->values) {
+			DocData::ConstantDoc const_doc;
+			const_doc.name = val.identifier->name;
+			// Enum files keep their enum outside ClassNode::members; until that path
+			// is analyzed, avoid documenting default zeroes as real values.
+			if (!p_requires_resolved_values || val.resolved) {
+				const_doc.value = _docvalue_from_variant(val.value);
+				const_doc.is_value_valid = true;
+			}
+			const_doc.type = "int";
+			const_doc.enumeration = name;
+			const_doc.description = val.doc_data.description;
+			const_doc.is_deprecated = val.doc_data.is_deprecated;
+			const_doc.deprecated_message = val.doc_data.deprecated_message;
+			const_doc.is_experimental = val.doc_data.is_experimental;
+			const_doc.experimental_message = val.doc_data.experimental_message;
+
+			doc.constants.push_back(const_doc);
+		}
+	};
+
+	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
+		add_enum_docs(p_class->enum_file_decl, _description_from_class_doc_data(p_class->doc_data), true);
+	}
 
 	for (const GDP::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
@@ -629,34 +685,7 @@ void GDScriptDocGen::_generate_docs(GDScript *p_script, const GDP::ClassNode *p_
 
 			case GDP::ClassNode::Member::ENUM: {
 				const GDP::EnumNode *m_enum = member.m_enum;
-				StringName name = m_enum->identifier->name;
-
-				p_script->member_lines[name] = m_enum->start_line;
-
-				DocData::EnumDoc enum_doc;
-				enum_doc.description = m_enum->doc_data.description;
-				enum_doc.is_deprecated = m_enum->doc_data.is_deprecated;
-				enum_doc.deprecated_message = m_enum->doc_data.deprecated_message;
-				enum_doc.is_experimental = m_enum->doc_data.is_experimental;
-				enum_doc.experimental_message = m_enum->doc_data.experimental_message;
-				doc.enums[name] = enum_doc;
-
-				for (const GDP::EnumNode::Value &val : m_enum->values) {
-					DocData::ConstantDoc const_doc;
-					const_doc.name = val.identifier->name;
-					const_doc.value = _docvalue_from_variant(val.value);
-					const_doc.is_value_valid = true;
-					const_doc.type = "int";
-					const_doc.enumeration = name;
-					const_doc.description = val.doc_data.description;
-					const_doc.is_deprecated = val.doc_data.is_deprecated;
-					const_doc.deprecated_message = val.doc_data.deprecated_message;
-					const_doc.is_experimental = val.doc_data.is_experimental;
-					const_doc.experimental_message = val.doc_data.experimental_message;
-
-					doc.constants.push_back(const_doc);
-				}
-
+				add_enum_docs(m_enum);
 			} break;
 
 			case GDP::ClassNode::Member::ENUM_VALUE: {

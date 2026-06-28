@@ -2636,6 +2636,90 @@ var map: Dictionary[String, DocTarget]
 	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
 }
 
+TEST_CASE("[Modules][GDScript] Docgen emits enum_name files as enum class docs") {
+	GDScriptParser parser;
+	Error err = parser.parse(R"(
+namespace items
+
+## Weapon type summary.
+enum_name WeaponType {
+	## Uses a blade.
+	SWORD = 3,
+	## Uses a bow.
+	BOW,
+}
+)",
+			"user://weapon_type_docgen.gd", false);
+	CHECK_EQ(err, OK);
+
+	GDScriptAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+
+	CHECK_EQ(err, OK);
+	const GDScriptParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<GDScript> script;
+	script.instantiate();
+	GDScriptCompiler::make_scripts(script.ptr(), root, false);
+	GDScriptDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	Dictionary doc_dict = DocData::ClassDoc::to_dict(docs[0]);
+	CHECK(doc_dict.has("is_enum"));
+	if (doc_dict.has("is_enum")) {
+		CHECK(bool(doc_dict["is_enum"]));
+	}
+
+	DocData::ClassDoc restored = DocData::ClassDoc::from_dict(doc_dict);
+	Dictionary restored_dict = DocData::ClassDoc::to_dict(restored);
+	CHECK(restored_dict.has("is_enum"));
+	if (restored_dict.has("is_enum")) {
+		CHECK(bool(restored_dict["is_enum"]));
+	}
+
+	CHECK_EQ(docs[0].name, "items.WeaponType");
+	CHECK(docs[0].inherits.is_empty());
+	CHECK_EQ(docs[0].enums.size(), 1);
+	CHECK(docs[0].enums.has("WeaponType"));
+	if (docs[0].enums.has("WeaponType")) {
+		CHECK_EQ(docs[0].enums["WeaponType"].description, "Weapon type summary.");
+	}
+
+	const DocData::ConstantDoc *sword = nullptr;
+	const DocData::ConstantDoc *bow = nullptr;
+	for (const DocData::ConstantDoc &constant : docs[0].constants) {
+		if (constant.name == "SWORD") {
+			sword = &constant;
+		} else if (constant.name == "BOW") {
+			bow = &constant;
+		}
+	}
+
+	CHECK_EQ(docs[0].constants.size(), 2);
+	CHECK(sword != nullptr);
+	CHECK(bow != nullptr);
+	if (sword == nullptr || bow == nullptr) {
+		return;
+	}
+
+	CHECK_EQ(sword->type, "int");
+	CHECK_EQ(sword->enumeration, "WeaponType");
+	CHECK_EQ(sword->description, "Uses a blade.");
+
+	CHECK_EQ(bow->type, "int");
+	CHECK_EQ(bow->enumeration, "WeaponType");
+	CHECK_EQ(bow->description, "Uses a bow.");
+}
+
 TEST_CASE("[Modules][GDScript] Docgen names UID-backed autoload scripts from the autoload index") {
 	ScopedGDScriptNativeGlobals native_globals;
 	TempScriptFile autoload_script("docgen_uid_autoload.gd", "extends Node\nvar count: int\n");

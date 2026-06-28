@@ -718,6 +718,7 @@ public:
 		String experimental_message;
 		bool is_script_doc = false;
 		bool is_trait = false;
+		bool is_enum = false;
 		Vector<String> used_traits;
 		String script_path;
 		bool operator<(const ClassDoc &p_class) const {
@@ -854,6 +855,10 @@ public:
 				doc.is_trait = p_dict["is_trait"];
 			}
 
+			if (p_dict.has("is_enum")) {
+				doc.is_enum = p_dict["is_enum"];
+			}
+
 			Array used_traits;
 			if (p_dict.has("used_traits")) {
 				used_traits = p_dict["used_traits"];
@@ -979,6 +984,10 @@ public:
 
 			if (p_doc.is_trait) {
 				dict["is_trait"] = p_doc.is_trait;
+			}
+
+			if (p_doc.is_enum) {
+				dict["is_enum"] = p_doc.is_enum;
 			}
 
 			if (!p_doc.used_traits.is_empty()) {
