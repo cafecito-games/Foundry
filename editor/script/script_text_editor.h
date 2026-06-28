@@ -163,6 +163,7 @@ class ScriptTextEditor : public ScriptEditorBase {
 		EDIT_TRIM_FINAL_NEWLINES,
 		EDIT_CONVERT_INDENT_TO_SPACES,
 		EDIT_CONVERT_INDENT_TO_TABS,
+		EDIT_FORMAT_DOCUMENT,
 		EDIT_TOGGLE_COMMENT,
 		EDIT_MOVE_LINE_UP,
 		EDIT_MOVE_LINE_DOWN,
@@ -356,6 +357,7 @@ public:
 	virtual void trim_final_newlines() override;
 	virtual void insert_final_newline() override;
 	virtual void convert_indent() override;
+	virtual void format_document(bool p_notify_on_error) override;
 	virtual void tag_saved_version() override;
 
 	virtual void goto_line(int p_line, int p_column = 0) override;

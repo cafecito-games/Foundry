@@ -414,6 +414,11 @@ public:
 	virtual Error lookup_code(const String &p_code, const String &p_symbol, const String &p_path, Object *p_owner, LookupResult &r_result) { return ERR_UNAVAILABLE; }
 
 	virtual void auto_indent_code(String &p_code, int p_from_line, int p_to_line) const = 0;
+	// Reformats `p_code` into the language's canonical style. Returns true and fills
+	// `r_formatted_code` on success; returns false (leaving `r_formatted_code`
+	// untouched and, if provided, filling `r_error_message`) when the language has
+	// no formatter or the source cannot be parsed. Editor-only; the default refuses.
+	virtual bool format_code(const String &p_code, const String &p_path, String &r_formatted_code, String *r_error_message = nullptr) const { return false; }
 	virtual void add_global_constant(const StringName &p_variable, const Variant &p_value) = 0;
 	virtual void add_named_global_constant(const StringName &p_name, const Variant &p_value) {}
 	virtual void remove_named_global_constant(const StringName &p_name) {}

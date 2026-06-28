@@ -222,6 +222,10 @@ public:
 	virtual void trim_final_newlines() = 0;
 	virtual void insert_final_newline() = 0;
 	virtual void convert_indent() = 0;
+	// Reformats the whole buffer through the script language's canonical formatter,
+	// preserving caret/scroll where practical. No-op for languages without a
+	// formatter or on parse error; surfaces the diagnostic only when p_notify_on_error.
+	virtual void format_document(bool p_notify_on_error) {}
 	virtual void ensure_focus() = 0;
 	virtual void tag_saved_version() = 0;
 	virtual void reload(bool p_soft) {}
@@ -458,6 +462,7 @@ class ScriptEditor : public PanelContainer {
 	bool trim_trailing_whitespace_on_save;
 	bool trim_final_newlines_on_save;
 	bool convert_indent_on_save;
+	bool format_on_save;
 	bool external_editor_active;
 
 	void _goto_script_line2(int p_line);

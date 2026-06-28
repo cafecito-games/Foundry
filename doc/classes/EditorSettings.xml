@@ -1425,6 +1425,9 @@
 			If [code]true[/code], when dropping a [Resource] file to script editor while [kbd]Ctrl[/kbd] is held, the resource will be preloaded with a UID. If [code]false[/code], the resource will be preloaded with a path.
 			When you hold [kbd]Ctrl+Shift[/kbd], the behavior is reversed.
 		</member>
+		<member name="text_editor/behavior/files/format_on_save" type="bool" setter="" getter="">
+			If [code]true[/code], reformats GDScript files with the built-in canonical formatter when saving. Files that fail to parse are left untouched. Only affects languages that provide a formatter (currently GDScript).
+		</member>
 		<member name="text_editor/behavior/files/open_dominant_script_on_scene_change" type="bool" setter="" getter="">
 			If [code]true[/code], opening a scene automatically opens the script attached to the root node, or the topmost node if the root has no script.
 		</member>
