@@ -35,7 +35,7 @@
 #include "scene/resources/material.h"
 
 class FogVolume : public VisualInstance3D {
-	GDCLASS(FogVolume, VisualInstance3D);
+	FOUNDRY_CLASS(FogVolume, VisualInstance3D);
 
 	Vector3 size = Vector3(2, 2, 2);
 	Ref<Material> material;

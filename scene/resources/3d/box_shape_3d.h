@@ -33,7 +33,7 @@
 #include "scene/resources/3d/shape_3d.h"
 
 class BoxShape3D : public Shape3D {
-	GDCLASS(BoxShape3D, Shape3D);
+	FOUNDRY_CLASS(BoxShape3D, Shape3D);
 	Vector3 size;
 
 protected:

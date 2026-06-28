@@ -36,7 +36,7 @@
 #include "scene/resources/text_paragraph.h"
 
 class ItemList : public Control {
-	GDCLASS(ItemList, Control);
+	FOUNDRY_CLASS(ItemList, Control);
 
 public:
 	enum IconMode {

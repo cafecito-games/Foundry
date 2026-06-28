@@ -33,7 +33,7 @@
 #include "scene/gui/control.h"
 
 class ColorRect : public Control {
-	GDCLASS(ColorRect, Control);
+	FOUNDRY_CLASS(ColorRect, Control);
 
 	Color color = Color(1, 1, 1);
 

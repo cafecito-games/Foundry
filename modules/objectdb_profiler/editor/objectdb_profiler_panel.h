@@ -41,7 +41,7 @@ class Tree;
 
 // UI loaded by the debugger.
 class ObjectDBProfilerPanel : public Control {
-	GDCLASS(ObjectDBProfilerPanel, Control);
+	FOUNDRY_CLASS(ObjectDBProfilerPanel, Control);
 
 protected:
 	static constexpr int SNAPSHOT_CACHE_MAX_SIZE = 10;

@@ -38,7 +38,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class OpenXRExportPlugin : public EditorExportPlugin {
-	GDCLASS(OpenXRExportPlugin, EditorExportPlugin)
+	FOUNDRY_CLASS(OpenXRExportPlugin, EditorExportPlugin)
 
 public:
 	virtual String get_name() const override { return "OpenXRExportPlugin"; }
@@ -57,7 +57,7 @@ private:
 };
 
 class OpenXREditorPlugin : public EditorPlugin {
-	GDCLASS(OpenXREditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(OpenXREditorPlugin, EditorPlugin);
 
 	OpenXRActionMapEditor *action_map_editor = nullptr;
 	Ref<EditorInspectorPluginBindingModifier> binding_modifier_inspector_plugin = nullptr;

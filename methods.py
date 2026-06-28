@@ -552,8 +552,8 @@ def generate_cpp_hint_file(filename):
     else:
         try:
             with open(filename, "w", encoding="utf-8", newline="\n") as fd:
-                fd.write("#define GDCLASS(m_class, m_inherits)\n")
-                for name in ["GDVIRTUAL", "EXBIND", "MODBIND"]:
+                fd.write("#define FOUNDRY_CLASS(m_class, m_inherits)\n")
+                for name in ["FOUNDRY_VIRTUAL", "EXBIND", "MODBIND"]:
                     for count in range(13):
                         for suffix in ["", "R", "C", "RC"]:
                             fd.write(f"#define {name}{count}{suffix}(")

@@ -47,7 +47,7 @@ class JoltShape3D;
 class JoltSpace3D;
 
 class JoltPhysicsDirectSpaceState3D final : public PhysicsDirectSpaceState3D {
-	GDCLASS(JoltPhysicsDirectSpaceState3D, PhysicsDirectSpaceState3D)
+	FOUNDRY_CLASS(JoltPhysicsDirectSpaceState3D, PhysicsDirectSpaceState3D)
 
 	JoltSpace3D *space = nullptr;
 

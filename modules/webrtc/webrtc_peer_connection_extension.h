@@ -36,7 +36,7 @@
 #include "core/object/gdvirtual.gen.inc"
 
 class WebRTCPeerConnectionExtension : public WebRTCPeerConnection {
-	GDCLASS(WebRTCPeerConnectionExtension, WebRTCPeerConnection);
+	FOUNDRY_CLASS(WebRTCPeerConnectionExtension, WebRTCPeerConnection);
 
 protected:
 	static void _bind_methods();

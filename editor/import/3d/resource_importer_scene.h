@@ -47,7 +47,7 @@ class ImporterMesh;
 class Material;
 
 class EditorSceneFormatImporter : public RefCounted {
-	GDCLASS(EditorSceneFormatImporter, RefCounted);
+	FOUNDRY_CLASS(EditorSceneFormatImporter, RefCounted);
 
 	List<ResourceImporter::ImportOption> *current_option_list = nullptr;
 
@@ -57,10 +57,10 @@ protected:
 	Node *import_scene_wrapper(const String &p_path, uint32_t p_flags, const Dictionary &p_options);
 	Ref<Animation> import_animation_wrapper(const String &p_path, uint32_t p_flags, const Dictionary &p_options);
 
-	GDVIRTUAL0RC_REQUIRED(Vector<String>, _get_extensions)
-	GDVIRTUAL3R_REQUIRED(Object *, _import_scene, String, uint32_t, Dictionary)
-	GDVIRTUAL1(_get_import_options, String)
-	GDVIRTUAL3RC(Variant, _get_option_visibility, String, bool, String)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Vector<String>, _get_extensions)
+	FOUNDRY_VIRTUAL3R_REQUIRED(Object *, _import_scene, String, uint32_t, Dictionary)
+	FOUNDRY_VIRTUAL1(_get_import_options, String)
+	FOUNDRY_VIRTUAL3RC(Variant, _get_option_visibility, String, bool, String)
 
 public:
 	enum ImportFlags {
@@ -83,14 +83,14 @@ public:
 };
 
 class EditorScenePostImport : public RefCounted {
-	GDCLASS(EditorScenePostImport, RefCounted);
+	FOUNDRY_CLASS(EditorScenePostImport, RefCounted);
 
 	String source_file;
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1R(Object *, _post_import, Node *)
+	FOUNDRY_VIRTUAL1R(Object *, _post_import, Node *)
 
 public:
 	String get_source_file() const;
@@ -99,7 +99,7 @@ public:
 };
 
 class EditorScenePostImportPlugin : public RefCounted {
-	GDCLASS(EditorScenePostImportPlugin, RefCounted);
+	FOUNDRY_CLASS(EditorScenePostImportPlugin, RefCounted);
 
 public:
 	enum InternalImportCategory {
@@ -119,14 +119,14 @@ private:
 	List<ResourceImporter::ImportOption> *current_option_list = nullptr;
 
 protected:
-	GDVIRTUAL1(_get_internal_import_options, int)
-	GDVIRTUAL3RC(Variant, _get_internal_option_visibility, int, bool, String)
-	GDVIRTUAL2RC(Variant, _get_internal_option_update_view_required, int, String)
-	GDVIRTUAL4(_internal_process, int, Node *, Node *, Ref<Resource>)
-	GDVIRTUAL1(_get_import_options, String)
-	GDVIRTUAL3RC(Variant, _get_option_visibility, String, bool, String)
-	GDVIRTUAL1(_pre_process, Node *)
-	GDVIRTUAL1(_post_process, Node *)
+	FOUNDRY_VIRTUAL1(_get_internal_import_options, int)
+	FOUNDRY_VIRTUAL3RC(Variant, _get_internal_option_visibility, int, bool, String)
+	FOUNDRY_VIRTUAL2RC(Variant, _get_internal_option_update_view_required, int, String)
+	FOUNDRY_VIRTUAL4(_internal_process, int, Node *, Node *, Ref<Resource>)
+	FOUNDRY_VIRTUAL1(_get_import_options, String)
+	FOUNDRY_VIRTUAL3RC(Variant, _get_option_visibility, String, bool, String)
+	FOUNDRY_VIRTUAL1(_pre_process, Node *)
+	FOUNDRY_VIRTUAL1(_post_process, Node *)
 
 	static void _bind_methods();
 
@@ -151,7 +151,7 @@ public:
 VARIANT_ENUM_CAST(EditorScenePostImportPlugin::InternalImportCategory)
 
 class ResourceImporterScene : public ResourceImporter {
-	GDCLASS(ResourceImporterScene, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterScene, ResourceImporter);
 
 	static Vector<Ref<EditorSceneFormatImporter>> scene_importers;
 	static Vector<Ref<EditorScenePostImportPlugin>> post_importer_plugins;
@@ -305,7 +305,7 @@ public:
 };
 
 class EditorSceneFormatImporterESCN : public EditorSceneFormatImporter {
-	GDCLASS(EditorSceneFormatImporterESCN, EditorSceneFormatImporter);
+	FOUNDRY_CLASS(EditorSceneFormatImporterESCN, EditorSceneFormatImporter);
 
 public:
 	virtual void get_extensions(List<String> *r_extensions) const override;

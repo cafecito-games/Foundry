@@ -40,7 +40,7 @@ class OpenXRExtensionWrapper;
 class OpenXRExtensionWrapperExtension;
 
 class OpenXRAPIExtension : public RefCounted {
-	GDCLASS(OpenXRAPIExtension, RefCounted);
+	FOUNDRY_CLASS(OpenXRAPIExtension, RefCounted);
 
 protected:
 	_THREAD_SAFE_CLASS_

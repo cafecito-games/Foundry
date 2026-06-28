@@ -71,7 +71,7 @@ struct RenderingDXIL {
 };
 
 class RenderingShaderContainerD3D12 : public RenderingShaderContainer {
-	GDSOFTCLASS(RenderingShaderContainerD3D12, RenderingShaderContainer);
+	FOUNDRY_SOFTCLASS(RenderingShaderContainerD3D12, RenderingShaderContainer);
 
 public:
 	static constexpr uint32_t REQUIRED_SHADER_MODEL = 0x62; // D3D_SHADER_MODEL_6_2

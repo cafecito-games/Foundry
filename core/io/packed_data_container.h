@@ -33,7 +33,7 @@
 #include "core/io/resource.h"
 
 class PackedDataContainer : public Resource {
-	GDCLASS(PackedDataContainer, Resource);
+	FOUNDRY_CLASS(PackedDataContainer, Resource);
 
 	enum : uint32_t {
 		TYPE_DICT = 0xFFFFFFFF,
@@ -78,7 +78,7 @@ public:
 };
 
 class PackedDataContainerRef : public RefCounted {
-	GDCLASS(PackedDataContainerRef, RefCounted);
+	FOUNDRY_CLASS(PackedDataContainerRef, RefCounted);
 
 	friend class PackedDataContainer;
 	uint32_t offset = 0;

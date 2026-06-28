@@ -40,7 +40,7 @@ class Tree;
 class TreeItem;
 
 class SectionedInspector : public HSplitContainer {
-	GDCLASS(SectionedInspector, HSplitContainer);
+	FOUNDRY_CLASS(SectionedInspector, HSplitContainer);
 
 	ObjectID obj;
 

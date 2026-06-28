@@ -35,7 +35,7 @@
 #include "webrtc_data_channel.h"
 
 class WebRTCDataChannelJS : public WebRTCDataChannel {
-	GDCLASS(WebRTCDataChannelJS, WebRTCDataChannel);
+	FOUNDRY_CLASS(WebRTCDataChannelJS, WebRTCDataChannel);
 
 private:
 	String _label;

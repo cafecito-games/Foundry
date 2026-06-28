@@ -35,7 +35,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class FSLanguageServer : public EditorPlugin {
-	GDCLASS(FSLanguageServer, EditorPlugin);
+	FOUNDRY_CLASS(FSLanguageServer, EditorPlugin);
 
 	FSLanguageProtocol protocol;
 

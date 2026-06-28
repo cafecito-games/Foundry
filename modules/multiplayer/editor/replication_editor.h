@@ -45,7 +45,7 @@ class PropertySelector;
 class SceneTreeDialog;
 
 class ReplicationEditor : public VBoxContainer {
-	GDCLASS(ReplicationEditor, VBoxContainer);
+	FOUNDRY_CLASS(ReplicationEditor, VBoxContainer);
 
 private:
 	MultiplayerSynchronizer *current = nullptr;

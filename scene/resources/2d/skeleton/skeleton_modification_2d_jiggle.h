@@ -38,7 +38,7 @@
 ///////////////////////////////////////
 
 class SkeletonModification2DJiggle : public SkeletonModification2D {
-	GDCLASS(SkeletonModification2DJiggle, SkeletonModification2D);
+	FOUNDRY_CLASS(SkeletonModification2DJiggle, SkeletonModification2D);
 
 private:
 	struct Jiggle_Joint_Data2D {

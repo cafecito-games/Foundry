@@ -46,7 +46,7 @@ class WindowWrapper;
 class StyleBoxFlat;
 
 class DockSplitContainer : public SplitContainer {
-	GDCLASS(DockSplitContainer, SplitContainer);
+	FOUNDRY_CLASS(DockSplitContainer, SplitContainer);
 
 private:
 	bool is_updating = false;
@@ -62,7 +62,7 @@ public:
 };
 
 class DockShortcutHandler : public Node {
-	GDCLASS(DockShortcutHandler, Node);
+	FOUNDRY_CLASS(DockShortcutHandler, Node);
 
 protected:
 	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
@@ -75,7 +75,7 @@ class DockContextPopup;
 class EditorDockDragHint;
 
 class EditorDockManager : public Object {
-	GDCLASS(EditorDockManager, Object);
+	FOUNDRY_CLASS(EditorDockManager, Object);
 
 private:
 	friend class DockContextPopup;
@@ -163,7 +163,7 @@ public:
 };
 
 class EditorDockDragHint : public Control {
-	GDCLASS(EditorDockDragHint, Control);
+	FOUNDRY_CLASS(EditorDockDragHint, Control);
 
 private:
 	EditorDockManager *dock_manager = nullptr;
@@ -193,7 +193,7 @@ public:
 };
 
 class DockContextPopup : public PopupPanel {
-	GDCLASS(DockContextPopup, PopupPanel);
+	FOUNDRY_CLASS(DockContextPopup, PopupPanel);
 
 private:
 	VBoxContainer *dock_select_popup_vb = nullptr;

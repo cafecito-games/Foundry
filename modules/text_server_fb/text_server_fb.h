@@ -111,7 +111,7 @@ using namespace godot;
 /*************************************************************************/
 
 class TextServerFallback : public TextServerExtension {
-	GDCLASS(TextServerFallback, TextServerExtension);
+	FOUNDRY_CLASS(TextServerFallback, TextServerExtension);
 	_THREAD_SAFE_CLASS_
 
 	HashMap<StringName, int32_t> feature_sets;

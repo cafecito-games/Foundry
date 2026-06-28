@@ -57,7 +57,7 @@ class RDFramebufferPass;
 class RDPipelineSpecializationConstant;
 
 class RenderingDevice : public RenderingDeviceCommons {
-	GDCLASS(RenderingDevice, Object)
+	FOUNDRY_CLASS(RenderingDevice, Object)
 
 	_THREAD_SAFE_CLASS_
 

@@ -36,7 +36,7 @@
 
 //@ TODO, excellent candidate for THREAD_SAFE MACRO, should go through all these and add THREAD_SAFE where it applies
 class DirAccess : public RefCounted {
-	GDCLASS(DirAccess, RefCounted);
+	FOUNDRY_CLASS(DirAccess, RefCounted);
 
 public:
 	enum AccessType : int32_t {

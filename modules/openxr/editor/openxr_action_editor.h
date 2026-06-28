@@ -40,7 +40,7 @@
 #include "scene/gui/text_edit.h"
 
 class OpenXRActionEditor : public HBoxContainer {
-	GDCLASS(OpenXRActionEditor, HBoxContainer);
+	FOUNDRY_CLASS(OpenXRActionEditor, HBoxContainer);
 
 private:
 	EditorUndoRedoManager *undo_redo;

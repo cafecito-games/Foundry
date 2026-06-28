@@ -57,7 +57,7 @@ class EditorUndoRedoManager;
 class ScriptCreateDialog;
 
 class EditorPlugin : public Node {
-	GDCLASS(EditorPlugin, Node);
+	FOUNDRY_CLASS(EditorPlugin, Node);
 	friend class EditorData;
 
 	bool input_event_forwarding_always_enabled = false;
@@ -117,31 +117,31 @@ protected:
 	void add_custom_type(const String &p_type, const String &p_base, const Ref<Script> &p_script, const Ref<Texture2D> &p_icon);
 	void remove_custom_type(const String &p_type);
 
-	GDVIRTUAL1R(bool, _forward_canvas_gui_input, Ref<InputEvent>)
-	GDVIRTUAL1(_forward_canvas_draw_over_viewport, Control *)
-	GDVIRTUAL1(_forward_canvas_force_draw_over_viewport, Control *)
-	GDVIRTUAL2R(int, _forward_3d_gui_input, Camera3D *, Ref<InputEvent>)
-	GDVIRTUAL1(_forward_3d_draw_over_viewport, Control *)
-	GDVIRTUAL1(_forward_3d_force_draw_over_viewport, Control *)
-	GDVIRTUAL0RC(String, _get_plugin_name)
-	GDVIRTUAL0RC(Ref<Texture2D>, _get_plugin_icon)
-	GDVIRTUAL0RC(bool, _has_main_screen)
-	GDVIRTUAL1(_make_visible, bool)
-	GDVIRTUAL1(_edit, Object *)
-	GDVIRTUAL1RC(bool, _handles, Object *)
-	GDVIRTUAL0RC(Dictionary, _get_state)
-	GDVIRTUAL1(_set_state, Dictionary)
-	GDVIRTUAL0(_clear)
-	GDVIRTUAL1RC(String, _get_unsaved_status, String)
-	GDVIRTUAL0(_save_external_data)
-	GDVIRTUAL0(_apply_changes)
-	GDVIRTUAL0RC(Vector<String>, _get_breakpoints)
-	GDVIRTUAL1(_set_window_layout, Ref<ConfigFile>)
-	GDVIRTUAL1(_get_window_layout, Ref<ConfigFile>)
-	GDVIRTUAL0R(bool, _build)
-	GDVIRTUAL2RC(Vector<String>, _run_scene, String, Vector<String>)
-	GDVIRTUAL0(_enable_plugin)
-	GDVIRTUAL0(_disable_plugin)
+	FOUNDRY_VIRTUAL1R(bool, _forward_canvas_gui_input, Ref<InputEvent>)
+	FOUNDRY_VIRTUAL1(_forward_canvas_draw_over_viewport, Control *)
+	FOUNDRY_VIRTUAL1(_forward_canvas_force_draw_over_viewport, Control *)
+	FOUNDRY_VIRTUAL2R(int, _forward_3d_gui_input, Camera3D *, Ref<InputEvent>)
+	FOUNDRY_VIRTUAL1(_forward_3d_draw_over_viewport, Control *)
+	FOUNDRY_VIRTUAL1(_forward_3d_force_draw_over_viewport, Control *)
+	FOUNDRY_VIRTUAL0RC(String, _get_plugin_name)
+	FOUNDRY_VIRTUAL0RC(Ref<Texture2D>, _get_plugin_icon)
+	FOUNDRY_VIRTUAL0RC(bool, _has_main_screen)
+	FOUNDRY_VIRTUAL1(_make_visible, bool)
+	FOUNDRY_VIRTUAL1(_edit, Object *)
+	FOUNDRY_VIRTUAL1RC(bool, _handles, Object *)
+	FOUNDRY_VIRTUAL0RC(Dictionary, _get_state)
+	FOUNDRY_VIRTUAL1(_set_state, Dictionary)
+	FOUNDRY_VIRTUAL0(_clear)
+	FOUNDRY_VIRTUAL1RC(String, _get_unsaved_status, String)
+	FOUNDRY_VIRTUAL0(_save_external_data)
+	FOUNDRY_VIRTUAL0(_apply_changes)
+	FOUNDRY_VIRTUAL0RC(Vector<String>, _get_breakpoints)
+	FOUNDRY_VIRTUAL1(_set_window_layout, Ref<ConfigFile>)
+	FOUNDRY_VIRTUAL1(_get_window_layout, Ref<ConfigFile>)
+	FOUNDRY_VIRTUAL0R(bool, _build)
+	FOUNDRY_VIRTUAL2RC(Vector<String>, _run_scene, String, Vector<String>)
+	FOUNDRY_VIRTUAL0(_enable_plugin)
+	FOUNDRY_VIRTUAL0(_disable_plugin)
 
 #ifndef DISABLE_DEPRECATED
 	Button *_add_control_to_bottom_panel_compat_88081(Control *p_control, const String &p_title);

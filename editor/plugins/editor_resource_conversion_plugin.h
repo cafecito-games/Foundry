@@ -34,14 +34,14 @@
 #include "core/object/gdvirtual.gen.inc"
 
 class EditorResourceConversionPlugin : public RefCounted {
-	GDCLASS(EditorResourceConversionPlugin, RefCounted);
+	FOUNDRY_CLASS(EditorResourceConversionPlugin, RefCounted);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC(String, _converts_to)
-	GDVIRTUAL1RC(bool, _handles, Ref<Resource>)
-	GDVIRTUAL1RC(Ref<Resource>, _convert, Ref<Resource>)
+	FOUNDRY_VIRTUAL0RC(String, _converts_to)
+	FOUNDRY_VIRTUAL1RC(bool, _handles, Ref<Resource>)
+	FOUNDRY_VIRTUAL1RC(Ref<Resource>, _convert, Ref<Resource>)
 
 public:
 	virtual String converts_to() const;

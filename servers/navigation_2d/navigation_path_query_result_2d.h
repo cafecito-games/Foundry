@@ -35,7 +35,7 @@
 #include "servers/navigation_2d/navigation_constants_2d.h"
 
 class NavigationPathQueryResult2D : public RefCounted {
-	GDCLASS(NavigationPathQueryResult2D, RefCounted);
+	FOUNDRY_CLASS(NavigationPathQueryResult2D, RefCounted);
 
 	Vector<Vector2> path;
 	Vector<int32_t> path_types;

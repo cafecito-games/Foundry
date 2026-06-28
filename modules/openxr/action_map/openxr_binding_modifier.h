@@ -40,13 +40,13 @@ class OpenXRInteractionProfile;
 class OpenXRIPBinding;
 
 class OpenXRBindingModifier : public Resource {
-	GDCLASS(OpenXRBindingModifier, Resource);
+	FOUNDRY_CLASS(OpenXRBindingModifier, Resource);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC_REQUIRED(String, _get_description)
-	GDVIRTUAL0R_REQUIRED(PackedByteArray, _get_ip_modification)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(String, _get_description)
+	FOUNDRY_VIRTUAL0R_REQUIRED(PackedByteArray, _get_ip_modification)
 
 public:
 	virtual String get_description() const; // Returns the description shown in the editor
@@ -54,7 +54,7 @@ public:
 };
 
 class OpenXRIPBindingModifier : public OpenXRBindingModifier {
-	GDCLASS(OpenXRIPBindingModifier, OpenXRBindingModifier);
+	FOUNDRY_CLASS(OpenXRIPBindingModifier, OpenXRBindingModifier);
 
 protected:
 	friend class OpenXRInteractionProfile;
@@ -66,7 +66,7 @@ public:
 };
 
 class OpenXRActionBindingModifier : public OpenXRBindingModifier {
-	GDCLASS(OpenXRActionBindingModifier, OpenXRBindingModifier);
+	FOUNDRY_CLASS(OpenXRActionBindingModifier, OpenXRBindingModifier);
 
 protected:
 	friend class OpenXRIPBinding;

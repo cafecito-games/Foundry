@@ -34,7 +34,7 @@
 #include "core/object/class_db.h"
 
 class GodotInstance : public Object {
-	GDCLASS(GodotInstance, Object);
+	FOUNDRY_CLASS(GodotInstance, Object);
 
 	bool started = false;
 

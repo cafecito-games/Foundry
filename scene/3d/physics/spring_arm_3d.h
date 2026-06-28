@@ -34,7 +34,7 @@
 #include "scene/resources/3d/shape_3d.h"
 
 class SpringArm3D : public Node3D {
-	GDCLASS(SpringArm3D, Node3D);
+	FOUNDRY_CLASS(SpringArm3D, Node3D);
 
 	Ref<Shape3D> shape;
 	HashSet<RID> excluded_objects;

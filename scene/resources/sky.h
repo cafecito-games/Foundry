@@ -34,7 +34,7 @@
 #include "scene/resources/material.h"
 
 class Sky : public Resource {
-	GDCLASS(Sky, Resource);
+	FOUNDRY_CLASS(Sky, Resource);
 
 public:
 	enum RadianceSize {

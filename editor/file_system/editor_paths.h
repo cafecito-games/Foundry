@@ -35,7 +35,7 @@
 #include "core/string/ustring.h"
 
 class EditorPaths : public Object {
-	GDCLASS(EditorPaths, Object)
+	FOUNDRY_CLASS(EditorPaths, Object)
 
 	bool paths_valid = false; // If any of the paths can't be created, this is false.
 	String data_dir; // Editor data (templates, shader cache, etc.).

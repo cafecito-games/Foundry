@@ -190,13 +190,13 @@ void BaseButton::_notification(int p_what) {
 }
 
 void BaseButton::_pressed() {
-	GDVIRTUAL_CALL(_pressed);
+	FOUNDRY_VIRTUAL_CALL(_pressed);
 	pressed();
 	emit_signal(SceneStringName(pressed));
 }
 
 void BaseButton::_toggled(bool p_pressed) {
-	GDVIRTUAL_CALL(_toggled, p_pressed);
+	FOUNDRY_VIRTUAL_CALL(_toggled, p_pressed);
 	toggled(p_pressed);
 	emit_signal(SceneStringName(toggled), p_pressed);
 }
@@ -556,8 +556,8 @@ void BaseButton::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_button_group", "button_group"), &BaseButton::set_button_group);
 	ClassDB::bind_method(D_METHOD("get_button_group"), &BaseButton::get_button_group);
 
-	GDVIRTUAL_BIND(_pressed);
-	GDVIRTUAL_BIND(_toggled, "toggled_on");
+	FOUNDRY_VIRTUAL_BIND(_pressed);
+	FOUNDRY_VIRTUAL_BIND(_toggled, "toggled_on");
 
 	ADD_SIGNAL(MethodInfo("pressed"));
 	ADD_SIGNAL(MethodInfo("button_up"));

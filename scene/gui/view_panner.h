@@ -37,7 +37,7 @@ class Shortcut;
 class Viewport;
 
 class ViewPanner : public RefCounted {
-	GDCLASS(ViewPanner, RefCounted);
+	FOUNDRY_CLASS(ViewPanner, RefCounted);
 
 public:
 	enum ControlScheme {

@@ -36,7 +36,7 @@
 class RenderingShaderContainerFormat;
 
 class ShaderBakerExportPluginPlatform : public RefCounted {
-	GDCLASS(ShaderBakerExportPluginPlatform, RefCounted);
+	FOUNDRY_CLASS(ShaderBakerExportPluginPlatform, RefCounted);
 
 public:
 	virtual RenderingShaderContainerFormat *create_shader_container_format(const Ref<EditorExportPlatform> &p_platform, const Ref<EditorExportPreset> &p_preset) = 0;
@@ -45,7 +45,7 @@ public:
 };
 
 class ShaderBakerExportPlugin : public EditorExportPlugin {
-	GDSOFTCLASS(ShaderBakerExportPlugin, EditorExportPlugin);
+	FOUNDRY_SOFTCLASS(ShaderBakerExportPlugin, EditorExportPlugin);
 
 protected:
 	struct WorkItem {

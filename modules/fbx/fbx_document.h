@@ -38,7 +38,7 @@
 #include <ufbx.h>
 
 class FBXDocument : public GLTFDocument {
-	GDCLASS(FBXDocument, GLTFDocument);
+	FOUNDRY_CLASS(FBXDocument, GLTFDocument);
 
 	int _naming_version = 2;
 

@@ -254,7 +254,7 @@ public:
 	template <typename T>
 	static void register_class(bool p_virtual = false) {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -269,7 +269,7 @@ public:
 	template <typename T>
 	static void register_abstract_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -282,7 +282,7 @@ public:
 	template <typename T>
 	static void register_internal_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -297,7 +297,7 @@ public:
 	template <typename T>
 	static void register_runtime_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -322,7 +322,7 @@ public:
 	template <typename T>
 	static void register_custom_instance_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -574,25 +574,25 @@ public:
 
 #endif // DEBUG_ENABLED
 
-#define GDREGISTER_CLASS(m_class)                 \
+#define FOUNDRY_REGISTER_CLASS(m_class)           \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) { \
 		::ClassDB::register_class<m_class>();     \
 	}
-#define GDREGISTER_VIRTUAL_CLASS(m_class)         \
+#define FOUNDRY_REGISTER_VIRTUAL_CLASS(m_class)   \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) { \
 		::ClassDB::register_class<m_class>(true); \
 	}
-#define GDREGISTER_ABSTRACT_CLASS(m_class)             \
+#define FOUNDRY_REGISTER_ABSTRACT_CLASS(m_class)       \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {      \
 		::ClassDB::register_abstract_class<m_class>(); \
 	}
-#define GDREGISTER_INTERNAL_CLASS(m_class)             \
+#define FOUNDRY_REGISTER_INTERNAL_CLASS(m_class)       \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {      \
 		::ClassDB::register_internal_class<m_class>(); \
 	}
-#define GDREGISTER_RUNTIME_CLASS(m_class)             \
+#define FOUNDRY_REGISTER_RUNTIME_CLASS(m_class)       \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {     \
 		::ClassDB::register_runtime_class<m_class>(); \
 	}
 
-#define GDREGISTER_NATIVE_STRUCT(m_class, m_code) ClassDB::register_native_struct(#m_class, m_code, sizeof(m_class))
+#define FOUNDRY_REGISTER_NATIVE_STRUCT(m_class, m_code) ClassDB::register_native_struct(#m_class, m_code, sizeof(m_class))

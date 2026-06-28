@@ -47,7 +47,7 @@ class EditorInspectorPlugin;
 class TileSetSourceItemList;
 
 class TileSetEditor : public EditorDock {
-	GDCLASS(TileSetEditor, EditorDock);
+	FOUNDRY_CLASS(TileSetEditor, EditorDock);
 
 	static TileSetEditor *singleton;
 
@@ -128,7 +128,7 @@ public:
 };
 
 class TileSourceInspectorPlugin : public EditorInspectorPlugin {
-	GDCLASS(TileSourceInspectorPlugin, EditorInspectorPlugin);
+	FOUNDRY_CLASS(TileSourceInspectorPlugin, EditorInspectorPlugin);
 
 	AcceptDialog *id_edit_dialog = nullptr;
 	Label *id_label = nullptr;

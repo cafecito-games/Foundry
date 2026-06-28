@@ -48,7 +48,7 @@ public:
 };
 
 class FSWorkspace : public RefCounted {
-	GDCLASS(FSWorkspace, RefCounted);
+	FOUNDRY_CLASS(FSWorkspace, RefCounted);
 
 private:
 	void _get_owners(EditorFileSystemDirectory *efsd, String p_path, List<String> &owners);

@@ -36,7 +36,7 @@
 #include "scene/gui/scroll_container.h"
 
 class OpenXRSelectInteractionProfileDialog : public ConfirmationDialog {
-	GDCLASS(OpenXRSelectInteractionProfileDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(OpenXRSelectInteractionProfileDialog, ConfirmationDialog);
 
 private:
 	String selected_interaction_profile;

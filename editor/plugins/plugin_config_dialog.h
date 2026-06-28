@@ -40,7 +40,7 @@ class ConfigFile;
 class EditorValidationPanel;
 
 class PluginConfigDialog : public ConfirmationDialog {
-	GDCLASS(PluginConfigDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(PluginConfigDialog, ConfirmationDialog);
 
 	enum {
 		MSG_ID_PLUGIN,

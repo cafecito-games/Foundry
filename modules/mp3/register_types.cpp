@@ -46,12 +46,12 @@ static void _editor_init() {
 
 void initialize_mp3_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
-		GDREGISTER_CLASS(AudioStreamMP3);
+		FOUNDRY_REGISTER_CLASS(AudioStreamMP3);
 	}
 
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_CLASS(ResourceImporterMP3);
+		FOUNDRY_REGISTER_CLASS(ResourceImporterMP3);
 
 		EditorNode::add_init_callback(_editor_init);
 	}

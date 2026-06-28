@@ -147,7 +147,7 @@ void CanvasItem::_redraw_callback() {
 		current_item_drawn = this;
 		notification(NOTIFICATION_DRAW);
 		emit_signal(SceneStringName(draw));
-		GDVIRTUAL_CALL(_draw);
+		FOUNDRY_VIRTUAL_CALL(_draw);
 		current_item_drawn = nullptr;
 		TextServer::set_current_drawn_item_oversampling(0.0);
 		drawing = false;
@@ -1465,7 +1465,7 @@ void CanvasItem::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_clip_children_mode", "mode"), &CanvasItem::set_clip_children_mode);
 	ClassDB::bind_method(D_METHOD("get_clip_children_mode"), &CanvasItem::get_clip_children_mode);
 
-	GDVIRTUAL_BIND(_draw);
+	FOUNDRY_VIRTUAL_BIND(_draw);
 
 	ADD_GROUP("Visibility", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "visible"), "set_visible", "is_visible");

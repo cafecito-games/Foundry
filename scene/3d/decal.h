@@ -33,7 +33,7 @@
 #include "scene/3d/visual_instance_3d.h"
 
 class Decal : public VisualInstance3D {
-	GDCLASS(Decal, VisualInstance3D);
+	FOUNDRY_CLASS(Decal, VisualInstance3D);
 
 public:
 	enum DecalTexture {

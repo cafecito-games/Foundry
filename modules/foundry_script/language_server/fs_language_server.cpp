@@ -121,7 +121,7 @@ void FSLanguageServer::stop() {
 }
 
 void register_lsp_types() {
-	GDREGISTER_CLASS(FSLanguageProtocol);
-	GDREGISTER_CLASS(FSTextDocument);
-	GDREGISTER_CLASS(FSWorkspace);
+	FOUNDRY_REGISTER_CLASS(FSLanguageProtocol);
+	FOUNDRY_REGISTER_CLASS(FSTextDocument);
+	FOUNDRY_REGISTER_CLASS(FSWorkspace);
 }

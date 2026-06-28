@@ -33,10 +33,10 @@
 #include "core/extension/foundry_extension.h"
 #include "core/variant/native_ptr.h"
 
-GDVIRTUAL_NATIVE_PTR(FoundryExtensionInitializationFunction)
+FOUNDRY_VIRTUAL_NATIVE_PTR(FoundryExtensionInitializationFunction)
 
 class FoundryExtensionManager : public Object {
-	GDCLASS(FoundryExtensionManager, Object);
+	FOUNDRY_CLASS(FoundryExtensionManager, Object);
 
 	int32_t level = -1;
 	HashMap<String, Ref<FoundryExtension>> foundry_extension_map;

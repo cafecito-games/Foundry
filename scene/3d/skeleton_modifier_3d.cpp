@@ -71,11 +71,11 @@ void SkeletonModifier3D::_update_skeleton() {
 }
 
 void SkeletonModifier3D::_skeleton_changed(Skeleton3D *p_old, Skeleton3D *p_new) {
-	GDVIRTUAL_CALL(_skeleton_changed, p_old, p_new);
+	FOUNDRY_VIRTUAL_CALL(_skeleton_changed, p_old, p_new);
 }
 
 void SkeletonModifier3D::_validate_bone_names() {
-	GDVIRTUAL_CALL(_validate_bone_names);
+	FOUNDRY_VIRTUAL_CALL(_validate_bone_names);
 }
 
 void SkeletonModifier3D::_force_update_skeleton_skin() {
@@ -125,11 +125,11 @@ void SkeletonModifier3D::process_modification(double p_delta) {
 }
 
 void SkeletonModifier3D::_process_modification(double p_delta) {
-	if (GDVIRTUAL_CALL(_process_modification_with_delta, p_delta)) {
+	if (FOUNDRY_VIRTUAL_CALL(_process_modification_with_delta, p_delta)) {
 		return;
 	}
 #ifndef DISABLE_DEPRECATED
-	if (GDVIRTUAL_CALL(_process_modification)) {
+	if (FOUNDRY_VIRTUAL_CALL(_process_modification)) {
 		return;
 	}
 #endif // DISABLE_DEPRECATED
@@ -161,13 +161,13 @@ void SkeletonModifier3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "influence", PROPERTY_HINT_RANGE, "0,1,0.001"), "set_influence", "get_influence");
 
 	ADD_SIGNAL(MethodInfo("modification_processed"));
-	GDVIRTUAL_BIND(_process_modification_with_delta, "delta");
+	FOUNDRY_VIRTUAL_BIND(_process_modification_with_delta, "delta");
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL_BIND(_process_modification);
+	FOUNDRY_VIRTUAL_BIND(_process_modification);
 #endif
 
-	GDVIRTUAL_BIND(_skeleton_changed, "old_skeleton", "new_skeleton");
-	GDVIRTUAL_BIND(_validate_bone_names);
+	FOUNDRY_VIRTUAL_BIND(_skeleton_changed, "old_skeleton", "new_skeleton");
+	FOUNDRY_VIRTUAL_BIND(_validate_bone_names);
 
 	BIND_ENUM_CONSTANT(BONE_AXIS_PLUS_X);
 	BIND_ENUM_CONSTANT(BONE_AXIS_MINUS_X);

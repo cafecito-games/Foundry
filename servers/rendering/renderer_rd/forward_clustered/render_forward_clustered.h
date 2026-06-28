@@ -90,7 +90,7 @@ public:
 	/* Framebuffer */
 
 	class RenderBufferDataForwardClustered : public RenderBufferCustomDataRD {
-		GDCLASS(RenderBufferDataForwardClustered, RenderBufferCustomDataRD)
+		FOUNDRY_CLASS(RenderBufferDataForwardClustered, RenderBufferCustomDataRD)
 
 	private:
 		RenderSceneBuffersRD *render_buffers = nullptr;

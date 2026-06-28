@@ -35,7 +35,7 @@
 #include "editor/export/editor_export.h"
 
 void register_windows_exporter_types() {
-	GDREGISTER_VIRTUAL_CLASS(EditorExportPlatformWindows);
+	FOUNDRY_REGISTER_VIRTUAL_CLASS(EditorExportPlatformWindows);
 }
 
 void register_windows_exporter() {

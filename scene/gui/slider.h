@@ -33,7 +33,7 @@
 #include "scene/gui/range.h"
 
 class Slider : public Range {
-	GDCLASS(Slider, Range);
+	FOUNDRY_CLASS(Slider, Range);
 
 public:
 	enum TickPosition {
@@ -114,7 +114,7 @@ public:
 VARIANT_ENUM_CAST(Slider::TickPosition);
 
 class HSlider : public Slider {
-	GDCLASS(HSlider, Slider);
+	FOUNDRY_CLASS(HSlider, Slider);
 
 public:
 	HSlider() :
@@ -122,7 +122,7 @@ public:
 };
 
 class VSlider : public Slider {
-	GDCLASS(VSlider, Slider);
+	FOUNDRY_CLASS(VSlider, Slider);
 
 public:
 	VSlider() :

@@ -35,7 +35,7 @@
 #include "scene/3d/node_3d.h"
 
 class GLTFDocumentExtension : public Resource {
-	GDCLASS(GLTFDocumentExtension, Resource);
+	FOUNDRY_CLASS(GLTFDocumentExtension, Resource);
 
 protected:
 	static void _bind_methods();
@@ -68,28 +68,28 @@ public:
 	virtual Error export_post(Ref<GLTFState> p_state);
 
 	// Import process.
-	GDVIRTUAL2R(Error, _import_preflight, Ref<GLTFState>, Vector<String>);
-	GDVIRTUAL0R(Vector<String>, _get_supported_extensions);
-	GDVIRTUAL3R(Error, _parse_node_extensions, Ref<GLTFState>, Ref<GLTFNode>, Dictionary);
-	GDVIRTUAL4R(Error, _parse_image_data, Ref<GLTFState>, PackedByteArray, String, Ref<Image>);
-	GDVIRTUAL0R(String, _get_image_file_extension);
-	GDVIRTUAL3R(Error, _parse_texture_json, Ref<GLTFState>, Dictionary, Ref<GLTFTexture>);
-	GDVIRTUAL3R(Ref<GLTFObjectModelProperty>, _import_object_model_property, Ref<GLTFState>, PackedStringArray, TypedArray<NodePath>);
-	GDVIRTUAL1R(Error, _import_post_parse, Ref<GLTFState>);
-	GDVIRTUAL1R(Error, _import_pre_generate, Ref<GLTFState>);
-	GDVIRTUAL3R(Node3D *, _generate_scene_node, Ref<GLTFState>, Ref<GLTFNode>, Node *);
-	GDVIRTUAL4R(Error, _import_node, Ref<GLTFState>, Ref<GLTFNode>, Dictionary, Node *);
-	GDVIRTUAL2R(Error, _import_post, Ref<GLTFState>, Node *);
+	FOUNDRY_VIRTUAL2R(Error, _import_preflight, Ref<GLTFState>, Vector<String>);
+	FOUNDRY_VIRTUAL0R(Vector<String>, _get_supported_extensions);
+	FOUNDRY_VIRTUAL3R(Error, _parse_node_extensions, Ref<GLTFState>, Ref<GLTFNode>, Dictionary);
+	FOUNDRY_VIRTUAL4R(Error, _parse_image_data, Ref<GLTFState>, PackedByteArray, String, Ref<Image>);
+	FOUNDRY_VIRTUAL0R(String, _get_image_file_extension);
+	FOUNDRY_VIRTUAL3R(Error, _parse_texture_json, Ref<GLTFState>, Dictionary, Ref<GLTFTexture>);
+	FOUNDRY_VIRTUAL3R(Ref<GLTFObjectModelProperty>, _import_object_model_property, Ref<GLTFState>, PackedStringArray, TypedArray<NodePath>);
+	FOUNDRY_VIRTUAL1R(Error, _import_post_parse, Ref<GLTFState>);
+	FOUNDRY_VIRTUAL1R(Error, _import_pre_generate, Ref<GLTFState>);
+	FOUNDRY_VIRTUAL3R(Node3D *, _generate_scene_node, Ref<GLTFState>, Ref<GLTFNode>, Node *);
+	FOUNDRY_VIRTUAL4R(Error, _import_node, Ref<GLTFState>, Ref<GLTFNode>, Dictionary, Node *);
+	FOUNDRY_VIRTUAL2R(Error, _import_post, Ref<GLTFState>, Node *);
 	// Export process.
-	GDVIRTUAL2R(Error, _export_preflight, Ref<GLTFState>, Node *);
-	GDVIRTUAL3(_convert_scene_node, Ref<GLTFState>, Ref<GLTFNode>, Node *);
-	GDVIRTUAL2R(Error, _export_post_convert, Ref<GLTFState>, Node *);
-	GDVIRTUAL1R(Error, _export_preserialize, Ref<GLTFState>);
-	GDVIRTUAL6R(Ref<GLTFObjectModelProperty>, _export_object_model_property, Ref<GLTFState>, NodePath, const Node *, GLTFNodeIndex, const Object *, int);
-	GDVIRTUAL0R(Vector<String>, _get_saveable_image_formats);
-	GDVIRTUAL5R(PackedByteArray, _serialize_image_to_bytes, Ref<GLTFState>, Ref<Image>, Dictionary, String, float);
-	GDVIRTUAL5R(Error, _save_image_at_path, Ref<GLTFState>, Ref<Image>, String, String, float);
-	GDVIRTUAL4R(Error, _serialize_texture_json, Ref<GLTFState>, Dictionary, Ref<GLTFTexture>, String);
-	GDVIRTUAL4R(Error, _export_node, Ref<GLTFState>, Ref<GLTFNode>, Dictionary, Node *);
-	GDVIRTUAL1R(Error, _export_post, Ref<GLTFState>);
+	FOUNDRY_VIRTUAL2R(Error, _export_preflight, Ref<GLTFState>, Node *);
+	FOUNDRY_VIRTUAL3(_convert_scene_node, Ref<GLTFState>, Ref<GLTFNode>, Node *);
+	FOUNDRY_VIRTUAL2R(Error, _export_post_convert, Ref<GLTFState>, Node *);
+	FOUNDRY_VIRTUAL1R(Error, _export_preserialize, Ref<GLTFState>);
+	FOUNDRY_VIRTUAL6R(Ref<GLTFObjectModelProperty>, _export_object_model_property, Ref<GLTFState>, NodePath, const Node *, GLTFNodeIndex, const Object *, int);
+	FOUNDRY_VIRTUAL0R(Vector<String>, _get_saveable_image_formats);
+	FOUNDRY_VIRTUAL5R(PackedByteArray, _serialize_image_to_bytes, Ref<GLTFState>, Ref<Image>, Dictionary, String, float);
+	FOUNDRY_VIRTUAL5R(Error, _save_image_at_path, Ref<GLTFState>, Ref<Image>, String, String, float);
+	FOUNDRY_VIRTUAL4R(Error, _serialize_texture_json, Ref<GLTFState>, Dictionary, Ref<GLTFTexture>, String);
+	FOUNDRY_VIRTUAL4R(Error, _export_node, Ref<GLTFState>, Ref<GLTFNode>, Dictionary, Node *);
+	FOUNDRY_VIRTUAL1R(Error, _export_post, Ref<GLTFState>);
 };

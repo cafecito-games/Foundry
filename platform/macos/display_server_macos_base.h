@@ -40,7 +40,7 @@
 #undef FontVariation
 
 class DisplayServerMacOSBase : public DisplayServer {
-	GDSOFTCLASS(DisplayServerMacOSBase, DisplayServer)
+	FOUNDRY_SOFTCLASS(DisplayServerMacOSBase, DisplayServer)
 
 	id tts = nullptr;
 

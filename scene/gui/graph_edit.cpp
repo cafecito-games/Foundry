@@ -1459,7 +1459,7 @@ bool GraphEdit::_check_clickable_control(Control *p_control, const Vector2 &mpos
 
 bool GraphEdit::is_in_input_hotzone(GraphNode *p_graph_node, int p_port_idx, const Vector2 &p_mouse_pos, const Vector2i &p_port_size) {
 	bool success;
-	if (GDVIRTUAL_CALL(_is_in_input_hotzone, p_graph_node, p_port_idx, p_mouse_pos, success)) {
+	if (FOUNDRY_VIRTUAL_CALL(_is_in_input_hotzone, p_graph_node, p_port_idx, p_mouse_pos, success)) {
 		return success;
 	} else {
 		Vector2 pos = p_graph_node->get_input_port_position(p_port_idx) * zoom + p_graph_node->get_position();
@@ -1477,7 +1477,7 @@ bool GraphEdit::is_in_output_hotzone(GraphNode *p_graph_node, int p_port_idx, co
 	}
 
 	bool success;
-	if (GDVIRTUAL_CALL(_is_in_output_hotzone, p_graph_node, p_port_idx, p_mouse_pos, success)) {
+	if (FOUNDRY_VIRTUAL_CALL(_is_in_output_hotzone, p_graph_node, p_port_idx, p_mouse_pos, success)) {
 		return success;
 	} else {
 		Vector2 pos = p_graph_node->get_output_port_position(p_port_idx) * zoom + p_graph_node->get_position();
@@ -1522,7 +1522,7 @@ bool GraphEdit::is_in_port_hotzone(const Vector2 &p_pos, const Vector2 &p_mouse_
 
 PackedVector2Array GraphEdit::get_connection_line(const Vector2 &p_from, const Vector2 &p_to) const {
 	Vector<Vector2> ret;
-	if (GDVIRTUAL_CALL(_get_connection_line, p_from, p_to, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_connection_line, p_from, p_to, ret)) {
 		return ret;
 	}
 
@@ -2411,7 +2411,7 @@ void GraphEdit::force_connection_drag_end() {
 
 bool GraphEdit::is_node_hover_valid(const StringName &p_from, const int p_from_port, const StringName &p_to, const int p_to_port) {
 	bool valid = true;
-	GDVIRTUAL_CALL(_is_node_hover_valid, p_from, p_from_port, p_to, p_to_port, valid);
+	FOUNDRY_VIRTUAL_CALL(_is_node_hover_valid, p_from, p_from_port, p_to, p_to_port, valid);
 	return valid;
 }
 
@@ -3054,8 +3054,8 @@ void GraphEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_type_names", "type_names"), &GraphEdit::set_type_names);
 	ClassDB::bind_method(D_METHOD("get_type_names"), &GraphEdit::get_type_names);
 
-	GDVIRTUAL_BIND(_is_in_input_hotzone, "in_node", "in_port", "mouse_position");
-	GDVIRTUAL_BIND(_is_in_output_hotzone, "in_node", "in_port", "mouse_position");
+	FOUNDRY_VIRTUAL_BIND(_is_in_input_hotzone, "in_node", "in_port", "mouse_position");
+	FOUNDRY_VIRTUAL_BIND(_is_in_output_hotzone, "in_node", "in_port", "mouse_position");
 
 	ClassDB::bind_method(D_METHOD("get_menu_hbox"), &GraphEdit::get_menu_hbox);
 
@@ -3063,8 +3063,8 @@ void GraphEdit::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_selected", "node"), &GraphEdit::set_selected);
 
-	GDVIRTUAL_BIND(_get_connection_line, "from_position", "to_position")
-	GDVIRTUAL_BIND(_is_node_hover_valid, "from_node", "from_port", "to_node", "to_port");
+	FOUNDRY_VIRTUAL_BIND(_get_connection_line, "from_position", "to_position")
+	FOUNDRY_VIRTUAL_BIND(_is_node_hover_valid, "from_node", "from_port", "to_node", "to_port");
 
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "scroll_offset", PROPERTY_HINT_NONE, "suffix:px"), "set_scroll_offset", "get_scroll_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "show_grid"), "set_show_grid", "is_showing_grid");

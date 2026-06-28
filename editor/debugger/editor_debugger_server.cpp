@@ -39,7 +39,7 @@
 
 template <typename T>
 class EditorDebuggerServerSocket : public EditorDebuggerServer {
-	GDSOFTCLASS(EditorDebuggerServerSocket, EditorDebuggerServer);
+	FOUNDRY_SOFTCLASS(EditorDebuggerServerSocket, EditorDebuggerServer);
 
 protected:
 	Ref<T> server;

@@ -39,7 +39,7 @@ class GLTFObjectModelProperty;
 // https://github.com/KhronosGroup/glTF-Tutorials/blob/master/gltfTutorial/gltfTutorial_015_SimpleCameras.md
 
 class GLTFCamera : public Resource {
-	GDCLASS(GLTFCamera, Resource);
+	FOUNDRY_CLASS(GLTFCamera, Resource);
 
 private:
 	// glTF has no default camera values, they should always be specified in

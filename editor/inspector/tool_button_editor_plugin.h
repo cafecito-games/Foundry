@@ -34,7 +34,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class EditorInspectorToolButtonPlugin : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorToolButtonPlugin, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorToolButtonPlugin, EditorInspectorPlugin);
 
 	void _call_action(const Variant &p_object, const StringName &p_property);
 	void _invoke_callable(const Callable &p_callable);
@@ -45,7 +45,7 @@ public:
 };
 
 class ToolButtonEditorPlugin : public EditorPlugin {
-	GDCLASS(ToolButtonEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ToolButtonEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "ToolButtonEditorPlugin"; }

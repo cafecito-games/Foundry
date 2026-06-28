@@ -42,7 +42,7 @@ class JoltSoftBody3D;
 class JoltSpace3D;
 
 class JoltPhysicsServer3D final : public PhysicsServer3D {
-	GDCLASS(JoltPhysicsServer3D, PhysicsServer3D)
+	FOUNDRY_CLASS(JoltPhysicsServer3D, PhysicsServer3D)
 
 	inline static JoltPhysicsServer3D *singleton = nullptr;
 

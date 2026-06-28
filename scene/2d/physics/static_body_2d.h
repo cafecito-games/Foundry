@@ -36,7 +36,7 @@ class NavigationPolygon;
 class NavigationMeshSourceGeometryData2D;
 
 class StaticBody2D : public PhysicsBody2D {
-	GDCLASS(StaticBody2D, PhysicsBody2D);
+	FOUNDRY_CLASS(StaticBody2D, PhysicsBody2D);
 
 private:
 	Vector2 constant_linear_velocity;

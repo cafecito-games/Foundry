@@ -63,7 +63,7 @@ struct LauncherIcon {
 class AndroidEditorGradleRunner;
 
 class EditorExportPlatformAndroid : public EditorExportPlatform {
-	GDCLASS(EditorExportPlatformAndroid, EditorExportPlatform);
+	FOUNDRY_CLASS(EditorExportPlatformAndroid, EditorExportPlatform);
 
 	Ref<ImageTexture> logo;
 	Ref<ImageTexture> run_icon;

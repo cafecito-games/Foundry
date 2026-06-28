@@ -38,7 +38,7 @@
 #include <enet/enet.h>
 
 class ENetMultiplayerPeer : public MultiplayerPeer {
-	GDCLASS(ENetMultiplayerPeer, MultiplayerPeer);
+	FOUNDRY_CLASS(ENetMultiplayerPeer, MultiplayerPeer);
 
 private:
 	enum {

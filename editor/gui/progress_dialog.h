@@ -37,7 +37,7 @@
 #include "scene/gui/progress_bar.h"
 
 class BackgroundProgress : public HBoxContainer {
-	GDCLASS(BackgroundProgress, HBoxContainer);
+	FOUNDRY_CLASS(BackgroundProgress, HBoxContainer);
 
 	_THREAD_SAFE_CLASS_
 
@@ -64,7 +64,7 @@ public:
 class PanelContainer;
 
 class ProgressDialog : public CenterContainer {
-	GDCLASS(ProgressDialog, CenterContainer);
+	FOUNDRY_CLASS(ProgressDialog, CenterContainer);
 	struct Task {
 		String task;
 		VBoxContainer *vb = nullptr;

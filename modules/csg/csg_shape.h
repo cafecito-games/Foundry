@@ -45,7 +45,7 @@ class NavigationMesh;
 class NavigationMeshSourceGeometryData3D;
 
 class CSGShape3D : public GeometryInstance3D {
-	GDCLASS(CSGShape3D, GeometryInstance3D);
+	FOUNDRY_CLASS(CSGShape3D, GeometryInstance3D);
 
 public:
 	enum Operation {
@@ -192,7 +192,7 @@ public:
 VARIANT_ENUM_CAST(CSGShape3D::Operation)
 
 class CSGCombiner3D : public CSGShape3D {
-	GDCLASS(CSGCombiner3D, CSGShape3D);
+	FOUNDRY_CLASS(CSGCombiner3D, CSGShape3D);
 
 private:
 	virtual CSGBrush *_build_brush() override;
@@ -202,7 +202,7 @@ public:
 };
 
 class CSGPrimitive3D : public CSGShape3D {
-	GDCLASS(CSGPrimitive3D, CSGShape3D);
+	FOUNDRY_CLASS(CSGPrimitive3D, CSGShape3D);
 
 protected:
 	bool flip_faces;
@@ -217,7 +217,7 @@ public:
 };
 
 class CSGMesh3D : public CSGPrimitive3D {
-	GDCLASS(CSGMesh3D, CSGPrimitive3D);
+	FOUNDRY_CLASS(CSGMesh3D, CSGPrimitive3D);
 
 	virtual CSGBrush *_build_brush() override;
 
@@ -238,7 +238,7 @@ public:
 };
 
 class CSGSphere3D : public CSGPrimitive3D {
-	GDCLASS(CSGSphere3D, CSGPrimitive3D);
+	FOUNDRY_CLASS(CSGSphere3D, CSGPrimitive3D);
 	virtual CSGBrush *_build_brush() override;
 
 	Ref<Material> material;
@@ -270,7 +270,7 @@ public:
 };
 
 class CSGBox3D : public CSGPrimitive3D {
-	GDCLASS(CSGBox3D, CSGPrimitive3D);
+	FOUNDRY_CLASS(CSGBox3D, CSGPrimitive3D);
 	virtual CSGBrush *_build_brush() override;
 
 	Ref<Material> material;
@@ -294,7 +294,7 @@ public:
 };
 
 class CSGCylinder3D : public CSGPrimitive3D {
-	GDCLASS(CSGCylinder3D, CSGPrimitive3D);
+	FOUNDRY_CLASS(CSGCylinder3D, CSGPrimitive3D);
 	virtual CSGBrush *_build_brush() override;
 
 	Ref<Material> material;
@@ -330,7 +330,7 @@ public:
 };
 
 class CSGTorus3D : public CSGPrimitive3D {
-	GDCLASS(CSGTorus3D, CSGPrimitive3D);
+	FOUNDRY_CLASS(CSGTorus3D, CSGPrimitive3D);
 	virtual CSGBrush *_build_brush() override;
 
 	Ref<Material> material;
@@ -366,7 +366,7 @@ public:
 };
 
 class CSGPolygon3D : public CSGPrimitive3D {
-	GDCLASS(CSGPolygon3D, CSGPrimitive3D);
+	FOUNDRY_CLASS(CSGPolygon3D, CSGPrimitive3D);
 
 public:
 	enum Mode {

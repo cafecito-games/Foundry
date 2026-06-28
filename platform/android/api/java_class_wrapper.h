@@ -45,7 +45,7 @@ class JavaObject;
 #endif
 
 class JavaClass : public RefCounted {
-	GDCLASS(JavaClass, RefCounted);
+	FOUNDRY_CLASS(JavaClass, RefCounted);
 
 #ifdef ANDROID_ENABLED
 	enum ArgumentType {
@@ -214,7 +214,7 @@ public:
 };
 
 class JavaObject : public RefCounted {
-	GDCLASS(JavaObject, RefCounted);
+	FOUNDRY_CLASS(JavaObject, RefCounted);
 
 #ifdef ANDROID_ENABLED
 	Ref<JavaClass> base_class;
@@ -244,7 +244,7 @@ public:
 };
 
 class JavaClassWrapper : public Object {
-	GDCLASS(JavaClassWrapper, Object);
+	FOUNDRY_CLASS(JavaClassWrapper, Object);
 
 #ifdef ANDROID_ENABLED
 	RBMap<String, Ref<JavaClass>> class_cache;

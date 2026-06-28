@@ -41,7 +41,7 @@
 class LineEdit;
 
 class AcceptDialog : public Window {
-	GDCLASS(AcceptDialog, Window);
+	FOUNDRY_CLASS(AcceptDialog, Window);
 
 	Window *parent_visible = nullptr;
 
@@ -131,7 +131,7 @@ public:
 };
 
 class ConfirmationDialog : public AcceptDialog {
-	GDCLASS(ConfirmationDialog, AcceptDialog);
+	FOUNDRY_CLASS(ConfirmationDialog, AcceptDialog);
 	Button *cancel = nullptr;
 
 protected:

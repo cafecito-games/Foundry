@@ -36,7 +36,7 @@
 #include "scene/gui/tree.h"
 
 class EditorHelpSearch : public ConfirmationDialog {
-	GDCLASS(EditorHelpSearch, ConfirmationDialog);
+	FOUNDRY_CLASS(EditorHelpSearch, ConfirmationDialog);
 
 	enum SearchFlags {
 		SEARCH_CLASSES = 1 << 0,

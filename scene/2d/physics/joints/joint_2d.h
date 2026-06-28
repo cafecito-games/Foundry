@@ -35,7 +35,7 @@
 class PhysicsBody2D;
 
 class Joint2D : public Node2D {
-	GDCLASS(Joint2D, Node2D);
+	FOUNDRY_CLASS(Joint2D, Node2D);
 
 	RID joint;
 	RID ba, bb;

@@ -33,7 +33,7 @@
 #include "core/io/resource.h"
 
 class Shape2D : public Resource {
-	GDCLASS(Shape2D, Resource);
+	FOUNDRY_CLASS(Shape2D, Resource);
 	OBJ_SAVE_TYPE(Shape2D);
 
 	RID shape;

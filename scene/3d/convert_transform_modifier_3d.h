@@ -33,7 +33,7 @@
 #include "scene/3d/bone_constraint_3d.h"
 
 class ConvertTransformModifier3D : public BoneConstraint3D {
-	GDCLASS(ConvertTransformModifier3D, BoneConstraint3D);
+	FOUNDRY_CLASS(ConvertTransformModifier3D, BoneConstraint3D);
 
 public:
 	enum TransformMode {

@@ -113,7 +113,7 @@ public:
 /*************************************************************************/
 
 class CodeSignBlob : public RefCounted {
-	GDSOFTCLASS(CodeSignBlob, RefCounted);
+	FOUNDRY_SOFTCLASS(CodeSignBlob, RefCounted);
 
 public:
 	virtual PackedByteArray get_hash_sha1() const = 0;
@@ -132,7 +132,7 @@ public:
 // Note: Proper code generator is not implemented (any we probably won't ever need it), just a hardcoded bytecode for the limited set of cases.
 
 class CodeSignRequirements : public CodeSignBlob {
-	GDSOFTCLASS(CodeSignRequirements, CodeSignBlob);
+	FOUNDRY_SOFTCLASS(CodeSignRequirements, CodeSignBlob);
 
 	PackedByteArray blob;
 
@@ -170,7 +170,7 @@ public:
 // PList formatted entitlements.
 
 class CodeSignEntitlementsText : public CodeSignBlob {
-	GDSOFTCLASS(CodeSignEntitlementsText, CodeSignBlob);
+	FOUNDRY_SOFTCLASS(CodeSignEntitlementsText, CodeSignBlob);
 
 	PackedByteArray blob;
 
@@ -194,7 +194,7 @@ public:
 // ASN.1 serialized entitlements.
 
 class CodeSignEntitlementsBinary : public CodeSignBlob {
-	GDSOFTCLASS(CodeSignEntitlementsBinary, CodeSignBlob);
+	FOUNDRY_SOFTCLASS(CodeSignEntitlementsBinary, CodeSignBlob);
 
 	PackedByteArray blob;
 
@@ -218,7 +218,7 @@ public:
 // Code Directory, runtime options, code segment and special structure hashes.
 
 class CodeSignCodeDirectory : public CodeSignBlob {
-	GDSOFTCLASS(CodeSignCodeDirectory, CodeSignBlob);
+	FOUNDRY_SOFTCLASS(CodeSignCodeDirectory, CodeSignBlob);
 
 public:
 	enum Slot {
@@ -320,7 +320,7 @@ public:
 /*************************************************************************/
 
 class CodeSignSignature : public CodeSignBlob {
-	GDSOFTCLASS(CodeSignSignature, CodeSignBlob);
+	FOUNDRY_SOFTCLASS(CodeSignSignature, CodeSignBlob);
 
 	PackedByteArray blob;
 

@@ -38,7 +38,7 @@ class ItemList;
 class EditorUndoRedoManager;
 
 class HistoryDock : public EditorDock {
-	GDCLASS(HistoryDock, EditorDock);
+	FOUNDRY_CLASS(HistoryDock, EditorDock);
 
 	EditorUndoRedoManager *ur_manager;
 	ItemList *action_list = nullptr;

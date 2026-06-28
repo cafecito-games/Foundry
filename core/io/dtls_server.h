@@ -34,7 +34,7 @@
 #include "core/io/packet_peer_dtls.h"
 
 class DTLSServer : public RefCounted {
-	GDCLASS(DTLSServer, RefCounted);
+	FOUNDRY_CLASS(DTLSServer, RefCounted);
 
 protected:
 	static inline DTLSServer *(*_create)(bool p_notify_postinitialize) = nullptr;

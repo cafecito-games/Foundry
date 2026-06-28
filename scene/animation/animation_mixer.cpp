@@ -1033,12 +1033,12 @@ Variant AnimationMixer::_post_process_key_value(const Ref<Animation> &p_anim, in
 }
 
 Variant AnimationMixer::post_process_key_value(const Ref<Animation> &p_anim, int p_track, Variant p_value, ObjectID p_object_id, int p_object_sub_idx) {
-	if (is_GDVIRTUAL_CALL_post_process_key_value) {
+	if (is_FOUNDRY_VIRTUAL_CALL_post_process_key_value) {
 		Variant res;
-		if (GDVIRTUAL_CALL(_post_process_key_value, p_anim, p_track, p_value, p_object_id, p_object_sub_idx, res)) {
+		if (FOUNDRY_VIRTUAL_CALL(_post_process_key_value, p_anim, p_track, p_value, p_object_id, p_object_sub_idx, res)) {
 			return res;
 		}
-		is_GDVIRTUAL_CALL_post_process_key_value = false;
+		is_FOUNDRY_VIRTUAL_CALL_post_process_key_value = false;
 	}
 	return _post_process_key_value(p_anim, p_track, p_value, p_object_id, p_object_sub_idx);
 }
@@ -1851,7 +1851,7 @@ void AnimationMixer::_blend_process(double p_delta, bool p_update_only) {
 			}
 		}
 	}
-	is_GDVIRTUAL_CALL_post_process_key_value = true;
+	is_FOUNDRY_VIRTUAL_CALL_post_process_key_value = true;
 }
 
 void AnimationMixer::_blend_apply() {
@@ -2446,7 +2446,7 @@ void AnimationMixer::_bind_methods() {
 	/* ---- Blending processor ---- */
 	ClassDB::bind_method(D_METHOD("clear_caches"), &AnimationMixer::clear_caches);
 	ClassDB::bind_method(D_METHOD("advance", "delta"), &AnimationMixer::advance);
-	GDVIRTUAL_BIND(_post_process_key_value, "animation", "track", "value", "object_id", "object_sub_idx");
+	FOUNDRY_VIRTUAL_BIND(_post_process_key_value, "animation", "track", "value", "object_id", "object_sub_idx");
 
 	/* ---- Capture feature ---- */
 	ClassDB::bind_method(D_METHOD("capture", "name", "duration", "trans_type", "ease_type"), &AnimationMixer::capture, DEFVAL(Tween::TRANS_LINEAR), DEFVAL(Tween::EASE_IN));

@@ -34,7 +34,7 @@
 #include "scene/resources/text_line.h"
 
 class LinkButton : public BaseButton {
-	GDCLASS(LinkButton, BaseButton);
+	FOUNDRY_CLASS(LinkButton, BaseButton);
 
 public:
 	enum UnderlineMode {

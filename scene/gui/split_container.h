@@ -35,7 +35,7 @@
 class TextureRect;
 
 class SplitContainerDragger : public Control {
-	GDCLASS(SplitContainerDragger, Control);
+	FOUNDRY_CLASS(SplitContainerDragger, Control);
 	friend class SplitContainer;
 
 	Rect2 split_bar_rect;
@@ -71,7 +71,7 @@ public:
 };
 
 class SplitContainer : public Container {
-	GDCLASS(SplitContainer, Container);
+	FOUNDRY_CLASS(SplitContainer, Container);
 	friend class SplitContainerDragger;
 
 public:
@@ -207,7 +207,7 @@ public:
 VARIANT_ENUM_CAST(SplitContainer::DraggerVisibility);
 
 class HSplitContainer : public SplitContainer {
-	GDCLASS(HSplitContainer, SplitContainer);
+	FOUNDRY_CLASS(HSplitContainer, SplitContainer);
 
 public:
 	HSplitContainer() :
@@ -215,7 +215,7 @@ public:
 };
 
 class VSplitContainer : public SplitContainer {
-	GDCLASS(VSplitContainer, SplitContainer);
+	FOUNDRY_CLASS(VSplitContainer, SplitContainer);
 
 public:
 	VSplitContainer() :

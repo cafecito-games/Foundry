@@ -45,7 +45,7 @@ class CharFXTransform;
 class RichTextEffect;
 
 class RichTextLabel : public Control {
-	GDCLASS(RichTextLabel, Control);
+	FOUNDRY_CLASS(RichTextLabel, Control);
 
 	enum RTLDrawStep {
 		DRAW_STEP_BACKGROUND,

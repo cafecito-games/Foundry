@@ -37,7 +37,7 @@
 #include "scene/main/multiplayer_peer.h"
 
 class WebSocketMultiplayerPeer : public MultiplayerPeer {
-	GDCLASS(WebSocketMultiplayerPeer, MultiplayerPeer);
+	FOUNDRY_CLASS(WebSocketMultiplayerPeer, MultiplayerPeer);
 
 private:
 	Ref<WebSocketPeer> _create_peer();

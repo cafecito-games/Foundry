@@ -35,7 +35,7 @@
 #include "core/io/resource.h"
 
 class OpenXRActionSet : public Resource {
-	GDCLASS(OpenXRActionSet, Resource);
+	FOUNDRY_CLASS(OpenXRActionSet, Resource);
 
 private:
 	String localized_name;

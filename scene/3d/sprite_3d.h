@@ -34,7 +34,7 @@
 #include "scene/resources/sprite_frames.h"
 
 class SpriteBase3D : public GeometryInstance3D {
-	GDCLASS(SpriteBase3D, GeometryInstance3D);
+	FOUNDRY_CLASS(SpriteBase3D, GeometryInstance3D);
 
 	mutable Ref<TriangleMesh> triangle_mesh; //cached
 
@@ -179,7 +179,7 @@ public:
 };
 
 class Sprite3D : public SpriteBase3D {
-	GDCLASS(Sprite3D, SpriteBase3D);
+	FOUNDRY_CLASS(Sprite3D, SpriteBase3D);
 	Ref<Texture2D> texture;
 
 	bool region = false;
@@ -225,7 +225,7 @@ public:
 };
 
 class AnimatedSprite3D : public SpriteBase3D {
-	GDCLASS(AnimatedSprite3D, SpriteBase3D);
+	FOUNDRY_CLASS(AnimatedSprite3D, SpriteBase3D);
 
 	Ref<SpriteFrames> frames;
 	String autoplay;

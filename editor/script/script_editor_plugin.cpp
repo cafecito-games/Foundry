@@ -102,20 +102,20 @@ bool is_embedded_script_path(const String &p_path) {
 
 String EditorSyntaxHighlighter::_get_name() const {
 	String ret = "Unnamed";
-	GDVIRTUAL_CALL(_get_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_name, ret);
 	return ret;
 }
 
 PackedStringArray EditorSyntaxHighlighter::_get_supported_languages() const {
 	PackedStringArray ret;
-	GDVIRTUAL_CALL(_get_supported_languages, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_supported_languages, ret);
 	return ret;
 }
 
 Ref<EditorSyntaxHighlighter> EditorSyntaxHighlighter::_create() const {
 	Ref<EditorSyntaxHighlighter> syntax_highlighter;
-	if (GDVIRTUAL_IS_OVERRIDDEN(_create)) {
-		GDVIRTUAL_CALL(_create, syntax_highlighter);
+	if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_create)) {
+		FOUNDRY_VIRTUAL_CALL(_create, syntax_highlighter);
 	} else {
 		syntax_highlighter.instantiate();
 		if (get_script_instance()) {
@@ -128,9 +128,9 @@ Ref<EditorSyntaxHighlighter> EditorSyntaxHighlighter::_create() const {
 void EditorSyntaxHighlighter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_get_edited_resource"), &EditorSyntaxHighlighter::_get_edited_resource);
 
-	GDVIRTUAL_BIND(_get_name)
-	GDVIRTUAL_BIND(_get_supported_languages)
-	GDVIRTUAL_BIND(_create)
+	FOUNDRY_VIRTUAL_BIND(_get_name)
+	FOUNDRY_VIRTUAL_BIND(_get_supported_languages)
+	FOUNDRY_VIRTUAL_BIND(_create)
 }
 
 ////

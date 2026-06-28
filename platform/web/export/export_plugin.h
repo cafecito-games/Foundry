@@ -45,7 +45,7 @@
 class ImageTexture;
 
 class EditorExportPlatformWeb : public EditorExportPlatform {
-	GDCLASS(EditorExportPlatformWeb, EditorExportPlatform);
+	FOUNDRY_CLASS(EditorExportPlatformWeb, EditorExportPlatform);
 
 	enum RemoteDebugState {
 		REMOTE_DEBUG_STATE_UNAVAILABLE,

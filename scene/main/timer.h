@@ -33,7 +33,7 @@
 #include "scene/main/node.h"
 
 class Timer : public Node {
-	GDCLASS(Timer, Node);
+	FOUNDRY_CLASS(Timer, Node);
 
 	double wait_time = 1.0;
 	bool one_shot = false;

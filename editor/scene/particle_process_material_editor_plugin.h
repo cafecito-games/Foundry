@@ -41,7 +41,7 @@ class Range;
 class VBoxContainer;
 
 class ParticleProcessMaterialMinMaxPropertyEditor : public EditorProperty {
-	GDCLASS(ParticleProcessMaterialMinMaxPropertyEditor, EditorProperty);
+	FOUNDRY_CLASS(ParticleProcessMaterialMinMaxPropertyEditor, EditorProperty);
 
 	enum class Hover {
 		NONE,
@@ -127,7 +127,7 @@ public:
 };
 
 class EditorInspectorParticleProcessMaterialPlugin : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorParticleProcessMaterialPlugin, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorParticleProcessMaterialPlugin, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;

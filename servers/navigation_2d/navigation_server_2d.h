@@ -48,7 +48,7 @@ struct NavMeshGeometryParser2D {
 };
 
 class NavigationServer2D : public Object {
-	GDCLASS(NavigationServer2D, Object);
+	FOUNDRY_CLASS(NavigationServer2D, Object);
 
 	static NavigationServer2D *singleton;
 
@@ -433,7 +433,7 @@ public:
 
 /// Manager used for the server singleton registration
 class NavigationServer2DManager : public Object {
-	GDCLASS(NavigationServer2DManager, Object);
+	FOUNDRY_CLASS(NavigationServer2DManager, Object);
 
 	static inline NavigationServer2DManager *singleton = nullptr;
 

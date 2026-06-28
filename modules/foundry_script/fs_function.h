@@ -669,7 +669,7 @@ public:
 };
 
 class FSFunctionState : public RefCounted {
-	GDCLASS(FSFunctionState, RefCounted);
+	FOUNDRY_CLASS(FSFunctionState, RefCounted);
 	friend class FSFunction;
 	FSFunction *function = nullptr;
 	FSFunction::CallState state;

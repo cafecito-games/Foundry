@@ -38,7 +38,7 @@
 // KHR_animation_pointer: https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_animation_pointer
 
 class GLTFObjectModelProperty : public RefCounted {
-	GDCLASS(GLTFObjectModelProperty, RefCounted);
+	FOUNDRY_CLASS(GLTFObjectModelProperty, RefCounted);
 
 public:
 	enum GLTFObjectModelType {

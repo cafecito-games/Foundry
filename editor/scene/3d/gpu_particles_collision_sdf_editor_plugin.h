@@ -39,7 +39,7 @@ class EditorFileDialog;
 class HBoxContainer;
 
 class GPUParticlesCollisionSDF3DEditorPlugin : public EditorPlugin {
-	GDCLASS(GPUParticlesCollisionSDF3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(GPUParticlesCollisionSDF3DEditorPlugin, EditorPlugin);
 
 	GPUParticlesCollisionSDF3D *col_sdf = nullptr;
 

@@ -39,7 +39,7 @@ class FileAccess;
 typedef void (*ResourceUIDScanForUIDOnStartup)();
 
 class ResourceUID : public Object {
-	GDCLASS(ResourceUID, Object)
+	FOUNDRY_CLASS(ResourceUID, Object)
 public:
 	typedef int64_t ID;
 	constexpr const static ID INVALID_ID = -1;

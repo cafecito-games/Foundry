@@ -33,7 +33,7 @@
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 
 class NavigationRegion3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(NavigationRegion3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(NavigationRegion3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	struct _EdgeKey {
 		Vector3 from;

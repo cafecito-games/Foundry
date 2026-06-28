@@ -39,7 +39,7 @@
 #include "core/variant/typed_array.h"
 
 class Input : public Object {
-	GDCLASS(Input, Object);
+	FOUNDRY_CLASS(Input, Object);
 	_THREAD_SAFE_CLASS_
 
 	static inline Input *singleton = nullptr;

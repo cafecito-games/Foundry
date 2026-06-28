@@ -34,7 +34,7 @@
 #include "editor/export/editor_export.h"
 
 class FoundryExtensionExportPlugin : public EditorExportPlugin {
-	GDSOFTCLASS(FoundryExtensionExportPlugin, EditorExportPlugin);
+	FOUNDRY_SOFTCLASS(FoundryExtensionExportPlugin, EditorExportPlugin);
 
 protected:
 	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) override;

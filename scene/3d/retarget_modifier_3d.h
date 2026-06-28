@@ -34,7 +34,7 @@
 #include "scene/resources/skeleton_profile.h"
 
 class RetargetModifier3D : public SkeletonModifier3D {
-	GDCLASS(RetargetModifier3D, SkeletonModifier3D);
+	FOUNDRY_CLASS(RetargetModifier3D, SkeletonModifier3D);
 
 public:
 	enum TransformFlag {

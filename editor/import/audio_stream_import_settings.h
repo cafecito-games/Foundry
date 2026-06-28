@@ -39,7 +39,7 @@
 class CheckBox;
 
 class AudioStreamImportSettingsDialog : public ConfirmationDialog {
-	GDCLASS(AudioStreamImportSettingsDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(AudioStreamImportSettingsDialog, ConfirmationDialog);
 
 	CheckBox *bpm_enabled = nullptr;
 	SpinBox *bpm_edit = nullptr;

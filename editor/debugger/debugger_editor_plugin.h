@@ -38,7 +38,7 @@ class PopupMenu;
 class RunInstancesDialog;
 
 class DebuggerEditorPlugin : public EditorPlugin {
-	GDCLASS(DebuggerEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(DebuggerEditorPlugin, EditorPlugin);
 
 private:
 	PopupMenu *debug_menu = nullptr;

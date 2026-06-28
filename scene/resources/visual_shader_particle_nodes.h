@@ -37,7 +37,7 @@ class ImageTexture;
 // Emit nodes
 
 class VisualShaderNodeParticleEmitter : public VisualShaderNode {
-	GDCLASS(VisualShaderNodeParticleEmitter, VisualShaderNode);
+	FOUNDRY_CLASS(VisualShaderNodeParticleEmitter, VisualShaderNode);
 
 protected:
 	bool mode_2d = false;
@@ -62,7 +62,7 @@ public:
 };
 
 class VisualShaderNodeParticleSphereEmitter : public VisualShaderNodeParticleEmitter {
-	GDCLASS(VisualShaderNodeParticleSphereEmitter, VisualShaderNodeParticleEmitter);
+	FOUNDRY_CLASS(VisualShaderNodeParticleSphereEmitter, VisualShaderNodeParticleEmitter);
 
 public:
 	virtual String get_caption() const override;
@@ -78,7 +78,7 @@ public:
 };
 
 class VisualShaderNodeParticleBoxEmitter : public VisualShaderNodeParticleEmitter {
-	GDCLASS(VisualShaderNodeParticleBoxEmitter, VisualShaderNodeParticleEmitter);
+	FOUNDRY_CLASS(VisualShaderNodeParticleBoxEmitter, VisualShaderNodeParticleEmitter);
 
 public:
 	virtual String get_caption() const override;
@@ -95,7 +95,7 @@ public:
 };
 
 class VisualShaderNodeParticleRingEmitter : public VisualShaderNodeParticleEmitter {
-	GDCLASS(VisualShaderNodeParticleRingEmitter, VisualShaderNodeParticleEmitter);
+	FOUNDRY_CLASS(VisualShaderNodeParticleRingEmitter, VisualShaderNodeParticleEmitter);
 
 public:
 	virtual String get_caption() const override;
@@ -111,7 +111,7 @@ public:
 };
 
 class VisualShaderNodeParticleMeshEmitter : public VisualShaderNodeParticleEmitter {
-	GDCLASS(VisualShaderNodeParticleMeshEmitter, VisualShaderNodeParticleEmitter);
+	FOUNDRY_CLASS(VisualShaderNodeParticleMeshEmitter, VisualShaderNodeParticleEmitter);
 	Ref<Mesh> mesh;
 	bool use_all_surfaces = true;
 	int surface_index = 0;
@@ -163,7 +163,7 @@ public:
 };
 
 class VisualShaderNodeParticleMultiplyByAxisAngle : public VisualShaderNode {
-	GDCLASS(VisualShaderNodeParticleMultiplyByAxisAngle, VisualShaderNode);
+	FOUNDRY_CLASS(VisualShaderNodeParticleMultiplyByAxisAngle, VisualShaderNode);
 	bool degrees_mode = true;
 
 protected:
@@ -194,7 +194,7 @@ public:
 };
 
 class VisualShaderNodeParticleConeVelocity : public VisualShaderNode {
-	GDCLASS(VisualShaderNodeParticleConeVelocity, VisualShaderNode);
+	FOUNDRY_CLASS(VisualShaderNodeParticleConeVelocity, VisualShaderNode);
 
 public:
 	virtual String get_caption() const override;
@@ -216,7 +216,7 @@ public:
 };
 
 class VisualShaderNodeParticleRandomness : public VisualShaderNode {
-	GDCLASS(VisualShaderNodeParticleRandomness, VisualShaderNode);
+	FOUNDRY_CLASS(VisualShaderNodeParticleRandomness, VisualShaderNode);
 
 public:
 	enum OpType {
@@ -263,7 +263,7 @@ VARIANT_ENUM_CAST(VisualShaderNodeParticleRandomness::OpType)
 // Process nodes
 
 class VisualShaderNodeParticleAccelerator : public VisualShaderNode {
-	GDCLASS(VisualShaderNodeParticleAccelerator, VisualShaderNode);
+	FOUNDRY_CLASS(VisualShaderNodeParticleAccelerator, VisualShaderNode);
 
 public:
 	enum Mode {
@@ -307,7 +307,7 @@ VARIANT_ENUM_CAST(VisualShaderNodeParticleAccelerator::Mode)
 // Common nodes
 
 class VisualShaderNodeParticleOutput : public VisualShaderNodeOutput {
-	GDCLASS(VisualShaderNodeParticleOutput, VisualShaderNodeOutput);
+	FOUNDRY_CLASS(VisualShaderNodeParticleOutput, VisualShaderNodeOutput);
 
 public:
 	virtual String get_caption() const override;
@@ -323,7 +323,7 @@ public:
 };
 
 class VisualShaderNodeParticleEmit : public VisualShaderNode {
-	GDCLASS(VisualShaderNodeParticleEmit, VisualShaderNode);
+	FOUNDRY_CLASS(VisualShaderNodeParticleEmit, VisualShaderNode);
 
 public:
 	enum EmitFlags {

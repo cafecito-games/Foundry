@@ -38,7 +38,7 @@
 #include "editor/translations/editor_translation_parser.h"
 
 class FSEditorTranslationParserPlugin : public EditorTranslationParserPlugin {
-	GDCLASS(FSEditorTranslationParserPlugin, EditorTranslationParserPlugin);
+	FOUNDRY_CLASS(FSEditorTranslationParserPlugin, EditorTranslationParserPlugin);
 
 	const HashMap<int, FSTokenizer::CommentData> *comment_data = nullptr;
 

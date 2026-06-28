@@ -34,7 +34,7 @@
 #include "editor/scene/texture/texture_editor_plugin.h"
 
 class EditorInspectorPluginSubViewportPreview : public EditorInspectorPluginTexture {
-	GDCLASS(EditorInspectorPluginSubViewportPreview, EditorInspectorPluginTexture);
+	FOUNDRY_CLASS(EditorInspectorPluginSubViewportPreview, EditorInspectorPluginTexture);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -42,7 +42,7 @@ public:
 };
 
 class SubViewportPreviewEditorPlugin : public EditorPlugin {
-	GDCLASS(SubViewportPreviewEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(SubViewportPreviewEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "SubViewportPreview"; }

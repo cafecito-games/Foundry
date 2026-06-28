@@ -37,7 +37,7 @@ class EventListenerLineEdit;
 class LineEdit;
 
 class EditorEventSearchBar : public HBoxContainer {
-	GDCLASS(EditorEventSearchBar, HBoxContainer);
+	FOUNDRY_CLASS(EditorEventSearchBar, HBoxContainer);
 
 	LineEdit *search_by_name = nullptr;
 	EventListenerLineEdit *search_by_event = nullptr;

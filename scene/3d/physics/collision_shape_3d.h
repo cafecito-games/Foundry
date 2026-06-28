@@ -35,7 +35,7 @@
 
 class CollisionObject3D;
 class CollisionShape3D : public Node3D {
-	GDCLASS(CollisionShape3D, Node3D);
+	FOUNDRY_CLASS(CollisionShape3D, Node3D);
 
 	Ref<Shape3D> shape;
 

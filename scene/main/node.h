@@ -48,7 +48,7 @@ SAFE_FLAG_TYPE_PUN_GUARANTEES
 SAFE_NUMERIC_TYPE_PUN_GUARANTEES(uint32_t)
 
 class Node : public Object {
-	GDCLASS(Node, Object);
+	FOUNDRY_CLASS(Node, Object);
 
 protected:
 	// During group processing, these are thread-safe.
@@ -424,20 +424,20 @@ protected:
 	virtual void unhandled_input(const Ref<InputEvent> &p_event);
 	virtual void unhandled_key_input(const Ref<InputEvent> &p_key_event);
 
-	GDVIRTUAL1(_process, double)
-	GDVIRTUAL1(_physics_process, double)
-	GDVIRTUAL0(_enter_tree)
-	GDVIRTUAL0(_exit_tree)
-	GDVIRTUAL0(_ready)
-	GDVIRTUAL0RC(Vector<String>, _get_accessibility_configuration_warnings)
-	GDVIRTUAL0RC(Vector<String>, _get_configuration_warnings)
+	FOUNDRY_VIRTUAL1(_process, double)
+	FOUNDRY_VIRTUAL1(_physics_process, double)
+	FOUNDRY_VIRTUAL0(_enter_tree)
+	FOUNDRY_VIRTUAL0(_exit_tree)
+	FOUNDRY_VIRTUAL0(_ready)
+	FOUNDRY_VIRTUAL0RC(Vector<String>, _get_accessibility_configuration_warnings)
+	FOUNDRY_VIRTUAL0RC(Vector<String>, _get_configuration_warnings)
 
-	GDVIRTUAL1(_input, RequiredParam<InputEvent>)
-	GDVIRTUAL1(_shortcut_input, RequiredParam<InputEvent>)
-	GDVIRTUAL1(_unhandled_input, RequiredParam<InputEvent>)
-	GDVIRTUAL1(_unhandled_key_input, RequiredParam<InputEvent>)
+	FOUNDRY_VIRTUAL1(_input, RequiredParam<InputEvent>)
+	FOUNDRY_VIRTUAL1(_shortcut_input, RequiredParam<InputEvent>)
+	FOUNDRY_VIRTUAL1(_unhandled_input, RequiredParam<InputEvent>)
+	FOUNDRY_VIRTUAL1(_unhandled_key_input, RequiredParam<InputEvent>)
 
-	GDVIRTUAL0RC(RID, _get_focused_accessibility_element)
+	FOUNDRY_VIRTUAL0RC(RID, _get_focused_accessibility_element)
 
 #ifndef DISABLE_DEPRECATED
 	void _set_name_bind_compat_76560(const String &p_name);

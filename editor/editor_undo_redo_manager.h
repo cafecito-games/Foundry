@@ -34,7 +34,7 @@
 #include "core/object/undo_redo.h"
 
 class EditorUndoRedoManager : public Object {
-	GDCLASS(EditorUndoRedoManager, Object);
+	FOUNDRY_CLASS(EditorUndoRedoManager, Object);
 
 	static EditorUndoRedoManager *singleton;
 

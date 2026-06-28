@@ -37,7 +37,7 @@
 class ImporterMesh;
 
 class ImporterMeshInstance3D : public Node3D {
-	GDCLASS(ImporterMeshInstance3D, Node3D)
+	FOUNDRY_CLASS(ImporterMeshInstance3D, Node3D)
 
 	Ref<ImporterMesh> mesh;
 	Ref<Skin> skin;

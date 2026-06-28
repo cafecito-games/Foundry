@@ -36,7 +36,7 @@ class DisplayServerMacOS;
 class EmbeddedProcessMacOS;
 
 class LayerHost final : public Control {
-	GDCLASS(LayerHost, Control);
+	FOUNDRY_CLASS(LayerHost, Control);
 
 	ScriptEditorDebugger *script_debugger = nullptr;
 	EmbeddedProcessMacOS *process = nullptr;
@@ -68,7 +68,7 @@ public:
 };
 
 class EmbeddedProcessMacOS final : public EmbeddedProcessBase {
-	GDCLASS(EmbeddedProcessMacOS, EmbeddedProcessBase);
+	FOUNDRY_CLASS(EmbeddedProcessMacOS, EmbeddedProcessBase);
 
 	enum class EmbeddingState {
 		IDLE,

@@ -42,7 +42,7 @@ const String ENV_WIN_CODESIGN_ID = "GODOT_WINDOWS_CODESIGN_IDENTITY";
 const String ENV_WIN_CODESIGN_PASS = "GODOT_WINDOWS_CODESIGN_PASSWORD";
 
 class EditorExportPlatformWindows : public EditorExportPlatformPC {
-	GDCLASS(EditorExportPlatformWindows, EditorExportPlatformPC);
+	FOUNDRY_CLASS(EditorExportPlatformWindows, EditorExportPlatformPC);
 
 	struct SSHCleanupCommand {
 		String host;

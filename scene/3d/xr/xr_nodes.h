@@ -38,7 +38,7 @@
 */
 
 class XRCamera3D : public Camera3D {
-	GDCLASS(XRCamera3D, Camera3D);
+	FOUNDRY_CLASS(XRCamera3D, Camera3D);
 
 protected:
 	// The name and pose for our HMD tracker is currently the only hardcoded bit.
@@ -75,7 +75,7 @@ public:
 */
 
 class XRNode3D : public Node3D {
-	GDCLASS(XRNode3D, Node3D);
+	FOUNDRY_CLASS(XRNode3D, Node3D);
 
 private:
 	StringName tracker_name;
@@ -131,7 +131,7 @@ public:
 */
 
 class XRController3D : public XRNode3D {
-	GDCLASS(XRController3D, XRNode3D);
+	FOUNDRY_CLASS(XRController3D, XRNode3D);
 
 private:
 protected:
@@ -161,7 +161,7 @@ public:
 */
 
 class XRAnchor3D : public XRNode3D {
-	GDCLASS(XRAnchor3D, XRNode3D);
+	FOUNDRY_CLASS(XRAnchor3D, XRNode3D);
 
 private:
 	Vector3 size;
@@ -184,7 +184,7 @@ public:
 */
 
 class XROrigin3D : public Node3D {
-	GDCLASS(XROrigin3D, Node3D);
+	FOUNDRY_CLASS(XROrigin3D, Node3D);
 
 private:
 	bool current = false;

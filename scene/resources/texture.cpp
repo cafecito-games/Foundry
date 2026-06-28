@@ -35,13 +35,13 @@
 
 int Texture2D::get_width() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_width, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_width, ret);
 	return ret;
 }
 
 int Texture2D::get_height() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_height, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_height, ret);
 	return ret;
 }
 
@@ -51,32 +51,32 @@ Size2 Texture2D::get_size() const {
 
 bool Texture2D::is_pixel_opaque(int p_x, int p_y) const {
 	bool ret = true;
-	GDVIRTUAL_CALL(_is_pixel_opaque, p_x, p_y, ret);
+	FOUNDRY_VIRTUAL_CALL(_is_pixel_opaque, p_x, p_y, ret);
 	return ret;
 }
 
 bool Texture2D::has_alpha() const {
 	bool ret = true;
-	GDVIRTUAL_CALL(_has_alpha, ret);
+	FOUNDRY_VIRTUAL_CALL(_has_alpha, ret);
 	return ret;
 }
 
 void Texture2D::draw(RID p_canvas_item, const Point2 &p_pos, const Color &p_modulate, bool p_transpose) const {
-	if (GDVIRTUAL_CALL(_draw, p_canvas_item, p_pos, p_modulate, p_transpose)) {
+	if (FOUNDRY_VIRTUAL_CALL(_draw, p_canvas_item, p_pos, p_modulate, p_transpose)) {
 		return;
 	}
 	RenderingServer::get_singleton()->canvas_item_add_texture_rect(p_canvas_item, Rect2(p_pos, get_size()), get_rid(), false, p_modulate, p_transpose);
 }
 
 void Texture2D::draw_rect(RID p_canvas_item, const Rect2 &p_rect, bool p_tile, const Color &p_modulate, bool p_transpose) const {
-	if (GDVIRTUAL_CALL(_draw_rect, p_canvas_item, p_rect, p_tile, p_modulate, p_transpose)) {
+	if (FOUNDRY_VIRTUAL_CALL(_draw_rect, p_canvas_item, p_rect, p_tile, p_modulate, p_transpose)) {
 		return;
 	}
 	RenderingServer::get_singleton()->canvas_item_add_texture_rect(p_canvas_item, p_rect, get_rid(), p_tile, p_modulate, p_transpose);
 }
 
 void Texture2D::draw_rect_region(RID p_canvas_item, const Rect2 &p_rect, const Rect2 &p_src_rect, const Color &p_modulate, bool p_transpose, bool p_clip_uv) const {
-	if (GDVIRTUAL_CALL(_draw_rect_region, p_canvas_item, p_rect, p_src_rect, p_modulate, p_transpose, p_clip_uv)) {
+	if (FOUNDRY_VIRTUAL_CALL(_draw_rect_region, p_canvas_item, p_rect, p_src_rect, p_modulate, p_transpose, p_clip_uv)) {
 		return;
 	}
 	RenderingServer::get_singleton()->canvas_item_add_texture_rect_region(p_canvas_item, p_rect, get_rid(), p_src_rect, p_modulate, p_transpose, p_clip_uv);
@@ -108,14 +108,14 @@ void Texture2D::_bind_methods() {
 
 	ADD_GROUP("", "");
 
-	GDVIRTUAL_BIND(_get_width);
-	GDVIRTUAL_BIND(_get_height);
-	GDVIRTUAL_BIND(_is_pixel_opaque, "x", "y");
-	GDVIRTUAL_BIND(_has_alpha);
+	FOUNDRY_VIRTUAL_BIND(_get_width);
+	FOUNDRY_VIRTUAL_BIND(_get_height);
+	FOUNDRY_VIRTUAL_BIND(_is_pixel_opaque, "x", "y");
+	FOUNDRY_VIRTUAL_BIND(_has_alpha);
 
-	GDVIRTUAL_BIND(_draw, "to_canvas_item", "pos", "modulate", "transpose")
-	GDVIRTUAL_BIND(_draw_rect, "to_canvas_item", "rect", "tile", "modulate", "transpose")
-	GDVIRTUAL_BIND(_draw_rect_region, "to_canvas_item", "rect", "src_rect", "modulate", "transpose", "clip_uv");
+	FOUNDRY_VIRTUAL_BIND(_draw, "to_canvas_item", "pos", "modulate", "transpose")
+	FOUNDRY_VIRTUAL_BIND(_draw_rect, "to_canvas_item", "rect", "tile", "modulate", "transpose")
+	FOUNDRY_VIRTUAL_BIND(_draw_rect_region, "to_canvas_item", "rect", "src_rect", "modulate", "transpose", "clip_uv");
 }
 
 Texture2D::Texture2D() {
@@ -134,37 +134,37 @@ TypedArray<Image> Texture3D::_get_datai() const {
 
 Image::Format Texture3D::get_format() const {
 	Image::Format ret = Image::FORMAT_MAX;
-	GDVIRTUAL_CALL(_get_format, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_format, ret);
 	return ret;
 }
 
 int Texture3D::get_width() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_width, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_width, ret);
 	return ret;
 }
 
 int Texture3D::get_height() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_height, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_height, ret);
 	return ret;
 }
 
 int Texture3D::get_depth() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_depth, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_depth, ret);
 	return ret;
 }
 
 bool Texture3D::has_mipmaps() const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_has_mipmaps, ret);
+	FOUNDRY_VIRTUAL_CALL(_has_mipmaps, ret);
 	return ret;
 }
 
 Vector<Ref<Image>> Texture3D::get_data() const {
 	TypedArray<Image> ret;
-	GDVIRTUAL_CALL(_get_data, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_data, ret);
 	Vector<Ref<Image>> data;
 	data.resize(ret.size());
 	for (int i = 0; i < data.size(); i++) {
@@ -182,12 +182,12 @@ void Texture3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_data"), &Texture3D::_get_datai);
 	ClassDB::bind_method(D_METHOD("create_placeholder"), &Texture3D::create_placeholder);
 
-	GDVIRTUAL_BIND(_get_format);
-	GDVIRTUAL_BIND(_get_width);
-	GDVIRTUAL_BIND(_get_height);
-	GDVIRTUAL_BIND(_get_depth);
-	GDVIRTUAL_BIND(_has_mipmaps);
-	GDVIRTUAL_BIND(_get_data);
+	FOUNDRY_VIRTUAL_BIND(_get_format);
+	FOUNDRY_VIRTUAL_BIND(_get_width);
+	FOUNDRY_VIRTUAL_BIND(_get_height);
+	FOUNDRY_VIRTUAL_BIND(_get_depth);
+	FOUNDRY_VIRTUAL_BIND(_has_mipmaps);
+	FOUNDRY_VIRTUAL_BIND(_get_data);
 }
 
 Ref<Resource> Texture3D::create_placeholder() const {
@@ -199,43 +199,43 @@ Ref<Resource> Texture3D::create_placeholder() const {
 
 Image::Format TextureLayered::get_format() const {
 	Image::Format ret = Image::FORMAT_MAX;
-	GDVIRTUAL_CALL(_get_format, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_format, ret);
 	return ret;
 }
 
 TextureLayered::LayeredType TextureLayered::get_layered_type() const {
 	uint32_t ret = LAYERED_TYPE_2D_ARRAY;
-	GDVIRTUAL_CALL(_get_layered_type, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_layered_type, ret);
 	return (LayeredType)ret;
 }
 
 int TextureLayered::get_width() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_width, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_width, ret);
 	return ret;
 }
 
 int TextureLayered::get_height() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_height, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_height, ret);
 	return ret;
 }
 
 int TextureLayered::get_layers() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_layers, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_layers, ret);
 	return ret;
 }
 
 bool TextureLayered::has_mipmaps() const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_has_mipmaps, ret);
+	FOUNDRY_VIRTUAL_CALL(_has_mipmaps, ret);
 	return ret;
 }
 
 Ref<Image> TextureLayered::get_layer_data(int p_layer) const {
 	Ref<Image> ret;
-	GDVIRTUAL_CALL(_get_layer_data, p_layer, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_layer_data, p_layer, ret);
 	return ret;
 }
 
@@ -252,11 +252,11 @@ void TextureLayered::_bind_methods() {
 	BIND_ENUM_CONSTANT(LAYERED_TYPE_CUBEMAP);
 	BIND_ENUM_CONSTANT(LAYERED_TYPE_CUBEMAP_ARRAY);
 
-	GDVIRTUAL_BIND(_get_format);
-	GDVIRTUAL_BIND(_get_layered_type);
-	GDVIRTUAL_BIND(_get_width);
-	GDVIRTUAL_BIND(_get_height);
-	GDVIRTUAL_BIND(_get_layers);
-	GDVIRTUAL_BIND(_has_mipmaps);
-	GDVIRTUAL_BIND(_get_layer_data, "layer_index");
+	FOUNDRY_VIRTUAL_BIND(_get_format);
+	FOUNDRY_VIRTUAL_BIND(_get_layered_type);
+	FOUNDRY_VIRTUAL_BIND(_get_width);
+	FOUNDRY_VIRTUAL_BIND(_get_height);
+	FOUNDRY_VIRTUAL_BIND(_get_layers);
+	FOUNDRY_VIRTUAL_BIND(_has_mipmaps);
+	FOUNDRY_VIRTUAL_BIND(_get_layer_data, "layer_index");
 }

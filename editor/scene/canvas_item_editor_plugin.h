@@ -53,7 +53,7 @@ class VSeparator;
 class VSplitContainer;
 
 class CanvasItemEditorSelectedItem : public Object {
-	GDCLASS(CanvasItemEditorSelectedItem, Object);
+	FOUNDRY_CLASS(CanvasItemEditorSelectedItem, Object);
 
 public:
 	Transform2D prev_xform;
@@ -72,7 +72,7 @@ public:
 };
 
 class CanvasItemEditor : public VBoxContainer {
-	GDCLASS(CanvasItemEditor, VBoxContainer);
+	FOUNDRY_CLASS(CanvasItemEditor, VBoxContainer);
 
 public:
 	enum Tool {
@@ -621,7 +621,7 @@ public:
 };
 
 class CanvasItemEditorPlugin : public EditorPlugin {
-	GDCLASS(CanvasItemEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(CanvasItemEditorPlugin, EditorPlugin);
 
 	CanvasItemEditor *canvas_item_editor = nullptr;
 
@@ -644,7 +644,7 @@ public:
 };
 
 class CanvasItemEditorViewport : public Control {
-	GDCLASS(CanvasItemEditorViewport, Control);
+	FOUNDRY_CLASS(CanvasItemEditorViewport, Control);
 
 	// The type of node that will be created when dropping texture into the viewport.
 	String default_texture_node_type;

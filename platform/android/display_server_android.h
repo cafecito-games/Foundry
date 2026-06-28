@@ -38,7 +38,7 @@ class RenderingDevice;
 #endif
 
 class DisplayServerAndroid : public DisplayServer {
-	GDSOFTCLASS(DisplayServerAndroid, DisplayServer);
+	FOUNDRY_SOFTCLASS(DisplayServerAndroid, DisplayServer);
 
 	String rendering_driver;
 

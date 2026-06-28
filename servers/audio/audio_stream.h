@@ -41,7 +41,7 @@
 class AudioStream;
 
 class AudioSamplePlayback : public RefCounted {
-	GDCLASS(AudioSamplePlayback, RefCounted);
+	FOUNDRY_CLASS(AudioSamplePlayback, RefCounted);
 
 public:
 	Ref<AudioStream> stream;
@@ -54,7 +54,7 @@ public:
 };
 
 class AudioSample : public RefCounted {
-	GDCLASS(AudioSample, RefCounted)
+	FOUNDRY_CLASS(AudioSample, RefCounted)
 
 public:
 	enum LoopMode {
@@ -76,21 +76,21 @@ public:
 ///////////
 
 class AudioStreamPlayback : public RefCounted {
-	GDCLASS(AudioStreamPlayback, RefCounted);
+	FOUNDRY_CLASS(AudioStreamPlayback, RefCounted);
 
 protected:
 	static void _bind_methods();
 	PackedVector2Array _mix_audio_bind(float p_rate_scale, int p_frames);
-	GDVIRTUAL1_REQUIRED(_start, double)
-	GDVIRTUAL0_REQUIRED(_stop)
-	GDVIRTUAL0RC_REQUIRED(bool, _is_playing)
-	GDVIRTUAL0RC(int, _get_loop_count)
-	GDVIRTUAL0RC_REQUIRED(double, _get_playback_position)
-	GDVIRTUAL1(_seek, double)
-	GDVIRTUAL3R_REQUIRED(int, _mix, FoundryExtensionPtr<AudioFrame>, float, int)
-	GDVIRTUAL0(_tag_used_streams)
-	GDVIRTUAL2(_set_parameter, const StringName &, const Variant &)
-	GDVIRTUAL1RC(Variant, _get_parameter, const StringName &)
+	FOUNDRY_VIRTUAL1_REQUIRED(_start, double)
+	FOUNDRY_VIRTUAL0_REQUIRED(_stop)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(bool, _is_playing)
+	FOUNDRY_VIRTUAL0RC(int, _get_loop_count)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(double, _get_playback_position)
+	FOUNDRY_VIRTUAL1(_seek, double)
+	FOUNDRY_VIRTUAL3R_REQUIRED(int, _mix, FoundryExtensionPtr<AudioFrame>, float, int)
+	FOUNDRY_VIRTUAL0(_tag_used_streams)
+	FOUNDRY_VIRTUAL2(_set_parameter, const StringName &, const Variant &)
+	FOUNDRY_VIRTUAL1RC(Variant, _get_parameter, const StringName &)
 
 public:
 	virtual void start(double p_from_pos = 0.0);
@@ -124,7 +124,7 @@ public:
 };
 
 class AudioStreamPlaybackResampled : public AudioStreamPlayback {
-	GDCLASS(AudioStreamPlaybackResampled, AudioStreamPlayback);
+	FOUNDRY_CLASS(AudioStreamPlaybackResampled, AudioStreamPlayback);
 
 	enum {
 		FP_BITS = 16, //fixed point used for resampling
@@ -144,8 +144,8 @@ protected:
 	virtual int _mix_internal(AudioFrame *p_buffer, int p_frames);
 	virtual float get_stream_sampling_rate();
 
-	GDVIRTUAL2R_REQUIRED(int, _mix_resampled, FoundryExtensionPtr<AudioFrame>, int)
-	GDVIRTUAL0RC_REQUIRED(float, _get_stream_sampling_rate)
+	FOUNDRY_VIRTUAL2R_REQUIRED(int, _mix_resampled, FoundryExtensionPtr<AudioFrame>, int)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(float, _get_stream_sampling_rate)
 
 	static void _bind_methods();
 
@@ -156,7 +156,7 @@ public:
 };
 
 class AudioStream : public Resource {
-	GDCLASS(AudioStream, Resource);
+	FOUNDRY_CLASS(AudioStream, Resource);
 	OBJ_SAVE_TYPE(AudioStream); // Saves derived classes with common type so they can be interchanged.
 
 	enum {
@@ -170,16 +170,16 @@ class AudioStream : public Resource {
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC_REQUIRED(Ref<AudioStreamPlayback>, _instantiate_playback)
-	GDVIRTUAL0RC(String, _get_stream_name)
-	GDVIRTUAL0RC(double, _get_length)
-	GDVIRTUAL0RC(bool, _is_monophonic)
-	GDVIRTUAL0RC(double, _get_bpm)
-	GDVIRTUAL0RC(bool, _has_loop)
-	GDVIRTUAL0RC(int, _get_bar_beats)
-	GDVIRTUAL0RC(int, _get_beat_count)
-	GDVIRTUAL0RC(Dictionary, _get_tags);
-	GDVIRTUAL0RC(TypedArray<Dictionary>, _get_parameter_list)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Ref<AudioStreamPlayback>, _instantiate_playback)
+	FOUNDRY_VIRTUAL0RC(String, _get_stream_name)
+	FOUNDRY_VIRTUAL0RC(double, _get_length)
+	FOUNDRY_VIRTUAL0RC(bool, _is_monophonic)
+	FOUNDRY_VIRTUAL0RC(double, _get_bpm)
+	FOUNDRY_VIRTUAL0RC(bool, _has_loop)
+	FOUNDRY_VIRTUAL0RC(int, _get_bar_beats)
+	FOUNDRY_VIRTUAL0RC(int, _get_beat_count)
+	FOUNDRY_VIRTUAL0RC(Dictionary, _get_tags);
+	FOUNDRY_VIRTUAL0RC(TypedArray<Dictionary>, _get_parameter_list)
 
 public:
 	virtual Ref<AudioStreamPlayback> instantiate_playback();
@@ -221,7 +221,7 @@ public:
 class AudioStreamPlaybackMicrophone;
 
 class AudioStreamMicrophone : public AudioStream {
-	GDCLASS(AudioStreamMicrophone, AudioStream);
+	FOUNDRY_CLASS(AudioStreamMicrophone, AudioStream);
 	friend class AudioStreamPlaybackMicrophone;
 
 	HashSet<AudioStreamPlaybackMicrophone *> playbacks;
@@ -236,7 +236,7 @@ public:
 };
 
 class AudioStreamPlaybackMicrophone : public AudioStreamPlaybackResampled {
-	GDCLASS(AudioStreamPlaybackMicrophone, AudioStreamPlaybackResampled);
+	FOUNDRY_CLASS(AudioStreamPlaybackMicrophone, AudioStreamPlaybackResampled);
 	friend class AudioStreamMicrophone;
 
 	bool active = false;
@@ -271,7 +271,7 @@ public:
 class AudioStreamPlaybackRandomizer;
 
 class AudioStreamRandomizer : public AudioStream {
-	GDCLASS(AudioStreamRandomizer, AudioStream);
+	FOUNDRY_CLASS(AudioStreamRandomizer, AudioStream);
 
 public:
 	enum PlaybackMode {
@@ -349,7 +349,7 @@ public:
 };
 
 class AudioStreamPlaybackRandomizer : public AudioStreamPlayback {
-	GDCLASS(AudioStreamPlaybackRandomizer, AudioStreamPlayback);
+	FOUNDRY_CLASS(AudioStreamPlaybackRandomizer, AudioStreamPlayback);
 	friend class AudioStreamRandomizer;
 
 	Ref<AudioStreamRandomizer> randomizer;

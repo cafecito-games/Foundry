@@ -34,7 +34,7 @@
 #include "core/object/ref_counted.h"
 
 class RandomNumberGenerator : public RefCounted {
-	GDCLASS(RandomNumberGenerator, RefCounted);
+	FOUNDRY_CLASS(RandomNumberGenerator, RefCounted);
 
 protected:
 	RandomPCG randbase;

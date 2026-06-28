@@ -40,7 +40,7 @@
 class AudioStreamOggVorbis;
 
 class AudioStreamPlaybackOggVorbis : public AudioStreamPlaybackResampled {
-	GDCLASS(AudioStreamPlaybackOggVorbis, AudioStreamPlaybackResampled);
+	FOUNDRY_CLASS(AudioStreamPlaybackOggVorbis, AudioStreamPlaybackResampled);
 
 	uint32_t frames_mixed = 0;
 	bool active = false;
@@ -113,7 +113,7 @@ public:
 };
 
 class AudioStreamOggVorbis : public AudioStream {
-	GDCLASS(AudioStreamOggVorbis, AudioStream);
+	FOUNDRY_CLASS(AudioStreamOggVorbis, AudioStream);
 	OBJ_SAVE_TYPE(AudioStream); // Saves derived classes with common type so they can be interchanged.
 	RES_BASE_EXTENSION("oggvorbisstr");
 

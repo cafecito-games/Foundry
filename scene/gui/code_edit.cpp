@@ -2250,7 +2250,7 @@ String CodeEdit::get_text_for_code_completion() const {
 }
 
 void CodeEdit::request_code_completion(bool p_force) {
-	if (GDVIRTUAL_CALL(_request_code_completion, p_force)) {
+	if (FOUNDRY_VIRTUAL_CALL(_request_code_completion, p_force)) {
 		return;
 	}
 
@@ -2369,7 +2369,7 @@ void CodeEdit::confirm_code_completion(bool p_replace) {
 		return;
 	}
 
-	if (GDVIRTUAL_CALL(_confirm_code_completion, p_replace)) {
+	if (FOUNDRY_VIRTUAL_CALL(_confirm_code_completion, p_replace)) {
 		return;
 	}
 
@@ -2945,9 +2945,9 @@ void CodeEdit::_bind_methods() {
 
 	// Overridable
 
-	GDVIRTUAL_BIND(_confirm_code_completion, "replace")
-	GDVIRTUAL_BIND(_request_code_completion, "force")
-	GDVIRTUAL_BIND(_filter_code_completion_candidates, "candidates")
+	FOUNDRY_VIRTUAL_BIND(_confirm_code_completion, "replace")
+	FOUNDRY_VIRTUAL_BIND(_request_code_completion, "force")
+	FOUNDRY_VIRTUAL_BIND(_filter_code_completion_candidates, "candidates")
 
 	/* Line length guidelines */
 	ClassDB::bind_method(D_METHOD("set_line_length_guidelines", "guideline_columns"), &CodeEdit::set_line_length_guidelines);
@@ -3546,7 +3546,7 @@ void CodeEdit::_update_scroll_selected_line(float p_mouse_y) {
 void CodeEdit::_filter_code_completion_candidates_impl() {
 	int line_height = get_line_height();
 
-	if (GDVIRTUAL_IS_OVERRIDDEN(_filter_code_completion_candidates)) {
+	if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_filter_code_completion_candidates)) {
 		Vector<ScriptLanguage::CodeCompletionOption> code_completion_options_new;
 		code_completion_base = "";
 
@@ -3569,7 +3569,7 @@ void CodeEdit::_filter_code_completion_candidates_impl() {
 
 		TypedArray<Dictionary> completion_options;
 
-		GDVIRTUAL_CALL(_filter_code_completion_candidates, completion_options_sources, completion_options);
+		FOUNDRY_VIRTUAL_CALL(_filter_code_completion_candidates, completion_options_sources, completion_options);
 
 		/* No options to complete, cancel. */
 		if (completion_options.is_empty()) {

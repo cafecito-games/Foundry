@@ -35,7 +35,7 @@
 
 class JavaScriptObject : public RefCounted {
 private:
-	GDCLASS(JavaScriptObject, RefCounted);
+	FOUNDRY_CLASS(JavaScriptObject, RefCounted);
 
 protected:
 	virtual bool _set(const StringName &p_name, const Variant &p_value) { return false; }
@@ -45,7 +45,7 @@ protected:
 
 class JavaScriptBridge : public Object {
 private:
-	GDCLASS(JavaScriptBridge, Object);
+	FOUNDRY_CLASS(JavaScriptBridge, Object);
 
 	static JavaScriptBridge *singleton;
 

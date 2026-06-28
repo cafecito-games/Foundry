@@ -33,7 +33,7 @@
 #include "scene/2d/node_2d.h"
 
 class ParallaxLayer : public Node2D {
-	GDCLASS(ParallaxLayer, Node2D);
+	FOUNDRY_CLASS(ParallaxLayer, Node2D);
 
 	Point2 orig_offset;
 	Point2 orig_scale;

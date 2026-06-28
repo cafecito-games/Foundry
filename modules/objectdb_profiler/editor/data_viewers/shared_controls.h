@@ -38,14 +38,14 @@ class LineEdit;
 class MenuButton;
 
 class SpanningHeader : public PanelContainer {
-	GDCLASS(SpanningHeader, PanelContainer);
+	FOUNDRY_CLASS(SpanningHeader, PanelContainer);
 
 public:
 	SpanningHeader(const String &p_text);
 };
 
 class DarkPanelContainer : public PanelContainer {
-	GDCLASS(DarkPanelContainer, PanelContainer);
+	FOUNDRY_CLASS(DarkPanelContainer, PanelContainer);
 
 public:
 	DarkPanelContainer();
@@ -54,7 +54,7 @@ public:
 // Utility class that creates a filter text box and a sort menu.
 // Takes a reference to a tree and applies the sort and filter to the tree.
 class TreeSortAndFilterBar : public HBoxContainer {
-	GDCLASS(TreeSortAndFilterBar, HBoxContainer);
+	FOUNDRY_CLASS(TreeSortAndFilterBar, HBoxContainer);
 
 public:
 	// The ways a column can be sorted, either alphabetically or numerically.

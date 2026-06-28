@@ -37,7 +37,7 @@ void initialize_text_server_fb_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(TextServerFallback);
+	FOUNDRY_REGISTER_CLASS(TextServerFallback);
 	TextServerManager *tsman = TextServerManager::get_singleton();
 	if (tsman) {
 		Ref<TextServerFallback> ts;

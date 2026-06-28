@@ -77,29 +77,29 @@ void RenderSceneBuffers::_bind_methods() {
 }
 
 void RenderSceneBuffersExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_configure, "config");
-	GDVIRTUAL_BIND(_set_fsr_sharpness, "fsr_sharpness");
-	GDVIRTUAL_BIND(_set_texture_mipmap_bias, "texture_mipmap_bias");
-	GDVIRTUAL_BIND(_set_anisotropic_filtering_level, "anisotropic_filtering_level");
-	GDVIRTUAL_BIND(_set_use_debanding, "use_debanding");
+	FOUNDRY_VIRTUAL_BIND(_configure, "config");
+	FOUNDRY_VIRTUAL_BIND(_set_fsr_sharpness, "fsr_sharpness");
+	FOUNDRY_VIRTUAL_BIND(_set_texture_mipmap_bias, "texture_mipmap_bias");
+	FOUNDRY_VIRTUAL_BIND(_set_anisotropic_filtering_level, "anisotropic_filtering_level");
+	FOUNDRY_VIRTUAL_BIND(_set_use_debanding, "use_debanding");
 }
 
 void RenderSceneBuffersExtension::configure(const RenderSceneBuffersConfiguration *p_config) {
-	GDVIRTUAL_CALL(_configure, p_config);
+	FOUNDRY_VIRTUAL_CALL(_configure, p_config);
 }
 
 void RenderSceneBuffersExtension::set_fsr_sharpness(float p_fsr_sharpness) {
-	GDVIRTUAL_CALL(_set_fsr_sharpness, p_fsr_sharpness);
+	FOUNDRY_VIRTUAL_CALL(_set_fsr_sharpness, p_fsr_sharpness);
 }
 
 void RenderSceneBuffersExtension::set_texture_mipmap_bias(float p_texture_mipmap_bias) {
-	GDVIRTUAL_CALL(_set_texture_mipmap_bias, p_texture_mipmap_bias);
+	FOUNDRY_VIRTUAL_CALL(_set_texture_mipmap_bias, p_texture_mipmap_bias);
 }
 
 void RenderSceneBuffersExtension::set_anisotropic_filtering_level(RS::ViewportAnisotropicFiltering p_anisotropic_filtering_level) {
-	GDVIRTUAL_CALL(_set_anisotropic_filtering_level, p_anisotropic_filtering_level);
+	FOUNDRY_VIRTUAL_CALL(_set_anisotropic_filtering_level, p_anisotropic_filtering_level);
 }
 
 void RenderSceneBuffersExtension::set_use_debanding(bool p_use_debanding) {
-	GDVIRTUAL_CALL(_set_use_debanding, p_use_debanding);
+	FOUNDRY_VIRTUAL_CALL(_set_use_debanding, p_use_debanding);
 }

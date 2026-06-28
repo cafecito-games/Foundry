@@ -35,7 +35,7 @@
 #include "editor/settings/action_map_editor.h"
 
 class InputEventConfigContainer : public VBoxContainer {
-	GDCLASS(InputEventConfigContainer, VBoxContainer);
+	FOUNDRY_CLASS(InputEventConfigContainer, VBoxContainer);
 
 	Label *input_event_text = nullptr;
 
@@ -54,7 +54,7 @@ public:
 };
 
 class EditorInspectorPluginInputEvent : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginInputEvent, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginInputEvent, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -62,7 +62,7 @@ public:
 };
 
 class InputEventEditorPlugin : public EditorPlugin {
-	GDCLASS(InputEventEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(InputEventEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "InputEvent"; }

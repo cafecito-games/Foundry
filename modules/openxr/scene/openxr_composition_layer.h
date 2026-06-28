@@ -42,7 +42,7 @@ class OpenXRCompositionLayerExtension;
 class SubViewport;
 
 class OpenXRCompositionLayer : public Node3D {
-	GDCLASS(OpenXRCompositionLayer, Node3D);
+	FOUNDRY_CLASS(OpenXRCompositionLayer, Node3D);
 
 public:
 	// Must be identical to Filter enum definition in OpenXRCompositionLayerExtension.

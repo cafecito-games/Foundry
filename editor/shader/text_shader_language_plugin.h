@@ -33,7 +33,7 @@
 #include "editor/shader/editor_shader_language_plugin.h"
 
 class TextShaderLanguagePlugin : public EditorShaderLanguagePlugin {
-	GDCLASS(TextShaderLanguagePlugin, EditorShaderLanguagePlugin);
+	FOUNDRY_CLASS(TextShaderLanguagePlugin, EditorShaderLanguagePlugin);
 
 public:
 	virtual bool handles_shader(const Ref<Shader> &p_shader) const override;

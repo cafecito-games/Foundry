@@ -43,7 +43,7 @@
 class TLSContextMbedTLS;
 
 class CookieContextMbedTLS : public RefCounted {
-	GDSOFTCLASS(CookieContextMbedTLS, RefCounted);
+	FOUNDRY_SOFTCLASS(CookieContextMbedTLS, RefCounted);
 
 	friend class TLSContextMbedTLS;
 
@@ -62,7 +62,7 @@ public:
 };
 
 class TLSContextMbedTLS : public RefCounted {
-	GDSOFTCLASS(TLSContextMbedTLS, RefCounted);
+	FOUNDRY_SOFTCLASS(TLSContextMbedTLS, RefCounted);
 
 protected:
 	bool inited = false;

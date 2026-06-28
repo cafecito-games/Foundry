@@ -36,7 +36,7 @@
 #include "servers/physics_2d/physics_server_2d.h"
 
 class PhysicsBody2D : public CollisionObject2D {
-	GDCLASS(PhysicsBody2D, CollisionObject2D);
+	FOUNDRY_CLASS(PhysicsBody2D, CollisionObject2D);
 
 protected:
 	static void _bind_methods();

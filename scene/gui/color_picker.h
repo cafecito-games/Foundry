@@ -52,7 +52,7 @@ class StyleBoxFlat;
 class TextureRect;
 
 class ColorPresetButton : public BaseButton {
-	GDCLASS(ColorPresetButton, BaseButton);
+	FOUNDRY_CLASS(ColorPresetButton, BaseButton);
 
 	Color preset_color;
 	bool recent = false;
@@ -80,7 +80,7 @@ public:
 };
 
 class ColorPicker : public VBoxContainer {
-	GDCLASS(ColorPicker, VBoxContainer);
+	FOUNDRY_CLASS(ColorPicker, VBoxContainer);
 
 	// These classes poke into theme items for their internal logic.
 	friend class ColorPickerShape;
@@ -505,7 +505,7 @@ class ColorPickerPopupPanel : public PopupPanel {
 };
 
 class ColorPickerButton : public Button {
-	GDCLASS(ColorPickerButton, Button);
+	FOUNDRY_CLASS(ColorPickerButton, Button);
 
 	// Initialization is now done deferred,
 	// this improves performance in the inspector as the color picker

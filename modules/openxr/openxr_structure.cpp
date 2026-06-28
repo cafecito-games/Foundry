@@ -38,7 +38,7 @@ void OpenXRStructureBase::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "next", PROPERTY_HINT_RESOURCE_TYPE, "OpenXRStructureBase"), "set_next", "get_next");
 
-	GDVIRTUAL_BIND(_get_header, "next");
+	FOUNDRY_VIRTUAL_BIND(_get_header, "next");
 }
 
 void OpenXRStructureBase::set_next(const Ref<OpenXRStructureBase> p_next) {
@@ -57,7 +57,7 @@ void *OpenXRStructureBase::get_header(void *p_next) {
 
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_get_header, (uint64_t)n, pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_header, (uint64_t)n, pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 

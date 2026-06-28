@@ -33,7 +33,7 @@
 #include "scene/3d/node_3d.h"
 
 class NavigationLink3D : public Node3D {
-	GDCLASS(NavigationLink3D, Node3D);
+	FOUNDRY_CLASS(NavigationLink3D, Node3D);
 
 	bool enabled = true;
 	RID link;

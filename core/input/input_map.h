@@ -38,7 +38,7 @@ template <typename T>
 class TypedArray;
 
 class InputMap : public Object {
-	GDCLASS(InputMap, Object);
+	FOUNDRY_CLASS(InputMap, Object);
 
 public:
 	/**

@@ -33,7 +33,7 @@
 #include "scene/3d/skeleton_3d.h"
 
 class SpringBoneCollision3D : public Node3D {
-	GDCLASS(SpringBoneCollision3D, Node3D);
+	FOUNDRY_CLASS(SpringBoneCollision3D, Node3D);
 
 	String bone_name;
 	int bone = -1;

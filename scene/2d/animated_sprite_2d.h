@@ -34,7 +34,7 @@
 #include "scene/resources/sprite_frames.h"
 
 class AnimatedSprite2D : public Node2D {
-	GDCLASS(AnimatedSprite2D, Node2D);
+	FOUNDRY_CLASS(AnimatedSprite2D, Node2D);
 
 	Ref<SpriteFrames> frames;
 	String autoplay;

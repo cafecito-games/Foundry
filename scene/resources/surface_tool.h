@@ -35,7 +35,7 @@
 #include "thirdparty/misc/mikktspace.h"
 
 class SurfaceTool : public RefCounted {
-	GDCLASS(SurfaceTool, RefCounted);
+	FOUNDRY_CLASS(SurfaceTool, RefCounted);
 
 	static const uint32_t custom_mask[RS::ARRAY_CUSTOM_COUNT];
 	static const uint32_t custom_shift[RS::ARRAY_CUSTOM_COUNT];

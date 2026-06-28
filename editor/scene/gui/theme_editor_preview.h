@@ -40,7 +40,7 @@ class MarginContainer;
 class ScrollContainer;
 
 class ThemeEditorPreview : public VBoxContainer {
-	GDCLASS(ThemeEditorPreview, VBoxContainer);
+	FOUNDRY_CLASS(ThemeEditorPreview, VBoxContainer);
 
 	ScrollContainer *preview_container = nullptr;
 	MarginContainer *preview_root = nullptr;
@@ -87,7 +87,7 @@ public:
 };
 
 class DefaultThemeEditorPreview : public ThemeEditorPreview {
-	GDCLASS(DefaultThemeEditorPreview, ThemeEditorPreview);
+	FOUNDRY_CLASS(DefaultThemeEditorPreview, ThemeEditorPreview);
 
 	ColorPickerButton *test_color_picker_button = nullptr;
 
@@ -99,7 +99,7 @@ public:
 };
 
 class SceneThemeEditorPreview : public ThemeEditorPreview {
-	GDCLASS(SceneThemeEditorPreview, ThemeEditorPreview);
+	FOUNDRY_CLASS(SceneThemeEditorPreview, ThemeEditorPreview);
 
 	Ref<PackedScene> loaded_scene;
 

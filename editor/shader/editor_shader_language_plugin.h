@@ -33,7 +33,7 @@
 #include "shader_editor.h"
 
 class EditorShaderLanguagePlugin : public RefCounted {
-	GDCLASS(EditorShaderLanguagePlugin, RefCounted);
+	FOUNDRY_CLASS(EditorShaderLanguagePlugin, RefCounted);
 
 	static Vector<Ref<EditorShaderLanguagePlugin>> shader_languages;
 	static Vector<Vector2i> language_variation_map;

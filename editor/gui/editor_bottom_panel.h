@@ -39,7 +39,7 @@ class EditorToaster;
 class HBoxContainer;
 
 class EditorBottomPanel : public TabContainer {
-	GDCLASS(EditorBottomPanel, TabContainer);
+	FOUNDRY_CLASS(EditorBottomPanel, TabContainer);
 
 	HBoxContainer *bottom_hbox = nullptr;
 	Control *icon_spacer = nullptr;

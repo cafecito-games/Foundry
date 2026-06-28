@@ -88,7 +88,7 @@ private:
 
 public:
 	class LuminanceBuffers : public RenderBufferCustomDataRD {
-		GDCLASS(LuminanceBuffers, RenderBufferCustomDataRD);
+		FOUNDRY_CLASS(LuminanceBuffers, RenderBufferCustomDataRD);
 
 	private:
 		bool prefer_raster_effects;

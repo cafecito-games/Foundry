@@ -33,7 +33,7 @@
 #include "core/object/ref_counted.h"
 
 class UPNPDevice : public RefCounted {
-	GDCLASS(UPNPDevice, RefCounted);
+	FOUNDRY_CLASS(UPNPDevice, RefCounted);
 
 protected:
 	static void _bind_methods();

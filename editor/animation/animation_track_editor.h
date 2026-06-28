@@ -56,7 +56,7 @@ class ViewPanner;
 class EditorValidationPanel;
 
 class AnimationTrackKeyEdit : public Object {
-	GDCLASS(AnimationTrackKeyEdit, Object);
+	FOUNDRY_CLASS(AnimationTrackKeyEdit, Object);
 
 public:
 	bool setting = false;
@@ -93,7 +93,7 @@ protected:
 };
 
 class AnimationMultiTrackKeyEdit : public Object {
-	GDCLASS(AnimationMultiTrackKeyEdit, Object);
+	FOUNDRY_CLASS(AnimationMultiTrackKeyEdit, Object);
 
 public:
 	bool setting = false;
@@ -131,7 +131,7 @@ protected:
 };
 
 class AnimationMarkerKeyEdit : public Object {
-	GDCLASS(AnimationMarkerKeyEdit, Object);
+	FOUNDRY_CLASS(AnimationMarkerKeyEdit, Object);
 
 public:
 	bool animation_read_only = false;
@@ -159,7 +159,7 @@ protected:
 };
 
 class AnimationMultiMarkerKeyEdit : public Object {
-	GDCLASS(AnimationMultiMarkerKeyEdit, Object);
+	FOUNDRY_CLASS(AnimationMultiMarkerKeyEdit, Object);
 
 public:
 	bool animation_read_only = false;
@@ -183,7 +183,7 @@ protected:
 };
 
 class AnimationTimelineEdit : public Range {
-	GDCLASS(AnimationTimelineEdit, Range);
+	FOUNDRY_CLASS(AnimationTimelineEdit, Range);
 
 	friend class AnimationBezierTrackEdit;
 	friend class AnimationTrackEditor;
@@ -285,7 +285,7 @@ public:
 };
 
 class AnimationMarkerEdit : public Control {
-	GDCLASS(AnimationMarkerEdit, Control);
+	FOUNDRY_CLASS(AnimationMarkerEdit, Control);
 	friend class AnimationTimelineEdit;
 
 	enum {
@@ -418,7 +418,7 @@ public:
 };
 
 class AnimationTrackEdit : public Control {
-	GDCLASS(AnimationTrackEdit, Control);
+	FOUNDRY_CLASS(AnimationTrackEdit, Control);
 	friend class AnimationTimelineEdit;
 
 	enum {
@@ -554,7 +554,7 @@ public:
 };
 
 class AnimationTrackEditPlugin : public RefCounted {
-	GDCLASS(AnimationTrackEditPlugin, RefCounted);
+	FOUNDRY_CLASS(AnimationTrackEditPlugin, RefCounted);
 
 public:
 	virtual AnimationTrackEdit *create_value_track_edit(Object *p_object, Variant::Type p_type, const String &p_property, PropertyHint p_hint, const String &p_hint_string, int p_usage);
@@ -567,7 +567,7 @@ class AnimationMultiTrackKeyEdit;
 class AnimationBezierTrackEdit;
 
 class AnimationTrackEditGroup : public Control {
-	GDCLASS(AnimationTrackEditGroup, Control);
+	FOUNDRY_CLASS(AnimationTrackEditGroup, Control);
 	Ref<Texture2D> icon;
 	Vector2 icon_size;
 	String node_name;
@@ -597,7 +597,7 @@ public:
 };
 
 class AnimationTrackEditor : public VBoxContainer {
-	GDCLASS(AnimationTrackEditor, VBoxContainer);
+	FOUNDRY_CLASS(AnimationTrackEditor, VBoxContainer);
 	friend class AnimationTimelineEdit;
 	friend class AnimationBezierTrackEdit;
 	friend class AnimationMarkerKeyEditEditor;
@@ -1014,7 +1014,7 @@ public:
 // AnimationTrackKeyEditEditorPlugin
 
 class AnimationTrackKeyEditEditor : public EditorProperty {
-	GDCLASS(AnimationTrackKeyEditEditor, EditorProperty);
+	FOUNDRY_CLASS(AnimationTrackKeyEditEditor, EditorProperty);
 
 	Ref<Animation> animation;
 	int track = -1;
@@ -1040,7 +1040,7 @@ public:
 // AnimationMarkerKeyEditEditorPlugin
 
 class AnimationMarkerKeyEditEditor : public EditorProperty {
-	GDCLASS(AnimationMarkerKeyEditEditor, EditorProperty);
+	FOUNDRY_CLASS(AnimationMarkerKeyEditEditor, EditorProperty);
 
 	Ref<Animation> animation;
 	StringName marker_name;

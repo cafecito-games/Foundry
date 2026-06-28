@@ -168,7 +168,7 @@ public:
 };
 
 class FileAccessPack : public FileAccess {
-	GDSOFTCLASS(FileAccessPack, FileAccess);
+	FOUNDRY_SOFTCLASS(FileAccessPack, FileAccess);
 	PackedData::PackedFile pf;
 
 	String path;
@@ -257,7 +257,7 @@ bool PackedData::has_directory(const String &p_path) {
 }
 
 class DirAccessPack : public DirAccess {
-	GDSOFTCLASS(DirAccessPack, DirAccess);
+	FOUNDRY_SOFTCLASS(DirAccessPack, DirAccess);
 	PackedData::PackedDir *current;
 
 	List<String> list_dirs;

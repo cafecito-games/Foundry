@@ -33,7 +33,7 @@
 #include "scene/3d/visual_instance_3d.h"
 
 class ReflectionProbe : public VisualInstance3D {
-	GDCLASS(ReflectionProbe, VisualInstance3D);
+	FOUNDRY_CLASS(ReflectionProbe, VisualInstance3D);
 
 public:
 	enum UpdateMode {

@@ -41,7 +41,7 @@ class AnimationMixer;
 class EditorFileDialog;
 
 class AnimationLibraryEditor : public AcceptDialog {
-	GDCLASS(AnimationLibraryEditor, AcceptDialog)
+	FOUNDRY_CLASS(AnimationLibraryEditor, AcceptDialog)
 
 	enum {
 		LIB_BUTTON_ADD,

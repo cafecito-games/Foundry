@@ -37,7 +37,7 @@
 // that can be used by the main scene shader but also by various effects.
 
 class RenderSceneDataRD : public RenderSceneData {
-	GDCLASS(RenderSceneDataRD, RenderSceneData);
+	FOUNDRY_CLASS(RenderSceneDataRD, RenderSceneData);
 
 public:
 	bool calculate_motion_vectors = false;

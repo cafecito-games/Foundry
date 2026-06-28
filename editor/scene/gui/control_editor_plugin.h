@@ -49,7 +49,7 @@ class TextureRect;
 
 // Inspector controls.
 class ControlPositioningWarning : public MarginContainer {
-	GDCLASS(ControlPositioningWarning, MarginContainer);
+	FOUNDRY_CLASS(ControlPositioningWarning, MarginContainer);
 
 	Control *control_node = nullptr;
 
@@ -76,7 +76,7 @@ public:
 };
 
 class EditorPropertyAnchorsPreset : public EditorProperty {
-	GDCLASS(EditorPropertyAnchorsPreset, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyAnchorsPreset, EditorProperty);
 	OptionButton *options = nullptr;
 
 	void _option_selected(int p_which);
@@ -92,7 +92,7 @@ public:
 };
 
 class EditorPropertySizeFlags : public EditorProperty {
-	GDCLASS(EditorPropertySizeFlags, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertySizeFlags, EditorProperty);
 
 	enum FlagPreset {
 		SIZE_FLAGS_PRESET_FILL,
@@ -125,7 +125,7 @@ public:
 };
 
 class EditorInspectorPluginControl : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginControl, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginControl, EditorInspectorPlugin);
 
 	bool inside_control_category = false;
 
@@ -138,7 +138,7 @@ public:
 
 // Toolbar controls.
 class ControlEditorPopupButton : public Button {
-	GDCLASS(ControlEditorPopupButton, Button);
+	FOUNDRY_CLASS(ControlEditorPopupButton, Button);
 
 	Ref<Texture2D> arrow_icon;
 
@@ -160,7 +160,7 @@ public:
 };
 
 class ControlEditorPresetPicker : public MarginContainer {
-	GDCLASS(ControlEditorPresetPicker, MarginContainer);
+	FOUNDRY_CLASS(ControlEditorPresetPicker, MarginContainer);
 
 	virtual void _preset_button_pressed(const int p_preset) {}
 
@@ -173,7 +173,7 @@ protected:
 };
 
 class AnchorPresetPicker : public ControlEditorPresetPicker {
-	GDCLASS(AnchorPresetPicker, ControlEditorPresetPicker);
+	FOUNDRY_CLASS(AnchorPresetPicker, ControlEditorPresetPicker);
 
 	virtual void _preset_button_pressed(const int p_preset) override;
 
@@ -186,7 +186,7 @@ public:
 };
 
 class SizeFlagPresetPicker : public ControlEditorPresetPicker {
-	GDCLASS(SizeFlagPresetPicker, ControlEditorPresetPicker);
+	FOUNDRY_CLASS(SizeFlagPresetPicker, ControlEditorPresetPicker);
 
 	CheckButton *expand_button = nullptr;
 
@@ -207,7 +207,7 @@ public:
 };
 
 class ControlEditorToolbar : public HBoxContainer {
-	GDCLASS(ControlEditorToolbar, HBoxContainer);
+	FOUNDRY_CLASS(ControlEditorToolbar, HBoxContainer);
 
 	EditorSelection *editor_selection = nullptr;
 
@@ -246,7 +246,7 @@ public:
 
 // Editor plugin.
 class ControlEditorPlugin : public EditorPlugin {
-	GDCLASS(ControlEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ControlEditorPlugin, EditorPlugin);
 
 	ControlEditorToolbar *toolbar = nullptr;
 

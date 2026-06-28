@@ -33,7 +33,7 @@
 #include "scene/2d/node_2d.h"
 
 class Parallax2D : public Node2D {
-	GDCLASS(Parallax2D, Node2D);
+	FOUNDRY_CLASS(Parallax2D, Node2D);
 
 	static constexpr real_t DEFAULT_LIMIT = 10000000;
 

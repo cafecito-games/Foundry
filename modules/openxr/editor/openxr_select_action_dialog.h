@@ -42,7 +42,7 @@
 #include "scene/gui/text_edit.h"
 
 class OpenXRSelectActionDialog : public ConfirmationDialog {
-	GDCLASS(OpenXRSelectActionDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(OpenXRSelectActionDialog, ConfirmationDialog);
 
 private:
 	Ref<OpenXRActionMap> action_map;

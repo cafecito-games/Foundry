@@ -35,7 +35,7 @@
 class GodotBody2D;
 
 class GodotPhysicsDirectBodyState2D : public PhysicsDirectBodyState2D {
-	GDCLASS(GodotPhysicsDirectBodyState2D, PhysicsDirectBodyState2D);
+	FOUNDRY_CLASS(GodotPhysicsDirectBodyState2D, PhysicsDirectBodyState2D);
 
 public:
 	GodotBody2D *body = nullptr;

@@ -41,7 +41,7 @@ class MenuButton;
 class SpinBox;
 
 class MeshInstance3DEditor : public Control {
-	GDCLASS(MeshInstance3DEditor, Control);
+	FOUNDRY_CLASS(MeshInstance3DEditor, Control);
 
 	enum Menu {
 		MENU_OPTION_CREATE_COLLISION_SHAPE,
@@ -124,7 +124,7 @@ public:
 };
 
 class MeshInstance3DEditorPlugin : public EditorPlugin {
-	GDCLASS(MeshInstance3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(MeshInstance3DEditorPlugin, EditorPlugin);
 
 	MeshInstance3DEditor *mesh_editor = nullptr;
 

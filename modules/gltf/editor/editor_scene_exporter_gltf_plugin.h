@@ -40,7 +40,7 @@ class EditorFileDialog;
 class EditorInspector;
 
 class SceneExporterGLTFPlugin : public EditorPlugin {
-	GDCLASS(SceneExporterGLTFPlugin, EditorPlugin);
+	FOUNDRY_CLASS(SceneExporterGLTFPlugin, EditorPlugin);
 
 	Ref<GLTFDocument> _gltf_document;
 	Ref<EditorSceneExporterGLTFSettings> _export_settings;

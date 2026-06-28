@@ -34,7 +34,7 @@
 #include "core/variant/typed_array.h"
 
 class Noise : public Resource {
-	GDCLASS(Noise, Resource);
+	FOUNDRY_CLASS(Noise, Resource);
 
 	// Helper struct for get_seamless_image(). See comments in .cpp for usage.
 	template <typename T>

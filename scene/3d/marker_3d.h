@@ -33,7 +33,7 @@
 #include "scene/3d/node_3d.h"
 
 class Marker3D : public Node3D {
-	GDCLASS(Marker3D, Node3D);
+	FOUNDRY_CLASS(Marker3D, Node3D);
 
 	real_t gizmo_extents = 0.25;
 

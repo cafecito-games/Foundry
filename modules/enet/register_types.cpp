@@ -49,9 +49,9 @@ void initialize_enet_module(ModuleInitializationLevel p_level) {
 		enet_ok = true;
 	}
 
-	GDREGISTER_CLASS(ENetMultiplayerPeer);
-	GDREGISTER_ABSTRACT_CLASS(ENetPacketPeer);
-	GDREGISTER_CLASS(ENetConnection);
+	FOUNDRY_REGISTER_CLASS(ENetMultiplayerPeer);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ENetPacketPeer);
+	FOUNDRY_REGISTER_CLASS(ENetConnection);
 }
 
 void uninitialize_enet_module(ModuleInitializationLevel p_level) {

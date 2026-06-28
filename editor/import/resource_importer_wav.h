@@ -34,7 +34,7 @@
 #include "scene/resources/audio_stream_wav.h"
 
 class ResourceImporterWAV : public ResourceImporter {
-	GDCLASS(ResourceImporterWAV, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterWAV, ResourceImporter);
 
 public:
 	virtual String get_importer_name() const override;

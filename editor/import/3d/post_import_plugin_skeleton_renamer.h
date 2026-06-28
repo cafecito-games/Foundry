@@ -33,7 +33,7 @@
 #include "resource_importer_scene.h"
 
 class PostImportPluginSkeletonRenamer : public EditorScenePostImportPlugin {
-	GDCLASS(PostImportPluginSkeletonRenamer, EditorScenePostImportPlugin);
+	FOUNDRY_CLASS(PostImportPluginSkeletonRenamer, EditorScenePostImportPlugin);
 
 public:
 	virtual void get_internal_import_options(InternalImportCategory p_category, List<ResourceImporter::ImportOption> *r_options) override;

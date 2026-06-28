@@ -14,7 +14,7 @@ script_has_method = """ScriptInstance *_script_instance = ((Object *)(this))->ge
 			return true;\\
 		}"""
 
-proto = """#define GDVIRTUAL$VER($ALIAS $RET m_name $ARG)\\
+proto = """#define FOUNDRY_VIRTUAL$VER($ALIAS $RET m_name $ARG)\\
 	mutable void *_gdvirtual_##$VARNAME = nullptr;\\
 	_FORCE_INLINE_ bool _gdvirtual_##$VARNAME##_call($CALLARGS) $CONST {\\
 		static const StringName _gdvirtual_##$VARNAME##_sn = StringName(#m_name, true);\\
@@ -23,7 +23,7 @@ proto = """#define GDVIRTUAL$VER($ALIAS $RET m_name $ARG)\\
 			if (unlikely(!_gdvirtual_##$VARNAME)) {\\
 			    _gdvirtual_init_method_ptr(_gdvirtual_##$VARNAME##_get_method_info().get_compatibility_hash(), _gdvirtual_##$VARNAME, _gdvirtual_##$VARNAME##_sn, $COMPAT);\\
 			}\\
-			if (_gdvirtual_##$VARNAME != reinterpret_cast<void*>(_INVALID_GDVIRTUAL_FUNC_ADDR)) {\\
+			if (_gdvirtual_##$VARNAME != reinterpret_cast<void*>(_INVALID_FOUNDRY_VIRTUAL_FUNC_ADDR)) {\\
 				$CALLPTRARGS\\
 				$CALLPTRRETDEF\\
 				if (_get_extension()->call_virtual_with_data) {\\
@@ -47,7 +47,7 @@ proto = """#define GDVIRTUAL$VER($ALIAS $RET m_name $ARG)\\
 			if (unlikely(!_gdvirtual_##$VARNAME)) {\\
 			    _gdvirtual_init_method_ptr(_gdvirtual_##$VARNAME##_get_method_info().get_compatibility_hash(), _gdvirtual_##$VARNAME, _gdvirtual_##$VARNAME##_sn, $COMPAT);\\
 			}\\
-			if (_gdvirtual_##$VARNAME != reinterpret_cast<void*>(_INVALID_GDVIRTUAL_FUNC_ADDR)) {\\
+			if (_gdvirtual_##$VARNAME != reinterpret_cast<void*>(_INVALID_FOUNDRY_VIRTUAL_FUNC_ADDR)) {\\
 				return true;\\
 			}\\
 		}\\
@@ -198,7 +198,7 @@ def run(target, source, env):
 
 #include "core/object/script_instance.h"
 
-inline constexpr uintptr_t _INVALID_GDVIRTUAL_FUNC_ADDR = static_cast<uintptr_t>(-1);
+inline constexpr uintptr_t _INVALID_FOUNDRY_VIRTUAL_FUNC_ADDR = static_cast<uintptr_t>(-1);
 
 template <typename... Args>
 void _gdvirtual_set_method_info_args(MethodInfo &p_method_info) {

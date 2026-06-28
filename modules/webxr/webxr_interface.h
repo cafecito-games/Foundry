@@ -38,7 +38,7 @@
 */
 
 class WebXRInterface : public XRInterface {
-	GDCLASS(WebXRInterface, XRInterface);
+	FOUNDRY_CLASS(WebXRInterface, XRInterface);
 
 protected:
 	static void _bind_methods();

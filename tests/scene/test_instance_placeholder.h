@@ -36,7 +36,7 @@
 #include "tests/test_macros.h"
 
 class _TestInstancePlaceholderNode : public Node {
-	GDCLASS(_TestInstancePlaceholderNode, Node);
+	FOUNDRY_CLASS(_TestInstancePlaceholderNode, Node);
 
 protected:
 	static void _bind_methods() {
@@ -96,7 +96,7 @@ public:
 namespace TestInstancePlaceholder {
 
 TEST_CASE("[SceneTree][InstancePlaceholder] Instantiate from placeholder with no overrides") {
-	GDREGISTER_CLASS(_TestInstancePlaceholderNode);
+	FOUNDRY_REGISTER_CLASS(_TestInstancePlaceholderNode);
 
 	SUBCASE("with non-node values") {
 		InstancePlaceholder *ip = memnew(InstancePlaceholder);
@@ -204,7 +204,7 @@ TEST_CASE("[SceneTree][InstancePlaceholder] Instantiate from placeholder with no
 }
 
 TEST_CASE("[SceneTree][InstancePlaceholder] Instantiate from placeholder with overrides") {
-	GDREGISTER_CLASS(_TestInstancePlaceholderNode);
+	FOUNDRY_REGISTER_CLASS(_TestInstancePlaceholderNode);
 
 	SUBCASE("with non-node values") {
 		InstancePlaceholder *ip = memnew(InstancePlaceholder);
@@ -334,7 +334,7 @@ TEST_CASE("[SceneTree][InstancePlaceholder] Instantiate from placeholder with ov
 
 #ifdef TOOLS_ENABLED
 TEST_CASE("[SceneTree][InstancePlaceholder] Instance a PackedScene containing an InstancePlaceholder with no overrides") {
-	GDREGISTER_CLASS(_TestInstancePlaceholderNode);
+	FOUNDRY_REGISTER_CLASS(_TestInstancePlaceholderNode);
 
 	// Create the internal scene.
 	_TestInstancePlaceholderNode *internal = memnew(_TestInstancePlaceholderNode);
@@ -409,7 +409,7 @@ TEST_CASE("[SceneTree][InstancePlaceholder] Instance a PackedScene containing an
 }
 
 TEST_CASE("[SceneTree][InstancePlaceholder] Instance a PackedScene containing an InstancePlaceholder with overrides") {
-	GDREGISTER_CLASS(_TestInstancePlaceholderNode);
+	FOUNDRY_REGISTER_CLASS(_TestInstancePlaceholderNode);
 
 	// Create the internal scene.
 	_TestInstancePlaceholderNode *internal = memnew(_TestInstancePlaceholderNode);

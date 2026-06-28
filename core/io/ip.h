@@ -39,7 +39,7 @@ class TypedArray;
 struct _IP_ResolverPrivate;
 
 class IP : public Object {
-	GDCLASS(IP, Object);
+	FOUNDRY_CLASS(IP, Object);
 
 public:
 	enum ResolverStatus {

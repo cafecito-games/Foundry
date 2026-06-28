@@ -33,7 +33,7 @@
 #include "scene/gui/control.h"
 
 class Panel : public Control {
-	GDCLASS(Panel, Control);
+	FOUNDRY_CLASS(Panel, Control);
 
 	struct ThemeCache {
 		Ref<StyleBox> panel_style;

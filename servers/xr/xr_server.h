@@ -52,7 +52,7 @@ class XRPositionalTracker;
 **/
 
 class XRServer : public Object {
-	GDCLASS(XRServer, Object);
+	FOUNDRY_CLASS(XRServer, Object);
 	_THREAD_SAFE_CLASS_
 
 public:

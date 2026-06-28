@@ -585,7 +585,7 @@ bool AStarGrid2D::_solve(Point *p_begin_point, Point *p_end_point, bool p_allow_
 
 real_t AStarGrid2D::_estimate_cost(const Vector2i &p_from_id, const Vector2i &p_end_id) {
 	real_t scost;
-	if (GDVIRTUAL_CALL(_estimate_cost, p_from_id, p_end_id, scost)) {
+	if (FOUNDRY_VIRTUAL_CALL(_estimate_cost, p_from_id, p_end_id, scost)) {
 		return scost;
 	}
 	return heuristics[default_estimate_heuristic](p_from_id, p_end_id);
@@ -593,7 +593,7 @@ real_t AStarGrid2D::_estimate_cost(const Vector2i &p_from_id, const Vector2i &p_
 
 real_t AStarGrid2D::_compute_cost(const Vector2i &p_from_id, const Vector2i &p_to_id) {
 	real_t scost;
-	if (GDVIRTUAL_CALL(_compute_cost, p_from_id, p_to_id, scost)) {
+	if (FOUNDRY_VIRTUAL_CALL(_compute_cost, p_from_id, p_to_id, scost)) {
 		return scost;
 	}
 	return heuristics[default_compute_heuristic](p_from_id, p_to_id);
@@ -759,8 +759,8 @@ void AStarGrid2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_point_path", "from_id", "to_id", "allow_partial_path"), &AStarGrid2D::get_point_path, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_id_path", "from_id", "to_id", "allow_partial_path"), &AStarGrid2D::get_id_path, DEFVAL(false));
 
-	GDVIRTUAL_BIND(_estimate_cost, "from_id", "end_id")
-	GDVIRTUAL_BIND(_compute_cost, "from_id", "to_id")
+	FOUNDRY_VIRTUAL_BIND(_estimate_cost, "from_id", "end_id")
+	FOUNDRY_VIRTUAL_BIND(_compute_cost, "from_id", "to_id")
 
 	ADD_PROPERTY(PropertyInfo(Variant::RECT2I, "region"), "set_region", "get_region");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "size"), "set_size", "get_size");

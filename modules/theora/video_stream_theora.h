@@ -41,7 +41,7 @@
 class ImageTexture;
 
 class VideoStreamPlaybackTheora : public VideoStreamPlayback {
-	GDCLASS(VideoStreamPlaybackTheora, VideoStreamPlayback);
+	FOUNDRY_CLASS(VideoStreamPlaybackTheora, VideoStreamPlayback);
 
 	Image::Format format = Image::Format::FORMAT_L8;
 	Vector<uint8_t> frame_data;
@@ -154,7 +154,7 @@ public:
 };
 
 class VideoStreamTheora : public VideoStream {
-	GDCLASS(VideoStreamTheora, VideoStream);
+	FOUNDRY_CLASS(VideoStreamTheora, VideoStream);
 
 protected:
 	static void _bind_methods();
@@ -173,7 +173,7 @@ public:
 };
 
 class ResourceFormatLoaderTheora : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderTheora, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderTheora, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;

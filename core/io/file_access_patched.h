@@ -34,7 +34,7 @@
 #include "file_access_memory.h"
 
 class FileAccessPatched : public FileAccess {
-	GDSOFTCLASS(FileAccessPatched, FileAccess);
+	FOUNDRY_SOFTCLASS(FileAccessPatched, FileAccess);
 
 	Ref<FileAccess> old_file;
 	mutable Vector<uint8_t> patched_file_data;

@@ -33,7 +33,7 @@
 #include "core/io/resource_importer.h"
 
 class ResourceImporterSVG : public ResourceImporter {
-	GDCLASS(ResourceImporterSVG, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterSVG, ResourceImporter);
 
 public:
 	virtual String get_importer_name() const override;

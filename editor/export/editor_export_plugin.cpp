@@ -169,66 +169,66 @@ String EditorExportPlugin::_has_valid_export_configuration(const Ref<EditorExpor
 }
 
 void EditorExportPlugin::_export_file_script(const String &p_path, const String &p_type, const Vector<String> &p_features) {
-	GDVIRTUAL_CALL(_export_file, p_path, p_type, p_features);
+	FOUNDRY_VIRTUAL_CALL(_export_file, p_path, p_type, p_features);
 }
 
 void EditorExportPlugin::_export_begin_script(const Vector<String> &p_features, bool p_debug, const String &p_path, int p_flags) {
-	GDVIRTUAL_CALL(_export_begin, p_features, p_debug, p_path, p_flags);
+	FOUNDRY_VIRTUAL_CALL(_export_begin, p_features, p_debug, p_path, p_flags);
 }
 
 void EditorExportPlugin::_export_end_script() {
-	GDVIRTUAL_CALL(_export_end);
+	FOUNDRY_VIRTUAL_CALL(_export_end);
 }
 
 // Customization
 
 bool EditorExportPlugin::_begin_customize_resources(const Ref<EditorExportPlatform> &p_platform, const Vector<String> &p_features) {
 	bool ret = false;
-	GDVIRTUAL_CALL(_begin_customize_resources, p_platform, p_features, ret);
+	FOUNDRY_VIRTUAL_CALL(_begin_customize_resources, p_platform, p_features, ret);
 	return ret;
 }
 
 Ref<Resource> EditorExportPlugin::_customize_resource(const Ref<Resource> &p_resource, const String &p_path) {
 	Ref<Resource> ret;
-	GDVIRTUAL_CALL(_customize_resource, p_resource, p_path, ret);
+	FOUNDRY_VIRTUAL_CALL(_customize_resource, p_resource, p_path, ret);
 	return ret;
 }
 
 bool EditorExportPlugin::_begin_customize_scenes(const Ref<EditorExportPlatform> &p_platform, const Vector<String> &p_features) {
 	bool ret = false;
-	GDVIRTUAL_CALL(_begin_customize_scenes, p_platform, p_features, ret);
+	FOUNDRY_VIRTUAL_CALL(_begin_customize_scenes, p_platform, p_features, ret);
 	return ret;
 }
 
 Node *EditorExportPlugin::_customize_scene(Node *p_root, const String &p_path) {
 	Node *ret = nullptr;
-	GDVIRTUAL_CALL(_customize_scene, p_root, p_path, ret);
+	FOUNDRY_VIRTUAL_CALL(_customize_scene, p_root, p_path, ret);
 	return ret;
 }
 
 uint64_t EditorExportPlugin::_get_customization_configuration_hash() const {
 	uint64_t ret = 0;
-	GDVIRTUAL_CALL(_get_customization_configuration_hash, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_customization_configuration_hash, ret);
 	return ret;
 }
 
 void EditorExportPlugin::_end_customize_scenes() {
-	GDVIRTUAL_CALL(_end_customize_scenes);
+	FOUNDRY_VIRTUAL_CALL(_end_customize_scenes);
 }
 
 void EditorExportPlugin::_end_customize_resources() {
-	GDVIRTUAL_CALL(_end_customize_resources);
+	FOUNDRY_VIRTUAL_CALL(_end_customize_resources);
 }
 
 String EditorExportPlugin::get_name() const {
 	String ret;
-	GDVIRTUAL_CALL(_get_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_name, ret);
 	return ret;
 }
 
 bool EditorExportPlugin::supports_platform(const Ref<EditorExportPlatform> &p_export_platform) const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_supports_platform, p_export_platform, ret);
+	FOUNDRY_VIRTUAL_CALL(_supports_platform, p_export_platform, ret);
 	return ret;
 }
 
@@ -238,55 +238,55 @@ PackedStringArray EditorExportPlugin::get_export_features(const Ref<EditorExport
 
 PackedStringArray EditorExportPlugin::get_android_dependencies(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	PackedStringArray ret;
-	GDVIRTUAL_CALL(_get_android_dependencies, p_export_platform, p_debug, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_android_dependencies, p_export_platform, p_debug, ret);
 	return ret;
 }
 
 PackedStringArray EditorExportPlugin::get_android_dependencies_maven_repos(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	PackedStringArray ret;
-	GDVIRTUAL_CALL(_get_android_dependencies_maven_repos, p_export_platform, p_debug, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_android_dependencies_maven_repos, p_export_platform, p_debug, ret);
 	return ret;
 }
 
 PackedStringArray EditorExportPlugin::get_android_libraries(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	PackedStringArray ret;
-	GDVIRTUAL_CALL(_get_android_libraries, p_export_platform, p_debug, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_android_libraries, p_export_platform, p_debug, ret);
 	return ret;
 }
 
 String EditorExportPlugin::get_android_manifest_activity_element_contents(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	String ret;
-	GDVIRTUAL_CALL(_get_android_manifest_activity_element_contents, p_export_platform, p_debug, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_android_manifest_activity_element_contents, p_export_platform, p_debug, ret);
 	return ret;
 }
 
 String EditorExportPlugin::get_android_manifest_application_element_contents(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	String ret;
-	GDVIRTUAL_CALL(_get_android_manifest_application_element_contents, p_export_platform, p_debug, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_android_manifest_application_element_contents, p_export_platform, p_debug, ret);
 	return ret;
 }
 
 String EditorExportPlugin::get_android_manifest_element_contents(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	String ret;
-	GDVIRTUAL_CALL(_get_android_manifest_element_contents, p_export_platform, p_debug, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_android_manifest_element_contents, p_export_platform, p_debug, ret);
 	return ret;
 }
 
 PackedByteArray EditorExportPlugin::update_android_prebuilt_manifest(const Ref<EditorExportPlatform> &p_export_platform, const PackedByteArray &p_manifest_data) const {
 	PackedByteArray ret;
-	GDVIRTUAL_CALL(_update_android_prebuilt_manifest, p_export_platform, p_manifest_data, ret);
+	FOUNDRY_VIRTUAL_CALL(_update_android_prebuilt_manifest, p_export_platform, p_manifest_data, ret);
 	return ret;
 }
 
 PackedStringArray EditorExportPlugin::_get_export_features(const Ref<EditorExportPlatform> &p_platform, bool p_debug) const {
 	PackedStringArray ret;
-	GDVIRTUAL_CALL(_get_export_features, p_platform, p_debug, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_export_features, p_platform, p_debug, ret);
 	return ret;
 }
 
 void EditorExportPlugin::_get_export_options(const Ref<EditorExportPlatform> &p_platform, List<EditorExportPlatform::ExportOption> *r_options) const {
 	TypedArray<Dictionary> ret;
-	GDVIRTUAL_CALL(_get_export_options, p_platform, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_export_options, p_platform, ret);
 	for (int i = 0; i < ret.size(); i++) {
 		Dictionary option = ret[i];
 		ERR_CONTINUE_MSG(!option.has("option"), "Missing required element 'option'");
@@ -300,25 +300,25 @@ void EditorExportPlugin::_get_export_options(const Ref<EditorExportPlatform> &p_
 
 bool EditorExportPlugin::_should_update_export_options(const Ref<EditorExportPlatform> &p_platform) const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_should_update_export_options, p_platform, ret);
+	FOUNDRY_VIRTUAL_CALL(_should_update_export_options, p_platform, ret);
 	return ret;
 }
 
 bool EditorExportPlugin::_get_export_option_visibility(const Ref<EditorExportPlatform> &p_export_platform, const String &p_option_name) const {
 	bool ret = true;
-	GDVIRTUAL_CALL(_get_export_option_visibility, p_export_platform, p_option_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_export_option_visibility, p_export_platform, p_option_name, ret);
 	return ret;
 }
 
 String EditorExportPlugin::_get_export_option_warning(const Ref<EditorExportPlatform> &p_export_platform, const String &p_option_name) const {
 	String ret;
-	GDVIRTUAL_CALL(_get_export_option_warning, p_export_platform, p_option_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_export_option_warning, p_export_platform, p_option_name, ret);
 	return ret;
 }
 
 Dictionary EditorExportPlugin::_get_export_options_overrides(const Ref<EditorExportPlatform> &p_platform) const {
 	Dictionary ret;
-	GDVIRTUAL_CALL(_get_export_options_overrides, p_platform, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_export_options_overrides, p_platform, ret);
 	return ret;
 }
 
@@ -363,37 +363,37 @@ void EditorExportPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_export_preset"), &EditorExportPlugin::get_export_preset);
 	ClassDB::bind_method(D_METHOD("get_export_platform"), &EditorExportPlugin::get_export_platform);
 
-	GDVIRTUAL_BIND(_export_file, "path", "type", "features");
-	GDVIRTUAL_BIND(_export_begin, "features", "is_debug", "path", "flags");
-	GDVIRTUAL_BIND(_export_end);
+	FOUNDRY_VIRTUAL_BIND(_export_file, "path", "type", "features");
+	FOUNDRY_VIRTUAL_BIND(_export_begin, "features", "is_debug", "path", "flags");
+	FOUNDRY_VIRTUAL_BIND(_export_end);
 
-	GDVIRTUAL_BIND(_begin_customize_resources, "platform", "features");
-	GDVIRTUAL_BIND(_customize_resource, "resource", "path");
+	FOUNDRY_VIRTUAL_BIND(_begin_customize_resources, "platform", "features");
+	FOUNDRY_VIRTUAL_BIND(_customize_resource, "resource", "path");
 
-	GDVIRTUAL_BIND(_begin_customize_scenes, "platform", "features");
-	GDVIRTUAL_BIND(_customize_scene, "scene", "path");
+	FOUNDRY_VIRTUAL_BIND(_begin_customize_scenes, "platform", "features");
+	FOUNDRY_VIRTUAL_BIND(_customize_scene, "scene", "path");
 
-	GDVIRTUAL_BIND(_get_customization_configuration_hash);
+	FOUNDRY_VIRTUAL_BIND(_get_customization_configuration_hash);
 
-	GDVIRTUAL_BIND(_end_customize_scenes);
-	GDVIRTUAL_BIND(_end_customize_resources);
+	FOUNDRY_VIRTUAL_BIND(_end_customize_scenes);
+	FOUNDRY_VIRTUAL_BIND(_end_customize_resources);
 
-	GDVIRTUAL_BIND(_get_export_options, "platform");
-	GDVIRTUAL_BIND(_get_export_options_overrides, "platform");
-	GDVIRTUAL_BIND(_should_update_export_options, "platform");
-	GDVIRTUAL_BIND(_get_export_option_visibility, "platform", "option");
-	GDVIRTUAL_BIND(_get_export_option_warning, "platform", "option");
+	FOUNDRY_VIRTUAL_BIND(_get_export_options, "platform");
+	FOUNDRY_VIRTUAL_BIND(_get_export_options_overrides, "platform");
+	FOUNDRY_VIRTUAL_BIND(_should_update_export_options, "platform");
+	FOUNDRY_VIRTUAL_BIND(_get_export_option_visibility, "platform", "option");
+	FOUNDRY_VIRTUAL_BIND(_get_export_option_warning, "platform", "option");
 
-	GDVIRTUAL_BIND(_get_export_features, "platform", "debug");
-	GDVIRTUAL_BIND(_get_name);
+	FOUNDRY_VIRTUAL_BIND(_get_export_features, "platform", "debug");
+	FOUNDRY_VIRTUAL_BIND(_get_name);
 
-	GDVIRTUAL_BIND(_supports_platform, "platform");
+	FOUNDRY_VIRTUAL_BIND(_supports_platform, "platform");
 
-	GDVIRTUAL_BIND(_get_android_dependencies, "platform", "debug");
-	GDVIRTUAL_BIND(_get_android_dependencies_maven_repos, "platform", "debug");
-	GDVIRTUAL_BIND(_get_android_libraries, "platform", "debug");
-	GDVIRTUAL_BIND(_get_android_manifest_activity_element_contents, "platform", "debug");
-	GDVIRTUAL_BIND(_get_android_manifest_application_element_contents, "platform", "debug");
-	GDVIRTUAL_BIND(_get_android_manifest_element_contents, "platform", "debug");
-	GDVIRTUAL_BIND(_update_android_prebuilt_manifest, "platform", "manifest_data");
+	FOUNDRY_VIRTUAL_BIND(_get_android_dependencies, "platform", "debug");
+	FOUNDRY_VIRTUAL_BIND(_get_android_dependencies_maven_repos, "platform", "debug");
+	FOUNDRY_VIRTUAL_BIND(_get_android_libraries, "platform", "debug");
+	FOUNDRY_VIRTUAL_BIND(_get_android_manifest_activity_element_contents, "platform", "debug");
+	FOUNDRY_VIRTUAL_BIND(_get_android_manifest_application_element_contents, "platform", "debug");
+	FOUNDRY_VIRTUAL_BIND(_get_android_manifest_element_contents, "platform", "debug");
+	FOUNDRY_VIRTUAL_BIND(_update_android_prebuilt_manifest, "platform", "manifest_data");
 }

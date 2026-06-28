@@ -38,7 +38,7 @@
 class FoundryScript;
 
 class FSTextDocument : public RefCounted {
-	GDCLASS(FSTextDocument, RefCounted)
+	FOUNDRY_CLASS(FSTextDocument, RefCounted)
 protected:
 	static void _bind_methods();
 

@@ -34,7 +34,7 @@
 #include "core/io/resource.h"
 
 class PhysicsMaterial : public Resource {
-	GDCLASS(PhysicsMaterial, Resource);
+	FOUNDRY_CLASS(PhysicsMaterial, Resource);
 	OBJ_SAVE_TYPE(PhysicsMaterial);
 	RES_BASE_EXTENSION("phymat");
 

@@ -41,12 +41,12 @@
 
 void initialize_interactive_music_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
-		GDREGISTER_CLASS(AudioStreamPlaylist);
-		GDREGISTER_ABSTRACT_CLASS(AudioStreamPlaybackPlaylist);
-		GDREGISTER_CLASS(AudioStreamInteractive);
-		GDREGISTER_ABSTRACT_CLASS(AudioStreamPlaybackInteractive);
-		GDREGISTER_CLASS(AudioStreamSynchronized);
-		GDREGISTER_ABSTRACT_CLASS(AudioStreamPlaybackSynchronized);
+		FOUNDRY_REGISTER_CLASS(AudioStreamPlaylist);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(AudioStreamPlaybackPlaylist);
+		FOUNDRY_REGISTER_CLASS(AudioStreamInteractive);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(AudioStreamPlaybackInteractive);
+		FOUNDRY_REGISTER_CLASS(AudioStreamSynchronized);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(AudioStreamPlaybackSynchronized);
 	}
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {

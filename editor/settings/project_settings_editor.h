@@ -48,7 +48,7 @@ class EditorVariantTypeOptionButton;
 class FileSystemDock;
 
 class ProjectSettingsEditor : public AcceptDialog {
-	GDCLASS(ProjectSettingsEditor, AcceptDialog);
+	FOUNDRY_CLASS(ProjectSettingsEditor, AcceptDialog);
 
 	inline static ProjectSettingsEditor *singleton = nullptr;
 

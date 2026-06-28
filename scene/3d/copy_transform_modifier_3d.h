@@ -33,7 +33,7 @@
 #include "scene/3d/bone_constraint_3d.h"
 
 class CopyTransformModifier3D : public BoneConstraint3D {
-	GDCLASS(CopyTransformModifier3D, BoneConstraint3D);
+	FOUNDRY_CLASS(CopyTransformModifier3D, BoneConstraint3D);
 
 public:
 	enum TransformFlag {

@@ -35,7 +35,7 @@
 class AudioEffectStereoEnhance;
 
 class AudioEffectStereoEnhanceInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectStereoEnhanceInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectStereoEnhanceInstance, AudioEffectInstance);
 	friend class AudioEffectStereoEnhance;
 	Ref<AudioEffectStereoEnhance> base;
 
@@ -54,7 +54,7 @@ public:
 };
 
 class AudioEffectStereoEnhance : public AudioEffect {
-	GDCLASS(AudioEffectStereoEnhance, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectStereoEnhance, AudioEffect);
 
 	friend class AudioEffectStereoEnhanceInstance;
 	float volume_db = 0.0f;

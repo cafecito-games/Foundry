@@ -68,7 +68,7 @@ struct RunTargetMenuEntry {
 };
 
 class EditorRunNative : public HBoxContainer {
-	GDCLASS(EditorRunNative, HBoxContainer);
+	FOUNDRY_CLASS(EditorRunNative, HBoxContainer);
 
 	RichTextLabel *result_dialog_log = nullptr;
 	AcceptDialog *result_dialog = nullptr;

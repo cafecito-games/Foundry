@@ -35,19 +35,19 @@
 
 String EditorImportPlugin::get_importer_name() const {
 	String ret;
-	GDVIRTUAL_CALL(_get_importer_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_importer_name, ret);
 	return ret;
 }
 
 String EditorImportPlugin::get_visible_name() const {
 	String ret;
-	GDVIRTUAL_CALL(_get_visible_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_visible_name, ret);
 	return ret;
 }
 
 void EditorImportPlugin::get_recognized_extensions(List<String> *p_extensions) const {
 	Vector<String> extensions;
-	GDVIRTUAL_CALL(_get_recognized_extensions, extensions);
+	FOUNDRY_VIRTUAL_CALL(_get_recognized_extensions, extensions);
 	for (int i = 0; i < extensions.size(); i++) {
 		p_extensions->push_back(extensions[i]);
 	}
@@ -55,13 +55,13 @@ void EditorImportPlugin::get_recognized_extensions(List<String> *p_extensions) c
 
 String EditorImportPlugin::get_preset_name(int p_idx) const {
 	String ret;
-	GDVIRTUAL_CALL(_get_preset_name, p_idx, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_preset_name, p_idx, ret);
 	return ret;
 }
 
 int EditorImportPlugin::get_preset_count() const {
 	int ret;
-	if (GDVIRTUAL_CALL(_get_preset_count, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_preset_count, ret)) {
 		return ret;
 	}
 	return 0;
@@ -69,19 +69,19 @@ int EditorImportPlugin::get_preset_count() const {
 
 String EditorImportPlugin::get_save_extension() const {
 	String ret;
-	GDVIRTUAL_CALL(_get_save_extension, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_save_extension, ret);
 	return ret;
 }
 
 String EditorImportPlugin::get_resource_type() const {
 	String ret;
-	GDVIRTUAL_CALL(_get_resource_type, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_resource_type, ret);
 	return ret;
 }
 
 float EditorImportPlugin::get_priority() const {
 	float ret;
-	if (GDVIRTUAL_CALL(_get_priority, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_priority, ret)) {
 		return ret;
 	}
 	return 1.0;
@@ -89,7 +89,7 @@ float EditorImportPlugin::get_priority() const {
 
 int EditorImportPlugin::get_import_order() const {
 	int ret;
-	if (GDVIRTUAL_CALL(_get_import_order, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_import_order, ret)) {
 		return ret;
 	}
 	return IMPORT_ORDER_DEFAULT;
@@ -97,7 +97,7 @@ int EditorImportPlugin::get_import_order() const {
 
 int EditorImportPlugin::get_format_version() const {
 	int ret = 0;
-	if (GDVIRTUAL_CALL(_get_format_version, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_format_version, ret)) {
 		return ret;
 	}
 	return 0;
@@ -106,7 +106,7 @@ int EditorImportPlugin::get_format_version() const {
 void EditorImportPlugin::get_import_options(const String &p_path, List<ResourceImporter::ImportOption> *r_options, int p_preset) const {
 	Array needed = { "name", "default_value" };
 	TypedArray<Dictionary> options;
-	GDVIRTUAL_CALL(_get_import_options, p_path, p_preset, options);
+	FOUNDRY_VIRTUAL_CALL(_get_import_options, p_path, p_preset, options);
 	for (int i = 0; i < options.size(); i++) {
 		Dictionary d = options[i];
 		ERR_FAIL_COND(!d.has_all(needed));
@@ -141,7 +141,7 @@ bool EditorImportPlugin::get_option_visibility(const String &p_path, const Strin
 		++E;
 	}
 	bool visible = false;
-	if (GDVIRTUAL_CALL(_get_option_visibility, p_path, p_option, d, visible)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_option_visibility, p_path, p_option, d, visible)) {
 		return visible;
 	}
 	return true;
@@ -158,7 +158,7 @@ Error EditorImportPlugin::import(ResourceUID::ID p_source_id, const String &p_so
 	}
 
 	Error err = OK;
-	GDVIRTUAL_CALL(_import, p_source_file, p_save_path, options, platform_variants, gen_files, err);
+	FOUNDRY_VIRTUAL_CALL(_import, p_source_file, p_save_path, options, platform_variants, gen_files, err);
 	for (int i = 0; i < platform_variants.size(); i++) {
 		r_platform_variants->push_back(platform_variants[i]);
 	}
@@ -170,7 +170,7 @@ Error EditorImportPlugin::import(ResourceUID::ID p_source_id, const String &p_so
 
 bool EditorImportPlugin::can_import_threaded() const {
 	bool ret = false;
-	if (GDVIRTUAL_CALL(_can_import_threaded, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_can_import_threaded, ret)) {
 		return ret;
 	} else {
 		return ResourceImporter::can_import_threaded();
@@ -191,19 +191,19 @@ Error EditorImportPlugin::append_import_external_resource(const String &p_file, 
 }
 
 void EditorImportPlugin::_bind_methods() {
-	GDVIRTUAL_BIND(_get_importer_name)
-	GDVIRTUAL_BIND(_get_visible_name)
-	GDVIRTUAL_BIND(_get_preset_count)
-	GDVIRTUAL_BIND(_get_preset_name, "preset_index")
-	GDVIRTUAL_BIND(_get_recognized_extensions)
-	GDVIRTUAL_BIND(_get_import_options, "path", "preset_index")
-	GDVIRTUAL_BIND(_get_save_extension)
-	GDVIRTUAL_BIND(_get_resource_type)
-	GDVIRTUAL_BIND(_get_priority)
-	GDVIRTUAL_BIND(_get_import_order)
-	GDVIRTUAL_BIND(_get_format_version)
-	GDVIRTUAL_BIND(_get_option_visibility, "path", "option_name", "options")
-	GDVIRTUAL_BIND(_import, "source_file", "save_path", "options", "platform_variants", "gen_files");
-	GDVIRTUAL_BIND(_can_import_threaded);
+	FOUNDRY_VIRTUAL_BIND(_get_importer_name)
+	FOUNDRY_VIRTUAL_BIND(_get_visible_name)
+	FOUNDRY_VIRTUAL_BIND(_get_preset_count)
+	FOUNDRY_VIRTUAL_BIND(_get_preset_name, "preset_index")
+	FOUNDRY_VIRTUAL_BIND(_get_recognized_extensions)
+	FOUNDRY_VIRTUAL_BIND(_get_import_options, "path", "preset_index")
+	FOUNDRY_VIRTUAL_BIND(_get_save_extension)
+	FOUNDRY_VIRTUAL_BIND(_get_resource_type)
+	FOUNDRY_VIRTUAL_BIND(_get_priority)
+	FOUNDRY_VIRTUAL_BIND(_get_import_order)
+	FOUNDRY_VIRTUAL_BIND(_get_format_version)
+	FOUNDRY_VIRTUAL_BIND(_get_option_visibility, "path", "option_name", "options")
+	FOUNDRY_VIRTUAL_BIND(_import, "source_file", "save_path", "options", "platform_variants", "gen_files");
+	FOUNDRY_VIRTUAL_BIND(_can_import_threaded);
 	ClassDB::bind_method(D_METHOD("append_import_external_resource", "path", "custom_options", "custom_importer", "generator_parameters"), &EditorImportPlugin::_append_import_external_resource, DEFVAL(Dictionary()), DEFVAL(String()), DEFVAL(Variant()));
 }

@@ -54,7 +54,7 @@
 #endif
 
 class PhysicsServer2DWrapMT : public PhysicsServer2D {
-	GDSOFTCLASS(PhysicsServer2DWrapMT, PhysicsServer2D);
+	FOUNDRY_SOFTCLASS(PhysicsServer2DWrapMT, PhysicsServer2D);
 
 	mutable PhysicsServer2D *physics_server_2d = nullptr;
 

@@ -33,7 +33,7 @@
 #include "scene/main/canvas_layer.h"
 
 class ParallaxBackground : public CanvasLayer {
-	GDCLASS(ParallaxBackground, CanvasLayer);
+	FOUNDRY_CLASS(ParallaxBackground, CanvasLayer);
 
 	Point2 offset;
 	real_t scale = 1.0;

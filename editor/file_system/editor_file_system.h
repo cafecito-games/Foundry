@@ -43,7 +43,7 @@ class FileAccess;
 
 struct EditorProgressBG;
 class EditorFileSystemDirectory : public Object {
-	GDCLASS(EditorFileSystemDirectory, Object);
+	FOUNDRY_CLASS(EditorFileSystemDirectory, Object);
 
 	String name;
 	uint64_t modified_time;
@@ -119,38 +119,38 @@ public:
 };
 
 class EditorFileSystemImportFormatSupportQuery : public RefCounted {
-	GDCLASS(EditorFileSystemImportFormatSupportQuery, RefCounted);
+	FOUNDRY_CLASS(EditorFileSystemImportFormatSupportQuery, RefCounted);
 
 protected:
-	GDVIRTUAL0RC_REQUIRED(bool, _is_active)
-	GDVIRTUAL0RC_REQUIRED(Vector<String>, _get_file_extensions)
-	GDVIRTUAL0RC_REQUIRED(bool, _query)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(bool, _is_active)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Vector<String>, _get_file_extensions)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(bool, _query)
 	static void _bind_methods() {
-		GDVIRTUAL_BIND(_is_active);
-		GDVIRTUAL_BIND(_get_file_extensions);
-		GDVIRTUAL_BIND(_query);
+		FOUNDRY_VIRTUAL_BIND(_is_active);
+		FOUNDRY_VIRTUAL_BIND(_get_file_extensions);
+		FOUNDRY_VIRTUAL_BIND(_query);
 	}
 
 public:
 	virtual bool is_active() const {
 		bool ret = false;
-		GDVIRTUAL_CALL(_is_active, ret);
+		FOUNDRY_VIRTUAL_CALL(_is_active, ret);
 		return ret;
 	}
 	virtual Vector<String> get_file_extensions() const {
 		Vector<String> ret;
-		GDVIRTUAL_CALL(_get_file_extensions, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_file_extensions, ret);
 		return ret;
 	}
 	virtual bool query() {
 		bool ret = false;
-		GDVIRTUAL_CALL(_query, ret);
+		FOUNDRY_VIRTUAL_CALL(_query, ret);
 		return ret;
 	}
 };
 
 class EditorFileSystem : public Node {
-	GDCLASS(EditorFileSystem, Node);
+	FOUNDRY_CLASS(EditorFileSystem, Node);
 
 	_THREAD_SAFE_CLASS_
 

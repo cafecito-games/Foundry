@@ -39,7 +39,7 @@
 #include <embree4/rtcore.h>
 
 class LightmapRaycasterEmbree : public LightmapRaycaster {
-	GDCLASS(LightmapRaycasterEmbree, LightmapRaycaster);
+	FOUNDRY_CLASS(LightmapRaycasterEmbree, LightmapRaycaster);
 
 private:
 	struct AlphaTextureData {

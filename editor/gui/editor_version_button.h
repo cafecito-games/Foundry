@@ -33,7 +33,7 @@
 #include "scene/gui/link_button.h"
 
 class EditorVersionButton : public LinkButton {
-	GDCLASS(EditorVersionButton, LinkButton);
+	FOUNDRY_CLASS(EditorVersionButton, LinkButton);
 
 public:
 	enum VersionFormat {

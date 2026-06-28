@@ -1059,7 +1059,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 	translation_server = memnew(TranslationServer);
 	performance = memnew(Performance);
-	GDREGISTER_CLASS(Performance);
+	FOUNDRY_REGISTER_CLASS(Performance);
 	engine->add_singleton(Engine::Singleton("Performance", performance));
 
 	// Only flush stdout in debug builds by default, as spamming `print()` will

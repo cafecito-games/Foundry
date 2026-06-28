@@ -42,7 +42,7 @@ class NavigationPolygon;
 class NavigationMeshSourceGeometryData2D;
 
 class NavMeshGenerator2D : public Object {
-	GDSOFTCLASS(NavMeshGenerator2D, Object);
+	FOUNDRY_SOFTCLASS(NavMeshGenerator2D, Object);
 
 	static NavMeshGenerator2D *singleton;
 

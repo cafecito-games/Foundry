@@ -33,7 +33,7 @@
 #include "scene/gui/base_button.h"
 #include "scene/resources/bit_map.h"
 class TextureButton : public BaseButton {
-	GDCLASS(TextureButton, BaseButton);
+	FOUNDRY_CLASS(TextureButton, BaseButton);
 
 public:
 	enum StretchMode {

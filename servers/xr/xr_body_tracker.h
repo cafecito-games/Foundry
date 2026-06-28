@@ -33,7 +33,7 @@
 #include "servers/xr/xr_positional_tracker.h"
 
 class XRBodyTracker : public XRPositionalTracker {
-	GDCLASS(XRBodyTracker, XRPositionalTracker);
+	FOUNDRY_CLASS(XRBodyTracker, XRPositionalTracker);
 	_THREAD_SAFE_CLASS_
 
 public:

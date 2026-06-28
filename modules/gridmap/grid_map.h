@@ -41,7 +41,7 @@ class PhysicsMaterial;
 #endif // PHYSICS_3D_DISABLED
 
 class GridMap : public Node3D {
-	GDCLASS(GridMap, Node3D);
+	FOUNDRY_CLASS(GridMap, Node3D);
 
 	enum {
 		MAP_DIRTY_TRANSFORMS = 1,

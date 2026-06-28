@@ -109,7 +109,7 @@ public:
 };
 
 class ResourceFormatLoaderBinary : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderBinary, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderBinary, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -183,7 +183,7 @@ public:
 };
 
 class ResourceFormatSaverBinary : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceFormatSaverBinary, ResourceFormatSaver);
+	FOUNDRY_SOFTCLASS(ResourceFormatSaverBinary, ResourceFormatSaver);
 
 public:
 	static inline ResourceFormatSaverBinary *singleton = nullptr;

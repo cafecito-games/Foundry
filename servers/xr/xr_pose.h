@@ -33,7 +33,7 @@
 #include "core/object/ref_counted.h"
 
 class XRPose : public RefCounted {
-	GDCLASS(XRPose, RefCounted);
+	FOUNDRY_CLASS(XRPose, RefCounted);
 
 public:
 	// TrackingConfidence gives an indication of how reliable our transform data is.

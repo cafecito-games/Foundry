@@ -35,7 +35,7 @@
 #include "core/io/file_access.h"
 
 class FileAccessFilesystemJAndroid : public FileAccess {
-	GDSOFTCLASS(FileAccessFilesystemJAndroid, FileAccess);
+	FOUNDRY_SOFTCLASS(FileAccessFilesystemJAndroid, FileAccess);
 	static jobject file_access_handler;
 	static jclass cls;
 

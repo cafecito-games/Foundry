@@ -33,7 +33,7 @@
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 
 class CollisionPolygon3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(CollisionPolygon3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(CollisionPolygon3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	void create_collision_material(const String &p_name, float p_alpha);
 

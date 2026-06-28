@@ -39,7 +39,7 @@ class ConfirmationDialog;
 class NavigationObstacle3D;
 
 class NavigationObstacle3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(NavigationObstacle3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(NavigationObstacle3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 public:
 	virtual bool has_gizmo(Node3D *p_spatial) override;
@@ -60,7 +60,7 @@ public:
 };
 
 class NavigationObstacle3DEditorPlugin : public EditorPlugin {
-	GDCLASS(NavigationObstacle3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(NavigationObstacle3DEditorPlugin, EditorPlugin);
 
 	Ref<NavigationObstacle3DGizmoPlugin> obstacle_3d_gizmo_plugin;
 

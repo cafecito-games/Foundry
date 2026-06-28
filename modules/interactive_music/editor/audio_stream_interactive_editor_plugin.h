@@ -42,7 +42,7 @@ class TreeItem;
 class AudioStreamInteractive;
 
 class AudioStreamInteractiveTransitionEditor : public AcceptDialog {
-	GDCLASS(AudioStreamInteractiveTransitionEditor, AcceptDialog);
+	FOUNDRY_CLASS(AudioStreamInteractiveTransitionEditor, AcceptDialog);
 
 	AudioStreamInteractive *audio_stream_interactive = nullptr;
 
@@ -84,7 +84,7 @@ public:
 //
 
 class EditorInspectorPluginAudioStreamInteractive : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginAudioStreamInteractive, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginAudioStreamInteractive, EditorInspectorPlugin);
 
 	AudioStreamInteractiveTransitionEditor *audio_stream_interactive_transition_editor = nullptr;
 
@@ -98,7 +98,7 @@ public:
 };
 
 class AudioStreamInteractiveEditorPlugin : public EditorPlugin {
-	GDCLASS(AudioStreamInteractiveEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(AudioStreamInteractiveEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "AudioStreamInteractive"; }

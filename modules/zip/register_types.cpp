@@ -40,8 +40,8 @@ void initialize_zip_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(ZIPPacker);
-	GDREGISTER_CLASS(ZIPReader);
+	FOUNDRY_REGISTER_CLASS(ZIPPacker);
+	FOUNDRY_REGISTER_CLASS(ZIPReader);
 }
 
 void uninitialize_zip_module(ModuleInitializationLevel p_level) {

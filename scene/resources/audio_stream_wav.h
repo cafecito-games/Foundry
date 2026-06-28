@@ -37,7 +37,7 @@
 class AudioStreamWAV;
 
 class AudioStreamPlaybackWAV : public AudioStreamPlaybackResampled {
-	GDCLASS(AudioStreamPlaybackWAV, AudioStreamPlaybackResampled);
+	FOUNDRY_CLASS(AudioStreamPlaybackWAV, AudioStreamPlaybackResampled);
 
 	struct IMA_ADPCM_State {
 		int16_t step_index = 0;
@@ -93,7 +93,7 @@ public:
 };
 
 class AudioStreamWAV : public AudioStream {
-	GDCLASS(AudioStreamWAV, AudioStream);
+	FOUNDRY_CLASS(AudioStreamWAV, AudioStream);
 	RES_BASE_EXTENSION("sample")
 
 public:

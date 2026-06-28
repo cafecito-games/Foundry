@@ -39,8 +39,8 @@ void initialize_regex_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(RegExMatch);
-	GDREGISTER_CLASS(RegEx);
+	FOUNDRY_REGISTER_CLASS(RegExMatch);
+	FOUNDRY_REGISTER_CLASS(RegEx);
 }
 
 void uninitialize_regex_module(ModuleInitializationLevel p_level) {

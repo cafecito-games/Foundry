@@ -37,7 +37,7 @@
 /*************************************************************************/
 
 class LabelSettings : public Resource {
-	GDCLASS(LabelSettings, Resource);
+	FOUNDRY_CLASS(LabelSettings, Resource);
 
 public:
 	struct StackedOutlineData {

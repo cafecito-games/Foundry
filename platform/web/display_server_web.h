@@ -38,7 +38,7 @@
 #include <emscripten/html5.h>
 
 class DisplayServerWeb : public DisplayServer {
-	GDSOFTCLASS(DisplayServerWeb, DisplayServer);
+	FOUNDRY_SOFTCLASS(DisplayServerWeb, DisplayServer);
 
 private:
 	struct JSTouchEvent {

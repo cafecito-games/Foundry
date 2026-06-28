@@ -40,7 +40,7 @@ class Label;
 class Tree;
 
 class GroupSettingsEditor : public VBoxContainer {
-	GDCLASS(GroupSettingsEditor, VBoxContainer);
+	FOUNDRY_CLASS(GroupSettingsEditor, VBoxContainer);
 
 	const String GLOBAL_GROUP_PREFIX = "global_group/";
 	const StringName group_changed = "group_changed";

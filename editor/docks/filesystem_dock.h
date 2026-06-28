@@ -63,7 +63,7 @@ class FileSystemTree : public Tree {
 };
 
 class FileSystemList : public ItemList {
-	GDCLASS(FileSystemList, ItemList);
+	FOUNDRY_CLASS(FileSystemList, ItemList);
 
 	bool popup_edit_committed = true;
 	VBoxContainer *popup_editor_vb = nullptr;
@@ -85,7 +85,7 @@ public:
 };
 
 class FileSystemDock : public EditorDock {
-	GDCLASS(FileSystemDock, EditorDock);
+	FOUNDRY_CLASS(FileSystemDock, EditorDock);
 
 public:
 	enum FileListDisplayMode {

@@ -684,7 +684,7 @@ EditorExportPlatform::ExportNotifier::ExportNotifier(EditorExportPlatform &p_pla
 	//initial export plugin callback
 	for (int i = 0; i < export_plugins.size(); i++) {
 		export_plugins.write[i]->set_export_preset(p_preset);
-		if (GDVIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_begin)) {
+		if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_begin)) {
 			PackedStringArray features_psa;
 			for (const String &feature : features) {
 				features_psa.push_back(feature);
@@ -699,7 +699,7 @@ EditorExportPlatform::ExportNotifier::ExportNotifier(EditorExportPlatform &p_pla
 EditorExportPlatform::ExportNotifier::~ExportNotifier() {
 	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	for (int i = 0; i < export_plugins.size(); i++) {
-		if (GDVIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_end)) {
+		if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_end)) {
 			export_plugins.write[i]->_export_end_script();
 		} else {
 			export_plugins.write[i]->_export_end();
@@ -1478,7 +1478,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 		bool do_export = true;
 		for (int i = 0; i < export_plugins.size(); i++) {
-			if (GDVIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_file)) {
+			if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_file)) {
 				export_plugins.write[i]->_export_file_script(path, type, features_psa);
 			} else {
 				export_plugins.write[i]->_export_file(path, type, features);

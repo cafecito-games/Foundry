@@ -36,7 +36,7 @@ class ConfirmationDialog;
 class EditorFileSystemDirectory;
 
 class ProjectUpgradeTool : public Object {
-	GDCLASS(ProjectUpgradeTool, Object);
+	FOUNDRY_CLASS(ProjectUpgradeTool, Object);
 
 	ConfirmationDialog *upgrade_dialog = nullptr;
 

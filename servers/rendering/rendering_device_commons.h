@@ -65,7 +65,7 @@ public:
 };
 
 class RenderingDeviceCommons : public Object {
-	GDSOFTCLASS(RenderingDeviceCommons, Object);
+	FOUNDRY_SOFTCLASS(RenderingDeviceCommons, Object);
 
 	////////////////////////////////////////////
 	// PUBLIC STUFF

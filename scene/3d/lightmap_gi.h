@@ -39,7 +39,7 @@ class Sky;
 class CameraAttributes;
 
 class LightmapGIData : public Resource {
-	GDCLASS(LightmapGIData, Resource);
+	FOUNDRY_CLASS(LightmapGIData, Resource);
 	RES_BASE_EXTENSION("lmbake")
 
 public:
@@ -144,7 +144,7 @@ public:
 };
 
 class LightmapGI : public VisualInstance3D {
-	GDCLASS(LightmapGI, VisualInstance3D);
+	FOUNDRY_CLASS(LightmapGI, VisualInstance3D);
 
 public:
 	enum BakeQuality {

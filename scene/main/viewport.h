@@ -53,7 +53,7 @@ class Window;
 class World2D;
 
 class ViewportTexture : public Texture2D {
-	GDCLASS(ViewportTexture, Texture2D);
+	FOUNDRY_CLASS(ViewportTexture, Texture2D);
 
 	NodePath path;
 
@@ -93,7 +93,7 @@ public:
 };
 
 class Viewport : public Node {
-	GDCLASS(Viewport, Node);
+	FOUNDRY_CLASS(Viewport, Node);
 
 public:
 	enum Scaling3DMode {
@@ -865,7 +865,7 @@ public:
 };
 
 class SubViewport : public Viewport {
-	GDCLASS(SubViewport, Viewport);
+	FOUNDRY_CLASS(SubViewport, Viewport);
 
 public:
 	enum ClearMode {

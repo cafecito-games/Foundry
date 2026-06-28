@@ -35,7 +35,7 @@
 class JoltBody3D;
 
 class JoltPhysicsDirectBodyState3D final : public PhysicsDirectBodyState3D {
-	GDCLASS(JoltPhysicsDirectBodyState3D, PhysicsDirectBodyState3D)
+	FOUNDRY_CLASS(JoltPhysicsDirectBodyState3D, PhysicsDirectBodyState3D)
 
 	JoltBody3D *body = nullptr;
 

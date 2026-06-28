@@ -80,7 +80,7 @@ FSCache *fs_cache = nullptr;
 Ref<FSEditorTranslationParserPlugin> fs_translation_parser_plugin;
 
 class EditorExportFoundryScript : public EditorExportPlugin {
-	GDCLASS(EditorExportFoundryScript, EditorExportPlugin);
+	FOUNDRY_CLASS(EditorExportFoundryScript, EditorExportPlugin);
 
 	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
 	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
@@ -158,13 +158,13 @@ static void _editor_init() {
 
 void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
-		GDREGISTER_CLASS(FoundryScript);
-		GDREGISTER_CLASS(FSTypeParameter);
-		GDREGISTER_CLASS(FSAnnotation);
-		GDREGISTER_CLASS(FSMethodDescriptor);
-		GDREGISTER_CLASS(FSPropertyDescriptor);
-		GDREGISTER_CLASS(FSReflection);
-		GDREGISTER_CLASS(FSGodotNamespace);
+		FOUNDRY_REGISTER_CLASS(FoundryScript);
+		FOUNDRY_REGISTER_CLASS(FSTypeParameter);
+		FOUNDRY_REGISTER_CLASS(FSAnnotation);
+		FOUNDRY_REGISTER_CLASS(FSMethodDescriptor);
+		FOUNDRY_REGISTER_CLASS(FSPropertyDescriptor);
+		FOUNDRY_REGISTER_CLASS(FSReflection);
+		FOUNDRY_REGISTER_CLASS(FSGodotNamespace);
 
 		script_language_gd = memnew(FSLanguage);
 		ScriptServer::register_language(script_language_gd);
@@ -187,8 +187,8 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 		fs_translation_parser_plugin.instantiate();
 		EditorTranslationParser::get_singleton()->add_parser(fs_translation_parser_plugin, EditorTranslationParser::STANDARD);
 	} else if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_CLASS(FSSyntaxHighlighter);
-		GDREGISTER_CLASS(FSMigrationWizardDialog);
+		FOUNDRY_REGISTER_CLASS(FSSyntaxHighlighter);
+		FOUNDRY_REGISTER_CLASS(FSMigrationWizardDialog);
 	}
 #endif // TOOLS_ENABLED
 }

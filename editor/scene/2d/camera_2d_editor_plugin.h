@@ -37,7 +37,7 @@ class Label;
 class MenuButton;
 
 class Camera2DEditor : public Control {
-	GDCLASS(Camera2DEditor, Control);
+	FOUNDRY_CLASS(Camera2DEditor, Control);
 
 	EditorPlugin *plugin = nullptr;
 
@@ -87,7 +87,7 @@ public:
 };
 
 class Camera2DEditorPlugin : public EditorPlugin {
-	GDCLASS(Camera2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(Camera2DEditorPlugin, EditorPlugin);
 
 	Camera2DEditor *camera_2d_editor = nullptr;
 

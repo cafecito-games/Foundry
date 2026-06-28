@@ -41,7 +41,7 @@ class SkeletonModification2D;
 class Bone2D;
 
 class SkeletonModificationStack2D : public Resource {
-	GDCLASS(SkeletonModificationStack2D, Resource);
+	FOUNDRY_CLASS(SkeletonModificationStack2D, Resource);
 	friend class Skeleton2D;
 	friend class SkeletonModification2D;
 

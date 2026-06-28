@@ -34,7 +34,7 @@
 #include "core/object/gdvirtual.gen.inc"
 
 class CharFXTransform : public RefCounted {
-	GDCLASS(CharFXTransform, RefCounted);
+	FOUNDRY_CLASS(CharFXTransform, RefCounted);
 
 protected:
 	static void _bind_methods();
@@ -98,13 +98,13 @@ public:
 };
 
 class RichTextEffect : public Resource {
-	GDCLASS(RichTextEffect, Resource);
+	FOUNDRY_CLASS(RichTextEffect, Resource);
 	OBJ_SAVE_TYPE(RichTextEffect);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1RC(bool, _process_custom_fx, Ref<CharFXTransform>)
+	FOUNDRY_VIRTUAL1RC(bool, _process_custom_fx, Ref<CharFXTransform>)
 
 public:
 	Variant get_bbcode() const;

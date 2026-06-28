@@ -52,7 +52,7 @@ class ThemeEditorPlugin;
 class TextureRect;
 
 class ThemeItemImportTree : public VBoxContainer {
-	GDCLASS(ThemeItemImportTree, VBoxContainer);
+	FOUNDRY_CLASS(ThemeItemImportTree, VBoxContainer);
 
 	Ref<Theme> edited_theme;
 	Ref<Theme> base_theme;
@@ -189,7 +189,7 @@ public:
 class ThemeTypeEditor;
 
 class ThemeItemEditorDialog : public AcceptDialog {
-	GDCLASS(ThemeItemEditorDialog, AcceptDialog);
+	FOUNDRY_CLASS(ThemeItemEditorDialog, AcceptDialog);
 
 	ThemeTypeEditor *theme_type_editor = nullptr;
 
@@ -288,7 +288,7 @@ public:
 };
 
 class ThemeTypeDialog : public ConfirmationDialog {
-	GDCLASS(ThemeTypeDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(ThemeTypeDialog, ConfirmationDialog);
 
 	Ref<Theme> edited_theme;
 	bool include_own_types = false;
@@ -330,7 +330,7 @@ class ThemeItemLabel : public Label {
 };
 
 class ThemeTypeEditor : public MarginContainer {
-	GDCLASS(ThemeTypeEditor, MarginContainer);
+	FOUNDRY_CLASS(ThemeTypeEditor, MarginContainer);
 
 	Ref<Theme> edited_theme;
 	String edited_type;
@@ -434,7 +434,7 @@ public:
 };
 
 class ThemeEditor : public EditorDock {
-	GDCLASS(ThemeEditor, EditorDock);
+	FOUNDRY_CLASS(ThemeEditor, EditorDock);
 
 	friend class ThemeEditorPlugin;
 	ThemeEditorPlugin *plugin = nullptr;
@@ -488,7 +488,7 @@ public:
 };
 
 class ThemeEditorPlugin : public EditorPlugin {
-	GDCLASS(ThemeEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ThemeEditorPlugin, EditorPlugin);
 
 	ThemeEditor *theme_editor = nullptr;
 

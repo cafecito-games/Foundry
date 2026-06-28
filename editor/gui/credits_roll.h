@@ -37,7 +37,7 @@ class VBoxContainer;
 class Font;
 
 class CreditsRoll : public CanvasLayer {
-	GDCLASS(CreditsRoll, CanvasLayer);
+	FOUNDRY_CLASS(CreditsRoll, CanvasLayer);
 
 	enum class LabelSize {
 		NORMAL,

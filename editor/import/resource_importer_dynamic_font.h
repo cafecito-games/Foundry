@@ -33,7 +33,7 @@
 #include "core/io/resource_importer.h"
 
 class ResourceImporterDynamicFont : public ResourceImporter {
-	GDCLASS(ResourceImporterDynamicFont, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterDynamicFont, ResourceImporter);
 
 	enum Presets {
 		PRESET_DYNAMIC,

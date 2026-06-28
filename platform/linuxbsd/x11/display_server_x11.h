@@ -121,7 +121,7 @@ typedef struct _xrr_monitor_info {
 #undef CursorShape
 
 class DisplayServerX11 : public DisplayServer {
-	GDSOFTCLASS(DisplayServerX11, DisplayServer);
+	FOUNDRY_SOFTCLASS(DisplayServerX11, DisplayServer);
 
 	_THREAD_SAFE_CLASS_
 

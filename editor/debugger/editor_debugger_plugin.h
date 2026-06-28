@@ -35,7 +35,7 @@
 class ScriptEditorDebugger;
 
 class EditorDebuggerSession : public RefCounted {
-	GDCLASS(EditorDebuggerSession, RefCounted);
+	FOUNDRY_CLASS(EditorDebuggerSession, RefCounted);
 
 private:
 	HashSet<Control *> tabs;
@@ -68,7 +68,7 @@ public:
 };
 
 class EditorDebuggerPlugin : public RefCounted {
-	GDCLASS(EditorDebuggerPlugin, RefCounted);
+	FOUNDRY_CLASS(EditorDebuggerPlugin, RefCounted);
 
 private:
 	List<Ref<EditorDebuggerSession>> sessions;
@@ -87,17 +87,17 @@ public:
 	Ref<EditorDebuggerSession> get_session(int p_session_id);
 	Array get_sessions();
 
-	GDVIRTUAL3R(bool, _capture, const String &, const Array &, int);
-	GDVIRTUAL1RC(bool, _has_capture, const String &);
-	GDVIRTUAL1(_setup_session, int);
+	FOUNDRY_VIRTUAL3R(bool, _capture, const String &, const Array &, int);
+	FOUNDRY_VIRTUAL1RC(bool, _has_capture, const String &);
+	FOUNDRY_VIRTUAL1(_setup_session, int);
 
 	virtual void goto_script_line(const Ref<Script> &p_script, int p_line);
 	virtual void breakpoints_cleared_in_tree();
 	virtual void breakpoint_set_in_tree(const Ref<Script> &p_script, int p_line, bool p_enabled);
 
-	GDVIRTUAL2(_goto_script_line, const Ref<Script> &, int);
-	GDVIRTUAL0(_breakpoints_cleared_in_tree);
-	GDVIRTUAL3(_breakpoint_set_in_tree, const Ref<Script> &, int, bool);
+	FOUNDRY_VIRTUAL2(_goto_script_line, const Ref<Script> &, int);
+	FOUNDRY_VIRTUAL0(_breakpoints_cleared_in_tree);
+	FOUNDRY_VIRTUAL3(_breakpoint_set_in_tree, const Ref<Script> &, int, bool);
 
 	EditorDebuggerPlugin();
 	~EditorDebuggerPlugin();

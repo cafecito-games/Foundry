@@ -236,7 +236,7 @@ public:
 };
 
 class RuntimeNodeSelect : public Object {
-	GDCLASS(RuntimeNodeSelect, Object);
+	FOUNDRY_CLASS(RuntimeNodeSelect, Object);
 
 public:
 	enum NodeType {

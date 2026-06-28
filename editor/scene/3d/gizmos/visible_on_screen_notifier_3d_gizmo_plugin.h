@@ -33,7 +33,7 @@
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 
 class VisibleOnScreenNotifier3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(VisibleOnScreenNotifier3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(VisibleOnScreenNotifier3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 public:
 	bool has_gizmo(Node3D *p_spatial) override;

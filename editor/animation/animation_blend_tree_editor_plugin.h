@@ -50,7 +50,7 @@ class PanelContainer;
 class EditorInspectorPluginAnimationNodeAnimation;
 
 class AnimationNodeBlendTreeEditor : public AnimationTreeNodeEditorPlugin {
-	GDCLASS(AnimationNodeBlendTreeEditor, AnimationTreeNodeEditorPlugin);
+	FOUNDRY_CLASS(AnimationNodeBlendTreeEditor, AnimationTreeNodeEditorPlugin);
 
 	Ref<AnimationNodeBlendTree> blend_tree;
 
@@ -174,7 +174,7 @@ public:
 // EditorPluginAnimationNodeAnimation
 
 class EditorInspectorPluginAnimationNodeAnimation : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginAnimationNodeAnimation, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginAnimationNodeAnimation, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -182,7 +182,7 @@ public:
 };
 
 class AnimationNodeAnimationEditorDialog : public ConfirmationDialog {
-	GDCLASS(AnimationNodeAnimationEditorDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(AnimationNodeAnimationEditorDialog, ConfirmationDialog);
 
 	friend class AnimationNodeAnimationEditor;
 
@@ -194,7 +194,7 @@ public:
 };
 
 class AnimationNodeAnimationEditor : public VBoxContainer {
-	GDCLASS(AnimationNodeAnimationEditor, VBoxContainer);
+	FOUNDRY_CLASS(AnimationNodeAnimationEditor, VBoxContainer);
 
 	Ref<AnimationNodeAnimation> animation_node_animation;
 	Button *button = nullptr;

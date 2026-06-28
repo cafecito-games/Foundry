@@ -140,7 +140,7 @@ GODOT_CLANG_WARNING_POP
 /*************************************************************************/
 
 class TextServerAdvanced : public TextServerExtension {
-	GDCLASS(TextServerAdvanced, TextServerExtension);
+	FOUNDRY_CLASS(TextServerAdvanced, TextServerExtension);
 	_THREAD_SAFE_CLASS_
 
 	struct FeatureInfo {

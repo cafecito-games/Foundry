@@ -35,7 +35,7 @@
 #include "servers/navigation_3d/navigation_constants_3d.h"
 
 class NavigationPathQueryResult3D : public RefCounted {
-	GDCLASS(NavigationPathQueryResult3D, RefCounted);
+	FOUNDRY_CLASS(NavigationPathQueryResult3D, RefCounted);
 
 	Vector<Vector3> path;
 	Vector<int32_t> path_types;

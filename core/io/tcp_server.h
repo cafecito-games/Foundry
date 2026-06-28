@@ -35,7 +35,7 @@
 #include "core/io/stream_peer_tcp.h"
 
 class TCPServer : public SocketServer {
-	GDCLASS(TCPServer, SocketServer);
+	FOUNDRY_CLASS(TCPServer, SocketServer);
 
 protected:
 	static void _bind_methods();

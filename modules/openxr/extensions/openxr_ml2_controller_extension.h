@@ -33,7 +33,7 @@
 #include "openxr_extension_wrapper.h"
 
 class OpenXRML2ControllerExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRML2ControllerExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRML2ControllerExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}

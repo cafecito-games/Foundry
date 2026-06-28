@@ -318,34 +318,34 @@ void MultiplayerAPI::_bind_methods() {
 
 Error MultiplayerAPIExtension::poll() {
 	Error err = OK;
-	GDVIRTUAL_CALL(_poll, err);
+	FOUNDRY_VIRTUAL_CALL(_poll, err);
 	return err;
 }
 
 void MultiplayerAPIExtension::set_multiplayer_peer(const Ref<MultiplayerPeer> &p_peer) {
-	GDVIRTUAL_CALL(_set_multiplayer_peer, p_peer);
+	FOUNDRY_VIRTUAL_CALL(_set_multiplayer_peer, p_peer);
 }
 
 Ref<MultiplayerPeer> MultiplayerAPIExtension::get_multiplayer_peer() {
 	Ref<MultiplayerPeer> peer;
-	GDVIRTUAL_CALL(_get_multiplayer_peer, peer);
+	FOUNDRY_VIRTUAL_CALL(_get_multiplayer_peer, peer);
 	return peer;
 }
 
 int MultiplayerAPIExtension::get_unique_id() {
 	int id = 1;
-	GDVIRTUAL_CALL(_get_unique_id, id);
+	FOUNDRY_VIRTUAL_CALL(_get_unique_id, id);
 	return id;
 }
 
 Vector<int> MultiplayerAPIExtension::get_peer_ids() {
 	Vector<int> ids;
-	GDVIRTUAL_CALL(_get_peer_ids, ids);
+	FOUNDRY_VIRTUAL_CALL(_get_peer_ids, ids);
 	return ids;
 }
 
 Error MultiplayerAPIExtension::rpcp(Object *p_obj, int p_peer_id, const StringName &p_method, const Variant **p_arg, int p_argcount) {
-	if (!GDVIRTUAL_IS_OVERRIDDEN(_rpc)) {
+	if (!FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_rpc)) {
 		return ERR_UNAVAILABLE;
 	}
 	Array args;
@@ -353,36 +353,36 @@ Error MultiplayerAPIExtension::rpcp(Object *p_obj, int p_peer_id, const StringNa
 		args.push_back(*p_arg[i]);
 	}
 	Error ret = FAILED;
-	GDVIRTUAL_CALL(_rpc, p_peer_id, p_obj, p_method, args, ret);
+	FOUNDRY_VIRTUAL_CALL(_rpc, p_peer_id, p_obj, p_method, args, ret);
 	return ret;
 }
 
 int MultiplayerAPIExtension::get_remote_sender_id() {
 	int id = 0;
-	GDVIRTUAL_CALL(_get_remote_sender_id, id);
+	FOUNDRY_VIRTUAL_CALL(_get_remote_sender_id, id);
 	return id;
 }
 
 Error MultiplayerAPIExtension::object_configuration_add(Object *p_object, Variant p_config) {
 	Error err = ERR_UNAVAILABLE;
-	GDVIRTUAL_CALL(_object_configuration_add, p_object, p_config, err);
+	FOUNDRY_VIRTUAL_CALL(_object_configuration_add, p_object, p_config, err);
 	return err;
 }
 
 Error MultiplayerAPIExtension::object_configuration_remove(Object *p_object, Variant p_config) {
 	Error err = ERR_UNAVAILABLE;
-	GDVIRTUAL_CALL(_object_configuration_remove, p_object, p_config, err);
+	FOUNDRY_VIRTUAL_CALL(_object_configuration_remove, p_object, p_config, err);
 	return err;
 }
 
 void MultiplayerAPIExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_poll);
-	GDVIRTUAL_BIND(_set_multiplayer_peer, "multiplayer_peer");
-	GDVIRTUAL_BIND(_get_multiplayer_peer);
-	GDVIRTUAL_BIND(_get_unique_id);
-	GDVIRTUAL_BIND(_get_peer_ids);
-	GDVIRTUAL_BIND(_rpc, "peer", "object", "method", "args");
-	GDVIRTUAL_BIND(_get_remote_sender_id);
-	GDVIRTUAL_BIND(_object_configuration_add, "object", "configuration");
-	GDVIRTUAL_BIND(_object_configuration_remove, "object", "configuration");
+	FOUNDRY_VIRTUAL_BIND(_poll);
+	FOUNDRY_VIRTUAL_BIND(_set_multiplayer_peer, "multiplayer_peer");
+	FOUNDRY_VIRTUAL_BIND(_get_multiplayer_peer);
+	FOUNDRY_VIRTUAL_BIND(_get_unique_id);
+	FOUNDRY_VIRTUAL_BIND(_get_peer_ids);
+	FOUNDRY_VIRTUAL_BIND(_rpc, "peer", "object", "method", "args");
+	FOUNDRY_VIRTUAL_BIND(_get_remote_sender_id);
+	FOUNDRY_VIRTUAL_BIND(_object_configuration_add, "object", "configuration");
+	FOUNDRY_VIRTUAL_BIND(_object_configuration_remove, "object", "configuration");
 }

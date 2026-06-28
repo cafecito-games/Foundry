@@ -56,7 +56,7 @@
 #endif
 
 class RenderingServer : public Object {
-	GDCLASS(RenderingServer, Object);
+	FOUNDRY_CLASS(RenderingServer, Object);
 
 	static RenderingServer *singleton;
 

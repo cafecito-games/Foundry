@@ -179,7 +179,7 @@ struct CellDataYSortedXReversedComparator {
 
 #ifdef DEBUG_ENABLED
 class DebugQuadrant : public RefCounted {
-	GDCLASS(DebugQuadrant, RefCounted);
+	FOUNDRY_CLASS(DebugQuadrant, RefCounted);
 
 public:
 	Vector2i quadrant_coords;
@@ -204,7 +204,7 @@ public:
 #endif // DEBUG_ENABLED
 
 class RenderingQuadrant : public RefCounted {
-	GDCLASS(RenderingQuadrant, RefCounted);
+	FOUNDRY_CLASS(RenderingQuadrant, RefCounted);
 
 public:
 	struct CoordsWorldComparator {
@@ -236,7 +236,7 @@ public:
 
 #ifndef PHYSICS_2D_DISABLED
 class PhysicsQuadrant : public RefCounted {
-	GDCLASS(PhysicsQuadrant, RefCounted);
+	FOUNDRY_CLASS(PhysicsQuadrant, RefCounted);
 
 public:
 	struct PhysicsBodyKey {
@@ -329,7 +329,7 @@ public:
 #endif // PHYSICS_2D_DISABLED
 
 class TileMapLayer : public Node2D {
-	GDCLASS(TileMapLayer, Node2D);
+	FOUNDRY_CLASS(TileMapLayer, Node2D);
 
 public:
 	enum HighlightMode {
@@ -588,9 +588,9 @@ public:
 	// --- Runtime ---
 	void update_internals();
 	void notify_runtime_tile_data_update();
-	GDVIRTUAL1R(bool, _use_tile_data_runtime_update, Vector2i);
-	GDVIRTUAL2(_tile_data_runtime_update, Vector2i, TileData *);
-	GDVIRTUAL2(_update_cells, TypedArray<Vector2i>, bool);
+	FOUNDRY_VIRTUAL1R(bool, _use_tile_data_runtime_update, Vector2i);
+	FOUNDRY_VIRTUAL2(_tile_data_runtime_update, Vector2i, TileData *);
+	FOUNDRY_VIRTUAL2(_update_cells, TypedArray<Vector2i>, bool);
 
 	// --- Shortcuts to methods defined in TileSet ---
 	Vector2i map_pattern(const Vector2i &p_position_in_tilemap, const Vector2i &p_coords_in_pattern, Ref<TileMapPattern> p_pattern);

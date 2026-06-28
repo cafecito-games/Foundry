@@ -47,7 +47,7 @@ class RichTextLabel;
 // destructive stages exactly as the orchestrator's options do; the dialog never writes anything the
 // user did not opt into and confirm.
 class FSMigrationWizardDialog : public ConfirmationDialog {
-	GDCLASS(FSMigrationWizardDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(FSMigrationWizardDialog, ConfirmationDialog);
 
 	RichTextLabel *report_output = nullptr;
 	CheckBox *strict_null_checkbox = nullptr;

@@ -35,7 +35,7 @@
 #include "scene/resources/3d/joint_limitation_3d.h"
 
 class IterateIK3D : public ChainIK3D {
-	GDCLASS(IterateIK3D, ChainIK3D);
+	FOUNDRY_CLASS(IterateIK3D, ChainIK3D);
 
 public:
 	struct IterateIK3DJointSetting {

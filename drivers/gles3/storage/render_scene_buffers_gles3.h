@@ -38,7 +38,7 @@
 #include "platform_gl.h"
 
 class RenderSceneBuffersGLES3 : public RenderSceneBuffers {
-	GDCLASS(RenderSceneBuffersGLES3, RenderSceneBuffers);
+	FOUNDRY_CLASS(RenderSceneBuffersGLES3, RenderSceneBuffers);
 
 public:
 	Size2i internal_size; // Size of the buffer we render 3D content to.

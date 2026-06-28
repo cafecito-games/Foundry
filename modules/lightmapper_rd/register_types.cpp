@@ -62,7 +62,7 @@ void initialize_lightmapper_rd_module(ModuleInitializationLevel p_level) {
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/lightmapping/denoising/denoiser", PROPERTY_HINT_ENUM, "JNLM,OIDN"), 0);
 #ifndef _3D_DISABLED
-	GDREGISTER_CLASS(LightmapperRD);
+	FOUNDRY_REGISTER_CLASS(LightmapperRD);
 	Lightmapper::create_gpu = create_lightmapper_rd;
 #endif
 }

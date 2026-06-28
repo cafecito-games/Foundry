@@ -50,7 +50,7 @@
 // for more information.
 
 class OpenXRHandInteractionExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRHandInteractionExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRHandInteractionExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}

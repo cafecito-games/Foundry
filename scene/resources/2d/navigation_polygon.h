@@ -35,7 +35,7 @@
 #include "servers/navigation_2d/navigation_constants_2d.h"
 
 class NavigationPolygon : public Resource {
-	GDCLASS(NavigationPolygon, Resource);
+	FOUNDRY_CLASS(NavigationPolygon, Resource);
 	RWLock rwlock;
 
 	Vector<Vector2> vertices;

@@ -42,7 +42,7 @@ class PanelContainer;
 class TextEdit;
 
 class OpenXRActionSetEditor : public HBoxContainer {
-	GDCLASS(OpenXRActionSetEditor, HBoxContainer);
+	FOUNDRY_CLASS(OpenXRActionSetEditor, HBoxContainer);
 
 private:
 	EditorUndoRedoManager *undo_redo;

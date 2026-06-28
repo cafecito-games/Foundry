@@ -46,7 +46,7 @@
 #include "scene/gui/tab_container.h"
 
 class OpenXRActionMapEditor : public EditorDock {
-	GDCLASS(OpenXRActionMapEditor, EditorDock);
+	FOUNDRY_CLASS(OpenXRActionMapEditor, EditorDock);
 
 private:
 	static HashMap<String, String> interaction_profile_editors; // interaction profile path, interaction profile editor

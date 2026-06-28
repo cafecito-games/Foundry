@@ -35,7 +35,7 @@
 #include "nav_utils_3d.h"
 
 class NavLinkIteration3D : public NavBaseIteration3D {
-	GDCLASS(NavLinkIteration3D, NavBaseIteration3D);
+	FOUNDRY_CLASS(NavLinkIteration3D, NavBaseIteration3D);
 
 public:
 	bool bidirectional = true;

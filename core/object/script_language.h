@@ -122,7 +122,7 @@ public:
 class PlaceHolderScriptInstance;
 
 class Script : public Resource {
-	GDCLASS(Script, Resource);
+	FOUNDRY_CLASS(Script, Resource);
 	OBJ_SAVE_TYPE(Script);
 
 protected:
@@ -231,7 +231,7 @@ public:
 };
 
 class ScriptLanguage : public Object {
-	GDCLASS(ScriptLanguage, Object)
+	FOUNDRY_CLASS(ScriptLanguage, Object)
 
 protected:
 	static void _bind_methods();

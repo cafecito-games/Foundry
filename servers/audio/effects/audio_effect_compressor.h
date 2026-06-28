@@ -35,7 +35,7 @@
 class AudioEffectCompressor;
 
 class AudioEffectCompressorInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectCompressorInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectCompressorInstance, AudioEffectInstance);
 	friend class AudioEffectCompressor;
 	Ref<AudioEffectCompressor> base;
 
@@ -48,7 +48,7 @@ public:
 };
 
 class AudioEffectCompressor : public AudioEffect {
-	GDCLASS(AudioEffectCompressor, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectCompressor, AudioEffect);
 
 	friend class AudioEffectCompressorInstance;
 	float threshold;

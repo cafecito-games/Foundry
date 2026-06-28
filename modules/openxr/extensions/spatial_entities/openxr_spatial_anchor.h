@@ -36,7 +36,7 @@
 
 // Anchor capability configuration
 class OpenXRSpatialCapabilityConfigurationAnchor : public OpenXRSpatialCapabilityConfigurationBaseHeader {
-	GDCLASS(OpenXRSpatialCapabilityConfigurationAnchor, OpenXRSpatialCapabilityConfigurationBaseHeader);
+	FOUNDRY_CLASS(OpenXRSpatialCapabilityConfigurationAnchor, OpenXRSpatialCapabilityConfigurationBaseHeader);
 
 public:
 	virtual bool has_valid_configuration() const override;
@@ -56,7 +56,7 @@ private:
 
 // Anchor component anchor list
 class OpenXRSpatialComponentAnchorList : public OpenXRSpatialComponentData {
-	GDCLASS(OpenXRSpatialComponentAnchorList, OpenXRSpatialComponentData);
+	FOUNDRY_CLASS(OpenXRSpatialComponentAnchorList, OpenXRSpatialComponentData);
 
 protected:
 	static void _bind_methods();
@@ -76,7 +76,7 @@ private:
 
 // Persistence configuration
 class OpenXRSpatialContextPersistenceConfig : public OpenXRStructureBase {
-	GDCLASS(OpenXRSpatialContextPersistenceConfig, OpenXRStructureBase);
+	FOUNDRY_CLASS(OpenXRSpatialContextPersistenceConfig, OpenXRStructureBase);
 
 public:
 	bool has_valid_configuration() const;
@@ -98,7 +98,7 @@ private:
 
 // Component persistence list
 class OpenXRSpatialComponentPersistenceList : public OpenXRSpatialComponentData {
-	GDCLASS(OpenXRSpatialComponentPersistenceList, OpenXRSpatialComponentData);
+	FOUNDRY_CLASS(OpenXRSpatialComponentPersistenceList, OpenXRSpatialComponentData);
 
 protected:
 	static void _bind_methods();
@@ -124,7 +124,7 @@ private:
 
 // Anchor tracker, this adds no new logic, it's purely for typing!
 class OpenXRAnchorTracker : public OpenXRSpatialEntityTracker {
-	GDCLASS(OpenXRAnchorTracker, OpenXRSpatialEntityTracker);
+	FOUNDRY_CLASS(OpenXRAnchorTracker, OpenXRSpatialEntityTracker);
 
 protected:
 	static void _bind_methods();
@@ -145,7 +145,7 @@ private:
 
 // (Persistent) anchor logic
 class OpenXRSpatialAnchorCapability : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRSpatialAnchorCapability, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRSpatialAnchorCapability, OpenXRExtensionWrapper);
 
 public:
 	enum PersistenceScope {

@@ -33,5 +33,5 @@
 #include "drivers/apple_embedded/apple_embedded.h"
 
 class visionOS : public AppleEmbedded {
-	GDCLASS(visionOS, AppleEmbedded);
+	FOUNDRY_CLASS(visionOS, AppleEmbedded);
 };

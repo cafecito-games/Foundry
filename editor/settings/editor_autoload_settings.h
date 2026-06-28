@@ -42,7 +42,7 @@
 class EditorFileDialog;
 
 class EditorAutoloadSettings : public VBoxContainer {
-	GDCLASS(EditorAutoloadSettings, VBoxContainer);
+	FOUNDRY_CLASS(EditorAutoloadSettings, VBoxContainer);
 
 	enum Column {
 		COLUMN_NAME,

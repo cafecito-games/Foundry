@@ -37,7 +37,7 @@
 #include "servers/rendering/shader_warnings.h"
 
 class GDShaderSyntaxHighlighter : public CodeHighlighter {
-	GDCLASS(GDShaderSyntaxHighlighter, CodeHighlighter)
+	FOUNDRY_CLASS(GDShaderSyntaxHighlighter, CodeHighlighter)
 
 private:
 	Vector<Point2i> disabled_branch_regions;
@@ -52,7 +52,7 @@ public:
 };
 
 class ShaderTextEditor : public CodeTextEditor {
-	GDCLASS(ShaderTextEditor, CodeTextEditor);
+	FOUNDRY_CLASS(ShaderTextEditor, CodeTextEditor);
 
 	Color marked_line_color = Color(1, 1, 1);
 
@@ -104,7 +104,7 @@ public:
 };
 
 class TextShaderEditor : public ShaderEditor {
-	GDCLASS(TextShaderEditor, ShaderEditor);
+	FOUNDRY_CLASS(TextShaderEditor, ShaderEditor);
 
 	enum {
 		EDIT_UNDO,

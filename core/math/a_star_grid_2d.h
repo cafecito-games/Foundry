@@ -35,7 +35,7 @@
 #include "core/templates/local_vector.h"
 
 class AStarGrid2D : public RefCounted {
-	GDCLASS(AStarGrid2D, RefCounted);
+	FOUNDRY_CLASS(AStarGrid2D, RefCounted);
 
 public:
 	enum DiagonalMode {
@@ -166,8 +166,8 @@ protected:
 	virtual real_t _estimate_cost(const Vector2i &p_from_id, const Vector2i &p_end_id);
 	virtual real_t _compute_cost(const Vector2i &p_from_id, const Vector2i &p_to_id);
 
-	GDVIRTUAL2RC(real_t, _estimate_cost, Vector2i, Vector2i)
-	GDVIRTUAL2RC(real_t, _compute_cost, Vector2i, Vector2i)
+	FOUNDRY_VIRTUAL2RC(real_t, _estimate_cost, Vector2i, Vector2i)
+	FOUNDRY_VIRTUAL2RC(real_t, _compute_cost, Vector2i, Vector2i)
 
 #ifndef DISABLE_DEPRECATED
 	TypedArray<Vector2i> _get_id_path_bind_compat_88047(const Vector2i &p_from, const Vector2i &p_to);

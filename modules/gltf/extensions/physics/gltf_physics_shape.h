@@ -41,7 +41,7 @@ class ImporterMesh;
 // https://github.com/omigroup/gltf-extensions/tree/main/extensions/2.0/OMI_physics_shape
 
 class GLTFPhysicsShape : public Resource {
-	GDCLASS(GLTFPhysicsShape, Resource)
+	FOUNDRY_CLASS(GLTFPhysicsShape, Resource)
 
 protected:
 	static void _bind_methods();

@@ -45,7 +45,7 @@ class Tree;
 class TreeItem;
 
 class EditorSettingsDialog : public AcceptDialog {
-	GDCLASS(EditorSettingsDialog, AcceptDialog);
+	FOUNDRY_CLASS(EditorSettingsDialog, AcceptDialog);
 
 	TabContainer *tabs = nullptr;
 	Control *tab_general = nullptr;
@@ -136,7 +136,7 @@ public:
 };
 
 class EditorSettingsPropertyWrapper : public EditorProperty {
-	GDCLASS(EditorSettingsPropertyWrapper, EditorProperty);
+	FOUNDRY_CLASS(EditorSettingsPropertyWrapper, EditorProperty);
 
 	String property;
 	PropertyHint hint;
@@ -167,7 +167,7 @@ public:
 };
 
 class EditorSettingsInspectorPlugin : public EditorInspectorPlugin {
-	GDCLASS(EditorSettingsInspectorPlugin, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorSettingsInspectorPlugin, EditorInspectorPlugin);
 
 	Object *current_object = nullptr;
 

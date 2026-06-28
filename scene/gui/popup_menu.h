@@ -40,7 +40,7 @@ class PanelContainer;
 class Timer;
 
 class PopupMenu : public Popup {
-	GDCLASS(PopupMenu, Popup);
+	FOUNDRY_CLASS(PopupMenu, Popup);
 
 	static HashMap<NativeMenu::SystemMenus, PopupMenu *> system_menus;
 

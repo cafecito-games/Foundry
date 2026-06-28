@@ -42,7 +42,7 @@
  */
 
 class FileAccess : public RefCounted {
-	GDCLASS(FileAccess, RefCounted);
+	FOUNDRY_CLASS(FileAccess, RefCounted);
 
 public:
 	enum AccessType : int32_t {

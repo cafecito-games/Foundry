@@ -44,7 +44,7 @@ class MainLoop;
 namespace CoreBind {
 
 class ResourceLoader : public Object {
-	GDCLASS(ResourceLoader, Object);
+	FOUNDRY_CLASS(ResourceLoader, Object);
 
 protected:
 	static void _bind_methods();
@@ -89,7 +89,7 @@ public:
 };
 
 class ResourceSaver : public Object {
-	GDCLASS(ResourceSaver, Object);
+	FOUNDRY_CLASS(ResourceSaver, Object);
 
 protected:
 	static void _bind_methods();
@@ -121,7 +121,7 @@ public:
 };
 
 class Logger : public RefCounted {
-	GDCLASS(Logger, RefCounted);
+	FOUNDRY_CLASS(Logger, RefCounted);
 
 public:
 	enum ErrorType {
@@ -132,8 +132,8 @@ public:
 	};
 
 protected:
-	GDVIRTUAL2(_log_message, String, bool);
-	GDVIRTUAL8(_log_error, String, String, int, String, String, bool, int, TypedArray<ScriptBacktrace>);
+	FOUNDRY_VIRTUAL2(_log_message, String, bool);
+	FOUNDRY_VIRTUAL8(_log_error, String, String, int, String, String, bool, int, TypedArray<ScriptBacktrace>);
 	static void _bind_methods();
 
 public:
@@ -142,7 +142,7 @@ public:
 };
 
 class OS : public Object {
-	GDCLASS(OS, Object);
+	FOUNDRY_CLASS(OS, Object);
 
 	mutable HashMap<String, bool> feature_cache;
 
@@ -320,7 +320,7 @@ public:
 };
 
 class Geometry2D : public Object {
-	GDCLASS(Geometry2D, Object);
+	FOUNDRY_CLASS(Geometry2D, Object);
 
 	static inline Geometry2D *singleton = nullptr;
 
@@ -386,7 +386,7 @@ public:
 };
 
 class Geometry3D : public Object {
-	GDCLASS(Geometry3D, Object);
+	FOUNDRY_CLASS(Geometry3D, Object);
 
 	static inline Geometry3D *singleton = nullptr;
 
@@ -417,7 +417,7 @@ public:
 };
 
 class Marshalls : public Object {
-	GDCLASS(Marshalls, Object);
+	FOUNDRY_CLASS(Marshalls, Object);
 
 	static inline Marshalls *singleton = nullptr;
 
@@ -441,7 +441,7 @@ public:
 };
 
 class Mutex : public RefCounted {
-	GDCLASS(Mutex, RefCounted);
+	FOUNDRY_CLASS(Mutex, RefCounted);
 	::Mutex mutex;
 
 	static void _bind_methods();
@@ -453,7 +453,7 @@ public:
 };
 
 class Semaphore : public RefCounted {
-	GDCLASS(Semaphore, RefCounted);
+	FOUNDRY_CLASS(Semaphore, RefCounted);
 	::Semaphore semaphore;
 
 protected:
@@ -470,7 +470,7 @@ public:
 };
 
 class Thread : public RefCounted {
-	GDCLASS(Thread, RefCounted);
+	FOUNDRY_CLASS(Thread, RefCounted);
 
 protected:
 	Variant ret;
@@ -501,7 +501,7 @@ public:
 namespace Special {
 
 class ClassDB : public Object {
-	GDCLASS(ClassDB, Object);
+	FOUNDRY_CLASS(ClassDB, Object);
 
 protected:
 	static void _bind_methods();
@@ -564,7 +564,7 @@ public:
 } // namespace Special
 
 class Engine : public Object {
-	GDCLASS(Engine, Object);
+	FOUNDRY_CLASS(Engine, Object);
 
 protected:
 	static void _bind_methods();
@@ -641,7 +641,7 @@ public:
 };
 
 class EngineDebugger : public Object {
-	GDCLASS(EngineDebugger, Object);
+	FOUNDRY_CLASS(EngineDebugger, Object);
 
 	HashMap<StringName, Callable> captures;
 	HashMap<StringName, Ref<EngineProfiler>> profilers;

@@ -33,7 +33,7 @@
 #include "editor/export/editor_export_platform_apple_embedded.h"
 
 class EditorExportPlatformIOS : public EditorExportPlatformAppleEmbedded {
-	GDCLASS(EditorExportPlatformIOS, EditorExportPlatformAppleEmbedded);
+	FOUNDRY_CLASS(EditorExportPlatformIOS, EditorExportPlatformAppleEmbedded);
 
 	static Vector<String> device_types;
 

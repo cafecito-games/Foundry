@@ -34,7 +34,7 @@
 #include "scene/resources/mesh.h"
 
 class NavigationMeshSourceGeometryData3D : public Resource {
-	GDCLASS(NavigationMeshSourceGeometryData3D, Resource);
+	FOUNDRY_CLASS(NavigationMeshSourceGeometryData3D, Resource);
 	RWLock geometry_rwlock;
 
 	Vector<float> vertices;

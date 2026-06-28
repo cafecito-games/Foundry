@@ -47,7 +47,7 @@ class RichTextLabel;
 class RefactorDiffPreviewDialog;
 
 class ConnectionInfoDialog : public AcceptDialog {
-	GDCLASS(ConnectionInfoDialog, AcceptDialog);
+	FOUNDRY_CLASS(ConnectionInfoDialog, AcceptDialog);
 
 	Label *method = nullptr;
 	Tree *tree = nullptr;
@@ -61,7 +61,7 @@ public:
 };
 
 class ScriptTextEditor : public ScriptEditorBase {
-	GDCLASS(ScriptTextEditor, ScriptEditorBase);
+	FOUNDRY_CLASS(ScriptTextEditor, ScriptEditorBase);
 
 	CodeTextEditor *code_editor = nullptr;
 	RichTextLabel *warnings_panel = nullptr;

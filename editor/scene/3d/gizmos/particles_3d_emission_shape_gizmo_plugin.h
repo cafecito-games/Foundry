@@ -34,7 +34,7 @@
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 
 class Particles3DEmissionShapeGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(Particles3DEmissionShapeGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(Particles3DEmissionShapeGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	Ref<Gizmo3DHelper> helper;
 

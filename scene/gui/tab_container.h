@@ -36,7 +36,7 @@
 #include "scene/property_list_helper.h"
 
 class TabContainer : public Container {
-	GDCLASS(TabContainer, Container);
+	FOUNDRY_CLASS(TabContainer, Container);
 
 public:
 	enum TabPosition {

@@ -33,7 +33,7 @@
 #include "scene/resources/2d/shape_2d.h"
 
 class SegmentShape2D : public Shape2D {
-	GDCLASS(SegmentShape2D, Shape2D);
+	FOUNDRY_CLASS(SegmentShape2D, Shape2D);
 
 	Vector2 a;
 	Vector2 b;

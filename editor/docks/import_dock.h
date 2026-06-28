@@ -45,7 +45,7 @@ class ImportDockParameters;
 class VBoxContainer;
 
 class ImportDock : public EditorDock {
-	GDCLASS(ImportDock, EditorDock);
+	FOUNDRY_CLASS(ImportDock, EditorDock);
 
 	Label *imported = nullptr;
 	OptionButton *import_as = nullptr;

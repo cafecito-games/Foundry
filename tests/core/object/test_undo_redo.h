@@ -33,11 +33,11 @@
 #include "core/object/undo_redo.h"
 #include "tests/test_macros.h"
 
-// Declared in global namespace because of GDCLASS macro warning (Windows):
+// Declared in global namespace because of FOUNDRY_CLASS macro warning (Windows):
 // "Unqualified friend declaration referring to type outside of the nearest enclosing namespace
 // is a Microsoft extension; add a nested name specifier".
 class _TestUndoRedoObject : public Object {
-	GDCLASS(_TestUndoRedoObject, Object);
+	FOUNDRY_CLASS(_TestUndoRedoObject, Object);
 	int property_value = 0;
 
 protected:
@@ -71,7 +71,7 @@ void increment_property_action(UndoRedo *undo_redo, const String &name, _TestUnd
 }
 
 TEST_CASE("[UndoRedo] Simple Property UndoRedo") {
-	GDREGISTER_CLASS(_TestUndoRedoObject);
+	FOUNDRY_REGISTER_CLASS(_TestUndoRedoObject);
 	UndoRedo *undo_redo = memnew(UndoRedo());
 
 	_TestUndoRedoObject *test_object = memnew(_TestUndoRedoObject());
@@ -121,7 +121,7 @@ TEST_CASE("[UndoRedo] Simple Property UndoRedo") {
 }
 
 TEST_CASE("[UndoRedo] Merge Property UndoRedo") {
-	GDREGISTER_CLASS(_TestUndoRedoObject);
+	FOUNDRY_REGISTER_CLASS(_TestUndoRedoObject);
 	UndoRedo *undo_redo = memnew(UndoRedo());
 
 	_TestUndoRedoObject *test_object = memnew(_TestUndoRedoObject());
@@ -153,7 +153,7 @@ TEST_CASE("[UndoRedo] Merge Property UndoRedo") {
 }
 
 TEST_CASE("[UndoRedo] Merge Method UndoRedo") {
-	GDREGISTER_CLASS(_TestUndoRedoObject);
+	FOUNDRY_REGISTER_CLASS(_TestUndoRedoObject);
 	UndoRedo *undo_redo = memnew(UndoRedo());
 
 	_TestUndoRedoObject *test_object = memnew(_TestUndoRedoObject());

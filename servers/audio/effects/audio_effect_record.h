@@ -38,7 +38,7 @@
 class AudioEffectRecord;
 
 class AudioEffectRecordInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectRecordInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectRecordInstance, AudioEffectInstance);
 	friend class AudioEffectRecord;
 
 	bool is_recording;
@@ -66,7 +66,7 @@ public:
 };
 
 class AudioEffectRecord : public AudioEffect {
-	GDCLASS(AudioEffectRecord, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectRecord, AudioEffect);
 
 	friend class AudioEffectRecordInstance;
 

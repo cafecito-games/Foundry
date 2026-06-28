@@ -35,7 +35,7 @@
 class AudioEffectHardLimiter;
 
 class AudioEffectHardLimiterInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectHardLimiterInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectHardLimiterInstance, AudioEffectInstance);
 	friend class AudioEffectHardLimiter;
 	Ref<AudioEffectHardLimiter> base;
 
@@ -60,7 +60,7 @@ public:
 };
 
 class AudioEffectHardLimiter : public AudioEffect {
-	GDCLASS(AudioEffectHardLimiter, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectHardLimiter, AudioEffect);
 
 	friend class AudioEffectHardLimiterInstance;
 	float pre_gain = 0.0f;

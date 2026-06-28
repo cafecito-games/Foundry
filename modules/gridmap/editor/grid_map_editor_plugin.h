@@ -46,7 +46,7 @@ class EditorZoomWidget;
 class BaseButton;
 
 class GridMapEditor : public VBoxContainer {
-	GDCLASS(GridMapEditor, VBoxContainer);
+	FOUNDRY_CLASS(GridMapEditor, VBoxContainer);
 
 	static constexpr int32_t GRID_CURSOR_SIZE = 50;
 
@@ -273,7 +273,7 @@ public:
 };
 
 class GridMapEditorPlugin : public EditorPlugin {
-	GDCLASS(GridMapEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(GridMapEditorPlugin, EditorPlugin);
 
 	GridMapEditor *grid_map_editor = nullptr;
 	Button *panel_button = nullptr;

@@ -35,16 +35,16 @@
 #include "core/variant/typed_array.h"
 
 class EditorTranslationParserPlugin : public RefCounted {
-	GDCLASS(EditorTranslationParserPlugin, RefCounted);
+	FOUNDRY_CLASS(EditorTranslationParserPlugin, RefCounted);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1R(TypedArray<PackedStringArray>, _parse_file, String)
-	GDVIRTUAL0RC(Vector<String>, _get_recognized_extensions)
+	FOUNDRY_VIRTUAL1R(TypedArray<PackedStringArray>, _parse_file, String)
+	FOUNDRY_VIRTUAL0RC(Vector<String>, _get_recognized_extensions)
 
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL3_COMPAT(_parse_file_bind_compat_99297, _parse_file, String, TypedArray<String>, TypedArray<Array>)
+	FOUNDRY_VIRTUAL3_COMPAT(_parse_file_bind_compat_99297, _parse_file, String, TypedArray<String>, TypedArray<Array>)
 #endif
 
 public:

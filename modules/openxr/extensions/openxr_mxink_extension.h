@@ -33,7 +33,7 @@
 #include "openxr_extension_wrapper.h"
 
 class OpenXRMxInkExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRMxInkExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRMxInkExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}

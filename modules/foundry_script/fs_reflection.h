@@ -50,7 +50,7 @@ class FSPropertyDescriptor;
 // language's globals are torn down (mirroring the native-class globals) rather
 // than relying on an explicit free.
 class FSReflection : public RefCounted {
-	GDCLASS(FSReflection, RefCounted);
+	FOUNDRY_CLASS(FSReflection, RefCounted);
 
 	static Ref<Script> _resolve_script(const Variant &p_target);
 	static StringName _resolve_trait_name(const Variant &p_trait);
@@ -115,7 +115,7 @@ public:
 // `reflection` member; this is the nested-singleton binding for the
 // `godot.reflection.*` surface (a true language namespace is not available).
 class FSGodotNamespace : public RefCounted {
-	GDCLASS(FSGodotNamespace, RefCounted);
+	FOUNDRY_CLASS(FSGodotNamespace, RefCounted);
 
 	Ref<FSReflection> reflection;
 

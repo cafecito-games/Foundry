@@ -35,7 +35,7 @@
 class AudioEffectSpectrumAnalyzer;
 
 class AudioEffectSpectrumAnalyzerInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectSpectrumAnalyzerInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectSpectrumAnalyzerInstance, AudioEffectInstance);
 
 public:
 	enum MagnitudeMode {
@@ -67,7 +67,7 @@ public:
 VARIANT_ENUM_CAST(AudioEffectSpectrumAnalyzerInstance::MagnitudeMode)
 
 class AudioEffectSpectrumAnalyzer : public AudioEffect {
-	GDCLASS(AudioEffectSpectrumAnalyzer, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectSpectrumAnalyzer, AudioEffect);
 
 public:
 	enum FFTSize {

@@ -35,7 +35,7 @@
 class GodotBody3D;
 
 class GodotPhysicsDirectBodyState3D : public PhysicsDirectBodyState3D {
-	GDCLASS(GodotPhysicsDirectBodyState3D, PhysicsDirectBodyState3D);
+	FOUNDRY_CLASS(GodotPhysicsDirectBodyState3D, PhysicsDirectBodyState3D);
 
 public:
 	GodotBody3D *body = nullptr;

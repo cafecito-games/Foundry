@@ -36,7 +36,7 @@
 #define ANIM_MIN_LENGTH 0.001
 
 class Animation : public Resource {
-	GDCLASS(Animation, Resource);
+	FOUNDRY_CLASS(Animation, Resource);
 	RES_BASE_EXTENSION("anim");
 
 public:

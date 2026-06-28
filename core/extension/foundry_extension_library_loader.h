@@ -37,7 +37,7 @@
 #include "core/os/shared_object.h"
 
 class FoundryExtensionLibraryLoader : public FoundryExtensionLoader {
-	GDSOFTCLASS(FoundryExtensionLibraryLoader, FoundryExtensionLoader);
+	FOUNDRY_SOFTCLASS(FoundryExtensionLibraryLoader, FoundryExtensionLoader);
 
 	friend class FoundryExtensionManager;
 	friend class FoundryExtension;

@@ -39,7 +39,7 @@
 class ColorChannelSelector;
 
 class TextureLayeredEditor : public Control {
-	GDCLASS(TextureLayeredEditor, Control);
+	FOUNDRY_CLASS(TextureLayeredEditor, Control);
 
 	struct ThemeCache {
 		Color outline_color;
@@ -96,7 +96,7 @@ public:
 };
 
 class EditorInspectorPluginLayeredTexture : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginLayeredTexture, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginLayeredTexture, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -104,7 +104,7 @@ public:
 };
 
 class TextureLayeredEditorPlugin : public EditorPlugin {
-	GDCLASS(TextureLayeredEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(TextureLayeredEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "TextureLayered"; }

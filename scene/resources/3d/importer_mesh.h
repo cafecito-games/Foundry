@@ -44,7 +44,7 @@
 // its easier to modify before saving
 
 class ImporterMesh : public Resource {
-	GDCLASS(ImporterMesh, Resource)
+	FOUNDRY_CLASS(ImporterMesh, Resource)
 
 	struct Surface {
 		Mesh::PrimitiveType primitive;

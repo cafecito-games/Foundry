@@ -42,7 +42,7 @@
 class ImageLoader;
 
 class ImageFormatLoader : public RefCounted {
-	GDCLASS(ImageFormatLoader, RefCounted);
+	FOUNDRY_CLASS(ImageFormatLoader, RefCounted);
 
 	friend class ImageLoader;
 	friend class ResourceFormatLoaderImage;
@@ -68,7 +68,7 @@ public:
 VARIANT_BITFIELD_CAST(ImageFormatLoader::LoaderFlags);
 
 class ImageFormatLoaderExtension : public ImageFormatLoader {
-	GDCLASS(ImageFormatLoaderExtension, ImageFormatLoader);
+	FOUNDRY_CLASS(ImageFormatLoaderExtension, ImageFormatLoader);
 
 protected:
 	static void _bind_methods();
@@ -80,8 +80,8 @@ public:
 	void add_format_loader();
 	void remove_format_loader();
 
-	GDVIRTUAL0RC(PackedStringArray, _get_recognized_extensions);
-	GDVIRTUAL4R(Error, _load_image, Ref<Image>, Ref<FileAccess>, BitField<ImageFormatLoader::LoaderFlags>, float);
+	FOUNDRY_VIRTUAL0RC(PackedStringArray, _get_recognized_extensions);
+	FOUNDRY_VIRTUAL4R(Error, _load_image, Ref<Image>, Ref<FileAccess>, BitField<ImageFormatLoader::LoaderFlags>, float);
 };
 
 class ImageLoader {
@@ -101,7 +101,7 @@ public:
 };
 
 class ResourceFormatLoaderImage : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderImage, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderImage, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;

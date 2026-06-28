@@ -37,7 +37,7 @@
 #endif // TOOLS_ENABLED
 
 class JointLimitation3D : public Resource {
-	GDCLASS(JointLimitation3D, Resource);
+	FOUNDRY_CLASS(JointLimitation3D, Resource);
 
 protected:
 	// Directions are normalized vector from Vector(0, 0, 0). Space is defined by _make_space(), must return normalized vector.

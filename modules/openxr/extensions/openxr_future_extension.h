@@ -54,7 +54,7 @@
 class OpenXRFutureExtension;
 
 class OpenXRFutureResult : public RefCounted {
-	GDCLASS(OpenXRFutureResult, RefCounted);
+	FOUNDRY_CLASS(OpenXRFutureResult, RefCounted);
 
 	friend class OpenXRFutureExtension;
 
@@ -93,7 +93,7 @@ private:
 VARIANT_ENUM_CAST(OpenXRFutureResult::ResultStatus);
 
 class OpenXRFutureExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRFutureExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRFutureExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods();

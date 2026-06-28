@@ -34,7 +34,7 @@
 #include "scene/2d/physics/collision_polygon_2d.h"
 
 class CollisionPolygon2DEditor : public AbstractPolygon2DEditor {
-	GDCLASS(CollisionPolygon2DEditor, AbstractPolygon2DEditor);
+	FOUNDRY_CLASS(CollisionPolygon2DEditor, AbstractPolygon2DEditor);
 
 	CollisionPolygon2D *node = nullptr;
 
@@ -47,7 +47,7 @@ public:
 };
 
 class CollisionPolygon2DEditorPlugin : public AbstractPolygon2DEditorPlugin {
-	GDCLASS(CollisionPolygon2DEditorPlugin, AbstractPolygon2DEditorPlugin);
+	FOUNDRY_CLASS(CollisionPolygon2DEditorPlugin, AbstractPolygon2DEditorPlugin);
 
 public:
 	CollisionPolygon2DEditorPlugin();

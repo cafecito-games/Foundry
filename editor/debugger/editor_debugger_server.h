@@ -34,7 +34,7 @@
 #include "core/object/ref_counted.h"
 
 class EditorDebuggerServer : public RefCounted {
-	GDSOFTCLASS(EditorDebuggerServer, RefCounted);
+	FOUNDRY_SOFTCLASS(EditorDebuggerServer, RefCounted);
 
 public:
 	typedef EditorDebuggerServer *(*CreateServerFunc)(const String &p_uri);

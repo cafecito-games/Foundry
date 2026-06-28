@@ -34,7 +34,7 @@
 #include "scene/resources/mesh.h"
 
 class ImmediateMesh : public Mesh {
-	GDCLASS(ImmediateMesh, Mesh)
+	FOUNDRY_CLASS(ImmediateMesh, Mesh)
 
 	RID mesh;
 

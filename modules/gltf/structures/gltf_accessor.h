@@ -35,7 +35,7 @@
 #include "gltf_buffer_view.h"
 
 class GLTFAccessor : public Resource {
-	GDCLASS(GLTFAccessor, Resource);
+	FOUNDRY_CLASS(GLTFAccessor, Resource);
 	friend class GLTFDocument;
 
 public:

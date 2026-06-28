@@ -36,7 +36,7 @@
 class CanvasItem;
 
 class StyleBox : public Resource {
-	GDCLASS(StyleBox, Resource);
+	FOUNDRY_CLASS(StyleBox, Resource);
 	RES_BASE_EXTENSION("stylebox");
 	OBJ_SAVE_TYPE(StyleBox);
 
@@ -46,10 +46,10 @@ protected:
 	static void _bind_methods();
 	virtual float get_style_margin(Side p_side) const { return 0; }
 
-	GDVIRTUAL2C_REQUIRED(_draw, RID, Rect2)
-	GDVIRTUAL1RC(Rect2, _get_draw_rect, Rect2)
-	GDVIRTUAL0RC(Size2, _get_minimum_size)
-	GDVIRTUAL2RC(bool, _test_mask, Point2, Rect2)
+	FOUNDRY_VIRTUAL2C_REQUIRED(_draw, RID, Rect2)
+	FOUNDRY_VIRTUAL1RC(Rect2, _get_draw_rect, Rect2)
+	FOUNDRY_VIRTUAL0RC(Size2, _get_minimum_size)
+	FOUNDRY_VIRTUAL2RC(bool, _test_mask, Point2, Rect2)
 
 public:
 	virtual Size2 get_minimum_size() const;
@@ -73,7 +73,7 @@ public:
 };
 
 class StyleBoxEmpty : public StyleBox {
-	GDCLASS(StyleBoxEmpty, StyleBox);
+	FOUNDRY_CLASS(StyleBoxEmpty, StyleBox);
 	virtual float get_style_margin(Side p_side) const override { return 0; }
 
 public:

@@ -39,7 +39,7 @@ class Label;
 class LinkButton;
 
 class EditorAssetInstaller : public ConfirmationDialog {
-	GDCLASS(EditorAssetInstaller, ConfirmationDialog);
+	FOUNDRY_CLASS(EditorAssetInstaller, ConfirmationDialog);
 
 	VBoxContainer *source_tree_vb = nullptr;
 	Tree *source_tree = nullptr;

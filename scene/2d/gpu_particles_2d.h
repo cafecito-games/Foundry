@@ -34,7 +34,7 @@
 
 class GPUParticles2D : public Node2D {
 private:
-	GDCLASS(GPUParticles2D, Node2D);
+	FOUNDRY_CLASS(GPUParticles2D, Node2D);
 
 public:
 	enum DrawOrder {

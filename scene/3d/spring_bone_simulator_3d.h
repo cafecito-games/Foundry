@@ -40,7 +40,7 @@ enum RotationAxis : int;
 #endif
 
 class SpringBoneSimulator3D : public SkeletonModifier3D {
-	GDCLASS(SpringBoneSimulator3D, SkeletonModifier3D);
+	FOUNDRY_CLASS(SpringBoneSimulator3D, SkeletonModifier3D);
 
 #ifdef TOOLS_ENABLED
 	bool saving = false;

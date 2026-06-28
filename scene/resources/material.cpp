@@ -125,24 +125,24 @@ void Material::inspect_native_shader_code() {
 
 RID Material::get_shader_rid() const {
 	RID ret;
-	GDVIRTUAL_CALL(_get_shader_rid, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_shader_rid, ret);
 	return ret;
 }
 Shader::Mode Material::get_shader_mode() const {
 	Shader::Mode ret = Shader::MODE_MAX;
-	GDVIRTUAL_CALL(_get_shader_mode, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_shader_mode, ret);
 	return ret;
 }
 
 bool Material::_can_do_next_pass() const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_can_do_next_pass, ret);
+	FOUNDRY_VIRTUAL_CALL(_can_do_next_pass, ret);
 	return ret;
 }
 
 bool Material::_can_use_render_priority() const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_can_use_render_priority, ret);
+	FOUNDRY_VIRTUAL_CALL(_can_use_render_priority, ret);
 	return ret;
 }
 
@@ -170,10 +170,10 @@ void Material::_bind_methods() {
 	BIND_CONSTANT(RENDER_PRIORITY_MAX);
 	BIND_CONSTANT(RENDER_PRIORITY_MIN);
 
-	GDVIRTUAL_BIND(_get_shader_rid)
-	GDVIRTUAL_BIND(_get_shader_mode)
-	GDVIRTUAL_BIND(_can_do_next_pass)
-	GDVIRTUAL_BIND(_can_use_render_priority)
+	FOUNDRY_VIRTUAL_BIND(_get_shader_rid)
+	FOUNDRY_VIRTUAL_BIND(_get_shader_mode)
+	FOUNDRY_VIRTUAL_BIND(_can_do_next_pass)
+	FOUNDRY_VIRTUAL_BIND(_can_use_render_priority)
 }
 
 Material::Material() {

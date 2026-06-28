@@ -34,7 +34,7 @@
 #include "scene/animation/tween.h"
 
 class LookAtModifier3D : public SkeletonModifier3D {
-	GDCLASS(LookAtModifier3D, SkeletonModifier3D);
+	FOUNDRY_CLASS(LookAtModifier3D, SkeletonModifier3D);
 
 public:
 	enum OriginFrom {

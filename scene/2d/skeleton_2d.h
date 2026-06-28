@@ -36,7 +36,7 @@
 class Skeleton2D;
 
 class Bone2D : public Node2D {
-	GDCLASS(Bone2D, Node2D);
+	FOUNDRY_CLASS(Bone2D, Node2D);
 
 	friend class Skeleton2D;
 #ifdef TOOLS_ENABLED
@@ -100,7 +100,7 @@ public:
 class SkeletonModificationStack2D;
 
 class Skeleton2D : public Node2D {
-	GDCLASS(Skeleton2D, Node2D);
+	FOUNDRY_CLASS(Skeleton2D, Node2D);
 
 	friend class Bone2D;
 #ifdef TOOLS_ENABLED

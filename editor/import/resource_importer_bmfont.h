@@ -35,7 +35,7 @@
 #include "servers/text/text_server.h"
 
 class ResourceImporterBMFont : public ResourceImporter {
-	GDCLASS(ResourceImporterBMFont, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterBMFont, ResourceImporter);
 
 public:
 	virtual String get_importer_name() const override;

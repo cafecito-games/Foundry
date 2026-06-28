@@ -38,7 +38,7 @@ class Window;
 class HBoxContainer;
 
 class WindowWrapper : public MarginContainer {
-	GDCLASS(WindowWrapper, MarginContainer);
+	FOUNDRY_CLASS(WindowWrapper, MarginContainer);
 
 	Control *wrapped_control = nullptr;
 	MarginContainer *margins = nullptr;
@@ -95,7 +95,7 @@ public:
 };
 
 class ScreenSelect : public Button {
-	GDCLASS(ScreenSelect, Button);
+	FOUNDRY_CLASS(ScreenSelect, Button);
 
 	Popup *popup = nullptr;
 	HBoxContainer *screen_list = nullptr;

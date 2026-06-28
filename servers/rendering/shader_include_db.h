@@ -33,7 +33,7 @@
 #include "core/object/class_db.h"
 
 class ShaderIncludeDB : public Object {
-	GDCLASS(ShaderIncludeDB, Object)
+	FOUNDRY_CLASS(ShaderIncludeDB, Object)
 
 private:
 	static HashMap<String, String> built_in_includes;

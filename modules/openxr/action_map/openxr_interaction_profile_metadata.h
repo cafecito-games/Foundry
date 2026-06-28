@@ -58,7 +58,7 @@
 #define XR_PATH_UNSUPPORTED_NAME "unsupported"
 
 class OpenXRInteractionProfileMetadata : public Object {
-	GDCLASS(OpenXRInteractionProfileMetadata, Object);
+	FOUNDRY_CLASS(OpenXRInteractionProfileMetadata, Object);
 
 public:
 	struct TopLevelPath {

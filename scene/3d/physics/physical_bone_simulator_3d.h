@@ -35,7 +35,7 @@
 class PhysicalBone3D;
 
 class PhysicalBoneSimulator3D : public SkeletonModifier3D {
-	GDCLASS(PhysicalBoneSimulator3D, SkeletonModifier3D);
+	FOUNDRY_CLASS(PhysicalBoneSimulator3D, SkeletonModifier3D);
 
 	bool simulating = false;
 

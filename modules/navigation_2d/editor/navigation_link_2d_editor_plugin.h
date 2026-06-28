@@ -36,7 +36,7 @@
 class CanvasItemEditor;
 
 class NavigationLink2DEditor : public Control {
-	GDCLASS(NavigationLink2DEditor, Control);
+	FOUNDRY_CLASS(NavigationLink2DEditor, Control);
 
 	CanvasItemEditor *canvas_item_editor = nullptr;
 	NavigationLink2D *node = nullptr;
@@ -58,7 +58,7 @@ public:
 };
 
 class NavigationLink2DEditorPlugin : public EditorPlugin {
-	GDCLASS(NavigationLink2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(NavigationLink2DEditorPlugin, EditorPlugin);
 
 	NavigationLink2DEditor *editor = nullptr;
 

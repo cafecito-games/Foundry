@@ -50,7 +50,7 @@ class HBoxContainer;
 class Timer;
 
 class EditorAudioBus : public PanelContainer {
-	GDCLASS(EditorAudioBus, PanelContainer);
+	FOUNDRY_CLASS(EditorAudioBus, PanelContainer);
 
 	Ref<Texture2D> disabled_vu;
 	LineEdit *track_name = nullptr;
@@ -136,7 +136,7 @@ public:
 };
 
 class EditorAudioBusDrop : public Control {
-	GDCLASS(EditorAudioBusDrop, Control);
+	FOUNDRY_CLASS(EditorAudioBusDrop, Control);
 
 	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
 	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
@@ -149,7 +149,7 @@ protected:
 };
 
 class EditorAudioBuses : public EditorDock {
-	GDCLASS(EditorAudioBuses, EditorDock);
+	FOUNDRY_CLASS(EditorAudioBuses, EditorDock);
 
 	HBoxContainer *top_hb = nullptr;
 
@@ -216,7 +216,7 @@ public:
 };
 
 class EditorAudioMeterNotches : public Control {
-	GDCLASS(EditorAudioMeterNotches, Control);
+	FOUNDRY_CLASS(EditorAudioMeterNotches, Control);
 
 private:
 	struct AudioNotch {
@@ -272,7 +272,7 @@ private:
 };
 
 class AudioBusesEditorPlugin : public EditorPlugin {
-	GDCLASS(AudioBusesEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(AudioBusesEditorPlugin, EditorPlugin);
 
 	EditorAudioBuses *audio_bus_editor = nullptr;
 

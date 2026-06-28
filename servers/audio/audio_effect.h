@@ -36,11 +36,11 @@
 #include "core/variant/native_ptr.h"
 
 class AudioEffectInstance : public RefCounted {
-	GDCLASS(AudioEffectInstance, RefCounted);
+	FOUNDRY_CLASS(AudioEffectInstance, RefCounted);
 
 protected:
-	GDVIRTUAL3_REQUIRED(_process, FoundryExtensionConstPtr<AudioFrame>, FoundryExtensionPtr<AudioFrame>, int)
-	GDVIRTUAL0RC(bool, _process_silence)
+	FOUNDRY_VIRTUAL3_REQUIRED(_process, FoundryExtensionConstPtr<AudioFrame>, FoundryExtensionPtr<AudioFrame>, int)
+	FOUNDRY_VIRTUAL0RC(bool, _process_silence)
 	static void _bind_methods();
 
 public:
@@ -49,10 +49,10 @@ public:
 };
 
 class AudioEffect : public Resource {
-	GDCLASS(AudioEffect, Resource);
+	FOUNDRY_CLASS(AudioEffect, Resource);
 
 protected:
-	GDVIRTUAL0R_REQUIRED(Ref<AudioEffectInstance>, _instantiate)
+	FOUNDRY_VIRTUAL0R_REQUIRED(Ref<AudioEffectInstance>, _instantiate)
 	static void _bind_methods();
 
 public:

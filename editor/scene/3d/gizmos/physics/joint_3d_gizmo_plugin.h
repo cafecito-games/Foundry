@@ -35,7 +35,7 @@
 class Timer;
 
 class Joint3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(Joint3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(Joint3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	Timer *update_timer = nullptr;
 	EditorNode3DGizmo *last_drawn = nullptr;

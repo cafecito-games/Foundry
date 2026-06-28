@@ -78,7 +78,7 @@ class EmbeddedProcessMacOS;
 #endif
 
 class DisplayServerMacOS : public DisplayServerMacOSBase {
-	GDSOFTCLASS(DisplayServerMacOS, DisplayServerMacOSBase);
+	FOUNDRY_SOFTCLASS(DisplayServerMacOS, DisplayServerMacOSBase);
 
 public:
 	struct KeyEvent {

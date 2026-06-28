@@ -35,7 +35,7 @@
 #import <CoreHaptics/CoreHaptics.h>
 
 class AppleEmbedded : public Object {
-	GDCLASS(AppleEmbedded, Object);
+	FOUNDRY_CLASS(AppleEmbedded, Object);
 
 	static void _bind_methods();
 

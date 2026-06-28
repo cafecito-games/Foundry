@@ -38,7 +38,7 @@
 ///////////////////////////////////////
 
 class SkeletonModification2DFABRIK : public SkeletonModification2D {
-	GDCLASS(SkeletonModification2DFABRIK, SkeletonModification2D);
+	FOUNDRY_CLASS(SkeletonModification2DFABRIK, SkeletonModification2D);
 
 private:
 	struct FABRIK_Joint_Data2D {

@@ -33,7 +33,7 @@
 #include "scene/3d/visual_instance_3d.h"
 
 class OpenXRVisibilityMask : public VisualInstance3D {
-	GDCLASS(OpenXRVisibilityMask, VisualInstance3D);
+	FOUNDRY_CLASS(OpenXRVisibilityMask, VisualInstance3D);
 
 protected:
 	static void _bind_methods();

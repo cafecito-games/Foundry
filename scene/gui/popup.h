@@ -37,7 +37,7 @@
 class Panel;
 
 class Popup : public Window {
-	GDCLASS(Popup, Window);
+	FOUNDRY_CLASS(Popup, Window);
 
 	LocalVector<Window *> visible_parents;
 	bool popped_up = false;
@@ -76,7 +76,7 @@ public:
 };
 
 class PopupPanel : public Popup {
-	GDCLASS(PopupPanel, Popup);
+	FOUNDRY_CLASS(PopupPanel, Popup);
 
 	Panel *panel = nullptr;
 

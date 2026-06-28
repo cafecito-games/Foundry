@@ -136,7 +136,7 @@ public:
 };
 
 class TestPresetOverrideExportPlatform : public EditorExportPlatform {
-	GDSOFTCLASS(TestPresetOverrideExportPlatform, EditorExportPlatform);
+	FOUNDRY_SOFTCLASS(TestPresetOverrideExportPlatform, EditorExportPlatform);
 
 public:
 	virtual void get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) const override {}

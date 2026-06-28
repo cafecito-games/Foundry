@@ -40,7 +40,7 @@ class AudioSamplePlayback;
 class Node;
 
 class AudioStreamPlayerInternal : public Object {
-	GDCLASS(AudioStreamPlayerInternal, Object);
+	FOUNDRY_CLASS(AudioStreamPlayerInternal, Object);
 
 private:
 	struct ParameterData {

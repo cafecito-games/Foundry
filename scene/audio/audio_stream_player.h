@@ -39,7 +39,7 @@ class AudioStreamPlayback;
 class AudioStreamPlayerInternal;
 
 class AudioStreamPlayer : public Node {
-	GDCLASS(AudioStreamPlayer, Node);
+	FOUNDRY_CLASS(AudioStreamPlayer, Node);
 
 public:
 	enum MixTarget {

@@ -42,7 +42,7 @@
 #include "scene/gui/scroll_container.h"
 
 class OpenXRBindingModifiersDialog : public AcceptDialog {
-	GDCLASS(OpenXRBindingModifiersDialog, AcceptDialog);
+	FOUNDRY_CLASS(OpenXRBindingModifiersDialog, AcceptDialog);
 
 private:
 	ScrollContainer *binding_modifier_sc = nullptr;

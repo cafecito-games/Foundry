@@ -33,7 +33,7 @@
 #include "servers/rendering/rendering_shader_container.h"
 
 class RenderingShaderContainerVulkan : public RenderingShaderContainer {
-	GDSOFTCLASS(RenderingShaderContainerVulkan, RenderingShaderContainer);
+	FOUNDRY_SOFTCLASS(RenderingShaderContainerVulkan, RenderingShaderContainer);
 
 public:
 	static const uint32_t FORMAT_VERSION;

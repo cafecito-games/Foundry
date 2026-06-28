@@ -56,7 +56,7 @@ TScriptInstance *cast_script_instance(ScriptInstance *p_inst) {
 #define CAST_CSHARP_INSTANCE(m_inst) (cast_script_instance<CSharpInstance, CSharpLanguage>(m_inst))
 
 class CSharpScript : public Script {
-	GDCLASS(CSharpScript, Script);
+	FOUNDRY_CLASS(CSharpScript, Script);
 
 	friend class CSharpInstance;
 	friend class CSharpLanguage;
@@ -395,7 +395,7 @@ struct CSharpScriptBinding {
 };
 
 class ManagedCallableMiddleman : public Object {
-	GDCLASS(ManagedCallableMiddleman, Object);
+	FOUNDRY_CLASS(ManagedCallableMiddleman, Object);
 };
 
 class CSharpLanguage : public ScriptLanguage {
@@ -587,7 +587,7 @@ public:
 };
 
 class ResourceFormatLoaderCSharpScript : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderCSharpScript, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderCSharpScript, ResourceFormatLoader);
 
 public:
 	Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -597,7 +597,7 @@ public:
 };
 
 class ResourceFormatSaverCSharpScript : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceFormatSaverCSharpScript, ResourceFormatSaver);
+	FOUNDRY_SOFTCLASS(ResourceFormatSaverCSharpScript, ResourceFormatSaver);
 
 public:
 	Error save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags = 0) override;

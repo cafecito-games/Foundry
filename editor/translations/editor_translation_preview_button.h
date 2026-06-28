@@ -33,7 +33,7 @@
 #include "scene/gui/button.h"
 
 class EditorTranslationPreviewButton : public Button {
-	GDCLASS(EditorTranslationPreviewButton, Button);
+	FOUNDRY_CLASS(EditorTranslationPreviewButton, Button);
 
 	void _update();
 

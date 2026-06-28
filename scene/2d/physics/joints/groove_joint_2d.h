@@ -35,7 +35,7 @@
 class PhysicsBody2D;
 
 class GrooveJoint2D : public Joint2D {
-	GDCLASS(GrooveJoint2D, Joint2D);
+	FOUNDRY_CLASS(GrooveJoint2D, Joint2D);
 
 	real_t length = 50.0;
 	real_t initial_offset = 25.0;

@@ -156,7 +156,7 @@ Control *Container::as_sortable_control(Node *p_node, SortableVisibilityMode p_v
 
 Vector<int> Container::get_allowed_size_flags_horizontal() const {
 	Vector<int> flags;
-	if (GDVIRTUAL_CALL(_get_allowed_size_flags_horizontal, flags)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_allowed_size_flags_horizontal, flags)) {
 		return flags;
 	}
 
@@ -170,7 +170,7 @@ Vector<int> Container::get_allowed_size_flags_horizontal() const {
 
 Vector<int> Container::get_allowed_size_flags_vertical() const {
 	Vector<int> flags;
-	if (GDVIRTUAL_CALL(_get_allowed_size_flags_vertical, flags)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_allowed_size_flags_vertical, flags)) {
 		return flags;
 	}
 
@@ -218,8 +218,8 @@ void Container::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("queue_sort"), &Container::queue_sort);
 	ClassDB::bind_method(D_METHOD("fit_child_in_rect", "child", "rect"), &Container::fit_child_in_rect);
 
-	GDVIRTUAL_BIND(_get_allowed_size_flags_horizontal);
-	GDVIRTUAL_BIND(_get_allowed_size_flags_vertical);
+	FOUNDRY_VIRTUAL_BIND(_get_allowed_size_flags_horizontal);
+	FOUNDRY_VIRTUAL_BIND(_get_allowed_size_flags_vertical);
 
 	BIND_CONSTANT(NOTIFICATION_PRE_SORT_CHILDREN);
 	BIND_CONSTANT(NOTIFICATION_SORT_CHILDREN);

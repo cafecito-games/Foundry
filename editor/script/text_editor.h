@@ -35,7 +35,7 @@
 #include "editor/gui/code_editor.h"
 
 class TextEditor : public ScriptEditorBase {
-	GDCLASS(TextEditor, ScriptEditorBase);
+	FOUNDRY_CLASS(TextEditor, ScriptEditorBase);
 
 	static ScriptEditorBase *create_editor(const Ref<Resource> &p_resource);
 

@@ -33,7 +33,7 @@
 #include "scene/3d/physics/static_body_3d.h"
 
 class AnimatableBody3D : public StaticBody3D {
-	GDCLASS(AnimatableBody3D, StaticBody3D);
+	FOUNDRY_CLASS(AnimatableBody3D, StaticBody3D);
 
 private:
 	Vector3 linear_velocity;

@@ -45,7 +45,7 @@ void initialize_mono_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(CSharpScript);
+	FOUNDRY_REGISTER_CLASS(CSharpScript);
 
 	_godotsharp = memnew(MonoBind::GodotSharp);
 

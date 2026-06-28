@@ -293,7 +293,7 @@ void GraphNode::_resort() {
 }
 
 void GraphNode::draw_port(int p_slot_index, Point2i p_pos, bool p_left, const Color &p_color) {
-	if (GDVIRTUAL_CALL(_draw_port, p_slot_index, p_pos, p_left, p_color)) {
+	if (FOUNDRY_VIRTUAL_CALL(_draw_port, p_slot_index, p_pos, p_left, p_color)) {
 		return;
 	}
 
@@ -1294,7 +1294,7 @@ void GraphNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_output_port_color", "port_idx"), &GraphNode::get_output_port_color);
 	ClassDB::bind_method(D_METHOD("get_output_port_slot", "port_idx"), &GraphNode::get_output_port_slot);
 
-	GDVIRTUAL_BIND(_draw_port, "slot_index", "position", "left", "color")
+	FOUNDRY_VIRTUAL_BIND(_draw_port, "slot_index", "position", "left", "color")
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "title"), "set_title", "get_title");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ignore_invalid_connection_type"), "set_ignore_invalid_connection_type", "is_ignoring_valid_connection_type");

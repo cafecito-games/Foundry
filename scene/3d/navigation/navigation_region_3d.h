@@ -34,7 +34,7 @@
 #include "scene/resources/navigation_mesh.h"
 
 class NavigationRegion3D : public Node3D {
-	GDCLASS(NavigationRegion3D, Node3D);
+	FOUNDRY_CLASS(NavigationRegion3D, Node3D);
 
 	bool enabled = true;
 	bool use_edge_connections = true;

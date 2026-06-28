@@ -33,7 +33,7 @@
 #include "scene/3d/skeleton_3d.h"
 
 class BoneAttachment3D : public Node3D {
-	GDCLASS(BoneAttachment3D, Node3D);
+	FOUNDRY_CLASS(BoneAttachment3D, Node3D);
 
 	bool bound = false;
 	String bone_name;

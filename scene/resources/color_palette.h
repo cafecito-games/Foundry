@@ -33,7 +33,7 @@
 #include "core/io/resource.h"
 
 class ColorPalette : public Resource {
-	GDCLASS(ColorPalette, Resource)
+	FOUNDRY_CLASS(ColorPalette, Resource)
 
 private:
 	PackedColorArray colors;

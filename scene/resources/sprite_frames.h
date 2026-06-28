@@ -35,7 +35,7 @@
 static const float SPRITE_FRAME_MINIMUM_DURATION = 0.01;
 
 class SpriteFrames : public Resource {
-	GDCLASS(SpriteFrames, Resource);
+	FOUNDRY_CLASS(SpriteFrames, Resource);
 
 	struct Frame {
 		Ref<Texture2D> texture;

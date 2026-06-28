@@ -31,138 +31,138 @@
 #include "script_language_extension.h"
 
 void ScriptExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_editor_can_reload_from_file);
-	GDVIRTUAL_BIND(_placeholder_erased, "placeholder");
+	FOUNDRY_VIRTUAL_BIND(_editor_can_reload_from_file);
+	FOUNDRY_VIRTUAL_BIND(_placeholder_erased, "placeholder");
 
-	GDVIRTUAL_BIND(_can_instantiate);
-	GDVIRTUAL_BIND(_get_base_script);
-	GDVIRTUAL_BIND(_get_global_name);
-	GDVIRTUAL_BIND(_inherits_script, "script");
+	FOUNDRY_VIRTUAL_BIND(_can_instantiate);
+	FOUNDRY_VIRTUAL_BIND(_get_base_script);
+	FOUNDRY_VIRTUAL_BIND(_get_global_name);
+	FOUNDRY_VIRTUAL_BIND(_inherits_script, "script");
 
-	GDVIRTUAL_BIND(_get_instance_base_type);
-	GDVIRTUAL_BIND(_instance_create, "for_object");
-	GDVIRTUAL_BIND(_placeholder_instance_create, "for_object");
+	FOUNDRY_VIRTUAL_BIND(_get_instance_base_type);
+	FOUNDRY_VIRTUAL_BIND(_instance_create, "for_object");
+	FOUNDRY_VIRTUAL_BIND(_placeholder_instance_create, "for_object");
 
-	GDVIRTUAL_BIND(_instance_has, "object");
+	FOUNDRY_VIRTUAL_BIND(_instance_has, "object");
 
-	GDVIRTUAL_BIND(_has_source_code);
-	GDVIRTUAL_BIND(_get_source_code);
+	FOUNDRY_VIRTUAL_BIND(_has_source_code);
+	FOUNDRY_VIRTUAL_BIND(_get_source_code);
 
-	GDVIRTUAL_BIND(_set_source_code, "code");
-	GDVIRTUAL_BIND(_reload, "keep_state");
+	FOUNDRY_VIRTUAL_BIND(_set_source_code, "code");
+	FOUNDRY_VIRTUAL_BIND(_reload, "keep_state");
 
-	GDVIRTUAL_BIND(_get_doc_class_name);
-	GDVIRTUAL_BIND(_get_documentation);
-	GDVIRTUAL_BIND(_get_class_icon_path);
+	FOUNDRY_VIRTUAL_BIND(_get_doc_class_name);
+	FOUNDRY_VIRTUAL_BIND(_get_documentation);
+	FOUNDRY_VIRTUAL_BIND(_get_class_icon_path);
 
-	GDVIRTUAL_BIND(_has_method, "method");
-	GDVIRTUAL_BIND(_has_static_method, "method");
+	FOUNDRY_VIRTUAL_BIND(_has_method, "method");
+	FOUNDRY_VIRTUAL_BIND(_has_static_method, "method");
 
-	GDVIRTUAL_BIND(_get_script_method_argument_count, "method");
+	FOUNDRY_VIRTUAL_BIND(_get_script_method_argument_count, "method");
 
-	GDVIRTUAL_BIND(_get_method_info, "method");
+	FOUNDRY_VIRTUAL_BIND(_get_method_info, "method");
 
-	GDVIRTUAL_BIND(_is_tool);
-	GDVIRTUAL_BIND(_is_valid);
-	GDVIRTUAL_BIND(_is_abstract);
-	GDVIRTUAL_BIND(_get_language);
+	FOUNDRY_VIRTUAL_BIND(_is_tool);
+	FOUNDRY_VIRTUAL_BIND(_is_valid);
+	FOUNDRY_VIRTUAL_BIND(_is_abstract);
+	FOUNDRY_VIRTUAL_BIND(_get_language);
 
-	GDVIRTUAL_BIND(_has_script_signal, "signal");
-	GDVIRTUAL_BIND(_get_script_signal_list);
-	GDVIRTUAL_BIND(_get_script_trait_list);
+	FOUNDRY_VIRTUAL_BIND(_has_script_signal, "signal");
+	FOUNDRY_VIRTUAL_BIND(_get_script_signal_list);
+	FOUNDRY_VIRTUAL_BIND(_get_script_trait_list);
 
-	GDVIRTUAL_BIND(_has_property_default_value, "property");
-	GDVIRTUAL_BIND(_get_property_default_value, "property");
+	FOUNDRY_VIRTUAL_BIND(_has_property_default_value, "property");
+	FOUNDRY_VIRTUAL_BIND(_get_property_default_value, "property");
 
-	GDVIRTUAL_BIND(_update_exports);
-	GDVIRTUAL_BIND(_get_script_method_list);
-	GDVIRTUAL_BIND(_get_script_property_list);
+	FOUNDRY_VIRTUAL_BIND(_update_exports);
+	FOUNDRY_VIRTUAL_BIND(_get_script_method_list);
+	FOUNDRY_VIRTUAL_BIND(_get_script_property_list);
 
-	GDVIRTUAL_BIND(_get_member_line, "member");
+	FOUNDRY_VIRTUAL_BIND(_get_member_line, "member");
 
-	GDVIRTUAL_BIND(_get_constants);
-	GDVIRTUAL_BIND(_get_members);
-	GDVIRTUAL_BIND(_is_placeholder_fallback_enabled);
+	FOUNDRY_VIRTUAL_BIND(_get_constants);
+	FOUNDRY_VIRTUAL_BIND(_get_members);
+	FOUNDRY_VIRTUAL_BIND(_is_placeholder_fallback_enabled);
 
-	GDVIRTUAL_BIND(_get_rpc_config);
+	FOUNDRY_VIRTUAL_BIND(_get_rpc_config);
 }
 
 void ScriptLanguageExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_get_name);
-	GDVIRTUAL_BIND(_init);
-	GDVIRTUAL_BIND(_get_type);
-	GDVIRTUAL_BIND(_get_extension);
-	GDVIRTUAL_BIND(_finish);
+	FOUNDRY_VIRTUAL_BIND(_get_name);
+	FOUNDRY_VIRTUAL_BIND(_init);
+	FOUNDRY_VIRTUAL_BIND(_get_type);
+	FOUNDRY_VIRTUAL_BIND(_get_extension);
+	FOUNDRY_VIRTUAL_BIND(_finish);
 
-	GDVIRTUAL_BIND(_get_reserved_words);
-	GDVIRTUAL_BIND(_is_control_flow_keyword, "keyword");
-	GDVIRTUAL_BIND(_get_comment_delimiters);
-	GDVIRTUAL_BIND(_get_doc_comment_delimiters);
-	GDVIRTUAL_BIND(_get_string_delimiters);
-	GDVIRTUAL_BIND(_make_template, "template", "class_name", "base_class_name");
-	GDVIRTUAL_BIND(_get_built_in_templates, "object");
-	GDVIRTUAL_BIND(_is_using_templates);
-	GDVIRTUAL_BIND(_validate, "script", "path", "validate_functions", "validate_errors", "validate_warnings", "validate_safe_lines");
+	FOUNDRY_VIRTUAL_BIND(_get_reserved_words);
+	FOUNDRY_VIRTUAL_BIND(_is_control_flow_keyword, "keyword");
+	FOUNDRY_VIRTUAL_BIND(_get_comment_delimiters);
+	FOUNDRY_VIRTUAL_BIND(_get_doc_comment_delimiters);
+	FOUNDRY_VIRTUAL_BIND(_get_string_delimiters);
+	FOUNDRY_VIRTUAL_BIND(_make_template, "template", "class_name", "base_class_name");
+	FOUNDRY_VIRTUAL_BIND(_get_built_in_templates, "object");
+	FOUNDRY_VIRTUAL_BIND(_is_using_templates);
+	FOUNDRY_VIRTUAL_BIND(_validate, "script", "path", "validate_functions", "validate_errors", "validate_warnings", "validate_safe_lines");
 
-	GDVIRTUAL_BIND(_validate_path, "path");
-	GDVIRTUAL_BIND(_create_script);
+	FOUNDRY_VIRTUAL_BIND(_validate_path, "path");
+	FOUNDRY_VIRTUAL_BIND(_create_script);
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL_BIND(_has_named_classes);
+	FOUNDRY_VIRTUAL_BIND(_has_named_classes);
 #endif
-	GDVIRTUAL_BIND(_supports_builtin_mode);
-	GDVIRTUAL_BIND(_supports_documentation);
-	GDVIRTUAL_BIND(_can_inherit_from_file);
-	GDVIRTUAL_BIND(_find_function, "function", "code");
-	GDVIRTUAL_BIND(_make_function, "class_name", "function_name", "function_args");
-	GDVIRTUAL_BIND(_can_make_function);
-	GDVIRTUAL_BIND(_open_in_external_editor, "script", "line", "column");
-	GDVIRTUAL_BIND(_overrides_external_editor);
-	GDVIRTUAL_BIND(_preferred_file_name_casing);
+	FOUNDRY_VIRTUAL_BIND(_supports_builtin_mode);
+	FOUNDRY_VIRTUAL_BIND(_supports_documentation);
+	FOUNDRY_VIRTUAL_BIND(_can_inherit_from_file);
+	FOUNDRY_VIRTUAL_BIND(_find_function, "function", "code");
+	FOUNDRY_VIRTUAL_BIND(_make_function, "class_name", "function_name", "function_args");
+	FOUNDRY_VIRTUAL_BIND(_can_make_function);
+	FOUNDRY_VIRTUAL_BIND(_open_in_external_editor, "script", "line", "column");
+	FOUNDRY_VIRTUAL_BIND(_overrides_external_editor);
+	FOUNDRY_VIRTUAL_BIND(_preferred_file_name_casing);
 
-	GDVIRTUAL_BIND(_complete_code, "code", "path", "owner");
-	GDVIRTUAL_BIND(_lookup_code, "code", "symbol", "path", "owner");
-	GDVIRTUAL_BIND(_auto_indent_code, "code", "from_line", "to_line");
+	FOUNDRY_VIRTUAL_BIND(_complete_code, "code", "path", "owner");
+	FOUNDRY_VIRTUAL_BIND(_lookup_code, "code", "symbol", "path", "owner");
+	FOUNDRY_VIRTUAL_BIND(_auto_indent_code, "code", "from_line", "to_line");
 
-	GDVIRTUAL_BIND(_add_global_constant, "name", "value");
-	GDVIRTUAL_BIND(_add_named_global_constant, "name", "value");
-	GDVIRTUAL_BIND(_remove_named_global_constant, "name");
+	FOUNDRY_VIRTUAL_BIND(_add_global_constant, "name", "value");
+	FOUNDRY_VIRTUAL_BIND(_add_named_global_constant, "name", "value");
+	FOUNDRY_VIRTUAL_BIND(_remove_named_global_constant, "name");
 
-	GDVIRTUAL_BIND(_thread_enter);
-	GDVIRTUAL_BIND(_thread_exit);
-	GDVIRTUAL_BIND(_debug_get_error);
-	GDVIRTUAL_BIND(_debug_get_stack_level_count);
+	FOUNDRY_VIRTUAL_BIND(_thread_enter);
+	FOUNDRY_VIRTUAL_BIND(_thread_exit);
+	FOUNDRY_VIRTUAL_BIND(_debug_get_error);
+	FOUNDRY_VIRTUAL_BIND(_debug_get_stack_level_count);
 
-	GDVIRTUAL_BIND(_debug_get_stack_level_line, "level");
-	GDVIRTUAL_BIND(_debug_get_stack_level_function, "level");
-	GDVIRTUAL_BIND(_debug_get_stack_level_source, "level");
-	GDVIRTUAL_BIND(_debug_get_stack_level_locals, "level", "max_subitems", "max_depth");
-	GDVIRTUAL_BIND(_debug_get_stack_level_members, "level", "max_subitems", "max_depth");
-	GDVIRTUAL_BIND(_debug_get_stack_level_instance, "level");
-	GDVIRTUAL_BIND(_debug_get_globals, "max_subitems", "max_depth");
-	GDVIRTUAL_BIND(_debug_parse_stack_level_expression, "level", "expression", "max_subitems", "max_depth");
+	FOUNDRY_VIRTUAL_BIND(_debug_get_stack_level_line, "level");
+	FOUNDRY_VIRTUAL_BIND(_debug_get_stack_level_function, "level");
+	FOUNDRY_VIRTUAL_BIND(_debug_get_stack_level_source, "level");
+	FOUNDRY_VIRTUAL_BIND(_debug_get_stack_level_locals, "level", "max_subitems", "max_depth");
+	FOUNDRY_VIRTUAL_BIND(_debug_get_stack_level_members, "level", "max_subitems", "max_depth");
+	FOUNDRY_VIRTUAL_BIND(_debug_get_stack_level_instance, "level");
+	FOUNDRY_VIRTUAL_BIND(_debug_get_globals, "max_subitems", "max_depth");
+	FOUNDRY_VIRTUAL_BIND(_debug_parse_stack_level_expression, "level", "expression", "max_subitems", "max_depth");
 
-	GDVIRTUAL_BIND(_debug_get_current_stack_info);
+	FOUNDRY_VIRTUAL_BIND(_debug_get_current_stack_info);
 
-	GDVIRTUAL_BIND(_reload_all_scripts);
-	GDVIRTUAL_BIND(_reload_scripts, "scripts", "soft_reload");
-	GDVIRTUAL_BIND(_reload_tool_script, "script", "soft_reload");
+	FOUNDRY_VIRTUAL_BIND(_reload_all_scripts);
+	FOUNDRY_VIRTUAL_BIND(_reload_scripts, "scripts", "soft_reload");
+	FOUNDRY_VIRTUAL_BIND(_reload_tool_script, "script", "soft_reload");
 
-	GDVIRTUAL_BIND(_get_recognized_extensions);
-	GDVIRTUAL_BIND(_get_public_functions);
-	GDVIRTUAL_BIND(_get_public_constants);
-	GDVIRTUAL_BIND(_get_public_annotations);
+	FOUNDRY_VIRTUAL_BIND(_get_recognized_extensions);
+	FOUNDRY_VIRTUAL_BIND(_get_public_functions);
+	FOUNDRY_VIRTUAL_BIND(_get_public_constants);
+	FOUNDRY_VIRTUAL_BIND(_get_public_annotations);
 
-	GDVIRTUAL_BIND(_profiling_start);
-	GDVIRTUAL_BIND(_profiling_stop);
-	GDVIRTUAL_BIND(_profiling_set_save_native_calls, "enable");
+	FOUNDRY_VIRTUAL_BIND(_profiling_start);
+	FOUNDRY_VIRTUAL_BIND(_profiling_stop);
+	FOUNDRY_VIRTUAL_BIND(_profiling_set_save_native_calls, "enable");
 
-	GDVIRTUAL_BIND(_profiling_get_accumulated_data, "info_array", "info_max");
-	GDVIRTUAL_BIND(_profiling_get_frame_data, "info_array", "info_max");
+	FOUNDRY_VIRTUAL_BIND(_profiling_get_accumulated_data, "info_array", "info_max");
+	FOUNDRY_VIRTUAL_BIND(_profiling_get_frame_data, "info_array", "info_max");
 
-	GDVIRTUAL_BIND(_frame);
+	FOUNDRY_VIRTUAL_BIND(_frame);
 
-	GDVIRTUAL_BIND(_handles_global_class_type, "type");
-	GDVIRTUAL_BIND(_get_global_class_name, "path");
+	FOUNDRY_VIRTUAL_BIND(_handles_global_class_type, "type");
+	FOUNDRY_VIRTUAL_BIND(_get_global_class_name, "path");
 
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_SCRIPT_LOCATION);
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_CLASS);

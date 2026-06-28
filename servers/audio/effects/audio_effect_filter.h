@@ -36,7 +36,7 @@
 class AudioEffectFilter;
 
 class AudioEffectFilterInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectFilterInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectFilterInstance, AudioEffectInstance);
 	friend class AudioEffectFilter;
 
 	Ref<AudioEffectFilter> base;
@@ -54,7 +54,7 @@ public:
 };
 
 class AudioEffectFilter : public AudioEffect {
-	GDCLASS(AudioEffectFilter, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectFilter, AudioEffect);
 
 public:
 	enum FilterDB {
@@ -95,7 +95,7 @@ public:
 VARIANT_ENUM_CAST(AudioEffectFilter::FilterDB)
 
 class AudioEffectLowPassFilter : public AudioEffectFilter {
-	GDCLASS(AudioEffectLowPassFilter, AudioEffectFilter);
+	FOUNDRY_CLASS(AudioEffectLowPassFilter, AudioEffectFilter);
 
 	void _validate_property(PropertyInfo &p_property) const {
 		if (p_property.name == "gain") {
@@ -109,7 +109,7 @@ public:
 };
 
 class AudioEffectHighPassFilter : public AudioEffectFilter {
-	GDCLASS(AudioEffectHighPassFilter, AudioEffectFilter);
+	FOUNDRY_CLASS(AudioEffectHighPassFilter, AudioEffectFilter);
 	void _validate_property(PropertyInfo &p_property) const {
 		if (p_property.name == "gain") {
 			p_property.usage = PROPERTY_USAGE_NONE;
@@ -122,7 +122,7 @@ public:
 };
 
 class AudioEffectBandPassFilter : public AudioEffectFilter {
-	GDCLASS(AudioEffectBandPassFilter, AudioEffectFilter);
+	FOUNDRY_CLASS(AudioEffectBandPassFilter, AudioEffectFilter);
 	void _validate_property(PropertyInfo &p_property) const {
 		if (p_property.name == "gain") {
 			p_property.usage = PROPERTY_USAGE_NONE;
@@ -135,7 +135,7 @@ public:
 };
 
 class AudioEffectNotchFilter : public AudioEffectFilter {
-	GDCLASS(AudioEffectNotchFilter, AudioEffectFilter);
+	FOUNDRY_CLASS(AudioEffectNotchFilter, AudioEffectFilter);
 
 public:
 	AudioEffectNotchFilter() :
@@ -143,7 +143,7 @@ public:
 };
 
 class AudioEffectBandLimitFilter : public AudioEffectFilter {
-	GDCLASS(AudioEffectBandLimitFilter, AudioEffectFilter);
+	FOUNDRY_CLASS(AudioEffectBandLimitFilter, AudioEffectFilter);
 
 public:
 	AudioEffectBandLimitFilter() :
@@ -151,7 +151,7 @@ public:
 };
 
 class AudioEffectLowShelfFilter : public AudioEffectFilter {
-	GDCLASS(AudioEffectLowShelfFilter, AudioEffectFilter);
+	FOUNDRY_CLASS(AudioEffectLowShelfFilter, AudioEffectFilter);
 
 public:
 	AudioEffectLowShelfFilter() :
@@ -159,7 +159,7 @@ public:
 };
 
 class AudioEffectHighShelfFilter : public AudioEffectFilter {
-	GDCLASS(AudioEffectHighShelfFilter, AudioEffectFilter);
+	FOUNDRY_CLASS(AudioEffectHighShelfFilter, AudioEffectFilter);
 
 public:
 	AudioEffectHighShelfFilter() :

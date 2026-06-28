@@ -56,7 +56,7 @@ public:
 };
 
 class EditorInspectorActionButton : public Button {
-	GDCLASS(EditorInspectorActionButton, Button);
+	FOUNDRY_CLASS(EditorInspectorActionButton, Button);
 
 	StringName icon_name;
 
@@ -68,7 +68,7 @@ public:
 };
 
 class EditorProperty : public Container {
-	GDCLASS(EditorProperty, Container);
+	FOUNDRY_CLASS(EditorProperty, Container);
 
 	friend class EditorInspector;
 
@@ -207,8 +207,8 @@ private:
 
 	HashMap<StringName, Variant> cache;
 
-	GDVIRTUAL0(_update_property)
-	GDVIRTUAL1(_set_read_only, bool)
+	FOUNDRY_VIRTUAL0(_update_property)
+	FOUNDRY_VIRTUAL1(_set_read_only, bool)
 
 	void _update_flags();
 
@@ -330,7 +330,7 @@ public:
 };
 
 class EditorInspectorPlugin : public RefCounted {
-	GDCLASS(EditorInspectorPlugin, RefCounted);
+	FOUNDRY_CLASS(EditorInspectorPlugin, RefCounted);
 
 public:
 	friend class EditorInspector;
@@ -346,12 +346,12 @@ public:
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1RC(bool, _can_handle, Object *)
-	GDVIRTUAL1(_parse_begin, Object *)
-	GDVIRTUAL2(_parse_category, Object *, String)
-	GDVIRTUAL2(_parse_group, Object *, String)
-	GDVIRTUAL7R(bool, _parse_property, Object *, Variant::Type, String, PropertyHint, String, BitField<PropertyUsageFlags>, bool)
-	GDVIRTUAL1(_parse_end, Object *)
+	FOUNDRY_VIRTUAL1RC(bool, _can_handle, Object *)
+	FOUNDRY_VIRTUAL1(_parse_begin, Object *)
+	FOUNDRY_VIRTUAL2(_parse_category, Object *, String)
+	FOUNDRY_VIRTUAL2(_parse_group, Object *, String)
+	FOUNDRY_VIRTUAL7R(bool, _parse_property, Object *, Variant::Type, String, PropertyHint, String, BitField<PropertyUsageFlags>, bool)
+	FOUNDRY_VIRTUAL1(_parse_end, Object *)
 
 #ifndef DISABLE_DEPRECATED
 	void _add_property_editor_bind_compat_92322(const String &p_for_property, Control *p_prop, bool p_add_to_end);
@@ -371,7 +371,7 @@ public:
 };
 
 class EditorInspectorCategory : public Control {
-	GDCLASS(EditorInspectorCategory, Control);
+	FOUNDRY_CLASS(EditorInspectorCategory, Control);
 
 	friend class EditorInspector;
 
@@ -432,7 +432,7 @@ public:
 };
 
 class EditorInspectorSection : public Container {
-	GDCLASS(EditorInspectorSection, Container);
+	FOUNDRY_CLASS(EditorInspectorSection, Container);
 
 	friend class EditorInspector;
 
@@ -540,7 +540,7 @@ public:
 };
 
 class ArrayPanelContainer : public PanelContainer {
-	GDCLASS(ArrayPanelContainer, PanelContainer);
+	FOUNDRY_CLASS(ArrayPanelContainer, PanelContainer);
 
 protected:
 	void _notification(int p_what);
@@ -552,7 +552,7 @@ public:
 };
 
 class EditorInspectorArray : public EditorInspectorSection {
-	GDCLASS(EditorInspectorArray, EditorInspectorSection);
+	FOUNDRY_CLASS(EditorInspectorArray, EditorInspectorSection);
 
 	enum Mode {
 		MODE_NONE,
@@ -664,7 +664,7 @@ public:
 };
 
 class EditorPaginator : public HBoxContainer {
-	GDCLASS(EditorPaginator, HBoxContainer);
+	FOUNDRY_CLASS(EditorPaginator, HBoxContainer);
 
 	int page = 0;
 	int max_page = 0;
@@ -692,7 +692,7 @@ public:
 };
 
 class EditorInspector : public ScrollContainer {
-	GDCLASS(EditorInspector, ScrollContainer);
+	FOUNDRY_CLASS(EditorInspector, ScrollContainer);
 
 	friend class EditorPropertyResource;
 

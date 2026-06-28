@@ -36,7 +36,7 @@
 class NavigationMeshSourceGeometryData2D : public Resource {
 	friend class NavMeshGenerator2D;
 
-	GDCLASS(NavigationMeshSourceGeometryData2D, Resource);
+	FOUNDRY_CLASS(NavigationMeshSourceGeometryData2D, Resource);
 	RWLock geometry_rwlock;
 
 	Vector<Vector<Vector2>> traversable_outlines;

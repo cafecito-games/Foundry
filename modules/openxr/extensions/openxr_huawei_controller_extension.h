@@ -33,7 +33,7 @@
 #include "openxr_extension_wrapper.h"
 
 class OpenXRHuaweiControllerExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRHuaweiControllerExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRHuaweiControllerExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}

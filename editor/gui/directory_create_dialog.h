@@ -37,7 +37,7 @@ class Label;
 class LineEdit;
 
 class DirectoryCreateDialog : public ConfirmationDialog {
-	GDCLASS(DirectoryCreateDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(DirectoryCreateDialog, ConfirmationDialog);
 
 public:
 	enum Mode {

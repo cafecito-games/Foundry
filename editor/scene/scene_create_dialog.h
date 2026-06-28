@@ -42,7 +42,7 @@ class LineEdit;
 class OptionButton;
 
 class SceneCreateDialog : public ConfirmationDialog {
-	GDCLASS(SceneCreateDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(SceneCreateDialog, ConfirmationDialog);
 
 	enum {
 		MSG_ID_PATH,

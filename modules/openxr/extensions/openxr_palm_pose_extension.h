@@ -33,7 +33,7 @@
 #include "openxr_extension_wrapper.h"
 
 class OpenXRPalmPoseExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRPalmPoseExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRPalmPoseExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}

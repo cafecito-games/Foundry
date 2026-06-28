@@ -36,24 +36,24 @@
 #include "scene/resources/curve.h"
 
 class Texture : public Resource {
-	GDCLASS(Texture, Resource);
+	FOUNDRY_CLASS(Texture, Resource);
 };
 
 class Texture2D : public Texture {
-	GDCLASS(Texture2D, Texture);
+	FOUNDRY_CLASS(Texture2D, Texture);
 	OBJ_SAVE_TYPE(Texture2D); // Saves derived classes with common type so they can be interchanged.
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC_REQUIRED(int, _get_width)
-	GDVIRTUAL0RC_REQUIRED(int, _get_height)
-	GDVIRTUAL2RC(bool, _is_pixel_opaque, int, int)
-	GDVIRTUAL0RC(bool, _has_alpha)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_width)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_height)
+	FOUNDRY_VIRTUAL2RC(bool, _is_pixel_opaque, int, int)
+	FOUNDRY_VIRTUAL0RC(bool, _has_alpha)
 
-	GDVIRTUAL4C(_draw, RID, Point2, Color, bool)
-	GDVIRTUAL5C(_draw_rect, RID, Rect2, bool, Color, bool)
-	GDVIRTUAL6C(_draw_rect_region, RID, Rect2, Rect2, Color, bool, bool)
+	FOUNDRY_VIRTUAL4C(_draw, RID, Point2, Color, bool)
+	FOUNDRY_VIRTUAL5C(_draw_rect, RID, Rect2, bool, Color, bool)
+	FOUNDRY_VIRTUAL6C(_draw_rect_region, RID, Rect2, Rect2, Color, bool, bool)
 
 public:
 	virtual int get_width() const;
@@ -78,18 +78,18 @@ public:
 };
 
 class TextureLayered : public Texture {
-	GDCLASS(TextureLayered, Texture);
+	FOUNDRY_CLASS(TextureLayered, Texture);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC_REQUIRED(Image::Format, _get_format)
-	GDVIRTUAL0RC_REQUIRED(uint32_t, _get_layered_type)
-	GDVIRTUAL0RC_REQUIRED(int, _get_width)
-	GDVIRTUAL0RC_REQUIRED(int, _get_height)
-	GDVIRTUAL0RC_REQUIRED(int, _get_layers)
-	GDVIRTUAL0RC_REQUIRED(bool, _has_mipmaps)
-	GDVIRTUAL1RC_REQUIRED(Ref<Image>, _get_layer_data, int)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Image::Format, _get_format)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(uint32_t, _get_layered_type)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_width)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_height)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_layers)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(bool, _has_mipmaps)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(Ref<Image>, _get_layer_data, int)
 public:
 	enum LayeredType {
 		LAYERED_TYPE_2D_ARRAY,
@@ -109,19 +109,19 @@ public:
 VARIANT_ENUM_CAST(TextureLayered::LayeredType)
 
 class Texture3D : public Texture {
-	GDCLASS(Texture3D, Texture);
+	FOUNDRY_CLASS(Texture3D, Texture);
 
 protected:
 	static void _bind_methods();
 
 	TypedArray<Image> _get_datai() const;
 
-	GDVIRTUAL0RC_REQUIRED(Image::Format, _get_format)
-	GDVIRTUAL0RC_REQUIRED(int, _get_width)
-	GDVIRTUAL0RC_REQUIRED(int, _get_height)
-	GDVIRTUAL0RC_REQUIRED(int, _get_depth)
-	GDVIRTUAL0RC_REQUIRED(bool, _has_mipmaps)
-	GDVIRTUAL0RC_REQUIRED(TypedArray<Image>, _get_data)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Image::Format, _get_format)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_width)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_height)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_depth)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(bool, _has_mipmaps)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<Image>, _get_data)
 public:
 	virtual Image::Format get_format() const;
 	virtual int get_width() const;

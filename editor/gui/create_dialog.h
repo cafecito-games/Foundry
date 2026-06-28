@@ -38,7 +38,7 @@
 #include "scene/gui/tree.h"
 
 class CreateDialog : public ConfirmationDialog {
-	GDCLASS(CreateDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(CreateDialog, ConfirmationDialog);
 
 	enum TypeCategory {
 		CPP_TYPE,

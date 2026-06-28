@@ -116,9 +116,9 @@ void EditorDock::_bind_methods() {
 	BIND_ENUM_CONSTANT(DOCK_SLOT_BOTTOM);
 	BIND_ENUM_CONSTANT(DOCK_SLOT_MAX);
 
-	GDVIRTUAL_BIND(_update_layout, "layout");
-	GDVIRTUAL_BIND(_save_layout_to_config, "config", "section");
-	GDVIRTUAL_BIND(_load_layout_from_config, "config", "section");
+	FOUNDRY_VIRTUAL_BIND(_update_layout, "layout");
+	FOUNDRY_VIRTUAL_BIND(_save_layout_to_config, "config", "section");
+	FOUNDRY_VIRTUAL_BIND(_load_layout_from_config, "config", "section");
 }
 
 void EditorDock::open() {

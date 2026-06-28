@@ -34,7 +34,7 @@
 #include <openxr/openxr.h>
 
 class OpenXRHapticBase : public Resource {
-	GDCLASS(OpenXRHapticBase, Resource);
+	FOUNDRY_CLASS(OpenXRHapticBase, Resource);
 
 private:
 protected:
@@ -45,7 +45,7 @@ public:
 };
 
 class OpenXRHapticVibration : public OpenXRHapticBase {
-	GDCLASS(OpenXRHapticVibration, OpenXRHapticBase);
+	FOUNDRY_CLASS(OpenXRHapticVibration, OpenXRHapticBase);
 
 private:
 	XrHapticVibration haptic_vibration;

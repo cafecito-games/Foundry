@@ -35,7 +35,7 @@
 class AudioEffectLimiter;
 
 class AudioEffectLimiterInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectLimiterInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectLimiterInstance, AudioEffectInstance);
 	friend class AudioEffectLimiter;
 	Ref<AudioEffectLimiter> base;
 
@@ -46,7 +46,7 @@ public:
 };
 
 class AudioEffectLimiter : public AudioEffect {
-	GDCLASS(AudioEffectLimiter, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectLimiter, AudioEffect);
 
 	friend class AudioEffectLimiterInstance;
 	float threshold;

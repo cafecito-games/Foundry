@@ -34,7 +34,7 @@
 #include "core/io/resource.h"
 
 class Shortcut : public Resource {
-	GDCLASS(Shortcut, Resource);
+	FOUNDRY_CLASS(Shortcut, Resource);
 
 	Array events;
 

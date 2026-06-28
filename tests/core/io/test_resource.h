@@ -54,7 +54,7 @@ enum TestDuplicateMode {
 };
 
 class DuplicateGuineaPigData : public Object {
-	GDSOFTCLASS(DuplicateGuineaPigData, Object)
+	FOUNDRY_SOFTCLASS(DuplicateGuineaPigData, Object)
 
 public:
 	const Variant SENTINEL_1 = "A";
@@ -257,7 +257,7 @@ public:
 
 #define DEFINE_DUPLICATE_GUINEA_PIG(m_class_name, m_property_usage)                                                                                 \
 	class m_class_name : public Resource {                                                                                                          \
-		GDCLASS(m_class_name, Resource)                                                                                                             \
+		FOUNDRY_CLASS(m_class_name, Resource)                                                                                                       \
                                                                                                                                                     \
 		DuplicateGuineaPigData data;                                                                                                                \
                                                                                                                                                     \
@@ -353,7 +353,7 @@ public:
 		static m_class_name *register_and_instantiate() {                                                                                           \
 			static bool registered = false;                                                                                                         \
 			if (!registered) {                                                                                                                      \
-				GDREGISTER_CLASS(m_class_name);                                                                                                     \
+				FOUNDRY_REGISTER_CLASS(m_class_name);                                                                                               \
 				registered = true;                                                                                                                  \
 			}                                                                                                                                       \
 			return memnew(m_class_name);                                                                                                            \

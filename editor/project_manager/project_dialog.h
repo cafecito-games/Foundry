@@ -41,7 +41,7 @@ class OptionButton;
 class TextureRect;
 
 class ProjectDialog : public ConfirmationDialog {
-	GDCLASS(ProjectDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(ProjectDialog, ConfirmationDialog);
 
 public:
 	enum Mode {

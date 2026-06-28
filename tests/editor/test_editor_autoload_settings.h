@@ -128,7 +128,7 @@ public:
 };
 
 class TestScriptResourceFormatLoader : public ResourceFormatLoader {
-	GDSOFTCLASS(TestScriptResourceFormatLoader, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(TestScriptResourceFormatLoader, ResourceFormatLoader);
 
 public:
 	virtual void get_recognized_extensions(List<String> *p_extensions) const override {

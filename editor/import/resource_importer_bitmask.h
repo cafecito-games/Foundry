@@ -33,7 +33,7 @@
 #include "core/io/resource_importer.h"
 
 class ResourceImporterBitMap : public ResourceImporter {
-	GDCLASS(ResourceImporterBitMap, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterBitMap, ResourceImporter);
 
 public:
 	virtual String get_importer_name() const override;

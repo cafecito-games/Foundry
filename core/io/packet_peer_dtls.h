@@ -34,7 +34,7 @@
 #include "core/io/packet_peer_udp.h"
 
 class PacketPeerDTLS : public PacketPeer {
-	GDCLASS(PacketPeerDTLS, PacketPeer);
+	FOUNDRY_CLASS(PacketPeerDTLS, PacketPeer);
 
 protected:
 	static inline PacketPeerDTLS *(*_create)(bool p_notify_postinitialize) = nullptr;

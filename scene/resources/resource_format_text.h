@@ -146,7 +146,7 @@ public:
 };
 
 class ResourceFormatLoaderText : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderText, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderText, ResourceFormatLoader);
 
 public:
 	static ResourceFormatLoaderText *singleton;
@@ -208,7 +208,7 @@ public:
 };
 
 class ResourceFormatSaverText : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceFormatSaverText, ResourceFormatSaver);
+	FOUNDRY_SOFTCLASS(ResourceFormatSaverText, ResourceFormatSaver);
 
 public:
 	static ResourceFormatSaverText *singleton;

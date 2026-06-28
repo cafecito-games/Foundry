@@ -33,7 +33,7 @@
 #include "gltf_document_extension.h"
 
 class GLTFDocumentExtensionTextureKTX : public GLTFDocumentExtension {
-	GDCLASS(GLTFDocumentExtensionTextureKTX, GLTFDocumentExtension);
+	FOUNDRY_CLASS(GLTFDocumentExtensionTextureKTX, GLTFDocumentExtension);
 
 public:
 	// Import process.

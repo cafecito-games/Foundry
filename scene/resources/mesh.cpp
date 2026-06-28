@@ -207,81 +207,81 @@ Mesh::ConvexDecompositionFunc Mesh::convex_decomposition_function = nullptr;
 
 int Mesh::get_surface_count() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_surface_count, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_surface_count, ret);
 	return ret;
 }
 
 int Mesh::surface_get_array_len(int p_idx) const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_surface_get_array_len, p_idx, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_array_len, p_idx, ret);
 	return ret;
 }
 
 int Mesh::surface_get_array_index_len(int p_idx) const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_surface_get_array_index_len, p_idx, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_array_index_len, p_idx, ret);
 	return ret;
 }
 
 Array Mesh::surface_get_arrays(int p_surface) const {
 	Array ret;
-	GDVIRTUAL_CALL(_surface_get_arrays, p_surface, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_arrays, p_surface, ret);
 	return ret;
 }
 
 TypedArray<Array> Mesh::surface_get_blend_shape_arrays(int p_surface) const {
 	TypedArray<Array> ret;
-	GDVIRTUAL_CALL(_surface_get_blend_shape_arrays, p_surface, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_blend_shape_arrays, p_surface, ret);
 	return ret;
 }
 
 Dictionary Mesh::surface_get_lods(int p_surface) const {
 	Dictionary ret;
-	GDVIRTUAL_CALL(_surface_get_lods, p_surface, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_lods, p_surface, ret);
 	return ret;
 }
 
 BitField<Mesh::ArrayFormat> Mesh::surface_get_format(int p_idx) const {
 	uint32_t ret = 0;
-	GDVIRTUAL_CALL(_surface_get_format, p_idx, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_format, p_idx, ret);
 	return ret;
 }
 
 Mesh::PrimitiveType Mesh::surface_get_primitive_type(int p_idx) const {
 	uint32_t ret = PRIMITIVE_MAX;
-	GDVIRTUAL_CALL(_surface_get_primitive_type, p_idx, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_primitive_type, p_idx, ret);
 	return (Mesh::PrimitiveType)ret;
 }
 
 void Mesh::surface_set_material(int p_idx, const Ref<Material> &p_material) {
-	GDVIRTUAL_CALL(_surface_set_material, p_idx, p_material);
+	FOUNDRY_VIRTUAL_CALL(_surface_set_material, p_idx, p_material);
 }
 
 Ref<Material> Mesh::surface_get_material(int p_idx) const {
 	Ref<Material> ret;
-	GDVIRTUAL_CALL(_surface_get_material, p_idx, ret);
+	FOUNDRY_VIRTUAL_CALL(_surface_get_material, p_idx, ret);
 	return ret;
 }
 
 int Mesh::get_blend_shape_count() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_blend_shape_count, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_blend_shape_count, ret);
 	return ret;
 }
 
 StringName Mesh::get_blend_shape_name(int p_index) const {
 	StringName ret;
-	GDVIRTUAL_CALL(_get_blend_shape_name, p_index, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_blend_shape_name, p_index, ret);
 	return ret;
 }
 
 void Mesh::set_blend_shape_name(int p_index, const StringName &p_name) {
-	GDVIRTUAL_CALL(_set_blend_shape_name, p_index, p_name);
+	FOUNDRY_VIRTUAL_CALL(_set_blend_shape_name, p_index, p_name);
 }
 
 AABB Mesh::get_aabb() const {
 	AABB ret;
-	GDVIRTUAL_CALL(_get_aabb, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_aabb, ret);
 	return ret;
 }
 
@@ -893,20 +893,20 @@ void Mesh::_bind_methods() {
 	BIND_ENUM_CONSTANT(BLEND_SHAPE_MODE_NORMALIZED);
 	BIND_ENUM_CONSTANT(BLEND_SHAPE_MODE_RELATIVE);
 
-	GDVIRTUAL_BIND(_get_surface_count)
-	GDVIRTUAL_BIND(_surface_get_array_len, "index")
-	GDVIRTUAL_BIND(_surface_get_array_index_len, "index")
-	GDVIRTUAL_BIND(_surface_get_arrays, "index")
-	GDVIRTUAL_BIND(_surface_get_blend_shape_arrays, "index")
-	GDVIRTUAL_BIND(_surface_get_lods, "index")
-	GDVIRTUAL_BIND(_surface_get_format, "index")
-	GDVIRTUAL_BIND(_surface_get_primitive_type, "index")
-	GDVIRTUAL_BIND(_surface_set_material, "index", "material")
-	GDVIRTUAL_BIND(_surface_get_material, "index")
-	GDVIRTUAL_BIND(_get_blend_shape_count)
-	GDVIRTUAL_BIND(_get_blend_shape_name, "index")
-	GDVIRTUAL_BIND(_set_blend_shape_name, "index", "name")
-	GDVIRTUAL_BIND(_get_aabb)
+	FOUNDRY_VIRTUAL_BIND(_get_surface_count)
+	FOUNDRY_VIRTUAL_BIND(_surface_get_array_len, "index")
+	FOUNDRY_VIRTUAL_BIND(_surface_get_array_index_len, "index")
+	FOUNDRY_VIRTUAL_BIND(_surface_get_arrays, "index")
+	FOUNDRY_VIRTUAL_BIND(_surface_get_blend_shape_arrays, "index")
+	FOUNDRY_VIRTUAL_BIND(_surface_get_lods, "index")
+	FOUNDRY_VIRTUAL_BIND(_surface_get_format, "index")
+	FOUNDRY_VIRTUAL_BIND(_surface_get_primitive_type, "index")
+	FOUNDRY_VIRTUAL_BIND(_surface_set_material, "index", "material")
+	FOUNDRY_VIRTUAL_BIND(_surface_get_material, "index")
+	FOUNDRY_VIRTUAL_BIND(_get_blend_shape_count)
+	FOUNDRY_VIRTUAL_BIND(_get_blend_shape_name, "index")
+	FOUNDRY_VIRTUAL_BIND(_set_blend_shape_name, "index", "name")
+	FOUNDRY_VIRTUAL_BIND(_get_aabb)
 }
 
 void Mesh::clear_cache() const {

@@ -39,7 +39,7 @@
 class FoundryExtensionMethodBind;
 
 class FoundryExtension : public Resource {
-	GDCLASS(FoundryExtension, Resource)
+	FOUNDRY_CLASS(FoundryExtension, Resource)
 
 	friend class FoundryExtensionManager;
 
@@ -183,7 +183,7 @@ public:
 VARIANT_ENUM_CAST(FoundryExtension::InitializationLevel)
 
 class FoundryExtensionResourceLoader : public ResourceFormatLoader {
-	GDSOFTCLASS(FoundryExtensionResourceLoader, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(FoundryExtensionResourceLoader, ResourceFormatLoader);
 
 public:
 	static Error load_foundry_extension_resource(const String &p_path, Ref<FoundryExtension> &p_extension);

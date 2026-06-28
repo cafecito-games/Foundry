@@ -34,7 +34,7 @@
 #include "editor/docks/groups_editor.h"
 
 class GroupsDock : public EditorDock {
-	GDCLASS(GroupsDock, EditorDock);
+	FOUNDRY_CLASS(GroupsDock, EditorDock);
 
 	GroupsEditor *groups = nullptr;
 

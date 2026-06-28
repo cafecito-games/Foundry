@@ -48,7 +48,7 @@ class SceneTreeEditor;
 class SpinBox;
 
 class ConnectDialog : public ConfirmationDialog {
-	GDCLASS(ConnectDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(ConnectDialog, ConfirmationDialog);
 
 public:
 	struct ConnectionData {
@@ -207,7 +207,7 @@ class ConnectionsDockTree : public Tree {
 };
 
 class ConnectionsDock : public VBoxContainer {
-	GDCLASS(ConnectionsDock, VBoxContainer);
+	FOUNDRY_CLASS(ConnectionsDock, VBoxContainer);
 
 	enum TreeItemType {
 		TREE_ITEM_TYPE_ROOT,

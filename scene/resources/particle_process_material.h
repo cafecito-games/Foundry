@@ -43,7 +43,7 @@
 */
 
 class ParticleProcessMaterial : public Material {
-	GDCLASS(ParticleProcessMaterial, Material);
+	FOUNDRY_CLASS(ParticleProcessMaterial, Material);
 
 public:
 	enum Parameter {

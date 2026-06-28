@@ -36,7 +36,7 @@ class FoldableGroup;
 class TextLine;
 
 class FoldableContainer : public Container {
-	GDCLASS(FoldableContainer, Container);
+	FOUNDRY_CLASS(FoldableContainer, Container);
 
 public:
 	enum TitlePosition {
@@ -149,7 +149,7 @@ public:
 VARIANT_ENUM_CAST(FoldableContainer::TitlePosition);
 
 class FoldableGroup : public Resource {
-	GDCLASS(FoldableGroup, Resource);
+	FOUNDRY_CLASS(FoldableGroup, Resource);
 
 	friend class FoldableContainer;
 

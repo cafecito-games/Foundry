@@ -33,7 +33,7 @@
 #include "scene/3d/visual_instance_3d.h"
 #include "scene/resources/immediate_mesh.h"
 class RootMotionView : public VisualInstance3D {
-	GDCLASS(RootMotionView, VisualInstance3D);
+	FOUNDRY_CLASS(RootMotionView, VisualInstance3D);
 
 public:
 	Ref<ImmediateMesh> immediate;

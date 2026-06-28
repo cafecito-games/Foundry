@@ -50,13 +50,13 @@ bool ImageFormatLoader::recognize(const String &p_extension) const {
 
 Error ImageFormatLoaderExtension::load_image(Ref<Image> p_image, Ref<FileAccess> p_fileaccess, BitField<ImageFormatLoader::LoaderFlags> p_flags, float p_scale) {
 	Error err = ERR_UNAVAILABLE;
-	GDVIRTUAL_CALL(_load_image, p_image, p_fileaccess, p_flags, p_scale, err);
+	FOUNDRY_VIRTUAL_CALL(_load_image, p_image, p_fileaccess, p_flags, p_scale, err);
 	return err;
 }
 
 void ImageFormatLoaderExtension::get_recognized_extensions(List<String> *p_extension) const {
 	PackedStringArray ext;
-	if (GDVIRTUAL_CALL(_get_recognized_extensions, ext)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_recognized_extensions, ext)) {
 		for (int i = 0; i < ext.size(); i++) {
 			p_extension->push_back(ext[i]);
 		}
@@ -72,8 +72,8 @@ void ImageFormatLoaderExtension::remove_format_loader() {
 }
 
 void ImageFormatLoaderExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_get_recognized_extensions);
-	GDVIRTUAL_BIND(_load_image, "image", "fileaccess", "flags", "scale");
+	FOUNDRY_VIRTUAL_BIND(_get_recognized_extensions);
+	FOUNDRY_VIRTUAL_BIND(_load_image, "image", "fileaccess", "flags", "scale");
 	ClassDB::bind_method(D_METHOD("add_format_loader"), &ImageFormatLoaderExtension::add_format_loader);
 	ClassDB::bind_method(D_METHOD("remove_format_loader"), &ImageFormatLoaderExtension::remove_format_loader);
 }

@@ -35,7 +35,7 @@
 class ArrayMesh;
 
 class CapsuleShape3D : public Shape3D {
-	GDCLASS(CapsuleShape3D, Shape3D);
+	FOUNDRY_CLASS(CapsuleShape3D, Shape3D);
 	float radius = 0.5;
 	float height = 2.0;
 

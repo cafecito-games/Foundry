@@ -34,7 +34,7 @@
 #include "servers/rendering/rendering_server.h"
 
 class MultiMesh : public Resource {
-	GDCLASS(MultiMesh, Resource);
+	FOUNDRY_CLASS(MultiMesh, Resource);
 	RES_BASE_EXTENSION("multimesh");
 
 public:

@@ -56,40 +56,40 @@ MovieWriter *MovieWriter::find_writer_for_file(const String &p_file) {
 
 uint32_t MovieWriter::get_audio_mix_rate() const {
 	uint32_t ret = 48000;
-	GDVIRTUAL_CALL(_get_audio_mix_rate, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_audio_mix_rate, ret);
 	return ret;
 }
 AudioServer::SpeakerMode MovieWriter::get_audio_speaker_mode() const {
 	AudioServer::SpeakerMode ret = AudioServer::SPEAKER_MODE_STEREO;
-	GDVIRTUAL_CALL(_get_audio_speaker_mode, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_audio_speaker_mode, ret);
 	return ret;
 }
 
 Error MovieWriter::write_begin(const Size2i &p_movie_size, uint32_t p_fps, const String &p_base_path) {
 	Error ret = ERR_UNCONFIGURED;
-	GDVIRTUAL_CALL(_write_begin, p_movie_size, p_fps, p_base_path, ret);
+	FOUNDRY_VIRTUAL_CALL(_write_begin, p_movie_size, p_fps, p_base_path, ret);
 	return ret;
 }
 
 Error MovieWriter::write_frame(const Ref<Image> &p_image, const int32_t *p_audio_data) {
 	Error ret = ERR_UNCONFIGURED;
-	GDVIRTUAL_CALL(_write_frame, p_image, p_audio_data, ret);
+	FOUNDRY_VIRTUAL_CALL(_write_frame, p_image, p_audio_data, ret);
 	return ret;
 }
 
 void MovieWriter::write_end() {
-	GDVIRTUAL_CALL(_write_end);
+	FOUNDRY_VIRTUAL_CALL(_write_end);
 }
 
 bool MovieWriter::handles_file(const String &p_path) const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_handles_file, p_path, ret);
+	FOUNDRY_VIRTUAL_CALL(_handles_file, p_path, ret);
 	return ret;
 }
 
 void MovieWriter::get_supported_extensions(List<String> *r_extensions) const {
 	Vector<String> exts;
-	GDVIRTUAL_CALL(_get_supported_extensions, exts);
+	FOUNDRY_VIRTUAL_CALL(_get_supported_extensions, exts);
 	for (int i = 0; i < exts.size(); i++) {
 		r_extensions->push_back(exts[i]);
 	}
@@ -134,15 +134,15 @@ void MovieWriter::begin(const Size2i &p_movie_size, uint32_t p_fps, const String
 void MovieWriter::_bind_methods() {
 	ClassDB::bind_static_method("MovieWriter", D_METHOD("add_writer", "writer"), &MovieWriter::add_writer);
 
-	GDVIRTUAL_BIND(_get_audio_mix_rate)
-	GDVIRTUAL_BIND(_get_audio_speaker_mode)
+	FOUNDRY_VIRTUAL_BIND(_get_audio_mix_rate)
+	FOUNDRY_VIRTUAL_BIND(_get_audio_speaker_mode)
 
-	GDVIRTUAL_BIND(_handles_file, "path")
-	GDVIRTUAL_BIND(_get_supported_extensions)
+	FOUNDRY_VIRTUAL_BIND(_handles_file, "path")
+	FOUNDRY_VIRTUAL_BIND(_get_supported_extensions)
 
-	GDVIRTUAL_BIND(_write_begin, "movie_size", "fps", "base_path")
-	GDVIRTUAL_BIND(_write_frame, "frame_image", "audio_frame_block")
-	GDVIRTUAL_BIND(_write_end)
+	FOUNDRY_VIRTUAL_BIND(_write_begin, "movie_size", "fps", "base_path")
+	FOUNDRY_VIRTUAL_BIND(_write_frame, "frame_image", "audio_frame_block")
+	FOUNDRY_VIRTUAL_BIND(_write_end)
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "editor/movie_writer/mix_rate", PROPERTY_HINT_RANGE, "8000,192000,1,suffix:Hz"), 48000);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "editor/movie_writer/speaker_mode", PROPERTY_HINT_ENUM, "Stereo,3.1,5.1,7.1"), 0);

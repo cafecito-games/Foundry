@@ -44,7 +44,7 @@
 #define LSP_NO_CLIENT -1
 
 class FSLanguageProtocol : public JSONRPC {
-	GDCLASS(FSLanguageProtocol, JSONRPC)
+	FOUNDRY_CLASS(FSLanguageProtocol, JSONRPC)
 
 #ifdef TESTS_ENABLED
 	friend class TestFSLanguageProtocolInitializer;

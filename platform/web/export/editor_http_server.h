@@ -37,7 +37,7 @@
 #include "editor/file_system/editor_paths.h"
 
 class EditorHTTPServer : public RefCounted {
-	GDSOFTCLASS(EditorHTTPServer, RefCounted);
+	FOUNDRY_SOFTCLASS(EditorHTTPServer, RefCounted);
 
 private:
 	Ref<TCPServer> server;

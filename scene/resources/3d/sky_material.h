@@ -34,7 +34,7 @@
 #include "scene/resources/material.h"
 
 class ProceduralSkyMaterial : public Material {
-	GDCLASS(ProceduralSkyMaterial, Material);
+	FOUNDRY_CLASS(ProceduralSkyMaterial, Material);
 
 private:
 	Color sky_top_color;
@@ -122,7 +122,7 @@ public:
 /* PanoramaSkyMaterial */
 
 class PanoramaSkyMaterial : public Material {
-	GDCLASS(PanoramaSkyMaterial, Material);
+	FOUNDRY_CLASS(PanoramaSkyMaterial, Material);
 
 private:
 	Ref<Texture2D> panorama;
@@ -162,7 +162,7 @@ public:
 /* PanoramaSkyMaterial */
 
 class PhysicalSkyMaterial : public Material {
-	GDCLASS(PhysicalSkyMaterial, Material);
+	FOUNDRY_CLASS(PhysicalSkyMaterial, Material);
 
 private:
 	static Mutex shader_mutex;

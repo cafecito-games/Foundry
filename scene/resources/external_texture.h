@@ -34,7 +34,7 @@
 
 // External textures as defined by OES_EGL_image_external (GLES) or VK_ANDROID_external_memory_android_hardware_buffer (Vulkan).
 class ExternalTexture : public Texture2D {
-	GDCLASS(ExternalTexture, Texture2D);
+	FOUNDRY_CLASS(ExternalTexture, Texture2D);
 
 private:
 	mutable RID texture;

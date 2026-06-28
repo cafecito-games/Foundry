@@ -39,7 +39,7 @@ class SceneReplicationInterface;
 class Node;
 
 class SceneRPCInterface : public RefCounted {
-	GDCLASS(SceneRPCInterface, RefCounted);
+	FOUNDRY_CLASS(SceneRPCInterface, RefCounted);
 
 private:
 	struct RPCConfig {

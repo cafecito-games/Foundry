@@ -53,7 +53,7 @@ struct FoundryExtensionPtr {
 	operator Variant() const { return uint64_t(data); }
 };
 
-#define GDVIRTUAL_NATIVE_PTR(m_type)                                                                               \
+#define FOUNDRY_VIRTUAL_NATIVE_PTR(m_type)                                                                         \
 	template <>                                                                                                    \
 	struct FoundryExtensionConstPtr<const m_type> {                                                                \
 		const m_type *data = nullptr;                                                                              \
@@ -158,21 +158,21 @@ struct PtrToArg<FoundryExtensionPtr<T>> {
 	}
 };
 
-GDVIRTUAL_NATIVE_PTR(void)
-GDVIRTUAL_NATIVE_PTR(AudioFrame)
-GDVIRTUAL_NATIVE_PTR(bool)
-GDVIRTUAL_NATIVE_PTR(char)
-GDVIRTUAL_NATIVE_PTR(char16_t)
-GDVIRTUAL_NATIVE_PTR(char32_t)
-GDVIRTUAL_NATIVE_PTR(wchar_t)
-GDVIRTUAL_NATIVE_PTR(uint8_t)
-GDVIRTUAL_NATIVE_PTR(uint8_t *)
-GDVIRTUAL_NATIVE_PTR(int8_t)
-GDVIRTUAL_NATIVE_PTR(uint16_t)
-GDVIRTUAL_NATIVE_PTR(int16_t)
-GDVIRTUAL_NATIVE_PTR(uint32_t)
-GDVIRTUAL_NATIVE_PTR(int32_t)
-GDVIRTUAL_NATIVE_PTR(int64_t)
-GDVIRTUAL_NATIVE_PTR(uint64_t)
-GDVIRTUAL_NATIVE_PTR(float)
-GDVIRTUAL_NATIVE_PTR(double)
+FOUNDRY_VIRTUAL_NATIVE_PTR(void)
+FOUNDRY_VIRTUAL_NATIVE_PTR(AudioFrame)
+FOUNDRY_VIRTUAL_NATIVE_PTR(bool)
+FOUNDRY_VIRTUAL_NATIVE_PTR(char)
+FOUNDRY_VIRTUAL_NATIVE_PTR(char16_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(char32_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(wchar_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint8_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint8_t *)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int8_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint16_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int16_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint32_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int32_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int64_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint64_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(float)
+FOUNDRY_VIRTUAL_NATIVE_PTR(double)

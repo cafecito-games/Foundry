@@ -37,7 +37,7 @@
 // Specialized DisplayServer for unittests based on DisplayServerHeadless, that
 // additionally supports things like mouse enter/exit events and clipboard.
 class DisplayServerMock : public DisplayServerHeadless {
-	GDSOFTCLASS(DisplayServerMock, DisplayServerHeadless);
+	FOUNDRY_SOFTCLASS(DisplayServerMock, DisplayServerHeadless);
 
 private:
 	friend class DisplayServer;

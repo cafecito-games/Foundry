@@ -38,7 +38,7 @@
 */
 
 class XRTracker : public RefCounted {
-	GDCLASS(XRTracker, RefCounted);
+	FOUNDRY_CLASS(XRTracker, RefCounted);
 	_THREAD_SAFE_CLASS_
 
 protected:

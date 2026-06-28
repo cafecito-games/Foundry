@@ -77,7 +77,7 @@ private:
 	/* Render Buffer */
 
 	class RenderBufferDataForwardMobile : public RenderBufferCustomDataRD {
-		GDCLASS(RenderBufferDataForwardMobile, RenderBufferCustomDataRD);
+		FOUNDRY_CLASS(RenderBufferDataForwardMobile, RenderBufferCustomDataRD);
 
 	public:
 		enum FramebufferConfigType {

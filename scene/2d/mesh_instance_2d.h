@@ -37,7 +37,7 @@ class NavigationPolygon;
 class NavigationMeshSourceGeometryData2D;
 
 class MeshInstance2D : public Node2D {
-	GDCLASS(MeshInstance2D, Node2D);
+	FOUNDRY_CLASS(MeshInstance2D, Node2D);
 
 	Ref<Mesh> mesh;
 

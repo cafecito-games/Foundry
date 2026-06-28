@@ -35,7 +35,7 @@
 #include "core/io/resource.h"
 
 class GLTFNode : public Resource {
-	GDCLASS(GLTFNode, Resource);
+	FOUNDRY_CLASS(GLTFNode, Resource);
 	friend class GLTFDocument;
 	friend class SkinTool;
 	friend class FBXDocument;

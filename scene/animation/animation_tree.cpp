@@ -37,7 +37,7 @@
 void AnimationNode::get_parameter_list(List<PropertyInfo> *r_list) const {
 	Array parameters;
 
-	if (GDVIRTUAL_CALL(_get_parameter_list, parameters)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_parameter_list, parameters)) {
 		for (int i = 0; i < parameters.size(); i++) {
 			Dictionary d = parameters[i];
 			ERR_CONTINUE(d.is_empty());
@@ -55,13 +55,13 @@ Variant AnimationNode::get_parameter_default_value(const StringName &p_parameter
 	if (p_parameter == current_length || p_parameter == current_position || p_parameter == current_delta) {
 		return 0.0;
 	}
-	GDVIRTUAL_CALL(_get_parameter_default_value, p_parameter, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_parameter_default_value, p_parameter, ret);
 	return ret;
 }
 
 bool AnimationNode::is_parameter_read_only(const StringName &p_parameter) const {
 	bool ret = false;
-	if (GDVIRTUAL_CALL(_is_parameter_read_only, p_parameter, ret) && ret) {
+	if (FOUNDRY_VIRTUAL_CALL(_is_parameter_read_only, p_parameter, ret) && ret) {
 		return true;
 	}
 
@@ -127,7 +127,7 @@ AnimationNode::NodeTimeInfo AnimationNode::get_node_time_info() const {
 
 void AnimationNode::get_child_nodes(List<ChildNode> *r_child_nodes) {
 	Dictionary cn;
-	if (GDVIRTUAL_CALL(_get_child_nodes, cn)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_child_nodes, cn)) {
 		for (const KeyValue<Variant, Variant> &kv : cn) {
 			ChildNode child;
 			child.name = kv.key;
@@ -321,7 +321,7 @@ AnimationNode::NodeTimeInfo AnimationNode::_blend_node(Ref<AnimationNode> p_node
 
 String AnimationNode::get_caption() const {
 	String ret = "Node";
-	GDVIRTUAL_CALL(_get_caption, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_caption, ret);
 	return ret;
 }
 
@@ -393,7 +393,7 @@ AnimationNode::NodeTimeInfo AnimationNode::process(const AnimationMixer::Playbac
 
 AnimationNode::NodeTimeInfo AnimationNode::_process(const AnimationMixer::PlaybackInfo p_playback_info, bool p_test_only) {
 	double r_ret = 0.0;
-	GDVIRTUAL_CALL(_process, p_playback_info.time, p_playback_info.seeked, p_playback_info.is_external_seeking, p_test_only, r_ret);
+	FOUNDRY_VIRTUAL_CALL(_process, p_playback_info.time, p_playback_info.seeked, p_playback_info.is_external_seeking, p_test_only, r_ret);
 	NodeTimeInfo nti;
 	nti.delta = r_ret;
 	return nti;
@@ -439,7 +439,7 @@ bool AnimationNode::is_path_filtered(const NodePath &p_path) const {
 
 bool AnimationNode::has_filter() const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_has_filter, ret);
+	FOUNDRY_VIRTUAL_CALL(_has_filter, ret);
 	return ret;
 }
 
@@ -469,7 +469,7 @@ void AnimationNode::_validate_property(PropertyInfo &p_property) const {
 
 Ref<AnimationNode> AnimationNode::get_child_by_name(const StringName &p_name) const {
 	Ref<AnimationNode> ret;
-	GDVIRTUAL_CALL(_get_child_by_name, p_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_child_by_name, p_name, ret);
 	return ret;
 }
 
@@ -575,14 +575,14 @@ void AnimationNode::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "filter_enabled", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR), "set_filter_enabled", "is_filter_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "filters", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_INTERNAL), "_set_filters", "_get_filters");
 
-	GDVIRTUAL_BIND(_get_child_nodes);
-	GDVIRTUAL_BIND(_get_parameter_list);
-	GDVIRTUAL_BIND(_get_child_by_name, "name");
-	GDVIRTUAL_BIND(_get_parameter_default_value, "parameter");
-	GDVIRTUAL_BIND(_is_parameter_read_only, "parameter");
-	GDVIRTUAL_BIND(_process, "time", "seek", "is_external_seeking", "test_only");
-	GDVIRTUAL_BIND(_get_caption);
-	GDVIRTUAL_BIND(_has_filter);
+	FOUNDRY_VIRTUAL_BIND(_get_child_nodes);
+	FOUNDRY_VIRTUAL_BIND(_get_parameter_list);
+	FOUNDRY_VIRTUAL_BIND(_get_child_by_name, "name");
+	FOUNDRY_VIRTUAL_BIND(_get_parameter_default_value, "parameter");
+	FOUNDRY_VIRTUAL_BIND(_is_parameter_read_only, "parameter");
+	FOUNDRY_VIRTUAL_BIND(_process, "time", "seek", "is_external_seeking", "test_only");
+	FOUNDRY_VIRTUAL_BIND(_get_caption);
+	FOUNDRY_VIRTUAL_BIND(_has_filter);
 
 	ADD_SIGNAL(MethodInfo("tree_changed"));
 	ADD_SIGNAL(MethodInfo("animation_node_renamed", PropertyInfo(Variant::INT, "object_id"), PropertyInfo(Variant::STRING, "old_name"), PropertyInfo(Variant::STRING, "new_name")));

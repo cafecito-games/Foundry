@@ -64,7 +64,7 @@ static const String storyboard_image_scale_mode[] = {
 };
 
 class EditorExportPlatformAppleEmbedded : public EditorExportPlatform {
-	GDCLASS(EditorExportPlatformAppleEmbedded, EditorExportPlatform);
+	FOUNDRY_CLASS(EditorExportPlatformAppleEmbedded, EditorExportPlatform);
 
 	Ref<ImageTexture> logo;
 	Ref<ImageTexture> run_icon;

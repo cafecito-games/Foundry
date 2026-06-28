@@ -1025,7 +1025,7 @@ void Object::_gdvirtual_init_method_ptr(uint32_t p_compat_hash, void *&r_fn_ptr,
 	}
 #endif
 	if (r_fn_ptr == nullptr) {
-		r_fn_ptr = reinterpret_cast<void *>(_INVALID_GDVIRTUAL_FUNC_ADDR);
+		r_fn_ptr = reinterpret_cast<void *>(_INVALID_FOUNDRY_VIRTUAL_FUNC_ADDR);
 	}
 }
 

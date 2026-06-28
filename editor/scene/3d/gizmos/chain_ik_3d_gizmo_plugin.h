@@ -37,7 +37,7 @@
 #include "scene/resources/surface_tool.h"
 
 class ChainIK3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(ChainIK3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(ChainIK3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	struct SelectionMaterials {
 		Ref<StandardMaterial3D> unselected_mat;

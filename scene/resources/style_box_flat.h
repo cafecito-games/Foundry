@@ -33,7 +33,7 @@
 #include "scene/resources/style_box.h"
 
 class StyleBoxFlat : public StyleBox {
-	GDCLASS(StyleBoxFlat, StyleBox);
+	FOUNDRY_CLASS(StyleBoxFlat, StyleBox);
 
 	Color bg_color = Color(0.6, 0.6, 0.6);
 	Color shadow_color = Color(0, 0, 0, 0.6);

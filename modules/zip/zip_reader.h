@@ -36,7 +36,7 @@
 #include "thirdparty/minizip/unzip.h"
 
 class ZIPReader : public RefCounted {
-	GDCLASS(ZIPReader, RefCounted)
+	FOUNDRY_CLASS(ZIPReader, RefCounted)
 
 	Ref<FileAccess> fa;
 	unzFile uzf = nullptr;

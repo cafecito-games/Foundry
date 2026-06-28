@@ -45,7 +45,7 @@
 */
 void PrimitiveMesh::_update() const {
 	Array arr;
-	if (GDVIRTUAL_CALL(_create_mesh_array, arr)) {
+	if (FOUNDRY_VIRTUAL_CALL(_create_mesh_array, arr)) {
 		ERR_FAIL_COND_MSG(arr.size() != RS::ARRAY_MAX, "_create_mesh_array must return an array of Mesh.ARRAY_MAX elements.");
 	} else {
 		arr.resize(RS::ARRAY_MAX);
@@ -259,7 +259,7 @@ void PrimitiveMesh::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "add_uv2"), "set_add_uv2", "get_add_uv2");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "uv2_padding", PROPERTY_HINT_RANGE, "0,10,0.01,or_greater"), "set_uv2_padding", "get_uv2_padding");
 
-	GDVIRTUAL_BIND(_create_mesh_array);
+	FOUNDRY_VIRTUAL_BIND(_create_mesh_array);
 }
 
 void PrimitiveMesh::set_material(const Ref<Material> &p_material) {
@@ -3233,7 +3233,7 @@ void TextMesh::_create_mesh_array(Array &p_arr) const {
 
 		TypedArray<Vector3i> stt;
 		if (st_parser == TextServer::STRUCTURED_TEXT_CUSTOM) {
-			GDVIRTUAL_CALL(_structured_text_parser, st_args, txt, stt);
+			FOUNDRY_VIRTUAL_CALL(_structured_text_parser, st_args, txt, stt);
 		} else {
 			stt = TS->parse_structured_text(st_parser, st_args, txt);
 		}

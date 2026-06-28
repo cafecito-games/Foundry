@@ -56,7 +56,7 @@ extern int godot_js_fetch_is_chunked(int p_id);
 #endif
 
 class HTTPClientWeb : public HTTPClient {
-	GDSOFTCLASS(HTTPClientWeb, HTTPClient);
+	FOUNDRY_SOFTCLASS(HTTPClientWeb, HTTPClient);
 
 private:
 	int js_id = 0;

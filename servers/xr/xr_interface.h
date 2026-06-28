@@ -49,7 +49,7 @@ struct BlitToScreen;
 */
 
 class XRInterface : public RefCounted {
-	GDCLASS(XRInterface, RefCounted);
+	FOUNDRY_CLASS(XRInterface, RefCounted);
 
 public:
 	enum Capabilities { /* purely metadata, provides some info about what this interface supports */

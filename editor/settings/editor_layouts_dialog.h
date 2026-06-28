@@ -37,7 +37,7 @@ class LineEdit;
 class ItemList;
 
 class EditorLayoutsDialog : public ConfirmationDialog {
-	GDCLASS(EditorLayoutsDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(EditorLayoutsDialog, ConfirmationDialog);
 
 	bool save_mode = true;
 

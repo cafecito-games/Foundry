@@ -39,7 +39,7 @@ typedef int BoneId;
 class Skeleton3D;
 
 class SkinReference : public RefCounted {
-	GDCLASS(SkinReference, RefCounted)
+	FOUNDRY_CLASS(SkinReference, RefCounted)
 	friend class Skeleton3D;
 
 	Skeleton3D *skeleton_node = nullptr;
@@ -63,7 +63,7 @@ public:
 };
 
 class Skeleton3D : public Node3D {
-	GDCLASS(Skeleton3D, Node3D);
+	FOUNDRY_CLASS(Skeleton3D, Node3D);
 
 #ifdef TOOLS_ENABLED
 	bool saving = false;

@@ -39,7 +39,7 @@
 class EditorSelectionHistory;
 
 class EditorObjectSelector : public Button {
-	GDCLASS(EditorObjectSelector, Button);
+	FOUNDRY_CLASS(EditorObjectSelector, Button);
 
 	EditorSelectionHistory *history = nullptr;
 

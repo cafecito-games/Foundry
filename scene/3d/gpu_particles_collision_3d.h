@@ -34,7 +34,7 @@
 #include "scene/3d/visual_instance_3d.h"
 
 class GPUParticlesCollision3D : public VisualInstance3D {
-	GDCLASS(GPUParticlesCollision3D, VisualInstance3D);
+	FOUNDRY_CLASS(GPUParticlesCollision3D, VisualInstance3D);
 
 	uint32_t cull_mask = 0xFFFFFFFF;
 	RID collision;
@@ -53,7 +53,7 @@ public:
 };
 
 class GPUParticlesCollisionSphere3D : public GPUParticlesCollision3D {
-	GDCLASS(GPUParticlesCollisionSphere3D, GPUParticlesCollision3D);
+	FOUNDRY_CLASS(GPUParticlesCollisionSphere3D, GPUParticlesCollision3D);
 
 	real_t radius = 1.0;
 
@@ -71,7 +71,7 @@ public:
 };
 
 class GPUParticlesCollisionBox3D : public GPUParticlesCollision3D {
-	GDCLASS(GPUParticlesCollisionBox3D, GPUParticlesCollision3D);
+	FOUNDRY_CLASS(GPUParticlesCollisionBox3D, GPUParticlesCollision3D);
 
 	Vector3 size = Vector3(2, 2, 2);
 
@@ -93,7 +93,7 @@ public:
 };
 
 class GPUParticlesCollisionSDF3D : public GPUParticlesCollision3D {
-	GDCLASS(GPUParticlesCollisionSDF3D, GPUParticlesCollision3D);
+	FOUNDRY_CLASS(GPUParticlesCollisionSDF3D, GPUParticlesCollision3D);
 
 public:
 	enum Resolution {
@@ -205,7 +205,7 @@ public:
 VARIANT_ENUM_CAST(GPUParticlesCollisionSDF3D::Resolution)
 
 class GPUParticlesCollisionHeightField3D : public GPUParticlesCollision3D {
-	GDCLASS(GPUParticlesCollisionHeightField3D, GPUParticlesCollision3D);
+	FOUNDRY_CLASS(GPUParticlesCollisionHeightField3D, GPUParticlesCollision3D);
 
 public:
 	enum Resolution {
@@ -268,7 +268,7 @@ VARIANT_ENUM_CAST(GPUParticlesCollisionHeightField3D::Resolution)
 VARIANT_ENUM_CAST(GPUParticlesCollisionHeightField3D::UpdateMode)
 
 class GPUParticlesAttractor3D : public VisualInstance3D {
-	GDCLASS(GPUParticlesAttractor3D, VisualInstance3D);
+	FOUNDRY_CLASS(GPUParticlesAttractor3D, VisualInstance3D);
 
 	uint32_t cull_mask = 0xFFFFFFFF;
 	RID collision;
@@ -299,7 +299,7 @@ public:
 };
 
 class GPUParticlesAttractorSphere3D : public GPUParticlesAttractor3D {
-	GDCLASS(GPUParticlesAttractorSphere3D, GPUParticlesAttractor3D);
+	FOUNDRY_CLASS(GPUParticlesAttractorSphere3D, GPUParticlesAttractor3D);
 
 	real_t radius = 1.0;
 
@@ -317,7 +317,7 @@ public:
 };
 
 class GPUParticlesAttractorBox3D : public GPUParticlesAttractor3D {
-	GDCLASS(GPUParticlesAttractorBox3D, GPUParticlesAttractor3D);
+	FOUNDRY_CLASS(GPUParticlesAttractorBox3D, GPUParticlesAttractor3D);
 
 	Vector3 size = Vector3(2, 2, 2);
 
@@ -339,7 +339,7 @@ public:
 };
 
 class GPUParticlesAttractorVectorField3D : public GPUParticlesAttractor3D {
-	GDCLASS(GPUParticlesAttractorVectorField3D, GPUParticlesAttractor3D);
+	FOUNDRY_CLASS(GPUParticlesAttractorVectorField3D, GPUParticlesAttractor3D);
 
 	Vector3 size = Vector3(2, 2, 2);
 	Ref<Texture3D> texture;

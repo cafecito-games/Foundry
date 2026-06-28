@@ -38,7 +38,7 @@
 #include "scene/gui/tree.h"
 
 class EditorPerformanceProfiler : public HSplitContainer {
-	GDCLASS(EditorPerformanceProfiler, HSplitContainer);
+	FOUNDRY_CLASS(EditorPerformanceProfiler, HSplitContainer);
 
 private:
 	class Monitor {

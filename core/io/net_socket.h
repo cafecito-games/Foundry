@@ -34,7 +34,7 @@
 #include "core/object/ref_counted.h"
 
 class NetSocket : public RefCounted {
-	GDSOFTCLASS(NetSocket, RefCounted);
+	FOUNDRY_SOFTCLASS(NetSocket, RefCounted);
 
 protected:
 	static NetSocket *(*_create)();

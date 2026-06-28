@@ -33,7 +33,7 @@
 #include "scene/2d/node_2d.h"
 
 class Light2D : public Node2D {
-	GDCLASS(Light2D, Node2D);
+	FOUNDRY_CLASS(Light2D, Node2D);
 
 public:
 	enum ShadowFilter {
@@ -138,7 +138,7 @@ VARIANT_ENUM_CAST(Light2D::ShadowFilter);
 VARIANT_ENUM_CAST(Light2D::BlendMode);
 
 class PointLight2D : public Light2D {
-	GDCLASS(PointLight2D, Light2D);
+	FOUNDRY_CLASS(PointLight2D, Light2D);
 
 private:
 	real_t _scale = 1.0;
@@ -183,7 +183,7 @@ public:
 };
 
 class DirectionalLight2D : public Light2D {
-	GDCLASS(DirectionalLight2D, Light2D);
+	FOUNDRY_CLASS(DirectionalLight2D, Light2D);
 
 	real_t max_distance = 10000.0;
 

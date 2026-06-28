@@ -36,7 +36,7 @@ class PanelContainer;
 class Button;
 
 class ColorChannelSelector : public HBoxContainer {
-	GDCLASS(ColorChannelSelector, HBoxContainer);
+	FOUNDRY_CLASS(ColorChannelSelector, HBoxContainer);
 
 	static const unsigned int CHANNEL_COUNT = 4;
 

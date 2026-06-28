@@ -33,7 +33,7 @@
 #include "scene/3d/ik_modifier_3d.h"
 
 class ChainIK3D : public IKModifier3D {
-	GDCLASS(ChainIK3D, IKModifier3D);
+	FOUNDRY_CLASS(ChainIK3D, IKModifier3D);
 
 public:
 	struct ChainIK3DSetting : public IKModifier3DSetting {

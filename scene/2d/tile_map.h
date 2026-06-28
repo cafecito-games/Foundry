@@ -49,7 +49,7 @@ enum TileMapDataFormat {
 };
 
 class TileMap : public Node2D {
-	GDCLASS(TileMap, Node2D)
+	FOUNDRY_CLASS(TileMap, Node2D)
 
 public:
 	// Kept for compatibility, but should use TileMapLayer::VisibilityMode instead.
@@ -242,8 +242,8 @@ public:
 	TypedArray<Vector2i> get_surrounding_cells(const Vector2i &p_coords);
 
 	// Virtual function to modify the TileData at runtime.
-	GDVIRTUAL2R(bool, _use_tile_data_runtime_update, int, Vector2i);
-	GDVIRTUAL3(_tile_data_runtime_update, int, Vector2i, TileData *);
+	FOUNDRY_VIRTUAL2R(bool, _use_tile_data_runtime_update, int, Vector2i);
+	FOUNDRY_VIRTUAL3(_tile_data_runtime_update, int, Vector2i, TileData *);
 
 	// Configuration warnings.
 	PackedStringArray get_configuration_warnings() const override;

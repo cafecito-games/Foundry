@@ -55,7 +55,7 @@ const String ENV_MAC_NOTARIZATION_APPLE_ID = "GODOT_MACOS_NOTARIZATION_APPLE_ID_
 const String ENV_MAC_NOTARIZATION_APPLE_PASS = "GODOT_MACOS_NOTARIZATION_APPLE_ID_PASSWORD";
 
 class EditorExportPlatformMacOS : public EditorExportPlatform {
-	GDCLASS(EditorExportPlatformMacOS, EditorExportPlatform);
+	FOUNDRY_CLASS(EditorExportPlatformMacOS, EditorExportPlatform);
 
 	int version_code = 0;
 

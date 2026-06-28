@@ -39,7 +39,7 @@
 #include "servers/physics_3d/physics_server_3d.h"
 
 class GodotPhysicsServer3D : public PhysicsServer3D {
-	GDCLASS(GodotPhysicsServer3D, PhysicsServer3D);
+	FOUNDRY_CLASS(GodotPhysicsServer3D, PhysicsServer3D);
 
 	friend class GodotPhysicsDirectSpaceState3D;
 	bool active = true;

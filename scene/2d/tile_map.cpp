@@ -989,8 +989,8 @@ void TileMap::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_neighbor_cell", "coords", "neighbor"), &TileMap::get_neighbor_cell);
 
-	GDVIRTUAL_BIND(_use_tile_data_runtime_update, "layer", "coords");
-	GDVIRTUAL_BIND(_tile_data_runtime_update, "layer", "coords", "tile_data");
+	FOUNDRY_VIRTUAL_BIND(_use_tile_data_runtime_update, "layer", "coords");
+	FOUNDRY_VIRTUAL_BIND(_tile_data_runtime_update, "layer", "coords", "tile_data");
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "tile_set", PROPERTY_HINT_RESOURCE_TYPE, "TileSet"), "set_tileset", "get_tileset");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "rendering_quadrant_size", PROPERTY_HINT_RANGE, "1,128,1"), "set_rendering_quadrant_size", "get_rendering_quadrant_size");

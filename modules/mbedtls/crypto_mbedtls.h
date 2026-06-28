@@ -39,7 +39,7 @@
 class CryptoMbedTLS;
 class TLSContextMbedTLS;
 class CryptoKeyMbedTLS : public CryptoKey {
-	GDSOFTCLASS(CryptoKeyMbedTLS, CryptoKey);
+	FOUNDRY_SOFTCLASS(CryptoKeyMbedTLS, CryptoKey);
 
 private:
 	mbedtls_pk_context pkey;
@@ -75,7 +75,7 @@ public:
 };
 
 class X509CertificateMbedTLS : public X509Certificate {
-	GDSOFTCLASS(X509CertificateMbedTLS, X509Certificate);
+	FOUNDRY_SOFTCLASS(X509CertificateMbedTLS, X509Certificate);
 
 private:
 	mbedtls_x509_crt cert;

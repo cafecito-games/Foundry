@@ -35,7 +35,7 @@
 class DependencyRemoveDialog;
 
 class EditorFileDialog : public FileDialog {
-	GDCLASS(EditorFileDialog, FileDialog);
+	FOUNDRY_CLASS(EditorFileDialog, FileDialog);
 
 	DependencyRemoveDialog *dependency_remove_dialog = nullptr;
 

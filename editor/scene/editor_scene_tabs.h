@@ -42,7 +42,7 @@ class TabBar;
 class TextureRect;
 
 class EditorSceneTabs : public MarginContainer {
-	GDCLASS(EditorSceneTabs, MarginContainer);
+	FOUNDRY_CLASS(EditorSceneTabs, MarginContainer);
 
 	inline static EditorSceneTabs *singleton = nullptr;
 

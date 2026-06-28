@@ -39,7 +39,7 @@ EditorTranslationParser *EditorTranslationParser::singleton = nullptr;
 Error EditorTranslationParserPlugin::parse_file(const String &p_path, Vector<Vector<String>> *r_translations) {
 	TypedArray<PackedStringArray> ret;
 
-	if (GDVIRTUAL_CALL(_parse_file, p_path, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_parse_file, p_path, ret)) {
 		// Copy over entries directly.
 		for (const PackedStringArray translation : ret) {
 			r_translations->push_back(translation);
@@ -52,7 +52,7 @@ Error EditorTranslationParserPlugin::parse_file(const String &p_path, Vector<Vec
 	TypedArray<String> ids;
 	TypedArray<Array> ids_ctx_plural;
 
-	if (GDVIRTUAL_CALL(_parse_file_bind_compat_99297, p_path, ids, ids_ctx_plural)) {
+	if (FOUNDRY_VIRTUAL_CALL(_parse_file_bind_compat_99297, p_path, ids, ids_ctx_plural)) {
 		// Add user's extracted translatable messages.
 		for (int i = 0; i < ids.size(); i++) {
 			r_translations->push_back({ ids[i] });
@@ -75,7 +75,7 @@ Error EditorTranslationParserPlugin::parse_file(const String &p_path, Vector<Vec
 
 void EditorTranslationParserPlugin::get_recognized_extensions(List<String> *r_extensions) const {
 	Vector<String> extensions;
-	if (GDVIRTUAL_CALL(_get_recognized_extensions, extensions)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_recognized_extensions, extensions)) {
 		for (int i = 0; i < extensions.size(); i++) {
 			r_extensions->push_back(extensions[i]);
 		}
@@ -85,11 +85,11 @@ void EditorTranslationParserPlugin::get_recognized_extensions(List<String> *r_ex
 }
 
 void EditorTranslationParserPlugin::_bind_methods() {
-	GDVIRTUAL_BIND(_parse_file, "path");
-	GDVIRTUAL_BIND(_get_recognized_extensions);
+	FOUNDRY_VIRTUAL_BIND(_parse_file, "path");
+	FOUNDRY_VIRTUAL_BIND(_get_recognized_extensions);
 
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL_BIND_COMPAT(_parse_file_bind_compat_99297, "path", "msgids", "msgids_context_plural");
+	FOUNDRY_VIRTUAL_BIND_COMPAT(_parse_file_bind_compat_99297, "path", "msgids", "msgids_context_plural");
 #endif
 }
 

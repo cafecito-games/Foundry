@@ -35,7 +35,7 @@
 class Image;
 
 class LightmapDenoiser : public RefCounted {
-	GDCLASS(LightmapDenoiser, RefCounted)
+	FOUNDRY_CLASS(LightmapDenoiser, RefCounted)
 protected:
 	static LightmapDenoiser *(*create_function)();
 
@@ -45,7 +45,7 @@ public:
 };
 
 class LightmapRaycaster : public RefCounted {
-	GDCLASS(LightmapRaycaster, RefCounted)
+	FOUNDRY_CLASS(LightmapRaycaster, RefCounted)
 protected:
 	static LightmapRaycaster *(*create_function)();
 
@@ -114,7 +114,7 @@ public:
 };
 
 class Lightmapper : public RefCounted {
-	GDCLASS(Lightmapper, RefCounted)
+	FOUNDRY_CLASS(Lightmapper, RefCounted)
 public:
 	enum GenerateProbes {
 		GENERATE_PROBES_DISABLED,

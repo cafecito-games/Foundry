@@ -386,17 +386,17 @@ struct ObjectFoundryExtension {
 	~ObjectFoundryExtension();
 };
 
-#define GDVIRTUAL_CALL(m_name, ...) _gdvirtual_##m_name##_call(__VA_ARGS__)
-#define GDVIRTUAL_CALL_PTR(m_obj, m_name, ...) m_obj->_gdvirtual_##m_name##_call(__VA_ARGS__)
+#define FOUNDRY_VIRTUAL_CALL(m_name, ...) _gdvirtual_##m_name##_call(__VA_ARGS__)
+#define FOUNDRY_VIRTUAL_CALL_PTR(m_obj, m_name, ...) m_obj->_gdvirtual_##m_name##_call(__VA_ARGS__)
 
 #ifdef DEBUG_ENABLED
-#define GDVIRTUAL_BIND(m_name, ...) ::ClassDB::add_virtual_method(get_class_static(), _gdvirtual_##m_name##_get_method_info(), true, sarray(__VA_ARGS__));
+#define FOUNDRY_VIRTUAL_BIND(m_name, ...) ::ClassDB::add_virtual_method(get_class_static(), _gdvirtual_##m_name##_get_method_info(), true, sarray(__VA_ARGS__));
 #else
-#define GDVIRTUAL_BIND(m_name, ...)
+#define FOUNDRY_VIRTUAL_BIND(m_name, ...)
 #endif // DEBUG_ENABLED
-#define GDVIRTUAL_BIND_COMPAT(m_alias, ...) ::ClassDB::add_virtual_compatibility_method(get_class_static(), _gdvirtual_##m_alias##_get_method_info(), true, sarray(__VA_ARGS__));
-#define GDVIRTUAL_IS_OVERRIDDEN(m_name) _gdvirtual_##m_name##_overridden()
-#define GDVIRTUAL_IS_OVERRIDDEN_PTR(m_obj, m_name) m_obj->_gdvirtual_##m_name##_overridden()
+#define FOUNDRY_VIRTUAL_BIND_COMPAT(m_alias, ...) ::ClassDB::add_virtual_compatibility_method(get_class_static(), _gdvirtual_##m_alias##_get_method_info(), true, sarray(__VA_ARGS__));
+#define FOUNDRY_VIRTUAL_IS_OVERRIDDEN(m_name) _gdvirtual_##m_name##_overridden()
+#define FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(m_obj, m_name) m_obj->_gdvirtual_##m_name##_overridden()
 
 /*
  * The following is an incomprehensible blob of hacks and workarounds to
@@ -404,9 +404,9 @@ struct ObjectFoundryExtension {
  * much alone defines the object model.
  */
 
-/// `GDSOFTCLASS` provides `Object` functionality, such as being able to use `Object::cast_to()`.
-/// Use this for `Object` subclasses that are not registered in `ClassDB` (use `GDCLASS` otherwise).
-#define GDSOFTCLASS(m_class, m_inherits)                                                                         \
+/// `FOUNDRY_SOFTCLASS` provides `Object` functionality, such as being able to use `Object::cast_to()`.
+/// Use this for `Object` subclasses that are not registered in `ClassDB` (use `FOUNDRY_CLASS` otherwise).
+#define FOUNDRY_SOFTCLASS(m_class, m_inherits)                                                                   \
 public:                                                                                                          \
 	using self_type = m_class;                                                                                   \
 	using super_type = m_inherits;                                                                               \
@@ -491,10 +491,10 @@ protected:                                                                      
                                                                                                                  \
 private:
 
-/// `GDSOFTCLASS` provides `Object` functionality, such as being able to use `Object::cast_to()`.
-/// Use this for `Object` subclasses that are registered in `ObjectDB` (use `GDSOFTCLASS` otherwise).
-#define GDCLASS(m_class, m_inherits)                                                                                                        \
-	GDSOFTCLASS(m_class, m_inherits)                                                                                                        \
+/// `FOUNDRY_SOFTCLASS` provides `Object` functionality, such as being able to use `Object::cast_to()`.
+/// Use this for `Object` subclasses that are registered in `ObjectDB` (use `FOUNDRY_SOFTCLASS` otherwise).
+#define FOUNDRY_CLASS(m_class, m_inherits)                                                                                                  \
+	FOUNDRY_SOFTCLASS(m_class, m_inherits)                                                                                                  \
 private:                                                                                                                                    \
 	void operator=(const m_class &p_rval) {}                                                                                                \
 	friend class ::ClassDB;                                                                                                                 \
@@ -1065,7 +1065,7 @@ bool Object::derives_from() const {
 	} else {
 		static_assert(std::is_base_of_v<Object, O>, "derives_from can only be used with Object subclasses.");
 		static_assert(std::is_base_of_v<O, T>, "Cannot cast argument to T because T does not derive from the argument's known class.");
-		static_assert(std::is_same_v<std::decay_t<T>, typename T::self_type>, "T must use GDCLASS or GDSOFTCLASS.");
+		static_assert(std::is_same_v<std::decay_t<T>, typename T::self_type>, "T must use FOUNDRY_CLASS or FOUNDRY_SOFTCLASS.");
 
 		// If there is an explicitly set ancestral class on the type, we can use that.
 		if constexpr (T::static_ancestral_class != T::super_type::static_ancestral_class) {

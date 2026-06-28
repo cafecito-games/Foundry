@@ -117,7 +117,7 @@ struct EditorProgress {
 };
 
 class EditorNode : public Node {
-	GDCLASS(EditorNode, Node);
+	FOUNDRY_CLASS(EditorNode, Node);
 
 public:
 	enum SceneNameCasing {

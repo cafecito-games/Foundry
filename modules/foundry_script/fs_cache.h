@@ -42,7 +42,7 @@ class FSAnalyzer;
 class FSParser;
 
 class FSParserRef : public RefCounted {
-	GDSOFTCLASS(FSParserRef, RefCounted);
+	FOUNDRY_SOFTCLASS(FSParserRef, RefCounted);
 
 public:
 	enum Status {

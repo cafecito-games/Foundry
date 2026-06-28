@@ -164,7 +164,7 @@ public:
 namespace MonoBind {
 
 class GodotSharp : public Object {
-	GDCLASS(GodotSharp, Object);
+	FOUNDRY_CLASS(GodotSharp, Object);
 
 protected:
 	static GodotSharp *singleton;

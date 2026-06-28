@@ -33,7 +33,7 @@
 #include "editor/export/shader_baker_export_plugin.h"
 
 class ShaderBakerExportPluginPlatformD3D12 : public ShaderBakerExportPluginPlatform {
-	GDCLASS(ShaderBakerExportPluginPlatformD3D12, ShaderBakerExportPluginPlatform);
+	FOUNDRY_CLASS(ShaderBakerExportPluginPlatformD3D12, ShaderBakerExportPluginPlatform);
 
 private:
 	void *lib_d3d12 = nullptr;

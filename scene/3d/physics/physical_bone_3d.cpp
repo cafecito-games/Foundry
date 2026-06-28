@@ -800,11 +800,11 @@ void PhysicalBone3D::_body_state_changed(PhysicsDirectBodyState3D *p_state) {
 		return;
 	}
 
-	if (GDVIRTUAL_IS_OVERRIDDEN(_integrate_forces)) {
+	if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_integrate_forces)) {
 		_sync_body_state(p_state);
 
 		Transform3D old_transform = get_global_transform();
-		GDVIRTUAL_CALL(_integrate_forces, p_state);
+		FOUNDRY_VIRTUAL_CALL(_integrate_forces, p_state);
 		Transform3D new_transform = get_global_transform();
 
 		if (new_transform != old_transform) {
@@ -885,7 +885,7 @@ void PhysicalBone3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_can_sleep", "able_to_sleep"), &PhysicalBone3D::set_can_sleep);
 	ClassDB::bind_method(D_METHOD("is_able_to_sleep"), &PhysicalBone3D::is_able_to_sleep);
 
-	GDVIRTUAL_BIND(_integrate_forces, "state");
+	FOUNDRY_VIRTUAL_BIND(_integrate_forces, "state");
 
 	ADD_GROUP("Joint", "joint_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "joint_type", PROPERTY_HINT_ENUM, "None,PinJoint,ConeJoint,HingeJoint,SliderJoint,6DOFJoint"), "set_joint_type", "get_joint_type");

@@ -35,7 +35,7 @@
 class FoundryExtension;
 
 class FoundryExtensionLoader : public RefCounted {
-	GDSOFTCLASS(FoundryExtensionLoader, RefCounted);
+	FOUNDRY_SOFTCLASS(FoundryExtensionLoader, RefCounted);
 
 public:
 	virtual Error open_library(const String &p_path) = 0;

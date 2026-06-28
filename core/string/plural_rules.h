@@ -36,7 +36,7 @@
 class Expression;
 
 class PluralRules : public Object {
-	GDSOFTCLASS(PluralRules, Object);
+	FOUNDRY_SOFTCLASS(PluralRules, Object);
 
 	mutable LRUCache<int, int> cache;
 
@@ -46,7 +46,7 @@ class PluralRules : public Object {
 
 	// Cache temporary variables related to `evaluate()` to make it faster.
 	class EQNode : public RefCounted {
-		GDSOFTCLASS(EQNode, RefCounted);
+		FOUNDRY_SOFTCLASS(EQNode, RefCounted);
 
 	public:
 		String regex;

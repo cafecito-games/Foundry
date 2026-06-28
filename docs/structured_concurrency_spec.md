@@ -94,7 +94,7 @@ Why NATIVE over `GDScriptFunctionState` rather than a pure synthetic flag
 - **Runtime-truthful** — the static type *is* the class the value actually has;
   that honesty is the whole premise of this phase.
 - **Null / RefCounted semantics, and ClassDB resolution, come for free** (the
-  class is registered via `GDCLASS`).
+  class is registered via `FOUNDRY_CLASS`).
 - **Reuses `is_coroutine`** as the discriminator, so the five set-sites and
   `reduce_await` keep working with minimal change.
 - A future `is_valid() -> bool` member would resolve through normal native

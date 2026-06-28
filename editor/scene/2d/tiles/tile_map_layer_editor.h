@@ -53,7 +53,7 @@ class TileSetSourceItemList;
 class GridContainer;
 
 class SwitchSeparator : public MarginContainer {
-	GDCLASS(SwitchSeparator, MarginContainer);
+	FOUNDRY_CLASS(SwitchSeparator, MarginContainer);
 
 	HSeparator *h_separator = nullptr;
 	VSeparator *v_separator = nullptr;
@@ -65,7 +65,7 @@ public:
 };
 
 class TileMapLayerSubEditorPlugin : public Object {
-	GDSOFTCLASS(TileMapLayerSubEditorPlugin, Object);
+	FOUNDRY_SOFTCLASS(TileMapLayerSubEditorPlugin, Object);
 
 protected:
 	ObjectID edited_tile_map_layer_id;
@@ -92,7 +92,7 @@ public:
 };
 
 class TileMapLayerEditorTilesPlugin : public TileMapLayerSubEditorPlugin {
-	GDCLASS(TileMapLayerEditorTilesPlugin, TileMapLayerSubEditorPlugin);
+	FOUNDRY_CLASS(TileMapLayerEditorTilesPlugin, TileMapLayerSubEditorPlugin);
 
 public:
 	enum TileTransformType {
@@ -268,7 +268,7 @@ public:
 };
 
 class TileMapLayerEditorTerrainsPlugin : public TileMapLayerSubEditorPlugin {
-	GDCLASS(TileMapLayerEditorTerrainsPlugin, TileMapLayerSubEditorPlugin);
+	FOUNDRY_CLASS(TileMapLayerEditorTerrainsPlugin, TileMapLayerSubEditorPlugin);
 
 private:
 	// Toolbar.
@@ -361,7 +361,7 @@ public:
 };
 
 class TileMapLayerEditor : public EditorDock {
-	GDCLASS(TileMapLayerEditor, EditorDock);
+	FOUNDRY_CLASS(TileMapLayerEditor, EditorDock);
 
 private:
 	bool tile_map_layer_changed_needs_update = false;

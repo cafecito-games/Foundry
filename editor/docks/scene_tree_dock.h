@@ -49,7 +49,7 @@ class TextureRect;
 class VBoxContainer;
 
 class SceneTreeDock : public EditorDock {
-	GDCLASS(SceneTreeDock, EditorDock);
+	FOUNDRY_CLASS(SceneTreeDock, EditorDock);
 
 	enum Tool {
 		TOOL_NEW,

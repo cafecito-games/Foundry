@@ -39,7 +39,7 @@
 namespace TestNode {
 
 class TestNode : public Node {
-	GDCLASS(TestNode, Node);
+	FOUNDRY_CLASS(TestNode, Node);
 
 protected:
 	void _notification(int p_what) {
@@ -503,7 +503,7 @@ TEST_CASE("[SceneTree][Node] Testing node operations with a more complex simple 
 }
 
 TEST_CASE("[SceneTree][Node] Duplicating node with internal children") {
-	GDREGISTER_CLASS(TestNode);
+	FOUNDRY_REGISTER_CLASS(TestNode);
 
 	TestNode *node = memnew(TestNode);
 	Node *child = memnew(Node);
@@ -541,7 +541,7 @@ TEST_CASE("[SceneTree][Node]Exported node checks") {
 	node->set("exported_nodes", children);
 
 	SUBCASE("Property of duplicated node should point to duplicated child") {
-		GDREGISTER_CLASS(TestNode);
+		FOUNDRY_REGISTER_CLASS(TestNode);
 
 		TestNode *dup = Object::cast_to<TestNode>(node->duplicate());
 		Node *new_exported = Object::cast_to<Node>(dup->get("exported_node"));

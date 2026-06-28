@@ -33,7 +33,7 @@
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 
 class MeshInstance3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(MeshInstance3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(MeshInstance3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 public:
 	bool has_gizmo(Node3D *p_spatial) override;

@@ -35,7 +35,7 @@
 #include "scene/3d/skeleton_3d.h"
 
 class SkeletonModifier3D : public Node3D {
-	GDCLASS(SkeletonModifier3D, Node3D);
+	FOUNDRY_CLASS(SkeletonModifier3D, Node3D);
 
 	void rebind();
 
@@ -99,8 +99,8 @@ protected:
 
 	virtual void _skeleton_changed(Skeleton3D *p_old, Skeleton3D *p_new);
 	virtual void _validate_bone_names();
-	GDVIRTUAL2(_skeleton_changed, Skeleton3D *, Skeleton3D *);
-	GDVIRTUAL0(_validate_bone_names);
+	FOUNDRY_VIRTUAL2(_skeleton_changed, Skeleton3D *, Skeleton3D *);
+	FOUNDRY_VIRTUAL0(_validate_bone_names);
 
 	void _notification(int p_what);
 	static void _bind_methods();
@@ -108,10 +108,10 @@ protected:
 	virtual void _set_active(bool p_active);
 
 	virtual void _process_modification(double p_delta);
-	// TODO: In Godot 5, should obsolete old GDVIRTUAL0(_process_modification); and replace it with _process_modification_with_delta as GDVIRTUAL1(_process_modification, double).
-	GDVIRTUAL1(_process_modification_with_delta, double);
+	// TODO: In Godot 5, should obsolete old FOUNDRY_VIRTUAL0(_process_modification); and replace it with _process_modification_with_delta as FOUNDRY_VIRTUAL1(_process_modification, double).
+	FOUNDRY_VIRTUAL1(_process_modification_with_delta, double);
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL0(_process_modification);
+	FOUNDRY_VIRTUAL0(_process_modification);
 #endif
 
 public:

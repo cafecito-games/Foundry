@@ -36,7 +36,7 @@
 
 // Plane tracking capability configuration
 class OpenXRSpatialCapabilityConfigurationPlaneTracking : public OpenXRSpatialCapabilityConfigurationBaseHeader {
-	GDCLASS(OpenXRSpatialCapabilityConfigurationPlaneTracking, OpenXRSpatialCapabilityConfigurationBaseHeader);
+	FOUNDRY_CLASS(OpenXRSpatialCapabilityConfigurationPlaneTracking, OpenXRSpatialCapabilityConfigurationBaseHeader);
 
 public:
 	virtual bool has_valid_configuration() const override;
@@ -64,7 +64,7 @@ private:
 
 // Plane alignment component data
 class OpenXRSpatialComponentPlaneAlignmentList : public OpenXRSpatialComponentData {
-	GDCLASS(OpenXRSpatialComponentPlaneAlignmentList, OpenXRSpatialComponentData);
+	FOUNDRY_CLASS(OpenXRSpatialComponentPlaneAlignmentList, OpenXRSpatialComponentData);
 
 public:
 	enum PlaneAlignment {
@@ -94,7 +94,7 @@ private:
 VARIANT_ENUM_CAST(OpenXRSpatialComponentPlaneAlignmentList::PlaneAlignment);
 
 class OpenXRSpatialComponentPolygon2DList : public OpenXRSpatialComponentData {
-	GDCLASS(OpenXRSpatialComponentPolygon2DList, OpenXRSpatialComponentData);
+	FOUNDRY_CLASS(OpenXRSpatialComponentPolygon2DList, OpenXRSpatialComponentData);
 
 protected:
 	static void _bind_methods();
@@ -115,7 +115,7 @@ private:
 
 // Plane semantic label component data.
 class OpenXRSpatialComponentPlaneSemanticLabelList : public OpenXRSpatialComponentData {
-	GDCLASS(OpenXRSpatialComponentPlaneSemanticLabelList, OpenXRSpatialComponentData);
+	FOUNDRY_CLASS(OpenXRSpatialComponentPlaneSemanticLabelList, OpenXRSpatialComponentData);
 
 public:
 	enum PlaneSemanticLabel {
@@ -147,7 +147,7 @@ VARIANT_ENUM_CAST(OpenXRSpatialComponentPlaneSemanticLabelList::PlaneSemanticLab
 
 // Plane tracker
 class OpenXRPlaneTracker : public OpenXRSpatialEntityTracker {
-	GDCLASS(OpenXRPlaneTracker, OpenXRSpatialEntityTracker);
+	FOUNDRY_CLASS(OpenXRPlaneTracker, OpenXRSpatialEntityTracker);
 
 public:
 	void set_bounds_size(const Vector2 &p_bounds_size);
@@ -208,7 +208,7 @@ private:
 
 // Plane tracking logic
 class OpenXRSpatialPlaneTrackingCapability : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRSpatialPlaneTrackingCapability, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRSpatialPlaneTrackingCapability, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods();

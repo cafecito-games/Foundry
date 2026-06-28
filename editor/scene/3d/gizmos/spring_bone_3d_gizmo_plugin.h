@@ -37,7 +37,7 @@
 #include "scene/resources/surface_tool.h"
 
 class SpringBoneSimulator3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(SpringBoneSimulator3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(SpringBoneSimulator3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	struct SelectionMaterials {
 		Ref<StandardMaterial3D> unselected_mat;
@@ -61,7 +61,7 @@ public:
 };
 
 class SpringBoneCollision3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(SpringBoneCollision3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(SpringBoneCollision3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	struct SelectionMaterials {
 		Ref<StandardMaterial3D> unselected_mat;

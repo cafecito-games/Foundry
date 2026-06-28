@@ -42,7 +42,7 @@ class CSGShape3D;
 class GridMap;
 
 class GLTFDocument : public Resource {
-	GDCLASS(GLTFDocument, Resource);
+	FOUNDRY_CLASS(GLTFDocument, Resource);
 
 public:
 	const int32_t JOINT_GROUP_SIZE = 4;

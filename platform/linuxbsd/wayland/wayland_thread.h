@@ -95,7 +95,7 @@ class WaylandThread {
 public:
 	// Messages used for exchanging information between Godot's and Wayland's thread.
 	class Message : public RefCounted {
-		GDSOFTCLASS(Message, RefCounted);
+		FOUNDRY_SOFTCLASS(Message, RefCounted);
 
 	public:
 		Message() {}
@@ -103,7 +103,7 @@ public:
 	};
 
 	class WindowMessage : public Message {
-		GDSOFTCLASS(WindowMessage, Message);
+		FOUNDRY_SOFTCLASS(WindowMessage, Message);
 
 	public:
 		DisplayServer::WindowID id = DisplayServer::INVALID_WINDOW_ID;
@@ -111,7 +111,7 @@ public:
 
 	// Message data for window rect changes.
 	class WindowRectMessage : public WindowMessage {
-		GDSOFTCLASS(WindowRectMessage, WindowMessage);
+		FOUNDRY_SOFTCLASS(WindowRectMessage, WindowMessage);
 
 	public:
 		// NOTE: This is in "scaled" terms. For example, if there's a 1920x1080 rect
@@ -120,28 +120,28 @@ public:
 	};
 
 	class WindowEventMessage : public WindowMessage {
-		GDSOFTCLASS(WindowEventMessage, WindowMessage);
+		FOUNDRY_SOFTCLASS(WindowEventMessage, WindowMessage);
 
 	public:
 		DisplayServer::WindowEvent event;
 	};
 
 	class InputEventMessage : public Message {
-		GDSOFTCLASS(InputEventMessage, Message);
+		FOUNDRY_SOFTCLASS(InputEventMessage, Message);
 
 	public:
 		Ref<InputEvent> event;
 	};
 
 	class DropFilesEventMessage : public WindowMessage {
-		GDSOFTCLASS(DropFilesEventMessage, WindowMessage);
+		FOUNDRY_SOFTCLASS(DropFilesEventMessage, WindowMessage);
 
 	public:
 		Vector<String> files;
 	};
 
 	class IMEUpdateEventMessage : public WindowMessage {
-		GDSOFTCLASS(IMEUpdateEventMessage, WindowMessage);
+		FOUNDRY_SOFTCLASS(IMEUpdateEventMessage, WindowMessage);
 
 	public:
 		String text;
@@ -149,7 +149,7 @@ public:
 	};
 
 	class IMECommitEventMessage : public WindowMessage {
-		GDSOFTCLASS(IMECommitEventMessage, WindowMessage);
+		FOUNDRY_SOFTCLASS(IMECommitEventMessage, WindowMessage);
 
 	public:
 		String text;

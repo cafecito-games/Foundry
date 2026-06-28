@@ -198,7 +198,7 @@ class DropTargetWindows;
 class JoypadSDL;
 
 class DisplayServerWindows : public DisplayServer {
-	GDSOFTCLASS(DisplayServerWindows, DisplayServer);
+	FOUNDRY_SOFTCLASS(DisplayServerWindows, DisplayServer);
 
 	friend class DropTargetWindows;
 

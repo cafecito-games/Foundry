@@ -37,7 +37,7 @@ void initialize_text_server_adv_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(TextServerAdvanced);
+	FOUNDRY_REGISTER_CLASS(TextServerAdvanced);
 	TextServerManager *tsman = TextServerManager::get_singleton();
 	if (tsman) {
 		Ref<TextServerAdvanced> ts;

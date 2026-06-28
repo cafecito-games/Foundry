@@ -35,7 +35,7 @@
 #include "core/crypto/crypto.h"
 
 class HTTPClientTCP : public HTTPClient {
-	GDSOFTCLASS(HTTPClientTCP, HTTPClient);
+	FOUNDRY_SOFTCLASS(HTTPClientTCP, HTTPClient);
 
 private:
 	Status status = STATUS_DISCONNECTED;

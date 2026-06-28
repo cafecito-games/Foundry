@@ -36,7 +36,7 @@
 #include "scene/resources/environment.h"
 
 class WorldEnvironment : public Node {
-	GDCLASS(WorldEnvironment, Node);
+	FOUNDRY_CLASS(WorldEnvironment, Node);
 
 	Ref<Environment> environment;
 	Ref<CameraAttributes> camera_attributes;

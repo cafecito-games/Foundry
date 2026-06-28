@@ -35,7 +35,7 @@
 class Gizmo3DHelper;
 
 class GPUParticlesCollision3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(GPUParticlesCollision3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(GPUParticlesCollision3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	Ref<Gizmo3DHelper> helper;
 

@@ -41,7 +41,7 @@
 #endif // PHYSICS_3D_DISABLED
 
 class MeshLibrary : public Resource {
-	GDCLASS(MeshLibrary, Resource);
+	FOUNDRY_CLASS(MeshLibrary, Resource);
 	RES_BASE_EXTENSION("meshlib");
 
 public:

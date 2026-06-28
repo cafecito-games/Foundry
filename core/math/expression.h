@@ -33,7 +33,7 @@
 #include "core/object/ref_counted.h"
 
 class Expression : public RefCounted {
-	GDCLASS(Expression, RefCounted);
+	FOUNDRY_CLASS(Expression, RefCounted);
 
 private:
 	String expression;

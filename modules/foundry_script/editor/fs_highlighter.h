@@ -33,7 +33,7 @@
 #include "editor/script/script_editor_plugin.h"
 
 class FSSyntaxHighlighter : public EditorSyntaxHighlighter {
-	GDCLASS(FSSyntaxHighlighter, EditorSyntaxHighlighter)
+	FOUNDRY_CLASS(FSSyntaxHighlighter, EditorSyntaxHighlighter)
 
 private:
 	struct ColorRegion {

@@ -57,7 +57,7 @@ int ResourceLoader::loader_count = 0;
 
 bool ResourceFormatLoader::recognize_path(const String &p_path, const String &p_for_type) const {
 	bool ret = false;
-	if (GDVIRTUAL_CALL(_recognize_path, p_path, p_for_type, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_recognize_path, p_path, p_for_type, ret)) {
 		return ret;
 	}
 
@@ -80,13 +80,13 @@ bool ResourceFormatLoader::recognize_path(const String &p_path, const String &p_
 
 bool ResourceFormatLoader::handles_type(const String &p_type) const {
 	bool success = false;
-	GDVIRTUAL_CALL(_handles_type, p_type, success);
+	FOUNDRY_VIRTUAL_CALL(_handles_type, p_type, success);
 	return success;
 }
 
 void ResourceFormatLoader::get_classes_used(const String &p_path, HashSet<StringName> *r_classes) {
 	Vector<String> ret;
-	if (GDVIRTUAL_CALL(_get_classes_used, p_path, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_classes_used, p_path, ret)) {
 		for (int i = 0; i < ret.size(); i++) {
 			r_classes->insert(ret[i]);
 		}
@@ -101,20 +101,20 @@ void ResourceFormatLoader::get_classes_used(const String &p_path, HashSet<String
 
 String ResourceFormatLoader::get_resource_type(const String &p_path) const {
 	String ret;
-	GDVIRTUAL_CALL(_get_resource_type, p_path, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_resource_type, p_path, ret);
 	return ret;
 }
 
 String ResourceFormatLoader::get_resource_script_class(const String &p_path) const {
 	String ret;
-	GDVIRTUAL_CALL(_get_resource_script_class, p_path, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_resource_script_class, p_path, ret);
 	return ret;
 }
 
 ResourceUID::ID ResourceFormatLoader::get_resource_uid(const String &p_path) const {
 	int64_t uid = ResourceUID::INVALID_ID;
 	if (has_custom_uid_support()) {
-		GDVIRTUAL_CALL(_get_resource_uid, p_path, uid);
+		FOUNDRY_VIRTUAL_CALL(_get_resource_uid, p_path, uid);
 	} else {
 		Ref<FileAccess> file = FileAccess::open(p_path + ".uid", FileAccess::READ);
 		if (file.is_valid()) {
@@ -125,7 +125,7 @@ ResourceUID::ID ResourceFormatLoader::get_resource_uid(const String &p_path) con
 }
 
 bool ResourceFormatLoader::has_custom_uid_support() const {
-	return GDVIRTUAL_IS_OVERRIDDEN(_get_resource_uid);
+	return FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_get_resource_uid);
 }
 
 void ResourceFormatLoader::get_recognized_extensions_for_type(const String &p_type, List<String> *p_extensions) const {
@@ -142,7 +142,7 @@ void ResourceLoader::get_recognized_extensions_for_type(const String &p_type, Li
 
 bool ResourceFormatLoader::exists(const String &p_path) const {
 	bool success = false;
-	if (GDVIRTUAL_CALL(_exists, p_path, success)) {
+	if (FOUNDRY_VIRTUAL_CALL(_exists, p_path, success)) {
 		return success;
 	}
 	return FileAccess::exists(p_path); // By default just check file.
@@ -150,7 +150,7 @@ bool ResourceFormatLoader::exists(const String &p_path) const {
 
 void ResourceFormatLoader::get_recognized_extensions(List<String> *p_extensions) const {
 	PackedStringArray exts;
-	if (GDVIRTUAL_CALL(_get_recognized_extensions, exts)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_recognized_extensions, exts)) {
 		const String *r = exts.ptr();
 		for (int i = 0; i < exts.size(); ++i) {
 			p_extensions->push_back(r[i]);
@@ -160,7 +160,7 @@ void ResourceFormatLoader::get_recognized_extensions(List<String> *p_extensions)
 
 Ref<Resource> ResourceFormatLoader::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
 	Variant res;
-	if (GDVIRTUAL_CALL(_load, p_path, p_original_path, p_use_sub_threads, p_cache_mode, res)) {
+	if (FOUNDRY_VIRTUAL_CALL(_load, p_path, p_original_path, p_use_sub_threads, p_cache_mode, res)) {
 		if (res.get_type() == Variant::INT) { // Error code, abort.
 			if (r_error) {
 				*r_error = (Error)res.operator int64_t();
@@ -179,7 +179,7 @@ Ref<Resource> ResourceFormatLoader::load(const String &p_path, const String &p_o
 
 void ResourceFormatLoader::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
 	PackedStringArray deps;
-	if (GDVIRTUAL_CALL(_get_dependencies, p_path, p_add_types, deps)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_dependencies, p_path, p_add_types, deps)) {
 		const String *r = deps.ptr();
 		for (int i = 0; i < deps.size(); ++i) {
 			p_dependencies->push_back(r[i]);
@@ -194,7 +194,7 @@ Error ResourceFormatLoader::rename_dependencies(const String &p_path, const Hash
 	}
 
 	Error err = OK;
-	GDVIRTUAL_CALL(_rename_dependencies, p_path, deps_dict, err);
+	FOUNDRY_VIRTUAL_CALL(_rename_dependencies, p_path, deps_dict, err);
 	return err;
 }
 
@@ -205,17 +205,17 @@ void ResourceFormatLoader::_bind_methods() {
 	BIND_ENUM_CONSTANT(CACHE_MODE_IGNORE_DEEP);
 	BIND_ENUM_CONSTANT(CACHE_MODE_REPLACE_DEEP);
 
-	GDVIRTUAL_BIND(_get_recognized_extensions);
-	GDVIRTUAL_BIND(_recognize_path, "path", "type");
-	GDVIRTUAL_BIND(_handles_type, "type");
-	GDVIRTUAL_BIND(_get_resource_type, "path");
-	GDVIRTUAL_BIND(_get_resource_script_class, "path");
-	GDVIRTUAL_BIND(_get_resource_uid, "path");
-	GDVIRTUAL_BIND(_get_dependencies, "path", "add_types");
-	GDVIRTUAL_BIND(_rename_dependencies, "path", "renames");
-	GDVIRTUAL_BIND(_exists, "path");
-	GDVIRTUAL_BIND(_get_classes_used, "path");
-	GDVIRTUAL_BIND(_load, "path", "original_path", "use_sub_threads", "cache_mode");
+	FOUNDRY_VIRTUAL_BIND(_get_recognized_extensions);
+	FOUNDRY_VIRTUAL_BIND(_recognize_path, "path", "type");
+	FOUNDRY_VIRTUAL_BIND(_handles_type, "type");
+	FOUNDRY_VIRTUAL_BIND(_get_resource_type, "path");
+	FOUNDRY_VIRTUAL_BIND(_get_resource_script_class, "path");
+	FOUNDRY_VIRTUAL_BIND(_get_resource_uid, "path");
+	FOUNDRY_VIRTUAL_BIND(_get_dependencies, "path", "add_types");
+	FOUNDRY_VIRTUAL_BIND(_rename_dependencies, "path", "renames");
+	FOUNDRY_VIRTUAL_BIND(_exists, "path");
+	FOUNDRY_VIRTUAL_BIND(_get_classes_used, "path");
+	FOUNDRY_VIRTUAL_BIND(_load, "path", "original_path", "use_sub_threads", "cache_mode");
 }
 
 ///////////////////////////////////

@@ -35,7 +35,7 @@
 #include "scene/property_list_helper.h"
 
 class OptionButton : public Button {
-	GDCLASS(OptionButton, Button);
+	FOUNDRY_CLASS(OptionButton, Button);
 
 	bool disable_shortcuts = false;
 	PopupMenu *popup = nullptr;

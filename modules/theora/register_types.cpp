@@ -55,7 +55,7 @@ void initialize_theora_module(ModuleInitializationLevel p_level) {
 		case MODULE_INITIALIZATION_LEVEL_SCENE: {
 			resource_loader_theora.instantiate();
 			ResourceLoader::add_resource_format_loader(resource_loader_theora, true);
-			GDREGISTER_CLASS(VideoStreamTheora);
+			FOUNDRY_REGISTER_CLASS(VideoStreamTheora);
 		} break;
 		default:
 			break;

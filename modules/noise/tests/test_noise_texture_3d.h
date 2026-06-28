@@ -37,7 +37,7 @@
 namespace TestNoiseTexture3D {
 
 class NoiseTexture3DTester : public RefCounted {
-	GDCLASS(NoiseTexture3DTester, RefCounted);
+	FOUNDRY_CLASS(NoiseTexture3DTester, RefCounted);
 
 	const NoiseTexture3D *const texture;
 

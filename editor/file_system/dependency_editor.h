@@ -41,7 +41,7 @@ class TreeItem;
 class VBoxContainer;
 
 class DependencyEditor : public AcceptDialog {
-	GDCLASS(DependencyEditor, AcceptDialog);
+	FOUNDRY_CLASS(DependencyEditor, AcceptDialog);
 
 	Tree *tree = nullptr;
 	Button *fixdeps = nullptr;
@@ -71,7 +71,7 @@ public:
 };
 
 class DependencyEditorOwners : public AcceptDialog {
-	GDCLASS(DependencyEditorOwners, AcceptDialog);
+	FOUNDRY_CLASS(DependencyEditorOwners, AcceptDialog);
 
 	Label *owners_count = nullptr;
 	Label *empty = nullptr;
@@ -98,7 +98,7 @@ public:
 };
 
 class DependencyRemoveDialog : public ConfirmationDialog {
-	GDCLASS(DependencyRemoveDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(DependencyRemoveDialog, ConfirmationDialog);
 
 	Label *text = nullptr;
 	Tree *owners = nullptr;
@@ -142,7 +142,7 @@ public:
 };
 
 class DependencyErrorDialog : public ConfirmationDialog {
-	GDCLASS(DependencyErrorDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(DependencyErrorDialog, ConfirmationDialog);
 
 	StringName icon_name_fail;
 	StringName icon_name_check;
@@ -170,7 +170,7 @@ public:
 };
 
 class OrphanResourcesDialog : public ConfirmationDialog {
-	GDCLASS(OrphanResourcesDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(OrphanResourcesDialog, ConfirmationDialog);
 
 	DependencyEditor *dep_edit = nullptr;
 	Tree *files = nullptr;

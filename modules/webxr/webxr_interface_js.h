@@ -45,7 +45,7 @@ class TextureStorage;
 }
 
 class WebXRInterfaceJS : public WebXRInterface {
-	GDCLASS(WebXRInterfaceJS, WebXRInterface);
+	FOUNDRY_CLASS(WebXRInterfaceJS, WebXRInterface);
 
 private:
 	bool initialized;

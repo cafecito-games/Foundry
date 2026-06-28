@@ -42,7 +42,7 @@ class ThemeOwner;
 class ThemeContext;
 
 class Control : public CanvasItem {
-	GDCLASS(Control, CanvasItem);
+	FOUNDRY_CLASS(Control, CanvasItem);
 
 #ifdef TOOLS_ENABLED
 	bool saving = false;
@@ -404,20 +404,20 @@ protected:
 
 	// Exposed virtual methods.
 
-	GDVIRTUAL1RC(bool, _has_point, Vector2)
-	GDVIRTUAL2RC(TypedArray<Vector3i>, _structured_text_parser, Array, String)
-	GDVIRTUAL0RC(Vector2, _get_minimum_size)
-	GDVIRTUAL1RC(String, _get_tooltip, Vector2)
+	FOUNDRY_VIRTUAL1RC(bool, _has_point, Vector2)
+	FOUNDRY_VIRTUAL2RC(TypedArray<Vector3i>, _structured_text_parser, Array, String)
+	FOUNDRY_VIRTUAL0RC(Vector2, _get_minimum_size)
+	FOUNDRY_VIRTUAL1RC(String, _get_tooltip, Vector2)
 
-	GDVIRTUAL1R(Variant, _get_drag_data, Vector2)
-	GDVIRTUAL2RC(bool, _can_drop_data, Vector2, Variant)
-	GDVIRTUAL2(_drop_data, Vector2, Variant)
-	GDVIRTUAL1RC(Object *, _make_custom_tooltip, String)
+	FOUNDRY_VIRTUAL1R(Variant, _get_drag_data, Vector2)
+	FOUNDRY_VIRTUAL2RC(bool, _can_drop_data, Vector2, Variant)
+	FOUNDRY_VIRTUAL2(_drop_data, Vector2, Variant)
+	FOUNDRY_VIRTUAL1RC(Object *, _make_custom_tooltip, String)
 
-	GDVIRTUAL0RC(String, _accessibility_get_contextual_info);
-	GDVIRTUAL1RC(String, _get_accessibility_container_name, RequiredParam<const Node>)
+	FOUNDRY_VIRTUAL0RC(String, _accessibility_get_contextual_info);
+	FOUNDRY_VIRTUAL1RC(String, _get_accessibility_container_name, RequiredParam<const Node>)
 
-	GDVIRTUAL1(_gui_input, RequiredParam<InputEvent>)
+	FOUNDRY_VIRTUAL1(_gui_input, RequiredParam<InputEvent>)
 
 public:
 	enum {

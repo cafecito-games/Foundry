@@ -37,7 +37,7 @@ class MenuButton;
 class ParallaxBackground;
 
 class ParallaxBackgroundEditorPlugin : public EditorPlugin {
-	GDCLASS(ParallaxBackgroundEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ParallaxBackgroundEditorPlugin, EditorPlugin);
 
 	enum {
 		MENU_CONVERT_TO_PARALLAX_2D,

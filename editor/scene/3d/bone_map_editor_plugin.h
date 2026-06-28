@@ -44,7 +44,7 @@
 class AspectRatioContainer;
 
 class BoneMapperButton : public TextureButton {
-	GDCLASS(BoneMapperButton, TextureButton);
+	FOUNDRY_CLASS(BoneMapperButton, TextureButton);
 
 public:
 	enum BoneMapState {
@@ -76,7 +76,7 @@ public:
 };
 
 class BoneMapperItem : public VBoxContainer {
-	GDCLASS(BoneMapperItem, VBoxContainer);
+	FOUNDRY_CLASS(BoneMapperItem, VBoxContainer);
 
 	StringName profile_bone_name;
 
@@ -101,7 +101,7 @@ public:
 };
 
 class BonePicker : public AcceptDialog {
-	GDCLASS(BonePicker, AcceptDialog);
+	FOUNDRY_CLASS(BonePicker, AcceptDialog);
 
 	Skeleton3D *skeleton = nullptr;
 	Tree *bones = nullptr;
@@ -124,7 +124,7 @@ public:
 };
 
 class BoneMapper : public VBoxContainer {
-	GDCLASS(BoneMapper, VBoxContainer);
+	FOUNDRY_CLASS(BoneMapper, VBoxContainer);
 
 	Skeleton3D *skeleton = nullptr;
 	Ref<BoneMap> bone_map;
@@ -188,7 +188,7 @@ public:
 };
 
 class BoneMapEditor : public VBoxContainer {
-	GDCLASS(BoneMapEditor, VBoxContainer);
+	FOUNDRY_CLASS(BoneMapEditor, VBoxContainer);
 
 	Skeleton3D *skeleton = nullptr;
 	Ref<BoneMap> bone_map;
@@ -205,7 +205,7 @@ public:
 };
 
 class EditorInspectorPluginBoneMap : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginBoneMap, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginBoneMap, EditorInspectorPlugin);
 	BoneMapEditor *editor = nullptr;
 
 public:
@@ -214,7 +214,7 @@ public:
 };
 
 class BoneMapEditorPlugin : public EditorPlugin {
-	GDCLASS(BoneMapEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(BoneMapEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "BoneMap"; }

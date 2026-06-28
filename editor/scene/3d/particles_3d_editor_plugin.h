@@ -33,7 +33,7 @@
 #include "editor/scene/particles_editor_plugin.h"
 
 class Particles3DEditorPlugin : public ParticlesEditorPlugin {
-	GDCLASS(Particles3DEditorPlugin, ParticlesEditorPlugin);
+	FOUNDRY_CLASS(Particles3DEditorPlugin, ParticlesEditorPlugin);
 
 	enum {
 		MENU_OPTION_GENERATE_AABB = 300,
@@ -66,7 +66,7 @@ public:
 };
 
 class GPUParticles3DEditorPlugin : public Particles3DEditorPlugin {
-	GDCLASS(GPUParticles3DEditorPlugin, Particles3DEditorPlugin);
+	FOUNDRY_CLASS(GPUParticles3DEditorPlugin, Particles3DEditorPlugin);
 
 protected:
 	Node *_convert_particles() override;
@@ -79,7 +79,7 @@ public:
 };
 
 class CPUParticles3DEditorPlugin : public Particles3DEditorPlugin {
-	GDCLASS(CPUParticles3DEditorPlugin, Particles3DEditorPlugin);
+	FOUNDRY_CLASS(CPUParticles3DEditorPlugin, Particles3DEditorPlugin);
 
 protected:
 	Node *_convert_particles() override;

@@ -41,7 +41,7 @@
 #include "core/templates/rb_set.h"
 
 class FSNativeClass : public RefCounted {
-	GDCLASS(FSNativeClass, RefCounted);
+	FOUNDRY_CLASS(FSNativeClass, RefCounted);
 
 	StringName name;
 
@@ -60,7 +60,7 @@ public:
 // Read-only descriptor for a single generic type parameter declared on a class, returned by
 // `FoundryScript.get_type_parameter_list()`. Each instance is an immutable snapshot of the reflected data.
 class FSTypeParameter : public RefCounted {
-	GDCLASS(FSTypeParameter, RefCounted);
+	FOUNDRY_CLASS(FSTypeParameter, RefCounted);
 
 	friend class FoundryScript;
 
@@ -89,7 +89,7 @@ class TestFSGenericReflectionAccessor;
 #endif // TESTS_ENABLED
 
 class FoundryScript : public Script {
-	GDCLASS(FoundryScript, Script);
+	FOUNDRY_CLASS(FoundryScript, Script);
 	bool tool = false;
 	bool valid = false;
 	bool reloading = false;
@@ -513,7 +513,7 @@ public:
 // FoundryScript reflection APIs. Each instance is an independent snapshot of the compiled metadata: the
 // argument accessors return copies, so callers cannot mutate the script's stored annotation data.
 class FSAnnotation : public RefCounted {
-	GDCLASS(FSAnnotation, RefCounted);
+	FOUNDRY_CLASS(FSAnnotation, RefCounted);
 
 	StringName name; // Short name, without "@": "timeout", "export_range".
 	StringName qualified_name; // Canonical declaration identity: "cafecito.test.timeout"; the bare name for built-ins.
@@ -545,7 +545,7 @@ public:
 // and additionally carries the method's passive annotations. Each instance is an independent snapshot;
 // the accessors return copies, so callers cannot mutate the script's compiled metadata.
 class FSMethodDescriptor : public RefCounted {
-	GDCLASS(FSMethodDescriptor, RefCounted);
+	FOUNDRY_CLASS(FSMethodDescriptor, RefCounted);
 
 	MethodInfo method_info;
 	TypedArray<FSAnnotation> annotations;
@@ -585,7 +585,7 @@ public:
 // usage) and additionally carries the variable's passive annotations. Each instance is an independent
 // snapshot; the accessors return copies, so callers cannot mutate the script's compiled metadata.
 class FSPropertyDescriptor : public RefCounted {
-	GDCLASS(FSPropertyDescriptor, RefCounted);
+	FOUNDRY_CLASS(FSPropertyDescriptor, RefCounted);
 
 	PropertyInfo property_info;
 	TypedArray<FSAnnotation> annotations;
@@ -1000,7 +1000,7 @@ public:
 };
 
 class ResourceFormatLoaderFoundryScript : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderFoundryScript, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderFoundryScript, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -1012,7 +1012,7 @@ public:
 };
 
 class ResourceFormatSaverFoundryScript : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceFormatSaverFoundryScript, ResourceFormatSaver);
+	FOUNDRY_SOFTCLASS(ResourceFormatSaverFoundryScript, ResourceFormatSaver);
 
 public:
 	virtual Error save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags = 0) override;

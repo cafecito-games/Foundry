@@ -41,7 +41,7 @@ struct DBusConnection;
 struct DBusMessageIter;
 
 class FreeDesktopPortalDesktop : public Object {
-	GDSOFTCLASS(FreeDesktopPortalDesktop, Object);
+	FOUNDRY_SOFTCLASS(FreeDesktopPortalDesktop, Object);
 
 private:
 	bool unsupported = false;

@@ -66,7 +66,7 @@ struct QuickOpenResultCandidate {
 };
 
 class HighlightedLabel : public Label {
-	GDCLASS(HighlightedLabel, Label)
+	FOUNDRY_CLASS(HighlightedLabel, Label)
 
 	Vector<Vector2i> highlights;
 
@@ -81,7 +81,7 @@ protected:
 };
 
 class QuickOpenResultContainer : public VBoxContainer {
-	GDCLASS(QuickOpenResultContainer, VBoxContainer)
+	FOUNDRY_CLASS(QuickOpenResultContainer, VBoxContainer)
 
 	enum {
 		FILE_SHOW_IN_FILESYSTEM,
@@ -183,7 +183,7 @@ private:
 };
 
 class QuickOpenResultGridItem : public MarginContainer {
-	GDCLASS(QuickOpenResultGridItem, MarginContainer)
+	FOUNDRY_CLASS(QuickOpenResultGridItem, MarginContainer)
 
 public:
 	QuickOpenResultGridItem();
@@ -200,7 +200,7 @@ private:
 };
 
 class QuickOpenResultListItem : public MarginContainer {
-	GDCLASS(QuickOpenResultListItem, MarginContainer)
+	FOUNDRY_CLASS(QuickOpenResultListItem, MarginContainer)
 
 public:
 	QuickOpenResultListItem();
@@ -223,7 +223,7 @@ private:
 };
 
 class QuickOpenResultItem : public HBoxContainer {
-	GDCLASS(QuickOpenResultItem, HBoxContainer)
+	FOUNDRY_CLASS(QuickOpenResultItem, HBoxContainer)
 
 public:
 	QuickOpenResultItem();
@@ -253,7 +253,7 @@ private:
 };
 
 class EditorQuickOpenDialog : public AcceptDialog {
-	GDCLASS(EditorQuickOpenDialog, AcceptDialog);
+	FOUNDRY_CLASS(EditorQuickOpenDialog, AcceptDialog);
 
 public:
 	void popup_dialog(const Vector<StringName> &p_base_types, const Callable &p_item_selected_callback);
