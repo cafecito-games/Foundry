@@ -45,20 +45,7 @@ bool is_usable_spelling(const String &p_rendered) {
 }
 
 bool is_class_handle_metatype(const GDScriptParser::DataType &p_type) {
-	if (p_type.is_type_handle_annotation) {
-		return true;
-	}
-	if (!p_type.is_meta_type) {
-		return false;
-	}
-	switch (p_type.kind) {
-		case GDScriptParser::DataType::NATIVE:
-		case GDScriptParser::DataType::SCRIPT:
-		case GDScriptParser::DataType::CLASS:
-			return true;
-		default:
-			return false;
-	}
+	return p_type.is_type_handle_annotation;
 }
 
 GDScriptParser::DataType type_handle_represented_type(const GDScriptParser::DataType &p_type) {
@@ -81,7 +68,7 @@ bool is_renderable_type(const GDScriptParser::DataType &p_type) {
 	if (p_type.is_pseudo_type) {
 		return false;
 	}
-	if (p_type.is_type_handle_annotation || is_class_handle_metatype(p_type)) {
+	if (p_type.is_type_handle_annotation) {
 		return true;
 	}
 	if (p_type.is_meta_type) {

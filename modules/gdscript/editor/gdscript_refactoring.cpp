@@ -1302,6 +1302,13 @@ bool find_assignable_type_annotation(const Vector<String> &p_lines, const GDScri
 		}
 	}
 
+	if (!effective_type.is_type_handle_annotation && effective_type.is_meta_type && p_assignable->initializer != nullptr &&
+			p_assignable->initializer->type == GDScriptParser::Node::IDENTIFIER &&
+			(effective_type.kind == GDScriptParser::DataType::NATIVE || effective_type.kind == GDScriptParser::DataType::SCRIPT ||
+					effective_type.kind == GDScriptParser::DataType::CLASS)) {
+		effective_type.is_type_handle_annotation = true;
+	}
+
 	String rendered_type;
 	if (!render_annotation_or_disable(effective_type, r_candidate, rendered_type, p_render_context)) {
 		return true;

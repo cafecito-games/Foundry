@@ -1835,6 +1835,9 @@ static void _list_type_handle_argument_types(GDScriptParser::CompletionContext &
 	LocalVector<StringName> global_classes;
 	ScriptServer::get_global_class_list(global_classes);
 	for (const StringName &class_name : global_classes) {
+		if (ScriptServer::is_global_class_enum(class_name)) {
+			continue;
+		}
 		ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
 		r_result.insert(option.display, option);
 	}

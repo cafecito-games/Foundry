@@ -922,7 +922,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			String rendered;
 			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
 		}
-		SUBCASE("class-handle metatype renders as Type[T]") {
+		SUBCASE("bare class-handle metatype is not directly annotatable") {
 			GDScriptParser::IdentifierNode class_identifier;
 			class_identifier.name = "User";
 			GDScriptParser::ClassNode class_node;
@@ -934,8 +934,7 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			dt.class_type = &class_node;
 			dt.is_meta_type = true;
 			String rendered;
-			CHECK(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
-			CHECK_EQ(rendered, "Type[User]");
+			CHECK_FALSE(GDScriptRefactorTypes::render_annotatable_type(dt, rendered));
 		}
 		SUBCASE("Type[T] annotation renders with represented type") {
 			GDScriptParser::IdentifierNode class_identifier;
@@ -4117,6 +4116,17 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 			CHECK(out.contains("tally += 1"));
 			CHECK(out.contains("return tally"));
 			CHECK_FALSE(out.contains("counter"));
+		}
+		SUBCASE("class referenced inside Type[T] annotations") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/type_metatype_rename.gd", 0, 6, "Client", out); // caret on `User` class
+			REQUIRE(r.ok);
+			CHECK(out.contains("class Client:"));
+			CHECK(out.contains("var user_type: Type[Client] = Client"));
+			CHECK(out.contains("func make() -> Client:"));
+			CHECK(out.contains("return Client.new()"));
+			CHECK_FALSE(out.contains("Type[User]"));
+			CHECK_FALSE(out.contains(": User"));
 		}
 		SUBCASE("strings and comments untouched") {
 			String out;
