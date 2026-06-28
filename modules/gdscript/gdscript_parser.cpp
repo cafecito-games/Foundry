@@ -6740,9 +6740,12 @@ static String _encode_signature_type(const GDScriptParser::DataType &p_type) {
 // stay in sync with the decoder's `_resolve_hint_enum_leaf` (gdscript_analyzer.cpp): the encoder only
 // emits an enum hint the decoder can rebuild exactly, so a round-tripped enum slot is never turned into
 // a false strict mismatch. Global (CoreConstants), native-class (ClassDB), and built-in (Variant) enums
-// qualify; a script/class enum has no stable global name in the grammar and must cross untyped.
+// qualify; a script/class enum without a stable global name in the grammar must cross untyped.
 static bool _enum_signature_leaf_round_trips(const String &p_name) {
 	if (CoreConstants::is_global_enum(p_name)) {
+		return true;
+	}
+	if (ScriptServer::is_global_class(p_name) && ScriptServer::is_global_class_enum(p_name)) {
 		return true;
 	}
 	const int separator = p_name.rfind(".");

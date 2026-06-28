@@ -542,6 +542,7 @@ static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info, const
 static GDScriptParser::DataType make_native_enum_type(const StringName &p_enum_name, const StringName &p_native_class, bool p_meta);
 static GDScriptParser::DataType make_builtin_enum_type(const StringName &p_enum_name, Variant::Type p_type, bool p_meta);
 static GDScriptParser::DataType make_global_enum_type(const StringName &p_enum_name, const StringName &p_base, bool p_meta);
+static GDScriptParser::DataType make_standalone_global_enum_type(const StringName &p_global_name, bool p_meta);
 
 // Rebuilds the enum identity behind a hint leaf — "Base.Member" for native-class/built-in enums or a
 // bare name for global enums — so a nested enum slot compares exactly across the script-API boundary
@@ -553,6 +554,11 @@ static GDScriptParser::DataType make_global_enum_type(const StringName &p_enum_n
 static bool _resolve_hint_enum_leaf(const String &p_name, GDScriptParser::DataType &r_type) {
 	if (CoreConstants::is_global_enum(p_name)) {
 		r_type = make_global_enum_type(p_name, StringName(), false);
+		r_type.is_constant = false;
+		return true;
+	}
+	if (ScriptServer::is_global_class(p_name) && ScriptServer::is_global_class_enum(p_name)) {
+		r_type = make_standalone_global_enum_type(p_name, false);
 		r_type.is_constant = false;
 		return true;
 	}
@@ -592,6 +598,11 @@ static bool _resolve_hint_leaf_type(const StringName &p_name, GDScriptParser::Da
 		r_type.kind = GDScriptParser::DataType::NATIVE;
 		r_type.builtin_type = Variant::OBJECT;
 		r_type.native_type = p_name;
+		return true;
+	}
+	if (ScriptServer::is_global_class(p_name) && ScriptServer::is_global_class_enum(p_name)) {
+		r_type = make_standalone_global_enum_type(p_name, false);
+		r_type.is_constant = false;
 		return true;
 	}
 	if (ScriptServer::is_global_class(p_name)) {
@@ -1151,6 +1162,34 @@ static GDScriptParser::DataType make_global_enum_type(const StringName &p_enum_n
 	}
 
 	return type;
+}
+
+static GDScriptParser::DataType make_standalone_global_enum_type(const StringName &p_global_name, bool p_meta = true) {
+	GDScriptParser::DataType type = make_enum_type(p_global_name, String(), p_meta);
+	type.enum_type = p_global_name;
+	type.native_type = p_global_name;
+	return type;
+}
+
+static Dictionary make_enum_dictionary_from_type(const GDScriptParser::DataType &p_type) {
+	if (p_type.class_type != nullptr && p_type.class_type->enum_file_decl != nullptr) {
+		return p_type.class_type->enum_file_decl->dictionary;
+	}
+
+	Dictionary dictionary;
+	for (const KeyValue<StringName, int64_t> &element : p_type.enum_values) {
+		dictionary[String(element.key)] = element.value;
+	}
+	dictionary.make_read_only();
+	return dictionary;
+}
+
+static void set_enum_meta_identifier_constant(GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::DataType &p_type) {
+	p_identifier->set_datatype(p_type);
+	if (p_type.kind == GDScriptParser::DataType::ENUM && p_type.is_meta_type) {
+		p_identifier->is_constant = true;
+		p_identifier->reduced_value = make_enum_dictionary_from_type(p_type);
+	}
 }
 
 static GDScriptParser::DataType make_builtin_meta_type(Variant::Type p_type) {
@@ -1879,7 +1918,12 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					if (namespace_error) {
 						return bad_type;
 					}
-					result = make_global_class_meta_type(namespace_global_class, p_type);
+					if (ScriptServer::is_global_class_enum(namespace_global_class)) {
+						const String path = ScriptServer::get_global_class_path(namespace_global_class);
+						result = make_global_enum_type_from_path(namespace_global_class, path, p_type);
+					} else {
+						result = make_global_class_meta_type(namespace_global_class, p_type);
+					}
 					resolved_type_chain_size = namespace_type_chain_size;
 				}
 			}
@@ -1888,20 +1932,25 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		if (result.is_set()) {
 			// Found.
 		} else if (ScriptServer::is_global_class(first)) {
-			if (GDScript::is_canonically_equal_paths(parser->script_path, ScriptServer::get_global_class_path(first))) {
-				result = parser->head->get_datatype();
+			if (ScriptServer::is_global_class_enum(first)) {
+				const String path = ScriptServer::get_global_class_path(first);
+				result = make_global_enum_type_from_path(first, path, p_type);
 			} else {
-				String path = ScriptServer::get_global_class_path(first);
-				String ext = path.get_extension();
-				if (ext == GDScriptLanguage::get_singleton()->get_extension()) {
-					Ref<GDScriptParserRef> ref = parser->get_depended_parser_for(path);
-					if (ref.is_null() || ref->raise_status(GDScriptParserRef::INHERITANCE_SOLVED) != OK) {
-						push_error(vformat(R"(Could not parse global class "%s" from "%s".)", first, ScriptServer::get_global_class_path(first)), p_type);
-						return bad_type;
-					}
-					result = ref->get_parser()->head->get_datatype();
+				if (GDScript::is_canonically_equal_paths(parser->script_path, ScriptServer::get_global_class_path(first))) {
+					result = parser->head->get_datatype();
 				} else {
-					result = make_script_meta_type(ResourceLoader::load(path, "Script"));
+					String path = ScriptServer::get_global_class_path(first);
+					String ext = path.get_extension();
+					if (ext == GDScriptLanguage::get_singleton()->get_extension()) {
+						Ref<GDScriptParserRef> ref = parser->get_depended_parser_for(path);
+						if (ref.is_null() || ref->raise_status(GDScriptParserRef::INHERITANCE_SOLVED) != OK) {
+							push_error(vformat(R"(Could not parse global class "%s" from "%s".)", first, ScriptServer::get_global_class_path(first)), p_type);
+							return bad_type;
+						}
+						result = ref->get_parser()->head->get_datatype();
+					} else {
+						result = make_script_meta_type(ResourceLoader::load(path, "Script"));
+					}
 				}
 			}
 		} else if (ClassDB::has_enum(parser->current_class->base_type.native_type, first)) {
@@ -8433,6 +8482,112 @@ GDScriptParser::DataType GDScriptAnalyzer::make_global_class_meta_type(const Str
 	}
 }
 
+GDScriptParser::DataType GDScriptAnalyzer::make_global_enum_type_from_current_parser(const StringName &p_global_name, const GDScriptParser::Node *p_source) {
+	GDScriptParser::DataType error_type;
+	error_type.type_source = GDScriptParser::DataType::UNDETECTED;
+	error_type.kind = GDScriptParser::DataType::VARIANT;
+
+	GDScriptParser::ClassNode *head = parser->head;
+	GDScriptParser::EnumNode *enum_node = head != nullptr ? head->enum_file_decl : nullptr;
+	if (head == nullptr || !head->is_enum_file || enum_node == nullptr || enum_node->identifier == nullptr) {
+		push_error(vformat(R"(Global enum "%s" does not refer to an enum_name file.)", p_global_name), p_source);
+		return error_type;
+	}
+
+	if (enum_node->get_datatype().is_resolving()) {
+		push_error(vformat(R"(Could not resolve global enum "%s": Cyclic reference.)", p_global_name), p_source);
+		return error_type;
+	}
+	if (enum_node->get_datatype().is_set()) {
+		return enum_node->get_datatype();
+	}
+
+	GDScriptParser::DataType resolving_datatype;
+	resolving_datatype.kind = GDScriptParser::DataType::RESOLVING;
+	enum_node->set_datatype(resolving_datatype);
+
+	GDScriptParser::DataType enum_type = make_standalone_global_enum_type(p_global_name, true);
+	enum_type.class_type = head;
+	enum_type.script_path = parser->script_path;
+
+	const GDScriptParser::EnumNode *previous_enum = current_enum;
+	GDScriptParser::ClassNode *previous_class = parser->current_class;
+	GDScriptParser::FunctionNode *previous_function = parser->current_function;
+	current_enum = enum_node;
+	parser->current_class = head;
+	parser->current_function = nullptr;
+
+	Dictionary dictionary;
+	for (int i = 0; i < enum_node->values.size(); i++) {
+		GDScriptParser::EnumNode::Value &element = enum_node->values.write[i];
+
+		if (element.custom_value) {
+			reduce_expression(element.custom_value);
+			if (!element.custom_value->is_constant) {
+				push_error(R"(Enum values must be constant.)", element.custom_value);
+			} else if (element.custom_value->reduced_value.get_type() != Variant::INT) {
+				push_error(R"(Enum values must be integers.)", element.custom_value);
+			} else {
+				element.value = element.custom_value->reduced_value;
+				element.resolved = true;
+			}
+		} else {
+			if (element.index > 0) {
+				element.value = element.parent_enum->values[element.index - 1].value + 1;
+			} else {
+				element.value = 0;
+			}
+			element.resolved = true;
+		}
+
+		enum_type.enum_values[element.identifier->name] = element.value;
+		dictionary[String(element.identifier->name)] = element.value;
+	}
+
+	parser->current_function = previous_function;
+	parser->current_class = previous_class;
+	current_enum = previous_enum;
+
+	dictionary.make_read_only();
+	enum_node->set_datatype(enum_type);
+	enum_node->dictionary = dictionary;
+
+	return enum_type;
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::make_global_enum_type_from_path(const StringName &p_global_name, const String &p_path, const GDScriptParser::Node *p_source) {
+	GDScriptParser::DataType error_type;
+	error_type.type_source = GDScriptParser::DataType::UNDETECTED;
+	error_type.kind = GDScriptParser::DataType::VARIANT;
+
+	if (GDScript::is_canonically_equal_paths(parser->script_path, p_path)) {
+		return make_global_enum_type_from_current_parser(p_global_name, p_source);
+	}
+
+	Ref<GDScriptParserRef> ref = parser->get_depended_parser_for(p_path);
+	if (ref.is_null()) {
+		push_error(vformat(R"(Could not find script for enum "%s".)", p_global_name), p_source);
+		return error_type;
+	}
+
+	Error err = ref->raise_status(GDScriptParserRef::INHERITANCE_SOLVED);
+	if (err != OK) {
+		push_error(vformat(R"(Could not resolve enum "%s", because of a parser error.)", p_global_name), p_source);
+		return error_type;
+	}
+
+	GDScriptParser *enum_parser = ref->get_parser();
+	GDScriptAnalyzer *enum_analyzer = ref->get_analyzer();
+	const int error_count = enum_parser->errors.size();
+	GDScriptParser::DataType enum_type = enum_analyzer->make_global_enum_type_from_current_parser(p_global_name, enum_parser->head);
+	if (enum_parser->errors.size() > error_count || !enum_type.is_set() || enum_type.kind != GDScriptParser::DataType::ENUM) {
+		push_error(vformat(R"(Could not resolve global enum "%s" from "%s".)", p_global_name, p_path), p_source);
+		return error_type;
+	}
+
+	return enum_type;
+}
+
 bool GDScriptAnalyzer::get_autoload_singleton_value_type(const StringName &p_name, GDScriptParser::DataType &r_type) {
 	if (GDScriptLanguage::get_singleton()->is_reserved_global_name(p_name)) {
 		return false;
@@ -10851,12 +11006,22 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 			p_identifier->set_datatype(dummy);
 			return;
 		}
-		p_identifier->set_datatype(make_global_class_meta_type(namespace_global_class, p_identifier));
+		if (ScriptServer::is_global_class_enum(namespace_global_class)) {
+			const String path = ScriptServer::get_global_class_path(namespace_global_class);
+			set_enum_meta_identifier_constant(p_identifier, make_global_enum_type_from_path(namespace_global_class, path, p_identifier));
+		} else {
+			p_identifier->set_datatype(make_global_class_meta_type(namespace_global_class, p_identifier));
+		}
 		return;
 	}
 
 	if (ScriptServer::is_global_class(name)) {
-		p_identifier->set_datatype(make_global_class_meta_type(name, p_identifier));
+		if (ScriptServer::is_global_class_enum(name)) {
+			const String path = ScriptServer::get_global_class_path(name);
+			set_enum_meta_identifier_constant(p_identifier, make_global_enum_type_from_path(name, path, p_identifier));
+		} else {
+			p_identifier->set_datatype(make_global_class_meta_type(name, p_identifier));
+		}
 		return;
 	}
 
@@ -11077,7 +11242,13 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 						return;
 					}
 
-					GDScriptParser::DataType namespace_class_type = make_global_class_meta_type(namespace_global_class, p_subscript);
+					GDScriptParser::DataType namespace_class_type;
+					if (ScriptServer::is_global_class_enum(namespace_global_class)) {
+						const String path = ScriptServer::get_global_class_path(namespace_global_class);
+						namespace_class_type = make_global_enum_type_from_path(namespace_global_class, path, p_subscript);
+					} else {
+						namespace_class_type = make_global_class_meta_type(namespace_global_class, p_subscript);
+					}
 					for (int i = namespace_type_chain_size; i < type_chain.size(); i++) {
 						GDScriptParser::DataType base = namespace_class_type;
 						reduce_identifier_from_base(type_chain[i], &base);
@@ -12127,6 +12298,8 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 					elem_type.kind = GDScriptParser::DataType::NATIVE;
 					elem_type.builtin_type = Variant::OBJECT;
 					elem_type.native_type = elem_type_name;
+				} else if (ScriptServer::is_global_class(elem_type_name) && ScriptServer::is_global_class_enum(elem_type_name)) {
+					elem_type = make_standalone_global_enum_type(elem_type_name, false);
 				} else if (ScriptServer::is_global_class(elem_type_name)) {
 					// Just load this as it shouldn't be a GDScript.
 					Ref<Script> script = ResourceLoader::load(ScriptServer::get_global_class_path(elem_type_name));
@@ -12160,6 +12333,8 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 				key_elem_type.kind = GDScriptParser::DataType::NATIVE;
 				key_elem_type.builtin_type = Variant::OBJECT;
 				key_elem_type.native_type = key_elem_type_name;
+			} else if (ScriptServer::is_global_class(key_elem_type_name) && ScriptServer::is_global_class_enum(key_elem_type_name)) {
+				key_elem_type = make_standalone_global_enum_type(key_elem_type_name, false);
 			} else if (ScriptServer::is_global_class(key_elem_type_name)) {
 				// Just load this as it shouldn't be a GDScript.
 				Ref<Script> script = ResourceLoader::load(ScriptServer::get_global_class_path(key_elem_type_name));
@@ -12190,6 +12365,8 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 				value_elem_type.kind = GDScriptParser::DataType::NATIVE;
 				value_elem_type.builtin_type = Variant::OBJECT;
 				value_elem_type.native_type = value_elem_type_name;
+			} else if (ScriptServer::is_global_class(value_elem_type_name) && ScriptServer::is_global_class_enum(value_elem_type_name)) {
+				value_elem_type = make_standalone_global_enum_type(value_elem_type_name, false);
 			} else if (ScriptServer::is_global_class(value_elem_type_name)) {
 				// Just load this as it shouldn't be a GDScript.
 				Ref<Script> script = ResourceLoader::load(ScriptServer::get_global_class_path(value_elem_type_name));
@@ -12209,6 +12386,9 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 			if ((p_property.usage & PROPERTY_USAGE_CLASS_IS_ENUM) && p_property.class_name != StringName()) {
 				if (CoreConstants::is_global_enum(p_property.class_name)) {
 					result = make_global_enum_type(p_property.class_name, StringName(), false);
+					result.is_constant = false;
+				} else if (ScriptServer::is_global_class(p_property.class_name) && ScriptServer::is_global_class_enum(p_property.class_name)) {
+					result = make_standalone_global_enum_type(p_property.class_name, false);
 					result.is_constant = false;
 				} else {
 					Vector<String> names = String(p_property.class_name).split(ENUM_SEPARATOR);
