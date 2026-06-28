@@ -40,9 +40,11 @@ class GDScriptMethodDescriptor;
 class GDScriptPropertyDescriptor;
 
 // Read-only introspection surface for GDScript, exposed as `godot.reflection`.
-// The target of each call is a script type (a `Script`) or an instance whose
-// script is used. Method/property descriptors are returned as the same
-// Dictionaries `Object.get_method_list()` / `get_property_list()` produce.
+// The target of each call is a script type (a `Script` class handle), a typed
+// class handle stored in a `Type[T]` variable (the same runtime value as the
+// bare class name), or an instance whose script is used. Method/property
+// descriptors are returned as the same Dictionaries `Object.get_method_list()` /
+// `get_property_list()` produce.
 //
 // RefCounted so that, registered as a named global, it is released when the
 // language's globals are torn down (mirroring the native-class globals) rather
@@ -73,7 +75,8 @@ public:
 
 	bool implements_trait(const Variant &p_target, const Variant &p_trait) const;
 
-	// Passive custom annotation reflection. `target` may be a Script type or an instance. Matching by
+	// Passive custom annotation reflection. `target` may be a Script class handle, a typed class
+	// handle stored in a `Type[T]` variable, or an instance whose script is used. Matching by
 	// `annotation` accepts either the short name ("timeout") or the qualified name
 	// ("cafecito.test.timeout"). `kind` is one of "class", "method", "variable", "signal", or
 	// "constant". When `effective` is true (the default) the member kinds walk the script base chain
