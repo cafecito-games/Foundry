@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_gltf_emissive.h                                                  */
+/*  test_editor_file_system.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,40 +30,41 @@
 
 #pragma once
 
-#include "test_gltf.h"
-
 #ifdef TOOLS_ENABLED
 
-namespace TestGltf {
+#include "editor/file_system/editor_file_system.h"
 
-TEST_CASE("[SceneTree][Node] GLTF emissiveTexture without emissiveFactor uses white emission") {
-	ResourcePathGuard resource_path_guard;
-	init("gltf_emissive_no_factor", "res://");
+#include "core/io/resource_importer.h"
+#include "core/io/resource_loader.h"
 
-	Node *loaded = gltf_import("res://emissive_no_factor.gltf");
-	CHECK_MESSAGE(loaded != nullptr, "Failed to load GLB.");
+#include "tests/test_macros.h"
 
-	MeshInstance3D *mesh = Object::cast_to<MeshInstance3D>(loaded->find_child("Cube", true, true));
-	CHECK_MESSAGE(mesh != nullptr, "Mesh not found.");
+namespace TestEditorFileSystem {
 
-	Ref<StandardMaterial3D> mat = mesh->get_active_material(0);
-	CHECK_MESSAGE(mat.is_valid(), "Material not found.");
+// Tests in other suites repeatedly create and destroy a transient
+// `EditorFileSystem` to exercise editor tooling. Its constructor installs
+// process-global callbacks (`ResourceLoader::import`,
+// `ResourceImporter::load_on_startup`) and points the `singleton` at itself;
+// those callbacks dereference `singleton`. If destruction does not undo them,
+// a later resource import in an unrelated suite calls into freed memory, which
+// previously surfaced as a use-after-free crash under randomized test ordering.
+TEST_CASE("[EditorFileSystem] Destruction clears the singleton and restores global hooks") {
+	ResourceLoaderImport previous_import = ResourceLoader::import;
+	ResourceFormatImporterLoadOnStartup previous_load_on_startup = ResourceImporter::load_on_startup;
 
-	// Emission should be enabled.
-	CHECK(mat->get_feature(BaseMaterial3D::FEATURE_EMISSION));
+	REQUIRE(EditorFileSystem::get_singleton() == nullptr);
 
-	// Emission operator should be MULTIPLY per glTF spec.
-	CHECK(mat->get_emission_operator() == BaseMaterial3D::EMISSION_OP_MULTIPLY);
+	EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+	CHECK(EditorFileSystem::get_singleton() == editor_file_system);
+	CHECK(ResourceLoader::import != previous_import);
+	CHECK(ResourceImporter::load_on_startup != previous_load_on_startup);
 
-	// Without emissiveFactor, emission color should be WHITE, not BLACK.
-	Color c = mat->get_emission();
-	CHECK_MESSAGE(c.r > 0.9f, "Emission red should be ~1.0 when emissiveFactor is absent.");
-	CHECK_MESSAGE(c.g > 0.9f, "Emission green should be ~1.0 when emissiveFactor is absent.");
-	CHECK_MESSAGE(c.b > 0.9f, "Emission blue should be ~1.0 when emissiveFactor is absent.");
-
-	memdelete(loaded);
+	memdelete(editor_file_system);
+	CHECK(EditorFileSystem::get_singleton() == nullptr);
+	CHECK(ResourceLoader::import == previous_import);
+	CHECK(ResourceImporter::load_on_startup == previous_load_on_startup);
 }
 
-} // namespace TestGltf
+} // namespace TestEditorFileSystem
 
 #endif // TOOLS_ENABLED
