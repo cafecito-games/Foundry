@@ -1152,14 +1152,21 @@ Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExpor
 #endif // MODULE_GDSCRIPT_ENABLED
 
 	List<PropertyInfo> props;
-	ProjectSettings::get_singleton()->get_property_list(&props);
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	project_settings->get_property_list(&props);
 
 	for (const PropertyInfo &pi : props) {
-		if (!pi.name.begins_with("autoload/") && !pi.name.begins_with("autoload_prepend/")) {
+		const String setting_name = pi.name;
+		if (!setting_name.begins_with("autoload/") && !setting_name.begins_with("autoload_prepend/")) {
 			continue;
 		}
 
-		String autoload_path = get_project_setting(p_preset, pi.name);
+		const int override_separator = setting_name.rfind_char('.');
+		if (override_separator != -1 && project_settings->has_setting(setting_name.substr(0, override_separator))) {
+			continue;
+		}
+
+		String autoload_path = get_project_setting(p_preset, setting_name);
 
 		if (autoload_path.begins_with("*")) {
 			autoload_path = autoload_path.substr(1);

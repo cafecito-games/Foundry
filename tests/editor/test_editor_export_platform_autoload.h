@@ -200,6 +200,16 @@ TEST_CASE("[Editor][Export] Selected autoload dependencies honor preset feature 
 	REQUIRE_EQ(err, OK);
 	CHECK_NE(autoload_paths.find(override_path), -1);
 	CHECK_EQ(autoload_paths.find(base_path), -1);
+
+	Ref<EditorExportPreset> base_preset = platform->create_preset();
+	base_preset->set_export_filter(EditorExportPreset::EXPORT_SELECTED_RESOURCES);
+
+	Vector<String> base_autoload_paths;
+	const Error base_err = platform->collect_autoload_export_paths(base_preset, base_autoload_paths);
+
+	REQUIRE_EQ(base_err, OK);
+	CHECK_NE(base_autoload_paths.find(base_path), -1);
+	CHECK_EQ(base_autoload_paths.find(override_path), -1);
 }
 
 } // namespace TestEditorExportPlatformAutoload
