@@ -3,7 +3,7 @@ class Base:
 		print(klass == Child)
 
 
-class Child:
+final class Child:
 	extends Base
 
 

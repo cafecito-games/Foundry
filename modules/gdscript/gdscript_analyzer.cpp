@@ -291,8 +291,17 @@ static bool _datatype_matches_self_parameter_contract(
 		return true;
 	}
 	if (expected_type.is_type_handle_annotation) {
-		return _type_handle_source_is_handle(p_argument_type) &&
-				_datatype_strict_identity_equal(type_handle_represented_type(expected_type), type_handle_represented_type(p_argument_type));
+		if (!_type_handle_source_is_handle(p_argument_type)) {
+			return false;
+		}
+		const GDScriptParser::DataType argument_handle_type = type_handle_represented_type(p_argument_type);
+		if (_datatype_strict_identity_equal(type_handle_represented_type(p_expected_type), argument_handle_type)) {
+			return true;
+		}
+		if (_datatype_contains_self_type_parameter(p_expected_type) && !_datatype_self_bindings_are_final(p_expected_type)) {
+			return false;
+		}
+		return _datatype_strict_identity_equal(type_handle_represented_type(expected_type), argument_handle_type);
 	}
 	if (!_datatype_self_bindings_are_final(p_expected_type)) {
 		return false;
