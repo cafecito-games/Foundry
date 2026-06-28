@@ -3196,7 +3196,9 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 	 * Before changing this function, please ask the current maintainer of EditorFileSystem.
 	 */
 
-	if (r_base_type) {
+	if (r_base_type && c->is_enum_file) {
+		*r_base_type = String();
+	} else if (r_base_type) {
 		const GDScriptParser::ClassNode *subclass = c;
 		String path = p_path;
 		GDScriptParser subparser;
@@ -3277,7 +3279,7 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 		*r_is_trait = c->is_trait;
 	}
 	if (r_is_enum) {
-		*r_is_enum = false;
+		*r_is_enum = c->is_enum_file;
 	}
 	if (c->identifier == nullptr) {
 		return String();

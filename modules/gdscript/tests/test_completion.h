@@ -245,8 +245,9 @@ static void setup_global_classes(const String &p_dir) {
 			bool is_abstract;
 			bool is_tool;
 			bool is_trait;
+			bool is_enum;
 			String source_file = path.path_join(next);
-			String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(source_file, &base_type, nullptr, &is_abstract, &is_tool, &is_trait);
+			String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(source_file, &base_type, nullptr, &is_abstract, &is_tool, &is_trait, &is_enum);
 			if (class_name.is_empty()) {
 				next = dir->get_next();
 				continue;
@@ -254,7 +255,7 @@ static void setup_global_classes(const String &p_dir) {
 			ERR_FAIL_COND_MSG(ScriptServer::is_global_class(class_name),
 					"Class name \"" + class_name + "\" from \"" + source_file + "\" is already used in \"" + ScriptServer::get_global_class_path(class_name) + "\".");
 
-			ScriptServer::add_global_class(class_name, base_type, GDScriptLanguage::get_singleton()->get_name(), source_file, is_abstract, is_tool, is_trait);
+			ScriptServer::add_global_class(class_name, base_type, GDScriptLanguage::get_singleton()->get_name(), source_file, is_abstract, is_tool, is_trait, is_enum);
 		}
 		next = dir->get_next();
 	}
