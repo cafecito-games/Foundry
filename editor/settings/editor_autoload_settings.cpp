@@ -32,16 +32,149 @@
 
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
+#include "core/io/file_access.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_uid.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/settings/project_settings_editor.h"
+#ifdef MODULE_GDSCRIPT_ENABLED
+#include "modules/gdscript/editor/gdscript_project_scan.h"
+#include "modules/gdscript/gdscript_analyzer.h"
+#include "modules/gdscript/gdscript_parser.h"
+#endif
 #include "scene/main/window.h"
 #include "scene/resources/packed_scene.h"
 
 #define PREVIEW_LIST_MAX_SIZE 10
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+namespace {
+
+bool _autoload_diagnostic_is_conflict(const GDScriptAutoloadIndexDiagnostic &p_diagnostic) {
+	return p_diagnostic.code == GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH;
+}
+
+String _autoload_source_label(const GDScriptAutoloadIndexEntry &p_entry, bool p_has_conflict) {
+	if (p_has_conflict) {
+		return "Conflict";
+	}
+
+	switch (p_entry.source) {
+		case GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS:
+			return "Project Settings";
+		case GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION:
+			return "Script";
+	}
+
+	return "Unknown";
+}
+
+String _autoload_diagnostics_summary(int p_count, bool p_has_conflict) {
+	if (p_has_conflict) {
+		return "Conflict";
+	}
+	if (p_count == 0) {
+		return "OK";
+	}
+	if (p_count == 1) {
+		return "1 Issue";
+	}
+	return vformat("%d Issues", p_count);
+}
+
+String _autoload_diagnostics_text(const Vector<GDScriptAutoloadIndexDiagnostic> &p_diagnostics) {
+	String text;
+	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_diagnostics) {
+		if (!text.is_empty()) {
+			text += "\n";
+		}
+		text += diagnostic.message;
+	}
+	return text;
+}
+
+bool _autoload_path_is_recognized_script(const String &p_path) {
+	const String resource_type = ResourceLoader::get_resource_type(p_path);
+	if (resource_type == SNAME("Script") || (!resource_type.is_empty() && ClassDB::is_parent_class(resource_type, SNAME("Script")))) {
+		return true;
+	}
+
+	List<String> extensions;
+	ResourceLoader::get_recognized_extensions_for_type("Script", &extensions);
+	const String extension = p_path.get_extension();
+	for (const String &recognized_extension : extensions) {
+		if (extension.nocasecmp_to(recognized_extension) == 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+String _autoload_project_setting_name(const StringName &p_name) {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings == nullptr) {
+		return String();
+	}
+
+	const String setting_name = "autoload/" + String(p_name);
+	if (project_settings->has_setting(setting_name)) {
+		return setting_name;
+	}
+
+	const String prepend_setting_name = "autoload_prepend/" + String(p_name);
+	if (project_settings->has_setting(prepend_setting_name)) {
+		return prepend_setting_name;
+	}
+
+	return String();
+}
+
+bool _autoload_setting_supports_raw_project_editing(const String &p_setting_name) {
+	return p_setting_name.begins_with("autoload/");
+}
+
+Vector<GDScriptAutoloadIndexDiagnostic> _autoload_view_diagnostics_for_entry(const GDScriptAutoloadIndexEntry &p_entry) {
+	Vector<GDScriptAutoloadIndexDiagnostic> diagnostics;
+	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_entry.diagnostics) {
+		if (diagnostic.code == GDScriptAutoloadIndexDiagnostic::NON_SCRIPT_NON_SCENE_PATH &&
+				p_entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS &&
+				_autoload_path_is_recognized_script(p_entry.path)) {
+			continue;
+		}
+
+		diagnostics.push_back(diagnostic);
+	}
+	return diagnostics;
+}
+
+void _append_script_owned_autoload_entries(const String &p_path, Vector<GDScriptAutoloadIndexEntry> &r_entries) {
+	const String source = FileAccess::get_file_as_string(p_path);
+	if (!source.contains("@autoload")) {
+		return;
+	}
+
+	GDScriptParser parser;
+	if (parser.parse(source, p_path, false) != OK) {
+		return;
+	}
+
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	for (const GDScriptAutoloadIndexEntry &entry : analyzer.get_autoload_index().get_entries()) {
+		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			r_entries.push_back(entry);
+		}
+	}
+}
+
+} // namespace
+#endif
 
 void EditorAutoloadSettings::_notification(int p_what) {
 	switch (p_what) {
@@ -174,6 +307,74 @@ static bool _autoload_name_shadows_reserved_global(const String &p_name) {
 	return false;
 }
 
+#ifdef MODULE_GDSCRIPT_ENABLED
+Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_autoload_view_entries(const GDScriptAutoloadIndex &p_index) {
+	Vector<AutoloadViewEntry> view_entries;
+
+	for (const GDScriptAutoloadIndexEntry &entry : p_index.get_entries()) {
+		AutoloadViewEntry view_entry;
+		view_entry.name = entry.name;
+		view_entry.path = entry.path;
+		view_entry.is_singleton = entry.is_singleton;
+		view_entry.order = entry.order;
+
+		const Vector<GDScriptAutoloadIndexDiagnostic> diagnostics = _autoload_view_diagnostics_for_entry(entry);
+		for (const GDScriptAutoloadIndexDiagnostic &diagnostic : diagnostics) {
+			if (_autoload_diagnostic_is_conflict(diagnostic)) {
+				view_entry.has_conflict = true;
+				break;
+			}
+		}
+
+		view_entry.source_label = _autoload_source_label(entry, view_entry.has_conflict);
+		view_entry.can_edit_project_settings = entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
+		view_entry.supports_manual_ordering = entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS && !view_entry.has_conflict;
+		view_entry.has_diagnostics = !diagnostics.is_empty();
+		view_entry.diagnostics_summary = _autoload_diagnostics_summary(diagnostics.size(), view_entry.has_conflict);
+		view_entry.diagnostics_text = _autoload_diagnostics_text(diagnostics);
+
+		ProjectSettings *project_settings = ProjectSettings::get_singleton();
+		const String project_setting_name = _autoload_project_setting_name(entry.name);
+		if (project_settings != nullptr && !project_setting_name.is_empty() && project_settings->has_autoload(entry.name) && !view_entry.has_conflict) {
+			const ProjectSettings::AutoloadInfo project_autoload = project_settings->get_autoload(entry.name);
+			view_entry.path = ResourceUID::ensure_path(project_autoload.path);
+			view_entry.is_singleton = project_autoload.is_singleton;
+			view_entry.order = project_settings->get_order(project_setting_name);
+			view_entry.can_edit_project_settings = _autoload_setting_supports_raw_project_editing(project_setting_name);
+			view_entry.supports_manual_ordering = view_entry.can_edit_project_settings;
+			if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+				view_entry.source_label = "Project Settings + Script";
+			}
+		}
+
+		view_entries.push_back(view_entry);
+	}
+
+	return view_entries;
+}
+
+GDScriptAutoloadIndex EditorAutoloadSettings::build_autoload_index_for_project_view(const String &p_root) {
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_project_settings();
+
+	Vector<GDScriptAutoloadIndexEntry> entries = index.get_entries();
+
+	ProjectScanOptions options;
+	options.include_addons = true;
+	const ProjectScanResult scan = GDScriptProjectScan::scan(p_root, options);
+	if (!scan.ok) {
+		return index;
+	}
+
+	for (const String &script_path : scan.files) {
+		_append_script_owned_autoload_entries(script_path, entries);
+	}
+
+	index.rebuild_from_entries(entries);
+	return index;
+}
+#endif
+
 void EditorAutoloadSettings::_autoload_add() {
 	if (autoload_add_path->get_text().is_empty()) {
 		ScriptCreateDialog *dialog = FileSystemDock::get_singleton()->get_script_create_dialog();
@@ -200,7 +401,7 @@ void EditorAutoloadSettings::_autoload_selected() {
 		return;
 	}
 
-	selected_autoload = "autoload/" + ti->get_text(0);
+	selected_autoload = "autoload/" + ti->get_text(COLUMN_NAME);
 }
 
 void EditorAutoloadSettings::_autoload_edited() {
@@ -211,10 +412,15 @@ void EditorAutoloadSettings::_autoload_edited() {
 	TreeItem *ti = tree->get_edited();
 	int column = tree->get_edited_column();
 
+	AutoloadInfo *info = _find_cached_autoload(ti->get_text(COLUMN_NAME));
+	if (info == nullptr || !info->can_edit_project_settings) {
+		return;
+	}
+
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 
-	if (column == 0) {
-		String name = ti->get_text(0);
+	if (column == COLUMN_NAME) {
+		String name = ti->get_text(COLUMN_NAME);
 		String old_name = selected_autoload.get_slicec('/', 1);
 
 		if (name == old_name) {
@@ -223,13 +429,13 @@ void EditorAutoloadSettings::_autoload_edited() {
 
 		String error;
 		if (!_autoload_name_is_valid(name, &error)) {
-			ti->set_text(0, old_name);
+			ti->set_text(COLUMN_NAME, old_name);
 			EditorNode::get_singleton()->show_warning(error);
 			return;
 		}
 
 		if (ProjectSettings::get_singleton()->has_setting("autoload/" + name)) {
-			ti->set_text(0, old_name);
+			ti->set_text(COLUMN_NAME, old_name);
 			EditorNode::get_singleton()->show_warning(vformat(TTR("Autoload '%s' already exists!"), name));
 			return;
 		}
@@ -260,11 +466,11 @@ void EditorAutoloadSettings::_autoload_edited() {
 		undo_redo->commit_action();
 
 		selected_autoload = name;
-	} else if (column == 2) {
+	} else if (column == COLUMN_GLOBAL_VARIABLE) {
 		updating_autoload = true;
 
-		bool checked = ti->is_checked(2);
-		String base = "autoload/" + ti->get_text(0);
+		bool checked = ti->is_checked(COLUMN_GLOBAL_VARIABLE);
+		String base = "autoload/" + ti->get_text(COLUMN_NAME);
 
 		int order = ProjectSettings::get_singleton()->get_order(base);
 		String scr_path = GLOBAL_GET(base);
@@ -304,16 +510,21 @@ void EditorAutoloadSettings::_autoload_button_pressed(Object *p_item, int p_colu
 	}
 	TreeItem *ti = Object::cast_to<TreeItem>(p_item);
 
-	String name = "autoload/" + ti->get_text(0);
+	String name = "autoload/" + ti->get_text(COLUMN_NAME);
+	AutoloadInfo *info = _find_cached_autoload(ti->get_text(COLUMN_NAME));
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 
 	switch (p_button) {
 		case BUTTON_OPEN: {
-			_autoload_open(ti->get_text(1));
+			_autoload_open(ti->get_text(COLUMN_PATH));
 		} break;
 		case BUTTON_MOVE_UP:
 		case BUTTON_MOVE_DOWN: {
+			if (info == nullptr || !info->supports_manual_ordering) {
+				return;
+			}
+
 			TreeItem *swap = nullptr;
 
 			if (p_button == BUTTON_MOVE_UP) {
@@ -326,7 +537,12 @@ void EditorAutoloadSettings::_autoload_button_pressed(Object *p_item, int p_colu
 				return;
 			}
 
-			String swap_name = "autoload/" + swap->get_text(0);
+			AutoloadInfo *swap_info = _find_cached_autoload(swap->get_text(COLUMN_NAME));
+			if (swap_info == nullptr || !swap_info->supports_manual_ordering) {
+				return;
+			}
+
+			String swap_name = "autoload/" + swap->get_text(COLUMN_NAME);
 
 			int order = ProjectSettings::get_singleton()->get_order(name);
 			int swap_order = ProjectSettings::get_singleton()->get_order(swap_name);
@@ -348,6 +564,10 @@ void EditorAutoloadSettings::_autoload_button_pressed(Object *p_item, int p_colu
 			undo_redo->commit_action();
 		} break;
 		case BUTTON_DELETE: {
+			if (info == nullptr || !info->can_edit_project_settings) {
+				return;
+			}
+
 			int order = ProjectSettings::get_singleton()->get_order(name);
 
 			undo_redo->create_action(TTR("Remove Autoload"));
@@ -373,7 +593,7 @@ void EditorAutoloadSettings::_autoload_activated() {
 	if (!ti) {
 		return;
 	}
-	_autoload_open(ti->get_text(1));
+	_autoload_open(ti->get_text(COLUMN_PATH));
 }
 
 void EditorAutoloadSettings::_autoload_open(const String &fpath) {
@@ -449,8 +669,30 @@ Node *EditorAutoloadSettings::_create_autoload(const String &p_path) {
 	return n;
 }
 
+EditorAutoloadSettings::AutoloadInfo *EditorAutoloadSettings::_find_cached_autoload(const String &p_name) {
+	for (List<AutoloadInfo>::Element *E = autoload_cache.front(); E != nullptr; E = E->next()) {
+		if (E->get().name == p_name) {
+			return &E->get();
+		}
+	}
+	return nullptr;
+}
+
+const EditorAutoloadSettings::AutoloadInfo *EditorAutoloadSettings::_find_cached_autoload(const String &p_name) const {
+	for (const List<AutoloadInfo>::Element *E = autoload_cache.front(); E != nullptr; E = E->next()) {
+		if (E->get().name == p_name) {
+			return &E->get();
+		}
+	}
+	return nullptr;
+}
+
 void EditorAutoloadSettings::init_autoloads() {
 	for (AutoloadInfo &info : autoload_cache) {
+		if (!info.runtime_enabled) {
+			continue;
+		}
+
 		info.node = _create_autoload(ResourceUID::ensure_path(info.path));
 
 		if (info.node) {
@@ -507,43 +749,40 @@ void EditorAutoloadSettings::update_autoload() {
 	tree->clear();
 	TreeItem *root = tree->create_item();
 
-	List<PropertyInfo> props;
-	ProjectSettings::get_singleton()->get_property_list(&props);
+#ifdef MODULE_GDSCRIPT_ENABLED
+	const Color diagnostics_color = get_theme_color(SNAME("warning_color"), EditorStringName(Editor));
+	const Color conflict_color = get_theme_color(SNAME("error_color"), EditorStringName(Editor));
+#endif
 
-	for (const PropertyInfo &pi : props) {
-		if (!pi.name.begins_with("autoload/")) {
-			continue;
-		}
-
-		String name = pi.name.get_slicec('/', 1);
-		String scr_path = GLOBAL_GET(pi.name);
-
-		if (name.is_empty()) {
-			continue;
-		}
-
+	auto add_autoload_row = [&](const String &p_name, const String &p_path, bool p_is_singleton, int p_order,
+									bool p_runtime_enabled, bool p_can_edit_project_settings, bool p_supports_manual_ordering,
+									const String &p_source_label, bool p_has_diagnostics, bool p_has_conflict,
+									const String &p_diagnostics_summary, const String &p_diagnostics_text) {
 		AutoloadInfo info;
-		info.is_singleton = scr_path.begins_with("*");
+		info.is_singleton = p_is_singleton;
+		info.name = p_name;
+		info.path = p_path;
+		info.order = p_order;
+		info.runtime_enabled = p_runtime_enabled;
+		info.can_edit_project_settings = p_can_edit_project_settings;
+		info.supports_manual_ordering = p_supports_manual_ordering;
 
-		if (info.is_singleton) {
-			scr_path = scr_path.substr(1);
-		}
-
-		info.name = name;
-		info.path = ResourceUID::get_singleton()->path_to_uid(scr_path);
-		info.order = ProjectSettings::get_singleton()->get_order(pi.name);
-
-		bool need_to_add = true;
-		if (to_remove.has(name)) {
-			AutoloadInfo &old_info = to_remove[name];
-			if (old_info.path == info.path) {
-				// Still the same resource, check status
+		bool need_to_add = info.runtime_enabled;
+		if (to_remove.has(info.name)) {
+			AutoloadInfo &old_info = to_remove[info.name];
+			if (!info.runtime_enabled) {
+				if (!old_info.runtime_enabled) {
+					to_remove.erase(info.name);
+				}
+				need_to_add = false;
+			} else if (old_info.path == info.path) {
+				// Still the same resource, check status.
 				info.node = old_info.node;
 				if (info.node) {
 					Ref<Script> scr = info.node->get_script();
 					info.in_editor = scr.is_valid() && scr->is_tool();
 					if (info.is_singleton == old_info.is_singleton && info.in_editor == old_info.in_editor) {
-						to_remove.erase(name);
+						to_remove.erase(info.name);
 						need_to_add = false;
 					} else {
 						info.node = nullptr;
@@ -559,29 +798,106 @@ void EditorAutoloadSettings::update_autoload() {
 		}
 
 		TreeItem *item = tree->create_item(root);
-		item->set_text(0, name);
-		item->set_editable(0, true);
+		item->set_text(COLUMN_NAME, p_name);
+		item->set_editable(COLUMN_NAME, p_can_edit_project_settings);
+		if (!p_can_edit_project_settings) {
+			item->set_tooltip_text(COLUMN_NAME, TTR("This autoload is owned by its script declaration."));
+		}
 
-		item->set_text(1, ResourceUID::ensure_path(scr_path));
-		item->set_selectable(1, true);
+		item->set_text(COLUMN_PATH, p_path);
+		item->set_selectable(COLUMN_PATH, true);
+		item->set_tooltip_text(COLUMN_PATH, p_path);
 
-		item->set_cell_mode(2, TreeItem::CELL_MODE_CHECK);
-		item->set_editable(2, true);
-		item->set_text(2, TTRC("Enable"));
-		item->set_checked(2, info.is_singleton);
-		item->add_button(3, get_editor_theme_icon(SNAME("Load")), BUTTON_OPEN);
-		item->add_button(3, get_editor_theme_icon(SNAME("MoveUp")), BUTTON_MOVE_UP);
-		item->add_button(3, get_editor_theme_icon(SNAME("MoveDown")), BUTTON_MOVE_DOWN);
-		item->add_button(3, get_editor_theme_icon(SNAME("Remove")), BUTTON_DELETE);
-		item->set_selectable(3, false);
+		item->set_text(COLUMN_SOURCE, p_source_label);
+		item->set_selectable(COLUMN_SOURCE, true);
+
+		item->set_cell_mode(COLUMN_GLOBAL_VARIABLE, TreeItem::CELL_MODE_CHECK);
+		item->set_editable(COLUMN_GLOBAL_VARIABLE, p_can_edit_project_settings);
+		item->set_text(COLUMN_GLOBAL_VARIABLE, TTRC("Enable"));
+		item->set_checked(COLUMN_GLOBAL_VARIABLE, info.is_singleton);
+		if (!p_can_edit_project_settings) {
+			item->set_tooltip_text(COLUMN_GLOBAL_VARIABLE, TTR("Script-owned autoloads are edited in their declaring script."));
+		}
+
+		item->set_text(COLUMN_DIAGNOSTICS, p_diagnostics_summary);
+		item->set_selectable(COLUMN_DIAGNOSTICS, true);
+		item->set_tooltip_text(COLUMN_DIAGNOSTICS, p_has_diagnostics ? p_diagnostics_text : TTR("No autoload index diagnostics."));
+#ifdef MODULE_GDSCRIPT_ENABLED
+		if (p_has_diagnostics) {
+			item->set_custom_color(COLUMN_DIAGNOSTICS, p_has_conflict ? conflict_color : diagnostics_color);
+		}
+#endif
+
+		item->add_button(COLUMN_ACTIONS, get_editor_theme_icon(SNAME("Load")), BUTTON_OPEN, false, TTR("Open autoload source."));
+		item->add_button(COLUMN_ACTIONS, get_editor_theme_icon(SNAME("MoveUp")), BUTTON_MOVE_UP, !p_supports_manual_ordering, TTR("Move up."));
+		item->add_button(COLUMN_ACTIONS, get_editor_theme_icon(SNAME("MoveDown")), BUTTON_MOVE_DOWN, !p_supports_manual_ordering, TTR("Move down."));
+		item->add_button(COLUMN_ACTIONS, get_editor_theme_icon(SNAME("Remove")), BUTTON_DELETE, !p_can_edit_project_settings, TTR("Remove project-settings autoload."));
+		item->set_selectable(COLUMN_ACTIONS, false);
+	};
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+	const GDScriptAutoloadIndex index = build_autoload_index_for_project_view();
+	const Vector<AutoloadViewEntry> view_entries = build_autoload_view_entries(index);
+	for (const AutoloadViewEntry &view_entry : view_entries) {
+		const bool runtime_enabled = ProjectSettings::get_singleton()->has_autoload(view_entry.name);
+		add_autoload_row(
+				String(view_entry.name),
+				view_entry.path,
+				view_entry.is_singleton,
+				view_entry.order,
+				runtime_enabled,
+				view_entry.can_edit_project_settings,
+				view_entry.supports_manual_ordering,
+				view_entry.source_label,
+				view_entry.has_diagnostics,
+				view_entry.has_conflict,
+				view_entry.diagnostics_summary,
+				view_entry.diagnostics_text);
 	}
+#else
+	List<PropertyInfo> props;
+	ProjectSettings::get_singleton()->get_property_list(&props);
+
+	for (const PropertyInfo &pi : props) {
+		if (!pi.name.begins_with("autoload/")) {
+			continue;
+		}
+
+		String name = pi.name.get_slicec('/', 1);
+		String scr_path = GLOBAL_GET(pi.name);
+
+		if (name.is_empty()) {
+			continue;
+		}
+
+		const bool is_singleton = scr_path.begins_with("*");
+
+		if (is_singleton) {
+			scr_path = scr_path.substr(1);
+		}
+
+		add_autoload_row(
+				name,
+				ResourceUID::ensure_path(scr_path),
+				is_singleton,
+				ProjectSettings::get_singleton()->get_order(pi.name),
+				true,
+				true,
+				true,
+				"Project Settings",
+				false,
+				false,
+				"OK",
+				String());
+	}
+#endif
 
 	// Remove deleted/changed autoloads
 	for (KeyValue<String, AutoloadInfo> &E : to_remove) {
 		AutoloadInfo &info = E.value;
 		// A singleton was not registered for any language that reserves its name (see
 		// above), so there is nothing to remove for those; mirror the per-language skip.
-		if (info.is_singleton) {
+		if (info.runtime_enabled && info.is_singleton) {
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 				ScriptLanguage *language = ScriptServer::get_language(i);
 				if (language->get_reserved_global_names().has(info.name)) {
@@ -664,7 +980,12 @@ Variant EditorAutoloadSettings::get_drag_data_fw(const Point2 &p_point, Control 
 	TreeItem *next = tree->get_next_selected(nullptr);
 
 	while (next) {
-		autoloads.push_back(next->get_text(0));
+		const AutoloadInfo *info = _find_cached_autoload(next->get_text(COLUMN_NAME));
+		if (info == nullptr || !info->supports_manual_ordering) {
+			return Variant();
+		}
+
+		autoloads.push_back(next->get_text(COLUMN_NAME));
 		next = tree->get_next_selected(next);
 	}
 
@@ -712,6 +1033,11 @@ bool EditorAutoloadSettings::can_drop_data_fw(const Point2 &p_point, const Varia
 			return false;
 		}
 
+		const AutoloadInfo *info = _find_cached_autoload(ti->get_text(COLUMN_NAME));
+		if (info == nullptr || !info->supports_manual_ordering) {
+			return false;
+		}
+
 		int section = (p_point == Vector2(Math::INF, Math::INF)) ? tree->get_drop_section_at_position(tree->get_item_rect(ti).position) : tree->get_drop_section_at_position(p_point);
 
 		return section >= -1;
@@ -737,21 +1063,24 @@ void EditorAutoloadSettings::drop_data_fw(const Point2 &p_point, const Variant &
 	bool move_to_back = false;
 
 	if (section < 0) {
-		name = ti->get_text(0);
+		name = ti->get_text(COLUMN_NAME);
 	} else if (ti->get_next()) {
-		name = ti->get_next()->get_text(0);
+		name = ti->get_next()->get_text(COLUMN_NAME);
 	} else {
-		name = ti->get_text(0);
+		name = ti->get_text(COLUMN_NAME);
 		move_to_back = true;
 	}
 
-	int order = ProjectSettings::get_singleton()->get_order("autoload/" + name);
+	const AutoloadInfo *target_info = _find_cached_autoload(name);
+	if (target_info == nullptr || !target_info->supports_manual_ordering) {
+		return;
+	}
 
 	AutoloadInfo aux;
 	List<AutoloadInfo>::Element *E = nullptr;
 
 	if (!move_to_back) {
-		aux.order = order;
+		aux.name = name;
 		E = autoload_cache.find(aux);
 	}
 
@@ -760,20 +1089,23 @@ void EditorAutoloadSettings::drop_data_fw(const Point2 &p_point, const Variant &
 
 	// Store the initial order of the autoloads for comparison.
 	Vector<int> initial_orders;
-	initial_orders.resize(autoload_cache.size());
 	int idx = 0;
 	for (const AutoloadInfo &F : autoload_cache) {
-		initial_orders.write[idx++] = F.order;
+		if (F.supports_manual_ordering) {
+			initial_orders.push_back(F.order);
+		}
 	}
 
 	// Perform the drag-and-drop operation.
 	Vector<int> orders;
-	orders.resize(autoload_cache.size());
 
 	for (int i = 0; i < autoloads.size(); i++) {
-		aux.order = ProjectSettings::get_singleton()->get_order("autoload/" + autoloads[i]);
+		aux.name = autoloads[i];
 
 		List<AutoloadInfo>::Element *I = autoload_cache.find(aux);
+		if (I == nullptr || !I->get().supports_manual_ordering) {
+			return;
+		}
 
 		if (move_to_back) {
 			autoload_cache.move_to_back(I);
@@ -788,7 +1120,9 @@ void EditorAutoloadSettings::drop_data_fw(const Point2 &p_point, const Variant &
 
 	idx = 0;
 	for (const AutoloadInfo &F : autoload_cache) {
-		orders.write[idx++] = F.order;
+		if (F.supports_manual_ordering) {
+			orders.push_back(F.order);
+		}
 	}
 
 	// If the order didn't change, we shouldn't create undo/redo actions.
@@ -804,6 +1138,10 @@ void EditorAutoloadSettings::drop_data_fw(const Point2 &p_point, const Variant &
 
 	idx = 0;
 	for (const AutoloadInfo &F : autoload_cache) {
+		if (!F.supports_manual_ordering) {
+			continue;
+		}
+
 		undo_redo->add_do_method(ProjectSettings::get_singleton(), "set_order", "autoload/" + F.name, orders[idx++]);
 		undo_redo->add_undo_method(ProjectSettings::get_singleton(), "set_order", "autoload/" + F.name, F.order);
 	}
@@ -920,7 +1258,7 @@ EditorAutoloadSettings::EditorAutoloadSettings() {
 		}
 
 		info.name = name;
-		info.path = ResourceUID::get_singleton()->path_to_uid(scr_path);
+		info.path = ResourceUID::ensure_path(scr_path);
 		info.order = ProjectSettings::get_singleton()->get_order(pi.name);
 
 		if (info.is_singleton) {
@@ -1016,24 +1354,30 @@ EditorAutoloadSettings::EditorAutoloadSettings() {
 
 	tree->set_theme_type_variation("TreeTable");
 	tree->set_hide_folding(true);
-	tree->set_columns(4);
+	tree->set_columns(COLUMN_MAX);
 	tree->set_column_titles_visible(true);
 
-	tree->set_column_title(0, TTRC("Name"));
-	tree->set_column_title_alignment(0, HORIZONTAL_ALIGNMENT_LEFT);
-	tree->set_column_expand(0, true);
-	tree->set_column_expand_ratio(0, 1);
+	tree->set_column_title(COLUMN_NAME, TTRC("Name"));
+	tree->set_column_title_alignment(COLUMN_NAME, HORIZONTAL_ALIGNMENT_LEFT);
+	tree->set_column_expand(COLUMN_NAME, true);
+	tree->set_column_expand_ratio(COLUMN_NAME, 1);
 
-	tree->set_column_title(1, TTRC("Path"));
-	tree->set_column_title_alignment(1, HORIZONTAL_ALIGNMENT_LEFT);
-	tree->set_column_expand(1, true);
-	tree->set_column_clip_content(1, true);
-	tree->set_column_expand_ratio(1, 2);
+	tree->set_column_title(COLUMN_PATH, TTRC("Path"));
+	tree->set_column_title_alignment(COLUMN_PATH, HORIZONTAL_ALIGNMENT_LEFT);
+	tree->set_column_expand(COLUMN_PATH, true);
+	tree->set_column_clip_content(COLUMN_PATH, true);
+	tree->set_column_expand_ratio(COLUMN_PATH, 2);
 
-	tree->set_column_title(2, TTRC("Global Variable"));
-	tree->set_column_expand(2, false);
+	tree->set_column_title(COLUMN_SOURCE, TTRC("Source"));
+	tree->set_column_expand(COLUMN_SOURCE, false);
 
-	tree->set_column_expand(3, false);
+	tree->set_column_title(COLUMN_GLOBAL_VARIABLE, TTRC("Global Variable"));
+	tree->set_column_expand(COLUMN_GLOBAL_VARIABLE, false);
+
+	tree->set_column_title(COLUMN_DIAGNOSTICS, TTRC("Status"));
+	tree->set_column_expand(COLUMN_DIAGNOSTICS, false);
+
+	tree->set_column_expand(COLUMN_ACTIONS, false);
 
 	tree->connect("cell_selected", callable_mp(this, &EditorAutoloadSettings::_autoload_selected));
 	tree->connect("item_edited", callable_mp(this, &EditorAutoloadSettings::_autoload_edited));
