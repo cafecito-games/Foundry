@@ -1328,6 +1328,15 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	if (p_class->identifier) {
 		StringName class_name = p_class->identifier->name;
 		StringName global_class_name = (p_class == parser->head && !p_class->qualified_global_name.is_empty()) ? StringName(p_class->qualified_global_name) : class_name;
+		bool declares_script_owned_autoload = false;
+		if (p_class == parser->head) {
+			for (GDScriptParser::AnnotationNode *annotation : parser->head->annotations) {
+				if (annotation->name == SNAME("@autoload")) {
+					declares_script_owned_autoload = true;
+					break;
+				}
+			}
+		}
 		ensure_autoload_index_current();
 		if (GDScriptParser::get_builtin_type(class_name) < Variant::VARIANT_MAX || class_name == SNAME("AsyncCallable")) {
 			push_error(vformat(R"(Class "%s" hides a built-in type.)", class_name), p_class->identifier);
@@ -1336,6 +1345,7 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 		} else if (ScriptServer::is_global_class(global_class_name) && (!GDScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(global_class_name), parser->script_path) || p_class != parser->head)) {
 			push_error(vformat(R"(Class "%s" from "%s" collides with global script class from "%s".)", global_class_name, parser->script_path, ScriptServer::get_global_class_path(global_class_name)), p_class->identifier);
 		} else if (const GDScriptAutoloadIndexEntry *autoload = autoload_index.get_by_name(class_name); autoload != nullptr && autoload->is_singleton &&
+				!declares_script_owned_autoload &&
 				(p_class != parser->head || !GDScript::is_canonically_equal_paths(autoload->path, parser->script_path))) {
 			push_error(vformat(R"(Class "%s" hides an autoload singleton.)", class_name), p_class->identifier);
 		}

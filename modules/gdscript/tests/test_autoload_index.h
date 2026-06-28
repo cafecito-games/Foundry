@@ -946,6 +946,8 @@ TEST_CASE("[Modules][GDScript] Autoload index diagnoses same-name different-path
 	REQUIRE_EQ(indexed_entries.size(), 1);
 	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("IndexMigrationConflict"));
 	REQUIRE(entry != nullptr);
+	CHECK_EQ(entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(entry->path, "res://migration_script.gd");
 	CHECK(has_hard_diagnostic_containing(
 			*entry,
 			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
@@ -1239,6 +1241,54 @@ TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery does not re
 	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
 	CHECK(loaded.has_autoload(SNAME("IndexExportBodyService")));
 	CHECK(loaded.has_autoload(SNAME("IndexExportBodyConsumer")));
+}
+
+TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery wins project-settings conflicts") {
+	ScopedTempFiles files("gdscript_autoload_index_export_conflict_precedence");
+	ScopedAutoloadSettings autoloads;
+
+	const String settings_path = files.write("export_conflict_settings.gd", "extends Node\n");
+	autoloads.set(SNAME("IndexExportConflict"), settings_path, true, 5);
+
+	const String script_source =
+			"@autoload\n"
+			"class_name IndexExportConflict extends Node\n";
+	const String script_path = files.write("export_conflict_script.gd", script_source);
+	ScopedScriptServerClass registered_conflict(SNAME("IndexExportConflict"), "Node", script_path);
+
+	GDScriptCache::remove_parser(script_path);
+
+	GDScriptAutoloadIndex index;
+	CHECK_EQ(index.rebuild_from_project_settings_and_script_annotations(), OK);
+
+	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("IndexExportConflict"));
+	CHECK(entry != nullptr);
+	if (entry == nullptr) {
+		return;
+	}
+	CHECK_EQ(entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(entry->path, script_path);
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			script_path));
+	CHECK(has_hard_diagnostic_containing(
+			*entry,
+			GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
+			settings_path));
+
+	const String cache_path = files.reserve("export_conflict_autoload_index_cache.cfg");
+	CHECK_EQ(index.save_to_cache(cache_path), OK);
+
+	GDScriptAutoloadIndex loaded;
+	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
+	const GDScriptAutoloadIndexEntry *loaded_entry = loaded.get_by_name(SNAME("IndexExportConflict"));
+	CHECK(loaded_entry != nullptr);
+	if (loaded_entry == nullptr) {
+		return;
+	}
+	CHECK_EQ(loaded_entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(loaded_entry->path, script_path);
 }
 
 TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery reports invalid annotations") {

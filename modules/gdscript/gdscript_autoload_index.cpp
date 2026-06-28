@@ -309,12 +309,24 @@ void normalize_duplicate_entries(Vector<GDScriptAutoloadIndexEntry> &r_entries) 
 			continue;
 		}
 
+		Vector<GDScriptAutoloadIndexDiagnostic> diagnostics = existing.diagnostics;
+		for (const GDScriptAutoloadIndexDiagnostic &diagnostic : entry.diagnostics) {
+			diagnostics.push_back(diagnostic);
+		}
+
+		const String existing_path = existing.path;
+		const String entry_path = entry.path;
+		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION &&
+				existing.source != GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			existing = entry;
+		}
+		existing.diagnostics = diagnostics;
 		add_diagnostic(existing,
 				GDScriptAutoloadIndexDiagnostic::CONFLICTING_AUTOLOAD_PATH,
 				vformat("Autoload \"%s\" is declared with conflicting paths \"%s\" and \"%s\" during migration.",
 						String(existing.name),
-						existing.path,
-						entry.path));
+						existing_path,
+						entry_path));
 	}
 
 	r_entries = normalized;
