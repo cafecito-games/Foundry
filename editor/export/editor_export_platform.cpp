@@ -1732,7 +1732,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	Vector<String> forced_export;
 	err = collect_forced_export_files(p_preset, forced_export, true);
 	if (err != OK) {
-		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not save GDScript autoload index cache: %s."), error_names[err]));
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not collect forced export files for GDScript autoload metadata: %s."), error_names[err]));
 		return err;
 	}
 	for (int i = 0; i < forced_export.size(); i++) {
