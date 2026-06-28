@@ -93,6 +93,48 @@ GDExtensionLoader	FoundryExtensionLoader	B
 GDExtensionMethodBind	FoundryExtensionMethodBind	B
 GDExtensionInterface	FoundryExtensionInterface	B
 GDExtension	FoundryExtension	B	apply AFTER all GDExtension* compounds
+# Lowercase file/dir/include/identifier prefix: gdextension_ -> foundry_extension_
+# (apply BEFORE the bare gdextension rule via longest-first).
+gdextension_	foundry_extension_	B	lowercase file/include/identifier prefix
+gdextension	foundry_extension	B	bare lowercase token (apply AFTER gdextension_)
+# All-caps public C API enums / build define / macros.
+GDEXTENSION_	FOUNDRY_EXTENSION_	B	all-caps macro/enum prefix (apply BEFORE bare GDEXTENSION)
+GDEXTENSION	FOUNDRY_EXTENSION	B	bare all-caps build define (apply AFTER GDEXTENSION_)
+# Bare resource/loader format string (no dot) -> "foundryextension" (no underscore).
+"gdextension"	"foundryextension"	B	resource loader recognized-extension string
+# Category-B residuals: embedded GDExtension tokens the word-boundary engine
+# cannot reach (preceded by a letter/digit, plural forms, or mid-identifier).
+# CamelCase embedded -> FoundryExtension.
+ObjectGDExtension	ObjectFoundryExtension	B	core object extension hook struct
+getGDExtensionConfigFiles	getFoundryExtensionConfigFiles	B	android JNI method name (both sides)
+getPluginGDExtensionLibrariesPaths	getPluginFoundryExtensionLibrariesPaths	B
+pluginGDExtensionLibrariesPaths	pluginFoundryExtensionLibrariesPaths	B
+# Identifier-initial _gdextension_ family (interface dumper constants, wrappers).
+_gdextension_	_foundry_extension_	B	leading-underscore gdextension prefix
+# snake_case embedded (gdextension preceded by alnum, or plural gdextensions).
+_gdextensions_reloaded	_foundry_extensions_reloaded	B
+gdextensions	foundry_extensions	B	bare plural (apply AFTER *_gdextensions compounds)
+initialize_gdextensions	initialize_foundry_extensions	B
+finalize_gdextensions	finalize_foundry_extensions	B
+load_platform_gdextensions	load_platform_foundry_extensions	B
+dump_gdextension_interface_header	dump_foundry_extension_interface_header	B
+dump_gdextension_interface	dump_foundry_extension_interface	B
+generate_gdextension_interface_header	generate_foundry_extension_interface_header	B
+generate_gdextension_interface_file	generate_foundry_extension_interface_file	B
+load_gdextension_interface_file	load_foundry_extension_interface_file	B
+load_gdextension_resource	load_foundry_extension_resource	B
+_get_gdextension_list_config_file	_get_foundry_extension_list_config_file	B
+get_gdextension_list_config_file	get_foundry_extension_list_config_file	B
+parse_gdextension_file	parse_foundry_extension_file	B
+resource_loader_gdextension	resource_loader_foundry_extension	B
+p_gdextension_extensions	p_foundry_extension_extensions	B
+p_gdextension_libs_path	p_foundry_extension_libs_path	B
+# Export config keys (web JS + android), kept self-consistent across .cpp/.js.
+gdextensionLibs	foundryextensionLibs	B	web export config key
+gdextensionlibs	foundryextensionlibs	B	android libs json path component
+# Hyphenated CLI flags (keep hyphens; the bare rule would inject an underscore).
+dump-gdextension-interface	dump-foundryextension-interface	B	CLI flag (covers -json suffix)
+gdextension-docs	foundryextension-docs	B	--gdextension-docs CLI flag
 GDREGISTER_ABSTRACT_CLASS	FOUNDRY_REGISTER_ABSTRACT_CLASS	C
 GDREGISTER_CLASS	FOUNDRY_REGISTER_CLASS	C
 GDSOFTCLASS	FOUNDRY_SOFTCLASS	C

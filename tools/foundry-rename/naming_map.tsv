@@ -66,6 +66,7 @@ GDExtensionUninitializedStringNamePtr	FoundryExtensionUninitializedStringNamePtr
 GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD	FOUNDRY_ANDROID_KEYSTORE_DEBUG_PASSWORD	D	code	generated
 GODOT_MACOS_CODESIGN_CERTIFICATE_FILE	FOUNDRY_MACOS_CODESIGN_CERTIFICATE_FILE	D	code	generated
 TestGDScriptGenericReflectionAccessor	TestFSGenericReflectionAccessor	A	code
+generate_gdextension_interface_header	generate_foundry_extension_interface_header	B	code
 GDExtensionScriptInstanceGetLanguage	FoundryExtensionScriptInstanceGetLanguage	B	code	generated
 GDExtensionVariantGetInternalPtrFunc	FoundryExtensionVariantGetInternalPtrFunc	B	code	generated
 GDExtensionWorkerThreadPoolGroupTask	FoundryExtensionWorkerThreadPoolGroupTask	B	code	generated
@@ -85,6 +86,7 @@ GODOT_NIR_DESCRIPTOR_SET_MULTIPLIER	FOUNDRY_NIR_DESCRIPTOR_SET_MULTIPLIER	D	code
 GODOT_animation_time_begin_time_end	FOUNDRY_animation_time_begin_time_end	D	code	generated
 TestGDScriptTraitReflectionAccessor	TestFSTraitReflectionAccessor	A	code
 check_for_rename_gdscript_functions	check_for_rename_foundry_script_functions	A	code
+generate_gdextension_interface_file	generate_foundry_extension_interface_file	B	code
 GDExtensionClassGetVirtualCallData	FoundryExtensionClassGetVirtualCallData	B	code	generated
 GDExtensionInterfaceGetProcAddress	FoundryExtensionInterfaceGetProcAddress	B	code	generated
 GDExtensionMainLoopStartupCallback	FoundryExtensionMainLoopStartupCallback	B	code	generated
@@ -95,6 +97,7 @@ GODOT_EMBEDDED_CLIENT_FOCUS_WINDOW	FOUNDRY_EMBEDDED_CLIENT_FOCUS_WINDOW	D	code	g
 GODOT_MSVC_WARNING_PUSH_AND_IGNORE	FOUNDRY_MSVC_WARNING_PUSH_AND_IGNORE	D	code	generated
 GODOT_MTL_DISABLE_ARGUMENT_BUFFERS	FOUNDRY_MTL_DISABLE_ARGUMENT_BUFFERS	D	code	generated
 check_for_rename_gdscript_keywords	check_for_rename_foundry_script_keywords	A	code
+getPluginGDExtensionLibrariesPaths	getPluginFoundryExtensionLibrariesPaths	B	code
 GDExtensionCallableCustomLessThan	FoundryExtensionCallableCustomLessThan	B	code	generated
 GDExtensionCallableCustomToString	FoundryExtensionCallableCustomToString	B	code	generated
 GDExtensionClassFreePropertyList2	FoundryExtensionClassFreePropertyList2	B	code	generated
@@ -111,6 +114,8 @@ GODOT_ANDROID_KEYSTORE_DEBUG_USER	FOUNDRY_ANDROID_KEYSTORE_DEBUG_USER	D	code	gen
 GODOT_GCC_WARNING_PUSH_AND_IGNORE	FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE	D	code	generated
 GODOT_MACOS_NOTARIZATION_API_UUID	FOUNDRY_MACOS_NOTARIZATION_API_UUID	D	code	generated
 GODOT_SCENE_TREE_FTI_EXTRA_CHECKS	FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS	D	code	generated
+_get_gdextension_list_config_file	_get_foundry_extension_list_config_file	B	code
+dump_gdextension_interface_header	dump_foundry_extension_interface_header	B	code
 GDExtensionCallableCustomIsValid	FoundryExtensionCallableCustomIsValid	B	code	generated
 GDExtensionClassFreePropertyList	FoundryExtensionClassFreePropertyList	B	code	generated
 GDExtensionClassRecreateInstance	FoundryExtensionClassRecreateInstance	B	code	generated
@@ -119,6 +124,7 @@ GDExtensionMainLoopFrameCallback	FoundryExtensionMainLoopFrameCallback	B	code	ge
 GDExtensionScriptInstanceDataPtr	FoundryExtensionScriptInstanceDataPtr	B	code	generated
 GODOT_MACOS_NOTARIZATION_API_KEY	FOUNDRY_MACOS_NOTARIZATION_API_KEY	D	code	generated
 GODOT_NIR_SC_SENTINEL_MAGIC_MASK	FOUNDRY_NIR_SC_SENTINEL_MAGIC_MASK	D	code	generated
+get_gdextension_list_config_file	get_foundry_extension_list_config_file	B	code
 test_conversion_gdscript_builtin	test_conversion_foundry_script_builtin	A	code
 GDExtensionClassCreateInstance2	FoundryExtensionClassCreateInstance2	B	code	generated
 GDExtensionClassGetPropertyList	FoundryExtensionClassGetPropertyList	B	code	generated
@@ -134,6 +140,8 @@ GODOT_UPDATE_INTERPOLATION_TICK	FOUNDRY_UPDATE_INTERPOLATION_TICK	D	code	generat
 GODOT_WINDOWS_CODESIGN_IDENTITY	FOUNDRY_WINDOWS_CODESIGN_IDENTITY	D	code	generated
 GODOT_WINDOWS_CODESIGN_PASSWORD	FOUNDRY_WINDOWS_CODESIGN_PASSWORD	D	code	generated
 _open_gdscript_migration_wizard	_open_foundry_script_migration_wizard	A	code
+load_gdextension_interface_file	load_foundry_extension_interface_file	B	code
+pluginGDExtensionLibrariesPaths	pluginFoundryExtensionLibrariesPaths	B	code
 GDExtensionCallableCustomEqual	FoundryExtensionCallableCustomEqual	B	code	generated
 GDExtensionCallableCustomInfo2	FoundryExtensionCallableCustomInfo2	B	code	generated
 GDExtensionClassCreateInstance	FoundryExtensionClassCreateInstance	B	code	generated
@@ -209,6 +217,7 @@ __gdscript_type_arguments__	__foundry_script_type_arguments__	A	code	internal me
 keyword_gdscript_mastersync	keyword_foundry_script_mastersync	A	code
 keyword_gdscript_puppetsync	keyword_foundry_script_puppetsync	A	code
 keyword_gdscript_remotesync	keyword_foundry_script_remotesync	A	code
+resource_loader_gdextension	resource_loader_foundry_extension	B	code
 write_call_gdscript_utility	write_call_foundry_script_utility	A	code
 GDExtensionClassGetVirtual	FoundryExtensionClassGetVirtual	B	code	generated
 GDExtensionClassLibraryPtr	FoundryExtensionClassLibraryPtr	B	code	generated
@@ -221,6 +230,9 @@ GODOT_CLANG_WARNING_IGNORE	FOUNDRY_CLANG_WARNING_IGNORE	D	code	generated
 GODOT_DEBUG_DELTA_SMOOTHER	FOUNDRY_DEBUG_DELTA_SMOOTHER	D	code	generated
 GODOT_JS_FETCH_STATE_ERROR	FOUNDRY_JS_FETCH_STATE_ERROR	D	code	generated
 GODOT_SILENCE_ROOT_WARNING	FOUNDRY_SILENCE_ROOT_WARNING	D	code	generated
+dump-gdextension-interface	dump-foundryextension-interface	B	code	CLI flag (covers -json suffix)
+dump_gdextension_interface	dump_foundry_extension_interface	B	code
+load_platform_gdextensions	load_platform_foundry_extensions	B	code
 populate_gdscript_metadata	populate_foundry_script_metadata	A	code
 GDExtensionClassReference	FoundryExtensionClassReference	B	code	generated
 GDExtensionConstObjectPtr	FoundryExtensionConstObjectPtr	B	code	generated
@@ -244,6 +256,8 @@ GODOT_VERSION_FULL_CONFIG	FOUNDRY_VERSION_FULL_CONFIG	D	code	generated
 GODOT_mesh_blend_channels	FOUNDRY_mesh_blend_channels	D	code	generated
 TestGDScriptCacheAccessor	TestFSCacheAccessor	A	code
 _get_gdscript_cache_mutex	_get_fs_cache_mutex	A	code
+getGDExtensionConfigFiles	getFoundryExtensionConfigFiles	B	code	android JNI method name (both sides)
+load_gdextension_resource	load_foundry_extension_resource	B	code
 rename_gdscript_functions	rename_foundry_script_functions	A	code
 GDExtensionCallErrorType	FoundryExtensionCallErrorType	B	code	generated
 GDExtensionClassToString	FoundryExtensionClassToString	B	code	generated
@@ -266,6 +280,7 @@ GODOT_VERSION_FULL_BUILD	FOUNDRY_VERSION_FULL_BUILD	D	code	generated
 GODOT_VERSION_SHORT_NAME	FOUNDRY_VERSION_SHORT_NAME	D	code	generated
 STRUCTURED_TEXT_GDSCRIPT	STRUCTURED_TEXT_FOUNDRY_SCRIPT	A	code	TextServer enum
 keyword_gdscript_onready	keyword_foundry_script_onready	A	code
+p_gdextension_extensions	p_foundry_extension_extensions	B	code
 rename_gdscript_keywords	rename_foundry_script_keywords	A	code
 GDExtensionConstTypePtr	FoundryExtensionConstTypePtr	B	code	generated
 GDExtensionExportPlugin	FoundryExtensionExportPlugin	B	code	generated
@@ -280,9 +295,11 @@ GODOT_VERSION_FULL_NAME	FOUNDRY_VERSION_FULL_NAME	D	code	generated
 GODOT_VERSION_TIMESTAMP	FOUNDRY_VERSION_TIMESTAMP	D	code	generated
 MODULE_GDSCRIPT_ENABLED	MODULE_FOUNDRY_SCRIPT_ENABLED	A	code	module enable macro (build-critical)
 generate_gdscript_tests	generate_foundry_script_tests	A	code
+initialize_gdextensions	initialize_foundry_extensions	B	code
 keyword_gdscript_master	keyword_foundry_script_master	A	code
 keyword_gdscript_puppet	keyword_foundry_script_puppet	A	code
 keyword_gdscript_remote	keyword_foundry_script_remote	A	code
+p_gdextension_libs_path	p_foundry_extension_libs_path	B	code
 GDExtensionClassGetRID	FoundryExtensionClassGetRID	B	code	generated
 GDExtensionConstRefPtr	FoundryExtensionConstRefPtr	B	code	generated
 GDExtensionVariantType	FoundryExtensionVariantType	B	code	generated
@@ -295,8 +312,10 @@ GODOT_TRANSFORM2D_SIZE	FOUNDRY_TRANSFORM2D_SIZE	D	code	generated
 GODOT_TRANSFORM3D_SIZE	FOUNDRY_TRANSFORM3D_SIZE	D	code	generated
 GODOT_VERSION_DOCS_URL	FOUNDRY_VERSION_DOCS_URL	D	code	generated
 ScopedGDScriptLanguage	ScopedFSLanguage	A	code
+_gdextensions_reloaded	_foundry_extensions_reloaded	B	code
 fuzz_gdscript_linuxbsd	fuzz_foundry_script_linuxbsd	A	code	fuzz harness (file + symbol)
 keyword_gdscript_slave	keyword_foundry_script_slave	A	code
+parse_gdextension_file	parse_foundry_extension_file	B	code
 shallow_gdscript_cache	shallow_fs_cache	A	code
 GDExtensionEditorHelp	FoundryExtensionEditorHelp	B	code	generated
 GDExtensionMethodBind	FoundryExtensionMethodBind	B	code
@@ -322,6 +341,7 @@ GODOT_THREADS_ENABLED	FOUNDRY_THREADS_ENABLED	D	code	generated
 GODOT_USE_INSTRUMENTS	FOUNDRY_USE_INSTRUMENTS	D	code	generated
 GODOT_VERSION_WEBSITE	FOUNDRY_VERSION_WEBSITE	D	code	generated
 GODOT_WAYLAND_DISPLAY	FOUNDRY_WAYLAND_DISPLAY	D	code	generated
+finalize_gdextensions	finalize_foundry_extensions	B	code
 keyword_gdscript_sync	keyword_foundry_script_sync	A	code
 keyword_gdscript_tool	keyword_foundry_script_tool	A	code
 process_gdscript_line	process_foundry_script_line	A	code
@@ -416,6 +436,7 @@ GODOT_STRING_SIZE	FOUNDRY_STRING_SIZE	D	code	generated
 GODOT_VERSION_HEX	FOUNDRY_VERSION_HEX	D	code	generated
 GODOT_single_root	FOUNDRY_single_root	D	code	generated
 LANGUAGE_GDSCRIPT	LANGUAGE_FOUNDRY_SCRIPT	A	code	editor_help enum
+ObjectGDExtension	ObjectFoundryExtension	B	code	core object extension hook struct
 expected_gdscript	expected_foundry_script	A	code
 p_gdscript_member	p_fs_member	A	code
 GDREGISTER_CLASS	FOUNDRY_REGISTER_CLASS	C	code
@@ -432,6 +453,7 @@ GODOT_JAVASCRIPT	FOUNDRY_JAVASCRIPT	D	code	generated
 GODOT_PLANE_SIZE	FOUNDRY_PLANE_SIZE	D	code	generated
 GODOT_RECT2_SIZE	FOUNDRY_RECT2_SIZE	D	code	generated
 base_is_gdscript	base_is_foundry_script	A	code
+gdextension-docs	foundryextension-docs	B	code	--gdextension-docs CLI flag
 is_gdscript_path	is_foundry_script_path	A	code
 GDExtensionBool	FoundryExtensionBool	B	code	generated
 GDExtensionData	FoundryExtensionData	B	code	generated
@@ -439,6 +461,8 @@ GDSCRIPT_NO_LSP	FOUNDRY_SCRIPT_NO_LSP	A	code	build define
 GODOT_AABB_SIZE	FOUNDRY_AABB_SIZE	D	code	generated
 GODOT_USE_TRACY	FOUNDRY_USE_TRACY	D	code	generated
 GODOT_fbx_light	FOUNDRY_fbx_light	D	code	generated
+gdextensionLibs	foundryextensionLibs	B	code	web export config key
+gdextensionlibs	foundryextensionlibs	B	code	android libs json path component
 godotengine.org	cafecito.games	D	both
 GDExtensionInt	FoundryExtensionInt	B	code	generated
 GDExtensionPtr	FoundryExtensionPtr	B	code	generated
@@ -447,13 +471,16 @@ GDVIRTUAL_BIND	FOUNDRY_VIRTUAL_BIND	C	code	generated
 GDVIRTUAL_CALL	FOUNDRY_VIRTUAL_CALL	C	code	generated
 GODOT_LINUXBSD	FOUNDRY_LINUXBSD	D	code	generated
 GODOT_RID_SIZE	FOUNDRY_RID_SIZE	D	code	generated
+"gdextension"	"foundryextension"	B	code	resource loader recognized-extension string
 GDScriptCache	FSCache	A	code
 GODOT_ANDROID	FOUNDRY_ANDROID	D	code	generated
 GODOT_VERSION	FOUNDRY_VERSION	D	code
 GODOT_WINDOWS	FOUNDRY_WINDOWS	D	code	generated
 TYPE_GDSCRIPT	TYPE_FOUNDRY_SCRIPT	A	code
+_gdextension_	_foundry_extension_	B	code	leading-underscore gdextension prefix
 project.godot	project.foundry	D	both
 .gdextension	.foundryextension	B	both	file format extension
+GDEXTENSION_	FOUNDRY_EXTENSION_	B	code	all-caps macro/enum prefix (apply BEFORE bare GDEXTENSION)
 GDExtensions	FoundryExtensions	B	code	generated
 GDVIRTUAL0RC	FOUNDRY_VIRTUAL0RC	C	code	generated
 GDVIRTUAL1RC	FOUNDRY_VIRTUAL1RC	C	code	generated
@@ -467,6 +494,9 @@ GODOT_MOBILE	FOUNDRY_MOBILE	D	code	generated
 GODOT_MODULE	FOUNDRY_MODULE	D	code	generated
 GODOT_SPLASH	FOUNDRY_SPLASH	D	code	generated
 Godot Engine	Foundry	D	prose
+gdextension_	foundry_extension_	B	code	lowercase file/include/identifier prefix
+gdextensions	foundry_extensions	B	code	bare plural (apply AFTER *_gdextensions compounds)
+GDEXTENSION	FOUNDRY_EXTENSION	B	code	bare all-caps build define (apply AFTER GDEXTENSION_)
 GDExtension	FoundryExtension	B	code	apply AFTER all GDExtension* compounds
 GDSOFTCLASS	FOUNDRY_SOFTCLASS	C	code
 GDVIRTUAL0R	FOUNDRY_VIRTUAL0R	C	code	generated
@@ -488,6 +518,7 @@ GDVIRTUAL8C	FOUNDRY_VIRTUAL8C	C	code	generated
 GODOT_CLOCK	FOUNDRY_CLOCK	D	code	generated
 GODOT_HTML5	FOUNDRY_HTML5	D	code	generated
 GODOT_MACOS	FOUNDRY_MACOS	D	code	generated
+gdextension	foundry_extension	B	code	bare lowercase token (apply AFTER gdextension_)
 GDVIRTUAL0	FOUNDRY_VIRTUAL0	C	code	generated
 GDVIRTUAL1	FOUNDRY_VIRTUAL1	C	code	generated
 GDVIRTUAL2	FOUNDRY_VIRTUAL2	C	code	generated
