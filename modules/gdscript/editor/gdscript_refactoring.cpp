@@ -293,6 +293,11 @@ public:
 		}
 		return parser;
 	}
+
+	const ExtendGDScriptParser *peek_parse_result(const String &p_path) const override {
+		ExtendGDScriptParser **existing = parse_results.getptr(p_path);
+		return existing != nullptr ? *existing : nullptr;
+	}
 };
 
 bool can_use_refactor_parse_results() {
@@ -1822,6 +1827,10 @@ bool infer_parameter_type_from_call_sites(
 	List<String> paths;
 	p_workspace->list_project_script_files(paths);
 	for (const String &path : paths) {
+		// A file whose source never names the function cannot call it; skip the parse.
+		if (!p_workspace->source_may_reference_symbol(path, function_name, p_parse_results)) {
+			continue;
+		}
 		const ExtendGDScriptParser *parser = p_parse_results->get_parse_result(path);
 		if (parser == nullptr || parser->parse_result != OK) {
 			continue;
@@ -7154,6 +7163,10 @@ static void collect_dynamic_string_references(
 	p_workspace->list_project_script_files(paths);
 
 	for (const String &path : paths) {
+		// A file whose raw text never mentions the symbol cannot reference it; skip the parse.
+		if (!p_workspace->source_may_reference_symbol(path, p_symbol.name, &p_parse_results)) {
+			continue;
+		}
 		const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(path);
 		if (!parser) {
 			continue;
@@ -7190,6 +7203,10 @@ static void collect_parse_error_textual_references(
 	p_workspace->list_project_script_files(paths);
 
 	for (const String &path : paths) {
+		// A file whose raw text never mentions the symbol cannot reference it; skip the parse.
+		if (!p_workspace->source_may_reference_symbol(path, p_symbol.name, &p_parse_results)) {
+			continue;
+		}
 		const ExtendGDScriptParser *parser = p_parse_results.get_parse_result(path);
 		if (parser == nullptr || parser->parse_result == OK) {
 			continue;

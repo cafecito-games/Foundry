@@ -40,6 +40,10 @@
 class GDScriptParseResultProvider {
 public:
 	virtual const ExtendGDScriptParser *get_parse_result(const String &p_path) const = 0;
+	// Return an already-parsed result for p_path without triggering a parse, or
+	// nullptr when nothing is cached. Lets the raw-text pre-filter honor unsaved
+	// buffers while avoiding a fresh parse just to inspect a file's contents.
+	virtual const ExtendGDScriptParser *peek_parse_result(const String &p_path) const { return nullptr; }
 	virtual ~GDScriptParseResultProvider() = default;
 };
 
@@ -72,6 +76,7 @@ protected:
 
 	const LSP::DocumentSymbol *get_native_symbol(const String &p_class, const String &p_member = "") const;
 	const ExtendGDScriptParser *get_parse_result(const String &p_path, const GDScriptParseResultProvider *p_parse_result_provider) const;
+	const ExtendGDScriptParser *peek_parse_result(const String &p_path, const GDScriptParseResultProvider *p_parse_result_provider) const;
 	const LSP::DocumentSymbol *get_script_symbol(const String &p_path, const GDScriptParseResultProvider *p_parse_result_provider = nullptr) const;
 	const LSP::DocumentSymbol *get_parameter_symbol(const LSP::DocumentSymbol *p_parent, const String &symbol_identifier);
 	const LSP::DocumentSymbol *get_local_symbol_at(const ExtendGDScriptParser *p_parser, const String &p_symbol_identifier, const LSP::Position p_position);
@@ -114,6 +119,15 @@ public:
 			LSP::Range &r_range,
 			const GDScriptParseResultProvider *p_parse_result_provider = nullptr);
 	void list_project_script_files(List<String> &r_files) { list_script_files("res://", r_files); }
+	// Cheap pre-filter for project-wide refactors: a file whose source never
+	// mentions p_symbol_name cannot reference it, so it can be skipped before the
+	// expensive parse + AST walk. Prefers an already-parsed result (honoring
+	// unsaved buffers) and otherwise reads the file from disk once. Returns true
+	// conservatively when the contents cannot be determined.
+	bool source_may_reference_symbol(
+			const String &p_path,
+			const String &p_symbol_name,
+			const GDScriptParseResultProvider *p_parse_result_provider) const;
 	Vector<LSP::Location> find_usages_in_file(
 			const LSP::DocumentSymbol &p_symbol,
 			const String &p_file_path,

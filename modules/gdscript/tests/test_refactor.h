@@ -4398,6 +4398,54 @@ TEST_SUITE("[Modules][GDScript][Refactor]") {
 		memdelete(editor_file_system);
 	}
 
+	TEST_CASE("Rename pre-filters project files by raw text before parsing") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
+		REQUIRE(protocol);
+
+		// Renames `helper` in rename_function.gd; the symbol name scanned for is "helper".
+		auto run_rename_helper = []() -> RefactorResult {
+			const String path = "res://refactor/rename_function.gd";
+			GDScriptTests::assert_no_errors_in(path);
+			RefactorContext ctx;
+			ctx.path = path;
+			ctx.source = FileAccess::get_file_as_string(path);
+			RefactorParams params;
+			params.new_name = "worker";
+			return GDScriptRefactoring::prepare(ctx, caret(2, 5), RefactorKind::RENAME, params); // caret on `helper` decl
+		};
+
+		ExtendGDScriptParser::reset_parse_file_count_for_test();
+		REQUIRE(run_rename_helper().ok);
+		const uint64_t baseline_parses = ExtendGDScriptParser::get_parse_file_count_for_test();
+
+		SUBCASE("a file whose text never mentions the symbol is not parsed") {
+			TemporaryScriptFile unrelated(
+					"res://refactor/issue_605_unrelated.gd",
+					"extends Node\n"
+					"func untouched() -> void:\n"
+					"\tpass\n");
+			ExtendGDScriptParser::reset_parse_file_count_for_test();
+			REQUIRE(run_rename_helper().ok);
+			CHECK_EQ(ExtendGDScriptParser::get_parse_file_count_for_test(), baseline_parses);
+		}
+
+		SUBCASE("a file whose text mentions the symbol is parsed") {
+			TemporaryScriptFile mentions(
+					"res://refactor/issue_605_mentions.gd",
+					"extends Node\n"
+					"# helper appears only in this comment\n"
+					"func other() -> void:\n"
+					"\tpass\n");
+			ExtendGDScriptParser::reset_parse_file_count_for_test();
+			REQUIRE(run_rename_helper().ok);
+			CHECK_EQ(ExtendGDScriptParser::get_parse_file_count_for_test(), baseline_parses + 1);
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
 	TEST_CASE("Implement abstract recovers a cross-file base default from the base file") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);

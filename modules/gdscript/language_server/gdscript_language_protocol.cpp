@@ -440,6 +440,13 @@ ExtendGDScriptParser *GDScriptLanguageProtocol::get_parse_result(const String &p
 	return *cached_parser;
 }
 
+ExtendGDScriptParser *GDScriptLanguageProtocol::peek_parse_result(const String &p_path) {
+	LSP_CLIENT_V(nullptr);
+
+	ExtendGDScriptParser **cached_parser = client->parse_results.getptr(p_path);
+	return cached_parser != nullptr ? *cached_parser : nullptr;
+}
+
 void GDScriptLanguageProtocol::lsp_did_open(const Dictionary &p_params) {
 	LSP_CLIENT;
 
