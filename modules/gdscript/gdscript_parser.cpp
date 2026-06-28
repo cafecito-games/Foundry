@@ -82,6 +82,17 @@ HashMap<String, String> GDScriptParser::theme_color_names;
 
 HashMap<StringName, GDScriptParser::AnnotationInfo> GDScriptParser::valid_annotations;
 
+namespace {
+// Increments a depth counter on construction and decrements it on destruction so
+// every return path out of a recursive parse function stays balanced.
+struct RecursionDepthGuard {
+	int &depth;
+	explicit RecursionDepthGuard(int &p_depth) :
+			depth(p_depth) { depth++; }
+	~RecursionDepthGuard() { depth--; }
+};
+} // namespace
+
 void GDScriptParser::cleanup() {
 	builtin_types.clear();
 	valid_annotations.clear();
@@ -2828,6 +2839,15 @@ GDScriptParser::SuiteNode *GDScriptParser::parse_suite(const String &p_context, 
 }
 
 GDScriptParser::Node *GDScriptParser::parse_statement() {
+	// Compound statements recurse through parse_suite() back into parse_statement();
+	// bound that depth so deeply nested blocks (e.g. chained single-line `if`s) report
+	// an error instead of overflowing the native stack.
+	RecursionDepthGuard depth_guard(statement_nesting_depth);
+	if (unlikely(statement_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Statement nesting is too deep.");
+		return nullptr;
+	}
+
 	Node *result = nullptr;
 #ifdef DEBUG_ENABLED
 	bool unreachable = current_suite->has_return && !current_suite->has_unreachable_code;
@@ -3557,6 +3577,15 @@ GDScriptParser::WhileNode *GDScriptParser::parse_while() {
 }
 
 GDScriptParser::ExpressionNode *GDScriptParser::parse_precedence(Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign, bool p_stop_on_question_mark) {
+	// Bail out before the recursive descent overflows the native stack on pathologically
+	// nested expressions (e.g. thousands of nested parentheses), turning a crash into a
+	// recoverable parse error.
+	RecursionDepthGuard depth_guard(expression_nesting_depth);
+	if (unlikely(expression_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Expression nesting is too deep.");
+		return nullptr;
+	}
+
 	// Switch multiline mode on for grouping tokens.
 	// Do this early to avoid the tokenizer generating whitespace tokens.
 	switch (current.type) {
