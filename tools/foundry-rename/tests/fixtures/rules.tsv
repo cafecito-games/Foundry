@@ -1,5 +1,7 @@
 # from	to	category	context	notes
 GDScriptParser	FSParser	A	code
+gdscript_	fs_	A	code	prefix rule (underscore-suffixed)
+gdscript	foundry_script	A	code	lowercase module dir / bare token
 GDScript	FoundryScript	A	code
 GDScript	Foundry Script	D	prose	user-facing
 GDExtensionManager	FoundryExtensionManager	B	code

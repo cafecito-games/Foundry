@@ -71,7 +71,13 @@ def compile_rule(row):
     src = row["from"]
     to = row["to"]
     if IDENTIFIER_RE.fullmatch(src):
-        pattern = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(src) + r"(?![A-Za-z0-9_])")
+        # An identifier rule whose source ends in "_" is a prefix rule: it
+        # matches the leading run of a snake_case token (e.g. "gdscript_" in
+        # "gdscript_parser") so a whole family of identifiers and include paths
+        # can be renamed by one rule. The leading word boundary is still
+        # enforced, so it never matches mid-token (e.g. "my_gdscript_path").
+        trailing = "" if src.endswith("_") else r"(?![A-Za-z0-9_])"
+        pattern = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(src) + trailing)
         return ("regex", pattern, to, src)
     if src.startswith("."):
         # Treat a file extension as a token: anchor the trailing edge so ".gd"

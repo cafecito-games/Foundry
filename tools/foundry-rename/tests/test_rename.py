@@ -37,6 +37,20 @@ def test_word_boundary_safety():
     assert out == "class MyGDScriptHelper {};"
 
 
+def test_prefix_rule_underscore_suffixed():
+    # A rule whose source ends in "_" matches the leading run of a snake_case
+    # token, so a whole identifier/include family is renamed by one rule.
+    rules = code_rules()
+    assert rename.replace_text("gdscript_parser", rules) == "fs_parser"
+    assert (
+        rename.replace_text('#include "modules/gdscript/gdscript_parser.h"', rules)
+        == '#include "modules/foundry_script/fs_parser.h"'
+    )
+    # The leading word boundary still holds: a prefix rule never matches
+    # mid-token, so "my_gdscript_path" is left untouched.
+    assert rename.replace_text("my_gdscript_path", rules) == "my_gdscript_path"
+
+
 def test_code_vs_prose_mapping():
     assert rename.replace_text("GDScript", code_rules()) == "FoundryScript"
     assert rename.replace_text("GDScript", prose_rules()) == "Foundry Script"
