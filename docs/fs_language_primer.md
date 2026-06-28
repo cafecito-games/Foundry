@@ -19,7 +19,7 @@ although it supports first-class functions, lambdas, dictionaries, arrays, and d
 
 ### File Shape And Declaration Order
 
-```gdscript
+```foundry_script
 # Script-level annotations such as @tool must stay at the top if used.
 @tool
 
@@ -61,7 +61,7 @@ are enum-only files.
 `class_name` registers a script class as a project-global type. The registered name can be used by other scripts in
 annotations, constructors, inheritance, and member access according to the usual class rules.
 
-```gdscript
+```foundry_script
 namespace game.characters
 
 class_name Player
@@ -76,7 +76,7 @@ scripts that import that namespace, can use the short name `Player`; other scrip
 `trait_name` registers a globally named trait. A trait file follows the same namespace and import rules as
 `class_name`, but the declaration describes a trait contract instead of a script class.
 
-```gdscript
+```foundry_script
 namespace game.combat
 
 trait_name Damageable
@@ -89,7 +89,7 @@ abstract func take_damage(amount: int) -> void
 `enum_name` declares a project-global enum type. It uses the normal Foundry Script enum body syntax, but the declaration is a
 file-level artifact rather than a member inside a class.
 
-```gdscript
+```foundry_script
 namespace game.enums
 
 enum_name CharacterState {
@@ -102,7 +102,7 @@ enum_name CharacterState {
 The enum above registers the global type `game.enums.CharacterState`. Other scripts can use the enum as a type
 annotation and can read members from the global enum name:
 
-```gdscript
+```foundry_script
 import game.enums
 
 var state: CharacterState = CharacterState.IDLE
@@ -113,7 +113,7 @@ func set_state(next_state: CharacterState) -> void:
 
 The enum name also evaluates to a read-only dictionary of its members, matching regular Foundry Script enum behavior:
 
-```gdscript
+```foundry_script
 print(CharacterState.RUNNING)
 print(CharacterState.keys())
 ```
@@ -121,7 +121,7 @@ print(CharacterState.keys())
 An `enum_name` declared inside a namespace is registered with its fully qualified name. Code in the same namespace can
 use the short name. Code in another namespace can either import the declaring namespace or use the fully qualified name:
 
-```gdscript
+```foundry_script
 namespace game.ui
 import game.enums
 
@@ -136,7 +136,7 @@ are `namespace` and `import`.
 
 Valid:
 
-```gdscript
+```foundry_script
 namespace game.enums
 import game.shared
 
@@ -148,7 +148,7 @@ enum_name ItemKind {
 
 Invalid:
 
-```gdscript
+```foundry_script
 enum_name ItemKind {
 	WEAPON,
 }
@@ -158,7 +158,7 @@ const DEFAULT_KIND = ItemKind.WEAPON
 
 ### Blocks, Comments, And Statements
 
-```gdscript
+```foundry_script
 # Single-line comment.
 ## Documentation comment for the next declaration.
 
@@ -176,7 +176,7 @@ func example(flag: bool) -> void:
 
 ### Variables, Constants, Properties, And Finality
 
-```gdscript
+```foundry_script
 var dynamic_value = 10                 # Inferred as dynamic/Variant-like in many contexts.
 var hit_points: int = 100              # Explicit type.
 var title := "Cafecito"                # Inferred static type from initializer.
@@ -200,7 +200,7 @@ var volume: float = 0.8
 
 ### Functions, Lambdas, And Async
 
-```gdscript
+```foundry_script
 func move(delta: float) -> void:
 	pass
 
@@ -235,7 +235,7 @@ final func stable_id() -> int:
 
 ### Control Flow And Loops
 
-```gdscript
+```foundry_script
 if health <= 0:
 	die()
 elif health < 10:
@@ -271,7 +271,7 @@ match state:
 
 ### Types
 
-```gdscript
+```foundry_script
 var maybe_target: Node? = null
 var target: Node
 var scores: Array[int] = [10, 20, 30]
@@ -289,7 +289,7 @@ var renamed: Signal[[String]]
 
 ### Classes, Traits, Generics, And Annotations
 
-```gdscript
+```foundry_script
 trait Damageable:
 	abstract func take_damage(amount: int) -> void
 
@@ -329,7 +329,7 @@ func measured() -> void:
 
 ### 1. Typed Node Script With Variables, Functions, And Loops
 
-```gdscript
+```foundry_script
 extends CharacterBody2D
 
 @export var speed: float = 240.0
@@ -367,7 +367,7 @@ func damage(amount: int) -> bool:
 
 ### 2. Fibonacci Generator
 
-```gdscript
+```foundry_script
 extends RefCounted
 
 func fibonacci(count: int) -> Array[int]:
@@ -394,7 +394,7 @@ func test() -> void:
 
 ### 3. String Parser Into A Typed Dictionary
 
-```gdscript
+```foundry_script
 extends RefCounted
 
 # Parses strings such as "potion:3, arrows:12, key:1".
@@ -429,7 +429,7 @@ func test() -> void:
 
 ### 4. Fork-Specific Traits And Generics
 
-```gdscript
+```foundry_script
 namespace primer.combat
 
 trait Damageable:
@@ -461,7 +461,7 @@ func test_hit_box() -> void:
 
 ### 5. Async HTTP Request
 
-```gdscript
+```foundry_script
 extends Node
 
 async func fetch_json(url: String) -> Dictionary[String, Variant]:
