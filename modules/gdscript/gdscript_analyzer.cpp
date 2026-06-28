@@ -6487,6 +6487,7 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 			update_dictionary_literal_element_type(static_cast<GDScriptParser::DictionaryNode *>(key_element_node),
 					expected_key_type.get_container_element_type_or_variant(0), expected_key_type.get_container_element_type_or_variant(1));
 		}
+		mark_coroutine_handle_capture(key_element_node, expected_key_type);
 		if (key_element_node->is_constant) {
 			update_const_expression_builtin_type(key_element_node, expected_key_type, "include");
 		}
@@ -6521,6 +6522,7 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 			update_dictionary_literal_element_type(static_cast<GDScriptParser::DictionaryNode *>(value_element_node),
 					expected_value_type.get_container_element_type_or_variant(0), expected_value_type.get_container_element_type_or_variant(1));
 		}
+		mark_coroutine_handle_capture(value_element_node, expected_value_type);
 		if (value_element_node->is_constant) {
 			update_const_expression_builtin_type(value_element_node, expected_value_type, "include");
 		}
