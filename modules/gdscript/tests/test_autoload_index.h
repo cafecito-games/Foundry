@@ -1227,7 +1227,7 @@ TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery does not re
 	GDScriptCache::remove_parser(consumer_path);
 
 	GDScriptAutoloadIndex index;
-	index.rebuild_from_project_settings_and_script_annotations();
+	CHECK_EQ(index.rebuild_from_project_settings_and_script_annotations(), OK);
 
 	CHECK(index.has_autoload(SNAME("IndexExportBodyService")));
 	CHECK(index.has_autoload(SNAME("IndexExportBodyConsumer")));
@@ -1239,6 +1239,22 @@ TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery does not re
 	CHECK_EQ(loaded.load_from_cache(cache_path), OK);
 	CHECK(loaded.has_autoload(SNAME("IndexExportBodyService")));
 	CHECK(loaded.has_autoload(SNAME("IndexExportBodyConsumer")));
+}
+
+TEST_CASE("[Modules][GDScript] Script-owned autoload cache discovery reports invalid annotations") {
+	ScopedTempFiles files("gdscript_autoload_index_export_invalid_annotation");
+
+	const String invalid_source =
+			"@autoload\n"
+			"class_name IndexExportInvalidAutoload extends RefCounted\n";
+	const String invalid_path = files.write("export_invalid_autoload.gd", invalid_source);
+	ScopedScriptServerClass registered_invalid(SNAME("IndexExportInvalidAutoload"), "RefCounted", invalid_path);
+
+	GDScriptCache::remove_parser(invalid_path);
+
+	GDScriptAutoloadIndex index;
+	CHECK_NE(index.rebuild_from_project_settings_and_script_annotations(), OK);
+	CHECK_FALSE(index.has_autoload(SNAME("IndexExportInvalidAutoload")));
 }
 #endif // TOOLS_ENABLED
 

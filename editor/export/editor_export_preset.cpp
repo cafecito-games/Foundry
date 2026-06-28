@@ -36,9 +36,21 @@
 #include "editor/export/editor_export.h"
 #include "editor/settings/editor_settings.h"
 
+void EditorExportPreset::_save_presets_if_available() const {
+	if (EditorExport::singleton != nullptr) {
+		EditorExport::singleton->save_presets();
+	}
+}
+
+void EditorExportPreset::_emit_presets_runnable_changed_if_available() const {
+	if (EditorExport::singleton != nullptr) {
+		EditorExport::singleton->emit_presets_runnable_changed();
+	}
+}
+
 bool EditorExportPreset::_set(const StringName &p_name, const Variant &p_value) {
 	values[p_name] = p_value;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 	if (update_visibility.has(p_name)) {
 		if (update_visibility[p_name]) {
 			update_value_overrides();
@@ -311,7 +323,7 @@ void EditorExportPreset::set_customized_files(const Dictionary &p_files) {
 
 void EditorExportPreset::set_name(const String &p_name) {
 	name = p_name;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_name() const {
@@ -320,8 +332,8 @@ String EditorExportPreset::get_name() const {
 
 void EditorExportPreset::set_runnable(bool p_enable) {
 	runnable = p_enable;
-	EditorExport::singleton->emit_presets_runnable_changed();
-	EditorExport::singleton->save_presets();
+	_emit_presets_runnable_changed_if_available();
+	_save_presets_if_available();
 }
 
 bool EditorExportPreset::is_runnable() const {
@@ -334,7 +346,7 @@ bool EditorExportPreset::are_advanced_options_enabled() const {
 
 void EditorExportPreset::set_dedicated_server(bool p_enable) {
 	dedicated_server = p_enable;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 bool EditorExportPreset::is_dedicated_server() const {
@@ -343,7 +355,7 @@ bool EditorExportPreset::is_dedicated_server() const {
 
 void EditorExportPreset::set_export_filter(ExportFilter p_filter) {
 	export_filter = p_filter;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 EditorExportPreset::ExportFilter EditorExportPreset::get_export_filter() const {
@@ -352,7 +364,7 @@ EditorExportPreset::ExportFilter EditorExportPreset::get_export_filter() const {
 
 void EditorExportPreset::set_include_filter(const String &p_include) {
 	include_filter = p_include;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_include_filter() const {
@@ -367,7 +379,7 @@ void EditorExportPreset::set_export_path(const String &p_path) {
 		String res_path = OS::get_singleton()->get_resource_dir();
 		export_path = res_path.path_to_file(export_path);
 	}
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_export_path() const {
@@ -376,7 +388,7 @@ String EditorExportPreset::get_export_path() const {
 
 void EditorExportPreset::set_exclude_filter(const String &p_exclude) {
 	exclude_filter = p_exclude;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_exclude_filter() const {
@@ -385,12 +397,12 @@ String EditorExportPreset::get_exclude_filter() const {
 
 void EditorExportPreset::add_export_file(const String &p_path) {
 	selected_files.insert(p_path);
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 void EditorExportPreset::remove_export_file(const String &p_path) {
 	selected_files.erase(p_path);
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 bool EditorExportPreset::has_export_file(const String &p_path) {
@@ -403,7 +415,7 @@ void EditorExportPreset::set_file_export_mode(const String &p_path, EditorExport
 	} else {
 		customized_files.insert(p_path, p_mode);
 	}
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 EditorExportPreset::FileExportMode EditorExportPreset::get_file_export_mode(const String &p_path, EditorExportPreset::FileExportMode p_default) const {
@@ -423,7 +435,7 @@ void EditorExportPreset::add_patch(const String &p_path, int p_at_pos) {
 		patches.insert(p_at_pos, p_path);
 	}
 
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 void EditorExportPreset::set_patch(int p_index, const String &p_path) {
@@ -439,7 +451,7 @@ String EditorExportPreset::get_patch(int p_index) {
 void EditorExportPreset::remove_patch(int p_index) {
 	ERR_FAIL_INDEX(p_index, patches.size());
 	patches.remove_at(p_index);
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 void EditorExportPreset::set_patches(const Vector<String> &p_patches) {
@@ -452,7 +464,7 @@ Vector<String> EditorExportPreset::get_patches() const {
 
 void EditorExportPreset::set_patch_delta_encoding_enabled(bool p_enable) {
 	patch_delta_encoding_enabled = p_enable;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 bool EditorExportPreset::is_patch_delta_encoding_enabled() const {
@@ -461,7 +473,7 @@ bool EditorExportPreset::is_patch_delta_encoding_enabled() const {
 
 void EditorExportPreset::set_patch_delta_zstd_level(int p_level) {
 	patch_delta_zstd_level = p_level;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 int EditorExportPreset::get_patch_delta_zstd_level() const {
@@ -470,7 +482,7 @@ int EditorExportPreset::get_patch_delta_zstd_level() const {
 
 void EditorExportPreset::set_patch_delta_min_reduction(double p_ratio) {
 	patch_delta_min_reduction = p_ratio;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 double EditorExportPreset::get_patch_delta_min_reduction() const {
@@ -479,7 +491,7 @@ double EditorExportPreset::get_patch_delta_min_reduction() const {
 
 void EditorExportPreset::set_patch_delta_include_filter(const String &p_filter) {
 	patch_delta_include_filter = p_filter;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_patch_delta_include_filter() const {
@@ -488,7 +500,7 @@ String EditorExportPreset::get_patch_delta_include_filter() const {
 
 void EditorExportPreset::set_patch_delta_exclude_filter(const String &p_filter) {
 	patch_delta_exclude_filter = p_filter;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_patch_delta_exclude_filter() const {
@@ -497,7 +509,7 @@ String EditorExportPreset::get_patch_delta_exclude_filter() const {
 
 void EditorExportPreset::set_custom_features(const String &p_custom_features) {
 	custom_features = p_custom_features;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_custom_features() const {
@@ -506,7 +518,7 @@ String EditorExportPreset::get_custom_features() const {
 
 void EditorExportPreset::set_enc_in_filter(const String &p_filter) {
 	enc_in_filters = p_filter;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_enc_in_filter() const {
@@ -515,7 +527,7 @@ String EditorExportPreset::get_enc_in_filter() const {
 
 void EditorExportPreset::set_enc_ex_filter(const String &p_filter) {
 	enc_ex_filters = p_filter;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_enc_ex_filter() const {
@@ -524,7 +536,7 @@ String EditorExportPreset::get_enc_ex_filter() const {
 
 void EditorExportPreset::set_seed(uint64_t p_seed) {
 	seed = p_seed;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 uint64_t EditorExportPreset::get_seed() const {
@@ -533,7 +545,7 @@ uint64_t EditorExportPreset::get_seed() const {
 
 void EditorExportPreset::set_enc_pck(bool p_enabled) {
 	enc_pck = p_enabled;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 bool EditorExportPreset::get_enc_pck() const {
@@ -542,7 +554,7 @@ bool EditorExportPreset::get_enc_pck() const {
 
 void EditorExportPreset::set_enc_directory(bool p_enabled) {
 	enc_directory = p_enabled;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 bool EditorExportPreset::get_enc_directory() const {
@@ -551,7 +563,7 @@ bool EditorExportPreset::get_enc_directory() const {
 
 void EditorExportPreset::set_script_encryption_key(const String &p_key) {
 	script_key = p_key;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 String EditorExportPreset::get_script_encryption_key() const {
@@ -560,7 +572,7 @@ String EditorExportPreset::get_script_encryption_key() const {
 
 void EditorExportPreset::set_script_export_mode(ScriptExportMode p_mode) {
 	script_mode = p_mode;
-	EditorExport::singleton->save_presets();
+	_save_presets_if_available();
 }
 
 EditorExportPreset::ScriptExportMode EditorExportPreset::get_script_export_mode() const {

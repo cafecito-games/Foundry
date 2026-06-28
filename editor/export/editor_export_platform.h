@@ -165,6 +165,7 @@ protected:
 	};
 
 	HashSet<String> get_features(const Ref<EditorExportPreset> &p_preset, bool p_debug) const;
+	static Error _collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths);
 
 	Dictionary _find_export_template(const String &p_template_file_name) const {
 		Dictionary ret;

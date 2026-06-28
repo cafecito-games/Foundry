@@ -103,7 +103,7 @@ public:
 	Error save_to_cache(const String &p_cache_path = String()) const;
 	Error load_from_cache(const String &p_cache_path = String());
 #ifdef TOOLS_ENABLED
-	void rebuild_from_project_settings_and_script_annotations();
+	Error rebuild_from_project_settings_and_script_annotations();
 #endif // TOOLS_ENABLED
 
 	bool has_autoload(const StringName &p_name) const;

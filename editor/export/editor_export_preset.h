@@ -100,6 +100,9 @@ private:
 	String script_key;
 	ScriptExportMode script_mode = MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
 
+	void _save_presets_if_available() const;
+	void _emit_presets_runnable_changed_if_available() const;
+
 protected:
 	bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;

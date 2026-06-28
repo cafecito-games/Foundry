@@ -83,6 +83,10 @@ void sort_entries_by_order(Vector<GDScriptAutoloadIndexEntry> &r_entries) {
 Error collect_script_annotation_autoload_entries(const String &p_script_path, Vector<GDScriptAutoloadIndexEntry> &r_entries) {
 	GDScriptParser parser;
 	const String source = GDScriptCache::get_source_code(ResourceLoader::path_remap(p_script_path));
+	if (!source.contains("@autoload")) {
+		return OK;
+	}
+
 	Error err = parser.parse(source, p_script_path, false);
 	if (err != OK) {
 		return err;
@@ -824,7 +828,10 @@ Error GDScriptAutoloadIndex::rebuild_from_cache_and_project_settings(const Strin
 
 Error GDScriptAutoloadIndex::rebuild_for_runtime_startup(const String &p_cache_path) {
 #ifdef TOOLS_ENABLED
-	rebuild_from_project_settings_and_script_annotations();
+	const Error rebuild_err = rebuild_from_project_settings_and_script_annotations();
+	if (rebuild_err != OK) {
+		return rebuild_err;
+	}
 
 	const String cache_path = p_cache_path.is_empty() ? get_cache_path() : p_cache_path;
 	if (!cache_path.is_empty()) {
@@ -907,7 +914,7 @@ Error GDScriptAutoloadIndex::load_from_cache(const String &p_cache_path) {
 }
 
 #ifdef TOOLS_ENABLED
-void GDScriptAutoloadIndex::rebuild_from_project_settings_and_script_annotations() {
+Error GDScriptAutoloadIndex::rebuild_from_project_settings_and_script_annotations() {
 	Vector<GDScriptAutoloadIndexEntry> merged_entries;
 
 	GDScriptLanguage *gdscript = GDScriptLanguage::get_singleton();
@@ -922,7 +929,10 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings_and_script_annotations
 			}
 
 			const String script_path = ScriptServer::get_global_class_path(global_class);
-			collect_script_annotation_autoload_entries(script_path, merged_entries);
+			const Error collect_err = collect_script_annotation_autoload_entries(script_path, merged_entries);
+			if (collect_err != OK) {
+				return collect_err;
+			}
 		}
 	}
 
@@ -933,6 +943,7 @@ void GDScriptAutoloadIndex::rebuild_from_project_settings_and_script_annotations
 	}
 
 	rebuild_from_entries(merged_entries);
+	return OK;
 }
 #endif // TOOLS_ENABLED
 

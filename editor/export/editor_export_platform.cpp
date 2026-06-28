@@ -501,9 +501,12 @@ Ref<EditorExportPreset> EditorExportPlatform::create_preset() {
 	List<ExportOption> options;
 	get_export_options(&options);
 
-	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
-	for (int i = 0; i < export_plugins.size(); i++) {
-		export_plugins.write[i]->_get_export_options(Ref<EditorExportPlatform>(this), &options);
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		Vector<Ref<EditorExportPlugin>> export_plugins = editor_export->get_export_plugins();
+		for (int i = 0; i < export_plugins.size(); i++) {
+			export_plugins.write[i]->_get_export_options(Ref<EditorExportPlatform>(this), &options);
+		}
 	}
 
 	for (const ExportOption &E : options) {
@@ -1089,7 +1092,10 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 	r_files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
 #ifdef MODULE_GDSCRIPT_ENABLED
 	GDScriptAutoloadIndex autoload_index;
-	autoload_index.rebuild_from_project_settings_and_script_annotations();
+	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
+	if (autoload_index_err != OK) {
+		return autoload_index_err;
+	}
 	const String autoload_cache_path = p_autoload_cache_path.is_empty() ? GDScriptAutoloadIndex::get_cache_path() : p_autoload_cache_path;
 	const Error autoload_cache_err = autoload_index.save_to_cache(autoload_cache_path);
 	if (autoload_cache_err != OK) {
@@ -1127,6 +1133,42 @@ Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExp
 	Vector<String> files;
 	collect_forced_export_files(p_preset, files);
 	return files;
+}
+
+Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths) {
+	r_paths.clear();
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+	GDScriptAutoloadIndex autoload_index;
+	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
+	if (autoload_index_err != OK) {
+		return autoload_index_err;
+	}
+	for (const GDScriptAutoloadIndexEntry &entry : autoload_index.get_entries()) {
+		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+			r_paths.push_back(entry.path);
+		}
+	}
+#endif // MODULE_GDSCRIPT_ENABLED
+
+	List<PropertyInfo> props;
+	ProjectSettings::get_singleton()->get_property_list(&props);
+
+	for (const PropertyInfo &pi : props) {
+		if (!pi.name.begins_with("autoload/") && !pi.name.begins_with("autoload_prepend/")) {
+			continue;
+		}
+
+		String autoload_path = get_project_setting(p_preset, pi.name);
+
+		if (autoload_path.begins_with("*")) {
+			autoload_path = autoload_path.substr(1);
+		}
+
+		r_paths.push_back(autoload_path);
+	}
+
+	return OK;
 }
 
 Error EditorExportPlatform::_script_save_file(const Ref<EditorExportPreset> &p_preset, void *p_userdata, const String &p_path, const Vector<uint8_t> &p_data, int p_file, int p_total, const Vector<String> &p_enc_in_filters, const Vector<String> &p_enc_ex_filters, const Vector<uint8_t> &p_key, uint64_t p_seed, bool p_delta) {
@@ -1209,30 +1251,14 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 
 		// Add autoload resources and their dependencies
-#ifdef MODULE_GDSCRIPT_ENABLED
-		GDScriptAutoloadIndex autoload_index;
-		autoload_index.rebuild_from_project_settings_and_script_annotations();
-		for (const ProjectSettings::AutoloadInfo &info : autoload_index.get_startup_autoloads()) {
-			_export_find_dependencies(info.path, paths);
+		Vector<String> autoload_paths;
+		const Error autoload_paths_err = _collect_autoload_export_paths(p_preset, autoload_paths);
+		if (autoload_paths_err != OK) {
+			return autoload_paths_err;
 		}
-#else
-		List<PropertyInfo> props;
-		ProjectSettings::get_singleton()->get_property_list(&props);
-
-		for (const PropertyInfo &pi : props) {
-			if (!pi.name.begins_with("autoload/") && !pi.name.begins_with("autoload_prepend/")) {
-				continue;
-			}
-
-			String autoload_path = get_project_setting(p_preset, pi.name);
-
-			if (autoload_path.begins_with("*")) {
-				autoload_path = autoload_path.substr(1);
-			}
-
+		for (const String &autoload_path : autoload_paths) {
 			_export_find_dependencies(autoload_path, paths);
 		}
-#endif // MODULE_GDSCRIPT_ENABLED
 	}
 
 	//add native icons to non-resource include list
@@ -1305,7 +1331,11 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	EditorExportSaveProxy save_proxy(p_save_func, p_remove_func != nullptr);
 
 	Error err = OK;
-	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
+	Vector<Ref<EditorExportPlugin>> export_plugins;
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		export_plugins = editor_export->get_export_plugins();
+	}
 
 	struct SortByName {
 		bool operator()(const Ref<EditorExportPlugin> &left, const Ref<EditorExportPlugin> &right) const {
