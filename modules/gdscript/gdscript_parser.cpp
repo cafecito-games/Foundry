@@ -82,6 +82,17 @@ HashMap<String, String> GDScriptParser::theme_color_names;
 
 HashMap<StringName, GDScriptParser::AnnotationInfo> GDScriptParser::valid_annotations;
 
+namespace {
+// Increments a depth counter on construction and decrements it on destruction so
+// every return path out of a recursive parse function stays balanced.
+struct RecursionDepthGuard {
+	int &depth;
+	explicit RecursionDepthGuard(int &p_depth) :
+			depth(p_depth) { depth++; }
+	~RecursionDepthGuard() { depth--; }
+};
+} // namespace
+
 void GDScriptParser::cleanup() {
 	builtin_types.clear();
 	valid_annotations.clear();
@@ -2828,6 +2839,15 @@ GDScriptParser::SuiteNode *GDScriptParser::parse_suite(const String &p_context, 
 }
 
 GDScriptParser::Node *GDScriptParser::parse_statement() {
+	// Compound statements recurse through parse_suite() back into parse_statement();
+	// bound that depth so deeply nested blocks (e.g. chained single-line `if`s) report
+	// an error instead of overflowing the native stack.
+	RecursionDepthGuard depth_guard(statement_nesting_depth);
+	if (unlikely(statement_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Statement nesting is too deep.");
+		return nullptr;
+	}
+
 	Node *result = nullptr;
 #ifdef DEBUG_ENABLED
 	bool unreachable = current_suite->has_return && !current_suite->has_unreachable_code;
@@ -3169,6 +3189,14 @@ GDScriptParser::ForNode *GDScriptParser::parse_for() {
 }
 
 GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
+	// `elif` chains recurse directly through parse_if() (bypassing parse_statement()), so
+	// bound them with the statement depth counter to avoid overflowing the native stack.
+	RecursionDepthGuard depth_guard(statement_nesting_depth);
+	if (unlikely(statement_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Statement nesting is too deep.");
+		return nullptr;
+	}
+
 	IfNode *n_if = alloc_node<IfNode>();
 
 	n_if->condition = parse_expression(false);
@@ -3194,7 +3222,9 @@ GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
 		current_suite = else_block;
 
 		IfNode *elif = parse_if("elif");
-		else_block->statements.push_back(elif);
+		if (elif != nullptr) {
+			else_block->statements.push_back(elif);
+		}
 		complete_extents(else_block);
 		n_if->false_block = else_block;
 
@@ -3380,6 +3410,14 @@ GDScriptParser::MatchBranchNode *GDScriptParser::parse_match_branch() {
 }
 
 GDScriptParser::PatternNode *GDScriptParser::parse_match_pattern(PatternNode *p_root_pattern) {
+	// Array and dictionary patterns recurse through parse_match_pattern(); bound that
+	// depth so deeply nested patterns report an error instead of overflowing the stack.
+	RecursionDepthGuard depth_guard(pattern_nesting_depth);
+	if (unlikely(pattern_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Pattern nesting is too deep.");
+		return nullptr;
+	}
+
 	PatternNode *pattern = alloc_node<PatternNode>();
 	reset_extents(pattern, current);
 
@@ -3557,6 +3595,15 @@ GDScriptParser::WhileNode *GDScriptParser::parse_while() {
 }
 
 GDScriptParser::ExpressionNode *GDScriptParser::parse_precedence(Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign, bool p_stop_on_question_mark) {
+	// Bail out before the recursive descent overflows the native stack on pathologically
+	// nested expressions (e.g. thousands of nested parentheses), turning a crash into a
+	// recoverable parse error.
+	RecursionDepthGuard depth_guard(expression_nesting_depth);
+	if (unlikely(expression_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Expression nesting is too deep.");
+		return nullptr;
+	}
+
 	// Switch multiline mode on for grouping tokens.
 	// Do this early to avoid the tokenizer generating whitespace tokens.
 	switch (current.type) {
@@ -4746,6 +4793,15 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_invalid_token(ExpressionNo
 }
 
 GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
+	// Nested type annotations (e.g. `Array[Array[...]]`, Callable/Coroutine signatures)
+	// recurse through parse_type(); bound that depth so a pathologically nested type
+	// reports an error instead of overflowing the native stack.
+	RecursionDepthGuard depth_guard(type_nesting_depth);
+	if (unlikely(type_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Type nesting is too deep.");
+		return nullptr;
+	}
+
 	TypeNode *type = alloc_node<TypeNode>();
 	make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
 	if (!match(GDScriptTokenizer::Token::IDENTIFIER)) {

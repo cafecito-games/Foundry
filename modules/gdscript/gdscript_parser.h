@@ -1616,6 +1616,19 @@ private:
 	List<bool> multiline_stack;
 	HashMap<String, Ref<GDScriptParserRef>> depended_parsers;
 
+	// Bound recursion in the recursive-descent parser. Deeply nested expressions or
+	// statements (e.g. thousands of nested parentheses) or nested type annotations
+	// (e.g. `Array[Array[...]]`) would otherwise overflow the native call stack and
+	// crash, since the editor and language server parse untrusted, partially-typed
+	// scripts. When the limit is exceeded the parser reports an error and bails out
+	// instead of descending further. The limit mirrors `Variant::MAX_RECURSION_DEPTH`,
+	// well below the stack-overflow threshold yet far beyond any legitimate source.
+	static constexpr int MAX_NESTING_DEPTH = Variant::MAX_RECURSION_DEPTH;
+	int expression_nesting_depth = 0;
+	int statement_nesting_depth = 0;
+	int type_nesting_depth = 0;
+	int pattern_nesting_depth = 0;
+
 	ClassNode *head = nullptr;
 	Node *list = nullptr;
 	List<ParserError> errors;
