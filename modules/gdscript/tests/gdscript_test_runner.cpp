@@ -430,12 +430,13 @@ static bool generate_class_index_recursive(const String &p_dir) {
 			bool is_abstract = false;
 			bool is_tool = false;
 			bool is_trait = false;
-			String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(source_file, &base_type, nullptr, &is_abstract, &is_tool, &is_trait);
+			bool is_enum = false;
+			String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(source_file, &base_type, nullptr, &is_abstract, &is_tool, &is_trait, &is_enum);
 			if (!class_name.is_empty()) {
 				ERR_FAIL_COND_V_MSG(ScriptServer::is_global_class(class_name), false,
 						"Class name '" + class_name + "' from " + source_file + " is already used in " + ScriptServer::get_global_class_path(class_name));
 
-				ScriptServer::add_global_class(class_name, base_type, gdscript_name, source_file, is_abstract, is_tool, is_trait);
+				ScriptServer::add_global_class(class_name, base_type, gdscript_name, source_file, is_abstract, is_tool, is_trait, is_enum);
 			}
 
 			// Index custom annotation declarations even for annotation-only files that declare

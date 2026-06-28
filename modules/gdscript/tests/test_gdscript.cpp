@@ -2394,13 +2394,15 @@ extends Node
 	String base_type;
 	bool is_abstract = true;
 	bool is_tool = true;
+	bool is_enum = true;
 	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr,
-			&is_abstract, &is_tool);
+			&is_abstract, &is_tool, nullptr, &is_enum);
 
 	CHECK_EQ(class_name, "characters.BaseCharacter");
 	CHECK_EQ(base_type, "Node");
 	CHECK_FALSE(is_abstract);
 	CHECK_FALSE(is_tool);
+	CHECK_FALSE(is_enum);
 }
 
 TEST_CASE("[Modules][GDScript] Global namespace class names stay unqualified") {
@@ -2424,12 +2426,71 @@ extends Node2D
 	String base_type;
 	bool is_abstract = true;
 	bool is_tool = true;
-	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr, &is_abstract, &is_tool);
+	bool is_enum = true;
+	String class_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr,
+			&is_abstract, &is_tool, nullptr, &is_enum);
 
 	CHECK_EQ(class_name, "characters.Damageable");
 	CHECK_EQ(base_type, "Node2D");
 	CHECK_FALSE(is_abstract);
 	CHECK_FALSE(is_tool);
+	CHECK_FALSE(is_enum);
+}
+
+TEST_CASE("[Modules][GDScript] Global enum files report enum metadata") {
+	TempScriptFile script("qualified_global_enum.gd", R"(
+namespace items
+enum_name WeaponType {
+	SWORD,
+	BOW,
+}
+)");
+
+	String base_type = "sentinel";
+	bool is_abstract = true;
+	bool is_tool = true;
+	bool is_trait = true;
+	bool is_enum = false;
+	String enum_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr,
+			&is_abstract, &is_tool, &is_trait, &is_enum);
+
+	CHECK_EQ(enum_name, "items.WeaponType");
+	CHECK(base_type.is_empty());
+	CHECK_FALSE(is_abstract);
+	CHECK_FALSE(is_tool);
+	CHECK_FALSE(is_trait);
+	CHECK(is_enum);
+}
+
+TEST_CASE("[Modules][GDScript] Global enum files register with the enum flag") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile script("register_global_enum.gd", R"(
+namespace items
+enum_name ElementKind {
+	FIRE,
+	ICE,
+}
+)");
+
+	String base_type;
+	bool is_abstract = false;
+	bool is_tool = false;
+	bool is_trait = false;
+	bool is_enum = false;
+	String enum_name = GDScriptLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr,
+			&is_abstract, &is_tool, &is_trait, &is_enum);
+	CHECK_EQ(enum_name, "items.ElementKind");
+	if (enum_name.is_empty()) {
+		return;
+	}
+
+	ScriptServer::add_global_class(enum_name, base_type, GDScriptLanguage::get_singleton()->get_name(), script.path,
+			is_abstract, is_tool, is_trait, is_enum);
+
+	CHECK(ScriptServer::is_global_class_enum("items.ElementKind"));
+	CHECK_FALSE(ScriptServer::is_global_class_trait("items.ElementKind"));
 }
 
 TEST_CASE("[Modules][GDScript] Loaded namespaced global class keeps qualified runtime identity") {
