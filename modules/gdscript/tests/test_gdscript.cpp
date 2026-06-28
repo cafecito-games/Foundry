@@ -2535,6 +2535,59 @@ enum_name ElementKind {
 	CHECK_FALSE(ScriptServer::is_global_class_trait("items.ElementKind"));
 }
 
+TEST_CASE("[Modules][GDScript] Global enum fixture files round-trip the enum flag through the cache") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+	ProjectSettings::get_singleton()->store_global_class_list(Array());
+
+	const String fixture_path = "modules/gdscript/tests/scripts/registration/global_enum_cache.notest.gd";
+
+	String base_type = "sentinel";
+	bool is_abstract = true;
+	bool is_tool = true;
+	bool is_trait = true;
+	bool is_enum = false;
+	String enum_name = GDScriptLanguage::get_singleton()->get_global_class_name(fixture_path, &base_type, nullptr,
+			&is_abstract, &is_tool, &is_trait, &is_enum);
+
+	CHECK_EQ(enum_name, "tests.registration.FixtureGlobalEnum");
+	CHECK(base_type.is_empty());
+	CHECK_FALSE(is_abstract);
+	CHECK_FALSE(is_tool);
+	CHECK_FALSE(is_trait);
+	CHECK(is_enum);
+	if (enum_name.is_empty()) {
+		return;
+	}
+
+	ScriptServer::add_global_class(enum_name, base_type, GDScriptLanguage::get_singleton()->get_name(), fixture_path,
+			is_abstract, is_tool, is_trait, is_enum);
+
+	CHECK(ScriptServer::is_global_class_enum("tests.registration.FixtureGlobalEnum"));
+	CHECK_FALSE(ScriptServer::is_global_class_trait("tests.registration.FixtureGlobalEnum"));
+	ScriptServer::save_global_classes();
+
+	TypedArray<Dictionary> script_classes = ProjectSettings::get_singleton()->get_global_class_list();
+	CHECK_EQ(script_classes.size(), 1);
+	if (script_classes.size() == 1) {
+		Dictionary script_class = script_classes[0];
+		CHECK_EQ(String(script_class["class"]), "tests.registration.FixtureGlobalEnum");
+		CHECK_EQ(String(script_class["path"]), fixture_path);
+		CHECK(script_class.has("is_enum"));
+		CHECK(bool(script_class["is_enum"]));
+		CHECK(script_class.has("is_trait"));
+		CHECK_FALSE(bool(script_class["is_trait"]));
+	}
+
+	ScriptServer::global_classes_clear();
+	ProjectSettings::get_singleton()->refresh_global_class_list();
+	CHECK(ScriptServer::is_global_class("tests.registration.FixtureGlobalEnum"));
+	CHECK(ScriptServer::is_global_class_enum("tests.registration.FixtureGlobalEnum"));
+	CHECK_FALSE(ScriptServer::is_global_class_trait("tests.registration.FixtureGlobalEnum"));
+	CHECK_EQ(ScriptServer::get_global_class_path("tests.registration.FixtureGlobalEnum"), fixture_path);
+	CHECK(ScriptServer::get_global_class_base("tests.registration.FixtureGlobalEnum").is_empty());
+}
+
 TEST_CASE("[Modules][GDScript] Loaded namespaced global class keeps qualified runtime identity") {
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
