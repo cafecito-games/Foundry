@@ -1851,7 +1851,7 @@ private:
 	void parse_import();
 	void parse_class_name();
 	void parse_trait_name();
-	void parse_enum_name();
+	void parse_enum_name(bool p_can_register_enum_file);
 	void parse_extends();
 	void parse_uses();
 	void parse_type_parameters(Vector<TypeParameterNode *> &r_type_parameters);

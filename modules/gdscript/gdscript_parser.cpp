@@ -791,9 +791,11 @@ void GDScriptParser::parse_program() {
 		}
 	};
 
+	bool has_top_level_annotation = false;
 	auto parse_top_level_annotations = [&](uint32_t p_valid_targets) {
 		while (!check(GDScriptTokenizer::Token::TK_EOF)) {
 			if (match(GDScriptTokenizer::Token::ANNOTATION)) {
+				has_top_level_annotation = true;
 				AnnotationNode *annotation = parse_annotation(p_valid_targets);
 				if (annotation != nullptr) {
 					if (annotation->applies_to(AnnotationInfo::CLASS)) {
@@ -953,7 +955,9 @@ void GDScriptParser::parse_program() {
 			case GDScriptTokenizer::Token::CLASS_NAME:
 				push_pending_annotations_to_head();
 				advance();
-				if (head->trait_name_used) {
+				if (head->is_enum_file) {
+					push_error(R"("enum_name" cannot be combined with "class_name" in the same file.)");
+				} else if (head->trait_name_used) {
 					push_error(R"("class_name" cannot be combined with "trait_name" in the same file.)");
 				} else if (head->identifier != nullptr) {
 					push_error(R"("class_name" can only be used once.)");
@@ -964,7 +968,9 @@ void GDScriptParser::parse_program() {
 			case GDScriptTokenizer::Token::TRAIT_NAME:
 				push_pending_annotations_to_head();
 				advance();
-				if (head->trait_name_used) {
+				if (head->is_enum_file) {
+					push_error(R"("enum_name" cannot be combined with "trait_name" in the same file.)");
+				} else if (head->trait_name_used) {
 					push_error(R"("trait_name" can only be used once.)");
 				} else if (head->identifier != nullptr) {
 					push_error(R"("trait_name" cannot be combined with "class_name" in the same file.)");
@@ -972,15 +978,22 @@ void GDScriptParser::parse_program() {
 					parse_trait_name();
 				}
 				break;
-			case GDScriptTokenizer::Token::ENUM_NAME:
+			case GDScriptTokenizer::Token::ENUM_NAME: {
 				push_pending_annotations_to_head();
 				advance();
-				parse_enum_name();
-				break;
+				bool can_register_enum_file = true;
+				if (has_top_level_annotation) {
+					push_error(R"(An "enum_name" file may only contain its enum declaration.)");
+					can_register_enum_file = false;
+				}
+				parse_enum_name(can_register_enum_file);
+			} break;
 			case GDScriptTokenizer::Token::EXTENDS:
 				push_pending_annotations_to_head();
 				advance();
-				if (head->uses_used) {
+				if (head->is_enum_file) {
+					push_error(R"("enum_name" cannot be combined with "extends" in the same file.)");
+				} else if (head->uses_used) {
 					push_error(R"("extends" must appear before "uses".)");
 				} else if (head->extends_used) {
 					push_error(R"("extends" can only be used once.)");
@@ -997,8 +1010,12 @@ void GDScriptParser::parse_program() {
 			case GDScriptTokenizer::Token::USES:
 				push_pending_annotations_to_head();
 				advance();
-				parse_uses();
-				end_statement("uses declaration");
+				if (head->is_enum_file) {
+					push_error(R"("enum_name" cannot be combined with "uses" in the same file.)");
+				} else {
+					parse_uses();
+					end_statement("uses declaration");
+				}
 				break;
 			case GDScriptTokenizer::Token::TK_EOF:
 				push_pending_annotations_to_head();
@@ -1385,14 +1402,37 @@ void GDScriptParser::parse_trait_name() {
 	}
 }
 
-void GDScriptParser::parse_enum_name() {
-	current_class->is_enum_file = true;
+void GDScriptParser::parse_enum_name(bool p_can_register_enum_file) {
+	const bool already_enum_file = current_class->is_enum_file;
+	bool has_conflict = !p_can_register_enum_file;
+	if (already_enum_file) {
+		push_error(R"("enum_name" can only be used once per file.)");
+		has_conflict = true;
+	} else if (!current_class->annotations.is_empty()) {
+		push_error(R"(An "enum_name" file may only contain its enum declaration.)");
+		has_conflict = true;
+	} else if (current_class->trait_name_used) {
+		push_error(R"("enum_name" cannot be combined with "trait_name" in the same file.)");
+		has_conflict = true;
+	} else if (current_class->identifier != nullptr) {
+		push_error(R"("enum_name" cannot be combined with "class_name" in the same file.)");
+		has_conflict = true;
+	} else if (current_class->extends_used) {
+		push_error(R"("enum_name" cannot be combined with "extends" in the same file.)");
+		has_conflict = true;
+	} else if (current_class->uses_used) {
+		push_error(R"("enum_name" cannot be combined with "uses" in the same file.)");
+		has_conflict = true;
+	}
 
 	DeclarationModifiers no_modifiers;
 	EnumNode *enum_node = parse_enum(no_modifiers);
-	current_class->enum_file_decl = enum_node;
+	if (!has_conflict) {
+		current_class->is_enum_file = true;
+		current_class->enum_file_decl = enum_node;
+	}
 
-	if (enum_node != nullptr && enum_node->identifier != nullptr) {
+	if (!has_conflict && enum_node != nullptr && enum_node->identifier != nullptr) {
 		current_class->identifier = enum_node->identifier;
 		current_class->qualified_global_name = current_class->namespace_name.is_empty() ? String(current_class->identifier->name) : current_class->namespace_name + "." + String(current_class->identifier->name);
 		current_class->fqcn = current_class->qualified_global_name;
@@ -1854,6 +1894,8 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 		const bool in_trait = current_class != nullptr && current_class->is_trait;
 
 		GDScriptTokenizer::Token token = current;
+		const bool starts_annotation_declaration = token.type == GDScriptTokenizer::Token::IDENTIFIER &&
+				token.get_identifier() == StringName("annotation");
 		const bool starts_declaration = token.type == GDScriptTokenizer::Token::VAR ||
 				token.type == GDScriptTokenizer::Token::TK_CONST ||
 				token.type == GDScriptTokenizer::Token::SIGNAL ||
@@ -1861,6 +1903,20 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				token.type == GDScriptTokenizer::Token::CLASS ||
 				token.type == GDScriptTokenizer::Token::TRAIT ||
 				token.type == GDScriptTokenizer::Token::ENUM;
+		const bool disallowed_enum_file_member = current_class->is_enum_file &&
+				(token.type == GDScriptTokenizer::Token::VAR ||
+						token.type == GDScriptTokenizer::Token::TK_CONST ||
+						token.type == GDScriptTokenizer::Token::SIGNAL ||
+						token.type == GDScriptTokenizer::Token::FUNC ||
+						token.type == GDScriptTokenizer::Token::CLASS ||
+						token.type == GDScriptTokenizer::Token::TRAIT ||
+						token.type == GDScriptTokenizer::Token::ENUM ||
+						token.type == GDScriptTokenizer::Token::ANNOTATION ||
+						token.type == GDScriptTokenizer::Token::PASS ||
+						starts_annotation_declaration);
+		if (disallowed_enum_file_member) {
+			push_error(R"(An "enum_name" file may only contain its enum declaration.)");
+		}
 		if (modifiers.has_any() && !starts_declaration) {
 			push_error(R"(Expected a declaration after the modifier.)");
 		}
@@ -1936,6 +1992,10 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::TRAIT_NAME:
 				advance();
 				push_error(R"("trait_name" declarations must appear before class body declarations.)");
+				break;
+			case GDScriptTokenizer::Token::ENUM_NAME:
+				advance();
+				push_error(R"("enum_name" can only be used at the top of a file.)");
 				break;
 			case GDScriptTokenizer::Token::EXTENDS:
 				advance();
