@@ -196,6 +196,22 @@ static GDScriptParser::DataType make_coroutine_type(const GDScriptParser::DataTy
 	return type;
 }
 
+// A coroutine call whose live `GDScriptFunctionState` handle is captured into a statically
+// `Coroutine[T]`-typed slot (variable/parameter/return value, or a `Coroutine[T]` container
+// element) is meant to be held and awaited later, not a forgotten `await`. Mark such a call so the
+// compiler emits `OPCODE_CALL_ASYNC` (store the handle, skip the debug missing-await guard), just as
+// it does for the operand of an `await`. Captures into a non-coroutine/Variant slot are left
+// unmarked, so the runtime guard still flags a genuinely missing `await`.
+static void mark_coroutine_handle_capture(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_target_type) {
+	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::CALL || !p_target_type.is_coroutine) {
+		return;
+	}
+	GDScriptParser::CallNode *call = static_cast<GDScriptParser::CallNode *>(p_expression);
+	if (call->get_datatype().is_coroutine) {
+		call->is_coroutine_handle_capture = true;
+	}
+}
+
 static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info) {
 	GDScriptParser::DataType type;
 	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -5460,6 +5476,8 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 #endif // DEBUG_ENABLED
 			}
 		}
+
+		mark_coroutine_handle_capture(p_assignable->initializer, type);
 	}
 
 #ifdef DEBUG_ENABLED
@@ -6164,6 +6182,9 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 			if (has_expected_type && expected_type.is_hard_type() && p_return->return_value->is_constant) {
 				update_const_expression_builtin_type(p_return->return_value, expected_type, "return");
 			}
+			if (has_expected_type) {
+				mark_coroutine_handle_capture(p_return->return_value, expected_type);
+			}
 			result = p_return->return_value->get_datatype();
 		}
 	} else {
@@ -6414,6 +6435,7 @@ void GDScriptAnalyzer::update_array_literal_element_type(GDScriptParser::ArrayNo
 			update_dictionary_literal_element_type(static_cast<GDScriptParser::DictionaryNode *>(element_node),
 					expected_type.get_container_element_type_or_variant(0), expected_type.get_container_element_type_or_variant(1));
 		}
+		mark_coroutine_handle_capture(element_node, expected_type);
 		if (element_node->is_constant) {
 			update_const_expression_builtin_type(element_node, expected_type, "include");
 		}
@@ -6592,6 +6614,8 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 	}
 
 	GDScriptParser::DataType assignee_type = p_assignment->assignee->get_datatype();
+
+	mark_coroutine_handle_capture(p_assignment->assigned_value, assignee_type);
 
 	if (assignee_type.is_constant) {
 		push_error("Cannot assign a new value to a constant.", p_assignment->assignee);
@@ -13579,6 +13603,8 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 			continue;
 		}
 		GDScriptParser::DataType par_type = *par_itr;
+
+		mark_coroutine_handle_capture(p_call->arguments[i], par_type);
 
 		if (par_type.is_hard_type() && p_call->arguments[i]->is_constant) {
 			update_const_expression_builtin_type(p_call->arguments[i], par_type, "pass");

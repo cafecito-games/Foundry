@@ -654,6 +654,15 @@ public:
 		// is an untyped container even though the substituted static return type is concrete; an
 		// assignment to a concrete typed container must convert (retype) the result.
 		bool returns_erased_container = false;
+		// Set by the analyzer when this coroutine call's result is captured into a statically
+		// `Coroutine[T]`-typed slot (a `Coroutine[T]` variable/parameter/return, or a
+		// `Coroutine[T]` container element). Holding the live `GDScriptFunctionState` handle to
+		// await later is intentional, not a missing-await bug, so the compiler emits
+		// `OPCODE_CALL_ASYNC` (store the handle without suspending and skip the debug
+		// missing-await guard) exactly as it does for the operand of an `await`. A coroutine call
+		// captured into a non-coroutine/Variant slot is left unmarked, so the runtime guard still
+		// flags a genuinely forgotten "await".
+		bool is_coroutine_handle_capture = false;
 		// Canonical argument positions whose value the analyzer synthesized from a skipped middle
 		// parameter's constant default during named-argument gap fill. Such an argument is excluded
 		// from generic type-parameter inference and from post-substitution argument validation, so a
