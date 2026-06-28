@@ -43,7 +43,7 @@
 namespace TestFileAccess {
 
 TEST_CASE("[FileAccess] Exclusive create (WRITE_EXCL)") {
-	const String base_dir = TestUtils::get_data_path("file_access_excl");
+	const String base_dir = TestUtils::get_temp_path("file_access_excl");
 	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	REQUIRE(dir.is_valid());
 	dir->make_dir_recursive(base_dir);
