@@ -279,6 +279,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 				result.builtin_type = Variant::OBJECT;
 				result.script_type = p_owner;
 				result.native_type = p_owner->get_instance_base_type();
+				result.is_self_type = true;
 				break;
 			}
 			// Plain `T` is erased to Variant. `Type[T]` cannot preserve the represented method parameter
@@ -340,6 +341,27 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	}
 
 	return result;
+}
+
+static void _rebind_self_data_type(GDScriptDataType &p_type, GDScript *p_owner) {
+	if (p_owner == nullptr) {
+		return;
+	}
+	if (p_type.is_self_type) {
+		p_type.kind = GDScriptDataType::GDSCRIPT;
+		p_type.builtin_type = Variant::OBJECT;
+		p_type.script_type = p_owner;
+		p_type.script_type_ref = Ref<Script>();
+		p_type.native_type = p_owner->get_instance_base_type();
+		p_type.is_script_trait = p_owner->is_trait_type();
+		p_type.script_trait = p_owner->get_trait_type_name();
+	}
+	for (GDScriptDataType &element_type : p_type.container_element_types) {
+		_rebind_self_data_type(element_type, p_owner);
+	}
+	for (GDScriptDataType &argument_type : p_type.type_arguments) {
+		_rebind_self_data_type(argument_type, p_owner);
+	}
 }
 
 // Some typed-container calls need a converting retype rather than the strict validate that an ordinary
@@ -1548,13 +1570,31 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					assigned = op_result;
 				}
 
+				GDScriptCodeGenerator::Address value_to_set = assigned;
+				bool converted_value_to_set = false;
+				if (assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
+					const GDScriptDataType target_type = _gdtype_from_datatype(subscript->get_datatype(), codegen.script);
+					if (_is_erased_container_call_to_typed_array(assignment->assigned_value, target_type)) {
+						value_to_set = codegen.add_temporary(target_type);
+						gen->write_assign_typed_array_convert(value_to_set, assigned);
+						converted_value_to_set = true;
+					} else if (_is_erased_container_call_to_typed_dictionary(assignment->assigned_value, target_type)) {
+						value_to_set = codegen.add_temporary(target_type);
+						gen->write_assign_typed_dictionary_convert(value_to_set, assigned);
+						converted_value_to_set = true;
+					}
+				}
+
 				// Perform assignment.
 				if (subscript->is_attribute) {
-					gen->write_set_named(prev_base, name, assigned);
+					gen->write_set_named(prev_base, name, value_to_set);
 				} else {
-					gen->write_set(prev_base, key, assigned);
+					gen->write_set(prev_base, key, value_to_set);
 				}
 				if (key.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+				if (converted_value_to_set) {
 					gen->pop_temporary();
 				}
 				if (assigned.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
@@ -1757,10 +1797,26 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 				if (has_setter && !is_in_setter) {
 					// Call setter.
+					GDScriptCodeGenerator::Address setter_argument = to_assign;
+					bool converted_setter_argument = false;
+					if (!has_operation) {
+						if (_is_erased_container_call_to_typed_array(assignment->assigned_value, target.type)) {
+							setter_argument = codegen.add_temporary(target.type);
+							gen->write_assign_typed_array_convert(setter_argument, to_assign);
+							converted_setter_argument = true;
+						} else if (_is_erased_container_call_to_typed_dictionary(assignment->assigned_value, target.type)) {
+							setter_argument = codegen.add_temporary(target.type);
+							gen->write_assign_typed_dictionary_convert(setter_argument, to_assign);
+							converted_setter_argument = true;
+						}
+					}
 					Vector<GDScriptCodeGenerator::Address> args;
-					args.push_back(to_assign);
+					args.push_back(setter_argument);
 					GDScriptCodeGenerator::Address call_base = is_static ? GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::CLASS) : GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::SELF);
 					gen->write_call(GDScriptCodeGenerator::Address(), call_base, setter_function, args);
+					if (converted_setter_argument) {
+						gen->pop_temporary();
+					}
 				} else if (is_static) {
 					GDScriptCodeGenerator::Address temp = codegen.add_temporary(static_var_data_type);
 					if (assignment->use_conversion_assign) {
@@ -3644,6 +3700,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 			// reifies against the correct argument rather than blindly indexing the leaf's own.
 			const Vector<GDScriptParser::DataType> &base_specialization = p_class->base_type.type_arguments;
 			for (KeyValue<StringName, GDScript::MemberInfo> &E : p_script->member_indices) {
+				_rebind_self_data_type(E.value.data_type, p_script);
 				_specialize_type_argument_binding(E.value.type_argument_binding, base_specialization, p_script);
 			}
 
