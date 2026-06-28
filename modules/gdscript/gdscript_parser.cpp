@@ -847,7 +847,7 @@ void GDScriptParser::parse_program() {
 
 	bool can_have_class_or_extends = parse_top_level_annotations(AnnotationInfo::SCRIPT | AnnotationInfo::CLASS_LEVEL | AnnotationInfo::STANDALONE);
 
-	if (current.type == GDScriptTokenizer::Token::NAMESPACE || current.type == GDScriptTokenizer::Token::IMPORT || current.type == GDScriptTokenizer::Token::CLASS_NAME || current.type == GDScriptTokenizer::Token::TRAIT_NAME || current.type == GDScriptTokenizer::Token::EXTENDS || current.type == GDScriptTokenizer::Token::USES) {
+	if (current.type == GDScriptTokenizer::Token::NAMESPACE || current.type == GDScriptTokenizer::Token::IMPORT || current.type == GDScriptTokenizer::Token::CLASS_NAME || current.type == GDScriptTokenizer::Token::TRAIT_NAME || current.type == GDScriptTokenizer::Token::ENUM_NAME || current.type == GDScriptTokenizer::Token::EXTENDS || current.type == GDScriptTokenizer::Token::USES) {
 		// Set range of the class to only start at the top-level declaration if present.
 		reset_extents(head, current);
 	}
@@ -971,6 +971,11 @@ void GDScriptParser::parse_program() {
 				} else {
 					parse_trait_name();
 				}
+				break;
+			case GDScriptTokenizer::Token::ENUM_NAME:
+				push_pending_annotations_to_head();
+				advance();
+				parse_enum_name();
 				break;
 			case GDScriptTokenizer::Token::EXTENDS:
 				push_pending_annotations_to_head();
@@ -1377,6 +1382,20 @@ void GDScriptParser::parse_trait_name() {
 		end_statement("uses declaration");
 	} else {
 		end_statement("trait_name statement");
+	}
+}
+
+void GDScriptParser::parse_enum_name() {
+	current_class->is_enum_file = true;
+
+	DeclarationModifiers no_modifiers;
+	EnumNode *enum_node = parse_enum(no_modifiers);
+	current_class->enum_file_decl = enum_node;
+
+	if (enum_node != nullptr && enum_node->identifier != nullptr) {
+		current_class->identifier = enum_node->identifier;
+		current_class->qualified_global_name = current_class->namespace_name.is_empty() ? String(current_class->identifier->name) : current_class->namespace_name + "." + String(current_class->identifier->name);
+		current_class->fqcn = current_class->qualified_global_name;
 	}
 }
 
