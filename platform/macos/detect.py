@@ -1,3 +1,4 @@
+import glob
 import os
 import sys
 from typing import TYPE_CHECKING
@@ -37,6 +38,7 @@ def get_opts():
         BoolVariable("use_asan", "Use LLVM/GCC compiler address sanitizer (ASAN)", False),
         BoolVariable("use_tsan", "Use LLVM/GCC compiler thread sanitizer (TSAN)", False),
         BoolVariable("use_coverage", "Use instrumentation codes in the binary (e.g. for code coverage)", False),
+        BoolVariable("use_fuzzer", "Build a libFuzzer harness instead of the normal entry point", False),
         ("angle_libs", "Path to the ANGLE static libraries", ""),
         (
             "bundle_sign_identity",
@@ -177,6 +179,20 @@ def configure(env: "SConsEnvironment"):
             env.Append(LINKFLAGS=["-Wl,-stack_size," + hex(STACK_SIZE_SANITIZERS)])
     elif env["library_type"] == "executable":
         env.Append(LINKFLAGS=["-Wl,-stack_size," + hex(STACK_SIZE)])
+
+    if env["use_fuzzer"]:
+        env.extra_suffix += ".fuzz"
+        # Instrument every translation unit for coverage-guided fuzzing. Apple's
+        # clang does not ship the libFuzzer runtime, so compile with Apple clang
+        # but link the runtime archive from a Homebrew LLVM of a matching major
+        # version (its SanitizerCoverage ABI is compatible with the -no-link
+        # instrumentation emitted above).
+        env.Append(CCFLAGS=["-fsanitize=fuzzer-no-link"])
+        fuzzer_runtime = sorted(glob.glob("/opt/homebrew/opt/llvm/lib/clang/*/lib/darwin/libclang_rt.fuzzer_osx.a"))
+        if not fuzzer_runtime:
+            print_error("use_fuzzer=yes requires a Homebrew LLVM with the libFuzzer runtime (brew install llvm).")
+            sys.exit(255)
+        env.Append(LINKFLAGS=[fuzzer_runtime[-1]])
 
     if env["use_coverage"]:
         env.Append(CCFLAGS=["-ftest-coverage", "-fprofile-arcs"])
