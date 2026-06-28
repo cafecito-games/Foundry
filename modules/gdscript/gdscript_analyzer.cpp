@@ -6803,6 +6803,11 @@ void GDScriptAnalyzer::update_const_expression_builtin_type(GDScriptParser::Expr
 		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, expression_type.to_string(), p_type.to_string()), p_expression);
 		return;
 	}
+	if (p_type.is_variant() &&
+			expression_type.is_meta_type && expression_type.kind == GDScriptParser::DataType::CLASS &&
+			!expression_type.type_arguments.is_empty()) {
+		return;
+	}
 
 	if (p_type.is_nullable && p_expression->is_constant && p_expression->reduced_value.get_type() == Variant::NIL) {
 		// An explicit null is kept as-is: a nullable target holds null without converting it to the underlying

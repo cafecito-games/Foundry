@@ -45,6 +45,9 @@ Ref<Script> GDScriptReflection::_resolve_script(const Variant &p_target) {
 	if (object == nullptr) {
 		return Ref<Script>();
 	}
+	if (GDScriptSpecializedClassHandle *specialized_handle = Object::cast_to<GDScriptSpecializedClassHandle>(object)) {
+		return specialized_handle->get_specialized_script();
+	}
 	// A script type passed directly.
 	if (Script *script = Object::cast_to<Script>(object)) {
 		return Ref<Script>(script);

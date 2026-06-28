@@ -40,6 +40,8 @@
 #include "core/object/script_language.h"
 #include "core/templates/rb_set.h"
 
+class GDScript;
+
 class GDScriptNativeClass : public RefCounted {
 	GDCLASS(GDScriptNativeClass, RefCounted);
 
@@ -81,6 +83,30 @@ public:
 	Dictionary get_bound() const { return bound; }
 };
 
+class GDScriptSpecializedClassHandle : public RefCounted {
+	GDCLASS(GDScriptSpecializedClassHandle, RefCounted);
+
+	Ref<GDScript> script;
+	Vector<ContainerType> type_arguments;
+
+protected:
+	bool _get(const StringName &p_name, Variant &r_ret) const;
+	static void _bind_methods();
+
+public:
+	const Ref<GDScript> &get_specialized_script() const { return script; }
+	const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
+	String get_type_name() const;
+	bool is_assignable_to_native_type(const StringName &p_native_type) const;
+	bool _equals(const Variant &p_other) const;
+	int64_t _hash_code() const;
+	virtual Variant callp(const StringName &p_method, const Variant **p_args, int p_argcount,
+			Callable::CallError &r_error) override;
+
+	static Ref<GDScriptSpecializedClassHandle> create(const Ref<GDScript> &p_script,
+			const Vector<ContainerType> &p_type_arguments);
+};
+
 #ifdef TESTS_ENABLED
 namespace GDScriptTests {
 class TestGDScriptTraitReflectionAccessor;
@@ -90,6 +116,7 @@ class TestGDScriptGenericReflectionAccessor;
 
 class GDScript : public Script {
 	GDCLASS(GDScript, Script);
+	friend class GDScriptSpecializedClassHandle;
 	bool tool = false;
 	bool valid = false;
 	bool reloading = false;
@@ -205,11 +232,13 @@ private:
 	// member-store opcode can resolve a `T`-typed member's reified argument from the leaf script
 	// without a name lookup. Populated after `member_indices` is finalized.
 	Vector<TypeArgumentBinding> member_type_argument_bindings;
-	// How each ancestor class's type parameters resolve for instances of this (leaf) class, keyed by the
-	// ancestor's GDScript and indexed by that ancestor's parameter ordinal. Lets `create_proxy[T]`
-	// (OPCODE_GET_TYPE_PARAMETER), compiled once in a base, materialize `T`'s bound script for a derived
-	// instance whose base was specialized (`Mock extends Base[Greeter]`). Ancestor keys are raw pointers
-	// kept alive by the `base` chain.
+	// How each ancestor class or applied trait's type parameters resolve for instances of this (leaf)
+	// class, keyed by the ancestor/trait GDScript and indexed by that script's parameter ordinal. Lets
+	// `create_proxy[T]` (OPCODE_GET_TYPE_PARAMETER), compiled once in a base, materialize `T`'s bound
+	// script for a derived instance whose base was specialized (`Mock extends Base[Greeter]`), and lets
+	// runtime Type[GenericTrait[T]] checks project specialized class handles through trait uses.
+	// Ancestor keys are raw pointers kept alive by the `base` chain; trait keys are kept alive by the
+	// parser/cache lifetime used for resolved trait metadata.
 	HashMap<GDScript *, Vector<TypeArgumentBinding>> type_parameter_bindings_by_ancestor;
 
 	// Only static variables of the current class.

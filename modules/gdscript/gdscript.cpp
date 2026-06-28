@@ -109,6 +109,116 @@ void GDScriptTypeParameter::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bound", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_bound");
 }
 
+void GDScriptSpecializedClassHandle::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("_equals", "other"), &GDScriptSpecializedClassHandle::_equals);
+	ClassDB::bind_method(D_METHOD("_hash_code"), &GDScriptSpecializedClassHandle::_hash_code);
+}
+
+String GDScriptSpecializedClassHandle::get_type_name() const {
+	if (script.is_null()) {
+		return "GDScript";
+	}
+	ContainerType type;
+	type.builtin_type = Variant::OBJECT;
+	type.class_name = script->get_instance_base_type();
+	type.script = script;
+	type.type_arguments = type_arguments;
+	return type.get_type_name();
+}
+
+bool GDScriptSpecializedClassHandle::is_assignable_to_native_type(const StringName &p_native_type) const {
+	return script.is_valid() && (p_native_type == StringName() || ClassDB::is_parent_class(script->get_class_name(), p_native_type));
+}
+
+bool GDScriptSpecializedClassHandle::_equals(const Variant &p_other) const {
+	Ref<GDScriptSpecializedClassHandle> other = p_other;
+	return other.is_valid() && script == other->script && type_arguments == other->type_arguments;
+}
+
+int64_t GDScriptSpecializedClassHandle::_hash_code() const {
+	uint32_t hash = hash_murmur3_one_64(reinterpret_cast<uint64_t>(script.ptr()));
+	for (const ContainerType &argument_type : type_arguments) {
+		hash = hash_murmur3_one_32(argument_type.get_type_name().hash(), hash);
+	}
+	return hash_fmix32(hash);
+}
+
+bool GDScriptSpecializedClassHandle::_get(const StringName &p_name, Variant &r_ret) const {
+	return script.is_valid() && script->_get(p_name, r_ret);
+}
+
+Variant GDScriptSpecializedClassHandle::callp(const StringName &p_method, const Variant **p_args, int p_argcount,
+		Callable::CallError &r_error) {
+	if (p_method == SNAME("new")) {
+		if (script.is_null()) {
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+			return Variant();
+		}
+		return script->_new_specialized(p_args, p_argcount, type_arguments, r_error);
+	}
+	if (p_method == CoreStringName(_equals) || p_method == CoreStringName(_hash_code)) {
+		return RefCounted::callp(p_method, p_args, p_argcount, r_error);
+	}
+	if (script.is_valid()) {
+		Variant ret = script->callp(p_method, p_args, p_argcount, r_error);
+		if (r_error.error != Callable::CallError::CALL_ERROR_INVALID_METHOD) {
+			return ret;
+		}
+	}
+	return RefCounted::callp(p_method, p_args, p_argcount, r_error);
+}
+
+Ref<GDScriptSpecializedClassHandle> GDScriptSpecializedClassHandle::create(const Ref<GDScript> &p_script,
+		const Vector<ContainerType> &p_type_arguments) {
+	Ref<GDScriptSpecializedClassHandle> handle;
+	handle.instantiate();
+	handle->script = p_script;
+	handle->type_arguments = p_type_arguments;
+	return handle;
+}
+
+static GDScriptSpecializedClassHandle *_specialized_class_handle_from_variant(const Variant &p_value) {
+	if (p_value.get_type() != Variant::OBJECT) {
+		return nullptr;
+	}
+
+	Object *object = p_value.get_validated_object();
+	if (object == nullptr) {
+		return nullptr;
+	}
+
+	return Object::cast_to<GDScriptSpecializedClassHandle>(object);
+}
+
+static bool _erase_specialized_class_handle_for_native_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (p_expected_type.builtin_type != Variant::OBJECT || p_expected_type.script.is_valid() ||
+			!p_expected_type.type_arguments.is_empty()) {
+		return false;
+	}
+
+	GDScriptSpecializedClassHandle *specialized_handle = _specialized_class_handle_from_variant(r_value);
+	if (specialized_handle == nullptr || !specialized_handle->is_assignable_to_native_type(p_expected_type.class_name)) {
+		return false;
+	}
+
+	r_value = specialized_handle->get_specialized_script();
+	return true;
+}
+
+static bool _erase_specialized_class_handle_for_native_data_type(const GDScriptDataType &p_expected_type, Variant &r_value) {
+	if (p_expected_type.kind != GDScriptDataType::NATIVE || p_expected_type.builtin_type != Variant::OBJECT) {
+		return false;
+	}
+
+	GDScriptSpecializedClassHandle *specialized_handle = _specialized_class_handle_from_variant(r_value);
+	if (specialized_handle == nullptr || !specialized_handle->is_assignable_to_native_type(p_expected_type.native_type)) {
+		return false;
+	}
+
+	r_value = specialized_handle->get_specialized_script();
+	return true;
+}
+
 Ref<GDScriptAnnotation> GDScriptAnnotation::from_usage(const GDScript::AnnotationUsage &p_usage) {
 	Ref<GDScriptAnnotation> descriptor;
 	descriptor.instantiate();
@@ -1178,6 +1288,7 @@ bool GDScript::_set(const StringName &p_name, const Variant &p_value) {
 		if (E) {
 			const MemberInfo *member = &E->value;
 			Variant value = p_value;
+			_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
 			if (!member->data_type.is_type(value)) {
 				const Variant *args = &p_value;
 				Callable::CallError err;
@@ -1905,6 +2016,7 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 							return false;
 						}
 					} else {
+						_erase_specialized_class_handle_for_native_container_type(expected_type, value);
 						ContainerTypeValidate validator(expected_type);
 						validator.where = "member";
 						if (!validator.validate(value, "assign")) {
@@ -1912,12 +2024,15 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 						}
 					}
 				}
-			} else if (!member->data_type.is_type(value)) {
-				const Variant *args = &p_value;
-				Callable::CallError err;
-				Variant::construct(member->data_type.builtin_type, value, &args, 1, err);
-				if (err.error != Callable::CallError::CALL_OK || !member->data_type.is_type(value)) {
-					return false;
+			} else {
+				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
+				if (!member->data_type.is_type(value)) {
+					const Variant *args = &p_value;
+					Callable::CallError err;
+					Variant::construct(member->data_type.builtin_type, value, &args, 1, err);
+					if (err.error != Callable::CallError::CALL_OK || !member->data_type.is_type(value)) {
+						return false;
+					}
 				}
 			}
 			if (likely(script->valid) && member->setter) {
@@ -1939,6 +2054,7 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 			if (E) {
 				const GDScript::MemberInfo *member = &E->value;
 				Variant value = p_value;
+				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
 				if (!member->data_type.is_type(value)) {
 					const Variant *args = &p_value;
 					Callable::CallError err;
