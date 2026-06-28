@@ -2460,48 +2460,52 @@ static String read_all_stdin() {
 // only replaced once the new content is fully and successfully written.
 static bool write_file_atomic(const String &p_path, const String &p_content, String &r_error_message) {
 	// Choose a temp sibling name unlikely to collide with real files: the pid plus
-	// a per-process counter, skipping any candidate that already exists (a stale
-	// temp, an unrelated file, or a symlink). Note this is not fully race-safe:
-	// `FileAccess` opens via `fopen("wb")` and exposes no exclusive/no-follow create
-	// (no `O_EXCL`/`O_NOFOLLOW`), so a symlink planted at the chosen path between the
-	// existence check and the open could still be followed and truncated. The
-	// unpredictable name plus the existence check make that race very narrow, and it
-	// only matters for a writable, attacker-controlled directory; closing it fully
-	// would need a FileAccess API change out of scope here.
+	// a per-process counter. The file is opened with WRITE | WRITE_EXCL, which
+	// creates it atomically and fails if the path already exists or is a symlink
+	// (O_EXCL/O_NOFOLLOW on Unix, CREATE_NEW on Windows). That single atomic step
+	// folds in the existence check and closes the TOCTOU race a separate
+	// check-then-open left open: a symlink planted at the chosen path can no
+	// longer redirect or truncate the write. On collision (a stale temp or a
+	// planted file), advance to the next candidate name and retry.
 	static uint32_t temp_counter = 0;
 	const uint64_t process_id = OS::get_singleton() != nullptr ? uint64_t(OS::get_singleton()->get_process_id()) : 0;
 	String temp_path;
+	Ref<FileAccess> output;
 	for (int attempt = 0; attempt < 4096; attempt++) {
 		const String candidate = p_path + ".gdformat-tmp." + itos(process_id) + "." + itos(temp_counter++);
-		if (!FileAccess::exists(candidate) && !DirAccess::exists(candidate)) {
+		Error open_error = OK;
+		output = FileAccess::open(candidate, FileAccess::WRITE | FileAccess::WRITE_EXCL, &open_error);
+		if (output.is_valid()) {
 			temp_path = candidate;
 			break;
+		}
+		if (open_error != ERR_ALREADY_EXISTS) {
+			// A real failure (permissions, missing parent dir, no-follow refusal on
+			// a planted symlink, …) rather than a name collision: stop retrying.
+			r_error_message = "could not open temporary file for writing";
+			return false;
 		}
 	}
 	if (temp_path.is_empty()) {
 		r_error_message = "could not find an unused temporary file name";
 		return false;
 	}
-	{
-		Ref<FileAccess> output = FileAccess::open(temp_path, FileAccess::WRITE);
-		if (output.is_null()) {
-			r_error_message = "could not open temporary file for writing";
-			return false;
-		}
-		if (!output->store_string(p_content)) {
-			r_error_message = "could not write formatted text";
-			output.unref();
-			DirAccess::remove_absolute(temp_path);
-			return false;
-		}
-		output->flush();
-		if (output->get_error() != OK) {
-			r_error_message = "error while writing formatted text";
-			output.unref();
-			DirAccess::remove_absolute(temp_path);
-			return false;
-		}
+	if (!output->store_string(p_content)) {
+		r_error_message = "could not write formatted text";
+		output.unref();
+		DirAccess::remove_absolute(temp_path);
+		return false;
 	}
+	output->flush();
+	if (output->get_error() != OK) {
+		r_error_message = "error while writing formatted text";
+		output.unref();
+		DirAccess::remove_absolute(temp_path);
+		return false;
+	}
+	// Close the temp file before renaming: a held handle blocks the rename on
+	// Windows, and the rename must observe fully-flushed content.
+	output.unref();
 	if (DirAccess::rename_absolute(temp_path, p_path) != OK) {
 		// The atomic replace failed. Crucially, the temp file is NOT deleted here: it
 		// holds the fully-formatted content (the desired output). On some platforms

@@ -59,6 +59,13 @@ public:
 		READ_WRITE = 3,
 		WRITE_READ = 7,
 		SKIP_PACK = 16,
+		// Combine with WRITE to create the file exclusively: fail if it already
+		// exists and, on platforms that support it, refuse to follow a symlink at
+		// the final path component. Closes the existence-check/open TOCTOU race so
+		// a write cannot be redirected through a planted symlink. Backends without
+		// exclusive-create support reject the flag (open fails) rather than
+		// silently downgrading to a non-exclusive open.
+		WRITE_EXCL = 32,
 	};
 
 	enum UnixPermissionFlags : int32_t {

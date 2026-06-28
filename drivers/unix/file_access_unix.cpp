@@ -68,6 +68,15 @@ void FileAccessUnix::check_errors(bool p_write) const {
 Error FileAccessUnix::open_internal(const String &p_path, int p_mode_flags) {
 	_close();
 
+	// Exclusive create (WRITE | WRITE_EXCL): create the file atomically, failing
+	// if it exists, and never following a symlink at the final component. Strip
+	// the flag so the rest of the mode handling sees a plain WRITE.
+	const bool exclusive_create = (p_mode_flags & WRITE_EXCL) != 0;
+	p_mode_flags &= ~WRITE_EXCL;
+	if (exclusive_create && p_mode_flags != WRITE) {
+		return ERR_INVALID_PARAMETER;
+	}
+
 	path_src = p_path;
 	path = fix_path(p_path);
 	//printf("opening %s, %i\n", path.utf8().get_data(), Memory::get_static_mem_usage());
@@ -119,7 +128,41 @@ Error FileAccessUnix::open_internal(const String &p_path, int p_mode_flags) {
 	}
 #endif
 
-	if (is_backup_save_enabled() && (p_mode_flags == WRITE)) {
+	if (exclusive_create) {
+		// O_EXCL fails if the path already exists (closing the existence-check
+		// race); O_NOFOLLOW refuses to open through a symlink at the final
+		// component. Together these prevent a planted symlink from redirecting the
+		// write. The atomic temp-then-rename is left to the caller. Backup-save's
+		// rename-on-close is intentionally bypassed: an exclusive-create caller
+		// manages its own atomic replacement.
+		const CharString native_path = path.utf8();
+		int open_flags = O_WRONLY | O_CREAT | O_EXCL;
+#ifdef O_NOFOLLOW
+		open_flags |= O_NOFOLLOW;
+#endif
+		const int fd = ::open(native_path.get_data(), open_flags, 0666);
+		if (fd == -1) {
+			switch (errno) {
+				case EEXIST: {
+					last_error = ERR_ALREADY_EXISTS;
+				} break;
+				case ENOENT: {
+					last_error = ERR_FILE_NOT_FOUND;
+				} break;
+				default: {
+					// ELOOP (a symlink was in the way) and everything else.
+					last_error = ERR_FILE_CANT_OPEN;
+				} break;
+			}
+			return last_error;
+		}
+		f = fdopen(fd, mode_string);
+		if (f == nullptr) {
+			::close(fd);
+			last_error = ERR_FILE_CANT_OPEN;
+			return last_error;
+		}
+	} else if (is_backup_save_enabled() && (p_mode_flags == WRITE)) {
 		// Set save path to the symlink target, not the link itself.
 		String link;
 		bool is_link = false;
