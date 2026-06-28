@@ -34,7 +34,7 @@
 
 #include <shlobj.h>
 
-GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wnon-virtual-dtor") // Silence warning due to a COM API weirdness.
+FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wnon-virtual-dtor") // Silence warning due to a COM API weirdness.
 
 // https://learn.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-dodragdrop#remarks
 class DropTargetWindows : public IDropTarget {
@@ -65,4 +65,4 @@ public:
 	HRESULT STDMETHODCALLTYPE Drop(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect) override;
 };
 
-GODOT_GCC_WARNING_POP
+FOUNDRY_GCC_WARNING_POP

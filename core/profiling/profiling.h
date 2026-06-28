@@ -42,7 +42,7 @@
 //       Prefer including it in .cpp files only. The reason is that we want to keep
 //       the recompile cost of changing the profiler as low as possible.
 
-#if defined(GODOT_USE_TRACY)
+#if defined(FOUNDRY_USE_TRACY)
 // Use the tracy profiler.
 
 #include "core/string/string_name.h"
@@ -79,11 +79,11 @@ const SourceLocationData *intern_source_location(const void *p_function_ptr, con
 	tracy::ScopedZone __godot_tracy_zone_system_call(tracy::intern_source_location(m_ptr, m_file, m_function, m_name, m_line, false))
 
 // Memory allocation
-#ifdef GODOT_PROFILER_TRACK_MEMORY
-#define GodotProfileAlloc(m_ptr, m_size)                       \
-	GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wmaybe-uninitialized") \
-	TracyAlloc(m_ptr, m_size);                                 \
-	GODOT_GCC_WARNING_POP
+#ifdef FOUNDRY_PROFILER_TRACK_MEMORY
+#define GodotProfileAlloc(m_ptr, m_size)                         \
+	FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wmaybe-uninitialized") \
+	TracyAlloc(m_ptr, m_size);                                   \
+	FOUNDRY_GCC_WARNING_POP
 #define GodotProfileFree(m_ptr) TracyFree(m_ptr)
 #else
 #define GodotProfileAlloc(m_ptr, m_size)
@@ -93,7 +93,7 @@ const SourceLocationData *intern_source_location(const void *p_function_ptr, con
 void godot_init_profiler();
 void godot_cleanup_profiler();
 
-#elif defined(GODOT_USE_PERFETTO)
+#elif defined(FOUNDRY_USE_PERFETTO)
 // Use the perfetto profiler.
 
 #include <perfetto.h>
@@ -134,7 +134,7 @@ struct PerfettoGroupedEventEnder {
 void godot_init_profiler();
 void godot_cleanup_profiler();
 
-#elif defined(GODOT_USE_INSTRUMENTS)
+#elif defined(FOUNDRY_USE_INSTRUMENTS)
 
 #include <os/log.h>
 #include <os/signpost.h>

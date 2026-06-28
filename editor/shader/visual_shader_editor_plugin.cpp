@@ -5256,7 +5256,7 @@ void VisualShaderEditor::_param_unselected() {
 }
 
 void VisualShaderEditor::_help_open() {
-	OS::get_singleton()->shell_open(vformat("%s/tutorials/shaders/visual_shaders.html", GODOT_VERSION_DOCS_URL));
+	OS::get_singleton()->shell_open(vformat("%s/tutorials/shaders/visual_shaders.html", FOUNDRY_VERSION_DOCS_URL));
 }
 
 void VisualShaderEditor::_notification(int p_what) {

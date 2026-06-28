@@ -33,7 +33,7 @@
 #include "core/config/engine.h"
 
 // Uncomment this define to get more debugging logs for the delta smoothing.
-// #define GODOT_DEBUG_DELTA_SMOOTHER
+// #define FOUNDRY_DEBUG_DELTA_SMOOTHER
 
 struct MainFrameTime {
 	double process_step; // delta time to advance during process()
@@ -97,7 +97,7 @@ class MainTimerSync {
 
 			_estimate_complete = false;
 
-#ifdef GODOT_DEBUG_DELTA_SMOOTHER
+#ifdef FOUNDRY_DEBUG_DELTA_SMOOTHER
 			print_line("estimated fps " + itos(_estimated_fps));
 #endif
 		}

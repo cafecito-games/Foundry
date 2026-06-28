@@ -148,10 +148,10 @@ DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 	print_error(vformat("%s: Program crashed", __FUNCTION__));
 
 	// Print the engine version just before, so that people are reminded to include the version in backtrace reports.
-	if (String(GODOT_VERSION_HASH).is_empty()) {
-		print_error(vformat("Engine version: %s", GODOT_VERSION_FULL_NAME));
+	if (String(FOUNDRY_VERSION_HASH).is_empty()) {
+		print_error(vformat("Engine version: %s", FOUNDRY_VERSION_FULL_NAME));
 	} else {
-		print_error(vformat("Engine version: %s (%s)", GODOT_VERSION_FULL_NAME, GODOT_VERSION_HASH));
+		print_error(vformat("Engine version: %s (%s)", FOUNDRY_VERSION_FULL_NAME, FOUNDRY_VERSION_HASH));
 	}
 	print_error(vformat("Dumping the backtrace. %s", msg));
 

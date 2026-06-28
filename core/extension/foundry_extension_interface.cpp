@@ -242,23 +242,23 @@ FoundryExtensionInterfaceFunctionPtr foundry_extension_get_proc_address(const ch
 
 #ifndef DISABLE_DEPRECATED
 static void foundry_extension_get_godot_version(FoundryExtensionGodotVersion *r_godot_version) {
-	r_godot_version->major = GODOT_VERSION_MAJOR;
-	r_godot_version->minor = GODOT_VERSION_MINOR;
-	r_godot_version->patch = GODOT_VERSION_PATCH;
-	r_godot_version->string = GODOT_VERSION_FULL_NAME;
+	r_godot_version->major = FOUNDRY_VERSION_MAJOR;
+	r_godot_version->minor = FOUNDRY_VERSION_MINOR;
+	r_godot_version->patch = FOUNDRY_VERSION_PATCH;
+	r_godot_version->string = FOUNDRY_VERSION_FULL_NAME;
 }
 #endif
 
 static void foundry_extension_get_godot_version2(FoundryExtensionGodotVersion2 *r_godot_version) {
-	r_godot_version->major = GODOT_VERSION_MAJOR;
-	r_godot_version->minor = GODOT_VERSION_MINOR;
-	r_godot_version->patch = GODOT_VERSION_PATCH;
-	r_godot_version->hex = GODOT_VERSION_HEX;
-	r_godot_version->status = GODOT_VERSION_STATUS;
-	r_godot_version->build = GODOT_VERSION_BUILD;
-	r_godot_version->hash = GODOT_VERSION_HASH;
-	r_godot_version->timestamp = GODOT_VERSION_TIMESTAMP;
-	r_godot_version->string = GODOT_VERSION_FULL_NAME;
+	r_godot_version->major = FOUNDRY_VERSION_MAJOR;
+	r_godot_version->minor = FOUNDRY_VERSION_MINOR;
+	r_godot_version->patch = FOUNDRY_VERSION_PATCH;
+	r_godot_version->hex = FOUNDRY_VERSION_HEX;
+	r_godot_version->status = FOUNDRY_VERSION_STATUS;
+	r_godot_version->build = FOUNDRY_VERSION_BUILD;
+	r_godot_version->hash = FOUNDRY_VERSION_HASH;
+	r_godot_version->timestamp = FOUNDRY_VERSION_TIMESTAMP;
+	r_godot_version->string = FOUNDRY_VERSION_FULL_NAME;
 }
 
 // Memory Functions

@@ -716,7 +716,7 @@ public:
 
 	FoundryExtensionScriptInstanceDataPtr instance = nullptr;
 
-	GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wignored-qualifiers") // There should not be warnings on explicit casts.
+	FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wignored-qualifiers") // There should not be warnings on explicit casts.
 
 	virtual bool set(const StringName &p_name, const Variant &p_value) override {
 		if (native_info->set_func) {
@@ -966,5 +966,5 @@ public:
 #endif // DISABLE_DEPRECATED
 	}
 
-	GODOT_GCC_WARNING_POP
+	FOUNDRY_GCC_WARNING_POP
 };

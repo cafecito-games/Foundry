@@ -50,7 +50,7 @@ namespace FSTests {
 
 // Restores the two strict project settings to their prior values when it goes out of scope, so a
 // test that flips them does not leak state into later tests (the analyzer reads these globally). A
-// confirmed activation also persists project.godot, so the guard snapshots the on-disk file and
+// confirmed activation also persists project.foundry, so the guard snapshots the on-disk file and
 // restores it byte-for-byte, keeping the curated test fixture (and its comments) intact rather than
 // letting ProjectSettings::save() rewrite it with full defaults.
 struct StrictSettingsGuard {
@@ -65,7 +65,7 @@ struct StrictSettingsGuard {
 		prior_null = settings->get_setting("debug/foundry_script/analysis/strict_null_checks", false);
 		prior_dynamic = settings->get_setting("debug/foundry_script/analysis/strict_dynamic_checks", false);
 
-		project_path = settings->globalize_path("res://project.godot");
+		project_path = settings->globalize_path("res://project.foundry");
 		if (FileAccess::exists(project_path)) {
 			had_project_file = true;
 			project_bytes = FileAccess::get_file_as_bytes(project_path);
@@ -77,7 +77,7 @@ struct StrictSettingsGuard {
 		settings->set_setting("debug/foundry_script/analysis/strict_null_checks", prior_null);
 		settings->set_setting("debug/foundry_script/analysis/strict_dynamic_checks", prior_dynamic);
 
-		// Restore the exact on-disk project.godot so a persisted flip never leaks onto disk.
+		// Restore the exact on-disk project.foundry so a persisted flip never leaks onto disk.
 		if (had_project_file) {
 			Ref<FileAccess> file = FileAccess::open(project_path, FileAccess::WRITE);
 			if (file.is_valid()) {

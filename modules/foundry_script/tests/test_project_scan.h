@@ -125,7 +125,7 @@ static void build_sample_project(const TemporaryProjectTree &p_tree) {
 	p_tree.write_file("vendor/lib.fs", "var vendored = true\n");
 	p_tree.write_file("vendor/.fsignore", "");
 	p_tree.write_file(".hidden/secret.fs", "var secret = true\n");
-	p_tree.write_file("nested/project.godot", "[application]\n");
+	p_tree.write_file("nested/project.foundry", "[application]\n");
 	p_tree.write_file("nested/sub.fs", "var nested = true\n");
 }
 

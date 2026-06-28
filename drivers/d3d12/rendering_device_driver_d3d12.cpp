@@ -40,23 +40,23 @@
 #include "d3d12_godot_nir_bridge.h"
 #include "rendering_context_driver_d3d12.h"
 
-GODOT_GCC_WARNING_PUSH
-GODOT_GCC_WARNING_IGNORE("-Wimplicit-fallthrough")
-GODOT_GCC_WARNING_IGNORE("-Wlogical-not-parentheses")
-GODOT_GCC_WARNING_IGNORE("-Wmissing-field-initializers")
-GODOT_GCC_WARNING_IGNORE("-Wnon-virtual-dtor")
-GODOT_GCC_WARNING_IGNORE("-Wshadow")
-GODOT_GCC_WARNING_IGNORE("-Wswitch")
-GODOT_CLANG_WARNING_PUSH
-GODOT_CLANG_WARNING_IGNORE("-Wimplicit-fallthrough")
-GODOT_CLANG_WARNING_IGNORE("-Wlogical-not-parentheses")
-GODOT_CLANG_WARNING_IGNORE("-Wmissing-field-initializers")
-GODOT_CLANG_WARNING_IGNORE("-Wnon-virtual-dtor")
-GODOT_CLANG_WARNING_IGNORE("-Wstring-plus-int")
-GODOT_CLANG_WARNING_IGNORE("-Wswitch")
-GODOT_MSVC_WARNING_PUSH
-GODOT_MSVC_WARNING_IGNORE(4200) // "nonstandard extension used: zero-sized array in struct/union".
-GODOT_MSVC_WARNING_IGNORE(4806) // "'&': unsafe operation: no value of type 'bool' promoted to type 'uint32_t' can equal the given constant".
+FOUNDRY_GCC_WARNING_PUSH
+FOUNDRY_GCC_WARNING_IGNORE("-Wimplicit-fallthrough")
+FOUNDRY_GCC_WARNING_IGNORE("-Wlogical-not-parentheses")
+FOUNDRY_GCC_WARNING_IGNORE("-Wmissing-field-initializers")
+FOUNDRY_GCC_WARNING_IGNORE("-Wnon-virtual-dtor")
+FOUNDRY_GCC_WARNING_IGNORE("-Wshadow")
+FOUNDRY_GCC_WARNING_IGNORE("-Wswitch")
+FOUNDRY_CLANG_WARNING_PUSH
+FOUNDRY_CLANG_WARNING_IGNORE("-Wimplicit-fallthrough")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wlogical-not-parentheses")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wmissing-field-initializers")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wnon-virtual-dtor")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wstring-plus-int")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wswitch")
+FOUNDRY_MSVC_WARNING_PUSH
+FOUNDRY_MSVC_WARNING_IGNORE(4200) // "nonstandard extension used: zero-sized array in struct/union".
+FOUNDRY_MSVC_WARNING_IGNORE(4806) // "'&': unsafe operation: no value of type 'bool' promoted to type 'uint32_t' can equal the given constant".
 
 #include <dxgi1_6.h>
 #define D3D12MA_D3D12_HEADERS_ALREADY_INCLUDED
@@ -69,9 +69,9 @@ extern "C" {
 #include <dxil_spirv_nir.h>
 }
 
-GODOT_GCC_WARNING_POP
-GODOT_CLANG_WARNING_POP
-GODOT_MSVC_WARNING_POP
+FOUNDRY_GCC_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
+FOUNDRY_MSVC_WARNING_POP
 
 #if !defined(_MSC_VER)
 #include <guiddef.h>
@@ -1512,9 +1512,9 @@ RDD::TextureID RenderingDeviceDriverD3D12::texture_create(const TextureFormat &p
 	}
 	tex_info->states_ptr = &tex_info->owner_info.states;
 	tex_info->format = p_format.format;
-	GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wstrict-aliasing")
+	FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wstrict-aliasing")
 	tex_info->desc = *(CD3DX12_RESOURCE_DESC *)&resource_desc;
-	GODOT_GCC_WARNING_POP
+	FOUNDRY_GCC_WARNING_POP
 	tex_info->base_layer = 0;
 	tex_info->layers = resource_desc.ArraySize();
 	tex_info->base_mip = 0;

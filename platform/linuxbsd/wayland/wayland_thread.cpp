@@ -4797,8 +4797,8 @@ Error WaylandThread::init() {
 #ifdef TOOLS_ENABLED
 	bool embedder_enabled = true;
 
-	if (OS::get_singleton()->get_environment("GODOT_WAYLAND_DISABLE_EMBEDDER") == "1") {
-		print_verbose("Disabling Wayland embedder as per GODOT_WAYLAND_DISABLE_EMBEDDER.");
+	if (OS::get_singleton()->get_environment("FOUNDRY_WAYLAND_DISABLE_EMBEDDER") == "1") {
+		print_verbose("Disabling Wayland embedder as per FOUNDRY_WAYLAND_DISABLE_EMBEDDER.");
 		embedder_enabled = false;
 	}
 
@@ -4810,12 +4810,12 @@ Error WaylandThread::init() {
 		embedder_socket_path = embedder.get_socket_path();
 		ERR_FAIL_COND_V_MSG(embedder_socket_path.is_empty(), ERR_CANT_CREATE, "Wayland embedder returned invalid path.");
 
-		OS::get_singleton()->set_environment("GODOT_WAYLAND_DISPLAY", embedder_socket_path);
+		OS::get_singleton()->set_environment("FOUNDRY_WAYLAND_DISPLAY", embedder_socket_path);
 	}
 #endif // TOOLS_ENABLED
 
 	if (Engine::get_singleton()->is_embedded_in_editor()) {
-		embedder_socket_path = OS::get_singleton()->get_environment("GODOT_WAYLAND_DISPLAY");
+		embedder_socket_path = OS::get_singleton()->get_environment("FOUNDRY_WAYLAND_DISPLAY");
 #if 0
 		// Debug
 		OS::get_singleton()->set_environment("WAYLAND_DEBUG", "1");
@@ -4840,7 +4840,7 @@ Error WaylandThread::init() {
 #ifdef LIBDECOR_ENABLED
 	bool libdecor_found = true;
 
-	bool skip_libdecor = OS::get_singleton()->get_environment("GODOT_WAYLAND_DISABLE_LIBDECOR") == "1";
+	bool skip_libdecor = OS::get_singleton()->get_environment("FOUNDRY_WAYLAND_DISABLE_LIBDECOR") == "1";
 
 #ifdef SOWRAP_ENABLED
 	if (!skip_libdecor && initialize_libdecor(dylibloader_verbose) != 0) {
@@ -4849,7 +4849,7 @@ Error WaylandThread::init() {
 #endif // SOWRAP_ENABLED
 
 	if (skip_libdecor) {
-		print_verbose("Skipping libdecor check because GODOT_WAYLAND_DISABLE_LIBDECOR is set to 1.");
+		print_verbose("Skipping libdecor check because FOUNDRY_WAYLAND_DISABLE_LIBDECOR is set to 1.");
 	} else {
 		if (libdecor_found) {
 			libdecor_context = libdecor_new(wl_display, (struct libdecor_interface *)&libdecor_interface);

@@ -309,17 +309,17 @@ Error FoundryExtensionLibraryLoader::parse_foundry_extension_file(const String &
 
 	bool compatible = true;
 	// Check version lexicographically.
-	if (GODOT_VERSION_MAJOR != compatibility_minimum[0]) {
-		compatible = GODOT_VERSION_MAJOR > compatibility_minimum[0];
-	} else if (GODOT_VERSION_MINOR != compatibility_minimum[1]) {
-		compatible = GODOT_VERSION_MINOR > compatibility_minimum[1];
+	if (FOUNDRY_VERSION_MAJOR != compatibility_minimum[0]) {
+		compatible = FOUNDRY_VERSION_MAJOR > compatibility_minimum[0];
+	} else if (FOUNDRY_VERSION_MINOR != compatibility_minimum[1]) {
+		compatible = FOUNDRY_VERSION_MINOR > compatibility_minimum[1];
 	} else {
-		compatible = GODOT_VERSION_PATCH >= compatibility_minimum[2];
+		compatible = FOUNDRY_VERSION_PATCH >= compatibility_minimum[2];
 	}
 	if (!compatible) {
 		ERR_PRINT(vformat("FoundryExtension only compatible with Godot version %d.%d.%d or later: %s, but your Godot version is %d.%d.%d",
 				compatibility_minimum[0], compatibility_minimum[1], compatibility_minimum[2], p_path,
-				GODOT_VERSION_MAJOR, GODOT_VERSION_MINOR, GODOT_VERSION_PATCH));
+				FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR, FOUNDRY_VERSION_PATCH));
 		return ERR_INVALID_DATA;
 	}
 
@@ -338,21 +338,21 @@ Error FoundryExtensionLibraryLoader::parse_foundry_extension_file(const String &
 		}
 
 		compatible = true;
-		if (GODOT_VERSION_MAJOR != compatibility_maximum[0]) {
-			compatible = GODOT_VERSION_MAJOR < compatibility_maximum[0];
-		} else if (GODOT_VERSION_MINOR != compatibility_maximum[1]) {
-			compatible = GODOT_VERSION_MINOR < compatibility_maximum[1];
+		if (FOUNDRY_VERSION_MAJOR != compatibility_maximum[0]) {
+			compatible = FOUNDRY_VERSION_MAJOR < compatibility_maximum[0];
+		} else if (FOUNDRY_VERSION_MINOR != compatibility_maximum[1]) {
+			compatible = FOUNDRY_VERSION_MINOR < compatibility_maximum[1];
 		}
-#if GODOT_VERSION_PATCH
+#if FOUNDRY_VERSION_PATCH
 		// #if check to avoid -Wtype-limits warning when 0.
 		else {
-			compatible = GODOT_VERSION_PATCH <= compatibility_maximum[2];
+			compatible = FOUNDRY_VERSION_PATCH <= compatibility_maximum[2];
 		}
 #endif
 
 		if (!compatible) {
 			ERR_PRINT(vformat("FoundryExtension only compatible with Godot version %s or earlier: %s, but your Godot version is %d.%d.%d",
-					compat_string, p_path, GODOT_VERSION_MAJOR, GODOT_VERSION_MINOR, GODOT_VERSION_PATCH));
+					compat_string, p_path, FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR, FOUNDRY_VERSION_PATCH));
 			return ERR_INVALID_DATA;
 		}
 	}

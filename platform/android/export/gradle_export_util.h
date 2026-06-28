@@ -39,7 +39,7 @@
 #include "editor/export/editor_export_platform.h"
 #include "servers/display/display_server.h"
 
-const String GODOT_PROJECT_NAME_XML_STRING = R"(<?xml version="1.0" encoding="utf-8"?>
+const String FOUNDRY_PROJECT_NAME_XML_STRING = R"(<?xml version="1.0" encoding="utf-8"?>
 <!--WARNING: THIS FILE WILL BE OVERWRITTEN AT BUILD TIME-->
 <resources>
 	<string name="godot_project_name_string">%s</string>

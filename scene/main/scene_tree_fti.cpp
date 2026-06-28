@@ -38,7 +38,7 @@
 #include "core/os/os.h"
 #include "scene/3d/visual_instance_3d.h"
 
-#ifdef GODOT_SCENE_TREE_FTI_VERIFY
+#ifdef FOUNDRY_SCENE_TREE_FTI_VERIFY
 #include "scene_tree_fti_tests.h"
 #endif
 
@@ -46,10 +46,10 @@
 
 // Uncomment this to enable some slow extra DEV_ENABLED
 // checks to ensure there aren't more than one object added to the lists.
-// #define GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+// #define FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 
 // Uncomment this to regularly print the tree that is being interpolated.
-// #define GODOT_SCENE_TREE_FTI_PRINT_TREE
+// #define FOUNDRY_SCENE_TREE_FTI_PRINT_TREE
 
 #endif
 
@@ -167,7 +167,7 @@ void SceneTreeFTI::tick_update() {
 				s->data.fti_on_frame_property_list = false;
 				data.frame_property_list.erase_unordered(s);
 
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 				DEV_CHECK_ONCE(data.frame_property_list.find(s) == -1);
 #endif
 			}
@@ -225,7 +225,7 @@ void SceneTreeFTI::node_3d_request_reset(Node3D *p_node) {
 
 	if (!p_node->_is_physics_interpolation_reset_requested()) {
 		p_node->_set_physics_interpolation_reset_requested(true);
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 		DEV_CHECK_ONCE(data.request_reset_list.find(p_node) == -1);
 #endif
 		data.request_reset_list.push_back(p_node);
@@ -244,7 +244,7 @@ void SceneTreeFTI::_node_3d_notify_set_property(Node3D &r_node) {
 		r_node.data.fti_on_tick_property_list = true;
 
 		// Should only appear once in the property list.
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 		DEV_CHECK_ONCE(data.tick_property_list[data.mirror].find(&r_node) == -1);
 #endif
 		data.tick_property_list[data.mirror].push_back(&r_node);
@@ -254,7 +254,7 @@ void SceneTreeFTI::_node_3d_notify_set_property(Node3D &r_node) {
 		r_node.data.fti_on_frame_property_list = true;
 
 		// Should only appear once in the property frame list.
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 		DEV_CHECK_ONCE(data.frame_property_list.find(&r_node) == -1);
 #endif
 		data.frame_property_list.push_back(&r_node);
@@ -289,7 +289,7 @@ void SceneTreeFTI::_create_depth_lists() {
 			depth = MIN(depth, (int32_t)data.scene_tree_depth_limit - 1);
 
 			LocalVector<Node3D *> &dest_list = data.dirty_node_depth_lists[depth];
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 			// Shouldn't really happen, but duplicates don't really matter that much.
 			if (dest_list.find(s) != -1) {
 				ERR_FAIL_COND(dest_list.find(s) != -1);
@@ -305,7 +305,7 @@ void SceneTreeFTI::_create_depth_lists() {
 			// Prevent being added to the dest_list twice when on
 			// the frame_xform_list AND the frame_xform_list_forced.
 			if ((l == 0) && s->data.fti_frame_xform_force_update) {
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 				DEV_ASSERT(data.frame_xform_list_forced.find(s) != -1);
 #endif
 				continue;
@@ -325,7 +325,7 @@ void SceneTreeFTI::_clear_depth_lists() {
 void SceneTreeFTI::_node_add_to_frame_list(Node3D &r_node, bool p_forced) {
 	if (p_forced) {
 		DEV_ASSERT(!r_node.data.fti_frame_xform_force_update);
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 		int64_t found = data.frame_xform_list_forced.find(&r_node);
 		if (found != -1) {
 			ERR_FAIL_COND(found != -1);
@@ -335,7 +335,7 @@ void SceneTreeFTI::_node_add_to_frame_list(Node3D &r_node, bool p_forced) {
 		r_node.data.fti_frame_xform_force_update = true;
 	} else {
 		DEV_ASSERT(!r_node.data.fti_on_frame_xform_list);
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 		int64_t found = data.frame_xform_list.find(&r_node);
 		if (found != -1) {
 			ERR_FAIL_COND(found != -1);
@@ -381,7 +381,7 @@ void SceneTreeFTI::_node_3d_notify_set_xform(Node3D &r_node) {
 		r_node.data.fti_on_tick_xform_list = true;
 
 		// Should only appear once in the xform list.
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 		DEV_CHECK_ONCE(data.tick_xform_list[data.mirror].find(&r_node) == -1);
 #endif
 		data.tick_xform_list[data.mirror].push_back(&r_node);
@@ -445,7 +445,7 @@ void SceneTreeFTI::node_3d_notify_delete(Node3D *p_node) {
 	data.frame_property_list.erase_unordered(p_node);
 	data.request_reset_list.erase_unordered(p_node);
 
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
 	// There should only be one occurrence on the lists.
 	// Check this in DEV_ENABLED builds.
 	DEV_CHECK_ONCE(data.tick_xform_list[0].find(p_node) == -1);
@@ -528,7 +528,7 @@ void SceneTreeFTI::_update_dirty_nodes(Node *p_node, uint32_t p_current_half_fra
 	}
 
 	if (p_active) {
-#ifdef GODOT_SCENE_TREE_FTI_PRINT_TREE
+#ifdef FOUNDRY_SCENE_TREE_FTI_PRINT_TREE
 		bool dirty = s->_test_dirty_bits(Node3D::DIRTY_GLOBAL_INTERPOLATED_TRANSFORM);
 
 		if (data.periodic_debug_log && !data.use_optimized_traversal_method && !data.frame_start) {
@@ -625,7 +625,7 @@ void SceneTreeFTI::frame_update(Node *p_root, bool p_frame_start) {
 		}
 	}
 
-#ifdef GODOT_SCENE_TREE_FTI_PRINT_TREE
+#ifdef FOUNDRY_SCENE_TREE_FTI_PRINT_TREE
 	if (data.periodic_debug_log) {
 		print_line(String("\nScene: ") + (data.frame_start ? "start" : "end") + "\n");
 	}
@@ -654,7 +654,7 @@ void SceneTreeFTI::frame_update(Node *p_root, bool p_frame_start) {
 		} break;
 	}
 
-#ifdef GODOT_SCENE_TREE_FTI_VERIFY
+#ifdef FOUNDRY_SCENE_TREE_FTI_VERIFY
 	_tests->frame_update(p_root, half_frame, interpolation_fraction);
 #else
 
@@ -721,7 +721,7 @@ void SceneTreeFTI::frame_update(Node *p_root, bool p_frame_start) {
 		print_line(String(data.use_optimized_traversal_method ? "FTI optimized" : "FTI reference") + " nodes traversed : " + itos(data.debug_node_count) + (skipped == 0 ? "" : ", skipped " + itos(skipped)) + ", processed : " + itos(data.debug_nodes_processed) + ", took " + itos(after - before) + " usec " + (data.frame_start ? "(start)" : "(end)"));
 	}
 
-#endif //  not GODOT_SCENE_TREE_FTI_VERIFY
+#endif //  not FOUNDRY_SCENE_TREE_FTI_VERIFY
 
 	// In theory we could clear the `force_update` flags from the nodes in the traversal.
 	// The problem is that hidden nodes are not recursed into, therefore the flags would
@@ -758,7 +758,7 @@ void SceneTreeFTI::frame_update(Node *p_root, bool p_frame_start) {
 }
 
 SceneTreeFTI::SceneTreeFTI() {
-#ifdef GODOT_SCENE_TREE_FTI_VERIFY
+#ifdef FOUNDRY_SCENE_TREE_FTI_VERIFY
 	_tests = memnew(SceneTreeFTITests(*this));
 #endif
 
@@ -791,16 +791,16 @@ SceneTreeFTI::SceneTreeFTI() {
 		} break;
 	}
 
-#ifdef GODOT_SCENE_TREE_FTI_EXTRA_CHECKS
-	print_line("SceneTreeFTI : GODOT_SCENE_TREE_FTI_EXTRA_CHECKS defined");
+#ifdef FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS
+	print_line("SceneTreeFTI : FOUNDRY_SCENE_TREE_FTI_EXTRA_CHECKS defined");
 #endif
-#ifdef GODOT_SCENE_TREE_FTI_PRINT_TREE
-	print_line("SceneTreeFTI : GODOT_SCENE_TREE_FTI_PRINT_TREE defined");
+#ifdef FOUNDRY_SCENE_TREE_FTI_PRINT_TREE
+	print_line("SceneTreeFTI : FOUNDRY_SCENE_TREE_FTI_PRINT_TREE defined");
 #endif
 }
 
 SceneTreeFTI::~SceneTreeFTI() {
-#ifdef GODOT_SCENE_TREE_FTI_VERIFY
+#ifdef FOUNDRY_SCENE_TREE_FTI_VERIFY
 	if (_tests) {
 		memfree(_tests);
 		_tests = nullptr;

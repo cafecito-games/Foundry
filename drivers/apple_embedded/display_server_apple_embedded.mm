@@ -75,10 +75,10 @@ DisplayServerAppleEmbedded::DisplayServerAppleEmbedded(const String &p_rendering
 		RenderingContextDriverVulkanAppleEmbedded::WindowPlatformData vulkan;
 #endif
 #ifdef METAL_ENABLED
-		GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
+		FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
 		// Eliminate "RenderingContextDriverMetal is only available on iOS 14.0 or newer".
 		RenderingContextDriverMetal::WindowPlatformData metal;
-		GODOT_CLANG_WARNING_POP
+		FOUNDRY_CLANG_WARNING_POP
 #endif
 	} wpd;
 

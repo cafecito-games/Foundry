@@ -5290,7 +5290,7 @@ void BindingsGenerator::handle_cmdline_args(const List<String> &p_cmdline_args) 
 				glue_dir_path = path_elem->get();
 				elem = elem->next();
 			} else {
-				ERR_PRINT(generate_all_glue_option + ": No output directory specified (expected path to '{GODOT_ROOT}/modules/mono/glue').");
+				ERR_PRINT(generate_all_glue_option + ": No output directory specified (expected path to '{FOUNDRY_ROOT}/modules/mono/glue').");
 				// Exit once done with invalid command line arguments.
 				cleanup_and_exit_godot();
 			}

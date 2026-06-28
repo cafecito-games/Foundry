@@ -85,13 +85,13 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=0
         run: |
-          GODOT_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*fuzz*' -perm -111 | head -n 1)"
-          if [ -z "${GODOT_BIN}" ]; then
+          FOUNDRY_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*fuzz*' -perm -111 | head -n 1)"
+          if [ -z "${FOUNDRY_BIN}" ]; then
             echo "Could not find fuzzer-enabled Godot binary in bin/." >&2
             ls -l bin/
             exit 1
           fi
-          echo "Fuzzer binary: ${GODOT_BIN}"
+          echo "Fuzzer binary: ${FOUNDRY_BIN}"
 
           # Seed corpus from the existing script fixtures.
           mkdir -p corpus artifacts
@@ -101,7 +101,7 @@ jobs:
           # A crash makes libFuzzer exit non-zero, failing the job and uploading
           # the reproducer below. NOTE: this is expected to surface the currently
           # open parser/tokenizer crashes until their fixes land.
-          "${GODOT_BIN}" \
+          "${FOUNDRY_BIN}" \
             -dict=modules/foundry_script/tests/fuzz/foundry_script.dict \
             -artifact_prefix=artifacts/ \
             -max_total_time="${FUZZ_DURATION}" \

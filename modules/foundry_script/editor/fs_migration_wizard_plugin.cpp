@@ -76,7 +76,7 @@ void FSMigrationWizardDialog::_run_migration() {
 
 	// Both destructive stages read and act on the on-disk sources while the script editor may hold
 	// unsaved buffers the migration cannot see: an apply would clobber those buffers and lose their
-	// edits, and a strict activation evaluates cleanliness from disk and could persist project.godot
+	// edits, and a strict activation evaluates cleanliness from disk and could persist project.foundry
 	// even though an open buffer still has strict violations. The migration is documented as unsafe
 	// to run alongside a live editing session, so any durable action is gated on a clean editor --
 	// the user must save or discard open changes first. A preview writes nothing, so it needs no gate.
@@ -109,7 +109,7 @@ void FSMigrationWizardDialog::_run_migration() {
 		script_editor->reload_scripts(false);
 	}
 
-	// A flip only counts as durably "enabled" once it persisted to project.godot and is not masked
+	// A flip only counts as durably "enabled" once it persisted to project.foundry and is not masked
 	// by a per-feature override; otherwise the setting is lost on restart or simply not live, which
 	// the user must be told rather than shown a plain success.
 	const bool strict_degraded = result.strict_activated && (!result.strict_result.persisted || result.strict_result.override_masked);
@@ -134,7 +134,7 @@ void FSMigrationWizardDialog::_run_migration() {
 		status_label->set_text(TTR("Migration applied. Review the changes in your version control before committing."));
 	} else if (strict_enabled) {
 		// No annotations were applied, but the strict project settings were flipped and saved, so
-		// project.godot did change -- not a no-op dry run.
+		// project.foundry did change -- not a no-op dry run.
 		status_label->set_text(TTR("Strict settings enabled in the project settings. No script files were changed."));
 	} else if (result.blocked_by_vcs_guard) {
 		status_label->set_text(TTR("Apply blocked by the version-control guard. Acknowledge the warning to proceed."));

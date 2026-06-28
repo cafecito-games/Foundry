@@ -111,7 +111,7 @@ Error ENetPacketPeer::put_packet(const uint8_t *p_buffer, int p_buffer_size) {
 IPAddress ENetPacketPeer::get_remote_address() const {
 	ERR_FAIL_NULL_V(peer, IPAddress());
 	IPAddress out;
-#ifdef GODOT_ENET
+#ifdef FOUNDRY_ENET
 	out.set_ipv6((uint8_t *)&(peer->address.host));
 #else
 	out.set_ipv4((uint8_t *)&(peer->address.host));

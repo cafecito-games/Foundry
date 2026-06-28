@@ -295,7 +295,7 @@ bool EditorAutoloadSettings::_autoload_name_is_valid(const String &p_name, Strin
 }
 
 // Whether any scripting language registers `p_name` as a built-in named global
-// constant. Autoloads loaded from project settings (or hand-edited project.godot)
+// constant. Autoloads loaded from project settings (or hand-edited project.foundry)
 // bypass `_autoload_name_is_valid`, so their registration is skipped for such names so
 // the language's own global (e.g. `godot.reflection`) is not silently overwritten.
 static bool _autoload_name_shadows_reserved_global(const String &p_name) {
@@ -1262,7 +1262,7 @@ EditorAutoloadSettings::EditorAutoloadSettings() {
 		info.order = ProjectSettings::get_singleton()->get_order(pi.name);
 
 		if (info.is_singleton) {
-			// A project autoload (possibly hand-edited into project.godot) that shadows a
+			// A project autoload (possibly hand-edited into project.foundry) that shadows a
 			// language's reserved engine namespace is not registered as that language's
 			// global, so its own global (e.g. `godot.reflection`) stays reachable. Skip per
 			// language to match main.cpp; surface the collision once here, where the cache

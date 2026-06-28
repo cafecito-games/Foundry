@@ -331,9 +331,9 @@ RDD::TextureID RenderingDeviceDriverMetal::texture_create(const TextureFormat &p
 #if defined(VISIONOS_ENABLED)
 	const bool supports_memoryless = true;
 #else
-	GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
+	FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
 	const bool supports_memoryless = (*device_properties).features.highestFamily >= MTLGPUFamilyApple2 && (*device_properties).features.highestFamily < MTLGPUFamilyMac1;
-	GODOT_CLANG_WARNING_POP
+	FOUNDRY_CLANG_WARNING_POP
 #endif
 	if (supports_memoryless && p_format.usage_bits & TEXTURE_USAGE_TRANSIENT_BIT) {
 		options = MTLResourceStorageModeMemoryless | MTLResourceHazardTrackingModeTracked;
@@ -1343,7 +1343,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 
 	if (device_properties->features.argument_buffers_supported()) {
 		// If argument buffers are enabled, we have already verified availability, so we can skip the runtime check.
-		GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability-new")
+		FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability-new")
 
 		set->arg_buffer = [device newBufferWithLength:shader_set.buffer_size options:MTLResourceStorageModeShared];
 		uint64_t *ptr = (uint64_t *)set->arg_buffer.contents;
@@ -1463,7 +1463,7 @@ RDD::UniformSetID RenderingDeviceDriverMetal::uniform_set_create(VectorView<Boun
 			}
 		}
 
-		GODOT_CLANG_WARNING_POP
+		FOUNDRY_CLANG_WARNING_POP
 	}
 	Vector<BoundUniform> bound_uniforms;
 	bound_uniforms.resize(p_uniforms.size());
@@ -2620,7 +2620,7 @@ RenderingDeviceDriverMetal::RenderingDeviceDriverMetal(RenderingContextDriverMet
 	DEV_ASSERT(p_context_driver != nullptr);
 
 #if TARGET_OS_OSX
-	if (String res = OS::get_singleton()->get_environment("GODOT_MTL_SHADER_LOAD_STRATEGY"); res == U"lazy") {
+	if (String res = OS::get_singleton()->get_environment("FOUNDRY_MTL_SHADER_LOAD_STRATEGY"); res == U"lazy") {
 		_shader_load_strategy = ShaderLoadStrategy::LAZY;
 	}
 #else

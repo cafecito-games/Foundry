@@ -209,7 +209,7 @@ String _android_xml_escape(const String &p_string) {
 Error _create_project_name_strings_files(const Ref<EditorExportPreset> &p_preset, const String &p_project_name, const String &p_gradle_build_dir, const Dictionary &p_appnames) {
 	print_verbose("Creating strings resources for supported locales for project " + p_project_name);
 	// Stores the string into the default values directory.
-	String processed_default_xml_string = vformat(GODOT_PROJECT_NAME_XML_STRING, _android_xml_escape(p_project_name));
+	String processed_default_xml_string = vformat(FOUNDRY_PROJECT_NAME_XML_STRING, _android_xml_escape(p_project_name));
 	store_string_at_path(p_gradle_build_dir.path_join("res/values/godot_project_name_string.xml"), processed_default_xml_string);
 
 	// Searches the Gradle project res/ directory to find all supported locales
@@ -247,7 +247,7 @@ Error _create_project_name_strings_files(const Ref<EditorExportPreset> &p_preset
 			locale_project_name = p_appnames.get(locale, p_project_name);
 		}
 		if (locale_project_name != p_project_name) {
-			String processed_xml_string = vformat(GODOT_PROJECT_NAME_XML_STRING, _android_xml_escape(locale_project_name));
+			String processed_xml_string = vformat(FOUNDRY_PROJECT_NAME_XML_STRING, _android_xml_escape(locale_project_name));
 			print_verbose("Storing project name for locale " + locale + " under " + locale_directory);
 			store_string_at_path(locale_directory, processed_xml_string);
 		} else {

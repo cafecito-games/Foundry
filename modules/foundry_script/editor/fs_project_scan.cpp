@@ -95,7 +95,7 @@ bool scan_directory(const String &p_dir_path, bool p_at_root, const ProjectScanO
 		}
 
 		// A nested project is a self-contained unit migrated on its own, never as part of this one.
-		if (FileAccess::exists(subdirectory.path_join("project.godot"))) {
+		if (FileAccess::exists(subdirectory.path_join("project.foundry"))) {
 			r_skipped.push_back(subdirectory);
 			continue;
 		}

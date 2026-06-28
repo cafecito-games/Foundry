@@ -78,7 +78,7 @@
 
 using namespace godot;
 
-#elif defined(GODOT_MODULE)
+#elif defined(FOUNDRY_MODULE)
 // Headers for building as built-in module.
 
 #include "core/extension/ext_wrappers.gen.inc"
@@ -94,9 +94,9 @@ using namespace godot;
 
 // Thirdparty headers.
 
-GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wshadow")
+FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wshadow")
 #if defined(__EMSCRIPTEN__) || (defined(__MINGW32__) && __clang_major__ >= 21)
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunnecessary-virtual-specifier")
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunnecessary-virtual-specifier")
 #endif
 
 #include <unicode/ubidi.h>
@@ -112,9 +112,9 @@ GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunnecessary-virtual-specifier")
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
 
-GODOT_GCC_WARNING_POP
+FOUNDRY_GCC_WARNING_POP
 #if defined(__EMSCRIPTEN__) || (defined(__MINGW32__) && __clang_major__ >= 21)
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
 #endif
 
 #ifdef MODULE_FREETYPE_ENABLED

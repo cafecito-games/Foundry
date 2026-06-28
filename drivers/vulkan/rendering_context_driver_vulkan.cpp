@@ -686,8 +686,8 @@ Error RenderingContextDriverVulkan::_initialize_instance() {
 	VkApplicationInfo app_info = {};
 	app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	app_info.pApplicationName = cs.get_data();
-	app_info.pEngineName = GODOT_VERSION_NAME;
-	app_info.engineVersion = VK_MAKE_VERSION(GODOT_VERSION_MAJOR, GODOT_VERSION_MINOR, GODOT_VERSION_PATCH);
+	app_info.pEngineName = FOUNDRY_VERSION_NAME;
+	app_info.engineVersion = VK_MAKE_VERSION(FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR, FOUNDRY_VERSION_PATCH);
 	app_info.apiVersion = application_api_version;
 
 	TightLocalVector<const char *> enabled_layer_names;

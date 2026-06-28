@@ -39,7 +39,7 @@
 
 using namespace godot;
 
-#elif defined(GODOT_MODULE)
+#elif defined(FOUNDRY_MODULE)
 
 // Headers for building as built-in module.
 #include "core/string/ustring.h"

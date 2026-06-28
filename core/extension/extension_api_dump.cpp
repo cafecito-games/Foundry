@@ -106,16 +106,16 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 	{
 		//header
 		Dictionary header;
-		header["version_major"] = GODOT_VERSION_MAJOR;
-		header["version_minor"] = GODOT_VERSION_MINOR;
-#if GODOT_VERSION_PATCH
-		header["version_patch"] = GODOT_VERSION_PATCH;
+		header["version_major"] = FOUNDRY_VERSION_MAJOR;
+		header["version_minor"] = FOUNDRY_VERSION_MINOR;
+#if FOUNDRY_VERSION_PATCH
+		header["version_patch"] = FOUNDRY_VERSION_PATCH;
 #else
 		header["version_patch"] = 0;
 #endif
-		header["version_status"] = GODOT_VERSION_STATUS;
-		header["version_build"] = GODOT_VERSION_BUILD;
-		header["version_full_name"] = GODOT_VERSION_FULL_NAME;
+		header["version_status"] = FOUNDRY_VERSION_STATUS;
+		header["version_build"] = FOUNDRY_VERSION_BUILD;
+		header["version_full_name"] = FOUNDRY_VERSION_FULL_NAME;
 
 #if REAL_T_IS_DOUBLE
 		header["precision"] = "double";
@@ -1614,8 +1614,8 @@ Error FoundryExtensionAPIDump::validate_extension_json_file(const String &p_path
 		int major = header["version_major"];
 		int minor = header["version_minor"];
 
-		ERR_FAIL_COND_V_MSG(major != GODOT_VERSION_MAJOR, ERR_INVALID_DATA, vformat("JSON API dump is for a different engine version (%d) than this one (%d)", major, GODOT_VERSION_MAJOR));
-		ERR_FAIL_COND_V_MSG(minor > GODOT_VERSION_MINOR, ERR_INVALID_DATA, vformat("JSON API dump is for a newer version of the engine: %d.%d", major, minor));
+		ERR_FAIL_COND_V_MSG(major != FOUNDRY_VERSION_MAJOR, ERR_INVALID_DATA, vformat("JSON API dump is for a different engine version (%d) than this one (%d)", major, FOUNDRY_VERSION_MAJOR));
+		ERR_FAIL_COND_V_MSG(minor > FOUNDRY_VERSION_MINOR, ERR_INVALID_DATA, vformat("JSON API dump is for a newer version of the engine: %d.%d", major, minor));
 	}
 
 	bool failed = false;

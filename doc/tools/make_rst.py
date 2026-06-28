@@ -17,7 +17,7 @@ import version
 from misc.utility.color import Ansi, force_stderr_color, force_stdout_color
 
 # $DOCS_URL/path/to/page.html(#fragment-tag)
-GODOT_DOCS_PATTERN = re.compile(r"^\$DOCS_URL/(.*)\.html(#.*)?$")
+FOUNDRY_DOCS_PATTERN = re.compile(r"^\$DOCS_URL/(.*)\.html(#.*)?$")
 
 # Based on reStructuredText inline markup recognition rules
 # https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#inline-markup-recognition-rules
@@ -1704,7 +1704,7 @@ def make_separator(section_level: bool = False) -> str:
 
 
 def make_link(url: str, title: str) -> str:
-    match = GODOT_DOCS_PATTERN.search(url)
+    match = FOUNDRY_DOCS_PATTERN.search(url)
     if match:
         groups = match.groups()
         if match.lastindex == 2:

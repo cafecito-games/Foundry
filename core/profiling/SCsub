@@ -68,7 +68,7 @@ if env["profiler"]:
             # 62 is the maximum supported callstack depth reported by the tracy docs.
             env_tracy.Append(CPPDEFINES=[("TRACY_CALLSTACK", 62)])
         if env["profiler_track_memory"]:
-            env_tracy.Append(CPPDEFINES=["GODOT_PROFILER_TRACK_MEMORY"])
+            env_tracy.Append(CPPDEFINES=["FOUNDRY_PROFILER_TRACK_MEMORY"])
         env_tracy.disable_warnings()
         env_tracy.add_source_files(env.core_sources, str((profiler_path / "TracyClient.cpp").absolute()))
     elif env["profiler"] == "perfetto":

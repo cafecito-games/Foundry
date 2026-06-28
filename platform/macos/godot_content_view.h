@@ -54,7 +54,7 @@
 
 @end
 
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
 
 @interface GodotContentView : RootView <NSTextInputClient> {
 	DisplayServer::WindowID window_id;
@@ -78,4 +78,4 @@ GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is de
 
 @end
 
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP

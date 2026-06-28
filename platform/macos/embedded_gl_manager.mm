@@ -38,7 +38,7 @@
 #import <QuartzCore/QuartzCore.h>
 #include <dlfcn.h>
 
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
 
 Error GLManagerEmbedded::create_context(GLWindow &p_win) {
 	NSOpenGLPixelFormatAttribute attributes[] = {
@@ -329,6 +329,6 @@ GLManagerEmbedded::~GLManagerEmbedded() {
 	release_current();
 }
 
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
 
 #endif // MACOS_ENABLED && GLES3_ENABLED

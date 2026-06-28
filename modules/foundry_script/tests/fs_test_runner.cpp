@@ -453,12 +453,12 @@ static bool generate_class_index_recursive(const String &p_dir) {
 	return true;
 }
 
-// Walk up from `p_dir` to the nearest ancestor containing `project.godot`,
+// Walk up from `p_dir` to the nearest ancestor containing `project.foundry`,
 // falling back to `p_dir` itself if none is found.
 static String find_test_project_root(const String &p_dir) {
 	String current = p_dir;
 	while (true) {
-		if (FileAccess::exists(current.path_join("project.godot"))) {
+		if (FileAccess::exists(current.path_join("project.foundry"))) {
 			return current;
 		}
 		const String parent = current.get_base_dir();

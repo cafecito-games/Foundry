@@ -52,7 +52,7 @@ class GodotEditorTest {
 
 		private val TEST_COMMAND_LINE_PARAMS = arrayOf("This is a test")
 		private const val PROJECT_MANAGER_CLASS_NAME = "org.godotengine.editor.ProjectManager"
-		private const val GODOT_EDITOR_CLASS_NAME = "org.godotengine.editor.GodotEditor"
+		private const val FOUNDRY_EDITOR_CLASS_NAME = "org.godotengine.editor.GodotEditor"
 	}
 
 	/**
@@ -101,12 +101,12 @@ class GodotEditorTest {
 	@Test
 	fun testExplicitGodotEditorLaunch() {
 		val godotEditorIntent = Intent().apply {
-			component = ComponentName(BuildConfig.APPLICATION_ID, GODOT_EDITOR_CLASS_NAME)
+			component = ComponentName(BuildConfig.APPLICATION_ID, FOUNDRY_EDITOR_CLASS_NAME)
 			putExtra(EXTRA_COMMAND_LINE_PARAMS, TEST_COMMAND_LINE_PARAMS)
 		}
 		ActivityScenario.launch<GodotEditor>(godotEditorIntent).use { scenario ->
 			scenario.onActivity { activity ->
-				assertEquals(activity.intent.component?.className, GODOT_EDITOR_CLASS_NAME)
+				assertEquals(activity.intent.component?.className, FOUNDRY_EDITOR_CLASS_NAME)
 
 				val commandLineParams = activity.intent.getStringArrayExtra(EXTRA_COMMAND_LINE_PARAMS)
 				assertNotNull(commandLineParams)

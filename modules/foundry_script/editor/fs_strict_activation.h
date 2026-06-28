@@ -85,7 +85,7 @@ struct StrictActivationResult {
 
 	// True iff a flip went through and ProjectSettings was successfully persisted to disk, so the
 	// activation survives an editor restart. False with activated=true means the settings are live
-	// for this session but the on-disk project.godot could not be written; see persist_error.
+	// for this session but the on-disk project.foundry could not be written; see persist_error.
 	bool persisted = false;
 	String persist_error; // The save failure message when activated && !persisted; empty otherwise.
 

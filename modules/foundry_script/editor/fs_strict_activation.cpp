@@ -109,7 +109,7 @@ StrictActivationResult FSStrictActivation::activate(
 		}
 		result.activated = true;
 
-		// set_setting() is an in-memory mutation only; persist it to project.godot so the
+		// set_setting() is an in-memory mutation only; persist it to project.foundry so the
 		// activation survives an editor restart. A save failure does not undo the live flip (the
 		// setting is active for this session), but it is reported so the caller can surface that
 		// the change is not yet durable rather than silently losing it on restart.

@@ -14,7 +14,7 @@ runs:
       run: |
         mkdir converter_test
         cd converter_test
-        touch project.godot
+        touch project.foundry
         ../${{ inputs.bin }} --headless --validate-conversion-3to4
         cd ..
         rm converter_test -rf

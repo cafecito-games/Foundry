@@ -1765,7 +1765,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 		Client *eclient = eclient_data->client;
 		ERR_FAIL_NULL_V(eclient, MessageStatus::ERROR);
 
-		if (p_opcode == GODOT_EMBEDDED_CLIENT_DESTROY) {
+		if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_DESTROY) {
 			if (!eclient_data->disconnected) {
 				close(eclient->socket);
 			}
@@ -1785,7 +1785,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 		XdgToplevelData *toplevel_data = (XdgToplevelData *)eclient->get_object(eclient->embedded_window_id)->data;
 		ERR_FAIL_NULL_V(toplevel_data, MessageStatus::ERROR);
 
-		if (p_opcode == GODOT_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_RECT && toplevel_data->wl_subsurface_id != INVALID_ID) {
+		if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_RECT && toplevel_data->wl_subsurface_id != INVALID_ID) {
 			uint32_t x = body[0];
 			uint32_t y = body[1];
 			uint32_t width = body[2];
@@ -1810,7 +1810,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 			send_wayland_message(eclient->socket, toplevel_data->xdg_surface_handle.get_local_id(), 0, { configure_serial_counter++ });
 
 			return MessageStatus::HANDLED;
-		} else if (p_opcode == GODOT_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_PARENT) {
+		} else if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_PARENT) {
 			uint32_t main_client_parent_id = body[0];
 
 			if (toplevel_data->parent_handle.get_local_id() == main_client_parent_id) {
@@ -1860,7 +1860,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 			send_wayland_message(compositor_socket, new_sub_id, 5, {});
 
 			return MessageStatus::HANDLED;
-		} else if (p_opcode == GODOT_EMBEDDED_CLIENT_FOCUS_WINDOW) {
+		} else if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_FOCUS_WINDOW) {
 			XdgSurfaceData *xdg_surf_data = (XdgSurfaceData *)toplevel_data->xdg_surface_handle.get()->data;
 			ERR_FAIL_NULL_V(xdg_surf_data, MessageStatus::ERROR);
 
@@ -1875,7 +1875,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 
 				seat_name_enter_surface(wl_seat_name, xdg_surf_data->wl_surface_id);
 			}
-		} else if (p_opcode == GODOT_EMBEDDED_CLIENT_EMBEDDED_WINDOW_REQUEST_CLOSE) {
+		} else if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_EMBEDDED_WINDOW_REQUEST_CLOSE) {
 			// xdg_toplevel::close
 			send_wayland_message(eclient->socket, eclient->embedded_window_id, 1, {});
 

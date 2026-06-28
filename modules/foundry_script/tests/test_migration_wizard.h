@@ -201,7 +201,7 @@ TEST_SUITE("[Modules][FoundryScript][MigrationWizard]") {
 		// Still untouched.
 		CHECK_EQ(ProjectSettings::get_singleton()->get_setting("debug/foundry_script/analysis/strict_null_checks", false), prior_null);
 
-		// The unconfirmed setting was not persisted, so no project.godot restore is needed.
+		// The unconfirmed setting was not persisted, so no project.foundry restore is needed.
 
 		memdelete(protocol);
 		memdelete(editor_file_system);
@@ -214,9 +214,9 @@ TEST_SUITE("[Modules][FoundryScript][MigrationWizard]") {
 
 		ProjectSettings *settings = ProjectSettings::get_singleton();
 		const Variant prior_null = settings->get_setting("debug/foundry_script/analysis/strict_null_checks", false);
-		// A confirmed flip persists project.godot, so snapshot and restore it byte-for-byte to keep
+		// A confirmed flip persists project.foundry, so snapshot and restore it byte-for-byte to keep
 		// the curated test fixture intact.
-		const String project_path = settings->globalize_path("res://project.godot");
+		const String project_path = settings->globalize_path("res://project.foundry");
 		const bool had_project_file = FileAccess::exists(project_path);
 		const PackedByteArray project_bytes = had_project_file ? FileAccess::get_file_as_bytes(project_path) : PackedByteArray();
 

@@ -200,10 +200,10 @@ private:
 		}
 
 		virtual Error wait(uint32_t p_timeout_ms) override {
-			GODOT_CLANG_WARNING_PUSH
-			GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
+			FOUNDRY_CLANG_WARNING_PUSH
+			FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
 			BOOL signaled = [event waitUntilSignaledValue:value timeoutMS:p_timeout_ms];
-			GODOT_CLANG_WARNING_POP
+			FOUNDRY_CLANG_WARNING_POP
 			if (!signaled) {
 #ifdef DEBUG_ENABLED
 				ERR_PRINT("timeout waiting for fence");

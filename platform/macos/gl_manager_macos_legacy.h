@@ -40,7 +40,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreVideo/CoreVideo.h>
 
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
 
 typedef CGLError (*CGLEnablePtr)(CGLContextObj ctx, CGLContextEnable pname);
 typedef CGLError (*CGLSetParameterPtr)(CGLContextObj ctx, CGLContextParameter pname, const GLint *params);
@@ -88,6 +88,6 @@ public:
 	~GLManagerLegacy_MacOS();
 };
 
-GODOT_CLANG_WARNING_PUSH
+FOUNDRY_CLANG_WARNING_PUSH
 
 #endif // MACOS_ENABLED && GLES3_ENABLED

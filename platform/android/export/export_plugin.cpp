@@ -494,7 +494,7 @@ String EditorExportPlatformAndroid::get_project_name(const Ref<EditorExportPrese
 	}
 
 	if (aname.is_empty()) {
-		aname = GODOT_VERSION_NAME;
+		aname = FOUNDRY_VERSION_NAME;
 	}
 
 	return aname;
@@ -1006,7 +1006,7 @@ void EditorExportPlatformAndroid::_get_manifest_info(const Ref<EditorExportPrese
 
 	MetadataInfo editor_version_metadata = {
 		"org.godotengine.editor.version",
-		String(GODOT_VERSION_FULL_CONFIG)
+		String(FOUNDRY_VERSION_FULL_CONFIG)
 	};
 	r_metadata.append(editor_version_metadata);
 }

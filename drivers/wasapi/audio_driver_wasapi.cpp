@@ -126,7 +126,7 @@ static bool default_input_device_changed = false;
 static int output_reinit_countdown = 0;
 static int input_reinit_countdown = 0;
 
-GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wnon-virtual-dtor") // Silence warning due to a COM API weirdness (GH-35194).
+FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wnon-virtual-dtor") // Silence warning due to a COM API weirdness (GH-35194).
 
 class CMMNotificationClient : public IMMNotificationClient {
 	LONG _cRef = 1;
@@ -192,7 +192,7 @@ public:
 	}
 };
 
-GODOT_GCC_WARNING_POP
+FOUNDRY_GCC_WARNING_POP
 
 static CMMNotificationClient notif_client;
 

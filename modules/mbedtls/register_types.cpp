@@ -45,7 +45,7 @@
 #include "tests/test_crypto_mbedtls.h"
 #endif
 
-#ifdef GODOT_MBEDTLS_THREADING_ALT
+#ifdef FOUNDRY_MBEDTLS_THREADING_ALT
 extern "C" {
 void godot_mbedtls_mutex_init(mbedtls_threading_mutex_t *p_mutex) {
 	ERR_FAIL_NULL(p_mutex);
@@ -83,7 +83,7 @@ void initialize_mbedtls_module(ModuleInitializationLevel p_level) {
 
 	GLOBAL_DEF("network/tls/enable_tls_v1.3", true);
 
-#ifdef GODOT_MBEDTLS_THREADING_ALT
+#ifdef FOUNDRY_MBEDTLS_THREADING_ALT
 	mbedtls_threading_set_alt(
 			godot_mbedtls_mutex_init,
 			godot_mbedtls_mutex_free,
@@ -128,7 +128,7 @@ void uninitialize_mbedtls_module(ModuleInitializationLevel p_level) {
 	StreamPeerMbedTLS::finalize_tls();
 	CryptoMbedTLS::finalize_crypto();
 
-#ifdef GODOT_MBEDTLS_THREADING_ALT
+#ifdef FOUNDRY_MBEDTLS_THREADING_ALT
 	mbedtls_threading_free_alt();
 #endif
 }

@@ -93,12 +93,12 @@
     Define constant to determine the target Godot platform. This includes the
     recognized platform names and the platform category (PC, MOBILE or WEB).
     -->
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'windows' ">GODOT_WINDOWS;GODOT_PC</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'linuxbsd' ">GODOT_LINUXBSD;GODOT_PC</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'macos' ">GODOT_OSX;GODOT_MACOS;GODOT_PC</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'android' ">GODOT_ANDROID;GODOT_MOBILE</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'ios' ">GODOT_IPHONE;GODOT_IOS;GODOT_MOBILE</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'web' ">GODOT_JAVASCRIPT;GODOT_HTML5;GODOT_WASM;GODOT_WEB</GodotPlatformConstants>
+    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'windows' ">FOUNDRY_WINDOWS;FOUNDRY_PC</GodotPlatformConstants>
+    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'linuxbsd' ">FOUNDRY_LINUXBSD;FOUNDRY_PC</GodotPlatformConstants>
+    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'macos' ">FOUNDRY_OSX;FOUNDRY_MACOS;FOUNDRY_PC</GodotPlatformConstants>
+    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'android' ">FOUNDRY_ANDROID;FOUNDRY_MOBILE</GodotPlatformConstants>
+    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'ios' ">FOUNDRY_IPHONE;FOUNDRY_IOS;FOUNDRY_MOBILE</GodotPlatformConstants>
+    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'web' ">FOUNDRY_JAVASCRIPT;FOUNDRY_HTML5;FOUNDRY_WASM;FOUNDRY_WEB</GodotPlatformConstants>
 
     <GodotDefineConstants>$(GodotDefineConstants);$(GodotPlatformConstants);$(GodotVersionConstants)</GodotDefineConstants>
   </PropertyGroup>

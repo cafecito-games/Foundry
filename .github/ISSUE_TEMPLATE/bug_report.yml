@@ -63,7 +63,7 @@ body:
     attributes:
       label: Minimal reproduction project (MRP)
       description: |
-        - A small Godot project which reproduces the issue, with no unnecessary files included. Be sure to not include the `.godot` folder in the archive (but keep `project.godot`).
+        - A small Godot project which reproduces the issue, with no unnecessary files included. Be sure to not include the `.godot` folder in the archive (but keep `project.foundry`).
         - Having an MRP is very important for contributors to be able to reproduce the bug in the same way that you are experiencing it. When testing a potential fix for the issue, contributors will use the MRP to validate that the fix is working as intended.
         - If the reproduction steps are not project dependent (e.g. the bug is visible in a brand new project), you can write "N/A" in the field.
         - Drag and drop a ZIP archive to upload it (max 10 MB). **Do not select another field until the project is done uploading.**

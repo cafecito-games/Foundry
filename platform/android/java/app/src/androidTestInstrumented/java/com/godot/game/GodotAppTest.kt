@@ -57,8 +57,8 @@ class GodotAppTest {
 	companion object {
 		private val TAG = GodotAppTest::class.java.simpleName
 
-		private const val GODOT_APP_LAUNCHER_CLASS_NAME = "com.godot.game.GodotAppLauncher"
-		private const val GODOT_APP_CLASS_NAME = "com.godot.game.GodotApp"
+		private const val FOUNDRY_APP_LAUNCHER_CLASS_NAME = "com.godot.game.GodotAppLauncher"
+		private const val FOUNDRY_APP_CLASS_NAME = "com.godot.game.GodotApp"
 
 		private val TEST_COMMAND_LINE_PARAMS = arrayOf("This is a test")
 	}
@@ -126,7 +126,7 @@ class GodotAppTest {
 		}
 		ActivityScenario.launch<GodotApp>(implicitLaunchIntent).use { scenario ->
 			scenario.onActivity { activity ->
-				assertEquals(activity.intent.component?.className, GODOT_APP_LAUNCHER_CLASS_NAME)
+				assertEquals(activity.intent.component?.className, FOUNDRY_APP_LAUNCHER_CLASS_NAME)
 
 				val commandLineParams = activity.intent.getStringArrayExtra(EXTRA_COMMAND_LINE_PARAMS)
 				assertNull(commandLineParams)
@@ -140,12 +140,12 @@ class GodotAppTest {
 	@Test
 	fun testExplicitGodotAppLauncherLaunch() {
 		val explicitIntent = Intent().apply {
-			component = ComponentName(BuildConfig.APPLICATION_ID, GODOT_APP_LAUNCHER_CLASS_NAME)
+			component = ComponentName(BuildConfig.APPLICATION_ID, FOUNDRY_APP_LAUNCHER_CLASS_NAME)
 			putExtra(EXTRA_COMMAND_LINE_PARAMS, TEST_COMMAND_LINE_PARAMS)
 		}
 		ActivityScenario.launch<GodotApp>(explicitIntent).use { scenario ->
 			scenario.onActivity { activity ->
-				assertEquals(activity.intent.component?.className, GODOT_APP_LAUNCHER_CLASS_NAME)
+				assertEquals(activity.intent.component?.className, FOUNDRY_APP_LAUNCHER_CLASS_NAME)
 
 				val commandLineParams = activity.intent.getStringArrayExtra(EXTRA_COMMAND_LINE_PARAMS)
 				assertNull(commandLineParams)
@@ -159,12 +159,12 @@ class GodotAppTest {
 	@Test
 	fun testExplicitGodotAppLaunch() {
 		val explicitIntent = Intent().apply {
-			component = ComponentName(BuildConfig.APPLICATION_ID, GODOT_APP_CLASS_NAME)
+			component = ComponentName(BuildConfig.APPLICATION_ID, FOUNDRY_APP_CLASS_NAME)
 			putExtra(EXTRA_COMMAND_LINE_PARAMS, TEST_COMMAND_LINE_PARAMS)
 		}
 		ActivityScenario.launch<GodotApp>(explicitIntent).use { scenario ->
 			scenario.onActivity { activity ->
-				assertEquals(activity.intent.component?.className, GODOT_APP_CLASS_NAME)
+				assertEquals(activity.intent.component?.className, FOUNDRY_APP_CLASS_NAME)
 
 				val commandLineParams = activity.intent.getStringArrayExtra(EXTRA_COMMAND_LINE_PARAMS)
 				assertNotNull(commandLineParams)
