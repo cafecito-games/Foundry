@@ -367,6 +367,7 @@ GDScriptFunction *GDScriptByteCodeGenerator::write_end() {
 		function->_builtin_methods_ptr = nullptr;
 		function->_builtin_methods_count = 0;
 	}
+	function->builtin_method_names = builtin_method_names;
 
 	if (constructors_map.size()) {
 		function->constructors.resize(constructors_map.size());
@@ -717,7 +718,8 @@ void GDScriptByteCodeGenerator::write_type_test(const Address &p_target, const A
 			append_opcode(GDScriptFunction::OPCODE_TYPE_TEST_SCRIPT);
 			append(p_target);
 			append(p_source);
-			append(get_constant_pos(script) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
+			const int type_idx = p_type.is_type_handle && !p_type.type_arguments.is_empty() ? get_container_type_pos(p_type) : get_constant_pos(script);
+			append(type_idx | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
 			append(p_type.is_type_handle);
 		} break;
 		default: {
@@ -992,7 +994,8 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 		case GDScriptDataType::SCRIPT:
 		case GDScriptDataType::GDSCRIPT: {
 			Variant script = p_target.type.script_type;
-			int idx = get_constant_pos(script) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
+			int idx = p_target.type.is_type_handle && !p_target.type.type_arguments.is_empty() ? get_container_type_pos(p_target.type) : get_constant_pos(script);
+			idx |= (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
 
 			append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_SCRIPT);
 			append(p_target);
@@ -1019,6 +1022,20 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 }
 
 void GDScriptByteCodeGenerator::write_assign(const Address &p_target, const Address &p_source) {
+	if (p_target.type.kind == GDScriptDataType::NATIVE &&
+			ClassDB::is_parent_class(SNAME("GDScript"), p_target.type.native_type) &&
+			p_source.type.is_type_handle && !p_source.type.type_arguments.is_empty()) {
+		int class_idx = GDScriptLanguage::get_singleton()->get_global_map()[p_target.type.native_type];
+		Variant nc = GDScriptLanguage::get_singleton()->get_global_array()[class_idx];
+		class_idx = get_constant_pos(nc) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
+		append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_NATIVE);
+		append(p_target);
+		append(p_source);
+		append(class_idx);
+		append(false);
+		return;
+	}
+
 	if (p_target.type.is_type_handle) {
 		switch (p_target.type.kind) {
 			case GDScriptDataType::NATIVE: {
@@ -1035,7 +1052,8 @@ void GDScriptByteCodeGenerator::write_assign(const Address &p_target, const Addr
 			case GDScriptDataType::SCRIPT:
 			case GDScriptDataType::GDSCRIPT: {
 				Variant script = p_target.type.script_type;
-				int idx = get_constant_pos(script) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
+				int idx = p_target.type.is_type_handle && !p_target.type.type_arguments.is_empty() ? get_container_type_pos(p_target.type) : get_constant_pos(script);
+				idx |= (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
 				append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_SCRIPT);
 				append(p_target);
 				append(p_source);
@@ -1165,7 +1183,8 @@ void GDScriptByteCodeGenerator::write_cast(const Address &p_target, const Addres
 		case GDScriptDataType::SCRIPT:
 		case GDScriptDataType::GDSCRIPT: {
 			Variant script = p_type.script_type;
-			int idx = get_constant_pos(script) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
+			int idx = p_type.is_type_handle && !p_type.type_arguments.is_empty() ? get_container_type_pos(p_type) : get_constant_pos(script);
+			idx |= (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
 			append_opcode(GDScriptFunction::OPCODE_CAST_TO_SCRIPT);
 			index = idx;
 		} break;
@@ -1349,11 +1368,14 @@ void GDScriptByteCodeGenerator::write_call_builtin_type(const Address &p_target,
 	append(p_base);
 	append(ct.target);
 	append(p_arguments.size());
-	append(Variant::get_validated_builtin_method(p_type, p_method));
+	Variant::ValidatedBuiltInMethod validated_method = Variant::get_validated_builtin_method(p_type, p_method);
+	const int method_index = get_builtin_method_pos(validated_method);
+	append(method_index);
+	add_builtin_method_name(method_index, p_method);
 	ct.cleanup();
 
 #ifdef DEBUG_ENABLED
-	add_debug_name(builtin_methods_names, get_builtin_method_pos(Variant::get_validated_builtin_method(p_type, p_method)), p_method);
+	add_debug_name(builtin_methods_names, method_index, p_method);
 #endif
 }
 
@@ -1972,7 +1994,17 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value) {
 
 		// If this is a typed function, then we need to check for potential conversions.
 		if (function->return_type.has_type()) {
-			if (function->return_type.is_type_handle && function->return_type.kind == GDScriptDataType::NATIVE) {
+			if (!function->return_type.is_type_handle && function->return_type.kind == GDScriptDataType::NATIVE &&
+					p_return_value.type.is_type_handle && !p_return_value.type.type_arguments.is_empty() &&
+					ClassDB::is_parent_class(SNAME("GDScript"), function->return_type.native_type)) {
+				append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_NATIVE);
+				append(p_return_value);
+				int class_idx = GDScriptLanguage::get_singleton()->get_global_map()[function->return_type.native_type];
+				Variant nc = GDScriptLanguage::get_singleton()->get_global_array()[class_idx];
+				class_idx = get_constant_pos(nc) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
+				append(class_idx);
+				append(false);
+			} else if (function->return_type.is_type_handle && function->return_type.kind == GDScriptDataType::NATIVE) {
 				append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_NATIVE);
 				append(p_return_value);
 				int class_idx = GDScriptLanguage::get_singleton()->get_global_map()[function->return_type.native_type];
@@ -1982,7 +2014,8 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value) {
 				append(true);
 			} else if (function->return_type.is_type_handle && (function->return_type.kind == GDScriptDataType::SCRIPT || function->return_type.kind == GDScriptDataType::GDSCRIPT)) {
 				Variant script = function->return_type.script_type;
-				int script_idx = get_constant_pos(script) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
+				int script_idx = !function->return_type.type_arguments.is_empty() ? get_container_type_pos(function->return_type) : get_constant_pos(script);
+				script_idx |= (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
 
 				append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_SCRIPT);
 				append(p_return_value);
@@ -2062,7 +2095,8 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value) {
 			case GDScriptDataType::GDSCRIPT:
 			case GDScriptDataType::SCRIPT: {
 				Variant script = function->return_type.script_type;
-				int script_idx = get_constant_pos(script) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
+				int script_idx = function->return_type.is_type_handle && !function->return_type.type_arguments.is_empty() ? get_container_type_pos(function->return_type) : get_constant_pos(script);
+				script_idx |= (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
 
 				append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_SCRIPT);
 				append(p_return_value);

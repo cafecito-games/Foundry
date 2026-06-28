@@ -81,6 +81,9 @@ static String _get_var_type(const Variant *p_var) {
 		} else {
 			if (bobj->is_class_ptr(GDScriptNativeClass::get_class_ptr_static())) {
 				basestr = Object::cast_to<GDScriptNativeClass>(bobj)->get_name();
+			} else if (GDScriptSpecializedClassHandle *specialized_handle =
+							   Object::cast_to<GDScriptSpecializedClassHandle>(bobj)) {
+				basestr = specialized_handle->get_type_name();
 			} else {
 				basestr = bobj->get_class();
 				if (bobj->get_script_instance()) {
@@ -198,6 +201,343 @@ static ContainerType _container_type_from_type_info(const Variant &p_type_info, 
 	Ref<Script> script = p_type_info;
 	type.script = script;
 	return type;
+}
+
+static String _get_type_handle_type_name(const GDScriptDataType &p_expected_type, Script *p_base_type) {
+	if (!p_expected_type.type_arguments.is_empty()) {
+		return p_expected_type.to_container_type().get_type_name();
+	}
+	return GDScript::debug_get_script_name(Ref<Script>(p_base_type));
+}
+
+static Script *_script_type_from_type_info(const Variant &p_type_info, GDScriptDataType *r_type_handle = nullptr) {
+	if (_is_container_type_descriptor(p_type_info)) {
+		const ContainerType type = _container_type_from_descriptor(p_type_info);
+		if (r_type_handle != nullptr) {
+			*r_type_handle = GDScriptDataType::from_type_handle_container_type(type);
+		}
+		return type.script.ptr();
+	}
+
+	Script *script = Object::cast_to<Script>(p_type_info.operator Object *());
+	if (r_type_handle != nullptr && script != nullptr) {
+		*r_type_handle = _make_script_type_handle_type(script);
+	}
+	return script;
+}
+
+static GDScriptSpecializedClassHandle *_specialized_handle_from_variant(const Variant *p_value) {
+	if (p_value->get_type() != Variant::OBJECT) {
+		return nullptr;
+	}
+
+	Object *object = p_value->get_validated_object();
+	if (object == nullptr) {
+		return nullptr;
+	}
+
+	return Object::cast_to<GDScriptSpecializedClassHandle>(object);
+}
+
+static GDScriptSpecializedClassHandle *_specialized_handle_assignable_to_native_script(const Variant *p_value,
+		const StringName &p_native_type) {
+	GDScriptSpecializedClassHandle *specialized_handle = _specialized_handle_from_variant(p_value);
+	if (specialized_handle == nullptr || !specialized_handle->is_assignable_to_native_type(p_native_type)) {
+		return nullptr;
+	}
+	return specialized_handle;
+}
+
+static bool _native_container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type) {
+	return p_expected_type.builtin_type == Variant::OBJECT && p_expected_type.script.is_null() &&
+			p_expected_type.type_arguments.is_empty();
+}
+
+static bool _container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type) {
+	if (_native_container_type_accepts_specialized_handle_erasure(p_expected_type)) {
+		return true;
+	}
+
+	if (p_expected_type.builtin_type == Variant::ARRAY) {
+		return !p_expected_type.element_types.is_empty() &&
+				_container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[0]);
+	}
+
+	if (p_expected_type.builtin_type == Variant::DICTIONARY && !p_expected_type.element_types.is_empty()) {
+		if (_container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[0])) {
+			return true;
+		}
+		return p_expected_type.element_types.size() > 1 &&
+				_container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[1]);
+	}
+
+	return false;
+}
+
+static bool _erase_specialized_handle_for_native_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (!_native_container_type_accepts_specialized_handle_erasure(p_expected_type)) {
+		return false;
+	}
+
+	GDScriptSpecializedClassHandle *specialized_handle = _specialized_handle_from_variant(&r_value);
+	if (specialized_handle == nullptr || !specialized_handle->is_assignable_to_native_type(p_expected_type.class_name)) {
+		return false;
+	}
+
+	r_value = specialized_handle->get_specialized_script();
+	return true;
+}
+
+static bool _erase_specialized_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value);
+
+static bool _erase_specialized_handles_for_container_array_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (p_expected_type.builtin_type != Variant::ARRAY || p_expected_type.element_types.is_empty() ||
+			r_value.get_type() != Variant::ARRAY) {
+		return false;
+	}
+
+	const ContainerType &element_type = p_expected_type.element_types[0];
+	const Array source = r_value;
+	Array erased;
+	erased.resize(source.size());
+
+	bool changed = false;
+	for (int i = 0; i < source.size(); i++) {
+		Variant value = source[i];
+		changed = _erase_specialized_handles_for_container_type(element_type, value) || changed;
+		erased[i] = value;
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	r_value = erased;
+	return true;
+}
+
+static bool _erase_specialized_handles_for_container_dictionary_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (p_expected_type.builtin_type != Variant::DICTIONARY || p_expected_type.element_types.is_empty() ||
+			r_value.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+
+	const ContainerType &key_type = p_expected_type.element_types[0];
+	const ContainerType value_type = p_expected_type.element_types.size() > 1 ? p_expected_type.element_types[1] : ContainerType();
+	const Dictionary source = r_value;
+	Dictionary erased;
+	erased.reserve(source.size());
+
+	bool changed = false;
+	for (const KeyValue<Variant, Variant> &E : source) {
+		Variant key = E.key;
+		Variant value = E.value;
+		changed = _erase_specialized_handles_for_container_type(key_type, key) || changed;
+		changed = _erase_specialized_handles_for_container_type(value_type, value) || changed;
+		erased[key] = value;
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	r_value = erased;
+	return true;
+}
+
+static bool _erase_specialized_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (_erase_specialized_handle_for_native_container_type(p_expected_type, r_value)) {
+		return true;
+	}
+	if (_erase_specialized_handles_for_container_array_type(p_expected_type, r_value)) {
+		return true;
+	}
+	return _erase_specialized_handles_for_container_dictionary_type(p_expected_type, r_value);
+}
+
+static bool _erase_specialized_handles_for_native_array_elements(const ContainerType &p_element_type, Variant &r_value) {
+	if (_erase_specialized_handles_for_container_type(p_element_type, r_value)) {
+		return true;
+	}
+
+	if (r_value.get_type() != Variant::ARRAY) {
+		return false;
+	}
+
+	const Array source = r_value;
+	Array erased;
+	erased.resize(source.size());
+
+	bool changed = false;
+	for (int i = 0; i < source.size(); i++) {
+		Variant value = source[i];
+		changed = _erase_specialized_handles_for_container_type(p_element_type, value) || changed;
+		erased[i] = value;
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	r_value = erased;
+	return true;
+}
+
+static bool _erase_specialized_handles_for_native_dictionary_entries(const ContainerType &p_key_type,
+		const ContainerType &p_value_type, Variant &r_value) {
+	if (r_value.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+
+	const Dictionary source = r_value;
+	Dictionary erased;
+	erased.reserve(source.size());
+
+	bool changed = false;
+	for (const KeyValue<Variant, Variant> &E : source) {
+		Variant key = E.key;
+		Variant value = E.value;
+		changed = _erase_specialized_handles_for_container_type(p_key_type, key) || changed;
+		changed = _erase_specialized_handles_for_container_type(p_value_type, value) || changed;
+		erased[key] = value;
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	r_value = erased;
+	return true;
+}
+
+static bool _erase_specialized_handles_for_typed_array_argument(Variant *p_base, Variant &r_value) {
+	if (p_base->get_type() != Variant::ARRAY) {
+		return false;
+	}
+
+	Array *array = VariantInternal::get_array(p_base);
+	if (!array->is_typed()) {
+		return false;
+	}
+
+	return _erase_specialized_handles_for_native_array_elements(array->get_element_type(), r_value);
+}
+
+static bool _erase_specialized_handles_for_typed_dictionary_arguments(Variant *p_base, Variant &r_key, Variant &r_value) {
+	if (p_base->get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+
+	Dictionary *dictionary = VariantInternal::get_dictionary(p_base);
+	if (!dictionary->is_typed()) {
+		return false;
+	}
+
+	const ContainerType key_type = dictionary->get_key_type();
+	const ContainerType value_type = dictionary->get_value_type();
+	bool changed = _erase_specialized_handles_for_container_type(key_type, r_key);
+	changed = _erase_specialized_handles_for_container_type(value_type, r_value) || changed;
+	return changed;
+}
+
+static bool _erase_specialized_handles_for_typed_container_set(Variant *p_base, Variant &r_key, Variant &r_value) {
+	if (p_base->get_type() == Variant::ARRAY) {
+		return _erase_specialized_handles_for_typed_array_argument(p_base, r_value);
+	}
+
+	return _erase_specialized_handles_for_typed_dictionary_arguments(p_base, r_key, r_value);
+}
+
+static bool _erase_specialized_handles_for_dictionary_call_argument(const StringName &p_method, int p_arg_index,
+		const ContainerType &p_key_type, const ContainerType &p_value_type, Variant &r_arg) {
+	if (p_method == SNAME("set")) {
+		if (p_arg_index == 0) {
+			return _erase_specialized_handles_for_container_type(p_key_type, r_arg);
+		}
+		if (p_arg_index == 1) {
+			return _erase_specialized_handles_for_container_type(p_value_type, r_arg);
+		}
+		return false;
+	}
+
+	if (p_method == SNAME("get_or_add")) {
+		if (p_arg_index == 0) {
+			return _erase_specialized_handles_for_container_type(p_key_type, r_arg);
+		}
+		if (p_arg_index == 1) {
+			return _erase_specialized_handles_for_container_type(p_value_type, r_arg);
+		}
+		return false;
+	}
+
+	if (p_method == SNAME("has") || p_method == SNAME("erase") || p_method == SNAME("get")) {
+		return p_arg_index == 0 && _erase_specialized_handles_for_container_type(p_key_type, r_arg);
+	}
+
+	if (p_method == SNAME("has_all")) {
+		return p_arg_index == 0 && _erase_specialized_handles_for_native_array_elements(p_key_type, r_arg);
+	}
+
+	if (p_method == SNAME("find_key")) {
+		return p_arg_index == 0 && _erase_specialized_handles_for_container_type(p_value_type, r_arg);
+	}
+
+	if (p_method == SNAME("assign") || p_method == SNAME("merge") || p_method == SNAME("merged")) {
+		return p_arg_index == 0 && _erase_specialized_handles_for_native_dictionary_entries(p_key_type, p_value_type, r_arg);
+	}
+
+	return false;
+}
+
+static const Variant **_erase_specialized_handles_for_typed_container_call(Variant *p_base, const StringName &p_method,
+		Variant **p_args, int p_argcount, Vector<Variant> &r_arg_storage, Vector<const Variant *> &r_argptr_storage) {
+	if (p_argcount == 0 || (p_base->get_type() != Variant::ARRAY && p_base->get_type() != Variant::DICTIONARY)) {
+		return (const Variant **)p_args;
+	}
+
+	const Variant::Type base_type = p_base->get_type();
+	bool changed = false;
+
+	if (base_type == Variant::ARRAY) {
+		Array *array = VariantInternal::get_array(p_base);
+		const ContainerType element_type = array->get_element_type();
+		if (!array->is_typed() || !_container_type_accepts_specialized_handle_erasure(element_type)) {
+			return (const Variant **)p_args;
+		}
+
+		r_arg_storage.resize(p_argcount);
+		r_argptr_storage.resize(p_argcount);
+
+		Variant *args = r_arg_storage.ptrw();
+		const Variant **argptrs = r_argptr_storage.ptrw();
+		for (int i = 0; i < p_argcount; i++) {
+			args[i] = *p_args[i];
+			changed = _erase_specialized_handles_for_native_array_elements(element_type, args[i]) || changed;
+			argptrs[i] = &args[i];
+		}
+	} else {
+		Dictionary *dictionary = VariantInternal::get_dictionary(p_base);
+		const ContainerType key_type = dictionary->get_key_type();
+		const ContainerType value_type = dictionary->get_value_type();
+		const bool can_erase_key = _container_type_accepts_specialized_handle_erasure(key_type);
+		const bool can_erase_value = _container_type_accepts_specialized_handle_erasure(value_type);
+		if (!dictionary->is_typed() || (!can_erase_key && !can_erase_value)) {
+			return (const Variant **)p_args;
+		}
+
+		r_arg_storage.resize(p_argcount);
+		r_argptr_storage.resize(p_argcount);
+
+		Variant *args = r_arg_storage.ptrw();
+		const Variant **argptrs = r_argptr_storage.ptrw();
+		for (int i = 0; i < p_argcount; i++) {
+			args[i] = *p_args[i];
+			changed = _erase_specialized_handles_for_dictionary_call_argument(p_method, i, key_type, value_type, args[i]) || changed;
+			argptrs[i] = &args[i];
+		}
+	}
+
+	return changed ? r_argptr_storage.ptrw() : (const Variant **)p_args;
 }
 
 Variant GDScriptFunction::_get_default_variant_for_data_type(const GDScriptDataType &p_data_type) {
@@ -671,6 +1011,14 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(*p_args[i]));
 				continue;
 			}
+			if (!argument_types[i].is_type_handle && argument_types[i].kind == GDScriptDataType::NATIVE) {
+				GDScriptSpecializedClassHandle *specialized_handle =
+						_specialized_handle_assignable_to_native_script(p_args[i], argument_types[i].native_type);
+				if (specialized_handle != nullptr) {
+					memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(specialized_handle->get_specialized_script()));
+					continue;
+				}
+			}
 			// If types already match, don't call Variant::construct(). Constructors of some types
 			// (e.g. packed arrays) do copies, whereas they pass by reference when inside a Variant.
 			if (argument_types[i].is_type(*p_args[i], false)) {
@@ -1043,7 +1391,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 						OPCODE_BREAK;
 					}
 
-					*dst = object && ClassDB::is_parent_class(object->get_class_name(), native_type);
+					*dst = _specialized_handle_assignable_to_native_script(value, native_type) != nullptr ||
+							(object && ClassDB::is_parent_class(object->get_class_name(), native_type));
 				}
 				ip += 5;
 			}
@@ -1056,46 +1405,50 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(value, 1);
 
 				GET_VARIANT_PTR(type, 2);
-				Script *script_type = Object::cast_to<Script>(type->operator Object *());
-				GD_ERR_BREAK(!script_type);
-				GDScript *gdscript_type = Object::cast_to<GDScript>(script_type);
-				const bool is_trait_type = gdscript_type != nullptr && gdscript_type->is_trait_type();
 				const bool is_type_handle = _code_ptr[ip + 4];
+				bool result = false;
 
 				if (is_type_handle) {
 					bool was_freed = false;
-					*dst = _type_handle_test_matches(_make_script_type_handle_type(script_type), *value, was_freed);
+					{
+						GDScriptDataType expected_handle_type;
+						Script *script_type = _script_type_from_type_info(*type, &expected_handle_type);
+						GD_ERR_BREAK(!script_type);
+						result = _type_handle_test_matches(expected_handle_type, *value, was_freed);
+					}
 					if (was_freed) {
 						err_text = "Left operand of 'is' is a previously freed instance.";
 						OPCODE_BREAK;
 					}
-					ip += 5;
-					DISPATCH_OPCODE;
-				}
+				} else {
+					Script *script_type = _script_type_from_type_info(*type);
+					GD_ERR_BREAK(!script_type);
+					GDScript *gdscript_type = Object::cast_to<GDScript>(script_type);
+					const bool is_trait_type = gdscript_type != nullptr && gdscript_type->is_trait_type();
 
-				bool was_freed = false;
-				Object *object = value->get_validated_object_with_check(was_freed);
-				if (was_freed) {
-					err_text = "Left operand of 'is' is a previously freed instance.";
-					OPCODE_BREAK;
-				}
+					bool was_freed = false;
+					Object *object = value->get_validated_object_with_check(was_freed);
+					if (was_freed) {
+						err_text = "Left operand of 'is' is a previously freed instance.";
+						OPCODE_BREAK;
+					}
 
-				bool result = false;
-				if (object && object->get_script_instance()) {
-					Ref<Script> script_ref = object->get_script_instance()->get_script();
-					if (is_trait_type) {
-						// Trait-typed values are Object-backed: a trait has no native class of its
-						// own, so membership is a nominal trait-set lookup over the flattened
-						// implementer rather than a native/script inheritance walk.
-						result = script_ref.is_valid() && script_ref->has_script_trait(gdscript_type->get_trait_type_name());
-					} else {
-						Script *script_ptr = script_ref.ptr();
-						while (script_ptr) {
-							if (script_ptr == script_type) {
-								result = true;
-								break;
+					if (object && object->get_script_instance()) {
+						Ref<Script> script_ref = object->get_script_instance()->get_script();
+						if (is_trait_type) {
+							// Trait-typed values are Object-backed: a trait has no native class of its
+							// own, so membership is a nominal trait-set lookup over the flattened
+							// implementer rather than a native/script inheritance walk.
+							result = script_ref.is_valid() && script_ref->has_script_trait(gdscript_type->get_trait_type_name());
+						} else {
+							Script *script_ptr = script_ref.ptr();
+							while (script_ptr) {
+								if (script_ptr == script_type) {
+									result = true;
+									break;
+								}
+								script_ptr = script_ptr->get_base_script().ptr();
 							}
-							script_ptr = script_ptr->get_base_script().ptr();
 						}
 					}
 				}
@@ -1112,12 +1465,18 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(index, 1);
 				GET_VARIANT_PTR(value, 2);
 
+				Variant erased_index = *index;
+				Variant erased_value = *value;
+				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value);
+				const Variant *index_arg = erased ? &erased_index : index;
+				const Variant *value_arg = erased ? &erased_value : value;
+
 				bool valid;
 #ifdef DEBUG_ENABLED
 				Variant::VariantSetError err_code;
-				dst->set(*index, *value, &valid, &err_code);
+				dst->set(*index_arg, *value_arg, &valid, &err_code);
 #else
-				dst->set(*index, *value, &valid);
+				dst->set(*index_arg, *value_arg, &valid);
 #endif
 #ifdef DEBUG_ENABLED
 				if (!valid) {
@@ -1125,7 +1484,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 						err_text = "Invalid assignment on read-only value (on base: '" + _get_var_type(dst) + "').";
 					} else {
 						Object *obj = dst->get_validated_object();
-						String v = index->operator String();
+						String v = index_arg->operator String();
 						bool read_only_property = false;
 						if (obj) {
 							read_only_property = ClassDB::has_property(obj->get_class_name(), v) && (ClassDB::get_property_setter(obj->get_class_name(), v) == StringName());
@@ -1136,11 +1495,11 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 							if (!v.is_empty()) {
 								v = "'" + v + "'";
 							} else {
-								v = "of type '" + _get_var_type(index) + "'";
+								v = "of type '" + _get_var_type(index_arg) + "'";
 							}
-							err_text = "Invalid assignment of property or key " + v + " with value of type '" + _get_var_type(value) + "' on a base object of type '" + _get_var_type(dst) + "'.";
+							err_text = "Invalid assignment of property or key " + v + " with value of type '" + _get_var_type(value_arg) + "' on a base object of type '" + _get_var_type(dst) + "'.";
 							if (err_code == Variant::VariantSetError::SET_INDEXED_ERR) {
-								err_text = "Invalid assignment of index " + v + " (on base: '" + _get_var_type(dst) + "') with value of type '" + _get_var_type(value) + "'.";
+								err_text = "Invalid assignment of index " + v + " (on base: '" + _get_var_type(dst) + "') with value of type '" + _get_var_type(value_arg) + "'.";
 							}
 						}
 					}
@@ -1158,25 +1517,31 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(index, 1);
 				GET_VARIANT_PTR(value, 2);
 
+				Variant erased_index = *index;
+				Variant erased_value = *value;
+				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value);
+				const Variant *index_arg = erased ? &erased_index : index;
+				const Variant *value_arg = erased ? &erased_value : value;
+
 				int index_setter = _code_ptr[ip + 4];
 				GD_ERR_BREAK(index_setter < 0 || index_setter >= _keyed_setters_count);
 				const Variant::ValidatedKeyedSetter setter = _keyed_setters_ptr[index_setter];
 
 				bool valid;
-				setter(dst, index, value, &valid);
+				setter(dst, index_arg, value_arg, &valid);
 
 #ifdef DEBUG_ENABLED
 				if (!valid) {
 					if (dst->is_read_only()) {
 						err_text = "Invalid assignment on read-only value (on base: '" + _get_var_type(dst) + "').";
 					} else {
-						String v = index->operator String();
+						String v = index_arg->operator String();
 						if (!v.is_empty()) {
 							v = "'" + v + "'";
 						} else {
-							v = "of type '" + _get_var_type(index) + "'";
+							v = "of type '" + _get_var_type(index_arg) + "'";
 						}
-						err_text = "Invalid assignment of property or key " + v + " with value of type '" + _get_var_type(value) + "' on a base object of type '" + _get_var_type(dst) + "'.";
+						err_text = "Invalid assignment of property or key " + v + " with value of type '" + _get_var_type(value_arg) + "' on a base object of type '" + _get_var_type(dst) + "'.";
 					}
 					OPCODE_BREAK;
 				}
@@ -1192,6 +1557,10 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(index, 1);
 				GET_VARIANT_PTR(value, 2);
 
+				Variant erased_value = *value;
+				const bool erased = _erase_specialized_handles_for_typed_array_argument(dst, erased_value);
+				const Variant *value_arg = erased ? &erased_value : value;
+
 				int index_setter = _code_ptr[ip + 4];
 				GD_ERR_BREAK(index_setter < 0 || index_setter >= _indexed_setters_count);
 				const Variant::ValidatedIndexedSetter setter = _indexed_setters_ptr[index_setter];
@@ -1199,7 +1568,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				int64_t int_index = *VariantInternal::get_int(index);
 
 				bool oob;
-				setter(dst, int_index, value, &oob);
+				setter(dst, int_index, value_arg, &oob);
 
 #ifdef DEBUG_ENABLED
 				if (oob) {
@@ -1705,6 +2074,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GDScriptNativeClass *nc = Object::cast_to<GDScriptNativeClass>(type->operator Object *());
 				GD_ERR_BREAK(!nc);
 				const bool is_type_handle = _code_ptr[ip + 4];
+				GDScriptSpecializedClassHandle *specialized_handle = !is_type_handle ? _specialized_handle_assignable_to_native_script(src, nc->get_name()) : nullptr;
 
 #ifdef DEBUG_ENABLED
 				if (is_type_handle) {
@@ -1725,14 +2095,19 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 						OPCODE_BREAK;
 					}
 
-					if (src_obj && !ClassDB::is_parent_class(src_obj->get_class_name(), nc->get_name())) {
+					if (src_obj && specialized_handle == nullptr &&
+							!ClassDB::is_parent_class(src_obj->get_class_name(), nc->get_name())) {
 						err_text = "Trying to assign value of type '" + src_obj->get_class_name() +
 								"' to a variable of type '" + nc->get_name() + "'.";
 						OPCODE_BREAK;
 					}
 				}
 #endif // DEBUG_ENABLED
-				*dst = *src;
+				if (specialized_handle != nullptr) {
+					*dst = specialized_handle->get_specialized_script();
+				} else {
+					*dst = *src;
+				}
 
 				ip += 5;
 			}
@@ -1744,7 +2119,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(src, 1);
 
 				GET_VARIANT_PTR(type, 2);
-				Script *base_type = Object::cast_to<Script>(type->operator Object *());
+				GDScriptDataType expected_handle_type;
+				Script *base_type = _script_type_from_type_info(*type, &expected_handle_type);
 
 				GD_ERR_BREAK(!base_type);
 				GDScript *gdscript_base_type = Object::cast_to<GDScript>(base_type);
@@ -1753,9 +2129,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 #ifdef DEBUG_ENABLED
 				if (is_type_handle) {
-					if (!_make_script_type_handle_type(base_type).is_type(*src)) {
+					if (!expected_handle_type.is_type(*src)) {
 						err_text = "Trying to assign value of type '" + _get_var_type(src) +
-								"' to a variable of type 'Type[" + GDScript::debug_get_script_name(Ref<Script>(base_type)) + "]'.";
+								"' to a variable of type 'Type[" + _get_type_handle_type_name(expected_handle_type, base_type) + "]'.";
 						OPCODE_BREAK;
 					}
 				} else if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
@@ -1853,6 +2229,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 							OPCODE_BREAK;
 						}
 					} else {
+						_erase_specialized_handles_for_container_type(expected_type, value);
 						ContainerTypeValidate validator(expected_type);
 						validator.where = "member";
 						if (!validator.validate(value, "assign")) {
@@ -1999,6 +2376,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 #endif
 				Object *src_obj = src->operator Object *();
+				GDScriptSpecializedClassHandle *specialized_handle = !is_type_handle ? _specialized_handle_assignable_to_native_script(src, nc->get_name()) : nullptr;
 
 				if (is_type_handle) {
 					if (_make_native_type_handle_type(nc).is_type(*src)) {
@@ -2006,6 +2384,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					} else {
 						*dst = Variant();
 					}
+				} else if (specialized_handle != nullptr) {
+					*dst = specialized_handle->get_specialized_script();
 				} else if (src_obj && !ClassDB::is_parent_class(src_obj->get_class_name(), nc->get_name())) {
 					*dst = Variant(); // invalid cast, assign NULL
 				} else {
@@ -2022,7 +2402,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(dst, 1);
 				GET_VARIANT_PTR(to_type, 2);
 
-				Script *base_type = Object::cast_to<Script>(to_type->operator Object *());
+				GDScriptDataType expected_handle_type;
+				Script *base_type = _script_type_from_type_info(*to_type, &expected_handle_type);
 
 				GD_ERR_BREAK(!base_type);
 				GDScript *gdscript_base_type = Object::cast_to<GDScript>(base_type);
@@ -2043,7 +2424,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				bool valid = false;
 
 				if (is_type_handle) {
-					valid = _make_script_type_handle_type(base_type).is_type(*src);
+					valid = expected_handle_type.is_type(*src);
 				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
 					ScriptInstance *scr_inst = src->operator Object *()->get_script_instance();
 
@@ -2163,8 +2544,10 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				array.set_typed(element_type);
 				array.resize(argc);
 				for (int i = 0; i < argc; i++) {
+					Variant value = *(instruction_args[i]);
+					_erase_specialized_handles_for_container_type(element_type, value);
 					// Use .set instead of operator[] to handle type conversion / validation.
-					array.set(i, *(instruction_args[i]));
+					array.set(i, value);
 				}
 
 				GET_INSTRUCTION_ARG(dst, argc);
@@ -2228,8 +2611,12 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				for (int i = 0; i < argc; i++) {
 					GET_INSTRUCTION_ARG(k, i * 2 + 0);
 					GET_INSTRUCTION_ARG(v, i * 2 + 1);
+					Variant key = *k;
+					Variant value = *v;
+					_erase_specialized_handles_for_container_type(key_type, key);
+					_erase_specialized_handles_for_container_type(value_type, value);
 					// Use .set instead of operator[] to handle type conversion / validation.
-					dict.set(*k, *v);
+					dict.set(key, value);
 				}
 
 				GET_INSTRUCTION_ARG(dst, argc * 2);
@@ -2256,7 +2643,14 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_INSTRUCTION_ARG(expected_base, argc + type_argument_count + 1);
 				GET_INSTRUCTION_ARG(dst, argc + type_argument_count + 2);
 
+				Ref<GDScriptSpecializedClassHandle> specialized_handle;
 				Ref<GDScript> gdscript = *base;
+				if (gdscript.is_null()) {
+					specialized_handle = *base;
+					if (specialized_handle.is_valid()) {
+						gdscript = specialized_handle->get_specialized_script();
+					}
+				}
 				if (gdscript.is_null()) {
 					err_text = "Cannot instantiate a specialized type whose base is not a GDScript.";
 					OPCODE_BREAK;
@@ -2264,7 +2658,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				Ref<GDScript> expected_gdscript = *expected_base;
 
 				Vector<ContainerType> type_arguments;
-				if (expected_gdscript.is_null() || gdscript == expected_gdscript) {
+				if (specialized_handle.is_valid()) {
+					type_arguments = specialized_handle->get_type_arguments();
+				} else if (expected_gdscript.is_null() || gdscript == expected_gdscript) {
 					for (int i = 0; i < type_argument_count; i++) {
 						GET_INSTRUCTION_ARG(type_info, argc + i);
 						type_arguments.push_back(_container_type_from_type_info(*type_info, Variant::NIL, StringName()));
@@ -2310,7 +2706,10 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GodotProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
 
 				GET_INSTRUCTION_ARG(base, argc);
-				Variant **argptrs = instruction_args;
+				Vector<Variant> erased_arg_storage;
+				Vector<const Variant *> erased_argptr_storage;
+				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
+						base, *methodname, instruction_args, argc, erased_arg_storage, erased_argptr_storage);
 
 #ifdef DEBUG_ENABLED
 				uint64_t call_time = 0;
@@ -2327,7 +2726,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				Callable::CallError err;
 				if (call_ret) {
 					GET_INSTRUCTION_ARG(ret, argc + 1);
-					base->callp(*methodname, (const Variant **)argptrs, argc, temp_ret, err);
+					base->callp(*methodname, argptrs, argc, temp_ret, err);
 					*ret = temp_ret;
 #ifdef DEBUG_ENABLED
 					if (ret->get_type() == Variant::NIL) {
@@ -2357,7 +2756,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					}
 #endif
 				} else {
-					base->callp(*methodname, (const Variant **)argptrs, argc, temp_ret, err);
+					base->callp(*methodname, argptrs, argc, temp_ret, err);
 				}
 #ifdef DEBUG_ENABLED
 
@@ -2404,9 +2803,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					}
 
 					if (is_callable) {
-						err_text = _get_callable_call_error(vformat("function '%s'", methodstr), *base, (const Variant **)argptrs, argc, temp_ret, err);
+						err_text = _get_callable_call_error(vformat("function '%s'", methodstr), *base, argptrs, argc, temp_ret, err);
 					} else {
-						err_text = _get_call_error(vformat("function '%s' in base '%s'", methodstr, basestr), (const Variant **)argptrs, argc, temp_ret, err);
+						err_text = _get_call_error(vformat("function '%s' in base '%s'", methodstr, basestr), argptrs, argc, temp_ret, err);
 					}
 					OPCODE_BREAK;
 				}
@@ -2778,12 +3177,17 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				GET_INSTRUCTION_ARG(base, argc);
 
-				GD_ERR_BREAK(_code_ptr[ip + 2] < 0 || _code_ptr[ip + 2] >= _builtin_methods_count);
-				Variant::ValidatedBuiltInMethod method = _builtin_methods_ptr[_code_ptr[ip + 2]];
-				Variant **argptrs = instruction_args;
+				int method_idx = _code_ptr[ip + 2];
+				GD_ERR_BREAK(method_idx < 0 || method_idx >= _builtin_methods_count);
+				Variant::ValidatedBuiltInMethod method = _builtin_methods_ptr[method_idx];
+				const StringName method_name = method_idx < builtin_method_names.size() ? builtin_method_names[method_idx] : StringName();
+				Vector<Variant> erased_arg_storage;
+				Vector<const Variant *> erased_argptr_storage;
+				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
+						base, method_name, instruction_args, argc, erased_arg_storage, erased_argptr_storage);
 
 				GET_INSTRUCTION_ARG(ret, argc + 1);
-				method(base, (const Variant **)argptrs, argc, ret);
+				method(base, argptrs, argc, ret);
 
 				ip += 3;
 			}
@@ -3326,6 +3730,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GDScriptNativeClass *nc = Object::cast_to<GDScriptNativeClass>(type->operator Object *());
 				GD_ERR_BREAK(!nc);
 				const bool is_type_handle = _code_ptr[ip + 3];
+				GDScriptSpecializedClassHandle *specialized_handle = !is_type_handle ? _specialized_handle_assignable_to_native_script(r, nc->get_name()) : nullptr;
 
 				if (is_type_handle) {
 					if (!_make_native_type_handle_type(nc).is_type(*r)) {
@@ -3351,7 +3756,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #else
 					Object *ret_obj = r->operator Object *();
 #endif // DEBUG_ENABLED
-					if (ret_obj && !ClassDB::is_parent_class(ret_obj->get_class_name(), nc->get_name())) {
+					if (ret_obj && specialized_handle == nullptr &&
+							!ClassDB::is_parent_class(ret_obj->get_class_name(), nc->get_name())) {
 #ifdef DEBUG_ENABLED
 						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
 								ret_obj->get_class_name(), nc->get_name());
@@ -3359,7 +3765,11 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 						OPCODE_BREAK;
 					}
 				}
-				retvalue = *r;
+				if (specialized_handle != nullptr) {
+					retvalue = specialized_handle->get_specialized_script();
+				} else {
+					retvalue = *r;
+				}
 
 #ifdef DEBUG_ENABLED
 				exit_ok = true;
@@ -3372,15 +3782,16 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(r, 0);
 
 				GET_VARIANT_PTR(type, 1);
-				Script *base_type = Object::cast_to<Script>(type->operator Object *());
+				GDScriptDataType expected_handle_type;
+				Script *base_type = _script_type_from_type_info(*type, &expected_handle_type);
 				GD_ERR_BREAK(!base_type);
 				const bool is_type_handle = _code_ptr[ip + 3];
 
 				if (is_type_handle) {
-					if (!_make_script_type_handle_type(base_type).is_type(*r)) {
+					if (!expected_handle_type.is_type(*r)) {
 #ifdef DEBUG_ENABLED
 						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "Type[%s]".)",
-								_get_var_type(r), GDScript::debug_get_script_name(Ref<Script>(base_type)));
+								_get_var_type(r), _get_type_handle_type_name(expected_handle_type, base_type));
 #endif // DEBUG_ENABLED
 						OPCODE_BREAK;
 					}

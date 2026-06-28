@@ -549,6 +549,7 @@ private:
 	Vector<GDScriptUtilityFunctions::FunctionPtr> gds_utilities;
 	Vector<MethodBind *> methods;
 	Vector<GDScriptFunction *> lambdas;
+	Vector<StringName> builtin_method_names;
 
 	int _code_size = 0;
 	int _default_arg_count = 0;
