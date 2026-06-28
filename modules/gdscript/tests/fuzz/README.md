@@ -27,12 +27,23 @@ mkdir -p corpus && find ../scripts -name '*.gd' -exec cp {} corpus/ \;
 
 ASAN_OPTIONS=detect_leaks=0 \
   ../../../../bin/godot.macos.editor.dev.arm64.san.fuzz \
-  -dict=gdscript.dict -timeout=25 -rss_limit_mb=4096 \
+  -dict=gdscript.dict -timeout=25 -rss_limit_mb=4096 -reduce_inputs=0 \
   -jobs=6 -workers=6 corpus
 ```
 
-Observed throughput on an M-series laptop: ~310 exec/s/worker, ~3.5M coverage
-counters, ~6.5k edges reached over the parser/tokenizer from the seed corpus.
+`-reduce_inputs=0 -shrink=0` is currently required for a stable run. Without it,
+libFuzzer's corpus-reduction path (`InputCorpus::Replace`) crashes after a few
+hundred iterations inside its own `std::string` bookkeeping — an artifact of
+mixing Apple clang's AddressSanitizer runtime with the Homebrew LLVM libFuzzer
+runtime, not a Godot bug (proven: with reduction disabled the same build runs
+30k+ iterations clean). The proper fix is to build the whole engine with a
+single LLVM toolchain (Homebrew clang for both compile and link) so the ASan and
+libFuzzer runtimes match; the crash should then disappear and `-reduce_inputs`
+can be left on.
+
+Observed on an M-series laptop: ~310 exec/s/worker parser-only, ~95–200
+exec/s/worker with the analyzer enabled; ~3.5M coverage counters; ~6.5k edges
+parser-only rising to ~19k edges with the analyzer pass.
 
 ## Harness notes
 
@@ -49,7 +60,25 @@ worth knowing for any future port:
   otherwise aborts at exit and is misattributed to the last input). Crashes
   during `LLVMFuzzerTestOneInput` are unaffected — ASan catches those mid-run.
 
+The harness parses every input, and on a clean parse also runs `GDScriptAnalyzer`
+(this fork's stricter typing / generics / traits live there). The `fuzz://input.gd`
+parser and script entries are dropped from `GDScriptCache` each iteration so a
+crash always reproduces from the single input that caused it.
+
 ## Findings
+
+Both findings are filed as issues; see the repo issue tracker. Reproducers under
+`repro/`.
+
+### Tokenizer OOB read on deep tab indentation (heap-buffer-overflow)
+
+A line indented with ≥`tab_size` (default 4) tabs followed by an identifier makes
+the tokenizer read before the start of the source buffer (`make_token()` →
+`String::utf32(Span(_start, _current - _start))` with `_start < _source`). Root
+cause is `_advance()` re-entering `check_indent()` at EOF mid-token combined with
+`check_indent()`'s per-tab `column` inflation. Minimal trigger: `printf '\t\t\t\tt'`.
+Reproducer: `repro/deep_tab_indent_oob.gd`. Memory-safety bug on tiny, ordinary
+input — found by the analyzer-enabled campaign.
 
 ### Unbounded parser recursion → stack overflow (crash)
 
