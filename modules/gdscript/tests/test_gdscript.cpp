@@ -89,6 +89,19 @@ TEST_CASE("[Modules][GDScript] Tokenizer emits ABSTRACT for the abstract keyword
 	CHECK(token.type == GDScriptTokenizer::Token::ABSTRACT);
 }
 
+TEST_CASE("[Modules][GDScript] Tokenizer keeps tab indent source span inside the script buffer at EOF") {
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code("\t\t\t\tidentifier");
+
+	GDScriptTokenizer::Token indent = tokenizer.scan();
+	CHECK(indent.type == GDScriptTokenizer::Token::INDENT);
+	CHECK_EQ(indent.source, String("\t\t\t\t"));
+
+	GDScriptTokenizer::Token identifier = tokenizer.scan();
+	CHECK(identifier.type == GDScriptTokenizer::Token::IDENTIFIER);
+	CHECK_EQ(identifier.source, String("identifier"));
+}
+
 TEST_CASE("[Modules][GDScript] ABSTRACT keyword is still valid as a node name") {
 	GDScriptTokenizerText tokenizer;
 	tokenizer.set_source_code("abstract");
