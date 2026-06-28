@@ -177,6 +177,17 @@ TEST_CASE("[Modules][GDScript] Parser bounds statement nesting instead of crashi
 	CHECK(err != OK);
 }
 
+TEST_CASE("[Modules][GDScript] Parser bounds type nesting instead of crashing") {
+	// Nested type annotations recurse through parse_type(); a pathologically nested type
+	// must report a parse error rather than overflowing the native stack.
+	const int depth = 50000;
+	String source = "var x: " + String("Array[").repeat(depth) + "int" + String("]").repeat(depth) + "\n";
+
+	GDScriptParser parser;
+	Error err = parser.parse(source, "user://deep_type.gd", false);
+	CHECK(err != OK);
+}
+
 static PackedStringArray parse_source_errors(const String &p_source) {
 	GDScriptParser parser;
 	Error err = parser.parse(p_source, "user://namespace_import_test.gd", false);

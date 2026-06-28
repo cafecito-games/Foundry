@@ -4775,6 +4775,15 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_invalid_token(ExpressionNo
 }
 
 GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
+	// Nested type annotations (e.g. `Array[Array[...]]`, Callable/Coroutine signatures)
+	// recurse through parse_type(); bound that depth so a pathologically nested type
+	// reports an error instead of overflowing the native stack.
+	RecursionDepthGuard depth_guard(type_nesting_depth);
+	if (unlikely(type_nesting_depth > MAX_NESTING_DEPTH)) {
+		push_error("Type nesting is too deep.");
+		return nullptr;
+	}
+
 	TypeNode *type = alloc_node<TypeNode>();
 	make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
 	if (!match(GDScriptTokenizer::Token::IDENTIFIER)) {
