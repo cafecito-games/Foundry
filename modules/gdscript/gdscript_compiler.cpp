@@ -736,7 +736,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 		} break;
 		case GDScriptParser::Node::CALL: {
 			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
-			bool is_awaited = p_expression == awaited_node;
+			// Compile the call as async (store the live function-state handle without suspending and
+			// skip the debug missing-await guard) when it is the operand of an `await`, or when the
+			// analyzer marked its result as captured into a statically `Coroutine[T]`-typed slot.
+			bool is_awaited = p_expression == awaited_node || call->is_coroutine_handle_capture;
 			GDScriptDataType type = _gdtype_from_datatype(call->get_datatype(), codegen.script);
 			GDScriptCodeGenerator::Address result;
 			if (p_root) {
