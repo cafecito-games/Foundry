@@ -1432,9 +1432,10 @@ void ProjectSettings::refresh_global_class_list() {
 		if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
 			continue;
 		}
-		// `is_trait` was added later, so it may be absent in older caches.
+		// `is_trait` and `is_enum` were added later, so they may be absent in older caches.
 		const bool is_trait = c.has("is_trait") && c["is_trait"];
-		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
+		const bool is_enum = c.has("is_enum") && c["is_enum"];
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
 }
 

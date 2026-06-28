@@ -1076,6 +1076,7 @@ void EditorData::script_class_save_global_classes() {
 		d["is_abstract"] = ScriptServer::is_global_class_abstract(class_name);
 		d["is_tool"] = ScriptServer::is_global_class_tool(class_name);
 		d["is_trait"] = ScriptServer::is_global_class_trait(class_name);
+		d["is_enum"] = ScriptServer::is_global_class_enum(class_name);
 		array_classes.push_back(d);
 	}
 	ProjectSettings::get_singleton()->store_global_class_list(array_classes);

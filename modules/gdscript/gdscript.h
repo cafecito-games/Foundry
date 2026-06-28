@@ -730,7 +730,7 @@ class GDScriptLanguage : public ScriptLanguage {
 	void _add_global(const StringName &p_name, const Variant &p_value);
 	void _remove_global(const StringName &p_name);
 
-	String _get_global_class_name(const String &p_path, String *r_base_type, String *r_icon_path, bool *r_is_abstract, bool *r_is_tool, bool *r_is_trait, LocalVector<String> &r_visited) const;
+	String _get_global_class_name(const String &p_path, String *r_base_type, String *r_icon_path, bool *r_is_abstract, bool *r_is_tool, bool *r_is_trait, bool *r_is_enum, LocalVector<String> &r_visited) const;
 
 	// Cross-file index of custom annotation declarations, keyed by canonical identity
 	// ("<namespace>.<name>", or "<name>" in the global namespace). Each entry tracks the
@@ -959,7 +959,7 @@ public:
 	/* GLOBAL CLASSES */
 
 	virtual bool handles_global_class_type(const String &p_type) const override;
-	virtual String get_global_class_name(const String &p_path, String *r_base_type = nullptr, String *r_icon_path = nullptr, bool *r_is_abstract = nullptr, bool *r_is_tool = nullptr, bool *r_is_trait = nullptr) const override;
+	virtual String get_global_class_name(const String &p_path, String *r_base_type = nullptr, String *r_icon_path = nullptr, bool *r_is_abstract = nullptr, bool *r_is_tool = nullptr, bool *r_is_trait = nullptr, bool *r_is_enum = nullptr) const override;
 
 	/* CUSTOM ANNOTATION INDEX */
 
