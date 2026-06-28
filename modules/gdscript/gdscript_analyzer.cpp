@@ -10570,6 +10570,29 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 	for (GDScriptParser::ClassNode *script_class : script_classes) {
 		const bool is_trait_interface_class = trait_interface_classes.has(script_class);
 		const bool can_access_instance_member = is_base || is_trait_interface_class;
+		GDScriptParser::EnumNode *enum_file_decl = script_class->is_enum_file ? script_class->enum_file_decl : nullptr;
+
+		if (base.is_meta_type && enum_file_decl != nullptr && enum_file_decl->identifier != nullptr) {
+			resolve_class_interface(script_class, p_identifier);
+			GDScriptParser::DataType enum_type = enum_file_decl->get_datatype();
+			if (enum_type.is_set() && enum_type.kind != GDScriptParser::DataType::RESOLVING) {
+				if (enum_type.enum_values.has(name)) {
+					p_identifier->set_datatype(type_from_metatype(enum_type));
+					p_identifier->is_constant = true;
+					p_identifier->reduced_value = enum_type.enum_values[name];
+					p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_CONSTANT;
+					return;
+				}
+
+				if (enum_file_decl->identifier->name == name) {
+					p_identifier->set_datatype(enum_type);
+					p_identifier->is_constant = true;
+					p_identifier->reduced_value = enum_file_decl->dictionary;
+					p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_CONSTANT;
+					return;
+				}
+			}
+		}
 
 		if (p_base == nullptr && script_class->identifier && script_class->identifier->name == name) {
 			reduce_identifier_from_base_set_class(p_identifier, script_class->get_datatype());
