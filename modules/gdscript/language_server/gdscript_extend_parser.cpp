@@ -261,13 +261,12 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 					symbol.detail += ": " + m.get_datatype().to_string();
 				}
 				if (m.variable->initializer != nullptr && m.variable->initializer->is_constant) {
-					const GDScriptParser::DataType var_type = m.get_datatype();
-					const Variant &reduced_value = m.variable->initializer->reduced_value;
-					if (var_type.kind == GDScriptParser::DataType::ENUM && !var_type.enum_values.is_empty() && reduced_value.get_type() == Variant::INT) {
-						symbol.detail += " = " + GDScriptDocGen::docvalue_from_enum_value(reduced_value, var_type.enum_values);
-					} else {
-						symbol.detail += " = " + reduced_value.to_json_string();
-					}
+					// Render the constant through the shared doc-value formatter rather than
+					// JSON. JSON cannot represent non-finite floats, so a valid GDScript
+					// constant like `const X = NAN` would otherwise emit a spurious engine
+					// warning and render as a value-losing `null`; the doc formatter prints
+					// `nan`/`inf` and keeps enum values rendered by name.
+					symbol.detail += " = " + GDScriptDocGen::docvalue_from_expression(m.variable->initializer, m.get_datatype());
 				}
 
 				symbol.documentation = m.variable->doc_data.description;

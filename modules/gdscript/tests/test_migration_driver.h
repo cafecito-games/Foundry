@@ -243,7 +243,11 @@ TEST_SUITE("[Modules][GDScript][MigrationDriver]") {
 				"func broken( ->:\n"
 				"\tpass\n");
 
+		// Scanning the malformed sibling emits an expected "Parse Error" script error;
+		// silence it so the deliberate bad input doesn't pollute the test log.
+		ERR_PRINT_OFF;
 		const MigrationDriverResult result = GDScriptMigrationDriver::run("res://migration_driver_unanalyzable", unguarded_options());
+		ERR_PRINT_ON;
 		REQUIRE(result.ok);
 
 		// The analyzable leaf is still typed despite the broken sibling.

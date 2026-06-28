@@ -32,6 +32,7 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "core/core_globals.h"
 #include "core/error/error_macros.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -2574,8 +2575,13 @@ void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vec
 	Ref<DirAccess> dir = DirAccess::open(p_dir, &open_error);
 	if (dir.is_null() || open_error != OK) {
 		// An unreadable subtree must not be silently skipped (a CI `--check` would
-		// pass blind); report it and mark failure, but keep scanning siblings.
-		fprintf(stderr, "%s: could not open directory\n", p_dir.utf8().get_data());
+		// pass blind); report it and mark failure, but keep scanning siblings. The
+		// diagnostic honors the engine error toggle so unit tests that deliberately
+		// feed bad paths can silence it with `ERR_PRINT_OFF`; in real CLI use the
+		// toggle is always enabled.
+		if (CoreGlobals::print_error_enabled) {
+			fprintf(stderr, "%s: could not open directory\n", p_dir.utf8().get_data());
+		}
 		r_had_error = true;
 		return;
 	}
@@ -2585,7 +2591,9 @@ void GDScriptFormatterCLI::collect_gd_scripts_recursive(const String &p_dir, Vec
 	if (dir->list_dir_begin() != OK) {
 		// A searchable-but-unreadable directory opens (the path resolves) but cannot
 		// be listed; do not let that subtree be silently skipped.
-		fprintf(stderr, "%s: could not list directory\n", p_dir.utf8().get_data());
+		if (CoreGlobals::print_error_enabled) {
+			fprintf(stderr, "%s: could not list directory\n", p_dir.utf8().get_data());
+		}
 		r_had_error = true;
 		return;
 	}
@@ -2619,7 +2627,9 @@ Vector<String> GDScriptFormatterCLI::collect_files(const Vector<String> &p_paths
 		} else if (FileAccess::exists(path)) {
 			files.push_back(path);
 		} else {
-			fprintf(stderr, "%s: no such file or directory\n", path.utf8().get_data());
+			if (CoreGlobals::print_error_enabled) {
+				fprintf(stderr, "%s: no such file or directory\n", path.utf8().get_data());
+			}
 			r_had_error = true;
 		}
 	}

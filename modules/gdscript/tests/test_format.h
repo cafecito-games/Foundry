@@ -1025,7 +1025,11 @@ TEST_SUITE("[Modules][GDScript][Format]") {
 		Vector<String> paths;
 		paths.push_back("gdfmt_this_path_does_not_exist_42/none.gd");
 		bool had_error = false;
+		// The missing path is reported to stderr by design; silence that expected
+		// diagnostic so it doesn't masquerade as a real failure in the test log.
+		ERR_PRINT_OFF;
 		const Vector<String> files = GDScriptFormatterCLI::collect_files(paths, had_error);
+		ERR_PRINT_ON;
 		CHECK(files.is_empty());
 		CHECK_MESSAGE(had_error, "A missing path must mark the collection as failed.");
 	}
