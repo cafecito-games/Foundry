@@ -737,6 +737,118 @@ func f():
 			CHECK_EQ(cls.detail, "trait LspGlobalTrait");
 		}
 
+		SUBCASE("A global enum_name file is reported as an enum with members") {
+			LSPGlobalScriptClassBackup global_class_backup;
+			ScriptServer::global_classes_clear();
+
+			String path = "res://lsp/global_enum.gd";
+			String uri = workspace->get_file_uri(path);
+			StringName language = GDScriptLanguage::get_singleton()->get_name();
+			ScriptServer::add_global_class("LspGlobalEnum", String(), language, path, false, false, false, true);
+			assert_no_errors_in(path);
+
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			LSP::DocumentSymbol cls = parser->get_symbols();
+			CHECK_EQ(cls.name, "LspGlobalEnum");
+			CHECK_EQ(cls.kind, LSP::SymbolKind::Enum);
+			CHECK_EQ(cls.detail, "enum LspGlobalEnum");
+			CHECK(cls.documentation.contains("Global enum documentation."));
+			CHECK_EQ(cls.children.size(), 3);
+			if (cls.children.size() == 3) {
+				CHECK_EQ(cls.children[0].name, "ALPHA");
+				CHECK_EQ(cls.children[0].kind, LSP::SymbolKind::EnumMember);
+				CHECK_EQ(cls.children[1].name, "BETA");
+				CHECK_EQ(cls.children[1].kind, LSP::SymbolKind::EnumMember);
+				CHECK_EQ(cls.children[2].name, "GAMMA");
+				CHECK_EQ(cls.children[2].kind, LSP::SymbolKind::EnumMember);
+			}
+
+			Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+			Dictionary document_symbol_params;
+			document_symbol_params["textDocument"] = make_text_document_identifier(uri);
+			Array document_symbols = text_document->documentSymbol(document_symbol_params);
+			REQUIRE(document_symbols.size() == 1);
+			Dictionary root_symbol = document_symbols[0];
+			CHECK_EQ(String(root_symbol["name"]), "LspGlobalEnum");
+			CHECK_EQ(int(root_symbol["kind"]), LSP::SymbolKind::Enum);
+			CHECK_EQ(String(root_symbol["detail"]), "enum LspGlobalEnum");
+			CHECK(root_symbol.has("children"));
+			Array child_symbols;
+			if (root_symbol.has("children")) {
+				child_symbols = root_symbol["children"];
+			}
+			CHECK_EQ(child_symbols.size(), 3);
+			if (child_symbols.size() == 3) {
+				Dictionary alpha_symbol = child_symbols[0];
+				Dictionary beta_symbol = child_symbols[1];
+				Dictionary gamma_symbol = child_symbols[2];
+				CHECK_EQ(String(alpha_symbol["name"]), "ALPHA");
+				CHECK_EQ(int(alpha_symbol["kind"]), LSP::SymbolKind::EnumMember);
+				CHECK_EQ(String(beta_symbol["name"]), "BETA");
+				CHECK_EQ(int(beta_symbol["kind"]), LSP::SymbolKind::EnumMember);
+				CHECK_EQ(String(gamma_symbol["name"]), "GAMMA");
+				CHECK_EQ(int(gamma_symbol["kind"]), LSP::SymbolKind::EnumMember);
+			}
+
+			Variant hover_variant = text_document->hover(pos_in(uri, cls.selectionRange.start).to_json());
+			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary hover = hover_variant;
+			Dictionary hover_contents = hover["contents"];
+			String hover_value = hover_contents["value"];
+			CHECK(hover_value.contains("enum LspGlobalEnum"));
+			CHECK(hover_value.contains("Global enum documentation."));
+		}
+
+		SUBCASE("A namespaced global enum_name resolves hover by declaration identifier") {
+			LSPGlobalScriptClassBackup global_class_backup;
+			ScriptServer::global_classes_clear();
+
+			String path = "res://lsp/global_enum_namespaced.gd";
+			String user_path = "res://lsp/global_enum_namespaced_user.gd";
+			String uri = workspace->get_file_uri(path);
+			String user_uri = workspace->get_file_uri(user_path);
+			StringName language = GDScriptLanguage::get_singleton()->get_name();
+			ScriptServer::add_global_class("lsp.enums.LspNamespacedGlobalEnum", String(), language, path, false, false, false, true);
+			assert_no_errors_in(path);
+			assert_no_errors_in(user_path);
+
+			ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			LSP::DocumentSymbol cls = parser->get_symbols();
+			CHECK_EQ(cls.name, "lsp.enums.LspNamespacedGlobalEnum");
+			CHECK_EQ(cls.kind, LSP::SymbolKind::Enum);
+			CHECK_EQ(cls.detail, "enum lsp.enums.LspNamespacedGlobalEnum");
+			CHECK(cls.documentation.contains("Namespaced global enum documentation."));
+
+			Ref<GDScriptTextDocument> text_document = proto->get_text_document();
+			const LSP::DocumentSymbol *declaration_symbol = workspace->resolve_symbol(pos_in(uri, cls.selectionRange.start));
+			REQUIRE(declaration_symbol);
+			CHECK_EQ(declaration_symbol->name, "lsp.enums.LspNamespacedGlobalEnum");
+			CHECK_EQ(declaration_symbol->kind, LSP::SymbolKind::Enum);
+
+			Variant declaration_hover_variant = text_document->hover(pos_in(uri, cls.selectionRange.start).to_json());
+			REQUIRE(declaration_hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary declaration_hover = declaration_hover_variant;
+			Dictionary declaration_hover_contents = declaration_hover["contents"];
+			String declaration_hover_value = declaration_hover_contents["value"];
+			CHECK(declaration_hover_value.contains("enum lsp.enums.LspNamespacedGlobalEnum"));
+			CHECK(declaration_hover_value.contains("Namespaced global enum documentation."));
+
+			const LSP::DocumentSymbol *reference_symbol = workspace->resolve_symbol(pos_in(user_uri, pos(2, 25)));
+			REQUIRE(reference_symbol);
+			CHECK_EQ(reference_symbol->name, "lsp.enums.LspNamespacedGlobalEnum");
+			CHECK_EQ(reference_symbol->kind, LSP::SymbolKind::Enum);
+
+			Variant reference_hover_variant = text_document->hover(pos_in(user_uri, pos(2, 25)).to_json());
+			REQUIRE(reference_hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary reference_hover = reference_hover_variant;
+			Dictionary reference_hover_contents = reference_hover["contents"];
+			String reference_hover_value = reference_hover_contents["value"];
+			CHECK(reference_hover_value.contains("enum lsp.enums.LspNamespacedGlobalEnum"));
+			CHECK(reference_hover_value.contains("Namespaced global enum documentation."));
+		}
+
 		SUBCASE("Signature help documents inherited flattened trait method provenance") {
 			String path = "res://lsp/trait_signature_help.gd";
 			assert_no_errors_in(path);
