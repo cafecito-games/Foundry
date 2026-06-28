@@ -36,8 +36,10 @@
 
 #include "editor/settings/editor_autoload_settings.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/resource_loader.h"
 #include "core/os/os.h"
 #include "modules/gdscript/gdscript.h"
 #include "modules/gdscript/gdscript_autoload_index.h"
@@ -91,6 +93,68 @@ struct TemporaryAutoloadProject {
 		}
 		dir->list_dir_end();
 		DirAccess::remove_absolute(p_path);
+	}
+};
+
+class ScopedAutoloadSettings {
+	Vector<StringName> names;
+
+	void clear_name(const StringName &p_name) {
+		ProjectSettings *project_settings = ProjectSettings::get_singleton();
+		const String setting = "autoload/" + String(p_name);
+		if (project_settings->has_setting(setting)) {
+			project_settings->clear(setting);
+		}
+		if (project_settings->has_autoload(p_name)) {
+			project_settings->remove_autoload(p_name);
+		}
+	}
+
+public:
+	~ScopedAutoloadSettings() {
+		for (const StringName &name : names) {
+			clear_name(name);
+		}
+	}
+
+	void set(const StringName &p_name, const String &p_path, bool p_singleton, int p_order) {
+		clear_name(p_name);
+		names.push_back(p_name);
+
+		const String setting = "autoload/" + String(p_name);
+		ProjectSettings::get_singleton()->set_setting(setting, p_singleton ? "*" + p_path : p_path);
+		ProjectSettings::get_singleton()->set_order(setting, p_order);
+	}
+};
+
+class TestScriptResourceFormatLoader : public ResourceFormatLoader {
+	GDSOFTCLASS(TestScriptResourceFormatLoader, ResourceFormatLoader);
+
+public:
+	virtual void get_recognized_extensions(List<String> *p_extensions) const override {
+		p_extensions->push_back("edautoloadscript");
+	}
+
+	virtual bool handles_type(const String &p_type) const override {
+		return p_type == "Script";
+	}
+
+	virtual String get_resource_type(const String &p_path) const override {
+		return p_path.get_extension() == "edautoloadscript" ? "Script" : String();
+	}
+};
+
+class ScopedTestScriptResourceFormatLoader {
+	Ref<TestScriptResourceFormatLoader> loader;
+
+public:
+	ScopedTestScriptResourceFormatLoader() {
+		loader.instantiate();
+		ResourceLoader::add_resource_format_loader(loader, true);
+	}
+
+	~ScopedTestScriptResourceFormatLoader() {
+		ResourceLoader::remove_resource_format_loader(loader);
 	}
 };
 
@@ -204,6 +268,83 @@ TEST_CASE("[Editor][AutoloadSettings] View model exposes source diagnostics and 
 	CHECK_EQ(conflict_view->diagnostics_summary, "Conflict");
 	CHECK(conflict_view->diagnostics_text.contains("project_conflict.gd"));
 	CHECK(conflict_view->diagnostics_text.contains("script_conflict.gd"));
+}
+
+TEST_CASE("[Editor][AutoloadSettings] Project settings state wins same-path script migration duplicate") {
+	const StringName autoload_name = SNAME("EditorMigrationAutoload");
+	const String autoload_path = "res://migration_duplicate.gd";
+
+	ScopedAutoloadSettings project_autoloads;
+	project_autoloads.set(autoload_name, autoload_path, false, 123);
+
+	GDScriptAutoloadIndexEntry project_entry = make_autoload_entry(
+			autoload_name,
+			autoload_path,
+			GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
+			123);
+	project_entry.is_singleton = false;
+
+	GDScriptAutoloadIndexEntry script_entry = make_autoload_entry(
+			autoload_name,
+			autoload_path,
+			GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION,
+			10);
+	script_entry.is_singleton = true;
+
+	Vector<GDScriptAutoloadIndexEntry> index_entries;
+	index_entries.push_back(project_entry);
+	index_entries.push_back(script_entry);
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(index_entries);
+
+	Vector<EditorAutoloadSettings::AutoloadViewEntry> view_entries =
+			EditorAutoloadSettings::build_autoload_view_entries(index);
+
+	const EditorAutoloadSettings::AutoloadViewEntry *view_entry = find_view_entry(view_entries, autoload_name);
+	REQUIRE(view_entry != nullptr);
+	CHECK_EQ(view_entry->source_label, "Project Settings + Script");
+	CHECK_EQ(view_entry->path, autoload_path);
+	CHECK_FALSE(view_entry->is_singleton);
+	CHECK_EQ(view_entry->order, 123);
+	CHECK(view_entry->can_edit_project_settings);
+	CHECK(view_entry->supports_manual_ordering);
+}
+
+TEST_CASE("[Editor][AutoloadSettings] Project script autoloads do not show GDScript-only path diagnostics") {
+	const StringName autoload_name = SNAME("EditorForeignLanguageAutoload");
+	const String autoload_path = "res://foreign_language.edautoloadscript";
+
+	ScopedTestScriptResourceFormatLoader loader;
+	ScopedAutoloadSettings project_autoloads;
+	project_autoloads.set(autoload_name, autoload_path, true, 50);
+
+	GDScriptAutoloadIndexEntry project_entry = make_autoload_entry(
+			autoload_name,
+			autoload_path,
+			GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
+			50);
+
+	GDScriptAutoloadIndexDiagnostic diagnostic;
+	diagnostic.code = GDScriptAutoloadIndexDiagnostic::NON_SCRIPT_NON_SCENE_PATH;
+	diagnostic.message = "Autoload \"EditorForeignLanguageAutoload\" points to a resource type unknown to GDScript.";
+	project_entry.diagnostics.push_back(diagnostic);
+
+	Vector<GDScriptAutoloadIndexEntry> index_entries;
+	index_entries.push_back(project_entry);
+
+	GDScriptAutoloadIndex index;
+	index.rebuild_from_entries(index_entries);
+
+	Vector<EditorAutoloadSettings::AutoloadViewEntry> view_entries =
+			EditorAutoloadSettings::build_autoload_view_entries(index);
+
+	const EditorAutoloadSettings::AutoloadViewEntry *view_entry = find_view_entry(view_entries, autoload_name);
+	REQUIRE(view_entry != nullptr);
+	CHECK_FALSE(view_entry->has_diagnostics);
+	CHECK_EQ(view_entry->diagnostics_summary, "OK");
+	CHECK(view_entry->diagnostics_text.is_empty());
+	CHECK(view_entry->can_edit_project_settings);
 }
 
 TEST_CASE("[Editor][AutoloadSettings] Project view index includes script-owned annotations") {

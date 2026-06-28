@@ -33,6 +33,8 @@
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
 #include "core/io/file_access.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_uid.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -93,6 +95,61 @@ String _autoload_diagnostics_text(const Vector<GDScriptAutoloadIndexDiagnostic> 
 		text += diagnostic.message;
 	}
 	return text;
+}
+
+bool _autoload_path_is_recognized_script(const String &p_path) {
+	const String resource_type = ResourceLoader::get_resource_type(p_path);
+	if (resource_type == SNAME("Script") || (!resource_type.is_empty() && ClassDB::is_parent_class(resource_type, SNAME("Script")))) {
+		return true;
+	}
+
+	List<String> extensions;
+	ResourceLoader::get_recognized_extensions_for_type("Script", &extensions);
+	const String extension = p_path.get_extension();
+	for (const String &recognized_extension : extensions) {
+		if (extension.nocasecmp_to(recognized_extension) == 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+String _autoload_project_setting_name(const StringName &p_name) {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings == nullptr) {
+		return String();
+	}
+
+	const String setting_name = "autoload/" + String(p_name);
+	if (project_settings->has_setting(setting_name)) {
+		return setting_name;
+	}
+
+	const String prepend_setting_name = "autoload_prepend/" + String(p_name);
+	if (project_settings->has_setting(prepend_setting_name)) {
+		return prepend_setting_name;
+	}
+
+	return String();
+}
+
+bool _autoload_setting_supports_raw_project_editing(const String &p_setting_name) {
+	return p_setting_name.begins_with("autoload/");
+}
+
+Vector<GDScriptAutoloadIndexDiagnostic> _autoload_view_diagnostics_for_entry(const GDScriptAutoloadIndexEntry &p_entry) {
+	Vector<GDScriptAutoloadIndexDiagnostic> diagnostics;
+	for (const GDScriptAutoloadIndexDiagnostic &diagnostic : p_entry.diagnostics) {
+		if (diagnostic.code == GDScriptAutoloadIndexDiagnostic::NON_SCRIPT_NON_SCENE_PATH &&
+				p_entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS &&
+				_autoload_path_is_recognized_script(p_entry.path)) {
+			continue;
+		}
+
+		diagnostics.push_back(diagnostic);
+	}
+	return diagnostics;
 }
 
 void _append_script_owned_autoload_entries(const String &p_path, Vector<GDScriptAutoloadIndexEntry> &r_entries) {
@@ -261,7 +318,8 @@ Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_
 		view_entry.is_singleton = entry.is_singleton;
 		view_entry.order = entry.order;
 
-		for (const GDScriptAutoloadIndexDiagnostic &diagnostic : entry.diagnostics) {
+		const Vector<GDScriptAutoloadIndexDiagnostic> diagnostics = _autoload_view_diagnostics_for_entry(entry);
+		for (const GDScriptAutoloadIndexDiagnostic &diagnostic : diagnostics) {
 			if (_autoload_diagnostic_is_conflict(diagnostic)) {
 				view_entry.has_conflict = true;
 				break;
@@ -271,9 +329,23 @@ Vector<EditorAutoloadSettings::AutoloadViewEntry> EditorAutoloadSettings::build_
 		view_entry.source_label = _autoload_source_label(entry, view_entry.has_conflict);
 		view_entry.can_edit_project_settings = entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS;
 		view_entry.supports_manual_ordering = entry.source == GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS && !view_entry.has_conflict;
-		view_entry.has_diagnostics = !entry.diagnostics.is_empty();
-		view_entry.diagnostics_summary = _autoload_diagnostics_summary(entry.diagnostics.size(), view_entry.has_conflict);
-		view_entry.diagnostics_text = _autoload_diagnostics_text(entry.diagnostics);
+		view_entry.has_diagnostics = !diagnostics.is_empty();
+		view_entry.diagnostics_summary = _autoload_diagnostics_summary(diagnostics.size(), view_entry.has_conflict);
+		view_entry.diagnostics_text = _autoload_diagnostics_text(diagnostics);
+
+		ProjectSettings *project_settings = ProjectSettings::get_singleton();
+		const String project_setting_name = _autoload_project_setting_name(entry.name);
+		if (project_settings != nullptr && !project_setting_name.is_empty() && project_settings->has_autoload(entry.name) && !view_entry.has_conflict) {
+			const ProjectSettings::AutoloadInfo project_autoload = project_settings->get_autoload(entry.name);
+			view_entry.path = ResourceUID::ensure_path(project_autoload.path);
+			view_entry.is_singleton = project_autoload.is_singleton;
+			view_entry.order = project_settings->get_order(project_setting_name);
+			view_entry.can_edit_project_settings = _autoload_setting_supports_raw_project_editing(project_setting_name);
+			view_entry.supports_manual_ordering = view_entry.can_edit_project_settings;
+			if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+				view_entry.source_label = "Project Settings + Script";
+			}
+		}
 
 		view_entries.push_back(view_entry);
 	}
