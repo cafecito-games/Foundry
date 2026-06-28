@@ -205,12 +205,30 @@ static GDScriptParser::DataType make_coroutine_type(const GDScriptParser::DataTy
 // non-coroutine/Variant slot is left unmarked, so in both cases the runtime guard still flags a
 // genuinely missing `await`.
 static void mark_coroutine_handle_capture(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_target_type) {
-	if (p_expression == nullptr || p_expression->type != GDScriptParser::Node::CALL || !p_target_type.is_coroutine || !p_target_type.is_hard_type()) {
+	if (p_expression == nullptr || !p_target_type.is_coroutine || !p_target_type.is_hard_type()) {
 		return;
 	}
-	GDScriptParser::CallNode *call = static_cast<GDScriptParser::CallNode *>(p_expression);
-	if (call->get_datatype().is_coroutine) {
-		call->is_coroutine_handle_capture = true;
+	// The handle is produced by the coroutine call(s) that supply the captured value. Recurse through
+	// the wrappers that forward a value unchanged -- a cast (`_job() as Coroutine[T]`) and a ternary
+	// (`a if c else b`) -- so the inner calls are marked even when the captured expression is not a
+	// direct call. An `await` is intentionally not followed: it unwraps to `T`, never `Coroutine[T]`.
+	switch (p_expression->type) {
+		case GDScriptParser::Node::CALL: {
+			GDScriptParser::CallNode *call = static_cast<GDScriptParser::CallNode *>(p_expression);
+			if (call->get_datatype().is_coroutine) {
+				call->is_coroutine_handle_capture = true;
+			}
+		} break;
+		case GDScriptParser::Node::CAST: {
+			mark_coroutine_handle_capture(static_cast<GDScriptParser::CastNode *>(p_expression)->operand, p_target_type);
+		} break;
+		case GDScriptParser::Node::TERNARY_OPERATOR: {
+			GDScriptParser::TernaryOpNode *ternary = static_cast<GDScriptParser::TernaryOpNode *>(p_expression);
+			mark_coroutine_handle_capture(ternary->true_expr, p_target_type);
+			mark_coroutine_handle_capture(ternary->false_expr, p_target_type);
+		} break;
+		default:
+			break;
 	}
 }
 
