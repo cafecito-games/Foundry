@@ -514,7 +514,8 @@ static void restore_global_script_classes(const Array &p_classes) {
 			continue;
 		}
 		const bool is_trait = c.has("is_trait") && c["is_trait"];
-		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
+		const bool is_enum = c.has("is_enum") && c["is_enum"];
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
 	ProjectSettings::get_singleton()->store_global_class_list(p_classes);
 }
@@ -2801,6 +2802,8 @@ TEST_CASE("[Modules][GDScript] Old global script class cache entries still load"
 	CHECK_EQ(ScriptServer::get_global_class_path("LegacyCharacter"), "res://legacy_character.gd");
 	// Caches written before the `is_trait` flag existed default to not-a-trait.
 	CHECK_FALSE(ScriptServer::is_global_class_trait("LegacyCharacter"));
+	// Caches written before the `is_enum` flag existed default to not-an-enum.
+	CHECK_FALSE(ScriptServer::is_global_class_enum("LegacyCharacter"));
 }
 
 TEST_CASE("[Modules][GDScript] Global class registry tracks the trait flag") {
@@ -2819,6 +2822,24 @@ TEST_CASE("[Modules][GDScript] Global class registry tracks the trait flag") {
 	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
 			"res://characters/base_character.gd", false, false, true);
 	CHECK(ScriptServer::is_global_class_trait("characters.BaseCharacter"));
+}
+
+TEST_CASE("[Modules][GDScript] Global class registry tracks the enum flag") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	ScriptServer::add_global_class("items.WeaponType", "RefCounted", GDScriptLanguage::get_singleton()->get_name(),
+			"res://items/weapon_type.gd", false, false, false, true);
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/base_character.gd", false, false, false, false);
+
+	CHECK(ScriptServer::is_global_class_enum("items.WeaponType"));
+	CHECK_FALSE(ScriptServer::is_global_class_enum("characters.BaseCharacter"));
+
+	// Re-registering with a different flag updates the cached bit.
+	ScriptServer::add_global_class("characters.BaseCharacter", "Node", GDScriptLanguage::get_singleton()->get_name(),
+			"res://characters/base_character.gd", false, false, false, true);
+	CHECK(ScriptServer::is_global_class_enum("characters.BaseCharacter"));
 }
 
 TEST_CASE("[Modules][GDScript] Global script class cache round-trips the trait flag") {
@@ -2842,6 +2863,29 @@ TEST_CASE("[Modules][GDScript] Global script class cache round-trips the trait f
 	ScriptServer::global_classes_clear();
 	ProjectSettings::get_singleton()->refresh_global_class_list();
 	CHECK(ScriptServer::is_global_class_trait("combat.Damageable"));
+}
+
+TEST_CASE("[Modules][GDScript] Global script class cache round-trips the enum flag") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+	ProjectSettings::get_singleton()->store_global_class_list(Array());
+
+	ScriptServer::add_global_class("items.WeaponType", "RefCounted", GDScriptLanguage::get_singleton()->get_name(),
+			"res://items/weapon_type.gd", false, false, false, true);
+	ScriptServer::save_global_classes();
+
+	TypedArray<Dictionary> script_classes = ProjectSettings::get_singleton()->get_global_class_list();
+	CHECK_EQ(script_classes.size(), 1);
+	if (script_classes.size() == 1) {
+		Dictionary script_class = script_classes[0];
+		CHECK(script_class.has("is_enum"));
+		CHECK(bool(script_class["is_enum"]));
+	}
+
+	// Reloading the serialized cache restores the enum flag.
+	ScriptServer::global_classes_clear();
+	ProjectSettings::get_singleton()->refresh_global_class_list();
+	CHECK(ScriptServer::is_global_class_enum("items.WeaponType"));
 }
 
 TEST_CASE("[Modules][GDScript] Fully qualified global class collisions keep both paths visible") {
@@ -3779,7 +3823,8 @@ void test(TestType p_type) {
 			continue;
 		}
 		const bool is_trait = c.has("is_trait") && c["is_trait"];
-		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait);
+		const bool is_enum = c.has("is_enum") && c["is_enum"];
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
 
 	Vector<uint8_t> buf;

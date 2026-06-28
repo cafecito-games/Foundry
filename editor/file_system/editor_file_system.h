@@ -76,6 +76,7 @@ class EditorFileSystemDirectory : public Object {
 			bool is_abstract = false;
 			bool is_tool = false;
 			bool is_trait = false;
+			bool is_enum = false;
 		};
 		ScriptClassInfo class_info;
 	};
@@ -316,6 +317,7 @@ class EditorFileSystem : public Node {
 			update.is_abstract = p_fi->class_info.is_abstract;
 			update.is_tool = p_fi->class_info.is_tool;
 			update.is_trait = p_fi->class_info.is_trait;
+			update.is_enum = p_fi->class_info.is_enum;
 			return update;
 		}
 	};
