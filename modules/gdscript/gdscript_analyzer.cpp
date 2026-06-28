@@ -2784,6 +2784,13 @@ void GDScriptAnalyzer::resolve_class_interface(GDScriptParser::ClassNode *p_clas
 			return;
 		}
 
+		// `enum_name` declarations are stored outside the normal member list, but
+		// compiling the enum-file itself still needs resolved values and dictionary.
+		if (p_class == parser->head && p_class->is_enum_file && p_class->enum_file_decl != nullptr && p_class->enum_file_decl->identifier != nullptr) {
+			const StringName global_enum_name = p_class->qualified_global_name.is_empty() ? p_class->enum_file_decl->identifier->name : StringName(p_class->qualified_global_name);
+			make_global_enum_type_from_current_parser(global_enum_name, p_class);
+		}
+
 		// Resolve declared type-parameter bounds eagerly so runtime reflection can report them even
 		// when a parameter is never referenced inside the class body. A class parameter's bound is
 		// resolved in its declaring class scope, mirroring `resolve_type_parameter`.
