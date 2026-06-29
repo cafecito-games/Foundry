@@ -8,7 +8,7 @@
   </a>
 </p>
 
-Foundry is a CafecitoGames fork of the [Godot Engine](https://godotengine.org)
+Foundry is a fork of the [Godot Engine](https://godotengine.org)
 focused on a stronger, statically-typed scripting experience and richer editor
 tooling for writing code. It keeps everything that makes Godot a great
 cross-platform 2D and 3D game engine, and layers on a new scripting language —
