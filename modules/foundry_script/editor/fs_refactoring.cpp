@@ -6129,6 +6129,17 @@ String class_member_indent(const FSParser::ClassNode *p_class, const Vector<Stri
 			return get_leading_whitespace(p_lines[line_index]);
 		}
 	}
+	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		for (const FSParser::IdentifierNode *identifier : trait_use.name) {
+			if (identifier == nullptr || identifier->start_line <= p_class->start_line) {
+				continue;
+			}
+			const int line_index = identifier->start_line - 1;
+			if (line_index >= 0 && line_index < p_lines.size()) {
+				return get_leading_whitespace(p_lines[line_index]);
+			}
+		}
+	}
 	if (p_is_top_level) {
 		return "";
 	}
@@ -6136,6 +6147,21 @@ String class_member_indent(const FSParser::ClassNode *p_class, const Vector<Stri
 		return get_leading_whitespace(p_lines[p_class->start_line - 1]) + "\t";
 	}
 	return "\t";
+}
+
+int trait_use_end_line(const FSParser::ClassNode::TraitUse &p_trait_use) {
+	int end_line = 0;
+	for (const FSParser::IdentifierNode *identifier : p_trait_use.name) {
+		if (identifier != nullptr && identifier->end_line > end_line) {
+			end_line = identifier->end_line;
+		}
+	}
+	for (const FSParser::TypeNode *type_argument : p_trait_use.type_arguments) {
+		if (type_argument != nullptr && type_argument->end_line > end_line) {
+			end_line = type_argument->end_line;
+		}
+	}
+	return end_line;
 }
 
 ImplementAbstractCandidate find_implement_abstract_in_tree(
@@ -6202,6 +6228,12 @@ ImplementAbstractCandidate find_implement_abstract_in_tree(
 			if (node->end_line > insertion_line) {
 				insertion_line = node->end_line;
 			}
+		}
+	}
+	for (const FSParser::ClassNode::TraitUse &trait_use : target->used_traits) {
+		const int trait_end_line = trait_use_end_line(trait_use);
+		if (trait_end_line > target->start_line && trait_end_line > insertion_line) {
+			insertion_line = trait_end_line;
 		}
 	}
 	// A root class with no members spans only its header lines (e.g. `@tool`,
