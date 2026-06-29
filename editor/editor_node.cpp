@@ -697,7 +697,6 @@ void EditorNode::_update_theme(bool p_skip_creation) {
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_COPY_SYSTEM_INFO), get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_ABOUT), get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
-		help_menu->set_item_icon(help_menu->get_item_index(HELP_SUPPORT_FOUNDRY_DEVELOPMENT), get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 
 		_update_renderer_color();
 	}
@@ -3825,9 +3824,6 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		case HELP_ABOUT: {
 			about->popup_centered(Size2(780, 500) * EDSCALE);
 		} break;
-		case HELP_SUPPORT_FOUNDRY_DEVELOPMENT: {
-			OS::get_singleton()->shell_open("https://fund.godotengine.org/?ref=help_menu");
-		} break;
 	}
 }
 
@@ -3961,7 +3957,6 @@ void EditorNode::_check_system_theme_changed() {
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_COPY_SYSTEM_INFO), get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_ABOUT), get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
-		help_menu->set_item_icon(help_menu->get_item_index(HELP_SUPPORT_FOUNDRY_DEVELOPMENT), get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		editor_dock_manager->update_docks_menu();
 	}
 }
@@ -8035,7 +8030,6 @@ void EditorNode::_build_help_menu() {
 #else
 	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/about"), HELP_ABOUT);
 #endif
-	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/support_development"), HELP_SUPPORT_FOUNDRY_DEVELOPMENT);
 }
 
 void EditorNode::_add_to_main_menu(const String &p_name, PopupMenu *p_menu) {
@@ -8797,7 +8791,6 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/suggest_a_feature", TTRC("Suggest a Feature"));
 	ED_SHORTCUT_AND_COMMAND("editor/send_docs_feedback", TTRC("Send Docs Feedback"));
 	ED_SHORTCUT_AND_COMMAND("editor/about", TTRC("About Foundry..."));
-	ED_SHORTCUT_AND_COMMAND("editor/support_development", TTRC("Support Foundry Development"));
 
 	// Use the Ctrl modifier so F2 can be used to rename nodes in the scene tree dock.
 	ED_SHORTCUT_AND_COMMAND("editor/editor_2d", TTRC("Open 2D Workspace"), KeyModifierMask::CTRL | Key::F1);

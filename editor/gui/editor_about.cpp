@@ -31,7 +31,6 @@
 #include "editor_about.h"
 
 #include "core/authors.gen.h"
-#include "core/donors.gen.h"
 #include "core/license.gen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -262,26 +261,6 @@ EditorAbout::EditorAbout() {
 		_project_manager_label = _create_section(vb, "", AUTHORS_PROJECT_MANAGERS, FLAG_EASTER_EGG);
 		_project_manager_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 		_create_section(vb, TTRC("Developers"), AUTHORS_DEVELOPERS);
-	}
-
-	{
-		ScrollContainer *sc = memnew(ScrollContainer);
-		sc->set_name(TTRC("Donors"));
-		sc->set_v_size_flags(Control::SIZE_EXPAND);
-		tc->add_child(sc);
-
-		VBoxContainer *vb = memnew(VBoxContainer);
-		vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		sc->add_child(vb);
-
-		_create_section(vb, TTRC("Patrons"), DONORS_PATRONS, FLAG_ALLOW_WEBSITE | FLAG_SINGLE_COLUMN);
-		_create_section(vb, TTRC("Platinum Sponsors"), DONORS_SPONSORS_PLATINUM, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Gold Sponsors"), DONORS_SPONSORS_GOLD, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Silver Sponsors"), DONORS_SPONSORS_SILVER, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Diamond Members"), DONORS_MEMBERS_DIAMOND, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Titanium Members"), DONORS_MEMBERS_TITANIUM, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Platinum Members"), DONORS_MEMBERS_PLATINUM, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Gold Members"), DONORS_MEMBERS_GOLD, FLAG_ALLOW_WEBSITE);
 	}
 
 	// License.
