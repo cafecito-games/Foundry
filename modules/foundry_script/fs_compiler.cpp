@@ -556,7 +556,60 @@ static bool _can_use_validate_call(const MethodBind *p_method, const Vector<FSCo
 	return true;
 }
 
+FSCodeGenerator::Address FSCompiler::_emit_global_class_value(CodeGen &codegen, Error &r_error, const StringName &p_global_class, const FSParser::ExpressionNode *p_source) {
+	const FSParser::ClassNode *class_node = codegen.class_node;
+	while (class_node->outer) {
+		class_node = class_node->outer;
+	}
+
+	Ref<Resource> res;
+
+	// A reference to the class being compiled (by its own name or qualified name)
+	// resolves to the live main script instead of loading a separate copy.
+	bool is_self_reference = false;
+	if (class_node->identifier) {
+		if (!class_node->qualified_global_name.is_empty()) {
+			is_self_reference = class_node->qualified_global_name == p_global_class;
+		} else {
+			is_self_reference = class_node->identifier->name == p_global_class;
+		}
+	}
+
+	if (is_self_reference) {
+		res = Ref<FoundryScript>(main_script);
+	} else {
+		String global_class_path = ScriptServer::get_global_class_path(p_global_class);
+		if (ResourceLoader::get_resource_type(global_class_path) == "FoundryScript") {
+			Error err = OK;
+			// Should not need to pass p_owner since analyzer will already have done it.
+			res = FSCache::get_shallow_script(global_class_path, err);
+			if (err != OK) {
+				_set_error("Can't load global class " + String(p_global_class), p_source);
+				r_error = ERR_COMPILATION_FAILED;
+				return FSCodeGenerator::Address();
+			}
+		} else {
+			res = ResourceLoader::load(global_class_path);
+			if (res.is_null()) {
+				_set_error("Can't load global class " + String(p_global_class) + ", cyclic reference?", p_source);
+				r_error = ERR_COMPILATION_FAILED;
+				return FSCodeGenerator::Address();
+			}
+		}
+	}
+
+	return codegen.add_constant(res);
+}
+
 FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
+	// A namespaced global script class used as a value (`Foo` from the current or an
+	// imported namespace, or a qualified `ns.Foo`). The analyzer resolved the dotted
+	// identity, which a bare-name lookup in the identifier/subscript paths below cannot
+	// match, so emit the class object directly from the resolved name.
+	if (!p_expression->resolved_global_class.is_empty()) {
+		return _emit_global_class_value(codegen, r_error, p_expression->resolved_global_class, p_expression);
+	}
+
 	const bool constant_foundry_script_handle = p_expression->reduced_value.get_type() == Variant::OBJECT &&
 			Object::cast_to<FoundryScript>(p_expression->reduced_value.operator Object *()) != nullptr;
 	if (p_expression->is_constant && !constant_foundry_script_handle &&
@@ -758,37 +811,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 
 					// Try global classes.
 					if (ScriptServer::is_global_class(identifier)) {
-						const FSParser::ClassNode *class_node = codegen.class_node;
-						while (class_node->outer) {
-							class_node = class_node->outer;
-						}
-
-						Ref<Resource> res;
-
-						if (class_node->identifier && class_node->identifier->name == identifier) {
-							res = Ref<FoundryScript>(main_script);
-						} else {
-							String global_class_path = ScriptServer::get_global_class_path(identifier);
-							if (ResourceLoader::get_resource_type(global_class_path) == "FoundryScript") {
-								Error err = OK;
-								// Should not need to pass p_owner since analyzer will already have done it.
-								res = FSCache::get_shallow_script(global_class_path, err);
-								if (err != OK) {
-									_set_error("Can't load global class " + String(identifier), p_expression);
-									r_error = ERR_COMPILATION_FAILED;
-									return FSCodeGenerator::Address();
-								}
-							} else {
-								res = ResourceLoader::load(global_class_path);
-								if (res.is_null()) {
-									_set_error("Can't load global class " + String(identifier) + ", cyclic reference?", p_expression);
-									r_error = ERR_COMPILATION_FAILED;
-									return FSCodeGenerator::Address();
-								}
-							}
-						}
-
-						return codegen.add_constant(res);
+						return _emit_global_class_value(codegen, r_error, identifier, p_expression);
 					}
 
 #ifdef TOOLS_ENABLED
