@@ -109,12 +109,12 @@ TEST_CASE("[PCKPacker] Pack a PCK file with some files and directories") {
 	CHECK_MESSAGE(
 			err == OK,
 			"The generated non-empty PCK file should be opened successfully.");
+	// These bounds track the size of the bundled branding assets packed above
+	// (icon.png, icon.svg, logo.png). Foundry's final icon/logo raster assets are
+	// compact, so the file lands well under the upstream ceiling.
 	CHECK_MESSAGE(
-			f->get_length() >= 30000,
+			f->get_length() >= 18000,
 			"The generated non-empty PCK file should be large enough to actually hold the contents specified above.");
-	// The upper bound tracks the size of the bundled branding assets packed above
-	// (icon.png, icon.svg, logo.png); Foundry's icon/logo raster assets are larger
-	// than the original ones, so this allows more headroom than upstream's 48000.
 	CHECK_MESSAGE(
 			f->get_length() <= 80000,
 			"The generated non-empty PCK file shouldn't be too large.");

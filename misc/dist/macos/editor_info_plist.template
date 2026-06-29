@@ -120,7 +120,7 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>gd</string>
+					<string>fs</string>
 				</array>
 				<key>public.mime-type</key>
 				<string>application/x-foundry_script</string>
@@ -190,7 +190,7 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>godot</string>
+					<string>foundry</string>
 				</array>
 				<key>public.mime-type</key>
 				<string>application/x-godot-project</string>
