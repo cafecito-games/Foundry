@@ -3,7 +3,7 @@
 ## Status
 
 Design approved for planning. This spec supersedes the namespace-module portion of
-`2026-06-28-gdscript-brace-modules-design.md`; brace-only blocks should be handled by a separate spec and epic.
+`2026-06-28-foundry_script-brace-modules-design.md`; brace-only blocks should be handled by a separate spec and epic.
 
 This spec assumes top-level enum support is complete. The current `enum_name` implementation is treated as the
 baseline behavior to generalize.
@@ -50,7 +50,7 @@ The artifact's canonical name is `namespace + "." + artifact_name`, or just `art
 
 Examples:
 
-```gdscript
+```foundry_script
 namespace games.services
 
 class LoginService extends RefCounted:
@@ -63,7 +63,7 @@ class LoginService extends RefCounted:
 	}
 ```
 
-```gdscript
+```foundry_script
 namespace games.dtos
 
 enum CombatType {
@@ -72,14 +72,14 @@ enum CombatType {
 }
 ```
 
-```gdscript
+```foundry_script
 namespace games.contracts
 
 trait Damageable:
 	func take_damage(amount: int) -> void
 ```
 
-```gdscript
+```foundry_script
 namespace games.annotations
 
 annotation RequiresAuth(role: String = "") targets CLASS, METHOD
@@ -124,7 +124,7 @@ per file, which keeps the file model uniform and leaves room for richer annotati
 
 The initial syntax can preserve the current custom annotation declaration shape:
 
-```gdscript
+```foundry_script
 annotation RequiresAuth(role: String = "") targets CLASS, METHOD
 ```
 
@@ -134,14 +134,14 @@ This spec does not require an annotation body syntax, but the file-artifact mode
 
 Every top-level artifact is globally addressable by canonical name:
 
-```gdscript
+```foundry_script
 var service: games.services.LoginService = games.services.LoginService.new()
 var mode: games.dtos.CombatType = games.dtos.CombatType.PVP
 ```
 
 Imports expose artifacts by short name, preserving current namespace/import behavior:
 
-```gdscript
+```foundry_script
 import games.dtos
 
 var mode: CombatType = CombatType.PVP
@@ -152,7 +152,7 @@ as an error. Callers can always use the fully qualified name.
 
 Nested declarations remain addressed through their containing artifact:
 
-```gdscript
+```foundry_script
 var state: games.services.LoginService.State = games.services.LoginService.State.IDLE
 var request := games.services.LoginService.Request.new()
 ```
@@ -171,14 +171,14 @@ Only class artifact files can load as Script resources.
 
 Allowed:
 
-```gdscript
+```foundry_script
 const LoginService = preload("res://services/login_service.fs")
 var service := LoginService.new()
 ```
 
 Rejected:
 
-```gdscript
+```foundry_script
 const CombatType = preload("res://dtos/combat_type.fs")
 ```
 
@@ -205,7 +205,7 @@ Eligibility should be centralized so editor and runtime paths do not each re-par
 a shared artifact query with a shape like:
 
 ```text
-GDScriptArtifactInfo:
+FoundryScriptArtifactInfo:
   path
   namespace
   name
