@@ -168,6 +168,7 @@ class FSCompiler {
 	// becomes FIXED. Used when a subclass inherits a base's member and per-ancestor parameter bindings.
 	void _specialize_type_argument_binding(FoundryScript::TypeArgumentBinding &r_binding, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner);
 
+	FSCodeGenerator::Address _emit_global_class_value(CodeGen &codegen, Error &r_error, const StringName &p_global_class, const FSParser::ExpressionNode *p_source);
 	FSCodeGenerator::Address _parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root = false, bool p_initializer = false);
 	FSCodeGenerator::Address _parse_match_pattern(CodeGen &codegen, Error &r_error, const FSParser::PatternNode *p_pattern, const FSCodeGenerator::Address &p_value_addr, const FSCodeGenerator::Address &p_type_addr, const FSCodeGenerator::Address &p_previous_test, bool p_is_first, bool p_is_nested);
 	List<FSCodeGenerator::Address> _add_block_locals(CodeGen &codegen, const FSParser::SuiteNode *p_block);

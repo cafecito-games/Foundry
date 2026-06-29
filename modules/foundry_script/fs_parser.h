@@ -446,6 +446,12 @@ public:
 		bool reduced = false;
 		bool is_constant = false;
 		Variant reduced_value;
+		// When the analyzer resolves this expression to a namespaced global script
+		// class used as a value (e.g. `Foo` from the current/imported namespace, or a
+		// qualified `ns.Foo`), it records the canonical global class name here so the
+		// compiler can emit the class object directly. The registered name is dotted
+		// (`ns.Foo`), which a bare-identifier lookup cannot match. Empty otherwise.
+		StringName resolved_global_class;
 
 		virtual bool is_expression() const override { return true; }
 		virtual ~ExpressionNode() {}

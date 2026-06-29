@@ -36,6 +36,7 @@
 #endif
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
+#include "../fs_cache.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
 #include "../fs_reflection.h"
@@ -2608,6 +2609,140 @@ class_name RuntimeCharacter
 
 	CHECK_EQ(compiled->get_global_name(), "characters.RuntimeCharacter");
 	CHECK(ScriptServer::is_global_class(compiled->get_global_name()));
+}
+
+TEST_CASE("[Modules][FoundryScript] Namespaced global class is referenceable as a value") {
+	ScopedFSNativeGlobals native_globals;
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	// The producer lives in `tests.nsvalue` and exposes a static factory plus an
+	// instance method, so consumers can exercise both static calls and `.new()`.
+	const String producer_path = "user://ns_value_producer.fs";
+	{
+		Ref<FileAccess> file = FileAccess::open(producer_path, FileAccess::WRITE);
+		CHECK(file.is_valid());
+		if (file.is_valid()) {
+			file->store_string(R"(namespace tests.nsvalue
+class_name NsValueProducer
+extends RefCounted
+
+static func make() -> int:
+	return 42
+
+func doubled(value: int) -> int:
+	return value * 2
+)");
+		}
+	}
+	ScriptServer::add_global_class("tests.nsvalue.NsValueProducer", "RefCounted",
+			FSLanguage::get_singleton()->get_name(), producer_path, false, false, false);
+
+	// Compile the consumer through analyze + compile, which is where the namespaced
+	// value reference is emitted. Without the fix, codegen cannot map the dotted
+	// global class name and `compile()` fails; the resulting Error is the regression
+	// signal.
+	auto compile_consumer = [](const String &p_source, const String &p_path) -> Error {
+		// Write the consumer to disk so a self-reference can load its own script path.
+		{
+			Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
+			CHECK(file.is_valid());
+			if (file.is_valid()) {
+				file->store_string(p_source);
+			}
+		}
+		FSParser parser;
+		Error parse_err = parser.parse(p_source, p_path, false);
+		CHECK_EQ(parse_err, OK);
+		FSAnalyzer analyzer(&parser);
+		Error analyze_err = analyzer.analyze();
+		CHECK_EQ(analyze_err, OK);
+		Ref<FoundryScript> script;
+		script.instantiate();
+		script->set_path(p_path);
+		FSCompiler compiler;
+		Error compile_err = OK;
+		if (analyze_err == OK) {
+			compile_err = compiler.compile(&parser, script.ptr(), false);
+			if (compile_err != OK) {
+				MESSAGE("compile error: ", compiler.get_error());
+			}
+		} else {
+			compile_err = analyze_err;
+		}
+		// Release the compiled consumer and drop its cached parser/script so no
+		// FoundryScript outlives the test. A self-reference compiles a constant Ref to
+		// the script itself, so clear() is needed to break that cycle before the Ref is
+		// dropped; otherwise the script stays in the global script list and trips a
+		// DEV_ASSERT in its destructor at shutdown.
+		script->clear();
+		script.unref();
+		FSCache::remove_parser(p_path);
+		FSCache::remove_script(p_path);
+		DirAccess::remove_absolute(p_path);
+		return compile_err;
+	};
+
+	SUBCASE("short name static call from the same namespace") {
+		CHECK_EQ(compile_consumer(R"(namespace tests.nsvalue
+extends RefCounted
+
+static func run() -> int:
+	return NsValueProducer.make()
+)",
+						 "user://ns_value_consumer_short_static.fs"),
+				OK);
+	}
+
+	SUBCASE("fully qualified static call") {
+		CHECK_EQ(compile_consumer(R"(namespace some.other
+extends RefCounted
+
+static func run() -> int:
+	return tests.nsvalue.NsValueProducer.make()
+)",
+						 "user://ns_value_consumer_qualified_static.fs"),
+				OK);
+	}
+
+	SUBCASE("short name construction from the same namespace") {
+		CHECK_EQ(compile_consumer(R"(namespace tests.nsvalue
+extends RefCounted
+
+static func run() -> RefCounted:
+	return NsValueProducer.new()
+)",
+						 "user://ns_value_consumer_short_new.fs"),
+				OK);
+	}
+
+	SUBCASE("imported short name construction") {
+		CHECK_EQ(compile_consumer(R"(namespace some.other
+import tests.nsvalue
+extends RefCounted
+
+static func run() -> RefCounted:
+	return NsValueProducer.new()
+)",
+						 "user://ns_value_consumer_import_new.fs"),
+				OK);
+	}
+
+	SUBCASE("self reference by its own namespaced class name") {
+		CHECK_EQ(compile_consumer(R"(namespace tests.nsvalue
+class_name NsValueSelf
+extends RefCounted
+
+static func build() -> RefCounted:
+	return NsValueSelf.new()
+)",
+						 "user://ns_value_consumer_self.fs"),
+				OK);
+	}
+
+	FSCache::remove_parser(producer_path);
+	FSCache::remove_script(producer_path);
+	DirAccess::remove_absolute(producer_path);
 }
 
 TEST_CASE("[Modules][FoundryScript] Namespaced global class property metadata uses qualified names") {

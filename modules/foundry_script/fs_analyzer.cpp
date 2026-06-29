@@ -10603,6 +10603,11 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 			reduce_identifier_from_base_set_class(p_identifier, script_class->get_datatype());
 			if (script_class->outer != nullptr) {
 				p_identifier->source = FSParser::IdentifierNode::MEMBER_CLASS;
+			} else if (!script_class->qualified_global_name.is_empty()) {
+				// A bare reference to a namespaced global root class (including a
+				// self-reference) must be emitted by its qualified identity; the bare
+				// name is not registered, so the compiler's name lookup would miss it.
+				p_identifier->resolved_global_class = script_class->qualified_global_name;
 			}
 			return;
 		}
@@ -11046,6 +11051,7 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 			set_enum_meta_identifier_constant(p_identifier, make_global_enum_type_from_path(namespace_global_class, path, p_identifier));
 		} else {
 			p_identifier->set_datatype(make_global_class_meta_type(namespace_global_class, p_identifier));
+			p_identifier->resolved_global_class = namespace_global_class;
 		}
 		return;
 	}
@@ -11283,6 +11289,22 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 						namespace_class_type = make_global_enum_type_from_path(namespace_global_class, path, p_subscript);
 					} else {
 						namespace_class_type = make_global_class_meta_type(namespace_global_class, p_subscript);
+						// Mark the sub-expression that spans exactly the resolved class
+						// (`ns.Foo`, or just `Foo` for a same-namespace prefix) so the
+						// compiler can emit the class object when it is used as a value.
+						// The class is the leading `namespace_type_chain_size` identifiers;
+						// any remaining identifiers are member access on that class.
+						FSParser::ExpressionNode *class_prefix = p_subscript;
+						for (int i = 0; i < type_chain.size() - namespace_type_chain_size; i++) {
+							if (class_prefix->type != FSParser::Node::SUBSCRIPT) {
+								class_prefix = nullptr;
+								break;
+							}
+							class_prefix = static_cast<FSParser::SubscriptNode *>(class_prefix)->base;
+						}
+						if (class_prefix != nullptr) {
+							class_prefix->resolved_global_class = namespace_global_class;
+						}
 					}
 					for (int i = namespace_type_chain_size; i < type_chain.size(); i++) {
 						FSParser::DataType base = namespace_class_type;
