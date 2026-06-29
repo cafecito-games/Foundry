@@ -65,6 +65,55 @@ static FSDataType _gdtype_from_container_type(const ContainerType &p_container_t
 	return type;
 }
 
+static bool _type_arguments_match_script(const FSDataType &p_expected_type,
+		const Ref<FoundryScript> &p_source_script, const Vector<ContainerType> &p_source_type_arguments,
+		bool p_require_bound_arguments = false) {
+	if (p_expected_type.type_arguments.is_empty()) {
+		return true;
+	}
+	if (p_source_script.is_null() || p_expected_type.script_type == nullptr) {
+		return false;
+	}
+
+	Ref<Script> expected_script;
+	expected_script.reference_ptr(p_expected_type.script_type);
+
+	Vector<ContainerType> expected_type_arguments;
+	for (const FSDataType &argument_type : p_expected_type.type_arguments) {
+		expected_type_arguments.push_back(argument_type.to_container_type());
+	}
+
+	Vector<ContainerType> projected_type_arguments;
+	Vector<bool> projected_argument_bound;
+	if (!p_source_script->project_type_arguments_onto_base(expected_script, p_source_type_arguments,
+				projected_type_arguments, projected_argument_bound)) {
+		if (p_source_script.ptr() != p_expected_type.script_type) {
+			return false;
+		}
+		projected_type_arguments = p_source_type_arguments;
+		projected_argument_bound.resize(projected_type_arguments.size());
+		for (int i = 0; i < projected_argument_bound.size(); i++) {
+			projected_argument_bound.write[i] = true;
+		}
+	}
+
+	if (projected_type_arguments.size() != expected_type_arguments.size()) {
+		return false;
+	}
+	for (int i = 0; i < expected_type_arguments.size(); i++) {
+		if (i >= projected_argument_bound.size() || !projected_argument_bound[i]) {
+			if (p_require_bound_arguments) {
+				return false;
+			}
+			continue;
+		}
+		if (projected_type_arguments[i] != expected_type_arguments[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool FSDataType::is_type_handle_type(const Variant &p_variant) const {
 	if (p_variant.get_type() == Variant::NIL) {
 		return true;
@@ -84,6 +133,32 @@ bool FSDataType::is_type_handle_type(const Variant &p_variant) const {
 		return kind == NATIVE && ClassDB::is_parent_class(native_class->get_name(), native_type);
 	}
 
+	FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(object);
+	if (specialized_handle != nullptr) {
+		const Ref<FoundryScript> handle_script = specialized_handle->get_specialized_script();
+		if (handle_script.is_null()) {
+			return false;
+		}
+		if (kind == NATIVE) {
+			const StringName script_native = handle_script->get_instance_base_type();
+			return script_native != StringName() && ClassDB::is_parent_class(script_native, native_type);
+		}
+		if (kind == SCRIPT || kind == FOUNDRY_SCRIPT) {
+			if (is_script_trait) {
+				return handle_script->has_script_trait(script_trait) &&
+						_type_arguments_match_script(*this, handle_script, specialized_handle->get_type_arguments());
+			}
+			Script *script = handle_script.ptr();
+			while (script != nullptr) {
+				if (script == script_type) {
+					return _type_arguments_match_script(*this, handle_script, specialized_handle->get_type_arguments());
+				}
+				script = script->get_base_script().ptr();
+			}
+		}
+		return false;
+	}
+
 	Script *script = Object::cast_to<Script>(object);
 	if (script == nullptr) {
 		return false;
@@ -96,11 +171,32 @@ bool FSDataType::is_type_handle_type(const Variant &p_variant) const {
 
 	if (kind == SCRIPT || kind == FOUNDRY_SCRIPT) {
 		if (is_script_trait) {
-			return script->has_script_trait(script_trait);
+			if (!script->has_script_trait(script_trait)) {
+				return false;
+			}
+			if (type_arguments.is_empty()) {
+				return true;
+			}
+			FoundryScript *foundry_script = Object::cast_to<FoundryScript>(script);
+			if (foundry_script == nullptr) {
+				return false;
+			}
+			Ref<FoundryScript> source_script;
+			source_script.reference_ptr(foundry_script);
+			return _type_arguments_match_script(*this, source_script, Vector<ContainerType>(), true);
 		}
+		FoundryScript *foundry_script = Object::cast_to<FoundryScript>(script);
 		while (script != nullptr) {
 			if (script == script_type) {
-				return true;
+				if (type_arguments.is_empty()) {
+					return true;
+				}
+				if (foundry_script == nullptr) {
+					return false;
+				}
+				Ref<FoundryScript> source_script;
+				source_script.reference_ptr(foundry_script);
+				return _type_arguments_match_script(*this, source_script, Vector<ContainerType>(), true);
 			}
 			script = script->get_base_script().ptr();
 		}

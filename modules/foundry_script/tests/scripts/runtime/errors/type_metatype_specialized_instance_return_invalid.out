@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/type_metatype_specialized_instance_return_invalid.fs:7 on get_box(): Trying to return value of type "FSSpecializedClassHandle" from a function whose return type is "Box".
+<null>

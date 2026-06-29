@@ -108,6 +108,15 @@ class FSCompiler {
 				if (obj) {
 					type.kind = FSDataType::NATIVE;
 					type.native_type = obj->get_class_name();
+					FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(obj);
+					if (specialized_handle != nullptr && specialized_handle->get_specialized_script().is_valid()) {
+						ContainerType handle_type;
+						handle_type.builtin_type = Variant::OBJECT;
+						handle_type.class_name = specialized_handle->get_specialized_script()->get_instance_base_type();
+						handle_type.script = specialized_handle->get_specialized_script();
+						handle_type.type_arguments = specialized_handle->get_type_arguments();
+						type = FSDataType::from_type_handle_container_type(handle_type);
+					}
 
 					Ref<Script> scr = obj->get_script();
 					if (scr.is_valid()) {
@@ -152,6 +161,8 @@ class FSCompiler {
 	// shallow, uncompiled class object; constructing through it (`Alias.new()`) fails. Re-point such a
 	// folded value at the live subclass compiled in this unit so the alias matches the inner-class name.
 	Variant _resolve_aliased_class_constant(const Variant &p_value);
+	Variant _resolve_aliased_class_constant(const Variant &p_value, const FSParser::DataType &p_datatype,
+			FoundryScript *p_owner);
 	// Re-resolve a still-open type-argument binding one level through a subclass's `extends Base[args]`
 	// specialization: a forwarded class parameter stays OPEN (remapped ordinal), a concrete argument
 	// becomes FIXED. Used when a subclass inherits a base's member and per-ancestor parameter bindings.

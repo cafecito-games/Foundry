@@ -145,6 +145,135 @@ static bool _datatype_contains_erased_type_parameter(const FSParser::DataType &p
 	return false;
 }
 
+static bool _constant_type_argument_from_expression(const FSParser::ExpressionNode *p_expression,
+		FSParser::DataType &r_type_argument) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+
+	const FSParser::DataType expression_type = p_expression->get_datatype();
+	if (expression_type.is_meta_type || expression_type.is_type_handle_annotation) {
+		r_type_argument = FSAnalyzer::type_from_metatype(expression_type);
+		return true;
+	}
+	if (expression_type.kind == FSParser::DataType::TYPE_PARAMETER) {
+		r_type_argument = expression_type;
+		return true;
+	}
+	if (p_expression->type == FSParser::Node::IDENTIFIER) {
+		const FSParser::IdentifierNode *identifier = static_cast<const FSParser::IdentifierNode *>(p_expression);
+		const Variant::Type builtin_type = FSParser::get_builtin_type(identifier->name);
+		if (builtin_type < Variant::VARIANT_MAX) {
+			r_type_argument.kind = FSParser::DataType::BUILTIN;
+			r_type_argument.builtin_type = builtin_type;
+			r_type_argument.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			return true;
+		}
+	}
+	if (p_expression->type != FSParser::Node::SUBSCRIPT) {
+		return false;
+	}
+
+	const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_expression);
+	if (subscript->is_attribute || subscript->base == nullptr || subscript->index == nullptr) {
+		return false;
+	}
+
+	FSParser::DataType base_argument;
+	if (!_constant_type_argument_from_expression(subscript->base, base_argument) ||
+			base_argument.kind != FSParser::DataType::BUILTIN) {
+		return false;
+	}
+
+	LocalVector<const FSParser::ExpressionNode *> element_expressions;
+	if (subscript->type_arguments.is_empty()) {
+		element_expressions.push_back(subscript->index);
+	} else {
+		for (const FSParser::ExpressionNode *argument : subscript->type_arguments) {
+			element_expressions.push_back(argument);
+		}
+	}
+
+	if (base_argument.builtin_type == Variant::ARRAY) {
+		if (element_expressions.size() != 1) {
+			return false;
+		}
+	} else if (base_argument.builtin_type == Variant::DICTIONARY) {
+		if (element_expressions.size() != 2) {
+			return false;
+		}
+	} else {
+		return false;
+	}
+
+	for (uint32_t i = 0; i < element_expressions.size(); i++) {
+		FSParser::DataType element_argument;
+		if (!_constant_type_argument_from_expression(element_expressions[i], element_argument)) {
+			return false;
+		}
+		base_argument.set_container_element_type(i, element_argument);
+	}
+
+	r_type_argument = base_argument;
+	return true;
+}
+
+static bool _specialized_class_handle_datatype_from_expression(const FSParser::ExpressionNode *p_expression,
+		FSParser::DataType &r_datatype) {
+	if (p_expression == nullptr || p_expression->type != FSParser::Node::SUBSCRIPT) {
+		return false;
+	}
+
+	const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_expression);
+	if (subscript->is_attribute || subscript->base == nullptr || subscript->index == nullptr) {
+		return false;
+	}
+
+	FSParser::DataType specialized = subscript->base->get_datatype();
+	if (!specialized.is_meta_type || specialized.kind != FSParser::DataType::CLASS ||
+			specialized.class_type == nullptr || specialized.class_type->type_parameters.is_empty()) {
+		return false;
+	}
+
+	LocalVector<const FSParser::ExpressionNode *> argument_expressions;
+	if (subscript->type_arguments.is_empty()) {
+		argument_expressions.push_back(subscript->index);
+	} else {
+		for (const FSParser::ExpressionNode *argument : subscript->type_arguments) {
+			argument_expressions.push_back(argument);
+		}
+	}
+	if (argument_expressions.size() != (uint32_t)specialized.class_type->type_parameters.size()) {
+		return false;
+	}
+
+	specialized.type_arguments.clear();
+	for (const FSParser::ExpressionNode *argument_expression : argument_expressions) {
+		FSParser::DataType argument_type;
+		if (!_constant_type_argument_from_expression(argument_expression, argument_type)) {
+			return false;
+		}
+		specialized.type_arguments.push_back(argument_type);
+	}
+	specialized.is_meta_type = true;
+	r_datatype = specialized;
+	return true;
+}
+
+static FSParser::DataType _constant_storage_datatype(const FSParser::ConstantNode *p_constant) {
+	const FSParser::DataType declared_type = p_constant->get_datatype();
+	if (p_constant->datatype_specifier != nullptr && declared_type.is_hard_type() && !declared_type.is_variant()) {
+		return declared_type;
+	}
+	if (p_constant->datatype_specifier != nullptr && declared_type.is_variant()) {
+		FSParser::DataType specialized_type;
+		if (_specialized_class_handle_datatype_from_expression(p_constant->initializer, specialized_type)) {
+			return specialized_type;
+		}
+	}
+	return p_constant->initializer->get_datatype();
+}
+
 static bool _datatype_contains_coroutine(const FSParser::DataType &p_datatype) {
 	if (p_datatype.is_coroutine) {
 		return true;
@@ -428,7 +557,11 @@ static bool _can_use_validate_call(const MethodBind *p_method, const Vector<FSCo
 }
 
 FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
-	if (p_expression->is_constant && !(p_expression->get_datatype().is_meta_type && p_expression->get_datatype().kind == FSParser::DataType::CLASS)) {
+	const bool constant_foundry_script_handle = p_expression->reduced_value.get_type() == Variant::OBJECT &&
+			Object::cast_to<FoundryScript>(p_expression->reduced_value.operator Object *()) != nullptr;
+	if (p_expression->is_constant && !constant_foundry_script_handle &&
+			!(p_expression->get_datatype().is_meta_type &&
+					p_expression->get_datatype().kind == FSParser::DataType::CLASS)) {
 		return codegen.add_constant(p_expression->reduced_value);
 	}
 
@@ -685,7 +818,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				// uncompiled same-unit class, so re-point it to the live compiled subclass here, the
 				// same resolution class-constant identifiers and `const` aliases use. An external class
 				// is already a compiled, valid class and is left untouched.
-				return codegen.add_constant(_resolve_aliased_class_constant(cn->value));
+				return codegen.add_constant(_resolve_aliased_class_constant(cn->value, literal_type, codegen.script));
 			}
 
 			return codegen.add_constant(cn->value);
@@ -1223,6 +1356,26 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				const FSParser::DataType subscript_type = subscript->get_datatype();
 				if (subscript_type.is_meta_type && subscript_type.kind == FSParser::DataType::CLASS &&
 						!subscript_type.type_arguments.is_empty()) {
+					FoundryScript *base_class = nullptr;
+					if (subscript_type.class_type != nullptr && main_script != nullptr) {
+						if (parser->has_class(subscript_type.class_type)) {
+							base_class = main_script->find_class(subscript_type.class_type->fqcn);
+						} else {
+							Error err = OK;
+							Ref<FoundryScript> script = FSCache::get_shallow_script(subscript_type.script_path, err,
+									codegen.script != nullptr ? codegen.script->path : String());
+							if (err == OK && script.is_valid()) {
+								base_class = script->find_class(subscript_type.class_type->fqcn);
+							}
+						}
+					}
+					if (base_class != nullptr) {
+						Vector<ContainerType> type_arguments;
+						for (const FSParser::DataType &argument : subscript_type.type_arguments) {
+							type_arguments.push_back(_gdtype_from_datatype(argument, codegen.script).to_container_type());
+						}
+						return codegen.add_constant(FSSpecializedClassHandle::create(Ref<FoundryScript>(base_class), type_arguments));
+					}
 					return _parse_expression(codegen, r_error, subscript->base);
 				}
 			}
@@ -2769,7 +2922,9 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 					return ERR_PARSE_ERROR;
 				}
 
-				codegen.add_local_constant(lc->identifier->name, _resolve_aliased_class_constant(lc->initializer->reduced_value));
+				codegen.add_local_constant(lc->identifier->name,
+						_resolve_aliased_class_constant(lc->initializer->reduced_value,
+								_constant_storage_datatype(lc), codegen.script));
 			} break;
 			case FSParser::Node::PASS:
 				// Nothing to do.
@@ -2800,6 +2955,42 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 
 	codegen.end_block();
 	return OK;
+}
+
+static HashMap<StringName, FSParser::DataType> _trait_type_argument_substitution(const FSParser::ClassNode *p_class, FSParser::ClassNode *p_trait) {
+	HashMap<StringName, FSParser::DataType> bindings;
+	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
+		return bindings;
+	}
+
+	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		FSParser::ClassNode *used_trait = trait_use.resolved_trait;
+		if (used_trait == nullptr) {
+			continue;
+		}
+		if (used_trait == p_trait) {
+			const int count = MIN(p_trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
+			for (int i = 0; i < count; i++) {
+				const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					bindings.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
+				}
+			}
+			return bindings;
+		}
+		if (used_trait->resolved_traits.has(p_trait)) {
+			HashMap<StringName, FSParser::DataType> inner = _trait_type_argument_substitution(used_trait, p_trait);
+			if (inner.is_empty()) {
+				continue;
+			}
+			const HashMap<StringName, FSParser::DataType> outer = _trait_type_argument_substitution(p_class, used_trait);
+			for (const KeyValue<StringName, FSParser::DataType> &binding : inner) {
+				bindings.insert(binding.key, FSParser::DataType::substitute(binding.value, outer));
+			}
+			return bindings;
+		}
+	}
+	return bindings;
 }
 
 // Whether a class has static data of its own or flattens static data in from an
@@ -3569,6 +3760,26 @@ Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value) {
 	return p_value;
 }
 
+Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value,
+		const FSParser::DataType &p_datatype, FoundryScript *p_owner) {
+	Variant resolved = _resolve_aliased_class_constant(p_value);
+	if (!p_datatype.is_meta_type || p_datatype.kind != FSParser::DataType::CLASS ||
+			p_datatype.type_arguments.is_empty()) {
+		return resolved;
+	}
+
+	FoundryScript *base_class = Object::cast_to<FoundryScript>(resolved.operator Object *());
+	if (base_class == nullptr) {
+		return resolved;
+	}
+
+	Vector<ContainerType> type_arguments;
+	for (const FSParser::DataType &argument : p_datatype.type_arguments) {
+		type_arguments.push_back(_gdtype_from_datatype(argument, p_owner).to_container_type());
+	}
+	return FSSpecializedClassHandle::create(Ref<FoundryScript>(base_class), type_arguments);
+}
+
 Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::ClassNode *p_class, bool p_keep_state) {
 	if (parsed_classes.has(p_script)) {
 		return OK;
@@ -3796,6 +4007,45 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 		p_script->type_parameter_bindings_by_ancestor[p_script] = own_bindings;
 	}
 
+	for (FSParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr || trait->type_parameters.is_empty()) {
+			continue;
+		}
+
+		FSDataType trait_type = _gdtype_from_datatype(trait->get_datatype(), p_script, false);
+		FoundryScript *trait_script = Object::cast_to<FoundryScript>(trait_type.script_type);
+		if (trait_script == nullptr) {
+			continue;
+		}
+
+		const HashMap<StringName, FSParser::DataType> substitutions = _trait_type_argument_substitution(p_class, trait);
+		Vector<FoundryScript::TypeArgumentBinding> trait_bindings;
+		trait_bindings.resize(trait->type_parameters.size());
+		for (int i = 0; i < trait->type_parameters.size(); i++) {
+			const FSParser::TypeParameterNode *type_parameter = trait->type_parameters[i];
+			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+				continue;
+			}
+			const FSParser::DataType *argument = substitutions.getptr(type_parameter->identifier->name);
+			if (argument == nullptr) {
+				continue;
+			}
+
+			FoundryScript::TypeArgumentBinding &binding = trait_bindings.write[i];
+			if (argument->kind == FSParser::DataType::TYPE_PARAMETER &&
+					argument->type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
+				binding.kind = FoundryScript::TypeArgumentBinding::OPEN;
+				binding.leaf_ordinal = argument->type_parameter_index;
+			} else {
+				binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
+				binding.fixed = _gdtype_from_datatype(*argument, p_script, false);
+				binding.fixed_is_dependent = _datatype_contains_erased_type_parameter(*argument);
+				binding.leaf_ordinal = -1;
+			}
+		}
+		p_script->type_parameter_bindings_by_ancestor[trait_script] = trait_bindings;
+	}
+
 	// Flatten the applied traits' members into this script alongside the class's own
 	// members so their state, constants, signals, and methods are recompiled per
 	// implementer. Shadowed names and abstract requirements are filtered out here.
@@ -3905,7 +4155,9 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				const FSParser::ConstantNode *constant = member.constant;
 				StringName name = constant->identifier->name;
 
-				p_script->constants.insert(name, _resolve_aliased_class_constant(constant->initializer->reduced_value));
+				p_script->constants.insert(name,
+						_resolve_aliased_class_constant(constant->initializer->reduced_value,
+								_constant_storage_datatype(constant), p_script));
 
 				// Persist constant annotation metadata, keyed by name.
 				Vector<FoundryScript::AnnotationUsage> constant_usages;

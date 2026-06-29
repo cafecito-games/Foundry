@@ -122,6 +122,7 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 	RBMap<FSUtilityFunctions::FunctionPtr, int> gds_utilities_map;
 	RBMap<MethodBind *, int> method_bind_map;
 	RBMap<FSFunction *, int> lambdas_map;
+	Vector<StringName> builtin_method_names;
 
 #ifdef DEBUG_ENABLED
 	// Keep method and property names for pointer and validated operations.
@@ -432,6 +433,13 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 
 	void append(const Variant::ValidatedBuiltInMethod p_method) {
 		opcodes.push_back(get_builtin_method_pos(p_method));
+	}
+
+	void add_builtin_method_name(int p_index, const StringName &p_name) {
+		if (p_index >= builtin_method_names.size()) {
+			builtin_method_names.resize(p_index + 1);
+		}
+		builtin_method_names.write[p_index] = p_name;
 	}
 
 	void append(const Variant::ValidatedConstructor p_constructor) {

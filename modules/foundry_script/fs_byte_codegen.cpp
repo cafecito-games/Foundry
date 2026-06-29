@@ -367,6 +367,7 @@ FSFunction *FSByteCodeGenerator::write_end() {
 		function->_builtin_methods_ptr = nullptr;
 		function->_builtin_methods_count = 0;
 	}
+	function->builtin_method_names = builtin_method_names;
 
 	if (constructors_map.size()) {
 		function->constructors.resize(constructors_map.size());
@@ -717,7 +718,8 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 			append_opcode(FSFunction::OPCODE_TYPE_TEST_SCRIPT);
 			append(p_target);
 			append(p_source);
-			append(get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+			const int type_idx = p_type.is_type_handle && !p_type.type_arguments.is_empty() ? get_container_type_pos(p_type) : get_constant_pos(script);
+			append(type_idx | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 			append(p_type.is_type_handle);
 		} break;
 		default: {
@@ -992,7 +994,8 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 		case FSDataType::SCRIPT:
 		case FSDataType::FOUNDRY_SCRIPT: {
 			Variant script = p_target.type.script_type;
-			int idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+			int idx = p_target.type.is_type_handle && !p_target.type.type_arguments.is_empty() ? get_container_type_pos(p_target.type) : get_constant_pos(script);
+			idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 
 			append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_SCRIPT);
 			append(p_target);
@@ -1019,6 +1022,20 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 }
 
 void FSByteCodeGenerator::write_assign(const Address &p_target, const Address &p_source) {
+	if (p_target.type.kind == FSDataType::NATIVE &&
+			ClassDB::is_parent_class(SNAME("FoundryScript"), p_target.type.native_type) &&
+			p_source.type.is_type_handle && !p_source.type.type_arguments.is_empty()) {
+		int class_idx = FSLanguage::get_singleton()->get_global_map()[p_target.type.native_type];
+		Variant nc = FSLanguage::get_singleton()->get_global_array()[class_idx];
+		class_idx = get_constant_pos(nc) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+		append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_NATIVE);
+		append(p_target);
+		append(p_source);
+		append(class_idx);
+		append(false);
+		return;
+	}
+
 	if (p_target.type.is_type_handle) {
 		switch (p_target.type.kind) {
 			case FSDataType::NATIVE: {
@@ -1035,7 +1052,8 @@ void FSByteCodeGenerator::write_assign(const Address &p_target, const Address &p
 			case FSDataType::SCRIPT:
 			case FSDataType::FOUNDRY_SCRIPT: {
 				Variant script = p_target.type.script_type;
-				int idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+				int idx = p_target.type.is_type_handle && !p_target.type.type_arguments.is_empty() ? get_container_type_pos(p_target.type) : get_constant_pos(script);
+				idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 				append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_SCRIPT);
 				append(p_target);
 				append(p_source);
@@ -1165,7 +1183,8 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 		case FSDataType::SCRIPT:
 		case FSDataType::FOUNDRY_SCRIPT: {
 			Variant script = p_type.script_type;
-			int idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+			int idx = p_type.is_type_handle && !p_type.type_arguments.is_empty() ? get_container_type_pos(p_type) : get_constant_pos(script);
+			idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 			append_opcode(FSFunction::OPCODE_CAST_TO_SCRIPT);
 			index = idx;
 		} break;
@@ -1349,11 +1368,14 @@ void FSByteCodeGenerator::write_call_builtin_type(const Address &p_target, const
 	append(p_base);
 	append(ct.target);
 	append(p_arguments.size());
-	append(Variant::get_validated_builtin_method(p_type, p_method));
+	Variant::ValidatedBuiltInMethod validated_method = Variant::get_validated_builtin_method(p_type, p_method);
+	const int method_index = get_builtin_method_pos(validated_method);
+	append(method_index);
+	add_builtin_method_name(method_index, p_method);
 	ct.cleanup();
 
 #ifdef DEBUG_ENABLED
-	add_debug_name(builtin_methods_names, get_builtin_method_pos(Variant::get_validated_builtin_method(p_type, p_method)), p_method);
+	add_debug_name(builtin_methods_names, method_index, p_method);
 #endif
 }
 
@@ -1972,7 +1994,17 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 
 		// If this is a typed function, then we need to check for potential conversions.
 		if (function->return_type.has_type()) {
-			if (function->return_type.is_type_handle && function->return_type.kind == FSDataType::NATIVE) {
+			if (!function->return_type.is_type_handle && function->return_type.kind == FSDataType::NATIVE &&
+					p_return_value.type.is_type_handle && !p_return_value.type.type_arguments.is_empty() &&
+					ClassDB::is_parent_class(SNAME("FoundryScript"), function->return_type.native_type)) {
+				append_opcode(FSFunction::OPCODE_RETURN_TYPED_NATIVE);
+				append(p_return_value);
+				int class_idx = FSLanguage::get_singleton()->get_global_map()[function->return_type.native_type];
+				Variant nc = FSLanguage::get_singleton()->get_global_array()[class_idx];
+				class_idx = get_constant_pos(nc) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+				append(class_idx);
+				append(false);
+			} else if (function->return_type.is_type_handle && function->return_type.kind == FSDataType::NATIVE) {
 				append_opcode(FSFunction::OPCODE_RETURN_TYPED_NATIVE);
 				append(p_return_value);
 				int class_idx = FSLanguage::get_singleton()->get_global_map()[function->return_type.native_type];
@@ -1982,7 +2014,8 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 				append(true);
 			} else if (function->return_type.is_type_handle && (function->return_type.kind == FSDataType::SCRIPT || function->return_type.kind == FSDataType::FOUNDRY_SCRIPT)) {
 				Variant script = function->return_type.script_type;
-				int script_idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+				int script_idx = !function->return_type.type_arguments.is_empty() ? get_container_type_pos(function->return_type) : get_constant_pos(script);
+				script_idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 
 				append_opcode(FSFunction::OPCODE_RETURN_TYPED_SCRIPT);
 				append(p_return_value);
@@ -2062,7 +2095,8 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 			case FSDataType::FOUNDRY_SCRIPT:
 			case FSDataType::SCRIPT: {
 				Variant script = function->return_type.script_type;
-				int script_idx = get_constant_pos(script) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+				int script_idx = function->return_type.is_type_handle && !function->return_type.type_arguments.is_empty() ? get_container_type_pos(function->return_type) : get_constant_pos(script);
+				script_idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 
 				append_opcode(FSFunction::OPCODE_RETURN_TYPED_SCRIPT);
 				append(p_return_value);

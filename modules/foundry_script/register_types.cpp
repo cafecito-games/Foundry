@@ -160,6 +160,7 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		FOUNDRY_REGISTER_CLASS(FoundryScript);
 		FOUNDRY_REGISTER_CLASS(FSTypeParameter);
+		FOUNDRY_REGISTER_CLASS(FSSpecializedClassHandle);
 		FOUNDRY_REGISTER_CLASS(FSAnnotation);
 		FOUNDRY_REGISTER_CLASS(FSMethodDescriptor);
 		FOUNDRY_REGISTER_CLASS(FSPropertyDescriptor);

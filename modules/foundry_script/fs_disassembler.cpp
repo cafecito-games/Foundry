@@ -35,6 +35,75 @@
 
 #include "core/string/string_builder.h"
 
+static bool _is_bytecode_type_descriptor(const Variant &p_type_info) {
+	if (p_type_info.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	const Dictionary descriptor = p_type_info;
+	return descriptor.has("builtin_type");
+}
+
+static ContainerType _container_type_from_bytecode_descriptor(const Variant &p_descriptor) {
+	Dictionary descriptor = p_descriptor;
+	ContainerType type;
+	type.builtin_type = Variant::Type(int(descriptor.get("builtin_type", Variant::NIL)));
+	type.class_name = descriptor.get("native_type", StringName());
+	Ref<Script> script = descriptor.get("script_type", Variant());
+	type.script = script;
+
+	Array element_types = descriptor.get("element_types", Array());
+	for (int i = 0; i < element_types.size(); i++) {
+		type.element_types.push_back(_container_type_from_bytecode_descriptor(element_types[i]));
+	}
+
+	Array type_arguments = descriptor.get("type_arguments", Array());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		type.type_arguments.push_back(_container_type_from_bytecode_descriptor(type_arguments[i]));
+	}
+	return type;
+}
+
+static String _get_container_type_debug_name(const ContainerType &p_type) {
+	String name;
+	if (p_type.builtin_type == Variant::ARRAY && !p_type.element_types.is_empty()) {
+		name = "Array[" + _get_container_type_debug_name(p_type.element_types[0]) + "]";
+	} else if (p_type.builtin_type == Variant::DICTIONARY && !p_type.element_types.is_empty()) {
+		const String key = p_type.element_types.size() > 0 ? _get_container_type_debug_name(p_type.element_types[0]) : String("Variant");
+		const String value = p_type.element_types.size() > 1 ? _get_container_type_debug_name(p_type.element_types[1]) : String("Variant");
+		name = "Dictionary[" + key + ", " + value + "]";
+	} else if (p_type.script.is_valid()) {
+		name = FoundryScript::debug_get_script_name(p_type.script);
+	} else if (p_type.class_name != StringName()) {
+		name = p_type.class_name;
+	} else {
+		name = Variant::get_type_name(p_type.builtin_type);
+	}
+
+	if (!p_type.type_arguments.is_empty()) {
+		String arguments;
+		for (int i = 0; i < p_type.type_arguments.size(); i++) {
+			if (i > 0) {
+				arguments += ", ";
+			}
+			arguments += _get_container_type_debug_name(p_type.type_arguments[i]);
+		}
+		name += "[" + arguments + "]";
+	}
+	return name;
+}
+
+static String _get_script_type_name_from_type_info(const Variant &p_type_info) {
+	if (_is_bytecode_type_descriptor(p_type_info)) {
+		return _get_container_type_debug_name(_container_type_from_bytecode_descriptor(p_type_info));
+	}
+
+	Ref<Script> script = p_type_info;
+	if (script.is_valid()) {
+		return FoundryScript::debug_get_script_name(script);
+	}
+	return "<unknown script>";
+}
+
 static String _get_variant_string(const Variant &p_variant) {
 	String txt;
 	if (p_variant.get_type() == Variant::STRING) {
@@ -95,6 +164,16 @@ static String _disassemble_address(const FoundryScript *p_script, const FSFuncti
 	}
 
 	return "<err>";
+}
+
+static String _disassemble_type_info_address(const FoundryScript *p_script, const FSFunction &p_function, int p_address) {
+	if ((p_address >> FSFunction::ADDR_BITS) == FSFunction::ADDR_TYPE_CONSTANT) {
+		const Variant type_info = p_function.get_constant(p_address & FSFunction::ADDR_MASK);
+		if (_is_bytecode_type_descriptor(type_info)) {
+			return _get_script_type_name_from_type_info(type_info);
+		}
+	}
+	return _disassemble_address(p_script, p_function, p_address);
 }
 
 void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
@@ -239,7 +318,7 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = ";
 				text += DADDR(2);
 				text += _code_ptr[ip + 4] ? " is Type[" : " is ";
-				text += DADDR(3);
+				text += _disassemble_type_info_address(_script, *this, _code_ptr[ip + 3]);
 				if (_code_ptr[ip + 4]) {
 					text += "]";
 				}
@@ -516,10 +595,10 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				incr += 5;
 			} break;
 			case OPCODE_ASSIGN_TYPED_SCRIPT: {
-				Ref<Script> script = get_constant(_code_ptr[ip + 3] & ADDR_MASK);
+				const Variant type_info = get_constant(_code_ptr[ip + 3] & ADDR_MASK);
 
 				text += "assign typed script (";
-				text += FoundryScript::debug_get_script_name(script);
+				text += _get_script_type_name_from_type_info(type_info);
 				text += ") ";
 				text += DADDR(1);
 				text += " = ";
@@ -543,7 +622,7 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = ";
 				text += DADDR(1);
 				text += _code_ptr[ip + 4] ? " as Type[" : " as ";
-				text += DADDR(3);
+				text += _disassemble_type_info_address(_script, *this, _code_ptr[ip + 3]);
 				if (_code_ptr[ip + 4]) {
 					text += "]";
 				}
@@ -1191,10 +1270,10 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				incr += 4;
 			} break;
 			case OPCODE_RETURN_TYPED_SCRIPT: {
-				Ref<Script> script = get_constant(_code_ptr[ip + 2] & ADDR_MASK);
+				const Variant type_info = get_constant(_code_ptr[ip + 2] & ADDR_MASK);
 
 				text += "return typed script (";
-				text += FoundryScript::debug_get_script_name(script);
+				text += _get_script_type_name_from_type_info(type_info);
 				text += ") ";
 				text += DADDR(1);
 
