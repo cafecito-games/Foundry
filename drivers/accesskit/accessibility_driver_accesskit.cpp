@@ -223,7 +223,7 @@ accesskit_tree_update *AccessibilityDriverAccessKit::_accessibility_initial_tree
 	ERR_FAIL_NULL_V(wd, nullptr);
 
 	accesskit_node *win_node = accesskit_node_new(ACCESSKIT_ROLE_WINDOW);
-	accesskit_node_set_label(win_node, "Godot Engine");
+	accesskit_node_set_label(win_node, "Foundry");
 	accesskit_node_set_busy(win_node);
 
 	accesskit_node_id win_id = (accesskit_node_id)wd->root_id.get_id();
