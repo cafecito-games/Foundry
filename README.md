@@ -1,91 +1,129 @@
-# Enhanced Godot Engine
+# Foundry
 
 > **Foundry is a fork of Godot Engine 4.6.3 (MIT).** See [NOTICE](NOTICE) and [LICENSE.txt](LICENSE.txt) for attribution and license details.
 
 <p align="center">
   <a href="https://godotengine.org">
-    <img src="logo_outlined.svg" width="400" alt="Godot Engine logo">
+    <img src="logo_outlined.svg" width="400" alt="Foundry logo">
   </a>
 </p>
 
-## Experiment
+Foundry is a CafecitoGames fork of the [Godot Engine](https://godotengine.org)
+focused on a stronger, statically-typed scripting experience and richer editor
+tooling for writing code. It keeps everything that makes Godot a great
+cross-platform 2D and 3D game engine, and layers on a new scripting language —
+**Foundry Script** — derived from GDScript but extended with modern language
+features and first-class refactoring support.
 
-This fork is an experiment to see how far I can push the Godot Engine in a few areas:
+## ⚠️ Experimental
 
-1. Enhancing the Foundry Script language for type safety
-2. Better editor tooling for scripting (e.g. Refactoring support)
-3. Adding features to Foundry Script like Traits, async keyword on coroutine functions and other things of that nature.
+This is an experiment to see how far the Godot Engine can be pushed in a few
+specific directions: a more type-safe scripting language, better editor tooling
+for scripting, and language features that aren't present in stock GDScript.
 
-This might be useful to others, or it might not be. For the time being it is unclear to me how far to push this experiment, for now I am using AI to help implement a good amount of this and seeing how effective AI is at working in this codebase.
+A large amount of the implementation is being done with AI assistance (primarily
+Claude and Codex). This is primarily a personal project built around my own
+tastes for what the language and tooling should look like. It may be useful to
+others, or it may not be. **Support, stability, and backwards compatibility are
+not guaranteed** — treat it as experimental and don't ship production games on
+it without understanding that caveat. Builds will eventually be published here
+for anyone who wants to try them out.
 
-I'll eventually publish builds here and people are free to try it out, but please note that my level of support for this project is currently not known. If I end up using this build to power my games, I'll be more incintivized to support it but please keep in mind that this is primarily for my own use and for my own personal tastes on what the language and tooling should look like. Also please keep in mind a lot of the work is being done by AI (both Claude and Codex for the most part), you might have feelings about that and that's ok, I understand.
+## Foundry Script
 
+Foundry Script is a superset-flavored evolution of GDScript. It uses the `.fs`
+file extension (compiled `.fsc`) and is implemented in
+[`modules/foundry_script/`](modules/foundry_script/). Beyond everything GDScript
+already offers, it adds:
 
-## 2D and 3D cross-platform game engine
+- **Stricter static typing** — opt-in stricter analysis (including null and
+  dynamic-cast checks) to catch type errors at compile time instead of at
+  runtime.
+- **Generics** — type parameters with optional bounds on both classes and
+  functions, e.g. `class Pair[K, V: RefCounted]` and `func swap[T]()`, with type
+  arguments at use sites.
+- **Traits** — mixin-style, composable units of behavior. Classes compose one or
+  more traits with `uses`, traits can inherit from other traits, and traits can
+  themselves be generic.
+- **`final`** — mark a class or method `final` to forbid further
+  inheritance/overriding.
+- **`abstract`** — mark a class `abstract` to forbid direct instantiation, and
+  methods `abstract` to require subclasses to implement them.
+- **Top-level enums** — file-scope enums declared with `enum_name`, usable as
+  globals rather than only as inner enums.
+- **`async` coroutines** — declare coroutine functions with the `async` keyword,
+  plus an `AsyncCallable` type for typing callables that return coroutines.
+- **Namespaces** — declare a file `namespace` and `import` others for
+  hierarchical organization and name-conflict avoidance, with namespace-qualified
+  classes and enums.
 
-**[Godot Engine](https://godotengine.org) is a feature-packed, cross-platform
-game engine to create 2D and 3D games from a unified interface.** It provides a
-comprehensive set of [common tools](https://godotengine.org/features), so that
-users can focus on making games without having to reinvent the wheel. Games can
-be exported with one click to a number of platforms, including the major desktop
-platforms (Linux, macOS, Windows), mobile platforms (Android, iOS), as well as
-Web-based platforms and [consoles](https://godotengine.org/consoles).
+## Editor & IDE tooling
 
-## Free, open source and community-driven
+Foundry invests heavily in the experience of writing and maintaining scripts,
+through both the editor and a Language Server (LSP) usable from external IDEs.
 
-Godot is completely free and open source under the very permissive [MIT license](https://godotengine.org/license).
-No strings attached, no royalties, nothing. The users' games are theirs, down
-to the last line of engine code. Godot's development is fully independent and
-community-driven, empowering users to help shape their engine to match their
-expectations. It is supported by the [Godot Foundation](https://godot.foundation/)
-not-for-profit.
-
-Before being open sourced in [February 2014](https://github.com/godotengine/godot/commit/0b806ee0fc9097fa7bda7ac0109191c9c5e0a1ac),
-Godot had been developed by [Juan Linietsky](https://github.com/reduz) and
-[Ariel Manzur](https://github.com/punto-) for several years as an in-house
-engine, used to publish several work-for-hire titles.
-
-![Screenshot of a 3D scene in the Godot Engine editor](https://raw.githubusercontent.com/godotengine/godot-design/master/screenshots/editor_tps_demo_1920x1080.jpg)
+- **Refactoring** — a suite of safe, analyzer-backed refactors: rename
+  (including cross-file), extract variable, extract method, inline variable, add
+  type annotation, implement abstract methods, insert explicit cast, widen to
+  nullable, and sort members by the style guide.
+- **Language Server (LSP)** — completion, go-to-definition, find-references, and
+  hover, exposed over LSP so editors beyond the Godot editor can integrate.
+- **Code formatter** — a full formatter that rewrites source to a canonical
+  style while preserving comments and literals (and refusing to format on parse
+  errors).
+- **Strict-typing migration wizard** — an editor tool to help migrate untyped
+  code toward stricter type annotations.
+- **Syntax highlighting & doc generation** — Foundry Script-aware highlighting in
+  the editor and documentation generation from script comments.
 
 ## Getting the engine
 
-### Binary downloads
-
-Official binaries for the Godot editor and the export templates can be found
-[on the Godot website](https://godotengine.org/download).
-
 ### Compiling from source
 
-[See the official docs](https://docs.godotengine.org/en/latest/engine_details/development/compiling)
-for compilation instructions for every supported platform.
+Foundry builds the same way as Godot. For example, on macOS:
 
-## Community and contributing
+```sh
+scons platform=macos target=editor dev_build=yes tests=yes
+```
 
-Godot is not only an engine but an ever-growing community of users and engine
-developers. The main community channels are listed [on the homepage](https://godotengine.org/community).
+Use `platform=linuxbsd` on Linux or `platform=windows` on Windows. See the
+[official Godot docs](https://docs.godotengine.org/en/latest/engine_details/development/compiling)
+for platform-specific prerequisites and options, and [CONTRIBUTING.md](CONTRIBUTING.md)
+for repository conventions.
 
-The best way to get in touch with the core engine developers is to join the
-[Godot Contributors Chat](https://chat.godotengine.org).
+### Binary downloads
 
-To get started contributing to the project, see the [contributing guide](CONTRIBUTING.md).
-This document also includes guidelines for reporting bugs.
+Pre-built Foundry binaries are not yet published. Until they are, build from
+source as above.
 
-## Documentation and demos
+## About Godot
 
-The official documentation is hosted on [Read the Docs](https://docs.godotengine.org).
-It is maintained by the Godot community in its own [GitHub repository](https://github.com/godotengine/godot-docs).
+Foundry is built on **[Godot Engine](https://godotengine.org)**, a feature-packed,
+cross-platform engine for creating 2D and 3D games from a unified interface. It
+provides a comprehensive set of [common tools](https://godotengine.org/features)
+and one-click export to desktop (Linux, macOS, Windows), mobile (Android, iOS),
+Web, and [consoles](https://godotengine.org/consoles).
 
-The [class reference](https://docs.godotengine.org/en/latest/classes/)
-is also accessible from the Godot editor.
+Godot is free and open source under the permissive
+[MIT license](https://godotengine.org/license) — no strings attached, no
+royalties. Its development is independent and community-driven, supported by the
+[Godot Foundation](https://godot.foundation/). Before being open sourced in
+[February 2014](https://github.com/godotengine/godot/commit/0b806ee0fc9097fa7bda7ac0109191c9c5e0a1ac),
+Godot was developed by [Juan Linietsky](https://github.com/reduz) and
+[Ariel Manzur](https://github.com/punto-) as an in-house engine.
 
-We also maintain official demos in their own [GitHub repository](https://github.com/godotengine/godot-demo-projects)
-as well as a list of [awesome Godot community resources](https://github.com/godotengine/awesome-godot).
+![Screenshot of a 3D scene in the Godot Engine editor](https://raw.githubusercontent.com/godotengine/godot-design/master/screenshots/editor_tps_demo_1920x1080.jpg)
 
-There are also a number of other
-[learning resources](https://docs.godotengine.org/en/latest/community/tutorials.html)
-provided by the community, such as text and video tutorials, demos, etc.
-Consult the [community channels](https://godotengine.org/community)
-for more information.
+## Godot documentation and resources
 
-[![Code Triagers Badge](https://www.codetriage.com/godotengine/godot/badges/users.svg)](https://www.codetriage.com/godotengine/godot)
-[![Translate on Weblate](https://hosted.weblate.org/widgets/godot-engine/-/godot/svg-badge.svg)](https://hosted.weblate.org/engage/godot-engine/?utm_source=widget)
+The upstream Godot resources remain the best reference for engine features that
+Foundry inherits:
+
+- The official documentation is hosted on [Read the Docs](https://docs.godotengine.org).
+  The [class reference](https://docs.godotengine.org/en/latest/classes/) is also
+  accessible from within the editor.
+- Official demos live in their own [GitHub repository](https://github.com/godotengine/godot-demo-projects),
+  alongside a list of [awesome Godot community resources](https://github.com/godotengine/awesome-godot).
+- Additional community [learning resources](https://docs.godotengine.org/en/latest/community/tutorials.html)
+  (text and video tutorials, demos, etc.) are available through the
+  [community channels](https://godotengine.org/community).
