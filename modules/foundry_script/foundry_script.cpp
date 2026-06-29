@@ -1741,7 +1741,6 @@ void FoundryScript::_save_orphaned_subclasses() {
 	}
 }
 
-#ifdef DEBUG_ENABLED
 String FoundryScript::debug_get_script_name(const Ref<Script> &p_script) {
 	if (p_script.is_valid()) {
 		Ref<FoundryScript> foundry_script = p_script;
@@ -1763,7 +1762,6 @@ String FoundryScript::debug_get_script_name(const Ref<Script> &p_script) {
 
 	return "<unknown script>";
 }
-#endif
 
 String FoundryScript::canonicalize_path(const String &p_path) {
 	if (p_path.get_extension() == "fsc") {
