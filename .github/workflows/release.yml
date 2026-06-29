@@ -418,6 +418,22 @@ jobs:
             cache-name: release-web-nothreads-debug
             target: template_debug
             scons-flags: threads=no
+          - name: dlink threads (template_release)
+            cache-name: release-web-dlink-threads-release
+            target: template_release
+            scons-flags: threads=yes dlink_enabled=yes
+          - name: dlink threads (template_debug)
+            cache-name: release-web-dlink-threads-debug
+            target: template_debug
+            scons-flags: threads=yes dlink_enabled=yes
+          - name: dlink nothreads (template_release)
+            cache-name: release-web-dlink-nothreads-release
+            target: template_release
+            scons-flags: threads=no dlink_enabled=yes
+          - name: dlink nothreads (template_debug)
+            cache-name: release-web-dlink-nothreads-debug
+            target: template_debug
+            scons-flags: threads=no dlink_enabled=yes
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -650,19 +666,28 @@ jobs:
           cp artifacts/release-linux-template_release/foundry.linuxbsd.template_release.x86_64 templates/linux_release.x86_64
           cp artifacts/release-linux-template_debug/foundry.linuxbsd.template_debug.x86_64 templates/linux_debug.x86_64
 
-          # Windows desktop templates (console executables are the shipped templates).
-          cp artifacts/release-windows-template_release/foundry.windows.template_release.x86_64.console.exe templates/windows_release_x86_64.exe
-          cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.console.exe templates/windows_debug_x86_64.exe
+          # Windows desktop templates: the GUI executable is the main template,
+          # and the console wrapper ships alongside it as *.console.exe (the
+          # exporter locates the wrapper by that exact sibling name).
+          cp artifacts/release-windows-template_release/foundry.windows.template_release.x86_64.exe templates/windows_release_x86_64.exe
+          cp artifacts/release-windows-template_release/foundry.windows.template_release.x86_64.console.exe templates/windows_release_x86_64.console.exe
+          cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.exe templates/windows_debug_x86_64.exe
+          cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.console.exe templates/windows_debug_x86_64.console.exe
 
           # macOS template (single macos_template.app zip with debug + release universals).
           cp artifacts/release-macos-templates/*.zip templates/macos.zip
 
-          # Web templates (threads + nothreads, debug + release). Each web build
-          # uploads exactly one zip whose suffix depends on PROGSUFFIX, so glob it.
+          # Web templates: threads/nothreads x debug/release, with and without
+          # FoundryExtension (dlink) support. Each web build uploads exactly one
+          # zip whose suffix depends on PROGSUFFIX, so glob it.
           cp artifacts/release-web-threads-release/*.zip templates/web_release.zip
           cp artifacts/release-web-threads-debug/*.zip templates/web_debug.zip
           cp artifacts/release-web-nothreads-release/*.zip templates/web_nothreads_release.zip
           cp artifacts/release-web-nothreads-debug/*.zip templates/web_nothreads_debug.zip
+          cp artifacts/release-web-dlink-threads-release/*.zip templates/web_dlink_release.zip
+          cp artifacts/release-web-dlink-threads-debug/*.zip templates/web_dlink_debug.zip
+          cp artifacts/release-web-dlink-nothreads-release/*.zip templates/web_dlink_nothreads_release.zip
+          cp artifacts/release-web-dlink-nothreads-debug/*.zip templates/web_dlink_nothreads_debug.zip
 
           # Android templates and source.
           cp artifacts/release-android-template-release/android_release.apk templates/android_release.apk
