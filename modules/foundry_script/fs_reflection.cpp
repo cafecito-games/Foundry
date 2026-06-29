@@ -423,7 +423,7 @@ void FSReflection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("create_delegating_proxy", "type", "target", "interceptor"), &FSReflection::create_delegating_proxy);
 }
 
-void FSGodotNamespace::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("get_reflection"), &FSGodotNamespace::get_reflection);
+void FSNamespace::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_reflection"), &FSNamespace::get_reflection);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "reflection", PROPERTY_HINT_RESOURCE_TYPE, "FSReflection", PROPERTY_USAGE_NONE), "", "get_reflection");
 }

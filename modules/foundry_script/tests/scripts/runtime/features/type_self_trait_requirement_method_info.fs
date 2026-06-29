@@ -15,7 +15,7 @@ func method_signature(target: Object, method_name: StringName) -> String:
 
 
 func test() -> void:
-	var proxy := godot.reflection.create_proxy_dynamic(Holder, func(_method_name: StringName, _args: Array) -> Variant:
+	var proxy := foundry.reflection.create_proxy_dynamic(Holder, func(_method_name: StringName, _args: Array) -> Variant:
 		return null
 	) as Holder
 	print(method_signature(proxy, &"items"))

@@ -23,19 +23,19 @@ const GreeterBox = Box[Greeter]
 func test() -> void:
 	# A `const` alias binds the same reified argument as the direct form.
 	var from_const := IntBox.new()
-	print(godot.reflection.get_type_arguments(from_const)[0]["type"] == TYPE_INT)
+	print(foundry.reflection.get_type_arguments(from_const)[0]["type"] == TYPE_INT)
 	from_const.value = 7 # validated and stored against the reified `int`
 	print(from_const.value)
 
 	# A local with a hard inferred specialized type.
 	var hard_handle := Box[int]
 	var from_hard := hard_handle.new()
-	print(godot.reflection.get_type_arguments(from_hard)[0]["type"] == TYPE_INT)
+	print(foundry.reflection.get_type_arguments(from_hard)[0]["type"] == TYPE_INT)
 
 	# An untyped local handle still names the arguments through its inferred type.
 	var weak_handle = Box[int]
 	var from_weak = weak_handle.new()
-	print(godot.reflection.get_type_arguments(from_weak)[0]["type"] == TYPE_INT)
+	print(foundry.reflection.get_type_arguments(from_weak)[0]["type"] == TYPE_INT)
 
 	# `create_proxy[T]` resolves `T` through an instance built from a const alias.
 	var greeter_box := GreeterBox.new()
@@ -45,6 +45,6 @@ func test() -> void:
 	# Erasure-on-widening: a handle widened to `FoundryScript` no longer names the argument, so the
 	# constructed instance carries none (mirrors `Array[int]` widening to `Array`).
 	var widened: FoundryScript = Box[int]
-	print(godot.reflection.get_type_arguments(widened.new()).size())
+	print(foundry.reflection.get_type_arguments(widened.new()).size())
 
 	print("aliased handle construction ok")

@@ -1379,7 +1379,7 @@ TEST_CASE("[Modules][FoundryScript][Reflection] Read-only introspection API") {
 TEST_CASE("[Modules][FoundryScript][Reflection] create_proxy_dynamic builds a handler proxy") {
 	ScopedProxyLanguage language;
 
-	// `godot.reflection.create_proxy_dynamic(type, handler)` is the namespaced surface
+	// `foundry.reflection.create_proxy_dynamic(type, handler)` is the namespaced surface
 	// for building a dynamic proxy; it mirrors the bare `create_proxy_dynamic` utility
 	// (which remains the `create_proxy[T]` codegen lowering target).
 	const char *source =
@@ -1551,19 +1551,19 @@ TEST_CASE("[Modules][FoundryScript][Reflection] godot namespace is a reserved au
 	FSLanguage *fs_language = FSLanguage::get_singleton();
 
 	// The reflection API is exposed as the `godot` named global constant (see
-	// FSLanguage::init), so the language reports `godot` as a reserved global
+	// FSLanguage::init), so the language reports `foundry` as a reserved global
 	// name. Editor autoload validation iterates this list exactly like
-	// get_reserved_words and rejects an autoload that would shadow `godot.reflection`.
+	// get_reserved_words and rejects an autoload that would shadow `foundry.reflection`.
 	// The registration and this reservation share a single source constant, so they
 	// cannot drift. The reservation is scoped to tools builds, where the compiler can
 	// resolve named globals; an exported runtime does not reserve the name.
 	const Vector<String> reserved = fs_language->get_reserved_global_names();
 #ifdef TOOLS_ENABLED
-	CHECK(reserved.has("godot"));
-	CHECK(fs_language->is_reserved_global_name("godot"));
+	CHECK(reserved.has("foundry"));
+	CHECK(fs_language->is_reserved_global_name("foundry"));
 #else
-	CHECK_FALSE(reserved.has("godot"));
-	CHECK_FALSE(fs_language->is_reserved_global_name("godot"));
+	CHECK_FALSE(reserved.has("foundry"));
+	CHECK_FALSE(fs_language->is_reserved_global_name("foundry"));
 #endif
 
 	// A normal identifier is never reserved by this mechanism.

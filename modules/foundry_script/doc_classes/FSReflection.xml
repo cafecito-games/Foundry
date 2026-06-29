@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="FSReflection" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		Read-only FoundryScript reflection and dynamic-proxy API, reached through [code]godot.reflection[/code].
+		Read-only FoundryScript reflection and dynamic-proxy API, reached through [code]foundry.reflection[/code].
 	</brief_description>
 	<description>
-		Provides read-only introspection over FoundryScript types and the helpers used to build dynamic proxies. It is exposed as the [code]reflection[/code] member of the [code]godot[/code] namespace, so it is called as [code]godot.reflection.method(...)[/code]; you never construct it yourself.
+		Provides read-only introspection over FoundryScript types and the helpers used to build dynamic proxies. It is exposed as the [code]reflection[/code] member of the [code]godot[/code] namespace, so it is called as [code]foundry.reflection.method(...)[/code]; you never construct it yourself.
 		A [i]dynamic proxy[/i] is a synthetic object that statically satisfies a trait or abstract type and routes every call in that type's contract through a handler [Callable]. The proxied type must be a trait or abstract type whose native base is [RefCounted] or a [RefCounted]-derived type such as [Resource]; the proxy host is then a real instance of that native base, so [code]is[/code] checks and native methods against it hold. Non-reference-counted bases ([Object], [Node], ...) are not supported. The same primitive serves mocking (the handler records calls and returns stubbed values) and Spring-style interception/AOP (the handler logs or times a call and then "proceeds" to a real target).
 		[codeblocks]
 		[foundry_script]
 		# Mocking: a handler records calls and returns stubbed values.
 		var stub: Dictionary = {"find": "stubbed"}
-		var repo := godot.reflection.create_proxy_dynamic(Repository, func(method: StringName, args: Array):
+		var repo := foundry.reflection.create_proxy_dynamic(Repository, func(method: StringName, args: Array):
 		    return stub.get(method, null)
 		) as Repository
 
 		# Interception/AOP: a handler logs a call and proceeds to a real target.
 		var real := UserService.new()
-		var logged := godot.reflection.create_proxy_dynamic(UserService, func(method: StringName, args: Array):
+		var logged := foundry.reflection.create_proxy_dynamic(UserService, func(method: StringName, args: Array):
 		    print("calling ", method)
 		    return real.callv(method, args)
 		) as UserService
 		[/foundry_script]
 		[/codeblocks]
-		Reflection introspection accepts a script type (a [Script] class handle), a typed class handle stored in a [code]Type[T][/code] variable, or an instance whose script is used. A [code]Type[T][/code] value is the same runtime class-handle object as the bare class name ([code]User[/code]); reflection does not add methods directly to [code]Type[T][/code] in v1—call [code]godot.reflection[/code] instead.
+		Reflection introspection accepts a script type (a [Script] class handle), a typed class handle stored in a [code]Type[T][/code] variable, or an instance whose script is used. A [code]Type[T][/code] value is the same runtime class-handle object as the bare class name ([code]User[/code]); reflection does not add methods directly to [code]Type[T][/code] in v1—call [code]foundry.reflection[/code] instead.
 		[codeblocks]
 		[foundry_script]
 		trait Creatable:
@@ -34,10 +34,10 @@
 
 		var user_type: Type[User] = User
 
-		godot.reflection.get_methods(User)
-		godot.reflection.get_methods(user_type)
-		godot.reflection.get_class_annotations(user_type)
-		godot.reflection.implements_trait(user_type, Creatable)
+		foundry.reflection.get_methods(User)
+		foundry.reflection.get_methods(user_type)
+		foundry.reflection.get_class_annotations(user_type)
+		foundry.reflection.implements_trait(user_type, Creatable)
 		[/foundry_script]
 		[/codeblocks]
 		The descriptors it returns use the same [Dictionary] shapes as [method Object.get_method_list] and [method Object.get_property_list].

@@ -1,4 +1,4 @@
-# `godot.reflection.create_proxy_dynamic(type, handler)` is the namespaced surface
+# `foundry.reflection.create_proxy_dynamic(type, handler)` is the namespaced surface
 # for building a dynamic proxy: every contract call on the proxied trait/abstract
 # type is routed through the handler, invoked as `handler.call(method_name, args)`.
 trait Repository:
@@ -12,7 +12,7 @@ func test() -> void:
 		"count": 3,
 	}
 
-	var repo := godot.reflection.create_proxy_dynamic(Repository, func(method_name: StringName, _args: Array) -> Variant:
+	var repo := foundry.reflection.create_proxy_dynamic(Repository, func(method_name: StringName, _args: Array) -> Variant:
 		calls.append(str(method_name))
 		return stub.get(method_name, null)) as Repository
 

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="FSGodotNamespace" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="FSNamespace" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		The [code]godot[/code] namespace object exposed to FoundryScript.
+		The [code]foundry[/code] namespace object exposed to FoundryScript.
 	</brief_description>
 	<description>
-		Backs the [code]godot[/code] global in FoundryScript. It is a singleton you do not construct; access its members through [code]godot.[/code], for example [code]godot.reflection.get_methods(...)[/code]. Currently it exposes only the read-only [member reflection] member.
+		Backs the [code]foundry[/code] global in FoundryScript. It is a singleton you do not construct; access its members through [code]foundry.[/code], for example [code]foundry.reflection.get_methods(...)[/code]. Currently it exposes only the read-only [member reflection] member.
 	</description>
 	<tutorials>
 	</tutorials>

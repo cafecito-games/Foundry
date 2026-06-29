@@ -684,7 +684,7 @@ public:
 };
 
 class FSReflection;
-class FSGodotNamespace;
+class FSNamespace;
 
 class FSLanguage : public ScriptLanguage {
 	friend class FSFunctionState;
@@ -699,11 +699,11 @@ class FSLanguage : public ScriptLanguage {
 	HashMap<StringName, Variant> named_globals;
 	Vector<int> global_array_empty_indexes;
 
-	// Read-only reflection singletons exposed as the `godot.reflection` surface.
+	// Read-only reflection singletons exposed as the `foundry.reflection` surface.
 	// Held by `named_globals`; these member refs keep them addressable and are
 	// cleared in finish().
 	Ref<FSReflection> reflection_singleton;
-	Ref<FSGodotNamespace> godot_namespace_singleton;
+	Ref<FSNamespace> namespace_singleton;
 
 	struct CallLevel {
 		Variant *stack = nullptr;

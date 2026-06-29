@@ -1,4 +1,4 @@
-# godot.reflection accepts typed class handles (Type[T] values) as reflection targets.
+# foundry.reflection accepts typed class handles (Type[T] values) as reflection targets.
 # At runtime a Type[T] value is the same class-handle object as the bare class name.
 namespace cafecito.type_metatype_reflect
 
@@ -25,7 +25,7 @@ class User uses Creatable:
 
 func _method_names(target: Variant) -> Array:
 	var names: Array = []
-	for method in godot.reflection.get_methods(target):
+	for method in foundry.reflection.get_methods(target):
 		names.append(str(method["name"]))
 	names.sort()
 	return names
@@ -33,7 +33,7 @@ func _method_names(target: Variant) -> Array:
 
 func _property_names(target: Variant) -> Array:
 	var names: Array = []
-	for property in godot.reflection.get_properties(target):
+	for property in foundry.reflection.get_properties(target):
 		names.append(str(property["name"]))
 	names.sort()
 	return names
@@ -51,17 +51,17 @@ func test() -> void:
 	print(_property_names(Sprite) == _property_names(sprite_type))
 	print("label" in _property_names(sprite_type))
 
-	print(godot.reflection.implements_trait(sprite_type, Drawable))
-	print(godot.reflection.implements_trait(sprite_type, Sprite))
-	print(godot.reflection.implements_trait(user_type, Creatable))
-	print(godot.reflection.implements_trait(user_type, creatable_trait))
-	print(godot.reflection.implements_trait(user_type, Drawable))
-	print(godot.reflection.implements_trait(drawable_type, Drawable))
+	print(foundry.reflection.implements_trait(sprite_type, Drawable))
+	print(foundry.reflection.implements_trait(sprite_type, Sprite))
+	print(foundry.reflection.implements_trait(user_type, Creatable))
+	print(foundry.reflection.implements_trait(user_type, creatable_trait))
+	print(foundry.reflection.implements_trait(user_type, Drawable))
+	print(foundry.reflection.implements_trait(drawable_type, Drawable))
 
 	print(user_type == User)
 	print(sprite_type == Sprite)
 
-	print(godot.reflection.get_class_annotations(user_type).size())
-	print(godot.reflection.get_class_annotations(sprite_type).size())
-	print(godot.reflection.has_annotation(sprite_type, "", "marked", "class"))
-	print(godot.reflection.get_method_info(user_type, "create")["name"])
+	print(foundry.reflection.get_class_annotations(user_type).size())
+	print(foundry.reflection.get_class_annotations(sprite_type).size())
+	print(foundry.reflection.has_annotation(sprite_type, "", "marked", "class"))
+	print(foundry.reflection.get_method_info(user_type, "create")["name"])

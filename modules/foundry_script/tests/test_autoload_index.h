@@ -537,7 +537,7 @@ TEST_CASE("[Modules][FoundryScript] Autoload index records project settings diag
 	autoloads.set(SNAME("IndexMissing"), files.missing("missing.fs"), true, 10);
 	autoloads.set(SNAME("IndexText"), text_path, true, 20);
 	autoloads.set(SNAME("IndexPlain"), non_node_path, true, 30);
-	autoloads.set(SNAME("godot"), node_path, true, 40);
+	autoloads.set(SNAME("foundry"), node_path, true, 40);
 	autoloads.set(SNAME("IndexCollision"), unrelated_path, true, 50);
 
 	FSAutoloadIndex index;
@@ -563,11 +563,11 @@ TEST_CASE("[Modules][FoundryScript] Autoload index records project settings diag
 	CHECK_FALSE(index.get_by_name(SNAME("IndexPlain"))->is_node);
 	CHECK(has_diagnostic(*index.get_by_name(SNAME("IndexPlain")), FSAutoloadIndexDiagnostic::NON_NODE_SCRIPT));
 
-	CHECK(index.get_by_name(SNAME("godot")) != nullptr);
-	if (index.get_by_name(SNAME("godot")) == nullptr) {
+	CHECK(index.get_by_name(SNAME("foundry")) != nullptr);
+	if (index.get_by_name(SNAME("foundry")) == nullptr) {
 		return;
 	}
-	CHECK(has_diagnostic(*index.get_by_name(SNAME("godot")), FSAutoloadIndexDiagnostic::RESERVED_GLOBAL_NAME_COLLISION));
+	CHECK(has_diagnostic(*index.get_by_name(SNAME("foundry")), FSAutoloadIndexDiagnostic::RESERVED_GLOBAL_NAME_COLLISION));
 
 	CHECK(index.get_by_name(SNAME("IndexCollision")) != nullptr);
 	if (index.get_by_name(SNAME("IndexCollision")) == nullptr) {
@@ -757,7 +757,7 @@ TEST_CASE("[Modules][FoundryScript] Analyzer populates script-owned autoload nam
 
 	const String reserved_source =
 			"@autoload\n"
-			"class_name godot extends Node\n";
+			"class_name foundry extends Node\n";
 	const String reserved_path = files.write("reserved.fs", reserved_source);
 
 	FSParser reserved_parser;
@@ -772,7 +772,7 @@ TEST_CASE("[Modules][FoundryScript] Analyzer populates script-owned autoload nam
 		return;
 	}
 
-	const FSAutoloadIndexEntry *reserved_entry = reserved_index.get_by_name(SNAME("godot"));
+	const FSAutoloadIndexEntry *reserved_entry = reserved_index.get_by_name(SNAME("foundry"));
 	REQUIRE(reserved_entry != nullptr);
 	CHECK(has_diagnostic(*reserved_entry, FSAutoloadIndexDiagnostic::RESERVED_GLOBAL_NAME_COLLISION));
 

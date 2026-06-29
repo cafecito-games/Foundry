@@ -54,17 +54,17 @@ class Subject:
 
 func test() -> void:
 	# Default of the omitted-only parameter is not injected.
-	var skip_marker = godot.reflection.get_annotation(Subject, "skipped_without_reason", "skip")
+	var skip_marker = foundry.reflection.get_annotation(Subject, "skipped_without_reason", "skip")
 	print(skip_marker.args.size())
 	print(skip_marker.kwargs.size())
 
 	# Explicit positional argument is preserved.
-	var skip_reason = godot.reflection.get_annotation(Subject, "skipped_with_reason", "skip")
+	var skip_reason = foundry.reflection.get_annotation(Subject, "skipped_with_reason", "skip")
 	print(skip_reason.args.size())
 	print(skip_reason.args[0])
 
 	# Positional in args, named in kwargs, defaulted parameter omitted from both.
-	var config = godot.reflection.get_annotation(Subject, "partially_bound", "config")
+	var config = foundry.reflection.get_annotation(Subject, "partially_bound", "config")
 	print(config.args.size())
 	print(config.args[0])
 	print(config.kwargs.size())
@@ -72,25 +72,25 @@ func test() -> void:
 	print(config.kwargs.has("second"))
 
 	# Variadic accepts zero extra positional arguments.
-	print(godot.reflection.get_annotation(Subject, "no_tags", "tags").args.size())
+	print(foundry.reflection.get_annotation(Subject, "no_tags", "tags").args.size())
 
 	# Variadic accepts many extra positional arguments, preserved in order.
-	var many = godot.reflection.get_annotation(Subject, "many_tags", "tags")
+	var many = foundry.reflection.get_annotation(Subject, "many_tags", "tags")
 	print(many.args.size())
 	print(many.args[0])
 	print(many.args[1])
 
 	# Constant-expression arguments are reduced to resolved values on a static method.
-	print(godot.reflection.get_annotation(Subject, "computed", "timeout").args[0])
-	print(godot.reflection.get_annotation(Subject, "computed", "priority").args[0])
+	print(foundry.reflection.get_annotation(Subject, "computed", "timeout").args[0])
+	print(foundry.reflection.get_annotation(Subject, "computed", "priority").args[0])
 
 	# Static member variables carry annotation metadata.
-	var static_variable = godot.reflection.get_variable_annotations(Subject, "shared_state")
+	var static_variable = foundry.reflection.get_variable_annotations(Subject, "shared_state")
 	print(static_variable.size())
 	print(static_variable[0].name)
 
 	# get_methods() (plural) descriptors embed the same annotation objects.
-	for method in godot.reflection.get_methods(Subject):
+	for method in foundry.reflection.get_methods(Subject):
 		if str(method["name"]) == "computed":
 			var method_annotations: Array = method["annotations"]
 			print(method_annotations.size())

@@ -22,7 +22,7 @@ func test() -> void:
 			return "wrapped:" + str(target.callv(method_name, args))),
 	}
 
-	var service := godot.reflection.create_delegating_proxy(Service, real, interceptor) as Service
+	var service := foundry.reflection.create_delegating_proxy(Service, real, interceptor) as Service
 
 	# Advised method: the advice runs and "proceeds" to the target.
 	print(service.greet("world"))

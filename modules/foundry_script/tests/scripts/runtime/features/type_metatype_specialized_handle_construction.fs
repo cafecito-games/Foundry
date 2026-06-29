@@ -25,7 +25,7 @@ func return_pair_as_int_box_type() -> Type[Box[int]]:
 
 
 func print_int_argument(instance: Box[int]) -> void:
-	print(godot.reflection.get_type_arguments(instance)[0]["type"] == TYPE_INT)
+	print(foundry.reflection.get_type_arguments(instance)[0]["type"] == TYPE_INT)
 
 
 func test() -> void:
@@ -50,12 +50,12 @@ func test() -> void:
 
 	var from_widened_pair: Variant = return_pair_as_int_box_type().new()
 	print(from_widened_pair is Pair)
-	print(godot.reflection.get_type_arguments(from_widened_pair).size())
+	print(foundry.reflection.get_type_arguments(from_widened_pair).size())
 	from_widened_pair.other = "ok"
 	print(from_widened_pair.other)
 
 	var external_int_box = External.Box[int]
 	var from_external = external_int_box.new()
-	print(godot.reflection.get_type_arguments(from_external)[0]["type"] == TYPE_INT)
+	print(foundry.reflection.get_type_arguments(from_external)[0]["type"] == TYPE_INT)
 
 	print("specialized Type handle construction ok")

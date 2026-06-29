@@ -9,6 +9,6 @@ trait Fetcher:
 func test() -> void:
 	var handler := func(_method_name: StringName, _args: Array) -> Variant:
 		return null
-	var proxy := godot.reflection.create_proxy_dynamic(Fetcher, handler) as Fetcher
+	var proxy := foundry.reflection.create_proxy_dynamic(Fetcher, handler) as Fetcher
 	print(Callable(proxy, "fetch").is_async())
 	print(Callable(proxy, "size").is_async())

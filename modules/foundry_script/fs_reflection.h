@@ -111,11 +111,11 @@ public:
 	Ref<RefCounted> create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor) const;
 };
 
-// The `godot` global namespace object. Currently it only exposes the read-only
+// The `foundry` global namespace object. Currently it only exposes the read-only
 // `reflection` member; this is the nested-singleton binding for the
-// `godot.reflection.*` surface (a true language namespace is not available).
-class FSGodotNamespace : public RefCounted {
-	FOUNDRY_CLASS(FSGodotNamespace, RefCounted);
+// `foundry.reflection.*` surface (a true language namespace is not available).
+class FSNamespace : public RefCounted {
+	FOUNDRY_CLASS(FSNamespace, RefCounted);
 
 	Ref<FSReflection> reflection;
 

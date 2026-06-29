@@ -17,20 +17,20 @@ class Probe:
 		pass
 
 func test() -> void:
-	var class_annotations := godot.reflection.get_class_annotations(Probe)
+	var class_annotations := foundry.reflection.get_class_annotations(Probe)
 	print(class_annotations.size())
 	print(class_annotations[0].name)
 	print(class_annotations[0].qualified_name)
 	print(class_annotations[0].kwargs["name"])
 
-	var method_annotations := godot.reflection.get_method_annotations(Probe, "scenario")
+	var method_annotations := foundry.reflection.get_method_annotations(Probe, "scenario")
 	print(method_annotations.size())
 	print(method_annotations[0].name)
 	print(method_annotations[0].qualified_name)
 	print(method_annotations[0].args[0])
 
-	print(godot.reflection.get_variable_annotations(Probe, "world")[0].qualified_name)
+	print(foundry.reflection.get_variable_annotations(Probe, "world")[0].qualified_name)
 
 	# A qualified usage is matchable by both its short name and its canonical identity.
-	print(godot.reflection.has_annotation(Probe, "scenario", "timeout"))
-	print(godot.reflection.has_annotation(Probe, "scenario", "cafecito.qualified_reflect.timeout"))
+	print(foundry.reflection.has_annotation(Probe, "scenario", "timeout"))
+	print(foundry.reflection.has_annotation(Probe, "scenario", "cafecito.qualified_reflect.timeout"))

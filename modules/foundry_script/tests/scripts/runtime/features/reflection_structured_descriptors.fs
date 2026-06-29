@@ -1,4 +1,4 @@
-# godot.reflection exposes structured method and property descriptors as typed
+# foundry.reflection exposes structured method and property descriptors as typed
 # FSMethodDescriptor / FSPropertyDescriptor objects, giving typed access to a
 # member's metadata (name, arguments, return value, flags) plus its passive annotations,
 # alongside the back-compatible loosely-keyed Dictionary form via to_dictionary().
@@ -22,7 +22,7 @@ class Derived extends Base:
 func test() -> void:
 	# Structured method descriptors carry typed metadata and embedded annotations.
 	var by_name := {}
-	for descriptor: FSMethodDescriptor in godot.reflection.get_method_descriptors(Base):
+	for descriptor: FSMethodDescriptor in foundry.reflection.get_method_descriptors(Base):
 		by_name[str(descriptor.name)] = descriptor
 	var attack: FSMethodDescriptor = by_name["attack"]
 	print(attack.name)
@@ -36,19 +36,19 @@ func test() -> void:
 	print(attack.annotations[0].name)
 
 	# get_method_descriptor resolves an inherited method through the derived script.
-	var inherited := godot.reflection.get_method_descriptor(Derived, "attack")
+	var inherited := foundry.reflection.get_method_descriptor(Derived, "attack")
 	print(inherited.name)
 	print(inherited.annotations.size())
-	print(godot.reflection.get_method_descriptor(Base, "missing") == null)
+	print(foundry.reflection.get_method_descriptor(Base, "missing") == null)
 
 	# to_dictionary mirrors the loosely-keyed get_method_info, annotations included.
-	var info := godot.reflection.get_method_info(Base, "attack")
+	var info := foundry.reflection.get_method_info(Base, "attack")
 	print(attack.to_dictionary()["name"] == info["name"])
 	var embedded: Array = attack.to_dictionary()["annotations"]
 	print(embedded.size())
 
 	# Structured property descriptors carry typed metadata and embedded annotations.
-	for descriptor: FSPropertyDescriptor in godot.reflection.get_property_descriptors(Base):
+	for descriptor: FSPropertyDescriptor in foundry.reflection.get_property_descriptors(Base):
 		if str(descriptor.name) == "health":
 			print(descriptor.type == TYPE_INT)
 			print(descriptor.usage == descriptor.get_property_usage())
@@ -57,6 +57,6 @@ func test() -> void:
 			print(descriptor.to_dictionary()["name"])
 
 	# Invalid / non-script targets stay safe: empty arrays and null descriptors.
-	print(godot.reflection.get_method_descriptors(42).size())
-	print(godot.reflection.get_method_descriptor(42, "x") == null)
-	print(godot.reflection.get_property_descriptors(null).size())
+	print(foundry.reflection.get_method_descriptors(42).size())
+	print(foundry.reflection.get_method_descriptor(42, "x") == null)
+	print(foundry.reflection.get_property_descriptors(null).size())

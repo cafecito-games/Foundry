@@ -2493,10 +2493,10 @@ void FSLanguage::remove_named_global_constant(const StringName &p_name) {
 	named_globals.erase(p_name);
 }
 
-// The reflection API is exposed as the `godot` named global (see `init`/`finish`).
+// The reflection API is exposed as the `foundry` named global (see `init`/`finish`).
 // `get_reserved_global_names` reports it so the editor rejects a project autoload that
 // would shadow it; reflection wins by construction. Single source for the three sites.
-static const char *FOUNDRY_SCRIPT_REFLECTION_NAMESPACE = "godot";
+static const char *FOUNDRY_SCRIPT_REFLECTION_NAMESPACE = "foundry";
 
 void FSLanguage::init() {
 	//populate global constants
@@ -2534,9 +2534,9 @@ void FSLanguage::init() {
 	// language namespace is not available, so `godot` is a nested-singleton object
 	// whose `reflection` member is the introspection object.
 	reflection_singleton.instantiate();
-	godot_namespace_singleton.instantiate();
-	godot_namespace_singleton->set_reflection(reflection_singleton);
-	add_named_global_constant(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE, godot_namespace_singleton);
+	namespace_singleton.instantiate();
+	namespace_singleton->set_reflection(reflection_singleton);
+	add_named_global_constant(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE, namespace_singleton);
 
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
@@ -2648,14 +2648,14 @@ void FSLanguage::finish() {
 
 	// Tear down the reflection singletons exposed via the `godot` global. Only
 	// remove the named global if it still points to our singleton: a project
-	// autoload could have overwritten the `godot` entry, and we must not clobber it.
-	if (godot_namespace_singleton.is_valid() && named_globals.has(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE)) {
+	// autoload could have overwritten the `foundry` entry, and we must not clobber it.
+	if (namespace_singleton.is_valid() && named_globals.has(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE)) {
 		const Object *registered = named_globals[FOUNDRY_SCRIPT_REFLECTION_NAMESPACE].get_validated_object();
-		if (registered == godot_namespace_singleton.ptr()) {
+		if (registered == namespace_singleton.ptr()) {
 			remove_named_global_constant(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE);
 		}
 	}
-	godot_namespace_singleton.unref();
+	namespace_singleton.unref();
 	reflection_singleton.unref();
 
 	finishing = false;
