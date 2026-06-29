@@ -701,6 +701,15 @@ jobs:
           cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.exe templates/windows_debug_x86_64.exe
           cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.console.exe templates/windows_debug_x86_64.console.exe
 
+          # D3D12 Agility SDK runtime DLLs ship next to the Windows templates,
+          # arch-suffixed; the exporter copies them beside the exported game.
+          # Only present when the D3D12 SDK was available at build time.
+          for dll in D3D12Core d3d12SDKLayers; do
+            if [ -f "artifacts/release-windows-template_release/${dll}.dll" ]; then
+              cp "artifacts/release-windows-template_release/${dll}.dll" "templates/${dll}.x86_64.dll"
+            fi
+          done
+
           # macOS template (single macos_template.app zip with debug + release universals).
           cp artifacts/release-macos-templates/*.zip templates/macos.zip
 
@@ -737,7 +746,14 @@ jobs:
 
           # --- Editor archives ----------------------------------------------
           ( cd artifacts/release-linux-editor && zip -q "$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_linux.x86_64.zip" foundry.linuxbsd.editor.x86_64 )
-          ( cd artifacts/release-windows-editor && zip -q "$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_windows.x86_64.zip" foundry.windows.editor.x86_64.exe )
+          # The Windows editor needs its D3D12 sidecar DLLs (and console wrapper)
+          # alongside the executable; include whichever were produced.
+          ( cd artifacts/release-windows-editor
+            win_zip="$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_windows.x86_64.zip"
+            zip -q "$win_zip" foundry.windows.editor.x86_64.exe
+            for extra in foundry.windows.editor.x86_64.console.exe D3D12Core.dll d3d12SDKLayers.dll; do
+              if [ -f "$extra" ]; then zip -q "$win_zip" "$extra"; fi
+            done )
           # macOS editor ships as the universal .app bundle produced by generate_bundle.
           ( cd artifacts/release-macos-editor && zip -r -q "$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_macos.universal.zip" ./*.app )
 
