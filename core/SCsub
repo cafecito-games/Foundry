@@ -211,7 +211,12 @@ env.CommandNoCache(
 env.CommandNoCache("#core/authors.gen.h", "#AUTHORS.md", env.Run(core_builders.make_authors_header))
 
 # Donors
-env.CommandNoCache("#core/donors.gen.h", "#DONORS.md", env.Run(core_builders.make_donors_header))
+donors_file = env.File("#DONORS.md")
+env.CommandNoCache(
+    "#core/donors.gen.h",
+    donors_file if donors_file.exists() else env.Value(""),
+    env.Run(core_builders.make_donors_header),
+)
 
 # License
 env.CommandNoCache(

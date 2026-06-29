@@ -134,10 +134,16 @@ def make_donors_header(target, source, env):
         "Platinum members": "DONORS_MEMBERS_PLATINUM",
         "Gold members": "DONORS_MEMBERS_GOLD",
     }
-    buffer = methods.get_buffer(str(source[0]))
+    source_path = str(source[0]) if source else ""
+    buffer = methods.get_buffer(source_path) if source_path else b""
     reading = False
+    written_sections = set()
 
     with methods.generated_wrapper(str(target[0])) as file:
+
+        def open_section(section):
+            file.write(f"inline constexpr const char *{section}[] = {{\n")
+            written_sections.add(section)
 
         def close_section():
             file.write("\tnullptr,\n};\n\n")
@@ -148,14 +154,19 @@ def make_donors_header(target, source, env):
             elif line.startswith("## "):
                 if reading:
                     close_section()
-                    reading = False
+                reading = False
                 section = SECTIONS.get(line[3:].strip())
                 if section:
-                    file.write(f"inline constexpr const char *{section}[] = {{\n")
+                    open_section(section)
                     reading = True
 
         if reading:
             close_section()
+
+        for section in SECTIONS.values():
+            if section not in written_sections:
+                open_section(section)
+                close_section()
 
 
 def make_license_header(target, source, env):
