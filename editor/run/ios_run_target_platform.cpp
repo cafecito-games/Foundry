@@ -49,22 +49,43 @@
 
 CommandResult OSCommandRunner::run(const String &p_program, const List<String> &p_arguments) {
 	CommandResult result;
-	result.error = OS::get_singleton()->execute(p_program, p_arguments, &result.output, &result.exit_code, true);
+	// Capture stdout only. `devicectl --json-output -` writes its JSON to stdout while
+	// progress and "Failed ..." diagnostics go to stderr; merging stderr in would
+	// corrupt the JSON (and spam the log via the parser) even when the command itself
+	// succeeds. A genuine failure is detected through the exit code instead.
+	result.error = OS::get_singleton()->execute(p_program, p_arguments, &result.output, &result.exit_code, false);
 	return result;
+}
+
+// Parses `p_json_text` as a JSON object, quietly. Unlike `JSON::parse_string`, this
+// does not emit an error when the text is not valid JSON: `devicectl` failures yield
+// a human-readable "Failed ..." string rather than JSON, and that is an expected,
+// non-exceptional outcome the callers handle by reporting no devices (issue #702).
+static bool parse_devicectl_object(const String &p_json_text, Dictionary &r_data) {
+	if (p_json_text.strip_edges().is_empty()) {
+		return false;
+	}
+	Ref<JSON> json;
+	json.instantiate();
+	if (json->parse(p_json_text) != OK) {
+		return false;
+	}
+	const Variant parsed = json->get_data();
+	if (parsed.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	r_data = parsed;
+	return true;
 }
 
 Vector<IOSRunTargetPlatform::DeviceInfo> IOSRunTargetPlatform::parse_devicectl_devices(const String &p_json_text) {
 	Vector<DeviceInfo> result;
-	if (p_json_text.strip_edges().is_empty()) {
+
+	Dictionary data;
+	if (!parse_devicectl_object(p_json_text, data)) {
 		return result;
 	}
 
-	const Variant parsed = JSON::parse_string(p_json_text);
-	if (parsed.get_type() != Variant::DICTIONARY) {
-		return result;
-	}
-
-	const Dictionary data = parsed;
 	const Dictionary outcome = data.get("result", Dictionary());
 	const Array devices = outcome.get("devices", Array());
 
@@ -110,10 +131,11 @@ Array IOSRunTargetPlatform::build_probe_devices(const String &p_devicectl_json, 
 	}
 
 	// Then the devicectl devices in their native shape, preserving connected but
-	// not-yet-runnable devices so the ladder can still diagnose them.
-	const Variant parsed = JSON::parse_string(p_devicectl_json);
-	if (parsed.get_type() == Variant::DICTIONARY) {
-		const Dictionary data = parsed;
+	// not-yet-runnable devices so the ladder can still diagnose them. A failed probe
+	// yields non-JSON "Failed ..." text, which is ignored quietly so the legacy
+	// devices above are still surfaced.
+	Dictionary data;
+	if (parse_devicectl_object(p_devicectl_json, data)) {
 		const Dictionary outcome = data.get("result", Dictionary());
 		const Array devicectl_devices = outcome.get("devices", Array());
 		for (int i = 0; i < devicectl_devices.size(); i++) {
