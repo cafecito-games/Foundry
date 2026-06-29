@@ -29,7 +29,7 @@ def version_info_builder(target, source, env):
 #define FOUNDRY_VERSION_MODULE_CONFIG "{module_config}"
 #define FOUNDRY_VERSION_WEBSITE "{website}"
 #define FOUNDRY_VERSION_DOCS_BRANCH "{docs_branch}"
-#define FOUNDRY_VERSION_DOCS_URL "https://docs.godotengine.org/en/" FOUNDRY_VERSION_DOCS_BRANCH
+#define FOUNDRY_VERSION_DOCS_URL "https://docs.cafecito.games/foundry/en/" FOUNDRY_VERSION_DOCS_BRANCH
 """.format(**source[0].read())
         )
 

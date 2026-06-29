@@ -1,9 +1,9 @@
 short_name = "foundry"
 name = "Foundry"
-major = 4
-minor = 6
-patch = 3
-status = "stable"
+major = 0
+minor = 1
+patch = 0
+status = "dev"
 module_config = ""
 website = "https://www.cafecito.games/"
-docs = "4.6"
+docs = "0.1"
