@@ -1,0 +1,33 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-29-foundry-versioning-and-releases.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Reset version + Foundry docs URL",
+      "status": "pending",
+      "description": "Set version.py to 0.1.0.dev with docs=\"0.1\"; change docs URL base to https://docs.cafecito.games/foundry/en/ in core/core_builders.py:32 and modules/mono/build_scripts/build_assemblies.py:326. Verify --version prints 0.1.0.dev.\n\n```json:metadata\n{\"files\": [\"version.py\", \"core/core_builders.py\", \"modules/mono/build_scripts/build_assemblies.py\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --version\", \"acceptanceCriteria\": [\"version.py 0.1.0.dev docs=0.1\", \"docs URL base is foundry placeholder\", \"--version prints 0.1.0.dev\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Rename build binary godot -> foundry",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Change #bin/godot -> #bin/foundry in platform/{linuxbsd,macos,windows,web}/SCsub; rename macOS .app bundle prefix + inner exe + CFBundleExecutable. Verify bin/foundry.* emitted, no bin/godot.*, test suite passes.\n\n```json:metadata\n{\"files\": [\"platform/linuxbsd/SCsub\", \"platform/macos/SCsub\", \"platform/windows/SCsub\", \"platform/web/SCsub\", \"platform/macos/platform_macos_builders.py\", \"misc/dist/macos_tools.app/Contents/Info.plist\"], \"verifyCommand\": \"ls bin/foundry.* && ./bin/foundry.macos.editor.dev.* --headless --test\", \"acceptanceCriteria\": [\"no #bin/godot in platform/\", \"bin/foundry.* emitted\", \"macOS bundle Foundry-named\", \"test suite passes\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: De-godot CI workflows + composite actions",
+      "status": "pending",
+      "blockedBy": [1],
+      "description": "git mv .github/actions/godot-* -> foundry-*; update uses: paths, bin/foundry paths, Godot->Foundry in name: fields. Keep godot-cpp/emsdk. Lint workflows.\n\n```json:metadata\n{\"files\": [\".github/actions/\", \".github/workflows/\"], \"verifyCommand\": \"grep -rn 'actions/godot-\\\\|bin/godot' .github\", \"acceptanceCriteria\": [\"no actions/godot- refs\", \"no bin/godot refs\", \"only external godot refs remain\", \"YAML lints\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Add release.yml pipeline",
+      "status": "pending",
+      "blockedBy": [2],
+      "description": "New .github/workflows/release.yml: trigger on v* tag + workflow_dispatch; build all platforms reusing foundry-* actions; package editor archives + export-templates .tpz; publish GH Release (tag=auto, dispatch=draft). Lint.\n\n```json:metadata\n{\"files\": [\".github/workflows/release.yml\"], \"verifyCommand\": \"actionlint .github/workflows/release.yml\", \"acceptanceCriteria\": [\"v* tag + dispatch triggers\", \"all-platform matrix\", \"templates .tpz + editor archives\", \"tag=auto dispatch=draft publish\", \"YAML lints\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-29"
+}
