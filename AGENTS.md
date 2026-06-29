@@ -26,13 +26,14 @@ Keep commits focused and readable. Recent history uses concise imperative subjec
 
 ## Cursor Cloud specific instructions
 
-This is a Godot Engine fork; the only product is the single `godot` binary (editor, runtime, headless tool, and unit-test runner in one). Build it with SCons on `platform=linuxbsd`.
+This is a Godot Engine fork; the only product is the single `foundry` binary (editor, runtime, headless tool, and unit-test runner in one). Build it with SCons on `platform=linuxbsd`.
 
 - SCons is installed via `pip --user`, so its console script lives in `~/.local/bin` (added to PATH in `~/.bashrc`). Invoke as `scons` in a login shell, or robustly as `python3 -m SCons` in non-login shells.
 - Build (mirrors CI flags), from repo root: `python3 -m SCons platform=linuxbsd target=editor dev_build=yes tests=yes module_text_server_fb_enabled=yes -j$(nproc)`. A clean build takes ~13 min on this VM; incremental rebuilds are much faster, so do NOT clean unless necessary.
   - CI additionally uses `dev_mode=yes` (warnings-as-errors). Prefer `dev_build=yes` for local iteration; use `dev_mode=yes` only when you need to reproduce CI warning failures.
-- Output binary: `bin/godot.linuxbsd.editor.dev.x86_64`.
-- Run the full C++ + Foundry Script test suite: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors`. Always pass `--headless`.
-- Regenerate Foundry Script `.out` fixtures after intentional behavior changes: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-tests modules/foundry_script/tests/scripts`.
-- The editor GUI does launch on the desktop (display `:1`), but the VM has no GPU: Vulkan init prints `VK_KHR_surface not found` errors and Godot falls back to software rendering. These errors are expected and non-blocking. For scripted/automated runs, prefer `--headless`.
+- Output binary: `bin/foundry.linuxbsd.editor.dev.x86_64` (this fork renames the binary from `godot` to `foundry`).
+- Run the full C++ + Foundry Script test suite: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless --test --force-colors`. Always pass `--headless`. The run prints `ObjectDB instances leaked`/`resources still in use at exit` and may exit non-zero at cleanup even when every test passes; trust the `[doctest] Status: SUCCESS!` summary line.
+- Regenerate Foundry Script `.out` fixtures after intentional behavior changes: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-tests modules/foundry_script/tests/scripts`.
+- Foundry Script files use the `.fs` extension, and a project's config file is `project.foundry` (NOT `project.godot`); the Project Manager and `--editor` will not recognize a project that only has `project.godot`.
+- The editor GUI does launch on the desktop (display `:1`) via `DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 --path <project> --editor`, but the VM has no GPU: Vulkan init prints `VK_KHR_surface not found` errors and rendering falls back to OpenGL/llvmpipe software rendering. These errors are expected and non-blocking. For scripted/automated runs, prefer `--headless`.
 - Lint/format gate (optional, not engine validation): `pre-commit run --all-files`.
