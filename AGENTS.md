@@ -16,6 +16,10 @@ This repository is a CafecitoGames fork of Godot Engine with active work around 
 
 Follow `.editorconfig`: UTF-8, LF line endings, final newline, 120-column limit, and trimmed trailing whitespace. C/C++ and most engine files use tabs with width 4; Python, `SConstruct`, and `SCsub` use 4 spaces; YAML and clang config files use 2 spaces. C++ formatting is enforced by `.clang-format`; Python/SCons formatting and imports are handled by Ruff, with mypy checks for Python. Keep filenames and APIs consistent with nearby Godot conventions, such as `snake_case` file names and test headers named `test_<area>.h`.
 
+## Grammar Specification
+
+The Foundry Script grammar is documented exhaustively in `modules/foundry_script/GRAMMAR.md` (ISO 14977 EBNF plus the Pratt-parser precedence table). It is a normative spec used to re-implement the front-end (tokenizer + Pratt parser) in other languages. Any change to the scripting language that affects its grammar — adding/removing/renaming tokens or keywords, changing operator precedence or associativity, altering statement/declaration/type/expression/pattern syntax, or changing the built-in annotation set (typically edits to `modules/foundry_script/fs_tokenizer.{h,cpp}` or `modules/foundry_script/fs_parser.{h,cpp}`) — must be reflected in `modules/foundry_script/GRAMMAR.md` in the same change so it stays authoritative.
+
 ## Testing Guidelines
 
 Add or update tests with behavior changes. C++ tests use doctest macros from `tests/test_macros.h` and are included through `tests/test_main.cpp`. New C++ test skeletons can be created with `python tests/create_test.py Name path`, where `path` is relative to `tests/`. Foundry Script integration, completion, LSP, and refactor fixtures belong under `modules/foundry_script/tests/scripts/`; pair `.fs` fixtures with expected-output config files where the local test runner expects them.
