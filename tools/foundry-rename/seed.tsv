@@ -168,3 +168,4 @@ GODOT_animation_time_begin_time_end	!EXCLUDE	D	FBX additional_data interop key
 GODOT_blend_shape_animations	!EXCLUDE	D	FBX additional_data interop key
 GODOT_mesh_blend_channels	!EXCLUDE	D	FBX additional_data interop key
 GODOT_fbx_light	!EXCLUDE	D	FBX additional_data interop key
+GODOT_MBEDTLS_THREADING_ALT	!EXCLUDE	D	defined in thirdparty/mbedtls config; consumer #ifdef must keep GODOT_ name
