@@ -587,9 +587,10 @@ jobs:
       - name: Setup Python and SCons
         uses: ./.github/actions/foundry-deps
 
-      # The ios.zip template bundles device + simulator xcframeworks for both
-      # debug and release, so build all four before generate_bundle assembles
-      # the zip on the final build.
+      # The ios.zip template bundles a device xcframework slice (arm64) and a
+      # simulator slice advertising arm64 + x86_64, for both debug and release.
+      # Build every slice before generate_bundle lipo-assembles the zip on the
+      # final build.
       - name: Compilation (release device arm64)
         uses: ./.github/actions/foundry-build
         with:
@@ -604,6 +605,13 @@ jobs:
           platform: ios
           target: template_release
 
+      - name: Compilation (release simulator x86_64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 ios_simulator=yes
+          platform: ios
+          target: template_release
+
       - name: Compilation (debug device arm64)
         uses: ./.github/actions/foundry-build
         with:
@@ -611,10 +619,17 @@ jobs:
           platform: ios
           target: template_debug
 
-      - name: Compilation (debug simulator arm64) + bundle
+      - name: Compilation (debug simulator arm64)
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes generate_bundle=yes
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes
+          platform: ios
+          target: template_debug
+
+      - name: Compilation (debug simulator x86_64) + bundle
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 ios_simulator=yes generate_bundle=yes
           platform: ios
           target: template_debug
 
@@ -698,6 +713,13 @@ jobs:
 
           # iOS template (device + simulator, debug + release).
           cp artifacts/release-ios/*.zip templates/ios.zip
+
+          # upload-artifact/download-artifact does not preserve POSIX executable
+          # bits, so restore them on loose Unix binaries before zipping (binaries
+          # already inside .zip/.apk artifacts keep their stored permissions).
+          chmod +x templates/linux_release.x86_64 templates/linux_debug.x86_64
+          chmod +x artifacts/release-linux-editor/foundry.linuxbsd.editor.x86_64
+          chmod +x artifacts/release-macos-editor/*.app/Contents/MacOS/*
 
           ( cd templates && zip -r -q "../dist/Foundry_v${VERSION}_export_templates.tpz" . )
 
