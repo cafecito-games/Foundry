@@ -54,6 +54,7 @@ void EditorAbout::_notification(int p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			_about_text_label->set_text(
 					String(U"© 2014-present ") + TTR("Godot Engine contributors") + ".\n" +
+					String(U"© 2026–present Cafecito Games (Foundry).\n") +
 					String(U"© 2007-2014 Juan Linietsky, Ariel Manzur.\n"));
 
 			_project_manager_label->set_text(TTR("Project Manager", "Job Title"));
@@ -254,6 +255,21 @@ EditorAbout::EditorAbout() {
 		VBoxContainer *vb = memnew(VBoxContainer);
 		vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		sc->add_child(vb);
+
+		// Foundry credit, shown above the upstream Godot authors. Foundry is a fork of
+		// Godot Engine; the complete Godot author list is preserved verbatim below.
+		static const char *const FOUNDRY_AUTHORS[] = { "Cafecito Games", nullptr };
+		_create_section(vb, TTRC("Foundry"), FOUNDRY_AUTHORS, FLAG_SINGLE_COLUMN);
+
+		Label *foundry_note = memnew(Label(TTRC("Foundry is a fork of Godot Engine, built on the work of the Godot Engine contributors listed below.")));
+		foundry_note->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+		foundry_note->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		foundry_note->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		vb->add_child(foundry_note);
+
+		HSeparator *foundry_note_separator = memnew(HSeparator);
+		foundry_note_separator->set_modulate(Color(0, 0, 0, 0));
+		vb->add_child(foundry_note_separator);
 
 		_create_section(vb, TTRC("Project Founders"), AUTHORS_FOUNDERS, FLAG_SINGLE_COLUMN);
 		_create_section(vb, TTRC("Lead Developer"), AUTHORS_LEAD_DEVELOPERS);
