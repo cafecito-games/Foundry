@@ -1443,6 +1443,10 @@ ProjectManager::ProjectManager() {
 		title_bar_logo = memnew(Button);
 		title_bar_logo->set_flat(true);
 		title_bar_logo->set_tooltip_text(TTR("About Foundry"));
+		// Keep the title bar compact: scale the wordmark down to the title bar height
+		// instead of letting the logo's intrinsic size drive the header height.
+		title_bar_logo->set_expand_icon(true);
+		title_bar_logo->set_custom_minimum_size(Size2(112, 28) * EDSCALE);
 		left_hbox->add_child(title_bar_logo);
 		title_bar_logo->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_show_about));
 
