@@ -30,22 +30,43 @@ major = 0
 minor = 1
 patch = 0
 status = "dev"
+docs = "0.1"
 ```
 
 `short_name`, `name`, `website` already reflect Foundry and are unchanged.
 
-### Side effects and decisions
+### Docs URL: point at Foundry, not Godot
 
-- **`docs` field stays `"4.6"`.** It feeds `VERSION_DOCS_BRANCH` /
-  `VERSION_DOCS_URL`, which build in-editor documentation links against
-  `docs.godotengine.org/en/4.6`. There is no Foundry docs site and the engine
-  API is still 4.6-based, so changing it to `0.1` would 404 every link. Left
-  unchanged deliberately.
-- **`.pck` compatibility (`core/io/file_access_pack.cpp`).** Pack
-  compatibility is gated on `FOUNDRY_VERSION_MAJOR/MINOR`. After the reset, a
-  `.pck` built by an old 4.6.x binary reads as "newer" (4 > 0) and is refused.
-  This is acceptable: a 0.1.0 build pairs with 0.1.0 packs. Known consequence,
-  no code change.
+The in-editor documentation links are built from a hardcoded base URL plus the
+`docs` branch field. Today both resolve to Godot's docs site. Foundry will get
+its own docs site later; for now point them at a Foundry placeholder domain and
+feed the Foundry version as the branch.
+
+- **`version.py`:** `docs = "0.1"` (Foundry major.minor, mirroring Godot's
+  branch convention).
+- **`core/core_builders.py:32`** (the `version_generated.gen.h` generator):
+  change the base URL from `https://docs.godotengine.org/en/` to the Foundry
+  placeholder `https://docs.cafecito.games/foundry/en/`. Combined with the
+  branch field this yields `https://docs.cafecito.games/foundry/en/0.1`.
+- **`modules/mono/build_scripts/build_assemblies.py:326`** builds the parallel
+  C#/mono `VersionDocsUrl` constant from the same base — update it identically
+  so the .NET surface matches.
+
+`core/version_generated.gen.h` is build-generated output; do not hand-edit it.
+The placeholder domain is a deliberate stand-in to be swapped for the real
+Foundry docs URL once that site exists; the link target need not resolve today.
+
+Out of scope: `docs.godotengine.org` references in READMEs, source comments, and
+test fixtures — those are documentation/comments, not the version docs URL.
+
+### Other side effects and decisions
+
+- **`.pck` compatibility (`core/io/file_access_pack.cpp`).** Pack compatibility
+  is gated on `FOUNDRY_VERSION_MAJOR/MINOR`. After the reset, a `.pck` built by
+  an old 4.6.x binary reads as "newer" (4 > 0) and is refused. This is an
+  intentional hard reset: Foundry keeps no compatibility with packs created
+  outside this fork's 0.x line, so a 0.1.0 build pairs only with 0.1.x packs.
+  Known consequence, no code change.
 - **`editor_settings.cpp:1246`.** The `FOUNDRY_VERSION_MAJOR == 4 && minor < 3`
   one-time editor-settings migration branch becomes unreachable at major 0. It
   only migrated old Godot 4.x editor settings; left as-is rather than removing
