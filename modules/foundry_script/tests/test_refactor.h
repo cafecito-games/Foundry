@@ -662,6 +662,26 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("push_error(\"Not implemented: take_damage\")"));
 	}
 
+	TEST_CASE("Implement abstract: inserts trait-required stubs after uses declarations") {
+		const String source =
+				"trait Labeled extends RefCounted:\n"
+				"\tabstract func get_label() -> String\n"
+				"class MyClass extends RefCounted:\n"
+				"\tuses Labeled\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out,
+				"trait Labeled extends RefCounted:\n"
+				"\tabstract func get_label() -> String\n"
+				"class MyClass extends RefCounted:\n"
+				"\tuses Labeled\n"
+				"\n"
+				"\tfunc get_label() -> String:\n"
+				"\t\tpush_error(\"Not implemented: get_label\")\n"
+				"\t\treturn \"\"\n");
+	}
+
 	TEST_CASE("Implement abstract: disabled when the class implements the trait method") {
 		const String source =
 				"trait Damageable:\n"
