@@ -302,22 +302,21 @@ Error FoundryExtensionLibraryLoader::parse_foundry_extension_file(const String &
 		return ERR_INVALID_DATA;
 	}
 
-	if (compatibility_minimum[0] < 4 || (compatibility_minimum[0] == 4 && compatibility_minimum[1] == 0)) {
-		ERR_PRINT(vformat("FoundryExtension's compatibility_minimum (%d.%d.%d) must be at least 4.1.0: %s", compatibility_minimum[0], compatibility_minimum[1], compatibility_minimum[2], p_path));
+	// FoundryExtensions are versioned against Foundry's own version line; the
+	// minimum supported version is 0.1.0.
+	if (compatibility_minimum[0] == 0 && compatibility_minimum[1] == 0) {
+		ERR_PRINT(vformat("FoundryExtension's compatibility_minimum (%d.%d.%d) must be at least 0.1.0: %s", compatibility_minimum[0], compatibility_minimum[1], compatibility_minimum[2], p_path));
 		return ERR_INVALID_DATA;
 	}
 
-	bool compatible = true;
-	// Check version lexicographically.
-	if (FOUNDRY_VERSION_MAJOR != compatibility_minimum[0]) {
-		compatible = FOUNDRY_VERSION_MAJOR > compatibility_minimum[0];
-	} else if (FOUNDRY_VERSION_MINOR != compatibility_minimum[1]) {
-		compatible = FOUNDRY_VERSION_MINOR > compatibility_minimum[1];
-	} else {
-		compatible = FOUNDRY_VERSION_PATCH >= compatibility_minimum[2];
-	}
-	if (!compatible) {
-		ERR_PRINT(vformat("FoundryExtension only compatible with Godot version %d.%d.%d or later: %s, but your Godot version is %d.%d.%d",
+	// Compare versions as packed integers so a zero component (e.g. major 0)
+	// does not produce a tautological comparison; this stays a correct
+	// lexicographic compare for any version.
+	const uint64_t engine_version = ((uint64_t)FOUNDRY_VERSION_MAJOR << 32) | ((uint64_t)FOUNDRY_VERSION_MINOR << 16) | (uint64_t)FOUNDRY_VERSION_PATCH;
+
+	const uint64_t minimum_version = ((uint64_t)compatibility_minimum[0] << 32) | ((uint64_t)compatibility_minimum[1] << 16) | (uint64_t)compatibility_minimum[2];
+	if (engine_version < minimum_version) {
+		ERR_PRINT(vformat("FoundryExtension only compatible with Foundry version %d.%d.%d or later: %s, but your Foundry version is %d.%d.%d",
 				compatibility_minimum[0], compatibility_minimum[1], compatibility_minimum[2], p_path,
 				FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR, FOUNDRY_VERSION_PATCH));
 		return ERR_INVALID_DATA;
@@ -337,21 +336,9 @@ Error FoundryExtensionLibraryLoader::parse_foundry_extension_file(const String &
 			}
 		}
 
-		compatible = true;
-		if (FOUNDRY_VERSION_MAJOR != compatibility_maximum[0]) {
-			compatible = FOUNDRY_VERSION_MAJOR < compatibility_maximum[0];
-		} else if (FOUNDRY_VERSION_MINOR != compatibility_maximum[1]) {
-			compatible = FOUNDRY_VERSION_MINOR < compatibility_maximum[1];
-		}
-#if FOUNDRY_VERSION_PATCH
-		// #if check to avoid -Wtype-limits warning when 0.
-		else {
-			compatible = FOUNDRY_VERSION_PATCH <= compatibility_maximum[2];
-		}
-#endif
-
-		if (!compatible) {
-			ERR_PRINT(vformat("FoundryExtension only compatible with Godot version %s or earlier: %s, but your Godot version is %d.%d.%d",
+		const uint64_t maximum_version = ((uint64_t)compatibility_maximum[0] << 32) | ((uint64_t)compatibility_maximum[1] << 16) | (uint64_t)compatibility_maximum[2];
+		if (engine_version > maximum_version) {
+			ERR_PRINT(vformat("FoundryExtension only compatible with Foundry version %s or earlier: %s, but your Foundry version is %d.%d.%d",
 					compat_string, p_path, FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR, FOUNDRY_VERSION_PATCH));
 			return ERR_INVALID_DATA;
 		}
