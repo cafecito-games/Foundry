@@ -36,15 +36,27 @@ jobs:
 
       - name: Resolve version and publish mode
         id: resolve
+        env:
+          # Pass untrusted/event-derived values through the environment instead
+          # of interpolating them into the script body, to avoid shell injection.
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            tag="${{ github.ref_name }}"
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="$REF_NAME"
             version="${tag#v}"
             draft="false"
           else
-            version="${{ inputs.version }}"
+            version="$VERSION_INPUT"
             tag="v${version}"
             draft="true"
+          fi
+
+          # Reject anything that is not a bare X.Y.Z version (defense in depth).
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid release version '$version'; expected X.Y.Z."
+            exit 1
           fi
 
           # Sanity-check the requested version matches version.py.
