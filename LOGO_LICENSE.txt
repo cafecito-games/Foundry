@@ -1,5 +1,29 @@
+Foundry Logo and Icon
+Copyright (c) 2026-present Cafecito Games LLC
+
+The Foundry logo, icon, and other Foundry-branded artwork in this repository
+are owned by Cafecito Games LLC. This includes, without limitation:
+
+- icon.png
+- icon.svg
+- icon_outlined.png
+- icon_outlined.svg
+- logo.png
+- logo.svg
+- logo_outlined.png
+- logo_outlined.svg
+- editor/icons/DefaultProjectIcon.svg
+- editor/icons/Logo.svg
+- editor/icons/TitleBarLogo.svg
+- main/app_icon.png
+- misc/dist/html/logo.svg
+- misc/dist/icon_console.svg
+
+These Foundry brand assets are not part of the Godot Engine logo license below.
+
 Godot Engine Logo
 Copyright (c) 2017 Andrea Calabró
 
-This work is licensed under the Creative Commons Attribution 4.0 International
-license (CC BY 4.0 International): https://creativecommons.org/licenses/by/4.0/
+Godot logo assets retained from upstream Godot Engine are licensed under the
+Creative Commons Attribution 4.0 International license (CC BY 4.0 International):
+https://creativecommons.org/licenses/by/4.0/
