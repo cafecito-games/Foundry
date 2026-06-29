@@ -417,7 +417,7 @@ function closeWelcomeModal(dontShowAgain) { // eslint-disable-line no-unused-var
 	}
 }
 		</script>
-		<script src="godot.editor.js"></script>
+		<script src="foundry.editor.js"></script>
 		<script>
 let editor = null;
 let game = null;
@@ -726,7 +726,7 @@ function startEditor(zip) {
 		displayFailureNotice('WebGL not available');
 	} else {
 		setStatusMode('indeterminate');
-		editor.init('godot.editor').then(function () {
+		editor.init('foundry.editor').then(function () {
 			if (zip) {
 				editor.copyToFS('/tmp/preload.zip', zip);
 			}

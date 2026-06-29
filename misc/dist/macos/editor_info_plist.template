@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>Godot</string>
+	<string>Foundry</string>
 	<key>CFBundleName</key>
 	<string>Foundry</string>
 	<key>CFBundleIconFile</key>

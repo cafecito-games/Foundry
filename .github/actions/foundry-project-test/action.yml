@@ -1,9 +1,9 @@
-name: Test Godot project
-description: Run the test Godot project.
+name: Test Foundry project
+description: Run the test Foundry project.
 
 inputs:
   bin:
-    description: The path to the Godot executable
+    description: The path to the Foundry executable
     required: true
 
 runs:

@@ -28,22 +28,22 @@ jobs:
       - name: Select Xcode 26
         run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
-      - name: Restore Godot build cache
-        uses: ./.github/actions/godot-cache-restore
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
         continue-on-error: true
 
       - name: Setup Python and SCons
-        uses: ./.github/actions/godot-deps
+        uses: ./.github/actions/foundry-deps
 
       - name: Compilation (arm64)
-        uses: ./.github/actions/godot-build
+        uses: ./.github/actions/foundry-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }}
           platform: ios
           target: template_release
 
-      - name: Save Godot build cache
-        uses: ./.github/actions/godot-cache-save
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
         continue-on-error: true
 
       - name: Upload artifact

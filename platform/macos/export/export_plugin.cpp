@@ -1661,7 +1661,7 @@ Error EditorExportPlatformMacOS::export_project(const Ref<EditorExportPreset> &p
 	int ret = unzGoToFirstFile(src_pkg_zip);
 
 	String architecture = p_preset->get("binary_format/architecture");
-	String binary_to_use = "godot_macos_" + String(p_debug ? "debug" : "release") + "." + architecture;
+	String binary_to_use = "foundry_macos_" + String(p_debug ? "debug" : "release") + "." + architecture;
 
 	String pkg_name;
 	if (String(get_project_setting(p_preset, "application/config/name")) != "") {
@@ -1973,7 +1973,7 @@ Error EditorExportPlatformMacOS::export_project(const Ref<EditorExportPreset> &p
 			_fix_privacy_manifest(p_preset, data);
 		}
 
-		if (file.begins_with("Contents/MacOS/godot_")) {
+		if (file.begins_with("Contents/MacOS/foundry_")) {
 			if (file != "Contents/MacOS/" + binary_to_use) {
 				ret = unzGoToNextFile(src_pkg_zip);
 				continue; // skip

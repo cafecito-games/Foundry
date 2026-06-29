@@ -1,0 +1,788 @@
+name: 🚀 Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, e.g. 0.1.0 (used when run manually).
+        required: true
+        type: string
+
+# Releases publish artifacts and create a GitHub Release, which needs write access.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Resolve the version string and whether to publish or leave a draft.
+  # - Tag push (refs/tags/vX.Y.Z) -> version X.Y.Z, auto-published.
+  # - Manual dispatch -> version from input, left as a draft for review.
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      template_version: ${{ steps.resolve.outputs.template_version }}
+      draft: ${{ steps.resolve.outputs.draft }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve version and publish mode
+        id: resolve
+        env:
+          # Pass untrusted/event-derived values through the environment instead
+          # of interpolating them into the script body, to avoid shell injection.
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="$REF_NAME"
+            version="${tag#v}"
+            draft="false"
+          else
+            version="$VERSION_INPUT"
+            tag="v${version}"
+            draft="true"
+          fi
+
+          # Reject anything that is not a bare X.Y.Z version (defense in depth).
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid release version '$version'; expected X.Y.Z."
+            exit 1
+          fi
+
+          # Sanity-check the requested version matches version.py.
+          py_version="$(python3 -c 'import version; print(f"{version.major}.{version.minor}.{version.patch}")')"
+          if [ "$version" != "$py_version" ]; then
+            echo "::error::Requested release version '$version' does not match version.py ('$py_version')."
+            exit 1
+          fi
+
+          # Template directory version string: major.minor[.patch].status (patch omitted when 0),
+          # matching the engine's VERSION_FULL_CONFIG used to locate export templates.
+          template_version="$(python3 -c 'import version; p=f".{version.patch}" if version.patch else ""; print(f"{version.major}.{version.minor}{p}.{version.status}")')"
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "template_version=$template_version"
+            echo "draft=$draft"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Releasing $version (tag $tag, template dir $template_version, draft=$draft)"
+
+  build-linux:
+    needs: resolve
+    runs-on: ubuntu-22.04
+    name: Linux ${{ matrix.target }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: editor
+          - target: template_debug
+          - target: template_release
+    env:
+      SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwayland-bin
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: release-linux-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Compilation
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64
+          platform: linuxbsd
+          target: ${{ matrix.target }}
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: release-linux-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Prepare artifact
+        run: |
+          strip bin/foundry.*
+          chmod +x bin/foundry.*
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-linux-${{ matrix.target }}
+
+  build-windows:
+    needs: resolve
+    runs-on: windows-latest
+    name: Windows ${{ matrix.target }}
+    timeout-minutes: 120
+    env:
+      SCONS_FLAGS: >-
+        production=yes
+        module_text_server_fb_enabled=yes
+        debug_symbols=no
+        "angle_libs=${{ github.workspace }}/"
+        "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
+      SCONS_CACHE_MSVC_CONFIG: true
+      PYTHONIOENCODING: utf8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: editor
+          - target: template_debug
+          - target: template_release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: release-windows-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download Direct3D 12 SDK components
+        shell: bash
+        id: d3d12-sdk
+        run: |
+          if python ./misc/scripts/install_d3d12_sdk_windows.py; then
+            echo "D3D12_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Windows: Direct3D 12 SDK installation failed, building without Direct3D 12 support."
+            echo "D3D12_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Download pre-built ANGLE static libraries
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: godotengine/godot-angle-static
+          version: tags/chromium/6601.2
+          file: godot-angle-static-x86_64-msvc-release.zip
+          target: angle/angle.zip
+
+      - name: Extract pre-built ANGLE static libraries
+        run: Expand-Archive -Force angle/angle.zip ${{ github.workspace }}/
+
+      - name: Download pre-built AccessKit
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: godotengine/godot-accesskit-c-static
+          version: tags/0.21.2
+          file: accesskit-c-0.21.2.zip
+          target: accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Extract pre-built AccessKit
+        run: unzip -o accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Compilation
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 d3d12=${{ steps.d3d12-sdk.outputs.D3D12_ENABLED }}
+          platform: windows
+          target: ${{ matrix.target }}
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: release-windows-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Prepare artifact
+        run: Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-windows-${{ matrix.target }}
+
+  build-macos-editor:
+    needs: resolve
+    runs-on: macos-latest
+    name: macOS editor
+    timeout-minutes: 120
+    env:
+      SCONS_FLAGS: >-
+        production=yes
+        module_text_server_fb_enabled=yes
+        "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: release-macos-editor
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download pre-built AccessKit
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: godotengine/godot-accesskit-c-static
+          version: tags/0.21.2
+          file: accesskit-c-0.21.2.zip
+          target: accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Extract pre-built AccessKit
+        run: unzip -o accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Setup Vulkan SDK
+        id: vulkan-sdk
+        run: |
+          if sh misc/scripts/install_vulkan_sdk_macos.sh; then
+            echo "VULKAN_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::macOS: Vulkan SDK installation failed, building without Vulkan support."
+            echo "VULKAN_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Compilation (x86_64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: editor
+
+      # The arm64 build runs generate_bundle, lipo-ing both archs into the
+      # universal editor .app the release packages.
+      - name: Compilation (arm64) + bundle
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} generate_bundle=yes
+          platform: macos
+          target: editor
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: release-macos-editor
+        continue-on-error: true
+
+      - name: Prune raw binaries
+        run: rm -f bin/foundry.macos.* || true
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-macos-editor
+
+  build-macos-templates:
+    needs: resolve
+    runs-on: macos-latest
+    name: macOS templates
+    timeout-minutes: 150
+    env:
+      SCONS_FLAGS: >-
+        production=yes
+        module_text_server_fb_enabled=yes
+        "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: release-macos-templates
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download pre-built AccessKit
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: godotengine/godot-accesskit-c-static
+          version: tags/0.21.2
+          file: accesskit-c-0.21.2.zip
+          target: accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Extract pre-built AccessKit
+        run: unzip -o accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Setup Vulkan SDK
+        id: vulkan-sdk
+        run: |
+          if sh misc/scripts/install_vulkan_sdk_macos.sh; then
+            echo "VULKAN_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::macOS: Vulkan SDK installation failed, building without Vulkan support."
+            echo "VULKAN_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      # A single macos_template.app must hold both debug and release universal
+      # binaries, so build all four (debug/release x x86_64/arm64) into bin/
+      # before generate_bundle assembles the zip on the final build.
+      - name: Compilation (template_release x86_64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: template_release
+
+      - name: Compilation (template_release arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: template_release
+
+      - name: Compilation (template_debug x86_64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: template_debug
+
+      - name: Compilation (template_debug arm64) + bundle
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} generate_bundle=yes
+          platform: macos
+          target: template_debug
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: release-macos-templates
+        continue-on-error: true
+
+      - name: Prune raw binaries
+        run: rm -f bin/foundry.macos.* || true
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-macos-templates
+
+  build-web:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    name: Web ${{ matrix.name }}
+    timeout-minutes: 90
+    env:
+      SCONS_FLAGS: production=yes debug_symbols=no use_closure_compiler=yes
+      EM_VERSION: 4.0.11
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: threads (template_release)
+            cache-name: release-web-threads-release
+            target: template_release
+            scons-flags: threads=yes
+          - name: threads (template_debug)
+            cache-name: release-web-threads-debug
+            target: template_debug
+            scons-flags: threads=yes
+          - name: nothreads (template_release)
+            cache-name: release-web-nothreads-release
+            target: template_release
+            scons-flags: threads=no
+          - name: nothreads (template_debug)
+            cache-name: release-web-nothreads-debug
+            target: template_debug
+            scons-flags: threads=no
+          - name: dlink threads (template_release)
+            cache-name: release-web-dlink-threads-release
+            target: template_release
+            scons-flags: threads=yes dlink_enabled=yes
+          - name: dlink threads (template_debug)
+            cache-name: release-web-dlink-threads-debug
+            target: template_debug
+            scons-flags: threads=yes dlink_enabled=yes
+          - name: dlink nothreads (template_release)
+            cache-name: release-web-dlink-nothreads-release
+            target: template_release
+            scons-flags: threads=no dlink_enabled=yes
+          - name: dlink nothreads (template_debug)
+            cache-name: release-web-dlink-nothreads-debug
+            target: template_debug
+            scons-flags: threads=no dlink_enabled=yes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Emscripten
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: ${{ env.EM_VERSION }}
+          no-cache: true
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: ${{ matrix.cache-name }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Compilation
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
+          platform: web
+          target: ${{ matrix.target }}
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: ${{ matrix.cache-name }}
+        continue-on-error: true
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ matrix.cache-name }}
+
+  build-android:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    name: Android ${{ matrix.name }}
+    timeout-minutes: 120
+    env:
+      SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no swappy=yes
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: editor
+            cache-name: release-android-editor
+            target: editor
+          - name: templates (debug)
+            cache-name: release-android-template-debug
+            target: template_debug
+          - name: templates (release)
+            cache-name: release-android-template-release
+            target: template_release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: ${{ matrix.cache-name }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download Swappy
+        run: python ./misc/scripts/install_swappy_android.py
+
+      # The editor ships arm64 only; the export templates must contain both
+      # arm32 and arm64 native libraries, so build both archs into bin/ before
+      # Gradle assembles the APKs.
+      - name: Compilation (arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
+          platform: android
+          target: ${{ matrix.target }}
+
+      - name: Compilation (arm32)
+        if: matrix.target != 'editor'
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm32
+          platform: android
+          target: ${{ matrix.target }}
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: ${{ matrix.cache-name }}
+        continue-on-error: true
+
+      - name: Generate Foundry templates
+        if: matrix.target != 'editor'
+        run: |
+          cd platform/android/java
+          ./gradlew generateGodotTemplates
+          cd ../../..
+          ls -l bin/
+
+      - name: Generate Foundry editor
+        if: matrix.target == 'editor'
+        run: |
+          cd platform/android/java
+          ./gradlew generateGodotEditor
+          cd ../../..
+          ls -l bin/android_editor_builds/
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ matrix.cache-name }}
+
+  build-ios:
+    needs: resolve
+    runs-on: macos-latest
+    name: iOS templates
+    timeout-minutes: 150
+    env:
+      SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no debug_symbols=no
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: release-ios
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      # The ios.zip template bundles a device xcframework slice (arm64) and a
+      # simulator slice advertising arm64 + x86_64, for both debug and release.
+      # Build every slice before generate_bundle lipo-assembles the zip on the
+      # final build.
+      - name: Compilation (release device arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
+          platform: ios
+          target: template_release
+
+      - name: Compilation (release simulator arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes
+          platform: ios
+          target: template_release
+
+      - name: Compilation (release simulator x86_64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 ios_simulator=yes
+          platform: ios
+          target: template_release
+
+      - name: Compilation (debug device arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
+          platform: ios
+          target: template_debug
+
+      - name: Compilation (debug simulator arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes
+          platform: ios
+          target: template_debug
+
+      - name: Compilation (debug simulator x86_64) + bundle
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 ios_simulator=yes generate_bundle=yes
+          platform: ios
+          target: template_debug
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: release-ios
+        continue-on-error: true
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-ios
+
+  # Download every build artifact, rename binaries to their canonical export
+  # template filenames, assemble the .tpz export-templates package, and zip the
+  # per-platform editors. All release assets are emitted under dist/.
+  package:
+    needs:
+      - resolve
+      - build-linux
+      - build-windows
+      - build-macos-editor
+      - build-macos-templates
+      - build-web
+      - build-android
+      - build-ios
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Assemble release assets
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          TEMPLATE_VERSION: ${{ needs.resolve.outputs.template_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist templates
+
+          # --- Export templates package (.tpz) ------------------------------
+          # The editor expects a single top-level "templates/" directory holding
+          # canonically-named binaries plus version.txt.
+          echo "$TEMPLATE_VERSION" > templates/version.txt
+
+          # Linux desktop templates.
+          cp artifacts/release-linux-template_release/foundry.linuxbsd.template_release.x86_64 templates/linux_release.x86_64
+          cp artifacts/release-linux-template_debug/foundry.linuxbsd.template_debug.x86_64 templates/linux_debug.x86_64
+
+          # Windows desktop templates: the GUI executable is the main template,
+          # and the console wrapper ships alongside it as *.console.exe (the
+          # exporter locates the wrapper by that exact sibling name).
+          cp artifacts/release-windows-template_release/foundry.windows.template_release.x86_64.exe templates/windows_release_x86_64.exe
+          cp artifacts/release-windows-template_release/foundry.windows.template_release.x86_64.console.exe templates/windows_release_x86_64.console.exe
+          cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.exe templates/windows_debug_x86_64.exe
+          cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.console.exe templates/windows_debug_x86_64.console.exe
+
+          # D3D12 Agility SDK runtime DLLs ship next to the Windows templates,
+          # arch-suffixed; the exporter copies them beside the exported game.
+          # Only present when the D3D12 SDK was available at build time.
+          for dll in D3D12Core d3d12SDKLayers; do
+            if [ -f "artifacts/release-windows-template_release/${dll}.dll" ]; then
+              cp "artifacts/release-windows-template_release/${dll}.dll" "templates/${dll}.x86_64.dll"
+            fi
+          done
+
+          # macOS template (single macos_template.app zip with debug + release universals).
+          cp artifacts/release-macos-templates/*.zip templates/macos.zip
+
+          # Web templates: threads/nothreads x debug/release, with and without
+          # FoundryExtension (dlink) support. Each web build uploads exactly one
+          # zip whose suffix depends on PROGSUFFIX, so glob it.
+          cp artifacts/release-web-threads-release/*.zip templates/web_release.zip
+          cp artifacts/release-web-threads-debug/*.zip templates/web_debug.zip
+          cp artifacts/release-web-nothreads-release/*.zip templates/web_nothreads_release.zip
+          cp artifacts/release-web-nothreads-debug/*.zip templates/web_nothreads_debug.zip
+          cp artifacts/release-web-dlink-threads-release/*.zip templates/web_dlink_release.zip
+          cp artifacts/release-web-dlink-threads-debug/*.zip templates/web_dlink_debug.zip
+          cp artifacts/release-web-dlink-nothreads-release/*.zip templates/web_dlink_nothreads_release.zip
+          cp artifacts/release-web-dlink-nothreads-debug/*.zip templates/web_dlink_nothreads_debug.zip
+
+          # Android templates and source.
+          cp artifacts/release-android-template-release/android_release.apk templates/android_release.apk
+          cp artifacts/release-android-template-debug/android_debug.apk templates/android_debug.apk
+          if [ -f artifacts/release-android-template-release/android_source.zip ]; then
+            cp artifacts/release-android-template-release/android_source.zip templates/android_source.zip
+          fi
+
+          # iOS template (device + simulator, debug + release).
+          cp artifacts/release-ios/*.zip templates/ios.zip
+
+          # upload-artifact/download-artifact does not preserve POSIX executable
+          # bits, so restore them on loose Unix binaries before zipping (binaries
+          # already inside .zip/.apk artifacts keep their stored permissions).
+          chmod +x templates/linux_release.x86_64 templates/linux_debug.x86_64
+          chmod +x artifacts/release-linux-editor/foundry.linuxbsd.editor.x86_64
+          chmod +x artifacts/release-macos-editor/*.app/Contents/MacOS/*
+
+          ( cd templates && zip -r -q "../dist/Foundry_v${VERSION}_export_templates.tpz" . )
+
+          # --- Editor archives ----------------------------------------------
+          ( cd artifacts/release-linux-editor && zip -q "$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_linux.x86_64.zip" foundry.linuxbsd.editor.x86_64 )
+          # The Windows editor needs its D3D12 sidecar DLLs (and console wrapper)
+          # alongside the executable; include whichever were produced.
+          ( cd artifacts/release-windows-editor
+            win_zip="$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_windows.x86_64.zip"
+            zip -q "$win_zip" foundry.windows.editor.x86_64.exe
+            for extra in foundry.windows.editor.x86_64.console.exe D3D12Core.dll d3d12SDKLayers.dll; do
+              if [ -f "$extra" ]; then zip -q "$win_zip" "$extra"; fi
+            done )
+          # macOS editor ships as the universal .app bundle produced by generate_bundle.
+          ( cd artifacts/release-macos-editor && zip -r -q "$GITHUB_WORKSPACE/dist/Foundry_v${VERSION}_macos.universal.zip" ./*.app )
+
+          echo "Release assets:"
+          ls -lh dist/
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: dist/*
+
+  publish:
+    needs:
+      - resolve
+      - package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: Foundry ${{ needs.resolve.outputs.version }}
+          draft: ${{ needs.resolve.outputs.draft }}
+          generate_release_notes: true
+          files: dist/*

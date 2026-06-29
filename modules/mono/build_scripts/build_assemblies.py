@@ -323,7 +323,7 @@ def generate_sdk_package_versions():
 #pragma warning disable IDE0040 // Add accessibility modifiers.
     partial class Common
     {{
-        public const string VersionDocsUrl = "https://docs.godotengine.org/en/{docs_branch}";
+        public const string VersionDocsUrl = "https://docs.cafecito.games/foundry/en/{docs_branch}";
     }}
 }}
 """.format(**version_info)

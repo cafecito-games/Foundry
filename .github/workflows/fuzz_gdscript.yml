@@ -58,24 +58,24 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           echo "Disk usage after:" && df -h
 
-      - name: Restore Godot build cache
-        uses: ./.github/actions/godot-cache-restore
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
         with:
           cache-name: linux-foundry_script-fuzzer
         continue-on-error: true
 
       - name: Setup Python and SCons
-        uses: ./.github/actions/godot-deps
+        uses: ./.github/actions/foundry-deps
 
       - name: Compilation
-        uses: ./.github/actions/godot-build
+        uses: ./.github/actions/foundry-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }}
           platform: linuxbsd
           target: editor
 
-      - name: Save Godot build cache
-        uses: ./.github/actions/godot-cache-save
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
         with:
           cache-name: linux-foundry_script-fuzzer
         continue-on-error: true
@@ -85,9 +85,9 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=0
         run: |
-          FOUNDRY_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*fuzz*' -perm -111 | head -n 1)"
+          FOUNDRY_BIN="$(find bin -maxdepth 1 -type f -name 'foundry.linuxbsd.editor.dev*fuzz*' -perm -111 | head -n 1)"
           if [ -z "${FOUNDRY_BIN}" ]; then
-            echo "Could not find fuzzer-enabled Godot binary in bin/." >&2
+            echo "Could not find fuzzer-enabled Foundry binary in bin/." >&2
             ls -l bin/
             exit 1
           fi
