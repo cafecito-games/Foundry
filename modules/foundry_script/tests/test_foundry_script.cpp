@@ -36,6 +36,7 @@
 #endif
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
+#include "../fs_cache.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
 #include "../fs_reflection.h"
@@ -2669,6 +2670,15 @@ func doubled(value: int) -> int:
 		} else {
 			compile_err = analyze_err;
 		}
+		// Release the compiled consumer and drop its cached parser/script so no
+		// FoundryScript outlives the test. A self-reference compiles a constant Ref to
+		// the script itself, so clear() is needed to break that cycle before the Ref is
+		// dropped; otherwise the script stays in the global script list and trips a
+		// DEV_ASSERT in its destructor at shutdown.
+		script->clear();
+		script.unref();
+		FSCache::remove_parser(p_path);
+		FSCache::remove_script(p_path);
 		DirAccess::remove_absolute(p_path);
 		return compile_err;
 	};
@@ -2730,6 +2740,8 @@ static func build() -> RefCounted:
 				OK);
 	}
 
+	FSCache::remove_parser(producer_path);
+	FSCache::remove_script(producer_path);
 	DirAccess::remove_absolute(producer_path);
 }
 
