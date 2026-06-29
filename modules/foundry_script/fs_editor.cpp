@@ -5183,7 +5183,12 @@ static Error _lookup_symbol_from_traits_in_class_hierarchy(const FSParser::DataT
 
 static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const String &p_symbol, FSLanguage::LookupResult &r_result) {
 	FSParser::DataType base_type = p_base;
-	const FSParser::DataType original_base_type = p_base;
+	if (base_type.kind == FSParser::DataType::TYPE_PARAMETER && !base_type.type_parameter_bound.is_empty()) {
+		const bool was_meta_type = base_type.is_meta_type;
+		base_type = base_type.type_parameter_bound[0];
+		base_type.is_meta_type = was_meta_type;
+	}
+	const FSParser::DataType original_base_type = base_type;
 
 	while (true) {
 		switch (base_type.kind) {

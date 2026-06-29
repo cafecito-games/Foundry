@@ -1126,6 +1126,25 @@ func f():
 			CHECK_EQ(String(klass_argument["type"]), "Type[T]");
 		}
 
+		SUBCASE("Type[T] constrained by a trait resolves static trait methods") {
+			String path = "res://lsp/type_metatype_trait_constraint.fs";
+			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
+
+			const LSP::DocumentSymbol *trait_create = workspace->resolve_symbol(pos_in(uri, pos(10, 25)));
+			CHECK(trait_create);
+			if (trait_create == nullptr) {
+				return;
+			}
+			CHECK_EQ(trait_create->name, "create");
+			CHECK_EQ(trait_create->selectionRange.start.line, 1);
+
+			const LSP::DocumentSymbol *concrete_create = workspace->resolve_symbol(pos_in(uri, pos(14, 13)));
+			REQUIRE(concrete_create);
+			CHECK_EQ(concrete_create->name, "create");
+			CHECK_EQ(concrete_create->selectionRange.start.line, 6);
+		}
+
 		SUBCASE("Enum default values are shown as constant names") {
 			String path = "res://lsp/enum_default_values.fs";
 			assert_no_errors_in(path);
