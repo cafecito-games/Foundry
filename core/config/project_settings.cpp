@@ -65,7 +65,7 @@ String ProjectSettings::get_resource_path() const {
 	return resource_path;
 }
 
-// This returns paths like "res://.godot/imported".
+// This returns paths like "res://.foundry/imported".
 String ProjectSettings::get_imported_files_path() const {
 	return get_project_data_path().path_join("imported");
 }
@@ -75,7 +75,7 @@ String ProjectSettings::get_imported_files_path() const {
 // This is used by the project manager to provide the initial_settings for config/features.
 const PackedStringArray ProjectSettings::get_required_features() {
 	PackedStringArray features;
-	features.append(GODOT_VERSION_BRANCH);
+	features.append(FOUNDRY_VERSION_BRANCH);
 #ifdef REAL_T_IS_DOUBLE
 	features.append("Double Precision");
 #endif
@@ -95,9 +95,9 @@ const PackedStringArray ProjectSettings::_get_supported_features() {
 #endif
 	// Allow pinning to a specific patch number or build type by marking
 	// them as supported. They're only used if the user adds them manually.
-	features.append(GODOT_VERSION_BRANCH "." _MKSTR(GODOT_VERSION_PATCH));
-	features.append(GODOT_VERSION_FULL_CONFIG);
-	features.append(GODOT_VERSION_FULL_BUILD);
+	features.append(FOUNDRY_VERSION_BRANCH "." _MKSTR(FOUNDRY_VERSION_PATCH));
+	features.append(FOUNDRY_VERSION_FULL_CONFIG);
+	features.append(FOUNDRY_VERSION_FULL_BUILD);
 
 #ifdef RD_ENABLED
 	features.append("Forward Plus");
@@ -643,7 +643,7 @@ void ProjectSettings::_convert_to_last_version(int p_from_version) {
 }
 
 /*
- * This method is responsible for loading a project.godot file and/or data file
+ * This method is responsible for loading a project.foundry file and/or data file
  * using the following merit order:
  *  - If using NetworkClient, try to lookup project file or fail.
  *  - If --main-pack was passed by the user (`p_main_pack`), load it or fail.
@@ -684,7 +684,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 		bool ok = _load_resource_pack(p_main_pack, false, 0, true);
 		ERR_FAIL_COND_V_MSG(!ok, ERR_CANT_OPEN, vformat("Cannot open resource pack '%s'.", p_main_pack));
 
-		Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
+		Error err = _load_settings_text_or_binary("res://project.foundry", "res://project.binary");
 #ifdef OVERRIDE_ENABLED
 		if (err == OK && !p_ignore_override) {
 			// Load override from location of the main pack
@@ -739,7 +739,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 
 		// If we opened our package, try and load our project.
 		if (found) {
-			Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
+			Error err = _load_settings_text_or_binary("res://project.foundry", "res://project.binary");
 #ifdef OVERRIDE_ENABLED
 			if (err == OK && !p_ignore_override) {
 				// Load overrides from the PCK and the executable location.
@@ -764,7 +764,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 	// (Only Android -when reading from PCK-.)
 
 	if (!OS::get_singleton()->get_resource_dir().is_empty()) {
-		Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
+		Error err = _load_settings_text_or_binary("res://project.foundry", "res://project.binary");
 #ifdef OVERRIDE_ENABLED
 		if (err == OK && !p_ignore_override) {
 			// Optional, we don't mind if it fails.
@@ -790,7 +790,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 
 		Error err;
 
-		err = _load_settings_text_or_binary(resource_path.path_join("project.godot"), resource_path.path_join("project.binary"));
+		err = _load_settings_text_or_binary(resource_path.path_join("project.foundry"), resource_path.path_join("project.binary"));
 		if (err == OK && !p_ignore_override) {
 			// Optional, we don't mind if it fails.
 #ifdef OVERRIDE_ENABLED
@@ -819,7 +819,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 		// Set the resource path early so things can be resolved when loading.
 		resource_path = current_dir;
 		resource_path = resource_path.replace_char('\\', '/'); // Windows path to Unix path just in case.
-		err = _load_settings_text_or_binary(current_dir.path_join("project.godot"), current_dir.path_join("project.binary"));
+		err = _load_settings_text_or_binary(current_dir.path_join("project.foundry"), current_dir.path_join("project.binary"));
 		if (err == OK) {
 #ifdef OVERRIDE_ENABLED
 			if (!p_ignore_override) {
@@ -963,10 +963,10 @@ Error ProjectSettings::_load_settings_text(const String &p_path) {
 
 		err = VariantParser::parse_tag_assign_eof(&stream, lines, error_text, next_tag, assign, value, nullptr, true);
 		if (err == ERR_FILE_EOF) {
-			// If we're loading a project.godot from source code, we can operate some
+			// If we're loading a project.foundry from source code, we can operate some
 			// ProjectSettings conversions if need be.
 			_convert_to_last_version(config_version);
-			last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.godot"));
+			last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.foundry"));
 			return OK;
 		}
 		ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Error parsing '%s' at line %d: %s File might be corrupted.", p_path, lines, error_text));
@@ -989,7 +989,7 @@ Error ProjectSettings::_load_settings_text(const String &p_path) {
 }
 
 Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, const String &p_bin_path) {
-	// Attempt first to load the binary project.godot file.
+	// Attempt first to load the binary project.foundry file.
 	Error err = _load_settings_binary(p_bin_path);
 	if (err == OK) {
 		return OK;
@@ -998,7 +998,7 @@ Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, 
 		ERR_PRINT(vformat("Couldn't load file '%s', error code %d.", p_bin_path, err));
 	}
 
-	// Fallback to text-based project.godot file if binary was not found.
+	// Fallback to text-based project.foundry file if binary was not found.
 	err = _load_settings_text(p_text_path);
 	if (err == OK) {
 #ifndef DISABLE_DEPRECATED
@@ -1060,9 +1060,9 @@ void ProjectSettings::clear(const String &p_name) {
 }
 
 Error ProjectSettings::save() {
-	Error error = save_custom(get_resource_path().path_join("project.godot"));
+	Error error = save_custom(get_resource_path().path_join("project.foundry"));
 	if (error == OK) {
-		last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.godot"));
+		last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.foundry"));
 	}
 	return error;
 }
@@ -1140,7 +1140,7 @@ Error ProjectSettings::_save_settings_text(const String &p_file, const RBMap<Str
 	Error err;
 	Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
 
-	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Couldn't save project.godot - %s.", p_file));
+	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Couldn't save project.foundry - %s.", p_file));
 
 	file->store_line("; Engine configuration file.");
 	file->store_line("; It's best edited using the editor UI and not directly,");
@@ -1308,7 +1308,7 @@ Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_cust
 		save_features += f;
 	}
 
-	if (p_path.ends_with(".godot") || p_path.ends_with("override.cfg")) {
+	if (p_path.ends_with(".foundry") || p_path.ends_with("override.cfg")) {
 		return _save_settings_text(p_path, save_props, p_custom, save_features);
 	} else if (p_path.ends_with(".binary")) {
 		return _save_settings_binary(p_path, save_props, p_custom, save_features);
@@ -1666,7 +1666,7 @@ void ProjectSettings::_add_builtin_input_map() {
 
 ProjectSettings::ProjectSettings() {
 	// Initialization of engine variables should be done in the setup() method,
-	// so that the values can be overridden from project.godot or project.binary.
+	// so that the values can be overridden from project.foundry or project.binary.
 
 	CRASH_COND_MSG(singleton != nullptr, "Instantiating a new ProjectSettings singleton is not supported.");
 	singleton = this;
@@ -1674,7 +1674,7 @@ ProjectSettings::ProjectSettings() {
 #ifdef TOOLS_ENABLED
 	// Available only at runtime in editor builds. Needs to be processed before anything else to work properly.
 	if (!Engine::get_singleton()->is_editor_hint()) {
-		String editor_features = OS::get_singleton()->get_environment("GODOT_EDITOR_CUSTOM_FEATURES");
+		String editor_features = OS::get_singleton()->get_environment("FOUNDRY_EDITOR_CUSTOM_FEATURES");
 		if (!editor_features.is_empty()) {
 			PackedStringArray feature_list = editor_features.split(",");
 			for (const String &s : feature_list) {

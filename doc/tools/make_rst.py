@@ -17,7 +17,7 @@ import version
 from misc.utility.color import Ansi, force_stderr_color, force_stdout_color
 
 # $DOCS_URL/path/to/page.html(#fragment-tag)
-GODOT_DOCS_PATTERN = re.compile(r"^\$DOCS_URL/(.*)\.html(#.*)?$")
+FOUNDRY_DOCS_PATTERN = re.compile(r"^\$DOCS_URL/(.*)\.html(#.*)?$")
 
 # Based on reStructuredText inline markup recognition rules
 # https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#inline-markup-recognition-rules
@@ -652,8 +652,8 @@ class ClassDef(DefinitionBase):
         self.class_group = group_name
 
 
-# Checks if code samples have both GDScript and C# variations.
-# For simplicity we assume that a GDScript example is always present, and ignore contexts
+# Checks if code samples have both Foundry Script and C# variations.
+# For simplicity we assume that a Foundry Script example is always present, and ignore contexts
 # which don't necessarily need C# examples.
 class ScriptLanguageParityCheck:
     def __init__(self) -> None:
@@ -661,7 +661,7 @@ class ScriptLanguageParityCheck:
         self.hit_count = 0
 
     def add_hit(self, class_name: str, context: DefinitionBase, error: str, state: State) -> None:
-        if class_name in ["@GDScript", "@GlobalScope"]:
+        if class_name in ["@FoundryScript", "@GlobalScope"]:
             return  # We don't expect these contexts to have parity.
 
         class_def = state.classes[class_name]
@@ -1704,7 +1704,7 @@ def make_separator(section_level: bool = False) -> str:
 
 
 def make_link(url: str, title: str) -> str:
-    match = GODOT_DOCS_PATTERN.search(url)
+    match = FOUNDRY_DOCS_PATTERN.search(url)
     if match:
         groups = match.groups()
         if match.lastindex == 2:
@@ -1778,7 +1778,7 @@ def make_rst_index(grouped_classes: dict[str, list[str]], dry_run: bool, output_
 
 RESERVED_FORMATTING_TAGS = ["i", "b", "u", "lb", "rb", "code", "kbd", "center", "url", "br"]
 RESERVED_LAYOUT_TAGS = ["codeblocks"]
-RESERVED_CODEBLOCK_TAGS = ["codeblock", "gdscript", "csharp"]
+RESERVED_CODEBLOCK_TAGS = ["codeblock", "foundry_script", "csharp"]
 RESERVED_CROSSLINK_TAGS = [
     "method",
     "constructor",
@@ -1864,7 +1864,7 @@ def format_text_block(
     ignore_code_warnings = False
     code_warning_if_intended_string = "If this is intended, use [code skip-lint]...[/code]."
 
-    has_codeblocks_gdscript = False
+    has_codeblocks_foundry_script = False
     has_codeblocks_csharp = False
 
     pos = 0
@@ -1934,7 +1934,7 @@ def format_text_block(
 
             elif tag_state.name == "codeblocks":
                 if tag_state.closing:
-                    if not has_codeblocks_gdscript or not has_codeblocks_csharp:
+                    if not has_codeblocks_foundry_script or not has_codeblocks_csharp:
                         state.script_language_parity_check.add_hit(
                             state.current_class,
                             context,
@@ -1942,7 +1942,7 @@ def format_text_block(
                             state,
                         )
 
-                    has_codeblocks_gdscript = False
+                    has_codeblocks_foundry_script = False
                     has_codeblocks_csharp = False
 
                     tag_depth -= 1
@@ -1956,15 +1956,15 @@ def format_text_block(
             elif is_in_tagset(tag_state.name, RESERVED_CODEBLOCK_TAGS):
                 tag_depth += 1
 
-                if tag_state.name == "gdscript":
+                if tag_state.name == "foundry_script":
                     if not inside_code_tabs:
                         print_error(
-                            f"{state.current_class}.xml: GDScript code block is used outside of [codeblocks] in {context_name}.",
+                            f"{state.current_class}.xml: Foundry Script code block is used outside of [codeblocks] in {context_name}.",
                             state,
                         )
                     else:
-                        has_codeblocks_gdscript = True
-                    tag_text = "\n .. code-tab:: gdscript\n"
+                        has_codeblocks_foundry_script = True
+                    tag_text = "\n .. code-tab:: foundry_script\n"
                 elif tag_state.name == "csharp":
                     if not inside_code_tabs:
                         print_error(
@@ -2436,8 +2436,8 @@ def preformat_text_block(text: str, state: State) -> str | None:
             if (
                 stripped_line.startswith("[codeblock]")
                 or stripped_line.startswith("[codeblock ")
-                or stripped_line.startswith("[gdscript]")
-                or stripped_line.startswith("[gdscript ")
+                or stripped_line.startswith("[foundry_script]")
+                or stripped_line.startswith("[foundry_script ")
                 or stripped_line.startswith("[csharp]")
                 or stripped_line.startswith("[csharp ")
             ):

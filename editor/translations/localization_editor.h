@@ -38,7 +38,7 @@ class EditorFileDialog;
 class FileSystemDock;
 
 class LocalizationEditor : public VBoxContainer {
-	GDCLASS(LocalizationEditor, VBoxContainer);
+	FOUNDRY_CLASS(LocalizationEditor, VBoxContainer);
 
 	Tree *translation_list = nullptr;
 

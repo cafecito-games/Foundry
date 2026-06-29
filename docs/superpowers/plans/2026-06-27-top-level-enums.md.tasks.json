@@ -5,21 +5,21 @@
       "id": 1,
       "subject": "Task 1: Tokenizer keyword enum_name",
       "status": "pending",
-      "description": "Add Token::ENUM_NAME, token-name table entry, and KEYWORD(\"enum_name\", Token::ENUM_NAME).\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_tokenizer.h\", \"modules/gdscript/gdscript_tokenizer.cpp\"], \"verifyCommand\": \"scons platform=macos target=editor dev_build=yes tests=yes\", \"acceptanceCriteria\": [\"Token::ENUM_NAME exists\", \"keyword registered\", \"builds\"]}\n```"
+      "description": "Add Token::ENUM_NAME, token-name table entry, and KEYWORD(\"enum_name\", Token::ENUM_NAME).\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_tokenizer.h\", \"modules/foundry_script/fs_tokenizer.cpp\"], \"verifyCommand\": \"scons platform=macos target=editor dev_build=yes tests=yes\", \"acceptanceCriteria\": [\"Token::ENUM_NAME exists\", \"keyword registered\", \"builds\"]}\n```"
     },
     {
       "id": 2,
       "subject": "Task 2: Parser root-class storage + top-level parse",
       "status": "pending",
       "blockedBy": [1],
-      "description": "Add ClassNode.is_enum_file + enum_file_decl; parse enum_name at file scope reusing parse_enum; set qualified_global_name namespace-aware.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_parser.h\", \"modules/gdscript/gdscript_parser.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/gdscript/tests/scripts/parser\", \"acceptanceCriteria\": [\"ClassNode fields added\", \"parse_enum_name implemented\", \"qualified_global_name set\"]}\n```"
+      "description": "Add ClassNode.is_enum_file + enum_file_decl; parse enum_name at file scope reusing parse_enum; set qualified_global_name namespace-aware.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_parser.h\", \"modules/foundry_script/fs_parser.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --foundry_script-generate-tests modules/foundry_script/tests/scripts/parser\", \"acceptanceCriteria\": [\"ClassNode fields added\", \"parse_enum_name implemented\", \"qualified_global_name set\"]}\n```"
     },
     {
       "id": 3,
       "subject": "Task 3: Validation - one enum, nothing else",
       "status": "pending",
       "blockedBy": [2],
-      "description": "Reject enum_name in class body, two enum_name, enum_name+class_name/trait_name/extends/uses, extra members; keep namespace/import allowed.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_parser.cpp\", \"modules/gdscript/gdscript_analyzer.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"all malformed shapes error\", \"namespace/import allowed\"]}\n```"
+      "description": "Reject enum_name in class body, two enum_name, enum_name+class_name/trait_name/extends/uses, extra members; keep namespace/import allowed.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_parser.cpp\", \"modules/foundry_script/fs_analyzer.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"all malformed shapes error\", \"namespace/import allowed\"]}\n```"
     },
     {
       "id": 4,
@@ -32,49 +32,49 @@
       "subject": "Task 5: Global registration of enum-files",
       "status": "pending",
       "blockedBy": [4],
-      "description": "get_global_class_name sets *r_is_enum for enum-files; EditorFileSystem threads is_enum into add_global_class.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript.cpp\", \"modules/gdscript/gdscript.h\", \"editor/file_system/editor_file_system.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"r_is_enum set\", \"EditorFileSystem threads is_enum\"]}\n```"
+      "description": "get_global_class_name sets *r_is_enum for enum-files; EditorFileSystem threads is_enum into add_global_class.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/foundry_script.cpp\", \"modules/foundry_script/foundry_script.h\", \"editor/file_system/editor_file_system.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"r_is_enum set\", \"EditorFileSystem threads is_enum\"]}\n```"
     },
     {
       "id": 6,
       "subject": "Task 6: Analyzer standalone enum resolution",
       "status": "pending",
       "blockedBy": [2, 5],
-      "description": "Add make_global_enum_type_from_path; branch in reduce_identifier for is_global_class_enum; harden ENUM_SEPARATOR assumptions; feature fixtures.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_analyzer.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"make_global_enum_type_from_path\", \"reduce_identifier branch\", \"ENUM_SEPARATOR hardening\", \"no regressions\"]}\n```"
+      "description": "Add make_global_enum_type_from_path; branch in reduce_identifier for is_global_class_enum; harden ENUM_SEPARATOR assumptions; feature fixtures.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_analyzer.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"make_global_enum_type_from_path\", \"reduce_identifier branch\", \"ENUM_SEPARATOR hardening\", \"no regressions\"]}\n```"
     },
     {
       "id": 7,
       "subject": "Task 7: Compiler / runtime",
       "status": "pending",
       "blockedBy": [6],
-      "description": "Hoist enum values as script constants + dictionary constant under global name; runtime fixture.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_compiler.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"value constants hoisted\", \"dictionary constant\", \"custom values\"]}\n```"
+      "description": "Hoist enum values as script constants + dictionary constant under global name; runtime fixture.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_compiler.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"value constants hoisted\", \"dictionary constant\", \"custom values\"]}\n```"
     },
     {
       "id": 8,
       "subject": "Task 8: Code completion",
       "status": "pending",
       "blockedBy": [5, 6],
-      "description": "Global enum names complete (enum kind) at type/expression positions; members complete after dot (separator-less native_type path).\n\n```json:metadata\n{\"files\": [\"modules/gdscript/gdscript_editor.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"global enum name candidate\", \"member completion after dot\"]}\n```"
+      "description": "Global enum names complete (enum kind) at type/expression positions; members complete after dot (separator-less native_type path).\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_editor.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"global enum name candidate\", \"member completion after dot\"]}\n```"
     },
     {
       "id": 9,
       "subject": "Task 9: LSP hover & symbols",
       "status": "pending",
       "blockedBy": [5, 6],
-      "description": "resolve_symbol resolves global enum; root SymbolKind::Enum with EnumMember children for enum-files.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/language_server/gdscript_workspace.cpp\", \"modules/gdscript/language_server/gdscript_extend_parser.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"hover resolves global enum\", \"root Enum symbol + members\"]}\n```"
+      "description": "resolve_symbol resolves global enum; root SymbolKind::Enum with EnumMember children for enum-files.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/language_server/fs_workspace.cpp\", \"modules/foundry_script/language_server/fs_extend_parser.cpp\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"hover resolves global enum\", \"root Enum symbol + members\"]}\n```"
     },
     {
       "id": 10,
       "subject": "Task 10: Class-reference doc generation",
       "status": "pending",
       "blockedBy": [5],
-      "description": "Populate ClassDoc enums/constants from enum_file_decl; attach ## doc comments; add ClassDoc.is_enum if needed.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/editor/gdscript_docgen.cpp\", \"core/doc_data.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"enums/constants from enum_file_decl\", \"doc comments attached\"]}\n```"
+      "description": "Populate ClassDoc enums/constants from enum_file_decl; attach ## doc comments; add ClassDoc.is_enum if needed.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/editor/fs_docgen.cpp\", \"core/doc_data.h\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"enums/constants from enum_file_decl\", \"doc comments attached\"]}\n```"
     },
     {
       "id": 11,
       "subject": "Task 11: C++ tests + fixture sweep + primer",
       "status": "pending",
       "blockedBy": [3, 7, 8, 9, 10],
-      "description": "C++ registration + cache round-trip test; regenerate fixtures; document enum_name in the primer.\n\n```json:metadata\n{\"files\": [\"modules/gdscript/tests/test_gdscript.h\", \"docs/gdscript_language_primer.md\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"C++ registration test\", \"full suite passes\", \"primer updated\"]}\n```"
+      "description": "C++ registration + cache round-trip test; regenerate fixtures; document enum_name in the primer.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/tests/test_gdscript.h\", \"docs/fs_language_primer.md\"], \"verifyCommand\": \"./bin/godot.macos.editor.dev.* --headless --test --force-colors\", \"acceptanceCriteria\": [\"C++ registration test\", \"full suite passes\", \"primer updated\"]}\n```"
     }
   ],
   "lastUpdated": "2026-06-27"

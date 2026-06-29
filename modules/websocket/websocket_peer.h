@@ -34,7 +34,7 @@
 #include "core/io/packet_peer.h"
 
 class WebSocketPeer : public PacketPeer {
-	GDCLASS(WebSocketPeer, PacketPeer);
+	FOUNDRY_CLASS(WebSocketPeer, PacketPeer);
 
 public:
 	enum State {

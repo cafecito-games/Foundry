@@ -36,7 +36,7 @@
 class CanvasItemEditor;
 
 class CollisionShape2DEditor : public Control {
-	GDCLASS(CollisionShape2DEditor, Control);
+	FOUNDRY_CLASS(CollisionShape2DEditor, Control);
 
 	enum ShapeType {
 		CAPSULE_SHAPE,
@@ -96,7 +96,7 @@ public:
 };
 
 class CollisionShape2DEditorPlugin : public EditorPlugin {
-	GDCLASS(CollisionShape2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(CollisionShape2DEditorPlugin, EditorPlugin);
 
 	CollisionShape2DEditor *collision_shape_2d_editor = nullptr;
 

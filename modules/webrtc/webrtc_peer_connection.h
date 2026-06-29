@@ -33,7 +33,7 @@
 #include "webrtc_data_channel.h"
 
 class WebRTCPeerConnection : public RefCounted {
-	GDCLASS(WebRTCPeerConnection, RefCounted);
+	FOUNDRY_CLASS(WebRTCPeerConnection, RefCounted);
 
 public:
 	enum ConnectionState {

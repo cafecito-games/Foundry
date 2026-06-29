@@ -34,7 +34,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class WebToolsEditorPlugin : public EditorPlugin {
-	GDCLASS(WebToolsEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(WebToolsEditorPlugin, EditorPlugin);
 
 private:
 	void _download_zip();

@@ -46,11 +46,11 @@
 #endif
 #endif
 
-// Declared in global namespace because of GDCLASS macro warning (Windows):
+// Declared in global namespace because of FOUNDRY_CLASS macro warning (Windows):
 // "Unqualified friend declaration referring to type outside of the nearest enclosing namespace
 // is a Microsoft extension; add a nested name specifier".
 class _TestDerivedObject : public Object {
-	GDCLASS(_TestDerivedObject, Object);
+	FOUNDRY_CLASS(_TestDerivedObject, Object);
 
 	int property_value;
 
@@ -248,7 +248,7 @@ TEST_CASE("[Object] Script instance property getter") {
 }
 
 TEST_CASE("[Object] Built-in property setter") {
-	GDREGISTER_CLASS(_TestDerivedObject);
+	FOUNDRY_REGISTER_CLASS(_TestDerivedObject);
 	_TestDerivedObject derived_object;
 
 	bool valid = false;
@@ -260,7 +260,7 @@ TEST_CASE("[Object] Built-in property setter") {
 }
 
 TEST_CASE("[Object] Built-in property getter") {
-	GDREGISTER_CLASS(_TestDerivedObject);
+	FOUNDRY_REGISTER_CLASS(_TestDerivedObject);
 	_TestDerivedObject derived_object;
 	derived_object.set_property(100);
 
@@ -317,7 +317,7 @@ TEST_CASE("[Object] Absent name getter") {
 }
 
 class SignalReceiver : public Object {
-	GDCLASS(SignalReceiver, Object);
+	FOUNDRY_CLASS(SignalReceiver, Object);
 
 public:
 	Vector<Variant> received_args;
@@ -526,7 +526,7 @@ TEST_CASE("[Object] Signals") {
 }
 
 class NotificationObjectSuperclass : public Object {
-	GDCLASS(NotificationObjectSuperclass, Object);
+	FOUNDRY_CLASS(NotificationObjectSuperclass, Object);
 
 protected:
 	void _notification(int p_what) {
@@ -539,7 +539,7 @@ public:
 };
 
 class NotificationObjectSubclass : public NotificationObjectSuperclass {
-	GDCLASS(NotificationObjectSubclass, NotificationObjectSuperclass);
+	FOUNDRY_CLASS(NotificationObjectSubclass, NotificationObjectSuperclass);
 
 protected:
 	void _notification(int p_what) {

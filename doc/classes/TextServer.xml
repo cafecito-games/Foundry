@@ -8,9 +8,9 @@
 		[b]Note:[/b] This is a low-level API, consider using [TextLine], [TextParagraph], and [Font] classes instead.
 		This is an abstract class, so to get the currently active [TextServer] instance, use the following code:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var ts = TextServerManager.get_primary_interface()
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var ts = TextServerManager.GetPrimaryInterface();
 		[/csharp]
@@ -2327,8 +2327,8 @@
 		<constant name="STRUCTURED_TEXT_LIST" value="4" enum="StructuredTextParser">
 			BiDi override for lists. Structured text options: list separator [String].
 		</constant>
-		<constant name="STRUCTURED_TEXT_GDSCRIPT" value="5" enum="StructuredTextParser">
-			BiDi override for GDScript.
+		<constant name="STRUCTURED_TEXT_FOUNDRY_SCRIPT" value="5" enum="StructuredTextParser">
+			BiDi override for FoundryScript.
 		</constant>
 		<constant name="STRUCTURED_TEXT_CUSTOM" value="6" enum="StructuredTextParser">
 			User defined structured text BiDi override function.

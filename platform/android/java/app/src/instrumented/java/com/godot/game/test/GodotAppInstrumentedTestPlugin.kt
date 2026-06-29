@@ -140,7 +140,7 @@ class GodotAppInstrumentedTestPlugin(godot: Godot) : GodotPlugin(godot) {
 	}
 
 	/**
-	 * Callback invoked from gdscript when the tests are completed.
+	 * Callback invoked from foundry_script when the tests are completed.
 	 */
 	@UsedByGodot
 	fun onTestsCompleted(testLabel: String, passes: Int, failures: Int) {

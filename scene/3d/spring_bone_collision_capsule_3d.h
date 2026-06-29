@@ -33,7 +33,7 @@
 #include "scene/3d/spring_bone_collision_3d.h"
 
 class SpringBoneCollisionCapsule3D : public SpringBoneCollision3D {
-	GDCLASS(SpringBoneCollisionCapsule3D, SpringBoneCollision3D);
+	FOUNDRY_CLASS(SpringBoneCollisionCapsule3D, SpringBoneCollision3D);
 
 	float radius = 0.1;
 	float height = 0.5;

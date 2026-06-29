@@ -37,14 +37,14 @@
 #include "core/variant/typed_array.h"
 
 class ScriptExtension : public Script {
-	GDCLASS(ScriptExtension, Script)
+	FOUNDRY_CLASS(ScriptExtension, Script)
 
 protected:
 	EXBIND0R(bool, editor_can_reload_from_file)
 
-	GDVIRTUAL1(_placeholder_erased, GDExtensionPtr<void>)
+	FOUNDRY_VIRTUAL1(_placeholder_erased, FoundryExtensionPtr<void>)
 	virtual void _placeholder_erased(PlaceHolderScriptInstance *p_placeholder) override {
-		GDVIRTUAL_CALL(_placeholder_erased, p_placeholder);
+		FOUNDRY_VIRTUAL_CALL(_placeholder_erased, p_placeholder);
 	}
 
 	static void _bind_methods();
@@ -56,16 +56,16 @@ public:
 	EXBIND1RC(bool, inherits_script, const Ref<Script> &)
 	EXBIND0RC(StringName, get_instance_base_type)
 
-	GDVIRTUAL1RC_REQUIRED(GDExtensionPtr<void>, _instance_create, Object *)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(FoundryExtensionPtr<void>, _instance_create, Object *)
 	virtual ScriptInstance *instance_create(Object *p_this) override {
-		GDExtensionPtr<void> ret = nullptr;
-		GDVIRTUAL_CALL(_instance_create, p_this, ret);
+		FoundryExtensionPtr<void> ret = nullptr;
+		FOUNDRY_VIRTUAL_CALL(_instance_create, p_this, ret);
 		return reinterpret_cast<ScriptInstance *>(ret.operator void *());
 	}
-	GDVIRTUAL1RC_REQUIRED(GDExtensionPtr<void>, _placeholder_instance_create, Object *)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(FoundryExtensionPtr<void>, _placeholder_instance_create, Object *)
 	PlaceHolderScriptInstance *placeholder_instance_create(Object *p_this) override {
-		GDExtensionPtr<void> ret = nullptr;
-		GDVIRTUAL_CALL(_placeholder_instance_create, p_this, ret);
+		FoundryExtensionPtr<void> ret = nullptr;
+		FOUNDRY_VIRTUAL_CALL(_placeholder_instance_create, p_this, ret);
 		return reinterpret_cast<PlaceHolderScriptInstance *>(ret.operator void *());
 	}
 
@@ -75,19 +75,19 @@ public:
 	EXBIND1(set_source_code, const String &)
 	EXBIND1R(Error, reload, bool)
 
-	GDVIRTUAL0RC_REQUIRED(StringName, _get_doc_class_name)
-	GDVIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_documentation)
-	GDVIRTUAL0RC(String, _get_class_icon_path)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(StringName, _get_doc_class_name)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_documentation)
+	FOUNDRY_VIRTUAL0RC(String, _get_class_icon_path)
 #ifdef TOOLS_ENABLED
 	virtual StringName get_doc_class_name() const override {
 		StringName ret;
-		GDVIRTUAL_CALL(_get_doc_class_name, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_doc_class_name, ret);
 		return ret;
 	}
 
 	virtual Vector<DocData::ClassDoc> get_documentation() const override {
 		TypedArray<Dictionary> doc;
-		GDVIRTUAL_CALL(_get_documentation, doc);
+		FOUNDRY_VIRTUAL_CALL(_get_documentation, doc);
 
 		Vector<DocData::ClassDoc> class_doc;
 		for (int i = 0; i < doc.size(); i++) {
@@ -99,7 +99,7 @@ public:
 
 	virtual String get_class_icon_path() const override {
 		String ret;
-		GDVIRTUAL_CALL(_get_class_icon_path, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_class_icon_path, ret);
 		return ret;
 	}
 #endif // TOOLS_ENABLED
@@ -107,10 +107,10 @@ public:
 	EXBIND1RC(bool, has_method, const StringName &)
 	EXBIND1RC(bool, has_static_method, const StringName &)
 
-	GDVIRTUAL1RC(Variant, _get_script_method_argument_count, const StringName &)
+	FOUNDRY_VIRTUAL1RC(Variant, _get_script_method_argument_count, const StringName &)
 	virtual int get_script_method_argument_count(const StringName &p_method, bool *r_is_valid = nullptr) const override {
 		Variant ret;
-		if (GDVIRTUAL_CALL(_get_script_method_argument_count, p_method, ret) && ret.get_type() == Variant::INT) {
+		if (FOUNDRY_VIRTUAL_CALL(_get_script_method_argument_count, p_method, ret) && ret.get_type() == Variant::INT) {
 			if (r_is_valid) {
 				*r_is_valid = true;
 			}
@@ -120,10 +120,10 @@ public:
 		return Script::get_script_method_argument_count(p_method, r_is_valid);
 	}
 
-	GDVIRTUAL1RC_REQUIRED(Dictionary, _get_method_info, const StringName &)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(Dictionary, _get_method_info, const StringName &)
 	virtual MethodInfo get_method_info(const StringName &p_method) const override {
 		Dictionary mi;
-		GDVIRTUAL_CALL(_get_method_info, p_method, mi);
+		FOUNDRY_VIRTUAL_CALL(_get_method_info, p_method, mi);
 		return MethodInfo::from_dict(mi);
 	}
 
@@ -132,28 +132,28 @@ public:
 
 	virtual bool is_abstract() const override {
 		bool abst;
-		return GDVIRTUAL_CALL(_is_abstract, abst) && abst;
+		return FOUNDRY_VIRTUAL_CALL(_is_abstract, abst) && abst;
 	}
-	GDVIRTUAL0RC(bool, _is_abstract)
+	FOUNDRY_VIRTUAL0RC(bool, _is_abstract)
 
 	EXBIND0RC(ScriptLanguage *, get_language)
 	EXBIND1RC(bool, has_script_signal, const StringName &)
 
-	GDVIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_script_signal_list)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_script_signal_list)
 
 	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const override {
 		TypedArray<Dictionary> sl;
-		GDVIRTUAL_CALL(_get_script_signal_list, sl);
+		FOUNDRY_VIRTUAL_CALL(_get_script_signal_list, sl);
 		for (int i = 0; i < sl.size(); i++) {
 			r_signals->push_back(MethodInfo::from_dict(sl[i]));
 		}
 	}
 
-	GDVIRTUAL0RC(TypedArray<StringName>, _get_script_trait_list)
+	FOUNDRY_VIRTUAL0RC(TypedArray<StringName>, _get_script_trait_list)
 
 	virtual void get_script_trait_list(List<StringName> *r_traits) const override {
 		TypedArray<StringName> traits;
-		if (!GDVIRTUAL_CALL(_get_script_trait_list, traits)) {
+		if (!FOUNDRY_VIRTUAL_CALL(_get_script_trait_list, traits)) {
 			return;
 		}
 		for (int i = 0; i < traits.size(); i++) {
@@ -161,37 +161,37 @@ public:
 		}
 	}
 
-	GDVIRTUAL1RC_REQUIRED(bool, _has_property_default_value, const StringName &)
-	GDVIRTUAL1RC_REQUIRED(Variant, _get_property_default_value, const StringName &)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(bool, _has_property_default_value, const StringName &)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(Variant, _get_property_default_value, const StringName &)
 
 	virtual bool get_property_default_value(const StringName &p_property, Variant &r_value) const override {
 		bool has_dv = false;
-		if (!GDVIRTUAL_CALL(_has_property_default_value, p_property, has_dv) || !has_dv) {
+		if (!FOUNDRY_VIRTUAL_CALL(_has_property_default_value, p_property, has_dv) || !has_dv) {
 			return false;
 		}
 		Variant ret;
-		GDVIRTUAL_CALL(_get_property_default_value, p_property, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_property_default_value, p_property, ret);
 		r_value = ret;
 		return true;
 	}
 
 	EXBIND0(update_exports)
 
-	GDVIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_script_method_list)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_script_method_list)
 
 	virtual void get_script_method_list(List<MethodInfo> *r_methods) const override {
 		TypedArray<Dictionary> sl;
-		GDVIRTUAL_CALL(_get_script_method_list, sl);
+		FOUNDRY_VIRTUAL_CALL(_get_script_method_list, sl);
 		for (int i = 0; i < sl.size(); i++) {
 			r_methods->push_back(MethodInfo::from_dict(sl[i]));
 		}
 	}
 
-	GDVIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_script_property_list)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_script_property_list)
 
 	virtual void get_script_property_list(List<PropertyInfo> *r_propertys) const override {
 		TypedArray<Dictionary> sl;
-		GDVIRTUAL_CALL(_get_script_property_list, sl);
+		FOUNDRY_VIRTUAL_CALL(_get_script_property_list, sl);
 		for (int i = 0; i < sl.size(); i++) {
 			r_propertys->push_back(PropertyInfo::from_dict(sl[i]));
 		}
@@ -199,19 +199,19 @@ public:
 
 	EXBIND1RC(int, get_member_line, const StringName &)
 
-	GDVIRTUAL0RC_REQUIRED(Dictionary, _get_constants)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Dictionary, _get_constants)
 
 	virtual void get_constants(HashMap<StringName, Variant> *p_constants) override {
 		Dictionary constants;
-		GDVIRTUAL_CALL(_get_constants, constants);
+		FOUNDRY_VIRTUAL_CALL(_get_constants, constants);
 		for (const KeyValue<Variant, Variant> &kv : constants) {
 			p_constants->insert(kv.key, kv.value);
 		}
 	}
-	GDVIRTUAL0RC_REQUIRED(TypedArray<StringName>, _get_members)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<StringName>, _get_members)
 	virtual void get_members(HashSet<StringName> *p_members) override {
 		TypedArray<StringName> members;
-		GDVIRTUAL_CALL(_get_members, members);
+		FOUNDRY_VIRTUAL_CALL(_get_members, members);
 		for (int i = 0; i < members.size(); i++) {
 			p_members->insert(members[i]);
 		}
@@ -219,21 +219,21 @@ public:
 
 	EXBIND0RC(bool, is_placeholder_fallback_enabled)
 
-	GDVIRTUAL0RC_REQUIRED(Variant, _get_rpc_config)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Variant, _get_rpc_config)
 
 	virtual const Variant get_rpc_config() const override {
 		Variant ret;
-		GDVIRTUAL_CALL(_get_rpc_config, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_rpc_config, ret);
 		return ret;
 	}
 };
 
 typedef ScriptLanguage::ProfilingInfo ScriptLanguageExtensionProfilingInfo;
 
-GDVIRTUAL_NATIVE_PTR(ScriptLanguageExtensionProfilingInfo)
+FOUNDRY_VIRTUAL_NATIVE_PTR(ScriptLanguageExtensionProfilingInfo)
 
 class ScriptLanguageExtension : public ScriptLanguage {
-	GDCLASS(ScriptLanguageExtension, ScriptLanguage)
+	FOUNDRY_CLASS(ScriptLanguageExtension, ScriptLanguage)
 protected:
 	static void _bind_methods();
 
@@ -247,46 +247,46 @@ public:
 
 	/* EDITOR FUNCTIONS */
 
-	GDVIRTUAL0RC_REQUIRED(Vector<String>, _get_reserved_words)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Vector<String>, _get_reserved_words)
 
 	virtual Vector<String> get_reserved_words() const override {
 		Vector<String> ret;
-		GDVIRTUAL_CALL(_get_reserved_words, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_reserved_words, ret);
 		return ret;
 	}
 	EXBIND1RC(bool, is_control_flow_keyword, const String &)
 
-	GDVIRTUAL0RC_REQUIRED(Vector<String>, _get_comment_delimiters)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Vector<String>, _get_comment_delimiters)
 
 	virtual Vector<String> get_comment_delimiters() const override {
 		Vector<String> ret;
-		GDVIRTUAL_CALL(_get_comment_delimiters, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_comment_delimiters, ret);
 		return ret;
 	}
 
-	GDVIRTUAL0RC(Vector<String>, _get_doc_comment_delimiters)
+	FOUNDRY_VIRTUAL0RC(Vector<String>, _get_doc_comment_delimiters)
 
 	virtual Vector<String> get_doc_comment_delimiters() const override {
 		Vector<String> ret;
-		GDVIRTUAL_CALL(_get_doc_comment_delimiters, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_doc_comment_delimiters, ret);
 		return ret;
 	}
 
-	GDVIRTUAL0RC_REQUIRED(Vector<String>, _get_string_delimiters)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Vector<String>, _get_string_delimiters)
 
 	virtual Vector<String> get_string_delimiters() const override {
 		Vector<String> ret;
-		GDVIRTUAL_CALL(_get_string_delimiters, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_string_delimiters, ret);
 		return ret;
 	}
 
 	EXBIND3RC(Ref<Script>, make_template, const String &, const String &, const String &)
 
-	GDVIRTUAL1RC_REQUIRED(TypedArray<Dictionary>, _get_built_in_templates, StringName)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(TypedArray<Dictionary>, _get_built_in_templates, StringName)
 
 	virtual Vector<ScriptTemplate> get_built_in_templates(const StringName &p_object) override {
 		TypedArray<Dictionary> ret;
-		GDVIRTUAL_CALL(_get_built_in_templates, p_object, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_built_in_templates, p_object, ret);
 		Vector<ScriptTemplate> stret;
 		for (int i = 0; i < ret.size(); i++) {
 			Dictionary d = ret[i];
@@ -310,10 +310,10 @@ public:
 
 	EXBIND0R(bool, is_using_templates)
 
-	GDVIRTUAL6RC_REQUIRED(Dictionary, _validate, const String &, const String &, bool, bool, bool, bool)
+	FOUNDRY_VIRTUAL6RC_REQUIRED(Dictionary, _validate, const String &, const String &, bool, bool, bool, bool)
 	virtual bool validate(const String &p_script, const String &p_path = "", List<String> *r_functions = nullptr, List<ScriptError> *r_errors = nullptr, List<Warning> *r_warnings = nullptr, HashSet<int> *r_safe_lines = nullptr) const override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_validate, p_script, p_path, r_functions != nullptr, r_errors != nullptr, r_warnings != nullptr, r_safe_lines != nullptr, ret);
+		FOUNDRY_VIRTUAL_CALL(_validate, p_script, p_path, r_functions != nullptr, r_errors != nullptr, r_warnings != nullptr, r_safe_lines != nullptr, ret);
 		if (!ret.has("valid")) {
 			return false;
 		}
@@ -373,14 +373,14 @@ public:
 	}
 
 	EXBIND1RC(String, validate_path, const String &)
-	GDVIRTUAL0RC_REQUIRED(Object *, _create_script)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Object *, _create_script)
 	Script *create_script() const override {
 		Object *ret = nullptr;
-		GDVIRTUAL_CALL(_create_script, ret);
+		FOUNDRY_VIRTUAL_CALL(_create_script, ret);
 		return Object::cast_to<Script>(ret);
 	}
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL0RC(bool, _has_named_classes)
+	FOUNDRY_VIRTUAL0RC(bool, _has_named_classes)
 #endif
 	EXBIND0RC(bool, supports_builtin_mode)
 	EXBIND0RC(bool, supports_documentation)
@@ -392,21 +392,21 @@ public:
 	EXBIND3R(Error, open_in_external_editor, const Ref<Script> &, int, int)
 	EXBIND0R(bool, overrides_external_editor)
 
-	GDVIRTUAL0RC(ScriptNameCasing, _preferred_file_name_casing);
+	FOUNDRY_VIRTUAL0RC(ScriptNameCasing, _preferred_file_name_casing);
 
 	virtual ScriptNameCasing preferred_file_name_casing() const override {
 		ScriptNameCasing ret;
-		if (GDVIRTUAL_CALL(_preferred_file_name_casing, ret)) {
+		if (FOUNDRY_VIRTUAL_CALL(_preferred_file_name_casing, ret)) {
 			return ret;
 		}
 		return ScriptNameCasing::SCRIPT_NAME_CASING_SNAKE_CASE;
 	}
 
-	GDVIRTUAL3RC_REQUIRED(Dictionary, _complete_code, const String &, const String &, Object *)
+	FOUNDRY_VIRTUAL3RC_REQUIRED(Dictionary, _complete_code, const String &, const String &, Object *)
 
 	virtual Error complete_code(const String &p_code, const String &p_path, Object *p_owner, List<CodeCompletionOption> *r_options, bool &r_force, String &r_call_hint) override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_complete_code, p_code, p_path, p_owner, ret);
+		FOUNDRY_VIRTUAL_CALL(_complete_code, p_code, p_path, p_owner, ret);
 		if (!ret.has("result")) {
 			return ERR_UNAVAILABLE;
 		}
@@ -452,11 +452,11 @@ public:
 		return result;
 	}
 
-	GDVIRTUAL4RC_REQUIRED(Dictionary, _lookup_code, const String &, const String &, const String &, Object *)
+	FOUNDRY_VIRTUAL4RC_REQUIRED(Dictionary, _lookup_code, const String &, const String &, const String &, Object *)
 
 	virtual Error lookup_code(const String &p_code, const String &p_symbol, const String &p_path, Object *p_owner, LookupResult &r_result) override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_lookup_code, p_code, p_symbol, p_path, p_owner, ret);
+		FOUNDRY_VIRTUAL_CALL(_lookup_code, p_code, p_symbol, p_path, p_owner, ret);
 
 		ERR_FAIL_COND_V(!ret.has("result"), ERR_UNAVAILABLE);
 		const Error result = Error(int(ret["result"]));
@@ -486,10 +486,10 @@ public:
 		return result;
 	}
 
-	GDVIRTUAL3RC_REQUIRED(String, _auto_indent_code, const String &, int, int)
+	FOUNDRY_VIRTUAL3RC_REQUIRED(String, _auto_indent_code, const String &, int, int)
 	virtual void auto_indent_code(String &p_code, int p_from_line, int p_to_line) const override {
 		String ret;
-		GDVIRTUAL_CALL(_auto_indent_code, p_code, p_from_line, p_to_line, ret);
+		FOUNDRY_VIRTUAL_CALL(_auto_indent_code, p_code, p_from_line, p_to_line, ret);
 		p_code = ret;
 	}
 	EXBIND2(add_global_constant, const StringName &, const Variant &)
@@ -508,10 +508,10 @@ public:
 	EXBIND1RC(String, debug_get_stack_level_function, int)
 	EXBIND1RC(String, debug_get_stack_level_source, int)
 
-	GDVIRTUAL3R_REQUIRED(Dictionary, _debug_get_stack_level_locals, int, int, int)
+	FOUNDRY_VIRTUAL3R_REQUIRED(Dictionary, _debug_get_stack_level_locals, int, int, int)
 	virtual void debug_get_stack_level_locals(int p_level, List<String> *p_locals, List<Variant> *p_values, int p_max_subitems = -1, int p_max_depth = -1) override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_debug_get_stack_level_locals, p_level, p_max_subitems, p_max_depth, ret);
+		FOUNDRY_VIRTUAL_CALL(_debug_get_stack_level_locals, p_level, p_max_subitems, p_max_depth, ret);
 		if (ret.is_empty()) {
 			return;
 		}
@@ -528,10 +528,10 @@ public:
 			}
 		}
 	}
-	GDVIRTUAL3R_REQUIRED(Dictionary, _debug_get_stack_level_members, int, int, int)
+	FOUNDRY_VIRTUAL3R_REQUIRED(Dictionary, _debug_get_stack_level_members, int, int, int)
 	virtual void debug_get_stack_level_members(int p_level, List<String> *p_members, List<Variant> *p_values, int p_max_subitems = -1, int p_max_depth = -1) override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_debug_get_stack_level_members, p_level, p_max_subitems, p_max_depth, ret);
+		FOUNDRY_VIRTUAL_CALL(_debug_get_stack_level_members, p_level, p_max_subitems, p_max_depth, ret);
 		if (ret.is_empty()) {
 			return;
 		}
@@ -548,17 +548,17 @@ public:
 			}
 		}
 	}
-	GDVIRTUAL1R_REQUIRED(GDExtensionPtr<void>, _debug_get_stack_level_instance, int)
+	FOUNDRY_VIRTUAL1R_REQUIRED(FoundryExtensionPtr<void>, _debug_get_stack_level_instance, int)
 
 	virtual ScriptInstance *debug_get_stack_level_instance(int p_level) override {
-		GDExtensionPtr<void> ret = nullptr;
-		GDVIRTUAL_CALL(_debug_get_stack_level_instance, p_level, ret);
+		FoundryExtensionPtr<void> ret = nullptr;
+		FOUNDRY_VIRTUAL_CALL(_debug_get_stack_level_instance, p_level, ret);
 		return reinterpret_cast<ScriptInstance *>(ret.operator void *());
 	}
-	GDVIRTUAL2R_REQUIRED(Dictionary, _debug_get_globals, int, int)
+	FOUNDRY_VIRTUAL2R_REQUIRED(Dictionary, _debug_get_globals, int, int)
 	virtual void debug_get_globals(List<String> *p_globals, List<Variant> *p_values, int p_max_subitems = -1, int p_max_depth = -1) override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_debug_get_globals, p_max_subitems, p_max_depth, ret);
+		FOUNDRY_VIRTUAL_CALL(_debug_get_globals, p_max_subitems, p_max_depth, ret);
 		if (ret.is_empty()) {
 			return;
 		}
@@ -578,10 +578,10 @@ public:
 
 	EXBIND4R(String, debug_parse_stack_level_expression, int, const String &, int, int)
 
-	GDVIRTUAL0R_REQUIRED(TypedArray<Dictionary>, _debug_get_current_stack_info)
+	FOUNDRY_VIRTUAL0R_REQUIRED(TypedArray<Dictionary>, _debug_get_current_stack_info)
 	virtual Vector<StackInfo> debug_get_current_stack_info() override {
 		TypedArray<Dictionary> ret;
-		GDVIRTUAL_CALL(_debug_get_current_stack_info, ret);
+		FOUNDRY_VIRTUAL_CALL(_debug_get_current_stack_info, ret);
 		Vector<StackInfo> sret;
 		for (const Variant &var : ret) {
 			StackInfo si;
@@ -602,29 +602,29 @@ public:
 	EXBIND2(reload_tool_script, const Ref<Script> &, bool)
 	/* LOADER FUNCTIONS */
 
-	GDVIRTUAL0RC_REQUIRED(PackedStringArray, _get_recognized_extensions)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(PackedStringArray, _get_recognized_extensions)
 
 	virtual void get_recognized_extensions(List<String> *p_extensions) const override {
 		PackedStringArray ret;
-		GDVIRTUAL_CALL(_get_recognized_extensions, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_recognized_extensions, ret);
 		for (int i = 0; i < ret.size(); i++) {
 			p_extensions->push_back(ret[i]);
 		}
 	}
 
-	GDVIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_public_functions)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_public_functions)
 	virtual void get_public_functions(List<MethodInfo> *p_functions) const override {
 		TypedArray<Dictionary> ret;
-		GDVIRTUAL_CALL(_get_public_functions, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_public_functions, ret);
 		for (const Variant &var : ret) {
 			MethodInfo mi = MethodInfo::from_dict(var);
 			p_functions->push_back(mi);
 		}
 	}
-	GDVIRTUAL0RC_REQUIRED(Dictionary, _get_public_constants)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(Dictionary, _get_public_constants)
 	virtual void get_public_constants(List<Pair<String, Variant>> *p_constants) const override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_get_public_constants, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_public_constants, ret);
 		for (int i = 0; i < ret.size(); i++) {
 			Dictionary d = ret[i];
 			ERR_CONTINUE(!d.has("name"));
@@ -632,10 +632,10 @@ public:
 			p_constants->push_back(Pair<String, Variant>(d["name"], d["value"]));
 		}
 	}
-	GDVIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_public_annotations)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(TypedArray<Dictionary>, _get_public_annotations)
 	virtual void get_public_annotations(List<MethodInfo> *p_annotations) const override {
 		TypedArray<Dictionary> ret;
-		GDVIRTUAL_CALL(_get_public_annotations, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_public_annotations, ret);
 		for (const Variant &var : ret) {
 			MethodInfo mi = MethodInfo::from_dict(var);
 			p_annotations->push_back(mi);
@@ -646,19 +646,19 @@ public:
 	EXBIND0(profiling_stop)
 	EXBIND1(profiling_set_save_native_calls, bool)
 
-	GDVIRTUAL2R_REQUIRED(int, _profiling_get_accumulated_data, GDExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
+	FOUNDRY_VIRTUAL2R_REQUIRED(int, _profiling_get_accumulated_data, FoundryExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
 
 	virtual int profiling_get_accumulated_data(ProfilingInfo *p_info_arr, int p_info_max) override {
 		int ret = 0;
-		GDVIRTUAL_CALL(_profiling_get_accumulated_data, p_info_arr, p_info_max, ret);
+		FOUNDRY_VIRTUAL_CALL(_profiling_get_accumulated_data, p_info_arr, p_info_max, ret);
 		return ret;
 	}
 
-	GDVIRTUAL2R_REQUIRED(int, _profiling_get_frame_data, GDExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
+	FOUNDRY_VIRTUAL2R_REQUIRED(int, _profiling_get_frame_data, FoundryExtensionPtr<ScriptLanguageExtensionProfilingInfo>, int)
 
 	virtual int profiling_get_frame_data(ProfilingInfo *p_info_arr, int p_info_max) override {
 		int ret = 0;
-		GDVIRTUAL_CALL(_profiling_get_frame_data, p_info_arr, p_info_max, ret);
+		FOUNDRY_VIRTUAL_CALL(_profiling_get_frame_data, p_info_arr, p_info_max, ret);
 		return ret;
 	}
 
@@ -666,11 +666,11 @@ public:
 
 	EXBIND1RC(bool, handles_global_class_type, const String &)
 
-	GDVIRTUAL1RC_REQUIRED(Dictionary, _get_global_class_name, const String &)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(Dictionary, _get_global_class_name, const String &)
 
 	virtual String get_global_class_name(const String &p_path, String *r_base_type = nullptr, String *r_icon_path = nullptr, bool *r_is_abstract = nullptr, bool *r_is_tool = nullptr, bool *r_is_trait = nullptr, bool *r_is_enum = nullptr) const override {
 		Dictionary ret;
-		GDVIRTUAL_CALL(_get_global_class_name, p_path, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_global_class_name, p_path, ret);
 		if (!ret.has("name")) {
 			return String();
 		}
@@ -702,43 +702,43 @@ VARIANT_ENUM_CAST(ScriptLanguageExtension::CodeCompletionLocation)
 
 class ScriptInstanceExtension : public ScriptInstance {
 public:
-	const GDExtensionScriptInstanceInfo3 *native_info;
+	const FoundryExtensionScriptInstanceInfo3 *native_info;
 
 #ifndef DISABLE_DEPRECATED
 	bool free_native_info = false;
 	struct DeprecatedNativeInfo {
-		GDExtensionScriptInstanceNotification notification_func = nullptr;
-		GDExtensionScriptInstanceFreePropertyList free_property_list_func = nullptr;
-		GDExtensionScriptInstanceFreeMethodList free_method_list_func = nullptr;
+		FoundryExtensionScriptInstanceNotification notification_func = nullptr;
+		FoundryExtensionScriptInstanceFreePropertyList free_property_list_func = nullptr;
+		FoundryExtensionScriptInstanceFreeMethodList free_method_list_func = nullptr;
 	};
 	DeprecatedNativeInfo *deprecated_native_info = nullptr;
 #endif // DISABLE_DEPRECATED
 
-	GDExtensionScriptInstanceDataPtr instance = nullptr;
+	FoundryExtensionScriptInstanceDataPtr instance = nullptr;
 
-	GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wignored-qualifiers") // There should not be warnings on explicit casts.
+	FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wignored-qualifiers") // There should not be warnings on explicit casts.
 
 	virtual bool set(const StringName &p_name, const Variant &p_value) override {
 		if (native_info->set_func) {
-			return native_info->set_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionConstVariantPtr)&p_value);
+			return native_info->set_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionConstVariantPtr)&p_value);
 		}
 		return false;
 	}
 	virtual bool get(const StringName &p_name, Variant &r_ret) const override {
 		if (native_info->get_func) {
-			return native_info->get_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&r_ret);
+			return native_info->get_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&r_ret);
 		}
 		return false;
 	}
 	virtual void get_property_list(List<PropertyInfo> *p_list) const override {
 		if (native_info->get_property_list_func) {
 			uint32_t pcount;
-			const GDExtensionPropertyInfo *pinfo = native_info->get_property_list_func(instance, &pcount);
+			const FoundryExtensionPropertyInfo *pinfo = native_info->get_property_list_func(instance, &pcount);
 
 #ifdef TOOLS_ENABLED
 			if (pcount > 0) {
 				if (native_info->get_class_category_func) {
-					GDExtensionPropertyInfo gdext_class_category;
+					FoundryExtensionPropertyInfo gdext_class_category;
 					if (native_info->get_class_category_func(instance, &gdext_class_category)) {
 						p_list->push_back(PropertyInfo(gdext_class_category));
 					}
@@ -765,8 +765,8 @@ public:
 	}
 	virtual Variant::Type get_property_type(const StringName &p_name, bool *r_is_valid = nullptr) const override {
 		if (native_info->get_property_type_func) {
-			GDExtensionBool is_valid = 0;
-			GDExtensionVariantType type = native_info->get_property_type_func(instance, (GDExtensionConstStringNamePtr)&p_name, &is_valid);
+			FoundryExtensionBool is_valid = 0;
+			FoundryExtensionVariantType type = native_info->get_property_type_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, &is_valid);
 			if (r_is_valid) {
 				*r_is_valid = is_valid != 0;
 			}
@@ -776,10 +776,10 @@ public:
 	}
 	virtual void validate_property(PropertyInfo &p_property) const override {
 		if (native_info->validate_property_func) {
-			// GDExtension uses a StringName rather than a String for property name.
+			// FoundryExtension uses a StringName rather than a String for property name.
 			StringName prop_name = p_property.name;
-			GDExtensionPropertyInfo gdext_prop = {
-				(GDExtensionVariantType)p_property.type,
+			FoundryExtensionPropertyInfo gdext_prop = {
+				(FoundryExtensionVariantType)p_property.type,
 				&prop_name,
 				&p_property.class_name,
 				(uint32_t)p_property.hint,
@@ -799,13 +799,13 @@ public:
 
 	virtual bool property_can_revert(const StringName &p_name) const override {
 		if (native_info->property_can_revert_func) {
-			return native_info->property_can_revert_func(instance, (GDExtensionConstStringNamePtr)&p_name);
+			return native_info->property_can_revert_func(instance, (FoundryExtensionConstStringNamePtr)&p_name);
 		}
 		return false;
 	}
 	virtual bool property_get_revert(const StringName &p_name, Variant &r_ret) const override {
 		if (native_info->property_get_revert_func) {
-			return native_info->property_get_revert_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&r_ret);
+			return native_info->property_get_revert_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&r_ret);
 		}
 		return false;
 	}
@@ -816,7 +816,7 @@ public:
 		}
 		return nullptr;
 	}
-	static void _add_property_with_state(GDExtensionConstStringNamePtr p_name, GDExtensionConstVariantPtr p_value, void *p_userdata) {
+	static void _add_property_with_state(FoundryExtensionConstStringNamePtr p_name, FoundryExtensionConstVariantPtr p_value, void *p_userdata) {
 		List<Pair<StringName, Variant>> *state = (List<Pair<StringName, Variant>> *)p_userdata;
 		state->push_back(Pair<StringName, Variant>(*(const StringName *)p_name, *(const Variant *)p_value));
 	}
@@ -831,7 +831,7 @@ public:
 	virtual void get_method_list(List<MethodInfo> *p_list) const override {
 		if (native_info->get_method_list_func) {
 			uint32_t mcount;
-			const GDExtensionMethodInfo *minfo = native_info->get_method_list_func(instance, &mcount);
+			const FoundryExtensionMethodInfo *minfo = native_info->get_method_list_func(instance, &mcount);
 			for (uint32_t i = 0; i < mcount; i++) {
 				p_list->push_back(MethodInfo(minfo[i]));
 			}
@@ -846,15 +846,15 @@ public:
 	}
 	virtual bool has_method(const StringName &p_method) const override {
 		if (native_info->has_method_func) {
-			return native_info->has_method_func(instance, (GDExtensionStringNamePtr)&p_method);
+			return native_info->has_method_func(instance, (FoundryExtensionStringNamePtr)&p_method);
 		}
 		return false;
 	}
 
 	virtual int get_method_argument_count(const StringName &p_method, bool *r_is_valid = nullptr) const override {
 		if (native_info->get_method_argument_count_func) {
-			GDExtensionBool is_valid = 0;
-			GDExtensionInt ret = native_info->get_method_argument_count_func(instance, (GDExtensionStringNamePtr)&p_method, &is_valid);
+			FoundryExtensionBool is_valid = 0;
+			FoundryExtensionInt ret = native_info->get_method_argument_count_func(instance, (FoundryExtensionStringNamePtr)&p_method, &is_valid);
 			if (r_is_valid) {
 				*r_is_valid = is_valid != 0;
 			}
@@ -867,8 +867,8 @@ public:
 	virtual Variant callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) override {
 		Variant ret;
 		if (native_info->call_func) {
-			GDExtensionCallError ce;
-			native_info->call_func(instance, (GDExtensionConstStringNamePtr)&p_method, (GDExtensionConstVariantPtr *)p_args, p_argcount, (GDExtensionVariantPtr)&ret, &ce);
+			FoundryExtensionCallError ce;
+			native_info->call_func(instance, (FoundryExtensionConstStringNamePtr)&p_method, (FoundryExtensionConstVariantPtr *)p_args, p_argcount, (FoundryExtensionVariantPtr)&ret, &ce);
 			r_error.error = Callable::CallError::Error(ce.error);
 			r_error.argument = ce.argument;
 			r_error.expected = ce.expected;
@@ -888,9 +888,9 @@ public:
 
 	virtual String to_string(bool *r_valid) override {
 		if (native_info->to_string_func) {
-			GDExtensionBool valid;
+			FoundryExtensionBool valid;
 			String ret;
-			native_info->to_string_func(instance, &valid, reinterpret_cast<GDExtensionStringPtr>(&ret));
+			native_info->to_string_func(instance, &valid, reinterpret_cast<FoundryExtensionStringPtr>(&ret));
 			if (r_valid) {
 				*r_valid = valid != 0;
 			}
@@ -913,7 +913,7 @@ public:
 
 	virtual Ref<Script> get_script() const override {
 		if (native_info->get_script_func) {
-			GDExtensionObjectPtr script = native_info->get_script_func(instance);
+			FoundryExtensionObjectPtr script = native_info->get_script_func(instance);
 			return Ref<Script>(reinterpret_cast<Script *>(script));
 		}
 		return Ref<Script>();
@@ -928,7 +928,7 @@ public:
 
 	virtual void property_set_fallback(const StringName &p_name, const Variant &p_value, bool *r_valid) override {
 		if (native_info->set_fallback_func) {
-			bool ret = native_info->set_fallback_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionConstVariantPtr)&p_value);
+			bool ret = native_info->set_fallback_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionConstVariantPtr)&p_value);
 			if (r_valid) {
 				*r_valid = ret;
 			}
@@ -937,7 +937,7 @@ public:
 	virtual Variant property_get_fallback(const StringName &p_name, bool *r_valid) override {
 		Variant ret;
 		if (native_info->get_fallback_func) {
-			bool valid = native_info->get_fallback_func(instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&ret);
+			bool valid = native_info->get_fallback_func(instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&ret);
 			if (r_valid) {
 				*r_valid = valid;
 			}
@@ -947,7 +947,7 @@ public:
 
 	virtual ScriptLanguage *get_language() override {
 		if (native_info->get_language_func) {
-			GDExtensionScriptLanguagePtr lang = native_info->get_language_func(instance);
+			FoundryExtensionScriptLanguagePtr lang = native_info->get_language_func(instance);
 			return reinterpret_cast<ScriptLanguage *>(lang);
 		}
 		return nullptr;
@@ -958,7 +958,7 @@ public:
 		}
 #ifndef DISABLE_DEPRECATED
 		if (free_native_info) {
-			memfree(const_cast<GDExtensionScriptInstanceInfo3 *>(native_info));
+			memfree(const_cast<FoundryExtensionScriptInstanceInfo3 *>(native_info));
 		}
 		if (deprecated_native_info) {
 			memfree(deprecated_native_info);
@@ -966,5 +966,5 @@ public:
 #endif // DISABLE_DEPRECATED
 	}
 
-	GODOT_GCC_WARNING_POP
+	FOUNDRY_GCC_WARNING_POP
 };

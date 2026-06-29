@@ -16,8 +16,8 @@ common_linuxbsd = [
 if env["library_type"] == "executable":
     if env["use_fuzzer"]:
         # libFuzzer provides its own main(); swap the platform entry point for
-        # the GDScript fuzzing harness in fuzz_gdscript_linuxbsd.cpp.
-        common_linuxbsd += ["fuzz_gdscript_linuxbsd.cpp"]
+        # the FoundryScript fuzzing harness in fuzz_foundry_script_linuxbsd.cpp.
+        common_linuxbsd += ["fuzz_foundry_script_linuxbsd.cpp"]
     else:
         common_linuxbsd += ["godot_linuxbsd.cpp"]
 else:

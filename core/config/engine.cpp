@@ -151,17 +151,17 @@ double Engine::get_unfrozen_time_scale() const {
 
 Dictionary Engine::get_version_info() const {
 	Dictionary dict;
-	dict["major"] = GODOT_VERSION_MAJOR;
-	dict["minor"] = GODOT_VERSION_MINOR;
-	dict["patch"] = GODOT_VERSION_PATCH;
-	dict["hex"] = GODOT_VERSION_HEX;
-	dict["status"] = GODOT_VERSION_STATUS;
-	dict["build"] = GODOT_VERSION_BUILD;
+	dict["major"] = FOUNDRY_VERSION_MAJOR;
+	dict["minor"] = FOUNDRY_VERSION_MINOR;
+	dict["patch"] = FOUNDRY_VERSION_PATCH;
+	dict["hex"] = FOUNDRY_VERSION_HEX;
+	dict["status"] = FOUNDRY_VERSION_STATUS;
+	dict["build"] = FOUNDRY_VERSION_BUILD;
 
-	String hash = String(GODOT_VERSION_HASH);
+	String hash = String(FOUNDRY_VERSION_HASH);
 	dict["hash"] = hash.is_empty() ? String("unknown") : hash;
 
-	dict["timestamp"] = GODOT_VERSION_TIMESTAMP;
+	dict["timestamp"] = FOUNDRY_VERSION_TIMESTAMP;
 
 	String stringver = String(dict["major"]) + "." + String(dict["minor"]);
 	if ((int)dict["patch"] != 0) {
@@ -244,7 +244,7 @@ Dictionary Engine::get_license_info() const {
 }
 
 String Engine::get_license_text() const {
-	return String(GODOT_LICENSE_TEXT);
+	return String(FOUNDRY_LICENSE_TEXT);
 }
 
 String Engine::get_architecture_name() const {

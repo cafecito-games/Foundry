@@ -67,7 +67,7 @@
 #undef CursorShape
 
 class DisplayServerWayland : public DisplayServer {
-	GDSOFTCLASS(DisplayServerWayland, DisplayServer);
+	FOUNDRY_SOFTCLASS(DisplayServerWayland, DisplayServer);
 
 	struct WindowData {
 		WindowID id = INVALID_WINDOW_ID;

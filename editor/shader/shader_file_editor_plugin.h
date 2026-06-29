@@ -39,7 +39,7 @@ class HFlowContainer;
 class ItemList;
 
 class ShaderFileEditor : public EditorDock {
-	GDCLASS(ShaderFileEditor, EditorDock);
+	FOUNDRY_CLASS(ShaderFileEditor, EditorDock);
 
 	Ref<RDShaderFile> shader_file;
 
@@ -66,7 +66,7 @@ public:
 };
 
 class ShaderFileEditorPlugin : public EditorPlugin {
-	GDCLASS(ShaderFileEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ShaderFileEditorPlugin, EditorPlugin);
 
 	ShaderFileEditor *shader_editor = nullptr;
 

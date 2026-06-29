@@ -37,8 +37,8 @@
 #include "core/crypto/crypto.h"
 #include "core/crypto/hashing_context.h"
 #include "core/debugger/engine_profiler.h"
-#include "core/extension/gdextension.h"
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/extension/godot_instance.h"
 #include "core/input/input.h"
 #include "core/input/input_map.h"
@@ -93,7 +93,7 @@ static Ref<ResourceFormatLoaderImage> resource_format_image;
 static Ref<TranslationLoaderPO> resource_format_po;
 static Ref<ResourceFormatSaverCrypto> resource_format_saver_crypto;
 static Ref<ResourceFormatLoaderCrypto> resource_format_loader_crypto;
-static Ref<GDExtensionResourceLoader> resource_loader_gdextension;
+static Ref<FoundryExtensionResourceLoader> resource_loader_foundry_extension;
 static Ref<ResourceFormatSaverJSON> resource_saver_json;
 static Ref<ResourceFormatLoaderJSON> resource_loader_json;
 
@@ -115,7 +115,7 @@ static WorkerThreadPool *worker_thread_pool = nullptr;
 
 extern Mutex _global_mutex;
 
-static GDExtensionManager *gdextension_manager = nullptr;
+static FoundryExtensionManager *foundry_extension_manager = nullptr;
 
 extern void register_global_constants();
 extern void unregister_global_constants();
@@ -135,19 +135,19 @@ void register_core_types() {
 	register_global_constants();
 	CoreStringNames::create();
 
-	GDREGISTER_CLASS(Object);
-	GDREGISTER_CLASS(RefCounted);
-	GDREGISTER_CLASS(WeakRef);
-	GDREGISTER_CLASS(Resource);
+	FOUNDRY_REGISTER_CLASS(Object);
+	FOUNDRY_REGISTER_CLASS(RefCounted);
+	FOUNDRY_REGISTER_CLASS(WeakRef);
+	FOUNDRY_REGISTER_CLASS(Resource);
 
-	GDREGISTER_CLASS(Time);
+	FOUNDRY_REGISTER_CLASS(Time);
 	_time = memnew(Time);
 	ResourceLoader::initialize();
 
 	Variant::register_types();
 
-	GDREGISTER_CLASS(ResourceFormatLoader);
-	GDREGISTER_CLASS(ResourceFormatSaver);
+	FOUNDRY_REGISTER_CLASS(ResourceFormatLoader);
+	FOUNDRY_REGISTER_CLASS(ResourceFormatSaver);
 
 	if constexpr (GD_IS_CLASS_ENABLED(Translation)) {
 		resource_format_po.instantiate();
@@ -170,64 +170,64 @@ void register_core_types() {
 		ResourceLoader::add_resource_format_loader(resource_format_image);
 	}
 
-	GDREGISTER_ABSTRACT_CLASS(Script);
-	GDREGISTER_ABSTRACT_CLASS(ScriptLanguage);
-	GDREGISTER_CLASS(ScriptBacktrace);
-	GDREGISTER_VIRTUAL_CLASS(ScriptExtension);
-	GDREGISTER_VIRTUAL_CLASS(ScriptLanguageExtension);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(Script);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ScriptLanguage);
+	FOUNDRY_REGISTER_CLASS(ScriptBacktrace);
+	FOUNDRY_REGISTER_VIRTUAL_CLASS(ScriptExtension);
+	FOUNDRY_REGISTER_VIRTUAL_CLASS(ScriptLanguageExtension);
 
-	GDREGISTER_CLASS(MissingResource);
-	GDREGISTER_CLASS(Image);
+	FOUNDRY_REGISTER_CLASS(MissingResource);
+	FOUNDRY_REGISTER_CLASS(Image);
 
-	GDREGISTER_CLASS(Shortcut);
-	GDREGISTER_ABSTRACT_CLASS(InputEvent);
-	GDREGISTER_ABSTRACT_CLASS(InputEventFromWindow);
-	GDREGISTER_ABSTRACT_CLASS(InputEventWithModifiers);
-	GDREGISTER_CLASS(InputEventKey);
-	GDREGISTER_CLASS(InputEventShortcut);
-	GDREGISTER_ABSTRACT_CLASS(InputEventMouse);
-	GDREGISTER_CLASS(InputEventMouseButton);
-	GDREGISTER_CLASS(InputEventMouseMotion);
-	GDREGISTER_CLASS(InputEventJoypadButton);
-	GDREGISTER_CLASS(InputEventJoypadMotion);
-	GDREGISTER_CLASS(InputEventScreenDrag);
-	GDREGISTER_CLASS(InputEventScreenTouch);
-	GDREGISTER_CLASS(InputEventAction);
-	GDREGISTER_ABSTRACT_CLASS(InputEventGesture);
-	GDREGISTER_CLASS(InputEventMagnifyGesture);
-	GDREGISTER_CLASS(InputEventPanGesture);
-	GDREGISTER_CLASS(InputEventMIDI);
+	FOUNDRY_REGISTER_CLASS(Shortcut);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(InputEvent);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(InputEventFromWindow);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(InputEventWithModifiers);
+	FOUNDRY_REGISTER_CLASS(InputEventKey);
+	FOUNDRY_REGISTER_CLASS(InputEventShortcut);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(InputEventMouse);
+	FOUNDRY_REGISTER_CLASS(InputEventMouseButton);
+	FOUNDRY_REGISTER_CLASS(InputEventMouseMotion);
+	FOUNDRY_REGISTER_CLASS(InputEventJoypadButton);
+	FOUNDRY_REGISTER_CLASS(InputEventJoypadMotion);
+	FOUNDRY_REGISTER_CLASS(InputEventScreenDrag);
+	FOUNDRY_REGISTER_CLASS(InputEventScreenTouch);
+	FOUNDRY_REGISTER_CLASS(InputEventAction);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(InputEventGesture);
+	FOUNDRY_REGISTER_CLASS(InputEventMagnifyGesture);
+	FOUNDRY_REGISTER_CLASS(InputEventPanGesture);
+	FOUNDRY_REGISTER_CLASS(InputEventMIDI);
 
 	// Network
-	GDREGISTER_ABSTRACT_CLASS(StreamPeer);
-	GDREGISTER_ABSTRACT_CLASS(StreamPeerSocket);
-	GDREGISTER_ABSTRACT_CLASS(SocketServer);
-	GDREGISTER_CLASS(StreamPeerExtension);
-	GDREGISTER_CLASS(StreamPeerBuffer);
-	GDREGISTER_CLASS(StreamPeerGZIP);
-	GDREGISTER_CLASS(StreamPeerTCP);
-	GDREGISTER_CLASS(TCPServer);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(StreamPeer);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(StreamPeerSocket);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(SocketServer);
+	FOUNDRY_REGISTER_CLASS(StreamPeerExtension);
+	FOUNDRY_REGISTER_CLASS(StreamPeerBuffer);
+	FOUNDRY_REGISTER_CLASS(StreamPeerGZIP);
+	FOUNDRY_REGISTER_CLASS(StreamPeerTCP);
+	FOUNDRY_REGISTER_CLASS(TCPServer);
 
 	// IPC using UNIX domain sockets.
-	GDREGISTER_CLASS(StreamPeerUDS);
-	GDREGISTER_CLASS(UDSServer);
+	FOUNDRY_REGISTER_CLASS(StreamPeerUDS);
+	FOUNDRY_REGISTER_CLASS(UDSServer);
 
-	GDREGISTER_ABSTRACT_CLASS(PacketPeer);
-	GDREGISTER_CLASS(PacketPeerExtension);
-	GDREGISTER_CLASS(PacketPeerStream);
-	GDREGISTER_CLASS(PacketPeerUDP);
-	GDREGISTER_CLASS(UDPServer);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(PacketPeer);
+	FOUNDRY_REGISTER_CLASS(PacketPeerExtension);
+	FOUNDRY_REGISTER_CLASS(PacketPeerStream);
+	FOUNDRY_REGISTER_CLASS(PacketPeerUDP);
+	FOUNDRY_REGISTER_CLASS(UDPServer);
 
-	GDREGISTER_ABSTRACT_CLASS(WorkerThreadPool);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(WorkerThreadPool);
 
 	ClassDB::register_custom_instance_class<HTTPClient>();
 
 	// Crypto
-	GDREGISTER_CLASS(HashingContext);
-	GDREGISTER_CLASS(AESContext);
+	FOUNDRY_REGISTER_CLASS(HashingContext);
+	FOUNDRY_REGISTER_CLASS(AESContext);
 	ClassDB::register_custom_instance_class<X509Certificate>();
 	ClassDB::register_custom_instance_class<CryptoKey>();
-	GDREGISTER_ABSTRACT_CLASS(TLSOptions);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(TLSOptions);
 	ClassDB::register_custom_instance_class<HMACContext>();
 	ClassDB::register_custom_instance_class<Crypto>();
 	ClassDB::register_custom_instance_class<StreamPeerTLS>();
@@ -250,76 +250,76 @@ void register_core_types() {
 		ResourceLoader::add_resource_format_loader(resource_loader_json);
 	}
 
-	GDREGISTER_CLASS(MainLoop);
-	GDREGISTER_CLASS(Translation);
-	GDREGISTER_CLASS(TranslationDomain);
-	GDREGISTER_CLASS(OptimizedTranslation);
-	GDREGISTER_CLASS(UndoRedo);
-	GDREGISTER_CLASS(TriangleMesh);
+	FOUNDRY_REGISTER_CLASS(MainLoop);
+	FOUNDRY_REGISTER_CLASS(Translation);
+	FOUNDRY_REGISTER_CLASS(TranslationDomain);
+	FOUNDRY_REGISTER_CLASS(OptimizedTranslation);
+	FOUNDRY_REGISTER_CLASS(UndoRedo);
+	FOUNDRY_REGISTER_CLASS(TriangleMesh);
 
-	GDREGISTER_ABSTRACT_CLASS(FileAccess);
-	GDREGISTER_ABSTRACT_CLASS(DirAccess);
-	GDREGISTER_CLASS(CoreBind::Thread);
-	GDREGISTER_CLASS(CoreBind::Mutex);
-	GDREGISTER_CLASS(CoreBind::Semaphore);
-	GDREGISTER_VIRTUAL_CLASS(CoreBind::Logger);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(FileAccess);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(DirAccess);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Thread);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Mutex);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Semaphore);
+	FOUNDRY_REGISTER_VIRTUAL_CLASS(CoreBind::Logger);
 
-	GDREGISTER_CLASS(XMLParser);
-	GDREGISTER_CLASS(JSON);
+	FOUNDRY_REGISTER_CLASS(XMLParser);
+	FOUNDRY_REGISTER_CLASS(JSON);
 
-	GDREGISTER_CLASS(ConfigFile);
+	FOUNDRY_REGISTER_CLASS(ConfigFile);
 
-	GDREGISTER_CLASS(PCKPacker);
+	FOUNDRY_REGISTER_CLASS(PCKPacker);
 
-	GDREGISTER_CLASS(AStar3D);
-	GDREGISTER_CLASS(AStar2D);
-	GDREGISTER_CLASS(AStarGrid2D);
-	GDREGISTER_CLASS(EncodedObjectAsID);
-	GDREGISTER_CLASS(RandomNumberGenerator);
+	FOUNDRY_REGISTER_CLASS(AStar3D);
+	FOUNDRY_REGISTER_CLASS(AStar2D);
+	FOUNDRY_REGISTER_CLASS(AStarGrid2D);
+	FOUNDRY_REGISTER_CLASS(EncodedObjectAsID);
+	FOUNDRY_REGISTER_CLASS(RandomNumberGenerator);
 #ifndef DISABLE_DEPRECATED
-	GDREGISTER_CLASS(PackedDataContainer);
-	GDREGISTER_ABSTRACT_CLASS(PackedDataContainerRef);
+	FOUNDRY_REGISTER_CLASS(PackedDataContainer);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(PackedDataContainerRef);
 #endif
 
-	GDREGISTER_ABSTRACT_CLASS(ImageFormatLoader);
-	GDREGISTER_CLASS(ImageFormatLoaderExtension);
-	GDREGISTER_ABSTRACT_CLASS(ResourceImporter);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ImageFormatLoader);
+	FOUNDRY_REGISTER_CLASS(ImageFormatLoaderExtension);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ResourceImporter);
 
-	GDREGISTER_CLASS(GDExtension);
+	FOUNDRY_REGISTER_CLASS(FoundryExtension);
 
-	GDREGISTER_ABSTRACT_CLASS(GodotInstance);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(GodotInstance);
 
-	GDREGISTER_ABSTRACT_CLASS(GDExtensionManager);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(FoundryExtensionManager);
 
-	GDREGISTER_ABSTRACT_CLASS(ResourceUID);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ResourceUID);
 
-	GDREGISTER_CLASS(EngineProfiler);
+	FOUNDRY_REGISTER_CLASS(EngineProfiler);
 
 	resource_uid = memnew(ResourceUID);
 
-	gdextension_manager = memnew(GDExtensionManager);
+	foundry_extension_manager = memnew(FoundryExtensionManager);
 
-	if constexpr (GD_IS_CLASS_ENABLED(GDExtension)) {
-		resource_loader_gdextension.instantiate();
-		ResourceLoader::add_resource_format_loader(resource_loader_gdextension);
+	if constexpr (GD_IS_CLASS_ENABLED(FoundryExtension)) {
+		resource_loader_foundry_extension.instantiate();
+		ResourceLoader::add_resource_format_loader(resource_loader_foundry_extension);
 	}
 
-	GDREGISTER_ABSTRACT_CLASS(IP);
-	GDREGISTER_CLASS(CoreBind::Geometry2D);
-	GDREGISTER_CLASS(CoreBind::Geometry3D);
-	GDREGISTER_CLASS(CoreBind::ResourceLoader);
-	GDREGISTER_CLASS(CoreBind::ResourceSaver);
-	GDREGISTER_CLASS(CoreBind::OS);
-	GDREGISTER_CLASS(CoreBind::Engine);
-	GDREGISTER_CLASS(CoreBind::Special::ClassDB);
-	GDREGISTER_CLASS(CoreBind::Marshalls);
-	GDREGISTER_CLASS(CoreBind::EngineDebugger);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(IP);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Geometry2D);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Geometry3D);
+	FOUNDRY_REGISTER_CLASS(CoreBind::ResourceLoader);
+	FOUNDRY_REGISTER_CLASS(CoreBind::ResourceSaver);
+	FOUNDRY_REGISTER_CLASS(CoreBind::OS);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Engine);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Special::ClassDB);
+	FOUNDRY_REGISTER_CLASS(CoreBind::Marshalls);
+	FOUNDRY_REGISTER_CLASS(CoreBind::EngineDebugger);
 
-	GDREGISTER_CLASS(TranslationServer);
-	GDREGISTER_ABSTRACT_CLASS(Input);
-	GDREGISTER_CLASS(InputMap);
-	GDREGISTER_CLASS(Expression);
-	GDREGISTER_CLASS(ProjectSettings);
+	FOUNDRY_REGISTER_CLASS(TranslationServer);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(Input);
+	FOUNDRY_REGISTER_CLASS(InputMap);
+	FOUNDRY_REGISTER_CLASS(Expression);
+	FOUNDRY_REGISTER_CLASS(ProjectSettings);
 
 	ip = IP::create();
 
@@ -334,9 +334,9 @@ void register_core_types() {
 	_marshalls = memnew(CoreBind::Marshalls);
 	_engine_debugger = memnew(CoreBind::EngineDebugger);
 
-	GDREGISTER_NATIVE_STRUCT(ObjectID, "uint64_t id = 0");
-	GDREGISTER_NATIVE_STRUCT(AudioFrame, "float left;float right");
-	GDREGISTER_NATIVE_STRUCT(ScriptLanguageExtensionProfilingInfo, "StringName signature;uint64_t call_count;uint64_t total_time;uint64_t self_time");
+	FOUNDRY_REGISTER_NATIVE_STRUCT(ObjectID, "uint64_t id = 0");
+	FOUNDRY_REGISTER_NATIVE_STRUCT(AudioFrame, "float left;float right");
+	FOUNDRY_REGISTER_NATIVE_STRUCT(ScriptLanguageExtensionProfilingInfo, "StringName signature;uint64_t call_count;uint64_t total_time;uint64_t self_time");
 
 	worker_thread_pool = memnew(WorkerThreadPool);
 
@@ -375,7 +375,7 @@ void register_core_singletons() {
 	Engine::get_singleton()->add_singleton(Engine::Singleton("Input", Input::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("InputMap", InputMap::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("EngineDebugger", CoreBind::EngineDebugger::get_singleton()));
-	Engine::get_singleton()->add_singleton(Engine::Singleton("GDExtensionManager", GDExtensionManager::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("FoundryExtensionManager", FoundryExtensionManager::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("ResourceUID", ResourceUID::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("WorkerThreadPool", worker_thread_pool));
 
@@ -386,9 +386,9 @@ void register_core_extensions() {
 	OS::get_singleton()->benchmark_begin_measure("Core", "Register Extensions");
 
 	// Hardcoded for now.
-	GDExtension::initialize_gdextensions();
-	gdextension_manager->load_extensions();
-	gdextension_manager->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_CORE);
+	FoundryExtension::initialize_foundry_extensions();
+	foundry_extension_manager->load_extensions();
+	foundry_extension_manager->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_CORE);
 	_is_core_extensions_registered = true;
 
 	OS::get_singleton()->benchmark_end_measure("Core", "Register Extensions");
@@ -398,9 +398,9 @@ void unregister_core_extensions() {
 	OS::get_singleton()->benchmark_begin_measure("Core", "Unregister Extensions");
 
 	if (_is_core_extensions_registered) {
-		gdextension_manager->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_CORE);
+		foundry_extension_manager->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_CORE);
 	}
-	GDExtension::finalize_gdextensions();
+	FoundryExtension::finalize_foundry_extensions();
 
 	OS::get_singleton()->benchmark_end_measure("Core", "Unregister Extensions");
 }
@@ -423,7 +423,7 @@ void unregister_core_types() {
 	memdelete(_geometry_3d);
 	memdelete(_geometry_2d);
 
-	memdelete(gdextension_manager);
+	memdelete(foundry_extension_manager);
 
 	memdelete(resource_uid);
 
@@ -469,9 +469,9 @@ void unregister_core_types() {
 		resource_loader_json.unref();
 	}
 
-	if constexpr (GD_IS_CLASS_ENABLED(GDExtension)) {
-		ResourceLoader::remove_resource_format_loader(resource_loader_gdextension);
-		resource_loader_gdextension.unref();
+	if constexpr (GD_IS_CLASS_ENABLED(FoundryExtension)) {
+		ResourceLoader::remove_resource_format_loader(resource_loader_foundry_extension);
+		resource_loader_foundry_extension.unref();
 	}
 
 	ResourceLoader::finalize();

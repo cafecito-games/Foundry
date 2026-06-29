@@ -1,3 +1,0 @@
-GDTEST_OK
-~~ WARNING at line 9: (SHADOWED_VARIABLE) The local variable "id" is shadowing an already-declared variable at line 7 in the current class.
-15

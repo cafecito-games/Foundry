@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: The rest parameter "rest" cannot be passed by name.

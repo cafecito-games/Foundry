@@ -7,11 +7,11 @@
 		The [bool] is a built-in [Variant] type that may only store one of two values: [code]true[/code] or [code]false[/code]. You can imagine it as a switch that can be either turned on or off, or as a binary digit that can either be 1 or 0.
 		Booleans can be directly used in [code]if[/code], and other conditional statements:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var can_shoot = true
 		if can_shoot:
 			launch_bullet()
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		bool canShoot = true;
 		if (canShoot)
@@ -23,13 +23,13 @@
 		All comparison operators return booleans ([code]==[/code], [code]&gt;[/code], [code]&lt;=[/code], etc.). As such, it is not necessary to compare booleans themselves. You do not need to add [code]== true[/code] or [code]== false[/code].
 		Booleans can be combined with the logical operators [code]and[/code], [code]or[/code], [code]not[/code] to create complex conditions:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		if bullets &gt; 0 and not is_reloading():
 			launch_bullet()
 
 		if bullets == 0 or is_reloading():
 			play_clack_sound()
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		if (bullets &gt; 0 &amp;&amp; !IsReloading())
 		{
@@ -65,7 +65,7 @@
 			<return type="bool" />
 			<param index="0" name="from" type="float" />
 			<description>
-				Cast a [float] value to a boolean value. Returns [code]false[/code] if [param from] is equal to [code]0.0[/code] (including [code]-0.0[/code]), and [code]true[/code] for all other values (including [constant @GDScript.INF] and [constant @GDScript.NAN]).
+				Cast a [float] value to a boolean value. Returns [code]false[/code] if [param from] is equal to [code]0.0[/code] (including [code]-0.0[/code]), and [code]true[/code] for all other values (including [constant @FoundryScript.INF] and [constant @FoundryScript.NAN]).
 			</description>
 		</constructor>
 		<constructor name="bool">

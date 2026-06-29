@@ -117,7 +117,7 @@ struct EditorProgress {
 };
 
 class EditorNode : public Node {
-	GDCLASS(EditorNode, Node);
+	FOUNDRY_CLASS(EditorNode, Node);
 
 public:
 	enum SceneNameCasing {
@@ -207,7 +207,6 @@ public:
 		HELP_SUGGEST_A_FEATURE,
 		HELP_SEND_DOCS_FEEDBACK,
 		HELP_ABOUT,
-		HELP_SUPPORT_GODOT_DEVELOPMENT,
 
 		// Update spinner menu.
 		SPINNER_UPDATE_CONTINUOUSLY,
@@ -621,7 +620,7 @@ private:
 
 	void _update_vsync_mode();
 	void _update_from_settings();
-	void _gdextensions_reloaded();
+	void _foundry_extensions_reloaded();
 	void _update_translations();
 	void _translation_resources_changed();
 	void _queue_translation_notification();

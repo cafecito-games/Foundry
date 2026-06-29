@@ -35,7 +35,7 @@
 class ConnectionsDock;
 
 class SignalsDock : public EditorDock {
-	GDCLASS(SignalsDock, EditorDock);
+	FOUNDRY_CLASS(SignalsDock, EditorDock);
 
 	ConnectionsDock *connections = nullptr;
 

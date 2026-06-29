@@ -33,7 +33,7 @@
 #include "scene/gui/container.h"
 
 class SubViewportContainer : public Container {
-	GDCLASS(SubViewportContainer, Container);
+	FOUNDRY_CLASS(SubViewportContainer, Container);
 
 	bool stretch = false;
 	int shrink = 1;
@@ -51,7 +51,7 @@ protected:
 	virtual void add_child_notify(Node *p_child) override;
 	virtual void remove_child_notify(Node *p_child) override;
 
-	GDVIRTUAL1RC(bool, _propagate_input_event, RequiredParam<InputEvent>);
+	FOUNDRY_VIRTUAL1RC(bool, _propagate_input_event, RequiredParam<InputEvent>);
 
 public:
 	void set_stretch(bool p_enable);

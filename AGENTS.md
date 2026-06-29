@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a CafecitoGames fork of Godot Engine with active work around stricter GDScript typing, editor scripting tools, and LSP/refactoring surfaces. Core engine code lives in `core/`, `scene/`, `servers/`, `drivers/`, `main/`, and `editor/`. Platform integrations are under `platform/`, optional engine features under `modules/`, and vendored dependencies under `thirdparty/`. GDScript implementation and editor tooling are concentrated in `modules/gdscript/`, with language server code in `modules/gdscript/language_server/` and script-based tests in `modules/gdscript/tests/scripts/`. C++ unit tests live in `tests/`; class reference XML lives in `doc/classes/` and `*/doc_classes/`.
+This repository is a CafecitoGames fork of Godot Engine with active work around stricter Foundry Script typing, editor scripting tools, and LSP/refactoring surfaces. Core engine code lives in `core/`, `scene/`, `servers/`, `drivers/`, `main/`, and `editor/`. Platform integrations are under `platform/`, optional engine features under `modules/`, and vendored dependencies under `thirdparty/`. Foundry Script implementation and editor tooling are concentrated in `modules/foundry_script/`, with language server code in `modules/foundry_script/language_server/` and script-based tests in `modules/foundry_script/tests/scripts/`. C++ unit tests live in `tests/`; class reference XML lives in `doc/classes/` and `*/doc_classes/`.
 
 ## Build, Test, and Development Commands
 
@@ -18,7 +18,7 @@ Follow `.editorconfig`: UTF-8, LF line endings, final newline, 120-column limit,
 
 ## Testing Guidelines
 
-Add or update tests with behavior changes. C++ tests use doctest macros from `tests/test_macros.h` and are included through `tests/test_main.cpp`. New C++ test skeletons can be created with `python tests/create_test.py Name path`, where `path` is relative to `tests/`. GDScript integration, completion, LSP, and refactor fixtures belong under `modules/gdscript/tests/scripts/`; pair `.gd` fixtures with expected-output config files where the local test runner expects them.
+Add or update tests with behavior changes. C++ tests use doctest macros from `tests/test_macros.h` and are included through `tests/test_main.cpp`. New C++ test skeletons can be created with `python tests/create_test.py Name path`, where `path` is relative to `tests/`. Foundry Script integration, completion, LSP, and refactor fixtures belong under `modules/foundry_script/tests/scripts/`; pair `.fs` fixtures with expected-output config files where the local test runner expects them.
 
 ## Commit & Pull Request Guidelines
 
@@ -32,7 +32,7 @@ This is a Godot Engine fork; the only product is the single `godot` binary (edit
 - Build (mirrors CI flags), from repo root: `python3 -m SCons platform=linuxbsd target=editor dev_build=yes tests=yes module_text_server_fb_enabled=yes -j$(nproc)`. A clean build takes ~13 min on this VM; incremental rebuilds are much faster, so do NOT clean unless necessary.
   - CI additionally uses `dev_mode=yes` (warnings-as-errors). Prefer `dev_build=yes` for local iteration; use `dev_mode=yes` only when you need to reproduce CI warning failures.
 - Output binary: `bin/godot.linuxbsd.editor.dev.x86_64`.
-- Run the full C++ + GDScript test suite: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors`. Always pass `--headless`.
-- Regenerate GDScript `.out` fixtures after intentional behavior changes: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-tests modules/gdscript/tests/scripts`.
+- Run the full C++ + Foundry Script test suite: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --test --force-colors`. Always pass `--headless`.
+- Regenerate Foundry Script `.out` fixtures after intentional behavior changes: `./bin/godot.linuxbsd.editor.dev.x86_64 --headless --gdscript-generate-tests modules/foundry_script/tests/scripts`.
 - The editor GUI does launch on the desktop (display `:1`), but the VM has no GPU: Vulkan init prints `VK_KHR_surface not found` errors and Godot falls back to software rendering. These errors are expected and non-blocking. For scripted/automated runs, prefer `--headless`.
 - Lint/format gate (optional, not engine validation): `pre-commit run --all-files`.

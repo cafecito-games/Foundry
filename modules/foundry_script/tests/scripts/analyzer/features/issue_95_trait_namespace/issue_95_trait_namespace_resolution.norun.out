@@ -1,0 +1,2 @@
+FS_TEST_OK
+~~ WARNING at line 34: (UNSAFE_CAST) Casting "Variant" to "Issue95Loggable" is unsafe.

@@ -41,7 +41,7 @@
 class ViewPanner;
 
 class TileAtlasView : public Control {
-	GDCLASS(TileAtlasView, Control);
+	FOUNDRY_CLASS(TileAtlasView, Control);
 
 private:
 	Ref<TileSet> tile_set;

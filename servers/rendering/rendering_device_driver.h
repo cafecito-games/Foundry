@@ -88,7 +88,7 @@ struct VersatileResourceTemplate {
 };
 
 class RenderingDeviceDriver : public RenderingDeviceCommons {
-	GDSOFTCLASS(RenderingDeviceDriver, RenderingDeviceCommons);
+	FOUNDRY_SOFTCLASS(RenderingDeviceDriver, RenderingDeviceCommons);
 
 public:
 	struct ID {

@@ -42,7 +42,7 @@ class ProgressBar;
 class Tree;
 
 class ExportTemplateManager : public AcceptDialog {
-	GDCLASS(ExportTemplateManager, AcceptDialog);
+	FOUNDRY_CLASS(ExportTemplateManager, AcceptDialog);
 
 	bool current_version_exists = false;
 	bool mirrors_available = false;

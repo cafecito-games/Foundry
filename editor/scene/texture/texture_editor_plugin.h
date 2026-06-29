@@ -42,7 +42,7 @@ class ShaderMaterial;
 class ColorChannelSelector;
 
 class TexturePreview : public MarginContainer {
-	GDCLASS(TexturePreview, MarginContainer);
+	FOUNDRY_CLASS(TexturePreview, MarginContainer);
 
 private:
 	struct ThemeCache {
@@ -80,7 +80,7 @@ public:
 };
 
 class EditorInspectorPluginTexture : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginTexture, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginTexture, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -88,7 +88,7 @@ public:
 };
 
 class TextureEditorPlugin : public EditorPlugin {
-	GDCLASS(TextureEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(TextureEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "Texture2D"; }

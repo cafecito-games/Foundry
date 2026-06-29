@@ -1,0 +1,39 @@
+Foundry
+
+Foundry is a fork of Godot Engine 4.6.3-stable, distributed under the MIT
+license. It builds additively on the Godot codebase and retains all inherited
+copyright notices, license texts, and per-file headers unchanged.
+
+-------------------------------------------------------------------------------
+Upstream: Godot Engine
+-------------------------------------------------------------------------------
+
+Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md).
+Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.
+
+Godot Engine is licensed under the MIT license. For the full license text and
+the complete list of upstream copyright holders and third-party components,
+see:
+
+  - LICENSE.txt   (MIT license text)
+  - COPYRIGHT.txt (detailed copyright and third-party component attribution)
+  - AUTHORS.md    (list of contributing authors)
+
+-------------------------------------------------------------------------------
+Foundry modifications
+-------------------------------------------------------------------------------
+
+Copyright (c) 2026-present Cafecito Games.
+
+All modifications, additions, and new files contributed to Foundry after the
+fork are licensed under the MIT license (the same terms as the upstream Godot
+Engine). The MIT permission and warranty terms in LICENSE.txt apply equally to
+these modifications.
+
+-------------------------------------------------------------------------------
+Branding notice
+-------------------------------------------------------------------------------
+
+This repository may contain placeholder brand assets (logos, icons, names, and
+similar materials). These placeholders must be reviewed and replaced with final
+Foundry brand assets before any public release or distribution.

@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 6: Generic class "List" expects 1 type argument(s), but 2 were given.

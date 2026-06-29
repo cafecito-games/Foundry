@@ -33,7 +33,7 @@
 #include "export_plugin.h"
 
 void register_macos_exporter_types() {
-	GDREGISTER_VIRTUAL_CLASS(EditorExportPlatformMacOS);
+	FOUNDRY_REGISTER_VIRTUAL_CLASS(EditorExportPlatformMacOS);
 }
 
 void register_macos_exporter() {

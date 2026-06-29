@@ -34,7 +34,7 @@
 #include "scene/resources/animation.h"
 
 class AnimationPlayer : public AnimationMixer {
-	GDCLASS(AnimationPlayer, AnimationMixer);
+	FOUNDRY_CLASS(AnimationPlayer, AnimationMixer);
 
 #ifndef DISABLE_DEPRECATED
 public:

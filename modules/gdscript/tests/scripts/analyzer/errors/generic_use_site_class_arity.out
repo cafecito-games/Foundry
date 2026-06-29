@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 8: Generic class "Box" expects 1 type argument(s), but 2 were given.

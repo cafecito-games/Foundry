@@ -56,11 +56,11 @@ public final class GodotPluginRegistry {
 	/**
 	 * Prefix used for version 1 of the Godot plugin, mostly compatible with Godot 3.x
 	 */
-	private static final String GODOT_PLUGIN_V1_NAME_PREFIX = "org.godotengine.plugin.v1.";
+	private static final String FOUNDRY_PLUGIN_V1_NAME_PREFIX = "org.godotengine.plugin.v1.";
 	/**
 	 * Prefix used for version 2 of the Godot plugin, compatible with Godot 4.2+
 	 */
-	private static final String GODOT_PLUGIN_V2_NAME_PREFIX = "org.godotengine.plugin.v2.";
+	private static final String FOUNDRY_PLUGIN_V2_NAME_PREFIX = "org.godotengine.plugin.v2.";
 
 	private static GodotPluginRegistry instance;
 	private final ConcurrentHashMap<String, GodotPlugin> registry;
@@ -147,10 +147,10 @@ public final class GodotPluginRegistry {
 			for (String metaDataName : metaData.keySet()) {
 				// Parse the meta-data looking for entry with the Godot plugin name prefix.
 				String pluginName = null;
-				if (metaDataName.startsWith(GODOT_PLUGIN_V2_NAME_PREFIX)) {
-					pluginName = metaDataName.substring(GODOT_PLUGIN_V2_NAME_PREFIX.length()).trim();
-				} else if (metaDataName.startsWith(GODOT_PLUGIN_V1_NAME_PREFIX)) {
-					pluginName = metaDataName.substring(GODOT_PLUGIN_V1_NAME_PREFIX.length()).trim();
+				if (metaDataName.startsWith(FOUNDRY_PLUGIN_V2_NAME_PREFIX)) {
+					pluginName = metaDataName.substring(FOUNDRY_PLUGIN_V2_NAME_PREFIX.length()).trim();
+				} else if (metaDataName.startsWith(FOUNDRY_PLUGIN_V1_NAME_PREFIX)) {
+					pluginName = metaDataName.substring(FOUNDRY_PLUGIN_V1_NAME_PREFIX.length()).trim();
 					Log.w(TAG, "Godot v1 plugin are deprecated in Godot 4.2 and higher: " + pluginName);
 				}
 

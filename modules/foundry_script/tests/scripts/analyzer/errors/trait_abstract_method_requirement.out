@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 2: Class "trait_abstract_method_requirement.fs" must implement trait method "TraitA.foo()".

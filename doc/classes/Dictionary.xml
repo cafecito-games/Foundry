@@ -8,7 +8,7 @@
 		You can define a dictionary by placing a comma-separated list of [code]key: value[/code] pairs inside curly braces [code]{}[/code].
 		Creating a dictionary:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var my_dict = {} # Creates an empty dictionary.
 
 		var dict_variable_key = "Another key name"
@@ -27,7 +27,7 @@
 		another_dict = {
 			some_key = 42,
 		}
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var myDict = new Godot.Collections.Dictionary(); // Creates an empty dictionary.
 		var pointsDict = new Godot.Collections.Dictionary
@@ -40,13 +40,13 @@
 		[/codeblocks]
 		You can access a dictionary's value by referencing its corresponding key. In the above example, [code]points_dict["White"][/code] will return [code]50[/code]. You can also write [code]points_dict.White[/code], which is equivalent. However, you'll have to use the bracket syntax if the key you're accessing the dictionary with isn't a fixed string (such as a number or variable).
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		@export_enum("White", "Yellow", "Orange") var my_color: String
 		var points_dict = { "White": 50, "Yellow": 75, "Orange": 100 }
 		func _ready():
 			# We can't use dot syntax here as `my_color` is a variable.
 			var points = points_dict[my_color]
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		[Export(PropertyHint.Enum, "White,Yellow,Orange")]
 		public string MyColor { get; set; }
@@ -66,11 +66,11 @@
 		In the above code, [code]points[/code] will be assigned the value that is paired with the appropriate color selected in [code]my_color[/code].
 		Dictionaries can contain more complex data:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var my_dict = {
 			"First Array": [1, 2, 3, 4] # Assigns an Array to a String key.
 		}
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var myDict = new Godot.Collections.Dictionary
 		{
@@ -80,10 +80,10 @@
 		[/codeblocks]
 		To add a key to an existing dictionary, access it like an existing key and assign to it:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var points_dict = { "White": 50, "Yellow": 75, "Orange": 100 }
 		points_dict["Blue"] = 150 # Add "Blue" as a key and assign 150 as its value.
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var pointsDict = new Godot.Collections.Dictionary
 		{
@@ -96,7 +96,7 @@
 		[/codeblocks]
 		Finally, untyped dictionaries can contain different types of keys and values in the same dictionary:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		# This is a valid dictionary.
 		# To access the string "Nested value" below, use `my_dict.sub_dict.sub_key` or `my_dict["sub_dict"]["sub_key"]`.
 		# Indexing styles can be mixed and matched depending on your needs.
@@ -106,7 +106,7 @@
 			7: "Hello",
 			"sub_dict": { "sub_key": "Nested value" },
 		}
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		// This is a valid dictionary.
 		// To access the string "Nested value" below, use `((Godot.Collections.Dictionary)myDict["sub_dict"])["sub_key"]`.
@@ -120,11 +120,11 @@
 		[/codeblocks]
 		The keys of a dictionary can be iterated with the [code]for[/code] keyword:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var groceries = { "Orange": 20, "Apple": 2, "Banana": 4 }
 		for fruit in groceries:
 			var amount = groceries[fruit]
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var groceries = new Godot.Collections.Dictionary { { "Orange", 20 }, { "Apple", 2 }, { "Banana", 4 } };
 		foreach (var (fruit, amount) in groceries)
@@ -135,7 +135,7 @@
 		[/codeblocks]
 		To enforce a certain type for keys and values, you can create a [i]typed dictionary[/i]. Typed dictionaries can only contain keys and values of the given types, or that inherit from the given classes:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		# Creates a typed dictionary with String keys and int values.
 		# Attempting to use any other type for keys or values will result in an error.
 		var typed_dict: Dictionary[String, int] = {
@@ -149,7 +149,7 @@
 			"some_key": 12.34,
 			"some_other_key": "string",
 		}
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		// Creates a typed dictionary with String keys and int values.
 		// Attempting to use any other type for keys or values will result in an error.
@@ -170,7 +170,7 @@
 		[b]Note:[/b] Erasing elements while iterating over dictionaries is [b]not[/b] supported and will result in unpredictable behavior.
 	</description>
 	<tutorials>
-		<link title="GDScript basics: Dictionary">$DOCS_URL/tutorials/scripting/gdscript/gdscript_basics.html#dictionary</link>
+		<link title="FoundryScript basics: Dictionary">$DOCS_URL/tutorials/scripting/foundry_script/fs_basics.html#dictionary</link>
 		<link title="3D Voxel Demo">https://godotengine.org/asset-library/asset/2755</link>
 		<link title="Operating System Testing Demo">https://godotengine.org/asset-library/asset/2789</link>
 	</tutorials>
@@ -307,7 +307,7 @@
 			<description>
 				Returns [code]true[/code] if the dictionary contains an entry with the given [param key].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_dict = {
 					"Godot" : 4,
 					210 : null,
@@ -316,7 +316,7 @@
 				print(my_dict.has("Godot")) # Prints true
 				print(my_dict.has(210))     # Prints true
 				print(my_dict.has(4))       # Prints false
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var myDict = new Godot.Collections.Dictionary
 				{
@@ -329,7 +329,7 @@
 				GD.Print(myDict.ContainsKey(4));       // Prints False
 				[/csharp]
 				[/codeblocks]
-				In GDScript, this is equivalent to the [code]in[/code] operator:
+				In FoundryScript, this is equivalent to the [code]in[/code] operator:
 				[codeblock]
 				if "Godot" in { "Godot": 4 }:
 					print("The key is here!") # Will be printed.
@@ -353,12 +353,12 @@
 			<description>
 				Returns a hashed 32-bit integer value representing the dictionary contents.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var dict1 = { "A": 10, "B": 2 }
 				var dict2 = { "A": 10, "B": 2 }
 
 				print(dict1.hash() == dict2.hash()) # Prints true
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var dict1 = new Godot.Collections.Dictionary { { "A", 10 }, { "B", 2 } };
 				var dict2 = new Godot.Collections.Dictionary { { "A", 10 }, { "B", 2 } };
@@ -441,7 +441,7 @@
 			<description>
 				Adds entries from [param dictionary] to this dictionary. By default, duplicate keys are not copied over, unless [param overwrite] is [code]true[/code].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var dict = { "item": "sword", "quantity": 2 }
 				var other_dict = { "quantity": 15, "color": "silver" }
 
@@ -452,7 +452,7 @@
 				# With overwriting of existing keys enabled.
 				dict.merge(other_dict, true)
 				print(dict)  # { "item": "sword", "quantity": 15, "color": "silver" }
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var dict = new Godot.Collections.Dictionary
 				{
@@ -522,11 +522,11 @@
 			<description>
 				Sorts the dictionary in ascending order, by key. The final order is dependent on the "less than" ([code]&lt;[/code]) comparison between keys.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var numbers = { "c": 2, "a": 0, "b": 1 }
 				numbers.sort()
 				print(numbers) # Prints { "a": 0, "b": 1, "c": 2 }
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 				This method ensures that the dictionary's entries are ordered consistently when [method keys] or [method values] are called, or when the dictionary needs to be converted to a string through [method @GlobalScope.str] or [method JSON.stringify].
 			</description>

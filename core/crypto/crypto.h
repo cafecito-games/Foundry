@@ -37,7 +37,7 @@
 #include "core/object/ref_counted.h"
 
 class CryptoKey : public Resource {
-	GDCLASS(CryptoKey, Resource);
+	FOUNDRY_CLASS(CryptoKey, Resource);
 
 protected:
 	static void _bind_methods();
@@ -53,7 +53,7 @@ public:
 };
 
 class X509Certificate : public Resource {
-	GDCLASS(X509Certificate, Resource);
+	FOUNDRY_CLASS(X509Certificate, Resource);
 
 protected:
 	static void _bind_methods();
@@ -69,7 +69,7 @@ public:
 };
 
 class TLSOptions : public RefCounted {
-	GDCLASS(TLSOptions, RefCounted);
+	FOUNDRY_CLASS(TLSOptions, RefCounted);
 
 private:
 	enum Mode {
@@ -101,7 +101,7 @@ public:
 };
 
 class HMACContext : public RefCounted {
-	GDCLASS(HMACContext, RefCounted);
+	FOUNDRY_CLASS(HMACContext, RefCounted);
 
 protected:
 	static void _bind_methods();
@@ -118,7 +118,7 @@ public:
 };
 
 class Crypto : public RefCounted {
-	GDCLASS(Crypto, RefCounted);
+	FOUNDRY_CLASS(Crypto, RefCounted);
 
 protected:
 	static void _bind_methods();
@@ -146,7 +146,7 @@ public:
 };
 
 class ResourceFormatLoaderCrypto : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderCrypto, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderCrypto, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -160,7 +160,7 @@ public:
 };
 
 class ResourceFormatSaverCrypto : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceFormatSaverCrypto, ResourceFormatSaver);
+	FOUNDRY_SOFTCLASS(ResourceFormatSaverCrypto, ResourceFormatSaver);
 
 public:
 	virtual Error save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags = 0) override;

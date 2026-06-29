@@ -51,7 +51,7 @@ class TreeItem;
 class VSeparator;
 
 class BonePropertiesEditor : public VBoxContainer {
-	GDCLASS(BonePropertiesEditor, VBoxContainer);
+	FOUNDRY_CLASS(BonePropertiesEditor, VBoxContainer);
 
 	EditorInspectorSection *section = nullptr;
 
@@ -105,7 +105,7 @@ public:
 };
 
 class Skeleton3DEditor : public VBoxContainer {
-	GDCLASS(Skeleton3DEditor, VBoxContainer);
+	FOUNDRY_CLASS(Skeleton3DEditor, VBoxContainer);
 
 	static void _bind_methods();
 
@@ -250,7 +250,7 @@ public:
 };
 
 class EditorInspectorPluginSkeleton : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginSkeleton, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginSkeleton, EditorInspectorPlugin);
 
 	friend class Skeleton3DEditorPlugin;
 
@@ -266,7 +266,7 @@ public:
 };
 
 class Skeleton3DEditorPlugin : public EditorPlugin {
-	GDCLASS(Skeleton3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(Skeleton3DEditorPlugin, EditorPlugin);
 
 	EditorInspectorPluginSkeleton *skeleton_plugin = nullptr;
 
@@ -282,7 +282,7 @@ public:
 };
 
 class Skeleton3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(Skeleton3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(Skeleton3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	struct SelectionMaterials {
 		Ref<StandardMaterial3D> unselected_mat;

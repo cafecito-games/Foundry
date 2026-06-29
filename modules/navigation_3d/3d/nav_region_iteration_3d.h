@@ -71,7 +71,7 @@ struct NavRegionIterationBuild3D {
 };
 
 class NavRegionIteration3D : public NavBaseIteration3D {
-	GDCLASS(NavRegionIteration3D, NavBaseIteration3D);
+	FOUNDRY_CLASS(NavRegionIteration3D, NavBaseIteration3D);
 
 public:
 	Transform3D transform;

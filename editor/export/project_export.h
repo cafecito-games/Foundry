@@ -52,7 +52,7 @@ class Tree;
 class TreeItem;
 
 class ProjectExportTextureFormatError : public HBoxContainer {
-	GDCLASS(ProjectExportTextureFormatError, HBoxContainer);
+	FOUNDRY_CLASS(ProjectExportTextureFormatError, HBoxContainer);
 
 	ProjectExportDialog *export_dialog = nullptr;
 	Label *texture_format_error_label = nullptr;
@@ -70,7 +70,7 @@ public:
 };
 
 class ProjectExportDialog : public ConfirmationDialog {
-	GDCLASS(ProjectExportDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(ProjectExportDialog, ConfirmationDialog);
 
 	TabContainer *sections = nullptr;
 

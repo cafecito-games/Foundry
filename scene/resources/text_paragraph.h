@@ -37,7 +37,7 @@
 /*************************************************************************/
 
 class TextParagraph : public RefCounted {
-	GDCLASS(TextParagraph, RefCounted);
+	FOUNDRY_CLASS(TextParagraph, RefCounted);
 	_THREAD_SAFE_CLASS_
 
 private:

@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 5: Invalid index type "K" for a base of type "Dictionary[int, String]".

@@ -40,14 +40,14 @@
 void OpenXRSpatialCapabilityConfigurationBaseHeader::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_valid_configuration"), &OpenXRSpatialCapabilityConfigurationBaseHeader::has_valid_configuration);
 
-	GDVIRTUAL_BIND(_has_valid_configuration);
-	GDVIRTUAL_BIND(_get_configuration);
+	FOUNDRY_VIRTUAL_BIND(_has_valid_configuration);
+	FOUNDRY_VIRTUAL_BIND(_get_configuration);
 }
 
 bool OpenXRSpatialCapabilityConfigurationBaseHeader::has_valid_configuration() const {
 	bool is_valid = false;
 
-	if (GDVIRTUAL_CALL(_has_valid_configuration, is_valid)) {
+	if (FOUNDRY_VIRTUAL_CALL(_has_valid_configuration, is_valid)) {
 		return is_valid;
 	}
 
@@ -57,7 +57,7 @@ bool OpenXRSpatialCapabilityConfigurationBaseHeader::has_valid_configuration() c
 XrSpatialCapabilityConfigurationBaseHeaderEXT *OpenXRSpatialCapabilityConfigurationBaseHeader::get_configuration() {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_get_configuration, pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_configuration, pointer)) {
 		return reinterpret_cast<XrSpatialCapabilityConfigurationBaseHeaderEXT *>(pointer);
 	}
 
@@ -156,19 +156,19 @@ OpenXRSpatialEntityTracker::EntityTrackingState OpenXRSpatialEntityTracker::_get
 void OpenXRSpatialComponentData::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_capacity", "capacity"), &OpenXRSpatialComponentData::set_capacity);
 
-	GDVIRTUAL_BIND(_set_capacity, "capacity");
-	GDVIRTUAL_BIND(_get_component_type);
-	GDVIRTUAL_BIND(_get_structure_data, "next");
+	FOUNDRY_VIRTUAL_BIND(_set_capacity, "capacity");
+	FOUNDRY_VIRTUAL_BIND(_get_component_type);
+	FOUNDRY_VIRTUAL_BIND(_get_structure_data, "next");
 }
 
 void OpenXRSpatialComponentData::set_capacity(uint32_t p_capacity) {
-	GDVIRTUAL_CALL(_set_capacity, p_capacity);
+	FOUNDRY_VIRTUAL_CALL(_set_capacity, p_capacity);
 }
 
 XrSpatialComponentTypeEXT OpenXRSpatialComponentData::get_component_type() const {
 	uint64_t component_type = XR_SPATIAL_COMPONENT_TYPE_MAX_ENUM_EXT;
 
-	if (GDVIRTUAL_CALL(_get_component_type, component_type)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_component_type, component_type)) {
 		return (XrSpatialComponentTypeEXT)component_type;
 	}
 
@@ -178,7 +178,7 @@ XrSpatialComponentTypeEXT OpenXRSpatialComponentData::get_component_type() const
 void *OpenXRSpatialComponentData::get_structure_data(void *p_next) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_get_structure_data, (uint64_t)p_next, pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_structure_data, (uint64_t)p_next, pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 

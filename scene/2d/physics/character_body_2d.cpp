@@ -432,7 +432,7 @@ void CharacterBody2D::_set_platform_data(const PhysicsServer2D::MotionResult &p_
 #ifndef DISABLE_DEPRECATED
 	// Try to accommodate for any physics extensions that have yet to implement `PhysicsDirectBodyState2D::get_collision_layer`.
 	PhysicsDirectBodyState2DExtension *bs_ext = Object::cast_to<PhysicsDirectBodyState2DExtension>(bs);
-	if (bs_ext != nullptr && !GDVIRTUAL_IS_OVERRIDDEN_PTR(bs_ext, _get_collision_layer)) {
+	if (bs_ext != nullptr && !FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(bs_ext, _get_collision_layer)) {
 		platform_layer = PhysicsServer2D::get_singleton()->body_get_collision_layer(p_result.collider);
 	} else
 #endif

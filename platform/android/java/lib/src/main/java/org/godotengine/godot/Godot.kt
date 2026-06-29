@@ -1236,13 +1236,13 @@ class Godot private constructor(val context: Context) {
 	}
 
 	/**
-	 * Get the list of gdextension modules to register.
+	 * Get the list of foundry_extension modules to register.
 	 */
 	@Keep
-	private fun getGDExtensionConfigFiles(): Array<String> {
+	private fun getFoundryExtensionConfigFiles(): Array<String> {
 		val configFiles = mutableSetOf<String>()
 		for (plugin in pluginRegistry.allPlugins) {
-			configFiles.addAll(plugin.pluginGDExtensionLibrariesPaths)
+			configFiles.addAll(plugin.pluginFoundryExtensionLibrariesPaths)
 		}
 
 		return configFiles.toTypedArray()

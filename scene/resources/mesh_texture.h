@@ -35,7 +35,7 @@
 class Mesh;
 
 class MeshTexture : public Texture2D {
-	GDCLASS(MeshTexture, Texture2D);
+	FOUNDRY_CLASS(MeshTexture, Texture2D);
 	RES_BASE_EXTENSION("meshtex");
 
 	Ref<Texture2D> base_texture;

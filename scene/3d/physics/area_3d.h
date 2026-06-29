@@ -34,7 +34,7 @@
 #include "scene/3d/physics/collision_object_3d.h"
 
 class Area3D : public CollisionObject3D {
-	GDCLASS(Area3D, CollisionObject3D);
+	FOUNDRY_CLASS(Area3D, CollisionObject3D);
 
 public:
 	enum SpaceOverride {

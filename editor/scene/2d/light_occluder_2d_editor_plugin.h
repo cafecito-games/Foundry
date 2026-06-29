@@ -34,7 +34,7 @@
 #include "scene/2d/light_occluder_2d.h"
 
 class LightOccluder2DEditor : public AbstractPolygon2DEditor {
-	GDCLASS(LightOccluder2DEditor, AbstractPolygon2DEditor);
+	FOUNDRY_CLASS(LightOccluder2DEditor, AbstractPolygon2DEditor);
 
 	LightOccluder2D *node = nullptr;
 
@@ -56,7 +56,7 @@ protected:
 };
 
 class LightOccluder2DEditorPlugin : public AbstractPolygon2DEditorPlugin {
-	GDCLASS(LightOccluder2DEditorPlugin, AbstractPolygon2DEditorPlugin);
+	FOUNDRY_CLASS(LightOccluder2DEditorPlugin, AbstractPolygon2DEditorPlugin);
 
 public:
 	LightOccluder2DEditorPlugin();

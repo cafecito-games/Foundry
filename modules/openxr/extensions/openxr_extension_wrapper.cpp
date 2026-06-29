@@ -34,77 +34,77 @@
 #include "../openxr_api_extension.h"
 
 void OpenXRExtensionWrapper::_bind_methods() {
-	GDVIRTUAL_BIND(_get_requested_extensions, "xr_version");
-	GDVIRTUAL_BIND(_set_system_properties_and_get_next_pointer, "next_pointer");
-	GDVIRTUAL_BIND(_set_instance_create_info_and_get_next_pointer, "xr_version", "next_pointer");
-	GDVIRTUAL_BIND(_set_session_create_and_get_next_pointer, "next_pointer");
-	GDVIRTUAL_BIND(_set_swapchain_create_info_and_get_next_pointer, "next_pointer");
-	GDVIRTUAL_BIND(_set_hand_joint_locations_and_get_next_pointer, "hand_index", "next_pointer");
-	GDVIRTUAL_BIND(_set_projection_views_and_get_next_pointer, "view_index", "next_pointer");
-	GDVIRTUAL_BIND(_set_frame_wait_info_and_get_next_pointer, "next_pointer");
-	GDVIRTUAL_BIND(_set_frame_end_info_and_get_next_pointer, "next_pointer");
-	GDVIRTUAL_BIND(_set_view_locate_info_and_get_next_pointer, "next_pointer");
-	GDVIRTUAL_BIND(_set_reference_space_create_info_and_get_next_pointer, "reference_space_type", "next_pointer");
-	GDVIRTUAL_BIND(_prepare_view_configuration, "view_count");
-	GDVIRTUAL_BIND(_set_view_configuration_and_get_next_pointer, "view", "next_pointer");
-	GDVIRTUAL_BIND(_print_view_configuration_info, "view");
-	GDVIRTUAL_BIND(_get_composition_layer_count);
-	GDVIRTUAL_BIND(_get_composition_layer, "index");
-	GDVIRTUAL_BIND(_get_composition_layer_order, "index");
-	GDVIRTUAL_BIND(_get_suggested_tracker_names);
-	GDVIRTUAL_BIND(_on_register_metadata);
-	GDVIRTUAL_BIND(_on_before_instance_created);
-	GDVIRTUAL_BIND(_on_instance_created, "instance");
-	GDVIRTUAL_BIND(_on_instance_destroyed);
-	GDVIRTUAL_BIND(_on_session_created, "session");
-	GDVIRTUAL_BIND(_on_process);
-	GDVIRTUAL_BIND(_on_sync_actions);
-	GDVIRTUAL_BIND(_on_pre_render);
-	GDVIRTUAL_BIND(_on_main_swapchains_created);
-	GDVIRTUAL_BIND(_on_pre_draw_viewport, "viewport");
-	GDVIRTUAL_BIND(_on_post_draw_viewport, "viewport");
-	GDVIRTUAL_BIND(_on_session_destroyed);
-	GDVIRTUAL_BIND(_on_state_idle);
-	GDVIRTUAL_BIND(_on_state_ready);
-	GDVIRTUAL_BIND(_on_state_synchronized);
-	GDVIRTUAL_BIND(_on_state_visible);
-	GDVIRTUAL_BIND(_on_state_focused);
-	GDVIRTUAL_BIND(_on_state_stopping);
-	GDVIRTUAL_BIND(_on_state_loss_pending);
-	GDVIRTUAL_BIND(_on_state_exiting);
-	GDVIRTUAL_BIND(_on_event_polled, "event");
-	GDVIRTUAL_BIND(_set_viewport_composition_layer_and_get_next_pointer, "layer", "property_values", "next_pointer");
-	GDVIRTUAL_BIND(_get_viewport_composition_layer_extension_properties);
-	GDVIRTUAL_BIND(_get_viewport_composition_layer_extension_property_defaults);
-	GDVIRTUAL_BIND(_on_viewport_composition_layer_destroyed, "layer");
-	GDVIRTUAL_BIND(_set_android_surface_swapchain_create_info_and_get_next_pointer, "property_values", "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_get_requested_extensions, "xr_version");
+	FOUNDRY_VIRTUAL_BIND(_set_system_properties_and_get_next_pointer, "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_instance_create_info_and_get_next_pointer, "xr_version", "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_session_create_and_get_next_pointer, "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_swapchain_create_info_and_get_next_pointer, "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_hand_joint_locations_and_get_next_pointer, "hand_index", "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_projection_views_and_get_next_pointer, "view_index", "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_frame_wait_info_and_get_next_pointer, "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_frame_end_info_and_get_next_pointer, "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_view_locate_info_and_get_next_pointer, "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_set_reference_space_create_info_and_get_next_pointer, "reference_space_type", "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_prepare_view_configuration, "view_count");
+	FOUNDRY_VIRTUAL_BIND(_set_view_configuration_and_get_next_pointer, "view", "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_print_view_configuration_info, "view");
+	FOUNDRY_VIRTUAL_BIND(_get_composition_layer_count);
+	FOUNDRY_VIRTUAL_BIND(_get_composition_layer, "index");
+	FOUNDRY_VIRTUAL_BIND(_get_composition_layer_order, "index");
+	FOUNDRY_VIRTUAL_BIND(_get_suggested_tracker_names);
+	FOUNDRY_VIRTUAL_BIND(_on_register_metadata);
+	FOUNDRY_VIRTUAL_BIND(_on_before_instance_created);
+	FOUNDRY_VIRTUAL_BIND(_on_instance_created, "instance");
+	FOUNDRY_VIRTUAL_BIND(_on_instance_destroyed);
+	FOUNDRY_VIRTUAL_BIND(_on_session_created, "session");
+	FOUNDRY_VIRTUAL_BIND(_on_process);
+	FOUNDRY_VIRTUAL_BIND(_on_sync_actions);
+	FOUNDRY_VIRTUAL_BIND(_on_pre_render);
+	FOUNDRY_VIRTUAL_BIND(_on_main_swapchains_created);
+	FOUNDRY_VIRTUAL_BIND(_on_pre_draw_viewport, "viewport");
+	FOUNDRY_VIRTUAL_BIND(_on_post_draw_viewport, "viewport");
+	FOUNDRY_VIRTUAL_BIND(_on_session_destroyed);
+	FOUNDRY_VIRTUAL_BIND(_on_state_idle);
+	FOUNDRY_VIRTUAL_BIND(_on_state_ready);
+	FOUNDRY_VIRTUAL_BIND(_on_state_synchronized);
+	FOUNDRY_VIRTUAL_BIND(_on_state_visible);
+	FOUNDRY_VIRTUAL_BIND(_on_state_focused);
+	FOUNDRY_VIRTUAL_BIND(_on_state_stopping);
+	FOUNDRY_VIRTUAL_BIND(_on_state_loss_pending);
+	FOUNDRY_VIRTUAL_BIND(_on_state_exiting);
+	FOUNDRY_VIRTUAL_BIND(_on_event_polled, "event");
+	FOUNDRY_VIRTUAL_BIND(_set_viewport_composition_layer_and_get_next_pointer, "layer", "property_values", "next_pointer");
+	FOUNDRY_VIRTUAL_BIND(_get_viewport_composition_layer_extension_properties);
+	FOUNDRY_VIRTUAL_BIND(_get_viewport_composition_layer_extension_property_defaults);
+	FOUNDRY_VIRTUAL_BIND(_on_viewport_composition_layer_destroyed, "layer");
+	FOUNDRY_VIRTUAL_BIND(_set_android_surface_swapchain_create_info_and_get_next_pointer, "property_values", "next_pointer");
 
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL_BIND_COMPAT(_get_requested_extensions_bind_compat_109302);
-	GDVIRTUAL_BIND_COMPAT(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, "next_pointer");
+	FOUNDRY_VIRTUAL_BIND_COMPAT(_get_requested_extensions_bind_compat_109302);
+	FOUNDRY_VIRTUAL_BIND_COMPAT(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, "next_pointer");
 #endif
 
-	ClassDB::bind_method(D_METHOD("get_openxr_api"), &OpenXRExtensionWrapper::_gdextension_get_openxr_api);
-	ClassDB::bind_method(D_METHOD("register_extension_wrapper"), &OpenXRExtensionWrapper::_gdextension_register_extension_wrapper);
+	ClassDB::bind_method(D_METHOD("get_openxr_api"), &OpenXRExtensionWrapper::_foundry_extension_get_openxr_api);
+	ClassDB::bind_method(D_METHOD("register_extension_wrapper"), &OpenXRExtensionWrapper::_foundry_extension_register_extension_wrapper);
 }
 
 HashMap<String, bool *> OpenXRExtensionWrapper::get_requested_extensions(XrVersion p_xr_version) {
 	Dictionary request_extension;
 
-	if (GDVIRTUAL_CALL(_get_requested_extensions, (uint64_t)p_xr_version, request_extension)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_requested_extensions, (uint64_t)p_xr_version, request_extension)) {
 		HashMap<String, bool *> result;
 		for (const KeyValue<Variant, Variant> &kv : request_extension) {
-			GDExtensionPtr<bool> value = VariantCaster<GDExtensionPtr<bool>>::cast(kv.value);
+			FoundryExtensionPtr<bool> value = VariantCaster<FoundryExtensionPtr<bool>>::cast(kv.value);
 			result.insert(kv.key, value);
 		}
 		return result;
 	}
 
 #ifndef DISABLE_DEPRECATED
-	if (GDVIRTUAL_CALL(_get_requested_extensions_bind_compat_109302, request_extension)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_requested_extensions_bind_compat_109302, request_extension)) {
 		HashMap<String, bool *> result;
 		for (const KeyValue<Variant, Variant> &kv : request_extension) {
-			GDExtensionPtr<bool> value = VariantCaster<GDExtensionPtr<bool>>::cast(kv.value);
+			FoundryExtensionPtr<bool> value = VariantCaster<FoundryExtensionPtr<bool>>::cast(kv.value);
 			result.insert(kv.key, value);
 		}
 		return result;
@@ -117,7 +117,7 @@ HashMap<String, bool *> OpenXRExtensionWrapper::get_requested_extensions(XrVersi
 void *OpenXRExtensionWrapper::set_system_properties_and_get_next_pointer(void *p_next_pointer) {
 	uint64_t pointer;
 
-	if (GDVIRTUAL_CALL(_set_system_properties_and_get_next_pointer, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_system_properties_and_get_next_pointer, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -127,12 +127,12 @@ void *OpenXRExtensionWrapper::set_system_properties_and_get_next_pointer(void *p
 void *OpenXRExtensionWrapper::set_instance_create_info_and_get_next_pointer(XrVersion p_xr_version, void *p_next_pointer) {
 	uint64_t pointer;
 
-	if (GDVIRTUAL_CALL(_set_instance_create_info_and_get_next_pointer, (uint64_t)p_xr_version, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_instance_create_info_and_get_next_pointer, (uint64_t)p_xr_version, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
 #ifndef DISABLE_DEPRECATED
-	if (GDVIRTUAL_CALL(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 #endif
@@ -143,7 +143,7 @@ void *OpenXRExtensionWrapper::set_instance_create_info_and_get_next_pointer(XrVe
 void *OpenXRExtensionWrapper::set_session_create_and_get_next_pointer(void *p_next_pointer) {
 	uint64_t pointer;
 
-	if (GDVIRTUAL_CALL(_set_session_create_and_get_next_pointer, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_session_create_and_get_next_pointer, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -153,7 +153,7 @@ void *OpenXRExtensionWrapper::set_session_create_and_get_next_pointer(void *p_ne
 void *OpenXRExtensionWrapper::set_swapchain_create_info_and_get_next_pointer(void *p_next_pointer) {
 	uint64_t pointer;
 
-	if (GDVIRTUAL_CALL(_set_swapchain_create_info_and_get_next_pointer, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_swapchain_create_info_and_get_next_pointer, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -163,7 +163,7 @@ void *OpenXRExtensionWrapper::set_swapchain_create_info_and_get_next_pointer(voi
 void *OpenXRExtensionWrapper::set_hand_joint_locations_and_get_next_pointer(int p_hand_index, void *p_next_pointer) {
 	uint64_t pointer;
 
-	if (GDVIRTUAL_CALL(_set_hand_joint_locations_and_get_next_pointer, p_hand_index, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_hand_joint_locations_and_get_next_pointer, p_hand_index, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -173,7 +173,7 @@ void *OpenXRExtensionWrapper::set_hand_joint_locations_and_get_next_pointer(int 
 void *OpenXRExtensionWrapper::set_projection_views_and_get_next_pointer(int p_view_index, void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_projection_views_and_get_next_pointer, p_view_index, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_projection_views_and_get_next_pointer, p_view_index, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -183,7 +183,7 @@ void *OpenXRExtensionWrapper::set_projection_views_and_get_next_pointer(int p_vi
 void *OpenXRExtensionWrapper::set_reference_space_create_info_and_get_next_pointer(int p_reference_space_type, void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_reference_space_create_info_and_get_next_pointer, p_reference_space_type, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_reference_space_create_info_and_get_next_pointer, p_reference_space_type, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -193,7 +193,7 @@ void *OpenXRExtensionWrapper::set_reference_space_create_info_and_get_next_point
 void *OpenXRExtensionWrapper::set_frame_wait_info_and_get_next_pointer(void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_frame_wait_info_and_get_next_pointer, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_frame_wait_info_and_get_next_pointer, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -203,7 +203,7 @@ void *OpenXRExtensionWrapper::set_frame_wait_info_and_get_next_pointer(void *p_n
 void *OpenXRExtensionWrapper::set_frame_end_info_and_get_next_pointer(void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_frame_end_info_and_get_next_pointer, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_frame_end_info_and_get_next_pointer, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -211,13 +211,13 @@ void *OpenXRExtensionWrapper::set_frame_end_info_and_get_next_pointer(void *p_ne
 }
 
 void OpenXRExtensionWrapper::prepare_view_configuration(uint32_t p_view_count) {
-	GDVIRTUAL_CALL(_prepare_view_configuration, p_view_count);
+	FOUNDRY_VIRTUAL_CALL(_prepare_view_configuration, p_view_count);
 }
 
 void *OpenXRExtensionWrapper::set_view_configuration_and_get_next_pointer(uint32_t p_view, void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_view_configuration_and_get_next_pointer, p_view, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_view_configuration_and_get_next_pointer, p_view, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -225,13 +225,13 @@ void *OpenXRExtensionWrapper::set_view_configuration_and_get_next_pointer(uint32
 }
 
 void OpenXRExtensionWrapper::print_view_configuration_info(uint32_t p_view) const {
-	GDVIRTUAL_CALL(_print_view_configuration_info, p_view);
+	FOUNDRY_VIRTUAL_CALL(_print_view_configuration_info, p_view);
 }
 
 void *OpenXRExtensionWrapper::set_view_locate_info_and_get_next_pointer(void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_view_locate_info_and_get_next_pointer, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_view_locate_info_and_get_next_pointer, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -241,7 +241,7 @@ void *OpenXRExtensionWrapper::set_view_locate_info_and_get_next_pointer(void *p_
 PackedStringArray OpenXRExtensionWrapper::get_suggested_tracker_names() {
 	PackedStringArray ret;
 
-	if (GDVIRTUAL_CALL(_get_suggested_tracker_names, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_suggested_tracker_names, ret)) {
 		return ret;
 	}
 
@@ -250,14 +250,14 @@ PackedStringArray OpenXRExtensionWrapper::get_suggested_tracker_names() {
 
 int OpenXRExtensionWrapper::get_composition_layer_count() {
 	int count = 0;
-	GDVIRTUAL_CALL(_get_composition_layer_count, count);
+	FOUNDRY_VIRTUAL_CALL(_get_composition_layer_count, count);
 	return count;
 }
 
 XrCompositionLayerBaseHeader *OpenXRExtensionWrapper::get_composition_layer(int p_index) {
 	uint64_t pointer;
 
-	if (GDVIRTUAL_CALL(_get_composition_layer, p_index, pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_composition_layer, p_index, pointer)) {
 		return reinterpret_cast<XrCompositionLayerBaseHeader *>(pointer);
 	}
 
@@ -266,96 +266,96 @@ XrCompositionLayerBaseHeader *OpenXRExtensionWrapper::get_composition_layer(int 
 
 int OpenXRExtensionWrapper::get_composition_layer_order(int p_index) {
 	int order = 0;
-	GDVIRTUAL_CALL(_get_composition_layer_order, p_index, order);
+	FOUNDRY_VIRTUAL_CALL(_get_composition_layer_order, p_index, order);
 	return order;
 }
 
 void OpenXRExtensionWrapper::on_register_metadata() {
-	GDVIRTUAL_CALL(_on_register_metadata);
+	FOUNDRY_VIRTUAL_CALL(_on_register_metadata);
 }
 
 void OpenXRExtensionWrapper::on_before_instance_created() {
-	GDVIRTUAL_CALL(_on_before_instance_created);
+	FOUNDRY_VIRTUAL_CALL(_on_before_instance_created);
 }
 
 void OpenXRExtensionWrapper::on_instance_created(const XrInstance p_instance) {
 	uint64_t instance = (uint64_t)p_instance;
-	GDVIRTUAL_CALL(_on_instance_created, instance);
+	FOUNDRY_VIRTUAL_CALL(_on_instance_created, instance);
 }
 
 void OpenXRExtensionWrapper::on_instance_destroyed() {
-	GDVIRTUAL_CALL(_on_instance_destroyed);
+	FOUNDRY_VIRTUAL_CALL(_on_instance_destroyed);
 }
 
 void OpenXRExtensionWrapper::on_session_created(const XrSession p_session) {
 	uint64_t session = (uint64_t)p_session;
-	GDVIRTUAL_CALL(_on_session_created, session);
+	FOUNDRY_VIRTUAL_CALL(_on_session_created, session);
 }
 
 void OpenXRExtensionWrapper::on_process() {
-	GDVIRTUAL_CALL(_on_process);
+	FOUNDRY_VIRTUAL_CALL(_on_process);
 }
 
 void OpenXRExtensionWrapper::on_sync_actions() {
-	GDVIRTUAL_CALL(_on_sync_actions);
+	FOUNDRY_VIRTUAL_CALL(_on_sync_actions);
 }
 
 void OpenXRExtensionWrapper::on_pre_render() {
-	GDVIRTUAL_CALL(_on_pre_render);
+	FOUNDRY_VIRTUAL_CALL(_on_pre_render);
 }
 
 void OpenXRExtensionWrapper::on_main_swapchains_created() {
-	GDVIRTUAL_CALL(_on_main_swapchains_created);
+	FOUNDRY_VIRTUAL_CALL(_on_main_swapchains_created);
 }
 
 void OpenXRExtensionWrapper::on_session_destroyed() {
-	GDVIRTUAL_CALL(_on_session_destroyed);
+	FOUNDRY_VIRTUAL_CALL(_on_session_destroyed);
 }
 
 void OpenXRExtensionWrapper::on_pre_draw_viewport(RID p_render_target) {
-	GDVIRTUAL_CALL(_on_pre_draw_viewport, p_render_target);
+	FOUNDRY_VIRTUAL_CALL(_on_pre_draw_viewport, p_render_target);
 }
 
 void OpenXRExtensionWrapper::on_post_draw_viewport(RID p_render_target) {
-	GDVIRTUAL_CALL(_on_post_draw_viewport, p_render_target);
+	FOUNDRY_VIRTUAL_CALL(_on_post_draw_viewport, p_render_target);
 }
 
 void OpenXRExtensionWrapper::on_state_idle() {
-	GDVIRTUAL_CALL(_on_state_idle);
+	FOUNDRY_VIRTUAL_CALL(_on_state_idle);
 }
 
 void OpenXRExtensionWrapper::on_state_ready() {
-	GDVIRTUAL_CALL(_on_state_ready);
+	FOUNDRY_VIRTUAL_CALL(_on_state_ready);
 }
 
 void OpenXRExtensionWrapper::on_state_synchronized() {
-	GDVIRTUAL_CALL(_on_state_synchronized);
+	FOUNDRY_VIRTUAL_CALL(_on_state_synchronized);
 }
 
 void OpenXRExtensionWrapper::on_state_visible() {
-	GDVIRTUAL_CALL(_on_state_visible);
+	FOUNDRY_VIRTUAL_CALL(_on_state_visible);
 }
 
 void OpenXRExtensionWrapper::on_state_focused() {
-	GDVIRTUAL_CALL(_on_state_focused);
+	FOUNDRY_VIRTUAL_CALL(_on_state_focused);
 }
 
 void OpenXRExtensionWrapper::on_state_stopping() {
-	GDVIRTUAL_CALL(_on_state_stopping);
+	FOUNDRY_VIRTUAL_CALL(_on_state_stopping);
 }
 
 void OpenXRExtensionWrapper::on_state_loss_pending() {
-	GDVIRTUAL_CALL(_on_state_loss_pending);
+	FOUNDRY_VIRTUAL_CALL(_on_state_loss_pending);
 }
 
 void OpenXRExtensionWrapper::on_state_exiting() {
-	GDVIRTUAL_CALL(_on_state_exiting);
+	FOUNDRY_VIRTUAL_CALL(_on_state_exiting);
 }
 
 bool OpenXRExtensionWrapper::on_event_polled(const XrEventDataBuffer &p_event) {
 	bool event_polled;
 
-	if (GDVIRTUAL_CALL(_on_event_polled, GDExtensionConstPtr<void>(&p_event), event_polled)) {
+	if (FOUNDRY_VIRTUAL_CALL(_on_event_polled, FoundryExtensionConstPtr<void>(&p_event), event_polled)) {
 		return event_polled;
 	}
 
@@ -365,7 +365,7 @@ bool OpenXRExtensionWrapper::on_event_polled(const XrEventDataBuffer &p_event) {
 void *OpenXRExtensionWrapper::set_viewport_composition_layer_and_get_next_pointer(const XrCompositionLayerBaseHeader *p_layer, const Dictionary &p_property_values, void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_viewport_composition_layer_and_get_next_pointer, GDExtensionConstPtr<void>(p_layer), p_property_values, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_viewport_composition_layer_and_get_next_pointer, FoundryExtensionConstPtr<void>(p_layer), p_property_values, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
@@ -373,13 +373,13 @@ void *OpenXRExtensionWrapper::set_viewport_composition_layer_and_get_next_pointe
 }
 
 void OpenXRExtensionWrapper::on_viewport_composition_layer_destroyed(const XrCompositionLayerBaseHeader *p_layer) {
-	GDVIRTUAL_CALL(_on_viewport_composition_layer_destroyed, GDExtensionConstPtr<void>(p_layer));
+	FOUNDRY_VIRTUAL_CALL(_on_viewport_composition_layer_destroyed, FoundryExtensionConstPtr<void>(p_layer));
 }
 
 void OpenXRExtensionWrapper::get_viewport_composition_layer_extension_properties(List<PropertyInfo> *p_property_list) {
 	TypedArray<Dictionary> properties;
 
-	if (GDVIRTUAL_CALL(_get_viewport_composition_layer_extension_properties, properties)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_viewport_composition_layer_extension_properties, properties)) {
 		for (int i = 0; i < properties.size(); i++) {
 			p_property_list->push_back(PropertyInfo::from_dict(properties[i]));
 		}
@@ -388,25 +388,25 @@ void OpenXRExtensionWrapper::get_viewport_composition_layer_extension_properties
 
 Dictionary OpenXRExtensionWrapper::get_viewport_composition_layer_extension_property_defaults() {
 	Dictionary property_defaults;
-	GDVIRTUAL_CALL(_get_viewport_composition_layer_extension_property_defaults, property_defaults);
+	FOUNDRY_VIRTUAL_CALL(_get_viewport_composition_layer_extension_property_defaults, property_defaults);
 	return property_defaults;
 }
 
 void *OpenXRExtensionWrapper::set_android_surface_swapchain_create_info_and_get_next_pointer(const Dictionary &p_property_values, void *p_next_pointer) {
 	uint64_t pointer = 0;
 
-	if (GDVIRTUAL_CALL(_set_android_surface_swapchain_create_info_and_get_next_pointer, p_property_values, GDExtensionPtr<void>(p_next_pointer), pointer)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_android_surface_swapchain_create_info_and_get_next_pointer, p_property_values, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
 
 	return p_next_pointer;
 }
 
-Ref<OpenXRAPIExtension> OpenXRExtensionWrapper::_gdextension_get_openxr_api() {
+Ref<OpenXRAPIExtension> OpenXRExtensionWrapper::_foundry_extension_get_openxr_api() {
 	return openxr_api_extension;
 }
 
-void OpenXRExtensionWrapper::_gdextension_register_extension_wrapper() {
+void OpenXRExtensionWrapper::_foundry_extension_register_extension_wrapper() {
 	OpenXRAPI::register_extension_wrapper(this);
 }
 

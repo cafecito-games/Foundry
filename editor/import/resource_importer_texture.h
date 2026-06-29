@@ -38,7 +38,7 @@
 class CompressedTexture2D;
 
 class ResourceImporterTexture : public ResourceImporter {
-	GDCLASS(ResourceImporterTexture, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterTexture, ResourceImporter);
 
 public:
 	enum CompressMode {

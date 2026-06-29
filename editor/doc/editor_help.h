@@ -41,7 +41,7 @@
 #include "scene/main/timer.h"
 
 class FindBar : public HBoxContainer {
-	GDCLASS(FindBar, HBoxContainer);
+	FOUNDRY_CLASS(FindBar, HBoxContainer);
 
 	LineEdit *search_text = nullptr;
 	Button *find_prev = nullptr;
@@ -84,7 +84,7 @@ public:
 class EditorFileSystemDirectory;
 
 class EditorHelp : public VBoxContainer {
-	GDCLASS(EditorHelp, VBoxContainer);
+	FOUNDRY_CLASS(EditorHelp, VBoxContainer);
 
 	enum MethodType {
 		METHOD_TYPE_METHOD,
@@ -292,7 +292,7 @@ public:
 };
 
 class EditorHelpBit : public VBoxContainer {
-	GDCLASS(EditorHelpBit, VBoxContainer);
+	FOUNDRY_CLASS(EditorHelpBit, VBoxContainer);
 
 	enum SymbolHint {
 		SYMBOL_HINT_NONE,
@@ -382,7 +382,7 @@ public:
 // Standard tooltips do not allow you to hover over them.
 // This class is intended as a temporary workaround.
 class EditorHelpBitTooltip : public PopupPanel {
-	GDCLASS(EditorHelpBitTooltip, PopupPanel);
+	FOUNDRY_CLASS(EditorHelpBitTooltip, PopupPanel);
 
 	static bool _is_tooltip_visible;
 
@@ -412,7 +412,7 @@ class EditorSyntaxHighlighter;
 class EditorHelpHighlighter {
 public:
 	enum Language {
-		LANGUAGE_GDSCRIPT,
+		LANGUAGE_FOUNDRY_SCRIPT,
 		LANGUAGE_CSHARP,
 		LANGUAGE_MAX,
 	};

@@ -40,7 +40,7 @@ class MenuButton;
 class PopupMenu;
 
 class CurveEdit : public Control {
-	GDCLASS(CurveEdit, Control);
+	FOUNDRY_CLASS(CurveEdit, Control);
 
 public:
 	CurveEdit();
@@ -147,7 +147,7 @@ private:
 
 // CurveEdit + toolbar
 class CurveEditor : public VBoxContainer {
-	GDCLASS(CurveEditor, VBoxContainer);
+	FOUNDRY_CLASS(CurveEditor, VBoxContainer);
 
 	// Make sure to use the scaled values below.
 	const int BASE_SPACING = 4;
@@ -173,7 +173,7 @@ public:
 };
 
 class EditorInspectorPluginCurve : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginCurve, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginCurve, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -181,7 +181,7 @@ public:
 };
 
 class CurveEditorPlugin : public EditorPlugin {
-	GDCLASS(CurveEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(CurveEditorPlugin, EditorPlugin);
 
 public:
 	CurveEditorPlugin();
@@ -190,7 +190,7 @@ public:
 };
 
 class CurvePreviewGenerator : public EditorResourcePreviewGenerator {
-	GDCLASS(CurvePreviewGenerator, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(CurvePreviewGenerator, EditorResourcePreviewGenerator);
 
 public:
 	virtual bool handles(const String &p_type) const override;

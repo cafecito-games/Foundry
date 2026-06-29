@@ -42,7 +42,7 @@ class Skin;
 class SkinReference;
 
 class MeshInstance3D : public GeometryInstance3D {
-	GDCLASS(MeshInstance3D, GeometryInstance3D);
+	FOUNDRY_CLASS(MeshInstance3D, GeometryInstance3D);
 
 protected:
 	Ref<Mesh> mesh;

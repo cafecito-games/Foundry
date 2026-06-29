@@ -46,7 +46,7 @@ class VBoxContainer;
 class VSeparator;
 
 class FileDialog : public ConfirmationDialog {
-	GDCLASS(FileDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(FileDialog, ConfirmationDialog);
 
 	inline static constexpr int MAX_RECENTS = 20;
 

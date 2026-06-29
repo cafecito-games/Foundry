@@ -71,7 +71,7 @@ struct NavRegionIterationBuild2D {
 };
 
 class NavRegionIteration2D : public NavBaseIteration2D {
-	GDCLASS(NavRegionIteration2D, NavBaseIteration2D);
+	FOUNDRY_CLASS(NavRegionIteration2D, NavBaseIteration2D);
 
 public:
 	Transform2D transform;

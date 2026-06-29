@@ -38,7 +38,7 @@ class ConfirmationDialog;
 class RichTextLabel;
 
 class AndroidEditorGradleRunner : public Object {
-	GDCLASS(AndroidEditorGradleRunner, Object);
+	FOUNDRY_CLASS(AndroidEditorGradleRunner, Object);
 
 	RichTextLabel *output_label = nullptr;
 	ConfirmationDialog *output_dialog = nullptr;

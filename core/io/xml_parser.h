@@ -39,7 +39,7 @@
 */
 
 class XMLParser : public RefCounted {
-	GDCLASS(XMLParser, RefCounted);
+	FOUNDRY_CLASS(XMLParser, RefCounted);
 
 public:
 	//! Enumeration of all supported source text file formats

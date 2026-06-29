@@ -36,13 +36,13 @@
 			Contains the audio data in bytes.
 			You can load a file without having to import it beforehand using the code snippet below. Keep in mind that this snippet loads the whole file into memory and may not be ideal for huge files (hundreds of megabytes or more).
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			func load_mp3(path):
 				var file = FileAccess.open(path, FileAccess.READ)
 				var sound = AudioStreamMP3.new()
 				sound.data = file.get_buffer(file.get_length())
 				return sound
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			public AudioStreamMP3 LoadMP3(string path)
 			{

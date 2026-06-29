@@ -56,7 +56,7 @@ struct DisplayServerEmbeddedState {
 };
 
 class DisplayServerEmbedded : public DisplayServerMacOSBase {
-	GDSOFTCLASS(DisplayServerEmbedded, DisplayServerMacOSBase)
+	FOUNDRY_SOFTCLASS(DisplayServerEmbedded, DisplayServerMacOSBase)
 
 	DisplayServerEmbeddedState state;
 

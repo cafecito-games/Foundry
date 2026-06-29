@@ -1,6 +1,6 @@
 # Typed-Container Element Inference (Phase 2) — Design
 
-Issue: cafecito-games/godot#36 (epic #29, GDScript Migration Wizard).
+Issue: cafecito-games/godot#36 (epic #29, Foundry Script Migration Wizard).
 
 ## Goal
 
@@ -24,7 +24,7 @@ requires looking at how `x` is used.
 
 ## Soundness model
 
-Arrays are reference types in GDScript: a container can be mutated through any
+Arrays are reference types in Foundry Script: a container can be mutated through any
 reference that escapes the declaration. Inference is therefore attempted only
 when both hold:
 
@@ -56,7 +56,7 @@ bare `Array`), `NOT_APPLICABLE` (already typed, not an array literal, …).
 
 ## Implementation
 
-- `modules/gdscript/editor/gdscript_container_inference.{h,cpp}` —
+- `modules/foundry_script/editor/gdscript_container_inference.{h,cpp}` —
   `GDScriptContainerInference::infer_local_array_element_type(decl, function_body)`
   returns the outcome plus, on success, the `Array[T]` `DataType`. It is a
   headless, caret-independent API the wizard can also call for reporting.
@@ -68,7 +68,7 @@ bare `Array`), `NOT_APPLICABLE` (already typed, not an array literal, …).
 
 ## Tests
 
-`modules/gdscript/tests/test_container_inference.h` covers each outcome directly
+`modules/foundry_script/tests/test_container_inference.h` covers each outcome directly
 against a parsed-and-analyzed tree (monomorphic literal, append-grown, nested
 block, indexed write, `append_array`, read-only-method tolerance, mixed,
 int/float mixing, return/argument/alias/lambda escapes, unmodelled method,
@@ -124,7 +124,7 @@ The remaining binding forms still do **not** need tracking:
   already a parse error, so no valid pre-upgrade source has this shape.
 - An explicit annotation (`var v: Variant = c[i]`) pins the type, so it never
   narrows.
-- A `match c[i]: var v:` pattern bind is a constant -- GDScript rejects
+- A `match c[i]: var v:` pattern bind is a constant -- Foundry Script rejects
   reassigning it -- so it can never trigger the reassignment check.
 
 ### Boundary

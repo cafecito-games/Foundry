@@ -52,7 +52,7 @@
 
 #include "core/typedefs.h"
 
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
 
 #import "inflection_map.h"
 #import "metal_device_properties.h"
@@ -409,4 +409,4 @@ protected:
 	TightLocalVector<MTLFormatDesc> _mtl_vertex_format_descs;
 };
 
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP

@@ -35,7 +35,7 @@
 
 class GPUParticles3D : public GeometryInstance3D {
 private:
-	GDCLASS(GPUParticles3D, GeometryInstance3D);
+	FOUNDRY_CLASS(GPUParticles3D, GeometryInstance3D);
 
 public:
 	enum DrawOrder {

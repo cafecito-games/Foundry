@@ -34,7 +34,7 @@
 #include "servers/rendering/rendering_server.h"
 
 class RenderSceneBuffersConfiguration : public RefCounted {
-	GDCLASS(RenderSceneBuffersConfiguration, RefCounted);
+	FOUNDRY_CLASS(RenderSceneBuffersConfiguration, RefCounted);
 
 private:
 	RID render_target;
@@ -98,7 +98,7 @@ public:
 };
 
 class RenderSceneBuffers : public RefCounted {
-	GDCLASS(RenderSceneBuffers, RefCounted);
+	FOUNDRY_CLASS(RenderSceneBuffers, RefCounted);
 
 protected:
 	static void _bind_methods();
@@ -117,16 +117,16 @@ public:
 };
 
 class RenderSceneBuffersExtension : public RenderSceneBuffers {
-	GDCLASS(RenderSceneBuffersExtension, RenderSceneBuffers);
+	FOUNDRY_CLASS(RenderSceneBuffersExtension, RenderSceneBuffers);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1(_configure, const RenderSceneBuffersConfiguration *)
-	GDVIRTUAL1(_set_fsr_sharpness, float)
-	GDVIRTUAL1(_set_texture_mipmap_bias, float)
-	GDVIRTUAL1(_set_anisotropic_filtering_level, int)
-	GDVIRTUAL1(_set_use_debanding, bool)
+	FOUNDRY_VIRTUAL1(_configure, const RenderSceneBuffersConfiguration *)
+	FOUNDRY_VIRTUAL1(_set_fsr_sharpness, float)
+	FOUNDRY_VIRTUAL1(_set_texture_mipmap_bias, float)
+	FOUNDRY_VIRTUAL1(_set_anisotropic_filtering_level, int)
+	FOUNDRY_VIRTUAL1(_set_use_debanding, bool)
 
 public:
 	virtual ~RenderSceneBuffersExtension() {}

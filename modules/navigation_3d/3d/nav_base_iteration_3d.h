@@ -36,7 +36,7 @@
 #include "servers/navigation_3d/navigation_constants_3d.h"
 
 class NavBaseIteration3D : public RefCounted {
-	GDCLASS(NavBaseIteration3D, RefCounted);
+	FOUNDRY_CLASS(NavBaseIteration3D, RefCounted);
 
 public:
 	bool enabled = true;

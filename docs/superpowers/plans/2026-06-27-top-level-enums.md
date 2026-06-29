@@ -6,15 +6,15 @@
 
 **Architecture:** A new `ENUM_NAME` keyword parsed in the parser's top-level class-declaration phase stores the enum on the root `ClassNode`. The file registers as a `ScriptServer` global class flagged `is_enum`. The analyzer resolves the global name into a new *standalone* `DataType::ENUM` (no `ENUM_SEPARATOR` in `native_type`). The compiler hoists values as script constants. Completion, LSP hover, and docgen mirror the trait wiring.
 
-**Tech Stack:** C++ (Godot engine), GDScript module (`modules/gdscript/`), `core/object/script_language.*`, doctest C++ tests, `.gd`/`.out` script fixtures.
+**Tech Stack:** C++ (Godot engine), Foundry Script module (`modules/foundry_script/`), `core/object/script_language.*`, doctest C++ tests, `.fs`/`.out` script fixtures.
 
 **Reference template:** The `trait` / `trait_name` feature is the canonical pattern. At nearly every hook site there is an existing `is_trait` / `trait_name` / `TRAIT_NAME` line — add the `enum` parallel beside it. The spec is at `docs/superpowers/specs/2026-06-27-top-level-enums-design.md`.
 
 **Build/test commands (this repo):**
 - Build: `scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)`
 - C++ tests: `./bin/godot.macos.editor.dev.* --headless --test --force-colors`
-- GDScript fixtures run as part of the test suite; regenerate `.out` with: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/gdscript/tests/scripts`
-- Single-script analyzer check: `./bin/godot.macos.editor.dev.* --headless --check-only --script <file.gd>`
+- Foundry Script fixtures run as part of the test suite; regenerate `.out` with: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts`
+- Single-script analyzer check: `./bin/godot.macos.editor.dev.* --headless --check-only --script <file.fs>`
 
 ---
 
@@ -23,8 +23,8 @@
 **Goal:** `enum_name` lexes to a new `Token::ENUM_NAME`.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_tokenizer.h` (Token enum, ~line 115-131, beside `CLASS_NAME`/`TRAIT_NAME`)
-- Modify: `modules/gdscript/gdscript_tokenizer.cpp` (token name table ~line 110/126; `KEYWORD(...)` table ~line 529/565)
+- Modify: `modules/foundry_script/gdscript_tokenizer.h` (Token enum, ~line 115-131, beside `CLASS_NAME`/`TRAIT_NAME`)
+- Modify: `modules/foundry_script/gdscript_tokenizer.cpp` (token name table ~line 110/126; `KEYWORD(...)` table ~line 529/565)
 
 **Acceptance Criteria:**
 - [ ] `Token::ENUM_NAME` exists in the `Type` enum.
@@ -51,7 +51,7 @@ KEYWORD("enum_name", Token::ENUM_NAME) \
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_tokenizer.h modules/gdscript/gdscript_tokenizer.cpp
+git add modules/foundry_script/gdscript_tokenizer.h modules/foundry_script/gdscript_tokenizer.cpp
 git commit -m "feat(gdscript): add enum_name tokenizer keyword"
 ```
 
@@ -62,8 +62,8 @@ git commit -m "feat(gdscript): add enum_name tokenizer keyword"
 **Goal:** `enum_name Name { ... }` parses at file scope into a new `ClassNode` field, reusing `parse_enum`.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_parser.h` (`ClassNode`: add fields near `is_trait`/`namespace_name`, ~line 964-976; declare `parse_enum_name()`)
-- Modify: `modules/gdscript/gdscript_parser.cpp` (top-level guard ~line 839; dispatch switch ~line 942-961; add `parse_enum_name()` near `parse_trait_name()` ~line 1343; `qualified_global_name` computation sites ~line 1320/1348)
+- Modify: `modules/foundry_script/gdscript_parser.h` (`ClassNode`: add fields near `is_trait`/`namespace_name`, ~line 964-976; declare `parse_enum_name()`)
+- Modify: `modules/foundry_script/gdscript_parser.cpp` (top-level guard ~line 839; dispatch switch ~line 942-961; add `parse_enum_name()` near `parse_trait_name()` ~line 1343; `qualified_global_name` computation sites ~line 1320/1348)
 
 **Acceptance Criteria:**
 - [ ] `ClassNode` has `bool is_enum_file = false;` and `EnumNode *enum_file_decl = nullptr;`.
@@ -71,7 +71,7 @@ git commit -m "feat(gdscript): add enum_name tokenizer keyword"
 - [ ] `qualified_global_name` is set for an enum-file the same way as for `class_name` (namespace-aware).
 - [ ] `enum_name` is accepted in the top-level phase, not in the class body.
 
-**Verify:** `./bin/godot.macos.editor.dev.* --headless --check-only --script /tmp/enum_ok.gd` where the file is a valid `enum_name` → no errors.
+**Verify:** `./bin/godot.macos.editor.dev.* --headless --check-only --script /tmp/enum_ok.fs` where the file is a valid `enum_name` → no errors.
 
 **Steps:**
 
@@ -130,7 +130,7 @@ void GDScriptParser::parse_enum_name() {
 
 - [ ] **Step 6: Add fixtures** (these drive Task 3's validation too — create the valid one now):
 
-`modules/gdscript/tests/scripts/parser/features/top_level_enum.gd`:
+`modules/foundry_script/tests/scripts/parser/features/top_level_enum.fs`:
 ```gdscript
 enum_name TrafficLight {
 	RED,
@@ -144,13 +144,13 @@ With its `.out` (generate in Step 8).
 
 - [ ] **Step 8: Generate `.out` and verify.**
 
-Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/gdscript/tests/scripts/parser`
+Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts/parser`
 Expected: `top_level_enum.out` shows a clean parse (GDTEST_OK).
 
 - [ ] **Step 9: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_parser.h modules/gdscript/gdscript_parser.cpp modules/gdscript/tests/scripts/parser/features/top_level_enum.*
+git add modules/foundry_script/gdscript_parser.h modules/foundry_script/gdscript_parser.cpp modules/foundry_script/tests/scripts/parser/features/top_level_enum.*
 git commit -m "feat(gdscript): parse top-level enum_name declarations"
 ```
 
@@ -161,9 +161,9 @@ git commit -m "feat(gdscript): parse top-level enum_name declarations"
 **Goal:** Reject every malformed enum-file shape with a clear diagnostic.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_parser.cpp` (`parse_enum_name`; class-body `ENUM_NAME` case ~line 1906; end-of-file/root checks)
-- Modify: `modules/gdscript/gdscript_analyzer.cpp` (cross-cutting checks that need resolved state, if any)
-- Test: `modules/gdscript/tests/scripts/analyzer/errors/enum_name_*.gd` + `.out`
+- Modify: `modules/foundry_script/gdscript_parser.cpp` (`parse_enum_name`; class-body `ENUM_NAME` case ~line 1906; end-of-file/root checks)
+- Modify: `modules/foundry_script/gdscript_analyzer.cpp` (cross-cutting checks that need resolved state, if any)
+- Test: `modules/foundry_script/tests/scripts/analyzer/errors/enum_name_*.fs` + `.out`
 
 **Acceptance Criteria:**
 - [ ] `enum_name` inside a class body → error.
@@ -182,25 +182,25 @@ git commit -m "feat(gdscript): parse top-level enum_name declarations"
 
 - [ ] **Step 3: Forbid other members in an enum-file.** In `parse_class_body`, at entry, if `current_class->is_enum_file` is true, push error for any member token (`VAR`/`CONST`/`FUNC`/`SIGNAL`/`CLASS`/`TRAIT`/`ENUM`/`ANNOTATION`): `An "enum_name" file may only contain its enum declaration.` (Allow `PASS`.)
 
-- [ ] **Step 4: Write error fixtures.** Each is a `.gd` + a `.out` whose first line is `GDTEST_ANALYZER_ERROR` (match neighbors in `analyzer/errors/`):
+- [ ] **Step 4: Write error fixtures.** Each is a `.fs` + a `.out` whose first line is `GDTEST_ANALYZER_ERROR` (match neighbors in `analyzer/errors/`):
 
-`enum_name_in_class_body.gd`:
+`enum_name_in_class_body.fs`:
 ```gdscript
 class Inner:
 	enum_name Bad { A, B }
 ```
-`enum_name_with_class_name.gd`:
+`enum_name_with_class_name.fs`:
 ```gdscript
 class_name Foo
 enum_name Bar { A, B }
 ```
-`enum_name_extra_member.gd`:
+`enum_name_extra_member.fs`:
 ```gdscript
 enum_name Color { RED, GREEN }
 func oops() -> void:
 	pass
 ```
-`enum_name_duplicate.gd`:
+`enum_name_duplicate.fs`:
 ```gdscript
 enum_name A { X }
 enum_name B { Y }
@@ -208,13 +208,13 @@ enum_name B { Y }
 
 - [ ] **Step 5: Build, generate `.out`, verify each error message.**
 
-Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/gdscript/tests/scripts/analyzer`
+Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts/analyzer`
 Then inspect each `.out` to confirm the intended message; adjust wording in code if needed and regenerate.
 
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_parser.cpp modules/gdscript/tests/scripts/analyzer/errors/enum_name_*
+git add modules/foundry_script/gdscript_parser.cpp modules/foundry_script/tests/scripts/analyzer/errors/enum_name_*
 git commit -m "feat(gdscript): validate enum_name file shape"
 ```
 
@@ -257,7 +257,7 @@ Declare it in the header near `is_global_class_trait`.
 
 - [ ] **Step 5: Extend the `get_global_class_name` virtual** with `bool *r_is_enum = nullptr` (header line ~480).
 
-- [ ] **Step 6: Fix all call sites.** Build; for each compile error at an `add_global_class` / `get_global_class_name` call, pass the new arg (`false` / `nullptr` where not yet enum-aware; GDScript ones wired in Task 5).
+- [ ] **Step 6: Fix all call sites.** Build; for each compile error at an `add_global_class` / `get_global_class_name` call, pass the new arg (`false` / `nullptr` where not yet enum-aware; Foundry Script ones wired in Task 5).
 
 - [ ] **Step 7: Commit.**
 
@@ -268,14 +268,14 @@ git commit -m "feat(core): add is_enum flag to ScriptServer global classes"
 
 ---
 
-### Task 5: Global registration — GDScript reports enum-files
+### Task 5: Global registration — Foundry Script reports enum-files
 
-**Goal:** A `.gd` enum-file registers as a global class flagged `is_enum`.
+**Goal:** A `.fs` enum-file registers as a global class flagged `is_enum`.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript.cpp` (`GDScriptLanguage::get_global_class_name` ~line 3156-3282; mirror the `r_is_trait` out-param at line ~3275)
+- Modify: `modules/foundry_script/gdscript.cpp` (`GDScriptLanguage::get_global_class_name` ~line 3156-3282; mirror the `r_is_trait` out-param at line ~3275)
 - Modify: `editor/file_system/editor_file_system.cpp` (~line 2617, the `add_global_class` call — thread `is_enum` through)
-- Modify: `modules/gdscript/gdscript.h` (override sig to add `bool *r_is_enum`)
+- Modify: `modules/foundry_script/gdscript.h` (override sig to add `bool *r_is_enum`)
 
 **Acceptance Criteria:**
 - [ ] `get_global_class_name` on an `enum_name` file returns its `qualified_global_name` and sets `*r_is_enum = true` (and an empty/sentinel base).
@@ -304,7 +304,7 @@ Ensure the returned name still uses `qualified_global_name` (line ~3281) — alr
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript.cpp modules/gdscript/gdscript.h editor/file_system/editor_file_system.cpp
+git add modules/foundry_script/gdscript.cpp modules/foundry_script/gdscript.h editor/file_system/editor_file_system.cpp
 git commit -m "feat(gdscript): register enum_name files as global enums"
 ```
 
@@ -315,8 +315,8 @@ git commit -m "feat(gdscript): register enum_name files as global enums"
 **Goal:** Referencing a global enum name from another script yields a usable `DataType::ENUM`.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_analyzer.cpp` (`reduce_identifier` global-class branch ~line 10241; add `make_global_enum_type_from_path` near the other `make_*_enum_type` helpers ~line 777-866; audit `ENUM_SEPARATOR` split sites)
-- Test: `modules/gdscript/tests/scripts/analyzer/features/top_level_enum_*.gd` + `.out`
+- Modify: `modules/foundry_script/gdscript_analyzer.cpp` (`reduce_identifier` global-class branch ~line 10241; add `make_global_enum_type_from_path` near the other `make_*_enum_type` helpers ~line 777-866; audit `ENUM_SEPARATOR` split sites)
+- Test: `modules/foundry_script/tests/scripts/analyzer/features/top_level_enum_*.fs` + `.out`
 
 **Acceptance Criteria:**
 - [ ] In another script, `TrafficLight` resolves (meta enum type), `TrafficLight.RED` resolves to an `int` constant `0`.
@@ -355,7 +355,7 @@ if (ScriptServer::is_global_class_enum(name)) {
 
 - [ ] **Step 4: Write feature fixtures.** A defining file plus a consumer:
 
-`analyzer/features/top_level_enum_consumer.gd`:
+`analyzer/features/top_level_enum_consumer.fs`:
 ```gdscript
 # Assumes a sibling enum_name file registered as global "TrafficLight".
 func _ready() -> void:
@@ -377,7 +377,7 @@ Plus the defining `enum_name` file in the same fixture dir (or reuse the runtime
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_analyzer.cpp modules/gdscript/tests/scripts/analyzer/features/top_level_enum_*
+git add modules/foundry_script/gdscript_analyzer.cpp modules/foundry_script/tests/scripts/analyzer/features/top_level_enum_*
 git commit -m "feat(gdscript): resolve top-level enums as standalone enum types"
 ```
 
@@ -388,8 +388,8 @@ git commit -m "feat(gdscript): resolve top-level enums as standalone enum types"
 **Goal:** A compiled enum-file exposes values as script constants so `Name.MEMBER` works at runtime.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_compiler.cpp` (enum handling ~line 3770-3775; add enum-file path)
-- Test: `modules/gdscript/tests/scripts/runtime/features/top_level_enum.gd` + `.out`
+- Modify: `modules/foundry_script/gdscript_compiler.cpp` (enum handling ~line 3770-3775; add enum-file path)
+- Test: `modules/foundry_script/tests/scripts/runtime/features/top_level_enum.fs` + `.out`
 
 **Acceptance Criteria:**
 - [ ] At runtime, `TrafficLight.RED == 0`, `TrafficLight.GREEN == 2`.
@@ -404,7 +404,7 @@ git commit -m "feat(gdscript): resolve top-level enums as standalone enum types"
 
 - [ ] **Step 2: Runtime fixture.**
 
-`runtime/features/top_level_enum.gd`:
+`runtime/features/top_level_enum.fs`:
 ```gdscript
 enum_name TrafficLight {
 	RED,
@@ -424,7 +424,7 @@ func test():
 - [ ] **Step 4: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_compiler.cpp modules/gdscript/tests/scripts/runtime/features/top_level_enum.*
+git add modules/foundry_script/gdscript_compiler.cpp modules/foundry_script/tests/scripts/runtime/features/top_level_enum.*
 git commit -m "feat(gdscript): compile top-level enums to script constants"
 ```
 
@@ -435,7 +435,7 @@ git commit -m "feat(gdscript): compile top-level enums to script constants"
 **Goal:** Global enum names complete at type/expression positions; their members complete after `.`.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_editor.cpp` (global-class completion loop ~line 1720-1731; member-access ENUM path ~line 2093-2115)
+- Modify: `modules/foundry_script/gdscript_editor.cpp` (global-class completion loop ~line 1720-1731; member-access ENUM path ~line 2093-2115)
 
 **Acceptance Criteria:**
 - [ ] A global enum name appears as a completion candidate (kind: enum/class) at type-annotation and expression positions.
@@ -454,7 +454,7 @@ git commit -m "feat(gdscript): compile top-level enums to script constants"
 - [ ] **Step 4: Commit.**
 
 ```bash
-git add modules/gdscript/gdscript_editor.cpp
+git add modules/foundry_script/gdscript_editor.cpp
 git commit -m "feat(gdscript): complete top-level enum names and members"
 ```
 
@@ -465,14 +465,14 @@ git commit -m "feat(gdscript): complete top-level enum names and members"
 **Goal:** Hovering a global enum name resolves to its definition; the enum-file emits an Enum symbol with EnumMember children.
 
 **Files:**
-- Modify: `modules/gdscript/language_server/gdscript_workspace.cpp` (`resolve_symbol` ~line 736-810, global-class branch ~line 760)
-- Modify: `modules/gdscript/language_server/gdscript_extend_parser.cpp` (symbol generation; root-class kind ~line 215; enum-symbol code ~line 399-437)
+- Modify: `modules/foundry_script/language_server/gdscript_workspace.cpp` (`resolve_symbol` ~line 736-810, global-class branch ~line 760)
+- Modify: `modules/foundry_script/language_server/gdscript_extend_parser.cpp` (symbol generation; root-class kind ~line 215; enum-symbol code ~line 399-437)
 
 **Acceptance Criteria:**
 - [ ] `textDocument/hover` over a global enum name returns the enum's symbol/documentation.
 - [ ] An `enum_name` file's document symbols include a root `SymbolKind::Enum` with `EnumMember` children for each value.
 
-**Verify:** Existing LSP test harness under `modules/gdscript/tests/` (or manual LSP request). Mirror an existing class/trait hover test if present.
+**Verify:** Existing LSP test harness under `modules/foundry_script/tests/` (or manual LSP request). Mirror an existing class/trait hover test if present.
 
 **Steps:**
 
@@ -485,7 +485,7 @@ git commit -m "feat(gdscript): complete top-level enum names and members"
 - [ ] **Step 4: Commit.**
 
 ```bash
-git add modules/gdscript/language_server/gdscript_workspace.cpp modules/gdscript/language_server/gdscript_extend_parser.cpp
+git add modules/foundry_script/language_server/gdscript_workspace.cpp modules/foundry_script/language_server/gdscript_extend_parser.cpp
 git commit -m "feat(gdscript): LSP hover and symbols for top-level enums"
 ```
 
@@ -496,12 +496,12 @@ git commit -m "feat(gdscript): LSP hover and symbols for top-level enums"
 **Goal:** An `enum_name` file produces a class-reference doc entry documenting the enum and its values.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_docgen.cpp` (`_generate_docs` ~line 401-725; enum member doc ~line 630-660; `is_trait`/`is_enum` flag extraction)
+- Modify: `modules/foundry_script/editor/gdscript_docgen.cpp` (`_generate_docs` ~line 401-725; enum member doc ~line 630-660; `is_trait`/`is_enum` flag extraction)
 - Modify: `core/doc_data.h` (`ClassDoc`: add `bool is_enum = false;` beside `is_trait` ~line 720, if docgen/UI needs it)
 
 **Acceptance Criteria:**
 - [ ] Generating docs for an enum-file yields a `ClassDoc` whose `enums`/`constants` describe the enum, with `## ` doc comments on the enum and values attached.
-- [ ] The class reference renders the enum-file like other GDScript globals.
+- [ ] The class reference renders the enum-file like other Foundry Script globals.
 
 **Verify:** Run docgen over the runtime fixture (or a dedicated fixture) and inspect the produced `DocData`/XML for the enum + constants + descriptions.
 
@@ -518,7 +518,7 @@ git commit -m "feat(gdscript): LSP hover and symbols for top-level enums"
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add modules/gdscript/editor/gdscript_docgen.cpp core/doc_data.h
+git add modules/foundry_script/editor/gdscript_docgen.cpp core/doc_data.h
 git commit -m "feat(gdscript): generate class reference docs for top-level enums"
 ```
 
@@ -529,7 +529,7 @@ git commit -m "feat(gdscript): generate class reference docs for top-level enums
 **Goal:** Lock behavior with C++ tests, regenerate all fixtures, document the feature.
 
 **Files:**
-- Create/Modify: a GDScript C++ test (e.g. `modules/gdscript/tests/test_gdscript.h` or the existing global-class test) asserting registration + resolution
+- Create/Modify: a Foundry Script C++ test (e.g. `modules/foundry_script/tests/test_gdscript.h` or the existing global-class test) asserting registration + resolution
 - Modify: `docs/gdscript_language_primer.md` (add an `enum_name` section)
 - Regenerate: all touched `.out` fixtures
 
@@ -542,18 +542,18 @@ git commit -m "feat(gdscript): generate class reference docs for top-level enums
 
 **Steps:**
 
-- [ ] **Step 1: Add the C++ test** mirroring an existing global-class registration test (search `tests/` and `modules/gdscript/tests/` for `is_global_class` / `add_global_class` usage). Assert flag set on registration and survives a serialize→deserialize cache cycle.
+- [ ] **Step 1: Add the C++ test** mirroring an existing global-class registration test (search `tests/` and `modules/foundry_script/tests/` for `is_global_class` / `add_global_class` usage). Assert flag set on registration and survives a serialize→deserialize cache cycle.
 
 - [ ] **Step 2: Run the full suite**, fix any regressions.
 
-- [ ] **Step 3: Regenerate fixtures** across `parser`, `analyzer`, `runtime`: `--gdscript-generate-tests modules/gdscript/tests/scripts`; commit only intended diffs (beware spurious diffs — see project memory on generate-tests).
+- [ ] **Step 3: Regenerate fixtures** across `parser`, `analyzer`, `runtime`: `--gdscript-generate-tests modules/foundry_script/tests/scripts`; commit only intended diffs (beware spurious diffs — see project memory on generate-tests).
 
 - [ ] **Step 4: Update the primer** with an `enum_name` section (syntax, global-type semantics, namespace behavior, validation rules), matching the existing `class_name`/`trait` sections' style.
 
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add modules/gdscript/tests docs/gdscript_language_primer.md
+git add modules/foundry_script/tests docs/gdscript_language_primer.md
 git commit -m "test(gdscript): cover top-level enums end-to-end; document enum_name"
 ```
 

@@ -32,7 +32,7 @@
 
 #include "scene/gui/control.h"
 class Separator : public Control {
-	GDCLASS(Separator, Control);
+	FOUNDRY_CLASS(Separator, Control);
 
 	struct ThemeCache {
 		int separation = 0;
@@ -53,14 +53,14 @@ public:
 };
 
 class VSeparator : public Separator {
-	GDCLASS(VSeparator, Separator);
+	FOUNDRY_CLASS(VSeparator, Separator);
 
 public:
 	VSeparator();
 };
 
 class HSeparator : public Separator {
-	GDCLASS(HSeparator, Separator);
+	FOUNDRY_CLASS(HSeparator, Separator);
 
 public:
 	HSeparator();

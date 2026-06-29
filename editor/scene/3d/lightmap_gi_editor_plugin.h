@@ -38,7 +38,7 @@ struct EditorProgress;
 class EditorFileDialog;
 
 class LightmapGIEditorPlugin : public EditorPlugin {
-	GDCLASS(LightmapGIEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(LightmapGIEditorPlugin, EditorPlugin);
 
 	LightmapGI *lightmap = nullptr;
 

@@ -3,9 +3,9 @@
 godot \- multi\-platform 2D and 3D game engine with a feature\-rich editor
 .SH SYNOPSIS
 .B godot
-[\fI\,options\/\fR] [path to scene or 'project.godot' file]
+[\fI\,options\/\fR] [path to scene or 'project.foundry' file]
 .SH DESCRIPTION
-Godot Engine is an advanced, feature\-packed, multi\-platform 2D and 3D game
+Foundry is an advanced, feature\-packed, multi\-platform 2D and 3D game
 engine.
 .br
 It provides a huge set of common tools, so you can just focus on making
@@ -38,7 +38,7 @@ Quit after the first iteration.
 Use a specific locale (<locale> being a two\-letter code).
 .TP
 \fB\-\-path\fR <directory>
-Path to a project (<directory> must contain a 'project.godot' file).
+Path to a project (<directory> must contain a 'project.foundry' file).
 .TP
 \fB\-\-main\-pack\fR <file>
 Path to a pack (.pck) file to load.
@@ -159,11 +159,11 @@ Disallow dumping the base types (used with \fB\-\-doctool\fR).
 \fB\-\-build\-solutions\fR
 Build the scripting solutions (e.g. for C# projects). Implies \-\-editor and requires a valid project to edit.
 .TP
-\fB\-\-dump\-gdextension\-interface\fR
-Generate GDExtension header file 'gdextension_interface.h' in the current folder. This file is the base file required to implement a GDExtension.
+\fB\-\-dump\-foundryextension\-interface\fR
+Generate FoundryExtension header file 'foundry_extension_interface.h' in the current folder. This file is the base file required to implement a FoundryExtension.
 .TP
 \fB\-\-dump\-extension\-api\fR
-Generate JSON dump of the Godot API for GDExtension bindings named 'extension_api.json' in the current folder.
+Generate JSON dump of the Godot API for FoundryExtension bindings named 'extension_api.json' in the current folder.
 .TP
 \fB\-\-test\fR <test>
 Run a unit test ('string', 'math', 'physics', 'physics_2d', 'render', 'oa_hash_map', 'gui', 'shaderlang', 'gd_tokenizer', 'gd_parser', 'gd_compiler', 'gd_bytecode', 'ordered_hash_map', 'astar').
@@ -174,7 +174,7 @@ User\-specific configuration folder, contains persistent editor settings, script
 .RE
 XDG_DATA_HOME/godot/ or ~/.local/share/godot/
 .RS
-Contains the default configuration and user data folders for Godot\-made games (\fIuser://\fR path), as well as export templates.
+Contains the default configuration and user data folders for Foundry\-made games (\fIuser://\fR path), as well as export templates.
 .RE
 XDG_DATA_CACHE/godot/ or ~/.cache/godot/
 .RS
@@ -192,7 +192,7 @@ Detailed licensing information.
 See the project website at \fIhttps://godotengine.org\fR and the source
 code repository at \fIhttps://github.com/godotengine/godot\fR for more details.
 .SH BUGS
-Godot Engine is a free and open source project and welcomes any kind of
+Foundry is a free and open source project and welcomes any kind of
 contributions. In particular, you can report issues or make suggestions on
 Godot's issue tracker at \fIhttps://github.com/godotengine/godot/issues\fR.
 .SH AUTHOR

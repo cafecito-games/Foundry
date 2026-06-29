@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Cannot assign a value of type Coroutine[Variant] to variable "value" with specified type int.

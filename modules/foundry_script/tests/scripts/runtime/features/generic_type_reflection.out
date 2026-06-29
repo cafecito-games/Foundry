@@ -1,0 +1,10 @@
+FS_TEST_OK
+true
+1
+T index=0 scope=class has_bound=false
+true
+2
+K index=0 scope=class has_bound=false
+V index=1 scope=class has_bound=true bound=RefCounted
+false
+0

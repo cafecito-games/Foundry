@@ -40,7 +40,7 @@ class EditorFileDialog;
 class EditorPropertyVector2i;
 
 class AtlasMergingDialog : public ConfirmationDialog {
-	GDCLASS(AtlasMergingDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(AtlasMergingDialog, ConfirmationDialog);
 
 private:
 	int committed_actions_count = 0;

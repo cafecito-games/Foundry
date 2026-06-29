@@ -35,7 +35,7 @@
 #include "editor/file_system/editor_file_system.h"
 
 class EditorFileServer : public Object {
-	GDCLASS(EditorFileServer, Object);
+	FOUNDRY_CLASS(EditorFileServer, Object);
 
 	Ref<TCPServer> server;
 	String password;

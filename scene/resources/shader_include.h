@@ -36,7 +36,7 @@
 #include "core/templates/hash_set.h"
 
 class ShaderInclude : public Resource {
-	GDCLASS(ShaderInclude, Resource);
+	FOUNDRY_CLASS(ShaderInclude, Resource);
 	OBJ_SAVE_TYPE(ShaderInclude);
 
 private:
@@ -56,7 +56,7 @@ public:
 };
 
 class ResourceFormatLoaderShaderInclude : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderShaderInclude, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderShaderInclude, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -66,7 +66,7 @@ public:
 };
 
 class ResourceFormatSaverShaderInclude : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceFormatSaverShaderInclude, ResourceFormatSaver);
+	FOUNDRY_SOFTCLASS(ResourceFormatSaverShaderInclude, ResourceFormatSaver);
 
 public:
 	virtual Error save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags = 0) override;

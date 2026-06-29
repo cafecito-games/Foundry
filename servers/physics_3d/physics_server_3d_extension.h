@@ -37,7 +37,7 @@
 #include "servers/physics_3d/physics_server_3d.h"
 
 class PhysicsDirectBodyState3DExtension : public PhysicsDirectBodyState3D {
-	GDCLASS(PhysicsDirectBodyState3DExtension, PhysicsDirectBodyState3D);
+	FOUNDRY_CLASS(PhysicsDirectBodyState3DExtension, PhysicsDirectBodyState3D);
 
 protected:
 	static void _bind_methods();
@@ -120,12 +120,12 @@ typedef PhysicsDirectSpaceState3D::RayResult PhysicsServer3DExtensionRayResult;
 typedef PhysicsDirectSpaceState3D::ShapeResult PhysicsServer3DExtensionShapeResult;
 typedef PhysicsDirectSpaceState3D::ShapeRestInfo PhysicsServer3DExtensionShapeRestInfo;
 
-GDVIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionRayResult)
-GDVIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionShapeResult)
-GDVIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionShapeRestInfo)
+FOUNDRY_VIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionRayResult)
+FOUNDRY_VIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionShapeResult)
+FOUNDRY_VIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionShapeRestInfo)
 
 class PhysicsDirectSpaceState3DExtension : public PhysicsDirectSpaceState3D {
-	GDCLASS(PhysicsDirectSpaceState3DExtension, PhysicsDirectSpaceState3D);
+	FOUNDRY_CLASS(PhysicsDirectSpaceState3DExtension, PhysicsDirectSpaceState3D);
 
 	thread_local static const HashSet<RID> *exclude;
 
@@ -133,61 +133,61 @@ protected:
 	static void _bind_methods();
 	bool is_body_excluded_from_query(const RID &p_body) const;
 
-	GDVIRTUAL9R_REQUIRED(bool, _intersect_ray, const Vector3 &, const Vector3 &, uint32_t, bool, bool, bool, bool, bool, GDExtensionPtr<PhysicsServer3DExtensionRayResult>)
-	GDVIRTUAL6R_REQUIRED(int, _intersect_point, const Vector3 &, uint32_t, bool, bool, GDExtensionPtr<PhysicsServer3DExtensionShapeResult>, int)
-	GDVIRTUAL9R_REQUIRED(int, _intersect_shape, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, GDExtensionPtr<PhysicsServer3DExtensionShapeResult>, int)
-	GDVIRTUAL10R_REQUIRED(bool, _cast_motion, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, GDExtensionPtr<real_t>, GDExtensionPtr<real_t>, GDExtensionPtr<PhysicsServer3DExtensionShapeRestInfo>)
-	GDVIRTUAL10R_REQUIRED(bool, _collide_shape, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, GDExtensionPtr<Vector3>, int, GDExtensionPtr<int>)
-	GDVIRTUAL8R_REQUIRED(bool, _rest_info, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, GDExtensionPtr<PhysicsServer3DExtensionShapeRestInfo>)
-	GDVIRTUAL2RC_REQUIRED(Vector3, _get_closest_point_to_object_volume, RID, const Vector3 &)
+	FOUNDRY_VIRTUAL9R_REQUIRED(bool, _intersect_ray, const Vector3 &, const Vector3 &, uint32_t, bool, bool, bool, bool, bool, FoundryExtensionPtr<PhysicsServer3DExtensionRayResult>)
+	FOUNDRY_VIRTUAL6R_REQUIRED(int, _intersect_point, const Vector3 &, uint32_t, bool, bool, FoundryExtensionPtr<PhysicsServer3DExtensionShapeResult>, int)
+	FOUNDRY_VIRTUAL9R_REQUIRED(int, _intersect_shape, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, FoundryExtensionPtr<PhysicsServer3DExtensionShapeResult>, int)
+	FOUNDRY_VIRTUAL10R_REQUIRED(bool, _cast_motion, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, FoundryExtensionPtr<real_t>, FoundryExtensionPtr<real_t>, FoundryExtensionPtr<PhysicsServer3DExtensionShapeRestInfo>)
+	FOUNDRY_VIRTUAL10R_REQUIRED(bool, _collide_shape, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, FoundryExtensionPtr<Vector3>, int, FoundryExtensionPtr<int>)
+	FOUNDRY_VIRTUAL8R_REQUIRED(bool, _rest_info, RID, const Transform3D &, const Vector3 &, real_t, uint32_t, bool, bool, FoundryExtensionPtr<PhysicsServer3DExtensionShapeRestInfo>)
+	FOUNDRY_VIRTUAL2RC_REQUIRED(Vector3, _get_closest_point_to_object_volume, RID, const Vector3 &)
 
 public:
 	virtual bool intersect_ray(const RayParameters &p_parameters, RayResult &r_result) override {
 		exclude = &p_parameters.exclude;
 		bool ret = false;
-		GDVIRTUAL_CALL(_intersect_ray, p_parameters.from, p_parameters.to, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, p_parameters.hit_from_inside, p_parameters.hit_back_faces, p_parameters.pick_ray, &r_result, ret);
+		FOUNDRY_VIRTUAL_CALL(_intersect_ray, p_parameters.from, p_parameters.to, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, p_parameters.hit_from_inside, p_parameters.hit_back_faces, p_parameters.pick_ray, &r_result, ret);
 		exclude = nullptr;
 		return ret;
 	}
 	virtual int intersect_point(const PointParameters &p_parameters, ShapeResult *r_results, int p_result_max) override {
 		exclude = &p_parameters.exclude;
 		int ret = false;
-		GDVIRTUAL_CALL(_intersect_point, p_parameters.position, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_results, p_result_max, ret);
+		FOUNDRY_VIRTUAL_CALL(_intersect_point, p_parameters.position, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_results, p_result_max, ret);
 		exclude = nullptr;
 		return ret;
 	}
 	virtual int intersect_shape(const ShapeParameters &p_parameters, ShapeResult *r_results, int p_result_max) override {
 		exclude = &p_parameters.exclude;
 		int ret = 0;
-		GDVIRTUAL_CALL(_intersect_shape, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_results, p_result_max, ret);
+		FOUNDRY_VIRTUAL_CALL(_intersect_shape, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_results, p_result_max, ret);
 		exclude = nullptr;
 		return ret;
 	}
 	virtual bool cast_motion(const ShapeParameters &p_parameters, real_t &p_closest_safe, real_t &p_closest_unsafe, ShapeRestInfo *r_info = nullptr) override {
 		exclude = &p_parameters.exclude;
 		bool ret = false;
-		GDVIRTUAL_CALL(_cast_motion, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, &p_closest_safe, &p_closest_unsafe, r_info, ret);
+		FOUNDRY_VIRTUAL_CALL(_cast_motion, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, &p_closest_safe, &p_closest_unsafe, r_info, ret);
 		exclude = nullptr;
 		return ret;
 	}
 	virtual bool collide_shape(const ShapeParameters &p_parameters, Vector3 *r_results, int p_result_max, int &r_result_count) override {
 		exclude = &p_parameters.exclude;
 		bool ret = false;
-		GDVIRTUAL_CALL(_collide_shape, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_results, p_result_max, &r_result_count, ret);
+		FOUNDRY_VIRTUAL_CALL(_collide_shape, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_results, p_result_max, &r_result_count, ret);
 		exclude = nullptr;
 		return ret;
 	}
 	virtual bool rest_info(const ShapeParameters &p_parameters, ShapeRestInfo *r_info) override {
 		exclude = &p_parameters.exclude;
 		bool ret = false;
-		GDVIRTUAL_CALL(_rest_info, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_info, ret);
+		FOUNDRY_VIRTUAL_CALL(_rest_info, p_parameters.shape_rid, p_parameters.transform, p_parameters.motion, p_parameters.margin, p_parameters.collision_mask, p_parameters.collide_with_bodies, p_parameters.collide_with_areas, r_info, ret);
 		exclude = nullptr;
 		return ret;
 	}
 
 	virtual Vector3 get_closest_point_to_object_volume(RID p_object, const Vector3 p_point) const override {
 		Vector3 ret;
-		GDVIRTUAL_CALL(_get_closest_point_to_object_volume, p_object, p_point, ret);
+		FOUNDRY_VIRTUAL_CALL(_get_closest_point_to_object_volume, p_object, p_point, ret);
 		return ret;
 	}
 
@@ -197,11 +197,11 @@ public:
 typedef PhysicsServer3D::MotionCollision PhysicsServer3DExtensionMotionCollision;
 typedef PhysicsServer3D::MotionResult PhysicsServer3DExtensionMotionResult;
 
-GDVIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionMotionCollision)
-GDVIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionMotionResult)
+FOUNDRY_VIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionMotionCollision)
+FOUNDRY_VIRTUAL_NATIVE_PTR(PhysicsServer3DExtensionMotionResult)
 
 class PhysicsServer3DExtension : public PhysicsServer3D {
-	GDCLASS(PhysicsServer3DExtension, PhysicsServer3D);
+	FOUNDRY_CLASS(PhysicsServer3DExtension, PhysicsServer3D);
 
 protected:
 	static void _bind_methods();
@@ -363,11 +363,11 @@ public:
 	EXBIND2(body_add_collision_exception, RID, RID)
 	EXBIND2(body_remove_collision_exception, RID, RID)
 
-	GDVIRTUAL1RC_REQUIRED(TypedArray<RID>, _body_get_collision_exceptions, RID)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(TypedArray<RID>, _body_get_collision_exceptions, RID)
 
 	void body_get_collision_exceptions(RID p_body, List<RID> *p_exceptions) override {
 		TypedArray<RID> ret;
-		GDVIRTUAL_CALL(_body_get_collision_exceptions, p_body, ret);
+		FOUNDRY_VIRTUAL_CALL(_body_get_collision_exceptions, p_body, ret);
 		for (int i = 0; i < ret.size(); i++) {
 			p_exceptions->push_back(ret[i]);
 		}
@@ -387,7 +387,7 @@ public:
 
 	EXBIND2(body_set_ray_pickable, RID, bool)
 
-	GDVIRTUAL8RC_REQUIRED(bool, _body_test_motion, RID, const Transform3D &, const Vector3 &, real_t, int, bool, bool, GDExtensionPtr<PhysicsServer3DExtensionMotionResult>)
+	FOUNDRY_VIRTUAL8RC_REQUIRED(bool, _body_test_motion, RID, const Transform3D &, const Vector3 &, real_t, int, bool, bool, FoundryExtensionPtr<PhysicsServer3DExtensionMotionResult>)
 
 	thread_local static const HashSet<RID> *exclude_bodies;
 	thread_local static const HashSet<ObjectID> *exclude_objects;
@@ -399,7 +399,7 @@ public:
 		bool ret = false;
 		exclude_bodies = &p_parameters.exclude_bodies;
 		exclude_objects = &p_parameters.exclude_objects;
-		GDVIRTUAL_CALL(_body_test_motion, p_body, p_parameters.from, p_parameters.motion, p_parameters.margin, p_parameters.max_collisions, p_parameters.collide_separation_ray, p_parameters.recovery_as_collision, r_result, ret);
+		FOUNDRY_VIRTUAL_CALL(_body_test_motion, p_body, p_parameters.from, p_parameters.motion, p_parameters.margin, p_parameters.max_collisions, p_parameters.collide_separation_ray, p_parameters.recovery_as_collision, r_result, ret);
 		exclude_bodies = nullptr;
 		exclude_objects = nullptr;
 		return ret;
@@ -427,11 +427,11 @@ public:
 	EXBIND2(soft_body_add_collision_exception, RID, RID)
 	EXBIND2(soft_body_remove_collision_exception, RID, RID)
 
-	GDVIRTUAL1RC_REQUIRED(TypedArray<RID>, _soft_body_get_collision_exceptions, RID)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(TypedArray<RID>, _soft_body_get_collision_exceptions, RID)
 
 	void soft_body_get_collision_exceptions(RID p_soft_body, List<RID> *p_exceptions) override {
 		TypedArray<RID> ret;
-		GDVIRTUAL_CALL(_soft_body_get_collision_exceptions, p_soft_body, ret);
+		FOUNDRY_VIRTUAL_CALL(_soft_body_get_collision_exceptions, p_soft_body, ret);
 		for (int i = 0; i < ret.size(); i++) {
 			p_exceptions->push_back(ret[i]);
 		}
@@ -532,9 +532,9 @@ public:
 
 	/* MISC */
 
-	GDVIRTUAL1_REQUIRED(_free_rid, RID)
+	FOUNDRY_VIRTUAL1_REQUIRED(_free_rid, RID)
 	virtual void free_rid(RID p_rid) override {
-		GDVIRTUAL_CALL(_free_rid, p_rid);
+		FOUNDRY_VIRTUAL_CALL(_free_rid, p_rid);
 	}
 
 	EXBIND1(set_active, bool)

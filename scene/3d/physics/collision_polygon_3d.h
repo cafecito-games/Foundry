@@ -34,7 +34,7 @@
 
 class CollisionObject3D;
 class CollisionPolygon3D : public Node3D {
-	GDCLASS(CollisionPolygon3D, Node3D);
+	FOUNDRY_CLASS(CollisionPolygon3D, Node3D);
 	real_t margin = 0.04;
 
 protected:

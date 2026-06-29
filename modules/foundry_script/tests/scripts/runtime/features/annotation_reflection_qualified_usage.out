@@ -1,0 +1,12 @@
+FS_TEST_OK
+1
+suite
+cafecito.qualified_reflect.suite
+Qualified Suite
+1
+timeout
+cafecito.qualified_reflect.timeout
+7.0
+cafecito.qualified_reflect.fixture
+true
+true

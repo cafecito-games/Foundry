@@ -131,8 +131,8 @@ void PluginConfigDialog::_on_required_text_changed() {
 	if ((!script_edit->get_text().get_extension().is_empty() && script_edit->get_text().get_extension() != ext) || script_edit->get_text().ends_with(".")) {
 		validation_panel->set_message(MSG_ID_SCRIPT, vformat(TTR("Script extension must match chosen language extension (.%s)."), ext), EditorValidationPanel::MSG_ERROR);
 	}
-	if (language->get_name() == "GDScript") {
-		validation_panel->set_message(MSG_ID_ENABLE_WARNINGS, TTR("Consider enabling GDScript warnings for this plugin by adding an entry for it to the project setting Debug > GDScript > Warnings > Directory Rules."), EditorValidationPanel::MSG_INFO);
+	if (language->get_name() == "FoundryScript") {
+		validation_panel->set_message(MSG_ID_ENABLE_WARNINGS, TTR("Consider enabling FoundryScript warnings for this plugin by adding an entry for it to the project setting Debug > FoundryScript > Warnings > Directory Rules."), EditorValidationPanel::MSG_INFO);
 	}
 }
 
@@ -290,7 +290,7 @@ PluginConfigDialog::PluginConfigDialog() {
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 		ScriptLanguage *lang = ScriptServer::get_language(i);
 		script_option_edit->add_item(lang->get_name());
-		if (lang->get_name() == "GDScript") {
+		if (lang->get_name() == "FoundryScript") {
 			default_lang = i;
 		}
 	}
@@ -305,7 +305,7 @@ PluginConfigDialog::PluginConfigDialog() {
 
 	script_edit = memnew(LineEdit);
 	script_edit->set_tooltip_text(TTR("Optional. The name of the script file. If left empty, will default to the subfolder name."));
-	script_edit->set_placeholder(U"\"plugin.gd\" → res://addons/my_plugin/plugin.gd");
+	script_edit->set_placeholder(U"\"plugin.fs\" → res://addons/my_plugin/plugin.fs");
 	script_edit->set_accessibility_name(TTRC("Script Name:"));
 	script_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	grid->add_child(script_edit);

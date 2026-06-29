@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 10: Cannot assign a value of type Array[int] to variable "bad" with specified type Array[String].

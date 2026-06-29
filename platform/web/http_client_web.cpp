@@ -170,9 +170,9 @@ PackedByteArray HTTPClientWeb::read_response_body_chunk() {
 
 	// Check if the stream is over.
 	godot_js_fetch_state_t state = godot_js_fetch_state_get(js_id);
-	if (state == GODOT_JS_FETCH_STATE_DONE) {
+	if (state == FOUNDRY_JS_FETCH_STATE_DONE) {
 		status = STATUS_DISCONNECTED;
-	} else if (state != GODOT_JS_FETCH_STATE_BODY) {
+	} else if (state != FOUNDRY_JS_FETCH_STATE_BODY) {
 		status = STATUS_CONNECTION_ERROR;
 	}
 
@@ -219,9 +219,9 @@ Error HTTPClientWeb::poll() {
 
 		case STATUS_BODY: {
 			godot_js_fetch_state_t state = godot_js_fetch_state_get(js_id);
-			if (state == GODOT_JS_FETCH_STATE_DONE) {
+			if (state == FOUNDRY_JS_FETCH_STATE_DONE) {
 				status = STATUS_DISCONNECTED;
-			} else if (state != GODOT_JS_FETCH_STATE_BODY) {
+			} else if (state != FOUNDRY_JS_FETCH_STATE_BODY) {
 				status = STATUS_CONNECTION_ERROR;
 				return ERR_CONNECTION_ERROR;
 			}
@@ -244,9 +244,9 @@ Error HTTPClientWeb::poll() {
 
 			polled_response_code = godot_js_fetch_http_status_get(js_id);
 			godot_js_fetch_state_t js_state = godot_js_fetch_state_get(js_id);
-			if (js_state == GODOT_JS_FETCH_STATE_REQUESTING) {
+			if (js_state == FOUNDRY_JS_FETCH_STATE_REQUESTING) {
 				return OK;
-			} else if (js_state == GODOT_JS_FETCH_STATE_ERROR) {
+			} else if (js_state == FOUNDRY_JS_FETCH_STATE_ERROR) {
 				// Fetch is in error state.
 				status = STATUS_CONNECTION_ERROR;
 				return ERR_CONNECTION_ERROR;

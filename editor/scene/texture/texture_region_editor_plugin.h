@@ -44,7 +44,7 @@ class StyleBoxTexture;
 class ViewPanner;
 
 class TextureRegionEditor : public AcceptDialog {
-	GDCLASS(TextureRegionEditor, AcceptDialog);
+	FOUNDRY_CLASS(TextureRegionEditor, AcceptDialog);
 
 	enum SnapMode {
 		SNAP_NONE,
@@ -162,7 +162,7 @@ public:
 //
 
 class EditorInspectorPluginTextureRegion : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginTextureRegion, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginTextureRegion, EditorInspectorPlugin);
 
 	TextureRegionEditor *texture_region_editor = nullptr;
 
@@ -176,7 +176,7 @@ public:
 };
 
 class TextureRegionEditorPlugin : public EditorPlugin {
-	GDCLASS(TextureRegionEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(TextureRegionEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "TextureRegion"; }

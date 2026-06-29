@@ -35,7 +35,7 @@
 #include "core/io/resource_importer.h"
 
 class ResourceImporterMP3 : public ResourceImporter {
-	GDCLASS(ResourceImporterMP3, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterMP3, ResourceImporter);
 
 public:
 	virtual String get_importer_name() const override;

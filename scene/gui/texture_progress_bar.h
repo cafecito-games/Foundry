@@ -33,7 +33,7 @@
 #include "scene/gui/range.h"
 
 class TextureProgressBar : public Range {
-	GDCLASS(TextureProgressBar, Range);
+	FOUNDRY_CLASS(TextureProgressBar, Range);
 
 	Ref<Texture2D> under;
 	Ref<Texture2D> progress;

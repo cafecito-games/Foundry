@@ -113,7 +113,7 @@ public:
 };
 
 class SkeletonIK3D : public SkeletonModifier3D {
-	GDCLASS(SkeletonIK3D, SkeletonModifier3D);
+	FOUNDRY_CLASS(SkeletonIK3D, SkeletonModifier3D);
 
 	bool internal_active = false;
 

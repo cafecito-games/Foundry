@@ -9,7 +9,7 @@
 		Once added, the [method _setup_session] callback will be called for every [EditorDebuggerSession] available to the plugin, and when new ones are created (the sessions may be inactive during this stage).
 		You can retrieve the available [EditorDebuggerSession]s via [method get_sessions] or get a specific one via [method get_session].
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		@tool
 		extends EditorPlugin
 
@@ -43,11 +43,11 @@
 
 		func _exit_tree():
 			remove_debugger_plugin(debugger)
-		[/gdscript]
+		[/foundry_script]
 		[/codeblocks]
 		To connect on the running game side, use the [EngineDebugger] singleton:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		extends Node
 
 		func _ready():
@@ -60,7 +60,7 @@
 				prints("Echo received:", data)
 				return true
 			return false
-		[/gdscript]
+		[/foundry_script]
 		[/codeblocks]
 		[b]Note:[/b] While the game is running, [method @GlobalScope.print] and similar functions [i]called in the editor[/i] do not print anything, the Output Log prints only game messages.
 	</description>

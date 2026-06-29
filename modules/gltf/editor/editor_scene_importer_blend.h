@@ -38,7 +38,7 @@ class Node;
 class ConfirmationDialog;
 
 class EditorSceneFormatImporterBlend : public EditorSceneFormatImporter {
-	GDCLASS(EditorSceneFormatImporterBlend, EditorSceneFormatImporter);
+	FOUNDRY_CLASS(EditorSceneFormatImporterBlend, EditorSceneFormatImporter);
 
 	int blender_major_version = -1;
 	int blender_minor_version = -1;
@@ -81,7 +81,7 @@ class EditorFileDialog;
 class Label;
 
 class EditorFileSystemImportFormatSupportQueryBlend : public EditorFileSystemImportFormatSupportQuery {
-	GDCLASS(EditorFileSystemImportFormatSupportQueryBlend, EditorFileSystemImportFormatSupportQuery);
+	FOUNDRY_CLASS(EditorFileSystemImportFormatSupportQueryBlend, EditorFileSystemImportFormatSupportQuery);
 
 	ConfirmationDialog *configure_blender_dialog = nullptr;
 	LineEdit *blender_path = nullptr;

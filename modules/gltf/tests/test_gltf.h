@@ -133,7 +133,7 @@ static Node *gltf_export_then_import(Node *p_root, const String &p_test_name) {
 
 // Restores the global resource path on scope exit. `init()` repoints `res://` at a
 // throwaway project; without restoring it, the temporary path leaks into later suites
-// that rely on their own fixtures (e.g. the GDScript tests, which crash if `res://` no
+// that rely on their own fixtures (e.g. the FoundryScript tests, which crash if `res://` no
 // longer resolves). Declare one of these in any test case that calls `init()`.
 struct ResourcePathGuard {
 	String old_resource_path = TestProjectSettingsInternalsAccessor::resource_path();

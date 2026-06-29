@@ -35,7 +35,7 @@
 #include "render_scene_data.h"
 
 class RenderData : public Object {
-	GDCLASS(RenderData, Object);
+	FOUNDRY_CLASS(RenderData, Object);
 
 protected:
 	static void _bind_methods();
@@ -49,7 +49,7 @@ public:
 };
 
 class RenderDataExtension : public RenderData {
-	GDCLASS(RenderDataExtension, RenderData);
+	FOUNDRY_CLASS(RenderDataExtension, RenderData);
 
 protected:
 	static void _bind_methods();
@@ -60,8 +60,8 @@ protected:
 	virtual RID get_environment() const override;
 	virtual RID get_camera_attributes() const override;
 
-	GDVIRTUAL0RC(Ref<RenderSceneBuffers>, _get_render_scene_buffers)
-	GDVIRTUAL0RC(RenderSceneData *, _get_render_scene_data)
-	GDVIRTUAL0RC(RID, _get_environment)
-	GDVIRTUAL0RC(RID, _get_camera_attributes)
+	FOUNDRY_VIRTUAL0RC(Ref<RenderSceneBuffers>, _get_render_scene_buffers)
+	FOUNDRY_VIRTUAL0RC(RenderSceneData *, _get_render_scene_data)
+	FOUNDRY_VIRTUAL0RC(RID, _get_environment)
+	FOUNDRY_VIRTUAL0RC(RID, _get_camera_attributes)
 };

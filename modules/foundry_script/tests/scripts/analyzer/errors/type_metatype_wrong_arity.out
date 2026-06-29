@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+Type[T] expects exactly one type argument, but more were given.

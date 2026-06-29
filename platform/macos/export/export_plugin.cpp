@@ -158,7 +158,7 @@ String EditorExportPlatformMacOS::get_export_option_warning(const EditorExportPr
 		if (p_name == "codesign/codesign") {
 			if (dist_type == 2) {
 				if (codesign_tool == 2 && ClassDB::class_exists("CSharpScript")) {
-					return TTR("'rcodesign' doesn't support signing applications with embedded dynamic libraries (GDExtension or .NET).");
+					return TTR("'rcodesign' doesn't support signing applications with embedded dynamic libraries (FoundryExtension or .NET).");
 				}
 				if (codesign_tool == 0) {
 					return TTR("Code signing is required for App Store distribution.");

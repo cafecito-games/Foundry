@@ -1,0 +1,4935 @@
+/**************************************************************************/
+/*  test_refactor.h                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#pragma once
+
+#ifdef TOOLS_ENABLED
+
+#include "tests/test_macros.h"
+
+#include "../editor/fs_refactoring.h"
+#include "../editor/fs_refactoring_edits.h"
+#include "../editor/fs_refactoring_names.h"
+#include "../editor/fs_refactoring_types.h"
+#include "../fs_cache.h"
+
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+#include "test_lsp.h"
+
+#include "editor/file_system/editor_file_system.h"
+#endif
+
+namespace FSTests {
+
+inline RefactorContext make_context(const String &p_path) {
+	Error err = OK;
+	String source = FileAccess::get_file_as_string(p_path, &err);
+	REQUIRE_MESSAGE(err == OK, vformat("Cannot read '%s'", p_path));
+	RefactorContext ctx;
+	ctx.path = p_path;
+	ctx.source = source;
+	return ctx;
+}
+
+inline RefactorLocation caret(int p_line, int p_column) {
+	RefactorLocation loc;
+	loc.start_line = loc.end_line = p_line;
+	loc.start_column = loc.end_column = p_column;
+	return loc;
+}
+
+inline RefactorLocation selection(int p_start_line, int p_start_column, int p_end_line, int p_end_column) {
+	RefactorLocation loc;
+	loc.start_line = p_start_line;
+	loc.start_column = p_start_column;
+	loc.end_line = p_end_line;
+	loc.end_column = p_end_column;
+	return loc;
+}
+
+inline RefactorResult run_type_annotation(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://type_annotation_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::ADD_TYPE_ANNOTATION, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline RefactorResult run_extract_variable(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://extract_variable_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_VARIABLE, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline RefactorResult run_extract_method_named(
+		const String &p_source,
+		const RefactorLocation &p_location,
+		const String &p_new_name,
+		String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://extract_method_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	params.new_name = p_new_name;
+	RefactorResult r = FSRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_METHOD, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline RefactorResult run_extract_method(const String &p_source, const RefactorLocation &p_location, String &r_out) {
+	return run_extract_method_named(p_source, p_location, String(), r_out);
+}
+
+inline RefactorResult run_inline_variable(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://inline_variable_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::INLINE_VARIABLE, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline RefactorResult run_sort_members_by_style_guide(const String &p_source, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://style_order_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(0, 0), RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline const RefactorFileEdit *find_file_edit(const RefactorResult &p_result, const String &p_path) {
+	for (const RefactorFileEdit &file_edit : p_result.file_edits) {
+		if (file_edit.path == p_path) {
+			return &file_edit;
+		}
+	}
+	return nullptr;
+}
+
+inline const RefactorAvailability *find_availability(const Vector<RefactorAvailability> &p_available, RefactorKind p_kind) {
+	for (const RefactorAvailability &a : p_available) {
+		if (a.kind == p_kind) {
+			return &a;
+		}
+	}
+	return nullptr;
+}
+
+inline bool implement_abstract_enabled(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.fs";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+	return entry != nullptr && entry->enabled;
+}
+
+inline String implement_abstract_reason(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.fs";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+	return entry != nullptr ? entry->disabled_reason : String();
+}
+
+inline RefactorResult run_implement_abstract(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://implement_abstract_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline RefactorResult run_insert_cast(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://insert_cast_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::INSERT_EXPLICIT_CAST, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline bool insert_cast_enabled(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://insert_cast_refactor.fs";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::INSERT_EXPLICIT_CAST);
+	return entry != nullptr && entry->enabled;
+}
+
+inline String insert_cast_reason(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://insert_cast_refactor.fs";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::INSERT_EXPLICIT_CAST);
+	return entry != nullptr ? entry->disabled_reason : String();
+}
+
+inline RefactorResult run_widen_nullable(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://widen_nullable_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::WIDEN_TO_NULLABLE, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline bool widen_nullable_enabled(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://widen_nullable_refactor.fs";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::WIDEN_TO_NULLABLE);
+	return entry != nullptr && entry->enabled;
+}
+
+inline String widen_nullable_reason(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://widen_nullable_refactor.fs";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::WIDEN_TO_NULLABLE);
+	return entry != nullptr ? entry->disabled_reason : String();
+}
+
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+struct TemporaryScriptFile {
+	String path;
+
+	TemporaryScriptFile(const String &p_path, const String &p_source) {
+		path = p_path;
+		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", path));
+		file->store_string(p_source);
+	}
+
+	~TemporaryScriptFile() {
+		DirAccess::remove_absolute(ProjectSettings::get_singleton()->globalize_path(path));
+	}
+};
+#endif // FOUNDRY_SCRIPT_NO_LSP
+
+TEST_SUITE("[Modules][FoundryScript][Refactor]") {
+	TEST_CASE("Rename is reported but disabled at a trivial location") {
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
+		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
+		CHECK_EQ(available.size(), 9);
+		if (available.size() < 9) {
+			return;
+		}
+		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
+		CHECK_FALSE(available[0].enabled);
+		CHECK_FALSE(available[0].disabled_reason.is_empty());
+		CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
+		CHECK_FALSE(available[1].enabled);
+		CHECK_FALSE(available[1].disabled_reason.is_empty());
+		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
+		CHECK_FALSE(available[2].enabled);
+		CHECK_FALSE(available[2].disabled_reason.is_empty());
+		CHECK_EQ(available[3].kind, RefactorKind::ADD_TYPE_ANNOTATION);
+		CHECK_FALSE(available[3].enabled);
+		CHECK_FALSE(available[3].disabled_reason.is_empty());
+		CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
+		CHECK_FALSE(available[4].enabled);
+		CHECK_FALSE(available[4].disabled_reason.is_empty());
+		CHECK_EQ(available[5].kind, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		CHECK_FALSE(available[5].enabled);
+		CHECK_FALSE(available[5].disabled_reason.is_empty());
+		CHECK_EQ(available[6].kind, RefactorKind::INSERT_EXPLICIT_CAST);
+		CHECK_FALSE(available[6].enabled);
+		CHECK_FALSE(available[6].disabled_reason.is_empty());
+		CHECK_EQ(available[7].kind, RefactorKind::WIDEN_TO_NULLABLE);
+		CHECK_FALSE(available[7].enabled);
+		CHECK_FALSE(available[7].disabled_reason.is_empty());
+		CHECK_EQ(available[8].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_FALSE(available[8].enabled);
+		CHECK_FALSE(available[8].disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
+		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
+		const RefactorAvailability *entry = nullptr;
+		for (const RefactorAvailability &a : available) {
+			if (a.kind == RefactorKind::IMPLEMENT_ABSTRACT_METHODS) {
+				entry = &a;
+				break;
+			}
+		}
+		REQUIRE(entry != nullptr);
+		CHECK_EQ(entry->title, String("Implement Abstract Methods"));
+		CHECK_FALSE(entry->enabled);
+		CHECK_FALSE(entry->disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Implement abstract: enabled when a derived class owes an abstract method") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		CHECK(FSTests::implement_abstract_enabled(source, 3, 1));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the method is already overridden") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tfunc area() -> float:\n"
+				"\t\treturn 3.14\n";
+		CHECK_FALSE(FSTests::implement_abstract_enabled(source, 2, 1));
+		CHECK_EQ(FSTests::implement_abstract_reason(source, 2, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled for an abstract derived class") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"abstract class Shape extends Base:\n"
+				"\tvar name := \"\"\n";
+		CHECK_FALSE(FSTests::implement_abstract_enabled(source, 3, 1));
+		CHECK_EQ(FSTests::implement_abstract_reason(source, 3, 1), String("Abstract classes don't need to implement abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the script cannot be parsed") {
+		const String source =
+				"class Circle extends:\n" // Malformed extends -> parse error.
+				"\tfunc\n";
+		RefactorContext ctx;
+		ctx.path = "user://implement_abstract_refactor.fs";
+		ctx.source = source;
+		const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, FSTests::caret(0, 0));
+		const RefactorAvailability *entry = FSTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		REQUIRE(entry != nullptr);
+		CHECK_FALSE(entry->enabled);
+		CHECK_EQ(entry->disabled_reason, String("Cannot analyze this script."));
+	}
+
+	TEST_CASE("Implement abstract: intermediate concrete override satisfies the contract") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"\tabstract func name() -> String\n"
+				"abstract class Mid extends Base:\n"
+				"\tfunc area() -> float:\n"
+				"\t\treturn 0.0\n"
+				"class Leaf extends Mid:\n"
+				"\tvar tag := 1\n";
+		// Leaf still owes name() but not area().
+		CHECK(FSTests::implement_abstract_enabled(source, 7, 1));
+	}
+
+	TEST_CASE("Implement abstract: renders typed stub with push_error and default return") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("push_error(\"Not implemented: area\")"));
+		CHECK(out.contains("return 0.0"));
+	}
+
+	TEST_CASE("Implement abstract: void method has no return") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func tick() -> void\n"
+				"class Clock extends Base:\n"
+				"\tvar t := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func tick() -> void:"));
+		CHECK(out.contains("push_error(\"Not implemented: tick\")"));
+		CHECK_FALSE(out.contains("return"));
+	}
+
+	TEST_CASE("Implement abstract: generic method preserves its type-parameter list") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func id[T](value: T) -> T\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func id[T](value: T) -> T:"));
+		CHECK(out.contains("push_error(\"Not implemented: id\")"));
+	}
+
+	TEST_CASE("Implement abstract: generic method preserves bounded type parameters") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func first[T: RefCounted](value: T) -> T\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func first[T: RefCounted](value: T) -> T:"));
+	}
+
+	TEST_CASE("Implement abstract: generic method preserves a user-class bound") {
+		const String source =
+				"class Animal:\n"
+				"\tpass\n"
+				"abstract class Base:\n"
+				"\tabstract func pick[T: Animal](value: T) -> T\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 5, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func pick[T: Animal](value: T) -> T:"));
+	}
+
+	TEST_CASE("Implement abstract: object return type uses pass") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func make() -> Node\n"
+				"class Factory extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func make() -> Node:"));
+		CHECK(out.contains("push_error(\"Not implemented: make\")"));
+		CHECK(out.contains("pass"));
+		CHECK_FALSE(out.contains("return"));
+	}
+
+	TEST_CASE("Implement abstract: preserves params and annotated types") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func combine(a: int, b: int) -> int\n"
+				"class Math extends Base:\n"
+				"\tvar seed := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func combine(a: int, b: int) -> int:"));
+		CHECK(out.contains("return 0"));
+	}
+
+	TEST_CASE("Implement abstract: generates all owed methods at once") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"\tabstract func name() -> String\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 4, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("func name() -> String:"));
+		CHECK(out.contains("return \"\""));
+	}
+
+	TEST_CASE("Implement abstract: inner class stub is indented one level deeper") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\tfunc area() -> float:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: area\")\n"));
+		CHECK(out.contains("\t\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: reproduces parameter default values") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func scaled(factor: float = 1.0) -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func scaled(factor: float = 1.0) -> float:"));
+	}
+
+	TEST_CASE("Implement abstract: Array return defaults to empty array") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func items() -> Array\n"
+				"class Bag extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func items() -> Array:"));
+		CHECK(out.contains("return []"));
+	}
+
+	TEST_CASE("Implement abstract: Dictionary return defaults to empty dictionary") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func lookup() -> Dictionary\n"
+				"class Store extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func lookup() -> Dictionary:"));
+		CHECK(out.contains("return {}"));
+	}
+
+	TEST_CASE("Implement abstract: StringName return defaults to empty string name") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func tag() -> StringName\n"
+				"class Label extends Base:\n"
+				"\tvar count := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func tag() -> StringName:"));
+		CHECK(out.contains("return &\"\""));
+	}
+
+	TEST_CASE("Implement abstract: top-level class stub has no indentation") {
+		const String source =
+				"extends Base\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"var radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 0, 0, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\nfunc area() -> float:\n"));
+		CHECK(out.contains("\n\tpush_error(\"Not implemented: area\")\n"));
+		CHECK(out.contains("\n\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: top-level class with no members has no indentation") {
+		const String source =
+				"extends Base\n"
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 0, 0, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\nfunc area() -> float:\n"));
+		CHECK(out.contains("\n\treturn 0.0\n"));
+	}
+
+	TEST_CASE("Implement abstract: preserves the async modifier") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract async func area() -> int\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("async func area() -> int:"));
+	}
+
+	TEST_CASE("Implement abstract: preserves the rest (vararg) parameter") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func record(...args)\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		// An untyped rest parameter is inferred as Array, which the stub renders faithfully.
+		CHECK(out.contains("func record(...args: Array):"));
+	}
+
+	TEST_CASE("Implement abstract: rest parameter follows fixed parameters") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func record(prefix: String, ...args)\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func record(prefix: String, ...args: Array):"));
+	}
+
+	TEST_CASE("Implement abstract: reproduces a multi-line default value") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func build(options := {\n"
+				"\t\t\t\"a\": 1,\n"
+				"\t\t\t\"b\": 2,\n"
+				"\t\t}) -> int\n"
+				"class Maker extends Base:\n"
+				"\tvar seed := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 6, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\"a\": 1,"));
+		CHECK(out.contains("\"b\": 2,"));
+		CHECK(out.contains("options"));
+	}
+
+	TEST_CASE("Implement abstract: enabled when a class uses a trait with an abstract method") {
+		const String source =
+				"trait Damageable:\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
+				"class Player:\n"
+				"\tuses Damageable\n"
+				"\tvar hp := 10\n";
+		CHECK(FSTests::implement_abstract_enabled(source, 4, 1));
+	}
+
+	TEST_CASE("Implement abstract: renders a stub for a trait-required abstract method") {
+		const String source =
+				"trait Damageable:\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
+				"class Player:\n"
+				"\tuses Damageable\n"
+				"\tvar hp := 10\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 4, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func take_damage(amount: int) -> void:"));
+		CHECK(out.contains("push_error(\"Not implemented: take_damage\")"));
+	}
+
+	TEST_CASE("Implement abstract: disabled when the class implements the trait method") {
+		const String source =
+				"trait Damageable:\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
+				"class Player:\n"
+				"\tuses Damageable\n"
+				"\tfunc take_damage(amount: int) -> void:\n"
+				"\t\tpass\n";
+		CHECK_FALSE(FSTests::implement_abstract_enabled(source, 4, 1));
+		CHECK_EQ(FSTests::implement_abstract_reason(source, 4, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: collects transitively-used trait abstract methods") {
+		const String source =
+				"trait Base:\n"
+				"\tabstract func base_required() -> void\n"
+				"trait Middle:\n"
+				"\tuses Base\n"
+				"\tabstract func middle_required() -> void\n"
+				"class Player:\n"
+				"\tuses Middle\n"
+				"\tvar hp := 10\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 7, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("func base_required() -> void:"));
+		CHECK(out.contains("func middle_required() -> void:"));
+	}
+
+	TEST_CASE("Implement abstract: preserves static on a trait-required abstract method") {
+		// A trait may declare an abstract static func (unlike an abstract class method),
+		// and the implementation's static flag must match, so the stub keeps `static`.
+		const String source =
+				"trait Fetcher:\n"
+				"\tabstract static func fetch() -> String\n"
+				"class Player:\n"
+				"\tuses Fetcher\n"
+				"\tvar hp := 10\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 4, 1, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("static func fetch() -> String:"));
+	}
+
+	TEST_CASE("Implement abstract: a native base method satisfies a trait requirement") {
+		// Object exposes get_class(); a class implicitly extends RefCounted, so the native
+		// base already implements the trait method and nothing is owed.
+		const String source =
+				"trait Named:\n"
+				"\tabstract func get_class() -> String\n"
+				"class Player:\n"
+				"\tuses Named\n"
+				"\tvar hp := 10\n";
+		CHECK_FALSE(FSTests::implement_abstract_enabled(source, 4, 1));
+		CHECK_EQ(FSTests::implement_abstract_reason(source, 4, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: disabled inside a trait that uses another trait") {
+		const String source =
+				"trait Damageable:\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
+				"trait Combatant:\n"
+				"\tuses Damageable\n"
+				"\tfunc fight() -> void:\n"
+				"\t\tpass\n";
+		CHECK_FALSE(FSTests::implement_abstract_enabled(source, 4, 1));
+		CHECK_EQ(FSTests::implement_abstract_reason(source, 4, 1), String("Traits don't need to implement abstract methods."));
+	}
+
+	TEST_CASE("Implement abstract: a concrete base implementation satisfies a trait requirement") {
+		const String source =
+				"trait Damageable:\n"
+				"\tabstract func take_damage(amount: int) -> void\n"
+				"class Living:\n"
+				"\tfunc take_damage(amount: int) -> void:\n"
+				"\t\tpass\n"
+				"class Player extends Living:\n"
+				"\tuses Damageable\n"
+				"\tvar hp := 10\n";
+		CHECK_FALSE(FSTests::implement_abstract_enabled(source, 7, 1));
+		CHECK_EQ(FSTests::implement_abstract_reason(source, 7, 1), String("No unimplemented abstract methods."));
+	}
+
+	TEST_CASE("Edit application") {
+		auto edit = [](int sl, int sc, int el, int ec, const String &t) {
+			RefactorTextEdit e;
+			e.start_line = sl;
+			e.start_column = sc;
+			e.end_line = el;
+			e.end_column = ec;
+			e.new_text = t;
+			return e;
+		};
+
+		SUBCASE("single in-line replacement") {
+			String src = "var foo = 1\n";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 4, 0, 7, "bar")); // "foo" -> "bar"
+			String out;
+			CHECK(FSRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "var bar = 1\n");
+		}
+
+		SUBCASE("order independence") {
+			String src = "ab\ncd\n";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(1, 0, 1, 1, "X")); // later position, added first
+			edits.push_back(edit(0, 0, 0, 1, "Y")); // earlier position, added second
+			String out;
+			CHECK(FSRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "Yb\nXd\n");
+		}
+
+		SUBCASE("overlapping edits rejected") {
+			String src = "abcdef";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 0, 0, 3, "X"));
+			edits.push_back(edit(0, 2, 0, 5, "Y"));
+			String out = "untouched";
+			CHECK_FALSE(FSRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "untouched");
+		}
+
+		SUBCASE("multi-line range") {
+			String src = "one\ntwo\nthree\n";
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 1, 2, 2, "X")); // 'n'(line0,col1) .. before 'r'(line2,col2)
+			String out;
+			CHECK(FSRefactorEdits::apply(src, edits, out));
+			CHECK_EQ(out, "oXree\n");
+		}
+
+		SUBCASE("finds edit touched by caret or selection") {
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(1, 4, 1, 9, "first"));
+			edits.push_back(edit(3, 8, 3, 13, "second"));
+
+			RefactorLocation caret_location;
+			caret_location.start_line = 3;
+			caret_location.end_line = 3;
+			caret_location.start_column = 10;
+			caret_location.end_column = 10;
+			CHECK_EQ(FSRefactorEdits::find_edit_at_location(edits, caret_location), 1);
+
+			RefactorLocation left_anchored_selection;
+			left_anchored_selection.start_line = 3;
+			left_anchored_selection.end_line = 3;
+			left_anchored_selection.start_column = 7;
+			left_anchored_selection.end_column = 13;
+			CHECK_EQ(FSRefactorEdits::find_edit_at_location(edits, left_anchored_selection), 1);
+
+			RefactorLocation outside_location;
+			outside_location.start_line = 2;
+			outside_location.end_line = 2;
+			outside_location.start_column = 1;
+			outside_location.end_column = 1;
+			CHECK_EQ(FSRefactorEdits::find_edit_at_location(edits, outside_location), -1);
+		}
+
+		SUBCASE("finds adjacent edits using half-open ranges") {
+			Vector<RefactorTextEdit> edits;
+			edits.push_back(edit(0, 0, 0, 3, "first"));
+			edits.push_back(edit(0, 3, 0, 6, "second"));
+
+			RefactorLocation boundary_location;
+			boundary_location.start_line = 0;
+			boundary_location.end_line = 0;
+			boundary_location.start_column = 3;
+			boundary_location.end_column = 3;
+			CHECK_EQ(FSRefactorEdits::find_edit_at_location(edits, boundary_location), 1);
+
+			RefactorLocation after_last_location;
+			after_last_location.start_line = 0;
+			after_last_location.end_line = 0;
+			after_last_location.start_column = 6;
+			after_last_location.end_column = 6;
+			CHECK_EQ(FSRefactorEdits::find_edit_at_location(edits, after_last_location), 1);
+		}
+	}
+
+	TEST_CASE("Identifier validation") {
+		String reason;
+		SUBCASE("accepts valid identifiers") {
+			CHECK(FSRefactorNames::validate_identifier("foo", reason));
+			CHECK(FSRefactorNames::validate_identifier("_bar", reason));
+			CHECK(FSRefactorNames::validate_identifier("baz2", reason));
+			CHECK(FSRefactorNames::validate_identifier("foo", reason));
+			CHECK(reason.is_empty());
+		}
+		SUBCASE("rejects empty") {
+			CHECK_FALSE(FSRefactorNames::validate_identifier("", reason));
+			CHECK_FALSE(reason.is_empty());
+		}
+		SUBCASE("rejects leading digit") {
+			CHECK_FALSE(FSRefactorNames::validate_identifier("2foo", reason));
+		}
+		SUBCASE("rejects whitespace") {
+			CHECK_FALSE(FSRefactorNames::validate_identifier("foo bar", reason));
+		}
+		SUBCASE("rejects keywords") {
+			CHECK_FALSE(FSRefactorNames::validate_identifier("var", reason));
+			CHECK_FALSE(FSRefactorNames::validate_identifier("func", reason));
+			CHECK_FALSE(FSRefactorNames::validate_identifier("return", reason));
+		}
+		SUBCASE("accepts unicode identifiers") {
+			CHECK(FSRefactorNames::validate_identifier(String::utf8("café"), reason));
+			CHECK(FSRefactorNames::validate_identifier(String::utf8("número"), reason));
+		}
+		SUBCASE("identifier at caret column") {
+			const String line = String::utf8("\tvar número := número + 1");
+			CHECK_EQ(FSRefactorNames::identifier_at_column("name := 1", 0), "name");
+			CHECK_EQ(FSRefactorNames::identifier_at_column("name := 1", 1), "name");
+			CHECK_EQ(FSRefactorNames::identifier_at_column(line, 8), String::utf8("número"));
+			CHECK_EQ(FSRefactorNames::identifier_at_column(line, 11), String::utf8("número"));
+			CHECK_EQ(FSRefactorNames::identifier_at_column(line, 21), String::utf8("número"));
+			CHECK(FSRefactorNames::identifier_at_column(line, 12).is_empty());
+			CHECK(FSRefactorNames::identifier_at_column("", 0).is_empty());
+		}
+	}
+
+	TEST_CASE("Type annotation rendering") {
+		SUBCASE("concrete builtin is annotatable") {
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::INT;
+			dt.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			String rendered;
+			CHECK(FSRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "int");
+		}
+		SUBCASE("variant is not annotatable") {
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::VARIANT;
+			String rendered;
+			CHECK_FALSE(FSRefactorTypes::render_annotatable_type(dt, rendered));
+		}
+		SUBCASE("inferred concrete type is annotatable") {
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::INT;
+			dt.type_source = FSParser::DataType::INFERRED;
+			String rendered;
+			CHECK(FSRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "int");
+		}
+		SUBCASE("unresolved type is not annotatable") {
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::UNRESOLVED;
+			dt.type_source = FSParser::DataType::INFERRED;
+			String rendered;
+			CHECK_FALSE(FSRefactorTypes::render_annotatable_type(dt, rendered));
+		}
+		SUBCASE("null type is not annotatable") {
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::NIL;
+			dt.type_source = FSParser::DataType::INFERRED;
+			String rendered;
+			CHECK_FALSE(FSRefactorTypes::render_annotatable_type(dt, rendered));
+		}
+		SUBCASE("bare class-handle metatype is not directly annotatable") {
+			FSParser::IdentifierNode class_identifier;
+			class_identifier.name = "User";
+			FSParser::ClassNode class_node;
+			class_node.identifier = &class_identifier;
+
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::CLASS;
+			dt.type_source = FSParser::DataType::INFERRED;
+			dt.class_type = &class_node;
+			dt.is_meta_type = true;
+			String rendered;
+			CHECK_FALSE(FSRefactorTypes::render_annotatable_type(dt, rendered));
+		}
+		SUBCASE("Type[T] annotation renders with represented type") {
+			FSParser::IdentifierNode class_identifier;
+			class_identifier.name = "Node";
+			FSParser::ClassNode class_node;
+			class_node.identifier = &class_identifier;
+
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::NATIVE;
+			dt.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			dt.native_type = "Node";
+			dt.is_meta_type = true;
+			dt.is_type_handle_annotation = true;
+			String rendered;
+			CHECK(FSRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "Type[Node]");
+		}
+		SUBCASE("nullable Type[T] annotation preserves nullability") {
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::NATIVE;
+			dt.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			dt.native_type = "Node";
+			dt.is_meta_type = true;
+			dt.is_type_handle_annotation = true;
+			dt.is_nullable = true;
+			String rendered;
+			CHECK(FSRefactorTypes::render_annotatable_type(dt, rendered));
+			CHECK_EQ(rendered, "Type[Node]?");
+		}
+	}
+
+	TEST_CASE("Namespace-aware type annotation rendering") {
+		// A root class node standing in for a namespaced global class
+		// `characters.BaseCharacter`.
+		FSParser::IdentifierNode class_identifier;
+		class_identifier.name = "BaseCharacter";
+		FSParser::ClassNode class_node;
+		class_node.identifier = &class_identifier;
+		class_node.namespace_name = "characters";
+		class_node.qualified_global_name = "characters.BaseCharacter";
+
+		FSParser::DataType class_type;
+		class_type.kind = FSParser::DataType::CLASS;
+		class_type.type_source = FSParser::DataType::INFERRED;
+		class_type.class_type = &class_node;
+
+		SUBCASE("builtin in any scope renders bare with no imports") {
+			FSParser::DataType dt;
+			dt.kind = FSParser::DataType::BUILTIN;
+			dt.builtin_type = Variant::INT;
+			dt.type_source = FSParser::DataType::INFERRED;
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(dt, scope, rendered, imports));
+			CHECK_EQ(rendered, "int");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("same-namespace class renders bare with no import") {
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "characters";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "BaseCharacter");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("already-imported cross-namespace class renders bare with no new import") {
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			scope.imported_namespaces.push_back("characters");
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "BaseCharacter");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("unimported cross-namespace class renders fully qualified with no import") {
+			// A fully-qualified spelling resolves on its own and never makes another
+			// bare name ambiguous, so it is preferred over adding an import.
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(class_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "characters.BaseCharacter");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("bare name colliding with a native type falls back to the qualified spelling") {
+			// `Node` is a native class, so a bare reference can never name a
+			// namespaced class; qualify and add no import.
+			FSParser::IdentifierNode node_identifier;
+			node_identifier.name = "Node";
+			FSParser::ClassNode node_class;
+			node_class.identifier = &node_identifier;
+			node_class.namespace_name = "characters";
+			FSParser::DataType node_type;
+			node_type.kind = FSParser::DataType::CLASS;
+			node_type.type_source = FSParser::DataType::INFERRED;
+			node_type.class_type = &node_class;
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(node_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "characters.Node");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("same-namespace native collision still falls back to the qualified spelling") {
+			// Even in its own namespace, a class named like a native type must be
+			// qualified because the analyzer resolves the native `Node` first.
+			FSParser::IdentifierNode node_identifier;
+			node_identifier.name = "Node";
+			FSParser::ClassNode node_class;
+			node_class.identifier = &node_identifier;
+			node_class.namespace_name = "characters";
+			FSParser::DataType node_type;
+			node_type.kind = FSParser::DataType::CLASS;
+			node_type.type_source = FSParser::DataType::INFERRED;
+			node_type.class_type = &node_class;
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "characters";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(node_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "characters.Node");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("class whose namespace root collides with a native name is not annotatable") {
+			// A qualified `Node.foo.Thing` would resolve `Node` as the native class and
+			// fail, and a bare reference is not in scope, so the site is left untyped
+			// rather than emitting invalid source.
+			FSParser::IdentifierNode thing_identifier;
+			thing_identifier.name = "Thing";
+			FSParser::ClassNode thing_class;
+			thing_class.identifier = &thing_identifier;
+			thing_class.namespace_name = "Node.foo";
+			FSParser::DataType thing_type;
+			thing_type.kind = FSParser::DataType::CLASS;
+			thing_type.type_source = FSParser::DataType::INFERRED;
+			thing_type.class_type = &thing_class;
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK_FALSE(FSRefactorTypes::render_annotatable_type_in_scope(thing_type, scope, rendered, imports));
+		}
+		SUBCASE("class whose namespace root is shadowed by a local name is not annotatable") {
+			// A local member/inner-class named `root` would capture `root.ns.Thing`, so
+			// the qualified spelling cannot resolve and the site is left untyped.
+			FSParser::IdentifierNode shadowed_identifier;
+			shadowed_identifier.name = "Thing";
+			FSParser::ClassNode shadowed_class;
+			shadowed_class.identifier = &shadowed_identifier;
+			shadowed_class.namespace_name = "root.ns";
+			FSParser::DataType shadowed_type;
+			shadowed_type.kind = FSParser::DataType::CLASS;
+			shadowed_type.type_source = FSParser::DataType::INFERRED;
+			shadowed_type.class_type = &shadowed_class;
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			scope.shadowing_local_names.push_back("root");
+			String rendered;
+			HashSet<String> imports;
+			CHECK_FALSE(FSRefactorTypes::render_annotatable_type_in_scope(shadowed_type, scope, rendered, imports));
+		}
+		SUBCASE("class whose namespace root is an ordinary identifier qualifies normally") {
+			// A non-native root (even one that may also be a global class) does not
+			// block the qualified spelling, since the analyzer matches the longest
+			// qualified global class first.
+			FSParser::IdentifierNode thing_identifier;
+			thing_identifier.name = "Thing";
+			FSParser::ClassNode thing_class;
+			thing_class.identifier = &thing_identifier;
+			thing_class.namespace_name = "root.ns";
+			FSParser::DataType thing_type;
+			thing_type.kind = FSParser::DataType::CLASS;
+			thing_type.type_source = FSParser::DataType::INFERRED;
+			thing_type.class_type = &thing_class;
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(thing_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "root.ns.Thing");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("nullable typed array keeps its nullable marker") {
+			FSParser::DataType array_type;
+			array_type.kind = FSParser::DataType::BUILTIN;
+			array_type.builtin_type = Variant::ARRAY;
+			array_type.type_source = FSParser::DataType::INFERRED;
+			array_type.is_nullable = true;
+			FSParser::DataType element_type;
+			element_type.kind = FSParser::DataType::BUILTIN;
+			element_type.builtin_type = Variant::INT;
+			element_type.type_source = FSParser::DataType::INFERRED;
+			array_type.set_container_element_type(0, element_type);
+
+			FSRefactorTypes::AnnotationScope scope;
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(array_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Array[int]?");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("global-namespace project renders bare exactly as today") {
+			// No `namespace`/`import` context: a global file leaves rendering and
+			// imports unchanged.
+			FSParser::IdentifierNode global_identifier;
+			global_identifier.name = "GlobalClass";
+			FSParser::ClassNode global_node;
+			global_node.identifier = &global_identifier;
+			FSParser::DataType global_type;
+			global_type.kind = FSParser::DataType::CLASS;
+			global_type.type_source = FSParser::DataType::INFERRED;
+			global_type.class_type = &global_node;
+
+			FSRefactorTypes::AnnotationScope scope;
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(global_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "GlobalClass");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("array of an unimported cross-namespace class qualifies the element with no import") {
+			FSParser::DataType array_type;
+			array_type.kind = FSParser::DataType::BUILTIN;
+			array_type.builtin_type = Variant::ARRAY;
+			array_type.type_source = FSParser::DataType::INFERRED;
+			array_type.set_container_element_type(0, class_type);
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(array_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Array[characters.BaseCharacter]");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("global-namespace generic qualifies its cross-namespace type argument") {
+			// A global-namespace generic `Box[T]` whose argument is a cross-namespace
+			// class qualifies the argument; the generic head itself is in scope.
+			FSParser::IdentifierNode box_identifier;
+			box_identifier.name = "Box";
+			FSParser::ClassNode box_node;
+			box_node.identifier = &box_identifier;
+			FSParser::DataType box_type;
+			box_type.kind = FSParser::DataType::CLASS;
+			box_type.type_source = FSParser::DataType::INFERRED;
+			box_type.class_type = &box_node;
+			box_type.type_arguments.push_back(class_type);
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(box_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Box[characters.BaseCharacter]");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("two same-named classes from different namespaces are both qualified") {
+			FSParser::IdentifierNode first_identifier;
+			first_identifier.name = "Controller";
+			FSParser::ClassNode first_node;
+			first_node.identifier = &first_identifier;
+			first_node.namespace_name = "characters";
+			FSParser::DataType first_type;
+			first_type.kind = FSParser::DataType::CLASS;
+			first_type.type_source = FSParser::DataType::INFERRED;
+			first_type.class_type = &first_node;
+
+			FSParser::IdentifierNode second_identifier;
+			second_identifier.name = "Controller";
+			FSParser::ClassNode second_node;
+			second_node.identifier = &second_identifier;
+			second_node.namespace_name = "ui";
+			FSParser::DataType second_type;
+			second_type.kind = FSParser::DataType::CLASS;
+			second_type.type_source = FSParser::DataType::INFERRED;
+			second_type.class_type = &second_node;
+
+			FSParser::DataType dictionary_type;
+			dictionary_type.kind = FSParser::DataType::BUILTIN;
+			dictionary_type.builtin_type = Variant::DICTIONARY;
+			dictionary_type.type_source = FSParser::DataType::INFERRED;
+			dictionary_type.set_container_element_type(0, first_type);
+			dictionary_type.set_container_element_type(1, second_type);
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(dictionary_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Dictionary[characters.Controller, ui.Controller]");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("callable signature scopes a namespaced parameter type") {
+			FSParser::DataType callable_type;
+			callable_type.kind = FSParser::DataType::BUILTIN;
+			callable_type.builtin_type = Variant::CALLABLE;
+			callable_type.type_source = FSParser::DataType::INFERRED;
+			callable_type.has_explicit_method_signature = true;
+			callable_type.method_parameter_types.push_back(class_type);
+
+			FSRefactorTypes::AnnotationScope scope;
+			scope.current_namespace = "game";
+			String rendered;
+			HashSet<String> imports;
+			CHECK(FSRefactorTypes::render_annotatable_type_in_scope(callable_type, scope, rendered, imports));
+			CHECK_EQ(rendered, "Callable[[characters.BaseCharacter], void]");
+			CHECK(imports.is_empty());
+		}
+		SUBCASE("qualified identity distinguishes same-named classes from different namespaces") {
+			// Used by call-site inference to tell apart types that share a bare name.
+			FSParser::IdentifierNode alpha_identifier;
+			alpha_identifier.name = "Thing";
+			FSParser::ClassNode alpha_node;
+			alpha_node.identifier = &alpha_identifier;
+			alpha_node.namespace_name = "alpha";
+			FSParser::DataType alpha_type;
+			alpha_type.kind = FSParser::DataType::CLASS;
+			alpha_type.type_source = FSParser::DataType::INFERRED;
+			alpha_type.class_type = &alpha_node;
+
+			FSParser::IdentifierNode beta_identifier;
+			beta_identifier.name = "Thing";
+			FSParser::ClassNode beta_node;
+			beta_node.identifier = &beta_identifier;
+			beta_node.namespace_name = "beta";
+			FSParser::DataType beta_type;
+			beta_type.kind = FSParser::DataType::CLASS;
+			beta_type.type_source = FSParser::DataType::INFERRED;
+			beta_type.class_type = &beta_node;
+
+			String alpha_identity;
+			String beta_identity;
+			CHECK(FSRefactorTypes::render_qualified_identity(alpha_type, alpha_identity));
+			CHECK(FSRefactorTypes::render_qualified_identity(beta_type, beta_identity));
+			CHECK_EQ(alpha_identity, "alpha.Thing");
+			CHECK_EQ(beta_identity, "beta.Thing");
+			CHECK_NE(alpha_identity, beta_identity);
+		}
+	}
+
+	TEST_CASE("Add type annotation inserts concrete inferred types") {
+		SUBCASE("variable") {
+			const String source = "var score = 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 1, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "var score: int = 1\n");
+		}
+		SUBCASE("variable without assignment spacing") {
+			const String source = "var score=1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 1, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "var score: int = 1\n");
+		}
+		SUBCASE("constant") {
+			const String source = "const TITLE = \"Cafecito\"\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 2, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "const TITLE: String = \"Cafecito\"\n");
+		}
+		SUBCASE("parameter") {
+			const String source = "func scale(amount = 1.0) -> void:\n\tpass\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func scale(amount: float = 1.0) -> void:\n\tpass\n");
+		}
+		SUBCASE("function return") {
+			const String source = "func make_score():\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func make_score() -> int:\n\treturn 1\n");
+		}
+		SUBCASE("function return when parameter repeats function name") {
+			const String source = "func value(value = 1):\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func value(value = 1) -> int:\n\treturn 1\n");
+		}
+	}
+
+	TEST_CASE("Add type annotation return type skips trailing comment colon") {
+		SUBCASE("caret-driven path") {
+			const String source = "func make_score(): # returns: score\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func make_score() -> int: # returns: score\n\treturn 1\n");
+		}
+		SUBCASE("typed parameter with trailing comment colon") {
+			const String source = "func scale(amount: float): # ratio: keep\n\treturn amount\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "func scale(amount: float) -> float: # ratio: keep\n\treturn amount\n");
+		}
+	}
+
+	TEST_CASE("find_candidates return-type edit skips trailing comment colon") {
+		RefactorContext ctx;
+		ctx.path = "user://type_annotation_comment.fs";
+		ctx.source = "func make_score(): # returns: score\n\treturn 1\n";
+		RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *return_candidate = nullptr;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			if (candidate.enabled && candidate.line == 0) {
+				return_candidate = &candidate;
+				break;
+			}
+		}
+		REQUIRE(return_candidate != nullptr);
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, return_candidate->edits, out));
+		CHECK_EQ(out, "func make_score() -> int: # returns: score\n\treturn 1\n");
+	}
+
+	TEST_CASE("Add type annotation preserves strict type spelling") {
+		const String source =
+				"signal selected(name: String)\n"
+				"func accept_score(score: int) -> bool:\n"
+				"\treturn true\n"
+				"func get_maybe_node() -> Node?:\n"
+				"\treturn null\n"
+				"func get_callback() -> Callable[[int], bool]:\n"
+				"\treturn accept_score\n"
+				"func get_selected() -> Signal[[String]]:\n"
+				"\treturn selected\n"
+				"func get_nested() -> Dictionary[String, Array[Callable[[int], bool]]]:\n"
+				"\treturn {}\n"
+				"var maybe_node = get_maybe_node()\n"
+				"var callback = get_callback()\n"
+				"var selected_signal = get_selected()\n"
+				"var nested = get_nested()\n";
+
+		SUBCASE("nullable") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 11, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var maybe_node: Node? = get_maybe_node()"));
+		}
+		SUBCASE("callable signature") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 12, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var callback: Callable[[int], bool] = get_callback()"));
+		}
+		SUBCASE("signal signature") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 13, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var selected_signal: Signal[[String]] = get_selected()"));
+		}
+		SUBCASE("nested typed containers") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 14, 5, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var nested: Dictionary[String, Array[Callable[[int], bool]]] = get_nested()"));
+		}
+	}
+
+	TEST_CASE("Add type annotation repairs inferred declaration syntax") {
+		const String source =
+				"func typed_value() -> int:\n"
+				"\treturn 1\n"
+				"func run(value := typed_value()) -> void:\n"
+				"\tvar local := typed_value()\n";
+
+		SUBCASE("variable colon-equals") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar local: int = typed_value()"));
+			CHECK_FALSE(out.contains("local :="));
+		}
+		SUBCASE("parameter colon-equals") {
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 10, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func run(value: int = typed_value()) -> void:"));
+			CHECK_FALSE(out.contains("value :="));
+		}
+	}
+
+	TEST_CASE("Add type annotation rejects non-annotatable inferred types") {
+		SUBCASE("variant inferred variable") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"var value = dynamic_value()\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("already explicit variable") {
+			const String source = "var value: int = 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("return-less function with variant return") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"func passthrough():\n"
+					"\treturn dynamic_value()\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+	}
+
+	TEST_CASE("find_candidates collects all type annotations without a caret") {
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs");
+		RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		// The fixture's annotatable declarations are: member_score (line 0, enabled),
+		// member_typed (line 1, disabled: already typed), the amount parameter (line 3,
+		// enabled), make_total's inferred return type (line 3, disabled: the return-less
+		// body yields no concrete annotation), local_name (line 4, enabled), and
+		// nested_flag (line 6, enabled).
+		int enabled_count = 0;
+		int disabled_count = 0;
+		bool saw_member_score = false;
+		bool saw_nested_flag = false;
+		bool saw_disabled_at_line_1 = false;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			CHECK_EQ(candidate.kind, RefactorKind::ADD_TYPE_ANNOTATION);
+			if (candidate.enabled) {
+				enabled_count++;
+				REQUIRE_FALSE(candidate.edits.is_empty());
+				if (candidate.line == 0) {
+					saw_member_score = true;
+					CHECK_EQ(candidate.edits[0].new_text, ": int = ");
+				}
+				if (candidate.line == 6) {
+					saw_nested_flag = true;
+				}
+			} else {
+				disabled_count++;
+				CHECK_FALSE(candidate.disabled_reason.is_empty());
+				if (candidate.line == 1) {
+					saw_disabled_at_line_1 = true; // member_typed is already typed.
+				}
+			}
+		}
+		CHECK(saw_member_score);
+		CHECK(saw_nested_flag);
+		CHECK(saw_disabled_at_line_1);
+		CHECK_EQ(enabled_count, 4);
+		CHECK_EQ(disabled_count, 2);
+		CHECK_EQ(result.candidates.size(), 6);
+	}
+
+	TEST_CASE("Add type annotation handles multi-line function signatures") {
+		SUBCASE("wrapped parameter list") {
+			const String source =
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					"):\n"
+					"\treturn base\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					") -> int:\n"
+					"\treturn base\n");
+		}
+		SUBCASE("parameter type colon is not mistaken for the body colon") {
+			const String source =
+					"func combine(\n"
+					"\t\tfirst: int,\n"
+					"\t\tsecond: int):\n"
+					"\treturn first + second\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func combine(\n"
+					"\t\tfirst: int,\n"
+					"\t\tsecond: int) -> int:\n"
+					"\treturn first + second\n");
+		}
+		SUBCASE("colon inside a multi-line string default is not mistaken for the body colon") {
+			const String source =
+					"func describe(text = \"\"\"\n"
+					")  :\n"
+					"\"\"\"):\n"
+					"\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func describe(text = \"\"\"\n"
+					")  :\n"
+					"\"\"\") -> int:\n"
+					"\treturn 1\n");
+		}
+		SUBCASE("caret on the closing colon line selects the wrapped return type") {
+			const String source =
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					"):\n"
+					"\treturn base\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 2, 0, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func make_score(\n"
+					"\t\tbase: int\n"
+					") -> int:\n"
+					"\treturn base\n");
+		}
+	}
+
+	TEST_CASE("Add type annotation preserves the async modifier") {
+		SUBCASE("single-line async function") {
+			const String source = "async func fetch():\n\treturn 1\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, "async func fetch() -> int:\n\treturn 1\n");
+		}
+		SUBCASE("multi-line async function") {
+			const String source =
+					"async func fetch(\n"
+					"\t\tbase: int\n"
+					"):\n"
+					"\treturn base\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"async func fetch(\n"
+					"\t\tbase: int\n"
+					") -> int:\n"
+					"\treturn base\n");
+		}
+	}
+
+	TEST_CASE("Add type annotation handles assignment operators on continuation lines") {
+		SUBCASE("var with the `=` on a backslash continuation line") {
+			const String source =
+					"var total \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("const with the `=` on a backslash continuation line") {
+			const String source =
+					"const TOTAL \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 7, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"const TOTAL: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("inferred `:=` on a backslash continuation line drops the colon") {
+			const String source =
+					"var total \\\n"
+					"\t:= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("caret on the continuation line selects the wrapped declaration") {
+			const String source =
+					"var total \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 1, 1, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("spaced inferred `: =` wrapped onto a continuation line drops the colon") {
+			const String source =
+					"var total \\\n"
+					"\t: = 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t = 1 + 2\n");
+		}
+		SUBCASE("spaced inferred `:` then wrapped `=` drops the colon") {
+			const String source =
+					"var total : \\\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int  \\\n"
+					"\t= 1 + 2\n");
+		}
+		SUBCASE("comment-only line between the backslash and the wrapped `=`") {
+			const String source =
+					"var total \\\n"
+					"\t# a note\n"
+					"\t= 1 + 2\n";
+			String out;
+			RefactorResult r = run_type_annotation(source, 0, 5, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"var total: int \\\n"
+					"\t# a note\n"
+					"\t= 1 + 2\n");
+		}
+	}
+
+	TEST_CASE("find_candidates annotates a wrapped declaration") {
+		RefactorContext ctx;
+		ctx.path = "user://type_annotation_wrapped_declaration.fs";
+		ctx.source =
+				"var total \\\n"
+				"\t= 1 + 2\n";
+		RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+		REQUIRE_EQ(result.candidates.size(), 1);
+		CHECK(result.candidates[0].enabled);
+		REQUIRE_EQ(result.candidates[0].edits.size(), 1);
+		CHECK_EQ(result.candidates[0].edits[0].new_text, ": int \\\n\t=");
+	}
+
+	TEST_CASE("find_candidates does not scan a bodyless abstract signature into a following member") {
+		RefactorContext ctx;
+		ctx.path = "user://type_annotation_abstract.fs";
+		ctx.source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"\tvar radius := 1.0\n";
+		RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		bool saw_radius = false;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			// The bodyless abstract signature on line 1 has no body colon; the scan
+			// must not borrow the `:=` colon from the following member declaration.
+			CHECK_NE(candidate.line, 1);
+			if (candidate.line == 2) {
+				saw_radius = true;
+				CHECK(candidate.enabled);
+			}
+		}
+		CHECK(saw_radius);
+	}
+
+	TEST_CASE("find_candidates rejects unsupported refactor kinds") {
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs");
+		RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::RENAME);
+		CHECK_FALSE(result.ok);
+		CHECK_EQ(result.error_message, "Headless candidate collection is not implemented for this refactor.");
+	}
+
+	TEST_CASE("find_candidates edit matches the caret-driven path") {
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs");
+		RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		const RefactorCandidate *member_score = nullptr;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			if (candidate.enabled && candidate.line == 0) {
+				member_score = &candidate;
+				break;
+			}
+		}
+		REQUIRE(member_score != nullptr);
+
+		RefactorParams params;
+		RefactorResult caret_result = FSRefactoring::prepare(ctx, caret(0, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+		REQUIRE(caret_result.ok);
+		REQUIRE_EQ(caret_result.edits.size(), 1);
+		CHECK_EQ(member_score->edits[0].new_text, caret_result.edits[0].new_text);
+		CHECK_EQ(member_score->edits[0].start_line, caret_result.edits[0].start_line);
+		CHECK_EQ(member_score->edits[0].start_column, caret_result.edits[0].start_column);
+		CHECK_EQ(member_score->edits[0].end_line, caret_result.edits[0].end_line);
+		CHECK_EQ(member_score->edits[0].end_column, caret_result.edits[0].end_column);
+
+		// The headless disabled_reason for an already-typed declaration must match the
+		// caret path's error_message for the same declaration.
+		const RefactorCandidate *member_typed = nullptr;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			if (!candidate.enabled && candidate.line == 1) {
+				member_typed = &candidate;
+				break;
+			}
+		}
+		REQUIRE(member_typed != nullptr);
+		RefactorResult typed_caret = FSRefactoring::prepare(ctx, caret(1, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+		CHECK_FALSE(typed_caret.ok);
+		CHECK_EQ(typed_caret.error_message, member_typed->disabled_reason);
+	}
+
+	TEST_CASE("Extract variable inserts typed local and replaces selected expression") {
+		SUBCASE("return expression") {
+			const String source =
+					"func calculate(base: int) -> int:\n"
+					"\treturn base + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(1, 8, 1, 16), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "value");
+			CHECK_EQ(r.rename_anchor_line, 1);
+			CHECK_EQ(r.rename_anchor_column, 5);
+			CHECK_EQ(out,
+					"func calculate(base: int) -> int:\n"
+					"\tvar value: int = base + 2\n"
+					"\treturn value\n");
+		}
+		SUBCASE("call expression name") {
+			const String source =
+					"func get_score() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\treturn get_score()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 8, 3, 19), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "score");
+			CHECK(out.contains("\tvar score: int = get_score()\n"));
+			CHECK(out.contains("\treturn score\n"));
+		}
+		SUBCASE("avoids local name collisions") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value: int = 0\n"
+					"\treturn 1 + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(2, 8, 2, 13), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "value_2");
+			CHECK(out.contains("\tvar value_2: int = 1 + 2\n"));
+			CHECK(out.contains("\treturn value_2\n"));
+		}
+		SUBCASE("compound assignment") {
+			const String source =
+					"func get_delta() -> int:\n"
+					"\treturn 2\n"
+					"func run() -> void:\n"
+					"\tvar total := 1\n"
+					"\ttotal += get_delta()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(4, 10, 4, 21), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar delta: int = get_delta()\n"));
+			CHECK(out.contains("\ttotal += delta\n"));
+		}
+		SUBCASE("member assignment") {
+			const String source =
+					"var total := 0\n"
+					"func get_delta() -> int:\n"
+					"\treturn 2\n"
+					"func run() -> void:\n"
+					"\tself.total = get_delta()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(4, 14, 4, 25), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar delta: int = get_delta()\n"));
+			CHECK(out.contains("\tself.total = delta\n"));
+		}
+		SUBCASE("if condition") {
+			const String source =
+					"func check_ready() -> bool:\n"
+					"\treturn true\n"
+					"func run() -> void:\n"
+					"\tif check_ready():\n"
+					"\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 4, 3, 17), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar check_ready: bool = check_ready()\n"));
+			CHECK(out.contains("\tif check_ready:\n"));
+		}
+		SUBCASE("for list") {
+			const String source =
+					"func get_items() -> Array[int]:\n"
+					"\treturn [1]\n"
+					"func run() -> void:\n"
+					"\tfor item in get_items():\n"
+					"\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 13, 3, 24), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar items: Array[int] = get_items()\n"));
+			CHECK(out.contains("\tfor item in items:\n"));
+		}
+		SUBCASE("match subject") {
+			const String source =
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> void:\n"
+					"\tmatch get_value():\n"
+					"\t\t1:\n"
+					"\t\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 7, 3, 18), out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tvar value: int = get_value()\n"));
+			CHECK(out.contains("\tmatch value:\n"));
+		}
+	}
+
+	TEST_CASE("Extract variable availability follows expression selection") {
+		const String source =
+				"func calculate(base: int) -> int:\n"
+				"\treturn base + 2\n";
+		RefactorContext ctx;
+		ctx.path = "user://extract_variable_availability.fs";
+		ctx.source = source;
+		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
+		REQUIRE_EQ(available.size(), 9);
+		if (available.size() >= 2) {
+			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
+			CHECK(available[1].enabled);
+			CHECK(available[1].disabled_reason.is_empty());
+		}
+	}
+
+	TEST_CASE("Extract variable rejects unsafe or unprovable selections") {
+		SUBCASE("requires a selection") {
+			const String source =
+					"func calculate(base: int) -> int:\n"
+					"\treturn base + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, caret(1, 8), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects subexpressions inside larger expressions") {
+			const String source =
+					"func calculate(base: int) -> int:\n"
+					"\treturn base + 2\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(1, 8, 1, 12), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects non-annotatable Variant expressions") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"func run() -> Variant:\n"
+					"\treturn dynamic_value()\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 8, 3, 23), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects while conditions") {
+			const String source =
+					"func should_continue() -> bool:\n"
+					"\treturn true\n"
+					"func run() -> void:\n"
+					"\twhile should_continue():\n"
+					"\t\tpass\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 7, 3, 24), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("while"));
+		}
+		SUBCASE("rejects assert expressions") {
+			const String source =
+					"func check_ready() -> bool:\n"
+					"\treturn true\n"
+					"func run() -> void:\n"
+					"\tassert(check_ready())\n";
+			String out;
+			RefactorResult r = run_extract_variable(source, selection(3, 8, 3, 21), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("assert"));
+		}
+	}
+
+	TEST_CASE("Extract method inserts nearby helper and replaces selected statements") {
+		SUBCASE("no parameters") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_extracted_method");
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("multiple parameters") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tprint(a + b)\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: int, b: int) -> void:\n"
+					"\t_extracted_method(a, b)\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method(a: int, b: int) -> void:\n"
+					"\tprint(a + b)\n");
+		}
+		SUBCASE("single output local uses explicit call-site type") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar total := a + b\n"
+					"\tprint(total)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar total: int = _extracted_method(a, b)\n"
+					"\tprint(total)\n"
+					"\n"
+					"func _extracted_method(a: int, b: int) -> int:\n"
+					"\tvar total := a + b\n"
+					"\treturn total\n");
+		}
+		SUBCASE("single output local inside nested suite") {
+			const String source =
+					"func run(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tvar total := 1\n"
+					"\t\tprint(total)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(2, 0, 3, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tvar total: int = _extracted_method()\n"
+					"\t\tprint(total)\n"
+					"\n"
+					"func _extracted_method() -> int:\n"
+					"\tvar total := 1\n"
+					"\treturn total\n");
+		}
+		SUBCASE("blank lines are preserved without trailing whitespace") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\n"
+					"\tprint(\"done\")\n"
+					"\tprint(\"after\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 4, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"after\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\n"
+					"\tprint(\"done\")\n");
+		}
+		SUBCASE("appends helper when source has no final newline") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("preserves nested control-flow indentation") {
+			const String source =
+					"func run(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tprint(\"yes\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(flag: bool) -> void:\n"
+					"\t_extracted_method(flag)\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method(flag: bool) -> void:\n"
+					"\tif flag:\n"
+					"\t\tprint(\"yes\")\n");
+		}
+		SUBCASE("avoids method name collisions") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_extracted_method_2");
+			CHECK(out.contains("\t_extracted_method_2()\n"));
+			CHECK(out.contains("func _extracted_method_2() -> void:\n"));
+		}
+		SUBCASE("export group labels do not invalidate suggested prompt names") {
+			const String source =
+					"@export_group(\"_extracted_method\")\n"
+					"@export var value := 0\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(4, 0, 5, 0), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_extracted_method");
+			String reason;
+			CHECK(FSRefactoring::validate_extract_method_name(r.extract_method_member_names, r.suggested_name, reason));
+			CHECK(reason.is_empty());
+		}
+		SUBCASE("uses requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "_print_ready", out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "_print_ready");
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_print_ready()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _print_ready() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("accepts full statement text selection without newline selection") {
+			const String source =
+					"func run(player_name: String, score: int) -> void:\n"
+					"\tvar message := \"Player %s scored %d points\" % [player_name, score]\n"
+					"\tprint(message)\n"
+					"\tprint(\"Score length: \", str(score).length())\n"
+					"\tprint(\"Done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 1, 3, lines[3].length()), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(player_name: String, score: int) -> void:\n"
+					"\t_extracted_method(player_name, score)\n"
+					"\tprint(\"Done\")\n"
+					"\n"
+					"func _extracted_method(player_name: String, score: int) -> void:\n"
+					"\tvar message := \"Player %s scored %d points\" % [player_name, score]\n"
+					"\tprint(message)\n"
+					"\tprint(\"Score length: \", str(score).length())\n");
+		}
+		SUBCASE("accepts single-line full statement text selection") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, lines[1].length()), out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> void:\n"
+					"\t_extracted_method()\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func _extracted_method() -> void:\n"
+					"\tprint(\"ready\")\n");
+		}
+		SUBCASE("allows requested method name matching export group label") {
+			const String source =
+					"@export_group(\"helper\")\n"
+					"@export var value := 0\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(4, 0, 5, 0), "helper", out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "helper");
+			CHECK(out.contains("\thelper()\n"));
+			CHECK(out.contains("func helper() -> void:\n"));
+		}
+		SUBCASE("rejects invalid requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "1bad", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("valid identifier"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects reserved requested method name") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "class", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("reserved keyword"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects requested method name collision") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n"
+					"\n"
+					"func existing() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(1, 0, 2, 0), "existing", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("already exists"));
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects requested method name collision inside target inner class") {
+			const String source =
+					"class Inner:\n"
+					"\tfunc run() -> void:\n"
+					"\t\tprint(\"ready\")\n"
+					"\t\tprint(\"done\")\n"
+					"\n"
+					"\tfunc existing() -> void:\n"
+					"\t\tpass\n"
+					"\n"
+					"func existing() -> void:\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_extract_method_named(source, selection(2, 0, 3, 0), "existing", out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.contains("already exists"));
+			CHECK(out.is_empty());
+		}
+	}
+
+	TEST_CASE("Extract method availability follows whole-statement selection") {
+		const String source =
+				"func run() -> void:\n"
+				"\tprint(\"ready\")\n"
+				"\tprint(\"done\")\n";
+		RefactorContext ctx;
+		ctx.path = "user://extract_method_availability.fs";
+		ctx.source = source;
+		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
+		REQUIRE_EQ(available.size(), 9);
+		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
+		CHECK(available[2].enabled);
+		CHECK(available[2].disabled_reason.is_empty());
+
+		const Vector<String> lines = source.split("\n");
+		Vector<RefactorAvailability> text_selection_available = FSRefactoring::get_available_refactors(
+				ctx,
+				selection(1, 1, 1, lines[1].length()));
+		REQUIRE_EQ(text_selection_available.size(), 9);
+		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
+		CHECK(text_selection_available[2].enabled);
+		CHECK(text_selection_available[2].disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Extract method rejects unsafe or unprovable selections") {
+		SUBCASE("requires whole statements") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, 6), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects text selection starting inside a statement") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			const Vector<String> lines = source.split("\n");
+			RefactorResult r = run_extract_method(source, selection(1, 2, 1, lines[1].length()), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects text selection ending before statement text ends") {
+			const String source =
+					"func run() -> void:\n"
+					"\tprint(\"ready\")\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 1, 1, 6), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(out.is_empty());
+		}
+		SUBCASE("rejects multiple output locals") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar first := a + 1\n"
+					"\tvar second := b + 1\n"
+					"\tprint(first + second)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("multiple"));
+		}
+		SUBCASE("rejects assignment to an existing output local") {
+			const String source =
+					"func run(a: int, b: int) -> void:\n"
+					"\tvar total := 0\n"
+					"\ttotal = a + b\n"
+					"\tprint(total)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(2, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("assignment"));
+		}
+		SUBCASE("rejects Variant parameters") {
+			const String source =
+					"func run(value: Variant) -> void:\n"
+					"\tprint(value)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("parameter"));
+		}
+		SUBCASE("rejects Variant output locals") {
+			const String source =
+					"func dynamic_value() -> Variant:\n"
+					"\treturn 1\n"
+					"func run() -> void:\n"
+					"\tvar value := dynamic_value()\n"
+					"\tprint(value)\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(3, 0, 4, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("return type"));
+		}
+		SUBCASE("rejects selections spanning functions") {
+			const String source =
+					"func first() -> void:\n"
+					"\tprint(\"first\")\n"
+					"func second() -> void:\n"
+					"\tprint(\"second\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 4, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("rejects return") {
+			const String source =
+					"func run() -> int:\n"
+					"\treturn 1\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 2, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("return"));
+		}
+		SUBCASE("rejects break") {
+			const String source =
+					"func run() -> void:\n"
+					"\twhile true:\n"
+					"\t\tbreak\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("break"));
+		}
+		SUBCASE("rejects continue") {
+			const String source =
+					"func run() -> void:\n"
+					"\twhile true:\n"
+					"\t\tcontinue\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("continue"));
+		}
+		SUBCASE("rejects await") {
+			const String source =
+					"signal finished\n"
+					"func run() -> void:\n"
+					"\tawait finished\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(2, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("await"));
+		}
+		SUBCASE("rejects lambda") {
+			const String source =
+					"func run(factor: int) -> void:\n"
+					"\tvar unused := func(x: int) -> int:\n"
+					"\t\treturn x * factor\n"
+					"\tprint(\"done\")\n";
+			String out;
+			RefactorResult r = run_extract_method(source, selection(1, 0, 3, 0), out);
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("lambda"));
+		}
+	}
+
+	TEST_CASE("Inline variable removes local declaration and replaces reads") {
+		SUBCASE("single use from declaration") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> int:\n"
+					"\treturn 2\n");
+		}
+		SUBCASE("single use from reference") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 2, 9, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> int:\n"
+					"\treturn 2\n");
+		}
+		SUBCASE("reference caret chooses identifier under caret") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar a = 1\n"
+					"\tvar b = 2\n"
+					"\treturn a + b\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 3, 12, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> int:\n"
+					"\tvar a = 1\n"
+					"\treturn a + 2\n");
+		}
+		SUBCASE("multi-use pure initializer") {
+			const String source =
+					"func run(base: int) -> int:\n"
+					"\tvar value = base + 1\n"
+					"\tprint(value)\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(base: int) -> int:\n"
+					"\tprint(base + 1)\n"
+					"\treturn base + 1\n");
+		}
+		SUBCASE("parenthesizes lower-precedence initializer") {
+			const String source =
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\tvar value = a + b\n"
+					"\treturn x * value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\treturn x * (a + b)\n");
+		}
+		SUBCASE("parenthesizes same-precedence right initializer") {
+			const String source =
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\tvar value = a + b\n"
+					"\treturn x + value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(x: int, a: int, b: int) -> int:\n"
+					"\treturn x + (a + b)\n");
+		}
+		SUBCASE("parenthesizes logical-not initializer in comparison") {
+			const String source =
+					"func run(a: bool, done: bool) -> bool:\n"
+					"\tvar ok = not a\n"
+					"\treturn ok == done\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: bool, done: bool) -> bool:\n"
+					"\treturn (not a) == done\n");
+		}
+		SUBCASE("parenthesizes awaited initializer operand") {
+			const String source =
+					"func run(a, b) -> void:\n"
+					"\tvar value = a + b\n"
+					"\tawait value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a, b) -> void:\n"
+					"\tawait (a + b)\n");
+		}
+		SUBCASE("parenthesizes power initializer as left power operand") {
+			const String source =
+					"func run(a: float, b: float, c: float) -> float:\n"
+					"\tvar value = a ** b\n"
+					"\treturn value ** c\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run(a: float, b: float, c: float) -> float:\n"
+					"\treturn (a ** b) ** c\n");
+		}
+		SUBCASE("single-use side-effecting initializer") {
+			const String source =
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\tvar value = get_value()\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\treturn get_value()\n");
+		}
+		SUBCASE("same-name local in another function is not replaced") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func other() -> void:\n"
+					"\tvar value = 2\n"
+					"\tprint(value)\n"
+					"\n"
+					"func run() -> int:\n"
+					"\tvar value = 1\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 8, 9, out);
+			REQUIRE_MESSAGE(r.ok, r.error_message);
+			CHECK_EQ(out,
+					"extends Node\n"
+					"\n"
+					"func other() -> void:\n"
+					"\tvar value = 2\n"
+					"\tprint(value)\n"
+					"\n"
+					"func run() -> int:\n"
+					"\treturn 1\n");
+		}
+	}
+
+	TEST_CASE("Inline variable availability follows local variable caret") {
+		const String source =
+				"func run() -> int:\n"
+				"\tvar value = 2\n"
+				"\treturn value\n";
+		RefactorContext ctx;
+		ctx.path = "user://inline_variable_availability.fs";
+		ctx.source = source;
+		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 6));
+		REQUIRE_EQ(available.size(), 9);
+		if (available.size() >= 5) {
+			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
+			CHECK(available[4].enabled);
+			CHECK(available[4].disabled_reason.is_empty());
+		}
+	}
+
+	TEST_CASE("Sort members by style guide reorders root members stably") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func beta() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"var second := 2\n"
+				"signal changed\n"
+				"var first := 1\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"func alpha() -> void:\n"
+				"\tpass\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"var second := 2\n"
+				"var first := 1\n"
+				"\n"
+				"func beta() -> void:\n"
+				"\tpass\n"
+				"func alpha() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps unnamed enums intact") {
+		SUBCASE("same-line unnamed enum") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"enum { IDLE, RUNNING }\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"enum { IDLE, RUNNING }\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("multiline unnamed enum") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"enum {\n"
+					"\tIDLE,\n"
+					"\tRUNNING,\n"
+					"}\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"enum {\n"
+					"\tIDLE,\n"
+					"\tRUNNING,\n"
+					"}\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
+	TEST_CASE("Sort members by style guide classifies all supported member buckets") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"class Inner:\n"
+				"\tpass\n"
+				"func public_method() -> void:\n"
+				"\tpass\n"
+				"func _private_method() -> void:\n"
+				"\tpass\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"static func helper() -> void:\n"
+				"\tpass\n"
+				"static func _static_init() -> void:\n"
+				"\tpass\n"
+				"@onready var node := Node.new()\n"
+				"var _private_value := 2\n"
+				"var public_value := 1\n"
+				"@export var exported_value := 3\n"
+				"static var shared_value := 4\n"
+				"const LIMIT := 10\n"
+				"enum State { IDLE, RUNNING }\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"enum State { IDLE, RUNNING }\n"
+				"\n"
+				"const LIMIT := 10\n"
+				"\n"
+				"static var shared_value := 4\n"
+				"\n"
+				"@export var exported_value := 3\n"
+				"\n"
+				"var public_value := 1\n"
+				"\n"
+				"var _private_value := 2\n"
+				"\n"
+				"@onready var node := Node.new()\n"
+				"\n"
+				"static func _static_init() -> void:\n"
+				"\tpass\n"
+				"static func helper() -> void:\n"
+				"\tpass\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"func public_method() -> void:\n"
+				"\tpass\n"
+				"func _private_method() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"class Inner:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves attached comments and annotations with declarations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"## Handles the ready callback.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"## Health points shown in the inspector.\n"
+				"@export var health := 10\n"
+				"\n"
+				"# Emitted after health changes.\n"
+				"signal health_changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"# Emitted after health changes.\n"
+				"signal health_changed\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"## Health points shown in the inspector.\n"
+				"@export var health := 10\n"
+				"\n"
+				"## Handles the ready callback.\n"
+				"func _ready() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide leaves script annotations outside sorted span") {
+		const String source =
+				"@tool\n"
+				"func _ready() -> void:\n"
+				"\tpass\n"
+				"signal changed\n";
+		const String expected =
+				"@tool\n"
+				"signal changed\n"
+				"\n"
+				"func _ready() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves member annotations across ordinary comments") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@export\n"
+				"# Inspector speed.\n"
+				"var speed := 1\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"@export\n"
+				"# Inspector speed.\n"
+				"var speed := 1\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps trailing comments with the previous member") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"# trailing note about value\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1\n"
+				"# trailing note about value\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide moves trailing comments with the last member") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"signal changed\n"
+				"# signal note\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"# signal note\n"
+				"\n"
+				"var value := 1\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide leaves leading ordinary comments outside sorted span") {
+		const String source =
+				"extends Node\n"
+				"# Header note.\n"
+				"var value := 1\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"# Header note.\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide declines ambiguous export groups") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func later() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"@export_group(\"Stats\")\n"
+				"func unrelated() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK(r.error_message.to_lower().contains("export group"));
+	}
+
+	TEST_CASE("Sort members by style guide moves safe annotation blocks") {
+		SUBCASE("separate-line member annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@export\n"
+					"var speed := 1\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@export\n"
+					"var speed := 1\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("same-line member annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@export var health := 10\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@export var health := 10\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+
+		SUBCASE("same-line onready annotation remains sortable") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n"
+					"@onready var child := Node.new()\n"
+					"signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n"
+					"@onready var child := Node.new()\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
+	TEST_CASE("Sort members by style guide moves export group annotations with exported variables") {
+		const String export_groups[] = {
+			"@export_category(\"Stats\")",
+			"@export_group(\"Stats\")",
+			"@export_subgroup(\"Movement\")",
+		};
+
+		for (const String &export_group : export_groups) {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func run() -> void:\n"
+					"\tpass\n" +
+					export_group + "\n"
+								   "@export var speed := 1\n"
+								   "signal changed\n";
+			const String expected =
+					"extends Node\n"
+					"\n"
+					"signal changed\n"
+					"\n" +
+					export_group + "\n"
+								   "@export var speed := 1\n"
+								   "\n"
+								   "func run() -> void:\n"
+								   "\tpass\n";
+
+			String out;
+			RefactorResult r = run_sort_members_by_style_guide(source, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out, expected);
+		}
+	}
+
+	TEST_CASE("Sort members by style guide declines export groups separated by blank lines") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@export_group(\"Stats\")\n"
+				"\n"
+				"@export var speed := 1\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK(r.error_message.to_lower().contains("export group"));
+	}
+
+	TEST_CASE("Sort members by style guide preserves fork headers and sorts nested types") {
+		const String source =
+				"@tool\n"
+				"namespace game.characters\n"
+				"import game.shared\n"
+				"import game.ui\n"
+				"class_name Player\n"
+				"extends Node\n"
+				"uses Damageable\n"
+				"\n"
+				"signal spawned\n"
+				"\n"
+				"func use_player() -> void:\n"
+				"\tpass\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"\tsignal changed\n"
+				"\n"
+				"trait Damageable:\n"
+				"\tfunc apply_damage() -> void:\n"
+				"\t\tpass\n"
+				"\tvar health := 10\n"
+				"\tsignal damaged\n"
+				"\n";
+		const String expected =
+				"@tool\n"
+				"namespace game.characters\n"
+				"import game.shared\n"
+				"import game.ui\n"
+				"class_name Player\n"
+				"extends Node\n"
+				"uses Damageable\n"
+				"\n"
+				"signal spawned\n"
+				"\n"
+				"func use_player() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"class Inventory:\n"
+				"\tsignal changed\n"
+				"\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"trait Damageable:\n"
+				"\tsignal damaged\n"
+				"\n"
+				"\tvar health := 10\n"
+				"\n"
+				"\tfunc apply_damage() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps builtin-like private methods after custom overrides on non-virtual bases") {
+		const String source =
+				"class Base extends RefCounted:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tvar value := 1\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _process(_delta: float) -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends RefCounted:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tvar value := 1\n"
+				"\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _process(_delta: float) -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide places resolved custom overrides before remaining methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only custom overrides when trait analysis fails") {
+		const String source =
+				"trait Marker:\n"
+				"\tpass\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"trait Marker:\n"
+				"\tpass\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only custom overrides when uses analysis fails") {
+		const String source =
+				"class_name Player\n"
+				"uses Damageable\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class_name Player\n"
+				"uses Damageable\n"
+				"\n"
+				"class Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc helper() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide classifies parser-only implicit object callbacks") {
+		const String source =
+				"class_name ParserFallbackCallbacks\n"
+				"uses Damageable\n"
+				"\n"
+				"func helper() -> void:\n"
+				"\tpass\n"
+				"func _to_string() -> String:\n"
+				"\treturn \"\"\n";
+		const String expected =
+				"class_name ParserFallbackCallbacks\n"
+				"uses Damageable\n"
+				"\n"
+				"func _to_string() -> String:\n"
+				"\treturn \"\"\n"
+				"func helper() -> void:\n"
+				"\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide places native virtual callbacks before custom overrides") {
+		const String source =
+				"class Base extends Control:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _draw() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends Control:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc _draw() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide uses native virtual metadata before custom overrides") {
+		const String source =
+				"class Base extends BaseButton:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc _pressed() -> void:\n"
+				"\t\tpass\n";
+		const String expected =
+				"class Base extends BaseButton:\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"class Derived extends Base:\n"
+				"\tfunc _pressed() -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide finishes repeated nested passes") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func root_method() -> void:\n"
+				"\tpass\n"
+				"class Outer:\n"
+				"\tfunc outer_method() -> void:\n"
+				"\t\tpass\n"
+				"\tclass Middle:\n"
+				"\t\tfunc middle_method() -> void:\n"
+				"\t\t\tpass\n"
+				"\t\tclass Inner:\n"
+				"\t\t\tfunc inner_method() -> void:\n"
+				"\t\t\t\tpass\n"
+				"\t\t\tvar inner_value := 1\n"
+				"\t\t\tsignal inner_signal\n"
+				"\t\tvar middle_value := 2\n"
+				"\t\tsignal middle_signal\n"
+				"\tvar outer_value := 3\n"
+				"\tsignal outer_signal\n"
+				"signal root_signal\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal root_signal\n"
+				"\n"
+				"func root_method() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"class Outer:\n"
+				"\tsignal outer_signal\n"
+				"\n"
+				"\tvar outer_value := 3\n"
+				"\n"
+				"\tfunc outer_method() -> void:\n"
+				"\t\tpass\n"
+				"\n"
+				"\tclass Middle:\n"
+				"\t\tsignal middle_signal\n"
+				"\n"
+				"\t\tvar middle_value := 2\n"
+				"\n"
+				"\t\tfunc middle_method() -> void:\n"
+				"\t\t\tpass\n"
+				"\n"
+				"\t\tclass Inner:\n"
+				"\t\t\tsignal inner_signal\n"
+				"\n"
+				"\t\t\tvar inner_value := 1\n"
+				"\n"
+				"\t\t\tfunc inner_method() -> void:\n"
+				"\t\t\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide keeps leading comments with unnamed enums") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var health := 10\n"
+				"enum {\n"
+				"\t## Idle state.\n"
+				"\tIDLE,\n"
+				"\tRUNNING,\n"
+				"}\n"
+				"signal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"enum {\n"
+				"\t## Idle state.\n"
+				"\tIDLE,\n"
+				"\tRUNNING,\n"
+				"}\n"
+				"\n"
+				"var health := 10\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide leaves dedented comments outside nested types") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"signal ready\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"# Parent-scope note.\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal ready\n"
+				"\n"
+				"class Inventory:\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"# Parent-scope note.\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide recurses into nested types when sorted parents contain warning annotations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"func run(_delta: float) -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"\n"
+				"class Inventory:\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n"
+				"\tvar slots := 8\n"
+				"\tsignal changed\n";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"func run(_delta: float) -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"\n"
+				"class Inventory:\n"
+				"\tsignal changed\n"
+				"\n"
+				"\tvar slots := 8\n"
+				"\n"
+				"\tfunc build() -> void:\n"
+				"\t\tpass\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+	}
+
+	TEST_CASE("Sort members by style guide reports unfinished deep nesting") {
+		String source =
+				"func root_method() -> void:\n"
+				"\tpass\n";
+		const int depth = 18;
+		for (int level = 0; level < depth; level++) {
+			String indent;
+			for (int i = 0; i < level; i++) {
+				indent += "\t";
+			}
+			const String level_name = String::num_int64(level);
+			source += indent + "class Level" + level_name + ":\n";
+			source += indent + "\tfunc method_" + level_name + "() -> void:\n";
+			source += indent + "\t\tpass\n";
+		}
+		for (int level = depth - 1; level >= 0; level--) {
+			String indent;
+			for (int i = 0; i <= level; i++) {
+				indent += "\t";
+			}
+			const String level_name = String::num_int64(level);
+			source += indent + "var value_" + level_name + " := " + level_name + "\n";
+			source += indent + "signal signal_" + level_name + "\n";
+		}
+		source += "signal root_signal\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		CHECK_EQ(r.error_message, "Cannot finish style-order sorting for this script.");
+	}
+
+	TEST_CASE("Sort members by style guide rejects standalone warning annotations") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tpass\n"
+				"@warning_ignore_start(\"unused_parameter\")\n"
+				"var speed := 1\n"
+				"@warning_ignore_restore(\"unused_parameter\")\n"
+				"signal changed\n";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		CHECK_FALSE(r.ok);
+		const bool mentions_annotation_or_warning =
+				r.error_message.to_lower().contains("annotation") || r.error_message.to_lower().contains("warning");
+		CHECK_MESSAGE(mentions_annotation_or_warning, r.error_message);
+	}
+
+	TEST_CASE("Sort members by style guide preserves missing final newline") {
+		const String source =
+				"extends Node\n"
+				"\n"
+				"var value := 1\n"
+				"signal changed";
+		const String expected =
+				"extends Node\n"
+				"\n"
+				"signal changed\n"
+				"\n"
+				"var value := 1";
+
+		String out;
+		RefactorResult r = run_sort_members_by_style_guide(source, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(out, expected);
+		CHECK_FALSE(out.ends_with("\n"));
+	}
+
+	TEST_CASE("Inline variable rejects unsafe or unsupported targets") {
+		SUBCASE("multi-use side-effecting initializer") {
+			const String source =
+					"func get_value() -> int:\n"
+					"\treturn 1\n"
+					"func run() -> int:\n"
+					"\tvar value = get_value()\n"
+					"\tprint(value)\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 3, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("side-effect"), r.error_message);
+		}
+		SUBCASE("reassigned local") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 1\n"
+					"\tvalue = 3\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("parameter") {
+			const String source =
+					"func run(value: int) -> int:\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 0, 10, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("constant") {
+			const String source =
+					"func run() -> int:\n"
+					"\tconst VALUE = 1\n"
+					"\treturn VALUE\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 8, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("member variable") {
+			const String source =
+					"var value = 1\n"
+					"func run() -> int:\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 0, 5, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+		SUBCASE("lambda capture") {
+			const String source =
+					"func run() -> Callable:\n"
+					"\tvar value = 1\n"
+					"\tvar callback = func():\n"
+					"\t\treturn value\n"
+					"\treturn callback\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("lambda"), r.error_message);
+		}
+		SUBCASE("no read usages") {
+			const String source =
+					"func run() -> void:\n"
+					"\tvar value = 2\n"
+					"\tpass\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("read"), r.error_message);
+		}
+		SUBCASE("multiline initializer") {
+			const String source =
+					"func run():\n"
+					"\tvar value = [\n"
+					"\t\t1,\n"
+					"\t]\n"
+					"\treturn value[0]\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("single-line"), r.error_message);
+		}
+		SUBCASE("trailing comment on declaration") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2 # keep this\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("trailing"), r.error_message);
+		}
+		SUBCASE("same-line declaration and use") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2; return value\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			CHECK_FALSE(r.ok);
+			CHECK_MESSAGE(r.error_message.to_lower().contains("trailing"), r.error_message);
+		}
+	}
+
+	TEST_CASE("Insert explicit cast") {
+		// An untyped parameter is a Variant, so `value` is the dynamic-boundary source.
+		SUBCASE("casts a Variant initializer to the declared type") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = value as int"));
+		}
+		SUBCASE("casts a Variant return value to the function return type") {
+			const String source =
+					"func use(value) -> int:\n"
+					"\treturn value\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 4, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("return value as int"));
+		}
+		SUBCASE("parenthesizes a compound expression before the cast") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value if true else value\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = (value if true else value) as int"));
+		}
+		SUBCASE("is available on a member declaration") {
+			const String source =
+					"func passthru(value):\n"
+					"\treturn value\n"
+					"var m: int = passthru(0)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 2, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var m: int = passthru(0) as int"));
+		}
+		SUBCASE("is disabled when the value is already statically typed") {
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: int = 5\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
+			CHECK(insert_cast_reason(source, 1, 6).to_lower().contains("already"));
+		}
+		SUBCASE("is disabled when the declaration has no target type") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x = value\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
+		}
+		SUBCASE("is disabled away from any cast site") {
+			const String source =
+					"func use() -> void:\n"
+					"\tpass\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 2));
+			CHECK(insert_cast_reason(source, 1, 2).to_lower().contains("caret"));
+		}
+		SUBCASE("does not double-cast an existing cast") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value as int\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
+		}
+		SUBCASE("does not fire on a trailing statement sharing the line") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = value; print(value)\n";
+			// The caret is on `print`, past the declaration's span, so the cast must not
+			// target the earlier declaration.
+			CHECK_FALSE(insert_cast_enabled(source, 1, 22));
+		}
+		SUBCASE("does not corrupt a grouped postfix expression") {
+			// `(value)[0]` parses to a subscript whose source range omits the leading `(`,
+			// so a naive rewrite would emit `value)[0] as int`. The refactor must refuse.
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar x: int = (value)[0]\n";
+			CHECK_FALSE(insert_cast_enabled(source, 1, 6));
+			CHECK(insert_cast_reason(source, 1, 6).to_lower().contains("safely"));
+		}
+		SUBCASE("casts a Variant call argument to the parameter type") {
+			const String source =
+					"func takes(amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\ttakes(value)\n";
+			String out;
+			// Caret on the `value` argument.
+			RefactorResult r = run_insert_cast(source, 3, 8, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("takes(value as int)"));
+		}
+		SUBCASE("casts a Variant signal emit argument to the parameter type") {
+			// An explicit receiver (`self.fired`) carries the signal's typed parameter list, so
+			// the Variant argument is a genuine emit boundary the analyzer resolves a target for.
+			const String source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\tself.fired.emit(value)\n";
+			String out;
+			// Caret on the `value` argument.
+			RefactorResult r = run_insert_cast(source, 2, 17, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("self.fired.emit(value as int)"));
+		}
+		SUBCASE("casts a Variant legacy emit_signal payload to the parameter type") {
+			// The legacy string-named API resolves the target signal from the name argument, so the
+			// Variant payload is a genuine emit boundary even though it flows through the generic
+			// `Object.emit_signal` vararg signature.
+			const String source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\temit_signal(\"fired\", value)\n";
+			String out;
+			// Caret on the `value` payload argument.
+			RefactorResult r = run_insert_cast(source, 2, 22, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("emit_signal(\"fired\", value as int)"));
+		}
+		SUBCASE("casts a Variant legacy emit_signal payload on a typed receiver") {
+			const String source =
+					"class Emitter:\n"
+					"\tsignal fired(amount: int)\n"
+					"func use(emitter: Emitter, value) -> void:\n"
+					"\temitter.emit_signal(\"fired\", value)\n";
+			String out;
+			// Caret on the `value` payload argument.
+			RefactorResult r = run_insert_cast(source, 3, 31, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("emitter.emit_signal(\"fired\", value as int)"));
+		}
+		SUBCASE("does not offer a cast on the legacy emit_signal name argument") {
+			// The leading name argument is a plain String literal, not a payload boundary.
+			const String source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\temit_signal(\"fired\", value)\n";
+			// Caret on the `"fired"` name argument.
+			CHECK_FALSE(insert_cast_enabled(source, 2, 13));
+		}
+		SUBCASE("casts a single argument among several") {
+			const String source =
+					"func takes(label: String, amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\ttakes(\"hi\", value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 14, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("takes(\"hi\", value as int)"));
+		}
+		SUBCASE("is disabled for an argument flowing into a Variant parameter") {
+			const String source =
+					"func takes(anything) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\ttakes(value)\n";
+			CHECK_FALSE(insert_cast_enabled(source, 3, 8));
+		}
+		SUBCASE("casts a call argument nested inside a typed declaration") {
+			// The declaration spans the whole line and the argument spans only `value`; a caret
+			// on the argument must target the argument, not the enclosing declaration.
+			const String source =
+					"func takes(amount: int) -> int:\n"
+					"\treturn amount\n"
+					"func use(value) -> void:\n"
+					"\tvar x: int = takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 20, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = takes(value as int)"));
+		}
+		SUBCASE("casts a call argument inside an assignment value") {
+			const String source =
+					"func takes(amount: int) -> int:\n"
+					"\treturn amount\n"
+					"func use(value) -> void:\n"
+					"\tvar x := 0\n"
+					"\tx = takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 4, 12, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("x = takes(value as int)"));
+		}
+		SUBCASE("casts an argument to a built-in utility function parameter") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tabsi(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("absi(value as int)"));
+		}
+		SUBCASE("casts a call argument inside a lambda body") {
+			const String source =
+					"func takes(amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> void:\n"
+					"\tvar f = func(): takes(value)\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 3, 23, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("takes(value as int)"));
+		}
+		SUBCASE("casts a Variant declaration initializer inside a lambda body") {
+			const String source =
+					"func use(value) -> void:\n"
+					"\tvar f = func(): var x: int = value\n";
+			String out;
+			// Caret on the inner declaration's value.
+			RefactorResult r = run_insert_cast(source, 1, 31, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int = value as int"));
+		}
+		SUBCASE("offers a cast on a value holding a triple-quoted string") {
+			// The triple-quoted argument embeds quotes and brackets; a quote-counting
+			// balance check misreads it and over-blocks. The tokenizer collapses the
+			// whole string to one literal, so the cast stays available.
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: Dictionary = JSON.parse_string(\"\"\"{}\"\"\")\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 22, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("JSON.parse_string(\"\"\"{}\"\"\") as Dictionary"));
+		}
+		SUBCASE("offers a cast on a value holding a prefixed string") {
+			// A raw-string prefix (`r"..."`) with an embedded bracket likewise must not
+			// confuse the balance check; the value stays a Variant from parse_string.
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: Array = JSON.parse_string(r\"[]\")\n";
+			String out;
+			RefactorResult r = run_insert_cast(source, 1, 18, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("JSON.parse_string(r\"[]\") as Array"));
+		}
+	}
+
+	TEST_CASE("find_candidates collects insert-cast opportunities") {
+		SUBCASE("enumerates declaration, return, and call-argument boundaries") {
+			RefactorContext ctx;
+			ctx.path = "user://insert_cast_candidates.fs";
+			ctx.source =
+					"func takes(amount: int) -> void:\n"
+					"\tpass\n"
+					"func use(value) -> int:\n"
+					"\tvar x: int = value\n"
+					"\ttakes(value)\n"
+					"\treturn value\n";
+			RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::INSERT_EXPLICIT_CAST);
+			REQUIRE(result.ok);
+
+			int enabled_count = 0;
+			bool saw_declaration = false;
+			bool saw_argument = false;
+			bool saw_return = false;
+			for (const RefactorCandidate &candidate : result.candidates) {
+				CHECK_EQ(candidate.kind, RefactorKind::INSERT_EXPLICIT_CAST);
+				if (!candidate.enabled) {
+					continue;
+				}
+				enabled_count++;
+				REQUIRE_FALSE(candidate.edits.is_empty());
+				const String &new_text = candidate.edits[0].new_text;
+				if (candidate.line == 3) {
+					saw_declaration = true;
+					CHECK_EQ(new_text, "value as int");
+				} else if (candidate.line == 4) {
+					saw_argument = true;
+					CHECK_EQ(new_text, "value as int");
+				} else if (candidate.line == 5) {
+					saw_return = true;
+					CHECK_EQ(new_text, "value as int");
+				}
+			}
+			CHECK(saw_declaration);
+			CHECK(saw_argument);
+			CHECK(saw_return);
+			CHECK_EQ(enabled_count, 3);
+		}
+		SUBCASE("enumerates a legacy emit_signal payload boundary") {
+			RefactorContext ctx;
+			ctx.path = "user://insert_cast_emit_signal_candidates.fs";
+			ctx.source =
+					"signal fired(amount: int)\n"
+					"func use(value) -> void:\n"
+					"\temit_signal(\"fired\", value)\n";
+			RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::INSERT_EXPLICIT_CAST);
+			REQUIRE(result.ok);
+
+			bool saw_payload = false;
+			for (const RefactorCandidate &candidate : result.candidates) {
+				CHECK_EQ(candidate.kind, RefactorKind::INSERT_EXPLICIT_CAST);
+				if (!candidate.enabled) {
+					continue;
+				}
+				REQUIRE_FALSE(candidate.edits.is_empty());
+				// `candidate.line` is zero-based, so the `emit_signal(...)` on source line 3 is line 2.
+				if (candidate.line == 2 && candidate.edits[0].new_text == "value as int") {
+					saw_payload = true;
+				}
+			}
+			CHECK(saw_payload);
+		}
+	}
+
+	TEST_CASE("Widen to nullable") {
+		// `maybe()` returns `int?`, so its result is a nullable value reaching a
+		// non-nullable boundary: the strict-null satisfier widens the boundary type to `T?`.
+		SUBCASE("widens a declared type fed a nullable initializer") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: int = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: int? = maybe()"));
+		}
+		SUBCASE("widens a function return type fed a nullable value") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> int:\n"
+					"\treturn maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 4, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func use() -> int?:"));
+		}
+		SUBCASE("widens a class-level member declaration") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"var m: int = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 2, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var m: int? = maybe()"));
+		}
+		SUBCASE("widens a declared object type fed a nullable value") {
+			const String source =
+					"func maybe() -> Node?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar n: Node = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var n: Node? = maybe()"));
+		}
+		SUBCASE("widens a covariant native boundary (Button? -> Node)") {
+			// `Button?` is assignment-compatible with `Node` apart from its nullability, so the
+			// satisfier widens the boundary to `Node?` even though the underlying types differ.
+			const String source =
+					"func maybe() -> Button?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar n: Node = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var n: Node? = maybe()"));
+		}
+		SUBCASE("widens a covariant native return boundary (Button? -> Node)") {
+			const String source =
+					"func maybe() -> Button?:\n"
+					"\treturn null\n"
+					"func use() -> Node:\n"
+					"\treturn maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 4, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func use() -> Node?:"));
+		}
+		SUBCASE("widens an implicit numeric boundary (int? -> float)") {
+			// `int?` reaches a `float` boundary via the same implicit numeric conversion the
+			// analyzer accepts for the underlying types, so widening to `float?` is the right fix.
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: float = maybe()\n";
+			String out;
+			RefactorResult r = run_widen_nullable(source, 3, 6, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("var x: float? = maybe()"));
+		}
+		SUBCASE("is disabled when the value is not nullable") {
+			const String source =
+					"func use() -> void:\n"
+					"\tvar x: int = 5\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 1, 6));
+			CHECK(widen_nullable_reason(source, 1, 6).to_lower().contains("not nullable"));
+		}
+		SUBCASE("is disabled when the declared type is already nullable") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: int? = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("already nullable"));
+		}
+		SUBCASE("is disabled when the declaration has no target type") {
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+		}
+		SUBCASE("is disabled away from any boundary site") {
+			const String source =
+					"func use() -> void:\n"
+					"\tpass\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 1, 2));
+			CHECK(widen_nullable_reason(source, 1, 2).to_lower().contains("caret"));
+		}
+		SUBCASE("is disabled when the value's type does not match the target") {
+			// `String?` reaching an `int` boundary is an underlying-type error, not a pure
+			// nullability mismatch; widening to `int?` would not fix it.
+			const String source =
+					"func maybe() -> String?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar x: int = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
+		}
+		SUBCASE("is disabled when only a nested element differs in nullability") {
+			// `Array[int?]?` reaching `Array[int]` is rejected by both the outer nullability and
+			// the `int?` vs `int` element. Widening inserts a single outer `?` (`Array[int]?`),
+			// which would leave the nested element mismatch unfixed, so the satisfier must stay
+			// disabled rather than offer a fix that produces still-wrong code.
+			const String source =
+					"func maybe() -> Array[int?]?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\tvar a: Array[int] = maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 6));
+			CHECK(widen_nullable_reason(source, 3, 6).to_lower().contains("does not match"));
+		}
+		SUBCASE("is disabled for a void return type") {
+			// `void?` is not valid syntax, so a nullable value at a void return is not widened.
+			const String source =
+					"func maybe() -> int?:\n"
+					"\treturn null\n"
+					"func use() -> void:\n"
+					"\treturn maybe()\n";
+			CHECK_FALSE(widen_nullable_enabled(source, 3, 4));
+			CHECK(widen_nullable_reason(source, 3, 4).to_lower().contains("void"));
+		}
+	}
+
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+	TEST_CASE("Rename file-local symbols") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		auto run_rename = [](const String &p_res_path, int p_line, int p_column, const String &p_new_name, String &r_out) -> RefactorResult {
+			// Prime the LSP workspace so the document can be resolved and parsed.
+			FSTests::assert_no_errors_in(p_res_path);
+
+			RefactorContext ctx;
+			ctx.path = p_res_path;
+			ctx.source = FileAccess::get_file_as_string(p_res_path);
+			RefactorParams params;
+			params.new_name = p_new_name;
+			RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::RENAME, params);
+			if (r.ok) {
+				FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+			}
+			return r;
+		};
+
+		SUBCASE("local variable") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_local.fs", 3, 5, "sum", out); // caret on `total`
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "total");
+			CHECK(out.contains("var sum := 1"));
+			CHECK(out.contains("sum += 2"));
+			CHECK(out.contains("return sum"));
+			CHECK_FALSE(out.contains("total"));
+		}
+		SUBCASE("local variable ignores string-based dynamic member references") {
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_local_dynamic_reference.fs", 3, 5, "local_total", out); // caret on `local_value`
+			REQUIRE(r.ok);
+			CHECK(r.warning.is_empty());
+			CHECK(r.unresolved_references.is_empty());
+			CHECK(out.contains("var local_total := 1"));
+			CHECK(out.contains("get(\"local_value\")"));
+			CHECK(out.contains("return local_total"));
+		}
+		SUBCASE("file-local member") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_member.fs", 2, 4, "tally", out); // caret on `counter`
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "counter");
+			CHECK(out.contains("var tally := 0"));
+			CHECK(out.contains("tally += 1"));
+			CHECK(out.contains("return tally"));
+			CHECK_FALSE(out.contains("counter"));
+		}
+		SUBCASE("class referenced inside Type[T] annotations") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/type_metatype_rename.fs", 0, 6, "Client", out); // caret on `User` class
+			REQUIRE(r.ok);
+			CHECK(out.contains("class Client:"));
+			CHECK(out.contains("var user_type: Type[Client] = Client"));
+			CHECK(out.contains("func make() -> Client:"));
+			CHECK(out.contains("return Client.new()"));
+			CHECK_FALSE(out.contains("Type[User]"));
+			CHECK_FALSE(out.contains(": User"));
+		}
+		SUBCASE("strings and comments untouched") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_strings_comments.fs", 3, 5, "sum", out); // caret on `total`
+			REQUIRE(r.ok);
+			CHECK(out.contains("var sum := 1"));
+			CHECK(out.contains("print(sum)"));
+			CHECK(out.contains("# total is a comment word")); // comment unchanged
+			CHECK(out.contains("\"total in a string\"")); // string unchanged
+		}
+		SUBCASE("local variable exposes current-file occurrence ranges for inline rename") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_local.fs", 3, 5, "total", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 3);
+
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].start_column, 5);
+			CHECK_EQ(r.rename_occurrences[0].end_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].end_column, 10);
+			CHECK_EQ(r.rename_occurrences[0].expected_text, "total");
+
+			CHECK_EQ(r.rename_occurrences[1].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].start_column, 1);
+			CHECK_EQ(r.rename_occurrences[1].end_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].end_column, 6);
+
+			CHECK_EQ(r.rename_occurrences[2].start_line, 5);
+			CHECK_EQ(r.rename_occurrences[2].start_column, 8);
+			CHECK_EQ(r.rename_occurrences[2].end_line, 5);
+			CHECK_EQ(r.rename_occurrences[2].end_column, 13);
+		}
+		SUBCASE("inline rename occurrence ranges ignore strings and comments") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_strings_comments.fs", 3, 5, "total", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 2);
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[1].start_line, 6);
+			for (const RefactorTextEdit &occurrence : r.rename_occurrences) {
+				CHECK_EQ(occurrence.expected_text, "total");
+				CHECK(occurrence.start_line != 4); // Comment line.
+				CHECK(occurrence.start_line != 5); // String line.
+			}
+		}
+		SUBCASE("inline rename exposes same-line occurrence ranges") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_same_line.fs", 3, 5, "sum", out); // caret on `total`
+			REQUIRE(r.ok);
+			REQUIRE_EQ(r.rename_occurrences.size(), 5);
+
+			CHECK_EQ(r.rename_occurrences[0].start_line, 3);
+			CHECK_EQ(r.rename_occurrences[0].start_column, 5);
+			CHECK_EQ(r.rename_occurrences[0].end_column, 10);
+
+			CHECK_EQ(r.rename_occurrences[1].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[1].start_column, 1);
+			CHECK_EQ(r.rename_occurrences[1].end_column, 6);
+
+			CHECK_EQ(r.rename_occurrences[2].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[2].start_column, 9);
+			CHECK_EQ(r.rename_occurrences[2].end_column, 14);
+
+			CHECK_EQ(r.rename_occurrences[3].start_line, 4);
+			CHECK_EQ(r.rename_occurrences[3].start_column, 17);
+			CHECK_EQ(r.rename_occurrences[3].end_column, 22);
+
+			CHECK_EQ(r.rename_occurrences[4].start_line, 5);
+			CHECK_EQ(r.rename_occurrences[4].start_column, 8);
+			CHECK_EQ(r.rename_occurrences[4].end_column, 13);
+		}
+		SUBCASE("availability reports rename enabled on a symbol") {
+			FSTests::assert_no_errors_in("res://refactor/rename_local.fs");
+			RefactorContext ctx;
+			ctx.path = "res://refactor/rename_local.fs";
+			ctx.source = FileAccess::get_file_as_string(ctx.path);
+			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(3, 5));
+			REQUIRE_EQ(available.size(), 9);
+			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
+			CHECK(available[0].enabled);
+		}
+		SUBCASE("function and all call sites") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_function.fs", 2, 5, "worker", out); // caret on `helper` decl
+			REQUIRE(r.ok);
+			CHECK(out.contains("func worker() -> int:"));
+			CHECK(out.contains("return worker() + worker()"));
+			CHECK_FALSE(out.contains("helper"));
+		}
+		SUBCASE("rejects invalid new name") {
+			String out;
+			RefactorResult bad_syntax = run_rename("res://refactor/rename_local.fs", 3, 5, "1bad", out); // caret on `total`
+			CHECK_FALSE(bad_syntax.ok);
+			CHECK_FALSE(bad_syntax.error_message.is_empty());
+
+			RefactorResult keyword = run_rename("res://refactor/rename_local.fs", 3, 5, "class", out);
+			CHECK_FALSE(keyword.ok);
+			CHECK_FALSE(keyword.error_message.is_empty());
+		}
+		SUBCASE("availability disabled off a symbol") {
+			FSTests::assert_no_errors_in("res://refactor/rename_local.fs");
+			RefactorContext ctx;
+			ctx.path = "res://refactor/rename_local.fs";
+			ctx.source = FileAccess::get_file_as_string(ctx.path);
+			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
+			REQUIRE_EQ(available.size(), 9);
+			CHECK_FALSE(available[0].enabled);
+			CHECK_FALSE(available[0].disabled_reason.is_empty());
+		}
+		SUBCASE("rejects in-scope collision") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_collision.fs", 3, 5, "b", out); // caret on `a` decl
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+			CHECK(r.error_message.to_lower().contains("scope"));
+		}
+		SUBCASE("warns when renaming an exported variable") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_exported.fs", 2, 12, "velocity", out); // caret on `speed`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("exported"));
+			// The in-file edits still apply: declaration and use are both updated.
+			CHECK(out.contains("@export var velocity := 1.0"));
+			CHECK(out.contains("return velocity"));
+			CHECK_FALSE(out.contains("speed"));
+		}
+		SUBCASE("member rename stays within its own file") {
+			// rename_xfile_a.fs and rename_xfile_b.fs both declare an unrelated
+			// `var shared_value`. Renaming A's member must only touch A.
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_xfile_a.fs", 2, 4, "renamed_value", out); // caret on A's `shared_value`
+			REQUIRE(r.ok);
+			CHECK(out.contains("var renamed_value := 0"));
+			CHECK(out.contains("renamed_value += 1"));
+			CHECK(out.contains("return renamed_value"));
+			CHECK_FALSE(out.contains("shared_value"));
+
+			// Every emitted edit targets a line that exists within A; the engine's
+			// URI filter keeps edits single-file, so B's same-named symbol is untouched.
+			const RefactorContext a_ctx = make_context("res://refactor/rename_xfile_a.fs");
+			const int a_line_count = a_ctx.source.split("\n").size();
+			for (const RefactorTextEdit &edit : r.edits) {
+				CHECK(edit.start_line >= 0);
+				CHECK(edit.start_line < a_line_count);
+			}
+
+			// B on disk is unaffected: it still declares the original symbol name.
+			const String b_source = FileAccess::get_file_as_string("res://refactor/rename_xfile_b.fs");
+			CHECK(b_source.contains("var shared_value := 0"));
+			CHECK_FALSE(b_source.contains("renamed_value"));
+		}
+		SUBCASE("member rename reports grouped cross-file edits") {
+			FSTests::assert_no_errors_in("res://refactor/rename_cross_file_user.fs");
+
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_cross_file_target.fs", 2, 5, "renamed_count", out); // caret on `shared_count`
+			REQUIRE(r.ok);
+			CHECK(r.warning.is_empty());
+			REQUIRE_EQ(r.file_edits.size(), 2);
+
+			const RefactorFileEdit *target_edits = find_file_edit(r, "res://refactor/rename_cross_file_target.fs");
+			REQUIRE(target_edits);
+			CHECK_EQ(target_edits->edits.size(), 3);
+
+			const RefactorFileEdit *user_edits = find_file_edit(r, "res://refactor/rename_cross_file_user.fs");
+			REQUIRE(user_edits);
+			CHECK_EQ(user_edits->edits.size(), 2);
+
+			String target_out;
+			REQUIRE(FSRefactorEdits::apply(
+					FileAccess::get_file_as_string(target_edits->path), target_edits->edits, target_out));
+			CHECK(target_out.contains("var renamed_count := 0"));
+			CHECK(target_out.contains("renamed_count += 1"));
+			CHECK(target_out.contains("return renamed_count"));
+			CHECK_FALSE(target_out.contains("shared_count"));
+
+			String user_out;
+			REQUIRE(FSRefactorEdits::apply(FileAccess::get_file_as_string(user_edits->path), user_edits->edits, user_out));
+			CHECK(user_out.contains("target.renamed_count += 1"));
+			CHECK(user_out.contains("return target.renamed_count"));
+			CHECK_FALSE(user_out.contains("shared_count"));
+		}
+		SUBCASE("exported member rename reports cross-file edits with advisory") {
+			FSTests::assert_no_errors_in("res://refactor/rename_cross_file_exported_user.fs");
+
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_cross_file_exported_target.fs", 2, 13, "renamed_exported_count", out); // caret on `shared_exported_count`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("exported"));
+			CHECK(r.unresolved_references.is_empty());
+			REQUIRE_EQ(r.file_edits.size(), 2);
+
+			const RefactorFileEdit *target_edits = find_file_edit(r, "res://refactor/rename_cross_file_exported_target.fs");
+			REQUIRE(target_edits);
+			CHECK_EQ(target_edits->edits.size(), 3);
+
+			const RefactorFileEdit *user_edits = find_file_edit(r, "res://refactor/rename_cross_file_exported_user.fs");
+			REQUIRE(user_edits);
+			CHECK_EQ(user_edits->edits.size(), 2);
+
+			const String scene_path = "res://refactor/rename_cross_file_exported_scene.tscn";
+			CHECK(find_file_edit(r, scene_path) == nullptr);
+			const String scene_source = FileAccess::get_file_as_string(scene_path);
+			CHECK(scene_source.contains("shared_exported_count = 7"));
+			CHECK_FALSE(scene_source.contains("renamed_exported_count = 7"));
+
+			String target_out;
+			REQUIRE(FSRefactorEdits::apply(
+					FileAccess::get_file_as_string(target_edits->path), target_edits->edits, target_out));
+			CHECK(target_out.contains("@export var renamed_exported_count := 0"));
+			CHECK(target_out.contains("renamed_exported_count += 1"));
+			CHECK(target_out.contains("return renamed_exported_count"));
+			CHECK_FALSE(target_out.contains("shared_exported_count"));
+
+			String user_out;
+			REQUIRE(FSRefactorEdits::apply(FileAccess::get_file_as_string(user_edits->path), user_edits->edits, user_out));
+			CHECK(user_out.contains("target.renamed_exported_count += 1"));
+			CHECK(user_out.contains("return target.renamed_exported_count"));
+			CHECK_FALSE(user_out.contains("shared_exported_count"));
+		}
+		SUBCASE("cross-file rename reports parse-failed textual references") {
+			const String broken_path = "res://refactor/rename_cross_file_broken_user.fs";
+			TemporaryScriptFile broken_script(
+					broken_path,
+					"extends Node\n"
+					"\n"
+					"const Target = preload(\"res://refactor/rename_cross_file_target.fs\")\n"
+					"\n"
+					"func use_target() -> int:\n"
+					"\tvar target := Target.new()\n"
+					"\ttarget.shared_count +=\n");
+
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_cross_file_target.fs", 2, 5, "renamed_count", out); // caret on `shared_count`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("parse"));
+
+			bool found_unresolved = false;
+			for (const RefactorUnresolvedReference &unresolved : r.unresolved_references) {
+				if (unresolved.path == broken_path && unresolved.line == 6 && unresolved.column == 8) {
+					found_unresolved = true;
+					CHECK(unresolved.message.to_lower().contains("parse"));
+				}
+			}
+			CHECK(found_unresolved);
+		}
+		SUBCASE("string-based dynamic references are reported") {
+			String out;
+			RefactorResult r = run_rename(
+					"res://refactor/rename_dynamic_reference.fs", 2, 5, "renamed_value", out); // caret on `dynamic_value`
+			REQUIRE(r.ok);
+			CHECK_FALSE(r.warning.is_empty());
+			CHECK(r.warning.to_lower().contains("dynamic"));
+			REQUIRE_EQ(r.unresolved_references.size(), 1);
+			CHECK_EQ(r.unresolved_references[0].path, "res://refactor/rename_dynamic_reference.fs");
+			CHECK_EQ(r.unresolved_references[0].line, 5);
+			CHECK(out.contains("\treturn get(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\treturn get(\"renamed_value\")"));
+			CHECK(out.contains("\twidget(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\twidget(\"renamed_value\")"));
+			CHECK(out.contains("\toffset(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\toffset(\"renamed_value\")"));
+			CHECK(out.contains("\trecall(\"dynamic_value\")"));
+			CHECK_FALSE(out.contains("\trecall(\"renamed_value\")"));
+			CHECK(out.contains("\tvar label := \"dynamic_value\"; call(\"unrelated_method\")"));
+			CHECK_FALSE(out.contains("\tvar label := \"renamed_value\"; call(\"unrelated_method\")"));
+		}
+		SUBCASE("allows same name in a different scope") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_diff_scope.fs", 3, 5, "y", out); // caret on `x` in first()
+			REQUIRE(r.ok); // `y` exists only in second(), not in first()'s scope
+			CHECK(out.contains("var y := 1"));
+			CHECK(out.contains("print(y)"));
+		}
+		SUBCASE("rejects collision with a parameter") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_param_collision.fs", 3, 5, "value", out); // caret on `temp`
+			CHECK_FALSE(r.ok);
+			CHECK(r.error_message.to_lower().contains("scope"));
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Rename uses caller source over stale protocol cache") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		FSTests::assert_no_errors_in("res://refactor/rename_local.fs");
+
+		RefactorContext ctx;
+		ctx.path = "res://refactor/rename_local.fs";
+		ctx.source = "extends Node\n"
+					 "\n"
+					 "func compute() -> int:\n"
+					 "\tvar current_total := 1\n"
+					 "\tcurrent_total += 2\n"
+					 "\treturn current_total\n";
+
+		RefactorParams params;
+		params.new_name = "renamed_total";
+		RefactorResult r = FSRefactoring::prepare(ctx, caret(3, 5), RefactorKind::RENAME, params);
+		REQUIRE(r.ok);
+		CHECK_EQ(r.suggested_name, "current_total");
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("var renamed_total := 1"));
+		CHECK(out.contains("renamed_total += 2"));
+		CHECK(out.contains("return renamed_total"));
+		CHECK_FALSE(out.contains("current_total"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Rename pre-filters project files by raw text before parsing") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		// Renames `helper` in rename_function.fs; the symbol name scanned for is "helper".
+		auto run_rename_helper = []() -> RefactorResult {
+			const String path = "res://refactor/rename_function.fs";
+			FSTests::assert_no_errors_in(path);
+			RefactorContext ctx;
+			ctx.path = path;
+			ctx.source = FileAccess::get_file_as_string(path);
+			RefactorParams params;
+			params.new_name = "worker";
+			return FSRefactoring::prepare(ctx, caret(2, 5), RefactorKind::RENAME, params); // caret on `helper` decl
+		};
+
+		ExtendFSParser::reset_parse_file_count_for_test();
+		REQUIRE(run_rename_helper().ok);
+		const uint64_t baseline_parses = ExtendFSParser::get_parse_file_count_for_test();
+
+		SUBCASE("a file whose text never mentions the symbol is not parsed") {
+			TemporaryScriptFile unrelated(
+					"res://refactor/issue_605_unrelated.fs",
+					"extends Node\n"
+					"func untouched() -> void:\n"
+					"\tpass\n");
+			ExtendFSParser::reset_parse_file_count_for_test();
+			REQUIRE(run_rename_helper().ok);
+			CHECK_EQ(ExtendFSParser::get_parse_file_count_for_test(), baseline_parses);
+		}
+
+		SUBCASE("a file whose text mentions the symbol is parsed") {
+			TemporaryScriptFile mentions(
+					"res://refactor/issue_605_mentions.fs",
+					"extends Node\n"
+					"# helper appears only in this comment\n"
+					"func other() -> void:\n"
+					"\tpass\n");
+			ExtendFSParser::reset_parse_file_count_for_test();
+			REQUIRE(run_rename_helper().ok);
+			CHECK_EQ(ExtendFSParser::get_parse_file_count_for_test(), baseline_parses + 1);
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Implement abstract recovers a cross-file base default from the base file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		// The child extends a default-bearing abstract method declared in another
+		// script. The default's source span points into the base file; slicing the
+		// child file with it would omit or corrupt the default. Caret on `var marker`.
+		RefactorContext ctx = make_context("res://refactor/implement_abstract_xfile_child.fs");
+		RefactorParams params;
+		RefactorResult r = FSRefactoring::prepare(ctx, caret(3, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func scaled(factor: float = 1.0) -> float:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Implement abstract recomputes cross-file base stubs after the base changes") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/implement_abstract_cache_base.fs";
+		const String child_path = "res://refactor/implement_abstract_cache_child.fs";
+		const String base_v1 =
+				"abstract extends RefCounted\n"
+				"\n"
+				"abstract func scaled(factor: float = 1.0) -> float\n";
+		const String base_v2 =
+				"abstract extends RefCounted\n"
+				"\n"
+				"abstract func scaled(value: int = 2) -> int\n";
+		const String child_source =
+				"extends \"res://refactor/implement_abstract_cache_base.fs\"\n"
+				"\n"
+				"var marker := 0\n";
+		TemporaryScriptFile base_script(base_path, base_v1);
+		TemporaryScriptFile child_script(child_path, child_source);
+
+		FSTests::assert_no_errors_in(base_path);
+
+		RefactorContext ctx;
+		ctx.path = child_path;
+		ctx.source = FileAccess::get_file_as_string(child_path);
+		RefactorParams params;
+
+		RefactorResult first = FSRefactoring::prepare(ctx, caret(2, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(first.ok);
+		String first_out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, first.edits, first_out));
+		CHECK(first_out.contains("func scaled(factor: float = 1.0) -> float:"));
+
+		Ref<FileAccess> file = FileAccess::open(base_path, FileAccess::WRITE);
+		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", base_path));
+		file->store_string(base_v2);
+		file.unref();
+		FSCache::remove_script(base_path);
+		FSTests::assert_no_errors_in(base_path);
+
+		RefactorResult second = FSRefactoring::prepare(ctx, caret(2, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(second.ok);
+		String second_out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, second.edits, second_out));
+		CHECK(second_out.contains("func scaled(value: int = 2) -> int:"));
+		CHECK_FALSE(second_out.contains("func scaled(factor: float = 1.0) -> float:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Implement abstract recovers a cross-file trait default from the trait file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+		LSPGlobalScriptClassBackup global_class_backup;
+		const StringName language = FSLanguage::get_singleton()->get_name();
+		ScriptServer::add_global_class("RefactorXfileDamageable", "RefCounted", language,
+				"res://refactor/implement_abstract_xfile_trait.fs", false, false, true);
+
+		// The user class applies a global trait whose abstract method carries a default
+		// value. The default's source span points into the trait file; the stub must
+		// recover it from there rather than dropping it (which would change the minimum
+		// argument count and not satisfy the trait). Caret on `var marker`.
+		const String user_path = "res://refactor/implement_abstract_xfile_trait_user.fs";
+		RefactorContext ctx;
+		ctx.path = user_path;
+		ctx.source = FileAccess::get_file_as_string(user_path);
+
+		RefactorParams params;
+		RefactorResult r = FSRefactoring::prepare(ctx, caret(3, 1), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func take_damage(amount: int = 1) -> void:"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Add type annotation renders class-handle initializers as Type[T]") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const RefactorContext ctx = make_context("res://refactor/type_metatype_annotation.fs");
+		FSTests::assert_no_errors_in(ctx.path);
+		RefactorParams params;
+
+		SUBCASE("script class handle") {
+			String out;
+			RefactorResult r = FSRefactoring::prepare(ctx, caret(3, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			REQUIRE(r.ok);
+			REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+			CHECK(out.contains("var user_type: Type[User] = User"));
+		}
+		SUBCASE("native class handle") {
+			String out;
+			RefactorResult r = FSRefactoring::prepare(ctx, caret(4, 5), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			REQUIRE(r.ok);
+			REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+			CHECK(out.contains("var node_type: Type[Node] = Node"));
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Add type annotation renders namespaced classes with the minimal in-scope spelling") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+		LSPGlobalScriptClassBackup global_class_backup;
+		const StringName language = FSLanguage::get_singleton()->get_name();
+		ScriptServer::add_global_class("refactor.characters.RefactorNsBaseCharacter", "Node", language,
+				"res://refactor/namespace_annotation_base.fs", false, false, false);
+
+		// Returns the applied source for the lone local-variable annotation candidate
+		// in the file (the `var character := ...` site).
+		auto annotate_local = [](const String &p_path, String &r_out) -> bool {
+			FSTests::assert_no_errors_in(p_path);
+			RefactorContext ctx;
+			ctx.path = p_path;
+			ctx.source = FileAccess::get_file_as_string(p_path);
+			const RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			if (!result.ok) {
+				return false;
+			}
+			for (const RefactorCandidate &candidate : result.candidates) {
+				if (candidate.enabled && candidate.declaration_kind == "variable") {
+					return FSRefactorEdits::apply(ctx.source, candidate.edits, r_out);
+				}
+			}
+			return false;
+		};
+
+		SUBCASE("same-namespace reference renders bare without an import") {
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_same.fs", out));
+			CHECK(out.contains("var character: RefactorNsBaseCharacter = RefactorNsBaseCharacter.new()"));
+			CHECK_FALSE(out.contains("import refactor.characters"));
+		}
+		SUBCASE("already-imported cross-namespace reference renders bare without a new import") {
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_imported.fs", out));
+			CHECK(out.contains("var character: RefactorNsBaseCharacter = RefactorNsBaseCharacter.new()"));
+			// The single existing import is preserved; no duplicate is inserted.
+			CHECK_EQ(out.count("import refactor.characters"), 1);
+		}
+		SUBCASE("unimported cross-namespace reference renders fully qualified with no import") {
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_unimported.fs", out));
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			CHECK_FALSE(out.contains("import refactor.characters"));
+			// The qualified annotation resolves on its own.
+			RefactorContext applied_ctx;
+			applied_ctx.path = "res://refactor/namespace_annotation_unimported.fs";
+			applied_ctx.source = out;
+			const RefactorCandidatesResult reanalyzed = FSRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			CHECK(reanalyzed.ok);
+		}
+		SUBCASE("annotated namespaced file qualifies the type and stays valid") {
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_annotated.fs", out));
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			CHECK_FALSE(out.contains("import refactor.characters"));
+			// The applied result must itself be valid FoundryScript.
+			RefactorContext applied_ctx;
+			applied_ctx.path = "res://refactor/namespace_annotation_annotated.fs";
+			applied_ctx.source = out;
+			const RefactorCandidatesResult reanalyzed = FSRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			CHECK(reanalyzed.ok);
+		}
+		SUBCASE("a nested-block local does not shadow an outer-scope qualified annotation") {
+			// The function body's `var character` site is annotated with the
+			// fully-qualified `refactor.characters.RefactorNsBaseCharacter`. A local
+			// named `refactor` declared only inside the nested `if` block is not in
+			// scope at that site, so it must not suppress the qualified spelling.
+			String out;
+			REQUIRE(annotate_local("res://refactor/namespace_annotation_nested_shadow.fs", out));
+			CHECK(out.contains("var character: refactor.characters.RefactorNsBaseCharacter = "));
+			CHECK_FALSE(out.contains("import refactor.characters"));
+			// The applied result must itself be valid FoundryScript.
+			RefactorContext applied_ctx;
+			applied_ctx.path = "res://refactor/namespace_annotation_nested_shadow.fs";
+			applied_ctx.source = out;
+			const RefactorCandidatesResult reanalyzed = FSRefactoring::find_candidates(applied_ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+			CHECK(reanalyzed.ok);
+		}
+		SUBCASE("a top-level body local still shadows a qualified annotation in scope") {
+			// `var refactor` is a top-level body local, so it is in scope at the
+			// sibling `var character` site. A qualified spelling rooted at
+			// `refactor` would resolve to that local, so the annotation must stay
+			// disabled rather than emit invalid FoundryScript.
+			String out;
+			CHECK_FALSE(annotate_local("res://refactor/namespace_annotation_toplevel_shadow.fs", out));
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Add type annotation infers parameters from resolved call sites") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		auto run_callsite_type_annotation = [](const String &p_res_path, int p_line, int p_column, String &r_out) -> RefactorResult {
+			FSTests::assert_no_errors_in(p_res_path);
+
+			RefactorContext ctx;
+			ctx.path = p_res_path;
+			ctx.source = FileAccess::get_file_as_string(p_res_path);
+			RefactorParams params;
+			RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::ADD_TYPE_ANNOTATION, params);
+			if (r.ok) {
+				FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+			}
+			return r;
+		};
+
+		SUBCASE("agreeing call sites produce a parameter annotation") {
+			FSTests::assert_no_errors_in("res://refactor/callsite_parameter_agree_user.fs");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_agree_target.fs", 2, 19, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func accept_score(score: int):"));
+		}
+
+		SUBCASE("default-less parameter before defaulted parameter keeps its insertion point") {
+			FSTests::assert_no_errors_in("res://refactor/callsite_parameter_before_default_user.fs");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_before_default_target.fs", 2, 19, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func accept_value(value: String, count = 5):"));
+		}
+
+		SUBCASE("non-first parameter uses its own argument index") {
+			FSTests::assert_no_errors_in("res://refactor/callsite_parameter_second_arg_user.fs");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_second_arg_target.fs", 2, 29, out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("func accept_second(prefix, score: int):"));
+		}
+
+		SUBCASE("disagreeing call sites are skipped") {
+			FSTests::assert_no_errors_in("res://refactor/callsite_parameter_disagree_user.fs");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_disagree_target.fs", 2, 19, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		SUBCASE("string-based dynamic dispatch keeps direct calls skipped") {
+			FSTests::assert_no_errors_in("res://refactor/callsite_parameter_dynamic_user.fs");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_dynamic_target.fs", 2, 21, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		SUBCASE("overridden methods are skipped") {
+			FSTests::assert_no_errors_in("res://refactor/callsite_parameter_override_user.fs");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_override_target.fs", 2, 22, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		SUBCASE("inline property accessor call sites are included") {
+			FSTests::assert_no_errors_in("res://refactor/callsite_parameter_property_user.fs");
+
+			String out;
+			RefactorResult r = run_callsite_type_annotation(
+					"res://refactor/callsite_parameter_property_target.fs", 2, 21, out);
+			CHECK_FALSE(r.ok);
+			CHECK_FALSE(r.error_message.is_empty());
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Implement abstract methods resolves a base defined in another file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		// Prime the workspace so the abstract base resolves. The derived script is
+		// intentionally left with unimplemented abstract methods, which the analyzer
+		// reports as an error; the refactor still operates on its parse tree.
+		FSTests::assert_no_errors_in("res://refactor/implement_abstract_base.fs");
+
+		const String derived_path = "res://refactor/implement_abstract_derived.fs";
+		RefactorContext ctx;
+		ctx.path = derived_path;
+		ctx.source = FileAccess::get_file_as_string(derived_path);
+
+		SUBCASE("availability reports the refactor as enabled") {
+			const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(2, 0));
+			const RefactorAvailability *entry = FSTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+			REQUIRE(entry != nullptr);
+			CHECK(entry->enabled);
+		}
+
+		SUBCASE("prepare stubs the inherited abstract methods") {
+			RefactorParams params;
+			RefactorResult r = FSRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+			REQUIRE(r.ok);
+			REQUIRE_FALSE(r.edits.is_empty());
+
+			String out;
+			REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+			CHECK(out.contains("func area() -> float:"));
+			CHECK(out.contains("push_error(\"Not implemented: area\")"));
+			CHECK(out.contains("return 0.0"));
+			CHECK(out.contains("func describe() -> String:"));
+			CHECK(out.contains("return \"\""));
+		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Implement abstract methods resolves a multi-level cross-file base chain") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		// Prime the abstract base and the abstract intermediate so the leaf's base chain
+		// resolves through separate script files. The leaf still owes ping(), inherited
+		// from the base two levels up; the intermediate does not override it.
+		FSTests::assert_no_errors_in("res://refactor/implement_abstract_chain_base.fs");
+
+		const String leaf_path = "res://refactor/implement_abstract_chain_leaf.fs";
+		RefactorContext ctx;
+		ctx.path = leaf_path;
+		ctx.source = FileAccess::get_file_as_string(leaf_path);
+
+		const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(2, 0));
+		const RefactorAvailability *entry = FSTests::find_availability(available, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
+		REQUIRE(entry != nullptr);
+		CHECK(entry->enabled);
+
+		RefactorParams params;
+		RefactorResult r = FSRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+		REQUIRE_FALSE(r.edits.is_empty());
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func ping() -> int:"));
+		CHECK(out.contains("return 0"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Implement abstract: root class with only header lines appends at end of file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		FSTests::assert_no_errors_in("res://refactor/implement_abstract_base.fs");
+
+		// A root class whose body is only header lines (@tool / class_name / extends) and
+		// that owes inherited abstract methods. The stubs must be appended after the
+		// extends line, not inserted mid-header, to keep the file valid.
+		const String derived_path = "res://refactor/implement_abstract_header_only.fs";
+		RefactorContext ctx;
+		ctx.path = derived_path;
+		ctx.source = FileAccess::get_file_as_string(derived_path);
+
+		RefactorParams params;
+		RefactorResult r = FSRefactoring::prepare(ctx, caret(2, 0), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+		REQUIRE(r.ok);
+		REQUIRE_FALSE(r.edits.is_empty());
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+		const int class_name_index = out.find("class_name RefactorAbstractHeaderOnly");
+		const int extends_index = out.find("extends \"res://refactor/implement_abstract_base.fs\"");
+		const int func_index = out.find("func area() -> float:");
+		CHECK(class_name_index >= 0);
+		CHECK(extends_index >= 0);
+		CHECK(func_index >= 0);
+		CHECK(func_index > extends_index);
+		CHECK(func_index > class_name_index);
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+#endif // FOUNDRY_SCRIPT_NO_LSP
+}
+
+} // namespace FSTests
+
+#endif // TOOLS_ENABLED

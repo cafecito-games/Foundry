@@ -1,0 +1,19 @@
+FS_TEST_OK
+~~ WARNING at line 30: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
+{"key1": "value1", "key2": "value2"}
+{"key1": "value1", "key2"}
+{"key1", "key2": "value2"}
+{"key1", "key2"}
+{"key1": "value1"}
+{"key1"}
+wildcard
+wildcard
+wildcard
+wildcard
+0
+1
+2
+wildcard
+multiline {"key1": "value1"}
+multiline {"key2": "value2",}
+multiline {"key3": {"key1", ..,},}

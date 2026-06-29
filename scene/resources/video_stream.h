@@ -33,7 +33,7 @@
 #include "scene/resources/texture.h"
 
 class VideoStreamPlayback : public Resource {
-	GDCLASS(VideoStreamPlayback, Resource);
+	FOUNDRY_CLASS(VideoStreamPlayback, Resource);
 
 public:
 	typedef int (*AudioMixCallback)(void *p_udata, const float *p_data, int p_frames);
@@ -44,19 +44,19 @@ protected:
 	mutable int _channel_count = 0; // Used only to assist with bounds checking in mix_audio.
 
 	static void _bind_methods();
-	GDVIRTUAL0(_stop);
-	GDVIRTUAL0(_play);
-	GDVIRTUAL0RC(bool, _is_playing);
-	GDVIRTUAL1(_set_paused, bool);
-	GDVIRTUAL0RC(bool, _is_paused);
-	GDVIRTUAL0RC(double, _get_length);
-	GDVIRTUAL0RC(double, _get_playback_position);
-	GDVIRTUAL1(_seek, double);
-	GDVIRTUAL1(_set_audio_track, int);
-	GDVIRTUAL0RC(Ref<Texture2D>, _get_texture);
-	GDVIRTUAL1_REQUIRED(_update, double);
-	GDVIRTUAL0RC(int, _get_channels);
-	GDVIRTUAL0RC(int, _get_mix_rate);
+	FOUNDRY_VIRTUAL0(_stop);
+	FOUNDRY_VIRTUAL0(_play);
+	FOUNDRY_VIRTUAL0RC(bool, _is_playing);
+	FOUNDRY_VIRTUAL1(_set_paused, bool);
+	FOUNDRY_VIRTUAL0RC(bool, _is_paused);
+	FOUNDRY_VIRTUAL0RC(double, _get_length);
+	FOUNDRY_VIRTUAL0RC(double, _get_playback_position);
+	FOUNDRY_VIRTUAL1(_seek, double);
+	FOUNDRY_VIRTUAL1(_set_audio_track, int);
+	FOUNDRY_VIRTUAL0RC(Ref<Texture2D>, _get_texture);
+	FOUNDRY_VIRTUAL1_REQUIRED(_update, double);
+	FOUNDRY_VIRTUAL0RC(int, _get_channels);
+	FOUNDRY_VIRTUAL0RC(int, _get_mix_rate);
 
 	int mix_audio(int num_frames, PackedFloat32Array buffer = {}, int offset = 0);
 
@@ -88,13 +88,13 @@ public:
 };
 
 class VideoStream : public Resource {
-	GDCLASS(VideoStream, Resource);
+	FOUNDRY_CLASS(VideoStream, Resource);
 	OBJ_SAVE_TYPE(VideoStream);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0R_REQUIRED(Ref<VideoStreamPlayback>, _instantiate_playback);
+	FOUNDRY_VIRTUAL0R_REQUIRED(Ref<VideoStreamPlayback>, _instantiate_playback);
 
 	String file;
 	int audio_track = 0;

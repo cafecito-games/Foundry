@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 4: Cannot find member "V3" in base "enum_bad_value.fs.Enum".

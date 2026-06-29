@@ -1,3 +1,0 @@
-GDTEST_OK
-abstract func items() -> Array[RefCounted]
-abstract func mapping() -> Dictionary[String, RefCounted]

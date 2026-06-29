@@ -36,7 +36,7 @@ class Animation;
 class Node;
 
 class EditorSceneFormatImporterFBX2GLTF : public EditorSceneFormatImporter {
-	GDCLASS(EditorSceneFormatImporterFBX2GLTF, EditorSceneFormatImporter);
+	FOUNDRY_CLASS(EditorSceneFormatImporterFBX2GLTF, EditorSceneFormatImporter);
 
 public:
 	virtual void get_extensions(List<String> *r_extensions) const override;

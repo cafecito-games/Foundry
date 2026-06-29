@@ -34,7 +34,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class DebugAdapterServer : public EditorPlugin {
-	GDCLASS(DebugAdapterServer, EditorPlugin);
+	FOUNDRY_CLASS(DebugAdapterServer, EditorPlugin);
 
 	DebugAdapterProtocol protocol;
 

@@ -42,14 +42,14 @@ namespace TestRefactorDiffPreview {
 TEST_CASE("[Editor][RefactorDiffPreview] File selection state") {
 	Vector<RefactorDiffPreviewFile> files;
 	RefactorDiffPreviewFile player;
-	player.path = "res://player.gd";
+	player.path = "res://player.fs";
 	player.before_source = "var speed = 10\n";
 	player.after_source = "var velocity = 10\n";
 	player.edit_count = 1;
 	files.push_back(player);
 
 	RefactorDiffPreviewFile enemy;
-	enemy.path = "res://enemy.gd";
+	enemy.path = "res://enemy.fs";
 	enemy.before_source = "target.speed += 1\n";
 	enemy.after_source = "target.velocity += 1\n";
 	enemy.edit_count = 1;
@@ -68,11 +68,11 @@ TEST_CASE("[Editor][RefactorDiffPreview] File selection state") {
 	CHECK(model.is_file_accepted(0));
 	CHECK_FALSE(model.is_file_accepted(1));
 	CHECK_EQ(model.get_accepted_file_count(), 1);
-	CHECK_EQ(model.get_accepted_paths()[0], "res://player.gd");
+	CHECK_EQ(model.get_accepted_paths()[0], "res://player.fs");
 
 	model.select_file(1);
 	CHECK_EQ(model.get_selected_index(), 1);
-	CHECK_EQ(model.get_selected_file().path, "res://enemy.gd");
+	CHECK_EQ(model.get_selected_file().path, "res://enemy.fs");
 
 	model.accept_file(1);
 	CHECK(model.is_file_accepted(1));
@@ -92,7 +92,7 @@ TEST_CASE("[Editor][RefactorDiffPreview] File selection handles empty input") {
 TEST_CASE("[Editor][RefactorDiffPreview] File selection rejects out-of-range indexes") {
 	Vector<RefactorDiffPreviewFile> files;
 	RefactorDiffPreviewFile player;
-	player.path = "res://player.gd";
+	player.path = "res://player.fs";
 	files.push_back(player);
 
 	RefactorDiffPreviewModel model;
@@ -109,7 +109,7 @@ TEST_CASE("[Editor][RefactorDiffPreview] Accepted files produce filtered apply p
 	ScriptRefactorApplyPlan plan;
 
 	ScriptRefactorFilePlan player;
-	player.path = "res://player.gd";
+	player.path = "res://player.fs";
 	player.before_source = "var speed := 10\n";
 	player.after_source = "var move_speed := 10\n";
 	player.edit_count = 1;
@@ -117,7 +117,7 @@ TEST_CASE("[Editor][RefactorDiffPreview] Accepted files produce filtered apply p
 	plan.files.push_back(player);
 
 	ScriptRefactorFilePlan enemy;
-	enemy.path = "res://enemy.gd";
+	enemy.path = "res://enemy.fs";
 	enemy.before_source = "target.speed += 1\n";
 	enemy.after_source = "target.move_speed += 1\n";
 	enemy.edit_count = 1;
@@ -128,18 +128,18 @@ TEST_CASE("[Editor][RefactorDiffPreview] Accepted files produce filtered apply p
 
 	const ScriptRefactorApplyPlan accepted = model.get_accepted_apply_plan();
 	REQUIRE_EQ(accepted.files.size(), 2);
-	CHECK_EQ(accepted.files[0].path, "res://player.gd");
+	CHECK_EQ(accepted.files[0].path, "res://player.fs");
 	CHECK_EQ(accepted.files[0].before_source, "var speed := 10\n");
 	CHECK_EQ(accepted.files[0].after_source, "var move_speed := 10\n");
 	CHECK_EQ(accepted.files[0].edit_count, 1);
 	CHECK_FALSE(accepted.files[0].before_source_is_saved_version);
-	CHECK_EQ(accepted.files[1].path, "res://enemy.gd");
+	CHECK_EQ(accepted.files[1].path, "res://enemy.fs");
 	CHECK(accepted.files[1].before_source_is_saved_version);
 
 	model.reject_file(1);
 	const ScriptRefactorApplyPlan filtered = model.get_accepted_apply_plan();
 	REQUIRE_EQ(filtered.files.size(), 1);
-	CHECK_EQ(filtered.files[0].path, "res://player.gd");
+	CHECK_EQ(filtered.files[0].path, "res://player.fs");
 }
 
 namespace {
@@ -159,7 +159,7 @@ RefactorTextEdit make_insert_edit(int p_line, int p_column, const String &p_new_
 ScriptRefactorApplyPlan make_two_edit_plan() {
 	ScriptRefactorApplyPlan plan;
 	ScriptRefactorFilePlan file;
-	file.path = "res://player.gd";
+	file.path = "res://player.fs";
 	file.before_source = "var a = 1\nvar b = 2\n";
 	file.after_source = "var a: int = 1\nvar b: int = 2\n";
 	file.edit_count = 2;

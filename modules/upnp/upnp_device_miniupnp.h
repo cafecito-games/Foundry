@@ -35,7 +35,7 @@
 #include "upnp_device.h"
 
 class UPNPDeviceMiniUPNP : public UPNPDevice {
-	GDCLASS(UPNPDeviceMiniUPNP, UPNPDevice);
+	FOUNDRY_CLASS(UPNPDeviceMiniUPNP, UPNPDevice);
 
 private:
 	static UPNPDevice *_create(bool p_notify_postinitialize) { return static_cast<UPNPDevice *>(ClassDB::creator<UPNPDeviceMiniUPNP>(p_notify_postinitialize)); }

@@ -125,7 +125,7 @@ public:
 		void *class_ptr = nullptr;
 		const GDType *gdtype = nullptr;
 
-		ObjectGDExtension *gdextension = nullptr;
+		ObjectFoundryExtension *foundry_extension = nullptr;
 
 		HashMap<StringName, MethodBind *> method_map;
 		HashMap<StringName, LocalVector<MethodBind *>> method_map_compatibility;
@@ -207,7 +207,7 @@ public:
 	static HashMap<StringName, StringName> compat_classes;
 
 #ifdef TOOLS_ENABLED
-	static HashMap<StringName, ObjectGDExtension> placeholder_extensions;
+	static HashMap<StringName, ObjectFoundryExtension> placeholder_extensions;
 #endif
 
 #ifdef DEBUG_ENABLED
@@ -254,7 +254,7 @@ public:
 	template <typename T>
 	static void register_class(bool p_virtual = false) {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -269,7 +269,7 @@ public:
 	template <typename T>
 	static void register_abstract_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -282,7 +282,7 @@ public:
 	template <typename T>
 	static void register_internal_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -297,7 +297,7 @@ public:
 	template <typename T>
 	static void register_runtime_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -311,7 +311,7 @@ public:
 		T::register_custom_data_to_otdb();
 	}
 
-	static void register_extension_class(ObjectGDExtension *p_extension);
+	static void register_extension_class(ObjectFoundryExtension *p_extension);
 	static void unregister_extension_class(const StringName &p_class, bool p_free_method_binds = true);
 
 	template <typename T>
@@ -322,7 +322,7 @@ public:
 	template <typename T>
 	static void register_custom_instance_class() {
 		Locker::Lock lock(Locker::STATE_WRITE);
-		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use FOUNDRY_CLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
 		ERR_FAIL_NULL(t);
@@ -336,8 +336,8 @@ public:
 	static void get_class_list(LocalVector<StringName> &p_classes);
 #ifdef TOOLS_ENABLED
 	static void get_extensions_class_list(LocalVector<StringName> &p_classes);
-	static void get_extension_class_list(const Ref<GDExtension> &p_extension, List<StringName> *p_classes);
-	static ObjectGDExtension *get_placeholder_extension(const StringName &p_class);
+	static void get_extension_class_list(const Ref<FoundryExtension> &p_extension, List<StringName> *p_classes);
+	static ObjectFoundryExtension *get_placeholder_extension(const StringName &p_class);
 #endif
 	static const GDType *get_gdtype(const StringName &p_class);
 	static void get_inheriters_from_class(const StringName &p_class, LocalVector<StringName> &p_classes);
@@ -354,7 +354,7 @@ public:
 	static Object *instantiate(const StringName &p_class);
 	static Object *instantiate_no_placeholders(const StringName &p_class);
 	static Object *instantiate_without_postinitialization(const StringName &p_class);
-	static void set_object_extension_instance(Object *p_object, const StringName &p_class, GDExtensionClassInstancePtr p_instance);
+	static void set_object_extension_instance(Object *p_object, const StringName &p_class, FoundryExtensionClassInstancePtr p_instance);
 
 	static APIType get_api_type(const StringName &p_class);
 
@@ -502,7 +502,7 @@ public:
 	static void add_virtual_method(const StringName &p_class, const MethodInfo &p_method, bool p_virtual = true, const Vector<String> &p_arg_names = Vector<String>(), bool p_object_core = false);
 	static void add_virtual_compatibility_method(const StringName &p_class, const MethodInfo &p_method, bool p_virtual = true, const Vector<String> &p_arg_names = Vector<String>(), bool p_object_core = false);
 	static void get_virtual_methods(const StringName &p_class, List<MethodInfo> *p_methods, bool p_no_inheritance = false);
-	static void add_extension_class_virtual_method(const StringName &p_class, const GDExtensionClassVirtualMethodInfo *p_method_info);
+	static void add_extension_class_virtual_method(const StringName &p_class, const FoundryExtensionClassVirtualMethodInfo *p_method_info);
 	static Vector<uint32_t> get_virtual_method_compatibility_hashes(const StringName &p_class, const StringName &p_name);
 
 	static void bind_integer_constant(const StringName &p_class, const StringName &p_enum, const StringName &p_name, int64_t p_constant, bool p_is_bitfield = false);
@@ -551,7 +551,7 @@ public:
 	static String get_native_struct_code(const StringName &p_name);
 	static uint64_t get_native_struct_size(const StringName &p_name); // Used for asserting
 
-	static Object *_instantiate_allow_unexposed(const StringName &p_class); // Used to create unexposed classes from GDExtension, typically for unexposed EditorPlugin.
+	static Object *_instantiate_allow_unexposed(const StringName &p_class); // Used to create unexposed classes from FoundryExtension, typically for unexposed EditorPlugin.
 };
 
 #define BIND_ENUM_CONSTANT(m_constant) \
@@ -574,25 +574,25 @@ public:
 
 #endif // DEBUG_ENABLED
 
-#define GDREGISTER_CLASS(m_class)                 \
+#define FOUNDRY_REGISTER_CLASS(m_class)           \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) { \
 		::ClassDB::register_class<m_class>();     \
 	}
-#define GDREGISTER_VIRTUAL_CLASS(m_class)         \
+#define FOUNDRY_REGISTER_VIRTUAL_CLASS(m_class)   \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) { \
 		::ClassDB::register_class<m_class>(true); \
 	}
-#define GDREGISTER_ABSTRACT_CLASS(m_class)             \
+#define FOUNDRY_REGISTER_ABSTRACT_CLASS(m_class)       \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {      \
 		::ClassDB::register_abstract_class<m_class>(); \
 	}
-#define GDREGISTER_INTERNAL_CLASS(m_class)             \
+#define FOUNDRY_REGISTER_INTERNAL_CLASS(m_class)       \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {      \
 		::ClassDB::register_internal_class<m_class>(); \
 	}
-#define GDREGISTER_RUNTIME_CLASS(m_class)             \
+#define FOUNDRY_REGISTER_RUNTIME_CLASS(m_class)       \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {     \
 		::ClassDB::register_runtime_class<m_class>(); \
 	}
 
-#define GDREGISTER_NATIVE_STRUCT(m_class, m_code) ClassDB::register_native_struct(#m_class, m_code, sizeof(m_class))
+#define FOUNDRY_REGISTER_NATIVE_STRUCT(m_class, m_code) ClassDB::register_native_struct(#m_class, m_code, sizeof(m_class))

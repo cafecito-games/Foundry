@@ -383,7 +383,7 @@ Error DisplayServerWindows::file_dialog_with_options_show(const String &p_title,
 	return _file_dialog_with_options_show(p_title, p_current_directory, p_root, p_filename, p_show_hidden, p_mode, p_filters, p_options, p_callback, true, p_window_id);
 }
 
-GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wnon-virtual-dtor") // Silence warning due to a COM API weirdness.
+FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wnon-virtual-dtor") // Silence warning due to a COM API weirdness.
 
 class FileDialogEventHandler : public IFileDialogEvents, public IFileDialogControlEvents {
 	LONG ref_count = 1;
@@ -502,7 +502,7 @@ public:
 	virtual ~FileDialogEventHandler() {}
 };
 
-GODOT_GCC_WARNING_POP
+FOUNDRY_GCC_WARNING_POP
 
 LRESULT CALLBACK WndProcFileDialog(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	DisplayServerWindows *ds_win = static_cast<DisplayServerWindows *>(DisplayServer::get_singleton());
@@ -807,7 +807,7 @@ Error DisplayServerWindows::_file_dialog_with_options_show(const String &p_title
 
 	String appname;
 	if (Engine::get_singleton()->is_editor_hint()) {
-		appname = "Godot.GodotEditor." + String(GODOT_VERSION_BRANCH);
+		appname = "Godot.GodotEditor." + String(FOUNDRY_VERSION_BRANCH);
 	} else {
 		String name = GLOBAL_GET("application/config/name");
 		String version = GLOBAL_GET("application/config/version");
@@ -1594,7 +1594,7 @@ void DisplayServerWindows::screen_set_keep_on(bool p_enable) {
 	}
 
 	if (p_enable) {
-		const String reason = "Godot Engine running with display/window/energy_saving/keep_screen_on = true";
+		const String reason = "Foundry running with display/window/energy_saving/keep_screen_on = true";
 		Char16String reason_utf16 = reason.utf16();
 		REASON_CONTEXT context;
 		context.Version = POWER_REQUEST_CONTEXT_VERSION;
@@ -6596,7 +6596,7 @@ Error DisplayServerWindows::_create_window(WindowID p_window_id, WindowMode p_mo
 			PROPVARIANT val;
 			String appname;
 			if (Engine::get_singleton()->is_editor_hint()) {
-				appname = "Godot.GodotEditor." + String(GODOT_VERSION_FULL_CONFIG);
+				appname = "Godot.GodotEditor." + String(FOUNDRY_VERSION_FULL_CONFIG);
 			} else {
 				String name = GLOBAL_GET("application/config/name");
 				String version = GLOBAL_GET("application/config/version");
@@ -7153,7 +7153,7 @@ DisplayServerWindows::DisplayServerWindows(const String &p_rendering_driver, Win
 
 	OleInitialize(nullptr);
 
-	HICON default_icon = LoadIconW(GetModuleHandle(nullptr), L"GODOT_ICON");
+	HICON default_icon = LoadIconW(GetModuleHandle(nullptr), L"FOUNDRY_ICON");
 	if (default_icon == nullptr) {
 		default_icon = LoadIcon(nullptr, IDI_WINLOGO);
 	}
@@ -7180,7 +7180,7 @@ DisplayServerWindows::DisplayServerWindows(const String &p_rendering_driver, Win
 
 	String appname;
 	if (Engine::get_singleton()->is_editor_hint()) {
-		appname = "Godot.GodotEditor." + String(GODOT_VERSION_FULL_CONFIG);
+		appname = "Godot.GodotEditor." + String(FOUNDRY_VERSION_FULL_CONFIG);
 	} else {
 		String name = GLOBAL_GET("application/config/name");
 		String version = GLOBAL_GET("application/config/version");

@@ -36,7 +36,7 @@
 class NavigationMeshSourceGeometryData3D;
 
 class NavigationMeshGenerator : public Object {
-	GDCLASS(NavigationMeshGenerator, Object);
+	FOUNDRY_CLASS(NavigationMeshGenerator, Object);
 
 	static NavigationMeshGenerator *singleton;
 

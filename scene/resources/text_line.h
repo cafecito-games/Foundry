@@ -36,7 +36,7 @@
 /*************************************************************************/
 
 class TextLine : public RefCounted {
-	GDCLASS(TextLine, RefCounted);
+	FOUNDRY_CLASS(TextLine, RefCounted);
 
 private:
 	RID rid;

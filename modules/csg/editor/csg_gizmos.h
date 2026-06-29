@@ -41,7 +41,7 @@ class Gizmo3DHelper;
 class MenuButton;
 
 class CSGShape3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(CSGShape3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(CSGShape3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	Ref<Gizmo3DHelper> helper;
 
@@ -62,7 +62,7 @@ public:
 };
 
 class CSGShapeEditor : public Control {
-	GDCLASS(CSGShapeEditor, Control);
+	FOUNDRY_CLASS(CSGShapeEditor, Control);
 
 	enum Menu {
 		MENU_OPTION_BAKE_MESH_INSTANCE,
@@ -89,7 +89,7 @@ public:
 };
 
 class EditorPluginCSG : public EditorPlugin {
-	GDCLASS(EditorPluginCSG, EditorPlugin);
+	FOUNDRY_CLASS(EditorPluginCSG, EditorPlugin);
 
 	CSGShapeEditor *csg_shape_editor = nullptr;
 

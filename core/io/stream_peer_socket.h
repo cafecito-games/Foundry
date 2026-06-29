@@ -40,7 +40,7 @@ enum class Status;
 #endif
 
 class StreamPeerSocket : public StreamPeer {
-	GDCLASS(StreamPeerSocket, StreamPeer);
+	FOUNDRY_CLASS(StreamPeerSocket, StreamPeer);
 
 public:
 	enum Status {

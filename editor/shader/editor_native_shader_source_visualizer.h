@@ -35,7 +35,7 @@
 #include "scene/resources/syntax_highlighter.h"
 
 class EditorNativeShaderSourceVisualizer : public AcceptDialog {
-	GDCLASS(EditorNativeShaderSourceVisualizer, AcceptDialog)
+	FOUNDRY_CLASS(EditorNativeShaderSourceVisualizer, AcceptDialog)
 	TabContainer *versions = nullptr;
 	Ref<CodeHighlighter> syntax_highlighter;
 

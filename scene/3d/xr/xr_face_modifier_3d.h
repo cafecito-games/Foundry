@@ -43,7 +43,7 @@
  */
 
 class XRFaceModifier3D : public Node3D {
-	GDCLASS(XRFaceModifier3D, Node3D);
+	FOUNDRY_CLASS(XRFaceModifier3D, Node3D);
 
 private:
 	StringName tracker_name = "/user/face_tracker";

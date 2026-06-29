@@ -51,7 +51,7 @@ class VSplitContainer;
 class WindowWrapper;
 
 class EditorSyntaxHighlighter : public SyntaxHighlighter {
-	GDCLASS(EditorSyntaxHighlighter, SyntaxHighlighter)
+	FOUNDRY_CLASS(EditorSyntaxHighlighter, SyntaxHighlighter)
 
 private:
 	Ref<RefCounted> edited_resource;
@@ -59,9 +59,9 @@ private:
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC(String, _get_name)
-	GDVIRTUAL0RC(PackedStringArray, _get_supported_languages)
-	GDVIRTUAL0RC(Ref<EditorSyntaxHighlighter>, _create)
+	FOUNDRY_VIRTUAL0RC(String, _get_name)
+	FOUNDRY_VIRTUAL0RC(PackedStringArray, _get_supported_languages)
+	FOUNDRY_VIRTUAL0RC(Ref<EditorSyntaxHighlighter>, _create)
 
 public:
 	virtual String _get_name() const;
@@ -74,7 +74,7 @@ public:
 };
 
 class EditorStandardSyntaxHighlighter : public EditorSyntaxHighlighter {
-	GDCLASS(EditorStandardSyntaxHighlighter, EditorSyntaxHighlighter)
+	FOUNDRY_CLASS(EditorStandardSyntaxHighlighter, EditorSyntaxHighlighter)
 
 private:
 	Ref<CodeHighlighter> highlighter;
@@ -94,7 +94,7 @@ public:
 };
 
 class EditorPlainTextSyntaxHighlighter : public EditorSyntaxHighlighter {
-	GDCLASS(EditorPlainTextSyntaxHighlighter, EditorSyntaxHighlighter)
+	FOUNDRY_CLASS(EditorPlainTextSyntaxHighlighter, EditorSyntaxHighlighter)
 
 public:
 	virtual String _get_name() const override { return TTR("Plain Text"); }
@@ -103,7 +103,7 @@ public:
 };
 
 class EditorJSONSyntaxHighlighter : public EditorSyntaxHighlighter {
-	GDCLASS(EditorJSONSyntaxHighlighter, EditorSyntaxHighlighter)
+	FOUNDRY_CLASS(EditorJSONSyntaxHighlighter, EditorSyntaxHighlighter)
 
 private:
 	Ref<CodeHighlighter> highlighter;
@@ -121,7 +121,7 @@ public:
 };
 
 class EditorMarkdownSyntaxHighlighter : public EditorSyntaxHighlighter {
-	GDCLASS(EditorMarkdownSyntaxHighlighter, EditorSyntaxHighlighter)
+	FOUNDRY_CLASS(EditorMarkdownSyntaxHighlighter, EditorSyntaxHighlighter)
 
 private:
 	Ref<CodeHighlighter> highlighter;
@@ -139,7 +139,7 @@ public:
 };
 
 class EditorConfigFileSyntaxHighlighter : public EditorSyntaxHighlighter {
-	GDCLASS(EditorConfigFileSyntaxHighlighter, EditorSyntaxHighlighter)
+	FOUNDRY_CLASS(EditorConfigFileSyntaxHighlighter, EditorSyntaxHighlighter)
 
 private:
 	Ref<CodeHighlighter> highlighter;
@@ -149,7 +149,7 @@ public:
 	virtual Dictionary _get_line_syntax_highlighting_impl(int p_line) override { return highlighter->get_line_syntax_highlighting(p_line); }
 
 	// While not explicitly designed for those formats, this highlighter happens
-	// to handle TSCN, TRES, `project.godot` well. We can expose it in case the
+	// to handle TSCN, TRES, `project.foundry` well. We can expose it in case the
 	// user opens one of these using the script editor (which can be done using
 	// the All Files filter).
 	virtual PackedStringArray _get_supported_languages() const override { return PackedStringArray{ "ini", "cfg", "tscn", "tres", "godot" }; }
@@ -163,7 +163,7 @@ public:
 ///////////////////////////////////////////////////////////////////////////////
 
 class ScriptEditorQuickOpen : public ConfirmationDialog {
-	GDCLASS(ScriptEditorQuickOpen, ConfirmationDialog);
+	FOUNDRY_CLASS(ScriptEditorQuickOpen, ConfirmationDialog);
 
 	LineEdit *search_box = nullptr;
 	Tree *search_options = nullptr;
@@ -189,7 +189,7 @@ public:
 class EditorDebuggerNode;
 
 class ScriptEditorBase : public VBoxContainer {
-	GDCLASS(ScriptEditorBase, VBoxContainer);
+	FOUNDRY_CLASS(ScriptEditorBase, VBoxContainer);
 
 protected:
 	static void _bind_methods();
@@ -258,7 +258,7 @@ class FindInFilesDialog;
 struct ScriptRefactorApplyPlan;
 
 class ScriptEditor : public PanelContainer {
-	GDCLASS(ScriptEditor, PanelContainer);
+	FOUNDRY_CLASS(ScriptEditor, PanelContainer);
 
 	enum MenuOptions {
 		// File.
@@ -639,7 +639,7 @@ public:
 };
 
 class ScriptEditorPlugin : public EditorPlugin {
-	GDCLASS(ScriptEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ScriptEditorPlugin, EditorPlugin);
 
 	ScriptEditor *script_editor = nullptr;
 	WindowWrapper *window_wrapper = nullptr;

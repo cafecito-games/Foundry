@@ -7,13 +7,13 @@
 		Provides OpenType variations, simulated bold / slant, and additional font settings like OpenType features and extra spacing.
 		To use simulated bold font variant:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var fv = FontVariation.new()
 		fv.base_font = load("res://BarlowCondensed-Regular.ttf")
 		fv.variation_embolden = 1.2
 		$Label.add_theme_font_override("font", fv)
 		$Label.add_theme_font_size_override("font_size", 64)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var fv = new FontVariation();
 		fv.SetBaseFont(ResourceLoader.Load&lt;FontFile&gt;("res://BarlowCondensed-Regular.ttf"));

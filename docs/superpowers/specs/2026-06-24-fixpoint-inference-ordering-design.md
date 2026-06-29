@@ -1,6 +1,6 @@
 # Iterative fixpoint inference ordering
 
-**Issue:** cafecito-games/godot#32 (parent epic #29 — GDScript Migration Wizard)
+**Issue:** cafecito-games/godot#32 (parent epic #29 — Foundry Script Migration Wizard)
 **Date:** 2026-06-24
 
 ## Goal
@@ -27,7 +27,7 @@ pipeline analyzes a script that depends on another, it resolves the dependency b
 parsing it from disk: `RefactorParseResultProvider::get_parse_result()`
 intentionally parses non-active scripts from disk rather than consulting LSP
 unsaved buffers or the protocol cache
-(`modules/gdscript/editor/gdscript_refactoring.cpp:163`), and
+(`modules/foundry_script/editor/gdscript_refactoring.cpp:163`), and
 `GDScriptCache::get_source_code()` is disk-backed with no in-memory override.
 Consequence: a caller file only "sees" a dependency's freshly-inferred return
 type after that dependency's annotation has been **written to disk and
@@ -99,7 +99,7 @@ is the verification step; both inline.
 ## Architecture
 
 A new headless orchestrator, `GDScriptFixpointInference`, in
-`modules/gdscript/editor/gdscript_fixpoint_inference.{h,cpp}`. It owns no new
+`modules/foundry_script/editor/gdscript_fixpoint_inference.{h,cpp}`. It owns no new
 refactor primitive — it composes existing ones:
 
 1. `GDScriptRefactoring::find_candidates(ctx, ADD_TYPE_ANNOTATION)` — collect.
@@ -261,9 +261,9 @@ harness gating it. This limitation is documented on the public API.
 
 ## Testing
 
-New `TEST_CASE`s under `[Modules][GDScript][Refactor]` (or a dedicated
+New `TEST_CASE`s under `[Modules][Foundry Script][Refactor]` (or a dedicated
 `[Fixpoint]` suite). Tests stage writable copies of the chain via the existing
-`TemporaryScriptFile` RAII helper (`modules/gdscript/tests/test_refactor.h:186`),
+`TemporaryScriptFile` RAII helper (`modules/foundry_script/tests/test_refactor.h:186`),
 which writes on construction and removes on destruction, so the orchestrator's
 disk writes never touch committed fixtures.
 

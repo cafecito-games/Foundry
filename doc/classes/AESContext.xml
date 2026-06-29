@@ -6,7 +6,7 @@
 	<description>
 		This class holds the context information required for encryption and decryption operations with AES (Advanced Encryption Standard). Both AES-ECB and AES-CBC modes are supported.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		extends Node
 
 		var aes = AESContext.new()
@@ -36,7 +36,7 @@
 			aes.finish()
 			# Check CBC
 			assert(decrypted == data.to_utf8_buffer())
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 		using System.Diagnostics;

@@ -44,7 +44,7 @@ class NavigationRegion3D;
 class NavigationRegion3DEditor : public Control {
 	friend class NavigationRegion3DEditorPlugin;
 
-	GDCLASS(NavigationRegion3DEditor, Control);
+	FOUNDRY_CLASS(NavigationRegion3DEditor, Control);
 
 	AcceptDialog *err_dialog = nullptr;
 	ConfirmationDialog *multibake_dialog = nullptr;
@@ -83,7 +83,7 @@ public:
 };
 
 class NavigationRegion3DEditorPlugin : public EditorPlugin {
-	GDCLASS(NavigationRegion3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(NavigationRegion3DEditorPlugin, EditorPlugin);
 
 	NavigationRegion3DEditor *navigation_region_editor = nullptr;
 

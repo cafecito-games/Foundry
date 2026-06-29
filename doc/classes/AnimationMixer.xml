@@ -30,10 +30,10 @@
 				Adds [param library] to the animation player, under the key [param name].
 				AnimationMixer has a global library by default with an empty string as key. For adding an animation to the global library:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var global_library = mixer.get_animation_library("")
 				global_library.add_animation("animation_name", animation_resource)
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>
@@ -111,7 +111,7 @@
 				See also [member root_motion_track] and [RootMotionView].
 				The most basic example is applying position to [CharacterBody3D]:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var current_rotation
 
 				func _process(delta):
@@ -121,11 +121,11 @@
 					var velocity = current_rotation * animation_tree.get_root_motion_position() / delta
 					set_velocity(velocity)
 					move_and_slide()
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 				By using this in combination with [method get_root_motion_rotation_accumulator], you can apply the root motion position more correctly to account for the rotation of the node.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _process(delta):
 					if Input.is_action_just_pressed("animate"):
 						state_machine.travel("Animate")
@@ -133,12 +133,12 @@
 					var velocity = (animation_tree.get_root_motion_rotation_accumulator().inverse() * get_quaternion()) * animation_tree.get_root_motion_position() / delta
 					set_velocity(velocity)
 					move_and_slide()
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 				If [member root_motion_local] is [code]true[/code], returns the pre-multiplied translation value with the inverted rotation.
 				In this case, the code can be written as follows:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _process(delta):
 					if Input.is_action_just_pressed("animate"):
 						state_machine.travel("Animate")
@@ -146,7 +146,7 @@
 					var velocity = get_quaternion() * animation_tree.get_root_motion_position() / delta
 					set_velocity(velocity)
 					move_and_slide()
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>
@@ -157,7 +157,7 @@
 				This is useful in cases where you want to respect the initial key values of the animation.
 				For example, if an animation with only one key [code]Vector3(0, 0, 0)[/code] is played in the previous frame and then an animation with only one key [code]Vector3(1, 0, 1)[/code] is played in the next frame, the difference can be calculated as follows:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var prev_root_motion_position_accumulator
 
 				func _process(delta):
@@ -167,7 +167,7 @@
 					var difference = current_root_motion_position_accumulator - prev_root_motion_position_accumulator
 					prev_root_motion_position_accumulator = current_root_motion_position_accumulator
 					transform.origin += difference
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 				However, if the animation loops, an unintended discrete change may occur, so this is only useful for some simple use cases.
 			</description>
@@ -180,12 +180,12 @@
 				See also [member root_motion_track] and [RootMotionView].
 				The most basic example is applying rotation to [CharacterBody3D]:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _process(delta):
 					if Input.is_action_just_pressed("animate"):
 						state_machine.travel("Animate")
 					set_quaternion(get_quaternion() * animation_tree.get_root_motion_rotation())
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>
@@ -197,7 +197,7 @@
 				Also, this is useful in cases where you want to respect the initial key values of the animation.
 				For example, if an animation with only one key [code]Quaternion(0, 0, 0, 1)[/code] is played in the previous frame and then an animation with only one key [code]Quaternion(0, 0.707, 0, 0.707)[/code] is played in the next frame, the difference can be calculated as follows:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var prev_root_motion_rotation_accumulator
 
 				func _process(delta):
@@ -207,7 +207,7 @@
 					var difference = prev_root_motion_rotation_accumulator.inverse() * current_root_motion_rotation_accumulator
 					prev_root_motion_rotation_accumulator = current_root_motion_rotation_accumulator
 					transform.basis *=  Basis(difference)
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 				However, if the animation loops, an unintended discrete change may occur, so this is only useful for some simple use cases.
 			</description>
@@ -220,7 +220,7 @@
 				See also [member root_motion_track] and [RootMotionView].
 				The most basic example is applying scale to [CharacterBody3D]:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var current_scale = Vector3(1, 1, 1)
 				var scale_accum = Vector3(1, 1, 1)
 
@@ -231,7 +231,7 @@
 						state_machine.travel("Animate")
 					scale_accum += animation_tree.get_root_motion_scale()
 					set_scale(current_scale * scale_accum)
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>
@@ -241,7 +241,7 @@
 				Retrieve the blended value of the scale tracks with the [member root_motion_track] as a [Vector3] that can be used elsewhere.
 				For example, if an animation with only one key [code]Vector3(1, 1, 1)[/code] is played in the previous frame and then an animation with only one key [code]Vector3(2, 2, 2)[/code] is played in the next frame, the difference can be calculated as follows:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var prev_root_motion_scale_accumulator
 
 				func _process(delta):
@@ -251,7 +251,7 @@
 					var difference = current_root_motion_scale_accumulator - prev_root_motion_scale_accumulator
 					prev_root_motion_scale_accumulator = current_root_motion_scale_accumulator
 					transform.basis = transform.basis.scaled(difference)
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 				However, if the animation loops, an unintended discrete change may occur, so this is only useful for some simple use cases.
 			</description>

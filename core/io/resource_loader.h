@@ -45,7 +45,7 @@ template <int Tag>
 class SafeBinaryMutex;
 
 class ResourceFormatLoader : public RefCounted {
-	GDCLASS(ResourceFormatLoader, RefCounted);
+	FOUNDRY_CLASS(ResourceFormatLoader, RefCounted);
 
 public:
 	enum CacheMode {
@@ -59,18 +59,18 @@ public:
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC(Vector<String>, _get_recognized_extensions)
-	GDVIRTUAL2RC(bool, _recognize_path, String, StringName)
-	GDVIRTUAL1RC(bool, _handles_type, StringName)
-	GDVIRTUAL1RC(String, _get_resource_type, String)
-	GDVIRTUAL1RC(String, _get_resource_script_class, String)
-	GDVIRTUAL1RC(ResourceUID::ID, _get_resource_uid, String)
-	GDVIRTUAL2RC(Vector<String>, _get_dependencies, String, bool)
-	GDVIRTUAL1RC(Vector<String>, _get_classes_used, String)
-	GDVIRTUAL2RC(Error, _rename_dependencies, String, Dictionary)
-	GDVIRTUAL1RC(bool, _exists, String)
+	FOUNDRY_VIRTUAL0RC(Vector<String>, _get_recognized_extensions)
+	FOUNDRY_VIRTUAL2RC(bool, _recognize_path, String, StringName)
+	FOUNDRY_VIRTUAL1RC(bool, _handles_type, StringName)
+	FOUNDRY_VIRTUAL1RC(String, _get_resource_type, String)
+	FOUNDRY_VIRTUAL1RC(String, _get_resource_script_class, String)
+	FOUNDRY_VIRTUAL1RC(ResourceUID::ID, _get_resource_uid, String)
+	FOUNDRY_VIRTUAL2RC(Vector<String>, _get_dependencies, String, bool)
+	FOUNDRY_VIRTUAL1RC(Vector<String>, _get_classes_used, String)
+	FOUNDRY_VIRTUAL2RC(Error, _rename_dependencies, String, Dictionary)
+	FOUNDRY_VIRTUAL1RC(bool, _exists, String)
 
-	GDVIRTUAL4RC_REQUIRED(Variant, _load, String, String, bool, int)
+	FOUNDRY_VIRTUAL4RC_REQUIRED(Variant, _load, String, String, bool, int)
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);

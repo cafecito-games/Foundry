@@ -39,7 +39,7 @@
 class Bone2D;
 
 class SkeletonModification2D : public Resource {
-	GDCLASS(SkeletonModification2D, Resource);
+	FOUNDRY_CLASS(SkeletonModification2D, Resource);
 	friend class Skeleton2D;
 	friend class Bone2D;
 
@@ -56,9 +56,9 @@ protected:
 
 	virtual void reset_state() override;
 
-	GDVIRTUAL1(_execute, double)
-	GDVIRTUAL1(_setup_modification, Ref<SkeletonModificationStack2D>)
-	GDVIRTUAL0(_draw_editor_gizmo)
+	FOUNDRY_VIRTUAL1(_execute, double)
+	FOUNDRY_VIRTUAL1(_setup_modification, Ref<SkeletonModificationStack2D>)
+	FOUNDRY_VIRTUAL0(_draw_editor_gizmo)
 
 public:
 	virtual void _execute(float _delta);

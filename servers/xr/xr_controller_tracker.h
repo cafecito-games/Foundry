@@ -38,7 +38,7 @@
 */
 
 class XRControllerTracker : public XRPositionalTracker {
-	GDCLASS(XRControllerTracker, XRPositionalTracker);
+	FOUNDRY_CLASS(XRControllerTracker, XRPositionalTracker);
 	_THREAD_SAFE_CLASS_
 
 public:

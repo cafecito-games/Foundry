@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Class "Player" cannot extend trait "Damageable"; use "uses Damageable" instead.

@@ -38,7 +38,7 @@ class Tree;
 class TreeItem;
 
 class EditorDirDialog : public ConfirmationDialog {
-	GDCLASS(EditorDirDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(EditorDirDialog, ConfirmationDialog);
 
 	DirectoryCreateDialog *makedialog = nullptr;
 

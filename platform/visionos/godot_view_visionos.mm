@@ -38,9 +38,9 @@
 
 @interface GDTViewVisionOS ()
 
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wobjc-property-synthesis")
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wobjc-property-synthesis")
 @property(strong, nonatomic) CALayer<GDTDisplayLayer> *renderingLayer;
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
 
 @end
 

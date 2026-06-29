@@ -37,7 +37,7 @@ void initialize_text_server_adv_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(TextServerAdvanced);
+	FOUNDRY_REGISTER_CLASS(TextServerAdvanced);
 	TextServerManager *tsman = TextServerManager::get_singleton();
 	if (tsman) {
 		Ref<TextServerAdvanced> ts;
@@ -52,7 +52,7 @@ void uninitialize_text_server_adv_module(ModuleInitializationLevel p_level) {
 	}
 }
 
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
@@ -62,8 +62,8 @@ using namespace godot;
 
 extern "C" {
 
-GDExtensionBool GDE_EXPORT textserver_advanced_init(GDExtensionInterfaceGetProcAddress p_get_proc_address, const GDExtensionClassLibraryPtr p_library, GDExtensionInitialization *r_initialization) {
-	GDExtensionBinding::InitObject init_obj(p_get_proc_address, p_library, r_initialization);
+FoundryExtensionBool GDE_EXPORT textserver_advanced_init(FoundryExtensionInterfaceGetProcAddress p_get_proc_address, const FoundryExtensionClassLibraryPtr p_library, FoundryExtensionInitialization *r_initialization) {
+	FoundryExtensionBinding::InitObject init_obj(p_get_proc_address, p_library, r_initialization);
 
 	init_obj.register_initializer(&initialize_text_server_adv_module);
 	init_obj.register_terminator(&uninitialize_text_server_adv_module);
@@ -74,4 +74,4 @@ GDExtensionBool GDE_EXPORT textserver_advanced_init(GDExtensionInterfaceGetProcA
 
 } // ! extern "C"
 
-#endif // ! GDEXTENSION
+#endif // ! FOUNDRY_EXTENSION

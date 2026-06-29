@@ -36,7 +36,7 @@
 
 // Performs the actual search
 class FindInFiles : public Node {
-	GDCLASS(FindInFiles, Node);
+	FOUNDRY_CLASS(FindInFiles, Node);
 
 public:
 	static const char *SIGNAL_RESULT_FOUND;
@@ -98,7 +98,7 @@ class HBoxContainer;
 
 // Prompts search parameters
 class FindInFilesDialog : public AcceptDialog {
-	GDCLASS(FindInFilesDialog, AcceptDialog);
+	FOUNDRY_CLASS(FindInFilesDialog, AcceptDialog);
 
 public:
 	enum FindInFilesMode {
@@ -168,7 +168,7 @@ class ProgressBar;
 
 // Display search results
 class FindInFilesPanel : public MarginContainer {
-	GDCLASS(FindInFilesPanel, MarginContainer);
+	FOUNDRY_CLASS(FindInFilesPanel, MarginContainer);
 
 public:
 	static const char *SIGNAL_RESULT_SELECTED;
@@ -259,7 +259,7 @@ class TabContainer;
 // FindInFilesContainer can contain several FindInFilesPanels so that multiple search
 // results can remain at the same time.
 class FindInFilesContainer : public EditorDock {
-	GDCLASS(FindInFilesContainer, EditorDock);
+	FOUNDRY_CLASS(FindInFilesContainer, EditorDock);
 
 	enum {
 		PANEL_CLOSE,

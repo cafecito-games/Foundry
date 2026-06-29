@@ -34,7 +34,7 @@
 
 AABB VisualInstance3D::get_aabb() const {
 	AABB ret;
-	GDVIRTUAL_CALL(_get_aabb, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_aabb, ret);
 	return ret;
 }
 
@@ -178,7 +178,7 @@ void VisualInstance3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_sorting_use_aabb_center", "enabled"), &VisualInstance3D::set_sorting_use_aabb_center);
 	ClassDB::bind_method(D_METHOD("is_sorting_use_aabb_center"), &VisualInstance3D::is_sorting_use_aabb_center);
 
-	GDVIRTUAL_BIND(_get_aabb);
+	FOUNDRY_VIRTUAL_BIND(_get_aabb);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "layers", PROPERTY_HINT_LAYERS_3D_RENDER), "set_layer_mask", "get_layer_mask");
 
 	ADD_GROUP("Sorting", "sorting_");

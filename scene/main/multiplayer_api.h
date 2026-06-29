@@ -34,7 +34,7 @@
 #include "scene/main/multiplayer_peer.h"
 
 class MultiplayerAPI : public RefCounted {
-	GDCLASS(MultiplayerAPI, RefCounted);
+	FOUNDRY_CLASS(MultiplayerAPI, RefCounted);
 
 private:
 	static StringName default_interface;
@@ -80,7 +80,7 @@ public:
 VARIANT_ENUM_CAST(MultiplayerAPI::RPCMode);
 
 class MultiplayerAPIExtension : public MultiplayerAPI {
-	GDCLASS(MultiplayerAPIExtension, MultiplayerAPI);
+	FOUNDRY_CLASS(MultiplayerAPIExtension, MultiplayerAPI);
 
 protected:
 	static void _bind_methods();
@@ -99,13 +99,13 @@ public:
 	virtual Error object_configuration_remove(Object *p_object, Variant p_config) override;
 
 	// Extensions
-	GDVIRTUAL0R(Error, _poll);
-	GDVIRTUAL1(_set_multiplayer_peer, Ref<MultiplayerPeer>);
-	GDVIRTUAL0R(Ref<MultiplayerPeer>, _get_multiplayer_peer);
-	GDVIRTUAL0RC(int, _get_unique_id);
-	GDVIRTUAL0RC(PackedInt32Array, _get_peer_ids);
-	GDVIRTUAL4R(Error, _rpc, int, Object *, StringName, Array);
-	GDVIRTUAL0RC(int, _get_remote_sender_id);
-	GDVIRTUAL2R(Error, _object_configuration_add, Object *, Variant);
-	GDVIRTUAL2R(Error, _object_configuration_remove, Object *, Variant);
+	FOUNDRY_VIRTUAL0R(Error, _poll);
+	FOUNDRY_VIRTUAL1(_set_multiplayer_peer, Ref<MultiplayerPeer>);
+	FOUNDRY_VIRTUAL0R(Ref<MultiplayerPeer>, _get_multiplayer_peer);
+	FOUNDRY_VIRTUAL0RC(int, _get_unique_id);
+	FOUNDRY_VIRTUAL0RC(PackedInt32Array, _get_peer_ids);
+	FOUNDRY_VIRTUAL4R(Error, _rpc, int, Object *, StringName, Array);
+	FOUNDRY_VIRTUAL0RC(int, _get_remote_sender_id);
+	FOUNDRY_VIRTUAL2R(Error, _object_configuration_add, Object *, Variant);
+	FOUNDRY_VIRTUAL2R(Error, _object_configuration_remove, Object *, Variant);
 };

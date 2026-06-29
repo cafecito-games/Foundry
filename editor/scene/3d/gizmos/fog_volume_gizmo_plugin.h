@@ -35,7 +35,7 @@
 class Gizmo3DHelper;
 
 class FogVolumeGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(FogVolumeGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(FogVolumeGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	Ref<Gizmo3DHelper> helper;
 

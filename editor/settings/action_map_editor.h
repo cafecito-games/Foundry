@@ -43,7 +43,7 @@ class LineEdit;
 class Tree;
 
 class ActionMapEditor : public Control {
-	GDCLASS(ActionMapEditor, Control);
+	FOUNDRY_CLASS(ActionMapEditor, Control);
 
 public:
 	struct ActionInfo {

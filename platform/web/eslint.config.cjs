@@ -190,9 +190,9 @@ module.exports = [
 			globals: {
 				...globals.browser,
 				'Engine': true,
-				'$GODOT_CONFIG': true,
-				'$GODOT_PROJECT_NAME': true,
-				'$GODOT_THREADS_ENABLED': true,
+				'$FOUNDRY_CONFIG': true,
+				'$FOUNDRY_PROJECT_NAME': true,
+				'$FOUNDRY_THREADS_ENABLED': true,
 				'___GODOT_THREADS_ENABLED___': true,
 			},
 		},

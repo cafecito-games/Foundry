@@ -4470,42 +4470,42 @@ void TextEdit::set_inline_object_handlers(const Callable &p_parser, const Callab
 
 // Overridable actions
 void TextEdit::handle_unicode_input(const uint32_t p_unicode, int p_caret) {
-	if (GDVIRTUAL_CALL(_handle_unicode_input, p_unicode, p_caret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_handle_unicode_input, p_unicode, p_caret)) {
 		return;
 	}
 	_handle_unicode_input_internal(p_unicode, p_caret);
 }
 
 void TextEdit::backspace(int p_caret) {
-	if (GDVIRTUAL_CALL(_backspace, p_caret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_backspace, p_caret)) {
 		return;
 	}
 	_backspace_internal(p_caret);
 }
 
 void TextEdit::cut(int p_caret) {
-	if (GDVIRTUAL_CALL(_cut, p_caret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_cut, p_caret)) {
 		return;
 	}
 	_cut_internal(p_caret);
 }
 
 void TextEdit::copy(int p_caret) {
-	if (GDVIRTUAL_CALL(_copy, p_caret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_copy, p_caret)) {
 		return;
 	}
 	_copy_internal(p_caret);
 }
 
 void TextEdit::paste(int p_caret) {
-	if (GDVIRTUAL_CALL(_paste, p_caret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_paste, p_caret)) {
 		return;
 	}
 	_paste_internal(p_caret);
 }
 
 void TextEdit::paste_primary_clipboard(int p_caret) {
-	if (GDVIRTUAL_CALL(_paste_primary_clipboard, p_caret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_paste_primary_clipboard, p_caret)) {
 		return;
 	}
 	_paste_primary_clipboard_internal(p_caret);
@@ -7198,12 +7198,12 @@ void TextEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("paste", "caret_index"), &TextEdit::paste, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("paste_primary_clipboard", "caret_index"), &TextEdit::paste_primary_clipboard, DEFVAL(-1));
 
-	GDVIRTUAL_BIND(_handle_unicode_input, "unicode_char", "caret_index")
-	GDVIRTUAL_BIND(_backspace, "caret_index")
-	GDVIRTUAL_BIND(_cut, "caret_index")
-	GDVIRTUAL_BIND(_copy, "caret_index")
-	GDVIRTUAL_BIND(_paste, "caret_index")
-	GDVIRTUAL_BIND(_paste_primary_clipboard, "caret_index")
+	FOUNDRY_VIRTUAL_BIND(_handle_unicode_input, "unicode_char", "caret_index")
+	FOUNDRY_VIRTUAL_BIND(_backspace, "caret_index")
+	FOUNDRY_VIRTUAL_BIND(_cut, "caret_index")
+	FOUNDRY_VIRTUAL_BIND(_copy, "caret_index")
+	FOUNDRY_VIRTUAL_BIND(_paste, "caret_index")
+	FOUNDRY_VIRTUAL_BIND(_paste_primary_clipboard, "caret_index")
 
 	// Context Menu
 	BIND_ENUM_CONSTANT(MENU_CUT);

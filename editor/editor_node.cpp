@@ -31,7 +31,7 @@
 #include "editor_node.h"
 
 #include "core/config/project_settings.h"
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/input/input.h"
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
@@ -99,7 +99,7 @@
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
 #include "editor/export/export_template_manager.h"
-#include "editor/export/gdextension_export_plugin.h"
+#include "editor/export/foundry_extension_export_plugin.h"
 #include "editor/export/project_export.h"
 #include "editor/export/project_zip_packer.h"
 #include "editor/export/register_exporters.h"
@@ -188,7 +188,7 @@
 #include "editor/shader/shader_baker/shader_baker_export_plugin_platform_metal.h"
 #endif
 
-#include "modules/modules_enabled.gen.h" // For gdscript, mono.
+#include "modules/modules_enabled.gen.h" // For foundry_script, mono.
 
 #ifndef PHYSICS_2D_DISABLED
 #include "servers/physics_2d/physics_server_2d.h"
@@ -372,7 +372,7 @@ void EditorNode::_update_title() {
 		// Display the "modified" mark before anything else so that it can always be seen in the OS task bar.
 		title = vformat("(*) %s", title);
 	}
-	DisplayServer::get_singleton()->window_set_title(title + String(" - ") + GODOT_VERSION_NAME);
+	DisplayServer::get_singleton()->window_set_title(title + String(" - ") + FOUNDRY_VERSION_NAME);
 	if (project_title) {
 		project_title->set_text(title);
 	}
@@ -571,11 +571,11 @@ void EditorNode::_update_from_settings() {
 #endif // DEBUG_ENABLED
 }
 
-void EditorNode::_gdextensions_reloaded() {
+void EditorNode::_foundry_extensions_reloaded() {
 	// In case the developer is inspecting an object that will be changed by the reload.
 	InspectorDock::get_inspector_singleton()->update_tree();
 
-	// Reload script editor to revalidate GDScript if classes are added or removed.
+	// Reload script editor to revalidate FoundryScript if classes are added or removed.
 	ScriptEditor::get_singleton()->reload_scripts(true);
 
 	// Regenerate documentation without using script documentation cache since that would
@@ -643,7 +643,7 @@ void EditorNode::_update_theme(bool p_skip_creation) {
 		theme = EditorThemeManager::generate_theme(theme);
 		DisplayServer::set_early_window_clear_color_override(true, theme->get_color(SNAME("background"), EditorStringName(Editor)));
 
-#if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 		if (EditorHelpHighlighter::get_singleton()) {
 			// Update syntax colors.
 			EditorHelpHighlighter::free_singleton();
@@ -697,7 +697,6 @@ void EditorNode::_update_theme(bool p_skip_creation) {
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_COPY_SYSTEM_INFO), get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_ABOUT), get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
-		help_menu->set_item_icon(help_menu->get_item_index(HELP_SUPPORT_GODOT_DEVELOPMENT), get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 
 		_update_renderer_color();
 	}
@@ -774,7 +773,7 @@ bool EditorNode::_is_project_data_missing() {
 		return true;
 	}
 
-	String project_data_gdignore_file_path = project_data_dir.path_join(".gdignore");
+	String project_data_gdignore_file_path = project_data_dir.path_join(".fsignore");
 	if (!FileAccess::exists(project_data_gdignore_file_path)) {
 		Ref<FileAccess> f = FileAccess::open(project_data_gdignore_file_path, FileAccess::WRITE);
 		if (f.is_valid()) {
@@ -825,7 +824,7 @@ void EditorNode::_notification(int p_what) {
 
 		case NOTIFICATION_POSTINITIALIZE: {
 			EditorHelp::generate_doc();
-#if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 			EditorHelpHighlighter::create_singleton();
 #endif
 		} break;
@@ -967,9 +966,9 @@ void EditorNode::_notification(int p_what) {
 
 			// Save the project after opening to mark it as last modified, except in headless mode.
 			// Also use this opportunity to ensure default settings are applied to new projects created from the command line
-			// using `touch project.godot`.
+			// using `touch project.foundry`.
 			if (DisplayServer::get_singleton()->window_can_draw()) {
-				const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.godot");
+				const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.foundry");
 				// Check the file's size in bytes as an optimization. If it's under 10 bytes, the file is assumed to be empty.
 				if (FileAccess::get_size(project_settings_path) < 10) {
 					const HashMap<String, Variant> initial_settings = get_initial_settings();
@@ -1010,8 +1009,8 @@ void EditorNode::_notification(int p_what) {
 			}
 			_scan_external_changes();
 
-			GDExtensionManager *gdextension_manager = GDExtensionManager::get_singleton();
-			callable_mp(gdextension_manager, &GDExtensionManager::reload_extensions).call_deferred();
+			FoundryExtensionManager *foundry_extension_manager = FoundryExtensionManager::get_singleton();
+			callable_mp(foundry_extension_manager, &FoundryExtensionManager::reload_extensions).call_deferred();
 		} break;
 
 		case NOTIFICATION_APPLICATION_FOCUS_OUT: {
@@ -1115,7 +1114,7 @@ void EditorNode::_notification(int p_what) {
 				DisplayServer::get_singleton()->screen_set_keep_on(EDITOR_GET("interface/editor/keep_screen_on"));
 			}
 
-#if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("text_editor/theme/highlighting")) {
 				EditorHelpHighlighter::get_singleton()->reset_cache();
 			}
@@ -1513,10 +1512,10 @@ void EditorNode::_scan_external_changes() {
 		}
 	}
 
-	String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.godot");
+	String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.foundry");
 	if (FileAccess::get_modified_time(project_settings_path) > ProjectSettings::get_singleton()->get_last_saved_time()) {
 		TreeItem *ti = disk_changed_list->create_item(r);
-		ti->set_text(0, "project.godot");
+		ti->set_text(0, "project.foundry");
 		need_reload = true;
 		disk_changed_project = true;
 	}
@@ -2036,7 +2035,7 @@ void EditorNode::_dialog_display_load_error(String p_file, Error p_error) {
 				show_accept(vformat(TTR("Missing file '%s' or one of its dependencies."), p_file.get_file()), TTR("OK"));
 			} break;
 			case ERR_FILE_UNRECOGNIZED: {
-				show_accept(vformat(TTR("File '%s' is saved in a format that is newer than the formats supported by this version of Godot, so it can't be opened."), p_file.get_file()), TTR("OK"));
+				show_accept(vformat(TTR("File '%s' is saved in a format that is newer than the formats supported by this version of Foundry, so it can't be opened."), p_file.get_file()), TTR("OK"));
 			} break;
 			default: {
 				show_accept(vformat(TTR("Error while loading file '%s'."), p_file.get_file()), TTR("OK"));
@@ -3801,7 +3800,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			command_palette->open_popup();
 		} break;
 		case HELP_DOCS: {
-			OS::get_singleton()->shell_open(GODOT_VERSION_DOCS_URL "/");
+			OS::get_singleton()->shell_open(FOUNDRY_VERSION_DOCS_URL "/");
 		} break;
 		case HELP_FORUM: {
 			OS::get_singleton()->shell_open("https://forum.godotengine.org/");
@@ -3824,9 +3823,6 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		} break;
 		case HELP_ABOUT: {
 			about->popup_centered(Size2(780, 500) * EDSCALE);
-		} break;
-		case HELP_SUPPORT_GODOT_DEVELOPMENT: {
-			OS::get_singleton()->shell_open("https://fund.godotengine.org/?ref=help_menu");
 		} break;
 	}
 }
@@ -3961,7 +3957,6 @@ void EditorNode::_check_system_theme_changed() {
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_COPY_SYSTEM_INFO), get_editor_theme_native_menu_icon(SNAME("ActionCopy"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_ABOUT), get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
-		help_menu->set_item_icon(help_menu->get_item_index(HELP_SUPPORT_GODOT_DEVELOPMENT), get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
 		editor_dock_manager->update_docks_menu();
 	}
 }
@@ -5871,9 +5866,9 @@ String EditorNode::_get_system_info() const {
 	}
 	const String distribution_version = OS::get_singleton()->get_version_alias();
 
-	String godot_version = "Godot v" + String(GODOT_VERSION_FULL_CONFIG);
-	if (String(GODOT_VERSION_BUILD) != "official") {
-		String hash = String(GODOT_VERSION_HASH);
+	String godot_version = "Godot v" + String(FOUNDRY_VERSION_FULL_CONFIG);
+	if (String(FOUNDRY_VERSION_BUILD) != "official") {
+		String hash = String(FOUNDRY_VERSION_HASH);
 		hash = hash.is_empty() ? String("unknown") : vformat("(%s)", hash.left(9));
 		godot_version += " " + hash;
 	}
@@ -6426,7 +6421,7 @@ void EditorNode::run_editor_script(const Ref<Script> &p_script) {
 	if (!p_script->is_tool()) {
 		is_runnable = false;
 
-		if (p_script->get_class() == "GDScript") {
+		if (p_script->get_class() == "FoundryScript") {
 			EditorToaster::get_singleton()->popup_str(TTR("Cannot run the script because it's not a tool script (add the @tool annotation at the top)."), EditorToaster::SEVERITY_WARNING);
 		} else if (p_script->get_class() == "CSharpScript") {
 			EditorToaster::get_singleton()->popup_str(TTR("Cannot run the script because it's not a tool script (add the [Tool] attribute above the class definition)."), EditorToaster::SEVERITY_WARNING);
@@ -7530,7 +7525,7 @@ bool EditorNode::call_build() {
 
 	for (int i = 0; i < build_callback_count && builds_successful; i++) {
 		if (!build_callbacks[i]()) {
-			ERR_PRINT("A Godot Engine build callback failed.");
+			ERR_PRINT("A Foundry build callback failed.");
 			builds_successful = false;
 		}
 	}
@@ -8035,7 +8030,6 @@ void EditorNode::_build_help_menu() {
 #else
 	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Godot"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/about"), HELP_ABOUT);
 #endif
-	help_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Heart"), menu_type == MENU_TYPE_GLOBAL, dark_mode), ED_GET_SHORTCUT("editor/support_development"), HELP_SUPPORT_GODOT_DEVELOPMENT);
 }
 
 void EditorNode::_add_to_main_menu(const String &p_name, PopupMenu *p_menu) {
@@ -8196,8 +8190,8 @@ void EditorNode::notify_settings_overrides_changed() {
 }
 
 // Returns the list of project settings to add to new projects. This is used by the
-// project manager creation dialog, but also applies to empty `project.godot` files
-// to cover the command line workflow of creating projects using `touch project.godot`.
+// project manager creation dialog, but also applies to empty `project.foundry` files
+// to cover the command line workflow of creating projects using `touch project.foundry`.
 //
 // This is used to set better defaults for new projects without affecting existing projects.
 HashMap<String, Variant> EditorNode::get_initial_settings() {
@@ -8263,7 +8257,7 @@ EditorNode::EditorNode() {
 	EditorUndoRedoManager::get_singleton()->connect("history_changed", callable_mp(this, &EditorNode::_update_undo_redo_allowed));
 	EditorUndoRedoManager::get_singleton()->connect("history_changed", callable_mp(this, &EditorNode::_update_unsaved_cache));
 	ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &EditorNode::_update_from_settings));
-	GDExtensionManager::get_singleton()->connect("extensions_reloaded", callable_mp(this, &EditorNode::_gdextensions_reloaded));
+	FoundryExtensionManager::get_singleton()->connect("extensions_reloaded", callable_mp(this, &EditorNode::_foundry_extensions_reloaded));
 
 	Ref<TranslationDomain> domain = TranslationServer::get_singleton()->get_main_domain();
 	domain->set_enabled(false);
@@ -8796,8 +8790,7 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/report_a_bug", TTRC("Report a Bug"));
 	ED_SHORTCUT_AND_COMMAND("editor/suggest_a_feature", TTRC("Suggest a Feature"));
 	ED_SHORTCUT_AND_COMMAND("editor/send_docs_feedback", TTRC("Send Docs Feedback"));
-	ED_SHORTCUT_AND_COMMAND("editor/about", TTRC("About Godot..."));
-	ED_SHORTCUT_AND_COMMAND("editor/support_development", TTRC("Support Godot Development"));
+	ED_SHORTCUT_AND_COMMAND("editor/about", TTRC("About Foundry..."));
 
 	// Use the Ctrl modifier so F2 can be used to rename nodes in the scene tree dock.
 	ED_SHORTCUT_AND_COMMAND("editor/editor_2d", TTRC("Open 2D Workspace"), KeyModifierMask::CTRL | Key::F1);
@@ -9143,7 +9136,7 @@ EditorNode::EditorNode() {
 
 	disk_changed = memnew(ConfirmationDialog);
 	{
-		disk_changed->set_title(TTR("Files have been modified outside Godot"));
+		disk_changed->set_title(TTR("Files have been modified outside Foundry"));
 
 		VBoxContainer *vbc = memnew(VBoxContainer);
 		disk_changed->add_child(vbc);
@@ -9210,11 +9203,11 @@ EditorNode::EditorNode() {
 		add_editor_plugin(EditorPlugins::create(i));
 	}
 
-	for (const StringName &extension_class_name : GDExtensionEditorPlugins::get_extension_classes()) {
+	for (const StringName &extension_class_name : FoundryExtensionEditorPlugins::get_extension_classes()) {
 		add_extension_editor_plugin(extension_class_name);
 	}
-	GDExtensionEditorPlugins::editor_node_add_plugin = &EditorNode::add_extension_editor_plugin;
-	GDExtensionEditorPlugins::editor_node_remove_plugin = &EditorNode::remove_extension_editor_plugin;
+	FoundryExtensionEditorPlugins::editor_node_add_plugin = &EditorNode::add_extension_editor_plugin;
+	FoundryExtensionEditorPlugins::editor_node_remove_plugin = &EditorNode::remove_extension_editor_plugin;
 
 	for (int i = 0; i < plugin_init_callback_count; i++) {
 		plugin_init_callbacks[i]();
@@ -9276,10 +9269,10 @@ EditorNode::EditorNode() {
 	editor_plugins_force_over = memnew(EditorPluginList);
 	editor_plugins_force_input_forwarding = memnew(EditorPluginList);
 
-	Ref<GDExtensionExportPlugin> gdextension_export_plugin;
-	gdextension_export_plugin.instantiate();
+	Ref<FoundryExtensionExportPlugin> foundry_extension_export_plugin;
+	foundry_extension_export_plugin.instantiate();
 
-	EditorExport::get_singleton()->add_export_plugin(gdextension_export_plugin);
+	EditorExport::get_singleton()->add_export_plugin(foundry_extension_export_plugin);
 
 	Ref<DedicatedServerExportPlugin> dedicated_server_export_plugin;
 	dedicated_server_export_plugin.instantiate();
@@ -9427,7 +9420,7 @@ EditorNode::~EditorNode() {
 
 	remove_print_handler(&print_handler);
 	EditorHelp::cleanup_doc();
-#if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 	EditorHelpHighlighter::free_singleton();
 #endif
 	memdelete(editor_selection);
@@ -9441,8 +9434,8 @@ EditorNode::~EditorNode() {
 	EditorSettings::destroy();
 	EditorThemeManager::finalize();
 
-	GDExtensionEditorPlugins::editor_node_add_plugin = nullptr;
-	GDExtensionEditorPlugins::editor_node_remove_plugin = nullptr;
+	FoundryExtensionEditorPlugins::editor_node_add_plugin = nullptr;
+	FoundryExtensionEditorPlugins::editor_node_remove_plugin = nullptr;
 
 	FileDialog::register_func = nullptr;
 	FileDialog::unregister_func = nullptr;

@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 8: Cannot assign class handle "Box[String]" to variable "stored_int_box" of type "Type[Box[int]]"; handle represents "Box[String]", which is not compatible with "Box[int]".

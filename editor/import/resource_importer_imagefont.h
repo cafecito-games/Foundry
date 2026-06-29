@@ -35,7 +35,7 @@
 #include "servers/text/text_server.h"
 
 class ResourceImporterImageFont : public ResourceImporter {
-	GDCLASS(ResourceImporterImageFont, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterImageFont, ResourceImporter);
 
 public:
 	virtual String get_importer_name() const override;

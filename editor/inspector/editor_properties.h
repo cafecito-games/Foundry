@@ -60,7 +60,7 @@ struct EditorPropertyRangeHint {
 };
 
 class EditorPropertyNil : public EditorProperty {
-	GDCLASS(EditorPropertyNil, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyNil, EditorProperty);
 	LineEdit *text = nullptr;
 
 public:
@@ -69,7 +69,7 @@ public:
 };
 
 class EditorPropertyVariant : public EditorProperty {
-	GDCLASS(EditorPropertyVariant, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyVariant, EditorProperty);
 
 	HBoxContainer *content = nullptr;
 	EditorProperty *sub_property = nullptr;
@@ -92,7 +92,7 @@ public:
 };
 
 class EditorPropertyText : public EditorProperty {
-	GDCLASS(EditorPropertyText, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyText, EditorProperty);
 	LineEdit *text = nullptr;
 
 	bool monospaced = false;
@@ -117,7 +117,7 @@ public:
 };
 
 class EditorPropertyMultilineText : public EditorProperty {
-	GDCLASS(EditorPropertyMultilineText, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyMultilineText, EditorProperty);
 
 	TextEdit *text = nullptr;
 
@@ -151,7 +151,7 @@ public:
 };
 
 class EditorPropertyTextEnum : public EditorProperty {
-	GDCLASS(EditorPropertyTextEnum, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyTextEnum, EditorProperty);
 
 	HBoxContainer *default_layout = nullptr;
 	HBoxContainer *edit_custom_layout = nullptr;
@@ -187,7 +187,7 @@ public:
 };
 
 class EditorPropertyPath : public EditorProperty {
-	GDCLASS(EditorPropertyPath, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyPath, EditorProperty);
 	Vector<String> extensions;
 	bool folder = false;
 	bool global = false;
@@ -224,7 +224,7 @@ public:
 };
 
 class EditorPropertyLocale : public EditorProperty {
-	GDCLASS(EditorPropertyLocale, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyLocale, EditorProperty);
 	EditorLocaleDialog *dialog = nullptr;
 	LineEdit *locale = nullptr;
 	Button *locale_edit = nullptr;
@@ -243,7 +243,7 @@ public:
 };
 
 class EditorPropertyClassName : public EditorProperty {
-	GDCLASS(EditorPropertyClassName, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyClassName, EditorProperty);
 
 private:
 	CreateDialog *dialog = nullptr;
@@ -263,7 +263,7 @@ public:
 };
 
 class EditorPropertyCheck : public EditorProperty {
-	GDCLASS(EditorPropertyCheck, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyCheck, EditorProperty);
 	CheckBox *checkbox = nullptr;
 
 	void _checkbox_pressed();
@@ -277,7 +277,7 @@ public:
 };
 
 class EditorPropertyEnum : public EditorProperty {
-	GDCLASS(EditorPropertyEnum, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyEnum, EditorProperty);
 	OptionButton *options = nullptr;
 
 	void _option_selected(int p_which);
@@ -294,7 +294,7 @@ public:
 };
 
 class EditorPropertyFlags : public EditorProperty {
-	GDCLASS(EditorPropertyFlags, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyFlags, EditorProperty);
 	VBoxContainer *vbox = nullptr;
 	Vector<CheckBox *> flags;
 	Vector<uint32_t> flag_values;
@@ -313,7 +313,7 @@ public:
 ///////////////////// LAYERS /////////////////////////
 
 class EditorPropertyLayersGrid : public Control {
-	GDCLASS(EditorPropertyLayersGrid, Control);
+	FOUNDRY_CLASS(EditorPropertyLayersGrid, Control);
 
 private:
 	Vector<Rect2> flag_rects;
@@ -358,7 +358,7 @@ public:
 };
 
 class EditorPropertyLayers : public EditorProperty {
-	GDCLASS(EditorPropertyLayers, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyLayers, EditorProperty);
 
 public:
 	enum LayerType {
@@ -396,7 +396,7 @@ public:
 };
 
 class EditorPropertyInteger : public EditorProperty {
-	GDCLASS(EditorPropertyInteger, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyInteger, EditorProperty);
 	EditorSpinSlider *spin = nullptr;
 	void _value_changed(int64_t p_val);
 
@@ -410,7 +410,7 @@ public:
 };
 
 class EditorPropertyObjectID : public EditorProperty {
-	GDCLASS(EditorPropertyObjectID, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyObjectID, EditorProperty);
 	Button *edit = nullptr;
 	String base_type;
 	void _edit_pressed();
@@ -425,7 +425,7 @@ public:
 };
 
 class EditorPropertySignal : public EditorProperty {
-	GDCLASS(EditorPropertySignal, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertySignal, EditorProperty);
 	Button *edit = nullptr;
 	String base_type;
 	void _edit_pressed();
@@ -436,7 +436,7 @@ public:
 };
 
 class EditorPropertyCallable : public EditorProperty {
-	GDCLASS(EditorPropertyCallable, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyCallable, EditorProperty);
 	Button *edit = nullptr;
 	String base_type;
 
@@ -446,7 +446,7 @@ public:
 };
 
 class EditorPropertyFloat : public EditorProperty {
-	GDCLASS(EditorPropertyFloat, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyFloat, EditorProperty);
 	EditorSpinSlider *spin = nullptr;
 	bool radians_as_degrees = false;
 	void _value_changed(double p_val);
@@ -461,7 +461,7 @@ public:
 };
 
 class EditorPropertyEasing : public EditorProperty {
-	GDCLASS(EditorPropertyEasing, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyEasing, EditorProperty);
 	Control *easing_draw = nullptr;
 	PopupMenu *preset = nullptr;
 	EditorSpinSlider *spin = nullptr;
@@ -502,7 +502,7 @@ public:
 };
 
 class EditorPropertyRect2 : public EditorProperty {
-	GDCLASS(EditorPropertyRect2, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyRect2, EditorProperty);
 	EditorSpinSlider *spin[4];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -517,7 +517,7 @@ public:
 };
 
 class EditorPropertyRect2i : public EditorProperty {
-	GDCLASS(EditorPropertyRect2i, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyRect2i, EditorProperty);
 	EditorSpinSlider *spin[4];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -532,7 +532,7 @@ public:
 };
 
 class EditorPropertyPlane : public EditorProperty {
-	GDCLASS(EditorPropertyPlane, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyPlane, EditorProperty);
 	EditorSpinSlider *spin[4];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -547,7 +547,7 @@ public:
 };
 
 class EditorPropertyQuaternion : public EditorProperty {
-	GDCLASS(EditorPropertyQuaternion, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyQuaternion, EditorProperty);
 	BoxContainer *default_layout = nullptr;
 	EditorSpinSlider *spin[4];
 
@@ -579,7 +579,7 @@ public:
 };
 
 class EditorPropertyAABB : public EditorProperty {
-	GDCLASS(EditorPropertyAABB, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyAABB, EditorProperty);
 	EditorSpinSlider *spin[6];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -594,7 +594,7 @@ public:
 };
 
 class EditorPropertyTransform2D : public EditorProperty {
-	GDCLASS(EditorPropertyTransform2D, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyTransform2D, EditorProperty);
 	EditorSpinSlider *spin[6];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -609,7 +609,7 @@ public:
 };
 
 class EditorPropertyBasis : public EditorProperty {
-	GDCLASS(EditorPropertyBasis, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyBasis, EditorProperty);
 	EditorSpinSlider *spin[9];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -624,7 +624,7 @@ public:
 };
 
 class EditorPropertyTransform3D : public EditorProperty {
-	GDCLASS(EditorPropertyTransform3D, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyTransform3D, EditorProperty);
 	EditorSpinSlider *spin[12];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -640,7 +640,7 @@ public:
 };
 
 class EditorPropertyProjection : public EditorProperty {
-	GDCLASS(EditorPropertyProjection, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyProjection, EditorProperty);
 	EditorSpinSlider *spin[16];
 	void _value_changed(double p_val, const String &p_name);
 
@@ -656,7 +656,7 @@ public:
 };
 
 class EditorPropertyColor : public EditorProperty {
-	GDCLASS(EditorPropertyColor, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyColor, EditorProperty);
 	ColorPickerButton *picker = nullptr;
 	void _color_changed(const Color &p_color);
 	void _picker_created();
@@ -678,7 +678,7 @@ public:
 };
 
 class EditorPropertyNodePath : public EditorProperty {
-	GDCLASS(EditorPropertyNodePath, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyNodePath, EditorProperty);
 
 	enum {
 		ACTION_CLEAR,
@@ -724,7 +724,7 @@ public:
 };
 
 class EditorPropertyRID : public EditorProperty {
-	GDCLASS(EditorPropertyRID, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyRID, EditorProperty);
 	Label *label = nullptr;
 
 public:
@@ -733,7 +733,7 @@ public:
 };
 
 class EditorPropertyResource : public EditorProperty {
-	GDCLASS(EditorPropertyResource, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyResource, EditorProperty);
 
 	EditorResourcePicker *resource_picker = nullptr;
 	SceneTreeDialog *scene_tree = nullptr;
@@ -786,7 +786,7 @@ public:
 /// \brief The EditorInspectorDefaultPlugin class
 ///
 class EditorInspectorDefaultPlugin : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorDefaultPlugin, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorDefaultPlugin, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;

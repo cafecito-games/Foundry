@@ -30,11 +30,11 @@
 
 #pragma once
 
-#include "core/extension/gdextension_interface.gen.h"
+#include "core/extension/foundry_extension_interface.gen.h"
 #include "core/object/class_db.h"
 
 class GodotInstance : public Object {
-	GDCLASS(GodotInstance, Object);
+	FOUNDRY_CLASS(GodotInstance, Object);
 
 	bool started = false;
 
@@ -45,7 +45,7 @@ public:
 	GodotInstance();
 	~GodotInstance();
 
-	bool initialize(GDExtensionInitializationFunction p_init_func);
+	bool initialize(FoundryExtensionInitializationFunction p_init_func);
 
 	bool start();
 	bool is_started();

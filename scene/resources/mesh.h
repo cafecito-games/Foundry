@@ -46,7 +46,7 @@ class Shape3D;
 class MeshConvexDecompositionSettings;
 
 class Mesh : public Resource {
-	GDCLASS(Mesh, Resource);
+	FOUNDRY_CLASS(Mesh, Resource);
 
 	mutable Ref<TriangleMesh> triangle_mesh; //cached
 	mutable Vector<Ref<TriangleMesh>> surface_triangle_meshes; //cached
@@ -68,20 +68,20 @@ public:
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0RC_REQUIRED(int, _get_surface_count)
-	GDVIRTUAL1RC_REQUIRED(int, _surface_get_array_len, int)
-	GDVIRTUAL1RC_REQUIRED(int, _surface_get_array_index_len, int)
-	GDVIRTUAL1RC_REQUIRED(Array, _surface_get_arrays, int)
-	GDVIRTUAL1RC_REQUIRED(TypedArray<Array>, _surface_get_blend_shape_arrays, int)
-	GDVIRTUAL1RC_REQUIRED(Dictionary, _surface_get_lods, int)
-	GDVIRTUAL1RC_REQUIRED(uint32_t, _surface_get_format, int)
-	GDVIRTUAL1RC_REQUIRED(uint32_t, _surface_get_primitive_type, int)
-	GDVIRTUAL2_REQUIRED(_surface_set_material, int, Ref<Material>)
-	GDVIRTUAL1RC_REQUIRED(Ref<Material>, _surface_get_material, int)
-	GDVIRTUAL0RC_REQUIRED(int, _get_blend_shape_count)
-	GDVIRTUAL1RC_REQUIRED(StringName, _get_blend_shape_name, int)
-	GDVIRTUAL2_REQUIRED(_set_blend_shape_name, int, StringName)
-	GDVIRTUAL0RC_REQUIRED(AABB, _get_aabb)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_surface_count)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(int, _surface_get_array_len, int)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(int, _surface_get_array_index_len, int)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(Array, _surface_get_arrays, int)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(TypedArray<Array>, _surface_get_blend_shape_arrays, int)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(Dictionary, _surface_get_lods, int)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(uint32_t, _surface_get_format, int)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(uint32_t, _surface_get_primitive_type, int)
+	FOUNDRY_VIRTUAL2_REQUIRED(_surface_set_material, int, Ref<Material>)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(Ref<Material>, _surface_get_material, int)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(int, _get_blend_shape_count)
+	FOUNDRY_VIRTUAL1RC_REQUIRED(StringName, _get_blend_shape_name, int)
+	FOUNDRY_VIRTUAL2_REQUIRED(_set_blend_shape_name, int, StringName)
+	FOUNDRY_VIRTUAL0RC_REQUIRED(AABB, _get_aabb)
 
 public:
 	enum {
@@ -211,7 +211,7 @@ public:
 };
 
 class MeshConvexDecompositionSettings : public RefCounted {
-	GDCLASS(MeshConvexDecompositionSettings, RefCounted);
+	FOUNDRY_CLASS(MeshConvexDecompositionSettings, RefCounted);
 
 public:
 	enum Mode : int {
@@ -294,7 +294,7 @@ public:
 VARIANT_ENUM_CAST(MeshConvexDecompositionSettings::Mode);
 
 class ArrayMesh : public Mesh {
-	GDCLASS(ArrayMesh, Mesh);
+	FOUNDRY_CLASS(ArrayMesh, Mesh);
 	RES_BASE_EXTENSION("mesh");
 
 	PackedStringArray _get_blend_shape_names() const;
@@ -407,7 +407,7 @@ VARIANT_ENUM_CAST(Mesh::PrimitiveType);
 VARIANT_ENUM_CAST(Mesh::BlendShapeMode);
 
 class PlaceholderMesh : public Mesh {
-	GDCLASS(PlaceholderMesh, Mesh);
+	FOUNDRY_CLASS(PlaceholderMesh, Mesh);
 
 	RID rid;
 	AABB aabb;

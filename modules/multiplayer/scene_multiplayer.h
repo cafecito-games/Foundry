@@ -37,7 +37,7 @@
 #include "scene/main/multiplayer_api.h"
 
 class OfflineMultiplayerPeer : public MultiplayerPeer {
-	GDCLASS(OfflineMultiplayerPeer, MultiplayerPeer);
+	FOUNDRY_CLASS(OfflineMultiplayerPeer, MultiplayerPeer);
 
 public:
 	virtual int get_available_packet_count() const override { return 0; }
@@ -62,7 +62,7 @@ public:
 };
 
 class SceneMultiplayer : public MultiplayerAPI {
-	GDCLASS(SceneMultiplayer, MultiplayerAPI);
+	FOUNDRY_CLASS(SceneMultiplayer, MultiplayerAPI);
 
 public:
 	enum NetworkCommands {

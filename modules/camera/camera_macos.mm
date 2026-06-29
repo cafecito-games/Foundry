@@ -229,7 +229,7 @@
 // CameraFeedMacOS - Subclass for camera feeds in macOS
 
 class CameraFeedMacOS : public CameraFeed {
-	GDSOFTCLASS(CameraFeedMacOS, CameraFeed);
+	FOUNDRY_SOFTCLASS(CameraFeedMacOS, CameraFeed);
 
 private:
 	AVCaptureDevice *device;

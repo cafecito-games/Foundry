@@ -35,7 +35,7 @@
 #include "scene/property_list_helper.h"
 
 class MenuButton : public Button {
-	GDCLASS(MenuButton, Button);
+	FOUNDRY_CLASS(MenuButton, Button);
 
 	bool switch_on_hover = false;
 	bool disable_shortcuts = false;

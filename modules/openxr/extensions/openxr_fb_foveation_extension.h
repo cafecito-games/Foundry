@@ -43,7 +43,7 @@
 #include "../openxr_platform_inc.h"
 
 class OpenXRFBFoveationExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRFBFoveationExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRFBFoveationExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}

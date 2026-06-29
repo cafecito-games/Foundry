@@ -4,8 +4,8 @@
 		A captured backtrace of a specific script language.
 	</brief_description>
 	<description>
-		[ScriptBacktrace] holds an already captured backtrace of a specific script language, such as GDScript or C#, which are captured using [method Engine.capture_script_backtraces].
-		See [member ProjectSettings.debug/settings/gdscript/always_track_call_stacks] and [member ProjectSettings.debug/settings/gdscript/always_track_local_variables] for ways of controlling the contents of this class.
+		[ScriptBacktrace] holds an already captured backtrace of a specific script language, such as FoundryScript or C#, which are captured using [method Engine.capture_script_backtraces].
+		See [member ProjectSettings.debug/settings/foundry_script/always_track_call_stacks] and [member ProjectSettings.debug/settings/foundry_script/always_track_local_variables] for ways of controlling the contents of this class.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -65,7 +65,7 @@
 			<param index="0" name="variable_index" type="int" />
 			<description>
 				Returns the value of the global variable at the specified index.
-				[b]Warning:[/b] With GDScript backtraces, the returned [Variant] will be the variable's actual value, including any object references. This means that storing the returned [Variant] will prevent any such object from being deallocated, so it's generally recommended not to do so.
+				[b]Warning:[/b] With FoundryScript backtraces, the returned [Variant] will be the variable's actual value, including any object references. This means that storing the returned [Variant] will prevent any such object from being deallocated, so it's generally recommended not to do so.
 			</description>
 		</method>
 		<method name="get_language_name" qualifiers="const">
@@ -96,7 +96,7 @@
 			<param index="1" name="variable_index" type="int" />
 			<description>
 				Returns the value of the local variable at the specified [param variable_index] in the stack frame at the specified [param frame_index].
-				[b]Warning:[/b] With GDScript backtraces, the returned [Variant] will be the variable's actual value, including any object references. This means that storing the returned [Variant] will prevent any such object from being deallocated, so it's generally recommended not to do so.
+				[b]Warning:[/b] With FoundryScript backtraces, the returned [Variant] will be the variable's actual value, including any object references. This means that storing the returned [Variant] will prevent any such object from being deallocated, so it's generally recommended not to do so.
 			</description>
 		</method>
 		<method name="get_member_variable_count" qualifiers="const">
@@ -121,7 +121,7 @@
 			<param index="1" name="variable_index" type="int" />
 			<description>
 				Returns the value of the member variable at the specified [param variable_index] in the stack frame at the specified [param frame_index].
-				[b]Warning:[/b] With GDScript backtraces, the returned [Variant] will be the variable's actual value, including any object references. This means that storing the returned [Variant] will prevent any such object from being deallocated, so it's generally recommended not to do so.
+				[b]Warning:[/b] With FoundryScript backtraces, the returned [Variant] will be the variable's actual value, including any object references. This means that storing the returned [Variant] will prevent any such object from being deallocated, so it's generally recommended not to do so.
 			</description>
 		</method>
 		<method name="is_empty" qualifiers="const">

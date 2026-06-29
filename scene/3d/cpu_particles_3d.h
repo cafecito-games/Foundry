@@ -37,7 +37,7 @@ class RandomNumberGenerator;
 
 class CPUParticles3D : public GeometryInstance3D {
 private:
-	GDCLASS(CPUParticles3D, GeometryInstance3D);
+	FOUNDRY_CLASS(CPUParticles3D, GeometryInstance3D);
 
 public:
 	enum DrawOrder {

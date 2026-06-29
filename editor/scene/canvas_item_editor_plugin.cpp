@@ -75,7 +75,7 @@ constexpr real_t SCALE_HANDLE_DISTANCE = 25;
 constexpr real_t MOVE_HANDLE_DISTANCE = 25;
 
 class SnapDialog : public ConfirmationDialog {
-	GDCLASS(SnapDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(SnapDialog, ConfirmationDialog);
 
 	friend class CanvasItemEditor;
 

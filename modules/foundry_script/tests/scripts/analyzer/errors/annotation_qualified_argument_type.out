@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Invalid argument 1 of annotation "@cafecito.qualified_args.timeout": expected "float" but got "String".

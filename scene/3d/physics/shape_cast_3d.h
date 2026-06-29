@@ -36,7 +36,7 @@
 class CollisionObject3D;
 
 class ShapeCast3D : public Node3D {
-	GDCLASS(ShapeCast3D, Node3D);
+	FOUNDRY_CLASS(ShapeCast3D, Node3D);
 
 	bool enabled = true;
 #ifndef DISABLE_DEPRECATED

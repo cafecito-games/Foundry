@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 2: Class "trait_concrete_method_scope.fs" must implement trait method "RequiresFoo.foo()".

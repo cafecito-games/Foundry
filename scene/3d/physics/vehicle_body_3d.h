@@ -36,7 +36,7 @@
 class VehicleBody3D;
 
 class VehicleWheel3D : public Node3D {
-	GDCLASS(VehicleWheel3D, Node3D);
+	FOUNDRY_CLASS(VehicleWheel3D, Node3D);
 
 	friend class VehicleBody3D;
 
@@ -195,7 +195,7 @@ public:
 };
 
 class VehicleBody3D : public RigidBody3D {
-	GDCLASS(VehicleBody3D, RigidBody3D);
+	FOUNDRY_CLASS(VehicleBody3D, RigidBody3D);
 
 	real_t engine_force = 0.0;
 	real_t brake = 0.0;

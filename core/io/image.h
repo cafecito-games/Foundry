@@ -62,7 +62,7 @@ typedef Error (*SaveDDSFunc)(const String &p_path, const Ref<Image> &p_img);
 typedef Vector<uint8_t> (*SaveDDSBufferFunc)(const Ref<Image> &p_img);
 
 class Image : public Resource {
-	GDCLASS(Image, Resource);
+	FOUNDRY_CLASS(Image, Resource);
 
 public:
 	enum {

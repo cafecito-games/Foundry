@@ -38,7 +38,7 @@
 #include <openxr/openxr.h>
 
 class OpenXRRenderModel : public Node3D {
-	GDCLASS(OpenXRRenderModel, Node3D);
+	FOUNDRY_CLASS(OpenXRRenderModel, Node3D);
 
 private:
 	RID render_model;

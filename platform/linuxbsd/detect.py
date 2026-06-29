@@ -252,7 +252,7 @@ def configure(env: "SConsEnvironment"):
 
     if not env["builtin_icu4c"] or not env["builtin_harfbuzz"]:
         print_warning(
-            "System-provided icu4c or harfbuzz cause known issues for GDExtension (see GH-91401 and GH-100301)."
+            "System-provided icu4c or harfbuzz cause known issues for FoundryExtension (see GH-91401 and GH-100301)."
         )
 
     if not env["builtin_libpng"]:

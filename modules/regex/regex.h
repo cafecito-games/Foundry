@@ -39,7 +39,7 @@
 #include "core/variant/typed_array.h"
 
 class RegExMatch : public RefCounted {
-	GDCLASS(RegExMatch, RefCounted);
+	FOUNDRY_CLASS(RegExMatch, RefCounted);
 
 	struct Range {
 		int start = 0;
@@ -69,7 +69,7 @@ public:
 };
 
 class RegEx : public RefCounted {
-	GDCLASS(RegEx, RefCounted);
+	FOUNDRY_CLASS(RegEx, RefCounted);
 
 	void *general_ctx = nullptr;
 	void *code = nullptr;

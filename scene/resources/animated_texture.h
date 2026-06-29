@@ -33,7 +33,7 @@
 #include "scene/resources/texture.h"
 
 class AnimatedTexture : public Texture2D {
-	GDCLASS(AnimatedTexture, Texture2D);
+	FOUNDRY_CLASS(AnimatedTexture, Texture2D);
 
 	// Use readers writers lock for this, since its far more times read than written to.
 	RWLock rw_lock;

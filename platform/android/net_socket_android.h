@@ -44,7 +44,7 @@
  * joins/leaves a multicast group.
  */
 class NetSocketAndroid : public NetSocketUnix {
-	GDSOFTCLASS(NetSocketAndroid, NetSocketUnix);
+	FOUNDRY_SOFTCLASS(NetSocketAndroid, NetSocketUnix);
 
 private:
 	static jobject net_utils;

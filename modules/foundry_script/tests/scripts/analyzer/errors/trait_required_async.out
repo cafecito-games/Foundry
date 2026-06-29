@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: The function "fetch()" must be async because it implements async trait method "RemoteLoadable.fetch()".

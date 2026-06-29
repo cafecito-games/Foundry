@@ -34,7 +34,7 @@
 #include "scene/resources/3d/world_3d.h"
 
 class Node3DGizmo : public RefCounted {
-	GDCLASS(Node3DGizmo, RefCounted);
+	FOUNDRY_CLASS(Node3DGizmo, RefCounted);
 
 public:
 	virtual void create() = 0;
@@ -48,7 +48,7 @@ public:
 };
 
 class Node3D : public Node {
-	GDCLASS(Node3D, Node);
+	FOUNDRY_CLASS(Node3D, Node);
 
 	friend class SceneTreeFTI;
 	friend class SceneTreeFTITests;

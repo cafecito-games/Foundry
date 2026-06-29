@@ -565,10 +565,10 @@ EditorRunBar::EditorRunBar() {
 		recovery_mode_popup->set_min_size(Size2(550, 70) * EDSCALE);
 		recovery_mode_popup->set_title(TTR("Recovery Mode"));
 		recovery_mode_popup->set_text(
-				TTR("Godot opened the project in Recovery Mode, which is a special mode that can help recover projects that crash the engine upon initialization. The following features have been temporarily disabled:") +
+				TTR("Foundry opened the project in Recovery Mode, which is a special mode that can help recover projects that crash the engine upon initialization. The following features have been temporarily disabled:") +
 				String::utf8("\n\n•  ") + TTR("Tool scripts") +
 				String::utf8("\n•  ") + TTR("Editor plugins") +
-				String::utf8("\n•  ") + TTR("GDExtension addons") +
+				String::utf8("\n•  ") + TTR("FoundryExtension addons") +
 				String::utf8("\n•  ") + TTR("Automatic scene restoring") +
 				String::utf8("\n\n") + TTR("If the project cannot be opened outside of this mode, then it's very likely any of these components is preventing this project from launching. This mode is intended only for basic editing to troubleshoot such issues, and therefore it is not possible to run a project in this mode.") +
 				String::utf8("\n\n") + TTR("To disable Recovery Mode, reload the project by pressing the Reload button next to the Recovery Mode banner, or by reopening the project normally."));

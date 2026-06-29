@@ -44,7 +44,7 @@ class SpinBox;
 class VSeparator;
 
 class AnimationNodeBlendSpace1DEditor : public AnimationTreeNodeEditorPlugin {
-	GDCLASS(AnimationNodeBlendSpace1DEditor, AnimationTreeNodeEditorPlugin);
+	FOUNDRY_CLASS(AnimationNodeBlendSpace1DEditor, AnimationTreeNodeEditorPlugin);
 
 	Ref<AnimationNodeBlendSpace1D> blend_space;
 	bool read_only = false;

@@ -10,7 +10,7 @@ ext {
     // The build number is added as a suffix to the version code for upload to the Google Play store.
     getEditorBuildNumber = { ->
         int buildNumber = 0
-        String versionStatus = System.getenv("GODOT_VERSION_STATUS")
+        String versionStatus = System.getenv("FOUNDRY_VERSION_STATUS")
         if (versionStatus != null && !versionStatus.isEmpty()) {
             try {
                 buildNumber = Integer.parseInt(versionStatus.replaceAll("[^0-9]", ""))
@@ -26,7 +26,7 @@ ext {
 
     // Return the keystore file used for signing the release build.
     getGodotKeystoreFile = { ->
-        def keyStore = System.getenv("GODOT_ANDROID_SIGN_KEYSTORE")
+        def keyStore = System.getenv("FOUNDRY_ANDROID_SIGN_KEYSTORE")
         if (keyStore == null || keyStore.isEmpty()) {
             return null
         }
@@ -35,13 +35,13 @@ ext {
 
     // Return the key alias used for signing the release build.
     getGodotKeyAlias = { ->
-        def kAlias = System.getenv("GODOT_ANDROID_KEYSTORE_ALIAS")
+        def kAlias = System.getenv("FOUNDRY_ANDROID_KEYSTORE_ALIAS")
         return kAlias
     }
 
     // Return the password for the key used for signing the release build.
     getGodotSigningPassword = { ->
-        def signingPassword = System.getenv("GODOT_ANDROID_SIGN_PASSWORD")
+        def signingPassword = System.getenv("FOUNDRY_ANDROID_SIGN_PASSWORD")
         return signingPassword
     }
 

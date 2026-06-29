@@ -36,7 +36,7 @@
 class AudioEffectEQ;
 
 class AudioEffectEQInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectEQInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectEQInstance, AudioEffectInstance);
 	friend class AudioEffectEQ;
 	Ref<AudioEffectEQ> base;
 
@@ -48,7 +48,7 @@ public:
 };
 
 class AudioEffectEQ : public AudioEffect {
-	GDCLASS(AudioEffectEQ, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectEQ, AudioEffect);
 
 	friend class AudioEffectEQInstance;
 
@@ -74,7 +74,7 @@ public:
 };
 
 class AudioEffectEQ6 : public AudioEffectEQ {
-	GDCLASS(AudioEffectEQ6, AudioEffectEQ);
+	FOUNDRY_CLASS(AudioEffectEQ6, AudioEffectEQ);
 
 public:
 	AudioEffectEQ6() :
@@ -82,7 +82,7 @@ public:
 };
 
 class AudioEffectEQ10 : public AudioEffectEQ {
-	GDCLASS(AudioEffectEQ10, AudioEffectEQ);
+	FOUNDRY_CLASS(AudioEffectEQ10, AudioEffectEQ);
 
 public:
 	AudioEffectEQ10() :
@@ -90,7 +90,7 @@ public:
 };
 
 class AudioEffectEQ21 : public AudioEffectEQ {
-	GDCLASS(AudioEffectEQ21, AudioEffectEQ);
+	FOUNDRY_CLASS(AudioEffectEQ21, AudioEffectEQ);
 
 public:
 	AudioEffectEQ21() :

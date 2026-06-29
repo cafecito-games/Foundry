@@ -34,7 +34,7 @@
 #include "core/io/resource_saver.h"
 
 class ResourceSaverWebP : public ResourceFormatSaver {
-	GDSOFTCLASS(ResourceSaverWebP, ResourceFormatSaver);
+	FOUNDRY_SOFTCLASS(ResourceSaverWebP, ResourceFormatSaver);
 
 public:
 	static Error save_image(const String &p_path, const Ref<Image> &p_img, const bool p_lossy = false, const float p_quality = 0.75f);

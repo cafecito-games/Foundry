@@ -38,7 +38,7 @@ class PanelContainer;
 class TextureRect;
 
 class ScrollContainer : public Container {
-	GDCLASS(ScrollContainer, Container);
+	FOUNDRY_CLASS(ScrollContainer, Container);
 
 public:
 	enum ScrollMode {

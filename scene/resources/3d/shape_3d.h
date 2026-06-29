@@ -36,7 +36,7 @@ class ArrayMesh;
 class Material;
 
 class Shape3D : public Resource {
-	GDCLASS(Shape3D, Resource);
+	FOUNDRY_CLASS(Shape3D, Resource);
 	OBJ_SAVE_TYPE(Shape3D);
 	RES_BASE_EXTENSION("shape");
 	RID shape;

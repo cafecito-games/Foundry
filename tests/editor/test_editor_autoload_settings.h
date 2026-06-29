@@ -32,7 +32,7 @@
 
 #include "modules/modules_enabled.gen.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 
 #include "editor/settings/editor_autoload_settings.h"
 
@@ -41,8 +41,8 @@
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/os/os.h"
-#include "modules/gdscript/gdscript.h"
-#include "modules/gdscript/gdscript_autoload_index.h"
+#include "modules/foundry_script/foundry_script.h"
+#include "modules/foundry_script/fs_autoload_index.h"
 #include "tests/test_macros.h"
 
 namespace TestEditorAutoloadSettings {
@@ -128,7 +128,7 @@ public:
 };
 
 class TestScriptResourceFormatLoader : public ResourceFormatLoader {
-	GDSOFTCLASS(TestScriptResourceFormatLoader, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(TestScriptResourceFormatLoader, ResourceFormatLoader);
 
 public:
 	virtual void get_recognized_extensions(List<String> *p_extensions) const override {
@@ -158,29 +158,29 @@ public:
 	}
 };
 
-struct ScopedGDScriptLanguage {
+struct ScopedFSLanguage {
 	bool initialized = false;
 
-	ScopedGDScriptLanguage() {
-		if (!GDScriptLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
-			GDScriptLanguage::get_singleton()->init();
+	ScopedFSLanguage() {
+		if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+			FSLanguage::get_singleton()->init();
 			initialized = true;
 		}
 	}
 
-	~ScopedGDScriptLanguage() {
+	~ScopedFSLanguage() {
 		if (initialized) {
-			GDScriptLanguage::get_singleton()->finish();
+			FSLanguage::get_singleton()->finish();
 		}
 	}
 };
 
-static GDScriptAutoloadIndexEntry make_autoload_entry(
+static FSAutoloadIndexEntry make_autoload_entry(
 		const StringName &p_name,
 		const String &p_path,
-		GDScriptAutoloadIndexEntry::Source p_source,
+		FSAutoloadIndexEntry::Source p_source,
 		int p_order = 0) {
-	GDScriptAutoloadIndexEntry entry;
+	FSAutoloadIndexEntry entry;
 	entry.name = p_name;
 	entry.path = p_path;
 	entry.is_singleton = true;
@@ -201,40 +201,40 @@ static const EditorAutoloadSettings::AutoloadViewEntry *find_view_entry(
 }
 
 TEST_CASE("[Editor][AutoloadSettings] View model exposes source diagnostics and editability") {
-	GDScriptAutoloadIndexEntry project_entry = make_autoload_entry(
+	FSAutoloadIndexEntry project_entry = make_autoload_entry(
 			SNAME("EditorProjectAutoload"),
-			"res://project_autoload.gd",
-			GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
+			"res://project_autoload.fs",
+			FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
 			10);
 
-	GDScriptAutoloadIndexEntry script_entry = make_autoload_entry(
+	FSAutoloadIndexEntry script_entry = make_autoload_entry(
 			SNAME("EditorScriptAutoload"),
-			"res://script_autoload.gd",
-			GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION,
+			"res://script_autoload.fs",
+			FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION,
 			20);
-	GDScriptAutoloadIndexDiagnostic diagnostic;
-	diagnostic.code = GDScriptAutoloadIndexDiagnostic::NON_NODE_SCRIPT;
+	FSAutoloadIndexDiagnostic diagnostic;
+	diagnostic.code = FSAutoloadIndexDiagnostic::NON_NODE_SCRIPT;
 	diagnostic.message = "Autoload \"EditorScriptAutoload\" does not inherit from Node.";
 	script_entry.diagnostics.push_back(diagnostic);
 
-	GDScriptAutoloadIndexEntry conflicting_project_entry = make_autoload_entry(
+	FSAutoloadIndexEntry conflicting_project_entry = make_autoload_entry(
 			SNAME("EditorConflictAutoload"),
-			"res://project_conflict.gd",
-			GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
+			"res://project_conflict.fs",
+			FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
 			30);
-	GDScriptAutoloadIndexEntry conflicting_script_entry = make_autoload_entry(
+	FSAutoloadIndexEntry conflicting_script_entry = make_autoload_entry(
 			SNAME("EditorConflictAutoload"),
-			"res://script_conflict.gd",
-			GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION,
+			"res://script_conflict.fs",
+			FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION,
 			40);
 
-	Vector<GDScriptAutoloadIndexEntry> index_entries;
+	Vector<FSAutoloadIndexEntry> index_entries;
 	index_entries.push_back(project_entry);
 	index_entries.push_back(script_entry);
 	index_entries.push_back(conflicting_project_entry);
 	index_entries.push_back(conflicting_script_entry);
 
-	GDScriptAutoloadIndex index;
+	FSAutoloadIndex index;
 	index.rebuild_from_entries(index_entries);
 
 	Vector<EditorAutoloadSettings::AutoloadViewEntry> view_entries =
@@ -266,36 +266,36 @@ TEST_CASE("[Editor][AutoloadSettings] View model exposes source diagnostics and 
 	CHECK(conflict_view->has_diagnostics);
 	CHECK(conflict_view->has_conflict);
 	CHECK_EQ(conflict_view->diagnostics_summary, "Conflict");
-	CHECK(conflict_view->diagnostics_text.contains("project_conflict.gd"));
-	CHECK(conflict_view->diagnostics_text.contains("script_conflict.gd"));
+	CHECK(conflict_view->diagnostics_text.contains("project_conflict.fs"));
+	CHECK(conflict_view->diagnostics_text.contains("script_conflict.fs"));
 }
 
 TEST_CASE("[Editor][AutoloadSettings] Project settings state wins same-path script migration duplicate") {
 	const StringName autoload_name = SNAME("EditorMigrationAutoload");
-	const String autoload_path = "res://migration_duplicate.gd";
+	const String autoload_path = "res://migration_duplicate.fs";
 
 	ScopedAutoloadSettings project_autoloads;
 	project_autoloads.set(autoload_name, autoload_path, false, 123);
 
-	GDScriptAutoloadIndexEntry project_entry = make_autoload_entry(
+	FSAutoloadIndexEntry project_entry = make_autoload_entry(
 			autoload_name,
 			autoload_path,
-			GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
+			FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
 			123);
 	project_entry.is_singleton = false;
 
-	GDScriptAutoloadIndexEntry script_entry = make_autoload_entry(
+	FSAutoloadIndexEntry script_entry = make_autoload_entry(
 			autoload_name,
 			autoload_path,
-			GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION,
+			FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION,
 			10);
 	script_entry.is_singleton = true;
 
-	Vector<GDScriptAutoloadIndexEntry> index_entries;
+	Vector<FSAutoloadIndexEntry> index_entries;
 	index_entries.push_back(project_entry);
 	index_entries.push_back(script_entry);
 
-	GDScriptAutoloadIndex index;
+	FSAutoloadIndex index;
 	index.rebuild_from_entries(index_entries);
 
 	Vector<EditorAutoloadSettings::AutoloadViewEntry> view_entries =
@@ -311,7 +311,7 @@ TEST_CASE("[Editor][AutoloadSettings] Project settings state wins same-path scri
 	CHECK(view_entry->supports_manual_ordering);
 }
 
-TEST_CASE("[Editor][AutoloadSettings] Project script autoloads do not show GDScript-only path diagnostics") {
+TEST_CASE("[Editor][AutoloadSettings] Project script autoloads do not show FoundryScript-only path diagnostics") {
 	const StringName autoload_name = SNAME("EditorForeignLanguageAutoload");
 	const String autoload_path = "res://foreign_language.edautoloadscript";
 
@@ -319,21 +319,21 @@ TEST_CASE("[Editor][AutoloadSettings] Project script autoloads do not show GDScr
 	ScopedAutoloadSettings project_autoloads;
 	project_autoloads.set(autoload_name, autoload_path, true, 50);
 
-	GDScriptAutoloadIndexEntry project_entry = make_autoload_entry(
+	FSAutoloadIndexEntry project_entry = make_autoload_entry(
 			autoload_name,
 			autoload_path,
-			GDScriptAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
+			FSAutoloadIndexEntry::SOURCE_PROJECT_SETTINGS,
 			50);
 
-	GDScriptAutoloadIndexDiagnostic diagnostic;
-	diagnostic.code = GDScriptAutoloadIndexDiagnostic::NON_SCRIPT_NON_SCENE_PATH;
-	diagnostic.message = "Autoload \"EditorForeignLanguageAutoload\" points to a resource type unknown to GDScript.";
+	FSAutoloadIndexDiagnostic diagnostic;
+	diagnostic.code = FSAutoloadIndexDiagnostic::NON_SCRIPT_NON_SCENE_PATH;
+	diagnostic.message = "Autoload \"EditorForeignLanguageAutoload\" points to a resource type unknown to FoundryScript.";
 	project_entry.diagnostics.push_back(diagnostic);
 
-	Vector<GDScriptAutoloadIndexEntry> index_entries;
+	Vector<FSAutoloadIndexEntry> index_entries;
 	index_entries.push_back(project_entry);
 
-	GDScriptAutoloadIndex index;
+	FSAutoloadIndex index;
 	index.rebuild_from_entries(index_entries);
 
 	Vector<EditorAutoloadSettings::AutoloadViewEntry> view_entries =
@@ -348,20 +348,20 @@ TEST_CASE("[Editor][AutoloadSettings] Project script autoloads do not show GDScr
 }
 
 TEST_CASE("[Editor][AutoloadSettings] Project view index includes script-owned annotations") {
-	ScopedGDScriptLanguage language;
+	ScopedFSLanguage language;
 	TemporaryAutoloadProject project("editor_autoload_settings_script_scan");
-	project.write_file("autoloaded.gd",
+	project.write_file("autoloaded.fs",
 			"@autoload\n"
 			"class_name EditorViewScriptOwned extends Node\n");
 
-	GDScriptAutoloadIndex index = EditorAutoloadSettings::build_autoload_index_for_project_view(project.root);
+	FSAutoloadIndex index = EditorAutoloadSettings::build_autoload_index_for_project_view(project.root);
 
-	const GDScriptAutoloadIndexEntry *entry = index.get_by_name(SNAME("EditorViewScriptOwned"));
+	const FSAutoloadIndexEntry *entry = index.get_by_name(SNAME("EditorViewScriptOwned"));
 	REQUIRE(entry != nullptr);
-	CHECK_EQ(entry->source, GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
-	CHECK_EQ(entry->path, project.root.path_join("autoloaded.gd"));
+	CHECK_EQ(entry->source, FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION);
+	CHECK_EQ(entry->path, project.root.path_join("autoloaded.fs"));
 }
 
 } // namespace TestEditorAutoloadSettings
 
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED

@@ -34,7 +34,7 @@
 #include "scene/resources/texture.h"
 
 class Sprite2D : public Node2D {
-	GDCLASS(Sprite2D, Node2D);
+	FOUNDRY_CLASS(Sprite2D, Node2D);
 
 	Ref<Texture2D> texture;
 

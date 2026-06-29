@@ -37,7 +37,7 @@ class AcceptDialog;
 class MenuButton;
 
 class Skeleton2DEditor : public Control {
-	GDCLASS(Skeleton2DEditor, Control);
+	FOUNDRY_CLASS(Skeleton2DEditor, Control);
 
 	enum Menu {
 		MENU_OPTION_SET_REST,
@@ -63,7 +63,7 @@ public:
 };
 
 class Skeleton2DEditorPlugin : public EditorPlugin {
-	GDCLASS(Skeleton2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(Skeleton2DEditorPlugin, EditorPlugin);
 
 	Skeleton2DEditor *sprite_editor = nullptr;
 

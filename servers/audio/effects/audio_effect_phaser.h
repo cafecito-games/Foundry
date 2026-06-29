@@ -35,7 +35,7 @@
 class AudioEffectPhaser;
 
 class AudioEffectPhaserInstance : public AudioEffectInstance {
-	GDCLASS(AudioEffectPhaserInstance, AudioEffectInstance);
+	FOUNDRY_CLASS(AudioEffectPhaserInstance, AudioEffectInstance);
 	friend class AudioEffectPhaser;
 	Ref<AudioEffectPhaser> base;
 
@@ -69,7 +69,7 @@ public:
 };
 
 class AudioEffectPhaser : public AudioEffect {
-	GDCLASS(AudioEffectPhaser, AudioEffect);
+	FOUNDRY_CLASS(AudioEffectPhaser, AudioEffect);
 
 	friend class AudioEffectPhaserInstance;
 	float range_min;

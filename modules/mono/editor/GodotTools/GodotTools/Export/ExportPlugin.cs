@@ -379,7 +379,7 @@ namespace GodotTools.Export
                                             {
                                                 // Don't export the same jar twice. Otherwise we will have conflicts.
                                                 // This can happen when exporting for multiple architectures. Dotnet
-                                                // stores the jars in .godot/mono/temp/bin/Export[Debug|Release] per
+                                                // stores the jars in .foundry/mono/temp/bin/Export[Debug|Release] per
                                                 // target architecture. Jars are cpu agnostic so only 1 is needed.
                                                 var jarName = Path.GetFileName(fileName);
                                                 return exportedJars.Add(jarName);
@@ -400,7 +400,7 @@ namespace GodotTools.Export
 
                                     manifest.Append(CultureInfo.InvariantCulture, $"{filePath}\t{hash}\n");
 
-                                    AddFile($"res://.godot/mono/publish/{arch}/{filePath}", fileData, false);
+                                    AddFile($"res://.foundry/mono/publish/{arch}/{filePath}", fileData, false);
                                 }
                                 else
                                 {
@@ -422,7 +422,7 @@ namespace GodotTools.Export
                     if (embedBuildResults)
                     {
                         byte[] fileData = Encoding.Default.GetBytes(manifest.ToString());
-                        AddFile($"res://.godot/mono/publish/{arch}/.dotnet-publish-manifest", fileData, false);
+                        AddFile($"res://.foundry/mono/publish/{arch}/.dotnet-publish-manifest", fileData, false);
                     }
                 }
             }

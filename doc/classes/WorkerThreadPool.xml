@@ -8,7 +8,7 @@
 		Tasks hold the [Callable] to be run by the threads. [WorkerThreadPool] can be used to create regular tasks, which will be taken by one worker thread, or group tasks, which can be distributed between multiple worker threads. Group tasks execute the [Callable] multiple times, which makes them useful for iterating over a lot of elements, such as the enemies in an arena.
 		Here's a sample on how to offload an expensive function to worker threads:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var enemies = [] # An array to be filled with enemies.
 
 		func process_enemy_ai(enemy_index):
@@ -20,7 +20,7 @@
 			# Other code...
 			WorkerThreadPool.wait_for_group_task_completion(task_id)
 			# Other code that depends on the enemy AI already being processed.
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		private List&lt;Node&gt; _enemies = new List&lt;Node&gt;(); // A list to be filled with enemies.
 

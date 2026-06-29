@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 2: Class "trait_base_constraint.gd" cannot use trait "Movable" because it does not inherit from "Node2D".

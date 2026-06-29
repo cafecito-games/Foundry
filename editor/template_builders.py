@@ -45,7 +45,7 @@ def parse_template(inherits, source, delimiter):
 
 
 def make_templates(target, source, env):
-    delimiter = "#"  # GDScript single line comment delimiter by default.
+    delimiter = "#"  # FoundryScript single line comment delimiter by default.
     if source:
         ext = os.path.splitext(str(source[0]))[1]
         if ext == ".cs":

@@ -112,7 +112,7 @@ String Resource::get_path() const {
 
 void Resource::set_path_cache(const String &p_path) {
 	path_cache = p_path;
-	GDVIRTUAL_CALL(_set_path_cache, p_path);
+	FOUNDRY_VIRTUAL_CALL(_set_path_cache, p_path);
 }
 
 static thread_local RandomPCG unique_id_gen = RandomPCG(0);
@@ -219,7 +219,7 @@ void Resource::disconnect_changed(const Callable &p_callable) {
 }
 
 void Resource::reset_state() {
-	GDVIRTUAL_CALL(_reset_state);
+	FOUNDRY_VIRTUAL_CALL(_reset_state);
 }
 
 Error Resource::copy_from(const Ref<Resource> &p_resource) {
@@ -608,7 +608,7 @@ void Resource::_take_over_path(const String &p_path) {
 
 RID Resource::get_rid() const {
 	RID ret;
-	if (!GDVIRTUAL_CALL(_get_rid, ret)) {
+	if (!FOUNDRY_VIRTUAL_CALL(_get_rid, ret)) {
 #ifndef DISABLE_DEPRECATED
 		if (_get_extension() && _get_extension()->get_rid) {
 			ret = RID::from_uint64(_get_extension()->get_rid(_get_extension_instance()));
@@ -662,7 +662,7 @@ Node *Resource::get_local_scene() const {
 
 void Resource::setup_local_to_scene() {
 	emit_signal(SNAME("setup_local_to_scene_requested"));
-	GDVIRTUAL_CALL(_setup_local_to_scene);
+	FOUNDRY_VIRTUAL_CALL(_setup_local_to_scene);
 }
 
 void Resource::reset_local_to_scene() {
@@ -764,10 +764,10 @@ void Resource::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "resource_name"), "set_name", "get_name");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "resource_scene_unique_id", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_scene_unique_id", "get_scene_unique_id");
 
-	GDVIRTUAL_BIND(_setup_local_to_scene);
-	GDVIRTUAL_BIND(_get_rid);
-	GDVIRTUAL_BIND(_reset_state);
-	GDVIRTUAL_BIND(_set_path_cache, "path");
+	FOUNDRY_VIRTUAL_BIND(_setup_local_to_scene);
+	FOUNDRY_VIRTUAL_BIND(_get_rid);
+	FOUNDRY_VIRTUAL_BIND(_reset_state);
+	FOUNDRY_VIRTUAL_BIND(_set_path_cache, "path");
 }
 
 Resource::Resource() :

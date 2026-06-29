@@ -35,7 +35,7 @@
 class Gizmo3DHelper;
 
 class ReflectionProbeGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(ReflectionProbeGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(ReflectionProbeGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	Ref<Gizmo3DHelper> helper;
 

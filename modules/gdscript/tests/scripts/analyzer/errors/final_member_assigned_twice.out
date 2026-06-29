@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 6: Cannot assign to final variable "id"; it is already assigned.

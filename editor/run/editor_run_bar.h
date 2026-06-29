@@ -42,7 +42,7 @@ class HBoxContainer;
 class AcceptDialog;
 
 class EditorRunBar : public MarginContainer {
-	GDCLASS(EditorRunBar, MarginContainer);
+	FOUNDRY_CLASS(EditorRunBar, MarginContainer);
 
 	static EditorRunBar *singleton;
 

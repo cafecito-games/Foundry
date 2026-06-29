@@ -42,7 +42,7 @@
 #include "scene/gui/box_container.h"
 
 class ImportDockParameters : public Object {
-	GDCLASS(ImportDockParameters, Object);
+	FOUNDRY_CLASS(ImportDockParameters, Object);
 
 public:
 	HashMap<StringName, Variant> values;

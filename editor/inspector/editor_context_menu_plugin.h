@@ -39,7 +39,7 @@ class Shortcut;
 class Texture2D;
 
 class EditorContextMenuPlugin : public RefCounted {
-	GDCLASS(EditorContextMenuPlugin, RefCounted);
+	FOUNDRY_CLASS(EditorContextMenuPlugin, RefCounted);
 
 	friend class EditorContextMenuPluginManager;
 
@@ -75,7 +75,7 @@ public:
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1(_popup_menu, Vector<String>);
+	FOUNDRY_VIRTUAL1(_popup_menu, Vector<String>);
 
 public:
 	virtual void get_options(const Vector<String> &p_paths);
@@ -89,7 +89,7 @@ public:
 VARIANT_ENUM_CAST(EditorContextMenuPlugin::ContextMenuSlot);
 
 class EditorContextMenuPluginManager : public Object {
-	GDCLASS(EditorContextMenuPluginManager, Object);
+	FOUNDRY_CLASS(EditorContextMenuPluginManager, Object);
 
 	using ContextMenuSlot = EditorContextMenuPlugin::ContextMenuSlot;
 	static inline EditorContextMenuPluginManager *singleton = nullptr;

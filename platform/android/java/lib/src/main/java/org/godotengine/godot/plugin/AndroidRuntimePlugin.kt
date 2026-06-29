@@ -48,13 +48,13 @@ class AndroidRuntimePlugin(godot: Godot) : GodotPlugin(godot) {
 	override fun getPluginName() = "AndroidRuntime"
 
 	/**
-	 * Provides access to the application [android.content.Context] to GDScript
+	 * Provides access to the application [android.content.Context] to FoundryScript
 	 */
 	@UsedByGodot
 	fun getApplicationContext() = activity?.applicationContext
 
 	/**
-	 * Provides access to the host [android.app.Activity] to GDScript
+	 * Provides access to the host [android.app.Activity] to FoundryScript
 	 */
 	@UsedByGodot
 	public override fun getActivity() = super.getActivity()

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-27
 **Status:** Approved (brainstorm complete)
-**Module:** `modules/gdscript/` (plus a small `core/object/script_language.*` change)
+**Module:** `modules/foundry_script/` (plus a small `core/object/script_language.*` change)
 
 ## Summary
 
@@ -57,7 +57,7 @@ for name in CharacterState:        # iterates the read-only {IDLE:0, ...} dictio
 
 - Multiple top-level enums per file.
 - A top-level enum coexisting with a `class_name`/class body in the same file.
-- Non-`int` backing types (enums remain `int`, like all GDScript enums).
+- Non-`int` backing types (enums remain `int`, like all Foundry Script enums).
 - A new engine-level "global enum registry" distinct from the existing
   path-keyed global-class system.
 
@@ -138,7 +138,7 @@ The only genuinely new type-system concept: a **standalone `DataType::ENUM`**
 
 ### 4. Compilation & runtime
 
-A global name resolves at runtime to the compiled `GDScript` at that path;
+A global name resolves at runtime to the compiled `Foundry Script` at that path;
 `Name.MEMBER` reads a constant `MEMBER` off that script. So
 (`gdscript_compiler.cpp`) for an enum-file:
 
@@ -194,7 +194,7 @@ An `enum_name` file is "exactly one enum, nothing else." Diagnostics:
 
 ## Testing
 
-Following `modules/gdscript/tests/scripts/` conventions (`.gd` + `.out` pairs);
+Following `modules/foundry_script/tests/scripts/` conventions (`.fs` + `.out` pairs);
 regenerate `.out` via `--gdscript-generate-tests` after the behavior lands.
 
 - **analyzer/features**: bare and namespaced `enum_name`; consume from another

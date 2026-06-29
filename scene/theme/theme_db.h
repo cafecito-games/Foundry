@@ -69,7 +69,7 @@ class ThemeContext;
 			})
 
 class ThemeDB : public Object {
-	GDCLASS(ThemeDB, Object);
+	FOUNDRY_CLASS(ThemeDB, Object);
 
 	static ThemeDB *singleton;
 
@@ -182,7 +182,7 @@ public:
 };
 
 class ThemeContext : public Object {
-	GDCLASS(ThemeContext, Object);
+	FOUNDRY_CLASS(ThemeContext, Object);
 
 	friend class ThemeDB;
 

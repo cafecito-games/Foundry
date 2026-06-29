@@ -37,7 +37,7 @@ class Button;
 class TextureRect;
 
 class TouchActionsPanel : public PanelContainer {
-	GDCLASS(TouchActionsPanel, PanelContainer);
+	FOUNDRY_CLASS(TouchActionsPanel, PanelContainer);
 
 private:
 	BoxContainer *box = nullptr;

@@ -72,10 +72,10 @@ import javax.microedition.khronos.opengles.GL10;
  * - 'plugin.init.ClassFullName' is the full name (package + class name) of the plugin init class
  * extending {@link GodotPlugin}.
  * <p>
- * A Godot Android plugin can also define and provide c/c++ gdextension libraries, which will be
+ * A Godot Android plugin can also define and provide c/c++ foundry_extension libraries, which will be
  * automatically bundled by the aar build system.
- * GDExtension ('*.gdextension') config files must be located in the project 'assets' directory and
- * their paths specified by {@link GodotPlugin#getPluginGDExtensionLibrariesPaths()}.
+ * FoundryExtension ('*.foundryextension') config files must be located in the project 'assets' directory and
+ * their paths specified by {@link GodotPlugin#getPluginFoundryExtensionLibrariesPaths()}.
  *
  * @see <a href="https://docs.godotengine.org/en/stable/tutorials/platform/android/index.html">Android plugins</a>
  */
@@ -304,12 +304,12 @@ public abstract class GodotPlugin {
 	}
 
 	/**
-	 * Returns the paths for the plugin's gdextension libraries (if any).
+	 * Returns the paths for the plugin's foundry_extension libraries (if any).
 	 * <p>
-	 * Each returned path must be relative to the 'assets' directory and point to a '*.gdextension' file.
+	 * Each returned path must be relative to the 'assets' directory and point to a '*.foundryextension' file.
 	 */
 	@NonNull
-	public Set<String> getPluginGDExtensionLibrariesPaths() {
+	public Set<String> getPluginFoundryExtensionLibrariesPaths() {
 		return Collections.emptySet();
 	}
 

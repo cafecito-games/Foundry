@@ -58,7 +58,7 @@ class RunTargetPlatform;
 // installed yet (e.g. on a develop checkout where that owner has not landed), the
 // dock creates and installs a minimal one so it remains functional on its own.
 class RunTargetsPanel : public EditorDock {
-	GDCLASS(RunTargetsPanel, EditorDock);
+	FOUNDRY_CLASS(RunTargetsPanel, EditorDock);
 
 public:
 	// Validates an iOS bundle identifier the way the Apple export platform does:

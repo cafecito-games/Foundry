@@ -38,32 +38,32 @@ void RenderData::_bind_methods() {
 }
 
 void RenderDataExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_get_render_scene_buffers);
-	GDVIRTUAL_BIND(_get_render_scene_data)
-	GDVIRTUAL_BIND(_get_environment)
-	GDVIRTUAL_BIND(_get_camera_attributes)
+	FOUNDRY_VIRTUAL_BIND(_get_render_scene_buffers);
+	FOUNDRY_VIRTUAL_BIND(_get_render_scene_data)
+	FOUNDRY_VIRTUAL_BIND(_get_environment)
+	FOUNDRY_VIRTUAL_BIND(_get_camera_attributes)
 }
 
 Ref<RenderSceneBuffers> RenderDataExtension::get_render_scene_buffers() const {
 	Ref<RenderSceneBuffers> ret;
-	GDVIRTUAL_CALL(_get_render_scene_buffers, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_render_scene_buffers, ret);
 	return ret;
 }
 
 RenderSceneData *RenderDataExtension::get_render_scene_data() const {
 	RenderSceneData *ret = nullptr;
-	GDVIRTUAL_CALL(_get_render_scene_data, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_render_scene_data, ret);
 	return ret;
 }
 
 RID RenderDataExtension::get_environment() const {
 	RID ret;
-	GDVIRTUAL_CALL(_get_environment, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_environment, ret);
 	return ret;
 }
 
 RID RenderDataExtension::get_camera_attributes() const {
 	RID ret;
-	GDVIRTUAL_CALL(_get_camera_attributes, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_camera_attributes, ret);
 	return ret;
 }

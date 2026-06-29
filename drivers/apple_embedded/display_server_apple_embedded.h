@@ -56,7 +56,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 
 class DisplayServerAppleEmbedded : public DisplayServer {
-	GDSOFTCLASS(DisplayServerAppleEmbedded, DisplayServer);
+	FOUNDRY_SOFTCLASS(DisplayServerAppleEmbedded, DisplayServer);
 
 	_THREAD_SAFE_CLASS_
 

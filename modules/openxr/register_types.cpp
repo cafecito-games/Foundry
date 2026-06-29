@@ -130,18 +130,18 @@ static void _editor_init() {
 
 void initialize_openxr_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_CORE) {
-		GDREGISTER_VIRTUAL_CLASS(OpenXRExtensionWrapper);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRExtensionWrapper);
 #ifndef DISABLE_DEPRECATED
-		GDREGISTER_VIRTUAL_CLASS(OpenXRExtensionWrapperExtension);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRExtensionWrapperExtension);
 #endif // DISABLE_DEPRECATED
-		GDREGISTER_ABSTRACT_CLASS(OpenXRFutureResult); // Declared abstract, should never be instantiated by a user (Q or should this be internal?)
-		GDREGISTER_CLASS(OpenXRFrameSynthesisExtension);
-		GDREGISTER_CLASS(OpenXRFutureExtension);
-		GDREGISTER_CLASS(OpenXRAPIExtension);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(OpenXRFutureResult); // Declared abstract, should never be instantiated by a user (Q or should this be internal?)
+		FOUNDRY_REGISTER_CLASS(OpenXRFrameSynthesisExtension);
+		FOUNDRY_REGISTER_CLASS(OpenXRFutureExtension);
+		FOUNDRY_REGISTER_CLASS(OpenXRAPIExtension);
 #ifdef MODULE_GLTF_ENABLED
-		GDREGISTER_CLASS(OpenXRRenderModelExtension);
+		FOUNDRY_REGISTER_CLASS(OpenXRRenderModelExtension);
 #endif
-		GDREGISTER_CLASS(OpenXRAndroidThreadSettingsExtension);
+		FOUNDRY_REGISTER_CLASS(OpenXRAndroidThreadSettingsExtension);
 
 		// Note, we're not registering all wrapper classes here, there is no point in exposing them
 		// if there isn't specific logic to expose.
@@ -265,71 +265,71 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 	}
 
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
-		GDREGISTER_CLASS(OpenXRInterface);
+		FOUNDRY_REGISTER_CLASS(OpenXRInterface);
 
-		GDREGISTER_CLASS(OpenXRAction);
-		GDREGISTER_CLASS(OpenXRActionSet);
-		GDREGISTER_CLASS(OpenXRActionMap);
-		GDREGISTER_CLASS(OpenXRInteractionProfileMetadata);
-		GDREGISTER_CLASS(OpenXRIPBinding);
-		GDREGISTER_CLASS(OpenXRInteractionProfile);
+		FOUNDRY_REGISTER_CLASS(OpenXRAction);
+		FOUNDRY_REGISTER_CLASS(OpenXRActionSet);
+		FOUNDRY_REGISTER_CLASS(OpenXRActionMap);
+		FOUNDRY_REGISTER_CLASS(OpenXRInteractionProfileMetadata);
+		FOUNDRY_REGISTER_CLASS(OpenXRIPBinding);
+		FOUNDRY_REGISTER_CLASS(OpenXRInteractionProfile);
 
-		GDREGISTER_ABSTRACT_CLASS(OpenXRBindingModifier);
-		GDREGISTER_VIRTUAL_CLASS(OpenXRIPBindingModifier);
-		GDREGISTER_VIRTUAL_CLASS(OpenXRActionBindingModifier);
-		GDREGISTER_CLASS(OpenXRAnalogThresholdModifier);
-		GDREGISTER_CLASS(OpenXRDpadBindingModifier);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(OpenXRBindingModifier);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRIPBindingModifier);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRActionBindingModifier);
+		FOUNDRY_REGISTER_CLASS(OpenXRAnalogThresholdModifier);
+		FOUNDRY_REGISTER_CLASS(OpenXRDpadBindingModifier);
 
-		GDREGISTER_ABSTRACT_CLASS(OpenXRHapticBase);
-		GDREGISTER_CLASS(OpenXRHapticVibration);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(OpenXRHapticBase);
+		FOUNDRY_REGISTER_CLASS(OpenXRHapticVibration);
 
-		GDREGISTER_ABSTRACT_CLASS(OpenXRCompositionLayer);
-		GDREGISTER_CLASS(OpenXRCompositionLayerEquirect);
-		GDREGISTER_CLASS(OpenXRCompositionLayerCylinder);
-		GDREGISTER_CLASS(OpenXRCompositionLayerQuad);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(OpenXRCompositionLayer);
+		FOUNDRY_REGISTER_CLASS(OpenXRCompositionLayerEquirect);
+		FOUNDRY_REGISTER_CLASS(OpenXRCompositionLayerCylinder);
+		FOUNDRY_REGISTER_CLASS(OpenXRCompositionLayerQuad);
 
 #ifndef DISABLE_DEPRECATED
-		GDREGISTER_CLASS(OpenXRHand);
+		FOUNDRY_REGISTER_CLASS(OpenXRHand);
 #endif
 
-		GDREGISTER_CLASS(OpenXRVisibilityMask);
+		FOUNDRY_REGISTER_CLASS(OpenXRVisibilityMask);
 #ifdef MODULE_GLTF_ENABLED
-		GDREGISTER_CLASS(OpenXRRenderModel);
-		GDREGISTER_CLASS(OpenXRRenderModelManager);
+		FOUNDRY_REGISTER_CLASS(OpenXRRenderModel);
+		FOUNDRY_REGISTER_CLASS(OpenXRRenderModelManager);
 #endif
 
-		GDREGISTER_CLASS(OpenXRSpatialEntityExtension);
-		GDREGISTER_VIRTUAL_CLASS(OpenXRSpatialEntityTracker);
-		GDREGISTER_CLASS(OpenXRAnchorTracker);
-		GDREGISTER_CLASS(OpenXRPlaneTracker);
-		GDREGISTER_CLASS(OpenXRMarkerTracker);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialEntityExtension);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRSpatialEntityTracker);
+		FOUNDRY_REGISTER_CLASS(OpenXRAnchorTracker);
+		FOUNDRY_REGISTER_CLASS(OpenXRPlaneTracker);
+		FOUNDRY_REGISTER_CLASS(OpenXRMarkerTracker);
 
-		GDREGISTER_VIRTUAL_CLASS(OpenXRStructureBase);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRStructureBase);
 
-		GDREGISTER_VIRTUAL_CLASS(OpenXRSpatialCapabilityConfigurationBaseHeader);
-		GDREGISTER_CLASS(OpenXRSpatialCapabilityConfigurationAnchor);
-		GDREGISTER_CLASS(OpenXRSpatialCapabilityConfigurationQrCode);
-		GDREGISTER_CLASS(OpenXRSpatialCapabilityConfigurationMicroQrCode);
-		GDREGISTER_CLASS(OpenXRSpatialCapabilityConfigurationAruco);
-		GDREGISTER_CLASS(OpenXRSpatialCapabilityConfigurationAprilTag);
-		GDREGISTER_CLASS(OpenXRSpatialContextPersistenceConfig);
-		GDREGISTER_CLASS(OpenXRSpatialCapabilityConfigurationPlaneTracking);
-		GDREGISTER_VIRTUAL_CLASS(OpenXRSpatialComponentData);
-		GDREGISTER_CLASS(OpenXRSpatialComponentBounded2DList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentBounded3DList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentParentList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentMesh2DList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentMesh3DList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentPlaneAlignmentList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentPolygon2DList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentPlaneSemanticLabelList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentMarkerList);
-		GDREGISTER_CLASS(OpenXRSpatialQueryResultData);
-		GDREGISTER_CLASS(OpenXRSpatialComponentAnchorList);
-		GDREGISTER_CLASS(OpenXRSpatialComponentPersistenceList);
-		GDREGISTER_CLASS(OpenXRSpatialAnchorCapability);
-		GDREGISTER_CLASS(OpenXRSpatialPlaneTrackingCapability);
-		GDREGISTER_CLASS(OpenXRSpatialMarkerTrackingCapability);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRSpatialCapabilityConfigurationBaseHeader);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialCapabilityConfigurationAnchor);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialCapabilityConfigurationQrCode);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialCapabilityConfigurationMicroQrCode);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialCapabilityConfigurationAruco);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialCapabilityConfigurationAprilTag);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialContextPersistenceConfig);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialCapabilityConfigurationPlaneTracking);
+		FOUNDRY_REGISTER_VIRTUAL_CLASS(OpenXRSpatialComponentData);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentBounded2DList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentBounded3DList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentParentList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentMesh2DList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentMesh3DList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentPlaneAlignmentList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentPolygon2DList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentPlaneSemanticLabelList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentMarkerList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialQueryResultData);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentAnchorList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialComponentPersistenceList);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialAnchorCapability);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialPlaneTrackingCapability);
+		FOUNDRY_REGISTER_CLASS(OpenXRSpatialMarkerTrackingCapability);
 
 		XRServer *xr_server = XRServer::get_singleton();
 		if (xr_server) {
@@ -344,9 +344,9 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_ABSTRACT_CLASS(OpenXRInteractionProfileEditorBase);
-		GDREGISTER_CLASS(OpenXRInteractionProfileEditor);
-		GDREGISTER_CLASS(OpenXRBindingModifierEditor);
+		FOUNDRY_REGISTER_ABSTRACT_CLASS(OpenXRInteractionProfileEditorBase);
+		FOUNDRY_REGISTER_CLASS(OpenXRInteractionProfileEditor);
+		FOUNDRY_REGISTER_CLASS(OpenXRBindingModifierEditor);
 
 		EditorNode::add_init_callback(_editor_init);
 	}

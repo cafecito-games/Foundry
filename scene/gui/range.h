@@ -33,7 +33,7 @@
 #include "scene/gui/control.h"
 
 class Range : public Control {
-	GDCLASS(Range, Control);
+	FOUNDRY_CLASS(Range, Control);
 
 	struct Shared {
 		double val = 0.0;
@@ -76,7 +76,7 @@ protected:
 
 	bool _rounded_values = false;
 
-	GDVIRTUAL1(_value_changed, double)
+	FOUNDRY_VIRTUAL1(_value_changed, double)
 
 public:
 	void set_value(double p_val);

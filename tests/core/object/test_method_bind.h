@@ -37,7 +37,7 @@
 namespace TestMethodBind {
 
 class MethodBindTester : public Object {
-	GDCLASS(MethodBindTester, Object);
+	FOUNDRY_CLASS(MethodBindTester, Object);
 
 public:
 	enum Test {
@@ -55,7 +55,7 @@ public:
 	};
 
 	class ObjectSubclass : public Object {
-		GDSOFTCLASS(ObjectSubclass, Object);
+		FOUNDRY_SOFTCLASS(ObjectSubclass, Object);
 
 	public:
 		int value = 1;

@@ -33,7 +33,7 @@
 #include "scene/resources/mesh.h"
 
 class MeshDataTool : public RefCounted {
-	GDCLASS(MeshDataTool, RefCounted);
+	FOUNDRY_CLASS(MeshDataTool, RefCounted);
 
 	uint64_t format = 0;
 	struct Vertex {

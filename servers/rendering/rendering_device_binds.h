@@ -59,7 +59,7 @@
 	ADD_PROPERTY(PropertyInfo(m_variant_type, _MKSTR(m_sub) "_" _MKSTR(m_member)), "set_" _MKSTR(m_sub) "_" _MKSTR(m_member), "get_" _MKSTR(m_sub) "_" _MKSTR(m_member))
 
 class RDTextureFormat : public RefCounted {
-	GDCLASS(RDTextureFormat, RefCounted)
+	FOUNDRY_CLASS(RDTextureFormat, RefCounted)
 
 	friend class RenderingDevice;
 	friend class RenderSceneBuffersRD;
@@ -102,7 +102,7 @@ protected:
 };
 
 class RDTextureView : public RefCounted {
-	GDCLASS(RDTextureView, RefCounted)
+	FOUNDRY_CLASS(RDTextureView, RefCounted)
 
 	friend class RenderingDevice;
 	friend class RenderSceneBuffersRD;
@@ -126,7 +126,7 @@ protected:
 };
 
 class RDAttachmentFormat : public RefCounted {
-	GDCLASS(RDAttachmentFormat, RefCounted)
+	FOUNDRY_CLASS(RDAttachmentFormat, RefCounted)
 	friend class RenderingDevice;
 
 	RD::AttachmentFormat base;
@@ -144,7 +144,7 @@ protected:
 };
 
 class RDFramebufferPass : public RefCounted {
-	GDCLASS(RDFramebufferPass, RefCounted)
+	FOUNDRY_CLASS(RDFramebufferPass, RefCounted)
 	friend class RenderingDevice;
 	friend class FramebufferCacheRD;
 
@@ -173,7 +173,7 @@ protected:
 };
 
 class RDSamplerState : public RefCounted {
-	GDCLASS(RDSamplerState, RefCounted)
+	FOUNDRY_CLASS(RDSamplerState, RefCounted)
 	friend class RenderingDevice;
 
 	RD::SamplerState base;
@@ -216,7 +216,7 @@ protected:
 };
 
 class RDVertexAttribute : public RefCounted {
-	GDCLASS(RDVertexAttribute, RefCounted)
+	FOUNDRY_CLASS(RDVertexAttribute, RefCounted)
 	friend class RenderingDevice;
 	RD::VertexAttribute base;
 
@@ -239,7 +239,7 @@ protected:
 	}
 };
 class RDShaderSource : public RefCounted {
-	GDCLASS(RDShaderSource, RefCounted)
+	FOUNDRY_CLASS(RDShaderSource, RefCounted)
 	String source[RD::SHADER_STAGE_MAX];
 	RD::ShaderLanguage language = RD::SHADER_LANGUAGE_GLSL;
 
@@ -282,7 +282,7 @@ protected:
 };
 
 class RDShaderSPIRV : public Resource {
-	GDCLASS(RDShaderSPIRV, Resource)
+	FOUNDRY_CLASS(RDShaderSPIRV, Resource)
 
 	Vector<uint8_t> bytecode[RD::SHADER_STAGE_MAX];
 	String compile_error[RD::SHADER_STAGE_MAX];
@@ -345,7 +345,7 @@ protected:
 };
 
 class RDShaderFile : public Resource {
-	GDCLASS(RDShaderFile, Resource)
+	FOUNDRY_CLASS(RDShaderFile, Resource)
 
 	HashMap<StringName, Ref<RDShaderSPIRV>> versions;
 	String base_error;
@@ -454,7 +454,7 @@ protected:
 };
 
 class RDUniform : public RefCounted {
-	GDCLASS(RDUniform, RefCounted)
+	FOUNDRY_CLASS(RDUniform, RefCounted)
 	friend class RenderingDevice;
 	friend class UniformSetCacheRD;
 	RD::Uniform base;
@@ -494,7 +494,7 @@ protected:
 };
 
 class RDPipelineSpecializationConstant : public RefCounted {
-	GDCLASS(RDPipelineSpecializationConstant, RefCounted)
+	FOUNDRY_CLASS(RDPipelineSpecializationConstant, RefCounted)
 	friend class RenderingDevice;
 
 	Variant value = false;
@@ -528,7 +528,7 @@ protected:
 };
 
 class RDPipelineRasterizationState : public RefCounted {
-	GDCLASS(RDPipelineRasterizationState, RefCounted)
+	FOUNDRY_CLASS(RDPipelineRasterizationState, RefCounted)
 	friend class RenderingDevice;
 
 	RD::PipelineRasterizationState base;
@@ -563,7 +563,7 @@ protected:
 };
 
 class RDPipelineMultisampleState : public RefCounted {
-	GDCLASS(RDPipelineMultisampleState, RefCounted)
+	FOUNDRY_CLASS(RDPipelineMultisampleState, RefCounted)
 	friend class RenderingDevice;
 
 	RD::PipelineMultisampleState base;
@@ -594,7 +594,7 @@ protected:
 };
 
 class RDPipelineDepthStencilState : public RefCounted {
-	GDCLASS(RDPipelineDepthStencilState, RefCounted)
+	FOUNDRY_CLASS(RDPipelineDepthStencilState, RefCounted)
 	friend class RenderingDevice;
 
 	RD::PipelineDepthStencilState base;
@@ -653,7 +653,7 @@ protected:
 };
 
 class RDPipelineColorBlendStateAttachment : public RefCounted {
-	GDCLASS(RDPipelineColorBlendStateAttachment, RefCounted)
+	FOUNDRY_CLASS(RDPipelineColorBlendStateAttachment, RefCounted)
 	friend class RenderingDevice;
 	RD::PipelineColorBlendState::Attachment base;
 
@@ -698,7 +698,7 @@ protected:
 };
 
 class RDPipelineColorBlendState : public RefCounted {
-	GDCLASS(RDPipelineColorBlendState, RefCounted)
+	FOUNDRY_CLASS(RDPipelineColorBlendState, RefCounted)
 	friend class RenderingDevice;
 	RD::PipelineColorBlendState base;
 

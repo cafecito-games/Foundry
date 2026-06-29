@@ -38,7 +38,7 @@
 #include <ws2tcpip.h>
 
 class NetSocketWinSock : public NetSocket {
-	GDSOFTCLASS(NetSocketWinSock, NetSocket);
+	FOUNDRY_SOFTCLASS(NetSocketWinSock, NetSocket);
 
 private:
 	SOCKET _sock = INVALID_SOCKET;

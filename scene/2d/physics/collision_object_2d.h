@@ -36,7 +36,7 @@
 #include "servers/physics_2d/physics_server_2d.h"
 
 class CollisionObject2D : public Node2D {
-	GDCLASS(CollisionObject2D, Node2D);
+	FOUNDRY_CLASS(CollisionObject2D, Node2D);
 
 public:
 	static constexpr AncestralClass static_ancestral_class = AncestralClass::COLLISION_OBJECT_2D;
@@ -112,11 +112,11 @@ protected:
 
 	virtual void _space_changed(const RID &p_new_space);
 
-	GDVIRTUAL3(_input_event, RequiredParam<Viewport>, RequiredParam<InputEvent>, int)
-	GDVIRTUAL0(_mouse_enter)
-	GDVIRTUAL0(_mouse_exit)
-	GDVIRTUAL1(_mouse_shape_enter, int)
-	GDVIRTUAL1(_mouse_shape_exit, int)
+	FOUNDRY_VIRTUAL3(_input_event, RequiredParam<Viewport>, RequiredParam<InputEvent>, int)
+	FOUNDRY_VIRTUAL0(_mouse_enter)
+	FOUNDRY_VIRTUAL0(_mouse_exit)
+	FOUNDRY_VIRTUAL1(_mouse_shape_enter, int)
+	FOUNDRY_VIRTUAL1(_mouse_shape_exit, int)
 public:
 	void set_collision_layer(uint32_t p_layer);
 	uint32_t get_collision_layer() const;

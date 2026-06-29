@@ -40,7 +40,7 @@ class MenuButton;
 class ConfirmationDialog;
 
 class Path3DGizmo : public EditorNode3DGizmo {
-	GDCLASS(Path3DGizmo, EditorNode3DGizmo);
+	FOUNDRY_CLASS(Path3DGizmo, EditorNode3DGizmo);
 
 	// Map handle id to control point id and handle type.
 	enum HandleType {
@@ -80,7 +80,7 @@ public:
 };
 
 class Path3DGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(Path3DGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(Path3DGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	// Locking basis is meant to ensure a predictable behavior during translation of the curve points in "local space transform mode".
 	// Without the locking, the gizmo/point, in "local space transform mode", wouldn't follow a straight path and would curve and twitch in an unpredictable way.
@@ -106,7 +106,7 @@ public:
 };
 
 class Path3DEditorPlugin : public EditorPlugin {
-	GDCLASS(Path3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(Path3DEditorPlugin, EditorPlugin);
 
 	friend class Path3DGizmo;
 	friend class Path3DGizmoPlugin;

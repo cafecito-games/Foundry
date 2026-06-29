@@ -39,7 +39,7 @@
 #include <windows.h>
 
 class FileAccessWindowsPipe : public FileAccess {
-	GDSOFTCLASS(FileAccessWindowsPipe, FileAccess);
+	FOUNDRY_SOFTCLASS(FileAccessWindowsPipe, FileAccess);
 	HANDLE fd[2] = { nullptr, nullptr };
 
 	mutable Error last_error = OK;

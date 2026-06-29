@@ -30,7 +30,7 @@
 
 #include "godot_instance.h"
 
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/os/main_loop.h"
 #include "main/main.h"
 #include "servers/display/display_server.h"
@@ -51,12 +51,12 @@ GodotInstance::GodotInstance() {
 GodotInstance::~GodotInstance() {
 }
 
-bool GodotInstance::initialize(GDExtensionInitializationFunction p_init_func) {
+bool GodotInstance::initialize(FoundryExtensionInitializationFunction p_init_func) {
 	print_verbose("Godot Instance initialization");
-	GDExtensionManager *gdextension_manager = GDExtensionManager::get_singleton();
-	GDExtensionConstPtr<const GDExtensionInitializationFunction> ptr((const GDExtensionInitializationFunction *)&p_init_func);
-	GDExtensionManager::LoadStatus status = gdextension_manager->load_extension_from_function("libgodot://main", ptr);
-	return status == GDExtensionManager::LoadStatus::LOAD_STATUS_OK;
+	FoundryExtensionManager *foundry_extension_manager = FoundryExtensionManager::get_singleton();
+	FoundryExtensionConstPtr<const FoundryExtensionInitializationFunction> ptr((const FoundryExtensionInitializationFunction *)&p_init_func);
+	FoundryExtensionManager::LoadStatus status = foundry_extension_manager->load_extension_from_function("libgodot://main", ptr);
+	return status == FoundryExtensionManager::LoadStatus::LOAD_STATUS_OK;
 }
 
 bool GodotInstance::start() {

@@ -40,7 +40,7 @@
 
 namespace gdmono {
 
-// Almost everything here is taken from functions used by GDScript for code completion, adapted for C#.
+// Almost everything here is taken from functions used by FoundryScript for code completion, adapted for C#.
 
 _FORCE_INLINE_ String quoted(const String &p_str) {
 	return "\"" + p_str + "\"";

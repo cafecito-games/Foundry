@@ -37,7 +37,7 @@
 #include <embree4/rtcore.h>
 
 class StaticRaycasterEmbree : public StaticRaycaster {
-	GDCLASS(StaticRaycasterEmbree, StaticRaycaster);
+	FOUNDRY_CLASS(StaticRaycasterEmbree, StaticRaycaster);
 
 private:
 	static RTCDevice embree_device;

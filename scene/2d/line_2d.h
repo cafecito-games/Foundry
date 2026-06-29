@@ -34,7 +34,7 @@
 #include "scene/resources/gradient.h"
 
 class Line2D : public Node2D {
-	GDCLASS(Line2D, Node2D);
+	FOUNDRY_CLASS(Line2D, Node2D);
 
 public:
 	enum LineJointMode {

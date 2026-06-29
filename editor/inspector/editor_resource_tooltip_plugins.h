@@ -39,15 +39,15 @@ class TextureRect;
 class VBoxContainer;
 
 class EditorResourceTooltipPlugin : public RefCounted {
-	GDCLASS(EditorResourceTooltipPlugin, RefCounted);
+	FOUNDRY_CLASS(EditorResourceTooltipPlugin, RefCounted);
 
 	void _thumbnail_ready(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, ObjectID p_trect_id);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1RC(bool, _handles, String)
-	GDVIRTUAL3RC(Control *, _make_tooltip_for_path, String, Dictionary, Control *)
+	FOUNDRY_VIRTUAL1RC(bool, _handles, String)
+	FOUNDRY_VIRTUAL3RC(Control *, _make_tooltip_for_path, String, Dictionary, Control *)
 
 public:
 	static VBoxContainer *make_default_tooltip(const String &p_resource_path);
@@ -58,7 +58,7 @@ public:
 };
 
 class EditorTextureTooltipPlugin : public EditorResourceTooltipPlugin {
-	GDCLASS(EditorTextureTooltipPlugin, EditorResourceTooltipPlugin);
+	FOUNDRY_CLASS(EditorTextureTooltipPlugin, EditorResourceTooltipPlugin);
 
 public:
 	virtual bool handles(const String &p_resource_type) const override;
@@ -66,7 +66,7 @@ public:
 };
 
 class EditorAudioStreamTooltipPlugin : public EditorResourceTooltipPlugin {
-	GDCLASS(EditorAudioStreamTooltipPlugin, EditorResourceTooltipPlugin);
+	FOUNDRY_CLASS(EditorAudioStreamTooltipPlugin, EditorResourceTooltipPlugin);
 
 public:
 	virtual bool handles(const String &p_resource_type) const override;

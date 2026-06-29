@@ -55,7 +55,7 @@
 #endif
 
 class PhysicsServer3DWrapMT : public PhysicsServer3D {
-	GDSOFTCLASS(PhysicsServer3DWrapMT, PhysicsServer3D);
+	FOUNDRY_SOFTCLASS(PhysicsServer3DWrapMT, PhysicsServer3D);
 
 	mutable PhysicsServer3D *physics_server_3d = nullptr;
 

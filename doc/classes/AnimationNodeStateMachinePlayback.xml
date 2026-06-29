@@ -6,10 +6,10 @@
 	<description>
 		Allows control of [AnimationTree] state machines created with [AnimationNodeStateMachine]. Retrieve with [code]$AnimationTree.get("parameters/playback")[/code].
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var state_machine = $AnimationTree.get("parameters/playback")
 		state_machine.travel("some_state")
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var stateMachine = GetNode&lt;AnimationTree&gt;("AnimationTree").Get("parameters/playback").As&lt;AnimationNodeStateMachinePlayback&gt;();
 		stateMachine.Travel("some_state");

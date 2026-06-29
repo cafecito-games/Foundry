@@ -35,7 +35,7 @@
 #include "scene/resources/curve.h"
 
 class AnimationNodeStateMachineTransition : public Resource {
-	GDCLASS(AnimationNodeStateMachineTransition, Resource);
+	FOUNDRY_CLASS(AnimationNodeStateMachineTransition, Resource);
 
 public:
 	enum SwitchMode {
@@ -107,7 +107,7 @@ VARIANT_ENUM_CAST(AnimationNodeStateMachineTransition::AdvanceMode)
 class AnimationNodeStateMachinePlayback;
 
 class AnimationNodeStateMachine : public AnimationRootNode {
-	GDCLASS(AnimationNodeStateMachine, AnimationRootNode);
+	FOUNDRY_CLASS(AnimationNodeStateMachine, AnimationRootNode);
 
 public:
 	enum StateMachineType {
@@ -230,7 +230,7 @@ public:
 VARIANT_ENUM_CAST(AnimationNodeStateMachine::StateMachineType);
 
 class AnimationNodeStateMachinePlayback : public Resource {
-	GDCLASS(AnimationNodeStateMachinePlayback, Resource);
+	FOUNDRY_CLASS(AnimationNodeStateMachinePlayback, Resource);
 
 	friend class AnimationNodeStateMachine;
 

@@ -7,7 +7,7 @@
     By default this is false, like the official Godot builds. If someone is using a custom
     Godot build where real_t is double, they can override the GodotFloat64 property.
     -->
-    <DefineConstants Condition=" '$(GodotFloat64)' == 'true' ">GODOT_REAL_T_IS_DOUBLE;$(DefineConstants)</DefineConstants>
+    <DefineConstants Condition=" '$(GodotFloat64)' == 'true' ">FOUNDRY_REAL_T_IS_DOUBLE;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <!--

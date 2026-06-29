@@ -21,7 +21,7 @@ by default and by actually ending the process cleanly.
 
 - A single call (`push_fatal("message")`) that logs and then terminates the
   running project gracefully.
-- Available everywhere `push_error` is (GDScript, C#, engine C++), since it is
+- Available everywhere `push_error` is (Foundry Script, C#, engine C++), since it is
   a `core` Variant utility function.
 - Safe by construction: it must not be able to kill the editor when invoked
   from a `@tool` script during editing.
@@ -32,7 +32,7 @@ by default and by actually ending the process cleanly.
 
 - No hard crash / `abort()` / crash-handler backtrace. Termination is a
   **graceful quit** (loop unwinds at a frame boundary, `finalize()` runs).
-- No GDScript-specific keyword or opcode; this is a plain utility function.
+- No Foundry Script-specific keyword or opcode; this is a plain utility function.
 - No conditional form (`push_fatal(cond, msg)`); the call site decides when to
   invoke it. `assert()` already covers the conditional case.
 
@@ -135,7 +135,7 @@ via the existing `ErrPrintError` path (preserving C# caller context) and then
 call a new no-argument native interop function
 `godotsharp_request_fatal_termination()`, which simply invokes
 `request_fatal_termination()`. This shares the termination policy between the
-GDScript and C# entry points so they cannot diverge.
+Foundry Script and C# entry points so they cannot diverge.
 
 The interop function is appended as the **last** entry of both the
 `unmanaged_callbacks[]` table in `modules/mono/glue/runtime_interop.cpp` and the
@@ -166,7 +166,7 @@ Actually quitting would terminate the test runner, so tests assert the
     logged and `is_exit_requested()` remains `false`;
   - with terminate conditions met: `is_exit_requested()` becomes `true` and the
     exit code is `EXIT_FAILURE`, **without** running the main loop.
-- No GDScript `.gd` fixture that calls `push_fatal` in a terminating
+- No Foundry Script `.fs` fixture that calls `push_fatal` in a terminating
   configuration (it would quit the runner). A fixture exercising the log-only
   path (setting off) may be added if convenient.
 

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FSNamespace" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		The [code]foundry[/code] namespace object exposed to FoundryScript.
+	</brief_description>
+	<description>
+		Backs the [code]foundry[/code] global in FoundryScript. It is a singleton you do not construct; access its members through [code]foundry.[/code], for example [code]foundry.reflection.get_methods(...)[/code]. Currently it exposes only the read-only [member reflection] member.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="reflection" type="FSReflection" setter="" getter="get_reflection">
+			The read-only reflection and dynamic-proxy API. See [FSReflection].
+		</member>
+	</members>
+</class>

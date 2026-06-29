@@ -45,11 +45,11 @@ struct BlitToScreen;
 
 	If the user wants to enable AR/VR, they can choose the interface they want to use and initialize it.
 
-	Note that we may make this into a fully instantiable class for GDExtension support.
+	Note that we may make this into a fully instantiable class for FoundryExtension support.
 */
 
 class XRInterface : public RefCounted {
-	GDCLASS(XRInterface, RefCounted);
+	FOUNDRY_CLASS(XRInterface, RefCounted);
 
 public:
 	enum Capabilities { /* purely metadata, provides some info about what this interface supports */

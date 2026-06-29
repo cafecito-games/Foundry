@@ -37,12 +37,12 @@
 
 // Optional environment variables for defining confidential information. If any
 // of these is set, they will override the values set in the credentials file.
-const String ENV_WIN_CODESIGN_ID_TYPE = "GODOT_WINDOWS_CODESIGN_IDENTITY_TYPE";
-const String ENV_WIN_CODESIGN_ID = "GODOT_WINDOWS_CODESIGN_IDENTITY";
-const String ENV_WIN_CODESIGN_PASS = "GODOT_WINDOWS_CODESIGN_PASSWORD";
+const String ENV_WIN_CODESIGN_ID_TYPE = "FOUNDRY_WINDOWS_CODESIGN_IDENTITY_TYPE";
+const String ENV_WIN_CODESIGN_ID = "FOUNDRY_WINDOWS_CODESIGN_IDENTITY";
+const String ENV_WIN_CODESIGN_PASS = "FOUNDRY_WINDOWS_CODESIGN_PASSWORD";
 
 class EditorExportPlatformWindows : public EditorExportPlatformPC {
-	GDCLASS(EditorExportPlatformWindows, EditorExportPlatformPC);
+	FOUNDRY_CLASS(EditorExportPlatformWindows, EditorExportPlatformPC);
 
 	struct SSHCleanupCommand {
 		String host;

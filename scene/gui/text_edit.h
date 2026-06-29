@@ -38,7 +38,7 @@
 #include "scene/resources/text_paragraph.h"
 
 class TextEdit : public Control {
-	GDCLASS(TextEdit, Control);
+	FOUNDRY_CLASS(TextEdit, Control);
 
 public:
 	/* Edit Actions. */
@@ -768,12 +768,12 @@ protected:
 	void _accessibility_scroll_set(const Variant &p_data);
 	void _accessibility_action_scroll_into_view(const Variant &p_data, int p_line, int p_wrap);
 
-	GDVIRTUAL2(_handle_unicode_input, int, int)
-	GDVIRTUAL1(_backspace, int)
-	GDVIRTUAL1(_cut, int)
-	GDVIRTUAL1(_copy, int)
-	GDVIRTUAL1(_paste, int)
-	GDVIRTUAL1(_paste_primary_clipboard, int)
+	FOUNDRY_VIRTUAL2(_handle_unicode_input, int, int)
+	FOUNDRY_VIRTUAL1(_backspace, int)
+	FOUNDRY_VIRTUAL1(_cut, int)
+	FOUNDRY_VIRTUAL1(_copy, int)
+	FOUNDRY_VIRTUAL1(_paste, int)
+	FOUNDRY_VIRTUAL1(_paste_primary_clipboard, int)
 
 public:
 	/* General overrides. */

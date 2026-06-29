@@ -33,7 +33,7 @@
 #include "scene/resources/2d/shape_2d.h"
 
 class WorldBoundaryShape2D : public Shape2D {
-	GDCLASS(WorldBoundaryShape2D, Shape2D);
+	FOUNDRY_CLASS(WorldBoundaryShape2D, Shape2D);
 
 	// WorldBoundaryShape2D is often used for one-way platforms, where the normal pointing up makes sense.
 	Vector2 normal = Vector2(0, -1);

@@ -49,8 +49,8 @@ void EditorResourceTooltipPlugin::_thumbnail_ready(const String &p_path, const R
 void EditorResourceTooltipPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("request_thumbnail", "path", "control"), &EditorResourceTooltipPlugin::request_thumbnail);
 
-	GDVIRTUAL_BIND(_handles, "type");
-	GDVIRTUAL_BIND(_make_tooltip_for_path, "path", "metadata", "base");
+	FOUNDRY_VIRTUAL_BIND(_handles, "type");
+	FOUNDRY_VIRTUAL_BIND(_make_tooltip_for_path, "path", "metadata", "base");
 }
 
 VBoxContainer *EditorResourceTooltipPlugin::make_default_tooltip(const String &p_resource_path) {
@@ -101,13 +101,13 @@ void EditorResourceTooltipPlugin::request_thumbnail(const String &p_path, Textur
 
 bool EditorResourceTooltipPlugin::handles(const String &p_resource_type) const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_handles, p_resource_type, ret);
+	FOUNDRY_VIRTUAL_CALL(_handles, p_resource_type, ret);
 	return ret;
 }
 
 Control *EditorResourceTooltipPlugin::make_tooltip_for_path(const String &p_resource_path, const Dictionary &p_metadata, Control *p_base) const {
 	Control *ret = nullptr;
-	GDVIRTUAL_CALL(_make_tooltip_for_path, p_resource_path, p_metadata, p_base, ret);
+	FOUNDRY_VIRTUAL_CALL(_make_tooltip_for_path, p_resource_path, p_metadata, p_base, ret);
 	return ret;
 }
 

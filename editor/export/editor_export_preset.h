@@ -35,7 +35,7 @@ class EditorExportPlatform;
 #include "core/object/ref_counted.h"
 
 class EditorExportPreset : public RefCounted {
-	GDCLASS(EditorExportPreset, RefCounted);
+	FOUNDRY_CLASS(EditorExportPreset, RefCounted);
 
 public:
 	enum ExportFilter {

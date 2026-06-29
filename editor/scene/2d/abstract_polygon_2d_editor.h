@@ -39,7 +39,7 @@ class CanvasItemEditor;
 class ConfirmationDialog;
 
 class AbstractPolygon2DEditor : public HBoxContainer {
-	GDCLASS(AbstractPolygon2DEditor, HBoxContainer);
+	FOUNDRY_CLASS(AbstractPolygon2DEditor, HBoxContainer);
 
 	Button *button_create = nullptr;
 	Button *button_edit = nullptr;
@@ -158,7 +158,7 @@ public:
 };
 
 class AbstractPolygon2DEditorPlugin : public EditorPlugin {
-	GDCLASS(AbstractPolygon2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(AbstractPolygon2DEditorPlugin, EditorPlugin);
 
 	AbstractPolygon2DEditor *polygon_editor = nullptr;
 	String klass;

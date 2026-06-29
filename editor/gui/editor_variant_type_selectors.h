@@ -35,7 +35,7 @@
 #include "scene/gui/popup_menu.h"
 
 class EditorVariantTypeOptionButton : public OptionButton {
-	GDCLASS(EditorVariantTypeOptionButton, OptionButton);
+	FOUNDRY_CLASS(EditorVariantTypeOptionButton, OptionButton);
 
 	void _update_menu_icons();
 
@@ -49,7 +49,7 @@ public:
 };
 
 class EditorVariantTypePopupMenu : public PopupMenu {
-	GDCLASS(EditorVariantTypePopupMenu, PopupMenu);
+	FOUNDRY_CLASS(EditorVariantTypePopupMenu, PopupMenu);
 
 	bool remove_item = false;
 	bool icons_dirty = true;

@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+An "enum_name" file may only contain its enum declaration.

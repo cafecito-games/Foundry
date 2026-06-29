@@ -1,0 +1,2 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/type_metatype_generic_member_builtin_invalid.fs:8 on test(): Invalid assignment of property or key 'klass' with value of type 'Node' on a base object of type 'RefCounted (Box)'.

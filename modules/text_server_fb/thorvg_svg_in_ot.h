@@ -30,8 +30,8 @@
 
 #pragma once
 
-#ifdef GDEXTENSION
-// Headers for building as GDExtension plug-in.
+#ifdef FOUNDRY_EXTENSION
+// Headers for building as FoundryExtension plug-in.
 
 #include <godot_cpp/core/mutex_lock.hpp>
 #include <godot_cpp/godot.hpp>
@@ -39,7 +39,7 @@
 
 using namespace godot;
 
-#elif defined(GODOT_MODULE)
+#elif defined(FOUNDRY_MODULE)
 // Headers for building as built-in module.
 
 #include "core/os/mutex.h"

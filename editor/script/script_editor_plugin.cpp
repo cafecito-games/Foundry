@@ -72,8 +72,8 @@
 #include "editor/themes/editor_theme_manager.h"
 #include "modules/modules_enabled.gen.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript_autoload_index.h"
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/fs_autoload_index.h"
 #endif
 #include "scene/gui/separator.h"
 #include "scene/gui/tab_container.h"
@@ -102,20 +102,20 @@ bool is_embedded_script_path(const String &p_path) {
 
 String EditorSyntaxHighlighter::_get_name() const {
 	String ret = "Unnamed";
-	GDVIRTUAL_CALL(_get_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_name, ret);
 	return ret;
 }
 
 PackedStringArray EditorSyntaxHighlighter::_get_supported_languages() const {
 	PackedStringArray ret;
-	GDVIRTUAL_CALL(_get_supported_languages, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_supported_languages, ret);
 	return ret;
 }
 
 Ref<EditorSyntaxHighlighter> EditorSyntaxHighlighter::_create() const {
 	Ref<EditorSyntaxHighlighter> syntax_highlighter;
-	if (GDVIRTUAL_IS_OVERRIDDEN(_create)) {
-		GDVIRTUAL_CALL(_create, syntax_highlighter);
+	if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_create)) {
+		FOUNDRY_VIRTUAL_CALL(_create, syntax_highlighter);
 	} else {
 		syntax_highlighter.instantiate();
 		if (get_script_instance()) {
@@ -128,9 +128,9 @@ Ref<EditorSyntaxHighlighter> EditorSyntaxHighlighter::_create() const {
 void EditorSyntaxHighlighter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_get_edited_resource"), &EditorSyntaxHighlighter::_get_edited_resource);
 
-	GDVIRTUAL_BIND(_get_name)
-	GDVIRTUAL_BIND(_get_supported_languages)
-	GDVIRTUAL_BIND(_create)
+	FOUNDRY_VIRTUAL_BIND(_get_name)
+	FOUNDRY_VIRTUAL_BIND(_get_supported_languages)
+	FOUNDRY_VIRTUAL_BIND(_create)
 }
 
 ////
@@ -163,10 +163,10 @@ void EditorStandardSyntaxHighlighter::_update_cache() {
 	}
 
 	/* Autoloads. */
-#ifdef MODULE_GDSCRIPT_ENABLED
-	GDScriptAutoloadIndex autoload_index;
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	FSAutoloadIndex autoload_index;
 	autoload_index.rebuild_from_project_settings();
-	for (const GDScriptAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+	for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
 		if (autoload.is_singleton) {
 			highlighter->add_keyword_color(autoload.name, usertype_color);
 		}
@@ -1554,10 +1554,10 @@ void ScriptEditor::_menu_option(int p_option) {
 			}
 			if (native_class_doc) {
 				String name = eh->get_class().to_lower();
-				String doc_url = vformat(GODOT_VERSION_DOCS_URL "/classes/class_%s.html", name);
+				String doc_url = vformat(FOUNDRY_VERSION_DOCS_URL "/classes/class_%s.html", name);
 				OS::get_singleton()->shell_open(doc_url);
 			} else {
-				OS::get_singleton()->shell_open(GODOT_VERSION_DOCS_URL "/");
+				OS::get_singleton()->shell_open(FOUNDRY_VERSION_DOCS_URL "/");
 			}
 		} break;
 		case FILE_MENU_HISTORY_NEXT: {
@@ -2851,7 +2851,7 @@ void ScriptEditor::save_current_script() {
 	}
 
 	// Format last so its canonical output is the final state of the buffer and
-	// matches the CLI byte-for-byte. No-op for non-GDScript buffers and on parse
+	// matches the CLI byte-for-byte. No-op for non-FoundryScript buffers and on parse
 	// error; the diagnostic is left to the live parser to avoid save-time noise.
 	if (format_on_save) {
 		current->format_document(false);
@@ -4218,7 +4218,7 @@ void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int li
 				return;
 			}
 
-			const char *scr_header = "[sub_resource type=\"GDScript\" id=\"";
+			const char *scr_header = "[sub_resource type=\"FoundryScript\" id=\"";
 			const char *source_header = "script/source = \"";
 			String script_id;
 
@@ -4651,7 +4651,7 @@ ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
 
 	disk_changed = memnew(ConfirmationDialog);
 	{
-		disk_changed->set_title(TTRC("Files have been modified outside Godot"));
+		disk_changed->set_title(TTRC("Files have been modified outside Foundry"));
 
 		VBoxContainer *vbc = memnew(VBoxContainer);
 		disk_changed->add_child(vbc);
@@ -4755,7 +4755,7 @@ void ScriptEditorPlugin::_window_visibility_changed(bool p_visible) {
 void ScriptEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			window_wrapper->set_window_title(vformat(TTR("%s - Godot Engine"), TTR("Script Editor")));
+			window_wrapper->set_window_title(vformat(TTR("%s - Foundry"), TTR("Script Editor")));
 		} break;
 		case NOTIFICATION_ENTER_TREE: {
 			connect("main_screen_changed", callable_mp(this, &ScriptEditorPlugin::_save_last_editor));

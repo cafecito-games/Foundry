@@ -224,7 +224,7 @@ Result inspect_project(const String &p_project_path) {
 		// or `normal` that would otherwise hide untracked (or untracked-in-subdir)
 		// scripts the migration can still overwrite, and `--untracked-files=all`
 		// enforces the same. Ignored paths are deliberately NOT surfaced here:
-		// normal Godot checkouts ignore `.godot/`, `bin/`, generated headers, etc.,
+		// normal Godot checkouts ignore `.foundry/`, `bin/`, generated headers, etc.,
 		// and reporting those would mark every clean project dirty. Detecting a
 		// git-ignored file that is also an actual migration target is the driver's
 		// job (it knows the scanned set); see the follow-up tracked on epic #29.

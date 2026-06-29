@@ -33,7 +33,7 @@
 #include "scene/resources/material.h"
 
 class FogMaterial : public Material {
-	GDCLASS(FogMaterial, Material);
+	FOUNDRY_CLASS(FogMaterial, Material);
 
 private:
 	float density = 1.0;

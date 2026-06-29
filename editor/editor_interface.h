@@ -60,7 +60,7 @@ class VBoxContainer;
 class Window;
 
 class EditorInterface : public Object {
-	GDCLASS(EditorInterface, Object);
+	FOUNDRY_CLASS(EditorInterface, Object);
 
 	static EditorInterface *singleton;
 

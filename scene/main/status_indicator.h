@@ -34,7 +34,7 @@
 #include "servers/display/display_server.h"
 
 class StatusIndicator : public Node {
-	GDCLASS(StatusIndicator, Node);
+	FOUNDRY_CLASS(StatusIndicator, Node);
 
 	Ref<Texture2D> icon;
 	String tooltip;

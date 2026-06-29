@@ -50,7 +50,7 @@ class Shortcut;
  */
 
 class InputEvent : public Resource {
-	GDCLASS(InputEvent, Resource);
+	FOUNDRY_CLASS(InputEvent, Resource);
 
 	int device = 0;
 
@@ -93,7 +93,7 @@ public:
 };
 
 class InputEventFromWindow : public InputEvent {
-	GDCLASS(InputEventFromWindow, InputEvent);
+	FOUNDRY_CLASS(InputEventFromWindow, InputEvent);
 
 	int64_t window_id = 0;
 
@@ -106,7 +106,7 @@ public:
 };
 
 class InputEventWithModifiers : public InputEventFromWindow {
-	GDCLASS(InputEventWithModifiers, InputEventFromWindow);
+	FOUNDRY_CLASS(InputEventWithModifiers, InputEventFromWindow);
 
 	bool command_or_control_autoremap = false;
 
@@ -146,7 +146,7 @@ public:
 };
 
 class InputEventKey : public InputEventWithModifiers {
-	GDCLASS(InputEventKey, InputEventWithModifiers);
+	FOUNDRY_CLASS(InputEventKey, InputEventWithModifiers);
 
 	Key keycode = Key::NONE; // Key enum, without modifier masks.
 	Key physical_keycode = Key::NONE;
@@ -202,7 +202,7 @@ public:
 };
 
 class InputEventMouse : public InputEventWithModifiers {
-	GDCLASS(InputEventMouse, InputEventWithModifiers);
+	FOUNDRY_CLASS(InputEventMouse, InputEventWithModifiers);
 
 	BitField<MouseButtonMask> button_mask = MouseButtonMask::NONE;
 
@@ -224,7 +224,7 @@ public:
 };
 
 class InputEventMouseButton : public InputEventMouse {
-	GDCLASS(InputEventMouseButton, InputEventMouse);
+	FOUNDRY_CLASS(InputEventMouseButton, InputEventMouse);
 
 	float factor = 1;
 	MouseButton button_index = MouseButton::NONE;
@@ -259,7 +259,7 @@ public:
 };
 
 class InputEventMouseMotion : public InputEventMouse {
-	GDCLASS(InputEventMouseMotion, InputEventMouse);
+	FOUNDRY_CLASS(InputEventMouseMotion, InputEventMouse);
 
 	Vector2 tilt;
 	float pressure = 0;
@@ -304,7 +304,7 @@ public:
 };
 
 class InputEventJoypadMotion : public InputEvent {
-	GDCLASS(InputEventJoypadMotion, InputEvent);
+	FOUNDRY_CLASS(InputEventJoypadMotion, InputEvent);
 	JoyAxis axis = (JoyAxis)0; ///< Joypad axis
 	float axis_value = 0; ///< -1 to 1
 
@@ -332,7 +332,7 @@ public:
 };
 
 class InputEventJoypadButton : public InputEvent {
-	GDCLASS(InputEventJoypadButton, InputEvent);
+	FOUNDRY_CLASS(InputEventJoypadButton, InputEvent);
 
 	JoyButton button_index = (JoyButton)0;
 	float pressure = 0; //0 to 1
@@ -363,7 +363,7 @@ public:
 };
 
 class InputEventScreenTouch : public InputEventFromWindow {
-	GDCLASS(InputEventScreenTouch, InputEventFromWindow);
+	FOUNDRY_CLASS(InputEventScreenTouch, InputEventFromWindow);
 	int index = 0;
 	Vector2 pos;
 	bool double_tap = false;
@@ -392,7 +392,7 @@ public:
 };
 
 class InputEventScreenDrag : public InputEventFromWindow {
-	GDCLASS(InputEventScreenDrag, InputEventFromWindow);
+	FOUNDRY_CLASS(InputEventScreenDrag, InputEventFromWindow);
 	int index = 0;
 	Vector2 pos;
 	Vector2 relative;
@@ -444,7 +444,7 @@ public:
 };
 
 class InputEventAction : public InputEvent {
-	GDCLASS(InputEventAction, InputEvent);
+	FOUNDRY_CLASS(InputEventAction, InputEvent);
 
 	StringName action;
 	float strength = 1.0f;
@@ -479,7 +479,7 @@ public:
 };
 
 class InputEventGesture : public InputEventWithModifiers {
-	GDCLASS(InputEventGesture, InputEventWithModifiers);
+	FOUNDRY_CLASS(InputEventGesture, InputEventWithModifiers);
 
 	Vector2 pos;
 
@@ -492,7 +492,7 @@ public:
 };
 
 class InputEventMagnifyGesture : public InputEventGesture {
-	GDCLASS(InputEventMagnifyGesture, InputEventGesture);
+	FOUNDRY_CLASS(InputEventMagnifyGesture, InputEventGesture);
 	real_t factor = 1.0;
 
 protected:
@@ -510,7 +510,7 @@ public:
 };
 
 class InputEventPanGesture : public InputEventGesture {
-	GDCLASS(InputEventPanGesture, InputEventGesture);
+	FOUNDRY_CLASS(InputEventPanGesture, InputEventGesture);
 	Vector2 delta;
 
 protected:
@@ -528,7 +528,7 @@ public:
 };
 
 class InputEventMIDI : public InputEvent {
-	GDCLASS(InputEventMIDI, InputEvent);
+	FOUNDRY_CLASS(InputEventMIDI, InputEvent);
 
 	int channel = 0;
 	MIDIMessage message = MIDIMessage::NONE;
@@ -574,7 +574,7 @@ public:
 };
 
 class InputEventShortcut : public InputEvent {
-	GDCLASS(InputEventShortcut, InputEvent);
+	FOUNDRY_CLASS(InputEventShortcut, InputEvent);
 
 	Ref<Shortcut> shortcut;
 

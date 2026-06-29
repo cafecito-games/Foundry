@@ -83,7 +83,7 @@ void MetalDeviceProperties::init_features(id<MTLDevice> p_device) {
 	MTLCompileOptions *opts = [MTLCompileOptions new];
 	features.msl_max_version = make_msl_version((opts.languageVersion >> 0x10) & 0xff, (opts.languageVersion >> 0x00) & 0xff);
 	features.msl_target_version = features.msl_max_version;
-	if (String version = OS::get_singleton()->get_environment("GODOT_MTL_TARGET_VERSION"); !version.is_empty()) {
+	if (String version = OS::get_singleton()->get_environment("FOUNDRY_MTL_TARGET_VERSION"); !version.is_empty()) {
 		if (version != "max") {
 			Vector<String> parts = version.split(".", true, 2);
 			if (parts.size() == 2) {
@@ -91,13 +91,13 @@ void MetalDeviceProperties::init_features(id<MTLDevice> p_device) {
 				uint32_t minor = parts[1].to_int();
 				uint32_t msl_version = make_msl_version(major, minor);
 				if (msl_version < MSL_VERSION_23 || msl_version > MSL_VERSION_40) {
-					WARN_PRINT(vformat("GODOT_MTL_TARGET_VERSION: invalid MSL version '%d.%d'", major, minor));
+					WARN_PRINT(vformat("FOUNDRY_MTL_TARGET_VERSION: invalid MSL version '%d.%d'", major, minor));
 				} else {
 					print_line(vformat("Override: Targeting Metal version %d.%d", major, minor));
 					features.msl_target_version = msl_version;
 				}
 			} else {
-				WARN_PRINT("GODOT_MTL_TARGET_VERSION: invalid version string format. Expected major.minor or 'max'.");
+				WARN_PRINT("FOUNDRY_MTL_TARGET_VERSION: invalid version string format. Expected major.minor or 'max'.");
 			}
 		}
 	}
@@ -155,7 +155,7 @@ void MetalDeviceProperties::init_features(id<MTLDevice> p_device) {
 		}
 	}
 
-	if (OS::get_singleton()->get_environment("GODOT_MTL_DISABLE_IMAGE_ATOMICS") == "1") {
+	if (OS::get_singleton()->get_environment("FOUNDRY_MTL_DISABLE_IMAGE_ATOMICS") == "1") {
 		features.supports_native_image_atomics = false;
 	}
 
@@ -169,7 +169,7 @@ void MetalDeviceProperties::init_features(id<MTLDevice> p_device) {
 		features.needs_arg_encoders = !([p_device supportsFamily:MTLGPUFamilyMetal3] && features.argument_buffers_tier == MTLArgumentBuffersTier2);
 	}
 
-	if (String v = OS::get_singleton()->get_environment("GODOT_MTL_DISABLE_ARGUMENT_BUFFERS"); v == "1") {
+	if (String v = OS::get_singleton()->get_environment("FOUNDRY_MTL_DISABLE_ARGUMENT_BUFFERS"); v == "1") {
 		features.use_argument_buffers = false;
 	}
 

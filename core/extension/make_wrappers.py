@@ -55,10 +55,10 @@ def generate_mod_version(argcount, const=False, returns=False):
 
 proto_ex = """
 #define EXBIND$VER($RETTYPE m_name$ARG) \\
-GDVIRTUAL$VER_REQUIRED($RETTYPE_##m_name$ARG)\\
+FOUNDRY_VIRTUAL$VER_REQUIRED($RETTYPE_##m_name$ARG)\\
 virtual $RETVAL m_name($FUNCARGS) $CONST override { \\
     $RETPRE\\
-    GDVIRTUAL_CALL(_##m_name$CALLARGS$RETREF);\\
+    FOUNDRY_VIRTUAL_CALL(_##m_name$CALLARGS$RETREF);\\
     $RETPOST\\
 }
 """

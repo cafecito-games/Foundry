@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Class "trait_state_conflict_bad_redeclare.fs" redeclares trait member "health" from "TraitA" with incompatible type. Expected "int", got "String".

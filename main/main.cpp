@@ -35,9 +35,9 @@
 #include "core/crypto/crypto.h"
 #include "core/debugger/engine_debugger.h"
 #include "core/extension/extension_api_dump.h"
-#include "core/extension/gdextension_interface_dump.gen.h"
-#include "core/extension/gdextension_interface_header_generator.h"
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_interface_dump.gen.h"
+#include "core/extension/foundry_extension_interface_header_generator.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/input/input.h"
 #include "core/input/input_map.h"
 #include "core/io/dir_access.h"
@@ -142,16 +142,16 @@
 #include "modules/mono/editor/bindings_generator.h"
 #endif
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript.h"
-#include "modules/gdscript/gdscript_autoload_index.h"
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/foundry_script.h"
+#include "modules/foundry_script/fs_autoload_index.h"
 #ifdef TOOLS_ENABLED
-#include "modules/gdscript/editor/gdscript_migration_wizard.h"
+#include "modules/foundry_script/editor/fs_migration_wizard.h"
 #endif // TOOLS_ENABLED
-#if defined(TOOLS_ENABLED) && !defined(GDSCRIPT_NO_LSP)
-#include "modules/gdscript/language_server/gdscript_language_server.h"
-#endif // TOOLS_ENABLED && !GDSCRIPT_NO_LSP
-#endif // MODULE_GDSCRIPT_ENABLED
+#if defined(TOOLS_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
+#include "modules/foundry_script/language_server/fs_language_server.h"
+#endif // TOOLS_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 /* Static members */
 
@@ -283,8 +283,8 @@ static bool disable_vsync = false;
 static bool print_fps = false;
 #ifdef TOOLS_ENABLED
 static bool editor_pseudolocalization = false;
-static bool dump_gdextension_interface = false;
-static bool dump_gdextension_interface_header = false;
+static bool dump_foundry_extension_interface = false;
+static bool dump_foundry_extension_interface_header = false;
 static bool dump_extension_api = false;
 static bool include_docs_in_extension_api_dump = false;
 static bool validate_extension_api = false;
@@ -320,14 +320,14 @@ static String unescape_cmdline(const String &p_str) {
 }
 
 static String get_full_version_string() {
-	String hash = String(GODOT_VERSION_HASH);
+	String hash = String(FOUNDRY_VERSION_HASH);
 	if (!hash.is_empty()) {
 		hash = "." + hash.left(9);
 	}
-	return String(GODOT_VERSION_FULL_BUILD) + hash;
+	return String(FOUNDRY_VERSION_FULL_BUILD) + hash;
 }
 
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 static Vector<String> get_files_with_extension(const String &p_root, const String &p_extension) {
 	Vector<String> paths;
 
@@ -431,18 +431,18 @@ void finalize_theme_db() {
 #endif
 
 void Main::print_header(bool p_rich) {
-	if (GODOT_VERSION_TIMESTAMP > 0) {
+	if (FOUNDRY_VERSION_TIMESTAMP > 0) {
 		// Version timestamp available.
 		if (p_rich) {
-			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(GODOT_VERSION_NAME) + "\u001b[0m v" + get_full_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(GODOT_VERSION_TIMESTAMP, true) + " UTC) - \u001b[4m" + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(FOUNDRY_VERSION_NAME) + "\u001b[0m v" + get_full_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(FOUNDRY_VERSION_TIMESTAMP, true) + " UTC) - \u001b[4m" + String(FOUNDRY_VERSION_WEBSITE));
 		} else {
-			Engine::get_singleton()->print_header(String(GODOT_VERSION_NAME) + " v" + get_full_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(GODOT_VERSION_TIMESTAMP, true) + " UTC) - " + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header(String(FOUNDRY_VERSION_NAME) + " v" + get_full_version_string() + " (" + Time::get_singleton()->get_datetime_string_from_unix_time(FOUNDRY_VERSION_TIMESTAMP, true) + " UTC) - " + String(FOUNDRY_VERSION_WEBSITE));
 		}
 	} else {
 		if (p_rich) {
-			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(GODOT_VERSION_NAME) + "\u001b[0m v" + get_full_version_string() + " - \u001b[4m" + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header_rich("\u001b[38;5;39m" + String(FOUNDRY_VERSION_NAME) + "\u001b[0m v" + get_full_version_string() + " - \u001b[4m" + String(FOUNDRY_VERSION_WEBSITE));
 		} else {
-			Engine::get_singleton()->print_header(String(GODOT_VERSION_NAME) + " v" + get_full_version_string() + " - " + String(GODOT_VERSION_WEBSITE));
+			Engine::get_singleton()->print_header(String(FOUNDRY_VERSION_NAME) + " v" + get_full_version_string() + " - " + String(FOUNDRY_VERSION_WEBSITE));
 		}
 	}
 }
@@ -525,7 +525,7 @@ void Main::print_help(const char *p_binary) {
 	print_help_copyright("(c) 2014-present Godot Engine contributors. (c) 2007-present Juan Linietsky, Ariel Manzur.");
 
 	print_help_title("Usage");
-	OS::get_singleton()->print("  %s \u001b[96m[options] [path to \"project.godot\" file]\u001b[0m\n", p_binary);
+	OS::get_singleton()->print("  %s \u001b[96m[options] [path to \"project.foundry\" file]\u001b[0m\n", p_binary);
 
 #if defined(TOOLS_ENABLED)
 	print_help_title("Option legend (this build = editor)");
@@ -558,18 +558,18 @@ void Main::print_help(const char *p_binary) {
 #ifdef TOOLS_ENABLED
 	print_help_option("-e, --editor", "Start the editor instead of running the scene.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("-p, --project-manager", "Start the project manager, even if a project is auto-detected.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--recovery-mode", "Start the editor in recovery mode, which disables features that can typically cause startup crashes, such as tool scripts, editor plugins, GDExtension addons, and others.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--recovery-mode", "Start the editor in recovery mode, which disables features that can typically cause startup crashes, such as tool scripts, editor plugins, FoundryExtension addons, and others.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--debug-server <uri>", "Start the editor debug server (<protocol>://<host/IP>[:port], e.g. tcp://127.0.0.1:6007)\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dap-port <port>", "Use the specified port for the GDScript Debug Adapter Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#if defined(MODULE_GDSCRIPT_ENABLED) && !defined(GDSCRIPT_NO_LSP)
-	print_help_option("--lsp-port <port>", "Use the specified port for the GDScript Language Server Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#endif // MODULE_GDSCRIPT_ENABLED && !GDSCRIPT_NO_LSP
+	print_help_option("--dap-port <port>", "Use the specified port for the FoundryScript Debug Adapter Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
+	print_help_option("--lsp-port <port>", "Use the specified port for the FoundryScript Language Server Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
 #endif
 	print_help_option("--quit", "Quit after the first iteration.\n");
 	print_help_option("--quit-after <int>", "Quit after the given number of iterations. Set to 0 to disable.\n");
 	print_help_option("-l, --language <locale>", "Use a specific locale (<locale> being a two-letter code).\n");
 #if defined(OVERRIDE_PATH_ENABLED)
-	print_help_option("--path <directory>", "Path to a project (<directory> must contain a \"project.godot\" file).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
+	print_help_option("--path <directory>", "Path to a project (<directory> must contain a \"project.foundry\" file).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
 	print_help_option("--scene <path>", "Path or UID of a scene in the project that should be started.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
 #endif // defined(OVERRIDE_PATH_ENABLED)
 #if defined(OVERRIDE_PATH_ENABLED) || defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
@@ -710,23 +710,23 @@ void Main::print_help(const char *p_binary) {
 #endif // DISABLE_DEPRECATED
 	print_help_option("--doctool [path]", "Dump the engine API reference to the given <path> (defaults to current directory) in XML format, merging if existing files are found.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--no-docbase", "Disallow dumping the base types (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdextension-docs", "Rather than dumping the engine API, generate API reference from all the GDExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#ifdef MODULE_GDSCRIPT_ENABLED
-	print_help_option("--gdscript-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the GDScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate <path>", "Run the GDScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --gdscript-migrate-apply to commit the inferred annotations, and the --gdscript-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-apply", "Commit the inferred type annotations to disk during --gdscript-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-strict-null-checks", "Project (and, with --gdscript-migrate-activate-strict, enable) strict null checks during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-strict-dynamic-checks", "Project (and, with --gdscript-migrate-activate-strict, enable) strict dynamic checks during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-activate-strict", "Flip the requested strict project settings during --gdscript-migrate. Requires --gdscript-migrate-confirm and a clean report (or --gdscript-migrate-allow-violations).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-confirm", "Confirm the gated strict-settings flip for --gdscript-migrate-activate-strict.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-allow-violations", "Allow the strict-settings flip even when violations remain (gradual adoption) during --gdscript-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-acknowledge-vcs", "Acknowledge the version-control safety warning so --gdscript-migrate-apply proceeds on an unversioned or dirty tree.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--gdscript-migrate-follow-up <path>", "Write the manual follow-up punch-list from --gdscript-migrate to <path>.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundryextension-docs", "Rather than dumping the engine API, generate API reference from all the FoundryExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	print_help_option("--foundry_script-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the FoundryScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate <path>", "Run the FoundryScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --foundry_script-migrate-apply to commit the inferred annotations, and the --foundry_script-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-apply", "Commit the inferred type annotations to disk during --foundry_script-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-strict-null-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict null checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-strict-dynamic-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict dynamic checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-activate-strict", "Flip the requested strict project settings during --foundry_script-migrate. Requires --foundry_script-migrate-confirm and a clean report (or --foundry_script-migrate-allow-violations).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-confirm", "Confirm the gated strict-settings flip for --foundry_script-migrate-activate-strict.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-allow-violations", "Allow the strict-settings flip even when violations remain (gradual adoption) during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-acknowledge-vcs", "Acknowledge the version-control safety warning so --foundry_script-migrate-apply proceeds on an unversioned or dirty tree.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-migrate-follow-up <path>", "Write the manual follow-up punch-list from --foundry_script-migrate to <path>.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #endif
 	print_help_option("--build-solutions", "Build the scripting solutions (e.g. for C# projects). Implies --editor and requires a valid project to edit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-gdextension-interface", "Generate a GDExtension header file \"gdextension_interface.h\" in the current folder. This file is the base file required to implement a GDExtension.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-gdextension-interface-json", "Generate a JSON dump of the GDExtension interface named \"gdextension_interface.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-extension-api", "Generate a JSON dump of the Godot API for GDExtension bindings named \"extension_api.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--dump-foundryextension-interface", "Generate a FoundryExtension header file \"foundry_extension_interface.h\" in the current folder. This file is the base file required to implement a FoundryExtension.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--dump-foundryextension-interface-json", "Generate a JSON dump of the FoundryExtension interface named \"foundry_extension_interface.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--dump-extension-api", "Generate a JSON dump of the Godot API for FoundryExtension bindings named \"extension_api.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--dump-extension-api-with-docs", "Generate JSON dump of the Godot API like the previous option, but including documentation.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--validate-extension-api <path>", "Validate an extension API file dumped (with one of the two previous options) from a previous version of the engine to ensure API compatibility.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("", "If incompatibilities or errors are detected, the exit code will be non-zero.\n");
@@ -797,7 +797,7 @@ Error Main::test_setup() {
 	XRServer::set_xr_mode(XRServer::XRMODE_OFF); // Skip in tests.
 #endif // XR_DISABLED
 	initialize_modules(MODULE_INITIALIZATION_LEVEL_SERVERS);
-	GDExtensionManager::get_singleton()->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_SERVERS);
+	FoundryExtensionManager::get_singleton()->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SERVERS);
 
 	translation_server->setup(); //register translations, load them, etc.
 	if (!locale.is_empty()) {
@@ -823,14 +823,14 @@ Error Main::test_setup() {
 	register_scene_singletons();
 
 	initialize_modules(MODULE_INITIALIZATION_LEVEL_SCENE);
-	GDExtensionManager::get_singleton()->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_SCENE);
+	FoundryExtensionManager::get_singleton()->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SCENE);
 
 #ifdef TOOLS_ENABLED
 	ClassDB::set_current_api(ClassDB::API_EDITOR);
 	register_editor_types();
 
 	initialize_modules(MODULE_INITIALIZATION_LEVEL_EDITOR);
-	GDExtensionManager::get_singleton()->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_EDITOR);
+	FoundryExtensionManager::get_singleton()->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_EDITOR);
 
 	ClassDB::set_current_api(ClassDB::API_CORE);
 #endif
@@ -888,12 +888,12 @@ void Main::test_cleanup() {
 	PropertyListHelper::clear_base_helpers();
 
 #ifdef TOOLS_ENABLED
-	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_EDITOR);
+	FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_EDITOR);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_EDITOR);
 	unregister_editor_types();
 #endif
 
-	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SCENE);
+	FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SCENE);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SCENE);
 
 	unregister_platform_apis();
@@ -911,7 +911,7 @@ void Main::test_cleanup() {
 	NavigationServer3DManager::finalize_server_manager();
 #endif // NAVIGATION_3D_DISABLED
 
-	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SERVERS);
+	FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SERVERS);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SERVERS);
 	unregister_server_types();
 
@@ -962,13 +962,13 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			tests_need_run = false;
 			return EXIT_SUCCESS;
 		}
-		// `--gdscript-generate-tests` is a registered `--test` command (so it
+		// `--foundry_script-generate-tests` is a registered `--test` command (so it
 		// runs under `test_setup()`/`test_cleanup()` and the process shuts down
 		// cleanly); accept it as a standalone flag too, for backwards compatibility.
 		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
-		const bool is_test_command = strcmp(argv[x], "--gdscript-generate-tests") == 0;
-		const bool is_format_command = strcmp(argv[x], "--gdscript-format") == 0 ||
-				strcmp(argv[x], "--gdscript-generate-format-tests") == 0;
+		const bool is_test_command = strcmp(argv[x], "--foundry_script-generate-tests") == 0;
+		const bool is_format_command = strcmp(argv[x], "--foundry_script-format") == 0 ||
+				strcmp(argv[x], "--foundry_script-generate-format-tests") == 0;
 		if (is_test || is_test_command || is_format_command) {
 			tests_need_run = true;
 #ifdef TESTS_ENABLED
@@ -1059,7 +1059,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 	translation_server = memnew(TranslationServer);
 	performance = memnew(Performance);
-	GDREGISTER_CLASS(Performance);
+	FOUNDRY_REGISTER_CLASS(Performance);
 	engine->add_singleton(Engine::Singleton("Performance", performance));
 
 	// Only flush stdout in debug builds by default, as spamming `print()` will
@@ -1590,22 +1590,22 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			auto_build_solutions = true;
 			editor = true;
 			cmdline_tool = true;
-		} else if (arg == "--dump-gdextension-interface") {
+		} else if (arg == "--dump-foundryextension-interface") {
 			// Register as an editor instance to use low-end fallback if relevant.
 			editor = true;
 			cmdline_tool = true;
-			dump_gdextension_interface_header = true;
-			print_line("Dumping GDExtension interface header file");
+			dump_foundry_extension_interface_header = true;
+			print_line("Dumping FoundryExtension interface header file");
 			// Hack. Not needed but otherwise we end up detecting that this should
 			// run the project instead of a cmdline tool.
 			// Needs full refactoring to fix properly.
 			main_args.push_back(arg);
-		} else if (arg == "--dump-gdextension-interface-json") {
+		} else if (arg == "--dump-foundryextension-interface-json") {
 			// Register as an editor instance to use low-end fallback if relevant.
 			editor = true;
 			cmdline_tool = true;
-			dump_gdextension_interface = true;
-			print_line("Dumping GDExtension interface json file");
+			dump_foundry_extension_interface = true;
+			print_line("Dumping FoundryExtension interface json file");
 			// Hack. Not needed but otherwise we end up detecting that this should
 			// run the project instead of a cmdline tool.
 			// Needs full refactoring to fix properly.
@@ -1716,22 +1716,22 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			audio_driver = NULL_AUDIO_DRIVER;
 			display_driver = NULL_DISPLAY_DRIVER;
 			main_args.push_back(arg);
-#ifdef MODULE_GDSCRIPT_ENABLED
-		} else if (arg == "--gdscript-docs") {
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		} else if (arg == "--foundry_script-docs") {
 			if (N) {
 				project_path = N->get();
 				// Will be handled in start()
 				main_args.push_back(arg);
 				main_args.push_back(N->get());
 				N = N->next();
-				// GDScript docgen requires Autoloads, but loading those also creates a main loop.
-				// This forces main loop to quit without adding more GDScript-specific exceptions to setup.
+				// FoundryScript docgen requires Autoloads, but loading those also creates a main loop.
+				// This forces main loop to quit without adding more FoundryScript-specific exceptions to setup.
 				quit_after = 1;
 			} else {
-				OS::get_singleton()->print("Missing relative or absolute path to project for --gdscript-docs, aborting.\n");
+				OS::get_singleton()->print("Missing relative or absolute path to project for --foundry_script-docs, aborting.\n");
 				goto error;
 			}
-		} else if (arg == "--gdscript-migrate") {
+		} else if (arg == "--foundry_script-migrate") {
 			// Headless strict-typing migration wizard: runs the dry-run report and, when
 			// asked, the atomic apply and gated strict activation, then exits. Will be
 			// handled in start(); the modifier flags are read there from cmdline_args.
@@ -1746,14 +1746,14 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				main_args.push_back(arg);
 				main_args.push_back(N->get());
 				N = N->next();
-				// The wizard finishes its work in start() and exits; like --gdscript-docs it
+				// The wizard finishes its work in start() and exits; like --foundry_script-docs it
 				// does not need a running main loop.
 				quit_after = 1;
 			} else {
-				OS::get_singleton()->print("Missing relative or absolute path to project for --gdscript-migrate, aborting.\n");
+				OS::get_singleton()->print("Missing relative or absolute path to project for --foundry_script-migrate, aborting.\n");
 				goto error;
 			}
-		} else if (arg == "--gdscript-migrate-follow-up") {
+		} else if (arg == "--foundry_script-migrate-follow-up") {
 			// Validate the required path argument here (where end-of-command-line is detectable);
 			// the value itself is read in start(). Consume the path so it is not reparsed as a
 			// standalone option.
@@ -1762,10 +1762,10 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				main_args.push_back(N->get());
 				N = N->next();
 			} else {
-				OS::get_singleton()->print("Missing file path argument for --gdscript-migrate-follow-up, aborting.\n");
+				OS::get_singleton()->print("Missing file path argument for --foundry_script-migrate-follow-up, aborting.\n");
 				goto error;
 			}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 #endif // TOOLS_ENABLED
 
 		} else if (arg == "--path") { // set path of project to start or edit
@@ -1800,7 +1800,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing number of iterations, aborting.\n");
 				goto error;
 			}
-		} else if (arg.ends_with("project.godot")) {
+		} else if (arg.ends_with("project.foundry")) {
 #if defined(OVERRIDE_PATH_ENABLED)
 			String path;
 			String file = arg;
@@ -1820,7 +1820,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 #endif
 #else
 			ERR_PRINT(
-					"`project.godot` path was specified on the command line, but this Godot binary was compiled without support for path overrides. Aborting.\n"
+					"`project.foundry` path was specified on the command line, but this Godot binary was compiled without support for path overrides. Aborting.\n"
 					"To be able to use it, use the `disable_path_overrides=no` SCons option when compiling Godot.\n");
 			goto error;
 #endif // defined(OVERRIDE_PATH_ENABLED)
@@ -2022,7 +2022,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing <path> argument for --benchmark-file <path>.\n");
 				goto error;
 			}
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED) && !defined(GDSCRIPT_NO_LSP)
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 		} else if (arg == "--lsp-port") {
 			if (N) {
 				int port_override = N->get().to_int();
@@ -2030,13 +2030,13 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 					OS::get_singleton()->print("<port> argument for --lsp-port <port> must be between 0 and 65535.\n");
 					goto error;
 				}
-				GDScriptLanguageServer::port_override = port_override;
+				FSLanguageServer::port_override = port_override;
 				N = N->next();
 			} else {
 				OS::get_singleton()->print("Missing <port> argument for --lsp-port <port>.\n");
 				goto error;
 			}
-#endif // TOOLS_ENABLED && MODULE_GDSCRIPT_ENABLED && !GDSCRIPT_NO_LSP
+#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
 #if defined(TOOLS_ENABLED)
 		} else if (arg == "--dap-port") {
 			if (N) {
@@ -2088,7 +2088,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 #if defined(DEBUG_ENABLED) || defined(TOOLS_ENABLED)
 	// Network file system needs to be configured before globals, since globals are based on the
-	// 'project.godot' file which will only be available through the network if this is enabled
+	// 'project.foundry' file which will only be available through the network if this is enabled
 	if (!remotefs.is_empty()) {
 		int port;
 		if (remotefs.contains_char(':')) {
@@ -2122,8 +2122,8 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 		if (FileAccess::exists(old_cwd.path_join(exec_basename + ".pck"))) {
 			error_msg += "\"" + exec_basename + ".pck\" was found in the current working directory. To be able to load a project from the CWD, use the `disable_path_overrides=no` SCons option when compiling Godot.\n";
-		} else if (FileAccess::exists(old_cwd.path_join("project.godot"))) {
-			error_msg += "\"project.godot\" was found in the current working directory. To be able to load a project from the CWD, use the `disable_path_overrides=no` SCons option when compiling Godot.\n";
+		} else if (FileAccess::exists(old_cwd.path_join("project.foundry"))) {
+			error_msg += "\"project.foundry\" was found in the current working directory. To be able to load a project from the CWD, use the `disable_path_overrides=no` SCons option when compiling Godot.\n";
 		} else {
 			error_msg += "If you've renamed the executable, the associated .pck file should also be renamed to match the executable's name (without the extension).\n";
 		}
@@ -2801,7 +2801,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	GLOBAL_DEF_NOVAL(PropertyInfo(Variant::STRING, "display/display_server/driver.macos", PROPERTY_HINT_ENUM, "default,macos,headless"), "default");
 
 	GLOBAL_DEF_RST_NOVAL("audio/driver/driver", AudioDriverManager::get_driver(0)->get_name());
-	if (audio_driver.is_empty()) { // Specified in project.godot.
+	if (audio_driver.is_empty()) { // Specified in project.foundry.
 		if (project_manager) {
 			// The project manager doesn't need to play sound (TTS audio output is not emitted by Godot, but by the system itself).
 			// Disable audio output so it doesn't appear in the list of applications outputting sound in the OS.
@@ -3223,7 +3223,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		OS::get_singleton()->benchmark_begin_measure("Servers", "Modules and Extensions");
 
 		initialize_modules(MODULE_INITIALIZATION_LEVEL_SERVERS);
-		GDExtensionManager::get_singleton()->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_SERVERS);
+		FoundryExtensionManager::get_singleton()->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SERVERS);
 
 		OS::get_singleton()->benchmark_end_measure("Servers", "Modules and Extensions");
 	}
@@ -3345,7 +3345,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 				memdelete(display_server);
 			}
 
-			GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SERVERS);
+			FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SERVERS);
 			uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SERVERS);
 			unregister_server_types();
 
@@ -3486,7 +3486,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		}
 #endif
 
-		if (tablet_driver.is_empty()) { // specified in project.godot
+		if (tablet_driver.is_empty()) { // specified in project.foundry
 			tablet_driver = GLOBAL_GET("input_devices/pen_tablet/driver");
 			if (tablet_driver.is_empty()) {
 				tablet_driver = DisplayServer::get_singleton()->tablet_get_driver_name(0);
@@ -3529,8 +3529,8 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 #ifdef UNIX_ENABLED
 	// Print warning after initializing the renderer but before initializing audio.
-	if (OS::get_singleton()->get_environment("USER") == "root" && !OS::get_singleton()->has_environment("GODOT_SILENCE_ROOT_WARNING")) {
-		WARN_PRINT("Started the engine as `root`/superuser. This is a security risk, and subsystems like audio may not work correctly.\nSet the environment variable `GODOT_SILENCE_ROOT_WARNING` to 1 to silence this warning.");
+	if (OS::get_singleton()->get_environment("USER") == "root" && !OS::get_singleton()->has_environment("FOUNDRY_SILENCE_ROOT_WARNING")) {
+		WARN_PRINT("Started the engine as `root`/superuser. This is a security risk, and subsystems like audio may not work correctly.\nSet the environment variable `FOUNDRY_SILENCE_ROOT_WARNING` to 1 to silence this warning.");
 	}
 #endif
 
@@ -3742,12 +3742,12 @@ Error Main::setup2(bool p_show_boot_logo) {
 		OS::get_singleton()->benchmark_begin_measure("Scene", "Modules and Extensions");
 
 		initialize_modules(MODULE_INITIALIZATION_LEVEL_SCENE);
-		GDExtensionManager::get_singleton()->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_SCENE);
+		FoundryExtensionManager::get_singleton()->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SCENE);
 
 		OS::get_singleton()->benchmark_end_measure("Scene", "Modules and Extensions");
 
 		// We need to initialize the movie writer here in case
-		// one of the user-provided GDExtensions subclasses MovieWriter.
+		// one of the user-provided FoundryExtensions subclasses MovieWriter.
 		if (Engine::get_singleton()->get_write_movie_path() != String()) {
 			movie_writer = MovieWriter::find_writer_for_file(Engine::get_singleton()->get_write_movie_path());
 			if (movie_writer == nullptr) {
@@ -3775,7 +3775,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		OS::get_singleton()->benchmark_begin_measure("Editor", "Modules and Extensions");
 
 		initialize_modules(MODULE_INITIALIZATION_LEVEL_EDITOR);
-		GDExtensionManager::get_singleton()->initialize_extensions(GDExtension::INITIALIZATION_LEVEL_EDITOR);
+		FoundryExtensionManager::get_singleton()->initialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_EDITOR);
 
 		OS::get_singleton()->benchmark_end_measure("Editor", "Modules and Extensions");
 	}
@@ -3937,7 +3937,7 @@ void Main::setup_boot_logo() {
 			MAIN_PRINT("Main: ClearColor");
 			RenderingServer::get_singleton()->set_default_clear_color(boot_bg_color);
 			MAIN_PRINT("Main: Image");
-			RenderingServer::get_singleton()->set_boot_image_with_stretch(splash, boot_bg_color, RenderingServer::SPLASH_STRETCH_MODE_DISABLED);
+			RenderingServer::get_singleton()->set_boot_image_with_stretch(splash, boot_bg_color, RenderingServer::SPLASH_STRETCH_MODE_KEEP);
 #endif
 		}
 
@@ -3989,17 +3989,17 @@ int Main::start() {
 	bool export_pack_only = false;
 	bool install_android_build_template = false;
 	bool export_patch = false;
-#ifdef MODULE_GDSCRIPT_ENABLED
-	String gdscript_docs_path;
-	String gdscript_migrate_path;
-	bool gdscript_migrate_apply = false;
-	bool gdscript_migrate_strict_null = false;
-	bool gdscript_migrate_strict_dynamic = false;
-	bool gdscript_migrate_activate_strict = false;
-	bool gdscript_migrate_confirm = false;
-	bool gdscript_migrate_allow_violations = false;
-	bool gdscript_migrate_acknowledge_vcs = false;
-	String gdscript_migrate_follow_up_path;
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	String fs_docs_path;
+	String fs_migrate_path;
+	bool fs_migrate_apply = false;
+	bool fs_migrate_strict_null = false;
+	bool fs_migrate_strict_dynamic = false;
+	bool fs_migrate_activate_strict = false;
+	bool fs_migrate_confirm = false;
+	bool fs_migrate_allow_violations = false;
+	bool fs_migrate_acknowledge_vcs = false;
+	String fs_migrate_follow_up_path;
 #endif
 #ifndef DISABLE_DEPRECATED
 	bool converting_project = false;
@@ -4020,7 +4020,7 @@ int Main::start() {
 #ifdef TOOLS_ENABLED
 		} else if (E->get() == "--no-docbase") {
 			gen_flags.set_flag(DocTools::GENERATE_FLAG_SKIP_BASIC_TYPES);
-		} else if (E->get() == "--gdextension-docs") {
+		} else if (E->get() == "--foundryextension-docs") {
 			gen_flags.set_flag(DocTools::GENERATE_FLAG_SKIP_BASIC_TYPES);
 			gen_flags.set_flag(DocTools::GENERATE_FLAG_EXTENSION_CLASSES_ONLY);
 #ifndef DISABLE_DEPRECATED
@@ -4037,22 +4037,22 @@ int Main::start() {
 			recovery_mode = true;
 		} else if (E->get() == "--install-android-build-template") {
 			install_android_build_template = true;
-#ifdef MODULE_GDSCRIPT_ENABLED
-		} else if (E->get() == "--gdscript-migrate-apply") {
-			gdscript_migrate_apply = true;
-		} else if (E->get() == "--gdscript-migrate-strict-null-checks") {
-			gdscript_migrate_strict_null = true;
-		} else if (E->get() == "--gdscript-migrate-strict-dynamic-checks") {
-			gdscript_migrate_strict_dynamic = true;
-		} else if (E->get() == "--gdscript-migrate-activate-strict") {
-			gdscript_migrate_activate_strict = true;
-		} else if (E->get() == "--gdscript-migrate-confirm") {
-			gdscript_migrate_confirm = true;
-		} else if (E->get() == "--gdscript-migrate-allow-violations") {
-			gdscript_migrate_allow_violations = true;
-		} else if (E->get() == "--gdscript-migrate-acknowledge-vcs") {
-			gdscript_migrate_acknowledge_vcs = true;
-#endif // MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		} else if (E->get() == "--foundry_script-migrate-apply") {
+			fs_migrate_apply = true;
+		} else if (E->get() == "--foundry_script-migrate-strict-null-checks") {
+			fs_migrate_strict_null = true;
+		} else if (E->get() == "--foundry_script-migrate-strict-dynamic-checks") {
+			fs_migrate_strict_dynamic = true;
+		} else if (E->get() == "--foundry_script-migrate-activate-strict") {
+			fs_migrate_activate_strict = true;
+		} else if (E->get() == "--foundry_script-migrate-confirm") {
+			fs_migrate_confirm = true;
+		} else if (E->get() == "--foundry_script-migrate-allow-violations") {
+			fs_migrate_allow_violations = true;
+		} else if (E->get() == "--foundry_script-migrate-acknowledge-vcs") {
+			fs_migrate_acknowledge_vcs = true;
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 #endif // TOOLS_ENABLED
 		} else if (E->get() == "--scene") {
 #if defined(OVERRIDE_PATH_ENABLED)
@@ -4109,13 +4109,13 @@ int Main::start() {
 					doc_tool_implicit_cwd = true;
 					parsed_pair = false;
 				}
-#ifdef MODULE_GDSCRIPT_ENABLED
-			} else if (E->get() == "--gdscript-docs") {
-				gdscript_docs_path = E->next()->get();
-			} else if (E->get() == "--gdscript-migrate") {
-				gdscript_migrate_path = E->next()->get();
-			} else if (E->get() == "--gdscript-migrate-follow-up") {
-				gdscript_migrate_follow_up_path = E->next()->get();
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+			} else if (E->get() == "--foundry_script-docs") {
+				fs_docs_path = E->next()->get();
+			} else if (E->get() == "--foundry_script-migrate") {
+				fs_migrate_path = E->next()->get();
+			} else if (E->get() == "--foundry_script-migrate-follow-up") {
+				fs_migrate_follow_up_path = E->next()->get();
 #endif
 			} else if (E->get() == "--export-release") {
 				ERR_FAIL_COND_V_MSG(!editor && !found_project, EXIT_FAILURE, "Please provide a valid project path when exporting, aborting.");
@@ -4165,8 +4165,8 @@ int Main::start() {
 	}
 
 #ifdef TOOLS_ENABLED
-#ifdef MODULE_GDSCRIPT_ENABLED
-	if (!doc_tool_path.is_empty() && gdscript_docs_path.is_empty()) {
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	if (!doc_tool_path.is_empty() && fs_docs_path.is_empty()) {
 #else
 	if (!doc_tool_path.is_empty()) {
 #endif
@@ -4206,9 +4206,9 @@ int Main::start() {
 		HashSet<String> checked_paths;
 		print_line("Loading docs...");
 
-		const bool gdextension_docs = gen_flags.has_flag(DocTools::GENERATE_FLAG_EXTENSION_CLASSES_ONLY);
+		const bool foundry_extension_docs = gen_flags.has_flag(DocTools::GENERATE_FLAG_EXTENSION_CLASSES_ONLY);
 
-		if (!gdextension_docs) {
+		if (!foundry_extension_docs) {
 			for (int i = 0; i < _doc_data_class_path_count; i++) {
 				// Custom modules are always located by absolute path.
 				String path = _doc_data_class_paths[i].path;
@@ -4232,8 +4232,8 @@ int Main::start() {
 			}
 		}
 
-		// For GDExtension docs, use a path that is compatible with Godot modules.
-		String index_path = gdextension_docs ? doc_tool_path.path_join("doc_classes") : doc_tool_path.path_join("doc/classes");
+		// For FoundryExtension docs, use a path that is compatible with Godot modules.
+		String index_path = foundry_extension_docs ? doc_tool_path.path_join("doc_classes") : doc_tool_path.path_join("doc/classes");
 		// Create the main documentation directory if it doesn't exist
 		Ref<DirAccess> da = DirAccess::create_for_path(index_path);
 		err = da->make_dir_recursive(index_path);
@@ -4254,7 +4254,7 @@ int Main::start() {
 		}
 
 		print_line("Generating new docs...");
-		err = doc.save_classes(index_path, doc_data_classes, !gdextension_docs);
+		err = doc.save_classes(index_path, doc_data_classes, !foundry_extension_docs);
 		ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error saving new docs:" + itos(err));
 
 		print_line("Deleting docs cache...");
@@ -4265,28 +4265,28 @@ int Main::start() {
 		return EXIT_SUCCESS;
 	}
 
-	// GDExtension API and interface.
+	// FoundryExtension API and interface.
 	{
-		if (dump_gdextension_interface) {
-			GDExtensionInterfaceDump::generate_gdextension_interface_file("gdextension_interface.json");
+		if (dump_foundry_extension_interface) {
+			FoundryExtensionInterfaceDump::generate_foundry_extension_interface_file("foundry_extension_interface.json");
 		}
 
-		if (dump_gdextension_interface_header) {
-			GDExtensionInterfaceHeaderGenerator::generate_gdextension_interface_header("gdextension_interface.h");
+		if (dump_foundry_extension_interface_header) {
+			FoundryExtensionInterfaceHeaderGenerator::generate_foundry_extension_interface_header("foundry_extension_interface.h");
 		}
 
 		if (dump_extension_api) {
 			Engine::get_singleton()->set_editor_hint(true); // "extension_api.json" should always contains editor singletons.
-			GDExtensionAPIDump::generate_extension_json_file("extension_api.json", include_docs_in_extension_api_dump);
+			FoundryExtensionAPIDump::generate_extension_json_file("extension_api.json", include_docs_in_extension_api_dump);
 		}
 
-		if (dump_gdextension_interface || dump_gdextension_interface_header || dump_extension_api) {
+		if (dump_foundry_extension_interface || dump_foundry_extension_interface_header || dump_extension_api) {
 			return EXIT_SUCCESS;
 		}
 
 		if (validate_extension_api) {
 			Engine::get_singleton()->set_editor_hint(true); // "extension_api.json" should always contains editor singletons.
-			bool valid = GDExtensionAPIDump::validate_extension_json_file(validate_extension_api_file) == OK;
+			bool valid = FoundryExtensionAPIDump::validate_extension_json_file(validate_extension_api_file) == OK;
 			return valid ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 	}
@@ -4318,11 +4318,11 @@ int Main::start() {
 #endif // defined(OVERRIDE_PATH_ENABLED)
 
 	bool skip_main_scene_resolution = false;
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 	// The migration command is handled before the game branch and never runs the main scene, so do
 	// not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a fresh
 	// CI/source checkout before the migration could even print its report.
-	skip_main_scene_resolution = !gdscript_migrate_path.is_empty();
+	skip_main_scene_resolution = !fs_migrate_path.is_empty();
 #endif
 
 	if (!skip_main_scene_resolution && script.is_empty() && game_path.is_empty()) {
@@ -4350,8 +4350,8 @@ int Main::start() {
 	}
 #endif
 
-#if defined(TOOLS_ENABLED) && defined(MODULE_GDSCRIPT_ENABLED)
-	if (!gdscript_migrate_path.is_empty()) {
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
+	if (!fs_migrate_path.is_empty()) {
 		// Headless strict-typing migration wizard. Reuses the same orchestrator the editor entry
 		// point drives (report -> apply -> gated strict activation), so a scripted or
 		// continuous-integration run produces the identical flow without a window. Handled here --
@@ -4364,34 +4364,34 @@ int Main::start() {
 		// have left res:// bound to the process working directory, and an --apply run could rewrite
 		// an unintended tree (and falsely report success).
 		ERR_FAIL_COND_V_MSG(!found_project, EXIT_FAILURE,
-				"--gdscript-migrate requires a valid project; none was found at the given path. Aborting.");
+				"--foundry_script-migrate requires a valid project; none was found at the given path. Aborting.");
 
-		// --gdscript-migrate-follow-up takes a path; reject a missing one (the next token was
+		// --foundry_script-migrate-follow-up takes a path; reject a missing one (the next token was
 		// another option, or the flag ended the command line) so the request is not silently
 		// dropped or made to consume an unrelated option as its path.
-		ERR_FAIL_COND_V_MSG(gdscript_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
-				"--gdscript-migrate-follow-up requires a file path argument. Aborting.");
+		ERR_FAIL_COND_V_MSG(fs_migrate_follow_up_path.begins_with("-"), EXIT_FAILURE,
+				"--foundry_script-migrate-follow-up requires a file path argument. Aborting.");
 
 		MigrationWizardOptions options;
-		options.apply = gdscript_migrate_apply;
-		options.strict_null_checks = gdscript_migrate_strict_null;
-		options.strict_dynamic_checks = gdscript_migrate_strict_dynamic;
-		options.activate_strict = gdscript_migrate_activate_strict;
-		options.confirm_strict_activation = gdscript_migrate_confirm;
-		options.allow_strict_with_violations = gdscript_migrate_allow_violations;
-		options.acknowledge_vcs_warning = gdscript_migrate_acknowledge_vcs;
-		options.follow_up_path = gdscript_migrate_follow_up_path;
+		options.apply = fs_migrate_apply;
+		options.strict_null_checks = fs_migrate_strict_null;
+		options.strict_dynamic_checks = fs_migrate_strict_dynamic;
+		options.activate_strict = fs_migrate_activate_strict;
+		options.confirm_strict_activation = fs_migrate_confirm;
+		options.allow_strict_with_violations = fs_migrate_allow_violations;
+		options.acknowledge_vcs_warning = fs_migrate_acknowledge_vcs;
+		options.follow_up_path = fs_migrate_follow_up_path;
 
 		// The migration path was loaded as the project (project_path), so res:// resolves to it; the
 		// wizard scans the whole project tree.
-		const MigrationWizardResult migration_result = GDScriptMigrationWizard::run("res://", options);
+		const MigrationWizardResult migration_result = FSMigrationWizard::run("res://", options);
 		OS::get_singleton()->print("%s", migration_result.summary().utf8().get_data());
 		// succeeded() is stricter than ok: it also fails a gated strict activation and an activation
 		// that flipped but could not be persisted, so a scripted or CI run enforcing strict
 		// activation never mistakes a blocked or unsaved flip for success.
 		return migration_result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
 	}
-#endif // TOOLS_ENABLED && MODULE_GDSCRIPT_ENABLED
+#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	MainLoop *main_loop = nullptr;
 	if (editor) {
@@ -4535,11 +4535,11 @@ int Main::start() {
 				//autoload
 				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
 				Vector<ProjectSettings::AutoloadInfo> autoloads;
-#ifdef MODULE_GDSCRIPT_ENABLED
-				GDScriptAutoloadIndex autoload_index;
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+				FSAutoloadIndex autoload_index;
 				const Error autoload_index_err = autoload_index.rebuild_for_runtime_startup();
 				if (autoload_index_err != OK) {
-					WARN_PRINT(vformat("Failed to load GDScript autoload index cache; falling back to project settings: %s.",
+					WARN_PRINT(vformat("Failed to load FoundryScript autoload index cache; falling back to project settings: %s.",
 							error_names[autoload_index_err]));
 					autoload_index.rebuild_from_project_settings();
 				}
@@ -4549,7 +4549,7 @@ int Main::start() {
 				for (const KeyValue<StringName, ProjectSettings::AutoloadInfo> &E : ProjectSettings::get_singleton()->get_autoload_list()) {
 					autoloads.push_back(E.value);
 				}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 				//first pass, add the constants so they exist before any script is loaded
 				for (const ProjectSettings::AutoloadInfo &info : autoloads) {
@@ -4630,17 +4630,17 @@ int Main::start() {
 		}
 
 #ifdef TOOLS_ENABLED
-#ifdef MODULE_GDSCRIPT_ENABLED
-		if (!doc_tool_path.is_empty() && !gdscript_docs_path.is_empty()) {
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		if (!doc_tool_path.is_empty() && !fs_docs_path.is_empty()) {
 			DocTools docs;
 			Error err;
 
-			Vector<String> paths = get_files_with_extension(gdscript_docs_path, "gd");
-			ERR_FAIL_COND_V_MSG(paths.is_empty(), EXIT_FAILURE, "Couldn't find any GDScript files under the given directory: " + gdscript_docs_path);
+			Vector<String> paths = get_files_with_extension(fs_docs_path, "gd");
+			ERR_FAIL_COND_V_MSG(paths.is_empty(), EXIT_FAILURE, "Couldn't find any FoundryScript files under the given directory: " + fs_docs_path);
 
 			for (const String &path : paths) {
-				Ref<GDScript> gdscript = ResourceLoader::load(path);
-				for (const DocData::ClassDoc &class_doc : gdscript->get_documentation()) {
+				Ref<FoundryScript> foundry_script = ResourceLoader::load(path);
+				for (const DocData::ClassDoc &class_doc : foundry_script->get_documentation()) {
 					docs.add_doc(class_doc);
 				}
 			}
@@ -4651,15 +4651,15 @@ int Main::start() {
 
 			Ref<DirAccess> da = DirAccess::create_for_path(doc_tool_path);
 			err = da->make_dir_recursive(doc_tool_path);
-			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error: Can't create GDScript docs directory: " + doc_tool_path + ": " + itos(err));
+			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error: Can't create FoundryScript docs directory: " + doc_tool_path + ": " + itos(err));
 
 			HashMap<String, String> doc_data_classes;
 			err = docs.save_classes(doc_tool_path, doc_data_classes, false);
-			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error saving GDScript docs:" + itos(err));
+			ERR_FAIL_COND_V_MSG(err != OK, EXIT_FAILURE, "Error saving FoundryScript docs:" + itos(err));
 
 			return EXIT_SUCCESS;
 		}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 		EditorNode *editor_node = nullptr;
 		if (editor) {
@@ -4918,7 +4918,7 @@ int Main::start() {
 		movie_writer->begin(movie_size, fixed_fps, Engine::get_singleton()->get_write_movie_path());
 	}
 
-	GDExtensionManager::get_singleton()->startup();
+	FoundryExtensionManager::get_singleton()->startup();
 
 #ifdef MACOS_ENABLED
 	// TODO: Used to fix full-screen splash drawing on macOS, processing events before main loop is fully initialized cause issues on Wayland, and has no effect on other platforms.
@@ -5171,8 +5171,8 @@ bool Main::iteration() {
 	process_max = MAX(process_ticks, process_max);
 	uint64_t frame_time = OS::get_singleton()->get_ticks_usec() - ticks;
 
-	GodotProfileZoneGrouped(_profile_zone, "GDExtensionManager::frame");
-	GDExtensionManager::get_singleton()->frame();
+	GodotProfileZoneGrouped(_profile_zone, "FoundryExtensionManager::frame");
+	FoundryExtensionManager::get_singleton()->frame();
 
 	GodotProfileZoneGrouped(_profile_zone, "ScriptServer::frame");
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
@@ -5300,7 +5300,7 @@ void Main::cleanup(bool p_force) {
 	}
 #endif
 
-	GDExtensionManager::get_singleton()->shutdown();
+	FoundryExtensionManager::get_singleton()->shutdown();
 
 	for (int i = 0; i < TextServerManager::get_singleton()->get_interface_count(); i++) {
 		TextServerManager::get_singleton()->get_interface(i)->cleanup();
@@ -5353,7 +5353,7 @@ void Main::cleanup(bool p_force) {
 #endif // XR_DISABLED
 
 #ifdef TOOLS_ENABLED
-	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_EDITOR);
+	FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_EDITOR);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_EDITOR);
 	unregister_editor_types();
 
@@ -5361,7 +5361,7 @@ void Main::cleanup(bool p_force) {
 
 	ImageLoader::cleanup();
 
-	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SCENE);
+	FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SCENE);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SCENE);
 
 	unregister_platform_apis();
@@ -5381,7 +5381,7 @@ void Main::cleanup(bool p_force) {
 #endif // NAVIGATION_3D_DISABLED
 	finalize_physics();
 
-	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SERVERS);
+	FoundryExtensionManager::get_singleton()->deinitialize_extensions(FoundryExtension::INITIALIZATION_LEVEL_SERVERS);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SERVERS);
 	unregister_server_types();
 

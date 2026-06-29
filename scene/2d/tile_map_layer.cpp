@@ -1728,8 +1728,8 @@ void TileMapLayer::_build_runtime_update_tile_data(bool p_force_cleanup) {
 	// Check if we should cleanup everything.
 	bool forced_cleanup = p_force_cleanup || !enabled || tile_set.is_null() || !is_visible_in_tree();
 	if (!forced_cleanup) {
-		bool valid_runtime_update = GDVIRTUAL_IS_OVERRIDDEN(_use_tile_data_runtime_update) && GDVIRTUAL_IS_OVERRIDDEN(_tile_data_runtime_update);
-		bool valid_runtime_update_for_tilemap = tile_map_node && tile_map_node->GDVIRTUAL_IS_OVERRIDDEN(_use_tile_data_runtime_update) && tile_map_node->GDVIRTUAL_IS_OVERRIDDEN(_tile_data_runtime_update); // For keeping compatibility.
+		bool valid_runtime_update = FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_use_tile_data_runtime_update) && FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_tile_data_runtime_update);
+		bool valid_runtime_update_for_tilemap = tile_map_node && tile_map_node->FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_use_tile_data_runtime_update) && tile_map_node->FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_tile_data_runtime_update); // For keeping compatibility.
 		if (valid_runtime_update || valid_runtime_update_for_tilemap) {
 			bool use_tilemap_for_runtime = valid_runtime_update_for_tilemap && !valid_runtime_update;
 			if (_runtime_update_tile_data_was_cleaned_up || dirty.flags[DIRTY_FLAGS_TILE_SET]) {
@@ -1768,7 +1768,7 @@ void TileMapLayer::_build_runtime_update_tile_data_for_cell(CellData &r_cell_dat
 
 				if (p_use_tilemap_for_runtime) {
 					// Compatibility with TileMap.
-					if (tile_map_node->GDVIRTUAL_CALL(_use_tile_data_runtime_update, layer_index_in_tile_map_node, r_cell_data.coords, ret) && ret) {
+					if (tile_map_node->FOUNDRY_VIRTUAL_CALL(_use_tile_data_runtime_update, layer_index_in_tile_map_node, r_cell_data.coords, ret) && ret) {
 						TileData *tile_data = atlas_source->get_tile_data(c.get_atlas_coords(), c.alternative_tile);
 
 						// Create the runtime TileData.
@@ -1776,14 +1776,14 @@ void TileMapLayer::_build_runtime_update_tile_data_for_cell(CellData &r_cell_dat
 						tile_data_runtime_use->set_allow_transform(true);
 						r_cell_data.runtime_tile_data_cache = tile_data_runtime_use;
 
-						tile_map_node->GDVIRTUAL_CALL(_tile_data_runtime_update, layer_index_in_tile_map_node, r_cell_data.coords, tile_data_runtime_use);
+						tile_map_node->FOUNDRY_VIRTUAL_CALL(_tile_data_runtime_update, layer_index_in_tile_map_node, r_cell_data.coords, tile_data_runtime_use);
 
 						if (p_auto_add_to_dirty_list && !r_cell_data.dirty_list_element.in_list()) {
 							dirty.cell_list.add(&r_cell_data.dirty_list_element);
 						}
 					}
 				} else {
-					if (GDVIRTUAL_CALL(_use_tile_data_runtime_update, r_cell_data.coords, ret) && ret) {
+					if (FOUNDRY_VIRTUAL_CALL(_use_tile_data_runtime_update, r_cell_data.coords, ret) && ret) {
 						TileData *tile_data = atlas_source->get_tile_data(c.get_atlas_coords(), c.alternative_tile);
 
 						// Create the runtime TileData.
@@ -1791,7 +1791,7 @@ void TileMapLayer::_build_runtime_update_tile_data_for_cell(CellData &r_cell_dat
 						tile_data_runtime_use->set_allow_transform(true);
 						r_cell_data.runtime_tile_data_cache = tile_data_runtime_use;
 
-						GDVIRTUAL_CALL(_tile_data_runtime_update, r_cell_data.coords, tile_data_runtime_use);
+						FOUNDRY_VIRTUAL_CALL(_tile_data_runtime_update, r_cell_data.coords, tile_data_runtime_use);
 
 						if (p_auto_add_to_dirty_list && !r_cell_data.dirty_list_element.in_list()) {
 							dirty.cell_list.add(&r_cell_data.dirty_list_element);
@@ -1826,7 +1826,7 @@ void TileMapLayer::_clear_runtime_update_tile_data_for_cell(CellData &r_cell_dat
 }
 
 void TileMapLayer::_update_cells_callback(bool p_force_cleanup) {
-	if (!GDVIRTUAL_IS_OVERRIDDEN(_update_cells)) {
+	if (!FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_update_cells)) {
 		return;
 	}
 
@@ -1840,7 +1840,7 @@ void TileMapLayer::_update_cells_callback(bool p_force_cleanup) {
 		dirty_cell_positions.push_back(cell_data.coords);
 	}
 
-	GDVIRTUAL_CALL(_update_cells, dirty_cell_positions, forced_cleanup);
+	FOUNDRY_VIRTUAL_CALL(_update_cells, dirty_cell_positions, forced_cleanup);
 }
 
 TileSet::TerrainsPattern TileMapLayer::_get_best_terrain_pattern_for_constraints(int p_terrain_set, const Vector2i &p_position, const RBSet<TerrainConstraint> &p_constraints, TileSet::TerrainsPattern p_current_pattern) const {
@@ -2260,9 +2260,9 @@ void TileMapLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_navigation_visibility_mode"), &TileMapLayer::get_navigation_visibility_mode);
 #endif // NAVIGATION_2D_DISABLED
 
-	GDVIRTUAL_BIND(_use_tile_data_runtime_update, "coords");
-	GDVIRTUAL_BIND(_tile_data_runtime_update, "coords", "tile_data");
-	GDVIRTUAL_BIND(_update_cells, "coords", "forced_cleanup");
+	FOUNDRY_VIRTUAL_BIND(_use_tile_data_runtime_update, "coords");
+	FOUNDRY_VIRTUAL_BIND(_tile_data_runtime_update, "coords", "tile_data");
+	FOUNDRY_VIRTUAL_BIND(_update_cells, "coords", "forced_cleanup");
 
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_BYTE_ARRAY, "tile_map_data", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR), "set_tile_map_data_from_array", "get_tile_map_data_as_array");
 

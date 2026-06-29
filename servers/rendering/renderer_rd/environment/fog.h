@@ -296,7 +296,7 @@ public:
 
 	/* Volumetric FOG */
 	class VolumetricFog : public RenderBufferCustomDataRD {
-		GDCLASS(VolumetricFog, RenderBufferCustomDataRD)
+		FOUNDRY_CLASS(VolumetricFog, RenderBufferCustomDataRD)
 
 	public:
 		enum {

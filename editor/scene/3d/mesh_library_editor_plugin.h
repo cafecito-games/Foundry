@@ -39,7 +39,7 @@ class MenuButton;
 class MeshInstance3D;
 
 class MeshLibraryEditor : public Control {
-	GDCLASS(MeshLibraryEditor, Control);
+	FOUNDRY_CLASS(MeshLibraryEditor, Control);
 
 	Ref<MeshLibrary> mesh_library;
 
@@ -77,7 +77,7 @@ public:
 };
 
 class MeshLibraryEditorPlugin : public EditorPlugin {
-	GDCLASS(MeshLibraryEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(MeshLibraryEditorPlugin, EditorPlugin);
 
 	MeshLibraryEditor *mesh_library_editor = nullptr;
 

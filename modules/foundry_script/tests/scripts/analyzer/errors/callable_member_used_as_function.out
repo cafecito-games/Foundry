@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Name "callback" is a Callable. You can call it with "callback.call()" instead.

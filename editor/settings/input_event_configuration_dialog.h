@@ -40,7 +40,7 @@ class CheckBox;
 // Confirmation Dialog used when configuring an input event.
 // Separate from ActionMapEditor for code cleanliness and separation of responsibilities.
 class InputEventConfigurationDialog : public ConfirmationDialog {
-	GDCLASS(InputEventConfigurationDialog, ConfirmationDialog)
+	FOUNDRY_CLASS(InputEventConfigurationDialog, ConfirmationDialog)
 private:
 	struct IconCache {
 		Ref<Texture2D> keyboard;

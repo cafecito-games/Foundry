@@ -290,17 +290,17 @@ void CollisionObject3D::_apply_enabled() {
 }
 
 void CollisionObject3D::_input_event_call(Camera3D *p_camera, const Ref<InputEvent> &p_input_event, const Vector3 &p_pos, const Vector3 &p_normal, int p_shape) {
-	GDVIRTUAL_CALL(_input_event, p_camera, p_input_event, p_pos, p_normal, p_shape);
+	FOUNDRY_VIRTUAL_CALL(_input_event, p_camera, p_input_event, p_pos, p_normal, p_shape);
 	emit_signal(SceneStringName(input_event), p_camera, p_input_event, p_pos, p_normal, p_shape);
 }
 
 void CollisionObject3D::_mouse_enter() {
-	GDVIRTUAL_CALL(_mouse_enter);
+	FOUNDRY_VIRTUAL_CALL(_mouse_enter);
 	emit_signal(SceneStringName(mouse_entered));
 }
 
 void CollisionObject3D::_mouse_exit() {
-	GDVIRTUAL_CALL(_mouse_exit);
+	FOUNDRY_VIRTUAL_CALL(_mouse_exit);
 	emit_signal(SceneStringName(mouse_exited));
 }
 
@@ -492,9 +492,9 @@ void CollisionObject3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("shape_owner_clear_shapes", "owner_id"), &CollisionObject3D::shape_owner_clear_shapes);
 	ClassDB::bind_method(D_METHOD("shape_find_owner", "shape_index"), &CollisionObject3D::shape_find_owner);
 
-	GDVIRTUAL_BIND(_input_event, "camera", "event", "event_position", "normal", "shape_idx");
-	GDVIRTUAL_BIND(_mouse_enter);
-	GDVIRTUAL_BIND(_mouse_exit);
+	FOUNDRY_VIRTUAL_BIND(_input_event, "camera", "event", "event_position", "normal", "shape_idx");
+	FOUNDRY_VIRTUAL_BIND(_mouse_enter);
+	FOUNDRY_VIRTUAL_BIND(_mouse_exit);
 
 	ADD_SIGNAL(MethodInfo("input_event", PropertyInfo(Variant::OBJECT, "camera", PROPERTY_HINT_RESOURCE_TYPE, "Node"), PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_RESOURCE_TYPE, "InputEvent"), PropertyInfo(Variant::VECTOR3, "event_position"), PropertyInfo(Variant::VECTOR3, "normal"), PropertyInfo(Variant::INT, "shape_idx")));
 	ADD_SIGNAL(MethodInfo("mouse_entered"));

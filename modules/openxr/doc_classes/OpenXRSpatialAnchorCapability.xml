@@ -38,7 +38,7 @@
 			<param index="0" name="persistence_context" type="RID" />
 			<description>
 				Returns the internal handle for this persistence context.
-				[b]Note:[/b] For GDExtension implementations.
+				[b]Note:[/b] For FoundryExtension implementations.
 			</description>
 		</method>
 		<method name="is_persistence_scope_supported">

@@ -40,7 +40,7 @@ class ResourcePreloader;
 class Tree;
 
 class ResourcePreloaderEditor : public EditorDock {
-	GDCLASS(ResourcePreloaderEditor, EditorDock);
+	FOUNDRY_CLASS(ResourcePreloaderEditor, EditorDock);
 
 	enum {
 		BUTTON_OPEN_SCENE,
@@ -86,7 +86,7 @@ public:
 };
 
 class ResourcePreloaderEditorPlugin : public EditorPlugin {
-	GDCLASS(ResourcePreloaderEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ResourcePreloaderEditorPlugin, EditorPlugin);
 
 	ResourcePreloaderEditor *preloader_editor = nullptr;
 

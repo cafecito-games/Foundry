@@ -43,23 +43,23 @@
 #define __REQUIRED_RPCNDR_H_VERSION__ 475
 #endif // !defined(_MSC_VER) && !defined(__REQUIRED_RPCNDR_H_VERSION__)
 
-GODOT_GCC_WARNING_PUSH
-GODOT_GCC_WARNING_IGNORE("-Wimplicit-fallthrough")
-GODOT_GCC_WARNING_IGNORE("-Wmissing-field-initializers")
-GODOT_GCC_WARNING_IGNORE("-Wnon-virtual-dtor")
-GODOT_GCC_WARNING_IGNORE("-Wshadow")
-GODOT_GCC_WARNING_IGNORE("-Wswitch")
-GODOT_CLANG_WARNING_PUSH
-GODOT_CLANG_WARNING_IGNORE("-Wimplicit-fallthrough")
-GODOT_CLANG_WARNING_IGNORE("-Wmissing-field-initializers")
-GODOT_CLANG_WARNING_IGNORE("-Wnon-virtual-dtor")
-GODOT_CLANG_WARNING_IGNORE("-Wstring-plus-int")
-GODOT_CLANG_WARNING_IGNORE("-Wswitch")
+FOUNDRY_GCC_WARNING_PUSH
+FOUNDRY_GCC_WARNING_IGNORE("-Wimplicit-fallthrough")
+FOUNDRY_GCC_WARNING_IGNORE("-Wmissing-field-initializers")
+FOUNDRY_GCC_WARNING_IGNORE("-Wnon-virtual-dtor")
+FOUNDRY_GCC_WARNING_IGNORE("-Wshadow")
+FOUNDRY_GCC_WARNING_IGNORE("-Wswitch")
+FOUNDRY_CLANG_WARNING_PUSH
+FOUNDRY_CLANG_WARNING_IGNORE("-Wimplicit-fallthrough")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wmissing-field-initializers")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wnon-virtual-dtor")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wstring-plus-int")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wswitch")
 
 #include <thirdparty/directx_headers/include/directx/d3dx12.h>
 
-GODOT_GCC_WARNING_POP
-GODOT_CLANG_WARNING_POP
+FOUNDRY_GCC_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
 
 #include <wrl/client.h>
 

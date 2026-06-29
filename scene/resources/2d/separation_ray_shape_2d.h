@@ -33,7 +33,7 @@
 #include "scene/resources/2d/shape_2d.h"
 
 class SeparationRayShape2D : public Shape2D {
-	GDCLASS(SeparationRayShape2D, Shape2D);
+	FOUNDRY_CLASS(SeparationRayShape2D, Shape2D);
 
 	real_t length = 20.0;
 	bool slide_on_slope = false;

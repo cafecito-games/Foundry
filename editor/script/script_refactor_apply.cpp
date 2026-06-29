@@ -35,7 +35,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
-#include "modules/gdscript/editor/gdscript_refactoring_edits.h"
+#include "modules/foundry_script/editor/fs_refactoring_edits.h"
 #include "scene/gui/code_edit.h"
 
 namespace {
@@ -88,7 +88,7 @@ bool ScriptRefactorApply::build_plan(
 		}
 
 		String after_source;
-		if (!GDScriptRefactorEdits::apply(source.source, file_edit.edits, after_source)) {
+		if (!FSRefactorEdits::apply(source.source, file_edit.edits, after_source)) {
 			r_error_message = vformat(TTR("Cannot apply refactor because '%s' changed or contains invalid edit ranges."), file_edit.path);
 			r_plan.files.clear();
 			return false;

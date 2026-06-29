@@ -39,7 +39,7 @@
 #include <ufbx.h>
 
 class FBXState : public GLTFState {
-	GDCLASS(FBXState, GLTFState);
+	FOUNDRY_CLASS(FBXState, GLTFState);
 	friend class FBXDocument;
 	friend class SkinTool;
 	friend class GLTFSkin;

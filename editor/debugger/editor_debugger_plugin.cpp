@@ -158,7 +158,7 @@ void EditorDebuggerPlugin::create_session(ScriptEditorDebugger *p_debugger) {
 }
 
 void EditorDebuggerPlugin::setup_session(int p_idx) {
-	GDVIRTUAL_CALL(_setup_session, p_idx);
+	FOUNDRY_VIRTUAL_CALL(_setup_session, p_idx);
 }
 
 Ref<EditorDebuggerSession> EditorDebuggerPlugin::get_session(int p_idx) {
@@ -176,7 +176,7 @@ Array EditorDebuggerPlugin::get_sessions() {
 
 bool EditorDebuggerPlugin::has_capture(const String &p_message) const {
 	bool ret = false;
-	if (GDVIRTUAL_CALL(_has_capture, p_message, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_has_capture, p_message, ret)) {
 		return ret;
 	}
 	return false;
@@ -184,31 +184,31 @@ bool EditorDebuggerPlugin::has_capture(const String &p_message) const {
 
 bool EditorDebuggerPlugin::capture(const String &p_message, const Array &p_data, int p_session_id) {
 	bool ret = false;
-	if (GDVIRTUAL_CALL(_capture, p_message, p_data, p_session_id, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_capture, p_message, p_data, p_session_id, ret)) {
 		return ret;
 	}
 	return false;
 }
 
 void EditorDebuggerPlugin::goto_script_line(const Ref<Script> &p_script, int p_line) {
-	GDVIRTUAL_CALL(_goto_script_line, p_script, p_line);
+	FOUNDRY_VIRTUAL_CALL(_goto_script_line, p_script, p_line);
 }
 
 void EditorDebuggerPlugin::breakpoints_cleared_in_tree() {
-	GDVIRTUAL_CALL(_breakpoints_cleared_in_tree);
+	FOUNDRY_VIRTUAL_CALL(_breakpoints_cleared_in_tree);
 }
 
 void EditorDebuggerPlugin::breakpoint_set_in_tree(const Ref<Script> &p_script, int p_line, bool p_enabled) {
-	GDVIRTUAL_CALL(_breakpoint_set_in_tree, p_script, p_line, p_enabled);
+	FOUNDRY_VIRTUAL_CALL(_breakpoint_set_in_tree, p_script, p_line, p_enabled);
 }
 
 void EditorDebuggerPlugin::_bind_methods() {
-	GDVIRTUAL_BIND(_setup_session, "session_id");
-	GDVIRTUAL_BIND(_has_capture, "capture");
-	GDVIRTUAL_BIND(_capture, "message", "data", "session_id");
-	GDVIRTUAL_BIND(_goto_script_line, "script", "line");
-	GDVIRTUAL_BIND(_breakpoints_cleared_in_tree);
-	GDVIRTUAL_BIND(_breakpoint_set_in_tree, "script", "line", "enabled");
+	FOUNDRY_VIRTUAL_BIND(_setup_session, "session_id");
+	FOUNDRY_VIRTUAL_BIND(_has_capture, "capture");
+	FOUNDRY_VIRTUAL_BIND(_capture, "message", "data", "session_id");
+	FOUNDRY_VIRTUAL_BIND(_goto_script_line, "script", "line");
+	FOUNDRY_VIRTUAL_BIND(_breakpoints_cleared_in_tree);
+	FOUNDRY_VIRTUAL_BIND(_breakpoint_set_in_tree, "script", "line", "enabled");
 	ClassDB::bind_method(D_METHOD("get_session", "id"), &EditorDebuggerPlugin::get_session);
 	ClassDB::bind_method(D_METHOD("get_sessions"), &EditorDebuggerPlugin::get_sessions);
 }

@@ -56,7 +56,7 @@ class Tween;
 class Viewport;
 
 class SceneTreeTimer : public RefCounted {
-	GDCLASS(SceneTreeTimer, RefCounted);
+	FOUNDRY_CLASS(SceneTreeTimer, RefCounted);
 
 	double time_left = 0.0;
 	bool process_always = true;
@@ -85,7 +85,7 @@ public:
 class SceneTree : public MainLoop {
 	_THREAD_SAFE_CLASS_
 
-	GDCLASS(SceneTree, MainLoop);
+	FOUNDRY_CLASS(SceneTree, MainLoop);
 
 public:
 	typedef void (*IdleCallback)();

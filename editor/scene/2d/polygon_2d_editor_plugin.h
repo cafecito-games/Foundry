@@ -49,7 +49,7 @@ class ViewPanner;
 class VScrollBar;
 
 class Polygon2DEditor : public AbstractPolygon2DEditor {
-	GDCLASS(Polygon2DEditor, AbstractPolygon2DEditor);
+	FOUNDRY_CLASS(Polygon2DEditor, AbstractPolygon2DEditor);
 
 	enum {
 		MENU_POLYGON_TO_UV,
@@ -191,7 +191,7 @@ public:
 };
 
 class Polygon2DEditorPlugin : public AbstractPolygon2DEditorPlugin {
-	GDCLASS(Polygon2DEditorPlugin, AbstractPolygon2DEditorPlugin);
+	FOUNDRY_CLASS(Polygon2DEditorPlugin, AbstractPolygon2DEditorPlugin);
 
 public:
 	Polygon2DEditorPlugin();

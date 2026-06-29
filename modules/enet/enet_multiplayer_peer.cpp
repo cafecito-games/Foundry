@@ -438,7 +438,7 @@ int ENetMultiplayerPeer::get_unique_id() const {
 }
 
 void ENetMultiplayerPeer::set_refuse_new_connections(bool p_enabled) {
-#ifdef GODOT_ENET
+#ifdef FOUNDRY_ENET
 	if (_is_active()) {
 		for (KeyValue<int, Ref<ENetConnection>> &E : hosts) {
 			E.value->refuse_new_connections(p_enabled);

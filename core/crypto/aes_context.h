@@ -34,7 +34,7 @@
 #include "core/object/ref_counted.h"
 
 class AESContext : public RefCounted {
-	GDCLASS(AESContext, RefCounted);
+	FOUNDRY_CLASS(AESContext, RefCounted);
 
 public:
 	enum Mode : int32_t {

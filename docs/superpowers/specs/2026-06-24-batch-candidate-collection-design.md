@@ -1,6 +1,6 @@
 # Batch annotation-candidate collection
 
-**Issue:** cafecito-games/godot#33 (parent epic #29 — GDScript Migration Wizard)
+**Issue:** cafecito-games/godot#33 (parent epic #29 — Foundry Script Migration Wizard)
 **Date:** 2026-06-24
 
 ## Goal
@@ -50,7 +50,7 @@ Out of scope:
 
 ## Public API
 
-New `modules/gdscript/editor/gdscript_batch_candidates.h`:
+New `modules/foundry_script/editor/gdscript_batch_candidates.h`:
 
 ```cpp
 struct BatchFileCandidates {
@@ -90,7 +90,7 @@ public:
 
 ## Tests
 
-`modules/gdscript/tests/test_batch_candidates.h` covers: multi-file collection
+`modules/foundry_script/tests/test_batch_candidates.h` covers: multi-file collection
 with enabled + disabled candidates and correct totals; duplicate-path collapse;
 a non-fatal unreadable file alongside a good one; unsupported-kind rejection; and
 parity between a single file's batch entry and `find_candidates` (same count,

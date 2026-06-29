@@ -38,7 +38,7 @@
 namespace TestCallable {
 
 class TestClass : public Object {
-	GDCLASS(TestClass, Object);
+	FOUNDRY_CLASS(TestClass, Object);
 
 protected:
 	static void _bind_methods() {
@@ -136,7 +136,7 @@ TEST_CASE("[Callable] Argument count") {
 }
 
 class TestBoundUnboundArgumentCount : public Object {
-	GDCLASS(TestBoundUnboundArgumentCount, Object);
+	FOUNDRY_CLASS(TestBoundUnboundArgumentCount, Object);
 
 protected:
 	static void _bind_methods() {

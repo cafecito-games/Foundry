@@ -33,7 +33,7 @@
 #include "core/io/resource_importer.h"
 
 class ResourceImporterShaderFile : public ResourceImporter {
-	GDCLASS(ResourceImporterShaderFile, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterShaderFile, ResourceImporter);
 
 public:
 	virtual String get_importer_name() const override;

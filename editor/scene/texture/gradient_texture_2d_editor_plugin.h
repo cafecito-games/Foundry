@@ -38,7 +38,7 @@ class EditorSpinSlider;
 class GradientTexture2D;
 
 class GradientTexture2DEdit : public Control {
-	GDCLASS(GradientTexture2DEdit, Control);
+	FOUNDRY_CLASS(GradientTexture2DEdit, Control);
 
 	enum Handle {
 		HANDLE_NONE,
@@ -80,7 +80,7 @@ public:
 };
 
 class GradientTexture2DEditor : public VBoxContainer {
-	GDCLASS(GradientTexture2DEditor, VBoxContainer);
+	FOUNDRY_CLASS(GradientTexture2DEditor, VBoxContainer);
 
 	Ref<GradientTexture2D> texture;
 
@@ -104,7 +104,7 @@ public:
 };
 
 class EditorInspectorPluginGradientTexture2D : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginGradientTexture2D, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginGradientTexture2D, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -112,7 +112,7 @@ public:
 };
 
 class GradientTexture2DEditorPlugin : public EditorPlugin {
-	GDCLASS(GradientTexture2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(GradientTexture2DEditorPlugin, EditorPlugin);
 
 public:
 	GradientTexture2DEditorPlugin();

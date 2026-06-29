@@ -35,7 +35,7 @@
 #include "core/io/resource_importer.h"
 
 class ResourceImporterOggVorbis : public ResourceImporter {
-	GDCLASS(ResourceImporterOggVorbis, ResourceImporter);
+	FOUNDRY_CLASS(ResourceImporterOggVorbis, ResourceImporter);
 
 protected:
 	static void _bind_methods();

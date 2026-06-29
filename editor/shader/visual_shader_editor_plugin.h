@@ -53,7 +53,7 @@ class VisualShaderEditor;
 class MaterialEditor;
 
 class VisualShaderNodePlugin : public RefCounted {
-	GDCLASS(VisualShaderNodePlugin, RefCounted);
+	FOUNDRY_CLASS(VisualShaderNodePlugin, RefCounted);
 
 protected:
 	VisualShaderEditor *vseditor = nullptr;
@@ -61,7 +61,7 @@ protected:
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL2RC(Object *, _create_editor, Ref<Resource>, Ref<VisualShaderNode>)
+	FOUNDRY_VIRTUAL2RC(Object *, _create_editor, Ref<Resource>, Ref<VisualShaderNode>)
 
 public:
 	void set_editor(VisualShaderEditor *p_editor);
@@ -69,7 +69,7 @@ public:
 };
 
 class VSGraphNode : public GraphNode {
-	GDCLASS(VSGraphNode, GraphNode);
+	FOUNDRY_CLASS(VSGraphNode, GraphNode);
 
 protected:
 	void _draw_port(int p_slot_index, Point2i p_pos, bool p_left, const Color &p_color, const Color &p_rim_color);
@@ -77,7 +77,7 @@ protected:
 };
 
 class VSRerouteNode : public VSGraphNode {
-	GDCLASS(VSRerouteNode, GraphNode);
+	FOUNDRY_CLASS(VSRerouteNode, GraphNode);
 
 	const float FADE_ANIMATION_LENGTH_SEC = 0.3;
 
@@ -97,7 +97,7 @@ public:
 };
 
 class VisualShaderGraphPlugin : public RefCounted {
-	GDCLASS(VisualShaderGraphPlugin, RefCounted);
+	FOUNDRY_CLASS(VisualShaderGraphPlugin, RefCounted);
 
 private:
 	VisualShaderEditor *editor = nullptr;
@@ -181,7 +181,7 @@ public:
 };
 
 class VisualShaderEditedProperty : public RefCounted {
-	GDCLASS(VisualShaderEditedProperty, RefCounted);
+	FOUNDRY_CLASS(VisualShaderEditedProperty, RefCounted);
 
 private:
 	Variant edited_property;
@@ -195,7 +195,7 @@ public:
 };
 
 class VisualShaderEditor : public ShaderEditor {
-	GDCLASS(VisualShaderEditor, ShaderEditor);
+	FOUNDRY_CLASS(VisualShaderEditor, ShaderEditor);
 	friend class VisualShaderGraphPlugin;
 
 	Ref<ConfigFile> vs_editor_cache; // Keeps the graph offsets and zoom levels for each VisualShader that has been edited.
@@ -687,14 +687,14 @@ public:
 };
 
 class VisualShaderNodePluginDefault : public VisualShaderNodePlugin {
-	GDCLASS(VisualShaderNodePluginDefault, VisualShaderNodePlugin);
+	FOUNDRY_CLASS(VisualShaderNodePluginDefault, VisualShaderNodePlugin);
 
 public:
 	virtual Control *create_editor(const Ref<Resource> &p_parent_resource, const Ref<VisualShaderNode> &p_node) override;
 };
 
 class EditorPropertyVisualShaderMode : public EditorProperty {
-	GDCLASS(EditorPropertyVisualShaderMode, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyVisualShaderMode, EditorProperty);
 	OptionButton *options = nullptr;
 
 	void _option_selected(int p_which);
@@ -707,7 +707,7 @@ public:
 };
 
 class EditorInspectorVisualShaderModePlugin : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorVisualShaderModePlugin, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorVisualShaderModePlugin, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -715,7 +715,7 @@ public:
 };
 
 class VisualShaderNodePortPreview : public Control {
-	GDCLASS(VisualShaderNodePortPreview, Control);
+	FOUNDRY_CLASS(VisualShaderNodePortPreview, Control);
 	TextureRect *checkerboard = nullptr;
 	Ref<VisualShader> shader;
 	Ref<ShaderMaterial> preview_mat;
@@ -733,7 +733,7 @@ public:
 };
 
 class VisualShaderConversionPlugin : public EditorResourceConversionPlugin {
-	GDCLASS(VisualShaderConversionPlugin, EditorResourceConversionPlugin);
+	FOUNDRY_CLASS(VisualShaderConversionPlugin, EditorResourceConversionPlugin);
 
 public:
 	virtual String converts_to() const override;

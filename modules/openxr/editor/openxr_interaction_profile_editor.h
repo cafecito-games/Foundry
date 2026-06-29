@@ -40,7 +40,7 @@
 #include "scene/gui/button.h"
 
 class OpenXRInteractionProfileEditorBase : public HBoxContainer {
-	GDCLASS(OpenXRInteractionProfileEditorBase, HBoxContainer);
+	FOUNDRY_CLASS(OpenXRInteractionProfileEditorBase, HBoxContainer);
 
 private:
 	OpenXRBindingModifiersDialog *binding_modifiers_dialog = nullptr;
@@ -84,7 +84,7 @@ public:
 };
 
 class OpenXRInteractionProfileEditor : public OpenXRInteractionProfileEditorBase {
-	GDCLASS(OpenXRInteractionProfileEditor, OpenXRInteractionProfileEditorBase);
+	FOUNDRY_CLASS(OpenXRInteractionProfileEditor, OpenXRInteractionProfileEditorBase);
 
 private:
 	String selecting_for_io_path;

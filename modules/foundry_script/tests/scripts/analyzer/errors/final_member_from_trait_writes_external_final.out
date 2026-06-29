@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Final variable "value" can only be assigned in its declaration or in "_init()".

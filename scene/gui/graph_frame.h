@@ -35,7 +35,7 @@
 class HBoxContainer;
 
 class GraphFrame : public GraphElement {
-	GDCLASS(GraphFrame, GraphElement);
+	FOUNDRY_CLASS(GraphFrame, GraphElement);
 
 	struct ThemeCache {
 		Ref<StyleBox> panel;

@@ -39,7 +39,7 @@ class ThemeContext;
 class Window;
 
 class ThemeOwner : public Object {
-	GDSOFTCLASS(ThemeOwner, Object);
+	FOUNDRY_SOFTCLASS(ThemeOwner, Object);
 
 	Node *holder = nullptr;
 

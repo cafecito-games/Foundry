@@ -31,9 +31,9 @@
 			<description>
 				Constructs a [Color] from the existing color, with [member a] set to the given [param alpha] value.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var red = Color(Color.RED, 0.2) # 20% opaque red.
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var red = new Color(Colors.Red, 0.2f); // 20% opaque red.
 				[/csharp]
@@ -70,9 +70,9 @@
 			<description>
 				Constructs a [Color] from RGB values, typically between 0.0 and 1.0. [member a] is set to 1.0.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(0.2, 1.0, 0.7) # Similar to `Color.from_rgba8(51, 255, 178, 255)`
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(0.2f, 1.0f, 0.7f); // Similar to `Color.Color8(51, 255, 178, 255)`
 				[/csharp]
@@ -88,9 +88,9 @@
 			<description>
 				Constructs a [Color] from RGBA values, typically between 0.0 and 1.0.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(0.2, 1.0, 0.7, 0.8) # Similar to `Color.from_rgba8(51, 255, 178, 204)`
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(0.2f, 1.0f, 0.7f, 0.8f); // Similar to `Color.Color8(51, 255, 178, 255, 204)`
 				[/csharp]
@@ -105,11 +105,11 @@
 			<description>
 				Returns a new color resulting from overlaying this color over the given color. In a painting program, you can imagine it as the [param over] color painted over this color (including alpha).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var bg = Color(0.0, 1.0, 0.0, 0.5) # Green with alpha of 50%
 				var fg = Color(1.0, 0.0, 0.0, 0.5) # Red with alpha of 50%
 				var blended_color = bg.blend(fg) # Brown with alpha of 75%
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var bg = new Color(0.0f, 1.0f, 0.0f, 0.5f); // Green with alpha of 50%
 				var fg = new Color(1.0f, 0.0f, 0.0f, 0.5f); // Red with alpha of 50%
@@ -132,10 +132,10 @@
 			<description>
 				Returns a new color resulting from making this color darker by the specified [param amount] (ratio from 0.0 to 1.0). See also [method lightened].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var green = Color(0.0, 1.0, 0.0)
 				var darkgreen = green.darkened(0.2) # 20% darker than regular green
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var green = new Color(0.0f, 1.0f, 0.0f);
 				Color darkgreen = green.Darkened(0.2f); // 20% darker than regular green
@@ -152,9 +152,9 @@
 			<description>
 				Constructs a color from an [url=https://en.wikipedia.org/wiki/HSL_and_HSV]HSV profile[/url]. The hue ([param h]), saturation ([param s]), and value ([param v]) are typically between 0.0 and 1.0.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color.from_hsv(0.58, 0.5, 0.79, 0.8)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = Color.FromHsv(0.58f, 0.5f, 0.79f, 0.8f);
 				[/csharp]
@@ -170,9 +170,9 @@
 			<description>
 				Constructs a color from an [url=https://bottosson.github.io/posts/colorpicker/]OK HSL profile[/url]. The hue ([param h]), saturation ([param s]), and lightness ([param l]) are typically between 0.0 and 1.0.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color.from_ok_hsl(0.58, 0.5, 0.79, 0.8)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = Color.FromOkHsl(0.58f, 0.5f, 0.79f, 0.8f);
 				[/csharp]
@@ -223,13 +223,13 @@
 			<param index="0" name="hex" type="int" />
 			<description>
 				Returns the [Color] associated with the provided [param hex] integer in 32-bit RGBA format (8 bits per channel). This method is the inverse of [method to_rgba32].
-				In GDScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRGGBBAA"[/code]).
+				In FoundryScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRGGBBAA"[/code]).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var red = Color.hex(0xff0000ff)
 				var dark_cyan = Color.hex(0x008b8bff)
 				var my_color = Color.hex(0xbbefd2a4)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var red = new Color(0xff0000ff);
 				var dark_cyan = new Color(0x008b8bff);
@@ -244,7 +244,7 @@
 			<param index="0" name="hex" type="int" />
 			<description>
 				Returns the [Color] associated with the provided [param hex] integer in 64-bit RGBA format (16 bits per channel). This method is the inverse of [method to_rgba64].
-				In GDScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRRRGGGGBBBBAAAA"[/code]).
+				In FoundryScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRRRGGGGBBBBAAAA"[/code]).
 			</description>
 		</method>
 		<method name="html" qualifiers="static">
@@ -254,11 +254,11 @@
 				Returns a new color from [param rgba], an HTML hexadecimal color string. [param rgba] is not case-sensitive, and may be prefixed by a hash sign ([code]#[/code]).
 				[param rgba] must be a valid three-digit or six-digit hexadecimal color string, and may contain an alpha channel value. If [param rgba] does not contain an alpha channel value, an alpha channel value of 1.0 is applied. If [param rgba] is invalid, returns an empty color.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var blue = Color.html("#0000ff") # blue is Color(0.0, 0.0, 1.0, 1.0)
 				var green = Color.html("#0F0")   # green is Color(0.0, 1.0, 0.0, 1.0)
 				var col = Color.html("663399cc") # col is Color(0.4, 0.2, 0.6, 0.8)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var blue = Color.FromHtml("#0000ff"); // blue is Color(0.0, 0.0, 1.0, 1.0)
 				var green = Color.FromHtml("#0F0");   // green is Color(0.0, 1.0, 0.0, 1.0)
@@ -273,7 +273,7 @@
 			<description>
 				Returns [code]true[/code] if [param color] is a valid HTML hexadecimal color string. The string must be a hexadecimal value (case-insensitive) of either 3, 4, 6 or 8 digits, and may be prefixed by a hash sign ([code]#[/code]). This method is identical to [method String.is_valid_html_color].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				Color.html_is_valid("#55aaFF")   # Returns true
 				Color.html_is_valid("#55AAFF20") # Returns true
 				Color.html_is_valid("55AAFF")    # Returns true
@@ -281,7 +281,7 @@
 
 				Color.html_is_valid("#AABBC")    # Returns false
 				Color.html_is_valid("#55aaFF5")  # Returns false
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				Color.HtmlIsValid("#55AAFF");   // Returns true
 				Color.HtmlIsValid("#55AAFF20"); // Returns true
@@ -299,11 +299,11 @@
 			<description>
 				Returns the color with its [member r], [member g], and [member b] components inverted ([code](1 - r, 1 - g, 1 - b, a)[/code]).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var black = Color.WHITE.inverted()
 				var color = Color(0.3, 0.4, 0.9)
 				var inverted_color = color.inverted() # Equivalent to `Color(0.7, 0.6, 0.1)`
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var black = Colors.White.Inverted();
 				var color = new Color(0.3f, 0.4f, 0.9f);
@@ -326,14 +326,14 @@
 			<description>
 				Returns the linear interpolation between this color's components and [param to]'s components. The interpolation factor [param weight] should be between 0.0 and 1.0 (inclusive). See also [method @GlobalScope.lerp].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var red = Color(1.0, 0.0, 0.0)
 				var aqua = Color(0.0, 1.0, 0.8)
 
 				red.lerp(aqua, 0.2) # Returns Color(0.8, 0.2, 0.16)
 				red.lerp(aqua, 0.5) # Returns Color(0.5, 0.5, 0.4)
 				red.lerp(aqua, 1.0) # Returns Color(0.0, 1.0, 0.8)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var red = new Color(1.0f, 0.0f, 0.0f);
 				var aqua = new Color(0.0f, 1.0f, 0.8f);
@@ -351,10 +351,10 @@
 			<description>
 				Returns a new color resulting from making this color lighter by the specified [param amount], which should be a ratio from 0.0 to 1.0. See also [method darkened].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var green = Color(0.0, 1.0, 0.0)
 				var light_green = green.lightened(0.2) # 20% lighter than regular green
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var green = new Color(0.0f, 1.0f, 0.0f);
 				Color lightGreen = green.Lightened(0.2f); // 20% lighter than regular green
@@ -381,10 +381,10 @@
 			<description>
 				Returns the color converted to a 32-bit integer in ABGR format (each component is 8 bits). ABGR is the reversed version of the default RGBA format.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
 				print(color.to_abgr32()) # Prints 4281565439
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
 				GD.Print(color.ToAbgr32()); // Prints 4281565439
@@ -397,10 +397,10 @@
 			<description>
 				Returns the color converted to a 64-bit integer in ABGR format (each component is 16 bits). ABGR is the reversed version of the default RGBA format.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
 				print(color.to_abgr64()) # Prints -225178692812801
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
 				GD.Print(color.ToAbgr64()); // Prints -225178692812801
@@ -413,10 +413,10 @@
 			<description>
 				Returns the color converted to a 32-bit integer in ARGB format (each component is 8 bits). ARGB is more compatible with DirectX.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
 				print(color.to_argb32()) # Prints 4294934323
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
 				GD.Print(color.ToArgb32()); // Prints 4294934323
@@ -429,10 +429,10 @@
 			<description>
 				Returns the color converted to a 64-bit integer in ARGB format (each component is 16 bits). ARGB is more compatible with DirectX.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
 				print(color.to_argb64()) # Prints -2147470541
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
 				GD.Print(color.ToArgb64()); // Prints -2147470541
@@ -447,11 +447,11 @@
 				Returns the color converted to an HTML hexadecimal color [String] in RGBA format, without the hash ([code]#[/code]) prefix.
 				Setting [param with_alpha] to [code]false[/code], excludes alpha from the hexadecimal string, using RGB format instead of RGBA format.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var white = Color(1, 1, 1, 0.5)
 				var with_alpha = white.to_html() # Returns "ffffff7f"
 				var without_alpha = white.to_html(false) # Returns "ffffff"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var white = new Color(1, 1, 1, 0.5f);
 				string withAlpha = white.ToHtml(); // Returns "ffffff7f"
@@ -465,10 +465,10 @@
 			<description>
 				Returns the color converted to a 32-bit integer in RGBA format (each component is 8 bits). RGBA is Godot's default format. This method is the inverse of [method hex].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
 				print(color.to_rgba32()) # Prints 4286526463
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(1, 0.5f, 0.2f);
 				GD.Print(color.ToRgba32()); // Prints 4286526463
@@ -481,10 +481,10 @@
 			<description>
 				Returns the color converted to a 64-bit integer in RGBA format (each component is 16 bits). RGBA is Godot's default format. This method is the inverse of [method hex64].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
 				print(color.to_rgba64()) # Prints -140736629309441
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var color = new Color(1, 0.5f, 0.2f);
 				GD.Print(color.ToRgba64()); // Prints -140736629309441
@@ -561,7 +561,7 @@
 			Bisque color.
 		</constant>
 		<constant name="BLACK" value="Color(0, 0, 0, 1)">
-			Black color. In GDScript, this is the default value of any color.
+			Black color. In FoundryScript, this is the default value of any color.
 		</constant>
 		<constant name="BLANCHED_ALMOND" value="Color(1, 0.92156863, 0.8039216, 1)">
 			Blanched almond color.

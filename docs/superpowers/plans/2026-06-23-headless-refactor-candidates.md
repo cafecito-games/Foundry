@@ -12,7 +12,7 @@
 
 **Build/test commands (macOS, this repo):**
 - Build: `scons platform=macos target=editor dev_build=yes tests=yes`
-- Test: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript][Refactor]" --force-colors`
+- Test: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script][Refactor]" --force-colors`
 
 ---
 
@@ -21,7 +21,7 @@
 **Goal:** Collect all Add Type Annotation candidates in one traversal; make the caret-driven path a filter over that list. No observable behavior change.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
 
 **Acceptance Criteria:**
 - [ ] `TypeAnnotationCandidate` carries its caret-test span (`line`, `caret_span_start`, `caret_span_end`).
@@ -30,13 +30,13 @@
 - [ ] `find_type_annotation_candidate_in_tree(...)` selects the caret-matching candidate from the collected list (or the default disabled candidate), preserving prior behavior.
 - [ ] Existing refactor test suite passes unchanged.
 
-**Verify:** `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript][Refactor]" --force-colors` → all cases pass (same count as before).
+**Verify:** `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script][Refactor]" --force-colors` → all cases pass (same count as before).
 
 **Steps:**
 
 - [ ] **Step 1: Add span fields to the internal `TypeAnnotationCandidate` struct**
 
-In `modules/gdscript/editor/gdscript_refactoring.cpp` (currently lines 57–62), extend the struct:
+In `modules/foundry_script/editor/gdscript_refactoring.cpp` (currently lines 57–62), extend the struct:
 
 ```cpp
 struct TypeAnnotationCandidate {
@@ -231,13 +231,13 @@ Expected: clean build, no warnings about unused `find_type_annotation_in_class/_
 
 - [ ] **Step 7: Run the existing test suite to prove no behavior change**
 
-Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript][Refactor]" --force-colors`
+Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script][Refactor]" --force-colors`
 Expected: all existing refactor cases PASS (e.g. "Add type annotation inserts concrete inferred types", "Add type annotation preserves strict type spelling", etc.).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_refactoring.cpp
+git add modules/foundry_script/editor/gdscript_refactoring.cpp
 git commit -m "Unify Add Type Annotation walk for caret-independent collection"
 ```
 
@@ -248,10 +248,10 @@ git commit -m "Unify Add Type Annotation walk for caret-independent collection"
 **Goal:** Public `RefactorCandidate` / `RefactorCandidatesResult` types and `GDScriptRefactoring::find_candidates`, returning all Add Type Annotation candidates for a file with no `RefactorLocation`, covered by new tests and fixtures.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_refactoring.h`
-- Modify: `modules/gdscript/editor/gdscript_refactoring.cpp`
-- Modify: `modules/gdscript/tests/test_refactor.h`
-- Create: `modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.h`
+- Modify: `modules/foundry_script/editor/gdscript_refactoring.cpp`
+- Modify: `modules/foundry_script/tests/test_refactor.h`
+- Create: `modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs`
 
 **Acceptance Criteria:**
 - [ ] `RefactorCandidate` and `RefactorCandidatesResult` declared in the header.
@@ -260,13 +260,13 @@ git commit -m "Unify Add Type Annotation walk for caret-independent collection"
 - [ ] Unparsable files return `ok = false`, `error_message = "Cannot analyze this script."`.
 - [ ] New tests assert the full candidate set, a disabled candidate, an unsupported kind, and edit-parity with the caret path — constructing no `RefactorLocation` for the collection assertions.
 
-**Verify:** `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript][Refactor]" --force-colors` → new cases pass.
+**Verify:** `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script][Refactor]" --force-colors` → new cases pass.
 
 **Steps:**
 
 - [ ] **Step 1: Write the failing test (TDD red) + fixture**
 
-Create `modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd`:
+Create `modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs`:
 
 ```gdscript
 var member_score = 1
@@ -278,11 +278,11 @@ func make_total(amount = 3):
 		var nested_flag = false
 ```
 
-Add these cases to `modules/gdscript/tests/test_refactor.h` inside the `TEST_SUITE("[Modules][GDScript][Refactor]")` block (after the existing type-annotation cases, e.g. following line 401):
+Add these cases to `modules/foundry_script/tests/test_refactor.h` inside the `TEST_SUITE("[Modules][Foundry Script][Refactor]")` block (after the existing type-annotation cases, e.g. following line 401):
 
 ```cpp
 	TEST_CASE("find_candidates collects all type annotations without a caret") {
-		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd");
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs");
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
@@ -317,14 +317,14 @@ Add these cases to `modules/gdscript/tests/test_refactor.h` inside the `TEST_SUI
 	}
 
 	TEST_CASE("find_candidates rejects unsupported refactor kinds") {
-		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd");
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs");
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::RENAME);
 		CHECK_FALSE(result.ok);
 		CHECK_EQ(result.error_message, "Headless candidate collection is not implemented for this refactor.");
 	}
 
 	TEST_CASE("find_candidates edit matches the caret-driven path") {
-		RefactorContext ctx = make_context("modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd");
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs");
 		RefactorCandidatesResult result = GDScriptRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
 		REQUIRE(result.ok);
 
@@ -350,12 +350,12 @@ Add these cases to `modules/gdscript/tests/test_refactor.h` inside the `TEST_SUI
 
 - [ ] **Step 2: Run the test to confirm it fails (red)**
 
-Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript][Refactor]" --force-colors`
+Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script][Refactor]" --force-colors`
 Expected: compile error — `find_candidates` / `RefactorCandidate` / `RefactorCandidatesResult` are not declared. (This confirms the test exercises the new API.)
 
 - [ ] **Step 3: Add the public types and method to the header**
 
-In `modules/gdscript/editor/gdscript_refactoring.h`, after the `RefactorAvailability` struct (line 76) and before `RefactorResult`, add:
+In `modules/foundry_script/editor/gdscript_refactoring.h`, after the `RefactorAvailability` struct (line 76) and before `RefactorResult`, add:
 
 ```cpp
 // One independently-applicable refactor opportunity found without a caret.
@@ -383,7 +383,7 @@ Then add the method to the `GDScriptRefactoring` class (after `prepare`, line 12
 
 - [ ] **Step 4: Implement `find_candidates` (TDD green)**
 
-In `modules/gdscript/editor/gdscript_refactoring.cpp`, add a namespace-internal helper that parses and collects, mirroring `find_type_annotation_candidate_uncached`'s parse/analyze path. Add it in the anonymous namespace near the other type-annotation helpers (e.g. after `prepare_type_annotation`, around line 3192):
+In `modules/foundry_script/editor/gdscript_refactoring.cpp`, add a namespace-internal helper that parses and collects, mirroring `find_type_annotation_candidate_uncached`'s parse/analyze path. Add it in the anonymous namespace near the other type-annotation helpers (e.g. after `prepare_type_annotation`, around line 3192):
 
 ```cpp
 RefactorCandidatesResult collect_type_annotation_candidates(
@@ -468,13 +468,13 @@ Expected: clean build.
 
 - [ ] **Step 6: Run the new tests to confirm they pass (green)**
 
-Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript][Refactor]" --force-colors`
+Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script][Refactor]" --force-colors`
 Expected: the three new cases pass, all prior cases still pass.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_refactoring.h modules/gdscript/editor/gdscript_refactoring.cpp modules/gdscript/tests/test_refactor.h modules/gdscript/tests/scripts/refactor/type_annotation_candidates.gd
+git add modules/foundry_script/editor/gdscript_refactoring.h modules/foundry_script/editor/gdscript_refactoring.cpp modules/foundry_script/tests/test_refactor.h modules/foundry_script/tests/scripts/refactor/type_annotation_candidates.fs
 git commit -m "Add headless find_candidates for Add Type Annotation"
 ```
 

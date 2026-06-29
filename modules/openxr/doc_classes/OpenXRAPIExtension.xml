@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="OpenXRAPIExtension" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		Makes the OpenXR API available for GDExtension.
+		Makes the OpenXR API available for FoundryExtension.
 	</brief_description>
 	<description>
-		[OpenXRAPIExtension] makes OpenXR available for GDExtension. It provides the OpenXR API to GDExtension through the [method get_instance_proc_addr] method, and the OpenXR instance through [method get_instance].
-		It also provides methods for querying the status of OpenXR initialization, and helper methods for ease of use of the API with GDExtension.
+		[OpenXRAPIExtension] makes OpenXR available for FoundryExtension. It provides the OpenXR API to FoundryExtension through the [method get_instance_proc_addr] method, and the OpenXR instance through [method get_instance].
+		It also provides methods for querying the status of OpenXR initialization, and helper methods for ease of use of the API with FoundryExtension.
 	</description>
 	<tutorials>
 		<link title="XrResult documentation">https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrResult.html</link>
@@ -76,7 +76,7 @@
 			<param index="0" name="name" type="String" />
 			<description>
 				Returns the function pointer of the OpenXR function with the specified name, cast to an integer. If the function with the given name does not exist, the method returns [code]0[/code].
-				[b]Note:[/b] [code]openxr/util.h[/code] contains utility macros for acquiring OpenXR functions, e.g. [code]GDEXTENSION_INIT_XR_FUNC_V(xrCreateAction)[/code].
+				[b]Note:[/b] [code]openxr/util.h[/code] contains utility macros for acquiring OpenXR functions, e.g. [code]FOUNDRY_EXTENSION_INIT_XR_FUNC_V(xrCreateAction)[/code].
 			</description>
 		</method>
 		<method name="get_next_frame_time">

@@ -37,7 +37,7 @@
 
 // Base class for XrStructureType based headers
 class OpenXRStructureBase : public RefCounted {
-	GDCLASS(OpenXRStructureBase, RefCounted);
+	FOUNDRY_CLASS(OpenXRStructureBase, RefCounted);
 
 public:
 	/*
@@ -64,7 +64,7 @@ public:
 	void set_next(const Ref<OpenXRStructureBase> p_next);
 	Ref<OpenXRStructureBase> get_next() const;
 
-	GDVIRTUAL1R(uint64_t, _get_header, uint64_t);
+	FOUNDRY_VIRTUAL1R(uint64_t, _get_header, uint64_t);
 
 protected:
 	static void _bind_methods();

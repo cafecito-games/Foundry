@@ -32,7 +32,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
-#include "core/extension/gdextension.h"
+#include "core/extension/foundry_extension.h"
 #include "core/input/input.h"
 #include "core/io/json.h"
 #include "core/object/script_language.h"
@@ -53,12 +53,12 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/line_edit.h"
 
-#include "modules/modules_enabled.gen.h" // For gdscript, mono.
+#include "modules/modules_enabled.gen.h" // For foundry_script, mono.
 
 // For syntax highlighting.
-#ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/editor/gdscript_highlighter.h"
-#include "modules/gdscript/gdscript.h"
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/editor/fs_highlighter.h"
+#include "modules/foundry_script/foundry_script.h"
 #endif
 
 // For syntax highlighting.
@@ -432,7 +432,7 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 	// this; they can never spell a typed container.
 	if (p_enum.is_empty() && !p_type.contains_char('*')) {
 		if (p_type.begins_with("Coroutine[") && p_type.ends_with("]")) {
-			// `Coroutine[T]` is a synthetic GDScript type with no dedicated class
+			// `Coroutine[T]` is a synthetic FoundryScript type with no dedicated class
 			// page. Render the wrapper as plain text and recurse on the result type
 			// so `T` links correctly instead of producing a dead `Coroutine[T]` link.
 			// Confirm the leading `Coroutine[` closes at the final bracket; otherwise
@@ -1260,13 +1260,13 @@ void EditorHelp::_update_doc() {
 		class_desc->add_newline();
 		class_desc->add_newline();
 
-		const String &csharp_differences_url = vformat("%s/tutorials/scripting/c_sharp/c_sharp_differences.html", GODOT_VERSION_DOCS_URL);
+		const String &csharp_differences_url = vformat("%s/tutorials/scripting/c_sharp/c_sharp_differences.html", FOUNDRY_VERSION_DOCS_URL);
 
 		class_desc->push_indent(1);
 		_push_normal_font();
 		class_desc->push_color(theme_cache.text_color);
 
-		class_desc->append_text("[b]" + TTR("Note:") + "[/b] " + vformat(TTR("There are notable differences when using this API with C#. See [url=%s]C# API differences to GDScript[/url] for more information."), csharp_differences_url));
+		class_desc->append_text("[b]" + TTR("Note:") + "[/b] " + vformat(TTR("There are notable differences when using this API with C#. See [url=%s]C# API differences to FoundryScript[/url] for more information."), csharp_differences_url));
 
 		class_desc->pop(); // color
 		_pop_normal_font();
@@ -1733,7 +1733,7 @@ void EditorHelp::_update_doc() {
 
 				_add_type(argument.type, argument.enumeration, argument.is_bitfield);
 
-				// Signals currently do not support default argument values, neither the core nor GDScript.
+				// Signals currently do not support default argument values, neither the core nor FoundryScript.
 				// This code is just for completeness.
 				if (!argument.default_value.is_empty()) {
 					class_desc->push_color(theme_cache.symbol_color);
@@ -2633,9 +2633,9 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 
 	// Select the correct code examples.
 	switch ((int)EDITOR_GET("text_editor/help/class_reference_examples")) {
-		case 0: // GDScript
-			bbcode = bbcode.replace("[gdscript", "[codeblock lang=gdscript"); // Tag can have extra arguments.
-			bbcode = bbcode.replace("[/gdscript]", "[/codeblock]");
+		case 0: // FoundryScript
+			bbcode = bbcode.replace("[foundry_script", "[codeblock lang=foundry_script"); // Tag can have extra arguments.
+			bbcode = bbcode.replace("[/foundry_script]", "[/codeblock]");
 
 			for (int pos = bbcode.find("[csharp"); pos != -1; pos = bbcode.find("[csharp")) {
 				int end_pos = bbcode.find("[/csharp]");
@@ -2654,25 +2654,25 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 			bbcode = bbcode.replace("[csharp", "[codeblock lang=csharp"); // Tag can have extra arguments.
 			bbcode = bbcode.replace("[/csharp]", "[/codeblock]");
 
-			for (int pos = bbcode.find("[gdscript"); pos != -1; pos = bbcode.find("[gdscript")) {
-				int end_pos = bbcode.find("[/gdscript]");
+			for (int pos = bbcode.find("[foundry_script"); pos != -1; pos = bbcode.find("[foundry_script")) {
+				int end_pos = bbcode.find("[/foundry_script]");
 				if (end_pos == -1) {
-					WARN_PRINT("Unclosed [gdscript] block or parse fail in code (search for tag errors)");
+					WARN_PRINT("Unclosed [foundry_script] block or parse fail in code (search for tag errors)");
 					break;
 				}
 
-				bbcode = bbcode.left(pos) + bbcode.substr(end_pos + 11); // 11 is length of "[/gdscript]".
+				bbcode = bbcode.left(pos) + bbcode.substr(end_pos + 11); // 11 is length of "[/foundry_script]".
 				while (bbcode[pos] == '\n') {
 					bbcode = bbcode.left(pos) + bbcode.substr(pos + 1);
 				}
 			}
 			break;
-		case 2: // GDScript and C#
+		case 2: // FoundryScript and C#
 			bbcode = bbcode.replace("[csharp", "[b]C#:[/b]\n[codeblock lang=csharp"); // Tag can have extra arguments.
-			bbcode = bbcode.replace("[gdscript", "[b]GDScript:[/b]\n[codeblock lang=gdscript"); // Tag can have extra arguments.
+			bbcode = bbcode.replace("[foundry_script", "[b]FoundryScript:[/b]\n[codeblock lang=foundry_script"); // Tag can have extra arguments.
 
 			bbcode = bbcode.replace("[/csharp]", "[/codeblock]");
-			bbcode = bbcode.replace("[/gdscript]", "[/codeblock]");
+			bbcode = bbcode.replace("[/foundry_script]", "[/codeblock]");
 			break;
 	}
 
@@ -2912,9 +2912,9 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 
 			bool codeblock_printed = false;
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-			if (!codeblock_printed && (lang.is_empty() || lang == "gdscript")) {
-				EditorHelpHighlighter::get_singleton()->highlight(p_rt, EditorHelpHighlighter::LANGUAGE_GDSCRIPT, codeblock_text, is_native);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+			if (!codeblock_printed && (lang.is_empty() || lang == "foundry_script")) {
+				EditorHelpHighlighter::get_singleton()->highlight(p_rt, EditorHelpHighlighter::LANGUAGE_FOUNDRY_SCRIPT, codeblock_text, is_native);
 				codeblock_printed = true;
 			}
 #endif
@@ -3104,7 +3104,7 @@ void EditorHelp::_compute_doc_version_hash() {
 }
 
 String EditorHelp::get_cache_full_path() {
-	return EditorPaths::get_singleton()->get_cache_dir().path_join(vformat("editor_doc_cache-%d.%d.res", GODOT_VERSION_MAJOR, GODOT_VERSION_MINOR));
+	return EditorPaths::get_singleton()->get_cache_dir().path_join(vformat("editor_doc_cache-%d.%d.res", FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR));
 }
 
 String EditorHelp::get_script_doc_cache_full_path() {
@@ -3441,7 +3441,7 @@ void EditorHelp::_notification(int p_what) {
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("text_editor/help")) {
 				need_update = true;
 			}
-#if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 			if (!need_update && EditorSettings::get_singleton()->check_changed_settings_in_group("text_editor/theme/highlighting")) {
 				need_update = true;
 			}
@@ -3578,8 +3578,8 @@ void EditorHelp::_bind_methods() {
 }
 
 void EditorHelp::init_gdext_pointers() {
-	GDExtensionEditorHelp::editor_help_load_xml_buffer = &EditorHelp::load_xml_buffer;
-	GDExtensionEditorHelp::editor_help_remove_class = &EditorHelp::remove_class;
+	FoundryExtensionEditorHelp::editor_help_load_xml_buffer = &EditorHelp::load_xml_buffer;
+	FoundryExtensionEditorHelp::editor_help_remove_class = &EditorHelp::remove_class;
 }
 
 EditorHelp::EditorHelp() {
@@ -4405,7 +4405,7 @@ void EditorHelpBit::_go_to_url(const String &p_what) {
 		section = vformat("#%s", clss);
 	}
 
-	String doc_url = clss.is_empty() ? String(GODOT_VERSION_DOCS_URL "/") : vformat(GODOT_VERSION_DOCS_URL "/classes/class_%s.html%s", clss, section);
+	String doc_url = clss.is_empty() ? String(FOUNDRY_VERSION_DOCS_URL "/") : vformat(FOUNDRY_VERSION_DOCS_URL "/classes/class_%s.html%s", clss, section);
 	OS::get_singleton()->shell_open(doc_url);
 }
 
@@ -4944,9 +4944,9 @@ EditorHelpHighlighter *EditorHelpHighlighter::get_singleton() {
 
 EditorHelpHighlighter::HighlightData EditorHelpHighlighter::_get_highlight_data(Language p_language, const String &p_source, bool p_use_cache) {
 	switch (p_language) {
-		case LANGUAGE_GDSCRIPT:
-#ifndef MODULE_GDSCRIPT_ENABLED
-			ERR_FAIL_V_MSG(HighlightData(), "GDScript module is disabled.");
+		case LANGUAGE_FOUNDRY_SCRIPT:
+#ifndef MODULE_FOUNDRY_SCRIPT_ENABLED
+			ERR_FAIL_V_MSG(HighlightData(), "FoundryScript module is disabled.");
 #endif
 			break;
 		case LANGUAGE_CSHARP:
@@ -5027,9 +5027,9 @@ void EditorHelpHighlighter::highlight(RichTextLabel *p_rich_text_label, Language
 void EditorHelpHighlighter::reset_cache() {
 	const Color text_color = EDITOR_GET("text_editor/theme/highlighting/text_color");
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-	highlight_data_caches[LANGUAGE_GDSCRIPT].clear();
-	text_edits[LANGUAGE_GDSCRIPT]->add_theme_color_override(SceneStringName(font_color), text_color);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	highlight_data_caches[LANGUAGE_FOUNDRY_SCRIPT].clear();
+	text_edits[LANGUAGE_FOUNDRY_SCRIPT]->add_theme_color_override(SceneStringName(font_color), text_color);
 #endif
 
 #ifdef MODULE_MONO_ENABLED
@@ -5041,21 +5041,21 @@ void EditorHelpHighlighter::reset_cache() {
 EditorHelpHighlighter::EditorHelpHighlighter() {
 	const Color text_color = EDITOR_GET("text_editor/theme/highlighting/text_color");
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-	TextEdit *gdscript_text_edit = memnew(TextEdit);
-	gdscript_text_edit->add_theme_color_override(SceneStringName(font_color), text_color);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	TextEdit *fs_text_edit = memnew(TextEdit);
+	fs_text_edit->add_theme_color_override(SceneStringName(font_color), text_color);
 
-	Ref<GDScript> gdscript;
-	gdscript.instantiate();
+	Ref<FoundryScript> foundry_script;
+	foundry_script.instantiate();
 
-	Ref<GDScriptSyntaxHighlighter> gdscript_highlighter;
-	gdscript_highlighter.instantiate();
-	gdscript_highlighter->set_text_edit(gdscript_text_edit);
-	gdscript_highlighter->_set_edited_resource(gdscript);
+	Ref<FSSyntaxHighlighter> fs_highlighter;
+	fs_highlighter.instantiate();
+	fs_highlighter->set_text_edit(fs_text_edit);
+	fs_highlighter->_set_edited_resource(foundry_script);
 
-	text_edits[LANGUAGE_GDSCRIPT] = gdscript_text_edit;
-	scripts[LANGUAGE_GDSCRIPT] = gdscript;
-	highlighters[LANGUAGE_GDSCRIPT] = gdscript_highlighter;
+	text_edits[LANGUAGE_FOUNDRY_SCRIPT] = fs_text_edit;
+	scripts[LANGUAGE_FOUNDRY_SCRIPT] = foundry_script;
+	highlighters[LANGUAGE_FOUNDRY_SCRIPT] = fs_highlighter;
 #endif
 
 #ifdef MODULE_MONO_ENABLED
@@ -5079,8 +5079,8 @@ EditorHelpHighlighter::EditorHelpHighlighter() {
 }
 
 EditorHelpHighlighter::~EditorHelpHighlighter() {
-#ifdef MODULE_GDSCRIPT_ENABLED
-	memdelete(text_edits[LANGUAGE_GDSCRIPT]);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	memdelete(text_edits[LANGUAGE_FOUNDRY_SCRIPT]);
 #endif
 
 #ifdef MODULE_MONO_ENABLED

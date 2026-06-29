@@ -51,7 +51,7 @@ MFXSpatialEffect::~MFXSpatialEffect() {
 }
 
 void MFXSpatialEffect::callback(RDD *p_driver, RDD::CommandBufferID p_command_buffer, CallbackArgs *p_userdata) {
-	GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
+	FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
 
 	MDCommandBuffer *obj = (MDCommandBuffer *)(p_command_buffer.id);
 	obj->end();
@@ -72,7 +72,7 @@ void MFXSpatialEffect::callback(RDD *p_driver, RDD::CommandBufferID p_command_bu
 
 	CallbackArgs::free(&p_userdata);
 
-	GODOT_CLANG_WARNING_POP
+	FOUNDRY_CLANG_WARNING_POP
 }
 
 void MFXSpatialEffect::ensure_context(Ref<RenderSceneBuffersRD> p_render_buffers) {
@@ -98,7 +98,7 @@ void MFXSpatialEffect::process(Ref<RenderSceneBuffersRD> p_render_buffers, RID p
 MFXSpatialContext *MFXSpatialEffect::create_context(CreateParams p_params) const {
 	DEV_ASSERT(RD::get_singleton()->has_feature(RD::SUPPORTS_METALFX_SPATIAL));
 
-	GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
+	FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
 
 	RenderingDeviceDriverMetal *rdd = (RenderingDeviceDriverMetal *)RD::get_singleton()->get_device_driver();
 	PixelFormats &pf = rdd->get_pixel_formats();
@@ -118,7 +118,7 @@ MFXSpatialContext *MFXSpatialEffect::create_context(CreateParams p_params) const
 	MFXSpatialContext *context = memnew(MFXSpatialContext);
 	context->scaler = scaler;
 
-	GODOT_CLANG_WARNING_POP
+	FOUNDRY_CLANG_WARNING_POP
 
 	return context;
 }
@@ -135,7 +135,7 @@ MFXTemporalEffect::~MFXTemporalEffect() {}
 MFXTemporalContext *MFXTemporalEffect::create_context(CreateParams p_params) const {
 	DEV_ASSERT(RD::get_singleton()->has_feature(RD::SUPPORTS_METALFX_TEMPORAL));
 
-	GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
+	FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
 
 	RenderingDeviceDriverMetal *rdd = (RenderingDeviceDriverMetal *)RD::get_singleton()->get_device_driver();
 	PixelFormats &pf = rdd->get_pixel_formats();
@@ -163,7 +163,7 @@ MFXTemporalContext *MFXTemporalEffect::create_context(CreateParams p_params) con
 	scaler.motionVectorScaleY = p_params.motion_vector_scale.y;
 	scaler.depthReversed = true; // Godot uses reverse Z per https://github.com/godotengine/godot/pull/88328
 
-	GODOT_CLANG_WARNING_POP
+	FOUNDRY_CLANG_WARNING_POP
 
 	return context;
 }
@@ -188,7 +188,7 @@ void MFXTemporalEffect::process(RendererRD::MFXTemporalContext *p_ctx, RendererR
 }
 
 void MFXTemporalEffect::callback(RDD *p_driver, RDD::CommandBufferID p_command_buffer, CallbackArgs *p_userdata) {
-	GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
+	FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wunguarded-availability")
 
 	MDCommandBuffer *obj = (MDCommandBuffer *)(p_command_buffer.id);
 	obj->end();
@@ -219,7 +219,7 @@ void MFXTemporalEffect::callback(RDD *p_driver, RDD::CommandBufferID p_command_b
 
 	CallbackArgs::free(&p_userdata);
 
-	GODOT_CLANG_WARNING_POP
+	FOUNDRY_CLANG_WARNING_POP
 }
 
 #endif

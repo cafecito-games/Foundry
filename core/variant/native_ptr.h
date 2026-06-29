@@ -36,143 +36,143 @@
 #include "core/variant/type_info.h"
 
 template <typename T>
-struct GDExtensionConstPtr {
+struct FoundryExtensionConstPtr {
 	const T *data = nullptr;
-	GDExtensionConstPtr(const T *p_assign) { data = p_assign; }
+	FoundryExtensionConstPtr(const T *p_assign) { data = p_assign; }
 	static const char *get_name() { return "const void"; }
 	operator const T *() const { return data; }
 	operator Variant() const { return uint64_t(data); }
 };
 
 template <typename T>
-struct GDExtensionPtr {
+struct FoundryExtensionPtr {
 	T *data = nullptr;
-	GDExtensionPtr(T *p_assign) { data = p_assign; }
+	FoundryExtensionPtr(T *p_assign) { data = p_assign; }
 	static const char *get_name() { return "void"; }
 	operator T *() const { return data; }
 	operator Variant() const { return uint64_t(data); }
 };
 
-#define GDVIRTUAL_NATIVE_PTR(m_type)                                                                          \
-	template <>                                                                                               \
-	struct GDExtensionConstPtr<const m_type> {                                                                \
-		const m_type *data = nullptr;                                                                         \
-		GDExtensionConstPtr() {}                                                                              \
-		GDExtensionConstPtr(const m_type *p_assign) {                                                         \
-			data = p_assign;                                                                                  \
-		}                                                                                                     \
-		static const char *get_name() {                                                                       \
-			return "const " #m_type;                                                                          \
-		}                                                                                                     \
-		operator const m_type *() const {                                                                     \
-			return data;                                                                                      \
-		}                                                                                                     \
-		operator Variant() const {                                                                            \
-			return uint64_t(data);                                                                            \
-		}                                                                                                     \
-	};                                                                                                        \
-	template <>                                                                                               \
-	struct VariantCaster<GDExtensionConstPtr<const m_type>> {                                                 \
-		static _FORCE_INLINE_ GDExtensionConstPtr<const m_type> cast(const Variant &p_variant) {              \
-			return GDExtensionConstPtr<const m_type>((const m_type *)p_variant.operator uint64_t());          \
-		}                                                                                                     \
-	};                                                                                                        \
-	template <>                                                                                               \
-	struct VariantInternalAccessor<GDExtensionConstPtr<const m_type>> {                                       \
-		static _FORCE_INLINE_ const GDExtensionConstPtr<const m_type> &get(const Variant *v) {                \
-			return *reinterpret_cast<const GDExtensionConstPtr<const m_type> *>(VariantInternal::get_int(v)); \
-		}                                                                                                     \
-		static _FORCE_INLINE_ void set(Variant *v, const GDExtensionConstPtr<const m_type> &p_value) {        \
-			*VariantInternal::get_int(v) = uint64_t(p_value.data);                                            \
-		}                                                                                                     \
-	};                                                                                                        \
-	template <>                                                                                               \
-	struct GDExtensionPtr<m_type> {                                                                           \
-		m_type *data = nullptr;                                                                               \
-		GDExtensionPtr() {}                                                                                   \
-		GDExtensionPtr(m_type *p_assign) {                                                                    \
-			data = p_assign;                                                                                  \
-		}                                                                                                     \
-		static const char *get_name() {                                                                       \
-			return #m_type;                                                                                   \
-		}                                                                                                     \
-		operator m_type *() const {                                                                           \
-			return data;                                                                                      \
-		}                                                                                                     \
-		operator Variant() const {                                                                            \
-			return uint64_t(data);                                                                            \
-		}                                                                                                     \
-	};                                                                                                        \
-	template <>                                                                                               \
-	struct VariantCaster<GDExtensionPtr<m_type>> {                                                            \
-		static _FORCE_INLINE_ GDExtensionPtr<m_type> cast(const Variant &p_variant) {                         \
-			return GDExtensionPtr<m_type>((m_type *)p_variant.operator uint64_t());                           \
-		}                                                                                                     \
-	};                                                                                                        \
-	template <>                                                                                               \
-	struct VariantInternalAccessor<GDExtensionPtr<m_type>> {                                                  \
-		static _FORCE_INLINE_ const GDExtensionPtr<m_type> &get(const Variant *v) {                           \
-			return *reinterpret_cast<const GDExtensionPtr<m_type> *>(VariantInternal::get_int(v));            \
-		}                                                                                                     \
-		static _FORCE_INLINE_ void set(Variant *v, const GDExtensionPtr<m_type> &p_value) {                   \
-			*VariantInternal::get_int(v) = uint64_t(p_value.data);                                            \
-		}                                                                                                     \
+#define FOUNDRY_VIRTUAL_NATIVE_PTR(m_type)                                                                         \
+	template <>                                                                                                    \
+	struct FoundryExtensionConstPtr<const m_type> {                                                                \
+		const m_type *data = nullptr;                                                                              \
+		FoundryExtensionConstPtr() {}                                                                              \
+		FoundryExtensionConstPtr(const m_type *p_assign) {                                                         \
+			data = p_assign;                                                                                       \
+		}                                                                                                          \
+		static const char *get_name() {                                                                            \
+			return "const " #m_type;                                                                               \
+		}                                                                                                          \
+		operator const m_type *() const {                                                                          \
+			return data;                                                                                           \
+		}                                                                                                          \
+		operator Variant() const {                                                                                 \
+			return uint64_t(data);                                                                                 \
+		}                                                                                                          \
+	};                                                                                                             \
+	template <>                                                                                                    \
+	struct VariantCaster<FoundryExtensionConstPtr<const m_type>> {                                                 \
+		static _FORCE_INLINE_ FoundryExtensionConstPtr<const m_type> cast(const Variant &p_variant) {              \
+			return FoundryExtensionConstPtr<const m_type>((const m_type *)p_variant.operator uint64_t());          \
+		}                                                                                                          \
+	};                                                                                                             \
+	template <>                                                                                                    \
+	struct VariantInternalAccessor<FoundryExtensionConstPtr<const m_type>> {                                       \
+		static _FORCE_INLINE_ const FoundryExtensionConstPtr<const m_type> &get(const Variant *v) {                \
+			return *reinterpret_cast<const FoundryExtensionConstPtr<const m_type> *>(VariantInternal::get_int(v)); \
+		}                                                                                                          \
+		static _FORCE_INLINE_ void set(Variant *v, const FoundryExtensionConstPtr<const m_type> &p_value) {        \
+			*VariantInternal::get_int(v) = uint64_t(p_value.data);                                                 \
+		}                                                                                                          \
+	};                                                                                                             \
+	template <>                                                                                                    \
+	struct FoundryExtensionPtr<m_type> {                                                                           \
+		m_type *data = nullptr;                                                                                    \
+		FoundryExtensionPtr() {}                                                                                   \
+		FoundryExtensionPtr(m_type *p_assign) {                                                                    \
+			data = p_assign;                                                                                       \
+		}                                                                                                          \
+		static const char *get_name() {                                                                            \
+			return #m_type;                                                                                        \
+		}                                                                                                          \
+		operator m_type *() const {                                                                                \
+			return data;                                                                                           \
+		}                                                                                                          \
+		operator Variant() const {                                                                                 \
+			return uint64_t(data);                                                                                 \
+		}                                                                                                          \
+	};                                                                                                             \
+	template <>                                                                                                    \
+	struct VariantCaster<FoundryExtensionPtr<m_type>> {                                                            \
+		static _FORCE_INLINE_ FoundryExtensionPtr<m_type> cast(const Variant &p_variant) {                         \
+			return FoundryExtensionPtr<m_type>((m_type *)p_variant.operator uint64_t());                           \
+		}                                                                                                          \
+	};                                                                                                             \
+	template <>                                                                                                    \
+	struct VariantInternalAccessor<FoundryExtensionPtr<m_type>> {                                                  \
+		static _FORCE_INLINE_ const FoundryExtensionPtr<m_type> &get(const Variant *v) {                           \
+			return *reinterpret_cast<const FoundryExtensionPtr<m_type> *>(VariantInternal::get_int(v));            \
+		}                                                                                                          \
+		static _FORCE_INLINE_ void set(Variant *v, const FoundryExtensionPtr<m_type> &p_value) {                   \
+			*VariantInternal::get_int(v) = uint64_t(p_value.data);                                                 \
+		}                                                                                                          \
 	};
 
 template <typename T>
-struct GetTypeInfo<GDExtensionConstPtr<T>> {
+struct GetTypeInfo<FoundryExtensionConstPtr<T>> {
 	static const Variant::Type VARIANT_TYPE = Variant::INT;
 	static const GodotTypeInfo::Metadata METADATA = GodotTypeInfo::METADATA_NONE;
 	static inline PropertyInfo get_class_info() {
-		return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_INT_IS_POINTER, GDExtensionConstPtr<T>::get_name());
+		return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_INT_IS_POINTER, FoundryExtensionConstPtr<T>::get_name());
 	}
 };
 
 template <typename T>
-struct GetTypeInfo<GDExtensionPtr<T>> {
+struct GetTypeInfo<FoundryExtensionPtr<T>> {
 	static const Variant::Type VARIANT_TYPE = Variant::INT;
 	static const GodotTypeInfo::Metadata METADATA = GodotTypeInfo::METADATA_NONE;
 	static inline PropertyInfo get_class_info() {
-		return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_INT_IS_POINTER, GDExtensionPtr<T>::get_name());
+		return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_INT_IS_POINTER, FoundryExtensionPtr<T>::get_name());
 	}
 };
 
 template <typename T>
-struct PtrToArg<GDExtensionConstPtr<T>> {
-	_FORCE_INLINE_ static GDExtensionConstPtr<T> convert(const void *p_ptr) {
-		return GDExtensionConstPtr<T>(reinterpret_cast<const T *>(p_ptr));
+struct PtrToArg<FoundryExtensionConstPtr<T>> {
+	_FORCE_INLINE_ static FoundryExtensionConstPtr<T> convert(const void *p_ptr) {
+		return FoundryExtensionConstPtr<T>(reinterpret_cast<const T *>(p_ptr));
 	}
 	typedef const T *EncodeT;
-	_FORCE_INLINE_ static void encode(GDExtensionConstPtr<T> p_val, void *p_ptr) {
+	_FORCE_INLINE_ static void encode(FoundryExtensionConstPtr<T> p_val, void *p_ptr) {
 		*((const T **)p_ptr) = p_val.data;
 	}
 };
 template <typename T>
-struct PtrToArg<GDExtensionPtr<T>> {
-	_FORCE_INLINE_ static GDExtensionPtr<T> convert(const void *p_ptr) {
-		return GDExtensionPtr<T>(reinterpret_cast<const T *>(p_ptr));
+struct PtrToArg<FoundryExtensionPtr<T>> {
+	_FORCE_INLINE_ static FoundryExtensionPtr<T> convert(const void *p_ptr) {
+		return FoundryExtensionPtr<T>(reinterpret_cast<const T *>(p_ptr));
 	}
 	typedef T *EncodeT;
-	_FORCE_INLINE_ static void encode(GDExtensionPtr<T> p_val, void *p_ptr) {
+	_FORCE_INLINE_ static void encode(FoundryExtensionPtr<T> p_val, void *p_ptr) {
 		*((T **)p_ptr) = p_val.data;
 	}
 };
 
-GDVIRTUAL_NATIVE_PTR(void)
-GDVIRTUAL_NATIVE_PTR(AudioFrame)
-GDVIRTUAL_NATIVE_PTR(bool)
-GDVIRTUAL_NATIVE_PTR(char)
-GDVIRTUAL_NATIVE_PTR(char16_t)
-GDVIRTUAL_NATIVE_PTR(char32_t)
-GDVIRTUAL_NATIVE_PTR(wchar_t)
-GDVIRTUAL_NATIVE_PTR(uint8_t)
-GDVIRTUAL_NATIVE_PTR(uint8_t *)
-GDVIRTUAL_NATIVE_PTR(int8_t)
-GDVIRTUAL_NATIVE_PTR(uint16_t)
-GDVIRTUAL_NATIVE_PTR(int16_t)
-GDVIRTUAL_NATIVE_PTR(uint32_t)
-GDVIRTUAL_NATIVE_PTR(int32_t)
-GDVIRTUAL_NATIVE_PTR(int64_t)
-GDVIRTUAL_NATIVE_PTR(uint64_t)
-GDVIRTUAL_NATIVE_PTR(float)
-GDVIRTUAL_NATIVE_PTR(double)
+FOUNDRY_VIRTUAL_NATIVE_PTR(void)
+FOUNDRY_VIRTUAL_NATIVE_PTR(AudioFrame)
+FOUNDRY_VIRTUAL_NATIVE_PTR(bool)
+FOUNDRY_VIRTUAL_NATIVE_PTR(char)
+FOUNDRY_VIRTUAL_NATIVE_PTR(char16_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(char32_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(wchar_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint8_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint8_t *)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int8_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint16_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int16_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint32_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int32_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(int64_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(uint64_t)
+FOUNDRY_VIRTUAL_NATIVE_PTR(float)
+FOUNDRY_VIRTUAL_NATIVE_PTR(double)

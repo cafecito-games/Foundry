@@ -35,7 +35,7 @@
 class ArrayMesh;
 
 class SphereShape3D : public Shape3D {
-	GDCLASS(SphereShape3D, Shape3D);
+	FOUNDRY_CLASS(SphereShape3D, Shape3D);
 	float radius = 0.5f;
 
 protected:

@@ -42,7 +42,7 @@
 #include <openxr/openxr.h>
 
 class OpenXRRenderModelManager : public Node3D {
-	GDCLASS(OpenXRRenderModelManager, Node3D);
+	FOUNDRY_CLASS(OpenXRRenderModelManager, Node3D);
 
 public:
 	enum RenderModelTracker {

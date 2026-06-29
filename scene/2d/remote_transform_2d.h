@@ -33,7 +33,7 @@
 #include "scene/2d/node_2d.h"
 
 class RemoteTransform2D : public Node2D {
-	GDCLASS(RemoteTransform2D, Node2D);
+	FOUNDRY_CLASS(RemoteTransform2D, Node2D);
 
 	NodePath remote_node;
 

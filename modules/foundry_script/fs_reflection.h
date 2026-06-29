@@ -1,0 +1,130 @@
+/**************************************************************************/
+/*  fs_reflection.h                                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#pragma once
+
+#include "core/object/ref_counted.h"
+#include "core/object/script_language.h"
+#include "core/variant/typed_array.h"
+
+class FoundryScript;
+class FSAnnotation;
+class FSMethodDescriptor;
+class FSPropertyDescriptor;
+
+// Read-only introspection surface for FoundryScript, exposed as `godot.reflection`.
+// The target of each call is a script type (a `Script` class handle), a typed
+// class handle stored in a `Type[T]` variable (the same runtime value as the
+// bare class name), or an instance whose script is used. Method/property
+// descriptors are returned as the same Dictionaries `Object.get_method_list()` /
+// `get_property_list()` produce.
+//
+// RefCounted so that, registered as a named global, it is released when the
+// language's globals are torn down (mirroring the native-class globals) rather
+// than relying on an explicit free.
+class FSReflection : public RefCounted {
+	FOUNDRY_CLASS(FSReflection, RefCounted);
+
+	static Ref<Script> _resolve_script(const Variant &p_target);
+	static StringName _resolve_trait_name(const Variant &p_trait);
+
+protected:
+	static void _bind_methods();
+
+public:
+	TypedArray<Dictionary> get_methods(const Variant &p_target) const;
+	Dictionary get_method_info(const Variant &p_target, const StringName &p_method) const;
+	TypedArray<Dictionary> get_properties(const Variant &p_target) const;
+
+	// Structured equivalents of get_methods()/get_method_info()/get_properties(): each returns typed
+	// FSMethodDescriptor / FSPropertyDescriptor objects instead of loosely-keyed
+	// Dictionaries, giving consumers typed access to a member's metadata including its annotations. The
+	// Dictionary-returning APIs above are preserved for back-compat and now produce the same data via
+	// each descriptor's to_dictionary(). get_method_descriptor() returns a null Ref when the method is
+	// not declared by the target's script or its base scripts.
+	TypedArray<FSMethodDescriptor> get_method_descriptors(const Variant &p_target) const;
+	Ref<FSMethodDescriptor> get_method_descriptor(const Variant &p_target, const StringName &p_method) const;
+	TypedArray<FSPropertyDescriptor> get_property_descriptors(const Variant &p_target) const;
+
+	bool implements_trait(const Variant &p_target, const Variant &p_trait) const;
+
+	// Passive custom annotation reflection. `target` may be a Script class handle, a typed class
+	// handle stored in a `Type[T]` variable, or an instance whose script is used. Matching by
+	// `annotation` accepts either the short name ("timeout") or the qualified name
+	// ("cafecito.test.timeout"). `kind` is one of "class", "method", "variable", "signal", or
+	// "constant". When `effective` is true (the default) the member kinds walk the script base chain
+	// so inherited and trait-flattened declarations are included; when false the result is restricted
+	// to annotations declared on the exact target script. Class annotations are direct-only and are
+	// unaffected by the flag. Invalid, freed, or non-script targets yield empty arrays, a null
+	// descriptor, or false, without crashing.
+	TypedArray<FSAnnotation> get_class_annotations(const Variant &p_target) const;
+	TypedArray<FSAnnotation> get_method_annotations(const Variant &p_target, const StringName &p_method, bool p_effective = true) const;
+	TypedArray<FSAnnotation> get_variable_annotations(const Variant &p_target, const StringName &p_variable, bool p_effective = true) const;
+	TypedArray<FSAnnotation> get_signal_annotations(const Variant &p_target, const StringName &p_signal, bool p_effective = true) const;
+	TypedArray<FSAnnotation> get_constant_annotations(const Variant &p_target, const StringName &p_constant, bool p_effective = true) const;
+	bool has_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind, bool p_effective = true) const;
+	Ref<FSAnnotation> get_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind, bool p_effective = true) const;
+	TypedArray<FSAnnotation> get_annotations(const Variant &p_target, const StringName &p_member, const StringName &p_kind, bool p_effective = true) const;
+
+	// The reified generic type arguments bound onto an instance (e.g. the `int` in `Box[int].new()`),
+	// as container-type descriptor Dictionaries. Empty for a non-generic instance, an instance
+	// created without explicit type arguments, or a non-FoundryScript / non-instance target.
+	TypedArray<Dictionary> get_type_arguments(const Variant &p_target) const;
+
+	// Builds a dynamic proxy of trait/abstract type `p_type` whose every contract call
+	// is routed through `p_handler` (invoked as `handler.call(method_name, args)`).
+	// Returns a null Ref (with an error printed) on invalid input. This is the public
+	// surface for the bare `create_proxy_dynamic` utility, which remains as the
+	// `create_proxy[T]` codegen lowering target.
+	Ref<RefCounted> create_proxy_dynamic(const Ref<Script> &p_type, const Callable &p_handler) const;
+
+	// "Intercept some, delegate the rest": contract methods named in `p_interceptor`
+	// route to that advice; all other methods and property access forward to
+	// `p_target`. Returns a null Ref (with an error printed) on invalid input.
+	Ref<RefCounted> create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor) const;
+};
+
+// The `foundry` global namespace object. Currently it only exposes the read-only
+// `reflection` member; this is the nested-singleton binding for the
+// `foundry.reflection.*` surface (a true language namespace is not available).
+class FSNamespace : public RefCounted {
+	FOUNDRY_CLASS(FSNamespace, RefCounted);
+
+	Ref<FSReflection> reflection;
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_reflection(const Ref<FSReflection> &p_reflection) { reflection = p_reflection; }
+	// Returns a Ref (not a raw pointer) so the binding carries
+	// PROPERTY_HINT_RESOURCE_TYPE for the reference return, as ClassDB expects.
+	Ref<FSReflection> get_reflection() const { return reflection; }
+};

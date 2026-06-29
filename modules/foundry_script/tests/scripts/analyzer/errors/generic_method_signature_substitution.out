@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 12: Cannot pass a value of type "String" as "int".
+>> ERROR at line 12: Invalid argument for "set_value()" function: argument 1 should be "int" but is "String".

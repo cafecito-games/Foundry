@@ -35,7 +35,7 @@
 #include "core/io/stream_peer_socket.h"
 
 class StreamPeerTCP : public StreamPeerSocket {
-	GDCLASS(StreamPeerTCP, StreamPeerSocket);
+	FOUNDRY_CLASS(StreamPeerTCP, StreamPeerSocket);
 
 protected:
 	Error _connect(const String &p_address, int p_port);

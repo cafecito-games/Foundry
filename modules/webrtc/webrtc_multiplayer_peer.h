@@ -35,7 +35,7 @@
 #include "scene/main/multiplayer_peer.h"
 
 class WebRTCMultiplayerPeer : public MultiplayerPeer {
-	GDCLASS(WebRTCMultiplayerPeer, MultiplayerPeer);
+	FOUNDRY_CLASS(WebRTCMultiplayerPeer, MultiplayerPeer);
 
 protected:
 	static void _bind_methods();

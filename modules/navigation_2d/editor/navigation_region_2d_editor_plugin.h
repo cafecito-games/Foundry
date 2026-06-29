@@ -42,7 +42,7 @@ class Timer;
 class NavigationRegion2DEditor : public AbstractPolygon2DEditor {
 	friend class NavigationRegion2DEditorPlugin;
 
-	GDCLASS(NavigationRegion2DEditor, AbstractPolygon2DEditor);
+	FOUNDRY_CLASS(NavigationRegion2DEditor, AbstractPolygon2DEditor);
 
 	NavigationRegion2D *node = nullptr;
 
@@ -86,7 +86,7 @@ public:
 };
 
 class NavigationRegion2DEditorPlugin : public AbstractPolygon2DEditorPlugin {
-	GDCLASS(NavigationRegion2DEditorPlugin, AbstractPolygon2DEditorPlugin);
+	FOUNDRY_CLASS(NavigationRegion2DEditorPlugin, AbstractPolygon2DEditorPlugin);
 
 	NavigationRegion2DEditor *navigation_polygon_editor = nullptr;
 

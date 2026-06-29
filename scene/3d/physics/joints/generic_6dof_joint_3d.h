@@ -33,7 +33,7 @@
 #include "scene/3d/physics/joints/joint_3d.h"
 
 class Generic6DOFJoint3D : public Joint3D {
-	GDCLASS(Generic6DOFJoint3D, Joint3D);
+	FOUNDRY_CLASS(Generic6DOFJoint3D, Joint3D);
 
 public:
 	enum Param {

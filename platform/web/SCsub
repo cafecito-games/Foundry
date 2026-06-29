@@ -11,11 +11,11 @@ if "serve" in COMMAND_LINE_TARGETS or "run" in COMMAND_LINE_TARGETS:
 
     from serve import serve
 
-    port = os.environ.get("GODOT_WEB_TEST_PORT", 8060)
+    port = os.environ.get("FOUNDRY_WEB_TEST_PORT", 8060)
     try:
         port = int(port)
     except Exception:
-        print_error("GODOT_WEB_TEST_PORT must be a valid integer")
+        print_error("FOUNDRY_WEB_TEST_PORT must be a valid integer")
         sys.exit(255)
     serve(env.Dir(env.GetTemplateZipPath()).abspath, port, "run" in COMMAND_LINE_TARGETS)
     sys.exit(0)

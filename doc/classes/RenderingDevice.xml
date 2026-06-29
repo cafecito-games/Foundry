@@ -1019,7 +1019,7 @@
 			<return type="int" />
 			<param index="0" name="texture" type="RID" />
 			<description>
-				Returns the internal graphics handle for this texture object. For use when communicating with third-party APIs mostly with GDExtension.
+				Returns the internal graphics handle for this texture object. For use when communicating with third-party APIs mostly with FoundryExtension.
 				[b]Note:[/b] This function returns a [code]uint64_t[/code] which internally maps to a [code]GLuint[/code] (OpenGL) or [code]VkImage[/code] (Vulkan).
 			</description>
 		</method>
@@ -2133,13 +2133,13 @@
 		<constant name="BUFFER_CREATION_DEVICE_ADDRESS_BIT" value="1" enum="BufferCreationBits" is_bitfield="true">
 			Optionally, set this flag if you wish to use [method buffer_get_device_address] functionality. You must first check the GPU supports it:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			rd = RenderingServer.get_rendering_device()
 
 			if rd.has_feature(RenderingDevice.SUPPORTS_BUFFER_DEVICE_ADDRESS):
 				storage_buffer = rd.storage_buffer_create(bytes.size(), bytes, RenderingDevice.STORAGE_BUFFER_USAGE_SHADER_DEVICE_ADDRESS)
 				storage_buffer_address = rd.buffer_get_device_address(storage_buffer)
-			[/gdscript]
+			[/foundry_script]
 			[/codeblocks]
 		</constant>
 		<constant name="BUFFER_CREATION_AS_STORAGE_BIT" value="2" enum="BufferCreationBits" is_bitfield="true">

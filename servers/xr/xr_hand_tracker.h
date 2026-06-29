@@ -33,7 +33,7 @@
 #include "servers/xr/xr_positional_tracker.h"
 
 class XRHandTracker : public XRPositionalTracker {
-	GDCLASS(XRHandTracker, XRPositionalTracker);
+	FOUNDRY_CLASS(XRHandTracker, XRPositionalTracker);
 	_THREAD_SAFE_CLASS_
 
 public:

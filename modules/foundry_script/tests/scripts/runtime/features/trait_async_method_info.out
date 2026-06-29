@@ -1,0 +1,4 @@
+FS_TEST_OK
+async func fetch() -> String
+async func fetch_twice() -> String
+xx

@@ -232,7 +232,7 @@
 		<constant name="IDENTITY" value="Quaternion(0, 0, 0, 1)">
 			The identity quaternion, representing no rotation. This has the same rotation as [constant Basis.IDENTITY].
 			If a [Vector3] is rotated (multiplied) by this quaternion, it does not change.
-			[b]Note:[/b] In GDScript, this constant is equivalent to creating a [constructor Quaternion] without any arguments. It can be used to make your code clearer, and for consistency with C#.
+			[b]Note:[/b] In FoundryScript, this constant is equivalent to creating a [constructor Quaternion] without any arguments. It can be used to make your code clearer, and for consistency with C#.
 		</constant>
 	</constants>
 	<operators>

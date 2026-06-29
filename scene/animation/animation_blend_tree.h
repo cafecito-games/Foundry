@@ -34,7 +34,7 @@
 #include "scene/resources/curve.h"
 
 class AnimationNodeAnimation : public AnimationRootNode {
-	GDCLASS(AnimationNodeAnimation, AnimationRootNode);
+	FOUNDRY_CLASS(AnimationNodeAnimation, AnimationRootNode);
 
 	StringName backward = "backward"; // Only used by pingpong animation.
 
@@ -105,7 +105,7 @@ private:
 VARIANT_ENUM_CAST(AnimationNodeAnimation::PlayMode)
 
 class AnimationNodeSync : public AnimationNode {
-	GDCLASS(AnimationNodeSync, AnimationNode);
+	FOUNDRY_CLASS(AnimationNodeSync, AnimationNode);
 
 protected:
 	bool sync = false;
@@ -120,7 +120,7 @@ public:
 };
 
 class AnimationNodeOneShot : public AnimationNodeSync {
-	GDCLASS(AnimationNodeOneShot, AnimationNodeSync);
+	FOUNDRY_CLASS(AnimationNodeOneShot, AnimationNodeSync);
 
 public:
 	enum OneShotRequest {
@@ -204,7 +204,7 @@ VARIANT_ENUM_CAST(AnimationNodeOneShot::OneShotRequest)
 VARIANT_ENUM_CAST(AnimationNodeOneShot::MixMode)
 
 class AnimationNodeAdd2 : public AnimationNodeSync {
-	GDCLASS(AnimationNodeAdd2, AnimationNodeSync);
+	FOUNDRY_CLASS(AnimationNodeAdd2, AnimationNodeSync);
 
 	StringName add_amount = PNAME("add_amount");
 
@@ -221,7 +221,7 @@ public:
 };
 
 class AnimationNodeAdd3 : public AnimationNodeSync {
-	GDCLASS(AnimationNodeAdd3, AnimationNodeSync);
+	FOUNDRY_CLASS(AnimationNodeAdd3, AnimationNodeSync);
 
 	StringName add_amount = PNAME("add_amount");
 
@@ -238,7 +238,7 @@ public:
 };
 
 class AnimationNodeBlend2 : public AnimationNodeSync {
-	GDCLASS(AnimationNodeBlend2, AnimationNodeSync);
+	FOUNDRY_CLASS(AnimationNodeBlend2, AnimationNodeSync);
 
 	StringName blend_amount = PNAME("blend_amount");
 
@@ -254,7 +254,7 @@ public:
 };
 
 class AnimationNodeBlend3 : public AnimationNodeSync {
-	GDCLASS(AnimationNodeBlend3, AnimationNodeSync);
+	FOUNDRY_CLASS(AnimationNodeBlend3, AnimationNodeSync);
 
 	StringName blend_amount = PNAME("blend_amount");
 
@@ -269,7 +269,7 @@ public:
 };
 
 class AnimationNodeSub2 : public AnimationNodeSync {
-	GDCLASS(AnimationNodeSub2, AnimationNodeSync);
+	FOUNDRY_CLASS(AnimationNodeSub2, AnimationNodeSync);
 
 	StringName sub_amount = PNAME("sub_amount");
 
@@ -286,7 +286,7 @@ public:
 };
 
 class AnimationNodeTimeScale : public AnimationNode {
-	GDCLASS(AnimationNodeTimeScale, AnimationNode);
+	FOUNDRY_CLASS(AnimationNodeTimeScale, AnimationNode);
 
 	StringName scale = PNAME("scale");
 
@@ -302,7 +302,7 @@ public:
 };
 
 class AnimationNodeTimeSeek : public AnimationNode {
-	GDCLASS(AnimationNodeTimeSeek, AnimationNode);
+	FOUNDRY_CLASS(AnimationNodeTimeSeek, AnimationNode);
 
 	StringName seek_pos_request = PNAME("seek_request");
 	bool explicit_elapse = true;
@@ -325,7 +325,7 @@ public:
 };
 
 class AnimationNodeTransition : public AnimationNodeSync {
-	GDCLASS(AnimationNodeTransition, AnimationNodeSync);
+	FOUNDRY_CLASS(AnimationNodeTransition, AnimationNodeSync);
 
 	struct InputData {
 		bool auto_advance = false;
@@ -389,7 +389,7 @@ public:
 };
 
 class AnimationNodeOutput : public AnimationNode {
-	GDCLASS(AnimationNodeOutput, AnimationNode);
+	FOUNDRY_CLASS(AnimationNodeOutput, AnimationNode);
 
 public:
 	virtual String get_caption() const override;
@@ -400,7 +400,7 @@ public:
 /////
 
 class AnimationNodeBlendTree : public AnimationRootNode {
-	GDCLASS(AnimationNodeBlendTree, AnimationRootNode);
+	FOUNDRY_CLASS(AnimationNodeBlendTree, AnimationRootNode);
 
 	struct Node {
 		Ref<AnimationNode> node;

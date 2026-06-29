@@ -481,7 +481,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 
 	{
 		EngineUpdateLabel::UpdateMode default_update_mode = EngineUpdateLabel::UpdateMode::NEWEST_UNSTABLE;
-		if (String(GODOT_VERSION_STATUS) == String("stable")) {
+		if (String(FOUNDRY_VERSION_STATUS) == String("stable")) {
 			default_update_mode = EngineUpdateLabel::UpdateMode::NEWEST_STABLE;
 		}
 		EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_ENUM, "network/connection/check_for_updates", int(default_update_mode), "Disable Update Checks,Check Newest Preview,Check Newest Stable,Check Newest Patch"); // Uses EngineUpdateLabel::UpdateMode.
@@ -860,7 +860,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_RANGE, "text_editor/help/help_font_size", 16, "8,48,1")
 	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_RANGE, "text_editor/help/help_source_font_size", 15, "8,48,1")
 	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_RANGE, "text_editor/help/help_title_font_size", 23, "8,64,1")
-	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_ENUM, "text_editor/help/class_reference_examples", 0, "GDScript,C#,GDScript and C#")
+	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_ENUM, "text_editor/help/class_reference_examples", 0, "FoundryScript,C#,FoundryScript and C#")
 	_initial_set("text_editor/help/sort_functions_alphabetically", true);
 
 	/* Editors */
@@ -1239,16 +1239,16 @@ EditorSettings *EditorSettings::get_singleton() {
 
 String EditorSettings::get_existing_settings_path() {
 	const String config_dir = EditorPaths::get_singleton()->get_config_dir();
-	int minor = GODOT_VERSION_MINOR;
+	int minor = FOUNDRY_VERSION_MINOR;
 	String filename;
 
 	do {
-		if (GODOT_VERSION_MAJOR == 4 && minor < 3) {
+		if (FOUNDRY_VERSION_MAJOR == 4 && minor < 3) {
 			// Minor version is used since 4.3, so special case to load older settings.
-			filename = vformat("editor_settings-%d.tres", GODOT_VERSION_MAJOR);
+			filename = vformat("editor_settings-%d.tres", FOUNDRY_VERSION_MAJOR);
 			minor = -1;
 		} else {
-			filename = vformat("editor_settings-%d.%d.tres", GODOT_VERSION_MAJOR, minor);
+			filename = vformat("editor_settings-%d.%d.tres", FOUNDRY_VERSION_MAJOR, minor);
 			minor--;
 		}
 	} while (minor >= 0 && !FileAccess::exists(config_dir.path_join(filename)));
@@ -1256,7 +1256,7 @@ String EditorSettings::get_existing_settings_path() {
 }
 
 String EditorSettings::get_newest_settings_path() {
-	const String config_file_name = vformat("editor_settings-%d.%d.tres", GODOT_VERSION_MAJOR, GODOT_VERSION_MINOR);
+	const String config_file_name = vformat("editor_settings-%d.%d.tres", FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR);
 	return EditorPaths::get_singleton()->get_config_dir().path_join(config_file_name);
 }
 
@@ -1783,13 +1783,13 @@ HashMap<StringName, Color> EditorSettings::get_godot2_text_editor_theme() {
 	colors["text_editor/theme/highlighting/folded_code_region_color"] = Color(0.68, 0.46, 0.77, 0.2);
 	colors["text_editor/theme/highlighting/search_result_color"] = Color(0.05, 0.25, 0.05, 1);
 	colors["text_editor/theme/highlighting/search_result_border_color"] = Color(0.41, 0.61, 0.91, 0.38);
-	colors["text_editor/theme/highlighting/gdscript/function_definition_color"] = Color(0.4, 0.9, 1.0);
+	colors["text_editor/theme/highlighting/foundry_script/function_definition_color"] = Color(0.4, 0.9, 1.0);
 
-	colors["text_editor/theme/highlighting/gdscript/global_function_color"] = Color(0.64, 0.64, 0.96);
-	colors["text_editor/theme/highlighting/gdscript/node_path_color"] = Color(0.72, 0.77, 0.49);
-	colors["text_editor/theme/highlighting/gdscript/node_reference_color"] = Color(0.39, 0.76, 0.35);
-	colors["text_editor/theme/highlighting/gdscript/annotation_color"] = Color(1.0, 0.7, 0.45);
-	colors["text_editor/theme/highlighting/gdscript/string_name_color"] = Color(1.0, 0.76, 0.65);
+	colors["text_editor/theme/highlighting/foundry_script/global_function_color"] = Color(0.64, 0.64, 0.96);
+	colors["text_editor/theme/highlighting/foundry_script/node_path_color"] = Color(0.72, 0.77, 0.49);
+	colors["text_editor/theme/highlighting/foundry_script/node_reference_color"] = Color(0.39, 0.76, 0.35);
+	colors["text_editor/theme/highlighting/foundry_script/annotation_color"] = Color(1.0, 0.7, 0.45);
+	colors["text_editor/theme/highlighting/foundry_script/string_name_color"] = Color(1.0, 0.76, 0.65);
 	colors["text_editor/theme/highlighting/comment_markers/critical_color"] = Color(0.77, 0.35, 0.35);
 	colors["text_editor/theme/highlighting/comment_markers/warning_color"] = Color(0.72, 0.61, 0.48);
 	colors["text_editor/theme/highlighting/comment_markers/notice_color"] = Color(0.56, 0.67, 0.51);

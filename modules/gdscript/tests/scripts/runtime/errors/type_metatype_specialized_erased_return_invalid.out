@@ -1,3 +1,0 @@
-GDTEST_RUNTIME_ERROR
->> SCRIPT ERROR at runtime/errors/type_metatype_specialized_erased_return_invalid.gd:7 on get_int_box_type(): Trying to return value of type "RefCounted[String]" from a function whose return type is "Type[RefCounted[int]]".
-<null>

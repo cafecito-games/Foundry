@@ -37,7 +37,7 @@
 #include "openxr_extension_wrapper.h"
 
 class OpenXRValveAnalogThresholdExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRValveAnalogThresholdExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRValveAnalogThresholdExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}
@@ -60,7 +60,7 @@ private:
 };
 
 class OpenXRAnalogThresholdModifier : public OpenXRActionBindingModifier {
-	GDCLASS(OpenXRAnalogThresholdModifier, OpenXRActionBindingModifier);
+	FOUNDRY_CLASS(OpenXRAnalogThresholdModifier, OpenXRActionBindingModifier);
 
 private:
 	XrInteractionProfileAnalogThresholdVALVE analog_threshold;

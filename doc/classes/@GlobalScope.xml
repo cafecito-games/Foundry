@@ -6,7 +6,7 @@
 	<description>
 		A list of global scope enumerated constants and built-in functions. This is all that resides in the globals, constants regarding error codes, keycodes, property hints, etc.
 		Singletons are also documented here, since they can be accessed from anywhere.
-		For the entries that can only be accessed from scripts written in GDScript, see [@GDScript].
+		For the entries that can only be accessed from scripts written in FoundryScript, see [@FoundryScript].
 	</description>
 	<tutorials>
 		<link title="Random number generation">$DOCS_URL/tutorials/math/random_number_generation.html</link>
@@ -65,7 +65,7 @@
 			<return type="float" />
 			<param index="0" name="x" type="float" />
 			<description>
-				Returns the arc cosine of [param x] in radians. Use to get the angle of cosine [param x]. [param x] will be clamped between [code]-1.0[/code] and [code]1.0[/code] (inclusive), in order to prevent [method acos] from returning [constant @GDScript.NAN].
+				Returns the arc cosine of [param x] in radians. Use to get the angle of cosine [param x]. [param x] will be clamped between [code]-1.0[/code] and [code]1.0[/code] (inclusive), in order to prevent [method acos] from returning [constant @FoundryScript.NAN].
 				[codeblock]
 				# c is 0.523599 or 30 degrees if converted with rad_to_deg(c)
 				var c = acos(0.866025)
@@ -76,7 +76,7 @@
 			<return type="float" />
 			<param index="0" name="x" type="float" />
 			<description>
-				Returns the hyperbolic arc (also called inverse) cosine of [param x], returning a value in radians. Use it to get the angle from an angle's cosine in hyperbolic space if [param x] is larger or equal to 1. For values of [param x] lower than 1, it will return 0, in order to prevent [method acosh] from returning [constant @GDScript.NAN].
+				Returns the hyperbolic arc (also called inverse) cosine of [param x], returning a value in radians. Use it to get the angle from an angle's cosine in hyperbolic space if [param x] is larger or equal to 1. For values of [param x] lower than 1, it will return 0, in order to prevent [method acosh] from returning [constant @FoundryScript.NAN].
 				[codeblock]
 				var a = acosh(2) # Returns 1.31695789692482
 				cosh(a) # Returns 2
@@ -97,7 +97,7 @@
 			<return type="float" />
 			<param index="0" name="x" type="float" />
 			<description>
-				Returns the arc sine of [param x] in radians. Use to get the angle of sine [param x]. [param x] will be clamped between [code]-1.0[/code] and [code]1.0[/code] (inclusive), in order to prevent [method asin] from returning [constant @GDScript.NAN].
+				Returns the arc sine of [param x] in radians. Use to get the angle of sine [param x]. [param x] will be clamped between [code]-1.0[/code] and [code]1.0[/code] (inclusive), in order to prevent [method asin] from returning [constant @FoundryScript.NAN].
 				[codeblock]
 				# s is 0.523599 or 30 degrees if converted with rad_to_deg(s)
 				var s = asin(0.5)
@@ -144,7 +144,7 @@
 			<param index="0" name="x" type="float" />
 			<description>
 				Returns the hyperbolic arc (also called inverse) tangent of [param x], returning a value in radians. Use it to get the angle from an angle's tangent in hyperbolic space if [param x] is between -1 and 1 (non-inclusive).
-				In mathematics, the inverse hyperbolic tangent is only defined for -1 &lt; [param x] &lt; 1 in the real set, so values equal or lower to -1 for [param x] return negative [constant @GDScript.INF] and values equal or higher than 1 return positive [constant @GDScript.INF] in order to prevent [method atanh] from returning [constant @GDScript.NAN].
+				In mathematics, the inverse hyperbolic tangent is only defined for -1 &lt; [param x] &lt; 1 in the real set, so values equal or lower to -1 for [param x] return negative [constant @FoundryScript.INF] and values equal or higher than 1 return positive [constant @FoundryScript.INF] in order to prevent [method atanh] from returning [constant @FoundryScript.NAN].
 				[codeblock]
 				var a = atanh(0.9) # Returns 1.47221948958322
 				tanh(a) # Returns 0.9
@@ -479,9 +479,9 @@
 			<description>
 				Returns the integer hash of the passed [param variable].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				print(hash("a")) # Prints 177670
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.Print(GD.Hash("a")); // Prints 177670
 				[/csharp]
@@ -494,14 +494,14 @@
 			<description>
 				Returns the [Object] that corresponds to [param instance_id]. All Objects have a unique instance ID. See also [method Object.get_instance_id].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var drink = "water"
 
 				func _ready():
 					var id = get_instance_id()
 					var instance = instance_from_id(id)
 					print(instance.drink) # Prints "water"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public partial class MyNode : Node
 				{
@@ -551,7 +551,7 @@
 			<return type="bool" />
 			<param index="0" name="x" type="float" />
 			<description>
-				Returns whether [param x] is a finite value, i.e. it is not [constant @GDScript.NAN], positive infinity, or negative infinity. See also [method is_inf] and [method is_nan].
+				Returns whether [param x] is a finite value, i.e. it is not [constant @FoundryScript.NAN], positive infinity, or negative infinity. See also [method is_inf] and [method is_nan].
 			</description>
 		</method>
 		<method name="is_inf">
@@ -579,7 +579,7 @@
 			<return type="bool" />
 			<param index="0" name="x" type="float" />
 			<description>
-				Returns [code]true[/code] if [param x] is a NaN ("Not a Number" or invalid) value. This method is needed as [constant @GDScript.NAN] is not equal to itself, which means [code]x == NAN[/code] can't be used to check whether a value is a NaN.
+				Returns [code]true[/code] if [param x] is a NaN ("Not a Number" or invalid) value. This method is needed as [constant @FoundryScript.NAN] is not equal to itself, which means [code]x == NAN[/code] can't be used to check whether a value is a NaN.
 			</description>
 		</method>
 		<method name="is_same">
@@ -637,7 +637,7 @@
 			<param index="2" name="weight" type="float" />
 			<description>
 				Linearly interpolates between two angles (in radians) by a [param weight] value between 0.0 and 1.0.
-				Similar to [method lerp], but interpolates correctly when the angles wrap around [constant @GDScript.TAU]. To perform eased interpolation with [method lerp_angle], combine it with [method ease] or [method smoothstep].
+				Similar to [method lerp], but interpolates correctly when the angles wrap around [constant @FoundryScript.TAU]. To perform eased interpolation with [method lerp_angle], combine it with [method ease] or [method smoothstep].
 				[codeblock]
 				extends Sprite
 				var elapsed = 0.0
@@ -836,7 +836,7 @@
 			<param index="1" name="exp" type="float" />
 			<description>
 				Returns the result of [param base] raised to the power of [param exp].
-				In GDScript, this is the equivalent of the [code]**[/code] operator.
+				In FoundryScript, this is the equivalent of the [code]**[/code] operator.
 				[codeblock]
 				pow(2, 5)   # Returns 32.0
 				pow(4, 1.5) # Returns 8.0
@@ -848,10 +848,10 @@
 			<description>
 				Converts one or more arguments of any type to string in the best way possible and prints them to the console.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var a = [1, 2, 3]
 				print("a", "b", a) # Prints "ab[1, 2, 3]"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				Godot.Collections.Array a = [1, 2, 3];
 				GD.Print("a", "b", a); // Prints "ab[1, 2, 3]"
@@ -868,9 +868,9 @@
 				URL tags only support URLs wrapped by a URL tag, not URLs with a different title.
 				When printing to standard output, the supported subset of BBCode is converted to ANSI escape codes for the terminal emulator to display. Support for ANSI escape codes varies across terminal emulators, especially for italic and strikethrough. In standard output, [code]code[/code] is represented with faint text but without any font change. Unsupported tags are left as-is in standard output.
 				[codeblocks]
-				[gdscript skip-lint]
+				[foundry_script skip-lint]
 				print_rich("[color=green][b]Hello world![/b][/color]") # Prints "Hello world!", in green with a bold font.
-				[/gdscript]
+				[/foundry_script]
 				[csharp skip-lint]
 				GD.PrintRich("[color=green][b]Hello world![/b][/color]"); // Prints "Hello world!", in green with a bold font.
 				[/csharp]
@@ -890,9 +890,9 @@
 			<description>
 				Prints one or more arguments to strings in the best way possible to standard error line.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				printerr("prints to stderr")
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.PrintErr("prints to stderr");
 				[/csharp]
@@ -905,12 +905,12 @@
 				Prints one or more arguments to strings in the best way possible to the OS terminal. Unlike [method print], no newline is automatically added at the end.
 				[b]Note:[/b] The OS terminal is [i]not[/i] the same as the editor's Output dock. The output sent to the OS terminal can be seen when running Godot from a terminal. On Windows, this requires using the [code]console.exe[/code] executable.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				# Prints "ABC" to terminal.
 				printraw("A")
 				printraw("B")
 				printraw("C")
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				// Prints "ABC" to terminal.
 				GD.PrintRaw("A");
@@ -925,9 +925,9 @@
 			<description>
 				Prints one or more arguments to the console with a space between each argument.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				prints("A", "B", "C") # Prints "A B C"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.PrintS("A", "B", "C"); // Prints "A B C"
 				[/csharp]
@@ -939,9 +939,9 @@
 			<description>
 				Prints one or more arguments to the console with a tab between each argument.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				printt("A", "B", "C") # Prints "A       B       C"
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.PrintT("A", "B", "C"); // Prints "A       B       C"
 				[/csharp]
@@ -953,9 +953,9 @@
 			<description>
 				Pushes an error message to Godot's built-in debugger and to the OS terminal.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				push_error("test error") # Prints "test error" to debugger and terminal as an error.
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.PushError("test error"); // Prints "test error" to debugger and terminal as an error.
 				[/csharp]
@@ -968,15 +968,15 @@
 			<description>
 				Pushes an error message to Godot's built-in debugger and to the OS terminal (like [method push_error]), then gracefully terminates the running project with a non-zero exit code. Use this for unrecoverable conditions the project should never continue past, such as a required asset failing to load.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				push_fatal("Failed to load required asset.") # Logs the error, then quits the project.
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.PushFatal("Failed to load required asset."); // Logs the error, then quits the project.
 				[/csharp]
 				[/codeblocks]
 				Termination happens gracefully at the end of the current frame, so any remaining synchronous code in the calling function still runs before the project quits.
-				For GDScript static analysis, [method push_fatal] is treated as a [annotation @GDScript.@noreturn] call.
+				For FoundryScript static analysis, [method push_fatal] is treated as a [annotation @FoundryScript.@noreturn] call.
 				This means it can satisfy typed return paths.
 				Unlike [code]assert()[/code], [method push_fatal] is not compiled out of release builds; it terminates in both debug and exported builds by default.
 				[b]Note:[/b] When called from a [code]@tool[/code] script running inside the editor, it only logs the message and does [b]not[/b] terminate, so it cannot close the editor.
@@ -988,9 +988,9 @@
 			<description>
 				Pushes a warning message to Godot's built-in debugger and to the OS terminal.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				push_warning("test warning") # Prints "test warning" to debugger and terminal as a warning.
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.PushWarning("test warning"); // Prints "test warning" to debugger and terminal as a warning.
 				[/csharp]
@@ -1028,9 +1028,9 @@
 			<description>
 				Returns a random floating-point value between [code]0.0[/code] and [code]1.0[/code] (inclusive).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				randf() # Returns e.g. 0.375671
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.Randf(); // Returns e.g. 0.375671
 				[/csharp]
@@ -1044,10 +1044,10 @@
 			<description>
 				Returns a random floating-point value between [param from] and [param to] (inclusive).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				randf_range(0, 20.5) # Returns e.g. 7.45315
 				randf_range(-10, 10) # Returns e.g. -3.844535
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.RandRange(0.0, 20.5);   // Returns e.g. 7.45315
 				GD.RandRange(-10.0, 10.0); // Returns e.g. -3.844535
@@ -1069,12 +1069,12 @@
 			<description>
 				Returns a random unsigned 32-bit integer. Use remainder to obtain a random value in the interval [code][0, N - 1][/code] (where N is smaller than 2^32).
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				randi()           # Returns random integer between 0 and 2^32 - 1
 				randi() % 20      # Returns random integer between 0 and 19
 				randi() % 100     # Returns random integer between 0 and 99
 				randi() % 100 + 1 # Returns random integer between 1 and 100
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.Randi();           // Returns random integer between 0 and 2^32 - 1
 				GD.Randi() % 20;      // Returns random integer between 0 and 19
@@ -1091,10 +1091,10 @@
 			<description>
 				Returns a random signed 32-bit integer between [param from] and [param to] (inclusive). If [param to] is lesser than [param from], they are swapped.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				randi_range(0, 1)      # Returns either 0 or 1
 				randi_range(-10, 1000) # Returns random integer between -10 and 1000
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.RandRange(0, 1);      // Returns either 0 or 1
 				GD.RandRange(-10, 1000); // Returns random integer between -10 and 1000
@@ -1145,7 +1145,7 @@
 			<param index="2" name="delta" type="float" />
 			<description>
 				Rotates [param from] toward [param to] by the [param delta] amount. Will not go past [param to].
-				Similar to [method move_toward], but interpolates correctly when the angles wrap around [constant @GDScript.TAU].
+				Similar to [method move_toward], but interpolates correctly when the angles wrap around [constant @FoundryScript.TAU].
 				If [param delta] is negative, this function will rotate away from [param to], toward the opposite angle, and will not go past the opposite angle.
 			</description>
 		</method>
@@ -1185,14 +1185,14 @@
 			<description>
 				Sets the seed for the random number generator to [param base]. Setting the seed manually can ensure consistent, repeatable results for most random functions.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var my_seed = "Godot Rocks".hash()
 				seed(my_seed)
 				var a = randf() + randi()
 				seed(my_seed)
 				var b = randf() + randi()
 				# a and b are now identical
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				ulong mySeed = (ulong)GD.Hash("Godot Rocks");
 				GD.Seed(mySeed);
@@ -1375,11 +1375,11 @@
 			<description>
 				Converts a formatted [param string] that was returned by [method var_to_str] to the original [Variant].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var data = '{ "a": 1, "b": 2 }' # data is a String
 				var dict = str_to_var(data)     # dict is a Dictionary
 				print(dict["a"])                # Prints 1
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				string data = "{ \"a\": 1, \"b\": 2 }";           // data is a string
 				var dict = GD.StrToVar(data).AsGodotDictionary(); // dict is a Dictionary
@@ -1479,10 +1479,10 @@
 			<description>
 				Converts a [Variant] [param variable] to a formatted [String] that can then be parsed using [method str_to_var].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var a = { "a": 1, "b": 2 }
 				print(var_to_str(a))
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var a = new Godot.Collections.Dictionary { ["a"] = 1, ["b"] = 2 };
 				GD.Print(GD.VarToStr(a));
@@ -1589,8 +1589,8 @@
 		<member name="EngineDebugger" type="EngineDebugger" setter="" getter="">
 			The [EngineDebugger] singleton.
 		</member>
-		<member name="GDExtensionManager" type="GDExtensionManager" setter="" getter="">
-			The [GDExtensionManager] singleton.
+		<member name="FoundryExtensionManager" type="FoundryExtensionManager" setter="" getter="">
+			The [FoundryExtensionManager] singleton.
 		</member>
 		<member name="Geometry2D" type="Geometry2D" setter="" getter="">
 			The [Geometry2D] singleton.
@@ -2877,7 +2877,7 @@
 			If a property is [Array], hints the editor how to show elements. The [code]hint_string[/code] must encode nested types using [code]":"[/code] and [code]"/"[/code].
 			If a property is [Dictionary], hints the editor how to show elements. The [code]hint_string[/code] is the same as [Array], with a [code]";"[/code] separating the key and value.
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			# Array of elem_type.
 			hint_string = "%d:" % [elem_type]
 			hint_string = "%d/%d:%s" % [elem_type, elem_hint, elem_hint_string]
@@ -2887,7 +2887,7 @@
 			# Three-dimensional array of elem_type (array of arrays of arrays of elem_type).
 			hint_string = "%d:%d:%d:" % [TYPE_ARRAY, TYPE_ARRAY, elem_type]
 			hint_string = "%d:%d:%d/%d:%s" % [TYPE_ARRAY, TYPE_ARRAY, elem_type, elem_hint, elem_hint_string]
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			// Array of elemType.
 			hintString = $"{elemType:D}:";
@@ -2902,7 +2902,7 @@
 			[/codeblocks]
 			[b]Examples:[/b]
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			hint_string = "%d:" % [TYPE_INT] # Array of integers.
 			hint_string = "%d/%d:1,10,1" % [TYPE_INT, PROPERTY_HINT_RANGE] # Array of integers (in range from 1 to 10).
 			hint_string = "%d/%d:Zero,One,Two" % [TYPE_INT, PROPERTY_HINT_ENUM] # Array of integers (an enum).
@@ -2914,7 +2914,7 @@
 			hint_string = "%d:%d/%d:" % [TYPE_ARRAY, TYPE_STRING, PROPERTY_HINT_MULTILINE_TEXT] # Two-dimensional array of multiline strings.
 			hint_string = "%d:%d/%d:-1,1,0.1" % [TYPE_ARRAY, TYPE_FLOAT, PROPERTY_HINT_RANGE] # Two-dimensional array of floats (in range from -1 to 1).
 			hint_string = "%d:%d/%d:Texture2D" % [TYPE_ARRAY, TYPE_OBJECT, PROPERTY_HINT_RESOURCE_TYPE] # Two-dimensional array of textures.
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			hintString = $"{Variant.Type.Int:D}/{PropertyHint.Range:D}:1,10,1"; // Array of integers (in range from 1 to 10).
 			hintString = $"{Variant.Type.Int:D}/{PropertyHint.Enum:D}:Zero,One,Two"; // Array of integers (an enum).
@@ -2947,7 +2947,7 @@
 		<constant name="PROPERTY_HINT_INT_IS_OBJECTID" value="29" enum="PropertyHint" deprecated="This hint is not used by the engine.">
 		</constant>
 		<constant name="PROPERTY_HINT_INT_IS_POINTER" value="30" enum="PropertyHint">
-			Hints that an [int] property is a pointer. Used by GDExtension.
+			Hints that an [int] property is a pointer. Used by FoundryExtension.
 		</constant>
 		<constant name="PROPERTY_HINT_ARRAY_TYPE" value="31" enum="PropertyHint">
 			Hints that a property is an [Array] with the stored type specified in the hint string. The hint string contains the type of the array (e.g. [code]"String"[/code]).
@@ -2996,10 +2996,10 @@
 			Like [constant PROPERTY_HINT_FILE], but the property is stored as a raw path, not UID. That means the reference will be broken if you move the file. Consider using [constant PROPERTY_HINT_FILE] when possible.
 		</constant>
 		<constant name="PROPERTY_HINT_CALLABLE_TYPE" value="45" enum="PropertyHint">
-			Hints that a [Callable] or [Signal] property carries an encoded method signature in its hint string. The hint string lists the parameter types and, for [Callable], the return type, using the same type-name grammar as [constant PROPERTY_HINT_ARRAY_TYPE] and nesting recursively. Used by GDScript to preserve typed [Callable]/[Signal] signatures across the script API; tools that do not understand the hint can safely ignore it.
+			Hints that a [Callable] or [Signal] property carries an encoded method signature in its hint string. The hint string lists the parameter types and, for [Callable], the return type, using the same type-name grammar as [constant PROPERTY_HINT_ARRAY_TYPE] and nesting recursively. Used by FoundryScript to preserve typed [Callable]/[Signal] signatures across the script API; tools that do not understand the hint can safely ignore it.
 		</constant>
 		<constant name="PROPERTY_HINT_COROUTINE_TYPE" value="46" enum="PropertyHint">
-			Hints that an [Object] property is a GDScript [code]Coroutine[T][/code] handle and carries its encoded result type [code]T[/code] in the hint string, using the same type-name grammar as [constant PROPERTY_HINT_CALLABLE_TYPE]. Used by GDScript to preserve the coroutine result type across the script API so the handle stays awaitable as [code]T[/code]; tools that do not understand the hint can safely ignore it.
+			Hints that an [Object] property is a FoundryScript [code]Coroutine[T][/code] handle and carries its encoded result type [code]T[/code] in the hint string, using the same type-name grammar as [constant PROPERTY_HINT_CALLABLE_TYPE]. Used by FoundryScript to preserve the coroutine result type across the script API so the handle stays awaitable as [code]T[/code]; tools that do not understand the hint can safely ignore it.
 		</constant>
 		<constant name="PROPERTY_HINT_MAX" value="47" enum="PropertyHint">
 			Represents the size of the [enum PropertyHint] enum.
@@ -3128,7 +3128,7 @@
 			Used internally. Allows to not dump core virtual methods (such as [method Object._notification]) to the JSON API.
 		</constant>
 		<constant name="METHOD_FLAG_VIRTUAL_REQUIRED" value="128" enum="MethodFlags" is_bitfield="true">
-			Flag for a virtual method that is required. In GDScript, this flag is set for abstract functions.
+			Flag for a virtual method that is required. In FoundryScript, this flag is set for abstract functions.
 		</constant>
 		<constant name="METHOD_FLAG_ASYNC" value="256" enum="MethodFlags" is_bitfield="true">
 			Flag for an asynchronous method.
@@ -3323,7 +3323,7 @@
 			Logical OR operator ([code]or[/code] or [code]||[/code]).
 		</constant>
 		<constant name="OP_XOR" value="22" enum="Variant.Operator">
-			Logical XOR operator (not implemented in GDScript).
+			Logical XOR operator (not implemented in FoundryScript).
 		</constant>
 		<constant name="OP_NOT" value="23" enum="Variant.Operator">
 			Logical NOT operator ([code]not[/code] or [code]![/code]).

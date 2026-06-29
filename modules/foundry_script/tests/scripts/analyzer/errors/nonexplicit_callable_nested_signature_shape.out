@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 11: Cannot assign a value of type Callable to variable "handler" with specified type Callable[[Callable[[int], void]], void].

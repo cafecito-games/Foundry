@@ -54,7 +54,7 @@ struct CameraRotationParams {
 };
 
 class CameraFeedAndroid : public CameraFeed {
-	GDSOFTCLASS(CameraFeedAndroid, CameraFeed);
+	FOUNDRY_SOFTCLASS(CameraFeedAndroid, CameraFeed);
 
 private:
 	String camera_id;
@@ -122,7 +122,7 @@ public:
 };
 
 class CameraAndroid : public CameraServer {
-	GDSOFTCLASS(CameraAndroid, CameraServer);
+	FOUNDRY_SOFTCLASS(CameraAndroid, CameraServer);
 
 private:
 	ACameraManager *cameraManager = nullptr;

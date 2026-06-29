@@ -1,0 +1,181 @@
+# Foundry rename naming map (seed)
+# Tab-separated: from<TAB>to<TAB>category<TAB>notes
+# Applied LONGEST-MATCH-FIRST. Excludes thirdparty/** and .git/**.
+# This is a SEED for tools/foundry-rename/naming_map.tsv — expand during implementation.
+#
+# NOTE: identifier rows are matched with a trailing word boundary, so a bare
+# "prefix" row like GDVIRTUAL or GODOT_ only matches the bare token, never
+# GDVIRTUAL0 / GODOT_VERSION. The concrete variants are emitted explicitly by
+# generate_map.py from the live code, so no prefix-fallback rows are kept here.
+#
+# from	to	category	notes
+GDScriptParser	FSParser	A	gdscript family prefix GDScript->FS
+GDScriptCompiler	FSCompiler	A
+GDScriptAnalyzer	FSAnalyzer	A
+GDScriptLanguage	FSLanguage	A
+GDScriptInstance	FSInstance	A
+GDScriptFunction	FSFunction	A
+GDScriptTokenizer	FSTokenizer	A
+GDScriptCache	FSCache	A
+GDScriptByteCodeGenerator	FSByteCodeGenerator	A
+GDScriptNativeClass	FSNativeClass	A
+GDScriptSyntaxHighlighter	FSSyntaxHighlighter	A
+GDScriptLanguageProtocol	FSLanguageProtocol	A
+GDScriptLanguageServer	FSLanguageServer	A
+GDScriptWorkspace	FSWorkspace	A
+GDScriptTextDocument	FSTextDocument	A
+GDScript	FoundryScript	A	standalone language class (apply AFTER all GDScript* prefixes)
+gdscript_	fs_	A	lowercase file/include prefix (apply BEFORE gdscript via longest-first)
+gdscript	foundry_script	A	lowercase module dir, main file, setting keys (apply AFTER gdscript_)
+# Category-A residuals: embedded / all-caps GDScript tokens the word-boundary
+# engine cannot reach via the family prefixes. Explicit full-identifier rules.
+# All-caps GDSCRIPT -> FOUNDRY_SCRIPT (forced by module-macro naming).
+MODULE_GDSCRIPT_ENABLED	MODULE_FOUNDRY_SCRIPT_ENABLED	A	module enable macro (build-critical)
+GDSCRIPT_NO_LSP	FOUNDRY_SCRIPT_NO_LSP	A	build define
+GDSCRIPT_REFLECTION_NAMESPACE	FOUNDRY_SCRIPT_REFLECTION_NAMESPACE	A
+OPCODE_CALL_GDSCRIPT_UTILITY	OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY	A
+STRUCTURED_TEXT_GDSCRIPT	STRUCTURED_TEXT_FOUNDRY_SCRIPT	A	TextServer enum
+LANGUAGE_GDSCRIPT	LANGUAGE_FOUNDRY_SCRIPT	A	editor_help enum
+TYPE_GDSCRIPT	TYPE_FOUNDRY_SCRIPT	A
+GDSCRIPT	FOUNDRY_SCRIPT	A	bare all-caps enum value (FSDataType/LanguageId)
+# Embedded CamelCase: GDScript segment -> FoundryScript (terminal) or FS (mid).
+ResourceFormatLoaderGDScript	ResourceFormatLoaderFoundryScript	A
+ResourceFormatSaverGDScript	ResourceFormatSaverFoundryScript	A
+EditorExportGDScript	EditorExportFoundryScript	A
+ExtendGDScriptParser	ExtendFSParser	A
+ScopedGDScriptLanguage	ScopedFSLanguage	A
+_GDScriptMemberSort	_FSMemberSort	A
+TestGDScriptCacheAccessor	TestFSCacheAccessor	A
+TestGDScriptAnalyzerAccessor	TestFSAnalyzerAccessor	A
+TestGDScriptTraitReflectionAccessor	TestFSTraitReflectionAccessor	A
+TestGDScriptGenericReflectionAccessor	TestFSGenericReflectionAccessor	A
+TestGDScriptLanguageProtocolInitializer	TestFSLanguageProtocolInitializer	A
+GDSCriptFunctionState	FSFunctionState	A	comment typo for GDScriptFunctionState
+GDSCript	FoundryScript	A	comment typo for GDScript
+# Embedded snake_case: cache/member mirrors -> fs_; conceptual -> foundry_script.
+shallow_gdscript_cache	shallow_fs_cache	A
+full_gdscript_cache	full_fs_cache	A
+static_gdscript_cache	static_fs_cache	A
+_get_gdscript_cache_mutex	_get_fs_cache_mutex	A
+p_gdscript_member	p_fs_member	A
+p_gdscript	p_foundry_script	A
+write_call_gdscript_utility	write_call_foundry_script_utility	A
+is_gdscript_path	is_foundry_script_path	A
+base_is_gdscript	base_is_foundry_script	A
+expected_gdscript	expected_foundry_script	A
+populate_gdscript_metadata	populate_foundry_script_metadata	A
+generate_gdscript_tests	generate_foundry_script_tests	A
+_open_gdscript_migration_wizard	_open_foundry_script_migration_wizard	A
+test_conversion_gdscript_builtin	test_conversion_foundry_script_builtin	A
+rename_gdscript_functions	rename_foundry_script_functions	A
+rename_gdscript_keywords	rename_foundry_script_keywords	A
+check_for_rename_gdscript_functions	check_for_rename_foundry_script_functions	A
+check_for_rename_gdscript_keywords	check_for_rename_foundry_script_keywords	A
+process_gdscript_line	process_foundry_script_line	A
+_gdscript_type_arguments_property_name	_foundry_script_type_arguments_property_name	A
+__gdscript_type_arguments__	__foundry_script_type_arguments__	A	internal metadata key
+keyword_gdscript_master	keyword_foundry_script_master	A
+keyword_gdscript_mastersync	keyword_foundry_script_mastersync	A
+keyword_gdscript_puppet	keyword_foundry_script_puppet	A
+keyword_gdscript_puppetsync	keyword_foundry_script_puppetsync	A
+keyword_gdscript_remote	keyword_foundry_script_remote	A
+keyword_gdscript_remotesync	keyword_foundry_script_remotesync	A
+keyword_gdscript_slave	keyword_foundry_script_slave	A
+keyword_gdscript_sync	keyword_foundry_script_sync	A
+keyword_gdscript_tool	keyword_foundry_script_tool	A
+keyword_gdscript_onready	keyword_foundry_script_onready	A
+keyword_gdscript_export_single	keyword_foundry_script_export_single	A
+keyword_gdscript_export_multi	keyword_foundry_script_export_multi	A
+fuzz_gdscript_linuxbsd	fuzz_foundry_script_linuxbsd	A	fuzz harness (file + symbol)
+fuzz_gdscript_macos	fuzz_foundry_script_macos	A	fuzz harness (file + symbol)
+GDExtensionManager	FoundryExtensionManager	B
+GDExtensionLoader	FoundryExtensionLoader	B
+GDExtensionMethodBind	FoundryExtensionMethodBind	B
+GDExtensionInterface	FoundryExtensionInterface	B
+GDExtension	FoundryExtension	B	apply AFTER all GDExtension* compounds
+# Lowercase file/dir/include/identifier prefix: gdextension_ -> foundry_extension_
+# (apply BEFORE the bare gdextension rule via longest-first).
+gdextension_	foundry_extension_	B	lowercase file/include/identifier prefix
+gdextension	foundry_extension	B	bare lowercase token (apply AFTER gdextension_)
+# All-caps public C API enums / build define / macros.
+GDEXTENSION_	FOUNDRY_EXTENSION_	B	all-caps macro/enum prefix (apply BEFORE bare GDEXTENSION)
+GDEXTENSION	FOUNDRY_EXTENSION	B	bare all-caps build define (apply AFTER GDEXTENSION_)
+# Bare resource/loader format string (no dot) -> "foundryextension" (no underscore).
+"gdextension"	"foundryextension"	B	resource loader recognized-extension string
+# Category-B residuals: embedded GDExtension tokens the word-boundary engine
+# cannot reach (preceded by a letter/digit, plural forms, or mid-identifier).
+# CamelCase embedded -> FoundryExtension.
+ObjectGDExtension	ObjectFoundryExtension	B	core object extension hook struct
+getGDExtensionConfigFiles	getFoundryExtensionConfigFiles	B	android JNI method name (both sides)
+getPluginGDExtensionLibrariesPaths	getPluginFoundryExtensionLibrariesPaths	B
+pluginGDExtensionLibrariesPaths	pluginFoundryExtensionLibrariesPaths	B
+# Identifier-initial _gdextension_ family (interface dumper constants, wrappers).
+_gdextension_	_foundry_extension_	B	leading-underscore gdextension prefix
+# snake_case embedded (gdextension preceded by alnum, or plural gdextensions).
+_gdextensions_reloaded	_foundry_extensions_reloaded	B
+gdextensions	foundry_extensions	B	bare plural (apply AFTER *_gdextensions compounds)
+initialize_gdextensions	initialize_foundry_extensions	B
+finalize_gdextensions	finalize_foundry_extensions	B
+load_platform_gdextensions	load_platform_foundry_extensions	B
+dump_gdextension_interface_header	dump_foundry_extension_interface_header	B
+dump_gdextension_interface	dump_foundry_extension_interface	B
+generate_gdextension_interface_header	generate_foundry_extension_interface_header	B
+generate_gdextension_interface_file	generate_foundry_extension_interface_file	B
+load_gdextension_interface_file	load_foundry_extension_interface_file	B
+load_gdextension_resource	load_foundry_extension_resource	B
+_get_gdextension_list_config_file	_get_foundry_extension_list_config_file	B
+get_gdextension_list_config_file	get_foundry_extension_list_config_file	B
+parse_gdextension_file	parse_foundry_extension_file	B
+resource_loader_gdextension	resource_loader_foundry_extension	B
+p_gdextension_extensions	p_foundry_extension_extensions	B
+p_gdextension_libs_path	p_foundry_extension_libs_path	B
+# Export config keys (web JS + android), kept self-consistent across .cpp/.js.
+gdextensionLibs	foundryextensionLibs	B	web export config key
+gdextensionlibs	foundryextensionlibs	B	android libs json path component
+# Hyphenated CLI flags (keep hyphens; the bare rule would inject an underscore).
+dump-gdextension-interface	dump-foundryextension-interface	B	CLI flag (covers -json suffix)
+gdextension-docs	foundryextension-docs	B	--gdextension-docs CLI flag
+GDREGISTER_ABSTRACT_CLASS	FOUNDRY_REGISTER_ABSTRACT_CLASS	C
+GDREGISTER_CLASS	FOUNDRY_REGISTER_CLASS	C
+GDSOFTCLASS	FOUNDRY_SOFTCLASS	C
+GDCLASS	FOUNDRY_CLASS	C	apply AFTER GDREGISTER_*/GDSOFTCLASS
+# Internal sentinel for the virtual-call machinery, emitted by
+# core/object/make_virtuals.py. Preceded by an underscore, so the auto-scan
+# word-boundary token regex cannot reach it; needs an explicit full-token rule.
+_INVALID_GDVIRTUAL_FUNC_ADDR	_INVALID_FOUNDRY_VIRTUAL_FUNC_ADDR	C	gdvirtual sentinel constant
+# Member flag in AnimationMixer that embeds the GDVIRTUAL_CALL macro name mid-
+# identifier (preceded by "is_"), so the word-boundary engine cannot reach it.
+is_GDVIRTUAL_CALL_post_process_key_value	is_FOUNDRY_VIRTUAL_CALL_post_process_key_value	C	embedded macro name in member flag
+.gdextension	.foundryextension	B	file format extension
+.gdignore	.fsignore	A
+.gdc	.fsc	A	compiled script
+.gde	.fse	A	encrypted script
+.gd	.fs	A	apply AFTER .gdc/.gde/.gdextension/.gdignore
+project.godot	project.foundry	D
+GODOT_VERSION	FOUNDRY_VERSION	D
+godotengine.org	cafecito.games	D
+Godot Engine	Foundry	D
+GDScript	Foundry Script	D	user-facing prose (handle in docs/translations pass)
+# glTF/FBX vendor-extension and additional-data interop strings (Category D
+# exclusions). These GODOT_-prefixed tokens are on-disk glTF vendor extension
+# names or in-memory additional_data dictionary keys shared across the glTF/FBX
+# importers and third-party GLTFDocumentExtensions. Renaming them would break
+# reading/writing real glTF files and the importer interop contract, so they are
+# excluded from every rename context.
+GODOT_single_root	!EXCLUDE	D	glTF vendor extension name (on-disk interop)
+GODOT_rest_transform	!EXCLUDE	D	glTF/FBX additional_data interop key
+GODOT_animation_time_begin_time_end	!EXCLUDE	D	FBX additional_data interop key
+GODOT_blend_shape_animations	!EXCLUDE	D	FBX additional_data interop key
+GODOT_mesh_blend_channels	!EXCLUDE	D	FBX additional_data interop key
+GODOT_fbx_light	!EXCLUDE	D	FBX additional_data interop key
+GODOT_MBEDTLS_THREADING_ALT	!EXCLUDE	D	defined in thirdparty/mbedtls config; consumer #ifdef must keep GODOT_ name
+# Wayland window-embedding protocol opcode enums. These are GENERATED by
+# wayland-scanner from the `godot_embedded_client` interface in
+# platform/linuxbsd/wayland/godot-embedding-compositor.xml. The generated
+# constants keep the GODOT_ name, so the consumers in wayland_embedder.cpp must
+# too (renaming the consumers desyncs them from the generated header).
+GODOT_EMBEDDED_CLIENT_DESTROY	!EXCLUDE	D	wayland-scanner generated opcode (godot_embedded_client interface)
+GODOT_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_RECT	!EXCLUDE	D	wayland-scanner generated opcode
+GODOT_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_PARENT	!EXCLUDE	D	wayland-scanner generated opcode
+GODOT_EMBEDDED_CLIENT_FOCUS_WINDOW	!EXCLUDE	D	wayland-scanner generated opcode
+GODOT_EMBEDDED_CLIENT_EMBEDDED_WINDOW_REQUEST_CLOSE	!EXCLUDE	D	wayland-scanner generated opcode

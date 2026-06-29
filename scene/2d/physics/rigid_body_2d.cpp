@@ -163,11 +163,11 @@ void RigidBody2D::_sync_body_state(PhysicsDirectBodyState2D *p_state) {
 void RigidBody2D::_body_state_changed(PhysicsDirectBodyState2D *p_state) {
 	lock_callback();
 
-	if (GDVIRTUAL_IS_OVERRIDDEN(_integrate_forces)) {
+	if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_integrate_forces)) {
 		_sync_body_state(p_state);
 
 		Transform2D old_transform = get_global_transform();
-		GDVIRTUAL_CALL(_integrate_forces, p_state);
+		FOUNDRY_VIRTUAL_CALL(_integrate_forces, p_state);
 		Transform2D new_transform = get_global_transform();
 
 		if (new_transform != old_transform) {
@@ -737,7 +737,7 @@ void RigidBody2D::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_colliding_bodies"), &RigidBody2D::get_colliding_bodies);
 
-	GDVIRTUAL_BIND(_integrate_forces, "state");
+	FOUNDRY_VIRTUAL_BIND(_integrate_forces, "state");
 
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "mass", PROPERTY_HINT_RANGE, "0.001,1000,0.001,or_greater,exp,suffix:kg"), "set_mass", "get_mass");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "physics_material_override", PROPERTY_HINT_RESOURCE_TYPE, "PhysicsMaterial"), "set_physics_material_override", "get_physics_material_override");

@@ -33,7 +33,7 @@
 #include "scene/gui/popup_menu.h"
 
 class EditorTranslationPreviewMenu : public PopupMenu {
-	GDCLASS(EditorTranslationPreviewMenu, PopupMenu);
+	FOUNDRY_CLASS(EditorTranslationPreviewMenu, PopupMenu);
 
 	void _prepare();
 	void _pressed(int p_index);

@@ -144,7 +144,7 @@ void EditorExportPlatformWeb::_fix_html(Vector<uint8_t> &p_html, const Ref<Edito
 	config["canvasResizePolicy"] = p_preset->get("html/canvas_resize_policy");
 	config["experimentalVK"] = p_preset->get("html/experimental_virtual_keyboard");
 	config["focusCanvas"] = p_preset->get("html/focus_canvas_on_start");
-	config["gdextensionLibs"] = libs;
+	config["foundryextensionLibs"] = libs;
 	config["executable"] = p_name;
 	config["args"] = args;
 	config["fileSizes"] = p_file_sizes;
@@ -167,24 +167,24 @@ void EditorExportPlatformWeb::_fix_html(Vector<uint8_t> &p_html, const Ref<Edito
 	const String str_config = Variant(config).to_json_string();
 	const String custom_head_include = p_preset->get("html/head_include");
 	HashMap<String, String> replaces;
-	replaces["$GODOT_URL"] = p_name + ".js";
-	replaces["$GODOT_PROJECT_NAME"] = get_project_setting(p_preset, "application/config/name");
-	replaces["$GODOT_HEAD_INCLUDE"] = head_include + custom_head_include;
-	replaces["$GODOT_CONFIG"] = str_config;
-	replaces["$GODOT_SPLASH_COLOR"] = "#" + Color(get_project_setting(p_preset, "application/boot_splash/bg_color")).to_html(false);
+	replaces["$FOUNDRY_URL"] = p_name + ".js";
+	replaces["$FOUNDRY_PROJECT_NAME"] = get_project_setting(p_preset, "application/config/name");
+	replaces["$FOUNDRY_HEAD_INCLUDE"] = head_include + custom_head_include;
+	replaces["$FOUNDRY_CONFIG"] = str_config;
+	replaces["$FOUNDRY_SPLASH_COLOR"] = "#" + Color(get_project_setting(p_preset, "application/boot_splash/bg_color")).to_html(false);
 
 	Vector<String> godot_splash_classes;
 	godot_splash_classes.push_back("show-image--" + String(get_project_setting(p_preset, "application/boot_splash/show_image")));
 	RenderingServer::SplashStretchMode boot_splash_stretch_mode = get_project_setting(p_preset, "application/boot_splash/stretch_mode");
 	godot_splash_classes.push_back("fullsize--" + String(((boot_splash_stretch_mode != RenderingServer::SplashStretchMode::SPLASH_STRETCH_MODE_DISABLED) ? "true" : "false")));
 	godot_splash_classes.push_back("use-filter--" + String(get_project_setting(p_preset, "application/boot_splash/use_filter")));
-	replaces["$GODOT_SPLASH_CLASSES"] = String(" ").join(godot_splash_classes);
-	replaces["$GODOT_SPLASH"] = p_name + ".png";
+	replaces["$FOUNDRY_SPLASH_CLASSES"] = String(" ").join(godot_splash_classes);
+	replaces["$FOUNDRY_SPLASH"] = p_name + ".png";
 
 	if (p_preset->get("variant/thread_support")) {
-		replaces["$GODOT_THREADS_ENABLED"] = "true";
+		replaces["$FOUNDRY_THREADS_ENABLED"] = "true";
 	} else {
-		replaces["$GODOT_THREADS_ENABLED"] = "false";
+		replaces["$FOUNDRY_THREADS_ENABLED"] = "false";
 	}
 
 	_replace_strings(replaces, p_html);
@@ -368,7 +368,7 @@ void EditorExportPlatformWeb::get_export_options(List<ExportOption> *r_options) 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/debug", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "variant/extensions_support"), false)); // GDExtension support.
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "variant/extensions_support"), false)); // FoundryExtension support.
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "variant/thread_support"), false, true)); // Thread support (i.e. run with or without COEP/COOP headers).
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "vram_texture_compression/for_desktop"), true)); // S3TC
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "vram_texture_compression/for_mobile"), false)); // ETC or ETC2, depending on renderer

@@ -41,7 +41,7 @@ class AnimationNodeEndState;
 class AnimationTree;
 
 class AnimationNode : public Resource {
-	GDCLASS(AnimationNode, Resource);
+	FOUNDRY_CLASS(AnimationNode, Resource);
 
 public:
 	friend class AnimationTree;
@@ -180,14 +180,14 @@ protected:
 
 	void _validate_property(PropertyInfo &p_property) const;
 
-	GDVIRTUAL0RC(Dictionary, _get_child_nodes)
-	GDVIRTUAL0RC(Array, _get_parameter_list)
-	GDVIRTUAL1RC(Ref<AnimationNode>, _get_child_by_name, StringName)
-	GDVIRTUAL1RC(Variant, _get_parameter_default_value, StringName)
-	GDVIRTUAL1RC(bool, _is_parameter_read_only, StringName)
-	GDVIRTUAL4R(double, _process, double, bool, bool, bool)
-	GDVIRTUAL0RC(String, _get_caption)
-	GDVIRTUAL0RC(bool, _has_filter)
+	FOUNDRY_VIRTUAL0RC(Dictionary, _get_child_nodes)
+	FOUNDRY_VIRTUAL0RC(Array, _get_parameter_list)
+	FOUNDRY_VIRTUAL1RC(Ref<AnimationNode>, _get_child_by_name, StringName)
+	FOUNDRY_VIRTUAL1RC(Variant, _get_parameter_default_value, StringName)
+	FOUNDRY_VIRTUAL1RC(bool, _is_parameter_read_only, StringName)
+	FOUNDRY_VIRTUAL4R(double, _process, double, bool, bool, bool)
+	FOUNDRY_VIRTUAL0RC(String, _get_caption)
+	FOUNDRY_VIRTUAL0RC(bool, _has_filter)
 
 public:
 	virtual void get_parameter_list(List<PropertyInfo> *r_list) const;
@@ -245,7 +245,7 @@ VARIANT_ENUM_CAST(AnimationNode::FilterAction)
 
 // Root node does not allow inputs.
 class AnimationRootNode : public AnimationNode {
-	GDCLASS(AnimationRootNode, AnimationNode);
+	FOUNDRY_CLASS(AnimationRootNode, AnimationNode);
 
 protected:
 	virtual void _tree_changed();
@@ -254,15 +254,15 @@ protected:
 };
 
 class AnimationNodeStartState : public AnimationRootNode {
-	GDCLASS(AnimationNodeStartState, AnimationRootNode);
+	FOUNDRY_CLASS(AnimationNodeStartState, AnimationRootNode);
 };
 
 class AnimationNodeEndState : public AnimationRootNode {
-	GDCLASS(AnimationNodeEndState, AnimationRootNode);
+	FOUNDRY_CLASS(AnimationNodeEndState, AnimationRootNode);
 };
 
 class AnimationTree : public AnimationMixer {
-	GDCLASS(AnimationTree, AnimationMixer);
+	FOUNDRY_CLASS(AnimationTree, AnimationMixer);
 
 #ifndef DISABLE_DEPRECATED
 public:

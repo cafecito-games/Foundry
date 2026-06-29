@@ -35,7 +35,7 @@
 class CollisionObject3D;
 
 class RayCast3D : public Node3D {
-	GDCLASS(RayCast3D, Node3D);
+	FOUNDRY_CLASS(RayCast3D, Node3D);
 
 	bool enabled = true;
 	bool collided = false;

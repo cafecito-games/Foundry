@@ -33,7 +33,7 @@
 #include "texture.h"
 
 class SkeletonProfile : public Resource {
-	GDCLASS(SkeletonProfile, Resource);
+	FOUNDRY_CLASS(SkeletonProfile, Resource);
 
 public:
 	enum TailDirection {
@@ -128,7 +128,7 @@ public:
 };
 
 class SkeletonProfileHumanoid : public SkeletonProfile {
-	GDCLASS(SkeletonProfileHumanoid, SkeletonProfile);
+	FOUNDRY_CLASS(SkeletonProfileHumanoid, SkeletonProfile);
 
 public:
 	SkeletonProfileHumanoid();

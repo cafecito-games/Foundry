@@ -45,7 +45,7 @@
 
 // Capture all shortcut events not handled by other nodes.
 class ShortcutBin : public Node {
-	GDCLASS(ShortcutBin, Node);
+	FOUNDRY_CLASS(ShortcutBin, Node);
 
 	virtual void _notification(int what) {
 		switch (what) {

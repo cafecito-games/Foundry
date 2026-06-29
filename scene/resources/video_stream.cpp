@@ -34,19 +34,19 @@
 
 void VideoStreamPlayback::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("mix_audio", "num_frames", "buffer", "offset"), &VideoStreamPlayback::mix_audio, DEFVAL(PackedFloat32Array()), DEFVAL(0));
-	GDVIRTUAL_BIND(_stop);
-	GDVIRTUAL_BIND(_play);
-	GDVIRTUAL_BIND(_is_playing);
-	GDVIRTUAL_BIND(_set_paused, "paused");
-	GDVIRTUAL_BIND(_is_paused);
-	GDVIRTUAL_BIND(_get_length);
-	GDVIRTUAL_BIND(_get_playback_position);
-	GDVIRTUAL_BIND(_seek, "time");
-	GDVIRTUAL_BIND(_set_audio_track, "idx");
-	GDVIRTUAL_BIND(_get_texture);
-	GDVIRTUAL_BIND(_update, "delta");
-	GDVIRTUAL_BIND(_get_channels);
-	GDVIRTUAL_BIND(_get_mix_rate);
+	FOUNDRY_VIRTUAL_BIND(_stop);
+	FOUNDRY_VIRTUAL_BIND(_play);
+	FOUNDRY_VIRTUAL_BIND(_is_playing);
+	FOUNDRY_VIRTUAL_BIND(_set_paused, "paused");
+	FOUNDRY_VIRTUAL_BIND(_is_paused);
+	FOUNDRY_VIRTUAL_BIND(_get_length);
+	FOUNDRY_VIRTUAL_BIND(_get_playback_position);
+	FOUNDRY_VIRTUAL_BIND(_seek, "time");
+	FOUNDRY_VIRTUAL_BIND(_set_audio_track, "idx");
+	FOUNDRY_VIRTUAL_BIND(_get_texture);
+	FOUNDRY_VIRTUAL_BIND(_update, "delta");
+	FOUNDRY_VIRTUAL_BIND(_get_channels);
+	FOUNDRY_VIRTUAL_BIND(_get_mix_rate);
 }
 
 VideoStreamPlayback::VideoStreamPlayback() {
@@ -56,28 +56,28 @@ VideoStreamPlayback::~VideoStreamPlayback() {
 }
 
 void VideoStreamPlayback::stop() {
-	GDVIRTUAL_CALL(_stop);
+	FOUNDRY_VIRTUAL_CALL(_stop);
 }
 
 void VideoStreamPlayback::play() {
-	GDVIRTUAL_CALL(_play);
+	FOUNDRY_VIRTUAL_CALL(_play);
 }
 
 bool VideoStreamPlayback::is_playing() const {
 	bool ret;
-	if (GDVIRTUAL_CALL(_is_playing, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_is_playing, ret)) {
 		return ret;
 	}
 	return false;
 }
 
 void VideoStreamPlayback::set_paused(bool p_paused) {
-	GDVIRTUAL_CALL(_set_paused, p_paused);
+	FOUNDRY_VIRTUAL_CALL(_set_paused, p_paused);
 }
 
 bool VideoStreamPlayback::is_paused() const {
 	bool ret;
-	if (GDVIRTUAL_CALL(_is_paused, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_is_paused, ret)) {
 		return ret;
 	}
 	return false;
@@ -85,7 +85,7 @@ bool VideoStreamPlayback::is_paused() const {
 
 double VideoStreamPlayback::get_length() const {
 	double ret;
-	if (GDVIRTUAL_CALL(_get_length, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_length, ret)) {
 		return ret;
 	}
 	return 0;
@@ -93,30 +93,30 @@ double VideoStreamPlayback::get_length() const {
 
 double VideoStreamPlayback::get_playback_position() const {
 	double ret;
-	if (GDVIRTUAL_CALL(_get_playback_position, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_playback_position, ret)) {
 		return ret;
 	}
 	return 0;
 }
 
 void VideoStreamPlayback::seek(double p_time) {
-	GDVIRTUAL_CALL(_seek, p_time);
+	FOUNDRY_VIRTUAL_CALL(_seek, p_time);
 }
 
 void VideoStreamPlayback::set_audio_track(int p_idx) {
-	GDVIRTUAL_CALL(_set_audio_track, p_idx);
+	FOUNDRY_VIRTUAL_CALL(_set_audio_track, p_idx);
 }
 
 Ref<Texture2D> VideoStreamPlayback::get_texture() const {
 	Ref<Texture2D> ret;
-	if (GDVIRTUAL_CALL(_get_texture, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_texture, ret)) {
 		return ret;
 	}
 	return nullptr;
 }
 
 void VideoStreamPlayback::update(double p_delta) {
-	GDVIRTUAL_CALL(_update, p_delta);
+	FOUNDRY_VIRTUAL_CALL(_update, p_delta);
 }
 
 void VideoStreamPlayback::set_mix_callback(AudioMixCallback p_callback, void *p_userdata) {
@@ -126,7 +126,7 @@ void VideoStreamPlayback::set_mix_callback(AudioMixCallback p_callback, void *p_
 
 int VideoStreamPlayback::get_channels() const {
 	int ret;
-	if (GDVIRTUAL_CALL(_get_channels, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_channels, ret)) {
 		_channel_count = ret;
 		return ret;
 	}
@@ -135,7 +135,7 @@ int VideoStreamPlayback::get_channels() const {
 
 int VideoStreamPlayback::get_mix_rate() const {
 	int ret;
-	if (GDVIRTUAL_CALL(_get_mix_rate, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_mix_rate, ret)) {
 		return ret;
 	}
 	return 0;
@@ -157,7 +157,7 @@ int VideoStreamPlayback::mix_audio(int num_frames, PackedFloat32Array buffer, in
 
 Ref<VideoStreamPlayback> VideoStream::instantiate_playback() {
 	Ref<VideoStreamPlayback> ret;
-	if (GDVIRTUAL_CALL(_instantiate_playback, ret)) {
+	if (FOUNDRY_VIRTUAL_CALL(_instantiate_playback, ret)) {
 		ERR_FAIL_COND_V_MSG(ret.is_null(), nullptr, "Plugin returned null playback");
 		ret->set_audio_track(audio_track);
 		return ret;
@@ -180,7 +180,7 @@ void VideoStream::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "file"), "set_file", "get_file");
 
-	GDVIRTUAL_BIND(_instantiate_playback);
+	FOUNDRY_VIRTUAL_BIND(_instantiate_playback);
 }
 
 VideoStream::VideoStream() {

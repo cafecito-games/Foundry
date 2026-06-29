@@ -35,14 +35,14 @@
 #include "scene/gui/button.h"
 #include "scene/gui/tree.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript_autoload_index.h"
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/fs_autoload_index.h"
 #endif
 
 class EditorFileDialog;
 
 class EditorAutoloadSettings : public VBoxContainer {
-	GDCLASS(EditorAutoloadSettings, VBoxContainer);
+	FOUNDRY_CLASS(EditorAutoloadSettings, VBoxContainer);
 
 	enum Column {
 		COLUMN_NAME,
@@ -123,7 +123,7 @@ protected:
 	static void _bind_methods();
 
 public:
-#ifdef MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	struct AutoloadViewEntry {
 		StringName name;
 		String path;
@@ -138,8 +138,8 @@ public:
 		String diagnostics_text;
 	};
 
-	static Vector<AutoloadViewEntry> build_autoload_view_entries(const GDScriptAutoloadIndex &p_index);
-	static GDScriptAutoloadIndex build_autoload_index_for_project_view(const String &p_root = "res://");
+	static Vector<AutoloadViewEntry> build_autoload_view_entries(const FSAutoloadIndex &p_index);
+	static FSAutoloadIndex build_autoload_index_for_project_view(const String &p_root = "res://");
 #endif
 
 	void init_autoloads();

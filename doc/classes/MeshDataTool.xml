@@ -8,7 +8,7 @@
 		To use MeshDataTool, load a mesh with [method create_from_surface]. When you are finished editing the data commit the data to a mesh with [method commit_to_surface].
 		Below is an example of how MeshDataTool may be used.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var mesh = ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, BoxMesh.new().get_mesh_arrays())
 		var mdt = MeshDataTool.new()
@@ -24,7 +24,7 @@
 		var mi = MeshInstance.new()
 		mi.mesh = mesh
 		add_child(mi)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var mesh = new ArrayMesh();
 		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, new BoxMesh().GetMeshArrays());
@@ -141,11 +141,11 @@
 				Returns the specified vertex index of the given face.
 				[param vertex] must be either [code]0[/code], [code]1[/code], or [code]2[/code] because faces contain three vertices.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var index = mesh_data_tool.get_face_vertex(0, 1) # Gets the index of the second vertex of the first face.
 				var position = mesh_data_tool.get_vertex(index)
 				var normal = mesh_data_tool.get_vertex_normal(index)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				int index = meshDataTool.GetFaceVertex(0, 1); // Gets the index of the second vertex of the first face.
 				Vector3 position = meshDataTool.GetVertex(index);

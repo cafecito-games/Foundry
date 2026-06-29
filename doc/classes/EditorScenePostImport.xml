@@ -7,7 +7,7 @@
 		Imported scenes can be automatically modified right after import by setting their [b]Custom Script[/b] Import property to a [code]tool[/code] script that inherits from this class.
 		The [method _post_import] callback receives the imported scene's root node and returns the modified version of the scene:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		@tool # Needed so it runs in editor.
 		extends EditorScenePostImport
 
@@ -23,7 +23,7 @@
 				node.name = "modified_" + node.name
 				for child in node.get_children():
 					iterate(child)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 

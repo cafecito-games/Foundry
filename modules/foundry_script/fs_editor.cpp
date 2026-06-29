@@ -1,0 +1,6042 @@
+/**************************************************************************/
+/*  fs_editor.cpp                                                         */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             GODOT ENGINE                               */
+/*                        https://godotengine.org                         */
+/**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#include "foundry_script.h"
+
+#include "fs_analyzer.h"
+#include "fs_autoload_index.h"
+#include "fs_parser.h"
+#include "fs_tokenizer.h"
+#include "fs_utility_functions.h"
+
+#ifdef TOOLS_ENABLED
+#include "fs_format.h"
+
+#include "editor/fs_docgen.h"
+#include "editor/script_templates/templates.gen.h"
+#endif
+
+#include "core/config/engine.h"
+#include "core/core_constants.h"
+#include "core/io/file_access.h"
+#include "core/math/expression.h"
+#include "core/variant/container_type_validate.h"
+
+#ifdef TOOLS_ENABLED
+#include "core/config/project_settings.h"
+#include "editor/editor_node.h"
+#include "editor/editor_string_names.h"
+#include "editor/file_system/editor_file_system.h"
+#include "editor/settings/editor_settings.h"
+#endif
+
+Vector<String> FSLanguage::get_comment_delimiters() const {
+	static const Vector<String> delimiters = { "#" };
+	return delimiters;
+}
+
+Vector<String> FSLanguage::get_doc_comment_delimiters() const {
+	static const Vector<String> delimiters = { "##" };
+	return delimiters;
+}
+
+Vector<String> FSLanguage::get_string_delimiters() const {
+	static const Vector<String> delimiters = {
+		"\" \"",
+		"' '",
+		"\"\"\" \"\"\"",
+		"''' '''",
+	};
+	// NOTE: StringName, NodePath and r-strings are not listed here.
+	return delimiters;
+}
+
+bool FSLanguage::is_using_templates() {
+	return true;
+}
+
+Ref<Script> FSLanguage::make_template(const String &p_template, const String &p_class_name, const String &p_base_class_name) const {
+	Ref<FoundryScript> scr;
+	scr.instantiate();
+
+	String processed_template = p_template;
+
+#ifdef TOOLS_ENABLED
+	const bool type_hints = EditorSettings::get_singleton()->get_setting("text_editor/completion/add_type_hints");
+#else
+	const bool type_hints = true;
+#endif
+
+	if (!type_hints) {
+		processed_template = processed_template.replace(": int", "")
+									 .replace(": Shader.Mode", "")
+									 .replace(": VisualShader.Type", "")
+									 .replace(": float", "")
+									 .replace(": String", "")
+									 .replace(": Array[String]", "")
+									 .replace(": Node", "")
+									 .replace(": CharFXTransform", "")
+									 .replace(":=", "=")
+									 .replace(" -> void", "")
+									 .replace(" -> bool", "")
+									 .replace(" -> int", "")
+									 .replace(" -> PortType", "")
+									 .replace(" -> String", "")
+									 .replace(" -> Object", "");
+	}
+
+	processed_template = processed_template.replace("_BASE_", p_base_class_name)
+								 .replace("_CLASS_SNAKE_CASE_", p_class_name.to_snake_case().validate_unicode_identifier())
+								 .replace("_CLASS_", p_class_name.to_pascal_case().validate_unicode_identifier())
+								 .replace("_TS_", _get_indentation());
+	scr->set_source_code(processed_template);
+
+	return scr;
+}
+
+Vector<ScriptLanguage::ScriptTemplate> FSLanguage::get_built_in_templates(const StringName &p_object) {
+	Vector<ScriptLanguage::ScriptTemplate> templates;
+#ifdef TOOLS_ENABLED
+	for (int i = 0; i < TEMPLATES_ARRAY_SIZE; i++) {
+		if (TEMPLATES[i].inherit == p_object) {
+			templates.append(TEMPLATES[i]);
+		}
+	}
+#endif
+	return templates;
+}
+
+static void get_function_names_recursively(const FSParser::ClassNode *p_class, const String &p_prefix, HashMap<int, String> &r_funcs) {
+	for (int i = 0; i < p_class->members.size(); i++) {
+		if (p_class->members[i].type == FSParser::ClassNode::Member::FUNCTION) {
+			const FSParser::FunctionNode *function = p_class->members[i].function;
+			r_funcs[function->start_line] = p_prefix.is_empty() ? String(function->identifier->name) : p_prefix + "." + String(function->identifier->name);
+		} else if (p_class->members[i].type == FSParser::ClassNode::Member::CLASS) {
+			String new_prefix = p_class->members[i].m_class->identifier->name;
+			get_function_names_recursively(p_class->members[i].m_class, p_prefix.is_empty() ? new_prefix : p_prefix + "." + new_prefix, r_funcs);
+		}
+	}
+}
+
+bool FSLanguage::validate(const String &p_script, const String &p_path, List<String> *r_functions, List<ScriptLanguage::ScriptError> *r_errors, List<ScriptLanguage::Warning> *r_warnings, HashSet<int> *r_safe_lines) const {
+	FSParser parser;
+	FSAnalyzer analyzer(&parser);
+
+	Error err = parser.parse(p_script, p_path, false);
+	if (err == OK) {
+		err = analyzer.analyze();
+	}
+#ifdef DEBUG_ENABLED
+	if (r_warnings) {
+		for (const FSWarning &E : parser.get_warnings()) {
+			const FSWarning &warn = E;
+			ScriptLanguage::Warning w;
+			w.start_line = warn.start_line;
+			w.end_line = warn.end_line;
+			w.code = (int)warn.code;
+			w.string_code = FSWarning::get_name_from_code(warn.code);
+			w.message = warn.get_message();
+			r_warnings->push_back(w);
+		}
+	}
+#endif
+	if (err) {
+		if (r_errors) {
+			for (const FSParser::ParserError &pe : parser.get_errors()) {
+				ScriptLanguage::ScriptError e;
+				e.path = p_path;
+				e.line = pe.line;
+				e.column = pe.column;
+				e.message = pe.message;
+				r_errors->push_back(e);
+			}
+
+			for (KeyValue<String, Ref<FSParserRef>> E : parser.get_depended_parsers()) {
+				FSParser *depended_parser = E.value->get_parser();
+				for (const FSParser::ParserError &pe : depended_parser->get_errors()) {
+					ScriptLanguage::ScriptError e;
+					e.path = E.key;
+					e.line = pe.line;
+					e.column = pe.column;
+					e.message = pe.message;
+					r_errors->push_back(e);
+				}
+			}
+		}
+		return false;
+	} else if (r_functions) {
+		const FSParser::ClassNode *cl = parser.get_tree();
+		HashMap<int, String> funcs;
+
+		get_function_names_recursively(cl, "", funcs);
+
+		for (const KeyValue<int, String> &E : funcs) {
+			r_functions->push_back(E.value + ":" + itos(E.key));
+		}
+	}
+
+#ifdef DEBUG_ENABLED
+	if (r_safe_lines) {
+		const HashSet<int> &unsafe_lines = parser.get_unsafe_lines();
+		for (int i = 1; i <= parser.get_last_line_number(); i++) {
+			if (!unsafe_lines.has(i)) {
+				r_safe_lines->insert(i);
+			}
+		}
+	}
+#endif
+
+	return true;
+}
+
+bool FSLanguage::supports_builtin_mode() const {
+	return true;
+}
+
+bool FSLanguage::supports_documentation() const {
+	return true;
+}
+
+int FSLanguage::find_function(const String &p_function, const String &p_code) const {
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code(p_code);
+	int indent = 0;
+	FSTokenizer::Token current = tokenizer.scan();
+	while (current.type != FSTokenizer::Token::TK_EOF && current.type != FSTokenizer::Token::ERROR) {
+		if (current.type == FSTokenizer::Token::INDENT) {
+			indent++;
+		} else if (current.type == FSTokenizer::Token::DEDENT) {
+			indent--;
+		}
+		if (indent == 0 && current.type == FSTokenizer::Token::FUNC) {
+			current = tokenizer.scan();
+			if (current.is_identifier()) {
+				String identifier = current.get_identifier();
+				if (identifier == p_function) {
+					return current.start_line;
+				}
+			}
+		}
+		current = tokenizer.scan();
+	}
+	return -1;
+}
+
+Script *FSLanguage::create_script() const {
+	return memnew(FoundryScript);
+}
+
+/* DEBUGGER FUNCTIONS */
+
+thread_local int FSLanguage::_debug_parse_err_line = -1;
+thread_local String FSLanguage::_debug_parse_err_file;
+thread_local String FSLanguage::_debug_error;
+
+bool FSLanguage::debug_break_parse(const String &p_file, int p_line, const String &p_error) {
+	// break because of parse error
+
+	if (EngineDebugger::is_active() && Thread::get_caller_id() == Thread::get_main_id()) {
+		_debug_parse_err_line = p_line;
+		_debug_parse_err_file = p_file;
+		_debug_error = p_error;
+		EngineDebugger::get_script_debugger()->debug(this, false, true);
+		// Because this is thread local, clear the memory afterwards.
+		_debug_parse_err_file = String();
+		_debug_error = String();
+		return true;
+	} else {
+		return false;
+	}
+}
+
+bool FSLanguage::debug_break(const String &p_error, bool p_allow_continue) {
+	if (EngineDebugger::is_active()) {
+		_debug_parse_err_line = -1;
+		_debug_parse_err_file = "";
+		_debug_error = p_error;
+		bool is_error_breakpoint = p_error != "Breakpoint";
+		EngineDebugger::get_script_debugger()->debug(this, p_allow_continue, is_error_breakpoint);
+		// Because this is thread local, clear the memory afterwards.
+		_debug_parse_err_file = String();
+		_debug_error = String();
+		return true;
+	} else {
+		return false;
+	}
+}
+
+String FSLanguage::debug_get_error() const {
+	return _debug_error;
+}
+
+int FSLanguage::debug_get_stack_level_count() const {
+	if (_debug_parse_err_line >= 0) {
+		return 1;
+	}
+
+	return _call_stack_size;
+}
+
+int FSLanguage::debug_get_stack_level_line(int p_level) const {
+	if (_debug_parse_err_line >= 0) {
+		return _debug_parse_err_line;
+	}
+
+	ERR_FAIL_INDEX_V(p_level, (int)_call_stack_size, -1);
+
+	return *(_get_stack_level(p_level)->line);
+}
+
+String FSLanguage::debug_get_stack_level_function(int p_level) const {
+	if (_debug_parse_err_line >= 0) {
+		return "";
+	}
+
+	ERR_FAIL_INDEX_V(p_level, (int)_call_stack_size, "");
+	FSFunction *func = _get_stack_level(p_level)->function;
+	return func ? func->get_name().operator String() : "";
+}
+
+String FSLanguage::debug_get_stack_level_source(int p_level) const {
+	if (_debug_parse_err_line >= 0) {
+		return _debug_parse_err_file;
+	}
+
+	ERR_FAIL_INDEX_V(p_level, (int)_call_stack_size, "");
+	return _get_stack_level(p_level)->function->get_source();
+}
+
+void FSLanguage::debug_get_stack_level_locals(int p_level, List<String> *p_locals, List<Variant> *p_values, int p_max_subitems, int p_max_depth) {
+	if (_debug_parse_err_line >= 0) {
+		return;
+	}
+
+	ERR_FAIL_INDEX(p_level, (int)_call_stack_size);
+
+	CallLevel *cl = _get_stack_level(p_level);
+	FSFunction *f = cl->function;
+
+	List<Pair<StringName, int>> locals;
+
+	f->debug_get_stack_member_state(*cl->line, &locals);
+	for (const Pair<StringName, int> &E : locals) {
+		p_locals->push_back(E.first);
+		p_values->push_back(cl->stack[E.second]);
+	}
+}
+
+void FSLanguage::debug_get_stack_level_members(int p_level, List<String> *p_members, List<Variant> *p_values, int p_max_subitems, int p_max_depth) {
+	if (_debug_parse_err_line >= 0) {
+		return;
+	}
+
+	ERR_FAIL_INDEX(p_level, (int)_call_stack_size);
+
+	CallLevel *cl = _get_stack_level(p_level);
+	FSInstance *instance = cl->instance;
+
+	if (!instance) {
+		return;
+	}
+
+	Ref<FoundryScript> scr = instance->get_script();
+	ERR_FAIL_COND(scr.is_null());
+
+	const HashMap<StringName, FoundryScript::MemberInfo> &mi = scr->debug_get_member_indices();
+
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &E : mi) {
+		p_members->push_back(E.key);
+		p_values->push_back(instance->debug_get_member_by_index(E.value.index));
+	}
+}
+
+ScriptInstance *FSLanguage::debug_get_stack_level_instance(int p_level) {
+	if (_debug_parse_err_line >= 0) {
+		return nullptr;
+	}
+
+	ERR_FAIL_INDEX_V(p_level, (int)_call_stack_size, nullptr);
+
+	return _get_stack_level(p_level)->instance;
+}
+
+void FSLanguage::debug_get_globals(List<String> *p_globals, List<Variant> *p_values, int p_max_subitems, int p_max_depth) {
+	const HashMap<StringName, int> &name_idx = FSLanguage::get_singleton()->get_global_map();
+	const Variant *gl_array = FSLanguage::get_singleton()->get_global_array();
+
+	List<Pair<String, Variant>> cinfo;
+	get_public_constants(&cinfo);
+
+	for (const KeyValue<StringName, int> &E : name_idx) {
+		if (FSAnalyzer::class_exists(E.key) || Engine::get_singleton()->has_singleton(E.key)) {
+			continue;
+		}
+
+		bool is_script_constant = false;
+		for (List<Pair<String, Variant>>::Element *CE = cinfo.front(); CE; CE = CE->next()) {
+			if (CE->get().first == E.key) {
+				is_script_constant = true;
+				break;
+			}
+		}
+		if (is_script_constant) {
+			continue;
+		}
+
+		const Variant &var = gl_array[E.value];
+		bool freed = false;
+		const Object *obj = var.get_validated_object_with_check(freed);
+		if (obj && !freed) {
+			if (Object::cast_to<FSNativeClass>(obj)) {
+				continue;
+			}
+		}
+
+		bool skip = false;
+		for (int i = 0; i < CoreConstants::get_global_constant_count(); i++) {
+			if (E.key == CoreConstants::get_global_constant_name(i)) {
+				skip = true;
+				break;
+			}
+		}
+		if (skip) {
+			continue;
+		}
+
+		p_globals->push_back(E.key);
+		p_values->push_back(var);
+	}
+}
+
+String FSLanguage::debug_parse_stack_level_expression(int p_level, const String &p_expression, int p_max_subitems, int p_max_depth) {
+	List<String> names;
+	List<Variant> values;
+	debug_get_stack_level_locals(p_level, &names, &values, p_max_subitems, p_max_depth);
+
+	Vector<String> name_vector;
+	for (const String &name : names) {
+		name_vector.push_back(name);
+	}
+
+	Array value_array;
+	for (const Variant &value : values) {
+		value_array.push_back(value);
+	}
+
+	Expression expression;
+	if (expression.parse(p_expression, name_vector) == OK) {
+		ScriptInstance *instance = debug_get_stack_level_instance(p_level);
+		if (instance) {
+			Variant return_val = expression.execute(value_array, instance->get_owner());
+			return return_val.get_construct_string();
+		}
+	}
+
+	return String();
+}
+
+void FSLanguage::get_recognized_extensions(List<String> *p_extensions) const {
+	p_extensions->push_back("fs");
+}
+
+void FSLanguage::get_public_functions(List<MethodInfo> *p_functions) const {
+	List<StringName> functions;
+	FSUtilityFunctions::get_function_list(&functions);
+
+	for (const StringName &E : functions) {
+		p_functions->push_back(FSUtilityFunctions::get_function_info(E));
+	}
+
+	// Not really "functions", but show in documentation.
+	{
+		MethodInfo mi;
+		mi.name = "preload";
+		mi.arguments.push_back(PropertyInfo(Variant::STRING, "path"));
+		mi.return_val = PropertyInfo(Variant::OBJECT, "", PROPERTY_HINT_RESOURCE_TYPE, "Resource");
+		p_functions->push_back(mi);
+	}
+	{
+		MethodInfo mi;
+		mi.name = "assert";
+		mi.return_val.type = Variant::NIL;
+		mi.arguments.push_back(PropertyInfo(Variant::BOOL, "condition"));
+		mi.arguments.push_back(PropertyInfo(Variant::STRING, "message"));
+		mi.default_arguments.push_back(String());
+		p_functions->push_back(mi);
+	}
+}
+
+void FSLanguage::get_public_constants(List<Pair<String, Variant>> *p_constants) const {
+	Pair<String, Variant> pi;
+	pi.first = "PI";
+	pi.second = Math::PI;
+	p_constants->push_back(pi);
+
+	Pair<String, Variant> tau;
+	tau.first = "TAU";
+	tau.second = Math::TAU;
+	p_constants->push_back(tau);
+
+	Pair<String, Variant> infinity;
+	infinity.first = "INF";
+	infinity.second = Math::INF;
+	p_constants->push_back(infinity);
+
+	Pair<String, Variant> nan;
+	nan.first = "NAN";
+	nan.second = Math::NaN;
+	p_constants->push_back(nan);
+}
+
+void FSLanguage::get_public_annotations(List<MethodInfo> *p_annotations) const {
+	FSParser parser;
+	List<MethodInfo> annotations;
+	parser.get_annotation_list(&annotations);
+
+	for (const MethodInfo &E : annotations) {
+		p_annotations->push_back(E);
+	}
+}
+
+String FSLanguage::make_function(const String &p_class, const String &p_name, const PackedStringArray &p_args) const {
+#ifdef TOOLS_ENABLED
+	const bool type_hints = EditorSettings::get_singleton()->get_setting("text_editor/completion/add_type_hints");
+#else
+	const bool type_hints = true;
+#endif
+
+	String result = "func " + p_name + "(";
+	if (p_args.size()) {
+		for (int i = 0; i < p_args.size(); i++) {
+			if (i > 0) {
+				result += ", ";
+			}
+
+			const String name_unstripped = p_args[i].get_slicec(':', 0);
+			result += name_unstripped.strip_edges();
+
+			if (type_hints) {
+				const String type_stripped = p_args[i].substr(name_unstripped.length() + 1).strip_edges();
+				if (!type_stripped.is_empty()) {
+					result += ": " + type_stripped;
+				}
+			}
+		}
+	}
+	result += String(")") + (type_hints ? " -> void" : "") + ":\n" +
+			_get_indentation() + "pass # Replace with function body.\n";
+
+	return result;
+}
+
+//////// COMPLETION //////////
+
+#ifdef TOOLS_ENABLED
+
+#define COMPLETION_RECURSION_LIMIT 200
+
+struct FSCompletionIdentifier {
+	FSParser::DataType type;
+	String enumeration;
+	Variant value;
+	const FSParser::ExpressionNode *assigned_expression = nullptr;
+};
+
+// LOCATION METHODS
+// These methods are used to populate the `CodeCompletionOption::location` integer.
+// For these methods, the location is based on the depth in the inheritance chain that the property
+// appears. For example, if you are completing code in a class that inherits Node2D, a property found on Node2D
+// will have a "better" (lower) location "score" than a property that is found on CanvasItem.
+
+static int _get_property_location(const StringName &p_class, const StringName &p_property) {
+	if (!ClassDB::has_property(p_class, p_property)) {
+		return ScriptLanguage::LOCATION_OTHER;
+	}
+
+	int depth = 0;
+	StringName class_test = p_class;
+	while (class_test && !ClassDB::has_property(class_test, p_property, true)) {
+		class_test = ClassDB::get_parent_class(class_test);
+		depth++;
+	}
+
+	return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+}
+
+static int _get_property_location(Ref<Script> p_script, const StringName &p_property) {
+	int depth = 0;
+	Ref<Script> scr = p_script;
+	while (scr.is_valid()) {
+		if (scr->get_member_line(p_property) != -1) {
+			return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+		}
+		depth++;
+		scr = scr->get_base_script();
+	}
+	return depth + _get_property_location(p_script->get_instance_base_type(), p_property);
+}
+
+static int _get_constant_location(const StringName &p_class, const StringName &p_constant) {
+	if (!ClassDB::has_integer_constant(p_class, p_constant)) {
+		return ScriptLanguage::LOCATION_OTHER;
+	}
+
+	int depth = 0;
+	StringName class_test = p_class;
+	while (class_test && !ClassDB::has_integer_constant(class_test, p_constant, true)) {
+		class_test = ClassDB::get_parent_class(class_test);
+		depth++;
+	}
+
+	return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+}
+
+static int _get_constant_location(Ref<Script> p_script, const StringName &p_constant) {
+	int depth = 0;
+	Ref<Script> scr = p_script;
+	while (scr.is_valid()) {
+		if (scr->get_member_line(p_constant) != -1) {
+			return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+		}
+		depth++;
+		scr = scr->get_base_script();
+	}
+	return depth + _get_constant_location(p_script->get_instance_base_type(), p_constant);
+}
+
+static int _get_signal_location(const StringName &p_class, const StringName &p_signal) {
+	if (!ClassDB::has_signal(p_class, p_signal)) {
+		return ScriptLanguage::LOCATION_OTHER;
+	}
+
+	int depth = 0;
+	StringName class_test = p_class;
+	while (class_test && !ClassDB::has_signal(class_test, p_signal, true)) {
+		class_test = ClassDB::get_parent_class(class_test);
+		depth++;
+	}
+
+	return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+}
+
+static int _get_signal_location(Ref<Script> p_script, const StringName &p_signal) {
+	int depth = 0;
+	Ref<Script> scr = p_script;
+	while (scr.is_valid()) {
+		if (scr->get_member_line(p_signal) != -1) {
+			return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+		}
+		depth++;
+		scr = scr->get_base_script();
+	}
+	return depth + _get_signal_location(p_script->get_instance_base_type(), p_signal);
+}
+
+static int _get_method_location(const StringName &p_class, const StringName &p_method) {
+	if (!ClassDB::has_method(p_class, p_method)) {
+		return ScriptLanguage::LOCATION_OTHER;
+	}
+
+	int depth = 0;
+	StringName class_test = p_class;
+	while (class_test && !ClassDB::has_method(class_test, p_method, true)) {
+		class_test = ClassDB::get_parent_class(class_test);
+		depth++;
+	}
+
+	return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+}
+
+static int _get_enum_constant_location(const StringName &p_class, const StringName &p_enum_constant) {
+	if (!ClassDB::get_integer_constant_enum(p_class, p_enum_constant)) {
+		return ScriptLanguage::LOCATION_OTHER;
+	}
+
+	int depth = 0;
+	StringName class_test = p_class;
+	while (class_test && !ClassDB::get_integer_constant_enum(class_test, p_enum_constant, true)) {
+		class_test = ClassDB::get_parent_class(class_test);
+		depth++;
+	}
+
+	return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+}
+
+static int _get_enum_location(const StringName &p_class, const StringName &p_enum) {
+	if (!ClassDB::has_enum(p_class, p_enum)) {
+		return ScriptLanguage::LOCATION_OTHER;
+	}
+
+	int depth = 0;
+	StringName class_test = p_class;
+	while (class_test && !ClassDB::has_enum(class_test, p_enum, true)) {
+		class_test = ClassDB::get_parent_class(class_test);
+		depth++;
+	}
+
+	return depth | ScriptLanguage::LOCATION_PARENT_MASK;
+}
+
+// END LOCATION METHODS
+
+static String _trim_parent_class(const String &p_class, const String &p_base_class) {
+	if (p_base_class.is_empty()) {
+		return p_class;
+	}
+	Vector<String> names = p_class.split(".", false, 1);
+	if (names.size() == 2) {
+		const String &first = names[0];
+		if (FSAnalyzer::class_exists(p_base_class) && FSAnalyzer::class_exists(first) && ClassDB::is_parent_class(p_base_class, first)) {
+			const String &rest = names[1];
+			return rest;
+		}
+	}
+	return p_class;
+}
+
+static String _get_visual_datatype(const PropertyInfo &p_info, bool p_is_arg, const String &p_base_class = "") {
+	String class_name = p_info.class_name;
+	bool is_enum = p_info.type == Variant::INT && p_info.usage & PROPERTY_USAGE_CLASS_IS_ENUM;
+	// PROPERTY_USAGE_CLASS_IS_BITFIELD: BitField[T] isn't supported (yet?), use plain int.
+
+	if ((p_info.type == Variant::OBJECT || is_enum) && !class_name.is_empty()) {
+		if (is_enum && CoreConstants::is_global_enum(p_info.class_name)) {
+			return class_name;
+		}
+		return _trim_parent_class(class_name, p_base_class);
+	} else if (p_info.type == Variant::ARRAY && p_info.hint == PROPERTY_HINT_ARRAY_TYPE && !p_info.hint_string.is_empty()) {
+		return "Array[" + _trim_parent_class(p_info.hint_string, p_base_class) + "]";
+	} else if (p_info.type == Variant::DICTIONARY && p_info.hint == PROPERTY_HINT_DICTIONARY_TYPE && !p_info.hint_string.is_empty()) {
+		const String key = p_info.hint_string.get_slicec(';', 0);
+		const String value = p_info.hint_string.get_slicec(';', 1);
+		return "Dictionary[" + _trim_parent_class(key, p_base_class) + ", " + _trim_parent_class(value, p_base_class) + "]";
+	} else if (p_info.type == Variant::NIL) {
+		if (p_is_arg || (p_info.usage & PROPERTY_USAGE_NIL_IS_VARIANT)) {
+			return "Variant";
+		} else {
+			return "void";
+		}
+	}
+
+	return Variant::get_type_name(p_info.type);
+}
+
+static String _make_arguments_hint(const MethodInfo &p_info, int p_arg_idx, bool p_is_annotation = false) {
+	String arghint;
+	if (!p_is_annotation && (p_info.flags & METHOD_FLAG_ASYNC)) {
+		arghint += "async ";
+	}
+	if (!p_is_annotation) {
+		arghint += _get_visual_datatype(p_info.return_val, false) + " ";
+	}
+	arghint += p_info.name + "(";
+
+	int def_args = p_info.arguments.size() - p_info.default_arguments.size();
+	int i = 0;
+	for (const PropertyInfo &E : p_info.arguments) {
+		if (i > 0) {
+			arghint += ", ";
+		}
+
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+		arghint += E.name + ": " + _get_visual_datatype(E, true);
+
+		if (i - def_args >= 0) {
+			arghint += String(" = ") + p_info.default_arguments[i - def_args].get_construct_string();
+		}
+
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+
+		i++;
+	}
+
+	if (p_info.flags & METHOD_FLAG_VARARG) {
+		if (p_info.arguments.size() > 0) {
+			arghint += ", ";
+		}
+		if (p_arg_idx >= p_info.arguments.size()) {
+			arghint += String::chr(0xFFFF);
+		}
+		arghint += "...args: Array"; // `MethodInfo` does not support the rest parameter name.
+		if (p_arg_idx >= p_info.arguments.size()) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	arghint += ")";
+
+	return arghint;
+}
+
+static String _make_arguments_hint(const FSParser::FunctionNode *p_function, int p_arg_idx, bool p_just_args = false) {
+	String arghint;
+
+	if (p_just_args) {
+		arghint = "(";
+	} else {
+		if (p_function->is_coroutine) {
+			arghint += "async ";
+		}
+		const FSParser::DataType return_type = p_function->get_datatype();
+		// Only a genuine `void` (a NIL builtin) renders as "void". A type-parameter return type
+		// (`func swap[T](...) -> T`) also has builtin_type NIL because it is not a builtin, so render
+		// it through to_string() (e.g. "T") instead of mislabelling it "void".
+		if (return_type.kind == FSParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+			arghint += "void ";
+		} else {
+			arghint += return_type.to_string() + " ";
+		}
+		arghint += p_function->identifier->name;
+		// Show the generic type-parameter list (`[T, U: Bound]`) for a generic method.
+		if (!p_function->type_parameters.is_empty()) {
+			arghint += "[";
+			bool first_type_parameter = true;
+			for (const FSParser::TypeParameterNode *type_parameter : p_function->type_parameters) {
+				if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+					continue;
+				}
+				if (!first_type_parameter) {
+					arghint += ", ";
+				}
+				first_type_parameter = false;
+				arghint += type_parameter->identifier->name;
+				// Method type parameters do not get an eager `resolved_bound`, so fall back to the
+				// bound TypeNode's datatype (a metatype handle in type position, hence the meta strip).
+				FSParser::DataType bound_type = type_parameter->resolved_bound;
+				if ((!bound_type.is_set() || bound_type.is_variant()) && type_parameter->bound != nullptr) {
+					bound_type = type_parameter->bound->get_datatype();
+					bound_type.is_meta_type = false;
+				}
+				if (bound_type.is_set() && !bound_type.is_variant()) {
+					arghint += ": " + bound_type.to_string();
+				}
+			}
+			arghint += "]";
+		}
+		arghint += "(";
+	}
+
+	for (int i = 0; i < p_function->parameters.size(); i++) {
+		if (i > 0) {
+			arghint += ", ";
+		}
+
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+		const FSParser::ParameterNode *par = p_function->parameters[i];
+		if (!par->get_datatype().is_hard_type()) {
+			arghint += par->identifier->name.operator String() + ": Variant";
+		} else {
+			arghint += par->identifier->name.operator String() + ": " + par->get_datatype().to_string();
+		}
+
+		if (par->initializer) {
+			String def_val = "<unknown>";
+			switch (par->initializer->type) {
+				case FSParser::Node::LITERAL: {
+					const FSParser::LiteralNode *literal = static_cast<const FSParser::LiteralNode *>(par->initializer);
+					def_val = literal->value.get_construct_string();
+				} break;
+				case FSParser::Node::IDENTIFIER: {
+					const FSParser::IdentifierNode *id = static_cast<const FSParser::IdentifierNode *>(par->initializer);
+					def_val = id->name.operator String();
+				} break;
+				case FSParser::Node::CALL: {
+					const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(par->initializer);
+					if (call->is_constant && call->reduced) {
+						def_val = call->reduced_value.get_construct_string();
+					} else if (call->get_callee_type() == FSParser::Node::IDENTIFIER) {
+						def_val = call->function_name.operator String() + (call->arguments.is_empty() ? "()" : "(...)");
+					}
+				} break;
+				case FSParser::Node::ARRAY: {
+					const FSParser::ArrayNode *arr = static_cast<const FSParser::ArrayNode *>(par->initializer);
+					if (arr->is_constant && arr->reduced) {
+						def_val = arr->reduced_value.get_construct_string();
+					} else {
+						def_val = arr->elements.is_empty() ? "[]" : "[...]";
+					}
+				} break;
+				case FSParser::Node::DICTIONARY: {
+					const FSParser::DictionaryNode *dict = static_cast<const FSParser::DictionaryNode *>(par->initializer);
+					if (dict->is_constant && dict->reduced) {
+						def_val = dict->reduced_value.get_construct_string();
+					} else {
+						def_val = dict->elements.is_empty() ? "{}" : "{...}";
+					}
+				} break;
+				case FSParser::Node::SUBSCRIPT: {
+					const FSParser::SubscriptNode *sub = static_cast<const FSParser::SubscriptNode *>(par->initializer);
+					if (sub->is_attribute && sub->datatype.kind == FSParser::DataType::ENUM && !sub->datatype.is_meta_type) {
+						def_val = sub->get_datatype().to_string() + "." + sub->attribute->name;
+					} else if (sub->is_constant && sub->reduced) {
+						def_val = sub->reduced_value.get_construct_string();
+					}
+				} break;
+				default:
+					break;
+			}
+			arghint += " = " + def_val;
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	if (p_function->is_vararg()) {
+		if (!p_function->parameters.is_empty()) {
+			arghint += ", ";
+		}
+		if (p_arg_idx >= p_function->parameters.size()) {
+			arghint += String::chr(0xFFFF);
+		}
+		const FSParser::ParameterNode *rest_param = p_function->rest_parameter;
+		arghint += "..." + rest_param->identifier->name + ": " + rest_param->get_datatype().to_string();
+		if (p_arg_idx >= p_function->parameters.size()) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	arghint += ")";
+
+	return arghint;
+}
+
+static void _get_directory_contents(EditorFileSystemDirectory *p_dir, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_list, const StringName &p_required_type = StringName()) {
+	const String quote_style = EDITOR_GET("text_editor/completion/use_single_quotes") ? "'" : "\"";
+	const bool requires_type = !p_required_type.is_empty();
+
+	for (int i = 0; i < p_dir->get_file_count(); i++) {
+		if (requires_type && !ClassDB::is_parent_class(p_dir->get_file_type(i), p_required_type)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(p_dir->get_file_path(i).quote(quote_style), ScriptLanguage::CODE_COMPLETION_KIND_FILE_PATH);
+		r_list.insert(option.display, option);
+	}
+
+	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
+		_get_directory_contents(p_dir->get_subdir(i), r_list, p_required_type);
+	}
+}
+
+struct FSVisibleAnnotation {
+	String short_name;
+	String qualified_name;
+	String path;
+	// Declaration node owned by the file's parser. For external declarations, the corresponding
+	// `FSParserRef` must be kept alive by the caller while this pointer is read.
+	const FSParser::AnnotationDeclarationNode *declaration = nullptr;
+};
+
+// Collect the custom annotation declarations visible from `p_parser`'s root: declarations in the
+// same file, declarations in the same namespace, and declarations in explicitly imported
+// namespaces. Same-file declarations take precedence over indexed ones sharing a short name,
+// mirroring `FSAnalyzer::resolve_custom_annotation_declaration`. External declarations are
+// loaded through the dependency parser cache; the caller must keep `r_parser_refs` alive while the
+// returned declaration pointers are read.
+static void _collect_visible_custom_annotations(FSParser &p_parser, const String &p_path, List<Ref<FSParserRef>> &r_parser_refs, HashMap<StringName, FSVisibleAnnotation> &r_annotations) {
+	const FSParser::ClassNode *head = p_parser.get_tree();
+	if (head == nullptr) {
+		return;
+	}
+
+	// Count same-file declarations per short name so a duplicated canonical identity (which the
+	// analyzer rejects as ambiguous) is offered for completion but does not bind to an arbitrary one.
+	HashMap<StringName, int> local_counts;
+	for (const FSParser::AnnotationDeclarationNode *declaration : head->annotation_declarations) {
+		if (declaration->identifier != nullptr && !declaration->qualified_name.is_empty()) {
+			local_counts[declaration->identifier->name]++;
+		}
+	}
+	for (const FSParser::AnnotationDeclarationNode *declaration : head->annotation_declarations) {
+		if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
+			continue;
+		}
+		FSVisibleAnnotation visible;
+		visible.short_name = declaration->identifier->name;
+		visible.qualified_name = declaration->qualified_name;
+		visible.path = p_path;
+		visible.declaration = local_counts[declaration->identifier->name] > 1 ? nullptr : declaration;
+		r_annotations[declaration->identifier->name] = visible;
+	}
+
+	FSLanguage *language = FSLanguage::get_singleton();
+	if (language == nullptr) {
+		return;
+	}
+
+	const String current_namespace = head->namespace_name;
+
+	// Gather short names visible through the current namespace or explicit imports, excluding the
+	// same-file declarations already registered above (which take precedence).
+	HashSet<String> indexed_short_names;
+	List<StringName> identities;
+	language->get_global_annotation_list(&identities);
+	for (const StringName &identity : identities) {
+		const String qualified_name = identity;
+		const int dot = qualified_name.rfind_char('.');
+		const String declaration_namespace = dot < 0 ? String() : qualified_name.substr(0, dot);
+		const String short_name = dot < 0 ? qualified_name : qualified_name.substr(dot + 1);
+		if (r_annotations.has(StringName(short_name))) {
+			continue;
+		}
+		if (declaration_namespace == current_namespace || head->imports.has(declaration_namespace)) {
+			indexed_short_names.insert(short_name);
+		}
+	}
+
+	for (const String &short_name : indexed_short_names) {
+		// Mirror `FSAnalyzer::resolve_custom_annotation_declaration`: the current namespace
+		// takes precedence over imports, and a short name provided by two or more imports (or by a
+		// canonical identity declared in multiple files) is ambiguous. An ambiguous or unresolved
+		// name is still offered for completion, but without a declaration it does not bind for
+		// argument hints or go-to-definition (matching how the script itself fails to resolve it).
+		String resolved_identity;
+
+		const String own_identity = current_namespace.is_empty() ? short_name : current_namespace + "." + short_name;
+		if (language->is_global_annotation(StringName(own_identity))) {
+			if (!language->is_duplicated_global_annotation(StringName(own_identity))) {
+				resolved_identity = own_identity;
+			}
+		} else {
+			LocalVector<String> checked_imports;
+			Vector<String> matching_identities;
+			for (const String &import : head->imports) {
+				if (checked_imports.has(import)) {
+					continue;
+				}
+				checked_imports.push_back(import);
+				const String identity = import + "." + short_name;
+				if (language->is_global_annotation(StringName(identity))) {
+					matching_identities.push_back(identity);
+				}
+			}
+			if (matching_identities.size() == 1 && !language->is_duplicated_global_annotation(StringName(matching_identities[0]))) {
+				resolved_identity = matching_identities[0];
+			}
+		}
+
+		FSVisibleAnnotation entry;
+		entry.short_name = short_name;
+
+		if (!resolved_identity.is_empty()) {
+			const String declaration_path = language->get_global_annotation_path(StringName(resolved_identity));
+			if (!declaration_path.is_empty() && !FoundryScript::is_canonically_equal_paths(declaration_path, p_path)) {
+				entry.qualified_name = resolved_identity;
+				entry.path = declaration_path;
+
+				// Load the declaring file so its signature (parameters, defaults, variadic) is available.
+				Ref<FSParserRef> ref = p_parser.get_depended_parser_for(declaration_path);
+				if (ref.is_valid() && ref->raise_status(FSParserRef::INTERFACE_SOLVED) == OK) {
+					FSParser *external_parser = ref->get_parser();
+					if (external_parser != nullptr && external_parser->get_tree() != nullptr) {
+						// A same-file duplicate identity in the declaring file is ambiguous; do not bind.
+						const FSParser::AnnotationDeclarationNode *found = nullptr;
+						for (const FSParser::AnnotationDeclarationNode *declaration : external_parser->get_tree()->annotation_declarations) {
+							if (declaration->qualified_name == resolved_identity) {
+								if (found != nullptr) {
+									found = nullptr;
+									break;
+								}
+								found = declaration;
+							}
+						}
+						entry.declaration = found;
+					}
+					r_parser_refs.push_back(ref);
+				}
+			}
+		}
+
+		r_annotations[StringName(short_name)] = entry;
+	}
+}
+
+// Resolve a fully qualified annotation usage such as `@cafecito.test.timeout` to its declaration,
+// mirroring `FSAnalyzer::resolve_qualified_annotation_declaration`: a same-file declaration
+// with the matching canonical identity wins, otherwise the global index is consulted regardless of
+// the active imports. `p_identity` is the bare dotted path (no leading "@"). The caller must keep
+// `r_parser_refs` alive while the returned declaration pointer is read. Returns false when the
+// identity is unknown or ambiguous.
+static bool _resolve_qualified_visible_annotation(FSParser &p_parser, const String &p_path, const String &p_identity, List<Ref<FSParserRef>> &r_parser_refs, FSVisibleAnnotation &r_annotation) {
+	const FSParser::ClassNode *head = p_parser.get_tree();
+	if (head == nullptr) {
+		return false;
+	}
+
+	const int last_dot = p_identity.rfind_char('.');
+	const String short_name = last_dot < 0 ? p_identity : p_identity.substr(last_dot + 1);
+
+	for (const FSParser::AnnotationDeclarationNode *declaration : head->annotation_declarations) {
+		if (declaration->qualified_name == p_identity && declaration->identifier != nullptr) {
+			r_annotation.short_name = short_name;
+			r_annotation.qualified_name = p_identity;
+			r_annotation.path = p_path;
+			r_annotation.declaration = declaration;
+			return true;
+		}
+	}
+
+	FSLanguage *language = FSLanguage::get_singleton();
+	if (language == nullptr || !language->is_global_annotation(StringName(p_identity)) || language->is_duplicated_global_annotation(StringName(p_identity))) {
+		return false;
+	}
+
+	const String declaration_path = language->get_global_annotation_path(StringName(p_identity));
+	if (declaration_path.is_empty() || FoundryScript::is_canonically_equal_paths(declaration_path, p_path)) {
+		return false;
+	}
+
+	Ref<FSParserRef> ref = p_parser.get_depended_parser_for(declaration_path);
+	if (ref.is_null() || ref->raise_status(FSParserRef::INTERFACE_SOLVED) != OK) {
+		return false;
+	}
+	FSParser *external_parser = ref->get_parser();
+	if (external_parser == nullptr || external_parser->get_tree() == nullptr) {
+		return false;
+	}
+	r_parser_refs.push_back(ref);
+
+	const FSParser::AnnotationDeclarationNode *found = nullptr;
+	for (const FSParser::AnnotationDeclarationNode *declaration : external_parser->get_tree()->annotation_declarations) {
+		if (declaration->qualified_name == p_identity) {
+			if (found != nullptr) {
+				// A same-file duplicate identity in the declaring file is ambiguous; do not bind.
+				return false;
+			}
+			found = declaration;
+		}
+	}
+	if (found == nullptr || found->identifier == nullptr) {
+		return false;
+	}
+	r_annotation.short_name = short_name;
+	r_annotation.qualified_name = p_identity;
+	r_annotation.path = declaration_path;
+	r_annotation.declaration = found;
+	return true;
+}
+
+// Render an argument hint for a custom annotation usage from its declaration signature, matching
+// the format used for built-in annotations and functions: parameter names, types, constant
+// defaults, and a final variadic parameter. `p_arg_idx` is wrapped in sentinels to emphasize the
+// argument currently being edited.
+static String _make_annotation_arguments_hint(const FSParser::AnnotationDeclarationNode *p_declaration, int p_arg_idx) {
+	String arghint = String(p_declaration->identifier->name) + "(";
+
+	const int fixed_count = p_declaration->parameters.size();
+	for (int i = 0; i < fixed_count; i++) {
+		if (i > 0) {
+			arghint += ", ";
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+		const FSParser::ParameterNode *parameter = p_declaration->parameters[i];
+		const FSParser::DataType type = parameter->get_datatype();
+		arghint += String(parameter->identifier->name) + ": " + (type.is_hard_type() ? type.to_string() : String("Variant"));
+		if (parameter->initializer != nullptr) {
+			arghint += " = ";
+			arghint += parameter->initializer->is_constant ? parameter->initializer->reduced_value.get_construct_string() : String("<unknown>");
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	if (p_declaration->is_variadic()) {
+		if (fixed_count > 0) {
+			arghint += ", ";
+		}
+		const bool emphasize = p_arg_idx >= fixed_count;
+		if (emphasize) {
+			arghint += String::chr(0xFFFF);
+		}
+		const FSParser::ParameterNode *rest = p_declaration->rest_parameter;
+		const FSParser::DataType type = rest->get_datatype();
+		arghint += "..." + String(rest->identifier->name) + ": " + (type.is_hard_type() ? type.to_string() : String("Variant"));
+		if (emphasize) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+
+	arghint += ")";
+	return arghint;
+}
+
+static void _find_annotation_arguments(const FSParser::AnnotationNode *p_annotation, int p_argument, const String p_quote_style, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, String &r_arghint) {
+	ERR_FAIL_NULL(p_annotation);
+
+	if (p_annotation->info != nullptr) {
+		r_arghint = _make_arguments_hint(p_annotation->info->info, p_argument, true);
+	}
+	if (p_annotation->name == SNAME("@export_range")) {
+		if (p_argument == 3 || p_argument == 4 || p_argument == 5) {
+			// Slider hint.
+			ScriptLanguage::CodeCompletionOption slider1("or_greater", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			slider1.insert_text = slider1.display.quote(p_quote_style);
+			r_result.insert(slider1.display, slider1);
+			ScriptLanguage::CodeCompletionOption slider2("or_less", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			slider2.insert_text = slider2.display.quote(p_quote_style);
+			r_result.insert(slider2.display, slider2);
+			ScriptLanguage::CodeCompletionOption slider3("prefer_slider", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			slider3.insert_text = slider3.display.quote(p_quote_style);
+			r_result.insert(slider3.display, slider3);
+			ScriptLanguage::CodeCompletionOption slider4("hide_control", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			slider4.insert_text = slider4.display.quote(p_quote_style);
+			r_result.insert(slider4.display, slider4);
+		}
+	} else if (p_annotation->name == SNAME("@export_exp_easing")) {
+		if (p_argument == 0 || p_argument == 1) {
+			// Easing hint.
+			ScriptLanguage::CodeCompletionOption hint1("attenuation", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			hint1.insert_text = hint1.display.quote(p_quote_style);
+			r_result.insert(hint1.display, hint1);
+			ScriptLanguage::CodeCompletionOption hint2("inout", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			hint2.insert_text = hint2.display.quote(p_quote_style);
+			r_result.insert(hint2.display, hint2);
+		}
+	} else if (p_annotation->name == SNAME("@export_node_path")) {
+		ScriptLanguage::CodeCompletionOption node("Node", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+		node.insert_text = node.display.quote(p_quote_style);
+		r_result.insert(node.display, node);
+
+		LocalVector<StringName> native_classes;
+		ClassDB::get_inheriters_from_class("Node", native_classes);
+		for (const StringName &E : native_classes) {
+			if (!ClassDB::is_class_exposed(E)) {
+				continue;
+			}
+			ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+			option.insert_text = option.display.quote(p_quote_style);
+			r_result.insert(option.display, option);
+		}
+
+		LocalVector<StringName> global_script_classes;
+		ScriptServer::get_global_class_list(global_script_classes);
+		for (const StringName &class_name : global_script_classes) {
+			if (!ClassDB::is_parent_class(ScriptServer::get_global_class_native_base(class_name), "Node")) {
+				continue;
+			}
+			ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+			option.insert_text = option.display.quote(p_quote_style);
+			r_result.insert(option.display, option);
+		}
+	} else if (p_annotation->name == SNAME("@export_tool_button")) {
+		if (p_argument == 1) {
+			const Ref<Theme> theme = EditorNode::get_singleton()->get_editor_theme();
+			if (theme.is_valid()) {
+				List<StringName> icon_list;
+				theme->get_icon_list(EditorStringName(EditorIcons), &icon_list);
+				for (const StringName &E : icon_list) {
+					ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+					option.insert_text = option.display.quote(p_quote_style);
+					r_result.insert(option.display, option);
+				}
+			}
+		}
+	} else if (p_annotation->name == SNAME("@export_custom")) {
+		switch (p_argument) {
+			case 0: {
+				static HashMap<StringName, int64_t> items;
+				if (unlikely(items.is_empty())) {
+					CoreConstants::get_enum_values(SNAME("PropertyHint"), &items);
+				}
+				for (const KeyValue<StringName, int64_t> &item : items) {
+					ScriptLanguage::CodeCompletionOption option(item.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
+					r_result.insert(option.display, option);
+				}
+			} break;
+			case 2: {
+				static HashMap<StringName, int64_t> items;
+				if (unlikely(items.is_empty())) {
+					CoreConstants::get_enum_values(SNAME("PropertyUsageFlags"), &items);
+				}
+				for (const KeyValue<StringName, int64_t> &item : items) {
+					ScriptLanguage::CodeCompletionOption option(item.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
+					r_result.insert(option.display, option);
+				}
+			} break;
+		}
+	} else if (p_annotation->name == SNAME("@warning_ignore") || p_annotation->name == SNAME("@warning_ignore_start") || p_annotation->name == SNAME("@warning_ignore_restore")) {
+		for (int warning_code = 0; warning_code < FSWarning::WARNING_MAX; warning_code++) {
+#ifndef DISABLE_DEPRECATED
+			if (warning_code >= FSWarning::FIRST_DEPRECATED_WARNING) {
+				break; // Don't suggest deprecated warnings as they are never produced.
+			}
+#endif // DISABLE_DEPRECATED
+			ScriptLanguage::CodeCompletionOption warning(FSWarning::get_name_from_code((FSWarning::Code)warning_code).to_lower(), ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			warning.insert_text = warning.display.quote(p_quote_style);
+			r_result.insert(warning.display, warning);
+		}
+	} else if (p_annotation->name == SNAME("@rpc")) {
+		if (p_argument == 0 || p_argument == 1 || p_argument == 2) {
+			static const char *options[7] = { "call_local", "call_remote", "any_peer", "authority", "reliable", "unreliable", "unreliable_ordered" };
+			for (int i = 0; i < 7; i++) {
+				ScriptLanguage::CodeCompletionOption option(options[i], ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+				option.insert_text = option.display.quote(p_quote_style);
+				r_result.insert(option.display, option);
+			}
+		}
+	}
+}
+
+static void _find_built_in_variants(HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	for (int i = 0; i < Variant::VARIANT_MAX; i++) {
+		if (Variant::Type(i) == Variant::Type::NIL) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(Variant::get_type_name(Variant::Type(i)), ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+		r_result.insert(option.display, option);
+	}
+	// `AsyncCallable` is a FoundryScript-only spelling of `Callable` and isn't a Variant type.
+	ScriptLanguage::CodeCompletionOption async_callable_option("AsyncCallable", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+	r_result.insert(async_callable_option.display, async_callable_option);
+	// `Coroutine` is a FoundryScript-only spelling over `FSFunctionState` and isn't a Variant type.
+	ScriptLanguage::CodeCompletionOption coroutine_option("Coroutine", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+	r_result.insert(coroutine_option.display, coroutine_option);
+	// `Type[T]` is a FoundryScript-only class-handle annotation and isn't a Variant type.
+	ScriptLanguage::CodeCompletionOption type_option("Type", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+	r_result.insert(type_option.display, type_option);
+}
+
+static void _find_global_enums(HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	List<StringName> global_enums;
+	CoreConstants::get_global_enums(&global_enums);
+	for (const StringName &enum_name : global_enums) {
+		ScriptLanguage::CodeCompletionOption option(enum_name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, ScriptLanguage::LOCATION_OTHER);
+		r_result.insert(option.display, option);
+	}
+}
+
+static void _insert_namespace_completion_option(const String &p_display, ScriptLanguage::CodeCompletionKind p_kind, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_display.is_empty() || r_result.has(p_display)) {
+		return;
+	}
+
+	ScriptLanguage::CodeCompletionOption option(p_display, p_kind, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+	r_result.insert(option.display, option);
+}
+
+static ScriptLanguage::CodeCompletionKind _get_global_class_completion_kind(const StringName &p_global_class) {
+	if (ScriptServer::is_global_class_enum(p_global_class)) {
+		return ScriptLanguage::CODE_COMPLETION_KIND_ENUM;
+	}
+	return ScriptLanguage::CODE_COMPLETION_KIND_CLASS;
+}
+
+struct FSNamespaceCompletionCache {
+	HashSet<String> namespaces;
+	HashMap<String, LocalVector<StringName>> direct_classes_by_namespace;
+	HashMap<String, LocalVector<String>> direct_child_namespaces_by_namespace;
+	bool populated = false;
+
+	void ensure_populated() {
+		if (populated) {
+			return;
+		}
+
+		populated = true;
+		populate();
+	}
+
+	void populate() {
+		LocalVector<StringName> global_classes;
+		ScriptServer::get_global_class_list(global_classes);
+		for (const StringName &global_class : global_classes) {
+			StringName class_name;
+			String namespace_name;
+			ScriptServer::get_global_class_name_parts(global_class, &class_name, &namespace_name);
+
+			if (!namespace_name.is_empty()) {
+				LocalVector<StringName> &classes = direct_classes_by_namespace[namespace_name];
+				if (!classes.has(class_name)) {
+					classes.push_back(class_name);
+				}
+			}
+
+			add_namespace(namespace_name);
+		}
+	}
+
+	void add_namespace(const String &p_namespace) {
+		String prefix;
+		const int slice_count = p_namespace.get_slice_count(".");
+		for (int i = 0; i < slice_count; i++) {
+			if (!prefix.is_empty()) {
+				prefix += ".";
+			}
+			prefix += p_namespace.get_slicec('.', i);
+			namespaces.insert(prefix);
+
+			if (i < slice_count - 1) {
+				const String child_namespace = p_namespace.get_slicec('.', i + 1);
+				LocalVector<String> &children = direct_child_namespaces_by_namespace[prefix];
+				if (!children.has(child_namespace)) {
+					children.push_back(child_namespace);
+				}
+			}
+		}
+	}
+};
+
+static void _list_importable_namespaces(FSNamespaceCompletionCache &r_cache, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+	for (const String &namespace_name : r_cache.namespaces) {
+		_insert_namespace_completion_option(namespace_name, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT, r_result);
+	}
+}
+
+static void _add_direct_global_classes_in_namespace(FSNamespaceCompletionCache &r_cache, const String &p_namespace, bool p_inherit_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+	const LocalVector<StringName> *classes = r_cache.direct_classes_by_namespace.getptr(p_namespace);
+	if (classes == nullptr) {
+		return;
+	}
+
+	for (const StringName &class_name : *classes) {
+		const StringName global_class = p_namespace + "." + String(class_name);
+		if (p_inherit_only && ScriptServer::is_global_class_enum(global_class)) {
+			continue;
+		}
+		_insert_namespace_completion_option(class_name, _get_global_class_completion_kind(global_class), r_result);
+	}
+}
+
+static bool _namespace_exists(FSNamespaceCompletionCache &r_cache, const String &p_namespace) {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+
+	r_cache.ensure_populated();
+	return r_cache.namespaces.has(p_namespace);
+}
+
+static void _add_direct_child_namespaces(FSNamespaceCompletionCache &r_cache, const String &p_namespace, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_namespace.is_empty()) {
+		return;
+	}
+
+	r_cache.ensure_populated();
+	const LocalVector<String> *children = r_cache.direct_child_namespaces_by_namespace.getptr(p_namespace);
+	if (children == nullptr) {
+		return;
+	}
+
+	for (const String &child_namespace : *children) {
+		_insert_namespace_completion_option(child_namespace, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT, r_result);
+	}
+}
+
+static void _add_imported_global_classes_in_namespaces(FSNamespaceCompletionCache &r_cache, const Vector<String> &p_imports, bool p_inherit_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+
+	HashMap<StringName, String> imported_class_namespaces;
+	HashSet<StringName> ambiguous_class_names;
+	LocalVector<String> checked_imports;
+
+	for (const String &import : p_imports) {
+		if (checked_imports.has(import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		const LocalVector<StringName> *classes = r_cache.direct_classes_by_namespace.getptr(import);
+		if (classes == nullptr) {
+			continue;
+		}
+
+		for (const StringName &class_name : *classes) {
+			const String *existing_namespace = imported_class_namespaces.getptr(class_name);
+			if (existing_namespace == nullptr) {
+				imported_class_namespaces[class_name] = import;
+			} else if (*existing_namespace != import) {
+				ambiguous_class_names.insert(class_name);
+			}
+		}
+	}
+
+	for (const KeyValue<StringName, String> &E : imported_class_namespaces) {
+		if (ambiguous_class_names.has(E.key)) {
+			continue;
+		}
+		const StringName global_class = E.value + "." + String(E.key);
+		if (p_inherit_only && ScriptServer::is_global_class_enum(global_class)) {
+			continue;
+		}
+		_insert_namespace_completion_option(E.key, _get_global_class_completion_kind(global_class), r_result);
+	}
+}
+
+static void _add_imported_child_namespaces(FSNamespaceCompletionCache &r_cache, const Vector<String> &p_imports, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+
+	HashMap<String, String> imported_child_namespaces;
+	HashSet<String> ambiguous_child_namespaces;
+	LocalVector<String> checked_imports;
+
+	for (const String &import : p_imports) {
+		if (checked_imports.has(import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		const LocalVector<String> *children = r_cache.direct_child_namespaces_by_namespace.getptr(import);
+		if (children == nullptr) {
+			continue;
+		}
+
+		for (const String &child_namespace : *children) {
+			const String *existing_import = imported_child_namespaces.getptr(child_namespace);
+			if (existing_import == nullptr) {
+				imported_child_namespaces[child_namespace] = import;
+			} else if (*existing_import != import) {
+				ambiguous_child_namespaces.insert(child_namespace);
+			}
+		}
+	}
+
+	for (const KeyValue<String, String> &E : imported_child_namespaces) {
+		if (ambiguous_child_namespaces.has(E.key)) {
+			continue;
+		}
+		_insert_namespace_completion_option(E.key, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT, r_result);
+	}
+}
+
+static const FSParser::ClassNode *_get_completion_root_class(const FSParser::CompletionContext &p_context) {
+	if (p_context.parser != nullptr) {
+		return p_context.parser->get_tree();
+	}
+
+	const FSParser::ClassNode *current_class = p_context.current_class;
+	while (current_class != nullptr && current_class->outer != nullptr) {
+		current_class = current_class->outer;
+	}
+	return current_class;
+}
+
+static void _add_namespace_type_completion_options(FSNamespaceCompletionCache &r_cache, const FSParser::CompletionContext &p_context, bool p_inherit_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	const FSParser::ClassNode *root = _get_completion_root_class(p_context);
+	if (root == nullptr) {
+		return;
+	}
+
+	_add_direct_global_classes_in_namespace(r_cache, root->namespace_name, p_inherit_only, r_result);
+	_add_direct_child_namespaces(r_cache, root->namespace_name, r_result);
+	_add_imported_global_classes_in_namespaces(r_cache, root->imports, p_inherit_only, r_result);
+	_add_imported_child_namespaces(r_cache, root->imports, r_result);
+}
+
+static String _join_identifier_chain(const Vector<FSParser::IdentifierNode *> &p_chain, int p_start, int p_count) {
+	String result;
+	for (int i = 0; i < p_count; i++) {
+		if (!result.is_empty()) {
+			result += ".";
+		}
+		result += String(p_chain[p_start + i]->name);
+	}
+	return result;
+}
+
+static bool _resolve_namespace_from_prefix(FSNamespaceCompletionCache &r_cache, const FSParser::ClassNode *p_root, const String &p_prefix, String &r_namespace) {
+	if (p_prefix.is_empty()) {
+		return false;
+	}
+
+	if (_namespace_exists(r_cache, p_prefix)) {
+		r_namespace = p_prefix;
+		return true;
+	}
+
+	if (p_root == nullptr) {
+		return false;
+	}
+
+	if (!p_root->namespace_name.is_empty()) {
+		const String current_namespace_candidate = p_root->namespace_name + "." + p_prefix;
+		if (_namespace_exists(r_cache, current_namespace_candidate)) {
+			r_namespace = current_namespace_candidate;
+			return true;
+		}
+	}
+
+	String matched_import_namespace;
+	for (const String &import : p_root->imports) {
+		const String imported_namespace_candidate = import + "." + p_prefix;
+		if (!_namespace_exists(r_cache, imported_namespace_candidate)) {
+			continue;
+		}
+
+		if (!matched_import_namespace.is_empty() && matched_import_namespace != imported_namespace_candidate) {
+			return false;
+		}
+		matched_import_namespace = imported_namespace_candidate;
+	}
+
+	if (!matched_import_namespace.is_empty()) {
+		r_namespace = matched_import_namespace;
+		return true;
+	}
+
+	return false;
+}
+
+static void _add_namespace_type_attribute_completion_options(FSNamespaceCompletionCache &r_cache, const FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_context.node == nullptr || p_context.node->type != FSParser::Node::TYPE) {
+		return;
+	}
+
+	const FSParser::TypeNode *type = static_cast<const FSParser::TypeNode *>(p_context.node);
+	if (p_context.type_chain_index <= 0 || p_context.type_chain_index > type->type_chain.size()) {
+		return;
+	}
+
+	const String prefix = _join_identifier_chain(type->type_chain, 0, p_context.type_chain_index);
+	const FSParser::ClassNode *root = _get_completion_root_class(p_context);
+	String namespace_name;
+	if (!_resolve_namespace_from_prefix(r_cache, root, prefix, namespace_name)) {
+		return;
+	}
+
+	_add_direct_global_classes_in_namespace(r_cache, namespace_name, false, r_result);
+	_add_direct_child_namespaces(r_cache, namespace_name, r_result);
+}
+
+static void _add_direct_traits_in_namespace(FSNamespaceCompletionCache &r_cache, const String &p_namespace, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	r_cache.ensure_populated();
+	const LocalVector<StringName> *classes = r_cache.direct_classes_by_namespace.getptr(p_namespace);
+	if (classes == nullptr) {
+		return;
+	}
+
+	for (const StringName &class_name : *classes) {
+		// Only traits are valid in a `uses` clause; non-trait classes in the same
+		// namespace must not be suggested.
+		const String qualified_name = p_namespace + "." + String(class_name);
+		if (!ScriptServer::is_global_class_trait(qualified_name)) {
+			continue;
+		}
+		_insert_namespace_completion_option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, r_result);
+	}
+}
+
+// Completes the trailing segment of a namespace-qualified `uses` reference (e.g.
+// the part after the dot in `uses characters.`): only traits declared directly in
+// the resolved namespace, plus its child namespaces to allow drilling deeper.
+static void _add_namespace_uses_completion_options(FSNamespaceCompletionCache &r_cache, const FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_context.current_argument <= 0 || p_context.current_argument > p_context.chain.size()) {
+		return;
+	}
+
+	const String prefix = _join_identifier_chain(p_context.chain, 0, p_context.current_argument);
+	const FSParser::ClassNode *root = _get_completion_root_class(p_context);
+	String namespace_name;
+	if (!_resolve_namespace_from_prefix(r_cache, root, prefix, namespace_name)) {
+		return;
+	}
+
+	_add_direct_traits_in_namespace(r_cache, namespace_name, r_result);
+	_add_direct_child_namespaces(r_cache, namespace_name, r_result);
+}
+
+static void _list_available_types(bool p_inherit_only, FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	// Built-in Variant Types
+	_find_built_in_variants(r_result);
+
+	// Variant meta-type
+	if (!p_inherit_only) {
+		ScriptLanguage::CodeCompletionOption variant_option("Variant", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+		r_result.insert(variant_option.display, variant_option);
+	}
+
+	LocalVector<StringName> native_types;
+	ClassDB::get_class_list(native_types);
+	for (const StringName &type : native_types) {
+		if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type)) {
+			ScriptLanguage::CodeCompletionOption option(type, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+			r_result.insert(option.display, option);
+		}
+	}
+
+	// TODO: Unify with _find_identifiers_in_class.
+	if (p_context.current_class) {
+		if (!p_inherit_only && p_context.current_class->base_type.is_set()) {
+			// Native enums from base class
+			List<StringName> enums;
+			ClassDB::get_enum_list(p_context.current_class->base_type.native_type, &enums);
+			for (const StringName &E : enums) {
+				ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_ENUM);
+				r_result.insert(option.display, option);
+			}
+		}
+		// Check current class for potential types.
+		// TODO: Also check classes the current class inherits from.
+		const FSParser::ClassNode *current = p_context.current_class;
+		int location_offset = 0;
+		while (current) {
+			for (int i = 0; i < current->members.size(); i++) {
+				const FSParser::ClassNode::Member &member = current->members[i];
+				switch (member.type) {
+					case FSParser::ClassNode::Member::CLASS: {
+						ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+						r_result.insert(option.display, option);
+					} break;
+					case FSParser::ClassNode::Member::ENUM: {
+						if (!p_inherit_only) {
+							ScriptLanguage::CodeCompletionOption option(member.m_enum->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, ScriptLanguage::LOCATION_LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
+					} break;
+					case FSParser::ClassNode::Member::CONSTANT: {
+						if (member.constant->get_datatype().is_meta_type) {
+							ScriptLanguage::CodeCompletionOption option(member.constant->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
+					} break;
+					default:
+						break;
+				}
+			}
+			location_offset += 1;
+			current = current->outer;
+		}
+	}
+
+	// Global scripts
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	for (const StringName &class_name : global_classes) {
+		if (p_inherit_only && ScriptServer::is_global_class_enum(class_name)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(
+				class_name, _get_global_class_completion_kind(class_name), ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		r_result.insert(option.display, option);
+	}
+
+	// Global enums
+	if (!p_inherit_only) {
+		_find_global_enums(r_result);
+	}
+
+	// Autoload singletons.
+	FSAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
+	for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (!autoload.is_singleton || autoload.script_path.is_empty()) {
+			continue;
+		}
+		// A reserved named global (e.g. the `godot` reflection namespace) is not usable as
+		// a type/base, and the analyzer refuses to resolve such an autoload there, so don't
+		// suggest it.
+		if (FSLanguage::get_singleton()->is_reserved_global_name(autoload.name)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(autoload.name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		r_result.insert(option.display, option);
+	}
+}
+
+static void _add_type_parameter_completion_options(const FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	auto add_parameters = [&](const Vector<FSParser::TypeParameterNode *> &p_parameters, ScriptLanguage::CodeCompletionLocation p_location) {
+		for (const FSParser::TypeParameterNode *parameter : p_parameters) {
+			if (parameter == nullptr || parameter->identifier == nullptr) {
+				continue;
+			}
+			ScriptLanguage::CodeCompletionOption option(parameter->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, p_location);
+			r_result.insert(option.display, option);
+		}
+	};
+
+	if (p_context.current_function != nullptr) {
+		add_parameters(p_context.current_function->type_parameters, ScriptLanguage::LOCATION_LOCAL);
+	}
+	if (p_context.current_class != nullptr) {
+		add_parameters(p_context.current_class->type_parameters, ScriptLanguage::LOCATION_LOCAL);
+	}
+}
+
+static void _list_type_handle_argument_types(FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	LocalVector<StringName> native_types;
+	ClassDB::get_class_list(native_types);
+	for (const StringName &type : native_types) {
+		if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type)) {
+			ScriptLanguage::CodeCompletionOption option(type, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+			r_result.insert(option.display, option);
+		}
+	}
+
+	if (p_context.current_class != nullptr) {
+		ScriptLanguage::CodeCompletionOption self_option("Self", ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL);
+		r_result.insert(self_option.display, self_option);
+	}
+
+	_add_type_parameter_completion_options(p_context, r_result);
+
+	if (p_context.current_class) {
+		const FSParser::ClassNode *current = p_context.current_class;
+		int location_offset = 0;
+		while (current) {
+			for (int i = 0; i < current->members.size(); i++) {
+				const FSParser::ClassNode::Member &member = current->members[i];
+				switch (member.type) {
+					case FSParser::ClassNode::Member::CLASS: {
+						ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+						r_result.insert(option.display, option);
+					} break;
+					case FSParser::ClassNode::Member::CONSTANT: {
+						if (member.constant->get_datatype().is_meta_type) {
+							ScriptLanguage::CodeCompletionOption option(member.constant->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
+					} break;
+					default:
+						break;
+				}
+			}
+			location_offset += 1;
+			current = current->outer;
+		}
+	}
+
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	for (const StringName &class_name : global_classes) {
+		if (ScriptServer::is_global_class_enum(class_name)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		r_result.insert(option.display, option);
+	}
+}
+
+// Lists the traits that can appear after `uses`: inline trait declarations from the
+// surrounding class hierarchy plus globally registered `trait_name` traits.
+static void _list_available_traits(FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	// Inline trait declarations visible from the current class: its own members, the
+	// members of its outer (lexically enclosing) classes, and the members it inherits
+	// from local base classes. This mirrors the scopes the analyzer searches when it
+	// resolves a `uses` reference.
+	HashSet<const FSParser::ClassNode *> visited;
+	List<const FSParser::ClassNode *> to_visit;
+	for (const FSParser::ClassNode *outer = p_context.current_class; outer != nullptr; outer = outer->outer) {
+		to_visit.push_back(outer);
+	}
+	while (!to_visit.is_empty()) {
+		const FSParser::ClassNode *current = to_visit.front()->get();
+		to_visit.pop_front();
+		if (current == nullptr || visited.has(current)) {
+			continue;
+		}
+		visited.insert(current);
+
+		for (int i = 0; i < current->members.size(); i++) {
+			const FSParser::ClassNode::Member &member = current->members[i];
+			if (member.type == FSParser::ClassNode::Member::CLASS && member.m_class->is_trait) {
+				ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL);
+				r_result.insert(option.display, option);
+			}
+		}
+
+		// Inline traits declared in a local base class are inherited.
+		if (current->base_type.kind == FSParser::DataType::CLASS && current->base_type.class_type != nullptr) {
+			to_visit.push_back(current->base_type.class_type);
+		}
+	}
+
+	// Global `trait_name` traits. Only FoundryScript globals can be traits; the trait flag
+	// is cached in the global-class registry, so no per-global parse is needed here.
+	const StringName fs_name = FSLanguage::get_singleton()->get_name();
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	for (const StringName &global_class : global_classes) {
+		if (ScriptServer::get_global_class_language(global_class) != fs_name) {
+			continue;
+		}
+		if (!ScriptServer::is_global_class_trait(global_class)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(global_class, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		r_result.insert(option.display, option);
+	}
+}
+
+static void _find_identifiers_in_suite(const FSParser::SuiteNode *p_suite, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth = 0) {
+	for (int i = 0; i < p_suite->locals.size(); i++) {
+		ScriptLanguage::CodeCompletionOption option;
+		int location = p_recursion_depth == 0 ? ScriptLanguage::LOCATION_LOCAL : (p_recursion_depth | ScriptLanguage::LOCATION_PARENT_MASK);
+		if (p_suite->locals[i].type == FSParser::SuiteNode::Local::CONSTANT) {
+			option = ScriptLanguage::CodeCompletionOption(p_suite->locals[i].name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+			option.default_value = p_suite->locals[i].constant->initializer->reduced_value;
+		} else {
+			option = ScriptLanguage::CodeCompletionOption(p_suite->locals[i].name, ScriptLanguage::CODE_COMPLETION_KIND_VARIABLE, location);
+		}
+		r_result.insert(option.display, option);
+	}
+	if (p_suite->parent_block) {
+		_find_identifiers_in_suite(p_suite->parent_block, r_result, p_recursion_depth + 1);
+	}
+}
+
+static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool p_only_functions, bool p_types_only, bool p_add_braces, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth);
+
+static void _find_identifiers_in_class(const FSParser::ClassNode *p_class, bool p_only_functions, bool p_types_only, bool p_static, bool p_parent_only, bool p_add_braces, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth) {
+	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
+
+	if (!p_parent_only) {
+		bool outer = false;
+		const FSParser::ClassNode *clss = p_class;
+		int classes_processed = 0;
+		while (clss) {
+			for (int i = 0; i < clss->members.size(); i++) {
+				const int location = p_recursion_depth == 0 ? classes_processed : (p_recursion_depth | ScriptLanguage::LOCATION_PARENT_MASK);
+				const FSParser::ClassNode::Member &member = clss->members[i];
+				ScriptLanguage::CodeCompletionOption option;
+				switch (member.type) {
+					case FSParser::ClassNode::Member::VARIABLE:
+						if (p_types_only || p_only_functions || outer || (p_static && !member.variable->is_static)) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.variable->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER, location);
+						break;
+					case FSParser::ClassNode::Member::CONSTANT:
+						if ((p_types_only && !member.constant->datatype.is_meta_type) || p_only_functions) {
+							continue;
+						}
+						if (r_result.has(member.constant->identifier->name)) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.constant->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+						if (member.constant->initializer) {
+							option.default_value = member.constant->initializer->reduced_value;
+						}
+						break;
+					case FSParser::ClassNode::Member::CLASS:
+						if (p_only_functions) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, location);
+						break;
+					case FSParser::ClassNode::Member::ENUM_VALUE:
+						if (p_types_only || p_only_functions) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.enum_value.identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+						break;
+					case FSParser::ClassNode::Member::ENUM:
+						if (p_only_functions) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.m_enum->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, location);
+						break;
+					case FSParser::ClassNode::Member::FUNCTION:
+						if (p_types_only || outer || (p_static && !member.function->is_static) || member.function->identifier->name.operator String().begins_with("@")) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.function->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, location);
+						if (p_add_braces) {
+							if (member.function->parameters.size() > 0 || (member.function->info.flags & METHOD_FLAG_VARARG)) {
+								option.insert_text += "(";
+								option.display += U"(\u2026)";
+							} else {
+								option.insert_text += "()";
+								option.display += "()";
+							}
+						}
+						break;
+					case FSParser::ClassNode::Member::SIGNAL:
+						if (p_types_only || p_only_functions || outer || p_static) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.signal->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_SIGNAL, location);
+						break;
+					case FSParser::ClassNode::Member::GROUP:
+						break; // No-op, but silences warnings.
+					case FSParser::ClassNode::Member::UNDEFINED:
+						break;
+				}
+				r_result.insert(option.display, option);
+			}
+			if (p_types_only) {
+				break; // Otherwise, it will fill the results with types from the outer class (which is undesired for that case).
+			}
+
+			outer = true;
+			clss = clss->outer;
+			classes_processed++;
+		}
+	}
+
+	// Parents.
+	FSCompletionIdentifier base_type;
+	base_type.type = p_class->base_type;
+	base_type.type.is_meta_type = p_static;
+
+	_find_identifiers_in_base(base_type, p_only_functions, p_types_only, p_add_braces, r_result, p_recursion_depth + 1);
+}
+
+static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool p_only_functions, bool p_types_only, bool p_add_braces, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth) {
+	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
+
+	FSParser::DataType base_type = p_base.type;
+
+	if (!p_types_only && base_type.is_meta_type && base_type.kind != FSParser::DataType::BUILTIN && base_type.kind != FSParser::DataType::ENUM) {
+		ScriptLanguage::CodeCompletionOption option("new", ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, ScriptLanguage::LOCATION_LOCAL);
+		if (p_add_braces) {
+			option.insert_text += "(";
+			option.display += U"(\u2026)";
+		}
+		r_result.insert(option.display, option);
+	}
+
+	while (!base_type.has_no_type()) {
+		switch (base_type.kind) {
+			case FSParser::DataType::CLASS: {
+				_find_identifiers_in_class(base_type.class_type, p_only_functions, p_types_only, base_type.is_meta_type, false, p_add_braces, r_result, p_recursion_depth);
+				// This already finds all parent identifiers, so we are done.
+				base_type = FSParser::DataType();
+			} break;
+			case FSParser::DataType::SCRIPT: {
+				Ref<Script> scr = base_type.script_type;
+				if (scr.is_valid()) {
+					if (p_types_only) {
+						// TODO: Need to implement Script::get_script_enum_list and retrieve the enum list from a script.
+					} else if (!p_only_functions) {
+						if (!base_type.is_meta_type) {
+							List<PropertyInfo> members;
+							scr->get_script_property_list(&members);
+							for (const PropertyInfo &E : members) {
+								if (E.usage & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_INTERNAL)) {
+									continue;
+								}
+								if (E.name.contains_char('/')) {
+									continue;
+								}
+								int location = p_recursion_depth + _get_property_location(scr, E.name);
+								ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER, location);
+								r_result.insert(option.display, option);
+							}
+
+							List<MethodInfo> signals;
+							scr->get_script_signal_list(&signals);
+							for (const MethodInfo &E : signals) {
+								if (E.name.begins_with("_")) {
+									continue;
+								}
+								int location = p_recursion_depth + _get_signal_location(scr, E.name);
+								ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_SIGNAL, location);
+								r_result.insert(option.display, option);
+							}
+						}
+						HashMap<StringName, Variant> constants;
+						scr->get_constants(&constants);
+						for (const KeyValue<StringName, Variant> &E : constants) {
+							int location = p_recursion_depth + _get_constant_location(scr, E.key);
+							ScriptLanguage::CodeCompletionOption option(E.key.operator String(), ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+							r_result.insert(option.display, option);
+						}
+					}
+
+					if (!p_types_only) {
+						List<MethodInfo> methods;
+						scr->get_script_method_list(&methods);
+						for (const MethodInfo &E : methods) {
+							if (E.name.begins_with("@")) {
+								continue;
+							}
+							int location = p_recursion_depth + _get_method_location(scr->get_class_name(), E.name);
+							ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, location);
+							if (p_add_braces) {
+								if (E.arguments.size() || (E.flags & METHOD_FLAG_VARARG)) {
+									option.insert_text += "(";
+									option.display += U"(\u2026)";
+								} else {
+									option.insert_text += "()";
+									option.display += "()";
+								}
+							}
+							r_result.insert(option.display, option);
+						}
+					}
+
+					Ref<Script> base_script = scr->get_base_script();
+					if (base_script.is_valid()) {
+						base_type.script_type = base_script;
+					} else {
+						base_type.kind = FSParser::DataType::NATIVE;
+						base_type.builtin_type = Variant::OBJECT;
+						base_type.native_type = scr->get_instance_base_type();
+					}
+				} else {
+					return;
+				}
+			} break;
+			case FSParser::DataType::NATIVE: {
+				StringName type = base_type.native_type;
+				if (!FSAnalyzer::class_exists(type)) {
+					return;
+				}
+
+				List<StringName> enums;
+				ClassDB::get_enum_list(type, &enums);
+				for (const StringName &E : enums) {
+					int location = p_recursion_depth + _get_enum_location(type, E);
+					ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, location);
+					r_result.insert(option.display, option);
+				}
+
+				if (p_types_only) {
+					return;
+				}
+
+				if (!p_only_functions) {
+					List<String> constants;
+					ClassDB::get_integer_constant_list(type, &constants);
+					for (const String &E : constants) {
+						int location = p_recursion_depth + _get_constant_location(type, StringName(E));
+						ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+						r_result.insert(option.display, option);
+					}
+
+					if (!base_type.is_meta_type || Engine::get_singleton()->has_singleton(type)) {
+						List<PropertyInfo> pinfo;
+						ClassDB::get_property_list(type, &pinfo);
+						for (const PropertyInfo &E : pinfo) {
+							if (E.usage & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_INTERNAL)) {
+								continue;
+							}
+							if (E.name.contains_char('/')) {
+								continue;
+							}
+							int location = p_recursion_depth + _get_property_location(type, E.name);
+							ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER, location);
+							r_result.insert(option.display, option);
+						}
+
+						List<MethodInfo> signals;
+						ClassDB::get_signal_list(type, &signals);
+						for (const MethodInfo &E : signals) {
+							if (E.name.begins_with("_")) {
+								continue;
+							}
+							int location = p_recursion_depth + _get_signal_location(type, StringName(E.name));
+							ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_SIGNAL, location);
+							r_result.insert(option.display, option);
+						}
+					}
+				}
+
+				bool only_static = base_type.is_meta_type && !Engine::get_singleton()->has_singleton(type);
+
+				List<MethodInfo> methods;
+				ClassDB::get_method_list(type, &methods, false, true);
+				for (const MethodInfo &E : methods) {
+					if (only_static && (E.flags & METHOD_FLAG_STATIC) == 0) {
+						continue;
+					}
+					if (E.name.begins_with("_")) {
+						continue;
+					}
+					int location = p_recursion_depth + _get_method_location(type, E.name);
+					ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, location);
+					if (p_add_braces) {
+						if (E.arguments.size() || (E.flags & METHOD_FLAG_VARARG)) {
+							option.insert_text += "(";
+							option.display += U"(\u2026)";
+						} else {
+							option.insert_text += "()";
+							option.display += "()";
+						}
+					}
+					r_result.insert(option.display, option);
+				}
+				return;
+			} break;
+			case FSParser::DataType::ENUM: {
+				if (p_types_only) {
+					return;
+				}
+
+				String type_str = base_type.native_type;
+				bool completed_native_enum = false;
+
+				if (type_str.contains_char('.')) {
+					StringName type = type_str.get_slicec('.', 0);
+					StringName type_enum = base_type.enum_type;
+
+					if (FSAnalyzer::class_exists(type) && ClassDB::has_enum(type, type_enum)) {
+						List<StringName> enum_values;
+
+						ClassDB::get_enum_constants(type, type_enum, &enum_values);
+
+						for (const StringName &E : enum_values) {
+							int location = p_recursion_depth + _get_enum_constant_location(type, E);
+							ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+							r_result.insert(option.display, option);
+						}
+						completed_native_enum = true;
+					}
+				}
+
+				if (!completed_native_enum) {
+					if (base_type.class_type == nullptr && CoreConstants::is_global_enum(base_type.native_type)) {
+						HashMap<StringName, int64_t> enum_values;
+						CoreConstants::get_enum_values(base_type.native_type, &enum_values);
+
+						for (const KeyValue<StringName, int64_t> &enum_value : enum_values) {
+							int location = p_recursion_depth + ScriptLanguage::LOCATION_OTHER;
+							ScriptLanguage::CodeCompletionOption option(
+									enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+							r_result.insert(option.display, option);
+						}
+					} else if (!type_str.contains_char('.') ||
+							(ScriptServer::is_global_class(base_type.native_type) &&
+									ScriptServer::is_global_class_enum(base_type.native_type))) {
+						for (const KeyValue<StringName, int64_t> &enum_value : base_type.enum_values) {
+							int location = p_recursion_depth + ScriptLanguage::LOCATION_OTHER_USER_CODE;
+							ScriptLanguage::CodeCompletionOption option(
+									enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
+							r_result.insert(option.display, option);
+						}
+					}
+				}
+			}
+				[[fallthrough]];
+			case FSParser::DataType::BUILTIN: {
+				if (p_types_only) {
+					return;
+				}
+
+				Callable::CallError err;
+				Variant tmp;
+				Variant::construct(base_type.builtin_type, tmp, nullptr, 0, err);
+				if (err.error != Callable::CallError::CALL_OK) {
+					return;
+				}
+
+				int location = ScriptLanguage::LOCATION_OTHER;
+
+				if (!p_only_functions) {
+					List<PropertyInfo> members;
+					if (p_base.value.get_type() != Variant::NIL) {
+						p_base.value.get_property_list(&members);
+					} else {
+						tmp.get_property_list(&members);
+					}
+
+					for (const PropertyInfo &E : members) {
+						if (E.usage & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_INTERNAL)) {
+							continue;
+						}
+						if (!String(E.name).contains_char('/')) {
+							ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER, location);
+							if (base_type.kind == FSParser::DataType::ENUM) {
+								// Sort enum members in their declaration order.
+								location += 1;
+							}
+							if (FSParser::theme_color_names.has(E.name)) {
+								option.theme_color_name = FSParser::theme_color_names[E.name];
+							}
+							if (r_result.has(option.display)) {
+								continue;
+							}
+							r_result.insert(option.display, option);
+						}
+					}
+				}
+
+				List<MethodInfo> methods;
+				tmp.get_method_list(&methods);
+				for (const MethodInfo &E : methods) {
+					if (base_type.kind == FSParser::DataType::ENUM && base_type.is_meta_type && !(E.flags & METHOD_FLAG_CONST)) {
+						// Enum types are static and cannot change, therefore we skip non-const dictionary methods.
+						continue;
+					}
+					ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, location);
+					if (p_add_braces) {
+						if (E.arguments.size() || (E.flags & METHOD_FLAG_VARARG)) {
+							option.insert_text += "(";
+							option.display += U"(\u2026)";
+						} else {
+							option.insert_text += "()";
+							option.display += "()";
+						}
+					}
+					r_result.insert(option.display, option);
+				}
+
+				return;
+			} break;
+			default: {
+				return;
+			} break;
+		}
+	}
+}
+
+static void _find_identifiers(const FSParser::CompletionContext &p_context, bool p_only_functions, bool p_add_braces, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth) {
+	if (!p_only_functions && p_context.current_suite) {
+		// This includes function parameters, since they are also locals.
+		_find_identifiers_in_suite(p_context.current_suite, r_result);
+	}
+
+	if (p_context.current_class) {
+		_find_identifiers_in_class(p_context.current_class, p_only_functions, false, (!p_context.current_function || p_context.current_function->is_static), false, p_add_braces, r_result, p_recursion_depth);
+	}
+
+	List<StringName> functions;
+	FSUtilityFunctions::get_function_list(&functions);
+
+	for (const StringName &E : functions) {
+		MethodInfo function = FSUtilityFunctions::get_function_info(E);
+		ScriptLanguage::CodeCompletionOption option(String(E), ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+		if (p_add_braces) {
+			if (function.arguments.size() || (function.flags & METHOD_FLAG_VARARG)) {
+				option.insert_text += "(";
+				option.display += U"(\u2026)";
+			} else {
+				option.insert_text += "()";
+				option.display += "()";
+			}
+		}
+		r_result.insert(option.display, option);
+	}
+
+	if (p_only_functions) {
+		return;
+	}
+
+	_find_built_in_variants(r_result);
+
+	static const char *_keywords[] = {
+		"true", "false", "PI", "TAU", "INF", "NAN", "null", "self", "super",
+		"break", "breakpoint", "continue", "pass", "return",
+		nullptr
+	};
+
+	const char **kw = _keywords;
+	while (*kw) {
+		ScriptLanguage::CodeCompletionOption option(*kw, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+		r_result.insert(option.display, option);
+		kw++;
+	}
+
+	static const char *_keywords_with_space[] = {
+		"and", "not", "or", "in", "as", "class", "class_name", "extends", "is", "func", "signal", "await",
+		"const", "enum", "static", "var", "if", "elif", "else", "for", "match", "when", "while",
+		nullptr
+	};
+
+	const char **kws = _keywords_with_space;
+	while (*kws) {
+		ScriptLanguage::CodeCompletionOption option(*kws, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+		option.insert_text += " ";
+		r_result.insert(option.display, option);
+		kws++;
+	}
+
+	static const char *_keywords_with_args[] = {
+		"assert", "preload",
+		nullptr
+	};
+
+	const char **kwa = _keywords_with_args;
+	while (*kwa) {
+		ScriptLanguage::CodeCompletionOption option(*kwa, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+		if (p_add_braces) {
+			option.insert_text += "(";
+			option.display += U"(\u2026)";
+		}
+		r_result.insert(option.display, option);
+		kwa++;
+	}
+
+	List<StringName> utility_func_names;
+	Variant::get_utility_function_list(&utility_func_names);
+
+	for (const StringName &util_func_name : utility_func_names) {
+		ScriptLanguage::CodeCompletionOption option(util_func_name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+		if (p_add_braces) {
+			option.insert_text += "(";
+			option.display += U"(\u2026)"; // As all utility functions contain an argument or more, this is hardcoded here.
+		}
+		r_result.insert(option.display, option);
+	}
+
+	FSAutoloadIndex autoload_index;
+	autoload_index.rebuild_from_project_settings();
+	for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+		if (!autoload.is_singleton) {
+			continue;
+		}
+		// A reserved named global (e.g. the `godot` reflection namespace) is not exposed
+		// as the autoload's global constant; the reserved global is suggested separately.
+		if (FSLanguage::get_singleton()->is_reserved_global_name(autoload.name)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(autoload.name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
+		r_result.insert(option.display, option);
+	}
+
+	// Native classes and global constants.
+	for (const KeyValue<StringName, int> &E : FSLanguage::get_singleton()->get_global_map()) {
+		ScriptLanguage::CodeCompletionOption option;
+		if (FSAnalyzer::class_exists(E.key) || Engine::get_singleton()->has_singleton(E.key)) {
+			option = ScriptLanguage::CodeCompletionOption(E.key.operator String(), ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+		} else {
+			option = ScriptLanguage::CodeCompletionOption(E.key.operator String(), ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
+		}
+		r_result.insert(option.display, option);
+	}
+
+	// Global enums
+	_find_global_enums(r_result);
+
+	// Global classes
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	for (const StringName &class_name : global_classes) {
+		ScriptLanguage::CodeCompletionOption option(
+				class_name, _get_global_class_completion_kind(class_name), ScriptLanguage::LOCATION_OTHER_USER_CODE);
+		r_result.insert(option.display, option);
+	}
+}
+
+static void _add_async_function_declaration_options(HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	ScriptLanguage::CodeCompletionOption async_func("async func", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+	async_func.insert_text += " ";
+	r_result.insert(async_func.display, async_func);
+
+	ScriptLanguage::CodeCompletionOption static_async_func("static async func", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+	static_async_func.insert_text += " ";
+	r_result.insert(static_async_func.display, static_async_func);
+}
+
+static FSCompletionIdentifier _type_from_variant(const Variant &p_value, FSParser::CompletionContext &p_context) {
+	FSCompletionIdentifier ci;
+	ci.value = p_value;
+	ci.type.is_constant = true;
+	ci.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	ci.type.kind = FSParser::DataType::BUILTIN;
+	ci.type.builtin_type = p_value.get_type();
+
+	if (ci.type.builtin_type == Variant::OBJECT) {
+		Object *obj = p_value.operator Object *();
+		if (!obj) {
+			return ci;
+		}
+		ci.type.native_type = obj->get_class_name();
+		Ref<Script> scr = p_value;
+		if (scr.is_valid()) {
+			ci.type.is_meta_type = true;
+		} else {
+			ci.type.is_meta_type = false;
+			scr = obj->get_script();
+		}
+		if (scr.is_valid()) {
+			ci.type.script_path = scr->get_path();
+			ci.type.script_type = scr;
+			ci.type.native_type = scr->get_instance_base_type();
+			ci.type.kind = FSParser::DataType::SCRIPT;
+
+			if (scr->get_path().ends_with(".fs")) {
+				Ref<FSParserRef> parser = p_context.parser->get_depended_parser_for(scr->get_path());
+				if (parser.is_valid() && parser->raise_status(FSParserRef::INTERFACE_SOLVED) == OK) {
+					ci.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+					ci.type.class_type = parser->get_parser()->get_tree();
+					ci.type.kind = FSParser::DataType::CLASS;
+					return ci;
+				}
+			}
+		} else {
+			ci.type.kind = FSParser::DataType::NATIVE;
+		}
+	}
+
+	return ci;
+}
+
+static FSCompletionIdentifier _type_from_property(const PropertyInfo &p_property) {
+	FSCompletionIdentifier ci;
+
+	if (p_property.type == Variant::NIL) {
+		// Variant
+		ci.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		ci.type.kind = FSParser::DataType::VARIANT;
+		return ci;
+	}
+
+	if (p_property.usage & (PROPERTY_USAGE_CLASS_IS_ENUM | PROPERTY_USAGE_CLASS_IS_BITFIELD)) {
+		ci.enumeration = p_property.class_name;
+	}
+
+	ci.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	ci.type.builtin_type = p_property.type;
+	if (p_property.type == Variant::OBJECT) {
+		StringName class_name = p_property.class_name;
+		if (String(class_name).ends_with("?")) {
+			String nullable_class_name = class_name;
+			nullable_class_name = nullable_class_name.substr(0, nullable_class_name.length() - 1);
+			class_name = nullable_class_name;
+			ci.type.is_nullable = true;
+		}
+		if (ScriptServer::is_global_class(class_name)) {
+			ci.type.kind = FSParser::DataType::SCRIPT;
+			ci.type.script_path = ScriptServer::get_global_class_path(class_name);
+			ci.type.native_type = ScriptServer::get_global_class_native_base(class_name);
+
+			Ref<Script> scr = ResourceLoader::load(ScriptServer::get_global_class_path(class_name));
+			if (scr.is_valid()) {
+				ci.type.script_type = scr;
+			}
+		} else {
+			ci.type.kind = FSParser::DataType::NATIVE;
+			ci.type.native_type = class_name == StringName() ? "Object" : class_name;
+		}
+	} else {
+		ci.type.kind = FSParser::DataType::BUILTIN;
+	}
+	return ci;
+}
+
+static FSCompletionIdentifier _callable_type_from_method_info(const MethodInfo &p_method) {
+	FSCompletionIdentifier ci;
+	ci.type.kind = FSParser::DataType::BUILTIN;
+	ci.type.builtin_type = Variant::CALLABLE;
+	ci.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	ci.type.is_constant = true;
+	ci.type.method_info = p_method;
+	ci.type.has_method_signature = true;
+	return ci;
+}
+
+#define MAX_COMPLETION_RECURSION 100
+struct RecursionCheck {
+	int *counter;
+	_FORCE_INLINE_ bool check() {
+		return (*counter) > MAX_COMPLETION_RECURSION;
+	}
+	RecursionCheck(int *p_counter) :
+			counter(p_counter) {
+		(*counter)++;
+	}
+	~RecursionCheck() {
+		(*counter)--;
+	}
+};
+
+static bool _guess_identifier_type(FSParser::CompletionContext &p_context, const FSParser::IdentifierNode *p_identifier, FSCompletionIdentifier &r_type);
+static bool _guess_identifier_type_from_base(FSParser::CompletionContext &p_context, const FSCompletionIdentifier &p_base, const StringName &p_identifier, FSCompletionIdentifier &r_type);
+static bool _guess_method_return_type_from_base(FSParser::CompletionContext &p_context, const FSCompletionIdentifier &p_base, const StringName &p_method, FSCompletionIdentifier &r_type);
+
+static bool _is_expression_named_identifier(const FSParser::ExpressionNode *p_expression, const StringName &p_name) {
+	if (p_expression) {
+		switch (p_expression->type) {
+			case FSParser::Node::IDENTIFIER: {
+				const FSParser::IdentifierNode *id = static_cast<const FSParser::IdentifierNode *>(p_expression);
+				if (id->name == p_name) {
+					return true;
+				}
+			} break;
+			case FSParser::Node::CAST: {
+				const FSParser::CastNode *cn = static_cast<const FSParser::CastNode *>(p_expression);
+				return _is_expression_named_identifier(cn->operand, p_name);
+			} break;
+			default:
+				break;
+		}
+	}
+
+	return false;
+}
+
+// Creates a map of exemplary results for some functions that return a structured dictionary.
+// Setting this example as value allows autocompletion to suggest the specific keys in some cases.
+static HashMap<String, Dictionary> make_structure_samples() {
+	HashMap<String, Dictionary> res;
+	const Array arr;
+
+	{
+		Dictionary d;
+		d.set("major", 0);
+		d.set("minor", 0);
+		d.set("patch", 0);
+		d.set("hex", 0);
+		d.set("status", String());
+		d.set("build", String());
+		d.set("hash", String());
+		d.set("timestamp", 0);
+		d.set("string", String());
+		res["Engine::get_version_info"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("lead_developers", arr);
+		d.set("founders", arr);
+		d.set("project_managers", arr);
+		d.set("developers", arr);
+		res["Engine::get_author_info"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("platinum_sponsors", arr);
+		d.set("gold_sponsors", arr);
+		d.set("silver_sponsors", arr);
+		d.set("bronze_sponsors", arr);
+		d.set("mini_sponsors", arr);
+		d.set("gold_donors", arr);
+		d.set("silver_donors", arr);
+		d.set("bronze_donors", arr);
+		res["Engine::get_donor_info"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("physical", -1);
+		d.set("free", -1);
+		d.set("available", -1);
+		d.set("stack", -1);
+		res["OS::get_memory_info"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("year", 0);
+		d.set("month", 0);
+		d.set("day", 0);
+		d.set("weekday", 0);
+		d.set("hour", 0);
+		d.set("minute", 0);
+		d.set("second", 0);
+		d.set("dst", 0);
+		res["Time::get_datetime_dict_from_system"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("year", 0);
+		d.set("month", 0);
+		d.set("day", 0);
+		d.set("weekday", 0);
+		d.set("hour", 0);
+		d.set("minute", 0);
+		d.set("second", 0);
+		res["Time::get_datetime_dict_from_unix_time"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("year", 0);
+		d.set("month", 0);
+		d.set("day", 0);
+		d.set("weekday", 0);
+		res["Time::get_date_dict_from_system"] = d;
+		res["Time::get_date_dict_from_unix_time"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("hour", 0);
+		d.set("minute", 0);
+		d.set("second", 0);
+		res["Time::get_time_dict_from_system"] = d;
+		res["Time::get_time_dict_from_unix_time"] = d;
+	}
+
+	{
+		Dictionary d;
+		d.set("bias", 0);
+		d.set("name", String());
+		res["Time::get_time_zone_from_system"] = d;
+	}
+
+	return res;
+}
+
+static const HashMap<String, Dictionary> structure_examples = make_structure_samples();
+
+static void _populate_global_enum_completion_values(
+		FSParser::CompletionContext &p_context, FSParser::DataType &r_type) {
+	if (r_type.kind != FSParser::DataType::ENUM || !r_type.enum_values.is_empty()) {
+		return;
+	}
+
+	FSParser::ClassNode *enum_class = r_type.class_type;
+	if (enum_class == nullptr && p_context.parser != nullptr && r_type.native_type != StringName()) {
+		if (ScriptServer::is_global_class(r_type.native_type) && ScriptServer::is_global_class_enum(r_type.native_type)) {
+			const String script = ScriptServer::get_global_class_path(r_type.native_type);
+			Ref<FSParserRef> parser = p_context.parser->get_depended_parser_for(script);
+			if (parser.is_valid() && parser->raise_status(FSParserRef::INHERITANCE_SOLVED) == OK) {
+				enum_class = parser->get_parser()->get_tree();
+				r_type.class_type = enum_class;
+				r_type.script_path = script;
+			}
+		}
+	}
+
+	const FSParser::EnumNode *enum_node = enum_class != nullptr ? enum_class->enum_file_decl : nullptr;
+	if (enum_node == nullptr) {
+		return;
+	}
+
+	for (const FSParser::EnumNode::Value &element : enum_node->values) {
+		if (element.identifier == nullptr) {
+			continue;
+		}
+		r_type.enum_values[element.identifier->name] = element.value;
+	}
+}
+
+static bool _guess_expression_type(FSParser::CompletionContext &p_context, const FSParser::ExpressionNode *p_expression, FSCompletionIdentifier &r_type) {
+	bool found = false;
+
+	if (p_expression == nullptr) {
+		return false;
+	}
+
+	static int recursion_depth = 0;
+	RecursionCheck recursion(&recursion_depth);
+	if (unlikely(recursion.check())) {
+		ERR_FAIL_V_MSG(false, "Reached recursion limit while trying to guess type.");
+	}
+
+	if (p_expression->is_constant) {
+		// Already has a value, so just use that.
+		r_type = _type_from_variant(p_expression->reduced_value, p_context);
+		switch (p_expression->get_datatype().kind) {
+			case FSParser::DataType::ENUM:
+			case FSParser::DataType::CLASS:
+				r_type.type = p_expression->get_datatype();
+				_populate_global_enum_completion_values(p_context, r_type.type);
+				break;
+			default:
+				break;
+		}
+		found = true;
+	} else {
+		switch (p_expression->type) {
+			case FSParser::Node::IDENTIFIER: {
+				const FSParser::IdentifierNode *id = static_cast<const FSParser::IdentifierNode *>(p_expression);
+				found = _guess_identifier_type(p_context, id, r_type);
+			} break;
+			case FSParser::Node::DICTIONARY: {
+				// Try to recreate the dictionary.
+				const FSParser::DictionaryNode *dn = static_cast<const FSParser::DictionaryNode *>(p_expression);
+				Dictionary d;
+				bool full = true;
+				for (int i = 0; i < dn->elements.size(); i++) {
+					FSCompletionIdentifier key;
+					if (_guess_expression_type(p_context, dn->elements[i].key, key)) {
+						if (!key.type.is_constant) {
+							full = false;
+							break;
+						}
+						FSCompletionIdentifier value;
+						if (_guess_expression_type(p_context, dn->elements[i].value, value)) {
+							if (!value.type.is_constant) {
+								full = false;
+								break;
+							}
+							d[key.value] = value.value;
+						} else {
+							full = false;
+							break;
+						}
+					} else {
+						full = false;
+						break;
+					}
+				}
+				if (full) {
+					r_type.value = d;
+					r_type.type.is_constant = true;
+				}
+				r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+				r_type.type.kind = FSParser::DataType::BUILTIN;
+				r_type.type.builtin_type = Variant::DICTIONARY;
+				found = true;
+			} break;
+			case FSParser::Node::ARRAY: {
+				// Try to recreate the array
+				const FSParser::ArrayNode *an = static_cast<const FSParser::ArrayNode *>(p_expression);
+				Array a;
+				bool full = true;
+				a.resize(an->elements.size());
+				for (int i = 0; i < an->elements.size(); i++) {
+					FSCompletionIdentifier value;
+					if (_guess_expression_type(p_context, an->elements[i], value)) {
+						if (value.type.is_constant) {
+							a[i] = value.value;
+						} else {
+							full = false;
+							break;
+						}
+					} else {
+						full = false;
+						break;
+					}
+				}
+				if (full) {
+					// If not fully constant, setting this value is detrimental to the inference.
+					r_type.value = a;
+					r_type.type.is_constant = true;
+				}
+				r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+				r_type.type.kind = FSParser::DataType::BUILTIN;
+				r_type.type.builtin_type = Variant::ARRAY;
+				found = true;
+			} break;
+			case FSParser::Node::CAST: {
+				const FSParser::CastNode *cn = static_cast<const FSParser::CastNode *>(p_expression);
+				FSCompletionIdentifier value;
+				if (_guess_expression_type(p_context, cn->operand, r_type)) {
+					r_type.type = cn->get_datatype();
+					found = true;
+				}
+			} break;
+			case FSParser::Node::CALL: {
+				const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(p_expression);
+				FSParser::CompletionContext c = p_context;
+				c.current_line = call->start_line;
+
+				FSParser::Node::Type callee_type = call->get_callee_type();
+
+				FSCompletionIdentifier base;
+				if (callee_type == FSParser::Node::IDENTIFIER || call->is_super) {
+					// Simple call, so base is 'self'.
+					if (p_context.current_class) {
+						if (call->is_super) {
+							base.type = p_context.current_class->base_type;
+							base.value = p_context.base;
+						} else {
+							base.type.kind = FSParser::DataType::CLASS;
+							base.type.type_source = FSParser::DataType::INFERRED;
+							base.type.is_constant = true;
+							base.type.class_type = p_context.current_class;
+							base.value = p_context.base;
+						}
+					} else {
+						break;
+					}
+				} else if (callee_type == FSParser::Node::SUBSCRIPT && static_cast<const FSParser::SubscriptNode *>(call->callee)->is_attribute) {
+					if (!_guess_expression_type(c, static_cast<const FSParser::SubscriptNode *>(call->callee)->base, base)) {
+						found = false;
+						break;
+					}
+				} else {
+					break;
+				}
+
+				// Apply additional behavior aware inference that the analyzer can't do.
+				if (base.type.is_set()) {
+					// Maintain type for duplicate methods.
+					if (call->function_name == SNAME("duplicate")) {
+						if (base.type.builtin_type == Variant::OBJECT && (ClassDB::is_parent_class(base.type.native_type, SNAME("Resource")) || ClassDB::is_parent_class(base.type.native_type, SNAME("Node")))) {
+							r_type.type = base.type;
+							found = true;
+							break;
+						}
+					}
+
+					// Simulate generics for some typed array methods.
+					if (base.type.builtin_type == Variant::ARRAY && base.type.has_container_element_types() && (call->function_name == SNAME("back") || call->function_name == SNAME("front") || call->function_name == SNAME("get") || call->function_name == SNAME("max") || call->function_name == SNAME("min") || call->function_name == SNAME("pick_random") || call->function_name == SNAME("pop_at") || call->function_name == SNAME("pop_back") || call->function_name == SNAME("pop_front"))) {
+						r_type.type = base.type.get_container_element_type(0);
+						found = true;
+						break;
+					}
+
+					// Insert example values for functions which a structured dictionary response.
+					if (!base.type.is_meta_type) {
+						const Dictionary *example = structure_examples.getptr(base.type.native_type.operator String() + "::" + call->function_name);
+						if (example != nullptr) {
+							r_type = _type_from_variant(*example, p_context);
+							found = true;
+							break;
+						}
+					}
+				}
+
+				if (!found) {
+					found = _guess_method_return_type_from_base(c, base, call->function_name, r_type);
+				}
+			} break;
+			case FSParser::Node::SUBSCRIPT: {
+				const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_expression);
+				if (subscript->is_attribute) {
+					FSParser::CompletionContext c = p_context;
+					c.current_line = subscript->start_line;
+
+					FSCompletionIdentifier base;
+					if (!_guess_expression_type(c, subscript->base, base)) {
+						found = false;
+						break;
+					}
+
+					if (base.value.get_type() == Variant::DICTIONARY && base.value.operator Dictionary().has(String(subscript->attribute->name))) {
+						Variant value = base.value.operator Dictionary()[String(subscript->attribute->name)];
+						r_type = _type_from_variant(value, p_context);
+						found = true;
+						break;
+					}
+
+					const FSParser::DictionaryNode *dn = nullptr;
+					if (subscript->base->type == FSParser::Node::DICTIONARY) {
+						dn = static_cast<const FSParser::DictionaryNode *>(subscript->base);
+					} else if (base.assigned_expression && base.assigned_expression->type == FSParser::Node::DICTIONARY) {
+						dn = static_cast<const FSParser::DictionaryNode *>(base.assigned_expression);
+					}
+
+					if (dn) {
+						for (int i = 0; i < dn->elements.size(); i++) {
+							FSCompletionIdentifier key;
+							if (!_guess_expression_type(c, dn->elements[i].key, key)) {
+								continue;
+							}
+							if (key.value == String(subscript->attribute->name)) {
+								r_type.assigned_expression = dn->elements[i].value;
+								found = _guess_expression_type(c, dn->elements[i].value, r_type);
+								break;
+							}
+						}
+					}
+
+					if (!found) {
+						found = _guess_identifier_type_from_base(c, base, subscript->attribute->name, r_type);
+					}
+				} else {
+					if (subscript->index == nullptr) {
+						found = false;
+						break;
+					}
+
+					FSParser::CompletionContext c = p_context;
+					c.current_line = subscript->start_line;
+
+					FSCompletionIdentifier base;
+					if (!_guess_expression_type(c, subscript->base, base)) {
+						found = false;
+						break;
+					}
+
+					FSCompletionIdentifier index;
+					if (!_guess_expression_type(c, subscript->index, index)) {
+						found = false;
+						break;
+					}
+
+					if (base.type.is_constant && index.type.is_constant) {
+						if (base.value.get_type() == Variant::DICTIONARY) {
+							Dictionary base_dict = base.value.operator Dictionary();
+							if (base_dict.get_key_validator().test_validate(index.value) && base_dict.has(index.value)) {
+								r_type = _type_from_variant(base_dict[index.value], p_context);
+								found = true;
+								break;
+							}
+						} else {
+							bool valid;
+							Variant value = base.value.get(index.value, &valid);
+							if (valid) {
+								r_type = _type_from_variant(value, p_context);
+								found = true;
+								break;
+							}
+						}
+					}
+
+					// Look if it is a dictionary node.
+					const FSParser::DictionaryNode *dn = nullptr;
+					if (subscript->base->type == FSParser::Node::DICTIONARY) {
+						dn = static_cast<const FSParser::DictionaryNode *>(subscript->base);
+					} else if (base.assigned_expression && base.assigned_expression->type == FSParser::Node::DICTIONARY) {
+						dn = static_cast<const FSParser::DictionaryNode *>(base.assigned_expression);
+					}
+
+					if (dn) {
+						for (int i = 0; i < dn->elements.size(); i++) {
+							FSCompletionIdentifier key;
+							if (!_guess_expression_type(c, dn->elements[i].key, key)) {
+								continue;
+							}
+							if (key.value == index.value) {
+								r_type.assigned_expression = dn->elements[i].value;
+								found = _guess_expression_type(p_context, dn->elements[i].value, r_type);
+								break;
+							}
+						}
+					}
+
+					// Look if it is an array node.
+					if (!found && index.value.is_num()) {
+						int idx = index.value;
+						const FSParser::ArrayNode *an = nullptr;
+						if (subscript->base->type == FSParser::Node::ARRAY) {
+							an = static_cast<const FSParser::ArrayNode *>(subscript->base);
+						} else if (base.assigned_expression && base.assigned_expression->type == FSParser::Node::ARRAY) {
+							an = static_cast<const FSParser::ArrayNode *>(base.assigned_expression);
+						}
+
+						if (an && idx >= 0 && an->elements.size() > idx) {
+							r_type.assigned_expression = an->elements[idx];
+							found = _guess_expression_type(c, an->elements[idx], r_type);
+							break;
+						}
+					}
+
+					// Look for valid indexing in other types
+					if (!found && (index.value.is_string() || index.value.get_type() == Variant::NODE_PATH)) {
+						StringName id = index.value;
+						found = _guess_identifier_type_from_base(c, base, id, r_type);
+					} else if (!found && index.type.kind == FSParser::DataType::BUILTIN) {
+						Callable::CallError err;
+						Variant base_val;
+						Variant::construct(base.type.builtin_type, base_val, nullptr, 0, err);
+						bool valid = false;
+						Variant res = base_val.get(index.value, &valid);
+						if (valid) {
+							r_type = _type_from_variant(res, p_context);
+							r_type.value = Variant();
+							r_type.type.is_constant = false;
+							found = true;
+						}
+					}
+				}
+			} break;
+			case FSParser::Node::BINARY_OPERATOR: {
+				const FSParser::BinaryOpNode *op = static_cast<const FSParser::BinaryOpNode *>(p_expression);
+
+				if (op->variant_op == Variant::OP_MAX) {
+					break;
+				}
+
+				FSParser::CompletionContext context = p_context;
+				context.current_line = op->start_line;
+
+				FSCompletionIdentifier p1;
+				FSCompletionIdentifier p2;
+
+				if (!_guess_expression_type(context, op->left_operand, p1)) {
+					found = false;
+					break;
+				}
+
+				if (!_guess_expression_type(context, op->right_operand, p2)) {
+					found = false;
+					break;
+				}
+
+				Callable::CallError ce;
+				bool v1_use_value = p1.value.get_type() != Variant::NIL && p1.value.get_type() != Variant::OBJECT;
+				Variant d1;
+				Variant::construct(p1.type.builtin_type, d1, nullptr, 0, ce);
+				Variant d2;
+				Variant::construct(p2.type.builtin_type, d2, nullptr, 0, ce);
+
+				Variant v1 = (v1_use_value) ? p1.value : d1;
+				bool v2_use_value = p2.value.get_type() != Variant::NIL && p2.value.get_type() != Variant::OBJECT;
+				Variant v2 = (v2_use_value) ? p2.value : d2;
+				// avoid potential invalid ops
+				if ((op->variant_op == Variant::OP_DIVIDE || op->variant_op == Variant::OP_MODULE) && v2.get_type() == Variant::INT) {
+					v2 = 1;
+					v2_use_value = false;
+				}
+				if (op->variant_op == Variant::OP_DIVIDE && v2.get_type() == Variant::FLOAT) {
+					v2 = 1.0;
+					v2_use_value = false;
+				}
+
+				Variant res;
+				bool valid;
+				Variant::evaluate(op->variant_op, v1, v2, res, valid);
+				if (!valid) {
+					found = false;
+					break;
+				}
+				r_type = _type_from_variant(res, p_context);
+				if (!v1_use_value || !v2_use_value) {
+					r_type.value = Variant();
+					r_type.type.is_constant = false;
+				}
+
+				found = true;
+			} break;
+			default:
+				break;
+		}
+	}
+
+	// It may have found a null, but that's never useful
+	if (found && r_type.type.kind == FSParser::DataType::BUILTIN && r_type.type.builtin_type == Variant::NIL) {
+		found = false;
+	}
+
+	// If the found type was not fully analyzed we analyze it now.
+	if (found && r_type.type.kind == FSParser::DataType::CLASS && !r_type.type.class_type->resolved_body) {
+		Error err;
+		Ref<FSParserRef> r = FSCache::get_parser(r_type.type.script_path, FSParserRef::FULLY_SOLVED, err);
+	}
+
+	// Check type hint last. For collections we want chance to get the actual value first
+	// This way we can detect types from the content of dictionaries and arrays
+	if (!found && p_expression->get_datatype().is_hard_type()) {
+		r_type.type = p_expression->get_datatype();
+		if (!r_type.assigned_expression) {
+			r_type.assigned_expression = p_expression;
+		}
+		found = true;
+	}
+
+	return found;
+}
+
+static bool _guess_identifier_type(FSParser::CompletionContext &p_context, const FSParser::IdentifierNode *p_identifier, FSCompletionIdentifier &r_type) {
+	static int recursion_depth = 0;
+	RecursionCheck recursion(&recursion_depth);
+	if (unlikely(recursion.check())) {
+		ERR_FAIL_V_MSG(false, "Reached recursion limit while trying to guess type.");
+	}
+
+	// Look in blocks first.
+	int last_assign_line = -1;
+	const FSParser::ExpressionNode *last_assigned_expression = nullptr;
+	FSCompletionIdentifier id_type;
+	FSParser::SuiteNode *suite = p_context.current_suite;
+	bool is_function_parameter = false;
+
+	bool can_be_local = true;
+	switch (p_identifier->source) {
+		case FSParser::IdentifierNode::MEMBER_VARIABLE:
+		case FSParser::IdentifierNode::MEMBER_CONSTANT:
+		case FSParser::IdentifierNode::MEMBER_FUNCTION:
+		case FSParser::IdentifierNode::MEMBER_SIGNAL:
+		case FSParser::IdentifierNode::MEMBER_CLASS:
+		case FSParser::IdentifierNode::INHERITED_VARIABLE:
+		case FSParser::IdentifierNode::STATIC_VARIABLE:
+		case FSParser::IdentifierNode::NATIVE_CLASS:
+			can_be_local = false;
+			break;
+		default:
+			break;
+	}
+
+	if (can_be_local && suite && suite->has_local(p_identifier->name)) {
+		const FSParser::SuiteNode::Local &local = suite->get_local(p_identifier->name);
+
+		id_type.type = local.get_datatype();
+
+		// Check initializer as the first assignment.
+		switch (local.type) {
+			case FSParser::SuiteNode::Local::VARIABLE:
+				if (local.variable->initializer) {
+					last_assign_line = local.variable->initializer->end_line;
+					last_assigned_expression = local.variable->initializer;
+				}
+				break;
+			case FSParser::SuiteNode::Local::CONSTANT:
+				if (local.constant->initializer) {
+					last_assign_line = local.constant->initializer->end_line;
+					last_assigned_expression = local.constant->initializer;
+				}
+				break;
+			case FSParser::SuiteNode::Local::PARAMETER:
+				if (local.parameter->initializer) {
+					last_assign_line = local.parameter->initializer->end_line;
+					last_assigned_expression = local.parameter->initializer;
+				}
+				is_function_parameter = true;
+				break;
+			default:
+				break;
+		}
+	} else {
+		if (p_context.current_class) {
+			FSCompletionIdentifier base_identifier;
+
+			FSCompletionIdentifier base;
+			base.value = p_context.base;
+			base.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			base.type.kind = FSParser::DataType::CLASS;
+			base.type.class_type = p_context.current_class;
+			base.type.is_meta_type = p_context.current_function && p_context.current_function->is_static;
+
+			if (_guess_identifier_type_from_base(p_context, base, p_identifier->name, base_identifier)) {
+				id_type = base_identifier;
+			}
+		}
+	}
+
+	while (suite) {
+		for (int i = 0; i < suite->statements.size(); i++) {
+			if (suite->statements[i]->end_line >= p_context.current_line) {
+				break;
+			}
+
+			switch (suite->statements[i]->type) {
+				case FSParser::Node::ASSIGNMENT: {
+					const FSParser::AssignmentNode *assign = static_cast<const FSParser::AssignmentNode *>(suite->statements[i]);
+					if (assign->end_line > last_assign_line && assign->assignee && assign->assigned_value && assign->assignee->type == FSParser::Node::IDENTIFIER) {
+						const FSParser::IdentifierNode *id = static_cast<const FSParser::IdentifierNode *>(assign->assignee);
+						if (id->name == p_identifier->name && id->source == p_identifier->source) {
+							last_assign_line = assign->assigned_value->end_line;
+							last_assigned_expression = assign->assigned_value;
+						}
+					}
+				} break;
+				default:
+					// TODO: Check sub blocks (control flow statements) as they might also reassign stuff.
+					break;
+			}
+		}
+
+		if (suite->parent_if && suite->parent_if->condition && suite->parent_if->condition->type == FSParser::Node::TYPE_TEST) {
+			// Operator `is` used, check if identifier is in there! this helps resolve in blocks that are (if (identifier is value)): which are very common..
+			// Super dirty hack, but very useful.
+			// Credit: Zylann.
+			// TODO: this could be hacked to detect AND-ed conditions too...
+			const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(suite->parent_if->condition);
+			if (type_test->operand && type_test->test_type && type_test->operand->type == FSParser::Node::IDENTIFIER && static_cast<const FSParser::IdentifierNode *>(type_test->operand)->name == p_identifier->name && static_cast<const FSParser::IdentifierNode *>(type_test->operand)->source == p_identifier->source) {
+				// Bingo.
+				FSParser::CompletionContext c = p_context;
+				c.current_line = type_test->operand->start_line;
+				c.current_suite = suite;
+				if (type_test->test_datatype.is_hard_type()) {
+					id_type.type = type_test->test_datatype;
+					if (last_assign_line < c.current_line) {
+						// Override last assignment.
+						last_assign_line = c.current_line;
+						last_assigned_expression = nullptr;
+					}
+				}
+			}
+		}
+
+		suite = suite->parent_block;
+	}
+
+	if (last_assigned_expression && last_assign_line < p_context.current_line) {
+		FSParser::CompletionContext c = p_context;
+		c.current_line = last_assign_line;
+		FSCompletionIdentifier assigned_type;
+		if (_guess_expression_type(c, last_assigned_expression, assigned_type)) {
+			if (id_type.type.is_set() && (assigned_type.type.kind == FSParser::DataType::VARIANT || (assigned_type.type.is_set() && !FSAnalyzer::check_type_compatibility(id_type.type, assigned_type.type)))) {
+				// The assigned type is incompatible. The annotated type takes priority.
+				r_type = id_type;
+				r_type.assigned_expression = last_assigned_expression;
+			} else {
+				r_type = assigned_type;
+			}
+			return true;
+		}
+	}
+
+	if (is_function_parameter && p_context.current_function && p_context.current_function->source_lambda == nullptr && p_context.current_class) {
+		// Check if it's override of native function, then we can assume the type from the signature.
+		FSParser::DataType base_type = p_context.current_class->base_type;
+		while (base_type.is_set()) {
+			switch (base_type.kind) {
+				case FSParser::DataType::CLASS:
+					if (base_type.class_type->has_function(p_context.current_function->identifier->name)) {
+						FSParser::FunctionNode *parent_function = base_type.class_type->get_member(p_context.current_function->identifier->name).function;
+						if (parent_function->parameters_indices.has(p_identifier->name)) {
+							const FSParser::ParameterNode *parameter = parent_function->parameters[parent_function->parameters_indices[p_identifier->name]];
+							if ((!id_type.type.is_set() || id_type.type.is_variant()) && parameter->get_datatype().is_hard_type()) {
+								id_type.type = parameter->get_datatype();
+							}
+							if (parameter->initializer) {
+								FSParser::CompletionContext c = p_context;
+								c.current_function = parent_function;
+								c.current_class = base_type.class_type;
+								c.base = nullptr;
+								if (_guess_expression_type(c, parameter->initializer, r_type)) {
+									return true;
+								}
+							}
+						}
+					}
+					base_type = base_type.class_type->base_type;
+					break;
+				case FSParser::DataType::NATIVE: {
+					if (id_type.type.is_set() && !id_type.type.is_variant()) {
+						base_type = FSParser::DataType();
+						break;
+					}
+					MethodInfo info;
+					if (ClassDB::get_method_info(base_type.native_type, p_context.current_function->identifier->name, &info)) {
+						for (const PropertyInfo &E : info.arguments) {
+							if (E.name == p_identifier->name) {
+								r_type = _type_from_property(E);
+								return true;
+							}
+						}
+					}
+					base_type = FSParser::DataType();
+				} break;
+				default:
+					break;
+			}
+		}
+	}
+
+	if (id_type.type.is_set() && !id_type.type.is_variant()) {
+		r_type = id_type;
+		return true;
+	}
+
+	// Check global scripts.
+	if (ScriptServer::is_global_class(p_identifier->name)) {
+		String script = ScriptServer::get_global_class_path(p_identifier->name);
+		if (ScriptServer::is_global_class_enum(p_identifier->name)) {
+			Ref<FSParserRef> parser = p_context.parser->get_depended_parser_for(script);
+			if (parser.is_valid() && parser->raise_status(FSParserRef::INHERITANCE_SOLVED) == OK) {
+				FSParser::ClassNode *enum_class = parser->get_parser()->get_tree();
+				const FSParser::EnumNode *enum_node = enum_class != nullptr ? enum_class->enum_file_decl : nullptr;
+				if (enum_node == nullptr) {
+					return false;
+				}
+				r_type.type = enum_node->get_datatype();
+				if (!r_type.type.is_set() || r_type.type.kind != FSParser::DataType::ENUM) {
+					r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+					r_type.type.kind = FSParser::DataType::ENUM;
+					r_type.type.builtin_type = Variant::DICTIONARY;
+					r_type.type.enum_type = p_identifier->name;
+					r_type.type.native_type = p_identifier->name;
+					r_type.type.is_constant = true;
+					r_type.type.is_meta_type = true;
+				}
+				r_type.type.class_type = enum_class;
+				r_type.type.script_path = script;
+				_populate_global_enum_completion_values(p_context, r_type.type);
+				r_type.value = Variant();
+				return r_type.type.is_set() && r_type.type.kind == FSParser::DataType::ENUM;
+			}
+			return false;
+		}
+		if (script.to_lower().ends_with(".fs")) {
+			Ref<FSParserRef> parser = p_context.parser->get_depended_parser_for(script);
+			if (parser.is_valid() && parser->raise_status(FSParserRef::INTERFACE_SOLVED) == OK) {
+				r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+				r_type.type.script_path = script;
+				r_type.type.class_type = parser->get_parser()->get_tree();
+				r_type.type.is_meta_type = true;
+				r_type.type.is_constant = false;
+				r_type.type.kind = FSParser::DataType::CLASS;
+				r_type.value = Variant();
+				return true;
+			}
+		} else {
+			Ref<Script> scr = ResourceLoader::load(ScriptServer::get_global_class_path(p_identifier->name));
+			if (scr.is_valid()) {
+				r_type = _type_from_variant(scr, p_context);
+				r_type.type.is_meta_type = true;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Check global variables (including autoloads).
+	if (FSLanguage::get_singleton()->get_named_globals_map().has(p_identifier->name)) {
+		r_type = _type_from_variant(FSLanguage::get_singleton()->get_named_globals_map()[p_identifier->name], p_context);
+		return true;
+	}
+
+	// Check ClassDB.
+	if (FSAnalyzer::class_exists(p_identifier->name)) {
+		r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		r_type.type.kind = FSParser::DataType::NATIVE;
+		r_type.type.builtin_type = Variant::OBJECT;
+		r_type.type.native_type = p_identifier->name;
+		r_type.type.is_constant = true;
+		if (Engine::get_singleton()->has_singleton(p_identifier->name)) {
+			r_type.type.is_meta_type = false;
+			r_type.value = Engine::get_singleton()->get_singleton_object(p_identifier->name);
+		} else {
+			r_type.type.is_meta_type = true;
+			r_type.value = Variant();
+		}
+		return true;
+	}
+
+	return false;
+}
+
+static bool _guess_identifier_type_from_base(FSParser::CompletionContext &p_context, const FSCompletionIdentifier &p_base, const StringName &p_identifier, FSCompletionIdentifier &r_type) {
+	static int recursion_depth = 0;
+	RecursionCheck recursion(&recursion_depth);
+	if (unlikely(recursion.check())) {
+		ERR_FAIL_V_MSG(false, "Reached recursion limit while trying to guess type.");
+	}
+
+	FSParser::DataType base_type = p_base.type;
+	bool is_static = base_type.is_meta_type;
+	while (base_type.is_set()) {
+		switch (base_type.kind) {
+			case FSParser::DataType::CLASS:
+				if (base_type.class_type->has_member(p_identifier)) {
+					const FSParser::ClassNode::Member &member = base_type.class_type->get_member(p_identifier);
+					switch (member.type) {
+						case FSParser::ClassNode::Member::CONSTANT:
+							r_type.type = member.constant->get_datatype();
+							if (member.constant->initializer && member.constant->initializer->is_constant) {
+								r_type.value = member.constant->initializer->reduced_value;
+							}
+							return true;
+						case FSParser::ClassNode::Member::VARIABLE:
+							if (!is_static || member.variable->is_static) {
+								if (member.variable->get_datatype().is_set() && !member.variable->get_datatype().is_variant()) {
+									r_type.type = member.variable->get_datatype();
+									return true;
+								} else if (member.variable->initializer) {
+									const FSParser::ExpressionNode *init = member.variable->initializer;
+									if (init->is_constant) {
+										r_type.value = init->reduced_value;
+										r_type = _type_from_variant(init->reduced_value, p_context);
+										return true;
+									} else if (init->start_line == p_context.current_line) {
+										return false;
+										// Detects if variable is assigned to itself
+									} else if (_is_expression_named_identifier(init, member.variable->identifier->name)) {
+										if (member.variable->initializer->get_datatype().is_set()) {
+											r_type.type = member.variable->initializer->get_datatype();
+										} else if (member.variable->get_datatype().is_set() && !member.variable->get_datatype().is_variant()) {
+											r_type.type = member.variable->get_datatype();
+										}
+										return true;
+									} else if (_guess_expression_type(p_context, init, r_type)) {
+										return true;
+									} else if (init->get_datatype().is_set() && !init->get_datatype().is_variant()) {
+										r_type.type = init->get_datatype();
+										return true;
+									}
+								}
+							}
+							// TODO: Check assignments in constructor.
+							return false;
+						case FSParser::ClassNode::Member::ENUM:
+							r_type.type = member.m_enum->get_datatype();
+							r_type.enumeration = member.m_enum->identifier->name;
+							return true;
+						case FSParser::ClassNode::Member::ENUM_VALUE:
+							r_type = _type_from_variant(member.enum_value.value, p_context);
+							return true;
+						case FSParser::ClassNode::Member::SIGNAL:
+							r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+							r_type.type.kind = FSParser::DataType::BUILTIN;
+							r_type.type.builtin_type = Variant::SIGNAL;
+							r_type.type.method_info = member.signal->method_info;
+							return true;
+						case FSParser::ClassNode::Member::FUNCTION:
+							if (is_static && !member.function->is_static) {
+								return false;
+							}
+							r_type = _callable_type_from_method_info(member.function->info);
+							return true;
+						case FSParser::ClassNode::Member::CLASS:
+							r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+							r_type.type.kind = FSParser::DataType::CLASS;
+							r_type.type.class_type = member.m_class;
+							r_type.type.is_meta_type = true;
+							return true;
+						case FSParser::ClassNode::Member::GROUP:
+							return false; // No-op, but silences warnings.
+						case FSParser::ClassNode::Member::UNDEFINED:
+							return false; // Unreachable.
+					}
+					return false;
+				}
+				base_type = base_type.class_type->base_type;
+				break;
+			case FSParser::DataType::SCRIPT: {
+				Ref<Script> scr = base_type.script_type;
+				if (scr.is_valid()) {
+					HashMap<StringName, Variant> constants;
+					scr->get_constants(&constants);
+					if (constants.has(p_identifier)) {
+						r_type = _type_from_variant(constants[p_identifier], p_context);
+						return true;
+					}
+
+					List<PropertyInfo> members;
+					if (is_static) {
+						scr->get_property_list(&members);
+					} else {
+						scr->get_script_property_list(&members);
+					}
+					for (const PropertyInfo &prop : members) {
+						if (prop.name == p_identifier) {
+							r_type = _type_from_property(prop);
+							return true;
+						}
+					}
+
+					if (scr->has_method(p_identifier)) {
+						MethodInfo mi = scr->get_method_info(p_identifier);
+						r_type = _callable_type_from_method_info(mi);
+						return true;
+					}
+
+					Ref<Script> parent = scr->get_base_script();
+					if (parent.is_valid()) {
+						base_type.script_type = parent;
+					} else {
+						base_type.kind = FSParser::DataType::NATIVE;
+						base_type.builtin_type = Variant::OBJECT;
+						base_type.native_type = scr->get_instance_base_type();
+					}
+				} else {
+					return false;
+				}
+			} break;
+			case FSParser::DataType::NATIVE: {
+				StringName class_name = base_type.native_type;
+				if (!FSAnalyzer::class_exists(class_name)) {
+					return false;
+				}
+
+				// Skip constants since they're all integers. Type does not matter because int has no members.
+
+				PropertyInfo prop;
+				if (ClassDB::get_property_info(class_name, p_identifier, &prop)) {
+					StringName getter = ClassDB::get_property_getter(class_name, p_identifier);
+					if (getter != StringName()) {
+						MethodBind *g = ClassDB::get_method(class_name, getter);
+						if (g) {
+							r_type = _type_from_property(g->get_return_info());
+							return true;
+						}
+					} else {
+						r_type = _type_from_property(prop);
+						return true;
+					}
+				}
+
+				MethodInfo method;
+				if (ClassDB::get_method_info(class_name, p_identifier, &method)) {
+					r_type = _callable_type_from_method_info(method);
+					return true;
+				}
+
+				if (ClassDB::has_enum(class_name, p_identifier)) {
+					r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+					r_type.type.kind = FSParser::DataType::ENUM;
+					r_type.type.enum_type = p_identifier;
+					r_type.type.is_constant = true;
+					r_type.type.is_meta_type = true;
+					r_type.type.native_type = String(class_name) + "." + p_identifier;
+					return true;
+				}
+
+				return false;
+			} break;
+			case FSParser::DataType::BUILTIN: {
+				if (Variant::has_builtin_method(base_type.builtin_type, p_identifier)) {
+					r_type = _callable_type_from_method_info(Variant::get_builtin_method_info(base_type.builtin_type, p_identifier));
+					return true;
+				} else {
+					Callable::CallError err;
+					Variant tmp;
+					Variant::construct(base_type.builtin_type, tmp, nullptr, 0, err);
+
+					if (err.error != Callable::CallError::CALL_OK) {
+						return false;
+					}
+					bool valid = false;
+					Variant res = tmp.get(p_identifier, &valid);
+					if (valid) {
+						r_type = _type_from_variant(res, p_context);
+						r_type.value = Variant();
+						r_type.type.is_constant = false;
+						return true;
+					}
+				}
+				return false;
+			} break;
+			default: {
+				return false;
+			} break;
+		}
+	}
+	return false;
+}
+
+static void _find_last_return_in_block(FSParser::CompletionContext &p_context, int &r_last_return_line, const FSParser::ExpressionNode **r_last_returned_value) {
+	if (!p_context.current_suite) {
+		return;
+	}
+
+	for (int i = 0; i < p_context.current_suite->statements.size(); i++) {
+		if (p_context.current_suite->statements[i]->start_line < r_last_return_line) {
+			break;
+		}
+
+		FSParser::CompletionContext c = p_context;
+		switch (p_context.current_suite->statements[i]->type) {
+			case FSParser::Node::FOR:
+				c.current_suite = static_cast<const FSParser::ForNode *>(p_context.current_suite->statements[i])->loop;
+				_find_last_return_in_block(c, r_last_return_line, r_last_returned_value);
+				break;
+			case FSParser::Node::WHILE:
+				c.current_suite = static_cast<const FSParser::WhileNode *>(p_context.current_suite->statements[i])->loop;
+				_find_last_return_in_block(c, r_last_return_line, r_last_returned_value);
+				break;
+			case FSParser::Node::IF: {
+				const FSParser::IfNode *_if = static_cast<const FSParser::IfNode *>(p_context.current_suite->statements[i]);
+				c.current_suite = _if->true_block;
+				_find_last_return_in_block(c, r_last_return_line, r_last_returned_value);
+				if (_if->false_block) {
+					c.current_suite = _if->false_block;
+					_find_last_return_in_block(c, r_last_return_line, r_last_returned_value);
+				}
+			} break;
+			case FSParser::Node::MATCH: {
+				const FSParser::MatchNode *match = static_cast<const FSParser::MatchNode *>(p_context.current_suite->statements[i]);
+				for (int j = 0; j < match->branches.size(); j++) {
+					c.current_suite = match->branches[j]->block;
+					_find_last_return_in_block(c, r_last_return_line, r_last_returned_value);
+				}
+			} break;
+			case FSParser::Node::RETURN: {
+				const FSParser::ReturnNode *ret = static_cast<const FSParser::ReturnNode *>(p_context.current_suite->statements[i]);
+				if (ret->return_value) {
+					if (ret->start_line > r_last_return_line) {
+						r_last_return_line = ret->start_line;
+						*r_last_returned_value = ret->return_value;
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+}
+
+static bool _guess_method_return_type_from_base(FSParser::CompletionContext &p_context, const FSCompletionIdentifier &p_base, const StringName &p_method, FSCompletionIdentifier &r_type) {
+	static int recursion_depth = 0;
+	RecursionCheck recursion(&recursion_depth);
+	if (unlikely(recursion.check())) {
+		ERR_FAIL_V_MSG(false, "Reached recursion limit while trying to guess type.");
+	}
+
+	FSParser::DataType base_type = p_base.type;
+	bool is_static = base_type.is_meta_type;
+
+	if (is_static && p_method == SNAME("new")) {
+		r_type.type = base_type;
+		r_type.type.is_meta_type = false;
+		r_type.type.is_constant = false;
+		return true;
+	}
+
+	while (base_type.is_set() && !base_type.is_variant()) {
+		switch (base_type.kind) {
+			case FSParser::DataType::CLASS:
+				if (base_type.class_type->has_function(p_method)) {
+					FSParser::FunctionNode *method = base_type.class_type->get_member(p_method).function;
+					if (!is_static || method->is_static) {
+						if (method->get_datatype().is_set() && !method->get_datatype().is_variant()) {
+							r_type.type = method->get_datatype();
+							return true;
+						}
+
+						int last_return_line = -1;
+						const FSParser::ExpressionNode *last_returned_value = nullptr;
+						FSParser::CompletionContext c = p_context;
+						c.current_class = base_type.class_type;
+						c.current_function = method;
+						c.current_suite = method->body;
+
+						_find_last_return_in_block(c, last_return_line, &last_returned_value);
+						if (last_returned_value) {
+							c.current_line = c.current_suite->end_line;
+							if (_guess_expression_type(c, last_returned_value, r_type)) {
+								return true;
+							}
+						}
+					}
+				}
+				base_type = base_type.class_type->base_type;
+				break;
+			case FSParser::DataType::SCRIPT: {
+				Ref<Script> scr = base_type.script_type;
+				if (scr.is_valid()) {
+					List<MethodInfo> methods;
+					scr->get_script_method_list(&methods);
+					for (const MethodInfo &mi : methods) {
+						if (mi.name == p_method) {
+							r_type = _type_from_property(mi.return_val);
+							return true;
+						}
+					}
+					Ref<Script> base_script = scr->get_base_script();
+					if (base_script.is_valid()) {
+						base_type.script_type = base_script;
+					} else {
+						base_type.kind = FSParser::DataType::NATIVE;
+						base_type.builtin_type = Variant::OBJECT;
+						base_type.native_type = scr->get_instance_base_type();
+					}
+				} else {
+					return false;
+				}
+			} break;
+			case FSParser::DataType::NATIVE: {
+				if (!FSAnalyzer::class_exists(base_type.native_type)) {
+					return false;
+				}
+				MethodBind *mb = ClassDB::get_method(base_type.native_type, p_method);
+				if (mb) {
+					r_type = _type_from_property(mb->get_return_info());
+					return true;
+				}
+				return false;
+			} break;
+			case FSParser::DataType::BUILTIN: {
+				Callable::CallError err;
+				Variant tmp;
+				Variant::construct(base_type.builtin_type, tmp, nullptr, 0, err);
+				if (err.error != Callable::CallError::CALL_OK) {
+					return false;
+				}
+
+				List<MethodInfo> methods;
+				tmp.get_method_list(&methods);
+
+				for (const MethodInfo &mi : methods) {
+					if (mi.name == p_method) {
+						r_type = _type_from_property(mi.return_val);
+						return true;
+					}
+				}
+				return false;
+			} break;
+			default: {
+				return false;
+			}
+		}
+	}
+
+	return false;
+}
+
+static bool _guess_expecting_callable(FSParser::CompletionContext &p_context) {
+	if (p_context.call.call != nullptr && p_context.call.call->type == FSParser::Node::CALL) {
+		FSParser::CallNode *call_node = static_cast<FSParser::CallNode *>(p_context.call.call);
+		FSCompletionIdentifier ci;
+		if (_guess_expression_type(p_context, call_node->callee, ci)) {
+			if (ci.type.kind == FSParser::DataType::BUILTIN && ci.type.builtin_type == Variant::CALLABLE) {
+				if (p_context.call.argument >= 0 && p_context.call.argument < ci.type.method_info.arguments.size()) {
+					return ci.type.method_info.arguments.get(p_context.call.argument).type == Variant::CALLABLE;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+static void _find_enumeration_candidates(FSParser::CompletionContext &p_context, const String &p_enum_hint, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (!p_enum_hint.contains_char('.')) {
+		// Global constant or in the current class.
+		StringName current_enum = p_enum_hint;
+		if (p_context.current_class && p_context.current_class->has_member(current_enum) && p_context.current_class->get_member(current_enum).type == FSParser::ClassNode::Member::ENUM) {
+			const FSParser::EnumNode *_enum = p_context.current_class->get_member(current_enum).m_enum;
+			for (int i = 0; i < _enum->values.size(); i++) {
+				ScriptLanguage::CodeCompletionOption option(_enum->values[i].identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM);
+				r_result.insert(option.display, option);
+			}
+		} else {
+			for (int i = 0; i < CoreConstants::get_global_constant_count(); i++) {
+				if (CoreConstants::get_global_constant_enum(i) == current_enum) {
+					ScriptLanguage::CodeCompletionOption option(CoreConstants::get_global_constant_name(i), ScriptLanguage::CODE_COMPLETION_KIND_ENUM);
+					r_result.insert(option.display, option);
+				}
+			}
+		}
+	} else {
+		String class_name = p_enum_hint.get_slicec('.', 0);
+		String enum_name = p_enum_hint.get_slicec('.', 1);
+
+		if (!FSAnalyzer::class_exists(class_name)) {
+			return;
+		}
+
+		List<StringName> enum_constants;
+		ClassDB::get_enum_constants(class_name, enum_name, &enum_constants);
+		for (const StringName &E : enum_constants) {
+			String candidate = class_name + "." + E;
+			int location = _get_enum_constant_location(class_name, E);
+			ScriptLanguage::CodeCompletionOption option(candidate, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, location);
+			r_result.insert(option.display, option);
+		}
+	}
+}
+
+// Offer the declared parameter names of a statically resolved FoundryScript callee as
+// `name = ` completions, so named arguments are discoverable in the editor. Only
+// parameters that are not already supplied (positionally or by name) are suggested,
+// matching what the analyzer accepts. The variadic rest parameter is never offered.
+static Vector<StringName> _collect_function_parameter_names(const FSParser::FunctionNode *p_function) {
+	Vector<StringName> names;
+	if (p_function == nullptr) {
+		return names;
+	}
+	// `parameters` excludes the variadic rest parameter, so it is never offered as a name.
+	// Push one entry per parameter (empty for a malformed one) to keep the vector index
+	// aligned with the parameter's declaration position.
+	for (const FSParser::ParameterNode *parameter : p_function->parameters) {
+		if (parameter != nullptr && parameter->identifier != nullptr) {
+			names.push_back(parameter->identifier->name);
+		} else {
+			names.push_back(StringName());
+		}
+	}
+	return names;
+}
+
+static void _add_named_argument_completions(const Vector<StringName> &p_parameter_names, const Vector<StringName> &p_supplied_argument_names, int p_argidx, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	// `p_supplied_argument_names` is the parser's snapshot of the call's surface arguments,
+	// parallel to the arguments as written: an empty entry for a positional argument and the
+	// parameter name for a `name = value` argument. It is read instead of the live CallNode
+	// because the analyzer canonicalizes named calls and clears their names.
+
+	// If the slot under the cursor already has a name, the cursor is on the value of a
+	// `name = value` argument (e.g. `f(width = |)`), not at a fresh argument slot. Parameter-name
+	// completions do not apply there: the user is typing the value, so suggesting `name = ` would
+	// produce a duplicate, malformed argument.
+	if (p_argidx >= 0 && p_argidx < p_supplied_argument_names.size() && p_supplied_argument_names[p_argidx] != StringName()) {
+		return;
+	}
+
+	// Map already-written arguments to the parameter positions they fill, so a name is
+	// only suggested while it remains unfilled. The argument currently being typed (at
+	// `p_argidx`) is skipped: it is the token the user is completing, not a supplied value.
+	HashSet<int> filled_positions;
+	for (int i = 0; i < p_supplied_argument_names.size(); i++) {
+		if (i == p_argidx) {
+			continue;
+		}
+		const StringName &argument_name = p_supplied_argument_names[i];
+		if (argument_name == StringName()) {
+			// Positional arguments form a prefix and fill parameters in declaration order,
+			// so the argument at list position `i` fills the parameter at position `i`.
+			filled_positions.insert(i);
+		} else {
+			for (int j = 0; j < p_parameter_names.size(); j++) {
+				if (p_parameter_names[j] == argument_name) {
+					filled_positions.insert(j);
+					break;
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < p_parameter_names.size(); i++) {
+		if (filled_positions.has(i) || p_parameter_names[i] == StringName()) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(String(p_parameter_names[i]) + " = ", ScriptLanguage::CODE_COMPLETION_KIND_VARIABLE);
+		r_result.insert(option.display, option);
+	}
+}
+
+static void _list_call_arguments(FSParser::CompletionContext &p_context, const FSCompletionIdentifier &p_base, const FSParser::CallNode *p_call, int p_argidx, bool p_static, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, String &r_arghint) {
+	Variant base = p_base.value;
+	FSParser::DataType base_type = p_base.type;
+	const StringName &method = p_call->function_name;
+
+	const String quote_style = EDITOR_GET("text_editor/completion/use_single_quotes") ? "'" : "\"";
+	const bool use_string_names = EDITOR_GET("text_editor/completion/add_string_name_literals");
+	const bool use_node_paths = EDITOR_GET("text_editor/completion/add_node_path_literals");
+
+	while (base_type.is_set() && !base_type.is_variant()) {
+		switch (base_type.kind) {
+			case FSParser::DataType::CLASS: {
+				if (base_type.is_meta_type && method == SNAME("new")) {
+					const FSParser::ClassNode *current = base_type.class_type;
+
+					do {
+						if (current->has_member("_init")) {
+							const FSParser::ClassNode::Member &member = current->get_member("_init");
+
+							if (member.type == FSParser::ClassNode::Member::FUNCTION) {
+								r_arghint = base_type.class_type->get_datatype().to_string() + " new" + _make_arguments_hint(member.function, p_argidx, true);
+								_add_named_argument_completions(_collect_function_parameter_names(member.function), p_call->parsed_argument_names, p_argidx, r_result);
+								return;
+							}
+						}
+						current = current->base_type.class_type;
+					} while (current != nullptr);
+
+					r_arghint = base_type.class_type->get_datatype().to_string() + " new()";
+					return;
+				}
+
+				if (base_type.class_type->has_member(method)) {
+					const FSParser::ClassNode::Member &member = base_type.class_type->get_member(method);
+
+					if (member.type == FSParser::ClassNode::Member::FUNCTION) {
+						r_arghint = _make_arguments_hint(member.function, p_argidx);
+						_add_named_argument_completions(_collect_function_parameter_names(member.function), p_call->parsed_argument_names, p_argidx, r_result);
+						return;
+					}
+				}
+
+				base_type = base_type.class_type->base_type;
+			} break;
+			case FSParser::DataType::SCRIPT: {
+				if (base_type.script_type->is_valid() && base_type.script_type->has_method(method)) {
+					r_arghint = _make_arguments_hint(base_type.script_type->get_method_info(method), p_argidx);
+					return;
+				}
+				Ref<Script> base_script = base_type.script_type->get_base_script();
+				if (base_script.is_valid()) {
+					base_type.script_type = base_script;
+				} else {
+					base_type.kind = FSParser::DataType::NATIVE;
+					base_type.builtin_type = Variant::OBJECT;
+					base_type.native_type = base_type.script_type->get_instance_base_type();
+				}
+			} break;
+			case FSParser::DataType::NATIVE: {
+				StringName class_name = base_type.native_type;
+				if (!FSAnalyzer::class_exists(class_name)) {
+					base_type.kind = FSParser::DataType::UNRESOLVED;
+					break;
+				}
+
+				MethodInfo info;
+				int method_args = 0;
+
+				if (ClassDB::get_method_info(class_name, method, &info)) {
+					method_args = info.arguments.size();
+					if (base.get_type() == Variant::OBJECT) {
+						Object *obj = base.operator Object *();
+						if (obj) {
+							List<String> options;
+							obj->get_argument_options(method, p_argidx, &options);
+							for (String &opt : options) {
+								// Handle user preference.
+								if (opt.is_quoted()) {
+									opt = opt.unquote().quote(quote_style);
+									if (use_string_names && info.arguments[p_argidx].type == Variant::STRING_NAME) {
+										if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == FSParser::Node::LITERAL) {
+											FSParser::LiteralNode *literal = static_cast<FSParser::LiteralNode *>(p_call->arguments[p_argidx]);
+											if (literal->value.get_type() == Variant::STRING) {
+												opt = "&" + opt;
+											}
+										} else {
+											opt = "&" + opt;
+										}
+									} else if (use_node_paths && info.arguments[p_argidx].type == Variant::NODE_PATH) {
+										if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == FSParser::Node::LITERAL) {
+											FSParser::LiteralNode *literal = static_cast<FSParser::LiteralNode *>(p_call->arguments[p_argidx]);
+											if (literal->value.get_type() == Variant::STRING) {
+												opt = "^" + opt;
+											}
+										} else {
+											opt = "^" + opt;
+										}
+									}
+								}
+								ScriptLanguage::CodeCompletionOption option(opt, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+								r_result.insert(option.display, option);
+							}
+						}
+					}
+
+					if (p_argidx < method_args) {
+						const PropertyInfo &arg_info = info.arguments[p_argidx];
+						if (arg_info.usage & (PROPERTY_USAGE_CLASS_IS_ENUM | PROPERTY_USAGE_CLASS_IS_BITFIELD)) {
+							_find_enumeration_candidates(p_context, arg_info.class_name, r_result);
+						}
+					}
+
+					r_arghint = _make_arguments_hint(info, p_argidx);
+				}
+
+				if (p_argidx == 1 && p_call && ClassDB::is_parent_class(class_name, SNAME("Tween")) && method == SNAME("tween_property")) {
+					// Get tweened objects properties.
+					if (p_call->arguments.is_empty()) {
+						base_type.kind = FSParser::DataType::UNRESOLVED;
+						break;
+					}
+					FSParser::ExpressionNode *tweened_object = p_call->arguments[0];
+					if (!tweened_object) {
+						base_type.kind = FSParser::DataType::UNRESOLVED;
+						break;
+					}
+					StringName native_type = tweened_object->datatype.native_type;
+					switch (tweened_object->datatype.kind) {
+						case FSParser::DataType::SCRIPT: {
+							Ref<Script> script = tweened_object->datatype.script_type;
+							native_type = script->get_instance_base_type();
+							int n = 0;
+							while (script.is_valid()) {
+								List<PropertyInfo> properties;
+								script->get_script_property_list(&properties);
+								for (const PropertyInfo &E : properties) {
+									if (E.usage & (PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_INTERNAL)) {
+										continue;
+									}
+									String name = E.name.quote(quote_style);
+									if (use_node_paths) {
+										if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == FSParser::Node::LITERAL) {
+											FSParser::LiteralNode *literal = static_cast<FSParser::LiteralNode *>(p_call->arguments[p_argidx]);
+											if (literal->value.get_type() == Variant::STRING) {
+												name = "^" + name;
+											}
+										} else {
+											name = "^" + name;
+										}
+									}
+									ScriptLanguage::CodeCompletionOption option(name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER, ScriptLanguage::CodeCompletionLocation::LOCATION_LOCAL + n);
+									r_result.insert(option.display, option);
+								}
+								script = script->get_base_script();
+								n++;
+							}
+						} break;
+						case FSParser::DataType::CLASS: {
+							FSParser::ClassNode *clss = tweened_object->datatype.class_type;
+							native_type = clss->base_type.native_type;
+							int n = 0;
+							while (clss) {
+								for (FSParser::ClassNode::Member member : clss->members) {
+									if (member.type == FSParser::ClassNode::Member::VARIABLE) {
+										String name = member.get_name().quote(quote_style);
+										if (use_node_paths) {
+											if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == FSParser::Node::LITERAL) {
+												FSParser::LiteralNode *literal = static_cast<FSParser::LiteralNode *>(p_call->arguments[p_argidx]);
+												if (literal->value.get_type() == Variant::STRING) {
+													name = "^" + name;
+												}
+											} else {
+												name = "^" + name;
+											}
+										}
+										ScriptLanguage::CodeCompletionOption option(name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER, ScriptLanguage::CodeCompletionLocation::LOCATION_LOCAL + n);
+										r_result.insert(option.display, option);
+									}
+								}
+								if (clss->base_type.kind == FSParser::DataType::Kind::CLASS) {
+									clss = clss->base_type.class_type;
+									n++;
+								} else {
+									native_type = clss->base_type.native_type;
+									clss = nullptr;
+								}
+							}
+						} break;
+						default:
+							break;
+					}
+
+					List<PropertyInfo> properties;
+					ClassDB::get_property_list(native_type, &properties);
+					for (const PropertyInfo &E : properties) {
+						if (E.usage & (PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_INTERNAL)) {
+							continue;
+						}
+						String name = E.name.quote(quote_style);
+						if (use_node_paths) {
+							if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == FSParser::Node::LITERAL) {
+								FSParser::LiteralNode *literal = static_cast<FSParser::LiteralNode *>(p_call->arguments[p_argidx]);
+								if (literal->value.get_type() == Variant::STRING) {
+									name = "^" + name;
+								}
+							} else {
+								name = "^" + name;
+							}
+						}
+						ScriptLanguage::CodeCompletionOption option(name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER);
+						r_result.insert(option.display, option);
+					}
+				}
+
+				if (p_argidx == 0 && ClassDB::is_parent_class(class_name, SNAME("Node")) && (method == SNAME("get_node") || method == SNAME("has_node"))) {
+					// Get autoloads.
+					FSAutoloadIndex autoload_index;
+					autoload_index.rebuild_from_project_settings();
+					for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+						String name = String(autoload.name);
+						String path = ("/root/" + name).quote(quote_style);
+						if (use_node_paths) {
+							if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == FSParser::Node::LITERAL) {
+								FSParser::LiteralNode *literal = static_cast<FSParser::LiteralNode *>(p_call->arguments[p_argidx]);
+								if (literal->value.get_type() == Variant::STRING) {
+									path = "^" + path;
+								}
+							} else {
+								path = "^" + path;
+							}
+						}
+						ScriptLanguage::CodeCompletionOption option(path, ScriptLanguage::CODE_COMPLETION_KIND_NODE_PATH);
+						r_result.insert(option.display, option);
+					}
+				}
+
+				if (p_argidx == 0 && method_args > 0 && ClassDB::is_parent_class(class_name, SNAME("InputEvent")) && method.operator String().contains("action")) {
+					// Get input actions
+					List<PropertyInfo> props;
+					ProjectSettings::get_singleton()->get_property_list(&props);
+					for (const PropertyInfo &E : props) {
+						String s = E.name;
+						if (!s.begins_with("input/")) {
+							continue;
+						}
+						String name = s.get_slicec('/', 1).quote(quote_style);
+						if (use_string_names) {
+							if (p_call->arguments.size() > p_argidx && p_call->arguments[p_argidx] && p_call->arguments[p_argidx]->type == FSParser::Node::LITERAL) {
+								FSParser::LiteralNode *literal = static_cast<FSParser::LiteralNode *>(p_call->arguments[p_argidx]);
+								if (literal->value.get_type() == Variant::STRING) {
+									name = "&" + name;
+								}
+							} else {
+								name = "&" + name;
+							}
+						}
+						ScriptLanguage::CodeCompletionOption option(name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
+						r_result.insert(option.display, option);
+					}
+				}
+				if (EDITOR_GET("text_editor/completion/complete_file_paths")) {
+					if (p_argidx == 0 && method == SNAME("change_scene_to_file") && ClassDB::is_parent_class(class_name, SNAME("SceneTree"))) {
+						HashMap<String, ScriptLanguage::CodeCompletionOption> list;
+						_get_directory_contents(EditorFileSystem::get_singleton()->get_filesystem(), list, SNAME("PackedScene"));
+						for (const KeyValue<String, ScriptLanguage::CodeCompletionOption> &key_value_pair : list) {
+							ScriptLanguage::CodeCompletionOption option = key_value_pair.value;
+							r_result.insert(option.display, option);
+						}
+					}
+				}
+
+				base_type.kind = FSParser::DataType::UNRESOLVED;
+			} break;
+			case FSParser::DataType::BUILTIN: {
+				if (base.get_type() == Variant::NIL) {
+					Callable::CallError err;
+					Variant::construct(base_type.builtin_type, base, nullptr, 0, err);
+					if (err.error != Callable::CallError::CALL_OK) {
+						return;
+					}
+				}
+
+				List<MethodInfo> methods;
+				base.get_method_list(&methods);
+				for (const MethodInfo &E : methods) {
+					if (E.name == method) {
+						r_arghint = _make_arguments_hint(E, p_argidx);
+						return;
+					}
+				}
+
+				base_type.kind = FSParser::DataType::UNRESOLVED;
+			} break;
+			default: {
+				base_type.kind = FSParser::DataType::UNRESOLVED;
+			} break;
+		}
+	}
+}
+
+static bool _get_subscript_type(FSParser::CompletionContext &p_context, const FSParser::SubscriptNode *p_subscript, FSParser::DataType &r_base_type, Variant *r_base = nullptr) {
+	if (p_context.base == nullptr) {
+		return false;
+	}
+
+	const FSParser::GetNodeNode *get_node = nullptr;
+
+	switch (p_subscript->base->type) {
+		case FSParser::Node::GET_NODE: {
+			get_node = static_cast<FSParser::GetNodeNode *>(p_subscript->base);
+		} break;
+
+		case FSParser::Node::IDENTIFIER: {
+			const FSParser::IdentifierNode *identifier_node = static_cast<FSParser::IdentifierNode *>(p_subscript->base);
+
+			switch (identifier_node->source) {
+				case FSParser::IdentifierNode::Source::MEMBER_VARIABLE: {
+					if (p_context.current_class != nullptr) {
+						const StringName &member_name = identifier_node->name;
+						const FSParser::ClassNode *current_class = p_context.current_class;
+
+						if (current_class->has_member(member_name)) {
+							const FSParser::ClassNode::Member &member = current_class->get_member(member_name);
+
+							if (member.type == FSParser::ClassNode::Member::VARIABLE) {
+								const FSParser::VariableNode *variable = static_cast<FSParser::VariableNode *>(member.variable);
+
+								if (variable->initializer && variable->initializer->type == FSParser::Node::GET_NODE) {
+									get_node = static_cast<FSParser::GetNodeNode *>(variable->initializer);
+								}
+							}
+						}
+					}
+				} break;
+				case FSParser::IdentifierNode::Source::LOCAL_VARIABLE: {
+					// TODO: Do basic assignment flow analysis like in `_guess_expression_type`.
+					const FSParser::SuiteNode::Local local = identifier_node->suite->get_local(identifier_node->name);
+					switch (local.type) {
+						case FSParser::SuiteNode::Local::CONSTANT: {
+							if (local.constant->initializer && local.constant->initializer->type == FSParser::Node::GET_NODE) {
+								get_node = static_cast<FSParser::GetNodeNode *>(local.constant->initializer);
+							}
+						} break;
+						case FSParser::SuiteNode::Local::VARIABLE: {
+							if (local.variable->initializer && local.variable->initializer->type == FSParser::Node::GET_NODE) {
+								get_node = static_cast<FSParser::GetNodeNode *>(local.variable->initializer);
+							}
+						} break;
+						default: {
+						} break;
+					}
+				} break;
+				default: {
+				} break;
+			}
+		} break;
+		default: {
+		} break;
+	}
+
+	if (get_node != nullptr) {
+		const Object *node = p_context.base->call("get_node_or_null", NodePath(get_node->full_path));
+		if (node != nullptr) {
+			FSParser::DataType assigned_type = _type_from_variant(node, p_context).type;
+			FSParser::DataType base_type = p_subscript->base->datatype;
+
+			if (p_subscript->base->type == FSParser::Node::IDENTIFIER && base_type.type_source == FSParser::DataType::ANNOTATED_EXPLICIT && (assigned_type.kind != base_type.kind || assigned_type.script_path != base_type.script_path || assigned_type.native_type != base_type.native_type)) {
+				// Annotated type takes precedence.
+				return false;
+			}
+
+			if (r_base != nullptr) {
+				*r_base = node;
+			}
+
+			r_base_type.type_source = FSParser::DataType::INFERRED;
+			r_base_type.builtin_type = Variant::OBJECT;
+			r_base_type.native_type = node->get_class_name();
+
+			Ref<Script> scr = node->get_script();
+			if (scr.is_null()) {
+				r_base_type.kind = FSParser::DataType::NATIVE;
+			} else {
+				r_base_type.kind = FSParser::DataType::SCRIPT;
+				r_base_type.script_type = scr;
+			}
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void _find_call_arguments(FSParser::CompletionContext &p_context, const FSParser::Node *p_call, int p_argidx, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, bool &r_forced, String &r_arghint) {
+	if (p_call->type == FSParser::Node::PRELOAD) {
+		if (p_argidx == 0 && bool(EDITOR_GET("text_editor/completion/complete_file_paths"))) {
+			_get_directory_contents(EditorFileSystem::get_singleton()->get_filesystem(), r_result);
+		}
+
+		MethodInfo mi(PropertyInfo(Variant::OBJECT, "resource", PROPERTY_HINT_RESOURCE_TYPE, "Resource"), "preload", PropertyInfo(Variant::STRING, "path"));
+		r_arghint = _make_arguments_hint(mi, p_argidx);
+		return;
+	} else if (p_call->type != FSParser::Node::CALL) {
+		return;
+	}
+
+	Variant base;
+	FSParser::DataType base_type;
+	bool _static = false;
+	const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(p_call);
+	FSParser::Node::Type callee_type = call->get_callee_type();
+
+	if (callee_type == FSParser::Node::SUBSCRIPT) {
+		const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
+
+		if (subscript->base != nullptr && subscript->base->type == FSParser::Node::IDENTIFIER) {
+			const FSParser::IdentifierNode *base_identifier = static_cast<const FSParser::IdentifierNode *>(subscript->base);
+
+			Variant::Type method_type = FSParser::get_builtin_type(base_identifier->name);
+			if (method_type < Variant::VARIANT_MAX) {
+				Variant v;
+				Callable::CallError err;
+				Variant::construct(method_type, v, nullptr, 0, err);
+				if (err.error != Callable::CallError::CALL_OK) {
+					return;
+				}
+				List<MethodInfo> methods;
+				v.get_method_list(&methods);
+
+				for (MethodInfo &E : methods) {
+					if (p_argidx >= E.arguments.size()) {
+						continue;
+					}
+					if (E.name == call->function_name) {
+						r_arghint += _make_arguments_hint(E, p_argidx);
+						return;
+					}
+				}
+			}
+		}
+
+		if (subscript->is_attribute) {
+			bool found_type = _get_subscript_type(p_context, subscript, base_type, &base);
+
+			if (!found_type) {
+				FSCompletionIdentifier ci;
+				if (_guess_expression_type(p_context, subscript->base, ci)) {
+					base_type = ci.type;
+					base = ci.value;
+				} else {
+					return;
+				}
+			}
+
+			_static = base_type.is_meta_type;
+		}
+	} else if (Variant::has_utility_function(call->function_name)) {
+		MethodInfo info = Variant::get_utility_function_info(call->function_name);
+		r_arghint = _make_arguments_hint(info, p_argidx);
+		return;
+	} else if (FSUtilityFunctions::function_exists(call->function_name)) {
+		MethodInfo info = FSUtilityFunctions::get_function_info(call->function_name);
+		r_arghint = _make_arguments_hint(info, p_argidx);
+		return;
+	} else if (FSParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
+		// Complete constructor.
+		List<MethodInfo> constructors;
+		Variant::get_constructor_list(FSParser::get_builtin_type(call->function_name), &constructors);
+
+		int i = 0;
+		for (const MethodInfo &E : constructors) {
+			if (p_argidx >= E.arguments.size()) {
+				continue;
+			}
+			if (i > 0) {
+				r_arghint += "\n";
+			}
+			r_arghint += _make_arguments_hint(E, p_argidx);
+			i++;
+		}
+		return;
+	} else if (call->is_super || callee_type == FSParser::Node::IDENTIFIER) {
+		base = p_context.base;
+
+		if (p_context.current_class) {
+			base_type = p_context.current_class->get_datatype();
+			_static = !p_context.current_function || p_context.current_function->is_static;
+		}
+	} else {
+		return;
+	}
+
+	FSCompletionIdentifier ci;
+	ci.type = base_type;
+	ci.value = base;
+	_list_call_arguments(p_context, ci, call, p_argidx, _static, r_result, r_arghint);
+
+	r_forced = r_result.size() > 0;
+}
+
+::Error FSLanguage::complete_code(const String &p_code, const String &p_path, Object *p_owner, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_forced, String &r_call_hint) {
+	const String quote_style = EDITOR_GET("text_editor/completion/use_single_quotes") ? "'" : "\"";
+
+	FSParser parser;
+	FSAnalyzer analyzer(&parser);
+
+	parser.parse(p_code, p_path, true);
+	analyzer.analyze();
+
+	r_forced = false;
+	HashMap<String, ScriptLanguage::CodeCompletionOption> options;
+
+	FSParser::CompletionContext completion_context = parser.get_completion_context();
+	if (completion_context.current_class != nullptr && completion_context.current_class->outer == nullptr) {
+		completion_context.base = p_owner;
+	}
+	bool is_function = false;
+	FSNamespaceCompletionCache namespace_cache;
+
+	switch (completion_context.type) {
+		case FSParser::COMPLETION_NONE:
+			break;
+		case FSParser::COMPLETION_ANNOTATION: {
+			List<MethodInfo> annotations;
+			parser.get_annotation_list(&annotations);
+			for (const MethodInfo &E : annotations) {
+				ScriptLanguage::CodeCompletionOption option(E.name.substr(1), ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+				if (E.arguments.size() > 0) {
+					option.insert_text += "(";
+				}
+				options.insert(option.display, option);
+			}
+
+			// Custom annotations visible through the current namespace or explicit imports.
+			List<Ref<FSParserRef>> annotation_parser_refs;
+			HashMap<StringName, FSVisibleAnnotation> visible_annotations;
+			_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
+			for (const KeyValue<StringName, FSVisibleAnnotation> &E : visible_annotations) {
+				ScriptLanguage::CodeCompletionOption option(E.value.short_name, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+				const FSParser::AnnotationDeclarationNode *declaration = E.value.declaration;
+				if (declaration != nullptr && (declaration->parameters.size() > 0 || declaration->is_variadic())) {
+					option.insert_text += "(";
+				}
+				options.insert(option.display, option);
+			}
+
+			// Fully qualified custom annotation identities from the global index, including
+			// namespaces that are neither the current namespace nor explicitly imported. Offering
+			// the canonical identity lets the user complete `@namespace.name` (and the dotted prefix
+			// `@namespace.`) without an import, mirroring how the analyzer resolves qualified usages
+			// by canonical identity regardless of the active imports (see #428).
+			if (FSLanguage *language = FSLanguage::get_singleton()) {
+				List<StringName> global_annotation_identities;
+				language->get_global_annotation_list(&global_annotation_identities);
+				for (const StringName &identity : global_annotation_identities) {
+					const String qualified_name = identity;
+					if (qualified_name.rfind_char('.') < 0) {
+						// A global-namespace identity has no dotted path; it is already reachable as a
+						// short name through the visible-annotation collection above.
+						continue;
+					}
+					ScriptLanguage::CodeCompletionOption option(qualified_name, ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+					// Append "(" only when the canonical identity resolves unambiguously to a
+					// declaration that takes arguments. An ambiguous or unresolved identity is still
+					// offered as a plain name, matching how the visible-name path degrades.
+					FSVisibleAnnotation qualified;
+					if (_resolve_qualified_visible_annotation(parser, p_path, qualified_name, annotation_parser_refs, qualified) && qualified.declaration != nullptr) {
+						if (qualified.declaration->parameters.size() > 0 || qualified.declaration->is_variadic()) {
+							option.insert_text += "(";
+						}
+					}
+					options.insert(option.display, option);
+				}
+			}
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_ANNOTATION_ARGUMENTS: {
+			if (completion_context.node == nullptr || completion_context.node->type != FSParser::Node::ANNOTATION) {
+				break;
+			}
+			const FSParser::AnnotationNode *annotation = static_cast<const FSParser::AnnotationNode *>(completion_context.node);
+			if (annotation->info != nullptr) {
+				_find_annotation_arguments(annotation, completion_context.current_argument, quote_style, options, r_call_hint);
+			} else {
+				// Custom annotation usage: resolve the declaration to build the argument hint.
+				List<Ref<FSParserRef>> annotation_parser_refs;
+				const String spelled_name = String(annotation->name).trim_prefix("@");
+				if (spelled_name.contains_char('.')) {
+					// Fully qualified usage resolves by its canonical identity, independent of imports.
+					FSVisibleAnnotation qualified;
+					if (_resolve_qualified_visible_annotation(parser, p_path, spelled_name, annotation_parser_refs, qualified) && qualified.declaration != nullptr) {
+						r_call_hint = _make_annotation_arguments_hint(qualified.declaration, completion_context.current_argument);
+					}
+				} else {
+					HashMap<StringName, FSVisibleAnnotation> visible_annotations;
+					_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
+					if (HashMap<StringName, FSVisibleAnnotation>::ConstIterator E = visible_annotations.find(spelled_name); E && E->value.declaration != nullptr) {
+						r_call_hint = _make_annotation_arguments_hint(E->value.declaration, completion_context.current_argument);
+					}
+				}
+			}
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_BUILT_IN_TYPE_CONSTANT_OR_STATIC_METHOD: {
+			// Constants.
+			{
+				List<StringName> constants;
+				Variant::get_constants_for_type(completion_context.builtin_type, &constants);
+				for (const StringName &E : constants) {
+					ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT);
+					bool valid = false;
+					Variant default_value = Variant::get_constant_value(completion_context.builtin_type, E, &valid);
+					if (valid) {
+						option.default_value = default_value;
+					}
+					options.insert(option.display, option);
+				}
+			}
+			// Methods.
+			{
+				List<StringName> methods;
+				Variant::get_builtin_method_list(completion_context.builtin_type, &methods);
+				for (const StringName &E : methods) {
+					if (Variant::is_builtin_method_static(completion_context.builtin_type, E)) {
+						ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+						if (!_guess_expecting_callable(completion_context)) {
+							if (Variant::get_builtin_method_argument_count(completion_context.builtin_type, E) > 0 || Variant::is_builtin_method_vararg(completion_context.builtin_type, E)) {
+								option.insert_text += "(";
+							} else {
+								option.insert_text += "()";
+							}
+						}
+						options.insert(option.display, option);
+					}
+				}
+			}
+		} break;
+		case FSParser::COMPLETION_INHERIT_TYPE: {
+			_list_available_types(true, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, true, options);
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_TYPE_NAME_OR_VOID: {
+			ScriptLanguage::CodeCompletionOption option("void", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			options.insert(option.display, option);
+		}
+			[[fallthrough]];
+		case FSParser::COMPLETION_TYPE_NAME: {
+			_list_available_types(false, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, false, options);
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_TYPE_HANDLE_ARGUMENT: {
+			_list_type_handle_argument_types(completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, false, options);
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_USES: {
+			if (completion_context.current_argument <= 0) {
+				// Leading name: inline traits plus globally registered traits, which
+				// are listed under their fully-qualified names (e.g.
+				// `characters.Damageable`).
+				_list_available_traits(completion_context, options);
+			} else {
+				// Trailing segment after a `.`: resolve the typed namespace prefix and
+				// suggest only the traits (and child namespaces) within it.
+				_add_namespace_uses_completion_options(namespace_cache, completion_context, options);
+			}
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_IMPORT_NAMESPACE: {
+			_list_importable_namespaces(namespace_cache, options);
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_PROPERTY_DECLARATION_OR_TYPE: {
+			_list_available_types(false, completion_context, options);
+			_add_namespace_type_completion_options(namespace_cache, completion_context, false, options);
+			ScriptLanguage::CodeCompletionOption get("get", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			options.insert(get.display, get);
+			ScriptLanguage::CodeCompletionOption set("set", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			options.insert(set.display, set);
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_PROPERTY_DECLARATION: {
+			ScriptLanguage::CodeCompletionOption get("get", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			options.insert(get.display, get);
+			ScriptLanguage::CodeCompletionOption set("set", ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
+			options.insert(set.display, set);
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_PROPERTY_METHOD: {
+			if (!completion_context.current_class) {
+				break;
+			}
+			for (int i = 0; i < completion_context.current_class->members.size(); i++) {
+				const FSParser::ClassNode::Member &member = completion_context.current_class->members[i];
+				if (member.type != FSParser::ClassNode::Member::FUNCTION) {
+					continue;
+				}
+				if (member.function->is_static) {
+					continue;
+				}
+				ScriptLanguage::CodeCompletionOption option(member.function->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+				options.insert(option.display, option);
+			}
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_ASSIGN: {
+			FSCompletionIdentifier type;
+			if (!completion_context.node || completion_context.node->type != FSParser::Node::ASSIGNMENT) {
+				break;
+			}
+			if (!_guess_expression_type(completion_context, static_cast<const FSParser::AssignmentNode *>(completion_context.node)->assignee, type)) {
+				_find_identifiers(completion_context, false, true, options, 0);
+				r_forced = true;
+				break;
+			}
+
+			if (!type.enumeration.is_empty()) {
+				_find_enumeration_candidates(completion_context, type.enumeration, options);
+				r_forced = options.size() > 0;
+			} else {
+				_find_identifiers(completion_context, false, true, options, 0);
+				r_forced = true;
+			}
+		} break;
+		case FSParser::COMPLETION_DECLARATION: {
+			_find_identifiers(completion_context, false, !_guess_expecting_callable(completion_context), options, 0);
+			_add_async_function_declaration_options(options);
+		} break;
+		case FSParser::COMPLETION_METHOD:
+			is_function = true;
+			[[fallthrough]];
+		case FSParser::COMPLETION_IDENTIFIER: {
+			_find_identifiers(completion_context, is_function, !_guess_expecting_callable(completion_context), options, 0);
+		} break;
+		case FSParser::COMPLETION_ATTRIBUTE_METHOD:
+			is_function = true;
+			[[fallthrough]];
+		case FSParser::COMPLETION_ATTRIBUTE: {
+			r_forced = true;
+			const FSParser::SubscriptNode *attr = static_cast<const FSParser::SubscriptNode *>(completion_context.node);
+			if (attr->base) {
+				FSCompletionIdentifier base;
+				bool found_type = _get_subscript_type(completion_context, attr, base.type);
+				if (!found_type && !_guess_expression_type(completion_context, attr->base, base)) {
+					break;
+				}
+
+				_find_identifiers_in_base(base, is_function, false, !_guess_expecting_callable(completion_context), options, 0);
+			}
+		} break;
+		case FSParser::COMPLETION_SUBSCRIPT: {
+			const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(completion_context.node);
+			FSCompletionIdentifier base;
+			const bool res = _guess_expression_type(completion_context, subscript->base, base);
+
+			// If the type is not known, we assume it is BUILTIN, since indices on arrays is the most common use case.
+			if (!subscript->is_attribute && (!res || base.type.kind == FSParser::DataType::BUILTIN || base.type.is_variant())) {
+				if (base.value.get_type() == Variant::DICTIONARY) {
+					List<PropertyInfo> members;
+					base.value.get_property_list(&members);
+
+					for (const PropertyInfo &E : members) {
+						ScriptLanguage::CodeCompletionOption option(E.name.quote(quote_style), ScriptLanguage::CODE_COMPLETION_KIND_MEMBER, ScriptLanguage::LOCATION_LOCAL);
+						options.insert(option.display, option);
+					}
+				}
+				if (!subscript->index || subscript->index->type != FSParser::Node::LITERAL) {
+					_find_identifiers(completion_context, false, !_guess_expecting_callable(completion_context), options, 0);
+				}
+			} else if (res) {
+				if (!subscript->is_attribute) {
+					// Quote the options if they are not accessed as attribute.
+
+					HashMap<String, ScriptLanguage::CodeCompletionOption> opt;
+					_find_identifiers_in_base(base, false, false, false, opt, 0);
+					for (const KeyValue<String, CodeCompletionOption> &E : opt) {
+						ScriptLanguage::CodeCompletionOption option(E.value.insert_text.quote(quote_style), E.value.kind, E.value.location);
+						options.insert(option.display, option);
+					}
+				} else {
+					_find_identifiers_in_base(base, false, false, !_guess_expecting_callable(completion_context), options, 0);
+				}
+			}
+		} break;
+		case FSParser::COMPLETION_TYPE_ATTRIBUTE: {
+			if (!completion_context.current_class) {
+				_add_namespace_type_attribute_completion_options(namespace_cache, completion_context, options);
+				r_forced = true;
+				break;
+			}
+
+			const FSParser::TypeNode *type = static_cast<const FSParser::TypeNode *>(completion_context.node);
+			ERR_FAIL_INDEX_V_MSG(completion_context.type_chain_index - 1, type->type_chain.size(), Error::ERR_BUG, "Could not complete type argument with out of bounds type chain index.");
+
+			FSCompletionIdentifier base;
+
+			if (_guess_identifier_type(completion_context, type->type_chain[0], base)) {
+				bool found = true;
+				for (int i = 1; i < completion_context.type_chain_index; i++) {
+					FSCompletionIdentifier ci;
+					found = _guess_identifier_type_from_base(completion_context, base, type->type_chain[i]->name, ci);
+					base = ci;
+					if (!found) {
+						break;
+					}
+				}
+				if (found) {
+					_find_identifiers_in_base(base, false, true, true, options, 0);
+				} else {
+					_add_namespace_type_attribute_completion_options(namespace_cache, completion_context, options);
+				}
+			} else {
+				_add_namespace_type_attribute_completion_options(namespace_cache, completion_context, options);
+			}
+
+			r_forced = true;
+		} break;
+		case FSParser::COMPLETION_RESOURCE_PATH: {
+			if (EDITOR_GET("text_editor/completion/complete_file_paths")) {
+				_get_directory_contents(EditorFileSystem::get_singleton()->get_filesystem(), options);
+				r_forced = true;
+			}
+		} break;
+		case FSParser::COMPLETION_CALL_ARGUMENTS: {
+			if (!completion_context.node) {
+				break;
+			}
+			_find_call_arguments(completion_context, completion_context.node, completion_context.current_argument, options, r_forced, r_call_hint);
+		} break;
+		case FSParser::COMPLETION_OVERRIDE_METHOD: {
+			FSParser::DataType native_type = completion_context.current_class->base_type;
+			FSParser::FunctionNode *function_node = static_cast<FSParser::FunctionNode *>(completion_context.node);
+			const bool is_static = function_node != nullptr && function_node->is_static;
+			const bool is_coroutine = function_node != nullptr && function_node->is_coroutine;
+			// Names of methods sealed by a `final` override somewhere in the hierarchy.
+			// Once a derived class makes a method final it cannot be overridden again, so
+			// the candidate must be suppressed even if an ancestor declares it non-final.
+			HashSet<StringName> sealed_overrides;
+			// Names of `final` methods supplied to a base class through a used trait.
+			// Concrete trait methods are not flattened into the using class's `members`,
+			// so a trait can mark a method `final` -- e.g. sealing a native virtual like
+			// `_process` -- without that method ever appearing in the inheritance walk
+			// below. A subclass inherits that sealed method through the base and cannot
+			// override it, so it must not be offered as a native-virtual override
+			// candidate. Only base-class traits are collected: a class may always
+			// redeclare a `final` method from a trait it uses directly, so finals from the
+			// current class's own traits stay overridable here. This is kept separate from
+			// `sealed_overrides` because a concrete trait method does not satisfy an
+			// abstract requirement from another trait, so a trait's final flag must not
+			// hide that still-required abstract method from the trait-requirement
+			// suggestions, nor shadow a non-final class-hierarchy declaration of the same
+			// name, which is offered through the class members above.
+			HashSet<StringName> trait_sealed_methods;
+			auto collect_trait_finals = [&](const FSParser::ClassNode *p_class) {
+				if (p_class == nullptr) {
+					return;
+				}
+				for (const FSParser::ClassNode *trait : p_class->resolved_traits) {
+					if (trait == nullptr) {
+						continue;
+					}
+					for (const FSParser::ClassNode::Member &member : trait->members) {
+						if (member.type != FSParser::ClassNode::Member::FUNCTION || !member.function->is_final) {
+							continue;
+						}
+						const StringName &member_name = member.function->identifier->name;
+						// Constructors are not overrides, so a final `_init`/`_static_init`
+						// in a trait does not seal them (mirrors the inheritance walk).
+						if (member_name == SNAME("_init") || member_name == SNAME("_static_init")) {
+							continue;
+						}
+						trait_sealed_methods.insert(member_name);
+					}
+				}
+			};
+			while (native_type.is_set() && native_type.kind != FSParser::DataType::NATIVE) {
+				switch (native_type.kind) {
+					case FSParser::DataType::CLASS: {
+						for (const FSParser::ClassNode::Member &member : native_type.class_type->members) {
+							if (member.type != FSParser::ClassNode::Member::FUNCTION) {
+								continue;
+							}
+
+							// Final methods cannot be overridden, so never offer them as override
+							// candidates, and seal the name so ancestor declarations are also hidden.
+							// Constructors are exempt: `_init`/`_static_init` are not overrides (the
+							// analyzer skips the final-override check for them), so a subclass may
+							// declare its own even when an ancestor marks one final.
+							const StringName &member_name = member.function->identifier->name;
+							const bool is_constructor = member_name == SNAME("_init") || member_name == SNAME("_static_init");
+							if (member.function->is_final && !is_constructor) {
+								sealed_overrides.insert(member_name);
+								continue;
+							}
+
+							if (sealed_overrides.has(member.function->identifier->name)) {
+								continue;
+							}
+
+							if (options.has(member.function->identifier->name)) {
+								continue;
+							}
+
+							if (completion_context.current_class->has_function(member.get_name()) && completion_context.current_class->get_member(member.get_name()).function != function_node) {
+								continue;
+							}
+
+							if (is_static != member.function->is_static) {
+								continue;
+							}
+							const bool parent_is_coroutine = member.function->is_coroutine;
+							if (is_coroutine != parent_is_coroutine) {
+								continue;
+							}
+
+							String insert_text = member.function->identifier->name;
+							insert_text += member.function->signature + ":";
+							String display_name = insert_text;
+							if (parent_is_coroutine) {
+								display_name = "async " + display_name;
+							}
+							ScriptLanguage::CodeCompletionOption option(display_name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+							option.insert_text = insert_text;
+							options.insert(member.function->identifier->name, option); // Insert name instead of display to track duplicates.
+						}
+						// Collect finals supplied to this base class through its used traits so
+						// the native-virtual loop below does not offer a sealed native method.
+						collect_trait_finals(native_type.class_type);
+						native_type = native_type.class_type->base_type;
+					} break;
+					default: {
+						native_type.kind = FSParser::DataType::UNRESOLVED;
+					} break;
+				}
+			}
+
+			// Required (abstract) methods owed to applied traits, including transitive traits.
+			for (const FSParser::ClassNode *trait : completion_context.current_class->resolved_traits) {
+				for (const FSParser::ClassNode::Member &member : trait->members) {
+					if (member.type != FSParser::ClassNode::Member::FUNCTION || !member.function->is_abstract) {
+						continue;
+					}
+					if (sealed_overrides.has(member.function->identifier->name)) {
+						continue;
+					}
+					if (options.has(member.function->identifier->name)) {
+						continue;
+					}
+					if (completion_context.current_class->has_function(member.get_name()) && completion_context.current_class->get_member(member.get_name()).function != function_node) {
+						continue;
+					}
+					if (is_static != member.function->is_static) {
+						continue;
+					}
+					const bool parent_is_coroutine = member.function->is_coroutine;
+					if (is_coroutine != parent_is_coroutine) {
+						continue;
+					}
+
+					String insert_text = member.function->identifier->name;
+					insert_text += member.function->signature + ":";
+					String display_name = insert_text;
+					if (parent_is_coroutine) {
+						display_name = "async " + display_name;
+					}
+					ScriptLanguage::CodeCompletionOption option(display_name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+					option.insert_text = insert_text;
+					options.insert(member.function->identifier->name, option); // Insert name instead of display to track duplicates.
+				}
+			}
+
+			if (!native_type.is_set()) {
+				break;
+			}
+
+			StringName class_name = native_type.native_type;
+			if (!FSAnalyzer::class_exists(class_name)) {
+				break;
+			}
+
+			const bool type_hints = EditorSettings::get_singleton()->get_setting("text_editor/completion/add_type_hints");
+
+			List<MethodInfo> virtual_methods;
+			if (is_static) {
+				// Not truly a virtual method, but can also be "overridden".
+				MethodInfo static_init("_static_init");
+				static_init.return_val.type = Variant::NIL;
+				static_init.flags |= METHOD_FLAG_STATIC | METHOD_FLAG_VIRTUAL;
+				virtual_methods.push_back(static_init);
+			} else {
+				ClassDB::get_virtual_methods(class_name, &virtual_methods);
+			}
+
+			for (const MethodInfo &mi : virtual_methods) {
+				if (sealed_overrides.has(mi.name) || trait_sealed_methods.has(mi.name)) {
+					continue;
+				}
+				if (options.has(mi.name)) {
+					continue;
+				}
+				if (completion_context.current_class->has_function(mi.name) && completion_context.current_class->get_member(mi.name).function != function_node) {
+					continue;
+				}
+				const bool parent_is_coroutine = mi.flags & METHOD_FLAG_ASYNC;
+				if (is_coroutine != parent_is_coroutine) {
+					continue;
+				}
+				String method_hint = mi.name;
+				if (method_hint.contains_char(':')) {
+					method_hint = method_hint.get_slicec(':', 0);
+				}
+				method_hint += "(";
+
+				for (int64_t i = 0; i < mi.arguments.size(); ++i) {
+					if (i > 0) {
+						method_hint += ", ";
+					}
+					String arg = mi.arguments[i].name;
+					if (arg.contains_char(':')) {
+						arg = arg.substr(0, arg.find_char(':'));
+					}
+					method_hint += arg;
+					if (type_hints) {
+						method_hint += ": " + _get_visual_datatype(mi.arguments[i], true, class_name);
+					}
+				}
+				if (mi.flags & METHOD_FLAG_VARARG) {
+					if (!mi.arguments.is_empty()) {
+						method_hint += ", ";
+					}
+					method_hint += "...args"; // `MethodInfo` does not support the rest parameter name.
+					if (type_hints) {
+						method_hint += ": Array";
+					}
+				}
+				method_hint += ")";
+				if (type_hints) {
+					method_hint += " -> " + _get_visual_datatype(mi.return_val, false, class_name);
+				}
+				method_hint += ":";
+
+				String display_hint = method_hint;
+				if (parent_is_coroutine) {
+					display_hint = "async " + display_hint;
+				}
+
+				ScriptLanguage::CodeCompletionOption option(display_hint, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION);
+				option.insert_text = method_hint;
+				options.insert(option.display, option);
+			}
+		} break;
+		case FSParser::COMPLETION_GET_NODE: {
+			// Handles the `$Node/Path` or `$"Some NodePath"` syntax specifically.
+			if (p_owner) {
+				List<String> opts;
+				p_owner->get_argument_options("get_node", 0, &opts);
+
+				bool for_unique_name = false;
+				if (completion_context.node != nullptr && completion_context.node->type == FSParser::Node::GET_NODE && !static_cast<FSParser::GetNodeNode *>(completion_context.node)->use_dollar) {
+					for_unique_name = true;
+				}
+
+				for (const String &E : opts) {
+					r_forced = true;
+					String opt = E.strip_edges();
+					if (opt.is_quoted()) {
+						// Remove quotes so that we can handle user preferred quote style,
+						// or handle NodePaths which are valid identifiers and don't need quotes.
+						opt = opt.unquote();
+					}
+
+					if (for_unique_name) {
+						if (!opt.begins_with("%")) {
+							continue;
+						}
+						opt = opt.substr(1);
+					}
+
+					// The path needs quotes if at least one of its components (excluding `%` prefix and `/` separations)
+					// is not a valid identifier.
+					bool path_needs_quote = false;
+					for (const String &part : opt.trim_prefix("%").split("/")) {
+						if (!part.is_valid_ascii_identifier()) {
+							path_needs_quote = true;
+							break;
+						}
+					}
+
+					if (path_needs_quote) {
+						// Ignore quote_style and just use double quotes for paths with apostrophes.
+						// Double quotes don't need to be checked because they're not valid in node and property names.
+						opt = opt.quote(opt.contains_char('\'') ? "\"" : quote_style); // Handle user preference.
+					}
+					ScriptLanguage::CodeCompletionOption option(opt, ScriptLanguage::CODE_COMPLETION_KIND_NODE_PATH);
+					options.insert(option.display, option);
+				}
+
+				if (!for_unique_name) {
+					// Get autoloads.
+					FSAutoloadIndex autoload_index;
+					autoload_index.rebuild_from_project_settings();
+					for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+						String path = "/root/" + String(autoload.name);
+						ScriptLanguage::CodeCompletionOption option(path.quote(quote_style), ScriptLanguage::CODE_COMPLETION_KIND_NODE_PATH);
+						options.insert(option.display, option);
+					}
+				}
+			}
+		} break;
+		case FSParser::COMPLETION_SUPER:
+			break;
+		case FSParser::COMPLETION_SUPER_METHOD: {
+			if (!completion_context.current_class) {
+				break;
+			}
+			_find_identifiers_in_class(completion_context.current_class, true, false, false, true, !_guess_expecting_callable(completion_context), options, 0);
+		} break;
+	}
+
+	for (const KeyValue<String, ScriptLanguage::CodeCompletionOption> &E : options) {
+		r_options->push_back(E.value);
+	}
+
+	return OK;
+}
+
+#else // !TOOLS_ENABLED
+
+Error FSLanguage::complete_code(const String &p_code, const String &p_path, Object *p_owner, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_forced, String &r_call_hint) {
+	return OK;
+}
+
+#endif // TOOLS_ENABLED
+
+//////// END COMPLETION //////////
+
+String FSLanguage::_get_indentation() const {
+#ifdef TOOLS_ENABLED
+	if (Engine::get_singleton()->is_editor_hint()) {
+		bool use_space_indentation = EDITOR_GET("text_editor/behavior/indent/type");
+
+		if (use_space_indentation) {
+			int indent_size = EDITOR_GET("text_editor/behavior/indent/size");
+			return String(" ").repeat(indent_size);
+		}
+	}
+#endif
+	return "\t";
+}
+
+void FSLanguage::auto_indent_code(String &p_code, int p_from_line, int p_to_line) const {
+	String indent = _get_indentation();
+
+	Vector<String> lines = p_code.split("\n");
+	List<int> indent_stack;
+
+	for (int i = 0; i < lines.size(); i++) {
+		String l = lines[i];
+		int tc = 0;
+		for (int j = 0; j < l.length(); j++) {
+			if (l[j] == ' ' || l[j] == '\t') {
+				tc++;
+			} else {
+				break;
+			}
+		}
+
+		String st = l.substr(tc).strip_edges();
+		if (st.is_empty() || st.begins_with("#")) {
+			continue; //ignore!
+		}
+
+		int ilevel = 0;
+		if (indent_stack.size()) {
+			ilevel = indent_stack.back()->get();
+		}
+
+		if (tc > ilevel) {
+			indent_stack.push_back(tc);
+		} else if (tc < ilevel) {
+			while (indent_stack.size() && indent_stack.back()->get() > tc) {
+				indent_stack.pop_back();
+			}
+
+			if (indent_stack.size() && indent_stack.back()->get() != tc) {
+				indent_stack.push_back(tc); // this is not right but gets the job done
+			}
+		}
+
+		if (i >= p_from_line) {
+			l = indent.repeat(indent_stack.size()) + st;
+		} else if (i > p_to_line) {
+			break;
+		}
+
+		lines.write[i] = l;
+	}
+
+	p_code = "";
+	for (int i = 0; i < lines.size(); i++) {
+		if (i > 0) {
+			p_code += "\n";
+		}
+		p_code += lines[i];
+	}
+}
+
+#ifdef TOOLS_ENABLED
+
+bool FSLanguage::format_code(const String &p_code, const String &p_path, String &r_formatted_code, String *r_error_message) const {
+	FSFormatter formatter;
+	FSFormatter::Result result;
+	if (formatter.format(p_code, p_path, result) != OK) {
+		if (r_error_message) {
+			*r_error_message = result.error_message;
+		}
+		return false;
+	}
+	r_formatted_code = result.formatted;
+	return true;
+}
+
+static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_base_type, const String &p_name, const FSParser::ClassNode::Member &p_member, FSLanguage::LookupResult &r_result) {
+	switch (p_member.type) {
+		case FSParser::ClassNode::Member::UNDEFINED:
+		case FSParser::ClassNode::Member::GROUP:
+			return ERR_BUG;
+		case FSParser::ClassNode::Member::CLASS: {
+			String doc_type_name;
+			String doc_enum_name;
+			FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_member.get_datatype()), doc_type_name, doc_enum_name);
+
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+			r_result.class_name = doc_type_name;
+		} break;
+		case FSParser::ClassNode::Member::CONSTANT:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+			break;
+		case FSParser::ClassNode::Member::FUNCTION:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+			break;
+		case FSParser::ClassNode::Member::SIGNAL:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_SIGNAL;
+			break;
+		case FSParser::ClassNode::Member::VARIABLE:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_PROPERTY;
+			break;
+		case FSParser::ClassNode::Member::ENUM:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+			break;
+		case FSParser::ClassNode::Member::ENUM_VALUE:
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+			break;
+	}
+
+	if (p_member.type != FSParser::ClassNode::Member::CLASS) {
+		String doc_type_name;
+		String doc_enum_name;
+		FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_base_type), doc_type_name, doc_enum_name);
+
+		r_result.class_name = doc_type_name;
+		r_result.class_member = p_name;
+	}
+
+	Error err = OK;
+	r_result.script = FSCache::get_shallow_script(p_base_type.script_path, err);
+	r_result.script_path = p_base_type.script_path;
+	r_result.location = p_member.get_line();
+	return err;
+}
+
+static Error _lookup_symbol_from_traits(const FSParser::DataType &p_base_type, const String &p_symbol, FSLanguage::LookupResult &r_result) {
+	if (p_base_type.kind != FSParser::DataType::CLASS || p_base_type.class_type == nullptr) {
+		return ERR_CANT_RESOLVE;
+	}
+
+	const String name = p_symbol == "new" ? String("_init") : p_symbol;
+	for (FSParser::ClassNode *trait : p_base_type.class_type->resolved_traits) {
+		if (trait == nullptr || !trait->has_member(name)) {
+			continue;
+		}
+
+		const FSParser::ClassNode::Member &member = trait->get_member(name);
+		FSParser::DataType trait_type = trait->get_datatype();
+		return _set_lookup_result_from_class_member(trait_type, name, member, r_result);
+	}
+
+	return ERR_CANT_RESOLVE;
+}
+
+static Error _lookup_symbol_from_traits_in_class_hierarchy(const FSParser::DataType &p_base_type, const String &p_symbol, FSLanguage::LookupResult &r_result) {
+	if (p_base_type.kind != FSParser::DataType::CLASS || p_base_type.class_type == nullptr) {
+		return ERR_CANT_RESOLVE;
+	}
+
+	for (FSParser::ClassNode *script_class = p_base_type.class_type; script_class != nullptr; script_class = script_class->base_type.class_type) {
+		FSParser::DataType script_class_type = script_class->get_datatype();
+		if (_lookup_symbol_from_traits(script_class_type, p_symbol, r_result) == OK) {
+			return OK;
+		}
+	}
+
+	return ERR_CANT_RESOLVE;
+}
+
+static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const String &p_symbol, FSLanguage::LookupResult &r_result) {
+	FSParser::DataType base_type = p_base;
+	const FSParser::DataType original_base_type = p_base;
+
+	while (true) {
+		switch (base_type.kind) {
+			case FSParser::DataType::CLASS: {
+				ERR_FAIL_NULL_V(base_type.class_type, ERR_BUG);
+
+				String name = p_symbol;
+				if (name == "new") {
+					name = "_init";
+				}
+
+				if (!base_type.class_type->has_member(name)) {
+					if (base_type.class_type->base_type.kind != FSParser::DataType::CLASS) {
+						if (_lookup_symbol_from_traits_in_class_hierarchy(original_base_type, name, r_result) == OK) {
+							return OK;
+						}
+					}
+					base_type = base_type.class_type->base_type;
+					break;
+				}
+
+				const FSParser::ClassNode::Member &member = base_type.class_type->get_member(name);
+
+				return _set_lookup_result_from_class_member(base_type, name, member, r_result);
+			} break;
+			case FSParser::DataType::SCRIPT: {
+				const Ref<Script> scr = base_type.script_type;
+
+				if (scr.is_null()) {
+					return ERR_CANT_RESOLVE;
+				}
+
+				String name = p_symbol;
+				if (name == "new") {
+					name = "_init";
+				}
+
+				const int line = scr->get_member_line(name);
+				if (line >= 0) {
+					bool found_type = false;
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_SCRIPT_LOCATION;
+					{
+						List<PropertyInfo> properties;
+						scr->get_script_property_list(&properties);
+						for (const PropertyInfo &property : properties) {
+							if (property.name == name && (property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE)) {
+								found_type = true;
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_PROPERTY;
+								r_result.class_name = scr->get_doc_class_name();
+								r_result.class_member = name;
+								break;
+							}
+						}
+					}
+					if (!found_type) {
+						List<MethodInfo> methods;
+						scr->get_script_method_list(&methods);
+						for (const MethodInfo &method : methods) {
+							if (method.name == name) {
+								found_type = true;
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+								r_result.class_name = scr->get_doc_class_name();
+								r_result.class_member = name;
+								break;
+							}
+						}
+					}
+					if (!found_type) {
+						List<MethodInfo> signals;
+						scr->get_script_method_list(&signals);
+						for (const MethodInfo &signal : signals) {
+							if (signal.name == name) {
+								found_type = true;
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_SIGNAL;
+								r_result.class_name = scr->get_doc_class_name();
+								r_result.class_member = name;
+								break;
+							}
+						}
+					}
+					if (!found_type) {
+						const Ref<FoundryScript> gds = scr;
+						if (gds.is_valid()) {
+							const Ref<FoundryScript> *subclass = gds->get_subclasses().getptr(name);
+							if (subclass != nullptr) {
+								found_type = true;
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+								r_result.class_name = subclass->ptr()->get_doc_class_name();
+							}
+							// TODO: enums.
+						}
+					}
+					if (!found_type) {
+						HashMap<StringName, Variant> constants;
+						scr->get_constants(&constants);
+						if (constants.has(name)) {
+							found_type = true;
+							r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+							r_result.class_name = scr->get_doc_class_name();
+							r_result.class_member = name;
+						}
+					}
+
+					r_result.script = scr;
+					r_result.script_path = base_type.script_path;
+					r_result.location = line;
+					return OK;
+				}
+
+				const Ref<Script> base_script = scr->get_base_script();
+				if (base_script.is_valid()) {
+					base_type.script_type = base_script;
+				} else {
+					base_type.kind = FSParser::DataType::NATIVE;
+					base_type.builtin_type = Variant::OBJECT;
+					base_type.native_type = scr->get_instance_base_type();
+				}
+			} break;
+			case FSParser::DataType::NATIVE: {
+				const StringName &class_name = base_type.native_type;
+
+				ERR_FAIL_COND_V(!FSAnalyzer::class_exists(class_name), ERR_BUG);
+
+				if (ClassDB::has_method(class_name, p_symbol, true)) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+					r_result.class_name = class_name;
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+
+				List<MethodInfo> virtual_methods;
+				ClassDB::get_virtual_methods(class_name, &virtual_methods, true);
+				for (const MethodInfo &E : virtual_methods) {
+					if (E.name == p_symbol) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+						r_result.class_name = class_name;
+						r_result.class_member = p_symbol;
+						return OK;
+					}
+				}
+
+				if (ClassDB::has_signal(class_name, p_symbol, true)) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_SIGNAL;
+					r_result.class_name = class_name;
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+
+				List<StringName> enums;
+				ClassDB::get_enum_list(class_name, &enums);
+				for (const StringName &E : enums) {
+					if (E == p_symbol) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+						r_result.class_name = class_name;
+						r_result.class_member = p_symbol;
+						return OK;
+					}
+				}
+
+				if (!String(ClassDB::get_integer_constant_enum(class_name, p_symbol, true)).is_empty()) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+					r_result.class_name = class_name;
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+
+				List<String> constants;
+				ClassDB::get_integer_constant_list(class_name, &constants, true);
+				for (const String &E : constants) {
+					if (E == p_symbol) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+						r_result.class_name = class_name;
+						r_result.class_member = p_symbol;
+						return OK;
+					}
+				}
+
+				if (ClassDB::has_property(class_name, p_symbol, true)) {
+					PropertyInfo prop_info;
+					ClassDB::get_property_info(class_name, p_symbol, &prop_info, true);
+					if (prop_info.usage & PROPERTY_USAGE_INTERNAL) {
+						return ERR_CANT_RESOLVE;
+					}
+
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_PROPERTY;
+					r_result.class_name = class_name;
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+
+				const StringName parent_class = ClassDB::get_parent_class(class_name);
+				if (parent_class != StringName()) {
+					base_type.native_type = parent_class;
+				} else {
+					return ERR_CANT_RESOLVE;
+				}
+			} break;
+			case FSParser::DataType::BUILTIN: {
+				if (base_type.is_meta_type) {
+					if (Variant::has_enum(base_type.builtin_type, p_symbol)) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+						r_result.class_name = Variant::get_type_name(base_type.builtin_type);
+						r_result.class_member = p_symbol;
+						return OK;
+					}
+
+					if (Variant::has_constant(base_type.builtin_type, p_symbol)) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+						r_result.class_name = Variant::get_type_name(base_type.builtin_type);
+						r_result.class_member = p_symbol;
+						return OK;
+					}
+				} else {
+					if (Variant::has_member(base_type.builtin_type, p_symbol)) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_PROPERTY;
+						r_result.class_name = Variant::get_type_name(base_type.builtin_type);
+						r_result.class_member = p_symbol;
+						return OK;
+					}
+				}
+
+				if (Variant::has_builtin_method(base_type.builtin_type, p_symbol)) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+					r_result.class_name = Variant::get_type_name(base_type.builtin_type);
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+
+				return ERR_CANT_RESOLVE;
+			} break;
+			case FSParser::DataType::ENUM: {
+				if (base_type.is_meta_type) {
+					if (base_type.enum_values.has(p_symbol)) {
+						String doc_type_name;
+						String doc_enum_name;
+						FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name);
+
+						if (CoreConstants::is_global_enum(doc_enum_name)) {
+							r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+							r_result.class_name = "@GlobalScope";
+							r_result.class_member = p_symbol;
+							return OK;
+						} else {
+							const int dot_pos = doc_enum_name.rfind_char('.');
+							if (dot_pos >= 0) {
+								Error err = OK;
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+								if (base_type.class_type != nullptr) {
+									// For script enums the value isn't accessible as class constant so we need the full enum name.
+									r_result.class_name = doc_enum_name;
+									r_result.class_member = p_symbol;
+									r_result.script = FSCache::get_shallow_script(base_type.script_path, err);
+									r_result.script_path = base_type.script_path;
+									const String enum_name = doc_enum_name.substr(dot_pos + 1);
+									if (base_type.class_type->has_member(enum_name)) {
+										const FSParser::ClassNode::Member member = base_type.class_type->get_member(enum_name);
+										if (member.type == FSParser::ClassNode::Member::ENUM) {
+											for (const FSParser::EnumNode::Value &value : member.m_enum->values) {
+												if (value.identifier->name == p_symbol) {
+													r_result.location = value.line;
+													break;
+												}
+											}
+										}
+									}
+								} else if (base_type.script_type.is_valid()) {
+									// For script enums the value isn't accessible as class constant so we need the full enum name.
+									r_result.class_name = doc_enum_name;
+									r_result.class_member = p_symbol;
+									r_result.script = base_type.script_type;
+									r_result.script_path = base_type.script_path;
+									// TODO: Find a way to obtain enum value location for a script
+									r_result.location = base_type.script_type->get_member_line(doc_enum_name.substr(dot_pos + 1));
+								} else {
+									r_result.class_name = doc_enum_name.left(dot_pos);
+									r_result.class_member = p_symbol;
+								}
+								return err;
+							}
+						}
+					} else if (Variant::has_builtin_method(Variant::DICTIONARY, p_symbol)) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+						r_result.class_name = "Dictionary";
+						r_result.class_member = p_symbol;
+						return OK;
+					}
+				}
+
+				return ERR_CANT_RESOLVE;
+			} break;
+			case FSParser::DataType::VARIANT: {
+				if (base_type.is_meta_type) {
+					const String enum_name = "Variant." + p_symbol;
+					if (CoreConstants::is_global_enum(enum_name)) {
+						r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+						r_result.class_name = "@GlobalScope";
+						r_result.class_member = enum_name;
+						return OK;
+					}
+				}
+
+				return ERR_CANT_RESOLVE;
+			} break;
+			case FSParser::DataType::TYPE_PARAMETER:
+			case FSParser::DataType::RESOLVING:
+			case FSParser::DataType::UNRESOLVED: {
+				return ERR_CANT_RESOLVE;
+			} break;
+		}
+	}
+
+	return ERR_CANT_RESOLVE;
+}
+
+static String _get_lookup_identifier_chain(const String &p_code, const String &p_symbol) {
+	const String cursor_marker = String::chr(0xFFFF);
+	const int cursor_index = p_code.find(cursor_marker);
+	if (cursor_index == -1) {
+		return p_symbol;
+	}
+
+	int start = cursor_index;
+	while (start > 0) {
+		const char32_t c = p_code[start - 1];
+		if (c != '.' && !is_unicode_identifier_continue(c)) {
+			break;
+		}
+		start--;
+	}
+
+	String identifier_chain = p_code.substr(start, cursor_index - start);
+	while (identifier_chain.begins_with(".")) {
+		identifier_chain = identifier_chain.substr(1);
+	}
+
+	// The backward scan accepts identifier-continuation characters; only keep chains that actually end at the resolved symbol.
+	if (identifier_chain == p_symbol || identifier_chain.ends_with("." + p_symbol)) {
+		return identifier_chain;
+	}
+
+	return p_symbol;
+}
+
+static bool _lookup_global_class_in_namespace(const String &p_namespace, const String &p_class_name, StringName &r_global_class_name) {
+	if (p_namespace.is_empty() || p_class_name.is_empty()) {
+		return false;
+	}
+
+	const String global_class_name = p_namespace + "." + p_class_name;
+	if (!ScriptServer::is_global_class(global_class_name)) {
+		return false;
+	}
+
+	r_global_class_name = global_class_name;
+	return true;
+}
+
+static bool _lookup_imported_global_class(const FSParser::ClassNode *p_root, const String &p_class_name, StringName &r_global_class_name) {
+	if (p_root == nullptr) {
+		return false;
+	}
+
+	LocalVector<String> checked_imports;
+	for (const String &import : p_root->imports) {
+		if (checked_imports.has(import)) {
+			continue;
+		}
+		checked_imports.push_back(import);
+
+		StringName candidate;
+		if (!_lookup_global_class_in_namespace(import, p_class_name, candidate)) {
+			continue;
+		}
+
+		if (r_global_class_name != StringName() && r_global_class_name != candidate) {
+			// The analyzer reports ambiguous imports as an error. Lookup should not pick an arbitrary target.
+			r_global_class_name = StringName();
+			return false;
+		}
+
+		r_global_class_name = candidate;
+	}
+
+	return r_global_class_name != StringName();
+}
+
+static bool _resolve_namespace_global_class(const FSParser::ClassNode *p_root, const String &p_identifier_chain, StringName &r_global_class_name) {
+	if (p_identifier_chain.is_empty()) {
+		return false;
+	}
+
+	if (p_identifier_chain.get_slice_count(".") > 1 && ScriptServer::is_global_class(p_identifier_chain)) {
+		r_global_class_name = p_identifier_chain;
+		return true;
+	}
+
+	if (p_root != nullptr) {
+		// Keep this in sync with FSAnalyzer name binding: current namespace, imported namespaces, then legacy direct globals.
+		if (_lookup_global_class_in_namespace(p_root->namespace_name, p_identifier_chain, r_global_class_name)) {
+			return true;
+		}
+
+		if (_lookup_imported_global_class(p_root, p_identifier_chain, r_global_class_name)) {
+			return true;
+		}
+	}
+
+	if (ScriptServer::is_global_class(p_identifier_chain)) {
+		r_global_class_name = p_identifier_chain;
+		return true;
+	}
+
+	return false;
+}
+
+static Error _lookup_global_script_class(const StringName &p_global_class_name, FSLanguage::LookupResult &r_result) {
+	const String script_path = ScriptServer::get_global_class_path(p_global_class_name);
+	const Ref<Script> script = ResourceLoader::load(script_path);
+	if (script.is_null()) {
+		return ERR_BUG;
+	}
+
+	r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+	r_result.class_name = script->get_doc_class_name();
+	r_result.script = script;
+	r_result.script_path = script_path;
+	r_result.location = 0;
+	return OK;
+}
+
+::Error FSLanguage::lookup_code(const String &p_code, const String &p_symbol, const String &p_path, Object *p_owner, LookupResult &r_result) {
+	FSParser parser;
+	parser.parse(p_code, p_path, true);
+
+	FSParser::CompletionContext context = parser.get_completion_context();
+	context.base = p_owner;
+
+	// A custom annotation usage resolves to its declaration before any global-symbol shortcut.
+	// Custom annotation names live in a separate symbol space and may legitimately collide with a
+	// class, builtin type, constant, or utility-function name (e.g. `@Node`, `@print`); the global
+	// shortcuts below would otherwise navigate to the colliding symbol instead of the declaration.
+	if (context.type == FSParser::COMPLETION_ANNOTATION && context.node != nullptr && context.node->type == FSParser::Node::ANNOTATION && static_cast<const FSParser::AnnotationNode *>(context.node)->info == nullptr) {
+		List<Ref<FSParserRef>> annotation_parser_refs;
+		const String spelled_name = String(static_cast<const FSParser::AnnotationNode *>(context.node)->name).trim_prefix("@");
+		if (spelled_name.contains_char('.')) {
+			// Fully qualified usage resolves by its canonical identity, independent of imports.
+			FSVisibleAnnotation qualified;
+			if (_resolve_qualified_visible_annotation(parser, p_path, spelled_name, annotation_parser_refs, qualified) && qualified.declaration != nullptr && qualified.declaration->identifier != nullptr) {
+				Error err = OK;
+				r_result.type = ScriptLanguage::LOOKUP_RESULT_SCRIPT_LOCATION;
+				r_result.script = FSCache::get_shallow_script(qualified.path, err);
+				r_result.script_path = qualified.path;
+				r_result.location = qualified.declaration->identifier->start_line;
+				return OK;
+			}
+		} else {
+			HashMap<StringName, FSVisibleAnnotation> visible_annotations;
+			_collect_visible_custom_annotations(parser, p_path, annotation_parser_refs, visible_annotations);
+			if (HashMap<StringName, FSVisibleAnnotation>::ConstIterator E = visible_annotations.find(p_symbol); E && E->value.declaration != nullptr && E->value.declaration->identifier != nullptr) {
+				Error err = OK;
+				r_result.type = ScriptLanguage::LOOKUP_RESULT_SCRIPT_LOCATION;
+				r_result.script = FSCache::get_shallow_script(E->value.path, err);
+				r_result.script_path = E->value.path;
+				r_result.location = E->value.declaration->identifier->start_line;
+				return OK;
+			}
+		}
+	}
+
+	// Before further analysis, try the usual global symbols.
+	if (FSAnalyzer::class_exists(p_symbol)) {
+		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+		r_result.class_name = p_symbol;
+		return OK;
+	}
+
+	if (Variant::get_type_by_name(p_symbol) < Variant::VARIANT_MAX) {
+		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+		r_result.class_name = p_symbol;
+		return OK;
+	}
+
+	if (p_symbol == "Variant") {
+		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+		r_result.class_name = "Variant";
+		return OK;
+	}
+
+	if (p_symbol == "PI" || p_symbol == "TAU" || p_symbol == "INF" || p_symbol == "NAN") {
+		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+		r_result.class_name = "@FoundryScript";
+		r_result.class_member = p_symbol;
+		return OK;
+	}
+
+	// Allows class functions with the names like built-ins to be handled properly.
+	if (context.type != FSParser::COMPLETION_ATTRIBUTE) {
+		// Need special checks for `assert` and `preload` as they are technically
+		// keywords, so are not registered in `FSUtilityFunctions`.
+		if (FSUtilityFunctions::function_exists(p_symbol) || p_symbol == "assert" || p_symbol == "preload") {
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+			r_result.class_name = "@FoundryScript";
+			r_result.class_member = p_symbol;
+			return OK;
+		}
+	}
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	if (context.current_class && context.current_class->extends.size() > 0) {
+		StringName class_name = context.current_class->extends[0]->name;
+
+		bool success = false;
+		ClassDB::get_integer_constant(class_name, p_symbol, &success);
+		if (success) {
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+			r_result.class_name = class_name;
+			r_result.class_member = p_symbol;
+			return OK;
+		}
+		do {
+			List<StringName> enums;
+			ClassDB::get_enum_list(class_name, &enums, true);
+			for (const StringName &enum_name : enums) {
+				if (enum_name == p_symbol) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+					r_result.class_name = class_name;
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+			}
+			class_name = ClassDB::get_parent_class_nocheck(class_name);
+		} while (class_name != StringName());
+	}
+
+	const FSParser::TypeNode *type_node = dynamic_cast<const FSParser::TypeNode *>(context.node);
+	if (type_node != nullptr && !type_node->type_chain.is_empty()) {
+		StringName class_name = type_node->type_chain[0]->name;
+		if (ScriptServer::is_global_class(class_name)) {
+			class_name = ScriptServer::get_global_class_native_base(class_name);
+		}
+		do {
+			List<StringName> enums;
+			ClassDB::get_enum_list(class_name, &enums, true);
+			for (const StringName &enum_name : enums) {
+				if (enum_name == p_symbol) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+					r_result.class_name = class_name;
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+			}
+			class_name = ClassDB::get_parent_class_nocheck(class_name);
+		} while (class_name != StringName());
+	}
+
+	bool is_function = false;
+
+	switch (context.type) {
+		case FSParser::COMPLETION_BUILT_IN_TYPE_CONSTANT_OR_STATIC_METHOD: {
+			FSParser::DataType base_type;
+			base_type.kind = FSParser::DataType::BUILTIN;
+			base_type.builtin_type = context.builtin_type;
+			base_type.is_meta_type = true;
+			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+		} break;
+		case FSParser::COMPLETION_SUPER: {
+			if (context.current_class && context.current_function) {
+				if (_lookup_symbol_from_base(context.current_class->base_type, context.current_function->info.name, r_result) == OK) {
+					return OK;
+				}
+			}
+		} break;
+		case FSParser::COMPLETION_SUPER_METHOD:
+		case FSParser::COMPLETION_METHOD:
+		case FSParser::COMPLETION_ASSIGN:
+		case FSParser::COMPLETION_CALL_ARGUMENTS:
+		case FSParser::COMPLETION_IDENTIFIER:
+		case FSParser::COMPLETION_PROPERTY_METHOD:
+		case FSParser::COMPLETION_SUBSCRIPT: {
+			FSParser::DataType base_type;
+			if (context.current_class) {
+				if (context.type != FSParser::COMPLETION_SUPER_METHOD) {
+					base_type = context.current_class->get_datatype();
+				} else {
+					base_type = context.current_class->base_type;
+				}
+			} else {
+				break;
+			}
+
+			if (!is_function && context.current_suite) {
+				// Lookup local variables.
+				const FSParser::SuiteNode *suite = context.current_suite;
+				while (suite) {
+					if (suite->has_local(p_symbol)) {
+						const FSParser::SuiteNode::Local &local = suite->get_local(p_symbol);
+
+						switch (local.type) {
+							case FSParser::SuiteNode::Local::UNDEFINED:
+								return ERR_BUG;
+							case FSParser::SuiteNode::Local::CONSTANT:
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_LOCAL_CONSTANT;
+								r_result.description = local.constant->doc_data.description;
+								r_result.is_deprecated = local.constant->doc_data.is_deprecated;
+								r_result.deprecated_message = local.constant->doc_data.deprecated_message;
+								r_result.is_experimental = local.constant->doc_data.is_experimental;
+								r_result.experimental_message = local.constant->doc_data.experimental_message;
+								if (local.constant->initializer != nullptr) {
+									r_result.value = FSDocGen::docvalue_from_expression(local.constant->initializer, local.constant->get_datatype());
+								}
+								break;
+							case FSParser::SuiteNode::Local::VARIABLE:
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_LOCAL_VARIABLE;
+								r_result.description = local.variable->doc_data.description;
+								r_result.is_deprecated = local.variable->doc_data.is_deprecated;
+								r_result.deprecated_message = local.variable->doc_data.deprecated_message;
+								r_result.is_experimental = local.variable->doc_data.is_experimental;
+								r_result.experimental_message = local.variable->doc_data.experimental_message;
+								if (local.variable->initializer != nullptr) {
+									r_result.value = FSDocGen::docvalue_from_expression(local.variable->initializer, local.variable->get_datatype());
+								}
+								break;
+							case FSParser::SuiteNode::Local::PARAMETER:
+							case FSParser::SuiteNode::Local::FOR_VARIABLE:
+							case FSParser::SuiteNode::Local::PATTERN_BIND:
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_LOCAL_VARIABLE;
+								break;
+						}
+
+						FSDocGen::doctype_from_gdtype(local.get_datatype(), r_result.doc_type, r_result.enumeration);
+
+						Error err = OK;
+						r_result.script = FSCache::get_shallow_script(base_type.script_path, err);
+						r_result.script_path = base_type.script_path;
+						r_result.location = local.start_line;
+						return err;
+					}
+					suite = suite->parent_block;
+				}
+			}
+
+			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+
+			if (!is_function) {
+				// A reserved named global (e.g. the `godot` reflection namespace) wins over a
+				// same-named autoload, so symbol lookup must not navigate to that autoload.
+				if (!FSLanguage::get_singleton()->is_reserved_global_name(p_symbol)) {
+					FSAutoloadIndex autoload_index;
+					autoload_index.rebuild_from_project_settings();
+					const FSAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_symbol);
+					if (autoload != nullptr && autoload->is_singleton) {
+						String scr_path = !autoload->script_path.is_empty() ? autoload->script_path : autoload->path;
+						if (!scr_path.ends_with(".fs")) {
+							// Not a script, try find the script anyway, may have some success.
+							scr_path = scr_path.get_basename() + ".fs";
+						}
+
+						if (FileAccess::exists(scr_path)) {
+							r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+							r_result.class_name = p_symbol;
+							r_result.script = ResourceLoader::load(scr_path);
+							r_result.script_path = scr_path;
+							r_result.location = 0;
+							return OK;
+						}
+					}
+				}
+
+				StringName namespace_global_class;
+				if (_resolve_namespace_global_class(parser.get_tree(), p_symbol, namespace_global_class)) {
+					return _lookup_global_script_class(namespace_global_class, r_result);
+				}
+
+				const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
+				if (global_map.has(p_symbol)) {
+					Variant value = FSLanguage::get_singleton()->get_global_array()[global_map[p_symbol]];
+					if (value.get_type() == Variant::OBJECT) {
+						const Object *obj = value;
+						if (obj) {
+							if (Object::cast_to<FSNativeClass>(obj)) {
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+								r_result.class_name = Object::cast_to<FSNativeClass>(obj)->get_name();
+							} else {
+								r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+								r_result.class_name = obj->get_class();
+							}
+							return OK;
+						}
+					}
+				}
+
+				if (CoreConstants::is_global_enum(p_symbol)) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ENUM;
+					r_result.class_name = "@GlobalScope";
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+
+				if (CoreConstants::is_global_constant(p_symbol)) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+					r_result.class_name = "@GlobalScope";
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+
+				if (Variant::has_utility_function(p_symbol)) {
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+					r_result.class_name = "@GlobalScope";
+					r_result.class_member = p_symbol;
+					return OK;
+				}
+			}
+		} break;
+		case FSParser::COMPLETION_ATTRIBUTE_METHOD:
+		case FSParser::COMPLETION_ATTRIBUTE: {
+			if (context.node->type != FSParser::Node::SUBSCRIPT) {
+				break;
+			}
+			const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(context.node);
+			if (!subscript->is_attribute) {
+				break;
+			}
+			FSCompletionIdentifier base;
+
+			bool found_type = _get_subscript_type(context, subscript, base.type);
+			if (!found_type && !_guess_expression_type(context, subscript->base, base)) {
+				break;
+			}
+
+			if (_lookup_symbol_from_base(base.type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+		} break;
+		case FSParser::COMPLETION_TYPE_ATTRIBUTE: {
+			if (context.node == nullptr || context.node->type != FSParser::Node::TYPE) {
+				break;
+			}
+			const FSParser::TypeNode *type = static_cast<const FSParser::TypeNode *>(context.node);
+
+			FSParser::DataType base_type;
+			const FSParser::IdentifierNode *prev = nullptr;
+			for (const FSParser::IdentifierNode *E : type->type_chain) {
+				if (E->name == p_symbol && prev != nullptr) {
+					base_type = prev->get_datatype();
+					break;
+				}
+				prev = E;
+			}
+			if (base_type.kind != FSParser::DataType::CLASS) {
+				FSCompletionIdentifier base;
+				if (!_guess_expression_type(context, prev, base)) {
+					break;
+				}
+				base_type = base.type;
+			}
+
+			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+		} break;
+		case FSParser::COMPLETION_OVERRIDE_METHOD: {
+			FSParser::DataType base_type = context.current_class->base_type;
+
+			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+		} break;
+		case FSParser::COMPLETION_PROPERTY_DECLARATION_OR_TYPE:
+		case FSParser::COMPLETION_TYPE_HANDLE_ARGUMENT:
+		case FSParser::COMPLETION_TYPE_NAME_OR_VOID:
+		case FSParser::COMPLETION_TYPE_NAME: {
+			FSParser::DataType base_type = context.current_class->get_datatype();
+
+			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+		} break;
+		case FSParser::COMPLETION_USES: {
+			// Resolve a trait reference in a `uses` clause through the analyzer-resolved
+			// trait. This reaches inline traits in outer, sibling, and base scopes as
+			// well as traits (possibly nested) declared in other files.
+			if (context.current_class != nullptr) {
+				const String identifier_chain = _get_lookup_identifier_chain(p_code, p_symbol);
+				const FSParser::ClassNode::TraitUse *chain_match = nullptr;
+				const FSParser::ClassNode::TraitUse *leaf_match = nullptr;
+				int leaf_match_count = 0;
+				for (const FSParser::ClassNode::TraitUse &trait_use : context.current_class->used_traits) {
+					if (trait_use.name.is_empty() || trait_use.resolved_trait == nullptr) {
+						continue;
+					}
+					if (trait_use.to_string() == identifier_chain) {
+						// Exact match on the qualified name under the cursor.
+						chain_match = &trait_use;
+						break;
+					}
+					if (trait_use.name[trait_use.name.size() - 1]->name == p_symbol) {
+						leaf_match = &trait_use;
+						leaf_match_count++;
+					}
+				}
+				// Only fall back to a leaf-name match when it is unambiguous; otherwise a
+				// reference like `uses A.Mixin, B.Mixin` could resolve to the wrong trait.
+				const FSParser::ClassNode::TraitUse *match = chain_match != nullptr ? chain_match : (leaf_match_count == 1 ? leaf_match : nullptr);
+				if (match != nullptr) {
+					const FSParser::ClassNode *trait = match->resolved_trait;
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+					r_result.class_name = trait->identifier != nullptr ? String(trait->identifier->name) : String();
+					r_result.location = trait->start_line;
+					// A trait declared in another file needs its own script path so the
+					// definition resolves against that file rather than this one.
+					const String trait_path = trait->get_datatype().script_path;
+					if (!trait_path.is_empty() && trait_path != p_path) {
+						Error err = OK;
+						r_result.script = FSCache::get_shallow_script(trait_path, err);
+						r_result.script_path = trait_path;
+					}
+					return OK;
+				}
+			}
+
+			FSParser::DataType base_type = context.current_class->get_datatype();
+			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+		} break;
+		case FSParser::COMPLETION_ANNOTATION: {
+			// Custom annotation usages are resolved to their declaration earlier, before the global
+			// symbol shortcuts. Only built-in annotations remain to be handled here.
+			const String annotation_symbol = "@" + p_symbol;
+			if (parser.annotation_exists(annotation_symbol)) {
+				r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_ANNOTATION;
+				r_result.class_name = "@FoundryScript";
+				r_result.class_member = annotation_symbol;
+				return OK;
+			}
+		} break;
+		default: {
+		}
+	}
+
+	StringName namespace_global_class;
+	const String identifier_chain = _get_lookup_identifier_chain(p_code, p_symbol);
+	if (_resolve_namespace_global_class(parser.get_tree(), identifier_chain, namespace_global_class)) {
+		return _lookup_global_script_class(namespace_global_class, r_result);
+	}
+
+	return ERR_CANT_RESOLVE;
+}
+
+#endif // TOOLS_ENABLED

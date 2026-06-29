@@ -36,7 +36,7 @@
 class Texture2D;
 
 class NativeMenu : public Object {
-	GDCLASS(NativeMenu, Object)
+	FOUNDRY_CLASS(NativeMenu, Object)
 
 	static NativeMenu *singleton;
 

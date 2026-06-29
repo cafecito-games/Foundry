@@ -129,11 +129,11 @@ void MultiplayerPeer::_bind_methods() {
 
 Error MultiplayerPeerExtension::get_packet(const uint8_t **r_buffer, int &r_buffer_size) {
 	Error err;
-	if (GDVIRTUAL_CALL(_get_packet, r_buffer, &r_buffer_size, err)) {
+	if (FOUNDRY_VIRTUAL_CALL(_get_packet, r_buffer, &r_buffer_size, err)) {
 		return err;
 	}
-	if (GDVIRTUAL_IS_OVERRIDDEN(_get_packet_script)) {
-		if (!GDVIRTUAL_CALL(_get_packet_script, script_buffer)) {
+	if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_get_packet_script)) {
+		if (!FOUNDRY_VIRTUAL_CALL(_get_packet_script, script_buffer)) {
 			return FAILED;
 		}
 
@@ -153,15 +153,15 @@ Error MultiplayerPeerExtension::get_packet(const uint8_t **r_buffer, int &r_buff
 Error MultiplayerPeerExtension::put_packet(const uint8_t *p_buffer, int p_buffer_size) {
 	ERR_FAIL_COND_V(p_buffer_size < 0, ERR_INVALID_PARAMETER);
 	Error err;
-	if (GDVIRTUAL_CALL(_put_packet, p_buffer, p_buffer_size, err)) {
+	if (FOUNDRY_VIRTUAL_CALL(_put_packet, p_buffer, p_buffer_size, err)) {
 		return err;
 	}
-	if (GDVIRTUAL_IS_OVERRIDDEN(_put_packet_script)) {
+	if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_put_packet_script)) {
 		PackedByteArray a;
 		a.resize(p_buffer_size);
 		memcpy(a.ptrw(), p_buffer, p_buffer_size);
 
-		if (!GDVIRTUAL_CALL(_put_packet_script, a, err)) {
+		if (!FOUNDRY_VIRTUAL_CALL(_put_packet_script, a, err)) {
 			return FAILED;
 		}
 		return err;
@@ -171,7 +171,7 @@ Error MultiplayerPeerExtension::put_packet(const uint8_t *p_buffer, int p_buffer
 }
 
 void MultiplayerPeerExtension::set_refuse_new_connections(bool p_enable) {
-	if (GDVIRTUAL_CALL(_set_refuse_new_connections, p_enable)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_refuse_new_connections, p_enable)) {
 		return;
 	}
 	MultiplayerPeer::set_refuse_new_connections(p_enable);
@@ -179,7 +179,7 @@ void MultiplayerPeerExtension::set_refuse_new_connections(bool p_enable) {
 
 bool MultiplayerPeerExtension::is_refusing_new_connections() const {
 	bool refusing;
-	if (GDVIRTUAL_CALL(_is_refusing_new_connections, refusing)) {
+	if (FOUNDRY_VIRTUAL_CALL(_is_refusing_new_connections, refusing)) {
 		return refusing;
 	}
 	return MultiplayerPeer::is_refusing_new_connections();
@@ -187,42 +187,42 @@ bool MultiplayerPeerExtension::is_refusing_new_connections() const {
 
 bool MultiplayerPeerExtension::is_server_relay_supported() const {
 	bool can_relay;
-	if (GDVIRTUAL_CALL(_is_server_relay_supported, can_relay)) {
+	if (FOUNDRY_VIRTUAL_CALL(_is_server_relay_supported, can_relay)) {
 		return can_relay;
 	}
 	return MultiplayerPeer::is_server_relay_supported();
 }
 
 void MultiplayerPeerExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_get_packet, "r_buffer", "r_buffer_size");
-	GDVIRTUAL_BIND(_put_packet, "p_buffer", "p_buffer_size");
-	GDVIRTUAL_BIND(_get_available_packet_count);
-	GDVIRTUAL_BIND(_get_max_packet_size);
+	FOUNDRY_VIRTUAL_BIND(_get_packet, "r_buffer", "r_buffer_size");
+	FOUNDRY_VIRTUAL_BIND(_put_packet, "p_buffer", "p_buffer_size");
+	FOUNDRY_VIRTUAL_BIND(_get_available_packet_count);
+	FOUNDRY_VIRTUAL_BIND(_get_max_packet_size);
 
-	GDVIRTUAL_BIND(_get_packet_script)
-	GDVIRTUAL_BIND(_put_packet_script, "p_buffer");
+	FOUNDRY_VIRTUAL_BIND(_get_packet_script)
+	FOUNDRY_VIRTUAL_BIND(_put_packet_script, "p_buffer");
 
-	GDVIRTUAL_BIND(_get_packet_channel);
-	GDVIRTUAL_BIND(_get_packet_mode);
+	FOUNDRY_VIRTUAL_BIND(_get_packet_channel);
+	FOUNDRY_VIRTUAL_BIND(_get_packet_mode);
 
-	GDVIRTUAL_BIND(_set_transfer_channel, "p_channel");
-	GDVIRTUAL_BIND(_get_transfer_channel);
+	FOUNDRY_VIRTUAL_BIND(_set_transfer_channel, "p_channel");
+	FOUNDRY_VIRTUAL_BIND(_get_transfer_channel);
 
-	GDVIRTUAL_BIND(_set_transfer_mode, "p_mode");
-	GDVIRTUAL_BIND(_get_transfer_mode);
+	FOUNDRY_VIRTUAL_BIND(_set_transfer_mode, "p_mode");
+	FOUNDRY_VIRTUAL_BIND(_get_transfer_mode);
 
-	GDVIRTUAL_BIND(_set_target_peer, "p_peer");
+	FOUNDRY_VIRTUAL_BIND(_set_target_peer, "p_peer");
 
-	GDVIRTUAL_BIND(_get_packet_peer);
-	GDVIRTUAL_BIND(_is_server);
-	GDVIRTUAL_BIND(_poll);
-	GDVIRTUAL_BIND(_close);
-	GDVIRTUAL_BIND(_disconnect_peer, "p_peer", "p_force");
-	GDVIRTUAL_BIND(_get_unique_id);
-	GDVIRTUAL_BIND(_set_refuse_new_connections, "p_enable");
-	GDVIRTUAL_BIND(_is_refusing_new_connections);
-	GDVIRTUAL_BIND(_is_server_relay_supported);
-	GDVIRTUAL_BIND(_get_connection_status);
+	FOUNDRY_VIRTUAL_BIND(_get_packet_peer);
+	FOUNDRY_VIRTUAL_BIND(_is_server);
+	FOUNDRY_VIRTUAL_BIND(_poll);
+	FOUNDRY_VIRTUAL_BIND(_close);
+	FOUNDRY_VIRTUAL_BIND(_disconnect_peer, "p_peer", "p_force");
+	FOUNDRY_VIRTUAL_BIND(_get_unique_id);
+	FOUNDRY_VIRTUAL_BIND(_set_refuse_new_connections, "p_enable");
+	FOUNDRY_VIRTUAL_BIND(_is_refusing_new_connections);
+	FOUNDRY_VIRTUAL_BIND(_is_server_relay_supported);
+	FOUNDRY_VIRTUAL_BIND(_get_connection_status);
 
 	ADD_PROPERTY_DEFAULT("transfer_mode", TRANSFER_MODE_RELIABLE);
 	ADD_PROPERTY_DEFAULT("transfer_channel", 0);

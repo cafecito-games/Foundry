@@ -68,10 +68,10 @@
 				Return [code]true[/code] if the connection is indeed valid or return [code]false[/code] if the connection is impossible. If the connection is impossible, no snapping to the port and thus no connection request to that port will happen.
 				In this example a connection to same node is suppressed:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _is_node_hover_valid(from, from_port, to, to_port):
 					return from != to
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override bool _IsNodeHoverValid(StringName fromNode, int fromPort, StringName toNode, int toPort)
 				{
@@ -186,9 +186,9 @@
 				[/codeblock]
 				For example, getting a connection at a given mouse position can be achieved like this:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var connection = get_closest_connection_at_point(mouse_event.get_position())
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>

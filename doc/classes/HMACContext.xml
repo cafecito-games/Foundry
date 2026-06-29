@@ -6,7 +6,7 @@
 	<description>
 		The HMACContext class is useful for advanced HMAC use cases, such as streaming the message as it supports creating the message over time rather than providing it all at once.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		extends Node
 		var ctx = HMACContext.new()
 
@@ -23,7 +23,7 @@
 			var hmac = ctx.finish()
 			print(hmac.hex_encode())
 
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 		using System.Diagnostics;

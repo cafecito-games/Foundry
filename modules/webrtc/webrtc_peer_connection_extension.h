@@ -36,13 +36,13 @@
 #include "core/object/gdvirtual.gen.inc"
 
 class WebRTCPeerConnectionExtension : public WebRTCPeerConnection {
-	GDCLASS(WebRTCPeerConnectionExtension, WebRTCPeerConnection);
+	FOUNDRY_CLASS(WebRTCPeerConnectionExtension, WebRTCPeerConnection);
 
 protected:
 	static void _bind_methods();
 
 public:
-	/** GDExtension **/
+	/** FoundryExtension **/
 	EXBIND0RC(ConnectionState, get_connection_state);
 	EXBIND0RC(GatheringState, get_gathering_state);
 	EXBIND0RC(SignalingState, get_signaling_state);

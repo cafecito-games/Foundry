@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: create_proxy[T]() cannot forward the class type parameter "T" from a static function because it is reified per instance. Use create_proxy_dynamic() with an explicit type instead.

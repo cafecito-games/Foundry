@@ -88,9 +88,9 @@
 #endif
 
 #ifndef SANITIZERS_ENABLED
-#define GODOT_DLOPEN_MODE RTLD_NOW | RTLD_DEEPBIND
+#define FOUNDRY_DLOPEN_MODE RTLD_NOW | RTLD_DEEPBIND
 #else
-#define GODOT_DLOPEN_MODE RTLD_NOW
+#define FOUNDRY_DLOPEN_MODE RTLD_NOW
 #endif
 
 #if defined(MACOS_ENABLED) || (defined(__ANDROID_API__) && __ANDROID_API__ >= 28)
@@ -121,13 +121,13 @@ static void _setup_clock() {
 }
 #else
 #if defined(CLOCK_MONOTONIC_RAW) && !defined(WEB_ENABLED) // This is a better clock on Linux.
-#define GODOT_CLOCK CLOCK_MONOTONIC_RAW
+#define FOUNDRY_CLOCK CLOCK_MONOTONIC_RAW
 #else
-#define GODOT_CLOCK CLOCK_MONOTONIC
+#define FOUNDRY_CLOCK CLOCK_MONOTONIC
 #endif
 static void _setup_clock() {
 	struct timespec tv_now = { 0, 0 };
-	ERR_FAIL_COND_MSG(clock_gettime(GODOT_CLOCK, &tv_now) != 0, "OS CLOCK IS NOT WORKING!");
+	ERR_FAIL_COND_MSG(clock_gettime(FOUNDRY_CLOCK, &tv_now) != 0, "OS CLOCK IS NOT WORKING!");
 	_clock_start = ((uint64_t)tv_now.tv_nsec / 1000L) + (uint64_t)tv_now.tv_sec * 1000000L;
 }
 #endif
@@ -393,7 +393,7 @@ uint64_t OS_Unix::get_ticks_usec() const {
 	// Unchecked return. Static analyzers might complain.
 	// If _setup_clock() succeeded, we assume clock_gettime() works.
 	struct timespec tv_now = { 0, 0 };
-	clock_gettime(GODOT_CLOCK, &tv_now);
+	clock_gettime(FOUNDRY_CLOCK, &tv_now);
 	uint64_t longtime = ((uint64_t)tv_now.tv_nsec / 1000L) + (uint64_t)tv_now.tv_sec * 1000000L;
 #endif
 	longtime -= _clock_start;
@@ -1039,7 +1039,7 @@ String OS_Unix::get_locale() const {
 	return locale;
 }
 
-Error OS_Unix::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_Unix::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	String path = p_path;
 
 	if (FileAccess::exists(path) && path.is_relative_path()) {
@@ -1049,18 +1049,18 @@ Error OS_Unix::open_dynamic_library(const String &p_path, void *&p_library_handl
 	}
 
 	if (!FileAccess::exists(path)) {
-		// This code exists so GDExtension can load .so files from within the executable path.
+		// This code exists so FoundryExtension can load .so files from within the executable path.
 		path = get_executable_path().get_base_dir().path_join(p_path.get_file());
 	}
 
 	if (!FileAccess::exists(path)) {
-		// This code exists so GDExtension can load .so files from a standard unix location.
+		// This code exists so FoundryExtension can load .so files from a standard unix location.
 		path = get_executable_path().get_base_dir().path_join("../lib").path_join(p_path.get_file());
 	}
 
 	ERR_FAIL_COND_V(!FileAccess::exists(path), ERR_FILE_NOT_FOUND);
 
-	p_library_handle = dlopen(path.utf8().get_data(), GODOT_DLOPEN_MODE);
+	p_library_handle = dlopen(path.utf8().get_data(), FOUNDRY_DLOPEN_MODE);
 	ERR_FAIL_NULL_V_MSG(p_library_handle, ERR_CANT_OPEN, vformat("Can't open dynamic library: %s. Error: %s.", p_path, dlerror()));
 
 	if (p_data != nullptr && p_data->r_resolved_path != nullptr) {

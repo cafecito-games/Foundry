@@ -482,7 +482,7 @@ XrSpatialContextEXT OpenXRSpatialEntityExtension::get_spatial_context_handle(RID
 	return context_data->spatial_context;
 }
 
-// For exposing this to GDExtension
+// For exposing this to FoundryExtension
 uint64_t OpenXRSpatialEntityExtension::_get_spatial_context_handle(RID p_spatial_context) const {
 	return (uint64_t)get_spatial_context_handle(p_spatial_context);
 }
@@ -526,7 +526,7 @@ Ref<OpenXRFutureResult> OpenXRSpatialEntityExtension::discover_spatial_entities(
 	return future_result;
 }
 
-// For calls from GDExtension
+// For calls from FoundryExtension
 Ref<OpenXRFutureResult> OpenXRSpatialEntityExtension::_discover_spatial_entities(RID p_spatial_context, const PackedInt64Array &p_component_types, Ref<OpenXRStructureBase> p_next, const Callable &p_callback) {
 	Vector<XrSpatialComponentTypeEXT> component_types;
 	component_types.resize(p_component_types.size());
@@ -702,7 +702,7 @@ RID OpenXRSpatialEntityExtension::get_spatial_snapshot_context(RID p_spatial_sna
 	return snapshot_data->spatial_context;
 }
 
-// For exposing this to GDExtension
+// For exposing this to FoundryExtension
 uint64_t OpenXRSpatialEntityExtension::_get_spatial_snapshot_handle(RID p_spatial_snapshot) const {
 	return (uint64_t)get_spatial_snapshot_handle(p_spatial_snapshot);
 }
@@ -1074,7 +1074,7 @@ PackedInt32Array OpenXRSpatialEntityExtension::_get_uint32_buffer(RID p_spatial_
 	Vector<uint32_t> buffer = get_uint32_buffer(p_spatial_snapshot, (XrSpatialBufferIdEXT)p_buffer_id);
 
 	if (!buffer.is_empty()) {
-		// Note, we don't have a UINT32 array that we can use with GDScript and using an INT64 array is overkill.
+		// Note, we don't have a UINT32 array that we can use with FoundryScript and using an INT64 array is overkill.
 		// Bit wasteful this but...
 
 		ret.resize(buffer.size());

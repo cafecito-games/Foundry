@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 2: Class "trait_required_method.gd" must implement trait method "Damageable.take_damage()".

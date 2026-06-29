@@ -38,7 +38,7 @@
 #include "core/string/ustring.h"
 
 class RemoteDebuggerPeer : public RefCounted {
-	GDSOFTCLASS(RemoteDebuggerPeer, RefCounted);
+	FOUNDRY_SOFTCLASS(RemoteDebuggerPeer, RefCounted);
 
 protected:
 	int max_queued_messages = 4096;
@@ -57,7 +57,7 @@ public:
 };
 
 class RemoteDebuggerPeerTCP : public RemoteDebuggerPeer {
-	GDSOFTCLASS(RemoteDebuggerPeerTCP, RemoteDebuggerPeer);
+	FOUNDRY_SOFTCLASS(RemoteDebuggerPeerTCP, RemoteDebuggerPeer);
 
 private:
 	Ref<StreamPeerSocket> tcp_client;

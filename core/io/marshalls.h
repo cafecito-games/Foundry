@@ -207,7 +207,7 @@ static inline double decode_double(const uint8_t *p_arr) {
 }
 
 class EncodedObjectAsID : public RefCounted {
-	GDCLASS(EncodedObjectAsID, RefCounted);
+	FOUNDRY_CLASS(EncodedObjectAsID, RefCounted);
 
 	ObjectID id;
 

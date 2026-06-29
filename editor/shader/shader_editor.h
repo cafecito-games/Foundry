@@ -37,7 +37,7 @@ class Button;
 class MenuButton;
 
 class ShaderEditor : public Control {
-	GDCLASS(ShaderEditor, Control);
+	FOUNDRY_CLASS(ShaderEditor, Control);
 
 public:
 	virtual void edit_shader(const Ref<Shader> &p_shader) = 0;

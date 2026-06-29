@@ -833,7 +833,7 @@ namespace Godot
 
         /// <summary>
         /// The identity basis, with no rotation or scaling applied.
-        /// This is used as a replacement for <c>Basis()</c> in GDScript.
+        /// This is used as a replacement for <c>Basis()</c> in FoundryScript.
         /// Do not use <c>new Basis()</c> with no arguments in C#, because it sets all values to zero.
         /// </summary>
         /// <value>Equivalent to <c>new Basis(Vector3.Right, Vector3.Up, Vector3.Back)</c>.</value>

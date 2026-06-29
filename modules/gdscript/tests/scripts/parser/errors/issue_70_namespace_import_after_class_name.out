@@ -1,2 +1,0 @@
-GDTEST_PARSER_ERROR
-"import" declarations must appear before "class_name", "extends", and body declarations.

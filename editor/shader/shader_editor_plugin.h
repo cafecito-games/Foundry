@@ -45,7 +45,7 @@ class HBoxContainer;
 class WindowWrapper;
 
 class ShaderEditorPlugin : public EditorPlugin {
-	GDCLASS(ShaderEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(ShaderEditorPlugin, EditorPlugin);
 
 	struct EditedShader {
 		Ref<Shader> shader;

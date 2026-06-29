@@ -34,7 +34,7 @@
 #include "scene/gui/button.h"
 
 class EditorZoomWidget : public HBoxContainer {
-	GDCLASS(EditorZoomWidget, HBoxContainer);
+	FOUNDRY_CLASS(EditorZoomWidget, HBoxContainer);
 
 	Button *zoom_minus = nullptr;
 	Button *zoom_reset = nullptr;

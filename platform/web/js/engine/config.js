@@ -127,7 +127,7 @@ const InternalConfig = function (initConfig) { // eslint-disable-line no-unused-
 		 * @ignore
 		 * @type {Array.<string>}
 		 */
-		gdextensionLibs: [],
+		foundryextensionLibs: [],
 		/**
 		 * @ignore
 		 * @type {Array.<string>}
@@ -267,7 +267,7 @@ const InternalConfig = function (initConfig) { // eslint-disable-line no-unused-
 		this.experimentalVK = parse('experimentalVK', this.experimentalVK);
 		this.focusCanvas = parse('focusCanvas', this.focusCanvas);
 		this.serviceWorker = parse('serviceWorker', this.serviceWorker);
-		this.gdextensionLibs = parse('gdextensionLibs', this.gdextensionLibs);
+		this.foundryextensionLibs = parse('foundryextensionLibs', this.foundryextensionLibs);
 		this.fileSizes = parse('fileSizes', this.fileSizes);
 		this.emscriptenPoolSize = parse('emscriptenPoolSize', this.emscriptenPoolSize);
 		this.godotPoolSize = parse('godotPoolSize', this.godotPoolSize);
@@ -283,13 +283,13 @@ const InternalConfig = function (initConfig) { // eslint-disable-line no-unused-
 	 */
 	Config.prototype.getModuleConfig = function (loadPath, response) {
 		let r = response;
-		const gdext = this.gdextensionLibs;
+		const gdext = this.foundryextensionLibs;
 		return {
 			'print': this.onPrint,
 			'printErr': this.onPrintError,
 			'thisProgram': this.executable,
 			'noExitRuntime': false,
-			'dynamicLibraries': [`${loadPath}.side.wasm`].concat(this.gdextensionLibs),
+			'dynamicLibraries': [`${loadPath}.side.wasm`].concat(this.foundryextensionLibs),
 			'emscriptenPoolSize': this.emscriptenPoolSize,
 			'instantiateWasm': function (imports, onSuccess) {
 				function done(result) {

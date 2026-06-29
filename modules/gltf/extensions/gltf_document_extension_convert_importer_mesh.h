@@ -35,7 +35,7 @@
 class MeshInstance3D;
 
 class GLTFDocumentExtensionConvertImporterMesh : public GLTFDocumentExtension {
-	GDCLASS(GLTFDocumentExtensionConvertImporterMesh, GLTFDocumentExtension);
+	FOUNDRY_CLASS(GLTFDocumentExtensionConvertImporterMesh, GLTFDocumentExtension);
 
 protected:
 	static void _copy_meta(Object *p_src_object, Object *p_dst_object);

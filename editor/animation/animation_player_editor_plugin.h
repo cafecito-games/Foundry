@@ -45,7 +45,7 @@ class AnimationPlayerEditorPlugin;
 class ImageTexture;
 
 class AnimationPlayerEditor : public EditorDock {
-	GDCLASS(AnimationPlayerEditor, EditorDock);
+	FOUNDRY_CLASS(AnimationPlayerEditor, EditorDock);
 
 	friend AnimationPlayerEditorPlugin;
 
@@ -281,7 +281,7 @@ public:
 };
 
 class AnimationPlayerEditorPlugin : public EditorPlugin {
-	GDCLASS(AnimationPlayerEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(AnimationPlayerEditorPlugin, EditorPlugin);
 
 	friend AnimationPlayerEditor;
 
@@ -321,7 +321,7 @@ public:
 // AnimationTrackKeyEditEditorPlugin
 
 class EditorInspectorPluginAnimationTrackKeyEdit : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginAnimationTrackKeyEdit, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginAnimationTrackKeyEdit, EditorInspectorPlugin);
 
 	AnimationTrackKeyEditEditor *atk_editor = nullptr;
 
@@ -331,7 +331,7 @@ public:
 };
 
 class AnimationTrackKeyEditEditorPlugin : public EditorPlugin {
-	GDCLASS(AnimationTrackKeyEditEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(AnimationTrackKeyEditEditorPlugin, EditorPlugin);
 
 	EditorInspectorPluginAnimationTrackKeyEdit *atk_plugin = nullptr;
 
@@ -347,7 +347,7 @@ public:
 // AnimationMarkerKeyEditEditorPlugin
 
 class EditorInspectorPluginAnimationMarkerKeyEdit : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginAnimationMarkerKeyEdit, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginAnimationMarkerKeyEdit, EditorInspectorPlugin);
 
 	AnimationMarkerKeyEditEditor *amk_editor = nullptr;
 
@@ -357,7 +357,7 @@ public:
 };
 
 class AnimationMarkerKeyEditEditorPlugin : public EditorPlugin {
-	GDCLASS(AnimationMarkerKeyEditEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(AnimationMarkerKeyEditEditorPlugin, EditorPlugin);
 
 	EditorInspectorPluginAnimationMarkerKeyEdit *amk_plugin = nullptr;
 

@@ -52,7 +52,7 @@ class XRPositionalTracker;
 **/
 
 class XRServer : public Object {
-	GDCLASS(XRServer, Object);
+	FOUNDRY_CLASS(XRServer, Object);
 	_THREAD_SAFE_CLASS_
 
 public:
@@ -157,7 +157,7 @@ public:
 		Most VR platforms, and our assumption, is that 1 unit in our virtual world equates to 1 meter in the real mode.
 		This scale basically effects the unit size relationship to real world size.
 
-		I may remove access to this property in GDScript in favor of exposing it on the XROrigin3D node
+		I may remove access to this property in FoundryScript in favor of exposing it on the XROrigin3D node
 	*/
 	double get_world_scale() const;
 	void set_world_scale(double p_world_scale);
@@ -169,7 +169,7 @@ public:
 		in relation to this point.
 
 		Note that the XROrigin3D spatial node in your scene automatically updates this property and it should be used instead of
-		direct access to this property and it therefore is not available in GDScript
+		direct access to this property and it therefore is not available in FoundryScript
 
 		Note: this should not be used in AR and should be ignored by an AR based interface as it would throw what you're looking at in the real world
 		and in the virtual world out of sync

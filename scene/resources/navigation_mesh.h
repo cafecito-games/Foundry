@@ -35,7 +35,7 @@
 #include "servers/navigation_3d/navigation_constants_3d.h"
 
 class NavigationMesh : public Resource {
-	GDCLASS(NavigationMesh, Resource);
+	FOUNDRY_CLASS(NavigationMesh, Resource);
 	RWLock rwlock;
 
 	Vector<Vector3> vertices;

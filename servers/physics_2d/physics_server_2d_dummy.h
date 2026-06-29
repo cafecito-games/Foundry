@@ -33,7 +33,7 @@
 #include "physics_server_2d.h"
 
 class PhysicsDirectBodyState2DDummy : public PhysicsDirectBodyState2D {
-	GDCLASS(PhysicsDirectBodyState2DDummy, PhysicsDirectBodyState2D);
+	FOUNDRY_CLASS(PhysicsDirectBodyState2DDummy, PhysicsDirectBodyState2D);
 
 	PhysicsDirectSpaceState2D *space_state_dummy = nullptr;
 
@@ -111,7 +111,7 @@ public:
 };
 
 class PhysicsDirectSpaceState2DDummy : public PhysicsDirectSpaceState2D {
-	GDCLASS(PhysicsDirectSpaceState2DDummy, PhysicsDirectSpaceState2D);
+	FOUNDRY_CLASS(PhysicsDirectSpaceState2DDummy, PhysicsDirectSpaceState2D);
 
 public:
 	virtual bool intersect_ray(const RayParameters &p_parameters, RayResult &r_result) override { return false; }
@@ -125,7 +125,7 @@ public:
 };
 
 class PhysicsServer2DDummy : public PhysicsServer2D {
-	GDCLASS(PhysicsServer2DDummy, PhysicsServer2D);
+	FOUNDRY_CLASS(PhysicsServer2DDummy, PhysicsServer2D);
 
 	PhysicsDirectSpaceState2DDummy *space_state_dummy = nullptr;
 	PhysicsDirectBodyState2DDummy *body_state_dummy = nullptr;

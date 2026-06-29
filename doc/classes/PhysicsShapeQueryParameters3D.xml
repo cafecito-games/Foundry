@@ -34,7 +34,7 @@
 		<member name="shape_rid" type="RID" setter="set_shape_rid" getter="get_shape_rid" default="RID()">
 			The queried shape's [RID] that will be used for collision/intersection queries. Use this over [member shape] if you want to optimize for performance using the Servers API:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			var shape_rid = PhysicsServer3D.sphere_shape_create()
 			var radius = 2.0
 			PhysicsServer3D.shape_set_data(shape_rid, radius)
@@ -46,7 +46,7 @@
 
 			# Release the shape when done with physics queries.
 			PhysicsServer3D.free_rid(shape_rid)
-			[/gdscript]
+			[/foundry_script]
 			[csharp]
 			RID shapeRid = PhysicsServer3D.SphereShapeCreate();
 			float radius = 2.0f;

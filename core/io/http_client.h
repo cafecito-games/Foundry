@@ -37,7 +37,7 @@
 #include "core/object/ref_counted.h"
 
 class HTTPClient : public RefCounted {
-	GDCLASS(HTTPClient, RefCounted);
+	FOUNDRY_CLASS(HTTPClient, RefCounted);
 
 public:
 	enum ResponseCode {

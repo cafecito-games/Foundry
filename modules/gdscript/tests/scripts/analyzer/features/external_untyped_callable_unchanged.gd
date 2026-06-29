@@ -1,5 +1,0 @@
-const Provider = preload("external_untyped_callable_unchanged_provider.notest.gd")
-
-func test() -> void:
-	var typed: Callable[[int], void] = Provider.new().get_cb()
-	print(typed.is_valid())

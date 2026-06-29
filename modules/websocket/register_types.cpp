@@ -66,7 +66,7 @@ void initialize_websocket_module(ModuleInitializationLevel p_level) {
 		WSLPeer::initialize();
 #endif
 
-		GDREGISTER_CLASS(WebSocketMultiplayerPeer);
+		FOUNDRY_REGISTER_CLASS(WebSocketMultiplayerPeer);
 		ClassDB::register_custom_instance_class<WebSocketPeer>();
 
 		EngineDebugger::register_uri_handler("ws://", RemoteDebuggerPeerWebSocket::create);

@@ -8,7 +8,7 @@
 		An example expression text using the built-in math functions could be [code]sqrt(pow(3, 2) + pow(4, 2))[/code].
 		In the following example we use a [LineEdit] node to write our expression and show the result.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var expression = Expression.new()
 
 		func _ready():
@@ -22,7 +22,7 @@
 			var result = expression.execute()
 			if not expression.has_execute_failed():
 				$LineEdit.text = str(result)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		private Expression _expression = new Expression();
 

@@ -37,8 +37,8 @@ void initialize_ogg_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(OggPacketSequence);
-	GDREGISTER_CLASS(OggPacketSequencePlayback);
+	FOUNDRY_REGISTER_CLASS(OggPacketSequence);
+	FOUNDRY_REGISTER_CLASS(OggPacketSequencePlayback);
 }
 
 void uninitialize_ogg_module(ModuleInitializationLevel p_level) {

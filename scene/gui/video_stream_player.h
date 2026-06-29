@@ -35,7 +35,7 @@
 #include "servers/audio/audio_rb_resampler.h"
 
 class VideoStreamPlayer : public Control {
-	GDCLASS(VideoStreamPlayer, Control);
+	FOUNDRY_CLASS(VideoStreamPlayer, Control);
 
 	Ref<VideoStreamPlayback> playback;
 	Ref<VideoStream> stream;

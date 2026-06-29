@@ -37,7 +37,7 @@
 class BitMap;
 
 class CompressedTexture2D : public Texture2D {
-	GDCLASS(CompressedTexture2D, Texture2D);
+	FOUNDRY_CLASS(CompressedTexture2D, Texture2D);
 
 public:
 	enum DataFormat {
@@ -111,7 +111,7 @@ public:
 };
 
 class ResourceFormatLoaderCompressedTexture2D : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderCompressedTexture2D, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderCompressedTexture2D, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -121,7 +121,7 @@ public:
 };
 
 class CompressedTextureLayered : public TextureLayered {
-	GDCLASS(CompressedTextureLayered, TextureLayered);
+	FOUNDRY_CLASS(CompressedTextureLayered, TextureLayered);
 
 public:
 	enum DataFormat {
@@ -177,7 +177,7 @@ public:
 };
 
 class ResourceFormatLoaderCompressedTextureLayered : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderCompressedTextureLayered, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderCompressedTextureLayered, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;
@@ -187,14 +187,14 @@ public:
 };
 
 class CompressedTexture2DArray : public CompressedTextureLayered {
-	GDCLASS(CompressedTexture2DArray, CompressedTextureLayered)
+	FOUNDRY_CLASS(CompressedTexture2DArray, CompressedTextureLayered)
 public:
 	CompressedTexture2DArray() :
 			CompressedTextureLayered(LAYERED_TYPE_2D_ARRAY) {}
 };
 
 class CompressedCubemap : public CompressedTextureLayered {
-	GDCLASS(CompressedCubemap, CompressedTextureLayered);
+	FOUNDRY_CLASS(CompressedCubemap, CompressedTextureLayered);
 
 public:
 	CompressedCubemap() :
@@ -202,7 +202,7 @@ public:
 };
 
 class CompressedCubemapArray : public CompressedTextureLayered {
-	GDCLASS(CompressedCubemapArray, CompressedTextureLayered);
+	FOUNDRY_CLASS(CompressedCubemapArray, CompressedTextureLayered);
 
 public:
 	CompressedCubemapArray() :
@@ -210,7 +210,7 @@ public:
 };
 
 class CompressedTexture3D : public Texture3D {
-	GDCLASS(CompressedTexture3D, Texture3D);
+	FOUNDRY_CLASS(CompressedTexture3D, Texture3D);
 
 public:
 	enum DataFormat {
@@ -263,7 +263,7 @@ public:
 };
 
 class ResourceFormatLoaderCompressedTexture3D : public ResourceFormatLoader {
-	GDSOFTCLASS(ResourceFormatLoaderCompressedTexture3D, ResourceFormatLoader);
+	FOUNDRY_SOFTCLASS(ResourceFormatLoaderCompressedTexture3D, ResourceFormatLoader);
 
 public:
 	virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE) override;

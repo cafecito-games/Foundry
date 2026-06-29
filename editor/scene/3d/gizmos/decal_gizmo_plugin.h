@@ -35,7 +35,7 @@
 class Gizmo3DHelper;
 
 class DecalGizmoPlugin : public EditorNode3DGizmoPlugin {
-	GDCLASS(DecalGizmoPlugin, EditorNode3DGizmoPlugin);
+	FOUNDRY_CLASS(DecalGizmoPlugin, EditorNode3DGizmoPlugin);
 
 	Ref<Gizmo3DHelper> helper;
 

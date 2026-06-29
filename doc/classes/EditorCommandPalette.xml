@@ -7,12 +7,12 @@
 		Object that holds all the available Commands and their shortcuts text. These Commands can be accessed through [b]Editor &gt; Command Palette[/b] menu.
 		Command key names use slash delimiters to distinguish sections, for example: [code]"example/command1"[/code] then [code]example[/code] will be the section name.
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var command_palette = EditorInterface.get_command_palette()
 		# external_command is a function that will be called with the command is executed.
 		var command_callable = Callable(self, "external_command").bind(arguments)
 		command_palette.add_command("command", "test/command",command_callable)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		EditorCommandPalette commandPalette = EditorInterface.Singleton.GetCommandPalette();
 		// ExternalCommand is a function that will be called with the command is executed.

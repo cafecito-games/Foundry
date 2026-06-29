@@ -34,7 +34,7 @@
 #include "servers/audio/audio_stream.h"
 
 class AudioStreamGenerator : public AudioStream {
-	GDCLASS(AudioStreamGenerator, AudioStream);
+	FOUNDRY_CLASS(AudioStreamGenerator, AudioStream);
 
 public:
 	enum AudioStreamGeneratorMixRate {
@@ -73,7 +73,7 @@ public:
 };
 
 class AudioStreamGeneratorPlayback : public AudioStreamPlaybackResampled {
-	GDCLASS(AudioStreamGeneratorPlayback, AudioStreamPlaybackResampled);
+	FOUNDRY_CLASS(AudioStreamGeneratorPlayback, AudioStreamPlaybackResampled);
 	friend class AudioStreamGenerator;
 	RingBuffer<AudioFrame> buffer;
 	int skips;

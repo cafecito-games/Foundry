@@ -355,7 +355,7 @@
 			<param index="0" name="b" type="Vector2" />
 			<description>
 				Returns a new vector resulting from projecting this vector onto the given vector [param b]. The resulting new vector is parallel to [param b]. See also [method slide].
-				[b]Note:[/b] If the vector [param b] is a zero vector, the components of the resulting new vector will be [constant @GDScript.NAN].
+				[b]Note:[/b] If the vector [param b] is a zero vector, the components of the resulting new vector will be [constant @FoundryScript.NAN].
 			</description>
 		</method>
 		<method name="reflect" qualifiers="const">
@@ -439,7 +439,7 @@
 			One vector, a vector with all components set to [code]1[/code].
 		</constant>
 		<constant name="INF" value="Vector2(inf, inf)">
-			Infinity vector, a vector with all components set to [constant @GDScript.INF].
+			Infinity vector, a vector with all components set to [constant @FoundryScript.INF].
 		</constant>
 		<constant name="LEFT" value="Vector2(-1, 0)">
 			Left unit vector. Represents the direction of left.
@@ -461,7 +461,7 @@
 			<description>
 				Returns [code]true[/code] if the vectors are not equal.
 				[b]Note:[/b] Due to floating-point precision errors, consider using [method is_equal_approx] instead, which is more reliable.
-				[b]Note:[/b] Vectors with [constant @GDScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
+				[b]Note:[/b] Vectors with [constant @FoundryScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
 			</description>
 		</operator>
 		<operator name="operator *">
@@ -546,7 +546,7 @@
 			<param index="0" name="right" type="Vector2" />
 			<description>
 				Compares two [Vector2] vectors by first checking if the X value of the left vector is less than the X value of the [param right] vector. If the X values are exactly equal, then it repeats this check with the Y values of the two vectors. This operator is useful for sorting vectors.
-				[b]Note:[/b] Vectors with [constant @GDScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
+				[b]Note:[/b] Vectors with [constant @FoundryScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
 			</description>
 		</operator>
 		<operator name="operator &lt;=">
@@ -554,7 +554,7 @@
 			<param index="0" name="right" type="Vector2" />
 			<description>
 				Compares two [Vector2] vectors by first checking if the X value of the left vector is less than or equal to the X value of the [param right] vector. If the X values are exactly equal, then it repeats this check with the Y values of the two vectors. This operator is useful for sorting vectors.
-				[b]Note:[/b] Vectors with [constant @GDScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
+				[b]Note:[/b] Vectors with [constant @FoundryScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
 			</description>
 		</operator>
 		<operator name="operator ==">
@@ -563,7 +563,7 @@
 			<description>
 				Returns [code]true[/code] if the vectors are exactly equal.
 				[b]Note:[/b] Due to floating-point precision errors, consider using [method is_equal_approx] instead, which is more reliable.
-				[b]Note:[/b] Vectors with [constant @GDScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
+				[b]Note:[/b] Vectors with [constant @FoundryScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
 			</description>
 		</operator>
 		<operator name="operator &gt;">
@@ -571,7 +571,7 @@
 			<param index="0" name="right" type="Vector2" />
 			<description>
 				Compares two [Vector2] vectors by first checking if the X value of the left vector is greater than the X value of the [param right] vector. If the X values are exactly equal, then it repeats this check with the Y values of the two vectors. This operator is useful for sorting vectors.
-				[b]Note:[/b] Vectors with [constant @GDScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
+				[b]Note:[/b] Vectors with [constant @FoundryScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
 			</description>
 		</operator>
 		<operator name="operator &gt;=">
@@ -579,7 +579,7 @@
 			<param index="0" name="right" type="Vector2" />
 			<description>
 				Compares two [Vector2] vectors by first checking if the X value of the left vector is greater than or equal to the X value of the [param right] vector. If the X values are exactly equal, then it repeats this check with the Y values of the two vectors. This operator is useful for sorting vectors.
-				[b]Note:[/b] Vectors with [constant @GDScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
+				[b]Note:[/b] Vectors with [constant @FoundryScript.NAN] elements don't behave the same as other vectors. Therefore, the results from this operator may not be accurate if NaNs are included.
 			</description>
 		</operator>
 		<operator name="operator []">

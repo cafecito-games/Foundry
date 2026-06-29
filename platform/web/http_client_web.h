@@ -37,10 +37,10 @@ extern "C" {
 #endif
 
 typedef enum {
-	GODOT_JS_FETCH_STATE_REQUESTING = 0,
-	GODOT_JS_FETCH_STATE_BODY = 1,
-	GODOT_JS_FETCH_STATE_DONE = 2,
-	GODOT_JS_FETCH_STATE_ERROR = -1,
+	FOUNDRY_JS_FETCH_STATE_REQUESTING = 0,
+	FOUNDRY_JS_FETCH_STATE_BODY = 1,
+	FOUNDRY_JS_FETCH_STATE_DONE = 2,
+	FOUNDRY_JS_FETCH_STATE_ERROR = -1,
 } godot_js_fetch_state_t;
 
 extern int godot_js_fetch_create(const char *p_method, const char *p_url, const char **p_headers, int p_headers_len, const uint8_t *p_body, int p_body_len);
@@ -56,7 +56,7 @@ extern int godot_js_fetch_is_chunked(int p_id);
 #endif
 
 class HTTPClientWeb : public HTTPClient {
-	GDSOFTCLASS(HTTPClientWeb, HTTPClient);
+	FOUNDRY_SOFTCLASS(HTTPClientWeb, HTTPClient);
 
 private:
 	int js_id = 0;

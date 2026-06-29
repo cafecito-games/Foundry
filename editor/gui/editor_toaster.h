@@ -37,7 +37,7 @@ class PanelContainer;
 class StyleBoxFlat;
 
 class EditorToaster : public HBoxContainer {
-	GDCLASS(EditorToaster, HBoxContainer);
+	FOUNDRY_CLASS(EditorToaster, HBoxContainer);
 
 public:
 	enum Severity {

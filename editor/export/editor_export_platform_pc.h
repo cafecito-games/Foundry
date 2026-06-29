@@ -35,7 +35,7 @@
 class ImageTexture;
 
 class EditorExportPlatformPC : public EditorExportPlatform {
-	GDCLASS(EditorExportPlatformPC, EditorExportPlatform);
+	FOUNDRY_CLASS(EditorExportPlatformPC, EditorExportPlatform);
 
 private:
 	Ref<ImageTexture> logo;

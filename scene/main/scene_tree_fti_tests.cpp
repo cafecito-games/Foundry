@@ -30,7 +30,7 @@
 
 #ifndef _3D_DISABLED
 
-#ifdef GODOT_SCENE_TREE_FTI_VERIFY
+#ifdef FOUNDRY_SCENE_TREE_FTI_VERIFY
 #include "scene_tree_fti_tests.h"
 
 #include "scene/3d/node_3d.h"
@@ -238,9 +238,9 @@ void SceneTreeFTITests::frame_update(Node *p_root, uint32_t p_half_frame, float 
 
 SceneTreeFTITests::SceneTreeFTITests(SceneTreeFTI &p_fti) :
 		_fti(p_fti) {
-	print_line("SceneTreeFTI : GODOT_SCENE_TREE_FTI_VERIFY defined");
+	print_line("SceneTreeFTI : FOUNDRY_SCENE_TREE_FTI_VERIFY defined");
 }
 
-#endif // def GODOT_SCENE_TREE_FTI_VERIFY
+#endif // def FOUNDRY_SCENE_TREE_FTI_VERIFY
 
 #endif // ndef _3D_DISABLED

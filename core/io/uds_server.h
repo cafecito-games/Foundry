@@ -34,7 +34,7 @@
 #include "core/io/stream_peer_uds.h"
 
 class UDSServer : public SocketServer {
-	GDCLASS(UDSServer, SocketServer);
+	FOUNDRY_CLASS(UDSServer, SocketServer);
 
 protected:
 	static void _bind_methods();

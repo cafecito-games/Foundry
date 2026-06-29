@@ -51,7 +51,7 @@ class HSeparator;
 class MenuButton;
 
 class EditorAssetLibraryItem : public PanelContainer {
-	GDCLASS(EditorAssetLibraryItem, PanelContainer);
+	FOUNDRY_CLASS(EditorAssetLibraryItem, PanelContainer);
 
 	TextureButton *icon = nullptr;
 	LinkButton *title = nullptr;
@@ -91,7 +91,7 @@ public:
 };
 
 class EditorAssetLibraryItemDescription : public ConfirmationDialog {
-	GDCLASS(EditorAssetLibraryItemDescription, ConfirmationDialog);
+	FOUNDRY_CLASS(EditorAssetLibraryItemDescription, ConfirmationDialog);
 
 	EditorAssetLibraryItem *item = nullptr;
 	RichTextLabel *description = nullptr;
@@ -139,7 +139,7 @@ public:
 };
 
 class EditorAssetLibraryItemDownload : public MarginContainer {
-	GDCLASS(EditorAssetLibraryItemDownload, MarginContainer);
+	FOUNDRY_CLASS(EditorAssetLibraryItemDownload, MarginContainer);
 
 	PanelContainer *panel = nullptr;
 	TextureRect *icon = nullptr;
@@ -183,7 +183,7 @@ public:
 };
 
 class EditorAssetLibrary : public PanelContainer {
-	GDCLASS(EditorAssetLibrary, PanelContainer);
+	FOUNDRY_CLASS(EditorAssetLibrary, PanelContainer);
 
 	String host;
 
@@ -338,7 +338,7 @@ public:
 };
 
 class AssetLibraryEditorPlugin : public EditorPlugin {
-	GDCLASS(AssetLibraryEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(AssetLibraryEditorPlugin, EditorPlugin);
 
 	EditorAssetLibrary *addon_library = nullptr;
 

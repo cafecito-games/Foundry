@@ -41,7 +41,7 @@ class Texture2D;
 class AccessibilityDriver;
 
 class DisplayServer : public Object {
-	GDCLASS(DisplayServer, Object)
+	FOUNDRY_CLASS(DisplayServer, Object)
 
 	static DisplayServer *singleton;
 	static bool hidpi_allowed;

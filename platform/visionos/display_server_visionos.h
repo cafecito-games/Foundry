@@ -33,7 +33,7 @@
 #include "drivers/apple_embedded/display_server_apple_embedded.h"
 
 class DisplayServerVisionOS : public DisplayServerAppleEmbedded {
-	GDSOFTCLASS(DisplayServerVisionOS, DisplayServerAppleEmbedded);
+	FOUNDRY_SOFTCLASS(DisplayServerVisionOS, DisplayServerAppleEmbedded);
 
 	_THREAD_SAFE_CLASS_
 

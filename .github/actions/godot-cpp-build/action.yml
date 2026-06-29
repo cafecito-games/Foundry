@@ -31,7 +31,7 @@ runs:
 
     - name: Extract API
       shell: sh
-      run: ${{ inputs.bin }} --headless --dump-gdextension-interface --dump-extension-api
+      run: ${{ inputs.bin }} --headless --dump-foundryextension-interface --dump-extension-api
 
     - name: SCons Build
       shell: sh

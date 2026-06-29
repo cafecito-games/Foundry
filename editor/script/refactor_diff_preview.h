@@ -111,7 +111,7 @@ public:
 };
 
 class RefactorDiffPreviewDialog : public ConfirmationDialog {
-	GDCLASS(RefactorDiffPreviewDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(RefactorDiffPreviewDialog, ConfirmationDialog);
 
 	enum TreeColumn {
 		COLUMN_FILE,

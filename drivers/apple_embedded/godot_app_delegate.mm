@@ -173,7 +173,7 @@ static NSMutableArray<GDTAppDelegateServiceProtocol *> *services = nil;
 }
 
 // UIApplication lifecycle has become deprecated in favor of UIScene lifecycle
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
 
 - (void)applicationDidBecomeActive:(UIApplication *)application {
 	for (GDTAppDelegateServiceProtocol *service in services) {
@@ -517,4 +517,4 @@ GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
 
 @end
 
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP

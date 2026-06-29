@@ -34,7 +34,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"
-#include "core/extension/gdextension.h"
+#include "core/extension/foundry_extension.h"
 #include "core/io/delta_encoding.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access_encrypted.h"
@@ -61,20 +61,20 @@
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/texture.h"
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-#include "modules/gdscript/gdscript_autoload_index.h"
-#endif // MODULE_GDSCRIPT_ENABLED
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/fs_autoload_index.h"
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-static bool _has_script_owned_autoload_entries(const GDScriptAutoloadIndex &p_index) {
-	for (const GDScriptAutoloadIndexEntry &entry : p_index.get_entries()) {
-		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+static bool _has_script_owned_autoload_entries(const FSAutoloadIndex &p_index) {
+	for (const FSAutoloadIndexEntry &entry : p_index.get_entries()) {
+		if (entry.source == FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
 			return true;
 		}
 	}
 	return false;
 }
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 class EditorExportSaveProxy {
 	HashSet<String> saved_paths;
@@ -475,7 +475,7 @@ Ref<Texture2D> EditorExportPlatform::get_option_icon(int p_index) const {
 }
 
 String EditorExportPlatform::find_export_template(const String &template_file_name, String *err) const {
-	String current_version = GODOT_VERSION_FULL_CONFIG;
+	String current_version = FOUNDRY_VERSION_FULL_CONFIG;
 	String template_path = EditorPaths::get_singleton()->get_export_templates_dir().path_join(current_version).path_join(template_file_name);
 
 	if (FileAccess::exists(template_path)) {
@@ -684,7 +684,7 @@ EditorExportPlatform::ExportNotifier::ExportNotifier(EditorExportPlatform &p_pla
 	//initial export plugin callback
 	for (int i = 0; i < export_plugins.size(); i++) {
 		export_plugins.write[i]->set_export_preset(p_preset);
-		if (GDVIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_begin)) {
+		if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_begin)) {
 			PackedStringArray features_psa;
 			for (const String &feature : features) {
 				features_psa.push_back(feature);
@@ -699,7 +699,7 @@ EditorExportPlatform::ExportNotifier::ExportNotifier(EditorExportPlatform &p_pla
 EditorExportPlatform::ExportNotifier::~ExportNotifier() {
 	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	for (int i = 0; i < export_plugins.size(); i++) {
-		if (GDVIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_end)) {
+		if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_end)) {
 			export_plugins.write[i]->_export_end_script();
 		} else {
 			export_plugins.write[i]->_export_end();
@@ -1052,7 +1052,7 @@ Dictionary EditorExportPlatform::get_internal_export_files(const Ref<EditorExpor
 						export_ok = true;
 					}
 				} else {
-					String current_version = GODOT_VERSION_FULL_CONFIG;
+					String current_version = FOUNDRY_VERSION_FULL_CONFIG;
 					String template_path = EditorPaths::get_singleton()->get_export_templates_dir().path_join(current_version);
 					if (p_debug && p_preset->has("custom_template/debug") && p_preset->get("custom_template/debug") != "") {
 						template_path = p_preset->get("custom_template/debug").operator String().get_base_dir();
@@ -1090,23 +1090,23 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 	r_files.clear();
 
 	r_files.push_back(ProjectSettings::get_singleton()->get_global_class_list_path());
-#ifdef MODULE_GDSCRIPT_ENABLED
-	GDScriptAutoloadIndex autoload_index;
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	FSAutoloadIndex autoload_index;
 	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
 	if (autoload_index_err != OK) {
 		return autoload_index_err;
 	}
-	const String autoload_cache_path = p_autoload_cache_path.is_empty() ? GDScriptAutoloadIndex::get_cache_path() : p_autoload_cache_path;
+	const String autoload_cache_path = p_autoload_cache_path.is_empty() ? FSAutoloadIndex::get_cache_path() : p_autoload_cache_path;
 	const Error autoload_cache_err = autoload_index.save_to_cache(autoload_cache_path);
 	if (autoload_cache_err != OK) {
 		if (p_fail_on_required_autoload_cache && _has_script_owned_autoload_entries(autoload_index)) {
 			return autoload_cache_err;
 		}
-		WARN_PRINT(vformat("Could not save GDScript autoload index cache: %s.", error_names[autoload_cache_err]));
+		WARN_PRINT(vformat("Could not save FoundryScript autoload index cache: %s.", error_names[autoload_cache_err]));
 	} else {
 		r_files.push_back(autoload_cache_path);
 	}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	String icon = ResourceUID::ensure_path(get_project_setting(p_preset, "application/config/icon"));
 	String splash = ResourceUID::ensure_path(get_project_setting(p_preset, "application/boot_splash/image"));
@@ -1121,7 +1121,7 @@ Error EditorExportPlatform::collect_forced_export_files(const Ref<EditorExportPr
 		r_files.push_back(resource_cache_file);
 	}
 
-	String extension_list_config_file = GDExtension::get_extension_list_config_file();
+	String extension_list_config_file = FoundryExtension::get_extension_list_config_file();
 	if (FileAccess::exists(extension_list_config_file)) {
 		r_files.push_back(extension_list_config_file);
 	}
@@ -1139,18 +1139,18 @@ Vector<String> EditorExportPlatform::get_forced_export_files(const Ref<EditorExp
 Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths) {
 	r_paths.clear();
 
-#ifdef MODULE_GDSCRIPT_ENABLED
-	GDScriptAutoloadIndex autoload_index;
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	FSAutoloadIndex autoload_index;
 	const Error autoload_index_err = autoload_index.rebuild_from_project_settings_and_script_annotations();
 	if (autoload_index_err != OK) {
 		return autoload_index_err;
 	}
-	for (const GDScriptAutoloadIndexEntry &entry : autoload_index.get_entries()) {
-		if (entry.source == GDScriptAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
+	for (const FSAutoloadIndexEntry &entry : autoload_index.get_entries()) {
+		if (entry.source == FSAutoloadIndexEntry::SOURCE_SCRIPT_ANNOTATION) {
 			r_paths.push_back(entry.path);
 		}
 	}
-#endif // MODULE_GDSCRIPT_ENABLED
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	List<PropertyInfo> props;
 	ProjectSettings *project_settings = ProjectSettings::get_singleton();
@@ -1478,7 +1478,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 		bool do_export = true;
 		for (int i = 0; i < export_plugins.size(); i++) {
-			if (GDVIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_file)) {
+			if (FOUNDRY_VIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_file)) {
 				export_plugins.write[i]->_export_file_script(path, type, features_psa);
 			} else {
 				export_plugins.write[i]->_export_file(path, type, features);
@@ -1732,12 +1732,12 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	Vector<String> forced_export;
 	err = collect_forced_export_files(p_preset, forced_export, true);
 	if (err != OK) {
-		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not collect forced export files for GDScript autoload metadata: %s."), error_names[err]));
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not collect forced export files for FoundryScript autoload metadata: %s."), error_names[err]));
 		return err;
 	}
 	for (int i = 0; i < forced_export.size(); i++) {
 		Vector<uint8_t> array;
-		if (GDExtension::get_extension_list_config_file() == forced_export[i]) {
+		if (FoundryExtension::get_extension_list_config_file() == forced_export[i]) {
 			array = _filter_extension_list_config_file(forced_export[i], paths);
 			if (array.is_empty()) {
 				continue;
@@ -2053,9 +2053,9 @@ Dictionary EditorExportPlatform::_save_zip_patch(const Ref<EditorExportPreset> &
 bool EditorExportPlatform::_store_header(Ref<FileAccess> p_fd, bool p_enc, bool p_sparse, uint64_t &r_file_base_ofs, uint64_t &r_dir_base_ofs) {
 	p_fd->store_32(PACK_HEADER_MAGIC);
 	p_fd->store_32(PACK_FORMAT_VERSION);
-	p_fd->store_32(GODOT_VERSION_MAJOR);
-	p_fd->store_32(GODOT_VERSION_MINOR);
-	p_fd->store_32(GODOT_VERSION_PATCH);
+	p_fd->store_32(FOUNDRY_VERSION_MAJOR);
+	p_fd->store_32(FOUNDRY_VERSION_MINOR);
+	p_fd->store_32(FOUNDRY_VERSION_PATCH);
 
 	uint32_t pack_flags = PACK_REL_FILEBASE;
 	if (p_enc) {

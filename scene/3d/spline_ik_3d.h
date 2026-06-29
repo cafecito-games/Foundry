@@ -34,7 +34,7 @@
 #include "scene/3d/path_3d.h"
 
 class SplineIK3D : public ChainIK3D {
-	GDCLASS(SplineIK3D, ChainIK3D);
+	FOUNDRY_CLASS(SplineIK3D, ChainIK3D);
 
 public:
 	struct SplineIK3DSetting : public ChainIK3DSetting {

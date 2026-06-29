@@ -34,7 +34,7 @@
 #include "core/object/ref_counted.h"
 
 class UndoRedo : public Object {
-	GDCLASS(UndoRedo, Object);
+	FOUNDRY_CLASS(UndoRedo, Object);
 	OBJ_SAVE_TYPE(UndoRedo);
 
 public:

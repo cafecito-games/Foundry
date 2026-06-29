@@ -33,7 +33,7 @@
 #include "scene/resources/material.h"
 
 class GLTFTextureSampler : public Resource {
-	GDCLASS(GLTFTextureSampler, Resource);
+	FOUNDRY_CLASS(GLTFTextureSampler, Resource);
 
 public:
 	enum FilterMode {

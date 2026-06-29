@@ -37,7 +37,7 @@
 #include "scene/resources/texture.h"
 
 class NoiseTexture3D : public Texture3D {
-	GDCLASS(NoiseTexture3D, Texture3D);
+	FOUNDRY_CLASS(NoiseTexture3D, Texture3D);
 
 private:
 	Thread noise_thread;

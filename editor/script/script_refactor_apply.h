@@ -34,7 +34,7 @@
 
 #include "core/string/ustring.h"
 #include "core/templates/vector.h"
-#include "modules/gdscript/editor/gdscript_refactoring.h"
+#include "modules/foundry_script/editor/fs_refactoring.h"
 
 class CodeEdit;
 

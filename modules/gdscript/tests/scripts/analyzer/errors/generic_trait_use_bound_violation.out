@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 6: Type argument "int" does not satisfy the bound "RefCounted" of type parameter "T".

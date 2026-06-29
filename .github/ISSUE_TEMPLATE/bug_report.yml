@@ -10,7 +10,7 @@ body:
         - The golden rule is to **always open *one* issue for *one* bug**. If you notice several bugs and want to report them, make sure to create one new issue for each of them.
         - Search [open](https://github.com/godotengine/godot/issues) and [closed](https://github.com/godotengine/godot/issues?q=is%3Aissue+is%3Aclosed) issues to ensure it has not already been reported. If you don't find a relevant match or if you're unsure, don't hesitate to **open a new issue**. The bugsquad will handle it from there if it's a duplicate.
         - Verify that you are using a [supported Godot version](https://docs.godotengine.org/en/latest/about/release_policy.html). Please always check if your issue is reproducible in the latest version – it may already have been fixed!
-        - If you use a custom build, please test if your issue is reproducible in official builds too. Likewise if you use any C++ modules, GDExtensions, or editor plugins, you should check if the bug is reproducible in a project without these.
+        - If you use a custom build, please test if your issue is reproducible in official builds too. Likewise if you use any C++ modules, FoundryExtensions, or editor plugins, you should check if the bug is reproducible in a project without these.
 
   - type: textarea
     attributes:
@@ -45,7 +45,7 @@ body:
       label: Issue description
       description: |
         Describe your issue briefly. What doesn't work, and how do you expect it to work instead?
-        You can include images or videos with drag and drop, and format code blocks or logs with <code>\`\`\`</code> tags, on separate lines before and after the text. (Use <code>\`\`\`gdscript</code> to add GDScript syntax highlighting.)
+        You can include images or videos with drag and drop, and format code blocks or logs with <code>\`\`\`</code> tags, on separate lines before and after the text. (Use <code>\`\`\`foundry_script</code> to add FoundryScript syntax highlighting.)
         Please do not add code examples or error messages as screenshots, but as text, this helps searching for issues and testing the code. If you are reporting a bug in the editor interface, like the script editor, please provide both a screenshot *and* the text of the code to help with testing.
     validations:
       required: true
@@ -63,10 +63,10 @@ body:
     attributes:
       label: Minimal reproduction project (MRP)
       description: |
-        - A small Godot project which reproduces the issue, with no unnecessary files included. Be sure to not include the `.godot` folder in the archive (but keep `project.godot`).
+        - A small Godot project which reproduces the issue, with no unnecessary files included. Be sure to not include the `.godot` folder in the archive (but keep `project.foundry`).
         - Having an MRP is very important for contributors to be able to reproduce the bug in the same way that you are experiencing it. When testing a potential fix for the issue, contributors will use the MRP to validate that the fix is working as intended.
         - If the reproduction steps are not project dependent (e.g. the bug is visible in a brand new project), you can write "N/A" in the field.
         - Drag and drop a ZIP archive to upload it (max 10 MB). **Do not select another field until the project is done uploading.**
-        - **Note for C# users:** If your issue is *not* C#-specific, please upload a minimal reproduction project written in GDScript. This will make it easier for contributors to reproduce the issue locally as not everyone has a .NET setup available.
+        - **Note for C# users:** If your issue is *not* C#-specific, please upload a minimal reproduction project written in FoundryScript. This will make it easier for contributors to reproduce the issue locally as not everyone has a .NET setup available.
     validations:
       required: true

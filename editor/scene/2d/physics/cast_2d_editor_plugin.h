@@ -36,7 +36,7 @@
 class CanvasItemEditor;
 
 class Cast2DEditor : public Control {
-	GDCLASS(Cast2DEditor, Control);
+	FOUNDRY_CLASS(Cast2DEditor, Control);
 
 	CanvasItemEditor *canvas_item_editor = nullptr;
 	Node2D *node = nullptr;
@@ -56,7 +56,7 @@ public:
 };
 
 class Cast2DEditorPlugin : public EditorPlugin {
-	GDCLASS(Cast2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(Cast2DEditorPlugin, EditorPlugin);
 
 	Cast2DEditor *cast_2d_editor = nullptr;
 

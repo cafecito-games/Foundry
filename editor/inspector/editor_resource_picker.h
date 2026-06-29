@@ -42,7 +42,7 @@ class Tree;
 class TreeItem;
 
 class EditorResourcePicker : public HBoxContainer {
-	GDCLASS(EditorResourcePicker, HBoxContainer);
+	FOUNDRY_CLASS(EditorResourcePicker, HBoxContainer);
 
 	String base_type;
 	Ref<Resource> edited_resource;
@@ -132,8 +132,8 @@ protected:
 
 	void set_assign_button_min_size(const Size2i &p_size);
 
-	GDVIRTUAL1(_set_create_options, Object *)
-	GDVIRTUAL1R(bool, _handle_menu_selected, int)
+	FOUNDRY_VIRTUAL1(_set_create_options, Object *)
+	FOUNDRY_VIRTUAL1R(bool, _handle_menu_selected, int)
 
 public:
 	void set_base_type(const String &p_base_type);
@@ -164,7 +164,7 @@ public:
 };
 
 class EditorScriptPicker : public EditorResourcePicker {
-	GDCLASS(EditorScriptPicker, EditorResourcePicker);
+	FOUNDRY_CLASS(EditorScriptPicker, EditorResourcePicker);
 
 	enum ExtraMenuOption {
 		OBJ_MENU_NEW_SCRIPT = 50,
@@ -185,7 +185,7 @@ public:
 };
 
 class EditorShaderPicker : public EditorResourcePicker {
-	GDCLASS(EditorShaderPicker, EditorResourcePicker);
+	FOUNDRY_CLASS(EditorShaderPicker, EditorResourcePicker);
 
 	enum ExtraMenuOption {
 		OBJ_MENU_NEW_SHADER = 50,
@@ -204,7 +204,7 @@ public:
 };
 
 class EditorAudioStreamPicker : public EditorResourcePicker {
-	GDCLASS(EditorAudioStreamPicker, EditorResourcePicker);
+	FOUNDRY_CLASS(EditorAudioStreamPicker, EditorResourcePicker);
 
 	uint64_t last_preview_version = 0;
 	Control *stream_preview_rect = nullptr;

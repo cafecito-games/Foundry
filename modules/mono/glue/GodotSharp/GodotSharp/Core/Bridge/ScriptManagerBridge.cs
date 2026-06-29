@@ -1148,7 +1148,7 @@ namespace Godot.Bridge
             }
 
             *ret = default;
-            (*refCallError).Error = godot_variant_call_error_error.GODOT_CALL_ERROR_CALL_ERROR_INVALID_METHOD;
+            (*refCallError).Error = godot_variant_call_error_error.FOUNDRY_CALL_ERROR_CALL_ERROR_INVALID_METHOD;
             return godot_bool.False;
         }
 

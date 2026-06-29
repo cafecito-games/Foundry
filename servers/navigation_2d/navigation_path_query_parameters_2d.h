@@ -34,7 +34,7 @@
 #include "servers/navigation_2d/navigation_constants_2d.h"
 
 class NavigationPathQueryParameters2D : public RefCounted {
-	GDCLASS(NavigationPathQueryParameters2D, RefCounted);
+	FOUNDRY_CLASS(NavigationPathQueryParameters2D, RefCounted);
 
 protected:
 	static void _bind_methods();

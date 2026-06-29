@@ -37,7 +37,7 @@ class CharacterBody2D;
 class PhysicsBody2D;
 
 class KinematicCollision2D : public RefCounted {
-	GDCLASS(KinematicCollision2D, RefCounted);
+	FOUNDRY_CLASS(KinematicCollision2D, RefCounted);
 
 	ObjectID owner_id;
 	friend class PhysicsBody2D;

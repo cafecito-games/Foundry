@@ -38,7 +38,7 @@ struct EditorProgress;
 class HBoxContainer;
 
 class VoxelGIEditorPlugin : public EditorPlugin {
-	GDCLASS(VoxelGIEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(VoxelGIEditorPlugin, EditorPlugin);
 
 	VoxelGI *voxel_gi = nullptr;
 

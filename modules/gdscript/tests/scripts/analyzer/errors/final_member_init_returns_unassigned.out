@@ -1,3 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 7: Final variable "id" must be definitely assigned before returning from "_init()".
->> ERROR at line 9: Final variable "id" must be definitely assigned before returning from "_init()".

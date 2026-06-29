@@ -38,7 +38,7 @@ class ScriptLanguage;
 void post_process_preview(Ref<Image> p_image);
 
 class EditorTexturePreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorTexturePreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorTexturePreviewPlugin, EditorResourcePreviewGenerator);
 
 public:
 	virtual bool handles(const String &p_type) const override;
@@ -47,7 +47,7 @@ public:
 };
 
 class EditorImagePreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorImagePreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorImagePreviewPlugin, EditorResourcePreviewGenerator);
 
 public:
 	virtual bool handles(const String &p_type) const override;
@@ -56,7 +56,7 @@ public:
 };
 
 class EditorBitmapPreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorBitmapPreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorBitmapPreviewPlugin, EditorResourcePreviewGenerator);
 
 public:
 	virtual bool handles(const String &p_type) const override;
@@ -65,7 +65,7 @@ public:
 };
 
 class EditorPackedScenePreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorPackedScenePreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorPackedScenePreviewPlugin, EditorResourcePreviewGenerator);
 
 public:
 	virtual bool handles(const String &p_type) const override;
@@ -74,7 +74,7 @@ public:
 };
 
 class EditorMaterialPreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorMaterialPreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorMaterialPreviewPlugin, EditorResourcePreviewGenerator);
 
 	RID scenario;
 	RID sphere;
@@ -100,7 +100,7 @@ public:
 };
 
 class EditorScriptPreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorScriptPreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorScriptPreviewPlugin, EditorResourcePreviewGenerator);
 
 	Ref<Texture2D> _generate_from_source_code(const ScriptLanguage *p_language, const String &p_source_code, const Size2 &p_size, Dictionary &p_metadata) const;
 
@@ -111,7 +111,7 @@ public:
 };
 
 class EditorAudioStreamPreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorAudioStreamPreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorAudioStreamPreviewPlugin, EditorResourcePreviewGenerator);
 
 public:
 	virtual bool handles(const String &p_type) const override;
@@ -119,7 +119,7 @@ public:
 };
 
 class EditorMeshPreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorMeshPreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorMeshPreviewPlugin, EditorResourcePreviewGenerator);
 
 	RID scenario;
 	RID mesh_instance;
@@ -143,7 +143,7 @@ public:
 };
 
 class EditorFontPreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorFontPreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorFontPreviewPlugin, EditorResourcePreviewGenerator);
 
 	RID viewport;
 	RID viewport_texture;
@@ -162,7 +162,7 @@ public:
 };
 
 class EditorGradientPreviewPlugin : public EditorResourcePreviewGenerator {
-	GDCLASS(EditorGradientPreviewPlugin, EditorResourcePreviewGenerator);
+	FOUNDRY_CLASS(EditorGradientPreviewPlugin, EditorResourcePreviewGenerator);
 
 public:
 	virtual bool handles(const String &p_type) const override;

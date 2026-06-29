@@ -41,7 +41,7 @@ class TreeItem;
 class PopupMenu;
 
 class RunInstancesDialog : public AcceptDialog {
-	GDCLASS(RunInstancesDialog, AcceptDialog);
+	FOUNDRY_CLASS(RunInstancesDialog, AcceptDialog);
 
 	enum Columns {
 		COLUMN_OVERRIDE_ARGS,

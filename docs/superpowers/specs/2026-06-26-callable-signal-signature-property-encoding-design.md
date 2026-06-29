@@ -8,8 +8,8 @@ Typed `Callable`/`Signal` signatures (`Callable[[int], void]`, `Signal[int]`) ar
 
 Concretely:
 
-- `GDScriptParser::DataType::to_property_info` (`modules/gdscript/gdscript_parser.cpp`) encodes element types only for `Array` (`PROPERTY_HINT_ARRAY_TYPE`) and `Dictionary` (`PROPERTY_HINT_DICTIONARY_TYPE`). A `CALLABLE`/`SIGNAL` falls through to a bare `result.type` with no hint — the signature is dropped.
-- `GDScriptAnalyzer::type_from_property` (`modules/gdscript/gdscript_analyzer.cpp`) rebuilds `Array`/`Dictionary` signatures from their hints but returns a bare, empty-signature `Callable`/`Signal`.
+- `GDScriptParser::DataType::to_property_info` (`modules/foundry_script/gdscript_parser.cpp`) encodes element types only for `Array` (`PROPERTY_HINT_ARRAY_TYPE`) and `Dictionary` (`PROPERTY_HINT_DICTIONARY_TYPE`). A `CALLABLE`/`SIGNAL` falls through to a bare `result.type` with no hint — the signature is dropped.
+- `GDScriptAnalyzer::type_from_property` (`modules/foundry_script/gdscript_analyzer.cpp`) rebuilds `Array`/`Dictionary` signatures from their hints but returns a bare, empty-signature `Callable`/`Signal`.
 - A bare-signature callable compares compatible with *any* signature (gradual-typing accept), so cross-script mismatches go uncaught.
 
 The signature-aware comparators added in [#327](https://github.com/cafecito-games/godot/issues/327) / [#382](https://github.com/cafecito-games/godot/issues/382) already recurse through `method_parameter_types` / `method_return_type` — they simply never receive that data across the script-API boundary because the serialization format cannot express it.
@@ -19,7 +19,7 @@ The signature-aware comparators added in [#327](https://github.com/cafecito-game
 A provider in a separate script:
 
 ```gdscript
-# provider.gd
+# provider.fs
 func get_cb() -> Callable[[Callable[[int], void]], void]:
     ...
 ```
@@ -27,7 +27,7 @@ func get_cb() -> Callable[[Callable[[int], void]], void]:
 Consumer:
 
 ```gdscript
-const Provider = preload("provider.gd")
+const Provider = preload("provider.fs")
 
 func value_boundary() -> void:
     # value-boundary erasure: outer signature lost crossing the API
@@ -50,7 +50,7 @@ Both must be caught once signatures survive the boundary.
 
 ## Non-goals
 
-- No C#/GDExtension implementation in this issue — GDScript-first, format reserved as canonical.
+- No C#/GDExtension implementation in this issue — Foundry Script-first, format reserved as canonical.
 - No new field on `PropertyInfo` (the struct carries a maintainer note reserving additions). The encoding rides on the existing `hint` / `hint_string` fields.
 - Arity flexibility (default-argument counts, varargs), exact local-script identity, a shared core decoder, and format versioning are deferred — see [Future extensions](#future-extensions).
 
@@ -144,7 +144,7 @@ The signature-aware comparators from #327/#382 already recurse through `method_p
 
 ## Round-trip and graceful degradation
 
-Note: the GDScript surface syntax for a signal signature is double-bracketed (`Signal[[int]]`), mirroring the callable form; the `hint_string` carries the suffix (`[[int]]`) and `PropertyInfo.type == SIGNAL` marks it as a signal with no return clause.
+Note: the Foundry Script surface syntax for a signal signature is double-bracketed (`Signal[[int]]`), mirroring the callable form; the `hint_string` carries the suffix (`[[int]]`) and `PropertyInfo.type == SIGNAL` marks it as a signal with no return clause.
 
 An unknown hint is inert everywhere it is not understood:
 
@@ -165,7 +165,7 @@ Per the issue's engine-wide-serialization caution:
 
 ## Testing
 
-GDScript fixtures under `modules/gdscript/tests/scripts/` (pair `.gd` with expected-output config where the runner expects it):
+Foundry Script fixtures under `modules/foundry_script/tests/scripts/` (pair `.fs` with expected-output config where the runner expects it):
 
 - **Both #412 repros** — value-boundary erasure and nested-callable-under-function-reference erasure, each across a separate provider script, asserting the mismatch is now reported.
 - **Round-trip parity** — a typed `Callable`/`Signal` exported from one script and consumed in another, with a matching signature, accepts; with a mismatched nested signature, rejects.
@@ -181,7 +181,7 @@ Deferred; capture as the format/encoding matures.
 
 1. **Arity flexibility — default-arg count & vararg flags.** The signature encodes a fixed parameter list. A callable carrying default-argument or vararg metadata (`method_info.default_arguments` / `METHOD_FLAG_VARARG`) cannot express it in the hint, so — like the lossy leaf cases — `_signature_type_is_encodable` returns false for it and the callable crosses the boundary untyped (gradual-accept) rather than as a rigid fixed-arity signature that would reject valid default-arg/vararg calls. A future trailing field (e.g. a default-count / vararg marker) would let these signatures round-trip faithfully and be checked rather than gradually accepted.
 2. **Enum and non-global script/class leaf fidelity (tracked: #446).** Like the existing container hints, an `ENUM`-typed leaf (encoded `Name.Member`) has no decoder branch and a non-global `preload`'d script/class leaf degrades to its native base name — so those nested slots decode to `Variant`/base across the boundary rather than round-tripping precisely. This is a fidelity limitation, not a soundness regression (mismatches on those slots are simply not caught cross-script; they are still caught within a single script). A future resolver shared with the `Array`/`Dictionary` hint paths would add an `ENUM` branch; a path-keyed resolver could preserve exact local-script identity, though embedding resource paths in hint strings is fragile.
-3. **Shared core decoder for binding parity.** The decoder lives in the GDScript module. When C#/GDExtension adopt the format (epic #144), lifting it into core avoids two implementations drifting.
+3. **Shared core decoder for binding parity.** The decoder lives in the Foundry Script module. When C#/GDExtension adopt the format (epic #144), lifting it into core avoids two implementations drifting.
 4. **Format versioning.** A reserved sentinel/marker would let the grammar gain fields (such as #1) later without ambiguity against the v1 form — cheap insurance for an engine-wide serialization surface.
 
 ## Acceptance

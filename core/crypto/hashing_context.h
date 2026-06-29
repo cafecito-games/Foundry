@@ -33,7 +33,7 @@
 #include "core/object/ref_counted.h"
 
 class HashingContext : public RefCounted {
-	GDCLASS(HashingContext, RefCounted);
+	FOUNDRY_CLASS(HashingContext, RefCounted);
 
 public:
 	enum HashType : int32_t {

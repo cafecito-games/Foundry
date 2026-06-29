@@ -47,7 +47,7 @@ class Button;
 class Label;
 
 class MaterialEditor : public Control {
-	GDCLASS(MaterialEditor, Control);
+	FOUNDRY_CLASS(MaterialEditor, Control);
 
 	// Both 2D and 3D materials.
 	Ref<Material> material;
@@ -115,7 +115,7 @@ public:
 };
 
 class EditorInspectorPluginMaterial : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginMaterial, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginMaterial, EditorInspectorPlugin);
 	Ref<Environment> env;
 
 public:
@@ -128,7 +128,7 @@ public:
 };
 
 class MaterialEditorPlugin : public EditorPlugin {
-	GDCLASS(MaterialEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(MaterialEditorPlugin, EditorPlugin);
 
 public:
 	virtual String get_plugin_name() const override { return "Material"; }
@@ -137,7 +137,7 @@ public:
 };
 
 class ParticleProcessMaterialConversionPlugin : public EditorResourceConversionPlugin {
-	GDCLASS(ParticleProcessMaterialConversionPlugin, EditorResourceConversionPlugin);
+	FOUNDRY_CLASS(ParticleProcessMaterialConversionPlugin, EditorResourceConversionPlugin);
 
 public:
 	virtual String converts_to() const override;
@@ -146,7 +146,7 @@ public:
 };
 
 class CanvasItemMaterialConversionPlugin : public EditorResourceConversionPlugin {
-	GDCLASS(CanvasItemMaterialConversionPlugin, EditorResourceConversionPlugin);
+	FOUNDRY_CLASS(CanvasItemMaterialConversionPlugin, EditorResourceConversionPlugin);
 
 public:
 	virtual String converts_to() const override;

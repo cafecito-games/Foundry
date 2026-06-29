@@ -40,7 +40,7 @@
 String get_default_android_sdk_path();
 
 void register_android_exporter_types() {
-	GDREGISTER_VIRTUAL_CLASS(EditorExportPlatformAndroid);
+	FOUNDRY_REGISTER_VIRTUAL_CLASS(EditorExportPlatformAndroid);
 }
 
 void register_android_exporter() {

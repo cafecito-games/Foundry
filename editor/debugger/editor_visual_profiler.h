@@ -43,7 +43,7 @@
 class ImageTexture;
 
 class EditorVisualProfiler : public VBoxContainer {
-	GDCLASS(EditorVisualProfiler, VBoxContainer);
+	FOUNDRY_CLASS(EditorVisualProfiler, VBoxContainer);
 
 public:
 	struct Metric {

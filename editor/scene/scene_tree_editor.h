@@ -40,7 +40,7 @@ class TextureRect;
 class Timer;
 
 class SceneTreeEditor : public Control {
-	GDCLASS(SceneTreeEditor, Control);
+	FOUNDRY_CLASS(SceneTreeEditor, Control);
 
 	EditorSelection *editor_selection = nullptr;
 
@@ -267,7 +267,7 @@ public:
 };
 
 class SceneTreeDialog : public ConfirmationDialog {
-	GDCLASS(SceneTreeDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(SceneTreeDialog, ConfirmationDialog);
 
 	VBoxContainer *content = nullptr;
 	SceneTreeEditor *tree = nullptr;

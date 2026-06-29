@@ -39,7 +39,7 @@ class ConfirmationDialog;
 class MenuButton;
 
 class Path2DEditor : public HBoxContainer {
-	GDCLASS(Path2DEditor, HBoxContainer);
+	FOUNDRY_CLASS(Path2DEditor, HBoxContainer);
 
 	friend class Path2DEditorPlugin;
 
@@ -139,7 +139,7 @@ public:
 };
 
 class Path2DEditorPlugin : public EditorPlugin {
-	GDCLASS(Path2DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(Path2DEditorPlugin, EditorPlugin);
 
 	Path2DEditor *path2d_editor = nullptr;
 

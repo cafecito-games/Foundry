@@ -1,3 +1,0 @@
-GDTEST_OK
-before resume: []
-after resume: ["value:1", "value:2", "value:3"]

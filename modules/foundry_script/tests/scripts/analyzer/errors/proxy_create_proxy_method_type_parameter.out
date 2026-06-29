@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: create_proxy[T]() cannot forward the method type parameter "T" because method type arguments are not reified at runtime. Use create_proxy_dynamic() with an explicit type instead.

@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 6: Could not resolve type "Issue160AmbiguousTrait": imported namespaces "issue_160.alpha" and "issue_160.beta" are ambiguous.

@@ -36,7 +36,7 @@ class NavigationMesh;
 class NavigationMeshSourceGeometryData3D;
 
 class NavigationObstacle3D : public Node3D {
-	GDCLASS(NavigationObstacle3D, Node3D);
+	FOUNDRY_CLASS(NavigationObstacle3D, Node3D);
 
 	RID obstacle;
 	RID map_before_pause;

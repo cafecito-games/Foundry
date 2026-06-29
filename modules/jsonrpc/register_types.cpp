@@ -39,7 +39,7 @@ void initialize_jsonrpc_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_CLASS(JSONRPC);
+	FOUNDRY_REGISTER_CLASS(JSONRPC);
 }
 
 void uninitialize_jsonrpc_module(ModuleInitializationLevel p_level) {

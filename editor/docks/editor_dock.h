@@ -38,7 +38,7 @@ class Shortcut;
 class WindowWrapper;
 
 class EditorDock : public MarginContainer {
-	GDCLASS(EditorDock, MarginContainer);
+	FOUNDRY_CLASS(EditorDock, MarginContainer);
 
 public:
 	enum DockLayout {
@@ -96,9 +96,9 @@ private:
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL1(_update_layout, int)
-	GDVIRTUAL2C(_save_layout_to_config, Ref<ConfigFile>, const String &)
-	GDVIRTUAL2(_load_layout_from_config, Ref<ConfigFile>, const String &)
+	FOUNDRY_VIRTUAL1(_update_layout, int)
+	FOUNDRY_VIRTUAL2C(_save_layout_to_config, Ref<ConfigFile>, const String &)
+	FOUNDRY_VIRTUAL2(_load_layout_from_config, Ref<ConfigFile>, const String &)
 
 public:
 	void open();
@@ -144,11 +144,11 @@ public:
 	String get_display_title() const;
 	String get_effective_layout_key() const;
 
-	virtual void update_layout(DockLayout p_layout) { GDVIRTUAL_CALL(_update_layout, p_layout); }
+	virtual void update_layout(DockLayout p_layout) { FOUNDRY_VIRTUAL_CALL(_update_layout, p_layout); }
 	DockLayout get_current_layout() const { return current_layout; }
 
-	virtual void save_layout_to_config(Ref<ConfigFile> &p_layout, const String &p_section) const { GDVIRTUAL_CALL(_save_layout_to_config, p_layout, p_section); }
-	virtual void load_layout_from_config(const Ref<ConfigFile> &p_layout, const String &p_section) { GDVIRTUAL_CALL(_load_layout_from_config, p_layout, p_section); }
+	virtual void save_layout_to_config(Ref<ConfigFile> &p_layout, const String &p_section) const { FOUNDRY_VIRTUAL_CALL(_save_layout_to_config, p_layout, p_section); }
+	virtual void load_layout_from_config(const Ref<ConfigFile> &p_layout, const String &p_section) { FOUNDRY_VIRTUAL_CALL(_load_layout_from_config, p_layout, p_section); }
 };
 
 VARIANT_BITFIELD_CAST(EditorDock::DockLayout);

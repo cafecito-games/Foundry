@@ -33,7 +33,7 @@
 #include "openxr_extension_wrapper.h"
 
 class OpenXRMetaControllerExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRMetaControllerExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRMetaControllerExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}

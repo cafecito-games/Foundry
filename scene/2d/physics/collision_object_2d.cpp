@@ -517,27 +517,27 @@ bool CollisionObject2D::is_pickable() const {
 }
 
 void CollisionObject2D::_input_event_call(Viewport *p_viewport, const Ref<InputEvent> &p_input_event, int p_shape) {
-	GDVIRTUAL_CALL(_input_event, p_viewport, p_input_event, p_shape);
+	FOUNDRY_VIRTUAL_CALL(_input_event, p_viewport, p_input_event, p_shape);
 	emit_signal(SceneStringName(input_event), p_viewport, p_input_event, p_shape);
 }
 
 void CollisionObject2D::_mouse_enter() {
-	GDVIRTUAL_CALL(_mouse_enter);
+	FOUNDRY_VIRTUAL_CALL(_mouse_enter);
 	emit_signal(SceneStringName(mouse_entered));
 }
 
 void CollisionObject2D::_mouse_exit() {
-	GDVIRTUAL_CALL(_mouse_exit);
+	FOUNDRY_VIRTUAL_CALL(_mouse_exit);
 	emit_signal(SceneStringName(mouse_exited));
 }
 
 void CollisionObject2D::_mouse_shape_enter(int p_shape) {
-	GDVIRTUAL_CALL(_mouse_shape_enter, p_shape);
+	FOUNDRY_VIRTUAL_CALL(_mouse_shape_enter, p_shape);
 	emit_signal(SceneStringName(mouse_shape_entered), p_shape);
 }
 
 void CollisionObject2D::_mouse_shape_exit(int p_shape) {
-	GDVIRTUAL_CALL(_mouse_shape_exit, p_shape);
+	FOUNDRY_VIRTUAL_CALL(_mouse_shape_exit, p_shape);
 	emit_signal(SceneStringName(mouse_shape_exited), p_shape);
 }
 
@@ -627,11 +627,11 @@ void CollisionObject2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("shape_owner_clear_shapes", "owner_id"), &CollisionObject2D::shape_owner_clear_shapes);
 	ClassDB::bind_method(D_METHOD("shape_find_owner", "shape_index"), &CollisionObject2D::shape_find_owner);
 
-	GDVIRTUAL_BIND(_input_event, "viewport", "event", "shape_idx");
-	GDVIRTUAL_BIND(_mouse_enter);
-	GDVIRTUAL_BIND(_mouse_exit);
-	GDVIRTUAL_BIND(_mouse_shape_enter, "shape_idx");
-	GDVIRTUAL_BIND(_mouse_shape_exit, "shape_idx");
+	FOUNDRY_VIRTUAL_BIND(_input_event, "viewport", "event", "shape_idx");
+	FOUNDRY_VIRTUAL_BIND(_mouse_enter);
+	FOUNDRY_VIRTUAL_BIND(_mouse_exit);
+	FOUNDRY_VIRTUAL_BIND(_mouse_shape_enter, "shape_idx");
+	FOUNDRY_VIRTUAL_BIND(_mouse_shape_exit, "shape_idx");
 
 	ADD_SIGNAL(MethodInfo("input_event", PropertyInfo(Variant::OBJECT, "viewport", PROPERTY_HINT_RESOURCE_TYPE, "Node"), PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_RESOURCE_TYPE, "InputEvent"), PropertyInfo(Variant::INT, "shape_idx")));
 	ADD_SIGNAL(MethodInfo("mouse_entered"));

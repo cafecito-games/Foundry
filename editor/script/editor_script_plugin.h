@@ -33,7 +33,7 @@
 #include "editor/plugins/editor_plugin.h"
 
 class EditorScriptPlugin : public EditorPlugin {
-	GDCLASS(EditorScriptPlugin, EditorPlugin);
+	FOUNDRY_CLASS(EditorScriptPlugin, EditorPlugin);
 
 private:
 	List<StringName> commands;

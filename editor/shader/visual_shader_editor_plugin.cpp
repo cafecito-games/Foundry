@@ -102,12 +102,12 @@ void VisualShaderNodePlugin::set_editor(VisualShaderEditor *p_editor) {
 
 Control *VisualShaderNodePlugin::create_editor(const Ref<Resource> &p_parent_resource, const Ref<VisualShaderNode> &p_node) {
 	Object *ret = nullptr;
-	GDVIRTUAL_CALL(_create_editor, p_parent_resource, p_node, ret);
+	FOUNDRY_VIRTUAL_CALL(_create_editor, p_parent_resource, p_node, ret);
 	return Object::cast_to<Control>(ret);
 }
 
 void VisualShaderNodePlugin::_bind_methods() {
-	GDVIRTUAL_BIND(_create_editor, "parent_resource", "visual_shader_node");
+	FOUNDRY_VIRTUAL_BIND(_create_editor, "parent_resource", "visual_shader_node");
 }
 
 ///////////////////
@@ -2161,7 +2161,7 @@ void VisualShaderEditor::_update_nodes() {
 	clear_custom_types();
 	Dictionary added;
 
-	// Add GDScript classes.
+	// Add FoundryScript classes.
 	{
 		LocalVector<StringName> class_list;
 		ScriptServer::get_global_class_list(class_list);
@@ -2191,7 +2191,7 @@ void VisualShaderEditor::_update_nodes() {
 		}
 	}
 
-	// Add GDExtension classes.
+	// Add FoundryExtension classes.
 	{
 		LocalVector<StringName> class_list;
 		ClassDB::get_class_list(class_list);
@@ -5256,7 +5256,7 @@ void VisualShaderEditor::_param_unselected() {
 }
 
 void VisualShaderEditor::_help_open() {
-	OS::get_singleton()->shell_open(vformat("%s/tutorials/shaders/visual_shaders.html", GODOT_VERSION_DOCS_URL));
+	OS::get_singleton()->shell_open(vformat("%s/tutorials/shaders/visual_shaders.html", FOUNDRY_VERSION_DOCS_URL));
 }
 
 void VisualShaderEditor::_notification(int p_what) {
@@ -6289,7 +6289,7 @@ void VisualShaderEditor::drop_data_fw(const Point2 &p_point, const Variant &p_da
 				PackedStringArray arr = d["files"];
 				for (int i = 0; i < arr.size(); i++) {
 					String type = ResourceLoader::get_resource_type(arr[i]);
-					if (type == "GDScript") {
+					if (type == "FoundryScript") {
 						Ref<Script> scr = ResourceLoader::load(arr[i]);
 						if (scr->get_instance_base_type() == "VisualShaderNodeCustom") {
 							saved_node_pos = p_point + Vector2(0, i * 250 * EDSCALE);
@@ -7797,7 +7797,7 @@ VisualShaderEditor::~VisualShaderEditor() {
 }
 
 class VisualShaderNodePluginInputEditor : public OptionButton {
-	GDCLASS(VisualShaderNodePluginInputEditor, OptionButton);
+	FOUNDRY_CLASS(VisualShaderNodePluginInputEditor, OptionButton);
 
 	VisualShaderEditor *editor = nullptr;
 	Ref<VisualShaderNodeInput> input;
@@ -7854,7 +7854,7 @@ public:
 ////////////////
 
 class VisualShaderNodePluginVaryingEditor : public OptionButton {
-	GDCLASS(VisualShaderNodePluginVaryingEditor, OptionButton);
+	FOUNDRY_CLASS(VisualShaderNodePluginVaryingEditor, OptionButton);
 
 	VisualShaderEditor *editor = nullptr;
 	Ref<VisualShaderNodeVarying> varying;
@@ -7936,7 +7936,7 @@ public:
 ////////////////
 
 class VisualShaderNodePluginParameterRefEditor : public OptionButton {
-	GDCLASS(VisualShaderNodePluginParameterRefEditor, OptionButton);
+	FOUNDRY_CLASS(VisualShaderNodePluginParameterRefEditor, OptionButton);
 
 	VisualShaderEditor *editor = nullptr;
 	Ref<VisualShaderNodeParameterRef> parameter_ref;
@@ -7994,7 +7994,7 @@ public:
 ////////////////
 
 class VisualShaderNodePluginDefaultEditor : public VBoxContainer {
-	GDCLASS(VisualShaderNodePluginDefaultEditor, VBoxContainer);
+	FOUNDRY_CLASS(VisualShaderNodePluginDefaultEditor, VBoxContainer);
 	VisualShaderEditor *editor = nullptr;
 	Ref<Resource> parent_resource;
 	int node_id = 0;

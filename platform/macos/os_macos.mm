@@ -287,7 +287,7 @@ void OS_MacOS::load_shell_environment() const {
 	static bool shell_env_loaded = false;
 	if (unlikely(!shell_env_loaded)) {
 		shell_env_loaded = true;
-		if (OS::get_singleton()->has_environment("TERM") || OS::get_singleton()->has_environment("__GODOT_SHELL_ENV_SET")) {
+		if (OS::get_singleton()->has_environment("TERM") || OS::get_singleton()->has_environment("__FOUNDRY_SHELL_ENV_SET")) {
 			return; // Already started from terminal, or other the instance with the shell environment, do nothing.
 		}
 		String pipe;
@@ -305,7 +305,7 @@ void OS_MacOS::load_shell_environment() const {
 				OS::get_singleton()->set_environment(tags[0], tags[1]);
 			}
 		}
-		OS::get_singleton()->set_environment("__GODOT_SHELL_ENV_SET", "1");
+		OS::get_singleton()->set_environment("__FOUNDRY_SHELL_ENV_SET", "1");
 	}
 }
 
@@ -394,7 +394,7 @@ _FORCE_INLINE_ String OS_MacOS::get_framework_executable(const String &p_path) {
 	return p_path;
 }
 
-Error OS_MacOS::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_MacOS::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	String path = get_framework_executable(p_path);
 
 	if (!FileAccess::exists(path)) {
@@ -496,7 +496,7 @@ String OS_MacOS::get_bundle_icon_name() const {
 
 // Get properly capitalized engine name for system paths
 String OS_MacOS::get_godot_dir_name() const {
-	return String(GODOT_VERSION_SHORT_NAME).capitalize();
+	return String(FOUNDRY_VERSION_SHORT_NAME).capitalize();
 }
 
 String OS_MacOS::get_system_dir(SystemDir p_dir, bool p_shared_storage) const {

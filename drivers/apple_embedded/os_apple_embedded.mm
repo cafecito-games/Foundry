@@ -255,7 +255,7 @@ _FORCE_INLINE_ String OS_AppleEmbedded::get_framework_executable(const String &p
 	return p_path;
 }
 
-Error OS_AppleEmbedded::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_AppleEmbedded::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	if (p_path.length() == 0) {
 		// Static xcframework.
 		p_library_handle = RTLD_SELF;
@@ -814,7 +814,7 @@ Rect2 OS_AppleEmbedded::calculate_boot_screen_rect(const Size2 &p_window_size, c
 	} else if (scalemodestr == "center") {
 		return OS_Unix::calculate_boot_screen_rect(p_window_size, p_imgrect_size);
 	} else {
-		WARN_PRINT(vformat("Boot screen scale mode mismatch between iOS and Godot: %s not supported", scalemodestr));
+		WARN_PRINT(vformat("Boot screen scale mode mismatch between iOS and Foundry: %s not supported", scalemodestr));
 		return OS_Unix::calculate_boot_screen_rect(p_window_size, p_imgrect_size);
 	}
 }

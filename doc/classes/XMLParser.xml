@@ -8,7 +8,7 @@
 		To parse XML, you must open a file with the [method open] method or a buffer with the [method open_buffer] method. Then, the [method read] method must be called to parse the next nodes. Most of the methods take into consideration the currently parsed node.
 		Here is an example of using [XMLParser] to parse an SVG file (which is based on XML), printing each element and its attributes as a dictionary:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		var parser = XMLParser.new()
 		parser.open("path/to/file.svg")
 		while parser.read() != ERR_FILE_EOF:
@@ -18,7 +18,7 @@
 				for idx in range(parser.get_attribute_count()):
 					attributes_dict[parser.get_attribute_name(idx)] = parser.get_attribute_value(idx)
 				print("The ", node_name, " element has the following attributes: ", attributes_dict)
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		var parser = new XmlParser();
 		parser.Open("path/to/file.svg");

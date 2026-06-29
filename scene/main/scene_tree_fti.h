@@ -40,7 +40,7 @@ class SceneTreeFTITests;
 
 #ifdef DEV_ENABLED
 // Uncomment this to verify traversal method results.
-// #define GODOT_SCENE_TREE_FTI_VERIFY
+// #define FOUNDRY_SCENE_TREE_FTI_VERIFY
 #endif
 
 #ifdef _3D_DISABLED
@@ -119,7 +119,7 @@ class SceneTreeFTI {
 
 	} data;
 
-#ifdef GODOT_SCENE_TREE_FTI_VERIFY
+#ifdef FOUNDRY_SCENE_TREE_FTI_VERIFY
 	SceneTreeFTITests *_tests = nullptr;
 #endif
 

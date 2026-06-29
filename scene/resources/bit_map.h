@@ -37,7 +37,7 @@ template <typename T>
 class TypedArray;
 
 class BitMap : public Resource {
-	GDCLASS(BitMap, Resource);
+	FOUNDRY_CLASS(BitMap, Resource);
 	OBJ_SAVE_TYPE(BitMap);
 
 	Vector<uint8_t> bitmask;

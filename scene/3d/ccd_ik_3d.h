@@ -33,7 +33,7 @@
 #include "scene/3d/iterate_ik_3d.h"
 
 class CCDIK3D : public IterateIK3D {
-	GDCLASS(CCDIK3D, IterateIK3D);
+	FOUNDRY_CLASS(CCDIK3D, IterateIK3D);
 
 protected:
 	virtual void _solve_iteration(double p_delta, Skeleton3D *p_skeleton, IterateIK3DSetting *p_setting, const Vector3 &p_destination) override;

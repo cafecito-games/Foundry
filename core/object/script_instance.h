@@ -97,7 +97,7 @@ public:
 	// A synthetic instance reports a script language (and script) but does not
 	// share that language's normal instance memory layout. Code that performs a
 	// language-keyed `static_cast` to the language's concrete instance type (e.g.
-	// "language == GDScript, so this is a GDScriptInstance") must exclude these.
+	// "language == FoundryScript, so this is a FSInstance") must exclude these.
 	virtual bool is_synthetic() const { return false; }
 
 	virtual void property_set_fallback(const StringName &p_name, const Variant &p_value, bool *r_valid);

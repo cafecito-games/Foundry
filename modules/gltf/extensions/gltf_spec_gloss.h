@@ -40,7 +40,7 @@ class Image;
 // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Archived/KHR_materials_pbrSpecularGlossiness
 
 class GLTFSpecGloss : public Resource {
-	GDCLASS(GLTFSpecGloss, Resource);
+	FOUNDRY_CLASS(GLTFSpecGloss, Resource);
 	friend class GLTFDocument;
 
 private:

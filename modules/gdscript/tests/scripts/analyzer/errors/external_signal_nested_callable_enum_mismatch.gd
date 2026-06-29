@@ -1,5 +1,0 @@
-const Provider = preload("external_signal_nested_callable_enum_mismatch_provider.notest.gd")
-
-func test() -> void:
-	var s: Signal[[Callable[[Vector2.Axis], void]]] = Provider.new().get_signal()
-	print(s)

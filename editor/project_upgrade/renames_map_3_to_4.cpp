@@ -154,7 +154,7 @@ const char *RenamesMap3To4::enum_renames[][2] = {
 	{ nullptr, nullptr },
 };
 
-const char *RenamesMap3To4::gdscript_function_renames[][2] = {
+const char *RenamesMap3To4::fs_function_renames[][2] = {
 	// NOTE: Commented out renames are disabled because deemed not suitable for
 	// the current way the regex-based converter works.
 	// When uncommenting any of those as suitable for conversion, please move it
@@ -258,7 +258,7 @@ const char *RenamesMap3To4::gdscript_function_renames[][2] = {
 	{ "damped_spring_joint_create", "joint_make_damped_spring" }, // PhysicsServer2D
 	{ "damped_string_joint_get_param", "damped_spring_joint_get_param" }, // PhysicsServer2D
 	{ "damped_string_joint_set_param", "damped_spring_joint_set_param" }, // PhysicsServer2D
-	{ "dectime", "move_toward" }, // GDScript, Math functions
+	{ "dectime", "move_toward" }, // FoundryScript, Math functions
 	{ "delete_char_at_cursor", "delete_char_at_caret" }, // LineEdit
 	{ "deselect_items", "deselect_all" }, // FileDialog
 	{ "disable_plugin", "_disable_plugin" }, // EditorPlugin
@@ -626,7 +626,7 @@ const char *RenamesMap3To4::gdscript_function_renames[][2] = {
 	{ "var2bytes", "var_to_bytes" },
 	{ "var2bytes_with_objects", "var_to_bytes_with_objects" },
 
-	// @GDScript
+	// @FoundryScript
 	// Remember to add them to the builtin_types_excluded_functions variable, because for now these functions cannot be listed.
 	{ "dict2inst", "dict_to_inst" },
 	{ "inst2dict", "inst_to_dict" },
@@ -634,7 +634,7 @@ const char *RenamesMap3To4::gdscript_function_renames[][2] = {
 	{ nullptr, nullptr },
 };
 
-// gdscript_function_renames clone with CamelCase
+// fs_function_renames clone with CamelCase
 const char *RenamesMap3To4::csharp_function_renames[][2] = {
 	{ "_AboutToShow", "_AboutToPopup" }, // ColorPickerButton
 	{ "_GetConfigurationWarning", "_GetConfigurationWarnings" }, // Node
@@ -1031,14 +1031,14 @@ const char *RenamesMap3To4::csharp_function_renames[][2] = {
 	{ "Var2Bytes", "VarToBytes" },
 	{ "Var2BytesWithObjects", "VarToBytesWithObjects" },
 
-	// @GDScript
+	// @FoundryScript
 	{ "Dict2Inst", "DictToInst" },
 	{ "Inst2Dict", "InstToDict" },
 
 	{ nullptr, nullptr },
 };
 
-const char *RenamesMap3To4::gdscript_properties_renames[][2] = {
+const char *RenamesMap3To4::fs_properties_renames[][2] = {
 	// NOTE: Commented out renames are disabled because deemed not suitable for
 	// the current way the regex-based converter works.
 	// When uncommenting any of those as suitable for conversion, please move it
@@ -1271,7 +1271,7 @@ const char *RenamesMap3To4::csharp_properties_renames[][2] = {
 	{ nullptr, nullptr },
 };
 
-const char *RenamesMap3To4::gdscript_signals_renames[][2] = {
+const char *RenamesMap3To4::fs_signals_renames[][2] = {
 	// NOTE: Commented out renames are disabled because deemed not suitable for
 	// the current way the regex-based converter works.
 	// When uncommenting any of those as suitable for conversion, please move it
@@ -1320,9 +1320,9 @@ const char *RenamesMap3To4::csharp_signals_renames[][2] = {
 };
 
 const char *RenamesMap3To4::project_settings_renames[][2] = {
-	// Project setting paths in scripts include the category, but in project.godot,
+	// Project setting paths in scripts include the category, but in project.foundry,
 	// the category is the section delimiter, so we need to support the paths without it.
-	// The project.godot remaps are defined in the project_godot_renames, keep them in sync!
+	// The project.foundry remaps are defined in the project_godot_renames, keep them in sync!
 	{ "audio/channel_disable_threshold_db", "audio/buses/channel_disable_threshold_db" },
 	{ "audio/channel_disable_time", "audio/buses/channel_disable_time" },
 	{ "audio/default_bus_layout", "audio/buses/default_bus_layout" },

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="OpenXRExtensionWrapper" inherits="Object" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		Allows implementing OpenXR extensions with GDExtension.
+		Allows implementing OpenXR extensions with FoundryExtension.
 	</brief_description>
 	<description>
-		[OpenXRExtensionWrapper] allows implementing OpenXR extensions with GDExtension. The extension should be registered with [method register_extension_wrapper].
+		[OpenXRExtensionWrapper] allows implementing OpenXR extensions with FoundryExtension. The extension should be registered with [method register_extension_wrapper].
 		When [OpenXRInterface] is initialized as the primary interface and any [Viewport] has [member Viewport.use_xr] set to [code]true[/code], OpenXR will become involved in Godot's rendering process. If [member ProjectSettings.rendering/driver/threads/thread_model] is set to "Separate", Godot's renderer will run on its own thread, and special care must be taken in all [OpenXRExtensionWrapper]s in order to prevent crashes or unexpected behavior. Some virtual methods will be called on the render thread, and any data they access should not be directly written to on the main thread. This is to prevent two potential issues:
 		1. Changes intended for the next frame, taking effect on the current frame. When using the "Separate" thread model, the main thread will immediately start working on the next frame while the render thread may still be rendering the current frame. If the main thread changes anything used by the render thread directly, the change could end up being used one frame earlier than intended.
 		2. Reading and writing to the same data at the same time from different threads can lead to the render thread using data in an invalid state.

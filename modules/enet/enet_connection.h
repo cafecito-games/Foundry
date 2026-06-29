@@ -41,7 +41,7 @@ template <typename T>
 class TypedArray;
 
 class ENetConnection : public RefCounted {
-	GDCLASS(ENetConnection, RefCounted);
+	FOUNDRY_CLASS(ENetConnection, RefCounted);
 
 public:
 	enum CompressionMode {

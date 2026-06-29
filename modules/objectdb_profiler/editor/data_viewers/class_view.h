@@ -52,7 +52,7 @@ struct ClassData {
 };
 
 class SnapshotClassView : public SnapshotView {
-	GDCLASS(SnapshotClassView, SnapshotView);
+	FOUNDRY_CLASS(SnapshotClassView, SnapshotView);
 
 protected:
 	Tree *class_tree = nullptr;

@@ -30,7 +30,7 @@
 
 #pragma once
 
-#include "core/extension/gdextension.h"
+#include "core/extension/foundry_extension.h"
 #include "core/object/ref_counted.h"
 #include "core/variant/array.h"
 #include "core/variant/container_type_validate.h"
@@ -958,12 +958,12 @@ TEST_CASE("[ContainerType] Descriptor rejects invalid shapes without changing ou
 	CHECK(error.contains("Script object"));
 }
 
-TEST_CASE("[GDExtension] Typed container descriptor API sets and gets recursive metadata") {
-	GDExtensionInterfaceArraySetTypedByDescriptor array_set_typed_by_descriptor = reinterpret_cast<GDExtensionInterfaceArraySetTypedByDescriptor>(GDExtension::get_interface_function("array_set_typed_by_descriptor"));
-	GDExtensionInterfaceArrayGetTypedElementTypeDescriptor array_get_typed_element_type_descriptor = reinterpret_cast<GDExtensionInterfaceArrayGetTypedElementTypeDescriptor>(GDExtension::get_interface_function("array_get_typed_element_type_descriptor"));
-	GDExtensionInterfaceDictionarySetTypedByDescriptor dictionary_set_typed_by_descriptor = reinterpret_cast<GDExtensionInterfaceDictionarySetTypedByDescriptor>(GDExtension::get_interface_function("dictionary_set_typed_by_descriptor"));
-	GDExtensionInterfaceDictionaryGetTypedKeyTypeDescriptor dictionary_get_typed_key_type_descriptor = reinterpret_cast<GDExtensionInterfaceDictionaryGetTypedKeyTypeDescriptor>(GDExtension::get_interface_function("dictionary_get_typed_key_type_descriptor"));
-	GDExtensionInterfaceDictionaryGetTypedValueTypeDescriptor dictionary_get_typed_value_type_descriptor = reinterpret_cast<GDExtensionInterfaceDictionaryGetTypedValueTypeDescriptor>(GDExtension::get_interface_function("dictionary_get_typed_value_type_descriptor"));
+TEST_CASE("[FoundryExtension] Typed container descriptor API sets and gets recursive metadata") {
+	FoundryExtensionInterfaceArraySetTypedByDescriptor array_set_typed_by_descriptor = reinterpret_cast<FoundryExtensionInterfaceArraySetTypedByDescriptor>(FoundryExtension::get_interface_function("array_set_typed_by_descriptor"));
+	FoundryExtensionInterfaceArrayGetTypedElementTypeDescriptor array_get_typed_element_type_descriptor = reinterpret_cast<FoundryExtensionInterfaceArrayGetTypedElementTypeDescriptor>(FoundryExtension::get_interface_function("array_get_typed_element_type_descriptor"));
+	FoundryExtensionInterfaceDictionarySetTypedByDescriptor dictionary_set_typed_by_descriptor = reinterpret_cast<FoundryExtensionInterfaceDictionarySetTypedByDescriptor>(FoundryExtension::get_interface_function("dictionary_set_typed_by_descriptor"));
+	FoundryExtensionInterfaceDictionaryGetTypedKeyTypeDescriptor dictionary_get_typed_key_type_descriptor = reinterpret_cast<FoundryExtensionInterfaceDictionaryGetTypedKeyTypeDescriptor>(FoundryExtension::get_interface_function("dictionary_get_typed_key_type_descriptor"));
+	FoundryExtensionInterfaceDictionaryGetTypedValueTypeDescriptor dictionary_get_typed_value_type_descriptor = reinterpret_cast<FoundryExtensionInterfaceDictionaryGetTypedValueTypeDescriptor>(FoundryExtension::get_interface_function("dictionary_get_typed_value_type_descriptor"));
 
 	const Variant string_descriptor = make_type_descriptor(Variant::STRING);
 	const Variant int_descriptor = make_type_descriptor(Variant::INT);

@@ -40,7 +40,7 @@
 class AnimatedValuesBackup;
 
 class AnimationMixer : public Node {
-	GDCLASS(AnimationMixer, Node);
+	FOUNDRY_CLASS(AnimationMixer, Node);
 	friend AnimatedValuesBackup;
 #ifdef TOOLS_ENABLED
 	bool editing = false;
@@ -48,7 +48,7 @@ class AnimationMixer : public Node {
 #endif // TOOLS_ENABLED
 
 	bool reset_on_save = true;
-	bool is_GDVIRTUAL_CALL_post_process_key_value = true;
+	bool is_FOUNDRY_VIRTUAL_CALL_post_process_key_value = true;
 
 public:
 	enum AnimationCallbackModeProcess {
@@ -361,7 +361,7 @@ protected:
 	// For post process with retrieved key value during blending.
 	virtual Variant _post_process_key_value(const Ref<Animation> &p_anim, int p_track, Variant &p_value, ObjectID p_object_id, int p_object_sub_idx = -1);
 	Variant post_process_key_value(const Ref<Animation> &p_anim, int p_track, Variant p_value, ObjectID p_object_id, int p_object_sub_idx = -1);
-	GDVIRTUAL5RC(Variant, _post_process_key_value, Ref<Animation>, int, Variant, ObjectID, int);
+	FOUNDRY_VIRTUAL5RC(Variant, _post_process_key_value, Ref<Animation>, int, Variant, ObjectID, int);
 
 	void _blend_init();
 	virtual bool _blend_pre_process(double p_delta, int p_track_count, const AHashMap<NodePath, int> &p_track_map);
@@ -484,7 +484,7 @@ public:
 };
 
 class AnimatedValuesBackup : public RefCounted {
-	GDCLASS(AnimatedValuesBackup, RefCounted);
+	FOUNDRY_CLASS(AnimatedValuesBackup, RefCounted);
 
 	AHashMap<Animation::TypeHash, AnimationMixer::TrackCache *, HashHasher> data;
 

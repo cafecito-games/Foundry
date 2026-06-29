@@ -40,7 +40,7 @@ class Timer;
 class UndoRedo;
 
 class EditorLog : public EditorDock {
-	GDCLASS(EditorLog, EditorDock);
+	FOUNDRY_CLASS(EditorLog, EditorDock);
 
 public:
 	enum MessageType {

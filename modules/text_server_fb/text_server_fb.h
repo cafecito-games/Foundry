@@ -35,8 +35,8 @@
 /* BiDi, shaping and advanced font features support.                     */
 /*************************************************************************/
 
-#ifdef GDEXTENSION
-// Headers for building as GDExtension plug-in.
+#ifdef FOUNDRY_EXTENSION
+// Headers for building as FoundryExtension plug-in.
 
 #include <godot_cpp/godot.hpp>
 
@@ -76,7 +76,7 @@
 
 using namespace godot;
 
-#elif defined(GODOT_MODULE)
+#elif defined(FOUNDRY_MODULE)
 // Headers for building as built-in module.
 
 #include "core/extension/ext_wrappers.gen.inc"
@@ -111,7 +111,7 @@ using namespace godot;
 /*************************************************************************/
 
 class TextServerFallback : public TextServerExtension {
-	GDCLASS(TextServerFallback, TextServerExtension);
+	FOUNDRY_CLASS(TextServerFallback, TextServerExtension);
 	_THREAD_SAFE_CLASS_
 
 	HashMap<StringName, int32_t> feature_sets;

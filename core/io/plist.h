@@ -37,7 +37,7 @@
 class PListNode;
 
 class PList : public RefCounted {
-	GDSOFTCLASS(PList, RefCounted);
+	FOUNDRY_SOFTCLASS(PList, RefCounted);
 
 	friend class PListNode;
 
@@ -85,7 +85,7 @@ public:
 /*************************************************************************/
 
 class PListNode : public RefCounted {
-	GDSOFTCLASS(PListNode, RefCounted);
+	FOUNDRY_SOFTCLASS(PListNode, RefCounted);
 
 	static int _asn1_size_len(uint8_t p_len_octets);
 

@@ -37,7 +37,7 @@
 class UDPServer;
 
 class PacketPeerUDP : public PacketPeer {
-	GDCLASS(PacketPeerUDP, PacketPeer);
+	FOUNDRY_CLASS(PacketPeerUDP, PacketPeer);
 
 protected:
 	enum {

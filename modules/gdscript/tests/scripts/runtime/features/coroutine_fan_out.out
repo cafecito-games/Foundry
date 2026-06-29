@@ -1,3 +1,0 @@
-GDTEST_OK
-started: ["a", "b", "c"]
-outputs: ["got:a", "got:b", "got:c"]

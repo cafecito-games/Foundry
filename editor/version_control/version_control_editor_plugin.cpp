@@ -411,7 +411,7 @@ void VersionControlEditorPlugin::_discard_file(const String &p_file_path, Editor
 		CHECK_PLUGIN_INITIALIZED();
 		EditorVCSInterface::get_singleton()->discard_file(p_file_path);
 	}
-	// FIXIT: The project.godot file shows weird behavior
+	// FIXIT: The project.foundry file shows weird behavior
 	EditorFileSystem::get_singleton()->update_file(p_file_path);
 }
 
@@ -563,7 +563,7 @@ void VersionControlEditorPlugin::_cell_button_pressed(Object *p_item, int p_colu
 		file_path = "res://" + file_path;
 		if (ResourceLoader::get_resource_type(file_path) == "PackedScene") {
 			EditorNode::get_singleton()->load_scene(file_path);
-		} else if (file_path.ends_with(".gd")) {
+		} else if (file_path.ends_with(".fs")) {
 			EditorNode::get_singleton()->load_resource(file_path);
 			ScriptEditor::get_singleton()->reload_scripts();
 		} else {

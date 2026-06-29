@@ -33,7 +33,7 @@
 #include "scene/3d/physics/joints/joint_3d.h"
 
 class PinJoint3D : public Joint3D {
-	GDCLASS(PinJoint3D, Joint3D);
+	FOUNDRY_CLASS(PinJoint3D, Joint3D);
 
 public:
 	enum Param {

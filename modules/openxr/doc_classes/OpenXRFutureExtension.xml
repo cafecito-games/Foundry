@@ -4,7 +4,7 @@
 		The OpenXR Future extension allows for asynchronous APIs to be used.
 	</brief_description>
 	<description>
-		This is a support extension in OpenXR that allows other OpenXR extensions to start asynchronous functions and get a callback after this function finishes. It is not intended for consumption within GDScript but can be accessed from GDExtension.
+		This is a support extension in OpenXR that allows other OpenXR extensions to start asynchronous functions and get a callback after this function finishes. It is not intended for consumption within FoundryScript but can be accessed from FoundryExtension.
 	</description>
 	<tutorials>
 	</tutorials>

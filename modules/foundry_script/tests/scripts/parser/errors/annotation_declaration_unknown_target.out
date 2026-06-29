@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+Unknown annotation target "WIDGET". Expected "CLASS", "METHOD", "VARIABLE", "SIGNAL", or "CONSTANT".

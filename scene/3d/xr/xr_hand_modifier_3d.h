@@ -39,7 +39,7 @@
  */
 
 class XRHandModifier3D : public SkeletonModifier3D {
-	GDCLASS(XRHandModifier3D, SkeletonModifier3D);
+	FOUNDRY_CLASS(XRHandModifier3D, SkeletonModifier3D);
 
 public:
 	enum BoneUpdate {

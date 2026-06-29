@@ -33,35 +33,35 @@
 #include "core/config/project_settings.h"
 
 void AudioStreamPlayback::start(double p_from_pos) {
-	GDVIRTUAL_CALL(_start, p_from_pos);
+	FOUNDRY_VIRTUAL_CALL(_start, p_from_pos);
 }
 void AudioStreamPlayback::stop() {
-	GDVIRTUAL_CALL(_stop);
+	FOUNDRY_VIRTUAL_CALL(_stop);
 }
 bool AudioStreamPlayback::is_playing() const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_is_playing, ret);
+	FOUNDRY_VIRTUAL_CALL(_is_playing, ret);
 	return ret;
 }
 
 int AudioStreamPlayback::get_loop_count() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_loop_count, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_loop_count, ret);
 	return ret;
 }
 
 double AudioStreamPlayback::get_playback_position() const {
 	double ret = 0.0;
-	GDVIRTUAL_CALL(_get_playback_position, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_playback_position, ret);
 	return ret;
 }
 void AudioStreamPlayback::seek(double p_time) {
-	GDVIRTUAL_CALL(_seek, p_time);
+	FOUNDRY_VIRTUAL_CALL(_seek, p_time);
 }
 
 int AudioStreamPlayback::mix(AudioFrame *p_buffer, float p_rate_scale, int p_frames) {
 	int ret = 0;
-	GDVIRTUAL_CALL(_mix, p_buffer, p_rate_scale, p_frames, ret);
+	FOUNDRY_VIRTUAL_CALL(_mix, p_buffer, p_rate_scale, p_frames, ret);
 	return ret;
 }
 
@@ -102,16 +102,16 @@ void AudioStreamPlayback::seek_playback(double p_time) {
 }
 
 void AudioStreamPlayback::tag_used_streams() {
-	GDVIRTUAL_CALL(_tag_used_streams);
+	FOUNDRY_VIRTUAL_CALL(_tag_used_streams);
 }
 
 void AudioStreamPlayback::set_parameter(const StringName &p_name, const Variant &p_value) {
-	GDVIRTUAL_CALL(_set_parameter, p_name, p_value);
+	FOUNDRY_VIRTUAL_CALL(_set_parameter, p_name, p_value);
 }
 
 Variant AudioStreamPlayback::get_parameter(const StringName &p_name) const {
 	Variant ret;
-	GDVIRTUAL_CALL(_get_parameter, p_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_parameter, p_name, ret);
 	return ret;
 }
 
@@ -120,16 +120,16 @@ Ref<AudioSamplePlayback> AudioStreamPlayback::get_sample_playback() const {
 }
 
 void AudioStreamPlayback::_bind_methods() {
-	GDVIRTUAL_BIND(_start, "from_pos")
-	GDVIRTUAL_BIND(_stop)
-	GDVIRTUAL_BIND(_is_playing)
-	GDVIRTUAL_BIND(_get_loop_count)
-	GDVIRTUAL_BIND(_get_playback_position)
-	GDVIRTUAL_BIND(_seek, "position")
-	GDVIRTUAL_BIND(_mix, "buffer", "rate_scale", "frames");
-	GDVIRTUAL_BIND(_tag_used_streams);
-	GDVIRTUAL_BIND(_set_parameter, "name", "value");
-	GDVIRTUAL_BIND(_get_parameter, "name");
+	FOUNDRY_VIRTUAL_BIND(_start, "from_pos")
+	FOUNDRY_VIRTUAL_BIND(_stop)
+	FOUNDRY_VIRTUAL_BIND(_is_playing)
+	FOUNDRY_VIRTUAL_BIND(_get_loop_count)
+	FOUNDRY_VIRTUAL_BIND(_get_playback_position)
+	FOUNDRY_VIRTUAL_BIND(_seek, "position")
+	FOUNDRY_VIRTUAL_BIND(_mix, "buffer", "rate_scale", "frames");
+	FOUNDRY_VIRTUAL_BIND(_tag_used_streams);
+	FOUNDRY_VIRTUAL_BIND(_set_parameter, "name", "value");
+	FOUNDRY_VIRTUAL_BIND(_get_parameter, "name");
 
 	ClassDB::bind_method(D_METHOD("set_sample_playback", "playback_sample"), &AudioStreamPlayback::set_sample_playback);
 	ClassDB::bind_method(D_METHOD("get_sample_playback"), &AudioStreamPlayback::get_sample_playback);
@@ -164,20 +164,20 @@ void AudioStreamPlaybackResampled::begin_resample() {
 
 int AudioStreamPlaybackResampled::_mix_internal(AudioFrame *p_buffer, int p_frames) {
 	int ret = 0;
-	GDVIRTUAL_CALL(_mix_resampled, p_buffer, p_frames, ret);
+	FOUNDRY_VIRTUAL_CALL(_mix_resampled, p_buffer, p_frames, ret);
 	return ret;
 }
 float AudioStreamPlaybackResampled::get_stream_sampling_rate() {
 	float ret = 0;
-	GDVIRTUAL_CALL(_get_stream_sampling_rate, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_stream_sampling_rate, ret);
 	return ret;
 }
 
 void AudioStreamPlaybackResampled::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("begin_resample"), &AudioStreamPlaybackResampled::begin_resample);
 
-	GDVIRTUAL_BIND(_mix_resampled, "dst_buffer", "frame_count");
-	GDVIRTUAL_BIND(_get_stream_sampling_rate);
+	FOUNDRY_VIRTUAL_BIND(_mix_resampled, "dst_buffer", "frame_count");
+	FOUNDRY_VIRTUAL_BIND(_get_stream_sampling_rate);
 }
 
 int AudioStreamPlaybackResampled::mix(AudioFrame *p_buffer, float p_rate_scale, int p_frames) {
@@ -240,54 +240,54 @@ int AudioStreamPlaybackResampled::mix(AudioFrame *p_buffer, float p_rate_scale, 
 
 Ref<AudioStreamPlayback> AudioStream::instantiate_playback() {
 	Ref<AudioStreamPlayback> ret;
-	GDVIRTUAL_CALL(_instantiate_playback, ret);
+	FOUNDRY_VIRTUAL_CALL(_instantiate_playback, ret);
 	return ret;
 }
 String AudioStream::get_stream_name() const {
 	String ret;
-	GDVIRTUAL_CALL(_get_stream_name, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_stream_name, ret);
 	return ret;
 }
 
 double AudioStream::get_length() const {
 	double ret = 0;
-	GDVIRTUAL_CALL(_get_length, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_length, ret);
 	return ret;
 }
 
 bool AudioStream::is_monophonic() const {
 	bool ret = true;
-	GDVIRTUAL_CALL(_is_monophonic, ret);
+	FOUNDRY_VIRTUAL_CALL(_is_monophonic, ret);
 	return ret;
 }
 
 double AudioStream::get_bpm() const {
 	double ret = 0;
-	GDVIRTUAL_CALL(_get_bpm, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_bpm, ret);
 	return ret;
 }
 
 bool AudioStream::has_loop() const {
 	bool ret = false;
-	GDVIRTUAL_CALL(_has_loop, ret);
+	FOUNDRY_VIRTUAL_CALL(_has_loop, ret);
 	return ret;
 }
 
 int AudioStream::get_bar_beats() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_bar_beats, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_bar_beats, ret);
 	return ret;
 }
 
 int AudioStream::get_beat_count() const {
 	int ret = 0;
-	GDVIRTUAL_CALL(_get_beat_count, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_beat_count, ret);
 	return ret;
 }
 
 Dictionary AudioStream::get_tags() const {
 	Dictionary ret;
-	GDVIRTUAL_CALL(_get_tags, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_tags, ret);
 	return ret;
 }
 
@@ -314,7 +314,7 @@ float AudioStream::get_tagged_frame_offset(int p_index) const {
 
 void AudioStream::get_parameter_list(List<Parameter> *r_parameters) {
 	TypedArray<Dictionary> ret;
-	GDVIRTUAL_CALL(_get_parameter_list, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_parameter_list, ret);
 	for (int i = 0; i < ret.size(); i++) {
 		Dictionary d = ret[i];
 		ERR_CONTINUE(!d.has("default_value"));
@@ -338,16 +338,16 @@ void AudioStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("generate_sample"), &AudioStream::generate_sample);
 	ClassDB::bind_method(D_METHOD("is_meta_stream"), &AudioStream::is_meta_stream);
 
-	GDVIRTUAL_BIND(_instantiate_playback);
-	GDVIRTUAL_BIND(_get_stream_name);
-	GDVIRTUAL_BIND(_get_length);
-	GDVIRTUAL_BIND(_is_monophonic);
-	GDVIRTUAL_BIND(_get_bpm)
-	GDVIRTUAL_BIND(_get_beat_count)
-	GDVIRTUAL_BIND(_get_tags);
-	GDVIRTUAL_BIND(_get_parameter_list)
-	GDVIRTUAL_BIND(_has_loop);
-	GDVIRTUAL_BIND(_get_bar_beats);
+	FOUNDRY_VIRTUAL_BIND(_instantiate_playback);
+	FOUNDRY_VIRTUAL_BIND(_get_stream_name);
+	FOUNDRY_VIRTUAL_BIND(_get_length);
+	FOUNDRY_VIRTUAL_BIND(_is_monophonic);
+	FOUNDRY_VIRTUAL_BIND(_get_bpm)
+	FOUNDRY_VIRTUAL_BIND(_get_beat_count)
+	FOUNDRY_VIRTUAL_BIND(_get_tags);
+	FOUNDRY_VIRTUAL_BIND(_get_parameter_list)
+	FOUNDRY_VIRTUAL_BIND(_has_loop);
+	FOUNDRY_VIRTUAL_BIND(_get_bar_beats);
 
 	ADD_SIGNAL(MethodInfo("parameter_list_changed"));
 }

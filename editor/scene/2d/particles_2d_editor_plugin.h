@@ -37,7 +37,7 @@ class MarginContainer;
 class LineEdit;
 
 class Particles2DEditorPlugin : public ParticlesEditorPlugin {
-	GDCLASS(Particles2DEditorPlugin, ParticlesEditorPlugin);
+	FOUNDRY_CLASS(Particles2DEditorPlugin, ParticlesEditorPlugin);
 
 protected:
 	enum {
@@ -107,7 +107,7 @@ public:
 };
 
 class GPUParticles2DEditorPlugin : public Particles2DEditorPlugin {
-	GDCLASS(GPUParticles2DEditorPlugin, Particles2DEditorPlugin);
+	FOUNDRY_CLASS(GPUParticles2DEditorPlugin, Particles2DEditorPlugin);
 
 	enum {
 		MENU_GENERATE_VISIBILITY_RECT = 200,
@@ -131,7 +131,7 @@ public:
 };
 
 class CPUParticles2DEditorPlugin : public Particles2DEditorPlugin {
-	GDCLASS(CPUParticles2DEditorPlugin, Particles2DEditorPlugin);
+	FOUNDRY_CLASS(CPUParticles2DEditorPlugin, Particles2DEditorPlugin);
 
 protected:
 	Node *_convert_particles() override;

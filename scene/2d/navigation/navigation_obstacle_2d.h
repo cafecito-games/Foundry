@@ -36,7 +36,7 @@ class NavigationPolygon;
 class NavigationMeshSourceGeometryData2D;
 
 class NavigationObstacle2D : public Node2D {
-	GDCLASS(NavigationObstacle2D, Node2D);
+	FOUNDRY_CLASS(NavigationObstacle2D, Node2D);
 
 	RID obstacle;
 	RID map_before_pause;

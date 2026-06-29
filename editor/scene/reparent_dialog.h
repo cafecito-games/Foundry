@@ -36,7 +36,7 @@ class CheckBox;
 class SceneTreeEditor;
 
 class ReparentDialog : public ConfirmationDialog {
-	GDCLASS(ReparentDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(ReparentDialog, ConfirmationDialog);
 
 	SceneTreeEditor *tree = nullptr;
 	CheckBox *keep_transform = nullptr;

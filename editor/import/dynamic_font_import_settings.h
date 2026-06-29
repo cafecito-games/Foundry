@@ -41,7 +41,7 @@
 class DynamicFontImportSettingsDialog;
 
 class DynamicFontImportSettingsData : public RefCounted {
-	GDCLASS(DynamicFontImportSettingsData, RefCounted)
+	FOUNDRY_CLASS(DynamicFontImportSettingsData, RefCounted)
 	friend class DynamicFontImportSettingsDialog;
 
 	HashMap<StringName, Variant> settings;
@@ -67,7 +67,7 @@ class EditorInspector;
 class EditorLocaleDialog;
 
 class DynamicFontImportSettingsDialog : public ConfirmationDialog {
-	GDCLASS(DynamicFontImportSettingsDialog, ConfirmationDialog)
+	FOUNDRY_CLASS(DynamicFontImportSettingsDialog, ConfirmationDialog)
 	friend class DynamicFontImportSettingsData;
 
 	enum ItemButton {

@@ -4,9 +4,9 @@
 
 **Goal:** Build a headless `GDScriptVerificationHarness` that applies candidate annotation edits, re-analyzes the affected dependency closure, keeps only edits that introduce no new analyzer errors (dropping the minimal offending subset with attributed diagnostics), provides a read-only strict-mode preview, and gates `GDScriptFixpointInference` so dependent-breaking edits are rolled back.
 
-**Architecture:** A new `modules/gdscript/editor/gdscript_verification_harness.{h,cpp}` (TOOLS_ENABLED). It computes an affected set = touched files ∪ their transitive inverse-dependency closure (via a new public `GDScriptCache::get_inverse_dependencies` accessor), measures total analyzer-error count by staging candidate sources to disk / analyzing / restoring originals, and uses optimistic batch-apply + delta-debugging (ddmin) to isolate offending candidates. The fixpoint routes each pass's accepted edits through it.
+**Architecture:** A new `modules/foundry_script/editor/gdscript_verification_harness.{h,cpp}` (TOOLS_ENABLED). It computes an affected set = touched files ∪ their transitive inverse-dependency closure (via a new public `GDScriptCache::get_inverse_dependencies` accessor), measures total analyzer-error count by staging candidate sources to disk / analyzing / restoring originals, and uses optimistic batch-apply + delta-debugging (ddmin) to isolate offending candidates. The fixpoint routes each pass's accepted edits through it.
 
-**Tech Stack:** C++ (Godot engine), doctest C++ tests under `modules/gdscript/tests/` (auto-globbed into `modules_tests.gen.h`), GDScript analyzer/parser/cache, `EditorFileSystem` test harness.
+**Tech Stack:** C++ (Godot engine), doctest C++ tests under `modules/foundry_script/tests/` (auto-globbed into `modules_tests.gen.h`), Foundry Script analyzer/parser/cache, `EditorFileSystem` test harness.
 
 ---
 
@@ -21,11 +21,11 @@
 
 ## File structure
 
-- Create `modules/gdscript/editor/gdscript_verification_harness.h` — public types (`VerificationCandidate`, `VerificationOptions`, `VerificationRejected`, `VerificationResult`, `StrictViolation`, `StrictPreviewResult`) and the `GDScriptVerificationHarness` class with `verify(...)` and `preview_strict(...)`.
-- Create `modules/gdscript/editor/gdscript_verification_harness.cpp` — affected-set closure, stage/restore, affected-set analysis (count + messages), optimistic-apply + ddmin attribution, strict preview.
-- Modify `modules/gdscript/gdscript_cache.h` / `.cpp` — add `static HashSet<String> get_inverse_dependencies(const String &p_path)`.
-- Modify `modules/gdscript/editor/gdscript_fixpoint_inference.h` / `.cpp` — add strict flags to options; route per-pass accepted edits through the harness.
-- Create `modules/gdscript/tests/test_verification_harness.h` — doctest suite `[Modules][GDScript][Verification]`.
+- Create `modules/foundry_script/editor/gdscript_verification_harness.h` — public types (`VerificationCandidate`, `VerificationOptions`, `VerificationRejected`, `VerificationResult`, `StrictViolation`, `StrictPreviewResult`) and the `GDScriptVerificationHarness` class with `verify(...)` and `preview_strict(...)`.
+- Create `modules/foundry_script/editor/gdscript_verification_harness.cpp` — affected-set closure, stage/restore, affected-set analysis (count + messages), optimistic-apply + ddmin attribution, strict preview.
+- Modify `modules/foundry_script/gdscript_cache.h` / `.cpp` — add `static HashSet<String> get_inverse_dependencies(const String &p_path)`.
+- Modify `modules/foundry_script/editor/gdscript_fixpoint_inference.h` / `.cpp` — add strict flags to options; route per-pass accepted edits through the harness.
+- Create `modules/foundry_script/tests/test_verification_harness.h` — doctest suite `[Modules][Foundry Script][Verification]`.
 
 ---
 
@@ -34,8 +34,8 @@
 **Goal:** Expose a public, snapshot-by-value accessor returning the set of files that directly depend on a given path, so the harness can build the inverse-dependency closure.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_cache.h` (public method list, ~line 130)
-- Modify: `modules/gdscript/gdscript_cache.cpp`
+- Modify: `modules/foundry_script/gdscript_cache.h` (public method list, ~line 130)
+- Modify: `modules/foundry_script/gdscript_cache.cpp`
 
 **Acceptance Criteria:**
 - [ ] `GDScriptCache::get_inverse_dependencies(path)` returns a copy of the direct inverse-dependents set, or an empty set when none exist.
@@ -79,7 +79,7 @@ Expected: links successfully.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add modules/gdscript/gdscript_cache.h modules/gdscript/gdscript_cache.cpp
+git add modules/foundry_script/gdscript_cache.h modules/foundry_script/gdscript_cache.cpp
 git commit -m "feat(gdscript): Expose inverse-dependency accessor on GDScriptCache (#34)"
 ```
 
@@ -90,9 +90,9 @@ git commit -m "feat(gdscript): Expose inverse-dependency accessor on GDScriptCac
 **Goal:** Implement the harness header and the core verification path: compute the affected set, measure error count + messages by staging/analyzing/restoring, accept all candidates when nothing regresses, and (for now) reject all candidates with attributed diagnostics when the batch regresses.
 
 **Files:**
-- Create: `modules/gdscript/editor/gdscript_verification_harness.h`
-- Create: `modules/gdscript/editor/gdscript_verification_harness.cpp`
-- Create: `modules/gdscript/tests/test_verification_harness.h`
+- Create: `modules/foundry_script/editor/gdscript_verification_harness.h`
+- Create: `modules/foundry_script/editor/gdscript_verification_harness.cpp`
+- Create: `modules/foundry_script/tests/test_verification_harness.h`
 
 **Acceptance Criteria:**
 - [ ] A batch of independently-sound candidates is fully accepted; `accepted_error_count == baseline_error_count`.
@@ -518,13 +518,13 @@ static Vector<VerificationCandidate> enabled_candidates_for(const String &p_path
 	return out;
 }
 
-TEST_SUITE("[Modules][GDScript][Verification]") {
+TEST_SUITE("[Modules][Foundry Script][Verification]") {
 	TEST_CASE("Independently-sound candidates are all accepted") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
 		REQUIRE(protocol);
 
-		const String path = "res://refactor/verify_clean.gd";
+		const String path = "res://refactor/verify_clean.fs";
 		const String source =
 				"func compute():\n"
 				"\treturn inner()\n"
@@ -553,18 +553,18 @@ TEST_SUITE("[Modules][GDScript][Verification]") {
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
 		REQUIRE(protocol);
 
-		// provider.gd: untyped getter whose inferred return type is int.
-		const String provider_path = "res://refactor/verify_provider.gd";
+		// provider.fs: untyped getter whose inferred return type is int.
+		const String provider_path = "res://refactor/verify_provider.fs";
 		const String provider_source =
 				"class_name VerifyProvider\n"
 				"func get_value():\n"
 				"\treturn 42\n";
 		TemporaryScriptFile provider(provider_path, provider_source);
 
-		// consumer.gd: assigns the getter's result to a String. Today the call is
+		// consumer.fs: assigns the getter's result to a String. Today the call is
 		// dynamic (Variant) so it analyzes clean. Typing get_value() -> int makes the
 		// String assignment a hard error, so the provider candidate must be rejected.
-		const String consumer_path = "res://refactor/verify_consumer.gd";
+		const String consumer_path = "res://refactor/verify_consumer.fs";
 		const String consumer_source =
 				"func use() -> void:\n"
 				"\tvar p := VerifyProvider.new()\n"
@@ -606,7 +606,7 @@ Expected: both cases pass. If the dependent-break case does not reject, fix the 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_verification_harness.h modules/gdscript/editor/gdscript_verification_harness.cpp modules/gdscript/tests/test_verification_harness.h
+git add modules/foundry_script/editor/gdscript_verification_harness.h modules/foundry_script/editor/gdscript_verification_harness.cpp modules/foundry_script/tests/test_verification_harness.h
 git commit -m "feat(gdscript): Post-edit verification harness with affected-set re-analysis (#34)"
 ```
 
@@ -617,8 +617,8 @@ git commit -m "feat(gdscript): Post-edit verification harness with affected-set 
 **Goal:** Replace Task 2's all-or-nothing regression branch with ddmin so that when a batch regresses, only the minimal offending candidates are dropped and the rest are accepted and re-verified clean.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_verification_harness.cpp`
-- Modify: `modules/gdscript/tests/test_verification_harness.h` (add isolation test)
+- Modify: `modules/foundry_script/editor/gdscript_verification_harness.cpp`
+- Modify: `modules/foundry_script/tests/test_verification_harness.h` (add isolation test)
 
 **Acceptance Criteria:**
 - [ ] In a batch where exactly one candidate regresses, only that candidate is rejected; all others are accepted and the accepted set re-verifies with `accepted_error_count <= baseline_error_count`.
@@ -807,7 +807,7 @@ NOTE: ensure `MAX`/`MIN` are available (they are global macros in `core/typedefs
 
 - [ ] **Step 3: Add the isolation test**
 
-Add to the `[Modules][GDScript][Verification]` suite in `test_verification_harness.h`:
+Add to the `[Modules][Foundry Script][Verification]` suite in `test_verification_harness.h`:
 
 ```cpp
 	TEST_CASE("Bisection drops only the offending candidate and keeps the rest") {
@@ -817,7 +817,7 @@ Add to the `[Modules][GDScript][Verification]` suite in `test_verification_harne
 
 		// One provider with two getters: get_value() (consumed as String -> bad once
 		// typed int) and get_label() (consumed correctly as String -> safe to type).
-		const String provider_path = "res://refactor/verify_multi_provider.gd";
+		const String provider_path = "res://refactor/verify_multi_provider.fs";
 		const String provider_source =
 				"class_name VerifyMultiProvider\n"
 				"func get_value():\n"
@@ -826,7 +826,7 @@ Add to the `[Modules][GDScript][Verification]` suite in `test_verification_harne
 				"\treturn \"hi\"\n";
 		TemporaryScriptFile provider(provider_path, provider_source);
 
-		const String consumer_path = "res://refactor/verify_multi_consumer.gd";
+		const String consumer_path = "res://refactor/verify_multi_consumer.fs";
 		const String consumer_source =
 				"func use() -> void:\n"
 				"\tvar p := VerifyMultiProvider.new()\n"
@@ -859,7 +859,7 @@ Expected: all three cases pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_verification_harness.cpp modules/gdscript/tests/test_verification_harness.h
+git add modules/foundry_script/editor/gdscript_verification_harness.cpp modules/foundry_script/tests/test_verification_harness.h
 git commit -m "feat(gdscript): Delta-debugging attribution for verification harness (#34)"
 ```
 
@@ -870,8 +870,8 @@ git commit -m "feat(gdscript): Delta-debugging attribution for verification harn
 **Goal:** Implement `preview_strict` to report diagnostics that appear only under the requested strict mode, writing nothing to disk.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_verification_harness.cpp`
-- Modify: `modules/gdscript/tests/test_verification_harness.h` (add preview test)
+- Modify: `modules/foundry_script/editor/gdscript_verification_harness.cpp`
+- Modify: `modules/foundry_script/tests/test_verification_harness.h` (add preview test)
 
 **Acceptance Criteria:**
 - [ ] For a source clean under default analysis but failing under strict mode, `preview_strict` lists the violation(s) with path/line/column/message.
@@ -961,7 +961,7 @@ StrictPreviewResult GDScriptVerificationHarness::preview_strict(
 
 		// Assigning a Variant (dynamic) to a typed local is allowed by default but a
 		// violation under strict_dynamic_checks.
-		const String path = "res://refactor/verify_strict.gd";
+		const String path = "res://refactor/verify_strict.fs";
 		const String source =
 				"func dyn():\n"
 				"\treturn JSON.parse_string(\"1\")\n"
@@ -994,7 +994,7 @@ Expected: all four cases pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_verification_harness.cpp modules/gdscript/tests/test_verification_harness.h
+git add modules/foundry_script/editor/gdscript_verification_harness.cpp modules/foundry_script/tests/test_verification_harness.h
 git commit -m "feat(gdscript): Strict-mode preview in verification harness (#34)"
 ```
 
@@ -1005,9 +1005,9 @@ git commit -m "feat(gdscript): Strict-mode preview in verification harness (#34)
 **Goal:** Make the fixpoint commit only edits the harness accepts (re-analyzing the inverse-dependent closure), so an accepted edit that breaks a dependent is rolled back instead of committed — closing #32's deferred safety note. Add strict flags to `FixpointInferenceOptions`.
 
 **Files:**
-- Modify: `modules/gdscript/editor/gdscript_fixpoint_inference.h`
-- Modify: `modules/gdscript/editor/gdscript_fixpoint_inference.cpp`
-- Modify: `modules/gdscript/tests/test_fixpoint_inference.h` (add dependent-break case)
+- Modify: `modules/foundry_script/editor/gdscript_fixpoint_inference.h`
+- Modify: `modules/foundry_script/editor/gdscript_fixpoint_inference.cpp`
+- Modify: `modules/foundry_script/tests/test_fixpoint_inference.h` (add dependent-break case)
 
 **Acceptance Criteria:**
 - [ ] A fixpoint run over provider+consumer where typing the provider's return would break the consumer does NOT change the provider on disk and reports it as a skip; safe annotations elsewhere still apply.
@@ -1113,7 +1113,7 @@ If `count_enabled_edits` and `verify_source` become unused after this change, de
 
 - [ ] **Step 3: Add the dependent-break fixpoint test**
 
-Add to the `[Modules][GDScript][Fixpoint]` suite in `test_fixpoint_inference.h`:
+Add to the `[Modules][Foundry Script][Fixpoint]` suite in `test_fixpoint_inference.h`:
 
 ```cpp
 	TEST_CASE("Run does not commit an edit that would break a dependent") {
@@ -1121,14 +1121,14 @@ Add to the `[Modules][GDScript][Fixpoint]` suite in `test_fixpoint_inference.h`:
 		GDScriptLanguageProtocol *protocol = GDScriptTests::initialize(GDScriptTests::root);
 		REQUIRE(protocol);
 
-		const String provider_path = "res://refactor/fixpoint_provider.gd";
+		const String provider_path = "res://refactor/fixpoint_provider.fs";
 		const String provider_source =
 				"class_name FixpointProvider\n"
 				"func get_value():\n"
 				"\treturn 42\n";
 		TemporaryScriptFile provider(provider_path, provider_source);
 
-		const String consumer_path = "res://refactor/fixpoint_consumer.gd";
+		const String consumer_path = "res://refactor/fixpoint_consumer.fs";
 		const String consumer_source =
 				"func use() -> void:\n"
 				"\tvar p := FixpointProvider.new()\n"
@@ -1168,22 +1168,22 @@ Expected: all fixpoint and verification cases pass, including pre-existing fixpo
 - [ ] **Step 5: Commit**
 
 ```bash
-git add modules/gdscript/editor/gdscript_fixpoint_inference.h modules/gdscript/editor/gdscript_fixpoint_inference.cpp modules/gdscript/tests/test_fixpoint_inference.h
+git add modules/foundry_script/editor/gdscript_fixpoint_inference.h modules/foundry_script/editor/gdscript_fixpoint_inference.cpp modules/foundry_script/tests/test_fixpoint_inference.h
 git commit -m "feat(gdscript): Gate fixpoint commits through the verification harness (#34)"
 ```
 
 ---
 
-### Task 6: CI-parity build + full GDScript suite + docs
+### Task 6: CI-parity build + full Foundry Script suite + docs
 
-**Goal:** Confirm the whole change builds warnings-as-errors and the full GDScript test suite is green, and document the new API surface.
+**Goal:** Confirm the whole change builds warnings-as-errors and the full Foundry Script test suite is green, and document the new API surface.
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-06-24-post-edit-verification-harness-design.md` (only if behavior diverged from the spec during implementation — keep it the source of truth).
 
 **Acceptance Criteria:**
 - [ ] `scons platform=macos dev_mode=yes tests=yes target=editor` builds clean (warnings-as-errors).
-- [ ] `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript]" --force-colors` is fully green.
+- [ ] `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script]" --force-colors` is fully green.
 
 **Verify:** commands above.
 
@@ -1196,8 +1196,8 @@ Expected: no warnings/errors. Fix any `-Werror=shadow` / unused-variable issues 
 
 - [ ] **Step 2: Full module suite**
 
-Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][GDScript]" --force-colors`
-Expected: all GDScript tests pass.
+Run: `./bin/godot.macos.editor.dev.arm64 --headless --test "[Modules][Foundry Script]" --force-colors`
+Expected: all Foundry Script tests pass.
 
 - [ ] **Step 3: Reconcile the spec if needed, then commit any doc change**
 

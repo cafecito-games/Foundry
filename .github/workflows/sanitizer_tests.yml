@@ -87,14 +87,14 @@ jobs:
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/misc/error_suppressions/lsan.txt
           TSAN_OPTIONS: halt_on_error=1:suppressions=${{ github.workspace }}/misc/error_suppressions/tsan.txt
         run: |
-          GODOT_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*.san*' -perm -111 | head -n 1)"
-          if [ -z "${GODOT_BIN}" ]; then
+          FOUNDRY_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*.san*' -perm -111 | head -n 1)"
+          if [ -z "${FOUNDRY_BIN}" ]; then
             echo "Could not find sanitizer-enabled Godot binary in bin/." >&2
             ls -l bin/
             exit 1
           fi
 
-          "${GODOT_BIN}" --version
-          "${GODOT_BIN}" --help
+          "${FOUNDRY_BIN}" --version
+          "${FOUNDRY_BIN}" --help
           # shellcheck disable=SC2086 # TEST_ARGS is an optional operator-supplied argument string.
-          "${GODOT_BIN}" --headless --test --force-colors ${TEST_ARGS}
+          "${FOUNDRY_BIN}" --headless --test --force-colors ${TEST_ARGS}

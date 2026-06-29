@@ -36,7 +36,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations") // OpenGL is deprecated in macOS 10.14.
 
 Error GLManagerLegacy_MacOS::create_context(GLWindow &win) {
 	NSOpenGLPixelFormatAttribute attributes[] = {
@@ -203,6 +203,6 @@ GLManagerLegacy_MacOS::~GLManagerLegacy_MacOS() {
 	release_current();
 }
 
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
 
 #endif // MACOS_ENABLED && GLES3_ENABLED

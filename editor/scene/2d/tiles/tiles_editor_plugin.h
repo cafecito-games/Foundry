@@ -36,7 +36,7 @@
 #include "tile_set_editor.h"
 
 class TilesEditorUtils : public Object {
-	GDCLASS(TilesEditorUtils, Object);
+	FOUNDRY_CLASS(TilesEditorUtils, Object);
 
 	static TilesEditorUtils *singleton;
 
@@ -108,7 +108,7 @@ public:
 };
 
 class TileSetSourceItemList : public ItemList {
-	GDCLASS(TileSetSourceItemList, ItemList);
+	FOUNDRY_CLASS(TileSetSourceItemList, ItemList);
 
 public:
 	Ref<TileSet> tile_set;
@@ -119,7 +119,7 @@ public:
 };
 
 class TileMapEditorPlugin : public EditorPlugin {
-	GDCLASS(TileMapEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(TileMapEditorPlugin, EditorPlugin);
 
 	TileMapLayerEditor *editor = nullptr;
 	ObjectID tile_map_layer_id;
@@ -154,7 +154,7 @@ public:
 };
 
 class TileSetEditorPlugin : public EditorPlugin {
-	GDCLASS(TileSetEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(TileSetEditorPlugin, EditorPlugin);
 
 	TileSetEditor *editor = nullptr;
 

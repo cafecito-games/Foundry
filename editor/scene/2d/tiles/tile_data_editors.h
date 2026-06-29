@@ -41,7 +41,7 @@ class SpinBox;
 class EditorUndoRedoManager;
 
 class TileDataEditor : public VBoxContainer {
-	GDCLASS(TileDataEditor, VBoxContainer);
+	FOUNDRY_CLASS(TileDataEditor, VBoxContainer);
 
 private:
 	bool _tile_set_changed_update_needed = false;
@@ -70,7 +70,7 @@ public:
 };
 
 class DummyObject : public Object {
-	GDCLASS(DummyObject, Object)
+	FOUNDRY_CLASS(DummyObject, Object)
 private:
 	HashMap<String, Variant> properties;
 
@@ -86,7 +86,7 @@ public:
 };
 
 class GenericTilePolygonEditor : public VBoxContainer {
-	GDCLASS(GenericTilePolygonEditor, VBoxContainer);
+	FOUNDRY_CLASS(GenericTilePolygonEditor, VBoxContainer);
 
 private:
 	Ref<TileSet> tile_set;
@@ -192,7 +192,7 @@ public:
 };
 
 class TileDataDefaultEditor : public TileDataEditor {
-	GDCLASS(TileDataDefaultEditor, TileDataEditor);
+	FOUNDRY_CLASS(TileDataDefaultEditor, TileDataEditor);
 
 private:
 	// Toolbar
@@ -250,28 +250,28 @@ public:
 };
 
 class TileDataTextureOriginEditor : public TileDataDefaultEditor {
-	GDCLASS(TileDataTextureOriginEditor, TileDataDefaultEditor);
+	FOUNDRY_CLASS(TileDataTextureOriginEditor, TileDataDefaultEditor);
 
 public:
 	virtual void draw_over_tile(CanvasItem *p_canvas_item, Transform2D p_transform, TileMapCell p_cell, bool p_selected = false) override;
 };
 
 class TileDataPositionEditor : public TileDataDefaultEditor {
-	GDCLASS(TileDataPositionEditor, TileDataDefaultEditor);
+	FOUNDRY_CLASS(TileDataPositionEditor, TileDataDefaultEditor);
 
 public:
 	virtual void draw_over_tile(CanvasItem *p_canvas_item, Transform2D p_transform, TileMapCell p_cell, bool p_selected = false) override;
 };
 
 class TileDataYSortEditor : public TileDataDefaultEditor {
-	GDCLASS(TileDataYSortEditor, TileDataDefaultEditor);
+	FOUNDRY_CLASS(TileDataYSortEditor, TileDataDefaultEditor);
 
 public:
 	virtual void draw_over_tile(CanvasItem *p_canvas_item, Transform2D p_transform, TileMapCell p_cell, bool p_selected = false) override;
 };
 
 class TileDataOcclusionShapeEditor : public TileDataDefaultEditor {
-	GDCLASS(TileDataOcclusionShapeEditor, TileDataDefaultEditor);
+	FOUNDRY_CLASS(TileDataOcclusionShapeEditor, TileDataDefaultEditor);
 
 private:
 	int occlusion_layer = -1;
@@ -301,7 +301,7 @@ public:
 };
 
 class TileDataCollisionEditor : public TileDataDefaultEditor {
-	GDCLASS(TileDataCollisionEditor, TileDataDefaultEditor);
+	FOUNDRY_CLASS(TileDataCollisionEditor, TileDataDefaultEditor);
 
 	int physics_layer = -1;
 
@@ -335,7 +335,7 @@ public:
 };
 
 class TileDataTerrainsEditor : public TileDataEditor {
-	GDCLASS(TileDataTerrainsEditor, TileDataEditor);
+	FOUNDRY_CLASS(TileDataTerrainsEditor, TileDataEditor);
 
 private:
 	// Toolbar
@@ -384,7 +384,7 @@ public:
 };
 
 class TileDataNavigationEditor : public TileDataDefaultEditor {
-	GDCLASS(TileDataNavigationEditor, TileDataDefaultEditor);
+	FOUNDRY_CLASS(TileDataNavigationEditor, TileDataDefaultEditor);
 
 private:
 	int navigation_layer = -1;

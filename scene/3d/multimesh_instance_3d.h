@@ -39,7 +39,7 @@ class NavigationMeshSourceGeometryData3D;
 #endif // NAVIGATION_3D_DISABLED
 
 class MultiMeshInstance3D : public GeometryInstance3D {
-	GDCLASS(MultiMeshInstance3D, GeometryInstance3D);
+	FOUNDRY_CLASS(MultiMeshInstance3D, GeometryInstance3D);
 
 	Ref<MultiMesh> multimesh;
 

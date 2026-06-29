@@ -36,7 +36,7 @@
 #include "scene/resources/image_texture.h"
 
 class EditorExportPlatformLinuxBSD : public EditorExportPlatformPC {
-	GDCLASS(EditorExportPlatformLinuxBSD, EditorExportPlatformPC);
+	FOUNDRY_CLASS(EditorExportPlatformLinuxBSD, EditorExportPlatformPC);
 
 	HashMap<String, String> extensions;
 

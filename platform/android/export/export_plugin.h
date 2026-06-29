@@ -45,12 +45,12 @@ class ImageTexture;
 
 // Optional environment variables for defining confidential information. If any
 // of these is set, they will override the values set in the credentials file.
-const String ENV_ANDROID_KEYSTORE_DEBUG_PATH = "GODOT_ANDROID_KEYSTORE_DEBUG_PATH";
-const String ENV_ANDROID_KEYSTORE_DEBUG_USER = "GODOT_ANDROID_KEYSTORE_DEBUG_USER";
-const String ENV_ANDROID_KEYSTORE_DEBUG_PASS = "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD";
-const String ENV_ANDROID_KEYSTORE_RELEASE_PATH = "GODOT_ANDROID_KEYSTORE_RELEASE_PATH";
-const String ENV_ANDROID_KEYSTORE_RELEASE_USER = "GODOT_ANDROID_KEYSTORE_RELEASE_USER";
-const String ENV_ANDROID_KEYSTORE_RELEASE_PASS = "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD";
+const String ENV_ANDROID_KEYSTORE_DEBUG_PATH = "FOUNDRY_ANDROID_KEYSTORE_DEBUG_PATH";
+const String ENV_ANDROID_KEYSTORE_DEBUG_USER = "FOUNDRY_ANDROID_KEYSTORE_DEBUG_USER";
+const String ENV_ANDROID_KEYSTORE_DEBUG_PASS = "FOUNDRY_ANDROID_KEYSTORE_DEBUG_PASSWORD";
+const String ENV_ANDROID_KEYSTORE_RELEASE_PATH = "FOUNDRY_ANDROID_KEYSTORE_RELEASE_PATH";
+const String ENV_ANDROID_KEYSTORE_RELEASE_USER = "FOUNDRY_ANDROID_KEYSTORE_RELEASE_USER";
+const String ENV_ANDROID_KEYSTORE_RELEASE_PASS = "FOUNDRY_ANDROID_KEYSTORE_RELEASE_PASSWORD";
 
 const String DEFAULT_ANDROID_KEYSTORE_DEBUG_USER = "androiddebugkey";
 const String DEFAULT_ANDROID_KEYSTORE_DEBUG_PASSWORD = "android";
@@ -63,7 +63,7 @@ struct LauncherIcon {
 class AndroidEditorGradleRunner;
 
 class EditorExportPlatformAndroid : public EditorExportPlatform {
-	GDCLASS(EditorExportPlatformAndroid, EditorExportPlatform);
+	FOUNDRY_CLASS(EditorExportPlatformAndroid, EditorExportPlatform);
 
 	Ref<ImageTexture> logo;
 	Ref<ImageTexture> run_icon;
@@ -278,7 +278,7 @@ public:
 
 	void _clear_assets_directory(const Ref<EditorExportPreset> &p_preset);
 
-	void _remove_copied_libs(String p_gdextension_libs_path);
+	void _remove_copied_libs(String p_foundry_extension_libs_path);
 
 	static String join_list(const List<String> &p_parts, const String &p_separator);
 	static String join_abis(const Vector<ABI> &p_parts, const String &p_separator, bool p_use_arch);

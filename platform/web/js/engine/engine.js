@@ -162,9 +162,9 @@ const Engine = (function () {
 					// Godot configuration.
 					me.rtenv['initConfig'](config);
 
-					// Preload GDExtension libraries.
-					if (me.config.gdextensionLibs.length > 0 && !me.rtenv['loadDynamicLibrary']) {
-						return Promise.reject(new Error('GDExtension libraries are not supported by this engine version. '
+					// Preload FoundryExtension libraries.
+					if (me.config.foundryextensionLibs.length > 0 && !me.rtenv['loadDynamicLibrary']) {
+						return Promise.reject(new Error('FoundryExtension libraries are not supported by this engine version. '
 							+ 'Enable "Extensions Support" for your export preset and/or build your custom template with "dlink_enabled=yes".'));
 					}
 					return new Promise(function (resolve, reject) {

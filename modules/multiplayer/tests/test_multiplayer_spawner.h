@@ -37,7 +37,7 @@
 
 namespace TestMultiplayerSpawner {
 class Wasp : public Node {
-	GDCLASS(Wasp, Node);
+	FOUNDRY_CLASS(Wasp, Node);
 
 	int _size = 0;
 
@@ -56,7 +56,7 @@ public:
 };
 
 class SpawnWasps : public Object {
-	GDCLASS(SpawnWasps, Object);
+	FOUNDRY_CLASS(SpawnWasps, Object);
 
 protected:
 	static void _bind_methods() {

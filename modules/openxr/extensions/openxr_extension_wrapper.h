@@ -48,10 +48,10 @@ class OpenXRActionMap;
 
 // `OpenXRExtensionWrapper` allows us to implement OpenXR extensions.
 class OpenXRExtensionWrapper : public Object {
-	GDCLASS(OpenXRExtensionWrapper, Object);
+	FOUNDRY_CLASS(OpenXRExtensionWrapper, Object);
 
-	Ref<OpenXRAPIExtension> _gdextension_get_openxr_api();
-	void _gdextension_register_extension_wrapper();
+	Ref<OpenXRAPIExtension> _foundry_extension_get_openxr_api();
+	void _foundry_extension_register_extension_wrapper();
 
 protected:
 	static void _bind_methods();
@@ -68,7 +68,7 @@ public:
 	// to true if the extension is enabled.
 	virtual HashMap<String, bool *> get_requested_extensions(XrVersion p_xr_version);
 
-	GDVIRTUAL1R(Dictionary, _get_requested_extensions, uint64_t);
+	FOUNDRY_VIRTUAL1R(Dictionary, _get_requested_extensions, uint64_t);
 
 	// These functions allow an extension to add entries to a struct chain.
 	// `p_next_pointer` points to the last struct that was created for this chain
@@ -92,32 +92,32 @@ public:
 	virtual void *set_view_configuration_and_get_next_pointer(uint32_t p_view, void *p_next_pointer); // Add additional data structures when calling xrEnumerateViewConfiguration
 	virtual void print_view_configuration_info(uint32_t p_view) const;
 
-	//TODO workaround as GDExtensionPtr<void> return type results in build error in godot-cpp
-	GDVIRTUAL1R(uint64_t, _set_system_properties_and_get_next_pointer, GDExtensionPtr<void>);
-	GDVIRTUAL2R(uint64_t, _set_instance_create_info_and_get_next_pointer, uint64_t, GDExtensionPtr<void>);
-	GDVIRTUAL1R(uint64_t, _set_session_create_and_get_next_pointer, GDExtensionPtr<void>);
-	GDVIRTUAL1R(uint64_t, _set_swapchain_create_info_and_get_next_pointer, GDExtensionPtr<void>);
-	GDVIRTUAL2R(uint64_t, _set_hand_joint_locations_and_get_next_pointer, int, GDExtensionPtr<void>);
-	GDVIRTUAL2R(uint64_t, _set_projection_views_and_get_next_pointer, int, GDExtensionPtr<void>);
-	GDVIRTUAL1R(uint64_t, _set_frame_wait_info_and_get_next_pointer, GDExtensionPtr<void>);
-	GDVIRTUAL1R(uint64_t, _set_frame_end_info_and_get_next_pointer, GDExtensionPtr<void>);
-	GDVIRTUAL1R(uint64_t, _set_view_locate_info_and_get_next_pointer, GDExtensionPtr<void>);
-	GDVIRTUAL2R(uint64_t, _set_reference_space_create_info_and_get_next_pointer, int, GDExtensionPtr<void>);
-	GDVIRTUAL0R(int, _get_composition_layer_count);
-	GDVIRTUAL1R(uint64_t, _get_composition_layer, int);
-	GDVIRTUAL1R(int, _get_composition_layer_order, int);
-	GDVIRTUAL1(_prepare_view_configuration, int);
-	GDVIRTUAL2R(uint64_t, _set_view_configuration_and_get_next_pointer, uint32_t, GDExtensionPtr<void>);
-	GDVIRTUAL1C(_print_view_configuration_info, int);
+	//TODO workaround as FoundryExtensionPtr<void> return type results in build error in godot-cpp
+	FOUNDRY_VIRTUAL1R(uint64_t, _set_system_properties_and_get_next_pointer, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL2R(uint64_t, _set_instance_create_info_and_get_next_pointer, uint64_t, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL1R(uint64_t, _set_session_create_and_get_next_pointer, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL1R(uint64_t, _set_swapchain_create_info_and_get_next_pointer, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL2R(uint64_t, _set_hand_joint_locations_and_get_next_pointer, int, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL2R(uint64_t, _set_projection_views_and_get_next_pointer, int, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL1R(uint64_t, _set_frame_wait_info_and_get_next_pointer, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL1R(uint64_t, _set_frame_end_info_and_get_next_pointer, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL1R(uint64_t, _set_view_locate_info_and_get_next_pointer, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL2R(uint64_t, _set_reference_space_create_info_and_get_next_pointer, int, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL0R(int, _get_composition_layer_count);
+	FOUNDRY_VIRTUAL1R(uint64_t, _get_composition_layer, int);
+	FOUNDRY_VIRTUAL1R(int, _get_composition_layer_order, int);
+	FOUNDRY_VIRTUAL1(_prepare_view_configuration, int);
+	FOUNDRY_VIRTUAL2R(uint64_t, _set_view_configuration_and_get_next_pointer, uint32_t, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL1C(_print_view_configuration_info, int);
 
 #ifndef DISABLE_DEPRECATED
-	GDVIRTUAL0R_COMPAT(_get_requested_extensions_bind_compat_109302, Dictionary, _get_requested_extensions);
-	GDVIRTUAL1R_COMPAT(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, uint64_t, _set_instance_create_info_and_get_next_pointer, GDExtensionPtr<void>);
+	FOUNDRY_VIRTUAL0R_COMPAT(_get_requested_extensions_bind_compat_109302, Dictionary, _get_requested_extensions);
+	FOUNDRY_VIRTUAL1R_COMPAT(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, uint64_t, _set_instance_create_info_and_get_next_pointer, FoundryExtensionPtr<void>);
 #endif
 
 	virtual PackedStringArray get_suggested_tracker_names();
 
-	GDVIRTUAL0R(PackedStringArray, _get_suggested_tracker_names);
+	FOUNDRY_VIRTUAL0R(PackedStringArray, _get_suggested_tracker_names);
 
 	// `on_register_metadata` allows extensions to register additional controller metadata.
 	// This function is called even when OpenXRApi is not constructured as the metadata
@@ -143,18 +143,18 @@ public:
 	virtual void on_pre_draw_viewport(RID p_render_target); // `on_pre_draw_viewport` is called right before we start rendering this viewport
 	virtual void on_post_draw_viewport(RID p_render_target); // `on_port_draw_viewport` is called right after we start rendering this viewport (note that on Vulkan draw commands may only be queued)
 
-	GDVIRTUAL0(_on_register_metadata);
-	GDVIRTUAL0(_on_before_instance_created);
-	GDVIRTUAL1(_on_instance_created, uint64_t);
-	GDVIRTUAL0(_on_instance_destroyed);
-	GDVIRTUAL1(_on_session_created, uint64_t);
-	GDVIRTUAL0(_on_process);
-	GDVIRTUAL0(_on_sync_actions);
-	GDVIRTUAL0(_on_pre_render);
-	GDVIRTUAL0(_on_main_swapchains_created);
-	GDVIRTUAL0(_on_session_destroyed);
-	GDVIRTUAL1(_on_pre_draw_viewport, RID);
-	GDVIRTUAL1(_on_post_draw_viewport, RID);
+	FOUNDRY_VIRTUAL0(_on_register_metadata);
+	FOUNDRY_VIRTUAL0(_on_before_instance_created);
+	FOUNDRY_VIRTUAL1(_on_instance_created, uint64_t);
+	FOUNDRY_VIRTUAL0(_on_instance_destroyed);
+	FOUNDRY_VIRTUAL1(_on_session_created, uint64_t);
+	FOUNDRY_VIRTUAL0(_on_process);
+	FOUNDRY_VIRTUAL0(_on_sync_actions);
+	FOUNDRY_VIRTUAL0(_on_pre_render);
+	FOUNDRY_VIRTUAL0(_on_main_swapchains_created);
+	FOUNDRY_VIRTUAL0(_on_session_destroyed);
+	FOUNDRY_VIRTUAL1(_on_pre_draw_viewport, RID);
+	FOUNDRY_VIRTUAL1(_on_post_draw_viewport, RID);
 
 	virtual void on_state_idle(); // `on_state_idle` is called when the OpenXR session state is changed to idle.
 	virtual void on_state_ready(); // `on_state_ready` is called when the OpenXR session state is changed to ready, this means OpenXR is ready to setup our session.
@@ -165,14 +165,14 @@ public:
 	virtual void on_state_loss_pending(); // `on_state_loss_pending` is called when the OpenXR session state is changed to loss pending.
 	virtual void on_state_exiting(); // `on_state_exiting` is called when the OpenXR session state is changed to exiting.
 
-	GDVIRTUAL0(_on_state_idle);
-	GDVIRTUAL0(_on_state_ready);
-	GDVIRTUAL0(_on_state_synchronized);
-	GDVIRTUAL0(_on_state_visible);
-	GDVIRTUAL0(_on_state_focused);
-	GDVIRTUAL0(_on_state_stopping);
-	GDVIRTUAL0(_on_state_loss_pending);
-	GDVIRTUAL0(_on_state_exiting);
+	FOUNDRY_VIRTUAL0(_on_state_idle);
+	FOUNDRY_VIRTUAL0(_on_state_ready);
+	FOUNDRY_VIRTUAL0(_on_state_synchronized);
+	FOUNDRY_VIRTUAL0(_on_state_visible);
+	FOUNDRY_VIRTUAL0(_on_state_focused);
+	FOUNDRY_VIRTUAL0(_on_state_stopping);
+	FOUNDRY_VIRTUAL0(_on_state_loss_pending);
+	FOUNDRY_VIRTUAL0(_on_state_exiting);
 
 	// These will only be called on extensions registered via OpenXRAPI::register_composition_layer_provider().
 	virtual int get_composition_layer_count();
@@ -185,17 +185,17 @@ public:
 	virtual Dictionary get_viewport_composition_layer_extension_property_defaults(); // Get the default values for the additional property definitions for OpenXRCompositionLayer.
 	virtual void *set_android_surface_swapchain_create_info_and_get_next_pointer(const Dictionary &p_property_values, void *p_next_pointer);
 
-	GDVIRTUAL3R(uint64_t, _set_viewport_composition_layer_and_get_next_pointer, GDExtensionConstPtr<void>, Dictionary, GDExtensionPtr<void>);
-	GDVIRTUAL1(_on_viewport_composition_layer_destroyed, GDExtensionConstPtr<void>);
-	GDVIRTUAL0R(TypedArray<Dictionary>, _get_viewport_composition_layer_extension_properties);
-	GDVIRTUAL0R(Dictionary, _get_viewport_composition_layer_extension_property_defaults);
-	GDVIRTUAL2R(uint64_t, _set_android_surface_swapchain_create_info_and_get_next_pointer, Dictionary, GDExtensionPtr<void>);
+	FOUNDRY_VIRTUAL3R(uint64_t, _set_viewport_composition_layer_and_get_next_pointer, FoundryExtensionConstPtr<void>, Dictionary, FoundryExtensionPtr<void>);
+	FOUNDRY_VIRTUAL1(_on_viewport_composition_layer_destroyed, FoundryExtensionConstPtr<void>);
+	FOUNDRY_VIRTUAL0R(TypedArray<Dictionary>, _get_viewport_composition_layer_extension_properties);
+	FOUNDRY_VIRTUAL0R(Dictionary, _get_viewport_composition_layer_extension_property_defaults);
+	FOUNDRY_VIRTUAL2R(uint64_t, _set_android_surface_swapchain_create_info_and_get_next_pointer, Dictionary, FoundryExtensionPtr<void>);
 
 	// `on_event_polled` is called when there is an OpenXR event to process.
 	// Should return true if the event was handled, false otherwise.
 	virtual bool on_event_polled(const XrEventDataBuffer &event);
 
-	GDVIRTUAL1R(bool, _on_event_polled, GDExtensionConstPtr<void>);
+	FOUNDRY_VIRTUAL1R(bool, _on_event_polled, FoundryExtensionConstPtr<void>);
 
 	OpenXRExtensionWrapper();
 	virtual ~OpenXRExtensionWrapper() override;

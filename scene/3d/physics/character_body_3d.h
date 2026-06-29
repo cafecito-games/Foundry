@@ -34,7 +34,7 @@
 #include "scene/3d/physics/physics_body_3d.h"
 
 class CharacterBody3D : public PhysicsBody3D {
-	GDCLASS(CharacterBody3D, PhysicsBody3D);
+	FOUNDRY_CLASS(CharacterBody3D, PhysicsBody3D);
 
 public:
 	enum MotionMode {

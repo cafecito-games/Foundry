@@ -37,7 +37,7 @@
 class GraphEdit;
 
 class GraphEditArranger : public RefCounted {
-	GDSOFTCLASS(GraphEditArranger, RefCounted);
+	FOUNDRY_SOFTCLASS(GraphEditArranger, RefCounted);
 
 	enum SET_OPERATIONS {
 		IS_EQUAL,

@@ -40,7 +40,7 @@ template <typename T>
 class TypedArray;
 
 class Performance : public Object {
-	GDCLASS(Performance, Object);
+	FOUNDRY_CLASS(Performance, Object);
 
 	static Performance *singleton;
 	static void _bind_methods();

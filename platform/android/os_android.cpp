@@ -39,7 +39,7 @@
 #include "net_socket_android.h"
 
 #include "core/config/project_settings.h"
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/io/xml_parser.h"
 #include "core/os/main_loop.h"
 #include "core/profiling/profiling.h"
@@ -210,7 +210,7 @@ bool OS_Android::copy_dynamic_library(const String &p_library_path, const String
 	return copy_exists;
 }
 
-Error OS_Android::open_dynamic_library(const String &p_path, void *&p_library_handle, GDExtensionData *p_data) {
+Error OS_Android::open_dynamic_library(const String &p_path, void *&p_library_handle, FoundryExtensionData *p_data) {
 	String path = p_path;
 	bool so_file_exists = true;
 	if (!FileAccess::exists(path)) {
@@ -963,11 +963,11 @@ Error OS_Android::setup_remote_filesystem(const String &p_server_host, int p_por
 	return err;
 }
 
-void OS_Android::load_platform_gdextensions() const {
-	Vector<String> extension_list_config_file = godot_java->get_gdextension_list_config_file();
+void OS_Android::load_platform_foundry_extensions() const {
+	Vector<String> extension_list_config_file = godot_java->get_foundry_extension_list_config_file();
 	for (String config_file_path : extension_list_config_file) {
-		GDExtensionManager::LoadStatus err = GDExtensionManager::get_singleton()->load_extension(config_file_path);
-		ERR_CONTINUE_MSG(err == GDExtensionManager::LOAD_STATUS_FAILED, "Error loading platform extension: " + config_file_path);
+		FoundryExtensionManager::LoadStatus err = FoundryExtensionManager::get_singleton()->load_extension(config_file_path);
+		ERR_CONTINUE_MSG(err == FoundryExtensionManager::LOAD_STATUS_FAILED, "Error loading platform extension: " + config_file_path);
 	}
 }
 

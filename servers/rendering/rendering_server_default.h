@@ -42,7 +42,7 @@
 #include "servers/server_wrap_mt_common.h"
 
 class RenderingServerDefault : public RenderingServer {
-	GDSOFTCLASS(RenderingServerDefault, RenderingServer);
+	FOUNDRY_SOFTCLASS(RenderingServerDefault, RenderingServer);
 
 	enum {
 		MAX_INSTANCE_CULL = 8192,

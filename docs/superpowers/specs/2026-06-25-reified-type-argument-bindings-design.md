@@ -15,13 +15,13 @@ fixtures against this rule.
 ## The shared root cause
 
 Runtime member-type validation indexes the **leaf instance's** `type_arguments` by a flat
-`MemberInfo::type_parameter_index` (`modules/gdscript/gdscript.cpp:1637`), and the
+`MemberInfo::type_parameter_index` (`modules/foundry_script/gdscript.cpp:1637`), and the
 `OPCODE_GET_TYPE_PARAMETER` path for `create_proxy[T]` does the same
-(`modules/gdscript/gdscript_vm.cpp:1423`). Both assume the member's declaring class *is*
+(`modules/foundry_script/gdscript_vm.cpp:1423`). Both assume the member's declaring class *is*
 the leaf class. Two facts make that assumption wrong:
 
 - A subclass seeds `member_indices = base->member_indices`
-  (`modules/gdscript/gdscript_compiler.cpp:3226`), copying each inherited member's
+  (`modules/foundry_script/gdscript_compiler.cpp:3226`), copying each inherited member's
   `type_parameter_index` — an ordinal relative to the member's **declaring** class — with
   no record of which class declared it.
 - The instance's `type_arguments` is only ever populated by `_new_specialized`
@@ -124,7 +124,7 @@ Runtime `set()` then branches on the tag:
 
 ### `create_proxy[T]` (`OPCODE_GET_TYPE_PARAMETER`)
 
-The leaf script `L` holds a per-ancestor binding table — keyed by declaring `GDScript*`,
+The leaf script `L` holds a per-ancestor binding table — keyed by declaring `Foundry Script*`,
 each entry a `Vector<TypeArgumentBinding>` indexed by that ancestor's parameter ordinal,
 populated at compile time from `resolve(L, D, i)`. The opcode already knows the declaring
 `_script` and the ordinal; it looks up `L`'s table for `_script` and branches:
@@ -193,6 +193,6 @@ The deliverable for #324; #255/#294/#305 each contribute their rows.
    built through an aliased handle or held as a typed-container element bind and validate
    identically to the direct form. These may live in #242/#240's own fixtures.
 
-Fixtures land under `modules/gdscript/tests/scripts/runtime/` (runtime reification and
+Fixtures land under `modules/foundry_script/tests/scripts/runtime/` (runtime reification and
 rejection) alongside the existing analyzer fixtures
 (`analyzer/errors/generic_inherited_member_declaring_scope`).

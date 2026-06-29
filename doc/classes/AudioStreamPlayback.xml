@@ -42,7 +42,7 @@
 			<param index="2" name="frames" type="int" />
 			<description>
 				Override this method to customize how the audio stream is mixed. This method is called even if the playback is not active.
-				[b]Note:[/b] It is not useful to override this method in GDScript or C#. Only GDExtension can take advantage of it.
+				[b]Note:[/b] It is not useful to override this method in FoundryScript or C#. Only FoundryExtension can take advantage of it.
 			</description>
 		</method>
 		<method name="_seek" qualifiers="virtual">

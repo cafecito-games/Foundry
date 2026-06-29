@@ -37,7 +37,7 @@
 class PhysicalBone3D;
 
 class PhysicalBone3DEditor : public Object {
-	GDCLASS(PhysicalBone3DEditor, Object);
+	FOUNDRY_CLASS(PhysicalBone3DEditor, Object);
 
 	HBoxContainer *spatial_editor_hb = nullptr;
 	Button *button_transform_joint = nullptr;
@@ -58,7 +58,7 @@ public:
 };
 
 class PhysicalBone3DEditorPlugin : public EditorPlugin {
-	GDCLASS(PhysicalBone3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(PhysicalBone3DEditorPlugin, EditorPlugin);
 
 	PhysicalBone3D *selected = nullptr;
 	PhysicalBone3DEditor physical_bone_editor;

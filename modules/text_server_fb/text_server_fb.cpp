@@ -30,8 +30,8 @@
 
 #include "text_server_fb.h"
 
-#ifdef GDEXTENSION
-// Headers for building as GDExtension plug-in.
+#ifdef FOUNDRY_EXTENSION
+// Headers for building as FoundryExtension plug-in.
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
@@ -46,7 +46,7 @@ using namespace godot;
 
 #define GLOBAL_GET(m_var) ProjectSettings::get_singleton()->get_setting_with_override(m_var)
 
-#elif defined(GODOT_MODULE)
+#elif defined(FOUNDRY_MODULE)
 // Headers for building as built-in module.
 
 #include "core/config/project_settings.h"
@@ -63,8 +63,8 @@ using namespace godot;
 // Thirdparty headers.
 
 #ifdef MODULE_MSDFGEN_ENABLED
-GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Wshadow")
-GODOT_MSVC_WARNING_PUSH_AND_IGNORE(4458) // "Declaration of 'identifier' hides class member".
+FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wshadow")
+FOUNDRY_MSVC_WARNING_PUSH_AND_IGNORE(4458) // "Declaration of 'identifier' hides class member".
 
 #include <core/EdgeHolder.h>
 #include <core/ShapeDistanceFinder.h>
@@ -72,8 +72,8 @@ GODOT_MSVC_WARNING_PUSH_AND_IGNORE(4458) // "Declaration of 'identifier' hides c
 #include <core/edge-selectors.h>
 #include <msdfgen.h>
 
-GODOT_GCC_WARNING_POP
-GODOT_MSVC_WARNING_POP
+FOUNDRY_GCC_WARNING_POP
+FOUNDRY_MSVC_WARNING_POP
 #endif
 
 #ifdef MODULE_FREETYPE_ENABLED
@@ -104,9 +104,9 @@ bool TextServerFallback::_has_feature(Feature p_feature) const {
 }
 
 String TextServerFallback::_get_name() const {
-#ifdef GDEXTENSION
-	return "Fallback (GDExtension)";
-#elif defined(GODOT_MODULE)
+#ifdef FOUNDRY_EXTENSION
+	return "Fallback (FoundryExtension)";
+#elif defined(FOUNDRY_MODULE)
 	return "Fallback (Built-in)";
 #endif
 }
@@ -4459,10 +4459,10 @@ RID TextServerFallback::_find_sys_font_for_text(const RID &p_fdef, const String 
 
 		String locale = (p_language.is_empty()) ? TranslationServer::get_singleton()->get_tool_locale() : p_language;
 		PackedStringArray fallback_font_name = OS::get_singleton()->get_system_font_path_for_text(font_name, p_text, locale, p_script_code, font_weight, font_stretch, font_style & TextServer::FONT_ITALIC);
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 		for (int fb = 0; fb < fallback_font_name.size(); fb++) {
 			const String &E = fallback_font_name[fb];
-#elif defined(GODOT_MODULE)
+#elif defined(FOUNDRY_MODULE)
 		for (const String &E : fallback_font_name) {
 #endif
 			SystemFontKey key = SystemFontKey(E, font_style & TextServer::FONT_ITALIC, font_weight, font_stretch, p_fdef, this);
@@ -5220,7 +5220,7 @@ PackedInt32Array TextServerFallback::_shaped_text_get_character_breaks(const RID
 	if (size > 0) {
 		ret.resize(size);
 		for (int i = 0; i < size; i++) {
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 			ret[i] = i + 1 + sd->start;
 #else
 			ret.write[i] = i + 1 + sd->start;

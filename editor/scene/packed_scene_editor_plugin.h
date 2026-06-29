@@ -35,7 +35,7 @@
 #include "scene/gui/box_container.h"
 
 class PackedSceneEditor : public VBoxContainer {
-	GDCLASS(PackedSceneEditor, VBoxContainer);
+	FOUNDRY_CLASS(PackedSceneEditor, VBoxContainer);
 
 	Ref<PackedScene> packed_scene;
 
@@ -46,7 +46,7 @@ public:
 };
 
 class EditorInspectorPluginPackedScene : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginPackedScene, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginPackedScene, EditorInspectorPlugin);
 
 public:
 	virtual bool can_handle(Object *p_object) override;
@@ -54,7 +54,7 @@ public:
 };
 
 class PackedSceneEditorPlugin : public EditorPlugin {
-	GDCLASS(PackedSceneEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(PackedSceneEditorPlugin, EditorPlugin);
 
 public:
 	PackedSceneEditorPlugin();

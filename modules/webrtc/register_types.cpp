@@ -45,12 +45,12 @@ void initialize_webrtc_module(ModuleInitializationLevel p_level) {
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "network/limits/webrtc/max_channel_in_buffer_kb", PROPERTY_HINT_RANGE, "2,4096,1,or_greater"), 64);
 
 	ClassDB::register_custom_instance_class<WebRTCPeerConnection>();
-	GDREGISTER_CLASS(WebRTCPeerConnectionExtension);
+	FOUNDRY_REGISTER_CLASS(WebRTCPeerConnectionExtension);
 
-	GDREGISTER_ABSTRACT_CLASS(WebRTCDataChannel);
-	GDREGISTER_CLASS(WebRTCDataChannelExtension);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(WebRTCDataChannel);
+	FOUNDRY_REGISTER_CLASS(WebRTCDataChannelExtension);
 
-	GDREGISTER_CLASS(WebRTCMultiplayerPeer);
+	FOUNDRY_REGISTER_CLASS(WebRTCMultiplayerPeer);
 }
 
 void uninitialize_webrtc_module(ModuleInitializationLevel p_level) {

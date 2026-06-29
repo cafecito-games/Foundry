@@ -34,7 +34,7 @@
 #include "core/io/file_access.h"
 
 class FileAccessCompressed : public FileAccess {
-	GDSOFTCLASS(FileAccessCompressed, FileAccess);
+	FOUNDRY_SOFTCLASS(FileAccessCompressed, FileAccess);
 	Compression::Mode cmode = Compression::MODE_ZSTD;
 	bool writing = false;
 	uint64_t write_pos = 0;

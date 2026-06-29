@@ -1,0 +1,18 @@
+FS_TEST_OK
+var test_native: FSNativeClass
+var test_script: FoundryScript
+var test_class: FoundryScript
+var test_enum: Dictionary
+---
+FSNativeClass
+FoundryScript
+FoundryScript
+{ "A": 0, "B": 1, "C": 2 }
+---
+[]
+100
+10
+["A", "B", "C"]
+---
+100
+10

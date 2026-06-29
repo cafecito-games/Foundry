@@ -65,7 +65,7 @@ class WorldEnvironment;
 class MeshInstance3D;
 
 class ViewportRotationControl : public Control {
-	GDCLASS(ViewportRotationControl, Control);
+	FOUNDRY_CLASS(ViewportRotationControl, Control);
 
 	struct Axis2D {
 		Vector2 screen_point;
@@ -106,7 +106,7 @@ public:
 };
 
 class Node3DEditorViewport : public Control {
-	GDCLASS(Node3DEditorViewport, Control);
+	FOUNDRY_CLASS(Node3DEditorViewport, Control);
 	friend class Node3DEditor;
 	friend class ViewportNavigationControl;
 	friend class ViewportRotationControl;
@@ -592,7 +592,7 @@ public:
 };
 
 class Node3DEditorSelectedItem : public Object {
-	GDCLASS(Node3DEditorSelectedItem, Object);
+	FOUNDRY_CLASS(Node3DEditorSelectedItem, Object);
 
 public:
 	AABB aabb;
@@ -616,7 +616,7 @@ public:
 };
 
 class Node3DEditorViewportContainer : public Container {
-	GDCLASS(Node3DEditorViewportContainer, Container);
+	FOUNDRY_CLASS(Node3DEditorViewportContainer, Container);
 
 public:
 	enum View {
@@ -655,7 +655,7 @@ public:
 };
 
 class Node3DEditor : public VBoxContainer {
-	GDCLASS(Node3DEditor, VBoxContainer);
+	FOUNDRY_CLASS(Node3DEditor, VBoxContainer);
 
 public:
 	static const unsigned int VIEWPORTS_COUNT = 4;
@@ -884,7 +884,7 @@ private:
 	// Preview Sun and Environment
 
 	class PreviewSunEnvPopup : public PopupPanel {
-		GDCLASS(PreviewSunEnvPopup, PopupPanel);
+		FOUNDRY_CLASS(PreviewSunEnvPopup, PopupPanel);
 
 	protected:
 		virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
@@ -1083,7 +1083,7 @@ public:
 };
 
 class Node3DEditorPlugin : public EditorPlugin {
-	GDCLASS(Node3DEditorPlugin, EditorPlugin);
+	FOUNDRY_CLASS(Node3DEditorPlugin, EditorPlugin);
 
 	Node3DEditor *spatial_editor = nullptr;
 
@@ -1105,7 +1105,7 @@ public:
 };
 
 class ViewportNavigationControl : public Control {
-	GDCLASS(ViewportNavigationControl, Control);
+	FOUNDRY_CLASS(ViewportNavigationControl, Control);
 
 	Node3DEditorViewport *viewport = nullptr;
 	Vector2i focused_mouse_start;

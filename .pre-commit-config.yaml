@@ -68,8 +68,8 @@ repos:
     rev: 0.34.1
     hooks:
       - id: check-jsonschema
-        files: ^core/extension/gdextension_interface\.json$
-        args: ["--schemafile", "core/extension/gdextension_interface.schema.json"]
+        files: ^core/extension/foundry_extension_interface\.json$
+        args: ["--schemafile", "core/extension/foundry_extension_interface.schema.json"]
 
   - repo: local
     hooks:
@@ -181,9 +181,9 @@ repos:
             .*\.svg|
             .*\.patch|
             .*\.out|
-            modules/gdscript/tests/scripts/parser/features/mixed_indentation_on_blank_lines\.gd|
-            modules/gdscript/tests/scripts/parser/warnings/empty_file_newline_comment\.norun\.gd|
-            modules/gdscript/tests/scripts/parser/warnings/empty_file_newline\.norun\.gd|
+            modules/foundry_script/tests/scripts/parser/features/mixed_indentation_on_blank_lines\.fs|
+            modules/foundry_script/tests/scripts/parser/warnings/empty_file_newline_comment\.norun\.fs|
+            modules/foundry_script/tests/scripts/parser/warnings/empty_file_newline\.norun\.fs|
             tests/data/.*\.bin
           )$
 

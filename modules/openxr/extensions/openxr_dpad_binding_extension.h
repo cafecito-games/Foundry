@@ -37,7 +37,7 @@
 #include "openxr_extension_wrapper.h"
 
 class OpenXRDPadBindingExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRDPadBindingExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRDPadBindingExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods() {}
@@ -60,7 +60,7 @@ private:
 };
 
 class OpenXRDpadBindingModifier : public OpenXRIPBindingModifier {
-	GDCLASS(OpenXRDpadBindingModifier, OpenXRIPBindingModifier);
+	FOUNDRY_CLASS(OpenXRDpadBindingModifier, OpenXRIPBindingModifier);
 
 private:
 	PackedByteArray dpad_bindings_data;

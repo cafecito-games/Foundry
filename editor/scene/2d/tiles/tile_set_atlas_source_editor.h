@@ -42,7 +42,7 @@ class Tree;
 class VSeparator;
 
 class TileSetAtlasSourceEditor : public HSplitContainer {
-	GDCLASS(TileSetAtlasSourceEditor, HSplitContainer);
+	FOUNDRY_CLASS(TileSetAtlasSourceEditor, HSplitContainer);
 
 public:
 	// A class to store which tiles are selected.
@@ -61,7 +61,7 @@ public:
 
 	// -- Proxy object for an atlas source, needed by the inspector --
 	class TileSetAtlasSourceProxyObject : public Object {
-		GDCLASS(TileSetAtlasSourceProxyObject, Object);
+		FOUNDRY_CLASS(TileSetAtlasSourceProxyObject, Object);
 
 	private:
 		Ref<TileSet> tile_set;
@@ -84,7 +84,7 @@ public:
 
 	// -- Proxy object for a tile, needed by the inspector --
 	class AtlasTileProxyObject : public Object {
-		GDCLASS(AtlasTileProxyObject, Object);
+		FOUNDRY_CLASS(AtlasTileProxyObject, Object);
 
 	private:
 		TileSetAtlasSourceEditor *tiles_set_atlas_source_editor = nullptr;
@@ -304,7 +304,7 @@ public:
 };
 
 class EditorPropertyTilePolygon : public EditorProperty {
-	GDCLASS(EditorPropertyTilePolygon, EditorProperty);
+	FOUNDRY_CLASS(EditorPropertyTilePolygon, EditorProperty);
 
 	StringName count_property;
 	String element_pattern;
@@ -323,7 +323,7 @@ public:
 };
 
 class EditorInspectorPluginTileData : public EditorInspectorPlugin {
-	GDCLASS(EditorInspectorPluginTileData, EditorInspectorPlugin);
+	FOUNDRY_CLASS(EditorInspectorPluginTileData, EditorInspectorPlugin);
 
 	void _occlusion_polygon_set_callback();
 	void _polygons_changed(Object *p_generic_tile_polygon_editor, Object *p_object, const String &p_path);

@@ -158,8 +158,8 @@ def get_version_info(module_version_string="", silent=False):
 
     # For dev snapshots (alpha, beta, RC, etc.) we do not commit status change to Git,
     # so this define provides a way to override it without having to modify the source.
-    if os.getenv("GODOT_VERSION_STATUS") is not None:
-        version_info["status"] = str(os.getenv("GODOT_VERSION_STATUS"))
+    if os.getenv("FOUNDRY_VERSION_STATUS") is not None:
+        version_info["status"] = str(os.getenv("FOUNDRY_VERSION_STATUS"))
         if not silent:
             print_info(f"Using version status '{version_info['status']}', overriding the original '{version.status}'.")
 
@@ -552,8 +552,8 @@ def generate_cpp_hint_file(filename):
     else:
         try:
             with open(filename, "w", encoding="utf-8", newline="\n") as fd:
-                fd.write("#define GDCLASS(m_class, m_inherits)\n")
-                for name in ["GDVIRTUAL", "EXBIND", "MODBIND"]:
+                fd.write("#define FOUNDRY_CLASS(m_class, m_inherits)\n")
+                for name in ["FOUNDRY_VIRTUAL", "EXBIND", "MODBIND"]:
                     for count in range(13):
                         for suffix in ["", "R", "C", "RC"]:
                             fd.write(f"#define {name}{count}{suffix}(")

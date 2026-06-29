@@ -54,7 +54,7 @@
 class OpenXRFutureExtension;
 
 class OpenXRFutureResult : public RefCounted {
-	GDCLASS(OpenXRFutureResult, RefCounted);
+	FOUNDRY_CLASS(OpenXRFutureResult, RefCounted);
 
 	friend class OpenXRFutureExtension;
 
@@ -93,7 +93,7 @@ private:
 VARIANT_ENUM_CAST(OpenXRFutureResult::ResultStatus);
 
 class OpenXRFutureExtension : public OpenXRExtensionWrapper {
-	GDCLASS(OpenXRFutureExtension, OpenXRExtensionWrapper);
+	FOUNDRY_CLASS(OpenXRFutureExtension, OpenXRExtensionWrapper);
 
 protected:
 	static void _bind_methods();
@@ -124,7 +124,7 @@ private:
 
 	HashMap<XrFutureEXT, Ref<OpenXRFutureResult>> futures;
 
-	// Make these accessible from GDExtension and/or GDScript
+	// Make these accessible from FoundryExtension and/or FoundryScript
 	Ref<OpenXRFutureResult> _register_future(uint64_t p_future, const Callable &p_on_success = Callable());
 	void _cancel_future(uint64_t p_future);
 

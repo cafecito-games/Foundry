@@ -39,7 +39,7 @@
 class Timer;
 
 class HTTPRequest : public Node {
-	GDCLASS(HTTPRequest, Node);
+	FOUNDRY_CLASS(HTTPRequest, Node);
 
 public:
 	enum Result {

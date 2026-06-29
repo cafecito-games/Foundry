@@ -1,4 +1,0 @@
-GDTEST_OK
-async func load_value() -> String
-abstract async func load_value() -> String
-loaded

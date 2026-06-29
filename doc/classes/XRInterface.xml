@@ -4,7 +4,7 @@
 		Base class for an XR interface implementation.
 	</brief_description>
 	<description>
-		This class needs to be implemented to make an AR or VR platform available to Godot and these should be implemented as C++ modules or GDExtension modules. Part of the interface is exposed to GDScript so you can detect, enable and configure an AR or VR platform.
+		This class needs to be implemented to make an AR or VR platform available to Godot and these should be implemented as C++ modules or FoundryExtension modules. Part of the interface is exposed to FoundryScript so you can detect, enable and configure an AR or VR platform.
 		Interfaces should be written in such a way that simply enabling them will give us a working setup. You can query the available interfaces through [XRServer].
 	</description>
 	<tutorials>
@@ -264,7 +264,7 @@
 			Same as [constant XR_PLAY_AREA_ROOMSCALE] but origin point is fixed to the center of the physical space. In this mode, system-level recentering may be disabled, requiring the use of [method XRServer.center_on_hmd].
 		</constant>
 		<constant name="XR_PLAY_AREA_CUSTOM" value="2147483647" enum="PlayAreaMode">
-			Custom play area set by a GDExtension.
+			Custom play area set by a FoundryExtension.
 		</constant>
 		<constant name="XR_ENV_BLEND_MODE_OPAQUE" value="0" enum="EnvironmentBlendMode">
 			Opaque blend mode. This is typically used for VR devices.

@@ -46,7 +46,7 @@ template <typename T>
 class TypedArray;
 
 class CameraServer : public Object {
-	GDCLASS(CameraServer, Object);
+	FOUNDRY_CLASS(CameraServer, Object);
 	_THREAD_SAFE_CLASS_
 
 public:

@@ -33,7 +33,7 @@
 #include "scene/gui/container.h"
 
 class PanelContainer : public Container {
-	GDCLASS(PanelContainer, Container);
+	FOUNDRY_CLASS(PanelContainer, Container);
 
 	struct ThemeCache {
 		Ref<StyleBox> panel_style;

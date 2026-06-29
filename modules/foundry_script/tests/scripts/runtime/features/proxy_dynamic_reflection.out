@@ -1,0 +1,5 @@
+FS_TEST_OK
+stubbed-find
+3
+["find", "count"]
+true

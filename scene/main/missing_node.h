@@ -33,7 +33,7 @@
 #include "scene/main/node.h"
 
 class MissingNode : public Node {
-	GDCLASS(MissingNode, Node)
+	FOUNDRY_CLASS(MissingNode, Node)
 	HashMap<StringName, Variant> properties;
 
 	String original_class;

@@ -42,7 +42,7 @@ class EditorFileDialog;
 class EditorValidationPanel;
 
 class ShaderCreateDialog : public ConfirmationDialog {
-	GDCLASS(ShaderCreateDialog, ConfirmationDialog);
+	FOUNDRY_CLASS(ShaderCreateDialog, ConfirmationDialog);
 
 	enum {
 		MSG_ID_SHADER,

@@ -35,7 +35,7 @@
 #include "core/io/resource.h"
 
 class GLTFTexture : public Resource {
-	GDCLASS(GLTFTexture, Resource);
+	FOUNDRY_CLASS(GLTFTexture, Resource);
 
 private:
 	GLTFImageIndex src_image = -1;

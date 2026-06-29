@@ -35,7 +35,7 @@
 class ArrayMesh;
 
 class ConcavePolygonShape3D : public Shape3D {
-	GDCLASS(ConcavePolygonShape3D, Shape3D);
+	FOUNDRY_CLASS(ConcavePolygonShape3D, Shape3D);
 
 	Vector<Vector3> faces;
 	bool backface_collision = false;

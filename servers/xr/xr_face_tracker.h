@@ -41,7 +41,7 @@
  */
 
 class XRFaceTracker : public XRTracker {
-	GDCLASS(XRFaceTracker, XRTracker);
+	FOUNDRY_CLASS(XRFaceTracker, XRTracker);
 	_THREAD_SAFE_CLASS_
 
 public:

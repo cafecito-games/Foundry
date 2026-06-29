@@ -36,7 +36,7 @@
 #include "core/object/script_language.h"
 
 class RenderSceneData : public Object {
-	GDCLASS(RenderSceneData, Object);
+	FOUNDRY_CLASS(RenderSceneData, Object);
 
 protected:
 	static void _bind_methods();
@@ -53,7 +53,7 @@ public:
 };
 
 class RenderSceneDataExtension : public RenderSceneData {
-	GDCLASS(RenderSceneDataExtension, RenderSceneData);
+	FOUNDRY_CLASS(RenderSceneDataExtension, RenderSceneData);
 
 protected:
 	static void _bind_methods();
@@ -68,12 +68,12 @@ public:
 
 	virtual RID get_uniform_buffer() const override;
 
-	GDVIRTUAL0RC(Transform3D, _get_cam_transform)
-	GDVIRTUAL0RC(Projection, _get_cam_projection)
+	FOUNDRY_VIRTUAL0RC(Transform3D, _get_cam_transform)
+	FOUNDRY_VIRTUAL0RC(Projection, _get_cam_projection)
 
-	GDVIRTUAL0RC(uint32_t, _get_view_count)
-	GDVIRTUAL1RC(Vector3, _get_view_eye_offset, uint32_t)
-	GDVIRTUAL1RC(Projection, _get_view_projection, uint32_t)
+	FOUNDRY_VIRTUAL0RC(uint32_t, _get_view_count)
+	FOUNDRY_VIRTUAL1RC(Vector3, _get_view_eye_offset, uint32_t)
+	FOUNDRY_VIRTUAL1RC(Projection, _get_view_projection, uint32_t)
 
-	GDVIRTUAL0RC(RID, _get_uniform_buffer)
+	FOUNDRY_VIRTUAL0RC(RID, _get_uniform_buffer)
 };

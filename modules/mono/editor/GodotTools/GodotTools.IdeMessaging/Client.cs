@@ -123,7 +123,7 @@ namespace GodotTools.IdeMessaging
             this.messageHandler = messageHandler;
             this.logger = logger;
 
-            string projectMetadataDir = Path.Combine(godotProjectDir, ".godot", "mono", "metadata");
+            string projectMetadataDir = Path.Combine(godotProjectDir, ".foundry", "mono", "metadata");
             // FileSystemWatcher requires an existing directory
             if (!Directory.Exists(projectMetadataDir))
             {

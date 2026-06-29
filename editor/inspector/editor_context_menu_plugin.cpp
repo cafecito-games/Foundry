@@ -36,7 +36,7 @@
 #include "scene/resources/texture.h"
 
 void EditorContextMenuPlugin::get_options(const Vector<String> &p_paths) {
-	GDVIRTUAL_CALL(_popup_menu, p_paths);
+	FOUNDRY_VIRTUAL_CALL(_popup_menu, p_paths);
 }
 
 void EditorContextMenuPlugin::add_menu_shortcut(const Ref<Shortcut> &p_shortcut, const Callable &p_callable) {
@@ -82,7 +82,7 @@ void EditorContextMenuPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_context_menu_item_from_shortcut", "name", "shortcut", "icon"), &EditorContextMenuPlugin::add_context_menu_item_from_shortcut, DEFVAL(Ref<Texture2D>()));
 	ClassDB::bind_method(D_METHOD("add_context_submenu_item", "name", "menu", "icon"), &EditorContextMenuPlugin::add_context_submenu_item, DEFVAL(Ref<Texture2D>()));
 
-	GDVIRTUAL_BIND(_popup_menu, "paths");
+	FOUNDRY_VIRTUAL_BIND(_popup_menu, "paths");
 
 	BIND_ENUM_CONSTANT(CONTEXT_SLOT_SCENE_TREE);
 	BIND_ENUM_CONSTANT(CONTEXT_SLOT_FILESYSTEM);

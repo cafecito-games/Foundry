@@ -278,7 +278,7 @@ Error ScriptServer::register_language(ScriptLanguage *p_language) {
 	_languages[_language_count++] = p_language;
 
 	// Make sure the new language is initialized in case languages have already been initialized before
-	// This happens when importing the GDExtension for the first time in the editor
+	// This happens when importing the FoundryExtension for the first time in the editor
 	if (languages_ready) {
 		p_language->init();
 	}

@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 6: Cannot call non-static function "label()" on class handle "Type[T]" directly. Make an instance instead.

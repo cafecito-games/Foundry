@@ -535,7 +535,7 @@ namespace Godot.Collections
 
         /// <summary>
         /// Adds an item to the end of this <see cref="Array"/>.
-        /// This is the same as <c>append</c> or <c>push_back</c> in GDScript.
+        /// This is the same as <c>append</c> or <c>push_back</c> in FoundryScript.
         /// </summary>
         /// <exception cref="InvalidOperationException">
         /// The array is read-only.
@@ -1607,7 +1607,7 @@ namespace Godot.Collections
 
         /// <summary>
         /// Adds an item to the end of this <see cref="Array{T}"/>.
-        /// This is the same as <c>append</c> or <c>push_back</c> in GDScript.
+        /// This is the same as <c>append</c> or <c>push_back</c> in FoundryScript.
         /// </summary>
         /// <exception cref="InvalidOperationException">
         /// The array is read-only.

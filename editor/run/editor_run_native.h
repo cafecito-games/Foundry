@@ -68,7 +68,7 @@ struct RunTargetMenuEntry {
 };
 
 class EditorRunNative : public HBoxContainer {
-	GDCLASS(EditorRunNative, HBoxContainer);
+	FOUNDRY_CLASS(EditorRunNative, HBoxContainer);
 
 	RichTextLabel *result_dialog_log = nullptr;
 	AcceptDialog *result_dialog = nullptr;
@@ -110,7 +110,7 @@ public:
 	// below it are legacy `EditorExport::encode_platform_device_id` device ids
 	// (`platform_idx * 10000 + device_idx`). The base sits far above any reachable
 	// legacy id — it would take 10000 export platforms to collide — so the two id
-	// spaces never overlap, even with many GDExtension export platforms registered.
+	// spaces never overlap, even with many FoundryExtension export platforms registered.
 	static constexpr int RUN_TARGET_ID_BASE = 100'000'000;
 
 	static EditorRunNative *get_singleton() { return singleton; }

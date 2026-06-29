@@ -35,7 +35,7 @@
 #include "editor/export/editor_export.h"
 
 void register_visionos_exporter_types() {
-	GDREGISTER_VIRTUAL_CLASS(EditorExportPlatformVisionOS);
+	FOUNDRY_REGISTER_VIRTUAL_CLASS(EditorExportPlatformVisionOS);
 }
 
 void register_visionos_exporter() {

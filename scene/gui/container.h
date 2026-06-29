@@ -33,7 +33,7 @@
 #include "scene/gui/control.h"
 
 class Container : public Control {
-	GDCLASS(Container, Control);
+	FOUNDRY_CLASS(Container, Control);
 
 	bool pending_sort = false;
 	void _sort_children();
@@ -53,8 +53,8 @@ protected:
 	virtual void move_child_notify(Node *p_child) override;
 	virtual void remove_child_notify(Node *p_child) override;
 
-	GDVIRTUAL0RC(Vector<int>, _get_allowed_size_flags_horizontal)
-	GDVIRTUAL0RC(Vector<int>, _get_allowed_size_flags_vertical)
+	FOUNDRY_VIRTUAL0RC(Vector<int>, _get_allowed_size_flags_horizontal)
+	FOUNDRY_VIRTUAL0RC(Vector<int>, _get_allowed_size_flags_vertical)
 
 	void _notification(int p_what);
 	static void _bind_methods();

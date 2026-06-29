@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Cannot assign to final variable "VALUE"; it is already assigned.

@@ -33,7 +33,7 @@
 #include "core/object/ref_counted.h"
 
 class StaticRaycaster : public RefCounted {
-	GDCLASS(StaticRaycaster, RefCounted)
+	FOUNDRY_CLASS(StaticRaycaster, RefCounted)
 protected:
 	static StaticRaycaster *(*create_function)();
 

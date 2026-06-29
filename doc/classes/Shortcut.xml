@@ -8,7 +8,7 @@
 		One shortcut can contain multiple [InputEvent] resources, making it possible to trigger one action with multiple different inputs.
 		[b]Example:[/b] Capture the [kbd]Ctrl + S[/kbd] shortcut using a [Shortcut] resource:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		extends Node
 
 		var save_shortcut = Shortcut.new()
@@ -23,7 +23,7 @@
 			if save_shortcut.matches_event(event) and event.is_pressed() and not event.is_echo():
 				print("Save shortcut pressed!")
 				get_viewport().set_input_as_handled()
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		using Godot;
 

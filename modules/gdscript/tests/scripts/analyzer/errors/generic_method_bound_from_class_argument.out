@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 10: Type argument "Resource" does not satisfy the bound "PackedScene" of type parameter "U" of generic method "keep()".

@@ -34,15 +34,15 @@
 #include "core/object/object.h"
 
 class MainLoop : public Object {
-	GDCLASS(MainLoop, Object);
+	FOUNDRY_CLASS(MainLoop, Object);
 
 protected:
 	static void _bind_methods();
 
-	GDVIRTUAL0(_initialize)
-	GDVIRTUAL1R(bool, _physics_process, double)
-	GDVIRTUAL1R(bool, _process, double)
-	GDVIRTUAL0(_finalize)
+	FOUNDRY_VIRTUAL0(_initialize)
+	FOUNDRY_VIRTUAL1R(bool, _physics_process, double)
+	FOUNDRY_VIRTUAL1R(bool, _process, double)
+	FOUNDRY_VIRTUAL0(_finalize)
 
 public:
 	enum {

@@ -33,7 +33,7 @@
 #include "scene/main/node.h"
 
 class ShaderGlobalsOverride : public Node {
-	GDCLASS(ShaderGlobalsOverride, Node);
+	FOUNDRY_CLASS(ShaderGlobalsOverride, Node);
 
 	struct Override {
 		bool in_use = false;

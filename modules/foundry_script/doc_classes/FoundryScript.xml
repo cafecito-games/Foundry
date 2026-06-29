@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoundryScript" inherits="Script" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A script implemented in the FoundryScript programming language.
+	</brief_description>
+	<description>
+		A script implemented in the FoundryScript programming language, saved with the [code].fs[/code] extension. The script extends the functionality of all objects that instantiate it.
+		Calling [method new] creates a new instance of the script. [method Object.set_script] extends an existing object, if that object's class matches one of the script's base classes.
+		If you are looking for FoundryScript's built-in functions, see [@FoundryScript] instead.
+		[b]Strict type analysis:[/b] FoundryScript supports nullable annotations, typed callable and signal signatures, and nested typed containers. Nullable object types use [code]T?[/code], while plain [code]T[/code] can be checked as non-nullable when [member ProjectSettings.debug/foundry_script/analysis/strict_null_checks] is enabled. [Callable] and [Signal] signatures can be written as [code]Callable[[ArgType, ...], ReturnType][/code] and [code]Signal[[ArgType, ...]][/code]. [Array] and [Dictionary] annotations can contain nested typed containers such as [code]Dictionary[String, Array[int]][/code].
+		[codeblock]
+		signal renamed_to(new_name: String)
+
+		func get_target() -> Node?:
+			return null
+
+		func accept_target(target: Node) -> void:
+			pass
+
+		func name_length(name: String) -> int:
+			return name.length()
+
+		func on_renamed(new_name: String) -> void:
+			pass
+
+		func get_dynamic_value() -> Variant:
+			return 1
+
+		func use_strict_types() -> void:
+			var maybe_target: Node? = get_target()
+			if maybe_target != null:
+				accept_target(maybe_target)
+
+			var callback: Callable[[String], int] = name_length
+			var length: int = callback.call("Player")
+
+			var renamed: Signal[[String]] = renamed_to
+			renamed.connect(on_renamed)
+			renamed.emit("Player")
+
+			var scores: Dictionary[String, Array[int]] = {
+				"level_1": [10, 20, 30],
+			}
+			print(length, scores["level_1"][0])
+
+			# Rejected when strict_null_checks is enabled:
+			# accept_target(get_target())
+
+			# Rejected when strict_dynamic_checks is enabled:
+			# var typed_value: int = get_dynamic_value()
+		[/codeblock]
+		Most callable and signal signature checks run as part of normal static analysis. [member ProjectSettings.debug/foundry_script/analysis/strict_dynamic_checks] adds stricter checks at dynamic boundaries by rejecting [Variant] values where a non-[Variant] static type is required.
+		[b]Abstract classes and methods:[/b] the contextual [code]abstract[/code] keyword marks a class or a method as abstract. It is written as a prefix on the declaration: [code]abstract func[/code] for a method, [code]abstract class[/code] for an inner class, and, at the top level of a file, [code]abstract class_name Shape[/code] or [code]abstract extends RefCounted[/code] for the script's own class.
+		An abstract class cannot be instantiated directly; it is meant to be inherited, and attempting to call [method new] on it results in an error. An abstract method has no implementation, so a newline or a semicolon is expected after its header. An abstract method defines a contract that inheriting classes must conform to, because the method signature must be compatible when overriding. Inheriting classes must either provide implementations for all inherited abstract methods or be marked as abstract themselves. If a class has at least one abstract method (its own or an unimplemented inherited one), then it must also be marked as abstract. The reverse is not required: an abstract class is allowed to have no abstract methods.
+		[codeblock]
+		abstract class Shape:
+			abstract func draw()
+
+		class Circle extends Shape:
+			func draw():
+				print("Drawing a circle.")
+
+		class Square extends Shape:
+			func draw():
+				print("Drawing a square.")
+		[/codeblock]
+		A method may be both abstract and asynchronous: [code]abstract async func[/code] declares an asynchronous override contract that inheriting classes must satisfy with a compatible asynchronous implementation.
+		At the top level, [code]abstract[/code] attaches to the script's own class, so it must precede a [code]class_name[/code] or [code]extends[/code] declaration. A file that declares neither implicitly extends [RefCounted], but the [code]abstract[/code] prefix has nothing to attach to; such a file must add an explicit base — for example [code]abstract extends RefCounted[/code] — to be marked abstract.
+		[b]Generics:[/b] classes and methods can be parameterized by one or more type parameters, declared with the same bracket convention used by [Array] and [Dictionary]. A type parameter is written after the class or method name ([code]class Box[T][/code], [code]func swap[T](...)[/code]), and the parameter is then usable as a type inside the body.
+		[codeblock]
+		# Generic class: `T` types members and method signatures.
+		class Box[T]:
+			var value: T
+
+			func set_value(new_value: T) -> void:
+				value = new_value
+
+			func get_value() -> T:
+				return value
+
+		# A generic class can also be file-level with `class_name Box[T]`.
+
+		# Generic method, independent of any class type parameter.
+		func swap[T](a: T, b: T) -> Array[T]:
+			return [b, a]
+		[/codeblock]
+		[b]Use-site type arguments:[/b] a generic class is specialized by supplying type arguments in brackets at the use site, including for construction: [code]Box[int].new()[/code]. A generic method infers its type parameters from the argument types, and explicit application is available as a fallback ([code]swap[float](1, 2)[/code]). Inference fails with an error directing you to apply the arguments explicitly when arguments conflict (for example [code]swap(1, "x")[/code]) or when a parameter is unconstrained because it appears only in the return type. Multiple parameters ([code]Pair[K, V][/code]) and multi-argument application ([code]Pair[int, String].new()[/code]) are supported.
+		[codeblock]
+		var box := Box[int].new()
+		box.set_value(42)            # Accepts `int`.
+		var n: int = box.get_value() # `get_value()` is substituted to `-> int`.
+
+		var inferred := swap(1, 2)        # `T` inferred as `int`.
+		var explicit := swap[float](1, 2) # `T` applied explicitly.
+		[/codeblock]
+		[b]Bounds:[/b] a type parameter can declare an upper bound with [code]T: Bound[/code]. The bound may be a class ([code]Box[T: RefCounted][/code]) or a trait ([code]Box[T: Damageable][/code]). A type argument must satisfy the bound (be the bound, derive from it, or — for a trait bound — [code]uses[/code] it), and inside the body a [code]T[/code]-typed value exposes the bound type's members for static checking. Bounds are matched [i]invariantly[/i] in their own type arguments: [code]Stack[String][/code] does not satisfy a [code]List[int][/code] bound.
+		[codeblock]
+		trait Damageable:
+			abstract func take_damage(amount: int) -> void
+
+		class Box[T: Damageable]:
+			var value: T
+
+			func hit() -> void:
+				value.take_damage(5) # `Damageable` members resolve on `T`.
+		[/codeblock]
+		[b]Inheritance:[/b] a class can extend a generic base, rebinding the base's parameter to its own ([code]class Stack[U] extends List[U][/code]) or fixing it to a concrete type ([code]class IntList extends List[int][/code]). Inherited members and method signatures are substituted along the chain. Generic specialization is [i]invariant[/i]: [code]Stack[String][/code] is a [code]List[String][/code], not a [code]List[int][/code]. The F-bounded / CRTP pattern [code]class Sword extends Box[Sword][/code] is supported.
+		[b]Reified runtime model:[/b] generic [i]class instances[/i] are [i]reified[/i] — their type arguments survive to runtime. A [code]Box[int][/code] instance carries its bound type arguments, and writes to a [code]T[/code]-typed member are validated against them exactly as [Array] element insertion is, so assigning an incompatible value through a dynamic reference fails at runtime (values that convert, such as a [float] written to an [code skip-lint]int[/code] slot, are coerced). The reified arguments round-trip through [code].tres[/code]/scene save-load, resource duplication, and hot-reload. A generic class named without type arguments is a [i]raw[/i] generic (like an untyped [Array]): [code]var b: Box[/code] is a permissive supertype that any [code]Box[X][/code] assigns to, and its members are dynamic, with writes still validated against the instance's reified argument at runtime.
+		Generic [i]methods[/i], by contrast, are a static inference and checking device: their type parameters are [i]not[/i] reified and are erased at runtime. A generic method that returns a container whose element is a type parameter ([code]func singleton[T](...) -> Array[T][/code]) produces an untyped array at runtime; the element type is recovered from the target's concrete type at the assignment site, so assigning the result to an [code]Array[int][/code] retypes it while assigning to an untyped [Array] leaves it untyped.
+		[b]Generic traits:[/b] traits can be generic ([code]trait Holder[T][/code]) and applied with type arguments ([code]class IntBox uses Holder[int][/code]); conformance is checked under substitution, so the implementation must satisfy every required member with the argument applied. Traits can also require generic methods ([code]abstract func transform[U](value: U) -> Array[U][/code]), which an implementation satisfies up to type-parameter renaming (alpha-equivalence by ordinal position).
+		[b]Reflection:[/b] generic type information is available at runtime. [method is_generic] and [method get_type_parameter_list] report a class's declared type parameters (as [FSTypeParameter] descriptors), and [method FSReflection.get_type_arguments] returns the reified type arguments bound onto an instance.
+		[b]Custom annotations:[/b] a script can declare its own [i]passive[/i] annotations and attach them to classes, methods, and member variables. Custom annotations are static metadata only: they are never executed and add no per-call runtime cost. They do not introduce decorators, interceptors, AST transforms, or code generation. A declaration is written at the root of a script with the contextual [code]annotation[/code] keyword, names the parameters it accepts, and lists the targets it may be applied to with [code]targets[/code]. The valid targets are [code]CLASS[/code] (root and inner classes), [code]METHOD[/code] (including static, abstract, and trait methods), and [code]VARIABLE[/code] (member [code]var[/code] declarations, including static member variables). Declarations are root-only; they are not allowed inside inner classes, traits, or functions, and they do not become members, constants, or callables.
+		[codeblock]
+		namespace cafecito.test
+
+		annotation test targets METHOD
+		annotation timeout(seconds: float) targets METHOD
+		annotation tags(...names: String) targets METHOD, CLASS
+		annotation skip(reason: String = "") targets METHOD, CLASS
+		annotation fixture targets VARIABLE
+		annotation suite(name: String = "") targets CLASS
+		[/codeblock]
+		Annotation parameters are function-like but stricter: every parameter must declare a type, default values must be constant expressions, and a variadic parameter (written with the ellipsis style [code]...names: String[/code]) must be final and collects extra positional arguments. Marker annotations take no parameters.
+		[b]Applying annotations:[/b] custom annotations are applied with the usual [code]@name[/code] spelling above the declaration they target. Multiple annotations can stack on one declaration, and repeating the same annotation is legal and preserved in source order. Arguments may be positional or named (by parameter name), with all positional arguments appearing before any named argument; an argument may not be supplied both positionally and by name. Every argument must be a constant expression that strictly converts to the declared parameter type. Default values are validated but are not injected into the reflected metadata.
+		[codeblock]
+		import cafecito.test
+
+		@suite(name = "Combat System")
+		@tags("gameplay", "slow")
+		class CombatTests:
+			@fixture
+			var world: TestWorld
+
+			@test
+			@timeout(10.0)
+			func crit_table(row: Dictionary) -> void:
+				pass
+		[/codeblock]
+		[b]Name resolution:[/b] custom annotations live in a separate annotation-symbol space and are resolved by short name against the current file's namespace first, then explicitly [code]import[/code]ed namespaces, and finally the built-in annotation registry. A short name provided by two imported namespaces is an ambiguity error. Namespaces that contain only annotation declarations are visible to imports, so a pure annotation library needs no [code]class_name[/code]. A custom annotation may not reuse a built-in annotation name such as [code]export[/code] or [code]rpc[/code], and duplicate canonical declarations are errors. An annotation can also be applied by its fully qualified name, such as [code]@cafecito.test.timeout(...)[/code]; a qualified usage names the canonical identity directly and resolves without an [code]import[/code], which sidesteps short-name import ambiguity. Unknown name, ambiguous name, wrong target, wrong arity, unknown or duplicate named argument, non-constant argument, and non-convertible argument uses are all analyzer errors. Built-in annotations such as [code]@export[/code] and [code]@tool[/code] keep their existing behavior and are not exposed as custom annotation metadata.
+		[b]Reflection:[/b] applied custom annotations are read back at runtime through [FSReflection] (reached via [code]foundry.reflection[/code]) as immutable [FSAnnotation] descriptors. Each descriptor exposes the short [member FSAnnotation.name], the namespaced [member FSAnnotation.qualified_name], the positional [member FSAnnotation.args], and the named [member FSAnnotation.kwargs]. Use [method FSReflection.get_class_annotations], [method FSReflection.get_method_annotations], and [method FSReflection.get_variable_annotations] for the kind-specific queries, or [method FSReflection.get_annotations], [method FSReflection.has_annotation], and [method FSReflection.get_annotation] (which match either the short or qualified name) for parameterized lookups. Method and property descriptors from [method FSReflection.get_methods], [method FSReflection.get_method_info], and [method FSReflection.get_properties] also embed an [code]"annotations"[/code] key for FoundryScript declarations.
+		[codeblock]
+		# Class annotations are direct-only and are not inherited.
+		for annotation in foundry.reflection.get_class_annotations(CombatTests):
+			print(annotation.name)           # e.g. &amp;"suite"
+			print(annotation.qualified_name) # e.g. &amp;"cafecito.test.suite"
+			print(annotation.kwargs["name"]) # e.g. "Combat System"
+
+		# Method annotations follow the effective method view and preserve source order.
+		var method_annotations := foundry.reflection.get_method_annotations(CombatTests, "crit_table")
+		if foundry.reflection.has_annotation(CombatTests, "crit_table", "timeout"):
+			var timeout := foundry.reflection.get_annotation(CombatTests, "crit_table", "timeout")
+			print(timeout.args[0]) # 10.0
+
+		# Member-variable annotations follow the effective member view.
+		for annotation in foundry.reflection.get_variable_annotations(CombatTests, "world"):
+			print(annotation.name) # e.g. &amp;"fixture"
+		[/codeblock]
+		Effective views match the rest of FoundryScript reflection: methods and member variables declared on a base script carry their annotations when reflected through a derived script, and concrete trait members flattened into an implementer carry their declaration annotations; an overriding or shadowing member's annotations take precedence. Class annotations are the exception and remain direct-only. Invalid, freed, or non-script targets return empty arrays, a [code]null[/code] descriptor, or [code]false[/code] without errors.
+	</description>
+	<tutorials>
+		<link title="FoundryScript documentation index">$DOCS_URL/tutorials/scripting/foundry_script/index.html</link>
+	</tutorials>
+	<methods>
+		<method name="get_type_parameter_list" qualifiers="const">
+			<return type="FSTypeParameter[]" />
+			<description>
+				Returns the generic type parameters declared directly on this script's class, in declaration order, as an array of [FSTypeParameter] descriptors. Returns an empty array for non-generic classes. This is part of the runtime reflection surface for FoundryScript generics.
+				[codeblock]
+				# class Box[T]: ...
+				var Box = load("box.fs")
+				for parameter in Box.get_type_parameter_list():
+					print(parameter.name) # Prints &amp;"T"
+				[/codeblock]
+			</description>
+		</method>
+		<method name="is_generic" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if this script's class declares one or more generic type parameters (for example [code]class Box[T][/code]). See [method get_type_parameter_list].
+			</description>
+		</method>
+		<method name="new" qualifiers="vararg">
+			<return type="Variant" />
+			<description>
+				Returns a new instance of the script.
+				[codeblock]
+				var MyClass = load("myclass.fs")
+				var instance = MyClass.new()
+				print(instance.get_script() == MyClass) # Prints true
+				[/codeblock]
+			</description>
+		</method>
+	</methods>
+</class>

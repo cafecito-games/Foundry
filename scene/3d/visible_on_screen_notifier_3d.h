@@ -33,7 +33,7 @@
 #include "scene/3d/visual_instance_3d.h"
 
 class VisibleOnScreenNotifier3D : public VisualInstance3D {
-	GDCLASS(VisibleOnScreenNotifier3D, VisualInstance3D);
+	FOUNDRY_CLASS(VisibleOnScreenNotifier3D, VisualInstance3D);
 
 	AABB aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2));
 
@@ -59,7 +59,7 @@ public:
 };
 
 class VisibleOnScreenEnabler3D : public VisibleOnScreenNotifier3D {
-	GDCLASS(VisibleOnScreenEnabler3D, VisibleOnScreenNotifier3D);
+	FOUNDRY_CLASS(VisibleOnScreenEnabler3D, VisibleOnScreenNotifier3D);
 
 public:
 	enum EnableMode {

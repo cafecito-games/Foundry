@@ -30,16 +30,16 @@
 
 #pragma once
 
-#ifdef GDEXTENSION
+#ifdef FOUNDRY_EXTENSION
 
-// Headers for building as GDExtension plug-in.
+// Headers for building as FoundryExtension plug-in.
 #include <godot_cpp/godot.hpp>
 #include <godot_cpp/templates/vector.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 using namespace godot;
 
-#elif defined(GODOT_MODULE)
+#elif defined(FOUNDRY_MODULE)
 
 // Headers for building as built-in module.
 #include "core/string/ustring.h"

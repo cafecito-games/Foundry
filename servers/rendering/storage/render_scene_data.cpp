@@ -42,47 +42,47 @@ void RenderSceneData::_bind_methods() {
 }
 
 void RenderSceneDataExtension::_bind_methods() {
-	GDVIRTUAL_BIND(_get_cam_transform);
-	GDVIRTUAL_BIND(_get_cam_projection);
-	GDVIRTUAL_BIND(_get_view_count);
-	GDVIRTUAL_BIND(_get_view_eye_offset, "view");
-	GDVIRTUAL_BIND(_get_view_projection, "view");
+	FOUNDRY_VIRTUAL_BIND(_get_cam_transform);
+	FOUNDRY_VIRTUAL_BIND(_get_cam_projection);
+	FOUNDRY_VIRTUAL_BIND(_get_view_count);
+	FOUNDRY_VIRTUAL_BIND(_get_view_eye_offset, "view");
+	FOUNDRY_VIRTUAL_BIND(_get_view_projection, "view");
 
-	GDVIRTUAL_BIND(_get_uniform_buffer);
+	FOUNDRY_VIRTUAL_BIND(_get_uniform_buffer);
 }
 
 Transform3D RenderSceneDataExtension::get_cam_transform() const {
 	Transform3D ret;
-	GDVIRTUAL_CALL(_get_cam_transform, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_cam_transform, ret);
 	return ret;
 }
 
 Projection RenderSceneDataExtension::get_cam_projection() const {
 	Projection ret;
-	GDVIRTUAL_CALL(_get_cam_projection, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_cam_projection, ret);
 	return ret;
 }
 
 uint32_t RenderSceneDataExtension::get_view_count() const {
 	uint32_t ret = 0;
-	GDVIRTUAL_CALL(_get_view_count, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_view_count, ret);
 	return ret;
 }
 
 Vector3 RenderSceneDataExtension::get_view_eye_offset(uint32_t p_view) const {
 	Vector3 ret;
-	GDVIRTUAL_CALL(_get_view_eye_offset, p_view, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_view_eye_offset, p_view, ret);
 	return ret;
 }
 
 Projection RenderSceneDataExtension::get_view_projection(uint32_t p_view) const {
 	Projection ret;
-	GDVIRTUAL_CALL(_get_view_projection, p_view, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_view_projection, p_view, ret);
 	return ret;
 }
 
 RID RenderSceneDataExtension::get_uniform_buffer() const {
 	RID ret;
-	GDVIRTUAL_CALL(_get_uniform_buffer, ret);
+	FOUNDRY_VIRTUAL_CALL(_get_uniform_buffer, ret);
 	return ret;
 }

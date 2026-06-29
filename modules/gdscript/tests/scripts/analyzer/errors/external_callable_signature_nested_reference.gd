@@ -1,6 +1,0 @@
-const Provider = preload("external_callable_signature_nested_reference_provider.notest.gd")
-
-func test() -> void:
-	var provider := Provider.new()
-	var fn: Callable[[Callable[[String], void]], void] = provider.get_cb()
-	print(fn)

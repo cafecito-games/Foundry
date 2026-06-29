@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>Godot</string>
 	<key>CFBundleName</key>
-	<string>Godot</string>
+	<string>Foundry</string>
 	<key>CFBundleIconFile</key>
 	<string>GodotLG.icns</string>
 	<key>CFBundleIconName</key>
@@ -84,7 +84,7 @@
 			<key>UTTypeReferenceURL</key>
 			<string></string>
 			<key>UTTypeDescription</key>
-			<string>Godot Engine scene</string>
+			<string>Foundry scene</string>
 			<key>UTTypeIconFile</key>
 			<string>Scene.icns</string>
 			<key>UTTypeConformsTo</key>
@@ -105,13 +105,13 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>public.gd</string>
+			<string>public.fs</string>
 			<key>UTTypeReferenceURL</key>
 			<string></string>
 			<key>UTTypeDescription</key>
-			<string>GDScript script</string>
+			<string>FoundryScript script</string>
 			<key>UTTypeIconFile</key>
-			<string>GDScript.icns</string>
+			<string>FoundryScript.icns</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.script</string>
@@ -120,10 +120,10 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>gd</string>
+					<string>fs</string>
 				</array>
 				<key>public.mime-type</key>
-				<string>application/x-gdscript</string>
+				<string>application/x-foundry_script</string>
 			</dict>
 		</dict>
 		<dict>
@@ -132,7 +132,7 @@
 			<key>UTTypeReferenceURL</key>
 			<string></string>
 			<key>UTTypeDescription</key>
-			<string>Godot Engine resource</string>
+			<string>Foundry resource</string>
 			<key>UTTypeIconFile</key>
 			<string>Resource.icns</string>
 			<key>UTTypeConformsTo</key>
@@ -156,7 +156,7 @@
 			<key>UTTypeReferenceURL</key>
 			<string></string>
 			<key>UTTypeDescription</key>
-			<string>Godot Engine shader</string>
+			<string>Foundry shader</string>
 			<key>UTTypeIconFile</key>
 			<string>Shader.icns</string>
 			<key>UTTypeConformsTo</key>
@@ -179,7 +179,7 @@
 			<key>UTTypeReferenceURL</key>
 			<string></string>
 			<key>UTTypeDescription</key>
-			<string>Godot Engine project</string>
+			<string>Foundry project</string>
 			<key>UTTypeIconFile</key>
 			<string>Project.icns</string>
 			<key>UTTypeConformsTo</key>
@@ -190,7 +190,7 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>godot</string>
+					<string>foundry</string>
 				</array>
 				<key>public.mime-type</key>
 				<string>application/x-godot-project</string>

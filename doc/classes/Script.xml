@@ -28,12 +28,12 @@
 			<return type="StringName" />
 			<description>
 				Returns the class name associated with the script, if there is one. Returns an empty string otherwise.
-				To give the script a global name, you can use the [code]class_name[/code] keyword in GDScript and the [code][GlobalClass][/code] attribute in C#.
+				To give the script a global name, you can use the [code]class_name[/code] keyword in FoundryScript and the [code][GlobalClass][/code] attribute in C#.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				class_name MyNode
 				extends Node
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				using Godot;
 
@@ -95,7 +95,7 @@
 			<return type="StringName[]" />
 			<description>
 				Returns the list of traits applied to this [Script], including traits applied transitively.
-				[b]Note:[/b] GDScript trait analysis is experimental and is not populated by the GDScript compiler until trait semantics are enabled.
+				[b]Note:[/b] FoundryScript trait analysis is experimental and is not populated by the FoundryScript compiler until trait semantics are enabled.
 			</description>
 		</method>
 		<method name="has_script_signal" qualifiers="const">
@@ -110,14 +110,14 @@
 			<param index="0" name="trait_name" type="StringName" />
 			<description>
 				Returns [code]true[/code] if this [Script] applies the given trait directly or transitively.
-				[b]Note:[/b] GDScript trait analysis is experimental and is not populated by the GDScript compiler until trait semantics are enabled.
+				[b]Note:[/b] FoundryScript trait analysis is experimental and is not populated by the FoundryScript compiler until trait semantics are enabled.
 			</description>
 		</method>
 		<method name="has_source_code" qualifiers="const">
 			<return type="bool" />
 			<description>
 				Returns [code]true[/code] if the script contains non-empty source code.
-				[b]Note:[/b] If a script does not have source code, this does not mean that it is invalid or unusable. For example, a [GDScript] that was exported with binary tokenization has no source code, but still behaves as expected and could be instantiated. This can be checked with [method can_instantiate].
+				[b]Note:[/b] If a script does not have source code, this does not mean that it is invalid or unusable. For example, a [FoundryScript] that was exported with binary tokenization has no source code, but still behaves as expected and could be instantiated. This can be checked with [method can_instantiate].
 			</description>
 		</method>
 		<method name="instance_has" qualifiers="const">

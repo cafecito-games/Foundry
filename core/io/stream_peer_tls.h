@@ -34,7 +34,7 @@
 #include "core/io/stream_peer.h"
 
 class StreamPeerTLS : public StreamPeer {
-	GDCLASS(StreamPeerTLS, StreamPeer);
+	FOUNDRY_CLASS(StreamPeerTLS, StreamPeer);
 
 protected:
 	static StreamPeerTLS *(*_create)(bool p_notify_postinitialize);

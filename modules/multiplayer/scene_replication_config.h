@@ -34,7 +34,7 @@
 #include "core/variant/typed_array.h"
 
 class SceneReplicationConfig : public Resource {
-	GDCLASS(SceneReplicationConfig, Resource);
+	FOUNDRY_CLASS(SceneReplicationConfig, Resource);
 	OBJ_SAVE_TYPE(SceneReplicationConfig);
 	RES_BASE_EXTENSION("repl");
 

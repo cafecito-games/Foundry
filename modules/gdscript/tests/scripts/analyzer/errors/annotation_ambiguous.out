@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 4: Ambiguous annotation "@amb_flag": it is declared in imported namespaces "cafecito.amb_a" and "cafecito.amb_b".

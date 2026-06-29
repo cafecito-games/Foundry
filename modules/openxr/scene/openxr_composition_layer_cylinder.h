@@ -35,7 +35,7 @@
 #include "openxr_composition_layer.h"
 
 class OpenXRCompositionLayerCylinder : public OpenXRCompositionLayer {
-	GDCLASS(OpenXRCompositionLayerCylinder, OpenXRCompositionLayer);
+	FOUNDRY_CLASS(OpenXRCompositionLayerCylinder, OpenXRCompositionLayer);
 
 	float radius = 1.0;
 	float aspect_ratio = 1.0;

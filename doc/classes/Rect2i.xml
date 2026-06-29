@@ -59,10 +59,10 @@
 			<description>
 				Returns a [Rect2i] equivalent to this rectangle, with its width and height modified to be non-negative values, and with its [member position] being the top-left corner of the rectangle.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var rect = Rect2i(25, 25, -100, -50)
 				var absolute = rect.abs() # absolute is Rect2i(-75, -25, 100, 50)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var rect = new Rect2I(25, 25, -100, -50);
 				var absolute = rect.Abs(); // absolute is Rect2I(-75, -25, 100, 50)
@@ -84,12 +84,12 @@
 			<description>
 				Returns a copy of this rectangle expanded to align the edges with the given [param to] point, if necessary.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var rect = Rect2i(0, 0, 5, 2)
 
 				rect = rect.expand(Vector2i(10, 0)) # rect is Rect2i(0, 0, 10, 2)
 				rect = rect.expand(Vector2i(-5, 5)) # rect is Rect2i(-5, 0, 15, 5)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var rect = new Rect2I(0, 0, 5, 2);
 
@@ -118,10 +118,10 @@
 			<description>
 				Returns a copy of this rectangle extended on all sides by the given [param amount]. A negative [param amount] shrinks the rectangle instead. See also [method grow_individual] and [method grow_side].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var a = Rect2i(4, 4, 8, 8).grow(4) # a is Rect2i(0, 0, 16, 16)
 				var b = Rect2i(0, 0, 8, 4).grow(2) # b is Rect2i(-2, -2, 12, 8)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var a = new Rect2I(4, 4, 8, 8).Grow(4); // a is Rect2I(0, 0, 16, 16)
 				var b = new Rect2I(0, 0, 8, 4).Grow(2); // b is Rect2I(-2, -2, 12, 8)
@@ -167,12 +167,12 @@
 			<description>
 				Returns the intersection between this rectangle and [param b]. If the rectangles do not intersect, returns an empty [Rect2i].
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var a = Rect2i(0, 0, 5, 10)
 				var b = Rect2i(2, 0, 8, 4)
 
 				var c = a.intersection(b) # c is Rect2i(2, 0, 3, 4)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				var a = new Rect2I(0, 0, 5, 10);
 				var b = new Rect2I(2, 0, 8, 4);

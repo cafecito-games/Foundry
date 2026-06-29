@@ -73,11 +73,11 @@
 				Returns a [KinematicCollision2D], which contains information about a collision that occurred during the last call to [method move_and_slide]. Since the body can collide several times in a single call to [method move_and_slide], you must specify the index of the collision in the range 0 to ([method get_slide_collision_count] - 1). See also [method get_last_slide_collision].
 				[b]Example:[/b] Iterate through the collisions with a [code]for[/code] loop:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				for i in get_slide_collision_count():
 					var collision = get_slide_collision(i)
 					print("Collided with: ", collision.get_collider().name)
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				for (int i = 0; i &lt; GetSlideCollisionCount(); i++)
 				{

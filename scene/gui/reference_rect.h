@@ -33,7 +33,7 @@
 #include "scene/gui/control.h"
 
 class ReferenceRect : public Control {
-	GDCLASS(ReferenceRect, Control);
+	FOUNDRY_CLASS(ReferenceRect, Control);
 
 	Color border_color = Color(1, 0, 0);
 	float border_width = 1.0;

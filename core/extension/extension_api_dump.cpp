@@ -32,7 +32,7 @@
 
 #include "core/config/engine.h"
 #include "core/core_constants.h"
-#include "core/extension/gdextension_special_compat_hashes.h"
+#include "core/extension/foundry_extension_special_compat_hashes.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/templates/pair.h"
@@ -100,22 +100,22 @@ static String fix_doc_description(const String &p_bbcode) {
 			.strip_edges();
 }
 
-Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
+Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 	Dictionary api_dump;
 
 	{
 		//header
 		Dictionary header;
-		header["version_major"] = GODOT_VERSION_MAJOR;
-		header["version_minor"] = GODOT_VERSION_MINOR;
-#if GODOT_VERSION_PATCH
-		header["version_patch"] = GODOT_VERSION_PATCH;
+		header["version_major"] = FOUNDRY_VERSION_MAJOR;
+		header["version_minor"] = FOUNDRY_VERSION_MINOR;
+#if FOUNDRY_VERSION_PATCH
+		header["version_patch"] = FOUNDRY_VERSION_PATCH;
 #else
 		header["version_patch"] = 0;
 #endif
-		header["version_status"] = GODOT_VERSION_STATUS;
-		header["version_build"] = GODOT_VERSION_BUILD;
-		header["version_full_name"] = GODOT_VERSION_FULL_NAME;
+		header["version_status"] = FOUNDRY_VERSION_STATUS;
+		header["version_build"] = FOUNDRY_VERSION_BUILD;
+		header["version_full_name"] = FOUNDRY_VERSION_FULL_NAME;
 
 #if REAL_T_IS_DOUBLE
 		header["precision"] = "double";
@@ -202,8 +202,8 @@ Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 		};
 
 		// Validate sizes at compile time for the current build configuration.
-		static_assert(type_size_array[Variant::BOOL][sizeof(void *)] == sizeof(GDExtensionBool), "Size of bool mismatch");
-		static_assert(type_size_array[Variant::INT][sizeof(void *)] == sizeof(GDExtensionInt), "Size of int mismatch");
+		static_assert(type_size_array[Variant::BOOL][sizeof(void *)] == sizeof(FoundryExtensionBool), "Size of bool mismatch");
+		static_assert(type_size_array[Variant::INT][sizeof(void *)] == sizeof(FoundryExtensionInt), "Size of int mismatch");
 		static_assert(type_size_array[Variant::FLOAT][sizeof(void *)] == sizeof(double), "Size of float mismatch");
 		static_assert(type_size_array[Variant::STRING][sizeof(void *)] == sizeof(String), "Size of String mismatch");
 		static_assert(type_size_array[Variant::VECTOR2][sizeof(void *)] == sizeof(Vector2), "Size of Vector2 mismatch");
@@ -1119,7 +1119,7 @@ Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 						}
 
 #ifndef DISABLE_DEPRECATED
-						GDExtensionSpecialCompatHashes::get_legacy_hashes(class_name, method_name, compatibility);
+						FoundryExtensionSpecialCompatHashes::get_legacy_hashes(class_name, method_name, compatibility);
 #endif
 
 						if (compatibility.size() > 0) {
@@ -1328,7 +1328,7 @@ Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 	return api_dump;
 }
 
-void GDExtensionAPIDump::generate_extension_json_file(const String &p_path, bool p_include_docs) {
+void FoundryExtensionAPIDump::generate_extension_json_file(const String &p_path, bool p_include_docs) {
 	Dictionary api = generate_extension_api(p_include_docs);
 	Ref<JSON> json;
 	json.instantiate();
@@ -1588,7 +1588,7 @@ static bool compare_sub_dict_array(HashSet<String> &r_removed_classes_registered
 	return !failed;
 }
 
-Error GDExtensionAPIDump::validate_extension_json_file(const String &p_path) {
+Error FoundryExtensionAPIDump::validate_extension_json_file(const String &p_path) {
 	Error error;
 	String text = FileAccess::get_file_as_string(p_path, &error);
 	if (error != OK) {
@@ -1614,8 +1614,8 @@ Error GDExtensionAPIDump::validate_extension_json_file(const String &p_path) {
 		int major = header["version_major"];
 		int minor = header["version_minor"];
 
-		ERR_FAIL_COND_V_MSG(major != GODOT_VERSION_MAJOR, ERR_INVALID_DATA, vformat("JSON API dump is for a different engine version (%d) than this one (%d)", major, GODOT_VERSION_MAJOR));
-		ERR_FAIL_COND_V_MSG(minor > GODOT_VERSION_MINOR, ERR_INVALID_DATA, vformat("JSON API dump is for a newer version of the engine: %d.%d", major, minor));
+		ERR_FAIL_COND_V_MSG(major != FOUNDRY_VERSION_MAJOR, ERR_INVALID_DATA, vformat("JSON API dump is for a different engine version (%d) than this one (%d)", major, FOUNDRY_VERSION_MAJOR));
+		ERR_FAIL_COND_V_MSG(minor > FOUNDRY_VERSION_MINOR, ERR_INVALID_DATA, vformat("JSON API dump is for a newer version of the engine: %d.%d", major, minor));
 	}
 
 	bool failed = false;

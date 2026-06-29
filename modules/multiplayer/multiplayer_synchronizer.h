@@ -35,7 +35,7 @@
 #include "scene/main/node.h"
 
 class MultiplayerSynchronizer : public Node {
-	GDCLASS(MultiplayerSynchronizer, Node);
+	FOUNDRY_CLASS(MultiplayerSynchronizer, Node);
 
 public:
 	enum VisibilityUpdateMode {

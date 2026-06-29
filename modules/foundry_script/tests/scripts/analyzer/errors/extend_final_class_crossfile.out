@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 1: Cannot extend final class "res://analyzer/errors/final_base.notest.fs".

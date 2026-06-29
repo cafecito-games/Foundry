@@ -6,7 +6,7 @@
 
 **Architecture:** A single new property hint rides on the existing `PropertyInfo.hint`/`hint_string` fields. `DataType::to_property_info` (emit) serializes the signature into a flat string that mirrors `DataType::to_string` surface syntax (`Callable[[int], bool]` → `[[int], bool]`); the encoding is uniformly recursive over `Callable`/`Signal`/`Array`/`Dictionary`. `GDScriptAnalyzer::type_from_property` (parse) reconstructs the nested `DataType` via a recursive-descent decoder. `explicit_callable_type_from_info` / `explicit_signal_type_from_info` and the existing comparators need no change — they already route every slot through `type_from_property`.
 
-**Tech Stack:** C++ (Godot engine), GDScript analyzer module, doctest C++ unit tests (`tests/test_macros.h`), GDScript `.out` script fixtures.
+**Tech Stack:** C++ (Godot engine), Foundry Script analyzer module, doctest C++ unit tests (`tests/test_macros.h`), Foundry Script `.out` script fixtures.
 
 **Spec:** `docs/superpowers/specs/2026-06-26-callable-signal-signature-property-encoding-design.md`
 
@@ -15,19 +15,19 @@
 ## File Structure
 
 - `core/object/object.h` — add `PROPERTY_HINT_CALLABLE_TYPE` enum value before `PROPERTY_HINT_MAX`.
-- `modules/gdscript/gdscript_parser.cpp` — emit: a recursive signature-type encoder (file-local static helpers) + a `CALLABLE`/`SIGNAL` branch in `DataType::to_property_info`.
-- `modules/gdscript/gdscript_analyzer.cpp` — parse: a recursive signature-type decoder (file-local static helpers) + a `CALLABLE`/`SIGNAL` branch in `GDScriptAnalyzer::type_from_property`; extract a shared leaf-name → `DataType` resolver reused by the existing Array/Dictionary branches.
-- `modules/gdscript/tests/test_gdscript_type.h` — C++ unit tests for the encoder (pure, asserts `hint`/`hint_string`).
-- `modules/gdscript/tests/scripts/analyzer/errors/` and `.../features/` — GDScript `.gd` + `.out` fixtures (with `.notest.gd` provider scripts) for the #412 repros, round-trip acceptance, and container-in-signature cases.
+- `modules/foundry_script/gdscript_parser.cpp` — emit: a recursive signature-type encoder (file-local static helpers) + a `CALLABLE`/`SIGNAL` branch in `DataType::to_property_info`.
+- `modules/foundry_script/gdscript_analyzer.cpp` — parse: a recursive signature-type decoder (file-local static helpers) + a `CALLABLE`/`SIGNAL` branch in `GDScriptAnalyzer::type_from_property`; extract a shared leaf-name → `DataType` resolver reused by the existing Array/Dictionary branches.
+- `modules/foundry_script/tests/test_gdscript_type.h` — C++ unit tests for the encoder (pure, asserts `hint`/`hint_string`).
+- `modules/foundry_script/tests/scripts/analyzer/errors/` and `.../features/` — Foundry Script `.fs` + `.out` fixtures (with `.notest.fs` provider scripts) for the #412 repros, round-trip acceptance, and container-in-signature cases.
 
 ---
 
 ## Conventions (read once)
 
 - **Build (incremental):** `scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)` → binary `bin/godot.macos.editor.dev.<arch>`. (CI parity: swap `dev_build=yes` for `dev_mode=yes` to get warnings-as-errors; do this at least once in Task 5.)
-- **Run a single C++ test suite:** `./bin/godot.macos.editor.dev.* --headless --test --test-suite="*GDScript*" --force-colors` — but note our memory: a `--test-suite` filter can silently skip suites lacking a matching `TEST_SUITE` macro. Prefer `--test-case="*<name>*"` for a specific case, and run the full `--test` once per task to be safe.
-- **Run GDScript script fixtures only:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*GDScript*"` runs the script-runner; a failing fixture prints a unified diff of expected vs actual `.out`.
-- **Regenerate `.out` fixtures after intentional changes:** `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/gdscript/tests/scripts`. Always review the diff; never blanket-regenerate.
+- **Run a single C++ test suite:** `./bin/godot.macos.editor.dev.* --headless --test --test-suite="*Foundry Script*" --force-colors` — but note our memory: a `--test-suite` filter can silently skip suites lacking a matching `TEST_SUITE` macro. Prefer `--test-case="*<name>*"` for a specific case, and run the full `--test` once per task to be safe.
+- **Run Foundry Script script fixtures only:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*Foundry Script*"` runs the script-runner; a failing fixture prints a unified diff of expected vs actual `.out`.
+- **Regenerate `.out` fixtures after intentional changes:** `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts`. Always review the diff; never blanket-regenerate.
 - **Commit cadence:** one commit per task. End every commit message body with `Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J`.
 - **Branch:** work continues on `docs/414-callable-signal-signature-encoding` (the spec commit lives here) or a fresh `feat/414-…` branch off `develop` — confirm with the coordinator before Task 0.
 
@@ -64,7 +64,7 @@ to:
 ```cpp
 	PROPERTY_HINT_INPUT_NAME,
 	PROPERTY_HINT_FILE_PATH,
-	PROPERTY_HINT_CALLABLE_TYPE, // hint_string carries an encoded Callable/Signal method signature (see GDScript DataType::to_property_info).
+	PROPERTY_HINT_CALLABLE_TYPE, // hint_string carries an encoded Callable/Signal method signature (see Foundry Script DataType::to_property_info).
 	PROPERTY_HINT_MAX,
 };
 ```
@@ -95,8 +95,8 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 **Goal:** When a `Callable`/`Signal` `DataType` has an explicit method signature, emit `PROPERTY_HINT_CALLABLE_TYPE` plus a recursively-encoded `hint_string`; untyped callables emit no hint (unchanged).
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_parser.cpp` — add file-local encoder helpers above `DataType::to_property_info` (`modules/gdscript/gdscript_parser.cpp:6001`); add a branch inside the `BUILTIN` case.
-- Test: `modules/gdscript/tests/test_gdscript_type.h` — encoder unit tests.
+- Modify: `modules/foundry_script/gdscript_parser.cpp` — add file-local encoder helpers above `DataType::to_property_info` (`modules/foundry_script/gdscript_parser.cpp:6001`); add a branch inside the `BUILTIN` case.
+- Test: `modules/foundry_script/tests/test_gdscript_type.h` — encoder unit tests.
 
 **Acceptance Criteria:**
 - [ ] `Callable[[int], bool]` → `hint == PROPERTY_HINT_CALLABLE_TYPE`, `hint_string == "[[int], bool]"`, `type == CALLABLE`.
@@ -111,7 +111,7 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 
 - [ ] **Step 1: Write failing encoder unit tests**
 
-In `modules/gdscript/tests/test_gdscript_type.h`, inside `namespace GDScriptTests`, add (after the existing helpers, before the closing brace of the namespace):
+In `modules/foundry_script/tests/test_gdscript_type.h`, inside `namespace GDScriptTests`, add (after the existing helpers, before the closing brace of the namespace):
 
 ```cpp
 static GDScriptParser::DataType make_typed_array_type(Variant::Type p_element_type) {
@@ -134,7 +134,7 @@ static GDScriptParser::DataType make_callable_signature_type(
 	return type;
 }
 
-TEST_CASE("[Modules][GDScript] Callable/Signal property encoding") {
+TEST_CASE("[Modules][Foundry Script] Callable/Signal property encoding") {
 	{
 		Vector<GDScriptParser::DataType> params;
 		params.push_back(make_builtin_type(Variant::INT));
@@ -185,7 +185,7 @@ Expected: FAIL — `hint` is `PROPERTY_HINT_NONE` and `hint_string` empty for th
 
 - [ ] **Step 3: Add the file-local encoder helpers**
 
-In `modules/gdscript/gdscript_parser.cpp`, immediately above `PropertyInfo GDScriptParser::DataType::to_property_info(...)` (line ~6001), add:
+In `modules/foundry_script/gdscript_parser.cpp`, immediately above `PropertyInfo GDScriptParser::DataType::to_property_info(...)` (line ~6001), add:
 
 ```cpp
 // Renders a DataType into the flat hint grammar used by PROPERTY_HINT_CALLABLE_TYPE.
@@ -299,7 +299,7 @@ Expected: no new failures. (Existing untyped callables still emit no hint, so sc
 - [ ] **Step 7: Commit**
 
 ```bash
-git add modules/gdscript/gdscript_parser.cpp modules/gdscript/tests/test_gdscript_type.h
+git add modules/foundry_script/gdscript_parser.cpp modules/foundry_script/tests/test_gdscript_type.h
 git commit -m "gdscript: encode Callable/Signal signatures into PropertyInfo hint (#414)
 
 Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
@@ -312,7 +312,7 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 **Goal:** Reconstruct the nested `Callable`/`Signal` `DataType` from `PROPERTY_HINT_CALLABLE_TYPE`, so `explicit_callable_type_from_info` / `explicit_signal_type_from_info` recover full signatures across the script-API boundary.
 
 **Files:**
-- Modify: `modules/gdscript/gdscript_analyzer.cpp` — extract a shared leaf-name resolver from the Array branch; add recursive decoder helpers; add a `CALLABLE`/`SIGNAL` branch in `type_from_property` (`modules/gdscript/gdscript_analyzer.cpp:8708`).
+- Modify: `modules/foundry_script/gdscript_analyzer.cpp` — extract a shared leaf-name resolver from the Array branch; add recursive decoder helpers; add a `CALLABLE`/`SIGNAL` branch in `type_from_property` (`modules/foundry_script/gdscript_analyzer.cpp:8708`).
 
 **Acceptance Criteria:**
 - [ ] `type_from_property` on a `CALLABLE` property with `hint == PROPERTY_HINT_CALLABLE_TYPE` returns a `DataType` with `has_explicit_method_signature == true` and reconstructed `method_parameter_types`/`method_return_type`.
@@ -326,7 +326,7 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 
 - [ ] **Step 1: Extract a shared leaf-name resolver**
 
-The Array branch of `type_from_property` (lines ~8735–8761) resolves a leaf type name through a four-way builtin/native/global-class/enum cascade. Extract it into a file-local static helper so the decoder reuses it. Add near the top of `modules/gdscript/gdscript_analyzer.cpp` (after the existing file-local helpers, e.g. below `make_signal_type`, ~line 200):
+The Array branch of `type_from_property` (lines ~8735–8761) resolves a leaf type name through a four-way builtin/native/global-class/enum cascade. Extract it into a file-local static helper so the decoder reuses it. Add near the top of `modules/foundry_script/gdscript_analyzer.cpp` (after the existing file-local helpers, e.g. below `make_signal_type`, ~line 200):
 
 ```cpp
 // Resolves a single hint type-name (as produced by _encode_signature_leaf_name / PROPERTY_HINT_ARRAY_TYPE)
@@ -495,7 +495,7 @@ static GDScriptParser::DataType _decode_signature_type(const String &p_encoded) 
 
 - [ ] **Step 3: Wire the decoder into `type_from_property`**
 
-In `GDScriptAnalyzer::type_from_property` (`modules/gdscript/gdscript_analyzer.cpp:8708`), in the `else` block where `result.kind = BUILTIN` is set (line ~8733), add a branch alongside the existing `ARRAY`/`DICTIONARY` hint handling:
+In `GDScriptAnalyzer::type_from_property` (`modules/foundry_script/gdscript_analyzer.cpp:8708`), in the `else` block where `result.kind = BUILTIN` is set (line ~8733), add a branch alongside the existing `ARRAY`/`DICTIONARY` hint handling:
 
 ```cpp
 			result.kind = GDScriptParser::DataType::BUILTIN;
@@ -526,7 +526,7 @@ Expected: green. (Behavior is observable in Task 3 fixtures; this task must not 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add modules/gdscript/gdscript_analyzer.cpp modules/gdscript/gdscript_analyzer.h
+git add modules/foundry_script/gdscript_analyzer.cpp modules/foundry_script/gdscript_analyzer.h
 git commit -m "gdscript: decode Callable/Signal signatures from PropertyInfo hint (#414)
 
 Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
@@ -539,14 +539,14 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 **Goal:** Prove the end-to-end behavior: both #412 repros now error, a matching cross-script signature is accepted, and container-typed parameters survive the boundary.
 
 **Files:**
-- Create: `modules/gdscript/tests/scripts/analyzer/errors/external_callable_signature_value_boundary.gd` + `.out`
-- Create: `modules/gdscript/tests/scripts/analyzer/errors/external_callable_signature_value_boundary_provider.notest.gd`
-- Create: `modules/gdscript/tests/scripts/analyzer/errors/external_callable_signature_nested_reference.gd` + `.out`
-- Create: `modules/gdscript/tests/scripts/analyzer/errors/external_callable_signature_nested_reference_provider.notest.gd`
-- Create: `modules/gdscript/tests/scripts/analyzer/features/external_callable_signature_roundtrip.gd` + `.out`
-- Create: `modules/gdscript/tests/scripts/analyzer/features/external_callable_signature_roundtrip_provider.notest.gd`
-- Create: `modules/gdscript/tests/scripts/analyzer/features/external_callable_signature_container_param.gd` + `.out`
-- Create: `modules/gdscript/tests/scripts/analyzer/features/external_callable_signature_container_param_provider.notest.gd`
+- Create: `modules/foundry_script/tests/scripts/analyzer/errors/external_callable_signature_value_boundary.fs` + `.out`
+- Create: `modules/foundry_script/tests/scripts/analyzer/errors/external_callable_signature_value_boundary_provider.notest.fs`
+- Create: `modules/foundry_script/tests/scripts/analyzer/errors/external_callable_signature_nested_reference.fs` + `.out`
+- Create: `modules/foundry_script/tests/scripts/analyzer/errors/external_callable_signature_nested_reference_provider.notest.fs`
+- Create: `modules/foundry_script/tests/scripts/analyzer/features/external_callable_signature_roundtrip.fs` + `.out`
+- Create: `modules/foundry_script/tests/scripts/analyzer/features/external_callable_signature_roundtrip_provider.notest.fs`
+- Create: `modules/foundry_script/tests/scripts/analyzer/features/external_callable_signature_container_param.fs` + `.out`
+- Create: `modules/foundry_script/tests/scripts/analyzer/features/external_callable_signature_container_param_provider.notest.fs`
 
 **Acceptance Criteria:**
 - [ ] Value-boundary repro errors with a Callable type-mismatch on assignment.
@@ -554,13 +554,13 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 - [ ] Matching cross-script signature analyzes clean (feature fixture, no error).
 - [ ] `Callable[[Array[int]], void]` mismatch across scripts is caught (e.g. `Array[String]` param).
 
-**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*GDScript*" --force-colors` → the four new fixtures pass (expected `.out` matches actual).
+**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*Foundry Script*" --force-colors` → the four new fixtures pass (expected `.out` matches actual).
 
 **Steps:**
 
 - [ ] **Step 1: Value-boundary provider**
 
-Create `.../errors/external_callable_signature_value_boundary_provider.notest.gd`:
+Create `.../errors/external_callable_signature_value_boundary_provider.notest.fs`:
 
 ```gdscript
 func get_cb() -> Callable[[Callable[[int], void]], void]:
@@ -570,10 +570,10 @@ func get_cb() -> Callable[[Callable[[int], void]], void]:
 
 - [ ] **Step 2: Value-boundary consumer + expected output**
 
-Create `.../errors/external_callable_signature_value_boundary.gd`:
+Create `.../errors/external_callable_signature_value_boundary.fs`:
 
 ```gdscript
-const Provider = preload("external_callable_signature_value_boundary_provider.notest.gd")
+const Provider = preload("external_callable_signature_value_boundary_provider.notest.fs")
 
 func test() -> void:
 	var handler: Callable[[Callable[[String], void]], void] = Provider.new().get_cb()
@@ -591,7 +591,7 @@ GDTEST_ANALYZER_ERROR
 
 - [ ] **Step 3: Nested-reference provider**
 
-Create `.../errors/external_callable_signature_nested_reference_provider.notest.gd`:
+Create `.../errors/external_callable_signature_nested_reference_provider.notest.fs`:
 
 ```gdscript
 func get_cb() -> Callable[[Callable[[int], void]], void]:
@@ -601,10 +601,10 @@ func get_cb() -> Callable[[Callable[[int], void]], void]:
 
 - [ ] **Step 4: Nested-reference consumer + expected output**
 
-Create `.../errors/external_callable_signature_nested_reference.gd` (exercises the function-reference path — `Provider.new().get_cb` as a value, not a call):
+Create `.../errors/external_callable_signature_nested_reference.fs` (exercises the function-reference path — `Provider.new().get_cb` as a value, not a call):
 
 ```gdscript
-const Provider = preload("external_callable_signature_nested_reference_provider.notest.gd")
+const Provider = preload("external_callable_signature_nested_reference_provider.notest.fs")
 
 func test() -> void:
 	var provider := Provider.new()
@@ -616,7 +616,7 @@ Create the `.out` analogous to Step 2 (reconcile wording in Step 7).
 
 - [ ] **Step 5: Round-trip acceptance fixture (feature, no error)**
 
-Create `.../features/external_callable_signature_roundtrip_provider.notest.gd`:
+Create `.../features/external_callable_signature_roundtrip_provider.notest.fs`:
 
 ```gdscript
 func get_cb() -> Callable[[Callable[[int], void]], void]:
@@ -624,10 +624,10 @@ func get_cb() -> Callable[[Callable[[int], void]], void]:
 		pass
 ```
 
-Create `.../features/external_callable_signature_roundtrip.gd`:
+Create `.../features/external_callable_signature_roundtrip.fs`:
 
 ```gdscript
-const Provider = preload("external_callable_signature_roundtrip_provider.notest.gd")
+const Provider = preload("external_callable_signature_roundtrip_provider.notest.fs")
 
 func test() -> void:
 	var handler: Callable[[Callable[[int], void]], void] = Provider.new().get_cb()
@@ -645,7 +645,7 @@ false
 
 - [ ] **Step 6: Container-in-signature fixture**
 
-Create `.../features/external_callable_signature_container_param_provider.notest.gd`:
+Create `.../features/external_callable_signature_container_param_provider.notest.fs`:
 
 ```gdscript
 func get_cb() -> Callable[[Array[int]], void]:
@@ -653,10 +653,10 @@ func get_cb() -> Callable[[Array[int]], void]:
 		pass
 ```
 
-Create `.../features/external_callable_signature_container_param.gd` as an error fixture instead (move to `errors/` and add `.out`) to prove the `Array[int]` vs `Array[String]` element type survives:
+Create `.../features/external_callable_signature_container_param.fs` as an error fixture instead (move to `errors/` and add `.out`) to prove the `Array[int]` vs `Array[String]` element type survives:
 
 ```gdscript
-const Provider = preload("external_callable_signature_container_param_provider.notest.gd")
+const Provider = preload("external_callable_signature_container_param_provider.notest.fs")
 
 func test() -> void:
 	var handler: Callable[[Array[String]], void] = Provider.new().get_cb()
@@ -667,15 +667,15 @@ func test() -> void:
 
 - [ ] **Step 7: Generate `.out`, reconcile, and run**
 
-Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/gdscript/tests/scripts`
+Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts`
 Then `git diff` the new `.out` files; verify the diagnostics are exactly the nested-signature mismatches you intended (not, e.g., a shallow outer-Callable mismatch or an unrelated error). Edit the consumer fixtures if the diagnostic points at the wrong thing. Re-run:
-`./bin/godot.macos.editor.dev.* --headless --test --test-case="*GDScript*" --force-colors`
+`./bin/godot.macos.editor.dev.* --headless --test --test-case="*Foundry Script*" --force-colors`
 Expected: all new fixtures pass.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add modules/gdscript/tests/scripts/analyzer/
+git add modules/foundry_script/tests/scripts/analyzer/
 git commit -m "gdscript: tests for cross-script Callable/Signal signature preservation (#412, #414)
 
 Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
@@ -688,20 +688,20 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 **Goal:** Cover the `Signal` arm of the boundary (signals omit the return clause) and lock in that an untyped cross-script callable is still accepted against any signature (no over-tightening).
 
 **Files:**
-- Create: `modules/gdscript/tests/scripts/analyzer/errors/external_signal_signature_mismatch.gd` + `.out` + `..._provider.notest.gd`
-- Create: `modules/gdscript/tests/scripts/analyzer/features/external_untyped_callable_unchanged.gd` + `.out` + `..._provider.notest.gd`
+- Create: `modules/foundry_script/tests/scripts/analyzer/errors/external_signal_signature_mismatch.fs` + `.out` + `..._provider.notest.fs`
+- Create: `modules/foundry_script/tests/scripts/analyzer/features/external_untyped_callable_unchanged.fs` + `.out` + `..._provider.notest.fs`
 
 **Acceptance Criteria:**
 - [ ] A typed `Signal[int]` exposed by one script, consumed as `Signal[String]` in another, errors.
 - [ ] An untyped `Callable` returned across scripts still assigns to a typed `Callable[[int], void]` variable without error (gradual-typing accept preserved).
 
-**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*GDScript*" --force-colors` → both fixtures pass.
+**Verify:** `./bin/godot.macos.editor.dev.* --headless --test --test-case="*Foundry Script*" --force-colors` → both fixtures pass.
 
 **Steps:**
 
 - [ ] **Step 1: Signal mismatch provider**
 
-Create `.../errors/external_signal_signature_mismatch_provider.notest.gd`:
+Create `.../errors/external_signal_signature_mismatch_provider.notest.fs`:
 
 ```gdscript
 signal pinged(value: int)
@@ -712,10 +712,10 @@ func get_signal() -> Signal[int]:
 
 - [ ] **Step 2: Signal mismatch consumer**
 
-Create `.../errors/external_signal_signature_mismatch.gd`:
+Create `.../errors/external_signal_signature_mismatch.fs`:
 
 ```gdscript
-const Provider = preload("external_signal_signature_mismatch_provider.notest.gd")
+const Provider = preload("external_signal_signature_mismatch_provider.notest.fs")
 
 func test() -> void:
 	var s: Signal[String] = Provider.new().get_signal()
@@ -726,17 +726,17 @@ Create the `.out` (reconcile wording via generation, as in Task 3 Step 7).
 
 - [ ] **Step 3: Untyped-callable regression provider + consumer**
 
-Create `.../features/external_untyped_callable_unchanged_provider.notest.gd`:
+Create `.../features/external_untyped_callable_unchanged_provider.notest.fs`:
 
 ```gdscript
 func get_cb() -> Callable:
 	return func(_x): pass
 ```
 
-Create `.../features/external_untyped_callable_unchanged.gd`:
+Create `.../features/external_untyped_callable_unchanged.fs`:
 
 ```gdscript
-const Provider = preload("external_untyped_callable_unchanged_provider.notest.gd")
+const Provider = preload("external_untyped_callable_unchanged_provider.notest.fs")
 
 func test() -> void:
 	var typed: Callable[[int], void] = Provider.new().get_cb()
@@ -754,14 +754,14 @@ false
 
 - [ ] **Step 4: Generate, reconcile, run**
 
-Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/gdscript/tests/scripts` then
-`./bin/godot.macos.editor.dev.* --headless --test --test-case="*GDScript*" --force-colors`
+Run: `./bin/godot.macos.editor.dev.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts` then
+`./bin/godot.macos.editor.dev.* --headless --test --test-case="*Foundry Script*" --force-colors`
 Expected: both fixtures pass.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add modules/gdscript/tests/scripts/analyzer/
+git add modules/foundry_script/tests/scripts/analyzer/
 git commit -m "gdscript: signal-path + untyped-callable regression fixtures (#414)
 
 Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
@@ -774,7 +774,7 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 **Goal:** Confirm the new hint degrades gracefully in tools that don't understand it, generated docs are unaffected, and the change passes the CI warnings-as-errors build.
 
 **Files:**
-- Inspect (no functional change expected): `editor/editor_help.cpp`, `editor/inspector/editor_inspector.cpp` (hint handling), `modules/gdscript/editor/gdscript_docgen.cpp`.
+- Inspect (no functional change expected): `editor/editor_help.cpp`, `editor/inspector/editor_inspector.cpp` (hint handling), `modules/foundry_script/editor/gdscript_docgen.cpp`.
 - Possibly modify: one of the above only if a new `PropertyHint` value produces a crash/garbage rather than a graceful fallback.
 
 **Acceptance Criteria:**
@@ -788,12 +788,12 @@ Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"
 
 - [ ] **Step 1: Audit hint consumers**
 
-Run: `grep -rn "PROPERTY_HINT_ARRAY_TYPE\|PROPERTY_HINT_DICTIONARY_TYPE" editor modules/gdscript/editor scene`
+Run: `grep -rn "PROPERTY_HINT_ARRAY_TYPE\|PROPERTY_HINT_DICTIONARY_TYPE" editor modules/foundry_script/editor scene`
 For each site, confirm an unknown/默认 hint falls through to plain-type rendering. Note any site that assumes `hint_string` parses a specific way for `CALLABLE`/`SIGNAL` types (there should be none today, since callables never carried a hint). If a site would misread the new `hint_string`, add an explicit guard so it ignores `PROPERTY_HINT_CALLABLE_TYPE`.
 
 - [ ] **Step 2: Doc-gen check**
 
-Run: `grep -rn "hint" modules/gdscript/editor/gdscript_docgen.cpp` and confirm doc generation does not serialize the callable `hint_string` into class XML in a way that changes output for typed callables. If GDScript doc-gen already omits callable signatures from docs, no change is needed.
+Run: `grep -rn "hint" modules/foundry_script/editor/gdscript_docgen.cpp` and confirm doc generation does not serialize the callable `hint_string` into class XML in a way that changes output for typed callables. If Foundry Script doc-gen already omits callable signatures from docs, no change is needed.
 
 - [ ] **Step 3: CI-parity build**
 
@@ -812,7 +812,7 @@ Open a scene/script exposing a typed callable property and confirm the Inspector
 - [ ] **Step 6: Commit (only if Steps 1–2 required a guard)**
 
 ```bash
-git add editor/ modules/gdscript/editor/
+git add editor/ modules/foundry_script/editor/
 git commit -m "editor: ignore PROPERTY_HINT_CALLABLE_TYPE in hint consumers for graceful fallback (#414)
 
 Claude-Session: https://claude.ai/code/session_016mpDPJgtz4gxEsB2QMeS8J"

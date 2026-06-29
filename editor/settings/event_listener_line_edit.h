@@ -40,7 +40,7 @@ enum InputType {
 };
 
 class EventListenerLineEdit : public LineEdit {
-	GDCLASS(EventListenerLineEdit, LineEdit)
+	FOUNDRY_CLASS(EventListenerLineEdit, LineEdit)
 
 	uint64_t hold_next = 0;
 	Ref<InputEvent> hold_event;

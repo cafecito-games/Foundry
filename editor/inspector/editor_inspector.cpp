@@ -761,7 +761,7 @@ void EditorProperty::set_internal(bool p_internal) {
 }
 
 void EditorProperty::update_property() {
-	GDVIRTUAL_CALL(_update_property);
+	FOUNDRY_VIRTUAL_CALL(_update_property);
 }
 
 void EditorProperty::_set_read_only(bool p_read_only) {
@@ -769,7 +769,7 @@ void EditorProperty::_set_read_only(bool p_read_only) {
 
 void EditorProperty::set_read_only(bool p_read_only) {
 	read_only = p_read_only;
-	if (GDVIRTUAL_CALL(_set_read_only, p_read_only)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_read_only, p_read_only)) {
 		return;
 	}
 	_set_read_only(p_read_only);
@@ -1541,8 +1541,8 @@ void EditorProperty::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("object_id_selected", PropertyInfo(Variant::STRING_NAME, "property"), PropertyInfo(Variant::INT, "id")));
 	ADD_SIGNAL(MethodInfo("selected", PropertyInfo(Variant::STRING, "path"), PropertyInfo(Variant::INT, "focusable_idx")));
 
-	GDVIRTUAL_BIND(_update_property)
-	GDVIRTUAL_BIND(_set_read_only, "read_only")
+	FOUNDRY_VIRTUAL_BIND(_update_property)
+	FOUNDRY_VIRTUAL_BIND(_set_read_only, "read_only")
 
 	ClassDB::bind_method(D_METHOD("_update_editor_property_status"), &EditorProperty::update_editor_property_status);
 }
@@ -1655,30 +1655,30 @@ void EditorInspectorPlugin::add_property_editor_for_multiple_properties(const St
 
 bool EditorInspectorPlugin::can_handle(Object *p_object) {
 	bool success = false;
-	GDVIRTUAL_CALL(_can_handle, p_object, success);
+	FOUNDRY_VIRTUAL_CALL(_can_handle, p_object, success);
 	return success;
 }
 
 void EditorInspectorPlugin::parse_begin(Object *p_object) {
-	GDVIRTUAL_CALL(_parse_begin, p_object);
+	FOUNDRY_VIRTUAL_CALL(_parse_begin, p_object);
 }
 
 void EditorInspectorPlugin::parse_category(Object *p_object, const String &p_category) {
-	GDVIRTUAL_CALL(_parse_category, p_object, p_category);
+	FOUNDRY_VIRTUAL_CALL(_parse_category, p_object, p_category);
 }
 
 void EditorInspectorPlugin::parse_group(Object *p_object, const String &p_group) {
-	GDVIRTUAL_CALL(_parse_group, p_object, p_group);
+	FOUNDRY_VIRTUAL_CALL(_parse_group, p_object, p_group);
 }
 
 bool EditorInspectorPlugin::parse_property(Object *p_object, const Variant::Type p_type, const String &p_path, const PropertyHint p_hint, const String &p_hint_text, const BitField<PropertyUsageFlags> p_usage, const bool p_wide) {
 	bool ret = false;
-	GDVIRTUAL_CALL(_parse_property, p_object, p_type, p_path, p_hint, p_hint_text, p_usage, p_wide, ret);
+	FOUNDRY_VIRTUAL_CALL(_parse_property, p_object, p_type, p_path, p_hint, p_hint_text, p_usage, p_wide, ret);
 	return ret;
 }
 
 void EditorInspectorPlugin::parse_end(Object *p_object) {
-	GDVIRTUAL_CALL(_parse_end, p_object);
+	FOUNDRY_VIRTUAL_CALL(_parse_end, p_object);
 }
 
 void EditorInspectorPlugin::_bind_methods() {
@@ -1686,12 +1686,12 @@ void EditorInspectorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_property_editor", "property", "editor", "add_to_end", "label"), &EditorInspectorPlugin::add_property_editor, DEFVAL(false), DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("add_property_editor_for_multiple_properties", "label", "properties", "editor"), &EditorInspectorPlugin::add_property_editor_for_multiple_properties);
 
-	GDVIRTUAL_BIND(_can_handle, "object")
-	GDVIRTUAL_BIND(_parse_begin, "object")
-	GDVIRTUAL_BIND(_parse_category, "object", "category")
-	GDVIRTUAL_BIND(_parse_group, "object", "group")
-	GDVIRTUAL_BIND(_parse_property, "object", "type", "name", "hint_type", "hint_string", "usage_flags", "wide");
-	GDVIRTUAL_BIND(_parse_end, "object")
+	FOUNDRY_VIRTUAL_BIND(_can_handle, "object")
+	FOUNDRY_VIRTUAL_BIND(_parse_begin, "object")
+	FOUNDRY_VIRTUAL_BIND(_parse_category, "object", "category")
+	FOUNDRY_VIRTUAL_BIND(_parse_group, "object", "group")
+	FOUNDRY_VIRTUAL_BIND(_parse_property, "object", "type", "name", "hint_type", "hint_string", "usage_flags", "wide");
+	FOUNDRY_VIRTUAL_BIND(_parse_end, "object")
 }
 
 ////////////////////////////////////////////////
@@ -4422,7 +4422,7 @@ void EditorInspector::update_tree() {
 					if (scr.is_valid()) {
 						Vector<DocData::ClassDoc> docs = scr->get_documentation();
 						if (!docs.is_empty()) {
-							// The documentation of a GDScript's main class is at the end of the array.
+							// The documentation of a FoundryScript's main class is at the end of the array.
 							// Hacky because this isn't necessarily always guaranteed.
 							classname = docs[docs.size() - 1].name;
 						}

@@ -22,7 +22,7 @@
 			<description>
 				Adds a custom monitor with the name [param id]. You can specify the category of the monitor using slash delimiters in [param id] (for example: [code]"Game/NumberOfNPCs"[/code]). If there is more than one slash delimiter, then the default category is used. The default category is [code]"Custom"[/code]. Prints an error if given [param id] is already present.
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				func _ready():
 					var monitor_value = Callable(self, "get_monitor_value")
 
@@ -42,7 +42,7 @@
 
 				func get_monitor_value():
 					return randi() % 25
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override void _Ready()
 				{
@@ -97,9 +97,9 @@
 			<description>
 				Returns the value of one of the available built-in monitors. You should provide one of the [enum Monitor] constants as the argument, like this:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				print(Performance.get_monitor(Performance.TIME_FPS)) # Prints the FPS to the console.
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				GD.Print(Performance.GetMonitor(Performance.Monitor.TimeFps)); // Prints the FPS to the console.
 				[/csharp]

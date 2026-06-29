@@ -30,7 +30,7 @@
 
 #include "profiling.h"
 
-#if defined(GODOT_USE_TRACY)
+#if defined(FOUNDRY_USE_TRACY)
 // Use the tracy profiler.
 
 #include "core/os/mutex.h"
@@ -194,7 +194,7 @@ void godot_cleanup_profiler() {
 	tracy::configured = false;
 }
 
-#elif defined(GODOT_USE_PERFETTO)
+#elif defined(FOUNDRY_USE_PERFETTO)
 PERFETTO_TRACK_EVENT_STATIC_STORAGE();
 
 void godot_init_profiler() {
@@ -210,7 +210,7 @@ void godot_cleanup_profiler() {
 	// Stub
 }
 
-#elif defined(GODOT_USE_INSTRUMENTS)
+#elif defined(FOUNDRY_USE_INSTRUMENTS)
 
 namespace apple::instruments {
 

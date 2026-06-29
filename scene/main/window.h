@@ -41,7 +41,7 @@ class ThemeOwner;
 class ThemeContext;
 
 class Window : public Viewport {
-	GDCLASS(Window, Viewport);
+	FOUNDRY_CLASS(Window, Viewport);
 
 public:
 	// Keep synced with enum hint for `mode` property.
@@ -285,7 +285,7 @@ protected:
 	virtual void add_child_notify(Node *p_child) override;
 	virtual void remove_child_notify(Node *p_child) override;
 
-	GDVIRTUAL0RC(Vector2, _get_contents_minimum_size)
+	FOUNDRY_VIRTUAL0RC(Vector2, _get_contents_minimum_size)
 
 public:
 	enum {

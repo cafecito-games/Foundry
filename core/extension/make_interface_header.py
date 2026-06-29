@@ -347,7 +347,7 @@ def write_interface(file, interface):
     fn = interface.copy()
     if "deprecated" in fn:
         del fn["deprecated"]
-    fn["name"] = "GDExtensionInterface" + "".join(word.capitalize() for word in interface["name"].split("_"))
+    fn["name"] = "FoundryExtensionInterface" + "".join(word.capitalize() for word in interface["name"].split("_"))
     write_function_type(file, fn)
 
     file.write("\n")

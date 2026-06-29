@@ -33,7 +33,7 @@
 #include "scene/3d/skeleton_modifier_3d.h"
 
 class BoneConstraint3D : public SkeletonModifier3D {
-	GDCLASS(BoneConstraint3D, SkeletonModifier3D);
+	FOUNDRY_CLASS(BoneConstraint3D, SkeletonModifier3D);
 
 public:
 	enum ReferenceType {

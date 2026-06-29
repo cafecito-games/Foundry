@@ -35,7 +35,7 @@
 class CameraAttributes;
 
 class VoxelGIData : public Resource {
-	GDCLASS(VoxelGIData, Resource);
+	FOUNDRY_CLASS(VoxelGIData, Resource);
 
 	RID probe;
 
@@ -95,7 +95,7 @@ public:
 };
 
 class VoxelGI : public VisualInstance3D {
-	GDCLASS(VoxelGI, VisualInstance3D);
+	FOUNDRY_CLASS(VoxelGI, VisualInstance3D);
 
 public:
 	enum Subdiv {

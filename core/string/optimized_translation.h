@@ -33,7 +33,7 @@
 #include "core/string/translation.h"
 
 class OptimizedTranslation : public Translation {
-	GDCLASS(OptimizedTranslation, Translation);
+	FOUNDRY_CLASS(OptimizedTranslation, Translation);
 
 	// This translation uses a sort of modified perfect hash algorithm
 	// it requires hashing strings twice and then does a binary search,

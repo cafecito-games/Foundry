@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 10: Cannot skip parameter "b": its default value is not a constant expression. Pass it explicitly.

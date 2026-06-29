@@ -1,8 +1,0 @@
-# A Coroutine[T] nested inside a signal parameter exposed by another script keeps its result type, so
-# binding the signal to the same Coroutine[String] signature stays accepted. (The serialized
-# MethodInfo/PropertyInfo round-trip itself is covered by a C++ unit test in test_gdscript_type.h.)
-const Provider = preload("external_signal_coroutine_roundtrip_provider.notest.gd")
-
-func test() -> void:
-	var s: Signal[[Coroutine[String]]] = Provider.new().get_signal()
-	print(s.is_null())

@@ -37,7 +37,7 @@ template <typename T>
 class TypedArray;
 
 class ProjectSettings : public Object {
-	GDCLASS(ProjectSettings, Object);
+	FOUNDRY_CLASS(ProjectSettings, Object);
 	_THREAD_SAFE_CLASS_
 	friend class TestProjectSettingsInternalsAccessor;
 
@@ -52,8 +52,8 @@ class ProjectSettings : public Object {
 
 public:
 	typedef HashMap<String, Variant> CustomMap;
-	// This constant is used to make the ".godot" folder and paths like "res://.godot/editor".
-	static inline const String PROJECT_DATA_DIR_NAME_SUFFIX = "godot";
+	// This constant is used to make the ".foundry" folder and paths like "res://.foundry/editor".
+	static inline const String PROJECT_DATA_DIR_NAME_SUFFIX = "foundry";
 	static inline const String EDITOR_SETTING_OVERRIDE_PREFIX = PNAME("editor_overrides") + String("/");
 
 	// Properties that are not for built in values begin from this value, so builtin ones are displayed first.

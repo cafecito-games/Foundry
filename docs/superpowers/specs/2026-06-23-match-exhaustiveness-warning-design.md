@@ -2,11 +2,11 @@
 
 Date: 2026-06-23
 Status: Approved (design)
-Area: `modules/gdscript/` (analyzer + warning system)
+Area: `modules/foundry_script/` (analyzer + warning system)
 
 ## Summary
 
-Add two new GDScript compiler warnings that flag `match` statements which may
+Add two new Foundry Script compiler warnings that flag `match` statements which may
 leave values unhandled:
 
 1. **`NON_EXHAUSTIVE_MATCH`** — the matched expression has a *finite domain*
@@ -20,14 +20,14 @@ leave values unhandled:
    noisy in existing codebases).
 
 Both are independently configurable to Ignore / Warn / Error through the existing
-GDScript warning project settings mechanism.
+Foundry Script warning project settings mechanism.
 
 ## Motivation
 
 `match` is frequently used to switch over an enum. When a new enumerator is added
 later, existing `match` statements silently fall through with no branch executed,
 which is a common source of bugs. Languages such as Rust and Swift catch this at
-compile time via exhaustiveness checking. GDScript already resolves enough type
+compile time via exhaustiveness checking. Foundry Script already resolves enough type
 information in the analyzer to do the same, plus a softer "you have no default
 branch" hint for the open-domain cases.
 
@@ -110,7 +110,7 @@ These rules keep the analysis sound and free of false positives:
 
 A new `#ifdef DEBUG_ENABLED` helper, `check_match_exhaustiveness(...)`, is called
 at the end of `GDScriptAnalyzer::resolve_match` in
-`modules/gdscript/gdscript_analyzer.cpp` (declared in `gdscript_analyzer.h`). By
+`modules/foundry_script/gdscript_analyzer.cpp` (declared in `gdscript_analyzer.h`). By
 that point `p_match->test` has been reduced, so its `DataType` is available, and
 all branches/patterns have been resolved (constants reduced).
 
@@ -140,19 +140,19 @@ Warnings are emitted with the existing
 
 ### Warning registration
 
-- `modules/gdscript/gdscript_warning.h`
+- `modules/foundry_script/gdscript_warning.h`
   - Add `NON_EXHAUSTIVE_MATCH` and `MATCH_WITHOUT_DEFAULT` to the `Code` enum
     before `WARNING_MAX`.
   - Add two entries to the `default_warning_levels[]` array in matching order:
     `WARN` for `NON_EXHAUSTIVE_MATCH`, `IGNORE` for `MATCH_WITHOUT_DEFAULT`.
   - The `static_assert(std_size(default_warning_levels) == WARNING_MAX)` continues
     to hold once both arrays are updated.
-- `modules/gdscript/gdscript_warning.cpp`
+- `modules/foundry_script/gdscript_warning.cpp`
   - Add the two string names to `names[]` (matching enum order):
     `"NON_EXHAUSTIVE_MATCH"`, `"MATCH_WITHOUT_DEFAULT"`.
   - Add two `case` blocks to `get_message()` producing the messages above, using
     the passed symbols.
-- `modules/gdscript/gdscript.cpp`
+- `modules/foundry_script/gdscript.cpp`
   - No change. The existing `for (… i < WARNING_MAX …)` loop auto-registers the
     project settings `debug/gdscript/warnings/non_exhaustive_match` and
     `debug/gdscript/warnings/match_without_default` with the `Ignore,Warn,Error`
@@ -162,22 +162,22 @@ Warnings are emitted with the existing
 
 The pre-commit doc checks expect the warning list to be in sync. Update the
 relevant class reference XML where the warning settings are documented
-(`doc/classes/ProjectSettings.xml` and/or `@GDScript` docs, matching how existing
+(`doc/classes/ProjectSettings.xml` and/or `@Foundry Script` docs, matching how existing
 warnings are listed). Run the doc dry-run via `pre-commit run --all-files`.
 
 ## Files touched
 
-- `modules/gdscript/gdscript_warning.h` — enum codes + default levels + assert.
-- `modules/gdscript/gdscript_warning.cpp` — names + messages.
-- `modules/gdscript/gdscript_analyzer.h` — declare `check_match_exhaustiveness`.
-- `modules/gdscript/gdscript_analyzer.cpp` — helper + call in `resolve_match`.
+- `modules/foundry_script/gdscript_warning.h` — enum codes + default levels + assert.
+- `modules/foundry_script/gdscript_warning.cpp` — names + messages.
+- `modules/foundry_script/gdscript_analyzer.h` — declare `check_match_exhaustiveness`.
+- `modules/foundry_script/gdscript_analyzer.cpp` — helper + call in `resolve_match`.
 - `doc/classes/*.xml` — warning documentation sync.
-- `modules/gdscript/tests/scripts/analyzer/warnings/` — new fixtures (below).
+- `modules/foundry_script/tests/scripts/analyzer/warnings/` — new fixtures (below).
 
 ## Testing
 
-GDScript analyzer warning fixtures are `.gd` + `.out` pairs under
-`modules/gdscript/tests/scripts/analyzer/warnings/`. Add cases covering:
+Foundry Script analyzer warning fixtures are `.fs` + `.out` pairs under
+`modules/foundry_script/tests/scripts/analyzer/warnings/`. Add cases covering:
 
 - Enum, partial coverage, no `_` → `NON_EXHAUSTIVE_MATCH` listing missing names.
 - Enum, full coverage, no `_` → no warning.
@@ -196,7 +196,7 @@ GDScript analyzer warning fixtures are `.gd` + `.out` pairs under
 Regenerate expected output with:
 
 ```
-./bin/godot.<platform>.editor.dev.<arch> --headless --gdscript-generate-tests modules/gdscript/tests/scripts
+./bin/godot.<platform>.editor.dev.<arch> --headless --gdscript-generate-tests modules/foundry_script/tests/scripts
 ```
 
 Run the suite with:
@@ -206,7 +206,7 @@ Run the suite with:
 ```
 
 No special fixture setup is needed for `MATCH_WITHOUT_DEFAULT` despite its Ignore
-default: the GDScript test runner force-sets every warning level to "Warn" before
+default: the Foundry Script test runner force-sets every warning level to "Warn" before
 running fixtures (`tests/gdscript_test_runner.cpp`, the `WARNING_MAX` loop that
 calls `set_setting(setting_path, WARN)`), so the warning will appear in the
 expected `.out`. This is the same reason existing Ignore-default warnings (e.g.

@@ -37,7 +37,7 @@
 #include <miniupnpc/miniupnpc.h>
 
 class UPNPMiniUPNP : public UPNP {
-	GDCLASS(UPNPMiniUPNP, UPNP);
+	FOUNDRY_CLASS(UPNPMiniUPNP, UPNP);
 
 private:
 	static UPNP *_create(bool p_notify_postinitialize) { return static_cast<UPNP *>(ClassDB::creator<UPNPMiniUPNP>(p_notify_postinitialize)); }

@@ -30,7 +30,7 @@
 
 #include "object.h"
 
-#include "core/extension/gdextension_manager.h"
+#include "core/extension/foundry_extension_manager.h"
 #include "core/io/resource.h"
 #include "core/object/class_db.h"
 #include "core/object/message_queue.h"
@@ -252,20 +252,20 @@ Object::Connection::operator Variant() const {
 	return d;
 }
 
-void ObjectGDExtension::create_gdtype() {
+void ObjectFoundryExtension::create_gdtype() {
 	ERR_FAIL_COND(gdtype);
 
 	gdtype = memnew(GDType(ClassDB::get_gdtype(parent_class_name), class_name));
 }
 
-void ObjectGDExtension::destroy_gdtype() {
+void ObjectFoundryExtension::destroy_gdtype() {
 	ERR_FAIL_COND(!gdtype);
 
 	memdelete(const_cast<GDType *>(gdtype));
 	gdtype = nullptr;
 }
 
-ObjectGDExtension::~ObjectGDExtension() {
+ObjectFoundryExtension::~ObjectFoundryExtension() {
 	if (gdtype) {
 		memdelete(const_cast<GDType *>(gdtype));
 	}
@@ -303,7 +303,7 @@ bool Object::_predelete() {
 	notification(NOTIFICATION_PREDELETE_CLEANUP, true);
 
 	// Destruction order starts with the most derived class, and progresses towards the base Object class:
-	// Script subclasses -> GDExtension subclasses -> C++ subclasses -> Object
+	// Script subclasses -> FoundryExtension subclasses -> C++ subclasses -> Object
 	if (script_instance) {
 		memdelete(script_instance);
 	}
@@ -325,10 +325,10 @@ bool Object::_predelete() {
 #ifdef TOOLS_ENABLED
 	else if (_instance_bindings != nullptr) {
 		Engine *engine = Engine::get_singleton();
-		GDExtensionManager *gdextension_manager = GDExtensionManager::get_singleton();
-		if (engine && gdextension_manager && engine->is_extension_reloading_enabled()) {
+		FoundryExtensionManager *foundry_extension_manager = FoundryExtensionManager::get_singleton();
+		if (engine && foundry_extension_manager && engine->is_extension_reloading_enabled()) {
 			for (uint32_t i = 0; i < _instance_binding_count; i++) {
-				gdextension_manager->untrack_instance_binding(_instance_bindings[i].token, this);
+				foundry_extension_manager->untrack_instance_binding(_instance_bindings[i].token, this);
 			}
 		}
 	}
@@ -370,7 +370,7 @@ void Object::set(const StringName &p_name, const Variant &p_value, bool *r_valid
 	}
 
 	if (_extension && _extension->set) {
-		if (_extension->set(_extension_instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionConstVariantPtr)&p_value)) {
+		if (_extension->set(_extension_instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionConstVariantPtr)&p_value)) {
 			if (r_valid) {
 				*r_valid = true;
 			}
@@ -449,7 +449,7 @@ Variant Object::get(const StringName &p_name, bool *r_valid) const {
 		}
 	}
 	if (_extension && _extension->get) {
-		if (_extension->get(_extension_instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&ret)) {
+		if (_extension->get(_extension_instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&ret)) {
 			if (r_valid) {
 				*r_valid = true;
 			}
@@ -602,7 +602,7 @@ void Object::get_property_list(List<PropertyInfo> *p_list, bool p_reversed) cons
 	}
 
 	if (_extension) {
-		const ObjectGDExtension *current_extension = _extension;
+		const ObjectFoundryExtension *current_extension = _extension;
 		while (current_extension) {
 			p_list->push_back(PropertyInfo(Variant::NIL, current_extension->class_name, PROPERTY_HINT_NONE, current_extension->class_name, PROPERTY_USAGE_CATEGORY));
 
@@ -610,12 +610,12 @@ void Object::get_property_list(List<PropertyInfo> *p_list, bool p_reversed) cons
 
 			if (current_extension->get_property_list) {
 #ifdef TOOLS_ENABLED
-				// If this is a placeholder, we can't call into the GDExtension on the parent class,
+				// If this is a placeholder, we can't call into the FoundryExtension on the parent class,
 				// because we don't have a real instance of the class to give it.
 				if (likely(!_extension->is_placeholder)) {
 #endif
 					uint32_t pcount;
-					const GDExtensionPropertyInfo *pinfo = current_extension->get_property_list(_extension_instance, &pcount);
+					const FoundryExtensionPropertyInfo *pinfo = current_extension->get_property_list(_extension_instance, &pcount);
 					for (uint32_t i = 0; i < pcount; i++) {
 						p_list->push_back(PropertyInfo(pinfo[i]));
 					}
@@ -666,10 +666,10 @@ void Object::validate_property(PropertyInfo &p_property) const {
 	_validate_propertyv(p_property);
 
 	if (_extension && _extension->validate_property) {
-		// GDExtension uses a StringName rather than a String for property name.
+		// FoundryExtension uses a StringName rather than a String for property name.
 		StringName prop_name = p_property.name;
-		GDExtensionPropertyInfo gdext_prop = {
-			(GDExtensionVariantType)p_property.type,
+		FoundryExtensionPropertyInfo gdext_prop = {
+			(FoundryExtensionVariantType)p_property.type,
 			&prop_name,
 			&p_property.class_name,
 			(uint32_t)p_property.hint,
@@ -699,7 +699,7 @@ bool Object::property_can_revert(const StringName &p_name) const {
 	}
 
 	if (_extension && _extension->property_can_revert) {
-		if (_extension->property_can_revert(_extension_instance, (GDExtensionConstStringNamePtr)&p_name)) {
+		if (_extension->property_can_revert(_extension_instance, (FoundryExtensionConstStringNamePtr)&p_name)) {
 			return true;
 		}
 	}
@@ -717,7 +717,7 @@ Variant Object::property_get_revert(const StringName &p_name) const {
 	}
 
 	if (_extension && _extension->property_get_revert) {
-		if (_extension->property_get_revert(_extension_instance, (GDExtensionConstStringNamePtr)&p_name, (GDExtensionVariantPtr)&ret)) {
+		if (_extension->property_get_revert(_extension_instance, (FoundryExtensionConstStringNamePtr)&p_name, (FoundryExtensionVariantPtr)&ret)) {
 			return ret;
 		}
 	}
@@ -1025,7 +1025,7 @@ void Object::_gdvirtual_init_method_ptr(uint32_t p_compat_hash, void *&r_fn_ptr,
 	}
 #endif
 	if (r_fn_ptr == nullptr) {
-		r_fn_ptr = reinterpret_cast<void *>(_INVALID_GDVIRTUAL_FUNC_ADDR);
+		r_fn_ptr = reinterpret_cast<void *>(_INVALID_FOUNDRY_VIRTUAL_FUNC_ADDR);
 	}
 }
 
@@ -1036,7 +1036,7 @@ void Object::_notification_forward(int p_notification) {
 
 	if (_extension) {
 		if (_extension->notification2) {
-			_extension->notification2(_extension_instance, p_notification, static_cast<GDExtensionBool>(false));
+			_extension->notification2(_extension_instance, p_notification, static_cast<FoundryExtensionBool>(false));
 #ifndef DISABLE_DEPRECATED
 		} else if (_extension->notification) {
 			_extension->notification(_extension_instance, p_notification);
@@ -1056,7 +1056,7 @@ void Object::_notification_backward(int p_notification) {
 
 	if (_extension) {
 		if (_extension->notification2) {
-			_extension->notification2(_extension_instance, p_notification, static_cast<GDExtensionBool>(true));
+			_extension->notification2(_extension_instance, p_notification, static_cast<FoundryExtensionBool>(true));
 #ifndef DISABLE_DEPRECATED
 		} else if (_extension->notification) {
 			_extension->notification(_extension_instance, p_notification);
@@ -1080,7 +1080,7 @@ String Object::to_string() {
 	}
 	if (_extension && _extension->to_string) {
 		String ret;
-		GDExtensionBool is_valid;
+		FoundryExtensionBool is_valid;
 		_extension->to_string(_extension_instance, &is_valid, &ret);
 		if (is_valid) {
 			return ret;
@@ -2238,7 +2238,7 @@ const StringName &Object::get_class_name() const {
 	return get_gdtype().get_name();
 }
 
-StringName Object::get_class_name_for_extension(const GDExtension *p_library) const {
+StringName Object::get_class_name_for_extension(const FoundryExtension *p_library) const {
 #ifdef TOOLS_ENABLED
 	// If this is the library this extension comes from and it's a placeholder, we
 	// have to return the closest native parent's class name, so that it doesn't try to
@@ -2271,7 +2271,7 @@ StringName Object::get_class_name_for_extension(const GDExtension *p_library) co
 	return SNAME("Object");
 }
 
-void Object::set_instance_binding(void *p_token, void *p_binding, const GDExtensionInstanceBindingCallbacks *p_callbacks) {
+void Object::set_instance_binding(void *p_token, void *p_binding, const FoundryExtensionInstanceBindingCallbacks *p_callbacks) {
 	// This is only meant to be used on creation by the binder, but we also
 	// need to account for reloading (where the 'binding' will be cleared).
 	ERR_FAIL_COND(_instance_bindings != nullptr && _instance_bindings[0].binding != nullptr);
@@ -2285,7 +2285,7 @@ void Object::set_instance_binding(void *p_token, void *p_binding, const GDExtens
 	_instance_bindings[0].token = p_token;
 }
 
-void *Object::get_instance_binding(void *p_token, const GDExtensionInstanceBindingCallbacks *p_callbacks) {
+void *Object::get_instance_binding(void *p_token, const FoundryExtensionInstanceBindingCallbacks *p_callbacks) {
 	void *binding = nullptr;
 	MutexLock instance_binding_lock(_instance_binding_mutex);
 	for (uint32_t i = 0; i < _instance_binding_count; i++) {
@@ -2311,7 +2311,7 @@ void *Object::get_instance_binding(void *p_token, const GDExtensionInstanceBindi
 
 #ifdef TOOLS_ENABLED
 		if (!_extension && Engine::get_singleton()->is_extension_reloading_enabled()) {
-			GDExtensionManager::get_singleton()->track_instance_binding(p_token, this);
+			FoundryExtensionManager::get_singleton()->track_instance_binding(p_token, this);
 		}
 #endif
 
@@ -2361,7 +2361,7 @@ void Object::free_instance_binding(void *p_token) {
 void Object::clear_internal_extension() {
 	ERR_FAIL_NULL(_extension);
 
-	// Free the instance inside the GDExtension.
+	// Free the instance inside the FoundryExtension.
 	if (_extension->free_instance) {
 		_extension->free_instance(_extension->class_userdata, _extension_instance);
 	}
@@ -2390,12 +2390,12 @@ void Object::clear_internal_extension() {
 	}
 }
 
-void Object::reset_internal_extension(ObjectGDExtension *p_extension) {
+void Object::reset_internal_extension(ObjectFoundryExtension *p_extension) {
 	ERR_FAIL_COND(_extension != nullptr);
 
 	if (p_extension) {
-		_extension_instance = p_extension->recreate_instance ? p_extension->recreate_instance(p_extension->class_userdata, (GDExtensionObjectPtr)this) : nullptr;
-		ERR_FAIL_NULL_MSG(_extension_instance, "Unable to recreate GDExtension instance - does this extension support hot reloading?");
+		_extension_instance = p_extension->recreate_instance ? p_extension->recreate_instance(p_extension->class_userdata, (FoundryExtensionObjectPtr)this) : nullptr;
+		ERR_FAIL_NULL_MSG(_extension_instance, "Unable to recreate FoundryExtension instance - does this extension support hot reloading?");
 		_extension = p_extension;
 		_gdtype_ptr = p_extension->gdtype;
 	}

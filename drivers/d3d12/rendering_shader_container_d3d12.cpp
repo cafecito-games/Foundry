@@ -36,23 +36,23 @@
 
 #include <zlib.h>
 
-GODOT_GCC_WARNING_PUSH
-GODOT_GCC_WARNING_IGNORE("-Wimplicit-fallthrough")
-GODOT_GCC_WARNING_IGNORE("-Wlogical-not-parentheses")
-GODOT_GCC_WARNING_IGNORE("-Wmissing-field-initializers")
-GODOT_GCC_WARNING_IGNORE("-Wnon-virtual-dtor")
-GODOT_GCC_WARNING_IGNORE("-Wshadow")
-GODOT_GCC_WARNING_IGNORE("-Wswitch")
-GODOT_CLANG_WARNING_PUSH
-GODOT_CLANG_WARNING_IGNORE("-Wimplicit-fallthrough")
-GODOT_CLANG_WARNING_IGNORE("-Wlogical-not-parentheses")
-GODOT_CLANG_WARNING_IGNORE("-Wmissing-field-initializers")
-GODOT_CLANG_WARNING_IGNORE("-Wnon-virtual-dtor")
-GODOT_CLANG_WARNING_IGNORE("-Wstring-plus-int")
-GODOT_CLANG_WARNING_IGNORE("-Wswitch")
-GODOT_MSVC_WARNING_PUSH
-GODOT_MSVC_WARNING_IGNORE(4200) // "nonstandard extension used: zero-sized array in struct/union".
-GODOT_MSVC_WARNING_IGNORE(4806) // "'&': unsafe operation: no value of type 'bool' promoted to type 'uint32_t' can equal the given constant".
+FOUNDRY_GCC_WARNING_PUSH
+FOUNDRY_GCC_WARNING_IGNORE("-Wimplicit-fallthrough")
+FOUNDRY_GCC_WARNING_IGNORE("-Wlogical-not-parentheses")
+FOUNDRY_GCC_WARNING_IGNORE("-Wmissing-field-initializers")
+FOUNDRY_GCC_WARNING_IGNORE("-Wnon-virtual-dtor")
+FOUNDRY_GCC_WARNING_IGNORE("-Wshadow")
+FOUNDRY_GCC_WARNING_IGNORE("-Wswitch")
+FOUNDRY_CLANG_WARNING_PUSH
+FOUNDRY_CLANG_WARNING_IGNORE("-Wimplicit-fallthrough")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wlogical-not-parentheses")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wmissing-field-initializers")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wnon-virtual-dtor")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wstring-plus-int")
+FOUNDRY_CLANG_WARNING_IGNORE("-Wswitch")
+FOUNDRY_MSVC_WARNING_PUSH
+FOUNDRY_MSVC_WARNING_IGNORE(4200) // "nonstandard extension used: zero-sized array in struct/union".
+FOUNDRY_MSVC_WARNING_IGNORE(4806) // "'&': unsafe operation: no value of type 'bool' promoted to type 'uint32_t' can equal the given constant".
 
 #include <dxgi1_6.h>
 #include <thirdparty/directx_headers/include/directx/d3dx12.h>
@@ -71,9 +71,9 @@ void dxil_reassign_driver_locations(nir_shader *s, nir_variable_mode modes,
 		uint64_t other_stage_mask, const BITSET_WORD *other_stage_frac_mask);
 }
 
-GODOT_GCC_WARNING_POP
-GODOT_CLANG_WARNING_POP
-GODOT_MSVC_WARNING_POP
+FOUNDRY_GCC_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
+FOUNDRY_MSVC_WARNING_POP
 
 // SPIR-V to DXIL does way too many allocations, which causes worker threads
 // to bottleneck each other due to sharing the same global process heap.
@@ -258,7 +258,7 @@ uint32_t RenderingDXIL::patch_specialization_constant(
 #ifdef DEV_ENABLED
 		uint64_t orig_patch_val = tamper_bits(bytecode.ptrw(), offset, (uint64_t)patch_val);
 		// Checking against the value the NIR patch should have set.
-		DEV_ASSERT(!p_is_first_patch || ((orig_patch_val >> 1) & GODOT_NIR_SC_SENTINEL_MAGIC_MASK) == GODOT_NIR_SC_SENTINEL_MAGIC);
+		DEV_ASSERT(!p_is_first_patch || ((orig_patch_val >> 1) & FOUNDRY_NIR_SC_SENTINEL_MAGIC_MASK) == FOUNDRY_NIR_SC_SENTINEL_MAGIC);
 		uint64_t readback_patch_val = tamper_bits(bytecode.ptrw(), offset, (uint64_t)patch_val);
 		DEV_ASSERT(readback_patch_val == (uint64_t)patch_val);
 #else
@@ -693,7 +693,7 @@ bool RenderingShaderContainerD3D12::_generate_root_signature(BitField<RenderingD
 				}
 			}
 
-			uint32_t dxil_register = i * GODOT_NIR_DESCRIPTOR_SET_MULTIPLIER + uniform.binding * GODOT_NIR_BINDING_MULTIPLIER;
+			uint32_t dxil_register = i * FOUNDRY_NIR_DESCRIPTOR_SET_MULTIPLIER + uniform.binding * FOUNDRY_NIR_BINDING_MULTIPLIER;
 			if (range_type != (D3D12_DESCRIPTOR_RANGE_TYPE)UINT_MAX) {
 				// Dynamic buffers are converted to root descriptors to prevent copying descriptors during command recording.
 				// Out of bounds accesses are not a concern because that's already undefined behavior on Vulkan.
@@ -840,8 +840,8 @@ void RenderingShaderContainerD3D12::_nir_report_resource(uint32_t p_register, ui
 	} else {
 		DEV_ASSERT(p_space == 0);
 
-		uint32_t set = p_register / GODOT_NIR_DESCRIPTOR_SET_MULTIPLIER;
-		uint32_t binding = (p_register % GODOT_NIR_DESCRIPTOR_SET_MULTIPLIER) / GODOT_NIR_BINDING_MULTIPLIER;
+		uint32_t set = p_register / FOUNDRY_NIR_DESCRIPTOR_SET_MULTIPLIER;
+		uint32_t binding = (p_register % FOUNDRY_NIR_DESCRIPTOR_SET_MULTIPLIER) / FOUNDRY_NIR_BINDING_MULTIPLIER;
 
 		DEV_ASSERT(set < (uint32_t)user_data.container->reflection_binding_set_uniforms_count.size());
 

@@ -60,7 +60,7 @@ void initialize_navigation_3d_module(ModuleInitializationLevel p_level) {
 
 #ifndef DISABLE_DEPRECATED
 		_nav_mesh_generator = memnew(NavigationMeshGenerator);
-		GDREGISTER_CLASS(NavigationMeshGenerator);
+		FOUNDRY_REGISTER_CLASS(NavigationMeshGenerator);
 		Engine::get_singleton()->add_singleton(Engine::Singleton("NavigationMeshGenerator", NavigationMeshGenerator::get_singleton()));
 #endif // DISABLE_DEPRECATED
 	}

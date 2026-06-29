@@ -743,7 +743,7 @@
 			<return type="RID" />
 			<description>
 				Creates a custom shape in the physics server, and returns the [RID] that identifies it. Use [method shape_set_data] to set the shape's data.
-				[b]Note:[/b] Custom shapes are not supported by the built-in physics servers, so calling this method always produces an error when using Godot Physics or Jolt Physics. Custom physics servers implemented as GDExtensions may support a custom shape.
+				[b]Note:[/b] Custom shapes are not supported by the built-in physics servers, so calling this method always produces an error when using Godot Physics or Jolt Physics. Custom physics servers implemented as FoundryExtensions may support a custom shape.
 			</description>
 		</method>
 		<method name="cylinder_shape_create">

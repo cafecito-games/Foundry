@@ -50,7 +50,7 @@ struct NodeTreeElements {
 };
 
 class SnapshotNodeView : public SnapshotView {
-	GDCLASS(SnapshotNodeView, SnapshotView);
+	FOUNDRY_CLASS(SnapshotNodeView, SnapshotView);
 
 	enum DiffGroup {
 		DIFF_GROUP_NONE,

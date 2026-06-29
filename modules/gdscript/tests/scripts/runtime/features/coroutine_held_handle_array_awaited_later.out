@@ -1,4 +1,0 @@
-GDTEST_OK
-held handles: 3
-before resume: []
-after resume: ["done:a", "done:b", "done:c"]

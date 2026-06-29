@@ -38,7 +38,7 @@ class Tree;
 class TreeItem;
 
 class PropertySelector : public ConfirmationDialog {
-	GDCLASS(PropertySelector, ConfirmationDialog);
+	FOUNDRY_CLASS(PropertySelector, ConfirmationDialog);
 
 	LineEdit *search_box = nullptr;
 	Tree *search_options = nullptr;

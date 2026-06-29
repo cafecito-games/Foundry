@@ -38,7 +38,7 @@
 namespace TestWindow {
 
 class NotificationControlWindow : public Control {
-	GDCLASS(NotificationControlWindow, Control);
+	FOUNDRY_CLASS(NotificationControlWindow, Control);
 
 protected:
 	void _notification(int p_what) {

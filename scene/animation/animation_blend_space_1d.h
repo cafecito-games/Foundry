@@ -33,7 +33,7 @@
 #include "scene/animation/animation_tree.h"
 
 class AnimationNodeBlendSpace1D : public AnimationRootNode {
-	GDCLASS(AnimationNodeBlendSpace1D, AnimationRootNode);
+	FOUNDRY_CLASS(AnimationNodeBlendSpace1D, AnimationRootNode);
 
 public:
 	enum BlendMode {

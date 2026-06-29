@@ -33,7 +33,7 @@
 #include "scene/resources/texture.h"
 
 class CurveTexture : public Texture2D {
-	GDCLASS(CurveTexture, Texture2D);
+	FOUNDRY_CLASS(CurveTexture, Texture2D);
 	RES_BASE_EXTENSION("curvetex")
 public:
 	enum TextureMode {
@@ -77,7 +77,7 @@ public:
 VARIANT_ENUM_CAST(CurveTexture::TextureMode)
 
 class CurveXYZTexture : public Texture2D {
-	GDCLASS(CurveXYZTexture, Texture2D);
+	FOUNDRY_CLASS(CurveXYZTexture, Texture2D);
 	RES_BASE_EXTENSION("curvetex")
 
 private:

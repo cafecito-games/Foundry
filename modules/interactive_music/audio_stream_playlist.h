@@ -35,7 +35,7 @@
 class AudioStreamPlaybackPlaylist;
 
 class AudioStreamPlaylist : public AudioStream {
-	GDCLASS(AudioStreamPlaylist, AudioStream)
+	FOUNDRY_CLASS(AudioStreamPlaylist, AudioStream)
 	OBJ_SAVE_TYPE(AudioStream)
 
 private:
@@ -79,7 +79,7 @@ protected:
 ///////////////////////////////////////
 
 class AudioStreamPlaybackPlaylist : public AudioStreamPlayback {
-	GDCLASS(AudioStreamPlaybackPlaylist, AudioStreamPlayback)
+	FOUNDRY_CLASS(AudioStreamPlaybackPlaylist, AudioStreamPlayback)
 	friend class AudioStreamPlaylist;
 
 private:

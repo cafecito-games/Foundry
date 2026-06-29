@@ -150,10 +150,10 @@
 /modules/xatlas_unwrap/                       @godotengine/rendering
 
 ## Scripting
-/modules/gdscript/                            @godotengine/gdscript
-/modules/gdscript/doc_classes/                @godotengine/gdscript @godotengine/documentation
-/modules/gdscript/editor/                     @godotengine/gdscript @godotengine/script-editor
-/modules/gdscript/tests/                      @godotengine/gdscript @godotengine/tests
+/modules/foundry_script/                            @godotengine/gdscript
+/modules/foundry_script/doc_classes/                @godotengine/gdscript @godotengine/documentation
+/modules/foundry_script/editor/                     @godotengine/gdscript @godotengine/script-editor
+/modules/foundry_script/tests/                      @godotengine/gdscript @godotengine/tests
 /modules/jsonrpc/                             @godotengine/gdscript @godotengine/network
 /modules/jsonrpc/tests/                       @godotengine/gdscript @godotengine/network @godotengine/tests
 /modules/mono/                                @godotengine/dotnet

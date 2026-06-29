@@ -40,7 +40,7 @@
 **/
 
 class CameraFeed : public RefCounted {
-	GDCLASS(CameraFeed, RefCounted);
+	FOUNDRY_CLASS(CameraFeed, RefCounted);
 
 public:
 	enum FeedDataType {
@@ -124,8 +124,8 @@ public:
 	virtual bool activate_feed();
 	virtual void deactivate_feed();
 
-	GDVIRTUAL0R(bool, _activate_feed)
-	GDVIRTUAL0(_deactivate_feed)
+	FOUNDRY_VIRTUAL0R(bool, _activate_feed)
+	FOUNDRY_VIRTUAL0(_deactivate_feed)
 };
 
 VARIANT_ENUM_CAST(CameraFeed::FeedDataType);

@@ -33,7 +33,7 @@
 #include "skeleton_profile.h"
 
 class BoneMap : public Resource {
-	GDCLASS(BoneMap, Resource);
+	FOUNDRY_CLASS(BoneMap, Resource);
 
 	Ref<SkeletonProfile> profile;
 	HashMap<StringName, StringName> bone_map;

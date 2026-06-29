@@ -1,0 +1,6 @@
+FS_TEST_OK
+~~ WARNING at line 5: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
+~~ WARNING at line 8: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
+~~ WARNING at line 9: (UNUSED_VARIABLE) The local variable "value" is declared but never used in the block. If this is intended, prefix it with an underscore: "_value".
+~~ WARNING at line 11: (MATCH_WITHOUT_DEFAULT) The "match" statement has no "_" wildcard branch; some values may go unhandled.
+value

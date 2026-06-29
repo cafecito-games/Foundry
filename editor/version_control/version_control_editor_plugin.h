@@ -42,7 +42,7 @@
 class EditorDock;
 
 class VersionControlEditorPlugin : public EditorPlugin {
-	GDCLASS(VersionControlEditorPlugin, EditorPlugin)
+	FOUNDRY_CLASS(VersionControlEditorPlugin, EditorPlugin)
 
 public:
 	enum ButtonType {

@@ -33,7 +33,7 @@
 #include "scene/3d/ik_modifier_3d.h"
 
 class TwoBoneIK3D : public IKModifier3D {
-	GDCLASS(TwoBoneIK3D, IKModifier3D);
+	FOUNDRY_CLASS(TwoBoneIK3D, IKModifier3D);
 
 public:
 	struct TwoBoneIK3DSetting : public IKModifier3DSetting {

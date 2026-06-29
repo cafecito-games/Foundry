@@ -40,12 +40,12 @@ class Label;
 class EditorFileDialog;
 
 class TileSetScenesCollectionSourceEditor : public HBoxContainer {
-	GDCLASS(TileSetScenesCollectionSourceEditor, HBoxContainer);
+	FOUNDRY_CLASS(TileSetScenesCollectionSourceEditor, HBoxContainer);
 
 private:
 	// -- Proxy object for an atlas source, needed by the inspector --
 	class TileSetScenesCollectionProxyObject : public Object {
-		GDCLASS(TileSetScenesCollectionProxyObject, Object);
+		FOUNDRY_CLASS(TileSetScenesCollectionProxyObject, Object);
 
 	private:
 		Ref<TileSet> tile_set;
@@ -67,7 +67,7 @@ private:
 
 	// -- Proxy object for a tile, needed by the inspector --
 	class SceneTileProxyObject : public Object {
-		GDCLASS(SceneTileProxyObject, Object);
+		FOUNDRY_CLASS(SceneTileProxyObject, Object);
 
 	private:
 		TileSetScenesCollectionSourceEditor *tile_set_scenes_collection_source_editor = nullptr;

@@ -637,7 +637,7 @@ void EditorResourcePicker::_edit_menu_cbk(int p_which) {
 void EditorResourcePicker::set_create_options(Object *p_menu_node) {
 	_ensure_resource_menu();
 	// If a subclass implements this method, use it to replace all create items.
-	if (GDVIRTUAL_CALL(_set_create_options, p_menu_node)) {
+	if (FOUNDRY_VIRTUAL_CALL(_set_create_options, p_menu_node)) {
 		return;
 	}
 
@@ -681,7 +681,7 @@ void EditorResourcePicker::set_create_options(Object *p_menu_node) {
 
 bool EditorResourcePicker::handle_menu_selected(int p_which) {
 	bool success = false;
-	GDVIRTUAL_CALL(_handle_menu_selected, p_which, success);
+	FOUNDRY_VIRTUAL_CALL(_handle_menu_selected, p_which, success);
 	return success;
 }
 
@@ -1041,8 +1041,8 @@ void EditorResourcePicker::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_editable", "enable"), &EditorResourcePicker::set_editable);
 	ClassDB::bind_method(D_METHOD("is_editable"), &EditorResourcePicker::is_editable);
 
-	GDVIRTUAL_BIND(_set_create_options, "menu_node");
-	GDVIRTUAL_BIND(_handle_menu_selected, "id");
+	FOUNDRY_VIRTUAL_BIND(_set_create_options, "menu_node");
+	FOUNDRY_VIRTUAL_BIND(_handle_menu_selected, "id");
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_type"), "set_base_type", "get_base_type");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "edited_resource", PROPERTY_HINT_RESOURCE_TYPE, "Resource", PROPERTY_USAGE_NONE), "set_edited_resource", "get_edited_resource");

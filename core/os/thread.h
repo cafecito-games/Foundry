@@ -92,9 +92,9 @@ public:
 	};
 
 #if defined(__cpp_lib_hardware_interference_size) && !defined(ANDROID_ENABLED) // This would be OK with NDK >= 26.
-	GODOT_GCC_WARNING_PUSH_AND_IGNORE("-Winterference-size")
+	FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Winterference-size")
 	static constexpr size_t CACHE_LINE_BYTES = std::hardware_destructive_interference_size;
-	GODOT_GCC_WARNING_POP
+	FOUNDRY_GCC_WARNING_POP
 #else
 	// At a negligible memory cost, we use a conservatively high value.
 	static constexpr size_t CACHE_LINE_BYTES = 128;

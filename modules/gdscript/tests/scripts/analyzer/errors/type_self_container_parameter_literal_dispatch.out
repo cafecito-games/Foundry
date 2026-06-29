@@ -1,5 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 3: Cannot have an element of type "Base" in an array of type "Array[Self]".
->> ERROR at line 3: Invalid argument for "take_items()" function: argument 1 should be "Array[Self]" but is "Array".
->> ERROR at line 4: Cannot have a value of type "Base" in a dictionary of type "Dictionary[String, Self]".
->> ERROR at line 4: Invalid argument for "take_mapping()" function: argument 1 should be "Dictionary[String, Self]" but is "Dictionary".

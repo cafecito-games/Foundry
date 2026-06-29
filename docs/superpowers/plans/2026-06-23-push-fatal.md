@@ -6,7 +6,7 @@
 
 **Architecture:** `push_fatal` is a `core` Variant utility function (sibling to `push_error`/`push_warning`). It logs via `ERR_PRINT`, then — unless running inside the editor or disabled by the `application/run/push_fatal_terminates` project setting — calls a new `OS::request_exit()`. `OS` stores an atomic exit-request flag; `Main::iteration()` reads it after the main-loop `process()` step and returns, so the loop unwinds and `finalize()` runs (graceful, not mid-frame).
 
-**Tech Stack:** C++ (Godot Engine), SCons build, doctest unit tests, ProjectSettings, GDScript-facing utility-function binding.
+**Tech Stack:** C++ (Godot Engine), SCons build, doctest unit tests, ProjectSettings, Foundry Script-facing utility-function binding.
 
 **Spec:** `docs/superpowers/specs/2026-06-23-push-fatal-design.md`
 
@@ -347,16 +347,16 @@ Expected: `[doctest] test cases: 1 | 1 passed | 0 failed`
 
 - [ ] **Step 9: Manual end-to-end repro (validates Task 2 too)**
 
-Create a throwaway project script `/tmp/push_fatal_repro/main.gd` and `project.godot`, or run inline:
+Create a throwaway project script `/tmp/push_fatal_repro/main.fs` and `project.foundry`, or run inline:
 
 ```bash
 mkdir -p /tmp/push_fatal_repro
-cat > /tmp/push_fatal_repro/project.godot <<'EOF'
+cat > /tmp/push_fatal_repro/project.foundry <<'EOF'
 config_version=5
 [application]
 run/main_scene="res://main.tscn"
 EOF
-cat > /tmp/push_fatal_repro/main.gd <<'EOF'
+cat > /tmp/push_fatal_repro/main.fs <<'EOF'
 extends Node
 func _ready() -> void:
 	print("about to fatal")
@@ -365,7 +365,7 @@ func _ready() -> void:
 EOF
 cat > /tmp/push_fatal_repro/main.tscn <<'EOF'
 [gd_scene load_steps=2 format=3]
-[ext_resource type="Script" path="res://main.gd" id="1"]
+[ext_resource type="Script" path="res://main.fs" id="1"]
 [node name="Main" type="Node"]
 script = ExtResource("1")
 EOF

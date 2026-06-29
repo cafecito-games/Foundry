@@ -35,7 +35,7 @@
 class CollisionObject2D;
 
 class RayCast2D : public Node2D {
-	GDCLASS(RayCast2D, Node2D);
+	FOUNDRY_CLASS(RayCast2D, Node2D);
 
 	bool enabled = true;
 	bool collided = false;

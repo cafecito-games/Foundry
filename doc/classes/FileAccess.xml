@@ -7,7 +7,7 @@
 		This class can be used to permanently store data in the user device's file system and to read from it. This is useful for storing game save data or player configuration files.
 		[b]Example:[/b] How to write and read from a file. The file named [code]"save_game.dat"[/code] will be stored in the user data folder, as specified in the [url=$DOCS_URL/tutorials/io/data_paths.html]Data paths[/url] documentation:
 		[codeblocks]
-		[gdscript]
+		[foundry_script]
 		func save_to_file(content):
 			var file = FileAccess.open("user://save_game.dat", FileAccess.WRITE)
 			file.store_string(content)
@@ -16,7 +16,7 @@
 			var file = FileAccess.open("user://save_game.dat", FileAccess.READ)
 			var content = file.get_as_text()
 			return content
-		[/gdscript]
+		[/foundry_script]
 		[csharp]
 		public void SaveToFile(string content)
 		{
@@ -71,10 +71,10 @@
 				Returns [code]true[/code] if the file cursor has already read past the end of the file.
 				[b]Note:[/b] [code]eof_reached() == false[/code] cannot be used to check whether there is more data available. To loop while there is more data available, use:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				while file.get_position() &lt; file.get_length():
 					# Read data
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				while (file.GetPosition() &lt; file.GetLength())
 				{
@@ -500,7 +500,7 @@
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
 				To store a signed integer, use [method store_64] or store a signed integer from the interval [code][-2^15, 2^15 - 1][/code] (i.e. keeping one bit for the signedness) and compute its sign manually when reading. For example:
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				const MAX_15B = 1 &lt;&lt; 15
 				const MAX_16B = 1 &lt;&lt; 16
 
@@ -516,7 +516,7 @@
 					var read2 = f.get_16() # 121
 					var converted1 = unsigned16_to_signed(read1) # -42
 					var converted2 = unsigned16_to_signed(read2) # 121
-				[/gdscript]
+				[/foundry_script]
 				[csharp]
 				public override void _Ready()
 				{

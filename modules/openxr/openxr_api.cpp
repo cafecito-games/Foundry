@@ -608,7 +608,7 @@ XrResult OpenXRAPI::attempt_create_instance(XrVersion p_version) {
 		"Godot Engine", // applicationName, if we're running a game we'll update this down below.
 		1, // applicationVersion, we don't currently have this
 		"Godot Engine", // engineName
-		GODOT_VERSION_MAJOR * 10000 + GODOT_VERSION_MINOR * 100 + GODOT_VERSION_PATCH, // engineVersion 4.0 -> 40000, 4.0.1 -> 40001, 4.1 -> 40100, etc.
+		FOUNDRY_VERSION_MAJOR * 10000 + FOUNDRY_VERSION_MINOR * 100 + FOUNDRY_VERSION_PATCH, // engineVersion 4.0 -> 40000, 4.0.1 -> 40001, 4.1 -> 40100, etc.
 		p_version // apiVersion
 	};
 
@@ -1875,10 +1875,10 @@ void OpenXRAPI::register_extension_metadata() {
 void OpenXRAPI::cleanup_extension_wrappers() {
 	for (OpenXRExtensionWrapper *extension_wrapper : registered_extension_wrappers) {
 #ifndef DISABLE_DEPRECATED
-		// Fix crash when the extension wrapper comes from GDExtension.
-		OpenXRExtensionWrapperExtension *gdextension_extension_wrapper = dynamic_cast<OpenXRExtensionWrapperExtension *>(extension_wrapper);
-		if (gdextension_extension_wrapper) {
-			memdelete(gdextension_extension_wrapper);
+		// Fix crash when the extension wrapper comes from FoundryExtension.
+		OpenXRExtensionWrapperExtension *foundry_extension_extension_wrapper = dynamic_cast<OpenXRExtensionWrapperExtension *>(extension_wrapper);
+		if (foundry_extension_extension_wrapper) {
+			memdelete(foundry_extension_extension_wrapper);
 		} else
 #endif
 		{

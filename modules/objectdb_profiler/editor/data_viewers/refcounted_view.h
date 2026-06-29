@@ -38,7 +38,7 @@ class Tree;
 class HSplitContainer;
 
 class SnapshotRefCountedView : public SnapshotView {
-	GDCLASS(SnapshotRefCountedView, SnapshotView);
+	FOUNDRY_CLASS(SnapshotRefCountedView, SnapshotView);
 
 protected:
 	Tree *refs_list = nullptr;

@@ -39,7 +39,7 @@
 class OggPacketSequencePlayback;
 
 class OggPacketSequence : public Resource {
-	GDCLASS(OggPacketSequence, Resource);
+	FOUNDRY_CLASS(OggPacketSequence, Resource);
 
 	friend class OggPacketSequencePlayback;
 
@@ -91,7 +91,7 @@ public:
 };
 
 class OggPacketSequencePlayback : public RefCounted {
-	GDCLASS(OggPacketSequencePlayback, RefCounted);
+	FOUNDRY_CLASS(OggPacketSequencePlayback, RefCounted);
 
 	friend class OggPacketSequence;
 

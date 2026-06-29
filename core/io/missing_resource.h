@@ -36,7 +36,7 @@
 #define META_MISSING_RESOURCES "_missing_resources"
 
 class MissingResource : public Resource {
-	GDCLASS(MissingResource, Resource)
+	FOUNDRY_CLASS(MissingResource, Resource)
 	HashMap<StringName, Variant> properties;
 
 	String original_class;

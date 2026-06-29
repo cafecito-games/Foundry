@@ -35,10 +35,10 @@
 				[codeblock]
 				func _get_dependencies(path, add_types):
 					return [
-						"uid://fqgvuwrkuixh::Script::res://script.gd",
-						"uid://fqgvuwrkuixh::::res://script.gd",
-						"res://script.gd::Script",
-						"res://script.gd",
+						"uid://fqgvuwrkuixh::Script::res://script.fs",
+						"uid://fqgvuwrkuixh::::res://script.fs",
+						"res://script.fs::Script",
+						"res://script.fs",
 					]
 				[/codeblock]
 				[b]Note:[/b] Custom resource types defined by scripts aren't known by the [ClassDB], so [code]"Resource"[/code] can be used for the class name.

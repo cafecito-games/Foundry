@@ -353,7 +353,7 @@ namespace GodotTools.Ides
 
                     // Pass the debugger agent settings to the player via an environment variables
                     // TODO: It would be better if this was an argument in EditorRunPlay instead
-                    Environment.SetEnvironmentVariable("GODOT_MONO_DEBUGGER_AGENT",
+                    Environment.SetEnvironmentVariable("FOUNDRY_MONO_DEBUGGER_AGENT",
                         "--debugger-agent=transport=dt_socket" +
                         $",address={request.DebuggerHost}:{request.DebuggerPort}" +
                         ",server=n");
@@ -362,7 +362,7 @@ namespace GodotTools.Ides
                     Internal.EditorRunPlay();
 
                     // Restore normal settings
-                    Environment.SetEnvironmentVariable("GODOT_MONO_DEBUGGER_AGENT", "");
+                    Environment.SetEnvironmentVariable("FOUNDRY_MONO_DEBUGGER_AGENT", "");
                     GodotSharpEditor.Instance.SkipBuildBeforePlaying = false;
                 });
                 return Task.FromResult<Response>(new DebugPlayResponse());

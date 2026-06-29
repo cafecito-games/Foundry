@@ -39,7 +39,7 @@ template <typename T>
 class TypedArray;
 
 class GLTFSkin : public Resource {
-	GDCLASS(GLTFSkin, Resource);
+	FOUNDRY_CLASS(GLTFSkin, Resource);
 	friend class GLTFDocument;
 	friend class SkinTool;
 	friend class FBXDocument;

@@ -44,10 +44,10 @@ class Texture2D;
 struct EditorProgress;
 struct SharedObject;
 
-const String ENV_SCRIPT_ENCRYPTION_KEY = "GODOT_SCRIPT_ENCRYPTION_KEY";
+const String ENV_SCRIPT_ENCRYPTION_KEY = "FOUNDRY_SCRIPT_ENCRYPTION_KEY";
 
 class EditorExportPlatform : public RefCounted {
-	GDCLASS(EditorExportPlatform, RefCounted);
+	FOUNDRY_CLASS(EditorExportPlatform, RefCounted);
 
 protected:
 	static void _bind_methods();

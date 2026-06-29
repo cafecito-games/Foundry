@@ -621,7 +621,7 @@ String CreateDialog::get_selected_type() {
 
 	String type = selected->get_text(0).get_slicec(' ', 0);
 	if (ClassDB::class_exists(type)) {
-		return type; // CPP type - from the core or GDExtensions
+		return type; // CPP type - from the core or FoundryExtensions
 	}
 
 	const EditorData::CustomType *custom_type = EditorNode::get_editor_data().get_custom_type_by_name(type);

@@ -36,7 +36,7 @@
 class SceneDebuggerObject;
 
 class EditorDebuggerRemoteObjects : public Object {
-	GDCLASS(EditorDebuggerRemoteObjects, Object);
+	FOUNDRY_CLASS(EditorDebuggerRemoteObjects, Object);
 
 private:
 	bool _set_impl(const StringName &p_name, const Variant &p_value, const String &p_field);
@@ -69,7 +69,7 @@ public:
 };
 
 class EditorDebuggerInspector : public EditorInspector {
-	GDCLASS(EditorDebuggerInspector, EditorInspector);
+	FOUNDRY_CLASS(EditorDebuggerInspector, EditorInspector);
 
 private:
 	LocalVector<EditorDebuggerRemoteObjects *> remote_objects_list;

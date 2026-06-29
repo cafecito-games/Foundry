@@ -37,7 +37,7 @@ class SceneDebuggerTree;
 class EditorFileDialog;
 
 class EditorDebuggerTree : public Tree {
-	GDCLASS(EditorDebuggerTree, Tree);
+	FOUNDRY_CLASS(EditorDebuggerTree, Tree);
 
 private:
 	struct ParentItem {

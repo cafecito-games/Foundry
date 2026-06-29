@@ -51,7 +51,9 @@ def get_opts():
         # eval() can be a security concern, so it can be disabled.
         BoolVariable("javascript_eval", "Enable JavaScript eval interface", True),
         BoolVariable(
-            "dlink_enabled", "Enable WebAssembly dynamic linking (GDExtension support). Produces bigger binaries", False
+            "dlink_enabled",
+            "Enable WebAssembly dynamic linking (FoundryExtension support). Produces bigger binaries",
+            False,
         ),
         BoolVariable("use_closure_compiler", "Use closure compiler to minimize JavaScript code", False),
         BoolVariable(
@@ -285,7 +287,7 @@ def configure(env: "SConsEnvironment"):
 
     if env["dlink_enabled"]:
         if env["proxy_to_pthread"]:
-            print_warning("GDExtension support requires proxy_to_pthread=no, disabling proxy to pthread.")
+            print_warning("FoundryExtension support requires proxy_to_pthread=no, disabling proxy to pthread.")
             env["proxy_to_pthread"] = False
 
         env.Append(CPPDEFINES=["WEB_DLINK_ENABLED"])
@@ -343,5 +345,5 @@ def configure(env: "SConsEnvironment"):
     # We also only use WebGL2, and changing context version is not widely supported anyway.
     env.Append(LINKFLAGS=["-sGL_WORKAROUND_SAFARI_GETCONTEXT_BUG=0"])
 
-    # Disable GDScript LSP (as the Web platform is not compatible with TCP).
-    env.Append(CPPDEFINES=["GDSCRIPT_NO_LSP"])
+    # Disable FoundryScript LSP (as the Web platform is not compatible with TCP).
+    env.Append(CPPDEFINES=["FOUNDRY_SCRIPT_NO_LSP"])

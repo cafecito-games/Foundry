@@ -36,7 +36,7 @@
 class Timer;
 
 class EditorExport : public Node {
-	GDCLASS(EditorExport, Node);
+	FOUNDRY_CLASS(EditorExport, Node);
 
 	Vector<Ref<EditorExportPlatform>> export_platforms;
 	Vector<Ref<EditorExportPreset>> export_presets;

@@ -36,7 +36,7 @@
 
 #ifdef THREADS_ENABLED
 
-GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wundefined-var-template")
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wundefined-var-template")
 
 // A very special kind of mutex, used in scenarios where these
 // requirements hold at the same time:
@@ -116,7 +116,7 @@ public:
 	// TODO: Implement a `try_temp_relock` if needed (will also need a dummy method below).
 };
 
-GODOT_CLANG_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
 
 #else // No threads.
 

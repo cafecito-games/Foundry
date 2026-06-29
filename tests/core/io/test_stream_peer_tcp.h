@@ -37,7 +37,7 @@
 namespace TestStreamPeerTCP {
 
 class MockNetSocket : public NetSocket {
-	GDSOFTCLASS(MockNetSocket, NetSocket);
+	FOUNDRY_SOFTCLASS(MockNetSocket, NetSocket);
 
 public:
 	static void make_default();

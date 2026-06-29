@@ -33,7 +33,7 @@
 #include "scene/gui/control.h"
 
 class NinePatchRect : public Control {
-	GDCLASS(NinePatchRect, Control);
+	FOUNDRY_CLASS(NinePatchRect, Control);
 
 public:
 	enum AxisStretchMode {

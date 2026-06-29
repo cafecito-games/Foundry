@@ -5180,7 +5180,7 @@ String String::lpad(int min_length, const String &character) const {
 	return s;
 }
 
-// sprintf is implemented in GDScript via:
+// sprintf is implemented in FoundryScript via:
 //   "fish %s pie" % "frog"
 //   "fish %s %d pie" % ["frog", 12]
 // In case of an error, the string returned is the error description and "error" is true.
@@ -5712,10 +5712,10 @@ String DTR(const String &p_text, const String &p_context) {
 	const String text = p_text.dedent().strip_edges();
 
 	if (TranslationServer::get_singleton()) {
-		return String(TranslationServer::get_singleton()->get_doc_domain()->translate(text, p_context)).replace("$DOCS_URL", GODOT_VERSION_DOCS_URL);
+		return String(TranslationServer::get_singleton()->get_doc_domain()->translate(text, p_context)).replace("$DOCS_URL", FOUNDRY_VERSION_DOCS_URL);
 	}
 
-	return text.replace("$DOCS_URL", GODOT_VERSION_DOCS_URL);
+	return text.replace("$DOCS_URL", FOUNDRY_VERSION_DOCS_URL);
 }
 
 /**
@@ -5729,14 +5729,14 @@ String DTRN(const String &p_text, const String &p_text_plural, int p_n, const St
 	const String text_plural = p_text_plural.dedent().strip_edges();
 
 	if (TranslationServer::get_singleton()) {
-		return String(TranslationServer::get_singleton()->get_doc_domain()->translate_plural(text, text_plural, p_n, p_context)).replace("$DOCS_URL", GODOT_VERSION_DOCS_URL);
+		return String(TranslationServer::get_singleton()->get_doc_domain()->translate_plural(text, text_plural, p_n, p_context)).replace("$DOCS_URL", FOUNDRY_VERSION_DOCS_URL);
 	}
 
 	// Return message based on English plural rule if translation is not possible.
 	if (p_n == 1) {
-		return text.replace("$DOCS_URL", GODOT_VERSION_DOCS_URL);
+		return text.replace("$DOCS_URL", FOUNDRY_VERSION_DOCS_URL);
 	}
-	return text_plural.replace("$DOCS_URL", GODOT_VERSION_DOCS_URL);
+	return text_plural.replace("$DOCS_URL", FOUNDRY_VERSION_DOCS_URL);
 }
 #endif
 

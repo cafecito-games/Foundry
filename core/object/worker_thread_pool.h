@@ -42,7 +42,7 @@
 #include "core/templates/self_list.h"
 
 class WorkerThreadPool : public Object {
-	GDCLASS(WorkerThreadPool, Object)
+	FOUNDRY_CLASS(WorkerThreadPool, Object)
 public:
 	enum {
 		INVALID_TASK_ID = -1

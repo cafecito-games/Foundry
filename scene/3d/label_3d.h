@@ -36,7 +36,7 @@
 #include "servers/text/text_server.h"
 
 class Label3D : public GeometryInstance3D {
-	GDCLASS(Label3D, GeometryInstance3D);
+	FOUNDRY_CLASS(Label3D, GeometryInstance3D);
 
 public:
 	enum DrawFlags {
@@ -148,7 +148,7 @@ private:
 	void _generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority = 0, int p_outline_size = 0);
 
 protected:
-	GDVIRTUAL2RC(TypedArray<Vector3i>, _structured_text_parser, Array, String)
+	FOUNDRY_VIRTUAL2RC(TypedArray<Vector3i>, _structured_text_parser, Array, String)
 
 	void _notification(int p_what);
 

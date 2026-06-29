@@ -1,6 +1,0 @@
-GDTEST_OK
-[7] true
-{ 1: "one" } true true
-[5] true
-{ 2: "two" } true true
-generic container return field initializer ok

@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_foundry_script = env_modules.Clone()
+
+env_foundry_script.add_source_files(env.modules_sources, "*.cpp")
+
+if env.editor_build:
+    env_foundry_script.add_source_files(env.modules_sources, "./editor/*.cpp")
+
+    SConscript("editor/script_templates/SCsub")
+
+    # Those two modules are required for the language server protocol
+    if env["module_jsonrpc_enabled"] and env["module_websocket_enabled"]:
+        env_foundry_script.add_source_files(env.modules_sources, "./language_server/*.cpp")
+    else:
+        # Using a define in the disabled case, to avoid having an extra define
+        # in regular builds where all modules are enabled.
+        env_foundry_script.Append(CPPDEFINES=["FOUNDRY_SCRIPT_NO_LSP"])
+        # Also needed in main env to unexpose --lsp-port option.
+        env.Append(CPPDEFINES=["FOUNDRY_SCRIPT_NO_LSP"])
+
+
+if env["tests"]:
+    env_foundry_script.Append(CPPDEFINES=["TESTS_ENABLED"])
+    env_foundry_script.add_source_files(env.modules_sources, "./tests/*.cpp")
+
+# Platform-independent libFuzzer harness (parser/analyzer). Compiled only for
+# fuzzing builds; the platform-specific entry point lives under platform/.
+if env.get("use_fuzzer", False):
+    env_foundry_script.add_source_files(env.modules_sources, "./tests/fuzz/*.cpp")
