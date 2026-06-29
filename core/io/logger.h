@@ -51,7 +51,8 @@ public:
 		ERR_ERROR,
 		ERR_WARNING,
 		ERR_SCRIPT,
-		ERR_SHADER
+		ERR_SHADER,
+		ERR_FATAL
 	};
 
 	static constexpr const char *error_type_string(ErrorType p_type) {
@@ -64,6 +65,8 @@ public:
 				return "SCRIPT ERROR";
 			case ERR_SHADER:
 				return "SHADER ERROR";
+			case ERR_FATAL:
+				return "FATAL ERROR";
 		}
 		return "UNKNOWN ERROR";
 	}
@@ -78,6 +81,8 @@ public:
 				return "          ";
 			case ERR_SHADER:
 				return "          ";
+			case ERR_FATAL:
+				return "            ";
 		}
 		return "           ";
 	}

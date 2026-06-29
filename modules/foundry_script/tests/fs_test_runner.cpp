@@ -43,6 +43,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
+#include "core/object/script_diagnostic_capture.h"
 #include "core/os/os.h"
 #include "core/string/string_builder.h"
 #include "scene/resources/packed_scene.h"
@@ -536,6 +537,10 @@ void FSTest::error_handler(void *p_this, const char *p_function, const char *p_f
 	ErrorHandlerData *data = (ErrorHandlerData *)p_this;
 	FSTest *self = data->self;
 	TestResult *result = data->result;
+
+	if (ScriptDiagnosticCapture::has_active_capture()) {
+		return;
+	}
 
 	result->status = FS_TEST_RUNTIME_ERROR;
 

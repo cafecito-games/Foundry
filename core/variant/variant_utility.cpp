@@ -34,6 +34,7 @@
 #include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
 #include "core/object/ref_counted.h"
+#include "core/object/script_diagnostic_capture.h"
 #include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "core/templates/a_hash_map.h"
@@ -1045,7 +1046,7 @@ void VariantUtilityFunctions::push_fatal(const Variant **p_args, int p_arg_count
 		return;
 	}
 
-	ERR_PRINT(join_string(p_args, p_arg_count));
+	_err_print_error(FUNCTION_STR, __FILE__, __LINE__, join_string(p_args, p_arg_count), false, ERR_HANDLER_FATAL);
 	r_error.error = Callable::CallError::CALL_OK;
 
 	request_fatal_termination();
@@ -1055,6 +1056,10 @@ void VariantUtilityFunctions::request_fatal_termination() {
 	// Never terminate the editor process itself (e.g. when called from a
 	// @tool script). Termination only applies to the running project.
 	if (Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+
+	if (ScriptDiagnosticCapture::has_active_capture()) {
 		return;
 	}
 
