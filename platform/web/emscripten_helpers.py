@@ -31,7 +31,7 @@ def create_engine_file(env, target, source, externs, threads_enabled):
 
 
 def create_template_zip(env, js, wasm, side):
-    binary_name = "godot.editor" if env.editor_build else "godot"
+    binary_name = "foundry.editor" if env.editor_build else "foundry"
     zip_dir = env.Dir(env.GetTemplateZipPath())
     in_files = [
         js,
@@ -55,15 +55,15 @@ def create_template_zip(env, js, wasm, side):
         # HTML
         html = "#misc/dist/html/editor.html"
         cache = [
-            "godot.editor.html",
+            "foundry.editor.html",
             "offline.html",
-            "godot.editor.js",
-            "godot.editor.audio.worklet.js",
-            "godot.editor.audio.position.worklet.js",
+            "foundry.editor.js",
+            "foundry.editor.audio.worklet.js",
+            "foundry.editor.audio.position.worklet.js",
             "logo.svg",
             "favicon.png",
         ]
-        opt_cache = ["godot.editor.wasm"]
+        opt_cache = ["foundry.editor.wasm"]
         subst_dict = {
             "___GODOT_VERSION___": get_build_version(False),
             "___GODOT_NAME___": "GodotEngine",
@@ -73,7 +73,7 @@ def create_template_zip(env, js, wasm, side):
             "___GODOT_THREADS_ENABLED___": "true" if env["threads"] else "false",
             "___GODOT_ENSURE_CROSSORIGIN_ISOLATION_HEADERS___": "true",
         }
-        html = env.Substfile(target="#bin/godot${PROGSUFFIX}.html", source=html, SUBST_DICT=subst_dict)
+        html = env.Substfile(target="#bin/foundry${PROGSUFFIX}.html", source=html, SUBST_DICT=subst_dict)
         in_files.append(html)
         out_files.append(zip_dir.File(binary_name + ".html"))
         # And logo/favicon
@@ -83,7 +83,7 @@ def create_template_zip(env, js, wasm, side):
         out_files.append(zip_dir.File("favicon.png"))
         # PWA
         service_worker = env.Substfile(
-            target="#bin/godot${PROGSUFFIX}.service.worker.js",
+            target="#bin/foundry${PROGSUFFIX}.service.worker.js",
             source=service_worker,
             SUBST_DICT=subst_dict,
         )
@@ -100,12 +100,12 @@ def create_template_zip(env, js, wasm, side):
         in_files.append(service_worker)
         out_files.append(zip_dir.File(binary_name + ".service.worker.js"))
         in_files.append("#misc/dist/html/offline-export.html")
-        out_files.append(zip_dir.File("godot.offline.html"))
+        out_files.append(zip_dir.File("foundry.offline.html"))
 
     zip_files = env.NoCache(env.InstallAs(out_files, in_files))
     env.NoCache(
         env.Zip(
-            "#bin/godot",
+            "#bin/foundry",
             zip_files,
             ZIPROOT=zip_dir,
             ZIPSUFFIX="${PROGSUFFIX}${ZIPSUFFIX}",

@@ -50,11 +50,11 @@ else:
     files += ["libgodot_macos.mm"]
 
 if env["library_type"] == "static_library":
-    prog = env.add_library("#bin/godot", files)
+    prog = env.add_library("#bin/foundry", files)
 elif env["library_type"] == "shared_library":
-    prog = env.add_shared_library("#bin/godot", files)
+    prog = env.add_shared_library("#bin/foundry", files)
 else:
-    prog = env.add_program("#bin/godot", files)
+    prog = env.add_program("#bin/foundry", files)
 
 if env["debug_symbols"] and env["separate_debug_symbols"]:
     env.AddPostAction(prog, env.Run(platform_macos_builders.make_debug_macos))

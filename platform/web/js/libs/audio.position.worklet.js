@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  godot.audio.position.worklet.js                                                      */
+/*  foundry.audio.position.worklet.js                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
