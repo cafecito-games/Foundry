@@ -215,23 +215,16 @@ jobs:
         with:
           name: release-windows-${{ matrix.target }}
 
-  build-macos:
+  build-macos-editor:
     needs: resolve
     runs-on: macos-latest
-    name: macOS ${{ matrix.target }}
+    name: macOS editor
     timeout-minutes: 120
     env:
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
         "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: editor
-          - target: template_debug
-          - target: template_release
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -244,7 +237,7 @@ jobs:
       - name: Restore Foundry build cache
         uses: ./.github/actions/foundry-cache-restore
         with:
-          cache-name: release-macos-${{ matrix.target }}
+          cache-name: release-macos-editor
         continue-on-error: true
 
       - name: Setup Python and SCons
@@ -277,33 +270,125 @@ jobs:
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
           platform: macos
-          target: ${{ matrix.target }}
+          target: editor
 
-      # The second (arm64) build runs generate_bundle, which lipos both archs
-      # into a universal binary and assembles the .app (editor) / macos_template
-      # zip (templates) that the release packages and the editor consume.
+      # The arm64 build runs generate_bundle, lipo-ing both archs into the
+      # universal editor .app the release packages.
       - name: Compilation (arm64) + bundle
         uses: ./.github/actions/foundry-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} generate_bundle=yes
           platform: macos
-          target: ${{ matrix.target }}
+          target: editor
 
       - name: Save Foundry build cache
         uses: ./.github/actions/foundry-cache-save
         with:
-          cache-name: release-macos-${{ matrix.target }}
+          cache-name: release-macos-editor
         continue-on-error: true
 
-      # Keep only the bundle outputs (.app for editor, macos_template zip for
-      # templates); drop the raw per-arch binaries from the uploaded artifact.
       - name: Prune raw binaries
         run: rm -f bin/foundry.macos.* || true
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
-          name: release-macos-${{ matrix.target }}
+          name: release-macos-editor
+
+  build-macos-templates:
+    needs: resolve
+    runs-on: macos-latest
+    name: macOS templates
+    timeout-minutes: 150
+    env:
+      SCONS_FLAGS: >-
+        production=yes
+        module_text_server_fb_enabled=yes
+        "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: release-macos-templates
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download pre-built AccessKit
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: godotengine/godot-accesskit-c-static
+          version: tags/0.21.2
+          file: accesskit-c-0.21.2.zip
+          target: accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Extract pre-built AccessKit
+        run: unzip -o accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Setup Vulkan SDK
+        id: vulkan-sdk
+        run: |
+          if sh misc/scripts/install_vulkan_sdk_macos.sh; then
+            echo "VULKAN_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::macOS: Vulkan SDK installation failed, building without Vulkan support."
+            echo "VULKAN_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      # A single macos_template.app must hold both debug and release universal
+      # binaries, so build all four (debug/release x x86_64/arm64) into bin/
+      # before generate_bundle assembles the zip on the final build.
+      - name: Compilation (template_release x86_64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: template_release
+
+      - name: Compilation (template_release arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: template_release
+
+      - name: Compilation (template_debug x86_64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: template_debug
+
+      - name: Compilation (template_debug arm64) + bundle
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} generate_bundle=yes
+          platform: macos
+          target: template_debug
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: release-macos-templates
+        continue-on-error: true
+
+      - name: Prune raw binaries
+        run: rm -f bin/foundry.macos.* || true
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-macos-templates
 
   build-web:
     needs: resolve
@@ -464,16 +549,10 @@ jobs:
   build-ios:
     needs: resolve
     runs-on: macos-latest
-    name: iOS ${{ matrix.target }}
-    timeout-minutes: 90
+    name: iOS templates
+    timeout-minutes: 150
     env:
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no debug_symbols=no
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: template_debug
-          - target: template_release
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -486,29 +565,53 @@ jobs:
       - name: Restore Foundry build cache
         uses: ./.github/actions/foundry-cache-restore
         with:
-          cache-name: release-ios-${{ matrix.target }}
+          cache-name: release-ios
         continue-on-error: true
 
       - name: Setup Python and SCons
         uses: ./.github/actions/foundry-deps
 
-      - name: Compilation (arm64)
+      # The ios.zip template bundles device + simulator xcframeworks for both
+      # debug and release, so build all four before generate_bundle assembles
+      # the zip on the final build.
+      - name: Compilation (release device arm64)
         uses: ./.github/actions/foundry-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
           platform: ios
-          target: ${{ matrix.target }}
+          target: template_release
+
+      - name: Compilation (release simulator arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes
+          platform: ios
+          target: template_release
+
+      - name: Compilation (debug device arm64)
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
+          platform: ios
+          target: template_debug
+
+      - name: Compilation (debug simulator arm64) + bundle
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes generate_bundle=yes
+          platform: ios
+          target: template_debug
 
       - name: Save Foundry build cache
         uses: ./.github/actions/foundry-cache-save
         with:
-          cache-name: release-ios-${{ matrix.target }}
+          cache-name: release-ios
         continue-on-error: true
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
-          name: release-ios-${{ matrix.target }}
+          name: release-ios
 
   # Download every build artifact, rename binaries to their canonical export
   # template filenames, assemble the .tpz export-templates package, and zip the
@@ -518,7 +621,8 @@ jobs:
       - resolve
       - build-linux
       - build-windows
-      - build-macos
+      - build-macos-editor
+      - build-macos-templates
       - build-web
       - build-android
       - build-ios
@@ -550,8 +654,8 @@ jobs:
           cp artifacts/release-windows-template_release/foundry.windows.template_release.x86_64.console.exe templates/windows_release_x86_64.exe
           cp artifacts/release-windows-template_debug/foundry.windows.template_debug.x86_64.console.exe templates/windows_debug_x86_64.exe
 
-          # macOS template (the SCons build already produced the universal macos_template.app zip).
-          cp artifacts/release-macos-template_release/*.zip templates/macos.zip
+          # macOS template (single macos_template.app zip with debug + release universals).
+          cp artifacts/release-macos-templates/*.zip templates/macos.zip
 
           # Web templates (threads + nothreads, debug + release). Each web build
           # uploads exactly one zip whose suffix depends on PROGSUFFIX, so glob it.
@@ -567,8 +671,8 @@ jobs:
             cp artifacts/release-android-template-release/android_source.zip templates/android_source.zip
           fi
 
-          # iOS template.
-          cp artifacts/release-ios-template_release/*.zip templates/ios.zip || true
+          # iOS template (device + simulator, debug + release).
+          cp artifacts/release-ios/*.zip templates/ios.zip
 
           ( cd templates && zip -r -q "../dist/Foundry_v${VERSION}_export_templates.tpz" . )
 
