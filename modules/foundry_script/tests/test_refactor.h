@@ -981,6 +981,23 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		class_type.type_source = FSParser::DataType::INFERRED;
 		class_type.class_type = &class_node;
 
+		SUBCASE("no-scope entry point qualifies namespaced classes and keeps bare globals") {
+			String rendered;
+			CHECK(FSRefactorTypes::render_annotatable_type(class_type, rendered));
+			CHECK_EQ(rendered, "characters.BaseCharacter");
+
+			FSParser::IdentifierNode global_identifier;
+			global_identifier.name = "GlobalClass";
+			FSParser::ClassNode global_node;
+			global_node.identifier = &global_identifier;
+			FSParser::DataType global_type;
+			global_type.kind = FSParser::DataType::CLASS;
+			global_type.type_source = FSParser::DataType::INFERRED;
+			global_type.class_type = &global_node;
+
+			CHECK(FSRefactorTypes::render_annotatable_type(global_type, rendered));
+			CHECK_EQ(rendered, "GlobalClass");
+		}
 		SUBCASE("builtin in any scope renders bare with no imports") {
 			FSParser::DataType dt;
 			dt.kind = FSParser::DataType::BUILTIN;

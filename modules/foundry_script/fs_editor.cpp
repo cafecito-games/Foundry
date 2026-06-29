@@ -1672,104 +1672,6 @@ static void _add_namespace_uses_completion_options(FSNamespaceCompletionCache &r
 	_add_direct_child_namespaces(r_cache, namespace_name, r_result);
 }
 
-static void _list_available_types(bool p_inherit_only, FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
-	// Built-in Variant Types
-	_find_built_in_variants(r_result);
-
-	// Variant meta-type
-	if (!p_inherit_only) {
-		ScriptLanguage::CodeCompletionOption variant_option("Variant", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
-		r_result.insert(variant_option.display, variant_option);
-	}
-
-	LocalVector<StringName> native_types;
-	ClassDB::get_class_list(native_types);
-	for (const StringName &type : native_types) {
-		if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type)) {
-			ScriptLanguage::CodeCompletionOption option(type, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
-			r_result.insert(option.display, option);
-		}
-	}
-
-	// TODO: Unify with _find_identifiers_in_class.
-	if (p_context.current_class) {
-		if (!p_inherit_only && p_context.current_class->base_type.is_set()) {
-			// Native enums from base class
-			List<StringName> enums;
-			ClassDB::get_enum_list(p_context.current_class->base_type.native_type, &enums);
-			for (const StringName &E : enums) {
-				ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_ENUM);
-				r_result.insert(option.display, option);
-			}
-		}
-		// Check current class for potential types.
-		// TODO: Also check classes the current class inherits from.
-		const FSParser::ClassNode *current = p_context.current_class;
-		int location_offset = 0;
-		while (current) {
-			for (int i = 0; i < current->members.size(); i++) {
-				const FSParser::ClassNode::Member &member = current->members[i];
-				switch (member.type) {
-					case FSParser::ClassNode::Member::CLASS: {
-						ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
-						r_result.insert(option.display, option);
-					} break;
-					case FSParser::ClassNode::Member::ENUM: {
-						if (!p_inherit_only) {
-							ScriptLanguage::CodeCompletionOption option(member.m_enum->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, ScriptLanguage::LOCATION_LOCAL + location_offset);
-							r_result.insert(option.display, option);
-						}
-					} break;
-					case FSParser::ClassNode::Member::CONSTANT: {
-						if (member.constant->get_datatype().is_meta_type) {
-							ScriptLanguage::CodeCompletionOption option(member.constant->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
-							r_result.insert(option.display, option);
-						}
-					} break;
-					default:
-						break;
-				}
-			}
-			location_offset += 1;
-			current = current->outer;
-		}
-	}
-
-	// Global scripts
-	LocalVector<StringName> global_classes;
-	ScriptServer::get_global_class_list(global_classes);
-	for (const StringName &class_name : global_classes) {
-		if (p_inherit_only && ScriptServer::is_global_class_enum(class_name)) {
-			continue;
-		}
-		ScriptLanguage::CodeCompletionOption option(
-				class_name, _get_global_class_completion_kind(class_name), ScriptLanguage::LOCATION_OTHER_USER_CODE);
-		r_result.insert(option.display, option);
-	}
-
-	// Global enums
-	if (!p_inherit_only) {
-		_find_global_enums(r_result);
-	}
-
-	// Autoload singletons.
-	FSAutoloadIndex autoload_index;
-	autoload_index.rebuild_from_project_settings();
-	for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
-		if (!autoload.is_singleton || autoload.script_path.is_empty()) {
-			continue;
-		}
-		// A reserved named global (e.g. the `godot` reflection namespace) is not usable as
-		// a type/base, and the analyzer refuses to resolve such an autoload there, so don't
-		// suggest it.
-		if (FSLanguage::get_singleton()->is_reserved_global_name(autoload.name)) {
-			continue;
-		}
-		ScriptLanguage::CodeCompletionOption option(autoload.name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
-		r_result.insert(option.display, option);
-	}
-}
-
 static void _add_type_parameter_completion_options(const FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	auto add_parameters = [&](const Vector<FSParser::TypeParameterNode *> &p_parameters, ScriptLanguage::CodeCompletionLocation p_location) {
 		for (const FSParser::TypeParameterNode *parameter : p_parameters) {
@@ -1789,24 +1691,61 @@ static void _add_type_parameter_completion_options(const FSParser::CompletionCon
 	}
 }
 
-static void _list_type_handle_argument_types(FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+struct TypeCompletionListOptions {
+	bool include_builtin_variants = false;
+	bool include_variant_meta_type = false;
+	bool include_native_classes = true;
+	bool include_native_enums = false;
+	bool include_self = false;
+	bool include_type_parameters = false;
+	bool include_member_enums = false;
+	bool include_global_classes = true;
+	bool include_global_class_enums = false;
+	bool include_global_enums = false;
+	bool include_autoload_singletons = false;
+};
+
+static void _list_type_completion_options(const FSParser::CompletionContext &p_context, const TypeCompletionListOptions &p_options, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	if (p_options.include_builtin_variants) {
+		_find_built_in_variants(r_result);
+	}
+
+	if (p_options.include_variant_meta_type) {
+		ScriptLanguage::CodeCompletionOption variant_option("Variant", ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+		r_result.insert(variant_option.display, variant_option);
+	}
+
 	LocalVector<StringName> native_types;
-	ClassDB::get_class_list(native_types);
-	for (const StringName &type : native_types) {
-		if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type)) {
-			ScriptLanguage::CodeCompletionOption option(type, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
-			r_result.insert(option.display, option);
+	if (p_options.include_native_classes) {
+		ClassDB::get_class_list(native_types);
+		for (const StringName &type : native_types) {
+			if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type)) {
+				ScriptLanguage::CodeCompletionOption option(type, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+				r_result.insert(option.display, option);
+			}
 		}
 	}
 
-	if (p_context.current_class != nullptr) {
+	if (p_options.include_self && p_context.current_class != nullptr) {
 		ScriptLanguage::CodeCompletionOption self_option("Self", ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL);
 		r_result.insert(self_option.display, self_option);
 	}
 
-	_add_type_parameter_completion_options(p_context, r_result);
+	if (p_options.include_type_parameters) {
+		_add_type_parameter_completion_options(p_context, r_result);
+	}
 
 	if (p_context.current_class) {
+		if (p_options.include_native_enums && p_context.current_class->base_type.is_set()) {
+			List<StringName> enums;
+			ClassDB::get_enum_list(p_context.current_class->base_type.native_type, &enums);
+			for (const StringName &E : enums) {
+				ScriptLanguage::CodeCompletionOption option(E, ScriptLanguage::CODE_COMPLETION_KIND_ENUM);
+				r_result.insert(option.display, option);
+			}
+		}
+
+		// TODO: Also check classes the current class inherits from.
 		const FSParser::ClassNode *current = p_context.current_class;
 		int location_offset = 0;
 		while (current) {
@@ -1816,6 +1755,12 @@ static void _list_type_handle_argument_types(FSParser::CompletionContext &p_cont
 					case FSParser::ClassNode::Member::CLASS: {
 						ScriptLanguage::CodeCompletionOption option(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
 						r_result.insert(option.display, option);
+					} break;
+					case FSParser::ClassNode::Member::ENUM: {
+						if (p_options.include_member_enums) {
+							ScriptLanguage::CodeCompletionOption option(member.m_enum->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, ScriptLanguage::LOCATION_LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
 					} break;
 					case FSParser::ClassNode::Member::CONSTANT: {
 						if (member.constant->get_datatype().is_meta_type) {
@@ -1832,15 +1777,59 @@ static void _list_type_handle_argument_types(FSParser::CompletionContext &p_cont
 		}
 	}
 
-	LocalVector<StringName> global_classes;
-	ScriptServer::get_global_class_list(global_classes);
-	for (const StringName &class_name : global_classes) {
-		if (ScriptServer::is_global_class_enum(class_name)) {
-			continue;
+	if (p_options.include_global_classes) {
+		LocalVector<StringName> global_classes;
+		ScriptServer::get_global_class_list(global_classes);
+		for (const StringName &class_name : global_classes) {
+			if (!p_options.include_global_class_enums && ScriptServer::is_global_class_enum(class_name)) {
+				continue;
+			}
+			ScriptLanguage::CodeCompletionOption option(
+					class_name, _get_global_class_completion_kind(class_name), ScriptLanguage::LOCATION_OTHER_USER_CODE);
+			r_result.insert(option.display, option);
 		}
-		ScriptLanguage::CodeCompletionOption option(class_name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
-		r_result.insert(option.display, option);
 	}
+
+	if (p_options.include_global_enums) {
+		_find_global_enums(r_result);
+	}
+
+	if (p_options.include_autoload_singletons) {
+		FSAutoloadIndex autoload_index;
+		autoload_index.rebuild_from_project_settings();
+		for (const FSAutoloadIndexEntry &autoload : autoload_index.get_entries()) {
+			if (!autoload.is_singleton || autoload.script_path.is_empty()) {
+				continue;
+			}
+			// A reserved named global (e.g. the `godot` reflection namespace) is not usable as
+			// a type/base, and the analyzer refuses to resolve such an autoload there, so don't
+			// suggest it.
+			if (FSLanguage::get_singleton()->is_reserved_global_name(autoload.name)) {
+				continue;
+			}
+			ScriptLanguage::CodeCompletionOption option(autoload.name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_OTHER_USER_CODE);
+			r_result.insert(option.display, option);
+		}
+	}
+}
+
+static void _list_available_types(bool p_inherit_only, FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	TypeCompletionListOptions options;
+	options.include_builtin_variants = true;
+	options.include_variant_meta_type = !p_inherit_only;
+	options.include_native_enums = !p_inherit_only;
+	options.include_member_enums = !p_inherit_only;
+	options.include_global_class_enums = !p_inherit_only;
+	options.include_global_enums = !p_inherit_only;
+	options.include_autoload_singletons = true;
+	_list_type_completion_options(p_context, options, r_result);
+}
+
+static void _list_type_handle_argument_types(FSParser::CompletionContext &p_context, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
+	TypeCompletionListOptions options;
+	options.include_self = true;
+	options.include_type_parameters = true;
+	_list_type_completion_options(p_context, options, r_result);
 }
 
 // Lists the traits that can appear after `uses`: inline trait declarations from the
