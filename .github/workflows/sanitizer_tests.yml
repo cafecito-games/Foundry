@@ -12,7 +12,7 @@ on:
           - asan_ubsan
           - tsan
       test_args:
-        description: Extra arguments appended to the Godot test command
+        description: Extra arguments appended to the Foundry test command
         required: false
         default: ""
         type: string
@@ -57,24 +57,24 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           echo "Disk usage after:" && df -h
 
-      - name: Restore Godot build cache
-        uses: ./.github/actions/godot-cache-restore
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
         with:
           cache-name: linux-sanitizer-${{ env.SANITIZER_SUITE }}
         continue-on-error: true
 
       - name: Setup Python and SCons
-        uses: ./.github/actions/godot-deps
+        uses: ./.github/actions/foundry-deps
 
       - name: Compilation
-        uses: ./.github/actions/godot-build
+        uses: ./.github/actions/foundry-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ env.SCONS_SANITIZER_FLAGS }}
           platform: linuxbsd
           target: editor
 
-      - name: Save Godot build cache
-        uses: ./.github/actions/godot-cache-save
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
         with:
           cache-name: linux-sanitizer-${{ env.SANITIZER_SUITE }}
         continue-on-error: true
@@ -87,9 +87,9 @@ jobs:
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/misc/error_suppressions/lsan.txt
           TSAN_OPTIONS: halt_on_error=1:suppressions=${{ github.workspace }}/misc/error_suppressions/tsan.txt
         run: |
-          FOUNDRY_BIN="$(find bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.dev*.san*' -perm -111 | head -n 1)"
+          FOUNDRY_BIN="$(find bin -maxdepth 1 -type f -name 'foundry.linuxbsd.editor.dev*.san*' -perm -111 | head -n 1)"
           if [ -z "${FOUNDRY_BIN}" ]; then
-            echo "Could not find sanitizer-enabled Godot binary in bin/." >&2
+            echo "Could not find sanitizer-enabled Foundry binary in bin/." >&2
             ls -l bin/
             exit 1
           fi
