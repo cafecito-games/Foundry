@@ -44,6 +44,7 @@ enum ErrorHandlerType {
 	ERR_HANDLER_WARNING,
 	ERR_HANDLER_SCRIPT,
 	ERR_HANDLER_SHADER,
+	ERR_HANDLER_FATAL,
 };
 
 constexpr const char *_error_handler_type_string(ErrorHandlerType p_type) {
@@ -56,6 +57,8 @@ constexpr const char *_error_handler_type_string(ErrorHandlerType p_type) {
 			return "SCRIPT ERROR";
 		case ERR_HANDLER_SHADER:
 			return "SHADER ERROR";
+		case ERR_HANDLER_FATAL:
+			return "FATAL ERROR";
 	}
 	return "UNKNOWN ERROR";
 }

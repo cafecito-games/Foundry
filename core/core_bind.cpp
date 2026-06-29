@@ -224,6 +224,7 @@ void Logger::_bind_methods() {
 	BIND_ENUM_CONSTANT(ERROR_TYPE_WARNING);
 	BIND_ENUM_CONSTANT(ERROR_TYPE_SCRIPT);
 	BIND_ENUM_CONSTANT(ERROR_TYPE_SHADER);
+	BIND_ENUM_CONSTANT(ERROR_TYPE_FATAL);
 }
 
 void Logger::log_error(const char *p_function, const char *p_file, int p_line, const char *p_code, const char *p_rationale, bool p_editor_notify, ErrorType p_type, const TypedArray<ScriptBacktrace> &p_script_backtraces) {
