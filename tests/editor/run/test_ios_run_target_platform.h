@@ -41,6 +41,7 @@
 #include "core/io/file_access.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 #include "tests/test_utils.h"
 
 namespace TestIOSRunTargetPlatform {
@@ -141,6 +142,47 @@ TEST_CASE("[Editor][IOSRunTarget] Malformed devicectl output yields no devices")
 	CHECK(IOSRunTargetPlatform::parse_devicectl_devices("").is_empty());
 	CHECK(IOSRunTargetPlatform::parse_devicectl_devices("not json").is_empty());
 	CHECK(IOSRunTargetPlatform::parse_devicectl_devices("{\"result\":{}}").is_empty());
+}
+
+TEST_CASE("[Editor][IOSRunTarget] devicectl failure text is rejected without log spam") {
+	// When `xcrun devicectl` cannot enumerate devices (no paired device, Developer
+	// Mode off, tooling missing) it emits a human-readable diagnostic beginning with
+	// "Failed ..." rather than JSON. Handing that to `JSON::parse_string` spammed the
+	// editor log with "Parse JSON failed" errors once per probe cycle (issue #702).
+	// Both parse seams must detect the non-JSON text and return empty *quietly*.
+	ErrorDetector error_detector;
+
+	const String failure_text = "Failed to gather available devices: no devices are paired with this host.";
+
+	CHECK(IOSRunTargetPlatform::parse_devicectl_devices(failure_text).is_empty());
+	CHECK_FALSE_MESSAGE(error_detector.has_error, "parse_devicectl_devices must not emit an error on non-JSON input.");
+
+	error_detector.clear();
+	CHECK(IOSRunTargetPlatform::build_probe_devices(failure_text, Vector<IOSDeployDevice>()).is_empty());
+	CHECK_FALSE_MESSAGE(error_detector.has_error, "build_probe_devices must not emit an error on non-JSON input.");
+
+	// Truncated/garbage JSON must be just as quiet: a partial object is still not
+	// parseable, but it must not reach the noisy static parser either.
+	error_detector.clear();
+	CHECK(IOSRunTargetPlatform::parse_devicectl_devices("{\"result\":{\"devices\":[").is_empty());
+	CHECK_FALSE_MESSAGE(error_detector.has_error, "Truncated devicectl JSON must not emit an error.");
+}
+
+TEST_CASE("[Editor][IOSRunTarget] build_probe_devices keeps legacy devices when devicectl fails") {
+	// A failed devicectl probe must not discard the legacy ios_deploy devices that
+	// were enumerated separately; the human-readable failure text is simply ignored.
+	Vector<IOSDeployDevice> ios_deploy_devices;
+	IOSDeployDevice legacy;
+	legacy.id = "legacy-phone";
+	legacy.name = "Legacy iPhone";
+	ios_deploy_devices.push_back(legacy);
+
+	ErrorDetector error_detector;
+	const Array devices = IOSRunTargetPlatform::build_probe_devices("Failed to gather devices.", ios_deploy_devices);
+	CHECK_FALSE(error_detector.has_error);
+	REQUIRE_EQ(devices.size(), 1);
+	const Dictionary device = devices[0];
+	CHECK_EQ(String(device.get("identifier", String())), "legacy-phone");
 }
 
 TEST_CASE("[Editor][IOSRunTarget] list_devices surfaces only runnable devices") {
