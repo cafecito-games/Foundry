@@ -652,8 +652,8 @@ class ClassDef(DefinitionBase):
         self.class_group = group_name
 
 
-# Checks if code samples have both GDScript and C# variations.
-# For simplicity we assume that a GDScript example is always present, and ignore contexts
+# Checks if code samples have both Foundry Script and C# variations.
+# For simplicity we assume that a Foundry Script example is always present, and ignore contexts
 # which don't necessarily need C# examples.
 class ScriptLanguageParityCheck:
     def __init__(self) -> None:
@@ -661,7 +661,7 @@ class ScriptLanguageParityCheck:
         self.hit_count = 0
 
     def add_hit(self, class_name: str, context: DefinitionBase, error: str, state: State) -> None:
-        if class_name in ["@GDScript", "@GlobalScope"]:
+        if class_name in ["@FoundryScript", "@GlobalScope"]:
             return  # We don't expect these contexts to have parity.
 
         class_def = state.classes[class_name]
@@ -1959,7 +1959,7 @@ def format_text_block(
                 if tag_state.name == "foundry_script":
                     if not inside_code_tabs:
                         print_error(
-                            f"{state.current_class}.xml: GDScript code block is used outside of [codeblocks] in {context_name}.",
+                            f"{state.current_class}.xml: Foundry Script code block is used outside of [codeblocks] in {context_name}.",
                             state,
                         )
                     else:
