@@ -2606,6 +2606,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 
 				for (int j = 0; j < member.signal->parameters.size(); j++) {
 					FSParser::ParameterNode *param = member.signal->parameters[j];
+					resolve_parameter(param);
 					FSParser::DataType param_type = type_from_metatype(resolve_datatype(param->datatype_specifier));
 					param->set_datatype(param_type);
 #ifdef DEBUG_ENABLED
@@ -4805,6 +4806,8 @@ static String _annotation_target_name(uint32_t p_target_kind) {
 			return "a signal";
 		case FSParser::AnnotationDeclarationNode::TARGET_CONSTANT:
 			return "a constant";
+		case FSParser::AnnotationDeclarationNode::TARGET_PARAMETER:
+			return "a parameter";
 		default:
 			return "this target";
 	}
@@ -5990,6 +5993,10 @@ void FSAnalyzer::resolve_constant(FSParser::ConstantNode *p_constant, bool p_is_
 
 void FSAnalyzer::resolve_parameter(FSParser::ParameterNode *p_parameter) {
 	static constexpr const char *kind = "parameter";
+	for (FSParser::AnnotationNode *&E : p_parameter->annotations) {
+		resolve_annotation(E, FSParser::AnnotationDeclarationNode::TARGET_PARAMETER);
+		E->apply(parser, p_parameter, parser->current_class);
+	}
 	resolve_assignable(p_parameter, kind);
 }
 

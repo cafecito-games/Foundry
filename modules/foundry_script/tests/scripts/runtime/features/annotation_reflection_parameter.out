@@ -1,0 +1,30 @@
+FS_TEST_OK
+~~ WARNING at line 9: (UNUSED_PARAMETER) The parameter "factory" is never used in the function "spawn()". If this is intended, prefix it with an underscore: "_factory".
+~~ WARNING at line 9: (UNUSED_PARAMETER) The parameter "threat" is never used in the function "spawn()". If this is intended, prefix it with an underscore: "_threat".
+~~ WARNING at line 12: (UNUSED_SIGNAL) The signal "damaged" is declared but never explicitly used in the class.
+~~ WARNING at line 15: (UNUSED_PARAMETER) The parameter "override_factory" is never used in the function "spawn()". If this is intended, prefix it with an underscore: "_override_factory".
+~~ WARNING at line 15: (UNUSED_PARAMETER) The parameter "threat" is never used in the function "spawn()". If this is intended, prefix it with an underscore: "_threat".
+~~ WARNING at line 19: (UNUSED_PARAMETER) The parameter "helper" is never used in the function "mixin_call()". If this is intended, prefix it with an underscore: "_helper".
+~~ WARNING at line 53: (UNSAFE_METHOD_ACCESS) The method "has()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 54: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 55: (UNSAFE_METHOD_ACCESS) The method "size()" is not present on the inferred type "Variant" (but may be present on a subtype).
+1
+inject
+1
+0.0
+10.0
+1
+0.0
+999.0
+0
+0
+1
+1
+1
+2
+true
+1
+1
+0
+0
+0

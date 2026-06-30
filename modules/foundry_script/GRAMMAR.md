@@ -160,7 +160,7 @@ Built-in numeric constants are also keyword tokens: `INF`, `NAN`, `PI`, `TAU` (t
 - `async` — function modifier when it immediately precedes `func`/other modifiers (§4.5).
 - `targets` — separates an annotation declaration's parameter list from its target list.
 - `get` / `set` — property accessor names.
-- `CLASS`, `METHOD`, `VARIABLE`, `SIGNAL`, `CONSTANT` — annotation target names (uppercase,
+- `CLASS`, `METHOD`, `VARIABLE`, `SIGNAL`, `CONSTANT`, `PARAMETER` — annotation target names (uppercase,
   so they are ordinary identifiers).
 
 **Keywords usable as identifiers / node names:** A few keyword tokens are still accepted
@@ -469,8 +469,9 @@ function_decl   = "func", identifier, [ type_parameters ],
                   ( ":", block | (* abstract: no body *) NEWLINE ) ;
 
 parameter_list  = param_item, { ",", param_item }, [ "," ] ;
-param_item      = [ "..." ], parameter ;          (* "..." marks the rest parameter *)
+param_item      = [ "..." ], parameter_annotation*, parameter ; (* "..." marks the rest parameter *)
 parameter       = identifier, [ ":", ( type | (* inferred *) ) ], [ "=", expression ] ;
+parameter_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ] ;
 
 return_type     = type | "void" ;
 ```
@@ -498,8 +499,8 @@ annotation_arg        = [ identifier, "=" ], expression ;   (* named args: custo
 ```
 
 - An annotation precedes the declaration (class/var/const/signal/func) or statement it
-  applies to. The newline after an annotation is optional so it may sit on the same line as
-  its target.
+  applies to, or a method/signal parameter name in a parameter list. The newline after an
+  annotation is optional so it may sit on the same line as its target.
 - Named arguments (`name = value`) are accepted only for **custom** annotations and the
   built-in `@autoload`; all other built-ins are positional.
 - Placement is validated against each annotation's allowed targets (script-level,
@@ -516,7 +517,7 @@ annotation_decl_params = adp_item, { ",", adp_item }, [ "," ] ;
 adp_item               = [ "..." ], parameter ;   (* variadic last param allowed *)
 
 target_list            = target_name, { ",", target_name } ;
-target_name            = "CLASS" | "METHOD" | "VARIABLE" | "SIGNAL" | "CONSTANT" ;
+target_name            = "CLASS" | "METHOD" | "VARIABLE" | "SIGNAL" | "CONSTANT" | "PARAMETER" ;
 ```
 
 `annotation` is contextual: it only starts a declaration at the **root** of a script where a

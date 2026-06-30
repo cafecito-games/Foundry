@@ -109,6 +109,16 @@
 				Returns the annotations applied to the method named [param method], in source order, as [FSAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective method view is used: a method declared on a base script carries its annotations when reflected from a derived script, a concrete trait method flattened into an implementer carries its declaration annotations, and an overriding method's annotations take precedence. When [code]false[/code] only annotations declared on [param target]'s exact script are returned (trait-flattened methods are owned by the implementer, so they remain visible). [param target] may be a [Script] class handle, a typed class handle stored in a [code]Type[T][/code] variable, or an instance whose script is used. Invalid, freed, or non-script targets return an empty array.
 			</description>
 		</method>
+		<method name="get_method_parameter_annotations" qualifiers="const">
+			<return type="FSAnnotation[]" />
+			<param index="0" name="target" type="Variant" />
+			<param index="1" name="method" type="StringName" />
+			<param index="2" name="parameter" type="StringName" />
+			<param index="3" name="effective" type="bool" default="true" />
+			<description>
+				Returns the annotations applied to the parameter named [param parameter] on the method named [param method], in source order, as [FSAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective owner declaration is used: inherited methods expose their parameter annotations through derived scripts, trait-flattened methods carry their declaration parameter annotations, and an overriding method replaces the base method's parameter annotation view. When [code]false[/code] only annotations declared on [param target]'s exact script are returned. Invalid targets, unknown methods, or unknown parameters return an empty array.
+			</description>
+		</method>
 		<method name="get_method_descriptor" qualifiers="const">
 			<return type="FSMethodDescriptor" />
 			<param index="0" name="target" type="Variant" />
@@ -163,6 +173,16 @@
 			<param index="2" name="effective" type="bool" default="true" />
 			<description>
 				Returns the annotations applied to the signal named [param signal], in source order, as [FSAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective member view is used: a signal declared on a base script carries its annotations when reflected from a derived script. When [code]false[/code] only annotations declared on [param target]'s exact script are returned. [param target] may be a [Script] class handle, a typed class handle stored in a [code]Type[T][/code] variable, or an instance whose script is used. Invalid, freed, or non-script targets return an empty array.
+			</description>
+		</method>
+		<method name="get_signal_parameter_annotations" qualifiers="const">
+			<return type="FSAnnotation[]" />
+			<param index="0" name="target" type="Variant" />
+			<param index="1" name="signal" type="StringName" />
+			<param index="2" name="parameter" type="StringName" />
+			<param index="3" name="effective" type="bool" default="true" />
+			<description>
+				Returns the annotations applied to the parameter named [param parameter] on the signal named [param signal], in source order, as [FSAnnotation] descriptors. When [param effective] is [code]true[/code] (the default) the effective owner declaration is used: inherited signals expose their parameter annotations through derived scripts. When [code]false[/code] only annotations declared on [param target]'s exact script are returned. Invalid targets, unknown signals, or unknown parameters return an empty array.
 			</description>
 		</method>
 		<method name="get_variable_annotations" qualifiers="const">

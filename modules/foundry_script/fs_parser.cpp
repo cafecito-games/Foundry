@@ -1805,7 +1805,7 @@ void FSParser::parse_annotation_declaration_parameters(AnnotationDeclarationNode
 			is_rest = true;
 		}
 
-		ParameterNode *parameter = parse_parameter();
+		ParameterNode *parameter = parse_parameter(false);
 		if (parameter == nullptr) {
 			break;
 		}
@@ -1856,8 +1856,10 @@ void FSParser::parse_annotation_declaration_targets(AnnotationDeclarationNode *p
 				target_bit = AnnotationDeclarationNode::TARGET_SIGNAL;
 			} else if (target_name == "CONSTANT") {
 				target_bit = AnnotationDeclarationNode::TARGET_CONSTANT;
+			} else if (target_name == "PARAMETER") {
+				target_bit = AnnotationDeclarationNode::TARGET_PARAMETER;
 			} else {
-				push_error(vformat(R"(Unknown annotation target "%s". Expected "CLASS", "METHOD", "VARIABLE", "SIGNAL", or "CONSTANT".)", target_name));
+				push_error(vformat(R"(Unknown annotation target "%s". Expected "CLASS", "METHOD", "VARIABLE", "SIGNAL", "CONSTANT", or "PARAMETER".)", target_name));
 			}
 		} else {
 			push_error(R"(Expected an annotation target name.)");
@@ -2523,7 +2525,17 @@ FSParser::ConstantNode *FSParser::parse_constant(const DeclarationModifiers &p_m
 	return constant;
 }
 
-FSParser::ParameterNode *FSParser::parse_parameter() {
+FSParser::ParameterNode *FSParser::parse_parameter(bool p_allow_annotations) {
+	List<AnnotationNode *> pending_annotations;
+	if (p_allow_annotations) {
+		while (match(FSTokenizer::Token::ANNOTATION)) {
+			AnnotationNode *annotation = parse_annotation(AnnotationInfo::PARAMETER);
+			if (annotation != nullptr) {
+				pending_annotations.push_back(annotation);
+			}
+		}
+	}
+
 	if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected parameter name.)")) {
 		return nullptr;
 	}
@@ -2545,6 +2557,10 @@ FSParser::ParameterNode *FSParser::parse_parameter() {
 	if (match(FSTokenizer::Token::EQUAL)) {
 		// Default value.
 		parameter->initializer = parse_expression(false);
+	}
+
+	for (AnnotationNode *&annotation : pending_annotations) {
+		parameter->annotations.push_back(annotation);
 	}
 
 	complete_extents(parameter);
@@ -5687,7 +5703,7 @@ bool FSParser::AnnotationNode::applies_to(uint32_t p_target_kinds) const {
 		// member variable, signal, constant), so the parser attaches to those positions and keeps
 		// the existing placement diagnostic for anything else (enums, statements, standalone slots,
 		// script level, or a pending annotation before an `annotation` declaration).
-		const uint32_t custom_targets = AnnotationInfo::CLASS | AnnotationInfo::VARIABLE | AnnotationInfo::FUNCTION | AnnotationInfo::SIGNAL | AnnotationInfo::CONSTANT;
+		const uint32_t custom_targets = AnnotationInfo::CLASS | AnnotationInfo::VARIABLE | AnnotationInfo::FUNCTION | AnnotationInfo::SIGNAL | AnnotationInfo::CONSTANT | AnnotationInfo::PARAMETER;
 		return (p_target_kinds & custom_targets) != 0;
 	}
 	return (info->target_kind & p_target_kinds) > 0;
@@ -7489,6 +7505,10 @@ void FSParser::TreePrinter::print_annotation_declaration(AnnotationDeclarationNo
 	}
 	if (targets & AnnotationDeclarationNode::TARGET_CONSTANT) {
 		push_text(first ? "CONSTANT" : ", CONSTANT");
+		first = false;
+	}
+	if (targets & AnnotationDeclarationNode::TARGET_PARAMETER) {
+		push_text(first ? "PARAMETER" : ", PARAMETER");
 		first = false;
 	}
 

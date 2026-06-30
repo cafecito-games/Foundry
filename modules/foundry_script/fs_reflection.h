@@ -89,6 +89,8 @@ public:
 	TypedArray<FSAnnotation> get_variable_annotations(const Variant &p_target, const StringName &p_variable, bool p_effective = true) const;
 	TypedArray<FSAnnotation> get_signal_annotations(const Variant &p_target, const StringName &p_signal, bool p_effective = true) const;
 	TypedArray<FSAnnotation> get_constant_annotations(const Variant &p_target, const StringName &p_constant, bool p_effective = true) const;
+	TypedArray<FSAnnotation> get_method_parameter_annotations(const Variant &p_target, const StringName &p_method, const StringName &p_parameter, bool p_effective = true) const;
+	TypedArray<FSAnnotation> get_signal_parameter_annotations(const Variant &p_target, const StringName &p_signal, const StringName &p_parameter, bool p_effective = true) const;
 	bool has_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind, bool p_effective = true) const;
 	Ref<FSAnnotation> get_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind, bool p_effective = true) const;
 	TypedArray<FSAnnotation> get_annotations(const Variant &p_target, const StringName &p_member, const StringName &p_kind, bool p_effective = true) const;
