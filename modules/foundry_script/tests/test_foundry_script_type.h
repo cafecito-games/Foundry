@@ -374,6 +374,48 @@ TEST_CASE("[Modules][FoundryScript] Type compatibility keeps typed arrays invari
 	CHECK_FALSE(FSTypeCompatibility::check(target, different_source).compatible);
 }
 
+static FSParser::DataType make_specialized_class_type(FSParser::ClassNode *p_class, const Vector<FSParser::DataType> &p_type_arguments) {
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::CLASS;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	type.class_type = p_class;
+	type.type_arguments = p_type_arguments;
+	return type;
+}
+
+TEST_CASE("[Modules][FoundryScript] Class type-argument compatibility ignores INFERRED parsing leniency") {
+	// Regression for #732: `DataType::operator==` treats INFERRED operands as equal for parsing,
+	// but specialized class handles must compare type arguments invariantly. `Box[T]` must not
+	// unify with `Box[int]` when `T` is an inferred type parameter.
+	FSParser parser;
+	const Error parse_error = parser.parse("class Box[T]:\n\tpass\n", "user://box.fs", false);
+	REQUIRE(parse_error == OK);
+
+	FSParser::ClassNode *box = parser.get_tree();
+	REQUIRE(box != nullptr);
+
+	FSParser::DataType inferred_type_parameter;
+	inferred_type_parameter.kind = FSParser::DataType::TYPE_PARAMETER;
+	inferred_type_parameter.type_source = FSParser::DataType::INFERRED;
+	inferred_type_parameter.type_parameter_name = StringName("T");
+	inferred_type_parameter.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_CLASS;
+	inferred_type_parameter.type_parameter_index = 0;
+
+	const FSParser::DataType hard_int = make_builtin_type(Variant::INT);
+	CHECK(inferred_type_parameter == hard_int);
+
+	Vector<FSParser::DataType> inferred_arguments;
+	inferred_arguments.push_back(inferred_type_parameter);
+	const FSParser::DataType box_with_inferred_t = make_specialized_class_type(box, inferred_arguments);
+
+	Vector<FSParser::DataType> int_arguments;
+	int_arguments.push_back(hard_int);
+	const FSParser::DataType box_with_int = make_specialized_class_type(box, int_arguments);
+
+	CHECK_FALSE(FSTypeCompatibility::check(box_with_int, box_with_inferred_t).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(box_with_inferred_t, box_with_int).compatible);
+}
+
 TEST_CASE("[Modules][FoundryScript] Type compatibility checks callable and signal signatures") {
 	const FSParser::DataType callable_target = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);
 	const FSParser::DataType callable_source = make_signature_builtin_type(Variant::CALLABLE, Variant::INT, Variant::BOOL);
