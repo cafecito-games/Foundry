@@ -1,0 +1,234 @@
+version: "3"
+
+vars:
+  SCONS:
+    sh: |
+      if [ -n "${SCONS:-}" ]; then
+        printf "%s\n" "$SCONS"
+      elif command -v scons >/dev/null 2>&1; then
+        printf "scons\n"
+      else
+        printf "python3 -m SCons\n"
+      fi
+  HOST_PLATFORM:
+    sh: |
+      case "$(uname -s)" in
+        Darwin) printf "macos\n" ;;
+        Linux) printf "linuxbsd\n" ;;
+        MINGW*|MSYS*|CYGWIN*) printf "windows\n" ;;
+        *) printf "%s\n" "$(uname -s | tr '[:upper:]' '[:lower:]')" ;;
+      esac
+  PLATFORM:
+    sh: 'printf "%s\n" "${PLATFORM:-{{.HOST_PLATFORM}}}"'
+  TARGET:
+    sh: 'printf "%s\n" "${TARGET:-editor}"'
+  BUILD_PROFILE:
+    sh: 'printf "%s\n" "${BUILD_PROFILE:-dev_build}"'
+  TESTS:
+    sh: 'printf "%s\n" "${TESTS:-yes}"'
+  HOST_ARCH:
+    sh: |
+      case "$(uname -m)" in
+        amd64) printf "x86_64\n" ;;
+        aarch64) printf "arm64\n" ;;
+        *) printf "%s\n" "$(uname -m)" ;;
+      esac
+  ARCH:
+    sh: 'printf "%s\n" "${ARCH:-{{.HOST_ARCH}}}"'
+  HOST_JOBS:
+    sh: |
+      if command -v nproc >/dev/null 2>&1; then
+        nproc
+      elif command -v sysctl >/dev/null 2>&1; then
+        sysctl -n hw.ncpu
+      else
+        getconf _NPROCESSORS_ONLN 2>/dev/null || printf "1\n"
+      fi
+  JOBS:
+    sh: 'printf "%s\n" "${JOBS:-{{.HOST_JOBS}}}"'
+  CACHE_PATH:
+    sh: 'printf "%s\n" "${CACHE_PATH-}"'
+  SCONS_FLAGS:
+    sh: 'printf "%s\n" "${SCONS_FLAGS:-}"'
+
+tasks:
+  default:
+    desc: List available tasks.
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the editor for the current host platform.
+    vars:
+      BUILD_ARGS:
+        sh: |
+          case "{{.BUILD_PROFILE}}" in
+            dev_build) printf "dev_build=yes\n" ;;
+            dev_mode) printf "dev_build=yes dev_mode=yes\n" ;;
+            *) printf "%s=yes\n" "{{.BUILD_PROFILE}}" ;;
+          esac
+      PLATFORM_ARGS:
+        sh: |
+          if [ "{{.PLATFORM}}" = "linuxbsd" ]; then
+            printf "module_text_server_fb_enabled=yes\n"
+          fi
+      CACHE_ARG:
+        sh: |
+          if [ -n "{{.CACHE_PATH}}" ]; then
+            printf "cache_path=%s\n" "{{.CACHE_PATH}}"
+          fi
+    cmds:
+      - >-
+        {{.SCONS}}
+        platform={{.PLATFORM}}
+        target={{.TARGET}}
+        arch={{.ARCH}}
+        {{.BUILD_ARGS}}
+        tests={{.TESTS}}
+        {{.PLATFORM_ARGS}}
+        {{.CACHE_ARG}}
+        -j{{.JOBS}}
+        {{.SCONS_FLAGS}}
+
+  build:ci:
+    desc: Build with LinuxBSD CI/cloud-agent defaults.
+    vars:
+      CI_ARCH:
+        sh: 'printf "%s\n" "${CI_ARCH:-x86_64}"'
+      CI_CACHE_PATH:
+        sh: 'printf "%s\n" "${CI_CACHE_PATH:-$HOME/.scons_cache}"'
+    cmds:
+      - task: build
+        vars:
+          PLATFORM: linuxbsd
+          BUILD_PROFILE: dev_build
+          ARCH: "{{.CI_ARCH}}"
+          CACHE_PATH: "{{.CI_CACHE_PATH}}"
+
+  build:dev-mode:
+    desc: Build with stricter dev_mode checks enabled.
+    cmds:
+      - task: build
+        vars:
+          BUILD_PROFILE: dev_mode
+
+  test:
+    desc: Run the compiled C++ and Foundry Script test suite.
+    cmds:
+      - |
+        binary="${BINARY:-}"
+        if [ -z "$binary" ]; then
+          dev_suffix=""
+          case "{{.BUILD_PROFILE}}" in
+            dev_build|dev_mode) dev_suffix=".dev" ;;
+          esac
+          expected="bin/foundry.{{.PLATFORM}}.{{.TARGET}}${dev_suffix}.{{.ARCH}}"
+          fallback="bin/foundry.{{.PLATFORM}}.{{.TARGET}}.{{.ARCH}}"
+          if [ -x "$expected" ]; then
+            binary="$expected"
+          elif [ -x "$fallback" ]; then
+            binary="$fallback"
+          else
+            binary="$expected"
+          fi
+        fi
+        test -x "$binary" || { echo "Missing $binary. Run 'task build' or set BINARY=path/to/foundry."; exit 1; }
+        "$binary" --headless --test --force-colors
+
+  check:
+    desc: Build, then run the headless test suite.
+    cmds:
+      - task: build
+      - task: test
+
+  check:ci:
+    desc: Build and test with LinuxBSD CI/cloud-agent defaults.
+    vars:
+      CI_ARCH:
+        sh: 'printf "%s\n" "${CI_ARCH:-x86_64}"'
+      CI_CACHE_PATH:
+        sh: 'printf "%s\n" "${CI_CACHE_PATH:-$HOME/.scons_cache}"'
+    cmds:
+      - task: build:ci
+      - task: test
+        vars:
+          PLATFORM: linuxbsd
+          BUILD_PROFILE: dev_build
+          ARCH: "{{.CI_ARCH}}"
+          CACHE_PATH: "{{.CI_CACHE_PATH}}"
+
+  lint:
+    desc: Run all pre-commit hooks.
+    cmds:
+      - pre-commit run --all-files
+
+  lint:manual:
+    desc: Run manual-stage pre-commit hooks.
+    cmds:
+      - pre-commit run --hook-stage manual --all-files
+
+  format:
+    desc: Run formatting-oriented pre-commit hooks.
+    cmds:
+      - pre-commit run clang-format --all-files
+      - pre-commit run clang-format-glsl --all-files
+      - pre-commit run ruff-check --all-files
+      - pre-commit run ruff-format --all-files
+      - pre-commit run eslint --all-files
+      - pre-commit run svgo --all-files
+
+  fixtures:
+    desc: Regenerate Foundry Script expected-output fixtures.
+    cmds:
+      - |
+        binary="${BINARY:-}"
+        if [ -z "$binary" ]; then
+          dev_suffix=""
+          case "{{.BUILD_PROFILE}}" in
+            dev_build|dev_mode) dev_suffix=".dev" ;;
+          esac
+          expected="bin/foundry.{{.PLATFORM}}.{{.TARGET}}${dev_suffix}.{{.ARCH}}"
+          fallback="bin/foundry.{{.PLATFORM}}.{{.TARGET}}.{{.ARCH}}"
+          if [ -x "$expected" ]; then
+            binary="$expected"
+          elif [ -x "$fallback" ]; then
+            binary="$fallback"
+          else
+            binary="$expected"
+          fi
+        fi
+        test -x "$binary" || { echo "Missing $binary. Run 'task build' or set BINARY=path/to/foundry."; exit 1; }
+        "$binary" --headless --gdscript-generate-tests modules/foundry_script/tests/scripts
+
+  clean:
+    desc: Clean the selected SCons build variant.
+    vars:
+      BUILD_ARGS:
+        sh: |
+          case "{{.BUILD_PROFILE}}" in
+            dev_build) printf "dev_build=yes\n" ;;
+            dev_mode) printf "dev_build=yes dev_mode=yes\n" ;;
+            *) printf "%s=yes\n" "{{.BUILD_PROFILE}}" ;;
+          esac
+      PLATFORM_ARGS:
+        sh: |
+          if [ "{{.PLATFORM}}" = "linuxbsd" ]; then
+            printf "module_text_server_fb_enabled=yes\n"
+          fi
+      CACHE_ARG:
+        sh: |
+          if [ -n "{{.CACHE_PATH}}" ]; then
+            printf "cache_path=%s\n" "{{.CACHE_PATH}}"
+          fi
+    cmds:
+      - >-
+        {{.SCONS}}
+        --clean
+        platform={{.PLATFORM}}
+        target={{.TARGET}}
+        arch={{.ARCH}}
+        {{.BUILD_ARGS}}
+        tests={{.TESTS}}
+        {{.PLATFORM_ARGS}}
+        {{.CACHE_ARG}}
+        {{.SCONS_FLAGS}}
