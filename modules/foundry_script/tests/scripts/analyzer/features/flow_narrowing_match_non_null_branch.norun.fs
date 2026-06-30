@@ -4,5 +4,7 @@ func test(value: RefCounted?) -> void:
 	match value:
 		null:
 			pass
-		_:
+		1:
 			print(value.get_instance_id())
+		_:
+			pass

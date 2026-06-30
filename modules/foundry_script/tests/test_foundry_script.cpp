@@ -29,7 +29,7 @@
 /**************************************************************************/
 
 #include "test_foundry_script.h"
-#include "test_parser_dependencies.h"
+#include "test_review_fixes.h"
 
 #include "../editor/fs_docgen.h"
 #ifdef TOOLS_ENABLED
