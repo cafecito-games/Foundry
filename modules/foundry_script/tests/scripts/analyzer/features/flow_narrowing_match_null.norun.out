@@ -1,0 +1,2 @@
+FS_TEST_OK
+~~ WARNING at line 8: (RETURN_VALUE_DISCARDED) The function "get_instance_id()" returns a value that will be discarded if not used.

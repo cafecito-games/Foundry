@@ -37,6 +37,7 @@
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
 #include "core/io/resource_loader.h"
+#include "core/io/resource_uid.h"
 #include "core/math/math_defs.h"
 #include "scene/main/multiplayer_api.h"
 
@@ -1106,6 +1107,53 @@ Ref<FSParserRef> FSParser::get_depended_parser_for(const String &p_path) {
 
 const HashMap<String, Ref<FSParserRef>> &FSParser::get_depended_parsers() {
 	return depended_parsers;
+}
+
+List<String> FSParser::get_dependencies() const {
+	List<String> dependencies;
+	HashSet<String> seen;
+
+	auto add_dependency = [&](String p_path) {
+		p_path = p_path.strip_edges();
+		if (p_path.is_empty()) {
+			return;
+		}
+		if (p_path.is_relative_path() && !script_path.is_empty()) {
+			p_path = script_path.get_base_dir().path_join(p_path).simplify_path();
+		}
+		p_path = ResourceUID::ensure_path(p_path);
+		if (seen.has(p_path)) {
+			return;
+		}
+		seen.insert(p_path);
+		dependencies.push_back(p_path);
+	};
+
+	for (const Node *node = list; node != nullptr; node = node->next) {
+		switch (node->type) {
+			case Node::CLASS: {
+				const ClassNode *class_node = static_cast<const ClassNode *>(node);
+				if (!class_node->extends_path.is_empty()) {
+					add_dependency(class_node->extends_path);
+				}
+			} break;
+			case Node::PRELOAD: {
+				const PreloadNode *preload = static_cast<const PreloadNode *>(node);
+				if (preload->path != nullptr && preload->path->type == Node::LITERAL) {
+					const LiteralNode *literal = static_cast<const LiteralNode *>(preload->path);
+					if (literal->value.get_type() == Variant::STRING) {
+						add_dependency(literal->value);
+					}
+				} else if (!preload->resolved_path.is_empty() && preload->resolved_path != "<missing path>") {
+					add_dependency(preload->resolved_path);
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+
+	return dependencies;
 }
 
 FSParser::ClassNode *FSParser::find_class(const String &p_qualified_name) const {

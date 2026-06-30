@@ -2001,10 +2001,7 @@ public:
 	bool annotation_exists(const String &p_annotation_name) const;
 
 	const List<ParserError> &get_errors() const { return errors; }
-	const List<String> get_dependencies() const {
-		// TODO: Keep track of deps.
-		return List<String>();
-	}
+	List<String> get_dependencies() const;
 
 #ifdef DEBUG_ENABLED
 	static void update_project_settings();

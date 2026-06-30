@@ -350,6 +350,7 @@ class FSAnalyzer {
 	const FSParser::Node *flow_narrowing_key_from_identifier(const FSParser::IdentifierNode *p_identifier) const;
 	void apply_flow_narrowing(const FSParser::IdentifierNode *p_identifier);
 	void apply_flow_narrowing(const FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type);
+	void apply_match_branch_flow_narrowing(FSParser::ExpressionNode *p_match_test, FSParser::MatchBranchNode *p_match_branch);
 	void clear_flow_narrowing(const FSParser::ExpressionNode *p_expression);
 	void mark_flow_narrowing_capture(const FSParser::IdentifierNode *p_identifier);
 	void clear_captured_flow_narrowing();

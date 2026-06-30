@@ -6075,6 +6075,90 @@ static bool _is_null_literal(const FSParser::ExpressionNode *p_expression) {
 	return literal->value.get_type() == Variant::NIL;
 }
 
+static bool _match_pattern_is_null_literal(const FSParser::PatternNode *p_pattern) {
+	return p_pattern != nullptr &&
+			p_pattern->pattern_type == FSParser::PatternNode::PT_LITERAL &&
+			p_pattern->literal != nullptr &&
+			_is_null_literal(p_pattern->literal);
+}
+
+static bool _match_branch_accepts_null(const FSParser::MatchBranchNode *p_branch) {
+	if (p_branch == nullptr) {
+		return false;
+	}
+	if (p_branch->has_wildcard) {
+		return true;
+	}
+	for (const FSParser::PatternNode *pattern : p_branch->patterns) {
+		if (_match_pattern_is_null_literal(pattern)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern, FSParser::DataType &r_type) {
+	if (p_pattern == nullptr || p_pattern->pattern_type != FSParser::PatternNode::PT_EXPRESSION) {
+		return false;
+	}
+
+	const FSParser::ExpressionNode *expression = p_pattern->expression;
+	if (expression == nullptr || !expression->is_constant) {
+		return false;
+	}
+
+	const FSParser::DataType &pattern_type = expression->get_datatype();
+	if (!pattern_type.is_set() || pattern_type.is_meta_type) {
+		return false;
+	}
+
+	switch (pattern_type.kind) {
+		case FSParser::DataType::CLASS:
+		case FSParser::DataType::NATIVE:
+		case FSParser::DataType::SCRIPT:
+			r_type = pattern_type;
+			r_type.is_meta_type = false;
+			return true;
+		case FSParser::DataType::BUILTIN:
+			if (pattern_type.builtin_type == Variant::OBJECT) {
+				r_type = pattern_type;
+				return true;
+			}
+			break;
+		default:
+			break;
+	}
+	return false;
+}
+
+static bool _match_branch_type_narrowing(const FSParser::MatchBranchNode *p_branch, FSParser::DataType &r_type) {
+	if (p_branch == nullptr || p_branch->has_wildcard || p_branch->patterns.size() != 1) {
+		return false;
+	}
+	return _match_pattern_type_narrowing(p_branch->patterns[0], r_type);
+}
+
+void FSAnalyzer::apply_match_branch_flow_narrowing(FSParser::ExpressionNode *p_match_test, FSParser::MatchBranchNode *p_match_branch) {
+	if (p_match_test == nullptr || p_match_test->type != FSParser::Node::IDENTIFIER || p_match_branch == nullptr) {
+		return;
+	}
+
+	FSParser::IdentifierNode *identifier = static_cast<FSParser::IdentifierNode *>(p_match_test);
+	if (flow_narrowing_key_from_identifier(identifier) == nullptr) {
+		return;
+	}
+
+	FSParser::DataType narrowed_type;
+	if (_match_branch_type_narrowing(p_match_branch, narrowed_type)) {
+		apply_flow_narrowing(identifier, narrowed_type);
+		return;
+	}
+
+	if (identifier->get_datatype().is_nullable && !_match_branch_accepts_null(p_match_branch)) {
+		apply_flow_narrowing(identifier);
+	}
+}
+
 bool FSAnalyzer::null_check_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier) const {
 	r_identifier = nullptr;
 	if (p_condition == nullptr || p_condition->type != FSParser::Node::BINARY_OPERATOR) {
@@ -6484,11 +6568,15 @@ void FSAnalyzer::resolve_match_branch(FSParser::MatchBranchNode *p_match_branch,
 		resolve_match_pattern(p_match_branch->patterns[i], p_match_test);
 	}
 
+	HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
+	apply_match_branch_flow_narrowing(p_match_test, p_match_branch);
+
 	if (p_match_branch->guard_body) {
 		resolve_suite(p_match_branch->guard_body, false);
 	}
 
 	resolve_suite(p_match_branch->block);
+	flow_narrowed_types = previous_flow_narrowed_types;
 
 	decide_suite_type(p_match_branch, p_match_branch->block);
 }
