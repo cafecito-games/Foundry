@@ -1672,8 +1672,8 @@ bool FoundryScript::has_script_trait(const StringName &p_trait) const {
 	if (registry->has_conformance(get_fully_qualified_name(), p_trait)) {
 		return true;
 	}
-	const StringName global_name = get_global_name();
-	if (global_name != StringName() && registry->has_conformance(String(global_name), p_trait)) {
+	const StringName script_global_name = get_global_name();
+	if (script_global_name != StringName() && registry->has_conformance(String(script_global_name), p_trait)) {
 		return true;
 	}
 	const String script_path = get_script_path();
