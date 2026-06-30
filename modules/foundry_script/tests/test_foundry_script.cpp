@@ -1414,6 +1414,71 @@ trait Damageable:
 	CHECK_EQ(err, OK);
 }
 
+TEST_CASE("[Modules][FoundryScript] Analyzer resolves transitive external scope classes") {
+	// Regression for #732: class-scope lookup must walk a multi-hop extends chain and find
+	// symbols declared in the root script without relying on defensive external-parser caching
+	// inside get_class_node_current_scope_classes().
+	const String root = OS::get_singleton()->get_temp_path().path_join("transitive_external_scope");
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	CHECK_EQ(dir->make_dir_recursive(root), OK);
+
+	const String root_path = root.path_join("transitive_external_parser_lookup_root.fs");
+	const String mid_path = root.path_join("transitive_external_parser_lookup_mid.fs");
+	const String leaf_path = root.path_join("transitive_external_parser_lookup.fs");
+
+	auto write_script = [&](const String &p_path, const String &p_source) {
+		Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
+		CHECK(file.is_valid());
+		if (file.is_valid()) {
+			file->store_string(p_source);
+		}
+	};
+
+	write_script(root_path, R"(
+class LeafType:
+	const MARK := "transitive-leaf"
+)");
+	write_script(mid_path, R"(extends "transitive_external_parser_lookup_root.fs")");
+	const String leaf_source = R"(
+extends "transitive_external_parser_lookup_mid.fs"
+
+func test() -> void:
+	var leaf := LeafType.new()
+	print(leaf.MARK)
+)";
+	write_script(leaf_path, leaf_source);
+
+	FSCache::remove_parser(root_path);
+	FSCache::remove_parser(mid_path);
+	FSCache::remove_parser(leaf_path);
+
+	FSParser parser;
+	Error err = parser.parse(leaf_source, leaf_path, false);
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.resolve_inheritance();
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+
+	err = analyzer.resolve_interface();
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+
+	err = analyzer.resolve_body();
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+
+	FSCache::remove_parser(root_path);
+	FSCache::remove_parser(mid_path);
+	FSCache::remove_parser(leaf_path);
+	dir->remove(root_path);
+	dir->remove(mid_path);
+	dir->remove(leaf_path);
+	dir->remove(root);
+}
+
 TEST_CASE("[Modules][FoundryScript] Analyzer rejects trait inheritance and construction") {
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
