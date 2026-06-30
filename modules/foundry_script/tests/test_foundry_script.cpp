@@ -30,8 +30,8 @@
 
 #include "test_foundry_script.h"
 
-#include "../editor/fs_docgen.h"
 #ifdef TOOLS_ENABLED
+#include "../editor/fs_docgen.h"
 #include "../editor/fs_highlighter.h"
 #endif
 #include "../foundry_script.h"
@@ -2894,6 +2894,7 @@ var map: Dictionary[String, PropertyTarget]
 	CHECK_EQ(map.hint_string, "String;characters.PropertyTarget");
 }
 
+#ifdef TOOLS_ENABLED
 TEST_CASE("[Modules][FoundryScript] Docgen emits qualified names for namespaced global class types") {
 	FSParser parser;
 	Error err = parser.parse(R"(
@@ -3312,6 +3313,8 @@ class Player:
 	}
 	CHECK(restored.used_traits[0].ends_with(".Damageable"));
 }
+
+#endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][FoundryScript] Namespaced global classes can share a local name") {
 	GlobalScriptClassCacheBackup backup;

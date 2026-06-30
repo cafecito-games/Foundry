@@ -53,7 +53,9 @@ public:
 	}
 };
 
-// TODO: Handle some cases failing on release builds. See: https://github.com/godotengine/godot/pull/88452
+// The full `.fs` fixture suite stays editor-only; release/template VM runtime error
+// coverage lives in `test_release_vm_runtime_error.h`, which runs under `tests=yes`
+// without `TOOLS_ENABLED`. See: https://github.com/godotengine/godot/pull/88452
 #ifdef TOOLS_ENABLED
 TEST_SUITE("[Modules][FoundryScript]") {
 	TEST_CASE("Script compilation and runtime") {

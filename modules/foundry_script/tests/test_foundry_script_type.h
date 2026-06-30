@@ -30,7 +30,9 @@
 
 #pragma once
 
+#ifdef TOOLS_ENABLED
 #include "modules/foundry_script/editor/fs_docgen.h"
+#endif
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_type.h"
@@ -1098,6 +1100,7 @@ TEST_CASE("[Modules][FoundryScript] Async method reference infers a bare AsyncCa
 	CHECK(handler_type.to_string() == "AsyncCallable");
 }
 
+#ifdef TOOLS_ENABLED
 TEST_CASE("[Modules][FoundryScript] Docgen renders AsyncCallable parameter and return types") {
 	FSParser parser;
 	Error err = parser.parse("var handler: AsyncCallable[[int], bool]\n", "user://async_callable_docgen.fs", false);
@@ -1170,6 +1173,8 @@ TEST_CASE("[Modules][FoundryScript] Docgen displays nested typed container value
 	CHECK(docs[0].constants[0].value == "Array[Dictionary[String, int]]([Dictionary[String, int]({\"score\": 10})])");
 	CHECK(docs[0].constants[1].value == "Dictionary[String, Array[int]]({\"scores\": Array[int]([1])})");
 }
+
+#endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][FoundryScript] Analyzer checks callable and signal signature assignments") {
 	const String source_prefix = "func accepts_int(value: int) -> bool:\n\treturn true\n";
