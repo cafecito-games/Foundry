@@ -69,6 +69,7 @@ public:
 	struct CallNode;
 	struct CastNode;
 	struct ClassNode;
+	struct ConformanceNode;
 	struct ConstantNode;
 	struct ContinueNode;
 	struct DictionaryNode;
@@ -394,6 +395,7 @@ public:
 			CALL,
 			CAST,
 			CLASS,
+			CONFORMANCE,
 			CONSTANT,
 			CONTINUE,
 			DICTIONARY,
@@ -988,6 +990,9 @@ public:
 		// Root class only. Custom annotation declarations live in a separate symbol space and are
 		// intentionally kept out of `members` so they never become runtime members, constants, or methods.
 		Vector<AnnotationDeclarationNode *> annotation_declarations;
+		// Root class only. Retroactive trait conformances (`extend Target uses Trait: ...`) live in a
+		// separate space and are intentionally kept out of `members` so they never become runtime members.
+		Vector<ConformanceNode *> conformances;
 #ifdef TOOLS_ENABLED
 		ClassDocData doc_data;
 
@@ -1044,6 +1049,16 @@ public:
 	struct TraitNode : public ClassNode {
 		TraitNode() {
 			is_trait = true;
+		}
+	};
+
+	struct ConformanceNode : public Node {
+		TypeNode *target = nullptr; // Unspecialized target type; type arguments are a parse error.
+		Vector<ClassNode::TraitUse> traits; // Traits supplied by `uses`.
+		Vector<FunctionNode *> witnesses; // Method witnesses parsed from the body.
+
+		ConformanceNode() {
+			type = CONFORMANCE;
 		}
 	};
 
@@ -1861,6 +1876,7 @@ private:
 	void parse_enum_name(bool p_can_register_enum_file);
 	void parse_extends();
 	void parse_uses();
+	bool parse_trait_use(ClassNode::TraitUse &r_trait_use);
 	void parse_type_parameters(Vector<TypeParameterNode *> &r_type_parameters);
 	void parse_class_body(bool p_is_multiline);
 	List<AnnotationNode *> parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind);
@@ -1870,6 +1886,9 @@ private:
 	void parse_class_member(T *(FSParser::*p_parse_function)(const DeclarationModifiers &), AnnotationInfo::TargetKind p_target, const String &p_member_kind, const DeclarationModifiers &p_modifiers);
 	void parse_function_class_member(const DeclarationModifiers &p_modifiers);
 	AnnotationDeclarationNode *parse_annotation_declaration();
+	ConformanceNode *parse_conformance();
+	void parse_conformance_uses(ConformanceNode *p_conformance);
+	void parse_conformance_body(ConformanceNode *p_conformance, bool p_is_multiline);
 	void parse_annotation_declaration_parameters(AnnotationDeclarationNode *p_annotation_declaration);
 	void parse_annotation_declaration_targets(AnnotationDeclarationNode *p_annotation_declaration);
 	SignalNode *parse_signal(const DeclarationModifiers &p_modifiers);

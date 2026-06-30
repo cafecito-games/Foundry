@@ -1037,6 +1037,115 @@ func echo(uses: int) -> int:
 	CHECK(find_parser_function(root, SNAME("echo")) != nullptr);
 }
 
+TEST_CASE("[Modules][FoundryScript] Parser stores retroactive conformance declarations") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+extend characters.Foo uses Bar, shared.Baz:
+	func required_method(x: int) -> void:
+		print(x)
+	static func make() -> int:
+		return 0
+)",
+			"user://conformance.fs", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK_EQ(root->conformances.size(), 1);
+	if (root->conformances.size() != 1) {
+		return;
+	}
+
+	const FSParser::ConformanceNode *conformance = root->conformances[0];
+	CHECK(conformance != nullptr);
+	if (conformance == nullptr) {
+		return;
+	}
+	CHECK(conformance->target != nullptr);
+	if (conformance->target != nullptr) {
+		CHECK_EQ(conformance->target->type_chain.size(), 2);
+		if (conformance->target->type_chain.size() == 2) {
+			CHECK_EQ(conformance->target->type_chain[0]->name, SNAME("characters"));
+			CHECK_EQ(conformance->target->type_chain[1]->name, SNAME("Foo"));
+		}
+		CHECK(conformance->target->container_types.is_empty());
+	}
+	CHECK_EQ(conformance->traits.size(), 2);
+	if (conformance->traits.size() == 2) {
+		CHECK_EQ(conformance->traits[0].to_string(), "Bar");
+		CHECK_EQ(conformance->traits[1].to_string(), "shared.Baz");
+	}
+	CHECK_EQ(conformance->witnesses.size(), 2);
+	if (conformance->witnesses.size() == 2) {
+		CHECK(conformance->witnesses[0]->identifier != nullptr);
+		CHECK_EQ(conformance->witnesses[0]->identifier->name, SNAME("required_method"));
+		CHECK(conformance->witnesses[1]->identifier != nullptr);
+		CHECK_EQ(conformance->witnesses[1]->identifier->name, SNAME("make"));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Parser rejects type arguments on a conformance target") {
+	check_parse_source_error(R"(
+extend Box[int] uses Bar:
+	func required_method() -> void:
+		pass
+)",
+			R"("extend" applies to all specializations; remove the type arguments.)");
+}
+
+TEST_CASE("[Modules][FoundryScript] Parser rejects non-method members in a conformance body") {
+	check_parse_source_error(R"(
+extend Foo uses Bar:
+	var state := 1
+)",
+			R"(An "extend" conformance body may only contain methods.)");
+}
+
+TEST_CASE("[Modules][FoundryScript] Parser requires uses in a conformance declaration") {
+	check_parse_source_error(R"(
+extend Foo:
+	func required_method() -> void:
+		pass
+)",
+			R"(Expected "uses" after the "extend" target type.)");
+}
+
+TEST_CASE("[Modules][FoundryScript] Parser keeps extend available as an identifier") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+var extend = 1
+
+func use_it() -> int:
+	var extend := 2
+	return extend
+)",
+			"user://extend_identifier.fs", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK(root->has_member(SNAME("extend")));
+	if (root->has_member(SNAME("extend"))) {
+		CHECK_EQ(root->get_member(SNAME("extend")).type, FSParser::ClassNode::Member::VARIABLE);
+	}
+	CHECK(find_parser_function(root, SNAME("use_it")) != nullptr);
+	CHECK_EQ(root->conformances.size(), 0);
+}
+
 TEST_CASE("[Modules][FoundryScript] Analyzer resolves inline trait uses") {
 	FSParser parser;
 	Error err = analyze_source(parser, R"(

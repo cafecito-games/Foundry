@@ -464,6 +464,22 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 			}
 			return true;
 		}
+		case Node::CONFORMANCE: {
+			const FSParser::ConformanceNode *a = static_cast<const FSParser::ConformanceNode *>(p_a);
+			const FSParser::ConformanceNode *b = static_cast<const FSParser::ConformanceNode *>(p_b);
+			if (!node_eq(a->target, b->target) || !node_vector_eq(a->witnesses, b->witnesses)) {
+				return false;
+			}
+			if (a->traits.size() != b->traits.size()) {
+				return false;
+			}
+			for (int i = 0; i < a->traits.size(); i++) {
+				if (!trait_use_eq(a->traits[i], b->traits[i])) {
+					return false;
+				}
+			}
+			return true;
+		}
 		case Node::CONSTANT:
 		case Node::PARAMETER:
 			return assignable_eq(static_cast<const FSParser::AssignableNode *>(p_a),
