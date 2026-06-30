@@ -4661,35 +4661,58 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 		}
 
 		// The target was resolved during analysis; reuse the cached datatype to recover both the
-		// target's parser ClassNode (for `self`/member-layout codegen context) and its compiled
-		// `FoundryScript` (whose `member_indices` the witness's member accesses bind against).
+		// codegen `self`/member-layout context (a ClassNode) and the `FoundryScript` whose constant
+		// pool / member layout the witness binds against.
 		const FSParser::DataType target_type = conformance->target->get_datatype();
 		const FSParser::ClassNode *target_class = nullptr;
 		Ref<FoundryScript> target_script;
+		FSConformanceRegistry::RuntimeConformance runtime_entry;
 
-		// Recover the target's parser ClassNode (the codegen `self`/member-layout context). A global or
-		// in-file class target resolves to a CLASS datatype carrying the ClassNode directly; an external
-		// path-only reference resolves to a SCRIPT datatype, whose ClassNode comes from its parser.
-		if (target_type.kind == FSParser::DataType::CLASS && target_type.class_type != nullptr) {
-			target_class = target_type.class_type;
-		} else if (target_type.kind == FSParser::DataType::SCRIPT && !target_type.script_path.is_empty()) {
-			Error parser_err = OK;
-			Ref<FSParserRef> ref = FSCache::get_parser(target_type.script_path, FSParserRef::INTERFACE_SOLVED, parser_err, source_file);
-			if (ref.is_valid() && ref->get_parser() != nullptr) {
-				target_class = ref->get_parser()->get_tree();
+		if (target_type.kind == FSParser::DataType::NATIVE && conformance->native_target_shim != nullptr) {
+			// A native engine-class target has no FoundryScript of its own; compile the witness against
+			// the synthesized stand-in (so `self` types as the native class and member access rides the
+			// native access opcodes), using this declaring script as the codegen/constant-pool context.
+			// `self` is bound to the native object at dispatch time via `FSFunction::call_witness`.
+			target_class = conformance->native_target_shim;
+			target_script = Ref<FoundryScript>(p_script);
+			runtime_entry.target_keys.push_back(String(target_type.native_type));
+		} else {
+			// Recover the target's parser ClassNode (the codegen `self`/member-layout context). A global
+			// or in-file class target resolves to a CLASS datatype carrying the ClassNode directly; an
+			// external path-only reference resolves to a SCRIPT datatype, whose ClassNode comes from its
+			// parser.
+			if (target_type.kind == FSParser::DataType::CLASS && target_type.class_type != nullptr) {
+				target_class = target_type.class_type;
+			} else if (target_type.kind == FSParser::DataType::SCRIPT && !target_type.script_path.is_empty()) {
+				Error parser_err = OK;
+				Ref<FSParserRef> ref = FSCache::get_parser(target_type.script_path, FSParserRef::INTERFACE_SOLVED, parser_err, source_file);
+				if (ref.is_valid() && ref->get_parser() != nullptr) {
+					target_class = ref->get_parser()->get_tree();
+				}
 			}
-		}
 
-		// Recover the target's compiled FoundryScript (whose `member_indices` the witness binds against).
-		// A target declared in the file being compiled is one of its (sub)classes; a foreign target is
-		// loaded fully so its member layout is available.
-		if (target_class != nullptr) {
-			FoundryScript *found = main_script->find_class(target_class->fqcn);
-			if (found != nullptr) {
-				target_script = Ref<FoundryScript>(found);
-			} else if (!target_type.script_path.is_empty()) {
-				Error script_err = OK;
-				target_script = FSCache::get_full_script(target_type.script_path, script_err, source_file);
+			// Recover the target's compiled FoundryScript (whose `member_indices` the witness binds
+			// against). A target declared in the file being compiled is one of its (sub)classes; a foreign
+			// target is loaded fully so its member layout is available.
+			if (target_class != nullptr) {
+				FoundryScript *found = main_script->find_class(target_class->fqcn);
+				if (found != nullptr) {
+					target_script = Ref<FoundryScript>(found);
+				} else if (!target_type.script_path.is_empty()) {
+					Error script_err = OK;
+					target_script = FSCache::get_full_script(target_type.script_path, script_err, source_file);
+				}
+			}
+
+			if (target_class != nullptr) {
+				const StringName target_global = target_class->get_global_name();
+				runtime_entry.target_keys.push_back(target_class->fqcn);
+				if (target_global != StringName()) {
+					runtime_entry.target_keys.push_back(String(target_global));
+				}
+				if (!target_type.script_path.is_empty() && !runtime_entry.target_keys.has(target_type.script_path)) {
+					runtime_entry.target_keys.push_back(target_type.script_path);
+				}
 			}
 		}
 
@@ -4697,16 +4720,6 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			// The type system already rejected unsupported targets; if the target is unavailable here,
 			// skip runtime witness compilation rather than fail the whole script's compilation.
 			continue;
-		}
-
-		FSConformanceRegistry::RuntimeConformance runtime_entry;
-		const StringName target_global = target_class->get_global_name();
-		runtime_entry.target_keys.push_back(target_class->fqcn);
-		if (target_global != StringName()) {
-			runtime_entry.target_keys.push_back(String(target_global));
-		}
-		if (!target_type.script_path.is_empty() && !runtime_entry.target_keys.has(target_type.script_path)) {
-			runtime_entry.target_keys.push_back(target_type.script_path);
 		}
 		// `trait_name` is informational only; runtime dispatch keys solely on (target, method). A
 		// single `extend` may list several traits sharing one witness set, so it is left unset here.

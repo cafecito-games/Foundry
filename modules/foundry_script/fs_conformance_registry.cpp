@@ -30,6 +30,8 @@
 
 #include "fs_conformance_registry.h"
 
+#include "core/object/class_db.h"
+
 FSConformanceRegistry *FSConformanceRegistry::singleton = nullptr;
 
 FSConformanceRegistry *FSConformanceRegistry::get_singleton() {
@@ -124,6 +126,26 @@ FSFunction *FSConformanceRegistry::find_witness_function(const String &p_target_
 	return function != nullptr ? *function : nullptr;
 }
 
+FSFunction *FSConformanceRegistry::find_native_witness_function(const StringName &p_native_class, const StringName &p_method) const {
+	if (p_native_class == StringName() || p_method == StringName()) {
+		return nullptr;
+	}
+	MutexLock lock(mutex);
+	// Walk the engine inheritance chain so a witness declared on a base class dispatches for a subclass
+	// instance, mirroring `native_class_conforms`.
+	for (StringName cursor = p_native_class; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
+		const WitnessFunctionMap *functions = runtime_index.getptr(String(cursor));
+		if (functions == nullptr) {
+			continue;
+		}
+		FSFunction *const *function = functions->getptr(p_method);
+		if (function != nullptr) {
+			return *function;
+		}
+	}
+	return nullptr;
+}
+
 void FSConformanceRegistry::clear() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
@@ -139,6 +161,22 @@ bool FSConformanceRegistry::has_conformance(const String &p_target_key, const St
 	MutexLock lock(mutex);
 	const HashMap<StringName, String> *traits = index.getptr(p_target_key);
 	return traits != nullptr && traits->has(p_trait_name);
+}
+
+bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name) const {
+	if (p_native_class == StringName() || p_trait_name == StringName()) {
+		return false;
+	}
+	MutexLock lock(mutex);
+	// Walk the engine inheritance chain so a conformance declared on a base class is honored for any
+	// subclass instance (e.g. a `Sprite2D` satisfies `extend Node2D uses ...`).
+	for (StringName cursor = p_native_class; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
+		const HashMap<StringName, String> *traits = index.getptr(String(cursor));
+		if (traits != nullptr && traits->has(p_trait_name)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 String FSConformanceRegistry::get_conformance_source(const String &p_target_key, const StringName &p_trait_name) const {

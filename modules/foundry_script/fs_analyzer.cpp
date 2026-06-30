@@ -10183,9 +10183,6 @@ FSParser::ClassNode *FSAnalyzer::resolve_conformance_target(FSParser::Conformanc
 	r_target_type = resolve_datatype(p_conformance->target);
 	parser->current_class = previous_class;
 
-	// v1 supports only Foundry Script class targets. A native engine class or a builtin type resolves
-	// to a non-CLASS/SCRIPT kind (or a non-Foundry script) and is rejected with a clear message; native
-	// and builtin targets are a planned later phase.
 	if (r_target_type.kind == FSParser::DataType::CLASS && r_target_type.class_type != nullptr) {
 		return r_target_type.class_type;
 	}
@@ -10197,10 +10194,62 @@ FSParser::ClassNode *FSAnalyzer::resolve_conformance_target(FSParser::Conformanc
 		}
 	}
 
+	// A native engine-class target (`extend Node uses ...`) is supported via a synthesized stand-in
+	// ClassNode whose base is the native class, so the shared conformance machinery applies. An engine
+	// singleton is rejected: conforming a single global instance to a trait has no consistent receiver.
+	if (r_target_type.kind == FSParser::DataType::NATIVE && r_target_type.native_type != StringName() &&
+			!r_target_type.is_meta_type) {
+		if (Engine::get_singleton()->has_singleton(r_target_type.native_type)) {
+			push_error(vformat(R"(Cannot retroactively conform engine singleton "%s" to a trait.)", r_target_type.native_type), p_conformance->target);
+			return nullptr;
+		}
+		return resolve_native_conformance_shim(p_conformance, r_target_type);
+	}
+
+	// Builtin/value targets (`extend int uses ...`) remain unsupported.
 	if (!r_target_type.is_variant()) {
-		push_error(R"(Retroactive conformance currently supports only Foundry Script class targets.)", p_conformance->target);
+		push_error(R"(Retroactive conformance supports only Foundry Script class and native engine-class targets.)", p_conformance->target);
 	}
 	return nullptr;
+}
+
+FSParser::ClassNode *FSAnalyzer::resolve_native_conformance_shim(FSParser::ConformanceNode *p_conformance, const FSParser::DataType &p_native_type) {
+	if (p_conformance->native_target_shim != nullptr) {
+		return p_conformance->native_target_shim;
+	}
+
+	// The stand-in carries no members and is never registered as a real class; its only job is to make
+	// the native class the base so witness `self`/member access resolves against the native surface and
+	// the trait-conformance validation reuses the Foundry Script class path. It is owned by the parser
+	// and freed with the parse tree.
+	FSParser::ClassNode *shim = parser->alloc_recovery_node<FSParser::ClassNode>();
+	shim->fqcn = String(p_native_type.native_type);
+	shim->extends_used = true;
+	shim->base_type = p_native_type;
+	shim->base_type.is_meta_type = false;
+	if (shim->base_type.type_source == FSParser::DataType::UNDETECTED) {
+		shim->base_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	}
+	// Mark every resolution phase done so the shared passes treat it as a fully-resolved, member-less
+	// class and never try to (re)parse or look it up in this file's class table.
+	shim->resolved_interface = true;
+	shim->resolved_body = true;
+	shim->resolved_trait_uses = true;
+	shim->is_native_conformance_shim = true;
+
+	FSParser::DataType self_type;
+	self_type.kind = FSParser::DataType::CLASS;
+	self_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	self_type.class_type = shim;
+	// Carry the native base so witness-body member/method resolution against `self` falls through to
+	// the engine class's ClassDB surface (mirroring how a real class's datatype records its native
+	// base), the same way `resolve_class_inheritance` stamps `class_type.native_type` for real classes.
+	self_type.native_type = p_native_type.native_type;
+	self_type.is_meta_type = true;
+	shim->set_datatype(self_type);
+
+	p_conformance->native_target_shim = shim;
+	return shim;
 }
 
 HashMap<StringName, FSParser::DataType> FSAnalyzer::conformance_trait_substitution(FSParser::ClassNode *p_trait,
@@ -10335,9 +10384,12 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 		}
 
 		// The target's own trait uses and interface must be solved before checking redundancy and
-		// requirement satisfaction against its existing surface.
-		resolve_trait_uses(target);
-		resolve_class_interface(target, conformance);
+		// requirement satisfaction against its existing surface. A synthesized native stand-in is not in
+		// this file's class table and carries no members/uses, so its resolution is already complete.
+		if (parser->has_class(target)) {
+			resolve_trait_uses(target);
+			resolve_class_interface(target, conformance);
+		}
 
 		const StringName target_global = target->get_global_name();
 		Vector<String> target_keys;
@@ -10459,6 +10511,10 @@ void FSAnalyzer::resolve_conformance_bodies(FSParser::ClassNode *p_class) {
 			if (ref.is_valid()) {
 				target = ref->get_parser()->head;
 			}
+		} else if (target_type.kind == FSParser::DataType::NATIVE) {
+			// A native target's witnesses are resolved against the synthesized stand-in so `self` and
+			// member access bind to the native surface.
+			target = conformance->native_target_shim;
 		}
 		if (target == nullptr) {
 			continue;
@@ -10601,6 +10657,14 @@ Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSPar
 	// Even if unlikely, getting the wrong parser could lead to strange undefined behavior without errors.
 
 	if (p_class == nullptr) {
+		return nullptr;
+	}
+
+	// The synthesized native-target stand-in is owned by this parser but absent from its class table; it
+	// carries no members and its base is a native engine class, so no external parser backs it. Treat it
+	// like a local class (null parser ref, no error) so witness-body member resolution against the native
+	// surface doesn't trip the foreign-class lookup.
+	if (p_class->is_native_conformance_shim) {
 		return nullptr;
 	}
 

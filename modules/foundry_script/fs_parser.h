@@ -1008,6 +1008,11 @@ public:
 		bool resolving_trait_uses = false;
 		bool resolved_trait_uses = false;
 		bool failed_trait_uses = false;
+		// True for the member-less stand-in the analyzer synthesizes to represent a native engine-class
+		// target of a retroactive conformance (`extend Node uses ...`). It is owned by the parser but is
+		// not part of any file's class table, so the external-parser lookups that back cross-file member
+		// resolution must treat it as a fully-resolved local class rather than a foreign one.
+		bool is_native_conformance_shim = false;
 
 		StringName get_global_name() const {
 			if (outer != nullptr || identifier == nullptr) {
@@ -1056,6 +1061,11 @@ public:
 		TypeNode *target = nullptr; // Unspecialized target type; type arguments are a parse error.
 		Vector<ClassNode::TraitUse> traits; // Traits supplied by `uses`.
 		Vector<FunctionNode *> witnesses; // Method witnesses parsed from the body.
+		// For a native engine-class target (`extend Node uses ...`), the analyzer synthesizes a member-less
+		// stand-in ClassNode whose base is the native class so the shared conformance machinery (witness
+		// `self` typing, member access against the native surface, signature validation) can be reused. Null
+		// for Foundry Script class/script targets, which resolve to a real ClassNode.
+		ClassNode *native_target_shim = nullptr;
 
 		ConformanceNode() {
 			type = CONFORMANCE;

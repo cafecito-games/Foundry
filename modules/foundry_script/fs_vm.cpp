@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "foundry_script.h"
+#include "fs_conformance_registry.h"
 #include "fs_function.h"
 #include "fs_lambda_callable.h"
 
@@ -924,7 +925,11 @@ void (*type_init_function_table[])(Variant *) = {
 #define METHOD_CALL_ON_NULL_VALUE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a null value."
 #define METHOD_CALL_ON_FREED_INSTANCE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a previously freed instance."
 
-Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state) {
+Variant FSFunction::call_witness(const Variant &p_self, const Variant **p_args, int p_argcount, Callable::CallError &r_err) {
+	return call(nullptr, p_args, p_argcount, r_err, nullptr, &p_self);
+}
+
+Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state, const Variant *p_self_override) {
 	GodotProfileZoneScript(this, source, name, name, _initial_line);
 
 	OPCODES_TABLE;
@@ -1087,6 +1092,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	if (p_instance) {
 		memnew_placement(&stack[ADDR_STACK_SELF], Variant(p_instance->owner));
 		script = p_instance->script.ptr();
+	} else if (p_self_override != nullptr) {
+		// Retroactive-conformance witness dispatched on a receiver with no FSInstance (native object or
+		// builtin value): bind `self` to the receiver; the script context stays the witness's own script.
+		memnew_placement(&stack[ADDR_STACK_SELF], Variant(*p_self_override));
+		script = _script;
 	} else {
 		memnew_placement(&stack[ADDR_STACK_SELF], Variant);
 		script = _script;
@@ -1433,22 +1443,30 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 
-					if (object && object->get_script_instance()) {
+					if (object && is_trait_type) {
+						// Trait-typed values are Object-backed: a trait has no native class of its own, so
+						// membership is a nominal trait-set lookup over the flattened implementer rather than
+						// a native/script inheritance walk.
+						const StringName trait_name = fs_type->get_trait_type_name();
+						ScriptInstance *script_instance = object->get_script_instance();
+						if (script_instance != nullptr) {
+							Ref<Script> script_ref = script_instance->get_script();
+							result = script_ref.is_valid() && script_ref->has_script_trait(trait_name);
+						}
+						if (!result) {
+							// A native object (no Foundry Script instance), or a scripted object whose engine
+							// base class was retroactively conformed, satisfies the trait via the registry.
+							result = FSConformanceRegistry::get_singleton()->native_class_conforms(object->get_class_name(), trait_name);
+						}
+					} else if (object && object->get_script_instance()) {
 						Ref<Script> script_ref = object->get_script_instance()->get_script();
-						if (is_trait_type) {
-							// Trait-typed values are Object-backed: a trait has no native class of its
-							// own, so membership is a nominal trait-set lookup over the flattened
-							// implementer rather than a native/script inheritance walk.
-							result = script_ref.is_valid() && script_ref->has_script_trait(fs_type->get_trait_type_name());
-						} else {
-							Script *script_ptr = script_ref.ptr();
-							while (script_ptr) {
-								if (script_ptr == script_type) {
-									result = true;
-									break;
-								}
-								script_ptr = script_ptr->get_base_script().ptr();
+						Script *script_ptr = script_ref.ptr();
+						while (script_ptr) {
+							if (script_ptr == script_type) {
+								result = true;
+								break;
 							}
+							script_ptr = script_ptr->get_base_script().ptr();
 						}
 					}
 				}
@@ -2147,19 +2165,21 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 					if (val_obj) { // src is not null
 						ScriptInstance *scr_inst = val_obj->get_script_instance();
-						if (!scr_inst) {
-							err_text = "Trying to assign value of type '" + val_obj->get_class_name() +
-									"' to a variable of type '" + base_type->get_path().get_file() + "'.";
-							OPCODE_BREAK;
-						}
-
-						Ref<Script> src_script = scr_inst->get_script();
 						bool valid = false;
 
 						if (is_trait_type) {
-							valid = src_script.is_valid() && src_script->has_script_trait(fs_base_type->get_trait_type_name());
-						} else {
-							Script *src_type = src_script.ptr();
+							// A native object satisfies a trait-typed slot when its engine class was
+							// retroactively conformed, so a Foundry Script instance is not required here.
+							const StringName trait_name = fs_base_type->get_trait_type_name();
+							if (scr_inst != nullptr) {
+								Ref<Script> src_script = scr_inst->get_script();
+								valid = src_script.is_valid() && src_script->has_script_trait(trait_name);
+							}
+							if (!valid) {
+								valid = FSConformanceRegistry::get_singleton()->native_class_conforms(val_obj->get_class_name(), trait_name);
+							}
+						} else if (scr_inst != nullptr) {
+							Script *src_type = scr_inst->get_script().ptr();
 							while (src_type) {
 								if (src_type == base_type) {
 									valid = true;
@@ -2170,7 +2190,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						}
 
 						if (!valid) {
-							err_text = "Trying to assign value of type '" + val_obj->get_script_instance()->get_script()->get_path().get_file() +
+							err_text = "Trying to assign value of type '" + val_obj->get_class_name() +
 									"' to a variable of type '" + base_type->get_path().get_file() + "'.";
 							OPCODE_BREAK;
 						}
@@ -2426,21 +2446,28 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (is_type_handle) {
 					valid = expected_handle_type.is_type(*src);
 				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
-					ScriptInstance *scr_inst = src->operator Object *()->get_script_instance();
-
-					if (scr_inst) {
-						Ref<Script> src_script = src->operator Object *()->get_script_instance()->get_script();
-						if (is_trait_type) {
-							valid = src_script.is_valid() && src_script->has_script_trait(fs_base_type->get_trait_type_name());
-						} else {
-							Script *src_type = src_script.ptr();
-							while (src_type) {
-								if (src_type == base_type) {
-									valid = true;
-									break;
-								}
-								src_type = src_type->get_base_script().ptr();
+					Object *src_obj = src->operator Object *();
+					ScriptInstance *scr_inst = src_obj->get_script_instance();
+					if (is_trait_type) {
+						const StringName trait_name = fs_base_type->get_trait_type_name();
+						if (scr_inst) {
+							Ref<Script> src_script = scr_inst->get_script();
+							valid = src_script.is_valid() && src_script->has_script_trait(trait_name);
+						}
+						if (!valid) {
+							// A native object (no Foundry Script instance), or a scripted object whose engine
+							// base class was retroactively conformed, casts successfully via the registry.
+							valid = FSConformanceRegistry::get_singleton()->native_class_conforms(src_obj->get_class_name(), trait_name);
+						}
+					} else if (scr_inst) {
+						Ref<Script> src_script = scr_inst->get_script();
+						Script *src_type = src_script.ptr();
+						while (src_type) {
+							if (src_type == base_type) {
+								valid = true;
+								break;
 							}
+							src_type = src_type->get_base_script().ptr();
 						}
 					}
 				}
@@ -2724,12 +2751,34 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				Variant temp_ret;
 				Callable::CallError err;
+				Variant *call_ret_dst = nullptr;
 				if (call_ret) {
 					GET_INSTRUCTION_ARG(ret, argc + 1);
-					base->callp(*methodname, argptrs, argc, temp_ret, err);
-					*ret = temp_ret;
+					call_ret_dst = ret;
+				}
+				base->callp(*methodname, argptrs, argc, temp_ret, err);
+
+				// Retroactive-conformance witness fallback. A trait method called on a native engine object
+				// (`extend Node uses Trait: ...`) is not a real method on that object, so the normal call
+				// misses; consult the conformance registry by the object's engine-class hierarchy and, when
+				// a witness is registered, dispatch it with the object as `self`. Foundry Script instances
+				// reach their witnesses through `FSInstance::callp` instead, so this only fires for native
+				// receivers (and runs in both debug and release builds).
+				if (err.error == Callable::CallError::CALL_ERROR_INVALID_METHOD && base->get_type() == Variant::OBJECT) {
+					Object *witness_obj = base->get_validated_object();
+					if (witness_obj != nullptr) {
+						FSFunction *witness = FSConformanceRegistry::get_singleton()->find_native_witness_function(witness_obj->get_class_name(), *methodname);
+						if (witness != nullptr) {
+							err.error = Callable::CallError::CALL_OK;
+							temp_ret = witness->call_witness(*base, argptrs, argc, err);
+						}
+					}
+				}
+
+				if (call_ret) {
+					*call_ret_dst = temp_ret;
 #ifdef DEBUG_ENABLED
-					if (ret->get_type() == Variant::NIL) {
+					if (call_ret_dst->get_type() == Variant::NIL) {
 						if (base_type == Variant::OBJECT) {
 							if (base_obj) {
 								MethodBind *method = ClassDB::get_method(base_class, *methodname);
@@ -2744,10 +2793,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						}
 					}
 
-					if (!call_async && ret->get_type() == Variant::OBJECT) {
+					if (!call_async && call_ret_dst->get_type() == Variant::OBJECT) {
 						// Check if getting a function state without await.
 						bool was_freed = false;
-						Object *obj = ret->get_validated_object_with_check(was_freed);
+						Object *obj = call_ret_dst->get_validated_object_with_check(was_freed);
 
 						if (obj && obj->is_class_ptr(FSFunctionState::get_class_ptr_static())) {
 							err_text = R"(Trying to call an async function without "await".)";
@@ -2755,8 +2804,6 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						}
 					}
 #endif
-				} else {
-					base->callp(*methodname, argptrs, argc, temp_ret, err);
 				}
 #ifdef DEBUG_ENABLED
 

@@ -215,7 +215,12 @@ static bool _class_has_trait(const FSParser::ClassNode *p_class, const FSParser:
 				return true;
 			}
 			return registry->has_conformance(current->base_type.script_path, trait_name) ||
-					registry->has_conformance(current->base_type.script_type->get_global_name(), trait_name);
+					registry->has_conformance(current->base_type.script_type->get_global_name(), trait_name) ||
+					registry->native_class_conforms(current->base_type.script_type->get_instance_base_type(), trait_name);
+		} else if (current->base_type.kind == FSParser::DataType::NATIVE) {
+			// The class chain bottoms out at a native base; a conformance declared on that native class
+			// (or any of its ancestors) applies to this Foundry Script class too.
+			return registry->native_class_conforms(current->base_type.native_type, trait_name);
 		} else {
 			break;
 		}
@@ -401,11 +406,21 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			result.compatible = p_source.script_type->has_script_trait(trait_name);
 			if (!result.compatible) {
 				// A retroactively-conformed script type carries its conformance in the registry, not in
-				// the compiled script's own trait set.
+				// the compiled script's own trait set. A conformance declared on the script's native base
+				// class (`extend Node uses ...`) also applies to any script extending that class.
 				const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 				result.compatible = registry->has_conformance(p_source.script_path, trait_name) ||
-						registry->has_conformance(p_source.script_type->get_global_name(), trait_name);
+						registry->has_conformance(p_source.script_type->get_global_name(), trait_name) ||
+						registry->native_class_conforms(p_source.script_type->get_instance_base_type(), trait_name);
 			}
+			return result;
+		}
+		if (p_source.kind == FSParser::DataType::NATIVE && !p_source.is_meta_type) {
+			// A native value satisfies a trait target when its class (or any ancestor) was retroactively
+			// conformed via `extend <native class> uses Trait`.
+			const StringName trait_name = fs_trait_identity_name(p_target.class_type);
+			const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+			result.compatible = registry->native_class_conforms(p_source.native_type, trait_name);
 			return result;
 		}
 		return result;
