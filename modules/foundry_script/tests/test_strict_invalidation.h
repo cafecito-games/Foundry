@@ -296,6 +296,7 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
 		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
 		REQUIRE(protocol);
+		TestFSLanguageProtocolInitializer::mark_initialized(protocol);
 
 		const String parent_path = "res://refactor/dep_invalidation_parent_lsp.fs";
 		const String parent_v1 =
@@ -323,13 +324,13 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		REQUIRE(before);
 		CHECK_EQ(error_diagnostic_count(before), 0);
 
-		// Parent return type changes from int to String while the child still assigns to int.
+		// Parent body no longer matches its declared int return type.
 		{
 			Ref<FileAccess> file = FileAccess::open(parent_path, FileAccess::WRITE);
 			REQUIRE(file.is_valid());
 			file->store_string(
 					"extends RefCounted\n"
-					"func value() -> String:\n"
+					"func value() -> int:\n"
 					"\treturn \"not an int\"\n");
 		}
 
