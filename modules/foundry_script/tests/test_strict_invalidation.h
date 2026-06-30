@@ -211,6 +211,85 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		memdelete(protocol);
 		memdelete(editor_file_system);
 	}
+
+	TEST_CASE("Parser-level dependencies record inverse edges before full analysis") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const String parent_path = "res://refactor/dep_invalidation_parent.fs";
+		const String parent_source =
+				"extends RefCounted\n"
+				"func value() -> int:\n"
+				"\treturn 1\n";
+		TemporaryScriptFile parent(parent_path, parent_source);
+
+		const String child_path = "res://refactor/dep_invalidation_child.fs";
+		const String child_source =
+				"const Parent = preload(\"res://refactor/dep_invalidation_parent.fs\")\n"
+				"func use() -> void:\n"
+				"\tvar x: int = Parent.value()\n";
+		TemporaryScriptFile child(child_path, child_source);
+
+		Error err = OK;
+		Ref<FSParserRef> parsed = FSCache::get_parser(child_path, FSParserRef::PARSED, err);
+		REQUIRE(err == OK);
+		REQUIRE(parsed.is_valid());
+		CHECK(FSCache::get_inverse_dependencies(parent_path).has(child_path));
+
+		parsed.unref();
+		FSCache::clear();
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Editing a dependency invalidates and re-analyzes dependent parsers") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const String parent_path = "res://refactor/dep_invalidation_parent_edit.fs";
+		const String parent_v1 =
+				"extends RefCounted\n"
+				"func value() -> int:\n"
+				"\treturn 1\n";
+		TemporaryScriptFile parent(parent_path, parent_v1);
+
+		const String child_path = "res://refactor/dep_invalidation_child_edit.fs";
+		const String child_source =
+				"extends \"res://refactor/dep_invalidation_parent_edit.fs\"\n"
+				"func use() -> int:\n"
+				"\treturn value()\n";
+		TemporaryScriptFile child(child_path, child_source);
+
+		Ref<FSParserRef> first = analyze(child_path);
+		CHECK_FALSE(reports_error(first));
+		CHECK(TestFSCacheAccessor::has_parser(child_path));
+		CHECK(TestFSCacheAccessor::has_parser(parent_path));
+
+		{
+			Ref<FileAccess> file = FileAccess::open(parent_path, FileAccess::WRITE);
+			REQUIRE(file.is_valid());
+			file->store_string(
+					"extends RefCounted\n"
+					"func value() -> int:\n"
+					"\treturn \"not an int\"\n");
+		}
+
+		FSCache::remove_parser(parent_path);
+
+		CHECK_FALSE(TestFSCacheAccessor::has_parser(child_path));
+		CHECK_FALSE(TestFSCacheAccessor::has_parser(parent_path));
+
+		Ref<FSParserRef> second = analyze(child_path);
+		CHECK(reports_error(second));
+
+		first.unref();
+		second.unref();
+		FSCache::clear();
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
 }
 
 } // namespace FSTests
