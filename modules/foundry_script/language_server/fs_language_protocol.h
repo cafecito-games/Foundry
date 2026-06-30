@@ -162,6 +162,7 @@ public:
 	// changes, so already-open documents are re-reported under the new flags without waiting for an
 	// edit or reopen. Re-parsing reads the managed buffer, not disk, so unsaved edits are preserved.
 	void reparse_open_scripts();
+	void reparse_open_scripts(const HashSet<String> &p_paths);
 
 	FSLanguageProtocol();
 	~FSLanguageProtocol();

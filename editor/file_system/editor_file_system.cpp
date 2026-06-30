@@ -47,6 +47,10 @@
 #include "editor/settings/project_settings_editor.h"
 #include "scene/resources/packed_scene.h"
 
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/foundry_script.h"
+#endif
+
 EditorFileSystem *EditorFileSystem::singleton = nullptr;
 int EditorFileSystem::nb_files_total = 0;
 EditorFileSystem::ScannedDirectory *EditorFileSystem::first_scan_root_dir = nullptr;
@@ -1009,10 +1013,20 @@ bool EditorFileSystem::_update_scan_actions() {
 				int idx = ia.dir->find_file_index(ia.file);
 				ERR_CONTINUE(idx == -1);
 
+				const String file_path = ia.dir->get_file_path(idx);
+
 				// Only reloads the resources that are already loaded.
-				if (ResourceCache::has(ia.dir->get_file_path(idx))) {
-					reloads.push_back(ia.dir->get_file_path(idx));
+				if (ResourceCache::has(file_path)) {
+					reloads.push_back(file_path);
 				}
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+				// Invalidate parser/LSP caches for dependents even when the changed script is not
+				// loaded as a resource (common for dependency-only files).
+				if (ia.file.get_extension().to_lower() == "fs") {
+					FSLanguage::get_singleton()->notify_disk_source_changed(file_path);
+				}
+#endif
 			} break;
 		}
 

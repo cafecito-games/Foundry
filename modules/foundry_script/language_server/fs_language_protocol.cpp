@@ -549,6 +549,11 @@ void FSLanguageProtocol::resolve_related_symbols(const LSP::TextDocumentPosition
 }
 
 void FSLanguageProtocol::reparse_open_scripts() {
+	reparse_open_scripts(HashSet<String>());
+}
+
+void FSLanguageProtocol::reparse_open_scripts(const HashSet<String> &p_paths) {
+	const bool filter_paths = !p_paths.is_empty();
 	// parse_script() -> FSWorkspace::publish_diagnostics() resolves and notifies through
 	// latest_client_id, so each client must be made the "latest" while its own documents are
 	// reparsed; otherwise a non-latest client's diagnostics would be computed for and sent to the
@@ -564,6 +569,9 @@ void FSLanguageProtocol::reparse_open_scripts() {
 		// the live managed_files map directly while re-parsing would be unsafe.
 		Vector<String> paths;
 		for (const KeyValue<String, LSP::TextDocumentItem> &document : client.value->managed_files) {
+			if (filter_paths && !p_paths.has(document.key)) {
+				continue;
+			}
 			paths.push_back(document.key);
 		}
 		for (const String &path : paths) {
