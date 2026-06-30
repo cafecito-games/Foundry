@@ -4518,6 +4518,7 @@ void FSAnalyzer::resolve_node(FSParser::Node *p_node, bool p_is_root) {
 		case FSParser::Node::ANNOTATION_DECLARATION:
 		case FSParser::Node::BREAK:
 		case FSParser::Node::BREAKPOINT:
+		case FSParser::Node::CONFORMANCE:
 		case FSParser::Node::CONTINUE:
 		case FSParser::Node::ENUM:
 		case FSParser::Node::FUNCTION:
@@ -6788,6 +6789,7 @@ void FSAnalyzer::reduce_expression(FSParser::ExpressionNode *p_expression, bool 
 		case FSParser::Node::BREAK:
 		case FSParser::Node::BREAKPOINT:
 		case FSParser::Node::CLASS:
+		case FSParser::Node::CONFORMANCE:
 		case FSParser::Node::CONSTANT:
 		case FSParser::Node::CONTINUE:
 		case FSParser::Node::ENUM:

@@ -1503,40 +1503,47 @@ void FSParser::parse_uses() {
 
 	do {
 		ClassNode::TraitUse trait_use;
-		int chain_index = 0;
-		make_completion_context(COMPLETION_USES, current_class, chain_index++, true, &trait_use.name);
-		if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected trait name after "uses".)")) {
+		if (!parse_trait_use(trait_use)) {
 			return;
 		}
-		trait_use.name.push_back(parse_identifier());
-
-		while (match(FSTokenizer::Token::PERIOD)) {
-			make_completion_context(COMPLETION_USES, current_class, chain_index++, true, &trait_use.name);
-			if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected trait name after ".".)")) {
-				return;
-			}
-			trait_use.name.push_back(parse_identifier());
-		}
-
-		// Type arguments specializing a generic trait: `uses Container[int]`.
-		if (match(FSTokenizer::Token::BRACKET_OPEN)) {
-			if (check(FSTokenizer::Token::BRACKET_CLOSE)) {
-				push_error(R"(Expected at least one type argument after "[".)");
-			} else {
-				do {
-					TypeNode *type_argument = parse_type();
-					if (type_argument == nullptr) {
-						push_error(R"(Expected type argument after "[".)");
-						break;
-					}
-					trait_use.type_arguments.push_back(type_argument);
-				} while (match(FSTokenizer::Token::COMMA));
-			}
-			consume(FSTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type arguments.)");
-		}
-
 		current_class->used_traits.push_back(trait_use);
 	} while (match(FSTokenizer::Token::COMMA));
+}
+
+bool FSParser::parse_trait_use(ClassNode::TraitUse &r_trait_use) {
+	int chain_index = 0;
+	make_completion_context(COMPLETION_USES, current_class, chain_index++, true, &r_trait_use.name);
+	if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected trait name after "uses".)")) {
+		return false;
+	}
+	r_trait_use.name.push_back(parse_identifier());
+
+	while (match(FSTokenizer::Token::PERIOD)) {
+		make_completion_context(COMPLETION_USES, current_class, chain_index++, true, &r_trait_use.name);
+		if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected trait name after ".".)")) {
+			return false;
+		}
+		r_trait_use.name.push_back(parse_identifier());
+	}
+
+	// Type arguments specializing a generic trait: `uses Container[int]`.
+	if (match(FSTokenizer::Token::BRACKET_OPEN)) {
+		if (check(FSTokenizer::Token::BRACKET_CLOSE)) {
+			push_error(R"(Expected at least one type argument after "[".)");
+		} else {
+			do {
+				TypeNode *type_argument = parse_type();
+				if (type_argument == nullptr) {
+					push_error(R"(Expected type argument after "[".)");
+					break;
+				}
+				r_trait_use.type_arguments.push_back(type_argument);
+			} while (match(FSTokenizer::Token::COMMA));
+		}
+		consume(FSTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type arguments.)");
+	}
+
+	return true;
 }
 
 void FSParser::parse_type_parameters(Vector<TypeParameterNode *> &r_type_parameters) {
@@ -1819,6 +1826,109 @@ void FSParser::parse_annotation_declaration_targets(AnnotationDeclarationNode *p
 	} while (match(FSTokenizer::Token::COMMA));
 }
 
+FSParser::ConformanceNode *FSParser::parse_conformance() {
+	ConformanceNode *conformance = alloc_node<ConformanceNode>();
+
+	// The current token is the contextual `extend` identifier. `alloc_node` anchored the node
+	// to the preceding token, so re-anchor it to `extend` itself once consumed.
+	advance();
+	reset_extents(conformance, previous);
+
+	// A conformance is not a runtime member, so no class-level annotation may apply to it.
+	// Consume any pending annotations here (erroring on each) so they cannot carry over.
+	parse_class_member_annotations(AnnotationInfo::NONE, "conformance declaration");
+
+	// Conformances are root-only, mirroring annotation declarations.
+	const bool is_root_declaration = current_class->outer == nullptr && !current_class->is_trait;
+	if (!is_root_declaration) {
+		push_error(R"(Retroactive conformances ("extend") are only allowed at the root of a script.)");
+	}
+
+	// The target is an unspecialized dotted name. Type arguments are rejected because a
+	// conformance applies to every specialization of a generic base.
+	conformance->target = parse_type();
+	if (conformance->target == nullptr) {
+		push_error(R"(Expected a target type name after "extend".)");
+	} else if (!conformance->target->container_types.is_empty() || conformance->target->has_signature || conformance->target->is_coroutine) {
+		push_error(R"("extend" applies to all specializations; remove the type arguments.)", conformance->target);
+	}
+
+	if (consume(FSTokenizer::Token::USES, R"(Expected "uses" after the "extend" target type.)")) {
+		parse_conformance_uses(conformance);
+	}
+
+	consume(FSTokenizer::Token::COLON, R"(Expected ":" after the "extend" conformance header.)");
+
+	bool multiline = match(FSTokenizer::Token::NEWLINE);
+
+	if (multiline && !consume(FSTokenizer::Token::INDENT, R"(Expected indented block after "extend" conformance declaration.)")) {
+		complete_extents(conformance);
+		if (is_root_declaration) {
+			current_class->conformances.push_back(conformance);
+		}
+		return conformance;
+	}
+
+	parse_conformance_body(conformance, multiline);
+	complete_extents(conformance);
+
+	if (multiline) {
+		consume(FSTokenizer::Token::DEDENT, R"(Missing unindent at the end of the "extend" conformance body.)");
+	}
+
+	if (is_root_declaration) {
+		current_class->conformances.push_back(conformance);
+	}
+
+	return conformance;
+}
+
+void FSParser::parse_conformance_uses(ConformanceNode *p_conformance) {
+	do {
+		ClassNode::TraitUse trait_use;
+		if (!parse_trait_use(trait_use)) {
+			return;
+		}
+		p_conformance->traits.push_back(trait_use);
+	} while (match(FSTokenizer::Token::COMMA));
+}
+
+void FSParser::parse_conformance_body(ConformanceNode *p_conformance, bool p_is_multiline) {
+	bool body_end = false;
+	while (!body_end && !is_at_end()) {
+		DeclarationModifiers modifiers = collect_declaration_modifiers();
+
+		FSTokenizer::Token token = current;
+		switch (token.type) {
+			case FSTokenizer::Token::FUNC: {
+				validate_declaration_modifiers(modifiers, "functions", true, true, true, true, false);
+				advance();
+				FunctionNode *function = parse_function_declaration(modifiers);
+				if (function != nullptr) {
+					p_conformance->witnesses.push_back(function);
+				}
+			} break;
+			case FSTokenizer::Token::PASS:
+				advance();
+				end_statement(R"("pass")");
+				break;
+			case FSTokenizer::Token::DEDENT:
+				body_end = true;
+				break;
+			default:
+				push_error(R"(An "extend" conformance body may only contain methods.)");
+				advance();
+				break;
+		}
+		if (panic_mode) {
+			synchronize();
+		}
+		if (!p_is_multiline) {
+			body_end = true;
+		}
+	}
+}
+
 FSParser::DeclarationModifiers FSParser::collect_declaration_modifiers() {
 	DeclarationModifiers modifiers;
 	while (true) {
@@ -1896,6 +2006,8 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 		FSTokenizer::Token token = current;
 		const bool starts_annotation_declaration = token.type == FSTokenizer::Token::IDENTIFIER &&
 				token.get_identifier() == StringName("annotation");
+		const bool starts_conformance_declaration = token.type == FSTokenizer::Token::IDENTIFIER &&
+				token.get_identifier() == StringName("extend");
 		const bool starts_declaration = token.type == FSTokenizer::Token::VAR ||
 				token.type == FSTokenizer::Token::TK_CONST ||
 				token.type == FSTokenizer::Token::SIGNAL ||
@@ -1913,7 +2025,8 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 						token.type == FSTokenizer::Token::ENUM ||
 						token.type == FSTokenizer::Token::ANNOTATION ||
 						token.type == FSTokenizer::Token::PASS ||
-						starts_annotation_declaration);
+						starts_annotation_declaration ||
+						starts_conformance_declaration);
 		if (disallowed_enum_file_member) {
 			push_error(R"(An "enum_name" file may only contain its enum declaration.)");
 		}
@@ -2031,6 +2144,12 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 					// `annotation` is contextual: it only starts a declaration where a root-body
 					// declaration is valid. Anywhere else it remains an ordinary identifier.
 					parse_annotation_declaration();
+					break;
+				}
+				if (token.type == FSTokenizer::Token::IDENTIFIER && token.get_identifier() == StringName("extend")) {
+					// `extend` is contextual: it only starts a retroactive conformance where a
+					// root-body declaration is valid. Anywhere else it remains an ordinary identifier.
+					parse_conformance();
 					break;
 				}
 				// Display a completion with declaration-oriented identifiers.

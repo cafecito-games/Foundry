@@ -154,6 +154,9 @@ Built-in numeric constants are also keyword tokens: `INF`, `NAN`, `PI`, `TAU` (t
 
 - `annotation` — starts a custom annotation declaration when it appears where a root-level
   declaration is valid (§4.4).
+- `extend` — starts a retroactive trait conformance when it appears where a root-level
+  declaration is valid (§4.8). Distinct from the `extends` keyword token: `extend` is an
+  ordinary identifier everywhere else, just like `annotation`.
 - `async` — function modifier when it immediately precedes `func`/other modifiers (§4.5).
 - `targets` — separates an annotation declaration's parameter list from its target list.
 - `get` / `set` — property accessor names.
@@ -360,6 +363,7 @@ member          = { declaration_modifier },
                   | trait_decl
                   | enum_decl
                   | annotation_declaration
+                  | conformance_declaration
                   | class_annotation
                   | standalone_annotation
                   | "pass" NEWLINE
@@ -519,6 +523,31 @@ target_name            = "CLASS" | "METHOD" | "VARIABLE" | "SIGNAL" | "CONSTANT"
 declaration is valid; elsewhere it is an ordinary identifier. The declaration defines a
 reusable custom annotation with typed parameters (defaults must be constant) and a set of
 valid targets.
+
+### 4.8 Retroactive conformance (`extend`)
+
+```ebnf
+conformance_declaration = "extend", conformance_target,
+                          "uses", trait_use, { ",", trait_use },
+                          ":", conformance_body ;
+conformance_target = dotted_name ;          (* unspecialized; NO type_arguments *)
+conformance_body = NEWLINE, INDENT, conformance_member, { conformance_member }, DEDENT
+                 | conformance_member ;
+conformance_member = { "static" | "async" }, function_decl ;
+```
+
+`extend` is contextual and root-only, exactly like `annotation` (§4.7): it only starts a
+conformance at the **root** of a script where a declaration is valid; elsewhere it is an
+ordinary identifier (and it is distinct from the `extends` keyword token, §2.5). A
+conformance declares that an existing type (which the script need not own) retroactively
+conforms to one or more traits, supplying the required methods externally as witnesses.
+
+The target must be **unspecialized**: writing type arguments (e.g. `extend Box[int] uses
+T`) is a parse error, because a conformance applies to **all** specializations of a generic
+base. The `uses` clause reuses `trait_use` from §3.3. The body contains **only** function /
+accessor members; `var`, `const`, `signal`, inner `class`/`trait`, and `enum` members are
+rejected. Witness methods may carry the `static`/`async` modifiers. Inside the witnesses,
+`self` is typed as the target.
 
 ---
 
@@ -985,9 +1014,9 @@ are written in `##` doc comments and produce errors if used as annotations.
 - **Named arguments are unambiguous** because assignment is never an expression: inside an
   argument list, `IDENTIFIER` `=` is always a named argument, while `==` is comparison.
 - **Dictionary style detection** is based on the first entry's separator (`:` vs `=`).
-- **Contextual keywords** (`annotation`, `async`, `targets`, `get`, `set`, `CLASS`/`METHOD`/
-  `VARIABLE`/`SIGNAL`/`CONSTANT`) are lexed as identifiers and only gain meaning from
-  position.
+- **Contextual keywords** (`annotation`, `extend`, `async`, `targets`, `get`, `set`,
+  `CLASS`/`METHOD`/`VARIABLE`/`SIGNAL`/`CONSTANT`) are lexed as identifiers and only gain
+  meaning from position. `extend` is distinct from the reserved `extends` keyword token.
 - **Multiline mode** inside brackets and around lambda bodies suspends layout-token
   generation; a re-implementation must replicate this to handle multi-line literals,
   argument lists, and lambdas.
