@@ -35,6 +35,8 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 
+class FoundryBuildTaskRegistry;
+
 class ProjectBuildPipelineConfig {
 public:
 	enum Stage {
@@ -129,7 +131,7 @@ public:
 	void write_to_config_file(const Ref<ConfigFile> &p_config) const;
 	ProjectSettings::CustomMap to_project_settings_custom_map() const;
 
-	Vector<ValidationError> validate() const;
+	Vector<ValidationError> validate(const FoundryBuildTaskRegistry *p_provider_registry = nullptr) const;
 	Status get_status() const;
 
 	bool is_enabled() const { return enabled; }
@@ -143,4 +145,6 @@ public:
 
 	const HashMap<String, ProviderDescriptor> &get_providers() const { return providers; }
 	const HashMap<String, TaskDefinition> &get_tasks() const { return tasks; }
+	const Vector<String> &get_provider_order() const { return provider_order; }
+	const Vector<String> &get_task_order() const { return task_order; }
 };
