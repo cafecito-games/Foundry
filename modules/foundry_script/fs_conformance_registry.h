@@ -118,6 +118,12 @@ public:
 	// True when some target alias `p_target_key` declares an external conformance to `p_trait_name`.
 	bool has_conformance(const String &p_target_key, const StringName &p_trait_name) const;
 
+	// True when `p_native_class` (a ClassDB-registered engine class) or any of its ancestors declares
+	// an external conformance to `p_trait_name`. Native conformances are keyed by the bare class name,
+	// and inheritance is honored by walking `ClassDB::get_parent_class` so a subclass instance satisfies
+	// a conformance declared on a base class (e.g. a `Sprite2D` value satisfies `extend Node2D uses ...`).
+	bool native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name) const;
+
 	// The declaring file of the (target, trait) conformance, or an empty string when none exists.
 	// Useful for diagnosing cross-file duplicate conformances.
 	String get_conformance_source(const String &p_target_key, const StringName &p_trait_name) const;
@@ -137,6 +143,11 @@ public:
 	// The compiled witness for `p_method` on a target alias `p_target_key`, or `nullptr` when none is
 	// registered. Consulted by the runtime only after a normal member-function lookup misses.
 	FSFunction *find_witness_function(const String &p_target_key, const StringName &p_method) const;
+
+	// The compiled witness for `p_method` on `p_native_class` or any of its ancestors, or `nullptr` when
+	// none is registered. Walks `ClassDB::get_parent_class` so a witness declared on a base engine class
+	// dispatches for a subclass instance. Consulted by the runtime after a native call misses.
+	FSFunction *find_native_witness_function(const StringName &p_native_class, const StringName &p_method) const;
 
 	FSConformanceRegistry();
 	~FSConformanceRegistry();

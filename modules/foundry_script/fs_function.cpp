@@ -55,7 +55,16 @@ bool FSDataType::_script_conforms_to_trait(const Ref<Script> &p_base, const Stri
 		}
 		script = script->get_base_script();
 	}
-	return false;
+	// A conformance declared on the value's native base class (`extend Node uses ...`) applies to any
+	// script extending that class.
+	return registry->native_class_conforms(p_base->get_instance_base_type(), p_trait);
+}
+
+bool FSDataType::_native_class_conforms_to_trait(const StringName &p_native_class, const StringName &p_trait) {
+	if (p_native_class == StringName() || p_trait == StringName()) {
+		return false;
+	}
+	return FSConformanceRegistry::get_singleton()->native_class_conforms(p_native_class, p_trait);
 }
 
 static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type, bool p_is_type_handle) {

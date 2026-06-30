@@ -96,6 +96,11 @@ public:
 	// absent from the script's own trait list.
 	static bool _script_conforms_to_trait(const Ref<Script> &p_base, const StringName &p_trait);
 
+	// True when native engine class `p_native_class` (or any ancestor) is retroactively conformed to
+	// trait `p_trait` via an external `extend <native class> uses` declaration. Lets a scriptless native
+	// object satisfy a trait-typed slot at runtime.
+	static bool _native_class_conforms_to_trait(const StringName &p_native_class, const StringName &p_trait);
+
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const {
 		if (is_nullable && p_variant.get_type() == Variant::NIL) {
 			return true;
@@ -163,7 +168,12 @@ public:
 
 				Ref<Script> base = obj && obj->get_script_instance() ? obj->get_script_instance()->get_script() : nullptr;
 				if (is_script_trait) {
-					return base.is_valid() && (base->has_script_trait(script_trait) || _script_conforms_to_trait(base, script_trait));
+					if (base.is_valid() && (base->has_script_trait(script_trait) || _script_conforms_to_trait(base, script_trait))) {
+						return true;
+					}
+					// A native object (no Foundry Script instance), or a scripted object whose engine base
+					// class was retroactively conformed, satisfies a trait-typed slot via the registry.
+					return _native_class_conforms_to_trait(obj->get_class_name(), script_trait);
 				}
 
 				bool valid = false;
@@ -663,7 +673,12 @@ public:
 	Variant get_constant(int p_idx) const;
 	StringName get_global_name(int p_idx) const;
 
-	Variant call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr);
+	Variant call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr, const Variant *p_self_override = nullptr);
+	// Dispatches a retroactive-conformance witness on a receiver that has no FSInstance (a native engine
+	// object or, later, a builtin value). The witness was compiled against the target's surface, so
+	// `self` is bound to `p_self` and member access rides the native/builtin access opcodes; no FS member
+	// layout is available, so the witness must not reference instance members.
+	Variant call_witness(const Variant &p_self, const Variant **p_args, int p_argcount, Callable::CallError &r_err);
 	void debug_get_stack_member_state(int p_line, List<Pair<StringName, int>> *r_stackvars) const;
 
 #ifdef DEBUG_ENABLED
