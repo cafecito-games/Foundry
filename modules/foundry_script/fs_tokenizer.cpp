@@ -1459,7 +1459,13 @@ FSTokenizer::Token FSTokenizerText::scan() {
 		line_continuation = true;
 		_skip_whitespace(); // Skip whitespace/comment lines after `\`. See GH-89403.
 		continuation_lines.push_back(line);
-		return scan(); // Recurse to get next token.
+		if (continuation_scan_depth >= Variant::MAX_RECURSION_DEPTH) {
+			return make_error("Too many line continuations.");
+		}
+		continuation_scan_depth++;
+		Token token = scan();
+		continuation_scan_depth--;
+		return token;
 	}
 
 	line_continuation = false;

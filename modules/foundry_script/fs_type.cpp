@@ -67,6 +67,8 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 	return true;
 }
 
+static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
+
 static bool _datatype_method_signature_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right);
 
 // Strict signature-slot comparison for the explicit `Callable[[...], ...]` / `Signal[[...]]` path.
@@ -513,7 +515,17 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 						// Specialized generic handles are invariant in their type arguments: a `Box[int]`
 						// is not a `Box[String]`. A bare (unspecialized) source stays compatible.
 						if (p_target.has_type_arguments() && current.has_type_arguments()) {
-							result.compatible = current.type_arguments == p_target.type_arguments;
+							if (current.type_arguments.size() != p_target.type_arguments.size()) {
+								result.compatible = false;
+							} else {
+								result.compatible = true;
+								for (int i = 0; i < current.type_arguments.size(); i++) {
+									if (!_datatype_invariant_equal(current.type_arguments[i], p_target.type_arguments[i])) {
+										result.compatible = false;
+										break;
+									}
+								}
+							}
 						} else {
 							result.compatible = true;
 						}
@@ -557,4 +569,80 @@ bool FSTypeCompatibility::is_compatible(const FSParser::DataType &p_target, cons
 	Options options;
 	options.allow_implicit_conversion = p_allow_implicit_conversion;
 	return check(p_target, p_source, options).compatible;
+}
+
+static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
+	if (p_a.kind != p_b.kind ||
+			p_a.is_nullable != p_b.is_nullable ||
+			p_a.is_meta_type != p_b.is_meta_type ||
+			p_a.is_type_handle_annotation != p_b.is_type_handle_annotation ||
+			p_a.has_method_signature != p_b.has_method_signature ||
+			p_a.signature_is_async != p_b.signature_is_async ||
+			p_a.container_element_types.size() != p_b.container_element_types.size() ||
+			p_a.type_arguments.size() != p_b.type_arguments.size() ||
+			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
+			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
+		return false;
+	}
+
+	bool equal = false;
+	switch (p_a.kind) {
+		case FSParser::DataType::VARIANT:
+			equal = true;
+			break;
+		case FSParser::DataType::BUILTIN:
+			equal = p_a.builtin_type == p_b.builtin_type;
+			break;
+		case FSParser::DataType::NATIVE:
+		case FSParser::DataType::ENUM:
+			equal = p_a.native_type == p_b.native_type;
+			break;
+		case FSParser::DataType::SCRIPT:
+			equal = p_a.script_type == p_b.script_type;
+			break;
+		case FSParser::DataType::CLASS:
+			equal = p_a.class_type == p_b.class_type ||
+					(p_a.class_type != nullptr && p_b.class_type != nullptr &&
+							p_a.class_type->fqcn == p_b.class_type->fqcn);
+			break;
+		case FSParser::DataType::TYPE_PARAMETER:
+			equal = p_a.type_parameter_name == p_b.type_parameter_name &&
+					p_a.type_parameter_scope == p_b.type_parameter_scope &&
+					p_a.type_parameter_index == p_b.type_parameter_index;
+			break;
+		case FSParser::DataType::RESOLVING:
+		case FSParser::DataType::UNRESOLVED:
+			break;
+	}
+	if (!equal) {
+		return false;
+	}
+
+	for (int i = 0; i < p_a.type_parameter_bound.size(); i++) {
+		if (!_datatype_invariant_equal(p_a.type_parameter_bound[i], p_b.type_parameter_bound[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.container_element_types.size(); i++) {
+		if (!_datatype_invariant_equal(p_a.container_element_types[i], p_b.container_element_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.type_arguments.size(); i++) {
+		if (!_datatype_invariant_equal(p_a.type_arguments[i], p_b.type_arguments[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_parameter_types.size(); i++) {
+		if (!_datatype_invariant_equal(p_a.method_parameter_types[i], p_b.method_parameter_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_return_type.size(); i++) {
+		if (!_datatype_invariant_equal(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	return true;
 }

@@ -3887,9 +3887,6 @@ FSParser::ExpressionNode *FSParser::parse_identifier(ExpressionNode *p_previous_
 	IdentifierNode *identifier = alloc_node<IdentifierNode>();
 	complete_extents(identifier);
 	identifier->name = previous.get_identifier();
-	if (identifier->name.operator String().is_empty()) {
-		print_line("Empty identifier found.");
-	}
 	identifier->suite = current_suite;
 
 	if (current_suite != nullptr && current_suite->has_local(identifier->name)) {
@@ -4439,6 +4436,7 @@ FSParser::ExpressionNode *FSParser::parse_grouping(ExpressionNode *p_previous_op
 	pop_multiline();
 	if (grouped == nullptr) {
 		push_error(R"(Expected grouping expression.)");
+		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
 	} else {
 		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
 	}

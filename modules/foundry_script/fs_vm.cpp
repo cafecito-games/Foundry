@@ -1228,9 +1228,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					Variant::ValidatedOperatorEvaluator op_func = Variant::get_validated_operator_evaluator(op, a_type, b_type);
 
 					if (unlikely(!op_func)) {
-#ifdef DEBUG_ENABLED
 						err_text = "Invalid operands '" + Variant::get_type_name(a->get_type()) + "' and '" + Variant::get_type_name(b->get_type()) + "' in operator '" + Variant::get_operator_name(op) + "'.";
-#endif
 						initializer_mutex.unlock();
 						OPCODE_BREAK;
 					} else {
@@ -1257,17 +1255,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					op_func(a, b, dst);
 				} else {
 					// If the signature doesn't match, we have to use the slow path.
-#ifdef DEBUG_ENABLED
-
 					Variant ret;
 					Variant::evaluate(op, *a, *b, ret, valid);
-#else
-					Variant::evaluate(op, *a, *b, *dst, valid);
-#endif
-#ifdef DEBUG_ENABLED
 					if (!valid) {
 						if (ret.get_type() == Variant::STRING) {
-							//return a string when invalid with the error
 							err_text = ret;
 							err_text += " in operator '" + Variant::get_operator_name(op) + "'.";
 						} else {
@@ -1276,7 +1267,6 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 					*dst = ret;
-#endif
 				}
 				ip += 7 + _pointer_size;
 			}
@@ -3667,14 +3657,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						Callable::CallError ce;
 						Variant::construct(ret_type, retvalue, const_cast<const Variant **>(&r), 1, ce);
 					} else {
-#ifdef DEBUG_ENABLED
 						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
 								Variant::get_type_name(r->get_type()), Variant::get_type_name(ret_type));
-#endif // DEBUG_ENABLED
-
-						// Construct a base type anyway so type constraints are met.
-						Callable::CallError ce;
-						Variant::construct(ret_type, retvalue, nullptr, 0, ce);
 						OPCODE_BREAK;
 					}
 				} else {

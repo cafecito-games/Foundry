@@ -277,7 +277,9 @@ public:
 					equal = script_type == p_other.script_type;
 					break;
 				case CLASS:
-					equal = class_type == p_other.class_type || class_type->fqcn == p_other.class_type->fqcn;
+					equal = class_type == p_other.class_type ||
+							(class_type != nullptr && p_other.class_type != nullptr &&
+									class_type->fqcn == p_other.class_type->fqcn);
 					break;
 				case TYPE_PARAMETER:
 					equal = type_parameter_name == p_other.type_parameter_name &&

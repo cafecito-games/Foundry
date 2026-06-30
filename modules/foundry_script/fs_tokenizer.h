@@ -254,6 +254,7 @@ class FSTokenizerText : public FSTokenizer {
 	int position = 0;
 	int length = 0;
 	Vector<int> continuation_lines;
+	int continuation_scan_depth = 0;
 #ifdef DEBUG_ENABLED
 	Vector<String> keyword_list;
 #endif // DEBUG_ENABLED
