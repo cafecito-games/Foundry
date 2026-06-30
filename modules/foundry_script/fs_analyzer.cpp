@@ -6331,9 +6331,14 @@ void FSAnalyzer::resolve_if(FSParser::IfNode *p_if) {
 	if (p_if->false_block != nullptr) {
 		previous_flow_narrowed_types = flow_narrowed_types;
 		apply_flow_narrowing_from_condition(p_if->condition, false);
-		resolve_suite(p_if->false_block);
+		if (FSParser::IfNode *elif = p_if->get_elif()) {
+			resolve_if(elif);
+			decide_suite_type(p_if, elif);
+		} else {
+			resolve_suite(p_if->false_block);
+			decide_suite_type(p_if, p_if->false_block);
+		}
 		flow_narrowed_types = previous_flow_narrowed_types;
-		decide_suite_type(p_if, p_if->false_block);
 	}
 }
 

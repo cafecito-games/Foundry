@@ -1210,6 +1210,22 @@ public:
 		SuiteNode *true_block = nullptr;
 		SuiteNode *false_block = nullptr;
 
+		IfNode *get_elif() {
+			return const_cast<IfNode *>(static_cast<const IfNode *>(this)->get_elif());
+		}
+
+		// An `elif` is parsed as a false block holding a single `if` that begins on the same line.
+		const IfNode *get_elif() const {
+			if (false_block == nullptr || false_block->statements.size() != 1) {
+				return nullptr;
+			}
+			const Node *statement = false_block->statements[0];
+			if (statement->type != IF || false_block->start_line != statement->start_line) {
+				return nullptr;
+			}
+			return static_cast<const IfNode *>(statement);
+		}
+
 		IfNode() {
 			type = IF;
 		}

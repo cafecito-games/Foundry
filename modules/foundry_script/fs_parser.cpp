@@ -7943,8 +7943,13 @@ void FSParser::TreePrinter::print_if(IfNode *p_if, bool p_is_elif) {
 	print_suite(p_if->true_block);
 	decrease_indent();
 
-	// FIXME: Properly detect "elif" blocks.
-	if (p_if->false_block != nullptr) {
+	if (p_if->false_block == nullptr) {
+		return;
+	}
+
+	if (FSParser::IfNode *elif = p_if->get_elif()) {
+		print_if(elif, true);
+	} else {
 		push_line("Else :");
 		increase_indent();
 		print_suite(p_if->false_block);
