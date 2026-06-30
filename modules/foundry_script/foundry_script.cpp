@@ -1665,6 +1665,22 @@ bool FoundryScript::has_script_trait(const StringName &p_trait) const {
 		}
 	}
 
+	// A retroactive conformance (`extend This uses Trait: ...`) is recorded in the registry rather
+	// than this script's own `script_trait_list`, so consult it by every identity alias the
+	// registry keys a target by (FQCN / global class name / script path).
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	if (registry->has_conformance(get_fully_qualified_name(), p_trait)) {
+		return true;
+	}
+	const StringName global_name = get_global_name();
+	if (global_name != StringName() && registry->has_conformance(String(global_name), p_trait)) {
+		return true;
+	}
+	const String script_path = get_script_path();
+	if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait)) {
+		return true;
+	}
+
 	if (base.is_valid()) {
 		return base->has_script_trait(p_trait);
 	}
