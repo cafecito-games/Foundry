@@ -485,6 +485,7 @@ FSFunctionState::FSFunctionState() :
 }
 
 FSFunctionState::~FSFunctionState() {
+	_clear_stack();
 	{
 		MutexLock lock(FSLanguage::singleton->mutex);
 		scripts_list.remove_from_list();

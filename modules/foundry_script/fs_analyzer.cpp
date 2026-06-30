@@ -6304,6 +6304,15 @@ void FSAnalyzer::resolve_while(FSParser::WhileNode *p_while) {
 	resolve_node(p_while->condition, false);
 
 	HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
+	FSParser::IdentifierNode *narrowed_identifier = nullptr;
+	if (null_check_narrowing_identifier(p_while->condition, true, narrowed_identifier)) {
+		apply_flow_narrowing(narrowed_identifier);
+	} else {
+		FSParser::DataType narrowed_type;
+		if (type_test_narrowing_identifier(p_while->condition, true, narrowed_identifier, narrowed_type)) {
+			apply_flow_narrowing(narrowed_identifier, narrowed_type);
+		}
+	}
 	resolve_suite(p_while->loop);
 	flow_narrowed_types = previous_flow_narrowed_types;
 	p_while->set_datatype(p_while->loop->get_datatype());
@@ -6322,6 +6331,11 @@ void FSAnalyzer::resolve_assert(FSParser::AssertNode *p_assert) {
 	FSParser::IdentifierNode *narrowed_identifier = nullptr;
 	if (null_check_narrowing_identifier(p_assert->condition, true, narrowed_identifier)) {
 		apply_flow_narrowing(narrowed_identifier);
+	} else {
+		FSParser::DataType narrowed_type;
+		if (type_test_narrowing_identifier(p_assert->condition, true, narrowed_identifier, narrowed_type)) {
+			apply_flow_narrowing(narrowed_identifier, narrowed_type);
+		}
 	}
 
 #ifdef DEBUG_ENABLED
@@ -10755,6 +10769,17 @@ Ref<FSParserRef> FSAnalyzer::find_cached_external_parser_for_class(const FSParse
 		}
 	}
 
+	for (KeyValue<String, Ref<FSParserRef>> &dep : p_dependant_parser->depended_parsers) {
+		if (dep.value.is_null()) {
+			continue;
+		}
+		dep.value->raise_status(FSParserRef::PARSED);
+		Ref<FSParserRef> found = find_cached_external_parser_for_class(p_class, dep.value->get_parser());
+		if (found.is_valid()) {
+			return found;
+		}
+	}
+
 	return nullptr;
 }
 
@@ -12192,7 +12217,13 @@ void FSAnalyzer::reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p
 		false_type.kind = FSParser::DataType::VARIANT;
 	}
 
-	if (true_type.is_variant() || false_type.is_variant()) {
+	const bool true_is_null = true_type.kind == FSParser::DataType::BUILTIN && true_type.builtin_type == Variant::NIL;
+	const bool false_is_null = false_type.kind == FSParser::DataType::BUILTIN && false_type.builtin_type == Variant::NIL;
+
+	if (true_is_null != false_is_null) {
+		result = true_is_null ? false_type : true_type;
+		result.is_nullable = true;
+	} else if (true_type.is_variant() || false_type.is_variant()) {
 		result.kind = FSParser::DataType::VARIANT;
 	} else {
 		result = true_type;
@@ -13865,7 +13896,8 @@ bool FSAnalyzer::merge_inferred_type_argument(const FSParser::DataType &p_existi
 
 	// Concrete types: mutual assignability without implicit conversion is the invariant equality
 	// test, tolerating incidental DataType field differences between two arguments of the same type.
-	if (is_type_compatible(p_existing, p_candidate) && is_type_compatible(p_candidate, p_existing)) {
+	if (p_existing.kind == p_candidate.kind &&
+			is_type_compatible(p_existing, p_candidate) && is_type_compatible(p_candidate, p_existing)) {
 		r_merged = p_existing;
 		return true;
 	}
