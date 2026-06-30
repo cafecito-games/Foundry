@@ -1246,11 +1246,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 					initializer_mutex.unlock();
 				} else if (likely(op_signature == actual_signature)) {
-					// If the signature matches, we can use the optimized path.
-					Variant::Type ret_type = static_cast<Variant::Type>(_code_ptr[ip + 6]);
-					Variant::ValidatedOperatorEvaluator op_func = *reinterpret_cast<Variant::ValidatedOperatorEvaluator *>(&_code_ptr[ip + 7]);
-
-					// Make sure the return value has the correct type.
+					// Re-resolve the validated evaluator instead of reading the cached function
+					// pointer from bytecode so concurrent initialization cannot observe a torn write.
+					Variant::Type a_type = (Variant::Type)((actual_signature >> 8) & 0xFF);
+					Variant::Type b_type = (Variant::Type)(actual_signature & 0xFF);
+					Variant::ValidatedOperatorEvaluator op_func = Variant::get_validated_operator_evaluator(op, a_type, b_type);
+					if (unlikely(!op_func)) {
+						err_text = "Invalid operands '" + Variant::get_type_name(a->get_type()) + "' and '" + Variant::get_type_name(b->get_type()) + "' in operator '" + Variant::get_operator_name(op) + "'.";
+						OPCODE_BREAK;
+					}
+					Variant::Type ret_type = Variant::get_operator_return_type(op, a_type, b_type);
 					VariantInternal::initialize(dst, ret_type);
 					op_func(a, b, dst);
 				} else {
@@ -4816,33 +4821,33 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		if (exit_ok) {
 			OPCODE_OUT;
 		}
-		//error
-		// function, file, line, error, explanation
-		String err_file;
-		bool instance_valid_with_script = p_instance && ObjectDB::get_instance(p_instance->owner_id) != nullptr && p_instance->script->is_valid();
-		if (instance_valid_with_script && !get_script()->path.is_empty()) {
-			err_file = get_script()->path;
-		} else if (script) {
-			err_file = script->path;
-		}
-		if (err_file.is_empty()) {
-			err_file = "<built-in>";
-		}
-		String err_func = name;
-		if (instance_valid_with_script && p_instance->script->local_name != StringName()) {
-			err_func = p_instance->script->local_name.operator String() + "." + err_func;
-		}
-		int err_line = line;
-		if (err_text.is_empty()) {
+		if (err_text.is_empty() && !exit_ok) {
 			err_text = "Internal script error! Opcode: " + itos(last_opcode) + " (please report).";
 		}
-
-		_err_print_error(err_func.utf8().get_data(), err_file.utf8().get_data(), err_line, err_text.utf8().get_data(), false, ERR_HANDLER_SCRIPT);
-		FSLanguage::get_singleton()->debug_break(err_text, false);
-
-		// Get a default return type in case of failure
-		retvalue = _get_default_variant_for_data_type(return_type);
 #endif
+		if (!err_text.is_empty()) {
+			String err_file;
+			bool instance_valid_with_script = p_instance && ObjectDB::get_instance(p_instance->owner_id) != nullptr && p_instance->script->is_valid();
+			if (instance_valid_with_script && !get_script()->path.is_empty()) {
+				err_file = get_script()->path;
+			} else if (script) {
+				err_file = script->path;
+			}
+			if (err_file.is_empty()) {
+				err_file = "<built-in>";
+			}
+			String err_func = name;
+			if (instance_valid_with_script && p_instance->script->local_name != StringName()) {
+				err_func = p_instance->script->local_name.operator String() + "." + err_func;
+			}
+			int err_line = line;
+
+			_err_print_error(err_func.utf8().get_data(), err_file.utf8().get_data(), err_line, err_text.utf8().get_data(), false, ERR_HANDLER_SCRIPT);
+#ifdef DEBUG_ENABLED
+			FSLanguage::get_singleton()->debug_break(err_text, false);
+#endif
+			retvalue = _get_default_variant_for_data_type(return_type);
+		}
 
 		OPCODE_OUT;
 	}
