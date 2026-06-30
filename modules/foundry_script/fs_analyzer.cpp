@@ -1300,18 +1300,21 @@ void FSAnalyzer::get_class_node_current_scope_classes(FSParser::ClassNode *p_nod
 
 	p_list->push_back(p_node);
 
-	// TODO: Try to solve class inheritance if not yet resolving.
+	auto resolve_for_scope_traverse = [&](FSParser::ClassNode *p_scope_class) {
+		if (p_scope_class == nullptr || p_scope_class->base_type.is_resolving()) {
+			return;
+		}
+		resolve_class_inheritance(p_scope_class, p_source);
+	};
 
-	// Prioritize node base type over its outer class
+	// Prioritize node base type over its outer class.
 	if (p_node->base_type.class_type != nullptr) {
-		// TODO: 'ensure_cached_external_parser_for_class()' is only necessary because 'resolve_class_inheritance()' is not getting called here.
-		ensure_cached_external_parser_for_class(p_node->base_type.class_type, p_node, "Trying to fetch classes in the current scope", p_source);
+		resolve_for_scope_traverse(p_node->base_type.class_type);
 		get_class_node_current_scope_classes(p_node->base_type.class_type, p_list, p_source);
 	}
 
 	if (p_node->outer != nullptr) {
-		// TODO: 'ensure_cached_external_parser_for_class()' is only necessary because 'resolve_class_inheritance()' is not getting called here.
-		ensure_cached_external_parser_for_class(p_node->outer, p_node, "Trying to fetch classes in the current scope", p_source);
+		resolve_for_scope_traverse(p_node->outer);
 		get_class_node_current_scope_classes(p_node->outer, p_list, p_source);
 	}
 }
