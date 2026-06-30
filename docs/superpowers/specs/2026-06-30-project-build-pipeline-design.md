@@ -30,8 +30,6 @@ generated outputs.
 - A separate virtual source root for generated code. Generated source files live in visible `res://` paths.
 - A bundled protobuf provider in the first slice. Protobuf can be an example or follow-up provider.
 - A visual graph editor for build tasks. Ordered list editing is enough for the first implementation.
-- Annotation-only provider discovery. `@build_task` is useful for tooling and validation, but provider availability
-  comes from registration metadata so the pipeline does not have to index the whole project before `pre_compile`.
 
 ## Architecture
 
@@ -152,7 +150,6 @@ namespace my.game.build_tasks
 
 import foundry.build_tasks
 
-@build_task
 class_name ProtobufGenerationProvider extends FoundryBuildTask:
 	func command(p_context: FoundryBuildContext) -> FoundryBuildCommand:
 		return FoundryBuildCommand.new(
@@ -160,10 +157,8 @@ class_name ProtobufGenerationProvider extends FoundryBuildTask:
 		)
 ```
 
-`@build_task` is a tooling and validation annotation. It helps the editor identify build-task classes, offer
-completion, and warn when a registered class is missing the expected marker. It is not the discovery mechanism by
-itself, because annotation-only discovery would require indexing arbitrary project scripts before the `pre_compile`
-stage has run.
+The descriptor registration and `extends FoundryBuildTask` type relationship are the provider contract. Tooling can
+find candidate providers by looking for classes that extend `FoundryBuildTask`.
 
 `FoundryCommandBuildTask` can exist as a helper base class or trait for the common "return a command" case. More
 complex providers can implement `run(context)` directly, emit structured diagnostics, run multiple commands, or write
