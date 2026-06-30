@@ -31,6 +31,32 @@
 #include "fs_function.h"
 
 #include "foundry_script.h"
+#include "fs_conformance_registry.h"
+
+bool FSDataType::_script_conforms_to_trait(const Ref<Script> &p_base, const StringName &p_trait) {
+	if (p_base.is_null() || p_trait == StringName()) {
+		return false;
+	}
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	Ref<Script> script = p_base;
+	while (script.is_valid()) {
+		// The registry keys a target by its FQCN, global class name, and script path; try each alias.
+		const FoundryScript *foundry_script = Object::cast_to<FoundryScript>(script.ptr());
+		if (foundry_script != nullptr && registry->has_conformance(foundry_script->get_fully_qualified_name(), p_trait)) {
+			return true;
+		}
+		const StringName global_name = script->get_global_name();
+		if (global_name != StringName() && registry->has_conformance(String(global_name), p_trait)) {
+			return true;
+		}
+		const String script_path = script->get_path();
+		if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait)) {
+			return true;
+		}
+		script = script->get_base_script();
+	}
+	return false;
+}
 
 static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type, bool p_is_type_handle) {
 	FSDataType type;

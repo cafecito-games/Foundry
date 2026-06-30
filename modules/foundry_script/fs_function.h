@@ -90,6 +90,12 @@ public:
 	bool is_type_handle_type(const Variant &p_variant) const;
 	static FSDataType from_type_handle_container_type(const ContainerType &p_container_type);
 
+	// True when `p_base` (or any of its base scripts) is retroactively conformed to trait `p_trait` via
+	// an external `extend ... uses` declaration recorded in the conformance registry. Used as a runtime
+	// fallback so a retroactively-conformed value satisfies a trait-typed slot even though the trait is
+	// absent from the script's own trait list.
+	static bool _script_conforms_to_trait(const Ref<Script> &p_base, const StringName &p_trait);
+
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const {
 		if (is_nullable && p_variant.get_type() == Variant::NIL) {
 			return true;
@@ -157,7 +163,7 @@ public:
 
 				Ref<Script> base = obj && obj->get_script_instance() ? obj->get_script_instance()->get_script() : nullptr;
 				if (is_script_trait) {
-					return base.is_valid() && base->has_script_trait(script_trait);
+					return base.is_valid() && (base->has_script_trait(script_trait) || _script_conforms_to_trait(base, script_trait));
 				}
 
 				bool valid = false;
