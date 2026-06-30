@@ -93,6 +93,7 @@ class FSCache {
 	HashMap<String, Ref<FoundryScript>> full_fs_cache;
 	HashMap<String, Ref<FoundryScript>> static_fs_cache;
 	HashMap<String, HashSet<String>> dependencies;
+	HashMap<String, HashSet<String>> parser_dependencies;
 	HashMap<String, HashSet<String>> parser_inverse_dependencies;
 
 	// In-memory source overrides keyed by path. When present, get_source_code() (and the
@@ -117,6 +118,9 @@ public:
 private:
 	static SafeBinaryMutex<BINARY_MUTEX_TAG> mutex;
 	friend SafeBinaryMutex<BINARY_MUTEX_TAG> &_get_fs_cache_mutex();
+
+	static void clear_parser_dependency_edges(const String &p_path);
+	static void update_parser_dependencies(const String &p_path, const FSParser *p_parser);
 
 public:
 	static void move_script(const String &p_from, const String &p_to);

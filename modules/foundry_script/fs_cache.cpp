@@ -85,6 +85,9 @@ Error FSParserRef::raise_status(Status p_new_status) {
 					source_hash = source.hash();
 					result = get_parser()->parse(source, path, false);
 				}
+				if (result == OK) {
+					FSCache::update_parser_dependencies(path, get_parser());
+				}
 			} break;
 			case PARSED: {
 				status = INHERITANCE_SOLVED;
@@ -242,8 +245,45 @@ bool FSCache::has_parser(const String &p_path) {
 	return singleton->parser_map.has(p_path);
 }
 
+void FSCache::clear_parser_dependency_edges(const String &p_path) {
+	if (singleton == nullptr) {
+		return;
+	}
+
+	if (HashMap<String, HashSet<String>>::Iterator forward = singleton->parser_dependencies.find(p_path)) {
+		for (const String &dep : forward->value) {
+			if (HashMap<String, HashSet<String>>::Iterator inverse = singleton->parser_inverse_dependencies.find(dep)) {
+				inverse->value.erase(p_path);
+				if (inverse->value.is_empty()) {
+					singleton->parser_inverse_dependencies.erase(dep);
+				}
+			}
+		}
+		singleton->parser_dependencies.erase(p_path);
+	}
+}
+
+void FSCache::update_parser_dependencies(const String &p_path, const FSParser *p_parser) {
+	if (singleton == nullptr || p_parser == nullptr) {
+		return;
+	}
+
+	clear_parser_dependency_edges(p_path);
+
+	HashSet<String> deps;
+	for (const String &dep : p_parser->get_dependencies()) {
+		deps.insert(dep);
+		singleton->parser_inverse_dependencies[dep].insert(p_path);
+	}
+	if (!deps.is_empty()) {
+		singleton->parser_dependencies[p_path] = deps;
+	}
+}
+
 void FSCache::remove_parser(const String &p_path) {
 	MutexLock lock(singleton->mutex);
+
+	clear_parser_dependency_edges(p_path);
 
 	if (singleton->parser_map.has(p_path)) {
 		FSParserRef *parser_ref = singleton->parser_map[p_path];
@@ -555,6 +595,7 @@ void FSCache::clear() {
 	}
 	singleton->cleared = true;
 
+	singleton->parser_dependencies.clear();
 	singleton->parser_inverse_dependencies.clear();
 
 	for (const KeyValue<String, Vector<ObjectID>> &KV : singleton->abandoned_parser_map) {
