@@ -34,6 +34,7 @@
 #include "fs_analyzer.h"
 #include "fs_byte_codegen.h"
 #include "fs_cache.h"
+#include "fs_conformance_registry.h"
 #include "fs_trait_utils.h"
 #include "fs_utility_functions.h"
 
@@ -3276,7 +3277,7 @@ void FSCompiler::_collect_trait_abstract_requirements(const FSParser::ClassNode 
 	}
 }
 
-FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda) {
+FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda, bool p_skip_member_register) {
 	r_error = OK;
 	CodeGen codegen;
 	codegen.generator = memnew(FSByteCodeGenerator);
@@ -3555,7 +3556,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 
 	gd_function->method_info = method_info;
 
-	if (!is_implicit_initializer && !is_implicit_ready && !p_for_lambda) {
+	if (!is_implicit_initializer && !is_implicit_ready && !p_for_lambda && !p_skip_member_register) {
 		p_script->member_functions[func_name] = gd_function;
 	}
 
@@ -3843,6 +3844,19 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 		memdelete(E.value);
 	}
 	member_functions.clear();
+
+	// Drop any compiled retroactive-conformance witnesses from a previous compilation of this script:
+	// unregister the borrowed pointers from the registry, free the owned functions, and release the
+	// strong references to their target scripts, mirroring the member-function handling above.
+	if (!p_script->registered_conformance_source.is_empty()) {
+		FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(p_script->registered_conformance_source);
+		p_script->registered_conformance_source = String();
+	}
+	for (FSFunction *witness : p_script->witness_functions) {
+		memdelete(witness);
+	}
+	p_script->witness_functions.clear();
+	p_script->witness_target_scripts.clear();
 
 	p_script->static_variables.clear();
 
@@ -4632,6 +4646,104 @@ void FSCompiler::_get_function_ptr_replacements(HashMap<FSFunction *, FSFunction
 	}
 }
 
+Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const FSParser::ClassNode *p_class) {
+	// Retroactive conformances (`extend Target uses Trait: ...`) are recorded only on the head class.
+	if (p_class == nullptr || p_class->conformances.is_empty()) {
+		return OK;
+	}
+
+	const String source_file = p_script->get_script_path();
+	Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries;
+
+	for (const FSParser::ConformanceNode *conformance : p_class->conformances) {
+		if (conformance == nullptr || conformance->target == nullptr || conformance->witnesses.is_empty()) {
+			continue;
+		}
+
+		// The target was resolved during analysis; reuse the cached datatype to recover both the
+		// target's parser ClassNode (for `self`/member-layout codegen context) and its compiled
+		// `FoundryScript` (whose `member_indices` the witness's member accesses bind against).
+		const FSParser::DataType target_type = conformance->target->get_datatype();
+		const FSParser::ClassNode *target_class = nullptr;
+		Ref<FoundryScript> target_script;
+
+		// Recover the target's parser ClassNode (the codegen `self`/member-layout context). A global or
+		// in-file class target resolves to a CLASS datatype carrying the ClassNode directly; an external
+		// path-only reference resolves to a SCRIPT datatype, whose ClassNode comes from its parser.
+		if (target_type.kind == FSParser::DataType::CLASS && target_type.class_type != nullptr) {
+			target_class = target_type.class_type;
+		} else if (target_type.kind == FSParser::DataType::SCRIPT && !target_type.script_path.is_empty()) {
+			Error parser_err = OK;
+			Ref<FSParserRef> ref = FSCache::get_parser(target_type.script_path, FSParserRef::INTERFACE_SOLVED, parser_err, source_file);
+			if (ref.is_valid() && ref->get_parser() != nullptr) {
+				target_class = ref->get_parser()->get_tree();
+			}
+		}
+
+		// Recover the target's compiled FoundryScript (whose `member_indices` the witness binds against).
+		// A target declared in the file being compiled is one of its (sub)classes; a foreign target is
+		// loaded fully so its member layout is available.
+		if (target_class != nullptr) {
+			FoundryScript *found = main_script->find_class(target_class->fqcn);
+			if (found != nullptr) {
+				target_script = Ref<FoundryScript>(found);
+			} else if (!target_type.script_path.is_empty()) {
+				Error script_err = OK;
+				target_script = FSCache::get_full_script(target_type.script_path, script_err, source_file);
+			}
+		}
+
+		if (target_class == nullptr || target_script.is_null()) {
+			// The type system already rejected unsupported targets; if the target is unavailable here,
+			// skip runtime witness compilation rather than fail the whole script's compilation.
+			continue;
+		}
+
+		FSConformanceRegistry::RuntimeConformance runtime_entry;
+		const StringName target_global = target_class->get_global_name();
+		runtime_entry.target_keys.push_back(target_class->fqcn);
+		if (target_global != StringName()) {
+			runtime_entry.target_keys.push_back(String(target_global));
+		}
+		if (!target_type.script_path.is_empty() && !runtime_entry.target_keys.has(target_type.script_path)) {
+			runtime_entry.target_keys.push_back(target_type.script_path);
+		}
+		// `trait_name` is informational only; runtime dispatch keys solely on (target, method). A
+		// single `extend` may list several traits sharing one witness set, so it is left unset here.
+
+		for (const FSParser::FunctionNode *witness : conformance->witnesses) {
+			if (witness == nullptr || witness->identifier == nullptr) {
+				continue;
+			}
+			Error err = OK;
+			// Compile against the target's script/class so member access binds to the target instance's
+			// layout; do NOT register it in the target's `member_functions` (we don't own the target).
+			FSFunction *compiled = _parse_function(err, target_script.ptr(), target_class, witness, false, false, true);
+			if (err != OK || compiled == nullptr) {
+				return err != OK ? err : ERR_COMPILATION_FAILED;
+			}
+			// The declaring script owns the compiled witness and frees it on reload/unload.
+			p_script->witness_functions.push_back(compiled);
+			runtime_entry.functions[witness->identifier->name] = compiled;
+		}
+
+		if (!runtime_entry.functions.is_empty()) {
+			runtime_entries.push_back(runtime_entry);
+			// Keep the target script alive for as long as these witnesses (whose `_script` points at it)
+			// live. Skip self-references to avoid a script holding a strong reference to itself.
+			if (target_script.ptr() != p_script && !p_script->witness_target_scripts.has(target_script)) {
+				p_script->witness_target_scripts.push_back(target_script);
+			}
+		}
+	}
+
+	// Replace this file's runtime witnesses wholesale, mirroring the analyzer's per-file registration so
+	// a recompile never leaves stale compiled functions behind.
+	p_script->registered_conformance_source = source_file;
+	FSConformanceRegistry::get_singleton()->register_runtime_witnesses(source_file, runtime_entries);
+	return OK;
+}
+
 Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, bool p_keep_state) {
 	err_line = -1;
 	err_column = -1;
@@ -4655,6 +4767,13 @@ Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, boo
 	}
 
 	err = _compile_class(main_script, root, p_keep_state);
+	if (err) {
+		return err;
+	}
+
+	// Compile retroactive-conformance witnesses against their target classes and register the compiled
+	// functions for runtime dispatch. Done after the head class so member layouts are settled.
+	err = _compile_conformance_witnesses(main_script, root);
 	if (err) {
 		return err;
 	}

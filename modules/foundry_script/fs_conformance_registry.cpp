@@ -75,10 +75,61 @@ void FSConformanceRegistry::clear_file(const String &p_source_file) {
 	}
 }
 
+void FSConformanceRegistry::_rebuild_runtime_index() {
+	runtime_index.clear();
+	for (const KeyValue<String, Vector<RuntimeConformance>> &file_entry : runtime_by_file) {
+		for (const RuntimeConformance &conformance : file_entry.value) {
+			for (const String &target_key : conformance.target_keys) {
+				if (target_key.is_empty()) {
+					continue;
+				}
+				WitnessFunctionMap &functions = runtime_index[target_key];
+				for (const KeyValue<StringName, FSFunction *> &witness : conformance.functions) {
+					if (witness.value != nullptr) {
+						functions[witness.key] = witness.value;
+					}
+				}
+			}
+		}
+	}
+}
+
+void FSConformanceRegistry::register_runtime_witnesses(const String &p_source_file, const Vector<RuntimeConformance> &p_conformances) {
+	MutexLock lock(mutex);
+	if (p_conformances.is_empty()) {
+		runtime_by_file.erase(p_source_file);
+	} else {
+		runtime_by_file[p_source_file] = p_conformances;
+	}
+	_rebuild_runtime_index();
+}
+
+void FSConformanceRegistry::clear_runtime_witnesses(const String &p_source_file) {
+	MutexLock lock(mutex);
+	if (runtime_by_file.erase(p_source_file)) {
+		_rebuild_runtime_index();
+	}
+}
+
+FSFunction *FSConformanceRegistry::find_witness_function(const String &p_target_key, const StringName &p_method) const {
+	if (p_target_key.is_empty() || p_method == StringName()) {
+		return nullptr;
+	}
+	MutexLock lock(mutex);
+	const WitnessFunctionMap *functions = runtime_index.getptr(p_target_key);
+	if (functions == nullptr) {
+		return nullptr;
+	}
+	FSFunction *const *function = functions->getptr(p_method);
+	return function != nullptr ? *function : nullptr;
+}
+
 void FSConformanceRegistry::clear() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();
 	index.clear();
+	runtime_by_file.clear();
+	runtime_index.clear();
 }
 
 bool FSConformanceRegistry::has_conformance(const String &p_target_key, const StringName &p_trait_name) const {
