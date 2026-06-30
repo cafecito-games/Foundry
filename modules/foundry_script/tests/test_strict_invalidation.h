@@ -36,6 +36,7 @@
 
 #include "../fs_cache.h"
 #include "../fs_parser.h"
+#include "../foundry_script.h"
 
 #include "core/config/project_settings.h"
 
@@ -287,6 +288,93 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		first.unref();
 		second.unref();
 		FSCache::clear();
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Editing a dependency refreshes open LSP diagnostics for dependents") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+		TestFSLanguageProtocolInitializer::mark_initialized(protocol);
+
+		const String parent_path = "res://refactor/dep_invalidation_parent_lsp.fs";
+		const String parent_v1 =
+				"extends RefCounted\n"
+				"func value() -> int:\n"
+				"\treturn 1\n";
+		TemporaryScriptFile parent(parent_path, parent_v1);
+
+		const String child_path = "res://refactor/dep_invalidation_child_lsp.fs";
+		const String child_source =
+				"extends \"res://refactor/dep_invalidation_parent_lsp.fs\"\n"
+				"func use() -> void:\n"
+				"\tvar x: int = value()\n";
+		TemporaryScriptFile child(child_path, child_source);
+
+		// Prime dependency edges through the shared cache, then open the child in the LSP.
+		Ref<FSParserRef> cached = analyze(child_path);
+		REQUIRE(cached.is_valid());
+		cached.unref();
+
+		const String child_uri = FSLanguageProtocol::get_singleton()->get_workspace()->get_file_uri(child_path);
+		protocol->get_text_document()->didOpen(make_did_open_params(child_uri, child_source));
+
+		ExtendFSParser *before = FSLanguageProtocol::get_singleton()->get_parse_result(child_path);
+		REQUIRE(before);
+		CHECK_EQ(error_diagnostic_count(before), 0);
+
+		// Parent body no longer matches its declared int return type.
+		{
+			Ref<FileAccess> file = FileAccess::open(parent_path, FileAccess::WRITE);
+			REQUIRE(file.is_valid());
+			file->store_string(
+					"extends RefCounted\n"
+					"func value() -> int:\n"
+					"\treturn \"not an int\"\n");
+		}
+
+		FSLanguage::get_singleton()->notify_disk_source_changed(parent_path);
+
+		ExtendFSParser *after = FSLanguageProtocol::get_singleton()->get_parse_result(child_path);
+		REQUIRE(after);
+		CHECK_GT(error_diagnostic_count(after), 0);
+
+		FSCache::clear();
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("FSCache::clear() drops parser dependency edges") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const String parent_path = "res://refactor/dep_invalidation_clear_parent.fs";
+		const String parent_source =
+				"extends RefCounted\n"
+				"func value() -> int:\n"
+				"\treturn 1\n";
+		TemporaryScriptFile parent(parent_path, parent_source);
+
+		const String child_path = "res://refactor/dep_invalidation_clear_child.fs";
+		const String child_source =
+				"const Parent = preload(\"res://refactor/dep_invalidation_clear_parent.fs\")\n"
+				"func use() -> void:\n"
+				"\tvar x: int = Parent.value()\n";
+		TemporaryScriptFile child(child_path, child_source);
+
+		Error err = OK;
+		Ref<FSParserRef> parsed = FSCache::get_parser(child_path, FSParserRef::PARSED, err);
+		REQUIRE(err == OK);
+		CHECK(FSCache::get_inverse_dependencies(parent_path).has(child_path));
+
+		parsed.unref();
+		FSCache::clear();
+
+		CHECK(FSCache::get_inverse_dependencies(parent_path).is_empty());
+		CHECK(FSCache::get_inverse_dependencies(child_path).is_empty());
+
 		memdelete(protocol);
 		memdelete(editor_file_system);
 	}

@@ -128,6 +128,9 @@ public:
 	static Ref<FSParserRef> get_parser(const String &p_path, FSParserRef::Status status, Error &r_error, const String &p_owner = String());
 	static bool has_parser(const String &p_path);
 	static void remove_parser(const String &p_path);
+	// Returns every path whose cached parser would be evicted by remove_parser(p_path),
+	// including p_path itself and all transitive inverse dependents recorded in the cache.
+	static HashSet<String> collect_parser_invalidation_closure(const String &p_path);
 	static String get_source_code(const String &p_path);
 
 	// In-memory source-override map. While an override is set for a path, get_source_code()

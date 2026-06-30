@@ -1065,7 +1065,11 @@ Error FoundryScript::reload(bool p_keep_state) {
 						source_hash = source.hash();
 					}
 					if (parser_ref->get_source_hash() != source_hash) {
+#ifdef TOOLS_ENABLED
+						FSLanguage::get_singleton()->notify_disk_source_changed(source_path);
+#else
 						FSCache::remove_parser(source_path);
+#endif
 					}
 				}
 			}
@@ -3532,6 +3536,24 @@ void FSLanguage::update_global_class_annotations(const String &p_search_path, co
 	get_global_annotations(p_target_path, &annotations);
 	replace_global_annotations(p_target_path, annotations);
 }
+
+#ifdef TOOLS_ENABLED
+void FSLanguage::notify_disk_source_changed(const String &p_path) {
+	if (p_path.is_empty()) {
+		return;
+	}
+
+	const HashSet<String> affected = FSCache::collect_parser_invalidation_closure(p_path);
+	FSCache::remove_parser(p_path);
+
+#if !defined(FOUNDRY_SCRIPT_NO_LSP)
+	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
+	if (protocol != nullptr && protocol->is_initialized()) {
+		protocol->reparse_open_scripts(affected);
+	}
+#endif
+}
+#endif // TOOLS_ENABLED
 
 void FSLanguage::add_global_annotation(const StringName &p_qualified_name, const String &p_path) {
 	MutexLock lock(annotation_index_mutex);

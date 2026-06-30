@@ -1012,6 +1012,12 @@ public:
 	// Re-extract a file's annotation declarations from disk and refresh the index. Called by the
 	// editor file-system scan (see `ScriptLanguage::update_global_class_annotations`).
 	virtual void update_global_class_annotations(const String &p_search_path, const String &p_target_path) override;
+#ifdef TOOLS_ENABLED
+	// Drops cached parsers for p_path and its transitive dependents, then re-parses any
+	// client-managed LSP documents in that affected set so diagnostics refresh after a
+	// dependency edit (save or external disk change).
+	void notify_disk_source_changed(const String &p_path);
+#endif
 	// Register a custom annotation declaration under its canonical identity for `p_path`.
 	void add_global_annotation(const StringName &p_qualified_name, const String &p_path);
 	// Drop every annotation declaration previously registered for `p_path`.

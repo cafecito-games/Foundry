@@ -280,6 +280,31 @@ void FSCache::update_parser_dependencies(const String &p_path, const FSParser *p
 	}
 }
 
+HashSet<String> FSCache::collect_parser_invalidation_closure(const String &p_path) {
+	HashSet<String> closure;
+	if (singleton == nullptr || p_path.is_empty()) {
+		return closure;
+	}
+
+	MutexLock lock(singleton->mutex);
+	List<String> frontier;
+	frontier.push_back(p_path);
+	while (!frontier.is_empty()) {
+		const String path = frontier.front()->get();
+		frontier.pop_front();
+		if (closure.has(path)) {
+			continue;
+		}
+		closure.insert(path);
+		if (HashMap<String, HashSet<String>>::ConstIterator inverse = singleton->parser_inverse_dependencies.find(path)) {
+			for (const String &dependent : inverse->value) {
+				frontier.push_back(dependent);
+			}
+		}
+	}
+	return closure;
+}
+
 void FSCache::remove_parser(const String &p_path) {
 	MutexLock lock(singleton->mutex);
 
