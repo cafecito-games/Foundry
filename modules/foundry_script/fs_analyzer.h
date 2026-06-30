@@ -356,6 +356,8 @@ class FSAnalyzer {
 	void clear_captured_flow_narrowing();
 	bool null_check_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier) const;
 	bool type_test_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier, FSParser::DataType &r_type) const;
+	void reduce_condition_expression(FSParser::ExpressionNode *p_condition);
+	void apply_flow_narrowing_from_condition(FSParser::ExpressionNode *p_condition, bool p_condition_value);
 	void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
 	void validate_call_arg(const MethodInfo &p_method, const FSParser::CallNode *p_call);
 	static bool call_has_named_arguments(const FSParser::CallNode *p_call);
