@@ -33,6 +33,7 @@
 #include "fs_analyzer.h"
 #include "fs_cache.h"
 #include "fs_compiler.h"
+#include "fs_conformance_registry.h"
 #include "fs_parser.h"
 #include "fs_reflection.h"
 #include "fs_rpc_callable.h"
@@ -1830,6 +1831,18 @@ void FoundryScript::clear() {
 	}
 	member_functions.clear();
 
+	// Drop borrowed pointers from the conformance registry before freeing the compiled witnesses, so a
+	// concurrent or subsequent runtime dispatch never sees a dangling `FSFunction *`.
+	if (!registered_conformance_source.is_empty()) {
+		FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(registered_conformance_source);
+		registered_conformance_source = String();
+	}
+	for (FSFunction *witness : witness_functions) {
+		functions_to_clear.insert(witness);
+	}
+	witness_functions.clear();
+	witness_target_scripts.clear();
+
 	for (KeyValue<StringName, MemberInfo> &E : member_indices) {
 		E.value.data_type.script_type_ref = Ref<Script>();
 		// A FIXED type-argument binding can hold a Ref<Script> to an external specialization argument;
@@ -2424,6 +2437,28 @@ Variant FSInstance::callp(const StringName &p_method, const Variant **p_args, in
 		sptr = sptr->base.ptr();
 	}
 
+	// Retroactive-conformance fallback (only on a member-function miss, to keep the hot path fast). A
+	// witness supplied by an external `extend Target uses Trait: ...` is not in any class's
+	// `member_functions` because the declaring file does not own this class. Consult the conformance
+	// registry by the instance's script identity aliases (FQCN / global class name / script path),
+	// walking the base chain, and dispatch the compiled witness with `this` as `self`.
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	for (FoundryScript *cursor = script.ptr(); cursor != nullptr; cursor = cursor->base.ptr()) {
+		FSFunction *witness = registry->find_witness_function(cursor->get_fully_qualified_name(), p_method);
+		if (witness == nullptr) {
+			const StringName global_name = cursor->get_global_name();
+			if (global_name != StringName()) {
+				witness = registry->find_witness_function(String(global_name), p_method);
+			}
+		}
+		if (witness == nullptr) {
+			witness = registry->find_witness_function(cursor->get_script_path(), p_method);
+		}
+		if (witness != nullptr) {
+			return witness->call(this, p_args, p_argcount, r_error);
+		}
+	}
+
 	r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 	return Variant();
 }
@@ -2759,6 +2794,10 @@ void FSLanguage::finish() {
 	}
 	script_list.clear();
 	function_list.clear();
+
+	// Every declaring script's `clear()` above already dropped its own runtime witnesses; clear the
+	// whole registry as a final safety net so no borrowed pointer outlives language shutdown.
+	FSConformanceRegistry::get_singleton()->clear();
 
 	// Tear down the reflection singletons exposed via the `godot` global. Only
 	// remove the named global if it still points to our singleton: a project

@@ -38,6 +38,8 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/vector.h"
 
+class FSFunction;
+
 // Process-global registry of retroactive trait conformances (`extend Target uses Trait: ...`).
 //
 // A conformance declares, from outside the target's own definition, that a type conforms to a
@@ -65,6 +67,18 @@ public:
 		WitnessMap witnesses;
 	};
 
+	// Runtime witnesses for a single (target, trait) conformance, keyed by method name. These are
+	// compiled `FSFunction *` owned by the conformance-declaring `FoundryScript`; the registry only
+	// borrows them and must drop them (via `clear_runtime_witnesses`) when that script is reloaded
+	// or unloaded so no dangling pointer is ever dispatched.
+	using WitnessFunctionMap = HashMap<StringName, FSFunction *>;
+
+	struct RuntimeConformance {
+		Vector<String> target_keys;
+		StringName trait_name;
+		WitnessFunctionMap functions;
+	};
+
 private:
 	static FSConformanceRegistry *singleton;
 
@@ -78,6 +92,17 @@ private:
 	HashMap<String, HashMap<StringName, String>> index;
 
 	void _rebuild_index();
+
+	// Runtime witness store, grouped by declaring file so a reload/unload can drop a file's compiled
+	// witnesses wholesale. Held separately from the parse-tree `conformances_by_file` because the
+	// analyzer re-registers the latter on every re-analysis (LSP/completion), which must NOT wipe the
+	// compiled functions the runtime dispatches through.
+	HashMap<String, Vector<RuntimeConformance>> runtime_by_file;
+
+	// Flattened runtime lookup: target alias key -> method name -> compiled witness function (borrowed).
+	HashMap<String, WitnessFunctionMap> runtime_index;
+
+	void _rebuild_runtime_index();
 
 public:
 	static FSConformanceRegistry *get_singleton();
@@ -99,6 +124,19 @@ public:
 
 	// The witnesses for the (target, trait) conformance, or an empty map when none exists.
 	WitnessMap get_witnesses(const String &p_target_key, const StringName &p_trait_name) const;
+
+	// Replaces every compiled runtime witness previously registered by `p_source_file`. The
+	// `FSFunction *` in `p_conformances` stay owned by the declaring script; the registry borrows
+	// them until the next re-registration or `clear_runtime_witnesses`.
+	void register_runtime_witnesses(const String &p_source_file, const Vector<RuntimeConformance> &p_conformances);
+
+	// Drops every compiled runtime witness previously registered by `p_source_file`. Call this before
+	// the declaring script frees the underlying `FSFunction`s so no borrowed pointer dangles.
+	void clear_runtime_witnesses(const String &p_source_file);
+
+	// The compiled witness for `p_method` on a target alias `p_target_key`, or `nullptr` when none is
+	// registered. Consulted by the runtime only after a normal member-function lookup misses.
+	FSFunction *find_witness_function(const String &p_target_key, const StringName &p_method) const;
 
 	FSConformanceRegistry();
 	~FSConformanceRegistry();

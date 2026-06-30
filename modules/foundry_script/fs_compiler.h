@@ -177,7 +177,8 @@ class FSCompiler {
 	static void _collect_flattened_trait_members(const FSParser::ClassNode *p_class, Vector<const FSParser::ClassNode::Member *> &r_members);
 	static void _collect_annotations(const List<FSParser::AnnotationNode *> &p_annotations, Vector<FoundryScript::AnnotationUsage> &r_usages);
 	void _collect_trait_abstract_requirements(const FSParser::ClassNode *p_class, FoundryScript *p_script);
-	FSFunction *_parse_function(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::FunctionNode *p_func, bool p_for_ready = false, bool p_for_lambda = false);
+	FSFunction *_parse_function(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::FunctionNode *p_func, bool p_for_ready = false, bool p_for_lambda = false, bool p_skip_member_register = false);
+	Error _compile_conformance_witnesses(FoundryScript *p_script, const FSParser::ClassNode *p_class);
 	FSFunction *_make_static_initializer(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class);
 	Error _parse_setter_getter(FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::VariableNode *p_variable, bool p_is_setter);
 	Error _prepare_compilation(FoundryScript *p_script, const FSParser::ClassNode *p_class, bool p_keep_state);
