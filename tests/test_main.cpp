@@ -53,6 +53,7 @@
 #include "tests/editor/test_script_refactor_vcs_guard.h"
 #endif // TOOLS_ENABLED
 
+#include "tests/core/config/test_foundry_build_task_registry.h"
 #include "tests/core/config/test_project_build_pipeline_config.h"
 #include "tests/core/config/test_project_settings.h"
 #include "tests/core/input/test_input_event.h"

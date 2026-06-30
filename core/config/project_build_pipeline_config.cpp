@@ -30,6 +30,8 @@
 
 #include "project_build_pipeline_config.h"
 
+#include "core/config/foundry_build_task_registry.h"
+
 static const char *BUILD_SECTION = "build";
 static const char *PROVIDER_SECTION_PREFIX = "build/providers/";
 static const char *TASK_SECTION_PREFIX = "build/tasks/";
@@ -611,7 +613,8 @@ ProjectSettings::CustomMap ProjectBuildPipelineConfig::to_project_settings_custo
 	return custom;
 }
 
-Vector<ProjectBuildPipelineConfig::ValidationError> ProjectBuildPipelineConfig::validate() const {
+Vector<ProjectBuildPipelineConfig::ValidationError> ProjectBuildPipelineConfig::validate(
+		const FoundryBuildTaskRegistry *p_provider_registry) const {
 	Vector<ValidationError> errors = parse_errors;
 
 	HashSet<String> seen_stage_tasks;
@@ -651,9 +654,12 @@ Vector<ProjectBuildPipelineConfig::ValidationError> ProjectBuildPipelineConfig::
 		if (!_is_valid_id(name)) {
 			_add_validation_error(errors, section, "name", vformat("Task name '%s' is not valid.", name));
 		}
+		const bool provider_registered = task->provider == COMMAND_PROVIDER_ID ||
+				providers.has(task->provider) ||
+				(p_provider_registry != nullptr && p_provider_registry->has_provider(task->provider));
 		if (task->provider.is_empty()) {
 			_add_validation_error(errors, section, "provider", "Build tasks require a provider id.");
-		} else if (task->provider != COMMAND_PROVIDER_ID && !providers.has(task->provider)) {
+		} else if (!provider_registered) {
 			_add_validation_error(errors, section, "provider", vformat("Provider id '%s' is not registered.", task->provider));
 		}
 
