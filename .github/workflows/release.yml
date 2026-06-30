@@ -10,6 +10,16 @@ on:
         description: Release version, e.g. 0.1.0 (used when run manually).
         required: true
         type: string
+      status:
+        description: Release status, e.g. alpha, beta, rc, stable.
+        required: true
+        default: alpha
+        type: choice
+        options:
+          - alpha
+          - beta
+          - rc
+          - stable
 
 # Releases publish artifacts and create a GitHub Release, which needs write access.
 permissions:
@@ -20,16 +30,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Resolve the version string and whether to publish or leave a draft.
-  # - Tag push (refs/tags/vX.Y.Z) -> version X.Y.Z, auto-published.
-  # - Manual dispatch -> version from input, left as a draft for review.
+  # Resolve the version/status strings and whether to publish or leave a draft.
+  # - Tag push (refs/tags/vX.Y.Z or refs/tags/vX.Y.Z-alpha) -> auto-published.
+  # - Manual dispatch -> version/status from inputs, left as a draft for review.
   resolve:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
+      status: ${{ steps.resolve.outputs.status }}
+      release_version: ${{ steps.resolve.outputs.release_version }}
+      release_name: ${{ steps.resolve.outputs.release_name }}
       template_version: ${{ steps.resolve.outputs.template_version }}
       draft: ${{ steps.resolve.outputs.draft }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -42,14 +56,21 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           VERSION_INPUT: ${{ inputs.version }}
+          STATUS_INPUT: ${{ inputs.status }}
         run: |
           if [ "$EVENT_NAME" = "push" ]; then
             tag="$REF_NAME"
-            version="${tag#v}"
+            release_version="${tag#v}"
+            version="${release_version%%-*}"
+            if [ "$release_version" = "$version" ]; then
+              status="stable"
+            else
+              status="${release_version#"$version"-}"
+            fi
             draft="false"
           else
             version="$VERSION_INPUT"
-            tag="v${version}"
+            status="$STATUS_INPUT"
             draft="true"
           fi
 
@@ -58,6 +79,22 @@ jobs:
             echo "::error::Invalid release version '$version'; expected X.Y.Z."
             exit 1
           fi
+
+          if ! printf '%s' "$status" | grep -Eq '^(alpha|beta|rc|stable)$'; then
+            echo "::error::Invalid release status '$status'; expected alpha, beta, rc, or stable."
+            exit 1
+          fi
+
+          if [ "$status" = "stable" ]; then
+            release_version="$version"
+            tag="v${version}"
+            prerelease="false"
+          else
+            release_version="${version}-${status}"
+            tag="v${release_version}"
+            prerelease="true"
+          fi
+          release_name="Foundry ${release_version}"
 
           # Sanity-check the requested version matches version.py.
           py_version="$(python3 -c 'import version; print(f"{version.major}.{version.minor}.{version.patch}")')"
@@ -68,16 +105,20 @@ jobs:
 
           # Template directory version string: major.minor[.patch].status (patch omitted when 0),
           # matching the engine's VERSION_FULL_CONFIG used to locate export templates.
-          template_version="$(python3 -c 'import version; p=f".{version.patch}" if version.patch else ""; print(f"{version.major}.{version.minor}{p}.{version.status}")')"
+          template_version="$(FOUNDRY_VERSION_STATUS="$status" python3 -c "import os, version; p=f'.{version.patch}' if version.patch else ''; print(f'{version.major}.{version.minor}{p}.{os.environ[\"FOUNDRY_VERSION_STATUS\"]}')")"
 
           {
             echo "version=$version"
             echo "tag=$tag"
+            echo "status=$status"
+            echo "release_version=$release_version"
+            echo "release_name=$release_name"
             echo "template_version=$template_version"
             echo "draft=$draft"
+            echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Releasing $version (tag $tag, template dir $template_version, draft=$draft)"
+          echo "Releasing $release_version (tag $tag, template dir $template_version, draft=$draft, prerelease=$prerelease)"
 
   build-linux:
     needs: resolve
@@ -92,6 +133,7 @@ jobs:
           - target: template_debug
           - target: template_release
     env:
+      FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes
     steps:
       - name: Checkout
@@ -142,6 +184,7 @@ jobs:
     name: Windows ${{ matrix.target }}
     timeout-minutes: 120
     env:
+      FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
@@ -233,6 +276,7 @@ jobs:
     name: macOS editor
     timeout-minutes: 120
     env:
+      FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
@@ -313,6 +357,7 @@ jobs:
     name: macOS templates
     timeout-minutes: 150
     env:
+      FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
@@ -408,6 +453,7 @@ jobs:
     name: Web ${{ matrix.name }}
     timeout-minutes: 90
     env:
+      FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: production=yes debug_symbols=no use_closure_compiler=yes
       EM_VERSION: 4.0.11
     strategy:
@@ -491,6 +537,7 @@ jobs:
     name: Android ${{ matrix.name }}
     timeout-minutes: 120
     env:
+      FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no swappy=yes
     strategy:
       fail-fast: false
@@ -580,6 +627,7 @@ jobs:
     name: iOS templates
     timeout-minutes: 150
     env:
+      FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no debug_symbols=no
     steps:
       - name: Checkout
@@ -678,7 +726,7 @@ jobs:
 
       - name: Assemble release assets
         env:
-          VERSION: ${{ needs.resolve.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.release_version }}
           TEMPLATE_VERSION: ${{ needs.resolve.outputs.template_version }}
         run: |
           set -euo pipefail
@@ -782,7 +830,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
-          name: Foundry ${{ needs.resolve.outputs.version }}
+          name: ${{ needs.resolve.outputs.release_name }}
           draft: ${{ needs.resolve.outputs.draft }}
+          prerelease: ${{ needs.resolve.outputs.prerelease }}
           generate_release_notes: true
           files: dist/*
