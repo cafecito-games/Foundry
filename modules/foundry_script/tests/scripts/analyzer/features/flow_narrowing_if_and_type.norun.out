@@ -1,0 +1,3 @@
+FS_TEST_OK
+~~ WARNING at line 17: (UNSAFE_METHOD_ACCESS) The method "id()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 18: (UNSAFE_METHOD_ACCESS) The method "take_damage()" is not present on the inferred type "Variant" (but may be present on a subtype).
