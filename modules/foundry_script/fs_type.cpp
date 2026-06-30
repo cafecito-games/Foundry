@@ -31,6 +31,7 @@
 #include "fs_type.h"
 
 #include "foundry_script.h"
+#include "fs_conformance_registry.h"
 #include "fs_trait_utils.h"
 
 #include "core/object/class_db.h"
@@ -191,6 +192,7 @@ static bool _class_has_trait(const FSParser::ClassNode *p_class, const FSParser:
 	}
 
 	const StringName trait_name = fs_trait_identity_name(p_trait);
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 	const FSParser::ClassNode *current = p_class;
 	while (current != nullptr) {
 		for (const FSParser::ClassNode *trait : current->resolved_traits) {
@@ -199,10 +201,21 @@ static bool _class_has_trait(const FSParser::ClassNode *p_class, const FSParser:
 			}
 		}
 
+		// A retroactive conformance (`extend Target uses Trait`) is recorded externally rather than
+		// in `resolved_traits`, so consult the conformance registry for this class and each ancestor.
+		if (registry->has_conformance(current->fqcn, trait_name) ||
+				registry->has_conformance(current->get_global_name(), trait_name)) {
+			return true;
+		}
+
 		if (current->base_type.kind == FSParser::DataType::CLASS) {
 			current = current->base_type.class_type;
 		} else if (current->base_type.kind == FSParser::DataType::SCRIPT && current->base_type.script_type.is_valid()) {
-			return current->base_type.script_type->has_script_trait(trait_name);
+			if (current->base_type.script_type->has_script_trait(trait_name)) {
+				return true;
+			}
+			return registry->has_conformance(current->base_type.script_path, trait_name) ||
+					registry->has_conformance(current->base_type.script_type->get_global_name(), trait_name);
 		} else {
 			break;
 		}
@@ -384,7 +397,15 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			return result;
 		}
 		if (p_source.kind == FSParser::DataType::SCRIPT && p_source.script_type.is_valid() && !p_source.is_meta_type) {
-			result.compatible = p_source.script_type->has_script_trait(fs_trait_identity_name(p_target.class_type));
+			const StringName trait_name = fs_trait_identity_name(p_target.class_type);
+			result.compatible = p_source.script_type->has_script_trait(trait_name);
+			if (!result.compatible) {
+				// A retroactively-conformed script type carries its conformance in the registry, not in
+				// the compiled script's own trait set.
+				const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+				result.compatible = registry->has_conformance(p_source.script_path, trait_name) ||
+						registry->has_conformance(p_source.script_type->get_global_name(), trait_name);
+			}
 			return result;
 		}
 		return result;

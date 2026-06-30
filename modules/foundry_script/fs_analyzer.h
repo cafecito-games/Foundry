@@ -280,6 +280,13 @@ class FSAnalyzer {
 	bool type_satisfies_trait(const FSParser::DataType &p_argument, const FSParser::DataType &p_trait_bound);
 	void validate_trait_conflicts(FSParser::ClassNode *p_class);
 	void validate_trait_requirements(FSParser::ClassNode *p_class);
+	void resolve_conformances(FSParser::ClassNode *p_class);
+	void resolve_conformance_bodies(FSParser::ClassNode *p_class);
+	FSParser::ClassNode *resolve_conformance_target(FSParser::ConformanceNode *p_conformance, FSParser::DataType &r_target_type);
+	bool validate_conformance(FSParser::ConformanceNode *p_conformance, FSParser::ClassNode *p_target,
+			FSParser::ClassNode *p_trait, const HashMap<StringName, FSParser::DataType> &p_trait_substitution);
+	HashMap<StringName, FSParser::DataType> conformance_trait_substitution(FSParser::ClassNode *p_trait,
+			const FSParser::ClassNode::TraitUse &p_trait_use);
 	bool find_trait_implementation(FSParser::ClassNode *p_class, const StringName &p_function_name,
 			TraitMethodImplementation &r_implementation);
 	HashMap<StringName, FSParser::DataType> trait_type_argument_substitution(FSParser::ClassNode *p_class, FSParser::ClassNode *p_trait);
