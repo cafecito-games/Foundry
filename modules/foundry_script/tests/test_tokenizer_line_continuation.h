@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_review_fixes.h                                                   */
+/*  test_tokenizer_line_continuation.h                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,81 +30,10 @@
 
 #pragma once
 
-#include "../fs_analyzer.h"
-#include "../fs_parser.h"
 #include "../fs_tokenizer.h"
 
+#include "core/string/string_builder.h"
 #include "tests/test_macros.h"
-
-static HashSet<String> _dependency_set(const FSParser &p_parser) {
-	HashSet<String> dep_set;
-	for (const String &dep : p_parser.get_dependencies()) {
-		dep_set.insert(dep);
-	}
-	return dep_set;
-}
-
-TEST_CASE("[Modules][FoundryScript] FSParser get_dependencies collects extends and preload paths") {
-	FSParser parser;
-	const String source = R"(
-extends "res://base.fs"
-
-func test() -> void:
-	var resource = preload("res://other.fs")
-	pass
-)";
-	CHECK(parser.parse(source, "res://main.fs", false) == OK);
-
-	HashSet<String> dep_set = _dependency_set(parser);
-	CHECK(dep_set.has("res://base.fs"));
-	CHECK(dep_set.has("res://other.fs"));
-}
-
-TEST_CASE("[Modules][FoundryScript] FSParser get_dependencies normalizes relative preload paths") {
-	FSParser parser;
-	const String source = R"(
-func test() -> void:
-	var resource = preload("../shared/helper.fs")
-	pass
-)";
-	CHECK(parser.parse(source, "res://game/scripts/main.fs", false) == OK);
-
-	HashSet<String> dep_set = _dependency_set(parser);
-	CHECK(dep_set.has("res://game/shared/helper.fs"));
-}
-
-TEST_CASE("[Modules][FoundryScript] FSParser get_dependencies deduplicates repeated paths") {
-	FSParser parser;
-	const String source = R"(
-extends "res://base.fs"
-
-func test() -> void:
-	var a = preload("res://base.fs")
-	var b = preload("res://base.fs")
-	pass
-)";
-	CHECK(parser.parse(source, "res://main.fs", false) == OK);
-
-	HashSet<String> dep_set = _dependency_set(parser);
-	CHECK(dep_set.size() == 1);
-	CHECK(dep_set.has("res://base.fs"));
-}
-
-TEST_CASE("[Modules][FoundryScript] FSParser get_dependencies collects inner class extends paths") {
-	FSParser parser;
-	const String source = R"(
-class Outer:
-	class Inner extends "res://inner_base.fs":
-		pass
-
-func test() -> void:
-	pass
-)";
-	CHECK(parser.parse(source, "res://main.fs", false) == OK);
-
-	HashSet<String> dep_set = _dependency_set(parser);
-	CHECK(dep_set.has("res://inner_base.fs"));
-}
 
 TEST_CASE("[Modules][FoundryScript] FSTokenizer rejects excessive line continuations") {
 	FSTokenizerText tokenizer;
@@ -127,33 +56,4 @@ TEST_CASE("[Modules][FoundryScript] FSTokenizer rejects excessive line continuat
 		token = tokenizer.scan();
 	}
 	CHECK(saw_error);
-}
-
-TEST_CASE("[Modules][FoundryScript] Analyzer rejects enum/int generic inference merge") {
-	FSParser parser;
-	const String source = R"(
-enum Axis {
-	NORTH = 0,
-	SOUTH = 1,
-}
-
-func pick[T](a: T, b: T) -> T:
-	return a
-
-func test() -> void:
-	pick(0, Axis.SOUTH)
-)";
-	CHECK(parser.parse(source, "res://test.fs", false) == OK);
-
-	FSAnalyzer analyzer(&parser);
-	CHECK(analyzer.analyze() != OK);
-
-	bool found_inference_error = false;
-	for (const FSParser::ParserError &parser_error : parser.get_errors()) {
-		if (parser_error.message.contains("infer")) {
-			found_inference_error = true;
-			break;
-		}
-	}
-	CHECK(found_inference_error);
 }

@@ -1381,4 +1381,33 @@ TEST_CASE("[Modules][FoundryScript] Analyzer rejects type arguments on a non-gen
 	CHECK(analyzer.analyze() != OK);
 }
 
+TEST_CASE("[Modules][FoundryScript] Analyzer rejects enum/int generic inference merge") {
+	FSParser parser;
+	const String source = R"(
+enum Axis {
+	NORTH = 0,
+	SOUTH = 1,
+}
+
+func pick[T](a: T, b: T) -> T:
+	return a
+
+func test() -> void:
+	pick(0, Axis.SOUTH)
+)";
+	CHECK(parser.parse(source, "res://test.fs", false) == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+
+	bool found_inference_error = false;
+	for (const FSParser::ParserError &parser_error : parser.get_errors()) {
+		if (parser_error.message.contains("infer")) {
+			found_inference_error = true;
+			break;
+		}
+	}
+	CHECK(found_inference_error);
+}
+
 } // namespace FSTests
