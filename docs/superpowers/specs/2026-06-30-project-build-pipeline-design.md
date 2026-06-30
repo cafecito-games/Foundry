@@ -17,7 +17,7 @@ generated outputs.
 - Define build stages in `project.foundry`, the project authority.
 - Support ordered `pre_compile` and `post_compile` task lists.
 - Support both project-authored Foundry Script providers and command-style tasks.
-- Let complex providers live in the project under `res://build_tasks/`.
+- Let providers come from engine modules, addons, or explicit project registrations.
 - Provide an editor authoring UI for enabling the pipeline, adding tasks, reordering stages, editing task fields, and
   validating configuration before it is saved.
 - Gate editor indexing, LSP workspace loading, run/export, and tests on the same pipeline state.
@@ -30,6 +30,8 @@ generated outputs.
 - A separate virtual source root for generated code. Generated source files live in visible `res://` paths.
 - A bundled protobuf provider in the first slice. Protobuf can be an example or follow-up provider.
 - A visual graph editor for build tasks. Ordered list editing is enough for the first implementation.
+- Annotation-only provider discovery. `@build_task` is useful for tooling and validation, but provider availability
+  comes from registration metadata so the pipeline does not have to index the whole project before `pre_compile`.
 
 ## Architecture
 
@@ -72,8 +74,12 @@ enabled=true
 pre_compile=PackedStringArray("generate_proto", "post_process_proto")
 post_compile=PackedStringArray("bundle_metadata")
 
+[build/providers/generate_protobuf]
+script="res://addons/protobuf_build/generate_protobuf.fs"
+class_name="GenerateProtobuf"
+
 [build/tasks/generate_proto]
-provider="protobuf"
+provider="generate_protobuf"
 inputs=PackedStringArray("res://proto/**/*.proto")
 outputs=PackedStringArray("res://generated/protobuf/")
 options={
@@ -91,9 +97,7 @@ outputs=PackedStringArray("res://generated/protobuf/")
 
 Task fields:
 
-- `provider`: required provider name. By convention, this maps to
-  `res://build_tasks/<provider>/provider.fs`. The reserved provider name `command` uses the built-in command provider
-  instead of a project provider folder.
+- `provider`: required provider ID resolved through the build task registry.
 - `inputs`: declared input files or globs.
 - `outputs`: declared output files, roots, or globs.
 - `options`: provider-specific dictionary.
@@ -107,13 +111,38 @@ Generated source outputs should live in visible `res://` locations such as `res:
 Non-source caches, fingerprints, stdout/stderr logs, and provider intermediates live under the project data path,
 outside `res://`.
 
-## Provider Model
+Provider descriptor fields:
 
-Most providers are project-authored Foundry Script classes discovered from a conventional project path:
+- `script`: Foundry Script file that defines the task provider class.
+- `class_name`: provider class to instantiate from the script.
+- `display_name`: optional UI label.
+- `description`: optional UI description.
+- `addon`: optional addon/source identifier for diagnostics and collision reporting.
 
-```text
-res://build_tasks/protobuf/provider.fs
-res://build_tasks/postprocess_proto/provider.fs
+Engine-provided providers, such as the reserved `command` provider, register native descriptors directly and do not need
+a script descriptor.
+
+## Provider Registration Model
+
+Providers are registered into a `FoundryBuildTaskRegistry`. Tasks reference provider IDs from that registry.
+
+Provider sources:
+
+- Engine modules register built-in providers directly, for example `command` and future first-party providers.
+- Addons register providers through addon metadata. This lets external libraries expose build tasks without asking the
+  project to copy files into a special folder.
+- Projects register additional providers under `build/providers/*` in `project.foundry`.
+
+Addon metadata uses the same descriptor shape as project provider registrations. For example:
+
+```ini
+[build_tasks]
+providers=PackedStringArray("protobuf.generate")
+
+[build_tasks/protobuf.generate]
+script="res://addons/protobuf_build/generate_protobuf.fs"
+class_name="GenerateProtobuf"
+display_name="Generate Protobuf"
 ```
 
 A provider script imports the built-in build task API and extends `FoundryBuildTask`.
@@ -123,12 +152,18 @@ namespace my.game.build_tasks
 
 import foundry.build_tasks
 
+@build_task
 class_name ProtobufGenerationProvider extends FoundryBuildTask:
 	func command(p_context: FoundryBuildContext) -> FoundryBuildCommand:
 		return FoundryBuildCommand.new(
 			command=["python3", "protobuf/codegen.py", "-w", p_context.current_working_directory],
 		)
 ```
+
+`@build_task` is a tooling and validation annotation. It helps the editor identify build-task classes, offer
+completion, and warn when a registered class is missing the expected marker. It is not the discovery mechanism by
+itself, because annotation-only discovery would require indexing arbitrary project scripts before the `pre_compile`
+stage has run.
 
 `FoundryCommandBuildTask` can exist as a helper base class or trait for the common "return a command" case. More
 complex providers can implement `run(context)` directly, emit structured diagnostics, run multiple commands, or write
@@ -138,15 +173,15 @@ Because `pre_compile` providers must run before normal project script compilatio
 bootstrapped island:
 
 - They may import the built-in `foundry.build_tasks` API.
-- They may import helper scripts under `res://build_tasks/`.
+- They may import helper scripts that live next to the registered provider script or under the same addon.
 - They must not depend on generated project code, autoloads, game scripts, or the normal project symbol graph.
 - The pipeline loads them through a restricted build task script loader before normal indexing.
 
-The trust prompt applies to all project-authored providers, not only raw command execution. Project-authored provider
-code can trigger external work, so the editor must treat it as trusted project code.
+The trust prompt applies to script-backed project and addon providers, not only raw command execution. Provider code can
+trigger external work, so the editor must treat it as trusted project code.
 
-The reserved `command` provider is built in and does not need a `res://build_tasks/command/provider.fs` file. It exists
-as a low-friction escape hatch for projects that only need to run an executable with declared inputs and outputs.
+The reserved `command` provider is built in. It exists as a low-friction escape hatch for projects that only need to
+run an executable with declared inputs and outputs.
 
 ## Built-In Build Task API
 
@@ -176,15 +211,16 @@ For a requested stage, the pipeline:
 
 1. Loads and validates the `project.foundry` build config.
 2. Checks trust. If project build tasks are not trusted, the pipeline enters `untrusted` and does not execute providers.
-3. Discovers provider scripts from `res://build_tasks/<provider>/provider.fs`.
-4. Bootstraps provider scripts with the restricted build task loader.
+3. Builds the provider registry from native providers, enabled addon metadata, and `project.foundry` provider
+   descriptors.
+4. Bootstraps script-backed providers with the restricted build task loader.
 5. Validates every task in the requested stage before running any task:
    - provider exists,
    - inputs are readable or valid globs,
    - outputs are declared,
    - output roots do not overlap unsafe paths,
    - command tasks have valid command data,
-   - provider scripts are inside `res://build_tasks/`.
+   - script-backed provider descriptors point to project files.
 6. Computes fingerprints and skips clean tasks.
 7. Runs dirty tasks sequentially in configured order.
 8. Stops on the first failure and marks the project `blocked`.
@@ -203,8 +239,9 @@ the project data path.
 The fingerprint includes:
 
 - normalized task configuration from `project.foundry`,
+- provider descriptor metadata,
 - provider script contents,
-- imported helper scripts under `res://build_tasks/`,
+- imported helper scripts used by script-backed providers,
 - declared input file contents,
 - declared environment and options,
 - provider API version,
@@ -222,7 +259,8 @@ A task is dirty when:
 Watch triggers include:
 
 - `project.foundry`,
-- `res://build_tasks/**`,
+- enabled addon build-task metadata,
+- registered provider scripts and their helper imports,
 - declared inputs,
 - declared outputs.
 
@@ -233,7 +271,7 @@ The editor debounces reruns so a save operation or branch switch does not launch
 Build diagnostics are structured and visible to all callers. A failing task records:
 
 - stage and task name,
-- provider path,
+- provider ID and descriptor source,
 - command line when applicable,
 - process exit code when applicable,
 - stdout/stderr tail,
@@ -283,7 +321,7 @@ The UI should provide:
 - separate ordered lists for `pre_compile` and `post_compile`,
 - add, duplicate, remove, enable/disable, and reorder controls for tasks,
 - a task details editor for name, provider, inputs, outputs, working directory, environment, timeout, and options,
-- a provider selector that discovers built-in providers and `res://build_tasks/<provider>/provider.fs` providers,
+- a provider selector that lists built-in, addon-provided, and project-registered providers,
 - command-specific fields when `provider="command"`,
 - provider-specific option controls when a trusted provider exposes schema metadata,
 - a generic dictionary editor fallback for provider options without schema metadata,
@@ -293,18 +331,19 @@ The UI should provide:
 
 The UI writes back to `project.foundry` using `ProjectSettings`/`ConfigFile` conventions so it preserves the project as
 the source of truth. Reordering in the UI updates the ordered stage arrays. Creating a project-authored provider from
-the UI can scaffold `res://build_tasks/<provider>/provider.fs` from a minimal template.
+the UI can scaffold a provider script at a user-selected project path and add a matching `build/providers/*`
+registration.
 
-Provider discovery for the selector must be path-based and non-executing, so untrusted projects can still be inspected
-and edited. Provider-supplied schemas require loading provider code and are therefore available only after the project
-build tasks are trusted. Before trust, project providers use the generic options editor.
+Provider discovery for the selector must be descriptor-based and non-executing, so untrusted projects can still be
+inspected and edited. Provider-supplied schemas require loading provider code and are therefore available only after
+the project build tasks are trusted. Before trust, script-backed providers use the generic options editor.
 
 Validation in the UI should mirror pipeline validation:
 
 - duplicate task names are rejected,
 - stage entries must reference task definitions; disabled tasks remain visible in the ordered stage list but are skipped
   during execution,
-- provider names must resolve to a built-in provider or a provider file,
+- provider names must resolve to a built-in provider, addon provider, or project provider descriptor,
 - command tasks must have a command,
 - inputs and outputs must be valid project paths or globs,
 - generated output roots must not target unsafe locations such as `res://` itself,
@@ -315,8 +354,9 @@ disabled until the user trusts project build tasks.
 
 ## Security And Trust
 
-Project-authored providers and command tasks require explicit trust before automatic execution in the editor. The trust
-decision should be stored outside the project file so it is local to the developer machine.
+Script-backed providers from projects or addons, and command tasks that can execute external processes, require
+explicit trust before automatic execution in the editor. The trust decision should be stored outside the project file so
+it is local to the developer machine.
 
 Before running a task, the pipeline validates declared output roots. Providers should not be allowed to write arbitrary
 project files without declaring them as outputs. The first implementation can enforce this best for command-style tasks
@@ -330,7 +370,7 @@ Tests should cover:
 
 - `project.foundry` build config parsing,
 - ordered stage execution,
-- provider discovery from `res://build_tasks/<provider>/provider.fs`,
+- provider registry construction from native, addon, and project descriptors,
 - provider bootstrap restrictions,
 - trust blocking,
 - command construction and timeout handling,
@@ -347,6 +387,6 @@ provider dependencies.
 ## Open Follow-Ups
 
 - Add a bundled protobuf provider or documented example.
-- Add optional provider path overrides if the conventional folder layout becomes too restrictive.
+- Add richer provider conflict-resolution UI if multiple addons or project descriptors register the same provider ID.
 - Add stronger write-scope enforcement for providers that perform file writes directly.
 - Add richer watch glob semantics if the initial filesystem integration needs it.
