@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoundryCommandBuildTask" inherits="FoundryBuildTask" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Built-in build task provider for command-shaped tasks.
+	</brief_description>
+	<description>
+		Provides the default configuration schema for command build tasks. This class is part of the script-facing build-task API surface; actual command execution is outside the bootstrap loader.
+	</description>
+	<tutorials>
+	</tutorials>
+</class>

@@ -42,6 +42,7 @@
 #include "core/core_constants.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
+#include "core/io/resource_uid.h"
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
@@ -56,6 +57,26 @@
 
 #define UNNAMED_ENUM "<anonymous enum>"
 #define ENUM_SEPARATOR "."
+
+static thread_local String bootstrap_allowed_dependency_root;
+
+static String _normalize_bootstrap_path(const String &p_path) {
+	return ResourceUID::ensure_path(p_path).replace_char('\\', '/').simplify_path();
+}
+
+static bool _bootstrap_path_is_within_root(const String &p_path, const String &p_root) {
+	if (p_path.is_empty() || p_root.is_empty()) {
+		return false;
+	}
+
+	const String path = _normalize_bootstrap_path(p_path);
+	String root = _normalize_bootstrap_path(p_root);
+	if (!root.ends_with("/")) {
+		root += "/";
+	}
+
+	return path == root.trim_suffix("/") || path.begins_with(root);
+}
 
 static FSParser::DataType make_void_type() {
 	FSParser::DataType type;
@@ -1459,6 +1480,10 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 			base.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 
 			if (ScriptServer::is_global_class(name)) {
+				if (reject_bootstrap_global_class_dependency(name, id, "global superclass")) {
+					return ERR_PARSE_ERROR;
+				}
+
 				String base_path = ScriptServer::get_global_class_path(name);
 
 				if (FoundryScript::is_canonically_equal_paths(base_path, parser->script_path)) {
@@ -1923,6 +1948,9 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 					if (namespace_error) {
 						return bad_type;
 					}
+					if (reject_bootstrap_global_class_dependency(namespace_global_class, p_type, "global type")) {
+						return bad_type;
+					}
 					if (ScriptServer::is_global_class_enum(namespace_global_class)) {
 						const String path = ScriptServer::get_global_class_path(namespace_global_class);
 						result = make_global_enum_type_from_path(namespace_global_class, path, p_type);
@@ -1937,6 +1965,9 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		if (result.is_set()) {
 			// Found.
 		} else if (ScriptServer::is_global_class(first)) {
+			if (reject_bootstrap_global_class_dependency(first, p_type, "global type")) {
+				return bad_type;
+			}
 			if (ScriptServer::is_global_class_enum(first)) {
 				const String path = ScriptServer::get_global_class_path(first);
 				result = make_global_enum_type_from_path(first, path, p_type);
@@ -4909,6 +4940,13 @@ FSParser::AnnotationDeclarationNode *FSAnalyzer::load_external_annotation_declar
 	const String path = language->get_global_annotation_path(StringName(p_qualified_name));
 	if (path.is_empty() || FoundryScript::is_canonically_equal_paths(path, parser->script_path)) {
 		// Either unknown or declared by this file, whose local declarations were already searched.
+		return nullptr;
+	}
+	if (!is_bootstrap_dependency_path_allowed(path)) {
+		push_error(vformat(R"(Build task bootstrap cannot use annotation "%s" from "%s"; it is outside the provider bootstrap root "%s".)",
+						   p_qualified_name, path, bootstrap_allowed_dependency_root),
+				p_annotation);
+		r_error_reported = true;
 		return nullptr;
 	}
 
@@ -8658,10 +8696,107 @@ void FSAnalyzer::reduce_get_node(FSParser::GetNodeNode *p_get_node) {
 	p_get_node->set_datatype(result);
 }
 
+bool FSAnalyzer::is_bootstrap_dependency_path_allowed(const String &p_path) const {
+	if (bootstrap_allowed_dependency_root.is_empty()) {
+		return true;
+	}
+
+	return _bootstrap_path_is_within_root(p_path, bootstrap_allowed_dependency_root);
+}
+
+bool FSAnalyzer::validate_bootstrap_namespace_import(
+		const String &p_import, const LocalVector<StringName> &p_global_classes) {
+	if (bootstrap_allowed_dependency_root.is_empty()) {
+		return true;
+	}
+
+	const String namespace_prefix = p_import + ".";
+	bool found_namespace_member = false;
+	for (const StringName &global_class : p_global_classes) {
+		if (!String(global_class).begins_with(namespace_prefix)) {
+			continue;
+		}
+
+		found_namespace_member = true;
+		const String path = ScriptServer::get_global_class_path(global_class);
+		if (!_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
+			push_error(vformat(R"(Build task bootstrap cannot import namespace "%s"; global class "%s" from "%s" is outside the provider bootstrap root "%s".)",
+							   p_import, global_class, path, bootstrap_allowed_dependency_root),
+					parser->head);
+			return false;
+		}
+	}
+
+	FSLanguage *language = FSLanguage::get_singleton();
+	if (language != nullptr) {
+		List<StringName> annotations;
+		language->get_global_annotation_list(&annotations);
+		for (const StringName &annotation : annotations) {
+			if (!String(annotation).begins_with(namespace_prefix)) {
+				continue;
+			}
+
+			found_namespace_member = true;
+			const String path = language->get_global_annotation_path(annotation);
+			if (!_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
+				push_error(vformat(R"(Build task bootstrap cannot import namespace "%s"; annotation "%s" from "%s" is outside the provider bootstrap root "%s".)",
+								   p_import, annotation, path, bootstrap_allowed_dependency_root),
+						parser->head);
+				return false;
+			}
+		}
+	}
+
+	if (!found_namespace_member) {
+		push_error(vformat(R"(Could not find imported namespace "%s".)", p_import), parser->head);
+		return false;
+	}
+
+	return true;
+}
+
+bool FSAnalyzer::reject_bootstrap_global_class_dependency(
+		const StringName &p_class_name, const FSParser::Node *p_source, const String &p_context) {
+	if (bootstrap_allowed_dependency_root.is_empty() || !ScriptServer::is_global_class(p_class_name)) {
+		return false;
+	}
+
+	const String path = ScriptServer::get_global_class_path(p_class_name);
+	if (FoundryScript::is_canonically_equal_paths(path, parser->script_path) ||
+			_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
+		return false;
+	}
+
+	push_error(vformat(R"(Build task bootstrap cannot use %s "%s" from "%s"; it is outside the provider bootstrap root "%s".)",
+					   p_context, p_class_name, path, bootstrap_allowed_dependency_root),
+			p_source);
+	return true;
+}
+
+void FSAnalyzer::set_bootstrap_allowed_dependency_root(const String &p_root) {
+	bootstrap_allowed_dependency_root = _normalize_bootstrap_path(p_root);
+	if (!bootstrap_allowed_dependency_root.is_empty() && !bootstrap_allowed_dependency_root.ends_with("/")) {
+		bootstrap_allowed_dependency_root += "/";
+	}
+}
+
+String FSAnalyzer::get_bootstrap_allowed_dependency_root() {
+	return bootstrap_allowed_dependency_root;
+}
+
 FSParser::DataType FSAnalyzer::make_global_class_meta_type(const StringName &p_class_name, const FSParser::Node *p_source) {
 	FSParser::DataType type;
 
 	String path = ScriptServer::get_global_class_path(p_class_name);
+	if (!bootstrap_allowed_dependency_root.is_empty() && !_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
+		push_error(vformat(R"(Build task bootstrap cannot use global class "%s" from "%s"; it is outside the provider bootstrap root "%s".)",
+						   p_class_name, path, bootstrap_allowed_dependency_root),
+				p_source);
+		type.type_source = FSParser::DataType::UNDETECTED;
+		type.kind = FSParser::DataType::VARIANT;
+		return type;
+	}
+
 	String ext = path.get_extension();
 	if (ext == FSLanguage::get_singleton()->get_extension()) {
 		Ref<FSParserRef> ref = parser->get_depended_parser_for(path);
@@ -8764,6 +8899,13 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_path(const StringName 
 	error_type.type_source = FSParser::DataType::UNDETECTED;
 	error_type.kind = FSParser::DataType::VARIANT;
 
+	if (!bootstrap_allowed_dependency_root.is_empty() && !_bootstrap_path_is_within_root(p_path, bootstrap_allowed_dependency_root)) {
+		push_error(vformat(R"(Build task bootstrap cannot use global enum "%s" from "%s"; it is outside the provider bootstrap root "%s".)",
+						   p_global_name, p_path, bootstrap_allowed_dependency_root),
+				p_source);
+		return error_type;
+	}
+
 	if (FoundryScript::is_canonically_equal_paths(parser->script_path, p_path)) {
 		return make_global_enum_type_from_current_parser(p_global_name, p_source);
 	}
@@ -8800,6 +8942,9 @@ bool FSAnalyzer::get_autoload_singleton_value_type(const StringName &p_name, FSP
 	ensure_autoload_index_current();
 	const FSAutoloadIndexEntry *autoload = autoload_index.get_by_name(p_name);
 	if (autoload == nullptr || !autoload->is_singleton) {
+		return false;
+	}
+	if (!bootstrap_allowed_dependency_root.is_empty()) {
 		return false;
 	}
 
@@ -9179,6 +9324,13 @@ FSParser::ClassNode *FSAnalyzer::resolve_global_trait_reference(const StringName
 	}
 
 	const String path = ScriptServer::get_global_class_path(p_global_class_name);
+	if (!is_bootstrap_dependency_path_allowed(path)) {
+		push_error(vformat(R"(Build task bootstrap cannot use global trait "%s" from "%s"; it is outside the provider bootstrap root "%s".)",
+						   p_global_class_name, path, bootstrap_allowed_dependency_root),
+				p_source);
+		return nullptr;
+	}
+
 	FSParser::ClassNode *global_class = nullptr;
 	if (FoundryScript::is_canonically_equal_paths(path, parser->script_path)) {
 		global_class = parser->head;
@@ -10739,6 +10891,13 @@ Error FSAnalyzer::validate_imports() {
 		}
 		checked_imports.push_back(import);
 
+		if (!validate_bootstrap_namespace_import(import, global_classes)) {
+			continue;
+		}
+		if (!bootstrap_allowed_dependency_root.is_empty()) {
+			continue;
+		}
+
 		// A namespace is a valid import target when it exposes any global class/trait or any
 		// custom annotation declaration. Annotation-only libraries declare no `class_name`, so
 		// they would otherwise be invisible to import validation.
@@ -10960,6 +11119,10 @@ Ref<FSParserRef> FSAnalyzer::find_cached_external_parser_for_class(const FSParse
 Ref<FoundryScript> FSAnalyzer::get_depended_shallow_script(const String &p_path, Error &r_error) {
 	// To keep a local cache of the parser for resolving external nodes later.
 	const String path = ResourceUID::ensure_path(p_path);
+	if (!is_bootstrap_dependency_path_allowed(path)) {
+		r_error = ERR_PARSE_ERROR;
+		return Ref<FoundryScript>();
+	}
 	parser->get_depended_parser_for(path);
 	Ref<FoundryScript> scr = FSCache::get_shallow_script(path, r_error, parser->script_path);
 	return scr;
@@ -11621,6 +11784,12 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 			p_identifier->set_datatype(dummy);
 			return;
 		}
+		if (reject_bootstrap_global_class_dependency(namespace_global_class, p_identifier, "global class")) {
+			FSParser::DataType dummy;
+			dummy.kind = FSParser::DataType::VARIANT;
+			p_identifier->set_datatype(dummy);
+			return;
+		}
 		if (ScriptServer::is_global_class_enum(namespace_global_class)) {
 			const String path = ScriptServer::get_global_class_path(namespace_global_class);
 			set_enum_meta_identifier_constant(p_identifier, make_global_enum_type_from_path(namespace_global_class, path, p_identifier));
@@ -11632,6 +11801,12 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 	}
 
 	if (ScriptServer::is_global_class(name)) {
+		if (reject_bootstrap_global_class_dependency(name, p_identifier, "global class")) {
+			FSParser::DataType dummy;
+			dummy.kind = FSParser::DataType::VARIANT;
+			p_identifier->set_datatype(dummy);
+			return;
+		}
 		if (ScriptServer::is_global_class_enum(name)) {
 			const String path = ScriptServer::get_global_class_path(name);
 			set_enum_meta_identifier_constant(p_identifier, make_global_enum_type_from_path(name, path, p_identifier));
@@ -11750,6 +11925,28 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 		return;
 	}
 
+	auto finalize_preload = [&]() {
+		p_preload->is_constant = true;
+		p_preload->reduced_value = p_preload->resource;
+		p_preload->set_datatype(type_from_variant(p_preload->reduced_value, p_preload));
+
+		// TODO: Not sure if this is necessary anymore.
+		// 'type_from_variant()' should call 'resolve_class_inheritance()' which would call 'ensure_cached_external_parser_for_class()'
+		// Better safe than sorry.
+		ensure_cached_external_parser_for_class(p_preload->get_datatype().class_type, nullptr, "Trying to resolve preload", p_preload);
+	};
+
+	auto raise_preloaded_script_conformances = [&]() {
+		const String depended_path = ResourceUID::ensure_path(p_preload->resolved_path);
+		Ref<FSParserRef> depended_ref = parser->get_depended_parser_for(depended_path);
+		if (depended_ref.is_valid() && depended_ref->raise_status(FSParserRef::PARSED) == OK) {
+			const FSParser *depended_parser = depended_ref->get_parser();
+			if (depended_parser != nullptr && depended_parser->head != nullptr && !depended_parser->head->conformances.is_empty()) {
+				depended_ref->raise_status(FSParserRef::INTERFACE_SOLVED);
+			}
+		}
+	};
+
 	reduce_expression(p_preload->path);
 
 	if (!p_preload->path->is_constant) {
@@ -11765,7 +11962,25 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 			p_preload->resolved_path = parser->script_path.get_base_dir().path_join(p_preload->resolved_path);
 		}
 		p_preload->resolved_path = p_preload->resolved_path.simplify_path();
-		if (!ResourceLoader::exists(p_preload->resolved_path)) {
+		const bool is_bootstrap_script_preload = !bootstrap_allowed_dependency_root.is_empty() &&
+				p_preload->resolved_path.get_extension() == FSLanguage::get_singleton()->get_extension();
+		if (is_bootstrap_script_preload) {
+			if (!is_bootstrap_dependency_path_allowed(p_preload->resolved_path)) {
+				push_error(vformat(R"(Build task bootstrap cannot preload script "%s"; it is outside the provider bootstrap root "%s".)",
+								   p_preload->resolved_path, bootstrap_allowed_dependency_root),
+						p_preload->path);
+				return;
+			}
+
+			Error err = OK;
+			Ref<FoundryScript> res = get_depended_shallow_script(p_preload->resolved_path, err);
+			p_preload->resource = res;
+			if (err != OK) {
+				push_error(vformat(R"(Could not preload resource script "%s".)", p_preload->resolved_path), p_preload->path);
+			} else {
+				raise_preloaded_script_conformances();
+			}
+		} else if (!ResourceLoader::exists(p_preload->resolved_path)) {
 			Ref<FileAccess> file_check = FileAccess::create(FileAccess::ACCESS_RESOURCES);
 
 			if (file_check->file_exists(p_preload->resolved_path)) {
@@ -11793,14 +12008,7 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 					// consults `is`/`as`/assignment against the externally-conformed types. Cyclic preloads
 					// are safe: `raise_status()` advances the status before running each phase, so a
 					// re-entrant raise to the same level returns without re-running it.
-					const String depended_path = ResourceUID::ensure_path(p_preload->resolved_path);
-					Ref<FSParserRef> depended_ref = parser->get_depended_parser_for(depended_path);
-					if (depended_ref.is_valid() && depended_ref->raise_status(FSParserRef::PARSED) == OK) {
-						const FSParser *depended_parser = depended_ref->get_parser();
-						if (depended_parser != nullptr && depended_parser->head != nullptr && !depended_parser->head->conformances.is_empty()) {
-							depended_ref->raise_status(FSParserRef::INTERFACE_SOLVED);
-						}
-					}
+					raise_preloaded_script_conformances();
 				}
 			} else {
 				Error err = OK;
@@ -11815,14 +12023,7 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 		}
 	}
 
-	p_preload->is_constant = true;
-	p_preload->reduced_value = p_preload->resource;
-	p_preload->set_datatype(type_from_variant(p_preload->reduced_value, p_preload));
-
-	// TODO: Not sure if this is necessary anymore.
-	// 'type_from_variant()' should call 'resolve_class_inheritance()' which would call 'ensure_cached_external_parser_for_class()'
-	// Better safe than sorry.
-	ensure_cached_external_parser_for_class(p_preload->get_datatype().class_type, nullptr, "Trying to resolve preload", p_preload);
+	finalize_preload();
 }
 
 void FSAnalyzer::reduce_self(FSParser::SelfNode *p_self) {

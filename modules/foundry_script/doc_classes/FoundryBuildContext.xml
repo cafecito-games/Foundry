@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoundryBuildContext" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Runtime context passed to a script-backed Foundry build task.
+	</brief_description>
+	<description>
+		Carries the task identity, provider identity, project configuration path, and task options used when invoking [method FoundryBuildTask.run]. Build-task discovery can instantiate providers without constructing this context.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="options" type="Dictionary" setter="set_options" getter="get_options">
+			The provider-specific options configured for the task.
+		</member>
+		<member name="project_config_path" type="String" setter="set_project_config_path" getter="get_project_config_path">
+			The project configuration path associated with this build invocation.
+		</member>
+		<member name="provider_id" type="String" setter="set_provider_id" getter="get_provider_id">
+			The id of the provider handling the task.
+		</member>
+		<member name="task_name" type="String" setter="set_task_name" getter="get_task_name">
+			The configured task name.
+		</member>
+	</members>
+</class>

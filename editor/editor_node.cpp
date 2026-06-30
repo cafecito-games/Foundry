@@ -190,6 +190,10 @@
 
 #include "modules/modules_enabled.gen.h" // For foundry_script, mono.
 
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/fs_build_task_bootstrap_loader.h"
+#endif
+
 #ifndef PHYSICS_2D_DISABLED
 #include "servers/physics_2d/physics_server_2d.h"
 #endif // PHYSICS_2D_DISABLED
@@ -862,6 +866,11 @@ void EditorNode::_notification(int p_what) {
 
 				OS::get_singleton()->benchmark_begin_measure("Editor", "First Scan");
 
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+				if (build_task_bootstrap_loader != nullptr) {
+					build_task_bootstrap_loader->load_project_bootstrap_providers();
+				}
+#endif
 				EditorFileSystem::get_singleton()->connect("filesystem_changed", callable_mp(this, &EditorNode::_execute_upgrades), CONNECT_ONE_SHOT);
 				EditorFileSystem::get_singleton()->scan();
 			}
@@ -8205,6 +8214,10 @@ EditorNode::EditorNode() {
 	DEV_ASSERT(!singleton);
 	singleton = this;
 
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	build_task_bootstrap_loader = memnew(FoundryBuildTaskBootstrapLoader);
+#endif
+
 	// Detecting headless mode, that means the editor is running in command line.
 	if (!DisplayServer::get_singleton()->window_can_draw()) {
 		cmdline_mode = true;
@@ -9422,6 +9435,9 @@ EditorNode::~EditorNode() {
 	EditorHelp::cleanup_doc();
 #if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 	EditorHelpHighlighter::free_singleton();
+#endif
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	memdelete(build_task_bootstrap_loader);
 #endif
 	memdelete(editor_selection);
 	memdelete(editor_plugins_over);

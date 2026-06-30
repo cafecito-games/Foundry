@@ -252,6 +252,9 @@ class FSAnalyzer {
 	ContainerType make_container_type_from_datatype(const FSParser::DataType &p_datatype, const FSParser::Node *p_source_node);
 	FSParser::DataType type_from_variant(const Variant &p_value, const FSParser::Node *p_source);
 	FSParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false) const;
+	bool is_bootstrap_dependency_path_allowed(const String &p_path) const;
+	bool validate_bootstrap_namespace_import(const String &p_import, const LocalVector<StringName> &p_global_classes);
+	bool reject_bootstrap_global_class_dependency(const StringName &p_class_name, const FSParser::Node *p_source, const String &p_context);
 	FSParser::DataType make_global_class_meta_type(const StringName &p_class_name, const FSParser::Node *p_source);
 	FSParser::DataType make_global_enum_type_from_path(
 			const StringName &p_global_name, const String &p_path, const FSParser::Node *p_source);
@@ -419,6 +422,8 @@ public:
 	static bool check_type_compatibility(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr);
 	static FSParser::DataType type_from_metatype(const FSParser::DataType &p_meta_type);
 	static bool class_exists(const StringName &p_class);
+	static void set_bootstrap_allowed_dependency_root(const String &p_root);
+	static String get_bootstrap_allowed_dependency_root();
 
 	FSAnalyzer(FSParser *p_parser);
 
