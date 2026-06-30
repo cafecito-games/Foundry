@@ -11523,6 +11523,22 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 				p_preload->resource = res;
 				if (err != OK) {
 					push_error(vformat(R"(Could not preload resource script "%s".)", p_preload->resolved_path), p_preload->path);
+				} else {
+					// A retroactive conformance (`extend Target uses Trait: ...`) takes effect when its
+					// declaring file is loaded by the using code, analogous to importing a module. When a
+					// preloaded FS script declares conformances, eagerly raise it to `INTERFACE_SOLVED` so
+					// its `resolve_conformances()` registers them before this file's body resolution
+					// consults `is`/`as`/assignment against the externally-conformed types. Cyclic preloads
+					// are safe: `raise_status()` advances the status before running each phase, so a
+					// re-entrant raise to the same level returns without re-running it.
+					const String depended_path = ResourceUID::ensure_path(p_preload->resolved_path);
+					Ref<FSParserRef> depended_ref = parser->get_depended_parser_for(depended_path);
+					if (depended_ref.is_valid() && depended_ref->raise_status(FSParserRef::PARSED) == OK) {
+						const FSParser *depended_parser = depended_ref->get_parser();
+						if (depended_parser != nullptr && depended_parser->head != nullptr && !depended_parser->head->conformances.is_empty()) {
+							depended_ref->raise_status(FSParserRef::INTERFACE_SOLVED);
+						}
+					}
 				}
 			} else {
 				Error err = OK;
