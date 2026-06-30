@@ -3126,13 +3126,13 @@ void FSCompiler::_collect_annotations(const List<FSParser::AnnotationNode *> &p_
 	}
 }
 
-static void _collect_parameter_annotations(const Vector<FSParser::ParameterNode *> &p_parameters, const FSParser::ParameterNode *p_rest_parameter, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_parameter_annotations) {
+void FSCompiler::_collect_parameter_annotations(const Vector<FSParser::ParameterNode *> &p_parameters, const FSParser::ParameterNode *p_rest_parameter, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_parameter_annotations) {
 	auto collect = [&](const FSParser::ParameterNode *p_parameter) {
 		if (p_parameter == nullptr || p_parameter->identifier == nullptr) {
 			return;
 		}
 		Vector<FoundryScript::AnnotationUsage> usages;
-		FSCompiler::_collect_annotations(p_parameter->annotations, usages);
+		_collect_annotations(p_parameter->annotations, usages);
 		if (!usages.is_empty()) {
 			r_parameter_annotations[p_parameter->identifier->name] = usages;
 		}

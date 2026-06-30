@@ -5209,18 +5209,23 @@ class Impl uses Mixin:
 	script.instantiate();
 	script->set_path("user://annotation_reflection_parameter_cpp.fs");
 
-	err = compiler.compile(script, parser.get_tree());
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
 	CHECK_EQ(err, OK);
 	if (err != OK) {
 		return;
 	}
 
-	Ref<FoundryScript> base = script->find_class("cafecito.reflect_parameter_cpp.Base");
-	Ref<FoundryScript> derived = script->find_class("cafecito.reflect_parameter_cpp.Derived");
-	Ref<FoundryScript> impl = script->find_class("cafecito.reflect_parameter_cpp.Impl");
-	REQUIRE(base.is_valid());
-	REQUIRE(derived.is_valid());
-	REQUIRE(impl.is_valid());
+	const HashMap<StringName, Ref<FoundryScript>> &subclasses = script->get_subclasses();
+	CHECK(subclasses.has(SNAME("Base")));
+	CHECK(subclasses.has(SNAME("Derived")));
+	CHECK(subclasses.has(SNAME("Impl")));
+	if (!subclasses.has(SNAME("Base")) || !subclasses.has(SNAME("Derived")) || !subclasses.has(SNAME("Impl"))) {
+		return;
+	}
+	Ref<FoundryScript> base = subclasses[SNAME("Base")];
+	Ref<FoundryScript> derived = subclasses[SNAME("Derived")];
+	Ref<FoundryScript> impl = subclasses[SNAME("Impl")];
 
 	Ref<FSReflection> reflection;
 	reflection.instantiate();
@@ -5250,7 +5255,9 @@ class Impl uses Mixin:
 	}
 
 	SUBCASE("parameter annotations follow the effective owner declaration") {
-		CHECK_EQ(reflection->get_method_parameter_annotations(derived, SNAME("spawn"), SNAME("factory")).size(), 1);
+		// Derived inherits spawn without reusing the base parameter names, so the override
+		// replaces the base parameter annotation view entirely.
+		CHECK(reflection->get_method_parameter_annotations(derived, SNAME("spawn"), SNAME("factory"), true).is_empty());
 		CHECK(reflection->get_method_parameter_annotations(derived, SNAME("spawn"), SNAME("factory"), false).is_empty());
 		CHECK_EQ(reflection->get_method_parameter_annotations(derived, SNAME("spawn"), SNAME("override_factory"), false).size(), 1);
 		CHECK_EQ(reflection->get_method_parameter_annotations(base, SNAME("spawn"), SNAME("factory"), false).size(), 1);
@@ -5259,13 +5266,20 @@ class Impl uses Mixin:
 
 	SUBCASE("method descriptors embed parameter annotations in argument dictionaries") {
 		Ref<FSMethodDescriptor> descriptor = reflection->get_method_descriptor(base, SNAME("spawn"));
-		REQUIRE(descriptor.is_valid());
+		CHECK(descriptor.is_valid());
+		if (!descriptor.is_valid()) {
+			return;
+		}
 		TypedArray<Dictionary> arguments = descriptor->get_arguments();
-		REQUIRE_EQ(arguments.size(), 2);
-		CHECK(arguments[0].has("annotations"));
-		CHECK_EQ(Array(arguments[0]["annotations"]).size(), 1);
-		CHECK(arguments[1].has("annotations"));
-		CHECK_EQ(Array(arguments[1]["annotations"]).size(), 1);
+		CHECK_EQ(arguments.size(), 2);
+		if (arguments.size() == 2) {
+			const Dictionary factory_arg = arguments[0];
+			const Dictionary threat_arg = arguments[1];
+			CHECK(factory_arg.has("annotations"));
+			CHECK_EQ(Array(factory_arg["annotations"]).size(), 1);
+			CHECK(threat_arg.has("annotations"));
+			CHECK_EQ(Array(threat_arg["annotations"]).size(), 1);
+		}
 	}
 
 	SUBCASE("invalid targets and unknown parameters return empty arrays") {

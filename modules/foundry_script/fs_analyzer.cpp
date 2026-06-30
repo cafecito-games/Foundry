@@ -2606,6 +2606,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 
 				for (int j = 0; j < member.signal->parameters.size(); j++) {
 					FSParser::ParameterNode *param = member.signal->parameters[j];
+					resolve_parameter(param);
 					FSParser::DataType param_type = type_from_metatype(resolve_datatype(param->datatype_specifier));
 					param->set_datatype(param_type);
 #ifdef DEBUG_ENABLED

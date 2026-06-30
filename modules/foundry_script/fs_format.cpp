@@ -1615,7 +1615,8 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 
 void FSPrinter::print_parameter(const FSParser::ParameterNode *p_parameter) {
 	for (const FSParser::AnnotationNode *annotation : p_parameter->annotations) {
-		print_annotation(annotation);
+		print_annotation_inline(annotation);
+		write(" ");
 	}
 	write(p_parameter->identifier->name);
 	if (p_parameter->datatype_specifier != nullptr) {

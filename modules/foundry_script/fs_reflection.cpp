@@ -136,18 +136,18 @@ const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *find_effectiv
 	return nullptr;
 }
 
-HashMap<StringName, TypedArray<FSAnnotation>> parameter_usages_to_descriptors(const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &p_usages) {
-	HashMap<StringName, TypedArray<FSAnnotation>> result;
-	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_usages) {
-		result[entry.key] = usages_to_descriptors(entry.value);
-	}
-	return result;
-}
-
 TypedArray<FSAnnotation> usages_to_descriptors(const Vector<FoundryScript::AnnotationUsage> &p_usages) {
 	TypedArray<FSAnnotation> result;
 	for (const FoundryScript::AnnotationUsage &usage : p_usages) {
 		result.push_back(FSAnnotation::from_usage(usage));
+	}
+	return result;
+}
+
+HashMap<StringName, TypedArray<FSAnnotation>> parameter_usages_to_descriptors(const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &p_usages) {
+	HashMap<StringName, TypedArray<FSAnnotation>> result;
+	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_usages) {
+		result[entry.key] = usages_to_descriptors(entry.value);
 	}
 	return result;
 }

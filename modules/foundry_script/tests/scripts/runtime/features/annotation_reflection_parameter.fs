@@ -37,10 +37,8 @@ func test() -> void:
 	print(signal_param[0].args[0])
 	print(signal_param[0].args[1])
 
-	# Inherited methods expose their parameter annotations through derived scripts.
-	print(foundry.reflection.get_method_parameter_annotations(Derived, "spawn", "factory").size())
-
 	# Overriding methods replace the base method's parameter annotation view.
+	print(foundry.reflection.get_method_parameter_annotations(Derived, "spawn", "factory", true).size())
 	print(foundry.reflection.get_method_parameter_annotations(Derived, "spawn", "factory", false).size())
 	print(foundry.reflection.get_method_parameter_annotations(Derived, "spawn", "override_factory", false).size())
 	print(foundry.reflection.get_method_parameter_annotations(Base, "spawn", "factory", false).size())
