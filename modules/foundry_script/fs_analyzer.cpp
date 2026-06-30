@@ -6097,18 +6097,41 @@ static bool _match_branch_accepts_null(const FSParser::MatchBranchNode *p_branch
 	return false;
 }
 
-static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern, FSParser::DataType &r_type) {
+static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern, FSParser::ExpressionNode *p_match_test, FSParser::DataType &r_type) {
 	if (p_pattern == nullptr || p_pattern->pattern_type != FSParser::PatternNode::PT_EXPRESSION) {
 		return false;
 	}
 
 	const FSParser::ExpressionNode *expression = p_pattern->expression;
-	if (expression == nullptr || !expression->is_constant) {
+	if (expression == nullptr) {
+		return false;
+	}
+
+	if (expression->type == FSParser::Node::TYPE_TEST) {
+		const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(expression);
+		if (p_match_test == nullptr || p_match_test->type != FSParser::Node::IDENTIFIER ||
+				type_test->operand == nullptr || type_test->operand->type != FSParser::Node::IDENTIFIER ||
+				!type_test->test_datatype.is_set()) {
+			return false;
+		}
+
+		const FSParser::IdentifierNode *match_identifier = static_cast<const FSParser::IdentifierNode *>(p_match_test);
+		const FSParser::IdentifierNode *pattern_operand = static_cast<const FSParser::IdentifierNode *>(type_test->operand);
+		if (pattern_operand->name != match_identifier->name) {
+			return false;
+		}
+
+		r_type = type_test->test_datatype;
+		r_type.is_meta_type = false;
+		return true;
+	}
+
+	if (!expression->is_constant && !expression->get_datatype().is_meta_type) {
 		return false;
 	}
 
 	const FSParser::DataType &pattern_type = expression->get_datatype();
-	if (!pattern_type.is_set() || pattern_type.is_meta_type) {
+	if (!pattern_type.is_set()) {
 		return false;
 	}
 
@@ -6131,11 +6154,11 @@ static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern
 	return false;
 }
 
-static bool _match_branch_type_narrowing(const FSParser::MatchBranchNode *p_branch, FSParser::DataType &r_type) {
+static bool _match_branch_type_narrowing(FSParser::ExpressionNode *p_match_test, const FSParser::MatchBranchNode *p_branch, FSParser::DataType &r_type) {
 	if (p_branch == nullptr || p_branch->has_wildcard || p_branch->patterns.size() != 1) {
 		return false;
 	}
-	return _match_pattern_type_narrowing(p_branch->patterns[0], r_type);
+	return _match_pattern_type_narrowing(p_branch->patterns[0], p_match_test, r_type);
 }
 
 void FSAnalyzer::apply_match_branch_flow_narrowing(FSParser::ExpressionNode *p_match_test, FSParser::MatchBranchNode *p_match_branch) {
@@ -6149,7 +6172,7 @@ void FSAnalyzer::apply_match_branch_flow_narrowing(FSParser::ExpressionNode *p_m
 	}
 
 	FSParser::DataType narrowed_type;
-	if (_match_branch_type_narrowing(p_match_branch, narrowed_type)) {
+	if (_match_branch_type_narrowing(p_match_test, p_match_branch, narrowed_type)) {
 		apply_flow_narrowing(identifier, narrowed_type);
 		return;
 	}
@@ -6228,33 +6251,86 @@ bool FSAnalyzer::type_test_narrowing_identifier(FSParser::ExpressionNode *p_cond
 	return true;
 }
 
-void FSAnalyzer::resolve_if(FSParser::IfNode *p_if) {
-	reduce_expression(p_if->condition);
+void FSAnalyzer::reduce_condition_expression(FSParser::ExpressionNode *p_condition) {
+	if (p_condition == nullptr) {
+		return;
+	}
 
-	HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
-	FSParser::IdentifierNode *narrowed_identifier = nullptr;
-	if (null_check_narrowing_identifier(p_if->condition, true, narrowed_identifier)) {
-		apply_flow_narrowing(narrowed_identifier);
-	} else {
-		FSParser::DataType narrowed_type;
-		if (type_test_narrowing_identifier(p_if->condition, true, narrowed_identifier, narrowed_type)) {
-			apply_flow_narrowing(narrowed_identifier, narrowed_type);
+	if (p_condition->type == FSParser::Node::BINARY_OPERATOR) {
+		FSParser::BinaryOpNode *binary_op = static_cast<FSParser::BinaryOpNode *>(p_condition);
+		if (binary_op->variant_op == Variant::OP_AND) {
+			reduce_condition_expression(binary_op->left_operand);
+
+			HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
+			apply_flow_narrowing_from_condition(binary_op->left_operand, true);
+			reduce_condition_expression(binary_op->right_operand);
+			flow_narrowed_types = previous_flow_narrowed_types;
+
+			FSParser::DataType left_type;
+			if (binary_op->left_operand) {
+				left_type = binary_op->left_operand->get_datatype();
+			}
+			FSParser::DataType right_type;
+			if (binary_op->right_operand) {
+				right_type = binary_op->right_operand->get_datatype();
+			}
+
+			if (!left_type.is_set() || !right_type.is_set()) {
+				return;
+			}
+
+			bool valid = false;
+			FSParser::DataType result = get_operation_type(Variant::OP_AND, left_type, right_type, valid, binary_op);
+			if (valid) {
+				binary_op->set_datatype(result);
+			}
+			return;
 		}
 	}
+
+	reduce_expression(p_condition);
+}
+
+void FSAnalyzer::apply_flow_narrowing_from_condition(FSParser::ExpressionNode *p_condition, bool p_condition_value) {
+	if (p_condition == nullptr) {
+		return;
+	}
+
+	if (p_condition->type == FSParser::Node::BINARY_OPERATOR) {
+		FSParser::BinaryOpNode *binary_op = static_cast<FSParser::BinaryOpNode *>(p_condition);
+		if (binary_op->variant_op == Variant::OP_AND) {
+			if (p_condition_value) {
+				apply_flow_narrowing_from_condition(binary_op->left_operand, true);
+				apply_flow_narrowing_from_condition(binary_op->right_operand, true);
+			}
+			return;
+		}
+	}
+
+	FSParser::IdentifierNode *narrowed_identifier = nullptr;
+	if (null_check_narrowing_identifier(p_condition, p_condition_value, narrowed_identifier)) {
+		apply_flow_narrowing(narrowed_identifier);
+		return;
+	}
+
+	FSParser::DataType narrowed_type;
+	if (type_test_narrowing_identifier(p_condition, p_condition_value, narrowed_identifier, narrowed_type)) {
+		apply_flow_narrowing(narrowed_identifier, narrowed_type);
+	}
+}
+
+void FSAnalyzer::resolve_if(FSParser::IfNode *p_if) {
+	reduce_condition_expression(p_if->condition);
+
+	HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
+	apply_flow_narrowing_from_condition(p_if->condition, true);
 	resolve_suite(p_if->true_block);
 	flow_narrowed_types = previous_flow_narrowed_types;
 	p_if->set_datatype(p_if->true_block->get_datatype());
 
 	if (p_if->false_block != nullptr) {
 		previous_flow_narrowed_types = flow_narrowed_types;
-		if (null_check_narrowing_identifier(p_if->condition, false, narrowed_identifier)) {
-			apply_flow_narrowing(narrowed_identifier);
-		} else {
-			FSParser::DataType narrowed_type;
-			if (type_test_narrowing_identifier(p_if->condition, false, narrowed_identifier, narrowed_type)) {
-				apply_flow_narrowing(narrowed_identifier, narrowed_type);
-			}
-		}
+		apply_flow_narrowing_from_condition(p_if->condition, false);
 		resolve_suite(p_if->false_block);
 		flow_narrowed_types = previous_flow_narrowed_types;
 		decide_suite_type(p_if, p_if->false_block);
@@ -6385,25 +6461,17 @@ void FSAnalyzer::resolve_for(FSParser::ForNode *p_for) {
 }
 
 void FSAnalyzer::resolve_while(FSParser::WhileNode *p_while) {
-	resolve_node(p_while->condition, false);
+	reduce_condition_expression(p_while->condition);
 
 	HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
-	FSParser::IdentifierNode *narrowed_identifier = nullptr;
-	if (null_check_narrowing_identifier(p_while->condition, true, narrowed_identifier)) {
-		apply_flow_narrowing(narrowed_identifier);
-	} else {
-		FSParser::DataType narrowed_type;
-		if (type_test_narrowing_identifier(p_while->condition, true, narrowed_identifier, narrowed_type)) {
-			apply_flow_narrowing(narrowed_identifier, narrowed_type);
-		}
-	}
+	apply_flow_narrowing_from_condition(p_while->condition, true);
 	resolve_suite(p_while->loop);
 	flow_narrowed_types = previous_flow_narrowed_types;
 	p_while->set_datatype(p_while->loop->get_datatype());
 }
 
 void FSAnalyzer::resolve_assert(FSParser::AssertNode *p_assert) {
-	reduce_expression(p_assert->condition);
+	reduce_condition_expression(p_assert->condition);
 	if (p_assert->message != nullptr) {
 		reduce_expression(p_assert->message);
 		if (!p_assert->message->get_datatype().has_no_type() && (p_assert->message->get_datatype().kind != FSParser::DataType::BUILTIN || p_assert->message->get_datatype().builtin_type != Variant::STRING)) {
@@ -6412,15 +6480,7 @@ void FSAnalyzer::resolve_assert(FSParser::AssertNode *p_assert) {
 	}
 
 	p_assert->set_datatype(p_assert->condition->get_datatype());
-	FSParser::IdentifierNode *narrowed_identifier = nullptr;
-	if (null_check_narrowing_identifier(p_assert->condition, true, narrowed_identifier)) {
-		apply_flow_narrowing(narrowed_identifier);
-	} else {
-		FSParser::DataType narrowed_type;
-		if (type_test_narrowing_identifier(p_assert->condition, true, narrowed_identifier, narrowed_type)) {
-			apply_flow_narrowing(narrowed_identifier, narrowed_type);
-		}
-	}
+	apply_flow_narrowing_from_condition(p_assert->condition, true);
 
 #ifdef DEBUG_ENABLED
 	if (p_assert->condition->is_constant) {
@@ -6610,16 +6670,27 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 				reduce_expression(expr);
 				result = expr->get_datatype();
 				if (!expr->is_constant) {
-					while (expr && expr->type == FSParser::Node::SUBSCRIPT) {
-						FSParser::SubscriptNode *sub = static_cast<FSParser::SubscriptNode *>(expr);
-						if (!sub->is_attribute) {
-							expr = nullptr;
-						} else {
-							expr = sub->base;
+					bool valid_type_test_pattern = false;
+					if (expr->type == FSParser::Node::TYPE_TEST && p_match_test != nullptr && p_match_test->type == FSParser::Node::IDENTIFIER) {
+						const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(expr);
+						if (type_test->operand != nullptr && type_test->operand->type == FSParser::Node::IDENTIFIER) {
+							const FSParser::IdentifierNode *pattern_operand = static_cast<const FSParser::IdentifierNode *>(type_test->operand);
+							const FSParser::IdentifierNode *match_identifier = static_cast<const FSParser::IdentifierNode *>(p_match_test);
+							valid_type_test_pattern = pattern_operand->name == match_identifier->name;
 						}
 					}
-					if (!expr || expr->type != FSParser::Node::IDENTIFIER) {
-						push_error(R"(Expression in match pattern must be a constant expression, an identifier, or an attribute access ("A.B").)", expr);
+					if (!valid_type_test_pattern) {
+						while (expr && expr->type == FSParser::Node::SUBSCRIPT) {
+							FSParser::SubscriptNode *sub = static_cast<FSParser::SubscriptNode *>(expr);
+							if (!sub->is_attribute) {
+								expr = nullptr;
+							} else {
+								expr = sub->base;
+							}
+						}
+						if (!expr || (expr->type != FSParser::Node::IDENTIFIER && !result.is_meta_type)) {
+							push_error(R"(Expression in match pattern must be a constant expression, an identifier, or an attribute access ("A.B").)", expr);
+						}
 					}
 				}
 			}
