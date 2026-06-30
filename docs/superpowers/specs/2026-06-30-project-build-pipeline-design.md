@@ -18,6 +18,8 @@ generated outputs.
 - Support ordered `pre_compile` and `post_compile` task lists.
 - Support both project-authored Foundry Script providers and command-style tasks.
 - Let complex providers live in the project under `res://build_tasks/`.
+- Provide an editor authoring UI for enabling the pipeline, adding tasks, reordering stages, editing task fields, and
+  validating configuration before it is saved.
 - Gate editor indexing, LSP workspace loading, run/export, and tests on the same pipeline state.
 - Re-run tasks only when their inputs, provider scripts, config, or outputs change.
 - Require an explicit trust decision before project-authored build code or external commands run automatically.
@@ -26,9 +28,8 @@ generated outputs.
 
 - A full dependency graph between tasks. The first version uses ordered stage lists.
 - A separate virtual source root for generated code. Generated source files live in visible `res://` paths.
-- A complete Project Settings UI for authoring every task. Hand-editing `project.foundry` is acceptable for the first
-  implementation.
 - A bundled protobuf provider in the first slice. Protobuf can be an example or follow-up provider.
+- A visual graph editor for build tasks. Ordered list editing is enough for the first implementation.
 
 ## Architecture
 
@@ -157,11 +158,17 @@ The built-in API should be small and stable:
 - `FoundryBuildResult`: success/failure result with diagnostics and optional output manifest.
 - `FoundryBuildCommand`: command description with executable, arguments, environment, working directory, timeout, and
   stdout/stderr capture settings.
+- `FoundryBuildTaskConfigSchema`: optional provider-supplied schema metadata for the authoring UI. This describes
+  provider options, default values, labels, hints, required fields, and validation rules.
 - `FoundryCommandBuildTask`: optional helper for providers that only need to return one or more commands.
 
 The API should avoid exposing broad editor internals. Providers should receive the information needed to generate
 outputs and report diagnostics, but the pipeline should retain control of trust, process execution, output capture,
 and write-scope validation.
+
+Providers can optionally expose a configuration schema method, for example `get_config_schema()`, so the editor can
+render provider-specific options without requiring hand-authored dictionaries. Providers that do not expose a schema
+still work, but the UI falls back to a generic dictionary editor for `options`.
 
 ## Execution Flow
 
@@ -265,6 +272,47 @@ Generated files:
 - The editor can warn before editing files under declared generated roots.
 - Fingerprint state and non-source intermediates stay outside `res://`.
 
+## Build Configuration UI
+
+The first implementation includes a dedicated authoring UI, preferably as a Project Settings page or adjacent project
+configuration panel. Hand-editing `project.foundry` remains possible, but should not be the expected workflow.
+
+The UI should provide:
+
+- a global build pipeline enable/disable toggle,
+- separate ordered lists for `pre_compile` and `post_compile`,
+- add, duplicate, remove, enable/disable, and reorder controls for tasks,
+- a task details editor for name, provider, inputs, outputs, working directory, environment, timeout, and options,
+- a provider selector that discovers built-in providers and `res://build_tasks/<provider>/provider.fs` providers,
+- command-specific fields when `provider="command"`,
+- provider-specific option controls when a trusted provider exposes schema metadata,
+- a generic dictionary editor fallback for provider options without schema metadata,
+- validation messages before saving,
+- a preview of the `project.foundry` sections that will be written,
+- actions to run a selected task, run a stage, and clear cached build state.
+
+The UI writes back to `project.foundry` using `ProjectSettings`/`ConfigFile` conventions so it preserves the project as
+the source of truth. Reordering in the UI updates the ordered stage arrays. Creating a project-authored provider from
+the UI can scaffold `res://build_tasks/<provider>/provider.fs` from a minimal template.
+
+Provider discovery for the selector must be path-based and non-executing, so untrusted projects can still be inspected
+and edited. Provider-supplied schemas require loading provider code and are therefore available only after the project
+build tasks are trusted. Before trust, project providers use the generic options editor.
+
+Validation in the UI should mirror pipeline validation:
+
+- duplicate task names are rejected,
+- stage entries must reference task definitions; disabled tasks remain visible in the ordered stage list but are skipped
+  during execution,
+- provider names must resolve to a built-in provider or a provider file,
+- command tasks must have a command,
+- inputs and outputs must be valid project paths or globs,
+- generated output roots must not target unsafe locations such as `res://` itself,
+- provider schema validation errors are shown inline.
+
+The UI should also surface trust state. If a project is untrusted, task editing is still allowed, but run buttons are
+disabled until the user trusts project build tasks.
+
 ## Security And Trust
 
 Project-authored providers and command tasks require explicit trust before automatic execution in the editor. The trust
@@ -286,6 +334,8 @@ Tests should cover:
 - provider bootstrap restrictions,
 - trust blocking,
 - command construction and timeout handling,
+- build configuration UI model validation and serialization,
+- provider schema metadata rendering/fallback behavior where practical,
 - fingerprint invalidation,
 - output-missing invalidation,
 - failure blocking,
@@ -296,7 +346,6 @@ provider dependencies.
 
 ## Open Follow-Ups
 
-- Add an editor UI for reordering stage tasks and editing task config.
 - Add a bundled protobuf provider or documented example.
 - Add optional provider path overrides if the conventional folder layout becomes too restrictive.
 - Add stronger write-scope enforcement for providers that perform file writes directly.
