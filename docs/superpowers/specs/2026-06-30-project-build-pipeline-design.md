@@ -93,6 +93,31 @@ inputs=PackedStringArray("res://generated/protobuf/**/*.fs")
 outputs=PackedStringArray("res://generated/protobuf/")
 ```
 
+A project that uses an external protobuf generator available on `$PATH` can use the built-in command provider directly:
+
+```ini
+[build]
+enabled=true
+pre_compile=PackedStringArray("generate_protobuf")
+
+[build/tasks/generate_protobuf]
+provider="command"
+command="foundryproto"
+args=PackedStringArray(
+	"--input", "proto/",
+	"--output", "generated/protobuf/",
+	"--config", "some-protobuf-config.toml"
+)
+inputs=PackedStringArray(
+	"res://proto/**/*.proto",
+	"res://some-protobuf-config.toml"
+)
+outputs=PackedStringArray("res://generated/protobuf/")
+working_directory="res://"
+tool_version_command=PackedStringArray("foundryproto", "--version")
+timeout_seconds=60
+```
+
 Task fields:
 
 - `provider`: required provider ID resolved through the build task registry.
@@ -103,6 +128,7 @@ Task fields:
 - `working_directory`: optional, defaults to the project root.
 - `environment`: optional declared environment additions.
 - `timeout_seconds`: optional, with a conservative default.
+- `tool_version_command`: optional command argv used to fingerprint an external generator version.
 - `enabled`: optional per-task toggle.
 
 Generated source outputs should live in visible `res://` locations such as `res://generated/` or `res://gen/`.
@@ -178,6 +204,20 @@ trigger external work, so the editor must treat it as trusted project code.
 The reserved `command` provider is built in. It exists as a low-friction escape hatch for projects that only need to
 run an executable with declared inputs and outputs.
 
+Command-provider launch semantics:
+
+- `command` resolves through the process `$PATH` when it is not absolute and not project-relative.
+- `res://` paths in `working_directory`, inputs, outputs, and command arguments are globalized before execution when
+  the external process needs filesystem paths. Relative command arguments that do not start with `res://` are passed
+  through unchanged and resolve relative to `working_directory`.
+- `args` are passed as argv entries. They are never concatenated into a shell command string.
+- `working_directory="res://"` means the project root.
+- External config files, such as generator TOML files, must be declared in `inputs` so they retrigger generation.
+- Generated source roots must be declared in `outputs` so the editor can rescan and index them after success.
+- When `tool_version_command` is present, its stdout/stderr/exit status are included in the task fingerprint. If it is
+  absent, the fingerprint includes only the configured command string and argv, so tool upgrades may require clearing
+  cached build state or touching an input.
+
 ## Built-In Build Task API
 
 The built-in API should be small and stable:
@@ -240,7 +280,7 @@ The fingerprint includes:
 - declared input file contents,
 - declared environment and options,
 - provider API version,
-- tool identity when a provider can report one,
+- tool identity when a provider can report one, including `tool_version_command` output for command tasks,
 - previous output manifest.
 
 A task is dirty when:
@@ -369,6 +409,8 @@ Tests should cover:
 - provider bootstrap restrictions,
 - trust blocking,
 - command construction and timeout handling,
+- command-provider `$PATH` resolution, argv passing, `res://` working-directory resolution, and tool-version
+  fingerprinting,
 - build configuration UI model validation and serialization,
 - provider schema metadata rendering/fallback behavior where practical,
 - fingerprint invalidation,
