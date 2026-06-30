@@ -1899,17 +1899,12 @@ void FSPrinter::print_if(const FSParser::IfNode *p_if, bool p_is_elif) {
 		return;
 	}
 
-	// An `elif` is parsed as an else block holding a single `if` that begins on the same line.
-	const bool is_elif_chain = p_if->false_block->statements.size() == 1 &&
-			p_if->false_block->statements[0]->type == FSParser::Node::IF &&
-			p_if->false_block->start_line == p_if->false_block->statements[0]->start_line;
 	// Invariant: a continuation header line (`elif`/`else` here, like `get:`/`set:`
 	// or a class header sub-line) is not a fresh statement/member, so the enclosing
 	// suite loop gives it no leading-trivia flush. Before writing it, flush every
 	// unemitted trivia line (comment or recovered annotation) above its source line,
 	// then attach any inline comment on the line itself.
-	if (is_elif_chain) {
-		const FSParser::IfNode *elif = static_cast<const FSParser::IfNode *>(p_if->false_block->statements[0]);
+	if (const FSParser::IfNode *elif = p_if->get_elif()) {
 		flush_trivia_until(elif->start_line);
 		print_if(elif, true); // The recursive call attaches the `elif` line's own inline comment.
 	} else {
