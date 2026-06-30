@@ -248,11 +248,12 @@ void FSAnnotation::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "builtin", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "is_builtin");
 }
 
-Ref<FSMethodDescriptor> FSMethodDescriptor::create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member) {
+Ref<FSMethodDescriptor> FSMethodDescriptor::create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member, const HashMap<StringName, TypedArray<FSAnnotation>> &p_parameter_annotations) {
 	Ref<FSMethodDescriptor> descriptor;
 	descriptor.instantiate();
 	descriptor->method_info = p_method_info;
 	descriptor->annotations = p_annotations;
+	descriptor->parameter_annotations = p_parameter_annotations;
 	descriptor->fs_member = p_fs_member;
 	return descriptor;
 }
@@ -260,7 +261,14 @@ Ref<FSMethodDescriptor> FSMethodDescriptor::create(const MethodInfo &p_method_in
 TypedArray<Dictionary> FSMethodDescriptor::get_arguments() const {
 	TypedArray<Dictionary> result;
 	for (const PropertyInfo &argument : method_info.arguments) {
-		result.push_back(Dictionary(argument));
+		Dictionary arg_dict(argument);
+		if (fs_member) {
+			const TypedArray<FSAnnotation> *parameter_annotations_for_arg = parameter_annotations.getptr(argument.name);
+			if (parameter_annotations_for_arg != nullptr) {
+				arg_dict["annotations"] = parameter_annotations_for_arg->duplicate();
+			}
+		}
+		result.push_back(arg_dict);
 	}
 	return result;
 }
@@ -1888,6 +1896,8 @@ void FoundryScript::clear() {
 	variable_annotations.clear();
 	signal_annotations.clear();
 	constant_annotations.clear();
+	method_parameter_annotations.clear();
+	signal_parameter_annotations.clear();
 	_is_trait_type = false;
 	trait_type_name = StringName();
 

@@ -507,6 +507,7 @@ public:
 			TARGET_VARIABLE = 1 << 2,
 			TARGET_SIGNAL = 1 << 3,
 			TARGET_CONSTANT = 1 << 4,
+			TARGET_PARAMETER = 1 << 5,
 		};
 
 		IdentifierNode *identifier = nullptr;
@@ -1749,6 +1750,7 @@ private:
 			FUNCTION = 1 << 5,
 			STATEMENT = 1 << 6,
 			STANDALONE = 1 << 7,
+			PARAMETER = 1 << 8,
 			CLASS_LEVEL = CLASS | VARIABLE | CONSTANT | SIGNAL | FUNCTION,
 		};
 		uint32_t target_kind = 0; // Flags.
@@ -1921,7 +1923,7 @@ private:
 	void parse_annotation_declaration_targets(AnnotationDeclarationNode *p_annotation_declaration);
 	SignalNode *parse_signal(const DeclarationModifiers &p_modifiers);
 	EnumNode *parse_enum(const DeclarationModifiers &p_modifiers);
-	ParameterNode *parse_parameter();
+	ParameterNode *parse_parameter(bool p_allow_annotations = true);
 	FunctionNode *parse_function_declaration(const DeclarationModifiers &p_modifiers);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);
 	SuiteNode *parse_suite(const String &p_context, SuiteNode *p_suite = nullptr, bool p_for_lambda = false);

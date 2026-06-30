@@ -389,6 +389,7 @@ static String _annotation_qualifiers(const FSParser::AnnotationDeclarationNode *
 		{ FSParser::AnnotationDeclarationNode::TARGET_VARIABLE, "variable" },
 		{ FSParser::AnnotationDeclarationNode::TARGET_SIGNAL, "signal" },
 		{ FSParser::AnnotationDeclarationNode::TARGET_CONSTANT, "constant" },
+		{ FSParser::AnnotationDeclarationNode::TARGET_PARAMETER, "parameter" },
 	};
 	for (const auto &target : target_names) {
 		if (targets & target.bit) {

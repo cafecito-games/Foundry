@@ -1373,6 +1373,7 @@ void FSPrinter::print_annotation_declaration(const FSParser::AnnotationDeclarati
 		{ FSParser::AnnotationDeclarationNode::TARGET_VARIABLE, "VARIABLE" },
 		{ FSParser::AnnotationDeclarationNode::TARGET_SIGNAL, "SIGNAL" },
 		{ FSParser::AnnotationDeclarationNode::TARGET_CONSTANT, "CONSTANT" },
+		{ FSParser::AnnotationDeclarationNode::TARGET_PARAMETER, "PARAMETER" },
 	};
 	bool first = true;
 	for (const auto &entry : target_names) {
@@ -1613,6 +1614,9 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 }
 
 void FSPrinter::print_parameter(const FSParser::ParameterNode *p_parameter) {
+	for (const FSParser::AnnotationNode *annotation : p_parameter->annotations) {
+		print_annotation(annotation);
+	}
 	write(p_parameter->identifier->name);
 	if (p_parameter->datatype_specifier != nullptr) {
 		write(": ");

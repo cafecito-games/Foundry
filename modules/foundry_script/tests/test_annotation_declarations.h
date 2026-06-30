@@ -102,6 +102,20 @@ TEST_CASE("[Modules][FoundryScript] Annotation declaration parses SIGNAL and CON
 	CHECK((declaration->targets & FSParser::AnnotationDeclarationNode::TARGET_METHOD) == 0);
 }
 
+TEST_CASE("[Modules][FoundryScript] Annotation declaration parses PARAMETER target") {
+	FSParser parser;
+	const Error error = parser.parse("annotation inject targets PARAMETER\n", "user://test.fs", false);
+	REQUIRE(error == OK);
+
+	const FSParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+	REQUIRE(root_class->annotation_declarations.size() == 1);
+
+	const FSParser::AnnotationDeclarationNode *declaration = root_class->annotation_declarations[0];
+	CHECK((declaration->targets & FSParser::AnnotationDeclarationNode::TARGET_PARAMETER) != 0);
+	CHECK((declaration->targets & FSParser::AnnotationDeclarationNode::TARGET_METHOD) == 0);
+}
+
 TEST_CASE("[Modules][FoundryScript] Annotation declaration parses a final variadic parameter") {
 	FSParser parser;
 	const Error error = parser.parse("annotation tags(...names: String) targets METHOD, CLASS\n", "user://test.fs", false);

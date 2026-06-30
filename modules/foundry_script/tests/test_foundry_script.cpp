@@ -5150,6 +5150,8 @@ class Impl uses Mixin:
 		CHECK(reflection->get_class_annotations(Variant(42)).is_empty());
 		CHECK(reflection->get_method_annotations(Variant(), SNAME("base_method")).is_empty());
 		CHECK(reflection->get_variable_annotations(Variant("not a script"), SNAME("base_var")).is_empty());
+		CHECK(reflection->get_method_parameter_annotations(Variant(), SNAME("base_method"), SNAME("unused")).is_empty());
+		CHECK(reflection->get_signal_parameter_annotations(Variant(42), SNAME("missing"), SNAME("amount")).is_empty());
 		CHECK_FALSE(reflection->has_annotation(Variant(42), SNAME("base_method"), SNAME("test"), SNAME("method")));
 		CHECK(reflection->get_annotation(Variant(42), SNAME("base_method"), SNAME("test"), SNAME("method")).is_null());
 
@@ -5159,6 +5161,117 @@ class Impl uses Mixin:
 		CHECK(reflection->get_class_annotations(freed_target).is_empty());
 		CHECK_FALSE(reflection->has_annotation(freed_target, SNAME("base_method"), SNAME("test"), SNAME("method")));
 		CHECK(reflection->get_annotation(freed_target, SNAME("base_method"), SNAME("test"), SNAME("method")).is_null());
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] FSReflection exposes parameter annotation metadata") {
+	ScopedFSNativeGlobals native_globals;
+	FSParser parser;
+	Error err = parser.parse(R"(
+namespace cafecito.reflect_parameter_cpp
+
+annotation inject targets PARAMETER
+annotation range(min: float, max: float) targets PARAMETER
+
+class Base:
+	func spawn(@inject factory: String, @range(0.0, 10.0) threat: float) -> void:
+		pass
+
+	signal damaged(@range(0.0, 999.0) amount: float)
+
+class Derived extends Base:
+	func spawn(@inject override_factory: String, @range(1.0, 5.0) threat: float) -> void:
+		pass
+
+trait Mixin:
+	func mixin_call(@inject helper: String) -> void:
+		pass
+
+class Impl uses Mixin:
+	pass
+)",
+			"user://annotation_reflection_parameter_cpp.fs", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSCompiler compiler;
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path("user://annotation_reflection_parameter_cpp.fs");
+
+	err = compiler.compile(script, parser.get_tree());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	Ref<FoundryScript> base = script->find_class("cafecito.reflect_parameter_cpp.Base");
+	Ref<FoundryScript> derived = script->find_class("cafecito.reflect_parameter_cpp.Derived");
+	Ref<FoundryScript> impl = script->find_class("cafecito.reflect_parameter_cpp.Impl");
+	REQUIRE(base.is_valid());
+	REQUIRE(derived.is_valid());
+	REQUIRE(impl.is_valid());
+
+	Ref<FSReflection> reflection;
+	reflection.instantiate();
+
+	SUBCASE("method parameter annotations resolve by owner and parameter name") {
+		TypedArray<FSAnnotation> factory = reflection->get_method_parameter_annotations(base, SNAME("spawn"), SNAME("factory"));
+		CHECK_EQ(factory.size(), 1);
+		if (factory.size() == 1) {
+			CHECK_EQ(Ref<FSAnnotation>(factory[0])->get_annotation_name(), SNAME("inject"));
+		}
+
+		TypedArray<FSAnnotation> threat = reflection->get_method_parameter_annotations(base, SNAME("spawn"), SNAME("threat"));
+		CHECK_EQ(threat.size(), 1);
+		if (threat.size() == 1) {
+			CHECK_EQ(double(Ref<FSAnnotation>(threat[0])->get_arguments()[0]), doctest::Approx(0.0));
+			CHECK_EQ(double(Ref<FSAnnotation>(threat[0])->get_arguments()[1]), doctest::Approx(10.0));
+		}
+	}
+
+	SUBCASE("signal parameter annotations resolve by owner and parameter name") {
+		TypedArray<FSAnnotation> amount = reflection->get_signal_parameter_annotations(base, SNAME("damaged"), SNAME("amount"));
+		CHECK_EQ(amount.size(), 1);
+		if (amount.size() == 1) {
+			CHECK_EQ(double(Ref<FSAnnotation>(amount[0])->get_arguments()[0]), doctest::Approx(0.0));
+			CHECK_EQ(double(Ref<FSAnnotation>(amount[0])->get_arguments()[1]), doctest::Approx(999.0));
+		}
+	}
+
+	SUBCASE("parameter annotations follow the effective owner declaration") {
+		CHECK_EQ(reflection->get_method_parameter_annotations(derived, SNAME("spawn"), SNAME("factory")).size(), 1);
+		CHECK(reflection->get_method_parameter_annotations(derived, SNAME("spawn"), SNAME("factory"), false).is_empty());
+		CHECK_EQ(reflection->get_method_parameter_annotations(derived, SNAME("spawn"), SNAME("override_factory"), false).size(), 1);
+		CHECK_EQ(reflection->get_method_parameter_annotations(base, SNAME("spawn"), SNAME("factory"), false).size(), 1);
+		CHECK_EQ(reflection->get_method_parameter_annotations(impl, SNAME("mixin_call"), SNAME("helper")).size(), 1);
+	}
+
+	SUBCASE("method descriptors embed parameter annotations in argument dictionaries") {
+		Ref<FSMethodDescriptor> descriptor = reflection->get_method_descriptor(base, SNAME("spawn"));
+		REQUIRE(descriptor.is_valid());
+		TypedArray<Dictionary> arguments = descriptor->get_arguments();
+		REQUIRE_EQ(arguments.size(), 2);
+		CHECK(arguments[0].has("annotations"));
+		CHECK_EQ(Array(arguments[0]["annotations"]).size(), 1);
+		CHECK(arguments[1].has("annotations"));
+		CHECK_EQ(Array(arguments[1]["annotations"]).size(), 1);
+	}
+
+	SUBCASE("invalid targets and unknown parameters return empty arrays") {
+		CHECK(reflection->get_method_parameter_annotations(base, SNAME("missing"), SNAME("factory")).is_empty());
+		CHECK(reflection->get_method_parameter_annotations(base, SNAME("spawn"), SNAME("missing")).is_empty());
+		CHECK(reflection->get_method_parameter_annotations(Variant(42), SNAME("spawn"), SNAME("factory")).is_empty());
 	}
 }
 } // namespace FSTests

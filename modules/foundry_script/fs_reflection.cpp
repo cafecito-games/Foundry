@@ -112,6 +112,38 @@ const Vector<FoundryScript::AnnotationUsage> *find_effective_constant_annotation
 	return nullptr;
 }
 
+const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *find_effective_method_parameter_annotations(const FoundryScript *p_script, const StringName &p_method) {
+	HashSet<const FoundryScript *> visited;
+	for (const FoundryScript *script = p_script; script != nullptr && !visited.has(script); script = Object::cast_to<FoundryScript>(script->get_base_script().ptr())) {
+		visited.insert(script);
+		const bool declares = script->get_member_functions().has(p_method) || script->get_method_annotations().has(p_method) || script->get_method_parameter_annotations().has(p_method);
+		if (declares) {
+			return script->get_method_parameter_annotations().getptr(p_method);
+		}
+	}
+	return nullptr;
+}
+
+const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *find_effective_signal_parameter_annotations(const FoundryScript *p_script, const StringName &p_signal) {
+	HashSet<const FoundryScript *> visited;
+	for (const FoundryScript *script = p_script; script != nullptr && !visited.has(script); script = Object::cast_to<FoundryScript>(script->get_base_script().ptr())) {
+		visited.insert(script);
+		const bool declares = script->get_signals().has(p_signal) || script->get_signal_annotations().has(p_signal) || script->get_signal_parameter_annotations().has(p_signal);
+		if (declares) {
+			return script->get_signal_parameter_annotations().getptr(p_signal);
+		}
+	}
+	return nullptr;
+}
+
+HashMap<StringName, TypedArray<FSAnnotation>> parameter_usages_to_descriptors(const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &p_usages) {
+	HashMap<StringName, TypedArray<FSAnnotation>> result;
+	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_usages) {
+		result[entry.key] = usages_to_descriptors(entry.value);
+	}
+	return result;
+}
+
 TypedArray<FSAnnotation> usages_to_descriptors(const Vector<FoundryScript::AnnotationUsage> &p_usages) {
 	TypedArray<FSAnnotation> result;
 	for (const FoundryScript::AnnotationUsage &usage : p_usages) {
@@ -223,7 +255,9 @@ TypedArray<FSMethodDescriptor> FSReflection::get_method_descriptors(const Varian
 		for (const KeyValue<StringName, FSFunction *> &entry : current->get_member_functions()) {
 			const Vector<FoundryScript::AnnotationUsage> *usages = current->get_method_annotations().getptr(entry.key);
 			TypedArray<FSAnnotation> annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<FSAnnotation>();
-			result.push_back(FSMethodDescriptor::create(entry.value->get_method_info(), annotations));
+			const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *parameter_usages = current->get_method_parameter_annotations().getptr(entry.key);
+			HashMap<StringName, TypedArray<FSAnnotation>> parameter_annotations = parameter_usages != nullptr ? parameter_usages_to_descriptors(*parameter_usages) : HashMap<StringName, TypedArray<FSAnnotation>>();
+			result.push_back(FSMethodDescriptor::create(entry.value->get_method_info(), annotations, true, parameter_annotations));
 		}
 	}
 	return result;
@@ -241,12 +275,15 @@ Ref<FSMethodDescriptor> FSReflection::get_method_descriptor(const Variant &p_tar
 		visited.insert(script.ptr());
 		if (script->has_method(p_method)) {
 			TypedArray<FSAnnotation> annotations;
+			HashMap<StringName, TypedArray<FSAnnotation>> parameter_annotations;
 			if (foundry_script != nullptr) {
 				// Resolve annotations from the leaf so an override's annotations win, matching get_method_descriptors().
 				const Vector<FoundryScript::AnnotationUsage> *usages = find_effective_method_annotations(foundry_script, p_method);
 				annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<FSAnnotation>();
+				const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *parameter_usages = find_effective_method_parameter_annotations(foundry_script, p_method);
+				parameter_annotations = parameter_usages != nullptr ? parameter_usages_to_descriptors(*parameter_usages) : HashMap<StringName, TypedArray<FSAnnotation>>();
 			}
-			return FSMethodDescriptor::create(script->get_method_info(p_method), annotations, foundry_script != nullptr);
+			return FSMethodDescriptor::create(script->get_method_info(p_method), annotations, foundry_script != nullptr, parameter_annotations);
 		}
 		script = script->get_base_script();
 	}
@@ -379,6 +416,48 @@ TypedArray<FSAnnotation> FSReflection::get_constant_annotations(const Variant &p
 	return usages_to_descriptors(compute_annotations(_resolve_script(p_target), p_constant, SNAME("constant"), p_effective));
 }
 
+TypedArray<FSAnnotation> FSReflection::get_method_parameter_annotations(const Variant &p_target, const StringName &p_method, const StringName &p_parameter, bool p_effective) const {
+	const FoundryScript *script = Object::cast_to<FoundryScript>(_resolve_script(p_target).ptr());
+	if (script == nullptr) {
+		return TypedArray<FSAnnotation>();
+	}
+
+	const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *parameter_table = nullptr;
+	if (p_effective) {
+		parameter_table = find_effective_method_parameter_annotations(script, p_method);
+	} else {
+		parameter_table = script->get_method_parameter_annotations().getptr(p_method);
+	}
+
+	if (parameter_table == nullptr) {
+		return TypedArray<FSAnnotation>();
+	}
+
+	const Vector<FoundryScript::AnnotationUsage> *usages = parameter_table->getptr(p_parameter);
+	return usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<FSAnnotation>();
+}
+
+TypedArray<FSAnnotation> FSReflection::get_signal_parameter_annotations(const Variant &p_target, const StringName &p_signal, const StringName &p_parameter, bool p_effective) const {
+	const FoundryScript *script = Object::cast_to<FoundryScript>(_resolve_script(p_target).ptr());
+	if (script == nullptr) {
+		return TypedArray<FSAnnotation>();
+	}
+
+	const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *parameter_table = nullptr;
+	if (p_effective) {
+		parameter_table = find_effective_signal_parameter_annotations(script, p_signal);
+	} else {
+		parameter_table = script->get_signal_parameter_annotations().getptr(p_signal);
+	}
+
+	if (parameter_table == nullptr) {
+		return TypedArray<FSAnnotation>();
+	}
+
+	const Vector<FoundryScript::AnnotationUsage> *usages = parameter_table->getptr(p_parameter);
+	return usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<FSAnnotation>();
+}
+
 bool FSReflection::has_annotation(const Variant &p_target, const StringName &p_member, const StringName &p_annotation, const StringName &p_kind, bool p_effective) const {
 	const Vector<FoundryScript::AnnotationUsage> usages = compute_annotations(_resolve_script(p_target), p_member, p_kind, p_effective);
 	for (const FoundryScript::AnnotationUsage &usage : usages) {
@@ -419,6 +498,8 @@ void FSReflection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_variable_annotations", "target", "variable", "effective"), &FSReflection::get_variable_annotations, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_signal_annotations", "target", "signal", "effective"), &FSReflection::get_signal_annotations, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_constant_annotations", "target", "constant", "effective"), &FSReflection::get_constant_annotations, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_method_parameter_annotations", "target", "method", "parameter", "effective"), &FSReflection::get_method_parameter_annotations, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_signal_parameter_annotations", "target", "signal", "parameter", "effective"), &FSReflection::get_signal_parameter_annotations, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("has_annotation", "target", "member", "annotation", "kind", "effective"), &FSReflection::has_annotation, DEFVAL(SNAME("method")), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_annotation", "target", "member", "annotation", "kind", "effective"), &FSReflection::get_annotation, DEFVAL(SNAME("method")), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_annotations", "target", "member", "kind", "effective"), &FSReflection::get_annotations, DEFVAL(StringName()), DEFVAL(SNAME("class")), DEFVAL(true));

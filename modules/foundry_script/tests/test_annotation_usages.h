@@ -147,9 +147,9 @@ TEST_CASE("[Modules][FoundryScript] Repeated custom annotations are preserved in
 	CHECK(annotations->back()->get()->name == StringName("@tag"));
 }
 
-TEST_CASE("[Modules][FoundryScript] Custom annotations apply to class, method, variable, signal, and constant targets") {
+TEST_CASE("[Modules][FoundryScript] Custom annotations apply to class, method, variable, signal, constant, and parameter targets") {
 	FSParser parser;
-	const Error error = parser.parse("@marker\nclass Inner:\n\t@marker\n\tvar value: int = 0\n\t@marker\n\tconst LIMIT = 1\n\t@marker\n\tsignal changed()\n\t@marker\n\tfunc method():\n\t\tpass\n", "user://test.fs", false);
+	const Error error = parser.parse("annotation marker targets CLASS, VARIABLE, CONSTANT, SIGNAL, METHOD, PARAMETER\n@marker\nclass Inner:\n\t@marker\n\tvar value: int = 0\n\t@marker\n\tconst LIMIT = 1\n\t@marker\n\tsignal changed(@marker amount: float)\n\t@marker\n\tfunc method(@marker arg: int):\n\t\tpass\n", "user://test.fs", false);
 	REQUIRE(error == OK);
 }
 

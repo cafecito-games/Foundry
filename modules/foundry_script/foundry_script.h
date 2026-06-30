@@ -284,6 +284,9 @@ private:
 	HashMap<StringName, Vector<AnnotationUsage>> variable_annotations;
 	HashMap<StringName, Vector<AnnotationUsage>> signal_annotations;
 	HashMap<StringName, Vector<AnnotationUsage>> constant_annotations;
+	// Parameter annotations keyed by owner declaration name, then parameter name.
+	HashMap<StringName, HashMap<StringName, Vector<AnnotationUsage>>> method_parameter_annotations;
+	HashMap<StringName, HashMap<StringName, Vector<AnnotationUsage>>> signal_parameter_annotations;
 
 public:
 	struct LambdaInfo {
@@ -445,6 +448,8 @@ public:
 	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_variable_annotations() const { return variable_annotations; }
 	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_signal_annotations() const { return signal_annotations; }
 	_FORCE_INLINE_ const HashMap<StringName, Vector<AnnotationUsage>> &get_constant_annotations() const { return constant_annotations; }
+	_FORCE_INLINE_ const HashMap<StringName, HashMap<StringName, Vector<AnnotationUsage>>> &get_method_parameter_annotations() const { return method_parameter_annotations; }
+	_FORCE_INLINE_ const HashMap<StringName, HashMap<StringName, Vector<AnnotationUsage>>> &get_signal_parameter_annotations() const { return signal_parameter_annotations; }
 	_FORCE_INLINE_ const HashMap<StringName, MethodInfo> &get_signals() const { return _signals; }
 	_FORCE_INLINE_ const HashMap<FSFunction *, LambdaInfo> &get_lambda_info() const { return lambda_info; }
 
@@ -589,6 +594,7 @@ class FSMethodDescriptor : public RefCounted {
 
 	MethodInfo method_info;
 	TypedArray<FSAnnotation> annotations;
+	HashMap<StringName, TypedArray<FSAnnotation>> parameter_annotations;
 	// Whether the reflected method is a FoundryScript declaration. Only FoundryScript descriptors carry an
 	// `annotations` key in their Dictionary form, matching `FSReflection.get_methods()`, which
 	// omits the key for native (non-FoundryScript) methods that have no passive annotations.
@@ -616,7 +622,9 @@ public:
 	// Builds a descriptor from a method's MethodInfo and its already-resolved annotation descriptors.
 	// `p_fs_member` is false for native (non-FoundryScript) methods, which omit the Dictionary's
 	// `annotations` key.
-	static Ref<FSMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member = true);
+	// `p_parameter_annotations` maps each argument name to its passive annotation descriptors.
+	// Only FoundryScript methods populate this map; native methods pass an empty map.
+	static Ref<FSMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member = true, const HashMap<StringName, TypedArray<FSAnnotation>> &p_parameter_annotations = HashMap<StringName, TypedArray<FSAnnotation>>());
 };
 
 // Read-only structured descriptor for a single reflected FoundryScript member variable, returned by the

@@ -3126,6 +3126,24 @@ void FSCompiler::_collect_annotations(const List<FSParser::AnnotationNode *> &p_
 	}
 }
 
+static void _collect_parameter_annotations(const Vector<FSParser::ParameterNode *> &p_parameters, const FSParser::ParameterNode *p_rest_parameter, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_parameter_annotations) {
+	auto collect = [&](const FSParser::ParameterNode *p_parameter) {
+		if (p_parameter == nullptr || p_parameter->identifier == nullptr) {
+			return;
+		}
+		Vector<FoundryScript::AnnotationUsage> usages;
+		FSCompiler::_collect_annotations(p_parameter->annotations, usages);
+		if (!usages.is_empty()) {
+			r_parameter_annotations[p_parameter->identifier->name] = usages;
+		}
+	};
+
+	for (const FSParser::ParameterNode *parameter : p_parameters) {
+		collect(parameter);
+	}
+	collect(p_rest_parameter);
+}
+
 // Collects the trait members to flatten into an implementing class, in declaration
 // order across the class's transitively-resolved trait set. A member is skipped when a
 // member with the same name is already defined by the implementer or any of its
@@ -4223,6 +4241,12 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				if (!signal_usages.is_empty()) {
 					p_script->signal_annotations[name] = signal_usages;
 				}
+
+				HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> signal_parameter_usages;
+				_collect_parameter_annotations(signal->parameters, nullptr, signal_parameter_usages);
+				if (!signal_parameter_usages.is_empty()) {
+					p_script->signal_parameter_annotations[name] = signal_parameter_usages;
+				}
 			} break;
 
 			case FSParser::ClassNode::Member::ENUM: {
@@ -4329,6 +4353,12 @@ Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassN
 			_collect_annotations(function->annotations, method_usages);
 			if (!method_usages.is_empty()) {
 				p_script->method_annotations[function->identifier->name] = method_usages;
+			}
+
+			HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> method_parameter_usages;
+			_collect_parameter_annotations(function->parameters, function->rest_parameter, method_parameter_usages);
+			if (!method_parameter_usages.is_empty()) {
+				p_script->method_parameter_annotations[function->identifier->name] = method_parameter_usages;
 			}
 		} else if (member.type == member.VARIABLE) {
 			const FSParser::VariableNode *variable = member.variable;

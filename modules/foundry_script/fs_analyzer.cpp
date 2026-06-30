@@ -4805,6 +4805,8 @@ static String _annotation_target_name(uint32_t p_target_kind) {
 			return "a signal";
 		case FSParser::AnnotationDeclarationNode::TARGET_CONSTANT:
 			return "a constant";
+		case FSParser::AnnotationDeclarationNode::TARGET_PARAMETER:
+			return "a parameter";
 		default:
 			return "this target";
 	}
@@ -5990,6 +5992,10 @@ void FSAnalyzer::resolve_constant(FSParser::ConstantNode *p_constant, bool p_is_
 
 void FSAnalyzer::resolve_parameter(FSParser::ParameterNode *p_parameter) {
 	static constexpr const char *kind = "parameter";
+	for (FSParser::AnnotationNode *&E : p_parameter->annotations) {
+		resolve_annotation(E, FSParser::AnnotationDeclarationNode::TARGET_PARAMETER);
+		E->apply(parser, p_parameter, parser->current_class);
+	}
 	resolve_assignable(p_parameter, kind);
 }
 
