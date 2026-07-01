@@ -65,6 +65,22 @@ TEST_CASE("[EditorFileSystem] Destruction clears the singleton and restores glob
 	CHECK(ResourceImporter::load_on_startup == previous_load_on_startup);
 }
 
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+TEST_CASE("[EditorFileSystem] Clean directory watcher polls keep processing for a delayed recheck") {
+	EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+	editor_file_system->setup_directory_watcher_clean_poll_for_tests();
+
+	CHECK_FALSE(editor_file_system->is_processing());
+
+	editor_file_system->scan_changes();
+
+	CHECK(editor_file_system->is_directory_watcher_clean_poll_recheck_pending_for_tests());
+	CHECK(editor_file_system->is_processing());
+
+	memdelete(editor_file_system);
+}
+#endif // EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+
 } // namespace TestEditorFileSystem
 
 #endif // TOOLS_ENABLED

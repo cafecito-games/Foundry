@@ -697,9 +697,9 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	// FileSystem
 	EDITOR_SETTING(Variant::INT, PROPERTY_HINT_RANGE, "docks/filesystem/thumbnail_size", 64, "32,128,16")
 	_initial_set("docks/filesystem/always_show_folders", true);
-	// When enabled (Linux only), an OS directory watcher lets the editor skip the full
-	// filesystem rescan on focus-in when nothing changed on disk. Disable it for projects on
-	// network/remote filesystems where change notifications may be unreliable.
+	// When enabled (Linux via inotify, macOS via FSEvents), an OS directory watcher lets the editor
+	// skip the full filesystem rescan on focus-in when nothing changed on disk. Disable it for
+	// projects on network/remote filesystems where change notifications may be unreliable.
 	_initial_set("docks/filesystem/use_directory_watcher", true, true);
 	_initial_set("docks/filesystem/textfile_extensions", "txt,md,cfg,ini,log,json,yml,yaml,toml,xml");
 	_initial_set("docks/filesystem/other_file_extensions", "ico,icns");

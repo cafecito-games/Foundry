@@ -255,6 +255,8 @@ def configure(env: "SConsEnvironment"):
             "UniformTypeIdentifiers",
             "-framework",
             "IOSurface",
+            "-framework",
+            "CoreServices",
         ]
     )
     env.Append(LIBS=["pthread", "z"])

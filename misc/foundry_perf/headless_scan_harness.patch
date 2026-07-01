@@ -1,0 +1,68 @@
+diff --git a/editor/file_system/editor_file_system.cpp b/editor/file_system/editor_file_system.cpp
+--- a/editor/file_system/editor_file_system.cpp
++++ b/editor/file_system/editor_file_system.cpp
+@@ -73,0 +74,40 @@
++// TEMP PERF INSTRUMENTATION (env-gated via FOUNDRY_PERF). Applied from
++// misc/foundry_perf/headless_scan_harness.patch to measure the watcher headless. Not committed.
++static bool _efs_perf() {
++	static int c = -1;
++	if (c == -1) {
++		c = (OS::get_singleton() && OS::get_singleton()->has_environment("FOUNDRY_PERF")) ? 1 : 0;
++	}
++	return c == 1;
++}
++static int _efs_perf_scan_remaining = -1;
++static void _efs_perf_advance(EditorFileSystem *p_efs) {
++	if (_efs_perf_scan_remaining <= 0) {
++		return;
++	}
++	_efs_perf_scan_remaining--;
++	if (_efs_perf_scan_remaining > 0) {
++		if (OS::get_singleton()->has_environment("FOUNDRY_PERF_TOUCH")) {
++			const String tmp = "res://.__perf_touch_tmp";
++			{
++				Ref<FileAccess> f = FileAccess::open(tmp, FileAccess::WRITE);
++				if (f.is_valid()) {
++					f->store_8(0);
++				}
++			}
++			DirAccess::remove_absolute(tmp);
++			const int delay_usec = OS::get_singleton()->has_environment("FOUNDRY_PERF_TOUCH_DELAY_USEC") ?
++					OS::get_singleton()->get_environment("FOUNDRY_PERF_TOUCH_DELAY_USEC").to_int() :
++					50000;
++			if (delay_usec > 0) {
++				OS::get_singleton()->delay_usec(delay_usec);
++			}
++		}
++		p_efs->call_deferred("scan_sources");
++		p_efs->set_process(true);
++	} else if (p_efs->get_tree()) {
++		print_line("[PERF][scan_changes] harness done, quitting");
++		p_efs->get_tree()->quit();
++	}
++}
++
+@@ -1690,0 +1731 @@
++		const uint64_t _t0 = _efs_perf() ? OS::get_singleton()->get_ticks_usec() : 0;
+@@ -1691,0 +1733,5 @@
++		if (_efs_perf()) {
++			print_line(vformat("[PERF][scan_changes] mode=SCAN files=%d elapsed_ms=%.3f",
++					efs->nb_files_total,
++					(OS::get_singleton()->get_ticks_usec() - _t0) / 1000.0));
++		}
+@@ -1998,0 +2043,3 @@
++			if (_efs_perf()) {
++				print_line("[PERF][scan_changes] mode=SKIP");
++			}
+@@ -1999,0 +2047 @@
++			_efs_perf_advance(this);
+@@ -2099,0 +2148 @@
++						_efs_perf_advance(this);
+@@ -2123,0 +2173,7 @@
++					if (_efs_perf() && _efs_perf_scan_remaining < 0 &&
++							OS::get_singleton()->has_environment("FOUNDRY_PERF_TRIGGER_SCAN")) {
++						const int n = OS::get_singleton()->get_environment("FOUNDRY_PERF_TRIGGER_SCAN").to_int();
++						_efs_perf_scan_remaining = n > 0 ? n : 4;
++						call_deferred("scan_sources");
++						set_process(true);
++					}
