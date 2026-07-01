@@ -40,6 +40,10 @@ public:
 	static String &resource_path() {
 		return ProjectSettings::get_singleton()->resource_path;
 	}
+
+	static String &project_data_dir_name() {
+		return ProjectSettings::get_singleton()->project_data_dir_name;
+	}
 };
 
 namespace TestProjectSettings {
