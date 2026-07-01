@@ -4,7 +4,7 @@
 		Result returned by a script-backed Foundry build task.
 	</brief_description>
 	<description>
-		Contains the high-level result of [method FoundryBuildTask.run] and any requested [FoundryBuildCommand] objects. Command execution is handled by later build-pipeline stages, not by provider bootstrap discovery.
+		Contains the high-level result of [method FoundryBuildTask.run], any requested [FoundryBuildCommand] objects, command output, diagnostics, and the task fingerprint used by build scheduling.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -21,11 +21,32 @@
 		<member name="commands" type="Array" setter="set_commands" getter="get_commands">
 			The command descriptors requested by the task. Entries are expected to be [FoundryBuildCommand] instances.
 		</member>
+		<member name="diagnostics" type="Array" setter="set_diagnostics" getter="get_diagnostics">
+			Structured diagnostic dictionaries produced by the task.
+		</member>
+		<member name="exit_code" type="int" setter="set_exit_code" getter="get_exit_code">
+			The process exit code for command-backed tasks, or [code]-1[/code] when the process could not complete normally.
+		</member>
+		<member name="fingerprint" type="String" setter="set_fingerprint" getter="get_fingerprint">
+			Hash of command inputs that affect whether the task is considered dirty.
+		</member>
+		<member name="launch_error" type="String" setter="set_launch_error" getter="get_launch_error">
+			Error text captured when the command process could not be launched.
+		</member>
 		<member name="message" type="String" setter="set_message" getter="get_message">
 			Optional human-readable result details.
 		</member>
+		<member name="stderr" type="String" setter="set_stderr" getter="get_stderr">
+			Standard error captured from command-backed tasks.
+		</member>
+		<member name="stdout" type="String" setter="set_stdout" getter="get_stdout">
+			Standard output captured from command-backed tasks.
+		</member>
 		<member name="success" type="bool" setter="set_success" getter="is_success">
 			Whether the task completed successfully.
+		</member>
+		<member name="timed_out" type="bool" setter="set_timed_out" getter="has_timed_out">
+			Whether the command process exceeded its configured timeout.
 		</member>
 	</members>
 </class>

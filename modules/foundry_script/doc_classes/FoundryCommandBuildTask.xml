@@ -4,7 +4,7 @@
 		Built-in build task provider for command-shaped tasks.
 	</brief_description>
 	<description>
-		Provides the default configuration schema for command build tasks. This class is part of the script-facing build-task API surface; actual command execution is outside the bootstrap loader.
+		Provides the default configuration schema and command runner for command build tasks. The runner resolves commands through [code]PATH[/code], executes arguments without shell evaluation, captures process output, and reports diagnostics in [FoundryBuildResult].
 	</description>
 	<tutorials>
 	</tutorials>

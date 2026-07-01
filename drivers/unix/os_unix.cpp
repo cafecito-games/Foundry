@@ -710,7 +710,7 @@ PackedByteArray OS_Unix::string_to_multibyte(const String &p_encoding, const Str
 	return ret;
 }
 
-Dictionary OS_Unix::execute_with_pipe(const String &p_path, const List<String> &p_arguments, bool p_blocking) {
+Dictionary OS_Unix::execute_with_pipe(const String &p_path, const List<String> &p_arguments, bool p_blocking, const String &p_working_directory, const Dictionary &p_environment, bool p_pipe_stdin) {
 #define CLEAN_PIPES           \
 	if (pipe_in[0] >= 0) {    \
 		::close(pipe_in[0]);  \
@@ -789,6 +789,26 @@ Dictionary OS_Unix::execute_with_pipe(const String &p_path, const List<String> &
 
 		CLEAN_PIPES
 
+		if (!p_working_directory.is_empty() && chdir(p_working_directory.utf8().get_data()) != 0) {
+			fprintf(stderr, "Could not change working directory: %s\n", p_working_directory.utf8().get_data());
+			raise(SIGKILL);
+		}
+
+		Array environment_keys = p_environment.keys();
+		for (int i = 0; i < environment_keys.size(); i++) {
+			const String key = environment_keys[i];
+			if (key.is_empty()) {
+				continue;
+			}
+
+			const CharString key_utf8 = key.utf8();
+			const CharString value_utf8 = String(p_environment[key]).utf8();
+			if (setenv(key_utf8.get_data(), value_utf8.get_data(), /* overwrite: */ 1) != 0) {
+				fprintf(stderr, "Could not set environment variable: %s\n", key_utf8.get_data());
+				raise(SIGKILL);
+			}
+		}
+
 		execvp(p_path.utf8().get_data(), &args[0]);
 		// The execvp() function only returns if an error occurs.
 		fprintf(stderr, "Could not create child process: %s\n", p_path.utf8().get_data());
@@ -797,10 +817,14 @@ Dictionary OS_Unix::execute_with_pipe(const String &p_path, const List<String> &
 	::close(pipe_in[0]);
 	::close(pipe_out[1]);
 	::close(pipe_err[1]);
+	if (!p_pipe_stdin) {
+		::close(pipe_in[1]);
+		pipe_in[1] = -1;
+	}
 
 	Ref<FileAccessUnixPipe> main_pipe;
 	main_pipe.instantiate();
-	main_pipe->open_existing(pipe_out[0], pipe_in[1], p_blocking);
+	main_pipe->open_existing(pipe_out[0], p_pipe_stdin ? pipe_in[1] : -1, p_blocking);
 
 	Ref<FileAccessUnixPipe> err_pipe;
 	err_pipe.instantiate();
