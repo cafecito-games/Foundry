@@ -461,6 +461,38 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
 	}
 
+	TEST_CASE("Override method skips generic script base methods inferred only through Callable signatures") {
+		const String source =
+				"class Base:\n"
+				"\tfunc apply[T](cb: Callable[[T], void]) -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "apply") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method skips generic script base methods inferred only through method bounds") {
+		const String source =
+				"class Base:\n"
+				"\tfunc constrained[T, U: T](value: U) -> U:\n"
+				"\t\treturn value\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "constrained") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
 	TEST_CASE("Override method keeps generic script base methods with inferable type parameters") {
 		const String source =
 				"class Base:\n"

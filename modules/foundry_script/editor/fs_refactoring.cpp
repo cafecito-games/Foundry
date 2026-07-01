@@ -6310,6 +6310,8 @@ void collect_method_type_parameters_referenced_by_type(
 		const FSParser::DataType &p_type,
 		const HashSet<StringName> &p_method_type_parameters,
 		HashSet<StringName> &r_referenced) {
+	// Keep this in sync with FSAnalyzer::collect_type_parameter_bindings(), which
+	// only infers method type parameters from these structural positions.
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER &&
 			p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD &&
 			p_method_type_parameters.has(p_type.type_parameter_name)) {
@@ -6320,15 +6322,6 @@ void collect_method_type_parameters_referenced_by_type(
 	}
 	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
 		collect_method_type_parameters_referenced_by_type(type_argument, p_method_type_parameters, r_referenced);
-	}
-	for (const FSParser::DataType &parameter_type : p_type.method_parameter_types) {
-		collect_method_type_parameters_referenced_by_type(parameter_type, p_method_type_parameters, r_referenced);
-	}
-	for (const FSParser::DataType &return_type : p_type.method_return_type) {
-		collect_method_type_parameters_referenced_by_type(return_type, p_method_type_parameters, r_referenced);
-	}
-	for (const FSParser::DataType &bound_type : p_type.type_parameter_bound) {
-		collect_method_type_parameters_referenced_by_type(bound_type, p_method_type_parameters, r_referenced);
 	}
 }
 
