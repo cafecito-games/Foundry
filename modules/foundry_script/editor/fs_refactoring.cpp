@@ -6323,7 +6323,9 @@ void collect_method_type_parameters_referenced_by_type(
 	}
 }
 
-bool generic_method_type_parameters_are_inferable_from_regular_parameters(const FSParser::FunctionNode *p_function) {
+bool generic_method_type_parameters_are_inferable_from_parameter_types(
+		const FSParser::FunctionNode *p_function,
+		const Vector<FSParser::DataType> &p_parameter_types) {
 	HashSet<StringName> method_type_parameters;
 	collect_method_type_parameter_names(p_function, method_type_parameters);
 	if (method_type_parameters.is_empty()) {
@@ -6331,13 +6333,11 @@ bool generic_method_type_parameters_are_inferable_from_regular_parameters(const 
 	}
 
 	HashSet<StringName> referenced_type_parameters;
-	for (const FSParser::ParameterNode *parameter : p_function->parameters) {
-		if (parameter != nullptr) {
-			collect_method_type_parameters_referenced_by_type(
-					parameter->get_datatype(),
-					method_type_parameters,
-					referenced_type_parameters);
-		}
+	for (const FSParser::DataType &parameter_type : p_parameter_types) {
+		collect_method_type_parameters_referenced_by_type(
+				parameter_type,
+				method_type_parameters,
+				referenced_type_parameters);
 	}
 
 	for (const StringName &type_parameter : method_type_parameters) {
@@ -6368,6 +6368,10 @@ void collect_override_class_type_parameter_names(
 	}
 }
 
+bool erase_raw_override_class_type_parameters(
+		FSParser::DataType &r_type,
+		const HashSet<StringName> &p_raw_class_type_parameters);
+
 FSParser::DataType specialize_override_parent_type(
 		const FSParser::ClassNode *p_current_class,
 		const FSParser::DataType &p_current_specialized_type) {
@@ -6376,8 +6380,13 @@ FSParser::DataType specialize_override_parent_type(
 	}
 
 	FSParser::DataType parent_type = p_current_class->base_type;
-	if (!p_current_specialized_type.has_type_arguments() ||
-			!override_class_type_matches(p_current_specialized_type, p_current_class)) {
+	if (!override_class_type_matches(p_current_specialized_type, p_current_class)) {
+		return parent_type;
+	}
+	if (!p_current_specialized_type.has_type_arguments()) {
+		HashSet<StringName> raw_class_type_parameters;
+		collect_override_class_type_parameter_names(p_current_class, raw_class_type_parameters);
+		erase_raw_override_class_type_parameters(parent_type, raw_class_type_parameters);
 		return parent_type;
 	}
 
@@ -6710,8 +6719,7 @@ void add_script_override_candidate(
 		Vector<OverrideMethodCandidate> &r_candidates) {
 	if (p_function == nullptr || p_function->identifier == nullptr || p_function->is_final || p_function->is_abstract ||
 			p_function->rest_parameter != nullptr ||
-			is_constructor_like_override_method(p_function->identifier->name) ||
-			!generic_method_type_parameters_are_inferable_from_regular_parameters(p_function)) {
+			is_constructor_like_override_method(p_function->identifier->name)) {
 		return;
 	}
 	const Vector<String> empty_lines;
@@ -6723,6 +6731,9 @@ void add_script_override_candidate(
 			parameter_type = substitute_override_member_type(parameter->get_datatype(), p_specialized_base, p_declaring_class, p_function);
 		}
 		parameter_types.push_back(parameter_type);
+	}
+	if (!generic_method_type_parameters_are_inferable_from_parameter_types(p_function, parameter_types)) {
+		return;
 	}
 	const FSParser::DataType return_type =
 			substitute_override_member_type(p_function->get_datatype(), p_specialized_base, p_declaring_class, p_function);
