@@ -41,6 +41,7 @@
 #ifdef TOOLS_ENABLED
 #include "fs_format.h"
 
+#include "editor/fs_build_pipeline_settings.h"
 #include "editor/fs_highlighter.h"
 #include "editor/fs_migration_wizard_plugin.h"
 #include "editor/fs_translation_parser_plugin.h"
@@ -121,6 +122,13 @@ public:
 };
 
 static FSMigrationWizardDialog *fs_migration_wizard_dialog = nullptr;
+static FSBuildPipelineSettingsDialog *fs_build_pipeline_settings_dialog = nullptr;
+
+static void _open_foundry_script_build_pipeline_settings() {
+	if (fs_build_pipeline_settings_dialog) {
+		fs_build_pipeline_settings_dialog->popup_settings();
+	}
+}
 
 static void _open_foundry_script_migration_wizard() {
 	if (fs_migration_wizard_dialog) {
@@ -145,6 +153,12 @@ static void _editor_init() {
 	EditorNode::get_singleton()->add_tool_menu_item(
 			TTR("Migrate to Strict Typing..."),
 			callable_mp_static(&_open_foundry_script_migration_wizard));
+
+	fs_build_pipeline_settings_dialog = memnew(FSBuildPipelineSettingsDialog);
+	EditorNode::get_singleton()->get_gui_base()->add_child(fs_build_pipeline_settings_dialog);
+	EditorNode::get_singleton()->add_tool_menu_item(
+			TTR("Build Pipeline..."),
+			callable_mp_static(&_open_foundry_script_build_pipeline_settings));
 #endif
 
 #ifndef FOUNDRY_SCRIPT_NO_LSP
@@ -197,6 +211,7 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 	} else if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		FOUNDRY_REGISTER_CLASS(FSSyntaxHighlighter);
 		FOUNDRY_REGISTER_CLASS(FSMigrationWizardDialog);
+		FOUNDRY_REGISTER_CLASS(FSBuildPipelineSettingsDialog);
 	}
 #endif // TOOLS_ENABLED
 }

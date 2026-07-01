@@ -130,6 +130,17 @@ void ProjectBuildPipelineConfig::_add_parse_error(const String &p_section, const
 	parse_errors.push_back(error);
 }
 
+void ProjectBuildPipelineConfig::_clear_parse_errors_for(const String &p_section, const String &p_key) {
+	// Drop load-time parse errors for a section (optionally a single key) once the authoring API edits
+	// it, so a structured repair is not still reported as invalid by validate(), which seeds from
+	// parse_errors.
+	for (int i = parse_errors.size() - 1; i >= 0; i--) {
+		if (parse_errors[i].section == p_section && (p_key.is_empty() || parse_errors[i].key == p_key)) {
+			parse_errors.remove_at(i);
+		}
+	}
+}
+
 void ProjectBuildPipelineConfig::_append_ordered(Vector<String> &r_order, const String &p_name) const {
 	if (!r_order.has(p_name)) {
 		r_order.push_back(p_name);
@@ -841,4 +852,204 @@ const ProjectBuildPipelineConfig::ProviderDescriptor *ProjectBuildPipelineConfig
 
 const ProjectBuildPipelineConfig::TaskDefinition *ProjectBuildPipelineConfig::get_task(const String &p_name) const {
 	return tasks.getptr(p_name);
+}
+
+static PackedStringArray *_mutable_stage_array(ProjectBuildPipelineConfig::Stage p_stage,
+		PackedStringArray *p_pre, PackedStringArray *p_post) {
+	switch (p_stage) {
+		case ProjectBuildPipelineConfig::STAGE_PRE_COMPILE:
+			return p_pre;
+		case ProjectBuildPipelineConfig::STAGE_POST_COMPILE:
+			return p_post;
+	}
+	return nullptr;
+}
+
+void ProjectBuildPipelineConfig::set_enabled(bool p_enabled) {
+	enabled = p_enabled;
+	_clear_parse_errors_for(BUILD_SECTION, "enabled");
+}
+
+void ProjectBuildPipelineConfig::set_provider(const ProviderDescriptor &p_provider) {
+	ERR_FAIL_COND(p_provider.id.is_empty());
+	if (!providers.has(p_provider.id)) {
+		_append_ordered(provider_order, p_provider.id);
+	}
+	providers[p_provider.id] = p_provider;
+	_clear_parse_errors_for(_nested_section(PROVIDER_SECTION_PREFIX, p_provider.id));
+}
+
+bool ProjectBuildPipelineConfig::remove_provider(const String &p_id) {
+	if (!providers.has(p_id)) {
+		return false;
+	}
+	providers.erase(p_id);
+	const int index = provider_order.find(p_id);
+	if (index >= 0) {
+		provider_order.remove_at(index);
+	}
+	_clear_parse_errors_for(_nested_section(PROVIDER_SECTION_PREFIX, p_id));
+	return true;
+}
+
+void ProjectBuildPipelineConfig::set_task(const TaskDefinition &p_task) {
+	ERR_FAIL_COND(p_task.name.is_empty());
+	if (!tasks.has(p_task.name)) {
+		_append_ordered(task_order, p_task.name);
+	}
+	tasks[p_task.name] = p_task;
+	_clear_parse_errors_for(_nested_section(TASK_SECTION_PREFIX, p_task.name));
+}
+
+bool ProjectBuildPipelineConfig::remove_task(const String &p_name) {
+	if (!tasks.has(p_name)) {
+		return false;
+	}
+	tasks.erase(p_name);
+	const int index = task_order.find(p_name);
+	if (index >= 0) {
+		task_order.remove_at(index);
+	}
+	remove_task_from_stage(STAGE_PRE_COMPILE, p_name);
+	remove_task_from_stage(STAGE_POST_COMPILE, p_name);
+	_clear_parse_errors_for(_nested_section(TASK_SECTION_PREFIX, p_name));
+	return true;
+}
+
+bool ProjectBuildPipelineConfig::rename_task(const String &p_old_name, const String &p_new_name) {
+	if (p_new_name.is_empty() || p_old_name == p_new_name) {
+		return false;
+	}
+	if (!tasks.has(p_old_name) || tasks.has(p_new_name)) {
+		return false;
+	}
+
+	TaskDefinition task = tasks[p_old_name];
+	task.name = p_new_name;
+	tasks.erase(p_old_name);
+	tasks[p_new_name] = task;
+	_clear_parse_errors_for(_nested_section(TASK_SECTION_PREFIX, p_old_name));
+	_clear_parse_errors_for(_nested_section(TASK_SECTION_PREFIX, p_new_name));
+
+	const int order_index = task_order.find(p_old_name);
+	if (order_index >= 0) {
+		task_order.set(order_index, p_new_name);
+	}
+
+	// Replace every occurrence: an invalid loaded config can list a task more than once in a stage,
+	// and a partial rename would leave dangling references to the old, now-undefined name.
+	PackedStringArray *stage_arrays[2] = { &pre_compile_tasks, &post_compile_tasks };
+	for (PackedStringArray *stage : stage_arrays) {
+		for (int i = 0; i < stage->size(); i++) {
+			if ((*stage)[i] == p_old_name) {
+				stage->set(i, p_new_name);
+			}
+		}
+	}
+	return true;
+}
+
+String ProjectBuildPipelineConfig::make_unique_task_name(const String &p_base) const {
+	if (!tasks.has(p_base)) {
+		return p_base;
+	}
+	int suffix = 2;
+	String candidate = p_base + "_" + itos(suffix);
+	while (tasks.has(candidate)) {
+		suffix++;
+		candidate = p_base + "_" + itos(suffix);
+	}
+	return candidate;
+}
+
+String ProjectBuildPipelineConfig::duplicate_task(const String &p_name) {
+	const TaskDefinition *original = tasks.getptr(p_name);
+	if (original == nullptr) {
+		return String();
+	}
+
+	TaskDefinition copy = *original;
+	copy.name = make_unique_task_name(p_name + "_copy");
+	tasks[copy.name] = copy;
+
+	const int index = task_order.find(p_name);
+	if (index >= 0) {
+		task_order.insert(index + 1, copy.name);
+	} else {
+		task_order.push_back(copy.name);
+	}
+	return copy.name;
+}
+
+bool ProjectBuildPipelineConfig::add_task_to_stage(Stage p_stage, const String &p_name) {
+	PackedStringArray *stage = _mutable_stage_array(p_stage, &pre_compile_tasks, &post_compile_tasks);
+	if (stage == nullptr || stage->has(p_name)) {
+		return false;
+	}
+	stage->push_back(p_name);
+	_clear_parse_errors_for(BUILD_SECTION, p_stage == STAGE_PRE_COMPILE ? "pre_compile" : "post_compile");
+	return true;
+}
+
+bool ProjectBuildPipelineConfig::remove_task_from_stage(Stage p_stage, const String &p_name) {
+	PackedStringArray *stage = _mutable_stage_array(p_stage, &pre_compile_tasks, &post_compile_tasks);
+	if (stage == nullptr) {
+		return false;
+	}
+	bool removed = false;
+	int index = stage->find(p_name);
+	while (index >= 0) {
+		stage->remove_at(index);
+		removed = true;
+		index = stage->find(p_name);
+	}
+	if (removed) {
+		_clear_parse_errors_for(BUILD_SECTION, p_stage == STAGE_PRE_COMPILE ? "pre_compile" : "post_compile");
+	}
+	return removed;
+}
+
+bool ProjectBuildPipelineConfig::move_stage_task(Stage p_stage, int p_from_index, int p_to_index) {
+	PackedStringArray *stage = _mutable_stage_array(p_stage, &pre_compile_tasks, &post_compile_tasks);
+	if (stage == nullptr) {
+		return false;
+	}
+	const int count = stage->size();
+	if (p_from_index < 0 || p_from_index >= count || p_to_index < 0 || p_to_index >= count) {
+		return false;
+	}
+	if (p_from_index == p_to_index) {
+		return true;
+	}
+	const String name = (*stage)[p_from_index];
+	stage->remove_at(p_from_index);
+	stage->insert(p_to_index, name);
+	_clear_parse_errors_for(BUILD_SECTION, p_stage == STAGE_PRE_COMPILE ? "pre_compile" : "post_compile");
+	return true;
+}
+
+void ProjectBuildPipelineConfig::set_stage_tasks(Stage p_stage, const PackedStringArray &p_tasks) {
+	PackedStringArray *stage = _mutable_stage_array(p_stage, &pre_compile_tasks, &post_compile_tasks);
+	if (stage == nullptr) {
+		return;
+	}
+	*stage = p_tasks;
+	_clear_parse_errors_for(BUILD_SECTION, p_stage == STAGE_PRE_COMPILE ? "pre_compile" : "post_compile");
+}
+
+bool ProjectBuildPipelineConfig::set_task_enabled(const String &p_name, bool p_enabled) {
+	TaskDefinition *task = tasks.getptr(p_name);
+	if (task == nullptr) {
+		return false;
+	}
+	task->enabled = p_enabled;
+	_clear_parse_errors_for(_nested_section(TASK_SECTION_PREFIX, p_name), "enabled");
+	return true;
+}
+
+String ProjectBuildPipelineConfig::generate_preview() const {
+	Ref<ConfigFile> config;
+	config.instantiate();
+	write_to_config_file(config);
+	return config->encode_to_text();
 }
