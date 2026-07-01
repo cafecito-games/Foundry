@@ -41,6 +41,8 @@
 #include "core/templates/rb_set.h"
 
 class FoundryScript;
+class FSParser;
+class FSAnalyzer;
 
 class FSNativeClass : public RefCounted {
 	FOUNDRY_CLASS(FSNativeClass, RefCounted);
@@ -382,14 +384,17 @@ private:
 	HashSet<PlaceHolderScriptInstance *> placeholders;
 	//void _update_placeholder(PlaceHolderScriptInstance *p_placeholder);
 	virtual void _placeholder_erased(PlaceHolderScriptInstance *p_placeholder) override;
-	void _update_exports_down(bool p_base_exports_changed);
+	// p_reload_parser/p_reload_analyzer: when a caller (reload()) has already parsed and analyzed
+	// the current source, they are reused to populate the export cache for this script instead of
+	// re-parsing and re-analyzing it. They only apply to this script, not to inheriters.
+	void _update_exports_down(bool p_base_exports_changed, FSParser *p_reload_parser = nullptr, FSAnalyzer *p_reload_analyzer = nullptr);
 #endif
 
 #ifdef DEBUG_ENABLED
 	HashMap<ObjectID, List<Pair<StringName, Variant>>> pending_reload_state;
 #endif
 
-	bool _update_exports(bool *r_err = nullptr, bool p_recursive_call = false, PlaceHolderScriptInstance *p_instance_to_update = nullptr, bool p_base_exports_changed = false);
+	bool _update_exports(bool *r_err = nullptr, bool p_recursive_call = false, PlaceHolderScriptInstance *p_instance_to_update = nullptr, bool p_base_exports_changed = false, FSParser *p_reload_parser = nullptr, FSAnalyzer *p_reload_analyzer = nullptr);
 
 	void _save_orphaned_subclasses();
 
