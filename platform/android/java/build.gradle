@@ -145,7 +145,7 @@ def generateBuildTasks(String flavor = "template", String edition = "standard", 
                     buildTasks += tasks.create(name: copyAARTaskName, type: Copy) {
                         dependsOn ":lib:assembleTemplate${capitalizedTarget}"
                         from('lib/build/outputs/aar')
-                        include("godot-lib.template_${targetSuffix}.aar")
+                        include("foundry-lib.template_${targetSuffix}.aar")
                         into("app/libs/${target}")
                     }
                 }
@@ -159,7 +159,7 @@ def generateBuildTasks(String flavor = "template", String edition = "standard", 
                     buildTasks += tasks.create(name: copyAARToBinTaskName, type: Copy) {
                         dependsOn ":lib:assembleTemplate${capitalizedTarget}"
                         from('lib/build/outputs/aar')
-                        include("godot-lib.template_${targetSuffix}.aar")
+                        include("foundry-lib.template_${targetSuffix}.aar")
                         into(binDir)
                     }
                 }
@@ -321,14 +321,14 @@ task cleanGodotTemplates(type: Delete) {
     delete("$binDir/android_monoDev.apk")
     delete("$binDir/android_monoRelease.apk")
     delete("$binDir/android_source.zip")
-    delete("$binDir/godot-lib.template_debug.aar")
-    delete("$binDir/godot-lib.template_debug.dev.aar")
-    delete("$binDir/godot-lib.template_release.aar")
+    delete("$binDir/foundry-lib.template_debug.aar")
+    delete("$binDir/foundry-lib.template_debug.dev.aar")
+    delete("$binDir/foundry-lib.template_release.aar")
 
     // Cover deletion for the libs using the previous naming scheme
-    delete("$binDir/godot-lib.debug.aar")
-    delete("$binDir/godot-lib.dev.aar")
-    delete("$binDir/godot-lib.release.aar")
+    delete("$binDir/foundry-lib.debug.aar")
+    delete("$binDir/foundry-lib.dev.aar")
+    delete("$binDir/foundry-lib.release.aar")
 
     // Delete the native debug symbols files.
     delete("$binDir/android-editor-debug-native-symbols.zip")

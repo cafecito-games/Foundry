@@ -51,7 +51,7 @@ dependencies {
         implementation project(":godot:lib")
     } else {
         // Godot gradle build mode. In this scenario this project is the only one around and the Godot
-        // library is available through the pre-generated godot-lib.*.aar android archive files.
+        // library is available through the pre-generated foundry-lib.*.aar android archive files.
         debugImplementation fileTree(dir: 'libs/debug', include: ['**/*.jar', '*.aar'])
         devImplementation fileTree(dir: 'libs/dev', include: ['**/*.jar', '*.aar'])
         releaseImplementation fileTree(dir: 'libs/release', include: ['**/*.jar', '*.aar'])

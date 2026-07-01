@@ -127,7 +127,7 @@ android {
             outputSuffix = "${outputSuffix}.dev"
         }
         variant.outputs.all { output ->
-            output.outputFileName = "godot-lib.${outputSuffix}.aar"
+            output.outputFileName = "foundry-lib.${outputSuffix}.aar"
         }
 
         // Find scons' executable path
