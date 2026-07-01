@@ -840,7 +840,7 @@ static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineCo
 	if (provider == nullptr || provider->instance.is_null()) {
 		return _make_failure_result(vformat("Provider '%s' could not be loaded.", p_task.provider));
 	}
-	const Ref<FoundryBuildResult> result = provider->instance->run(context);
+	const Ref<FoundryBuildResult> result = FoundryBuildTask::call_run_script_hook(provider->instance, context);
 	return result.is_valid() ? result : _make_failure_result(vformat("Provider '%s' returned no result.", p_task.provider));
 }
 

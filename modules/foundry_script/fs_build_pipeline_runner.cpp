@@ -501,7 +501,7 @@ FoundryBuildPipelineRunner::StageRunResult FoundryBuildPipelineRunner::run_stage
 
 		Ref<FoundryBuildContext> context = _build_task_context(*task, prepared.trust.is_project_trusted());
 
-		Ref<FoundryBuildResult> result = provider->instance->run(context);
+		Ref<FoundryBuildResult> result = FoundryBuildTask::call_run_script_hook(provider->instance, context);
 		const bool success = result.is_valid() && result->is_success();
 		const String fingerprint = result.is_valid() ? result->get_fingerprint() : String();
 		prepared.state.record_task_run(task->name, fingerprint, task->outputs, success, task_status,

@@ -31,6 +31,7 @@
 #pragma once
 
 #include "../fs_build_pipeline_runner.h"
+#include "../fs_script_extensible_native_hooks.h"
 
 #include "core/config/project_build_pipeline_config.h"
 #include "core/config/project_build_pipeline_status.h"
@@ -45,6 +46,15 @@
 #include "tests/test_utils.h"
 
 namespace FSTests {
+
+TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] Build task hooks are registered as script-extensible") {
+	CHECK(FSScriptExtensibleNativeHooks::is_allowed_override(SNAME("FoundryBuildTask"), SNAME("get_config_schema")));
+	CHECK(FSScriptExtensibleNativeHooks::is_allowed_override(SNAME("FoundryBuildTask"), SNAME("run")));
+	CHECK(FSScriptExtensibleNativeHooks::is_allowed_override(
+			SNAME("FoundryCommandBuildTask"), SNAME("get_config_schema")));
+	CHECK(FSScriptExtensibleNativeHooks::is_allowed_override(SNAME("FoundryCommandBuildTask"), SNAME("run")));
+	CHECK_FALSE(FSScriptExtensibleNativeHooks::is_allowed_override(SNAME("Object"), SNAME("get")));
+}
 
 struct ScopedPipelineProject {
 	String old_resource_path;
@@ -243,6 +253,71 @@ TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] Trusted dirty pre-compi
 			FoundryBuildPipelineRunner::get_stage_status(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
 	CHECK_EQ(status.state, ProjectBuildPipelineStatus::STATE_CLEAN);
 	CHECK_FALSE(FoundryBuildPipelineRunner::status_blocks_flow(status));
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] Script provider run controls task result") {
+	ScopedPipelineProject project("build_pipeline_runner_script_provider_run");
+	ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+	project.write_file("res://build/script_provider.fs",
+			"class_name PipelineScriptProvider extends FoundryBuildTask\n"
+			"\n"
+			"func run(context: FoundryBuildContext) -> FoundryBuildResult:\n"
+			"\tvar result := FoundryBuildResult.new()\n"
+			"\tresult.success = false\n"
+			"\tresult.message = \"script-run:\" + context.task_name\n"
+			"\tresult.fingerprint = \"script-fingerprint\"\n"
+			"\treturn result\n");
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->set_value("build", "enabled", true);
+	config->set_value("build", "pre_compile", pipeline_args("script_task"));
+	config->set_value("build/providers/pipeline.script", "script", "res://build/script_provider.fs");
+	config->set_value("build/providers/pipeline.script", "class_name", "PipelineScriptProvider");
+	config->set_value("build/tasks/script_task", "provider", "pipeline.script");
+	config->set_value("build/tasks/script_task", "outputs", pipeline_args("res://generated/script_provider.txt"));
+	project.save_config(config);
+
+	const FoundryBuildPipelineRunner::StageRunResult result =
+			FoundryBuildPipelineRunner::run_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	CHECK_FALSE(result.is_success());
+	CHECK(result.ran_any_task);
+	REQUIRE_FALSE(result.snapshot.diagnostics.is_empty());
+	CHECK_EQ(result.snapshot.diagnostics[0].message, "script-run:script_task");
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] Command subclass script provider run controls task result") {
+	ScopedPipelineProject project("build_pipeline_runner_command_subclass_provider_run");
+	ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+	project.write_file("res://build/command_subclass_provider.fs",
+			"class_name PipelineCommandSubclassProvider extends FoundryCommandBuildTask\n"
+			"\n"
+			"func run(context: FoundryBuildContext) -> FoundryBuildResult:\n"
+			"\tvar result := FoundryBuildResult.new()\n"
+			"\tresult.success = false\n"
+			"\tresult.message = \"command-subclass-run:\" + context.task_name\n"
+			"\tresult.fingerprint = \"command-subclass-fingerprint\"\n"
+			"\treturn result\n");
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->set_value("build", "enabled", true);
+	config->set_value("build", "pre_compile", pipeline_args("script_task"));
+	config->set_value("build/providers/pipeline.command_subclass", "script", "res://build/command_subclass_provider.fs");
+	config->set_value("build/providers/pipeline.command_subclass", "class_name", "PipelineCommandSubclassProvider");
+	config->set_value("build/tasks/script_task", "provider", "pipeline.command_subclass");
+	config->set_value("build/tasks/script_task", "outputs",
+			pipeline_args("res://generated/command_subclass_provider.txt"));
+	project.save_config(config);
+
+	const FoundryBuildPipelineRunner::StageRunResult result =
+			FoundryBuildPipelineRunner::run_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	CHECK_FALSE(result.is_success());
+	CHECK(result.ran_any_task);
+	REQUIRE_FALSE(result.snapshot.diagnostics.is_empty());
+	CHECK_EQ(result.snapshot.diagnostics[0].message, "command-subclass-run:script_task");
 }
 
 TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] Missing dirty output reruns automatically") {

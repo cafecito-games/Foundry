@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_conformance_registry.h"
+#include "fs_script_extensible_native_hooks.h"
 #include "fs_trait_utils.h"
 #include "fs_type.h"
 #include "fs_utility_callable.h"
@@ -5498,7 +5499,8 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 				push_error(vformat(R"(The function signature doesn't match the parent. Parent signature is "%s".)", parent_signature), p_function);
 			}
 #ifdef DEBUG_ENABLED
-			if (native_base != StringName() && !(parser->current_class->is_trait && p_function->is_abstract)) {
+			if (native_base != StringName() && !FSScriptExtensibleNativeHooks::is_allowed_override(native_base, function_name) &&
+					!(parser->current_class->is_trait && p_function->is_abstract)) {
 				parser->push_warning(p_function, FSWarning::NATIVE_METHOD_OVERRIDE, function_name, native_base);
 			}
 #endif // DEBUG_ENABLED

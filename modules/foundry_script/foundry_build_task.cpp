@@ -32,6 +32,7 @@
 
 #include "core/config/project_build_pipeline_status.h"
 #include "core/config/project_settings.h"
+#include "core/error/error_macros.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
@@ -964,8 +965,26 @@ bool FoundryBuildContext::is_trusted_execution() const {
 }
 
 void FoundryBuildTask::_bind_methods() {
+	// These are script-extensible hooks. Native callers must use the static call_*_script_hook()
+	// helpers below so FoundryScript overrides dispatch through Object::call().
 	ClassDB::bind_method(D_METHOD("get_config_schema"), &FoundryBuildTask::get_config_schema);
 	ClassDB::bind_method(D_METHOD("run", "context"), &FoundryBuildTask::run);
+}
+
+Ref<FoundryBuildTaskConfigSchema> FoundryBuildTask::call_get_config_schema_script_hook(
+		const Ref<FoundryBuildTask> &p_provider) {
+	ERR_FAIL_COND_V(p_provider.is_null(), Ref<FoundryBuildTaskConfigSchema>());
+
+	const Variant schema_value = p_provider->call(SNAME("get_config_schema"));
+	return schema_value;
+}
+
+Ref<FoundryBuildResult> FoundryBuildTask::call_run_script_hook(
+		const Ref<FoundryBuildTask> &p_provider, const Ref<FoundryBuildContext> &p_context) {
+	ERR_FAIL_COND_V(p_provider.is_null(), Ref<FoundryBuildResult>());
+
+	const Variant result_value = p_provider->call(SNAME("run"), p_context);
+	return result_value;
 }
 
 Ref<FoundryBuildTaskConfigSchema> FoundryBuildTask::get_config_schema() const {
