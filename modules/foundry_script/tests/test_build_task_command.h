@@ -32,6 +32,7 @@
 
 #include "../foundry_build_task.h"
 
+#include "core/config/project_build_state.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -681,6 +682,42 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Tool version output partic
 	CHECK_NE(first->get_fingerprint(), second->get_fingerprint());
 }
 
+TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Tool version fingerprint changes mark persisted state dirty") {
+	ScopedCommandTaskProject project("build_task_command_state_tool_version");
+
+	const String script =
+			"import pathlib, sys\n"
+			"pathlib.Path(sys.argv[1]).write_text('generated\\n')\n";
+
+	Dictionary options;
+	options["command"] = "python3";
+	options["args"] = make_args("-c", script, "res://generated/tool_version_state.txt");
+	options["outputs"] = make_args("res://generated/tool_version_state.txt");
+	options["tool_version_command"] = make_args("python3", "-c", "print('tool-v1')\n");
+
+	Ref<FoundryBuildResult> first = run_command_task(options);
+	CHECK(first.is_valid());
+	if (first.is_null() || !first->is_success()) {
+		return;
+	}
+
+	ProjectBuildState state;
+	state.record_task_result("generate_tool_versioned", first->get_fingerprint(), make_args("res://generated/tool_version_state.txt"), true);
+	CHECK_FALSE(state.get_task_dirty_status("generate_tool_versioned", first->get_fingerprint(), make_args("res://generated/tool_version_state.txt")).dirty);
+
+	options["tool_version_command"] = make_args("python3", "-c", "print('tool-v2')\n");
+	Ref<FoundryBuildResult> second = run_command_task(options);
+	CHECK(second.is_valid());
+	if (second.is_null() || !second->is_success()) {
+		return;
+	}
+
+	const ProjectBuildState::DirtyStatus status =
+			state.get_task_dirty_status("generate_tool_versioned", second->get_fingerprint(), make_args("res://generated/tool_version_state.txt"));
+	CHECK(status.dirty);
+	CHECK_EQ(status.reason, ProjectBuildState::DIRTY_FINGERPRINT_CHANGED);
+}
+
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Timeout participates in fingerprint") {
 	Dictionary options;
 	options["command"] = "python3";
@@ -791,6 +828,43 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Input file contents partic
 	}
 
 	CHECK_NE(first->get_fingerprint(), second->get_fingerprint());
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Input content fingerprint changes mark persisted state dirty") {
+	ScopedCommandTaskProject project("build_task_command_state_input");
+	project.write_file("res://input.txt", "input-v1");
+
+	const String script =
+			"import pathlib, sys\n"
+			"pathlib.Path(sys.argv[1]).write_text('generated\\n')\n";
+
+	Dictionary options;
+	options["command"] = "python3";
+	options["args"] = make_args("-c", script, "res://generated/input_state.txt");
+	options["inputs"] = make_args("res://input.txt");
+	options["outputs"] = make_args("res://generated/input_state.txt");
+
+	Ref<FoundryBuildResult> first = run_command_task(options);
+	CHECK(first.is_valid());
+	if (first.is_null() || !first->is_success()) {
+		return;
+	}
+
+	ProjectBuildState state;
+	state.record_task_result("generate_from_input", first->get_fingerprint(), make_args("res://generated/input_state.txt"), true);
+	CHECK_FALSE(state.get_task_dirty_status("generate_from_input", first->get_fingerprint(), make_args("res://generated/input_state.txt")).dirty);
+
+	project.write_file("res://input.txt", "input-v2");
+	Ref<FoundryBuildResult> second = run_command_task(options);
+	CHECK(second.is_valid());
+	if (second.is_null() || !second->is_success()) {
+		return;
+	}
+
+	const ProjectBuildState::DirtyStatus status =
+			state.get_task_dirty_status("generate_from_input", second->get_fingerprint(), make_args("res://generated/input_state.txt"));
+	CHECK(status.dirty);
+	CHECK_EQ(status.reason, ProjectBuildState::DIRTY_FINGERPRINT_CHANGED);
 }
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Input glob matches participate in fingerprinting") {
