@@ -145,7 +145,7 @@ void FSBuildPipelineSettingsDialog::_save_to_project() {
 		const Error load_err = config->load(PROJECT_CONFIG_PATH);
 		if (load_err != OK) {
 			ERR_PRINT(vformat("Could not read '%s' (error %d); build pipeline configuration was not saved to avoid overwriting existing project settings.", PROJECT_CONFIG_PATH, load_err));
-			run_output->set_text(vformat(TTR("Could not read %s; nothing was saved."), PROJECT_CONFIG_PATH));
+			run_output->set_text(vformat(TTR("Could not read %s; nothing was saved. Your edits are still open."), PROJECT_CONFIG_PATH));
 			return;
 		}
 	}
@@ -153,7 +153,11 @@ void FSBuildPipelineSettingsDialog::_save_to_project() {
 	const Error err = config->save(PROJECT_CONFIG_PATH);
 	if (err != OK) {
 		ERR_PRINT(vformat("Failed to write build pipeline configuration to '%s'.", PROJECT_CONFIG_PATH));
+		run_output->set_text(vformat(TTR("Failed to save %s (error %d). Your edits are still open."), PROJECT_CONFIG_PATH, err));
+		return;
 	}
+	// The dialog does not hide on OK, so it can stay open to report a save failure; hide only on success.
+	hide();
 }
 
 void FSBuildPipelineSettingsDialog::popup_settings() {
@@ -630,9 +634,13 @@ static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineCo
 	Dictionary options;
 	options["working_directory"] = p_task.working_directory;
 	options["environment"] = p_task.environment;
-	options["timeout_seconds"] = p_task.timeout_seconds;
 	options["inputs"] = p_task.inputs;
 	options["outputs"] = p_task.outputs;
+	// Only forward the timeout when the task actually overrides it, so a manual run uses the same
+	// default the saved pipeline would when the override is off.
+	if (p_task.has_timeout_seconds) {
+		options["timeout_seconds"] = p_task.timeout_seconds;
+	}
 
 	if (p_task.provider == COMMAND_PROVIDER_ID) {
 		options["command"] = p_task.command;
@@ -681,6 +689,18 @@ static String _format_run_output(const String &p_task_name, const Ref<FoundryBui
 	return output;
 }
 
+// Returns a non-empty reason when the registry recorded a blocking diagnostic (provider collision,
+// invalid/untrusted descriptor, loader failure) for this provider. The normal pipeline blocks on
+// these, so the editor must not silently run a possibly-wrong provider.
+static String _provider_run_block_reason(const FoundryBuildTaskRegistry &p_registry, const String &p_provider_id) {
+	for (const FoundryBuildTaskRegistry::Diagnostic &diagnostic : p_registry.get_diagnostics()) {
+		if (diagnostic.provider_id == p_provider_id) {
+			return diagnostic.message;
+		}
+	}
+	return String();
+}
+
 void FSBuildPipelineSettingsDialog::_run_selected_task() {
 	if (!project_trusted || selected_task.is_empty()) {
 		return;
@@ -692,6 +712,12 @@ void FSBuildPipelineSettingsDialog::_run_selected_task() {
 
 	FoundryBuildTaskRegistry registry;
 	_build_available_registry(registry);
+
+	const String block_reason = _provider_run_block_reason(registry, task->provider);
+	if (!block_reason.is_empty()) {
+		run_output->set_text(vformat(TTR("Cannot run task '%s': %s"), task->name, block_reason));
+		return;
+	}
 
 	const Ref<FoundryBuildResult> result = _run_task_definition(*task, registry);
 	run_output->set_text(_format_run_output(selected_task, result));
@@ -723,6 +749,12 @@ void FSBuildPipelineSettingsDialog::_run_selected_stage() {
 		const ProjectBuildPipelineConfig::TaskDefinition *task = working_config.get_task(stage_tasks[i]);
 		if (task == nullptr) {
 			continue;
+		}
+		const String block_reason = _provider_run_block_reason(registry, task->provider);
+		if (!block_reason.is_empty()) {
+			output += vformat(TTR("%s: cannot run – %s\n"), task->name, block_reason);
+			output += TTR("Stage stopped: provider is blocked.") + String("\n");
+			break;
 		}
 		const Ref<FoundryBuildResult> result = _run_task_definition(*task, registry);
 		output += _format_run_output(task->name, result);
@@ -756,7 +788,9 @@ void FSBuildPipelineSettingsDialog::_clear_cached_state() {
 FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	set_title(TTR("Build Pipeline"));
 	set_ok_button_text(TTR("Save"));
-	set_hide_on_ok(true);
+	// Keep the dialog open on OK so _save_to_project() can report (and preserve edits through) a save
+	// or read failure; it hides itself only after a successful write.
+	set_hide_on_ok(false);
 	connect(SceneStringName(confirmed), callable_mp(this, &FSBuildPipelineSettingsDialog::_save_to_project));
 
 	VBoxContainer *root = memnew(VBoxContainer);
