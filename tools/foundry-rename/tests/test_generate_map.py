@@ -2,6 +2,7 @@
 # Copyright (c) 2026-present Cafecito Games. MIT License.
 # Foundry is a fork of Godot Engine 4.6.3-stable (MIT); see NOTICE.
 
+import os
 import subprocess
 
 import generate_map as gm
@@ -65,6 +66,11 @@ def test_classify_godot_macro():
     assert gm.classify_token("GODOT_VERSION") == ("FOUNDRY_VERSION", "D")
 
 
+def test_classify_godot_camel_case_symbol():
+    assert gm.classify_token("GodotInstance") == ("FoundryInstance", "D")
+    assert gm.classify_token("GodotProfileZone") == ("FoundryProfileZone", "D")
+
+
 def test_classify_round_trips_real_macro_forms():
     for token in GDVIRTUAL_FORMS:
         to, category = gm.classify_token(token)
@@ -92,9 +98,15 @@ def test_token_regex_is_word_boundary_safe():
 
 
 def test_scan_text_discovers_families():
-    text = "GDCLASS(Foo, Object)\nGDVIRTUAL1R_REQUIRED(int, do_it)\nGDExtensionManager *m;\n#define GODOT_VERSION 4\n"
+    text = (
+        "GDCLASS(Foo, Object)\n"
+        "GDVIRTUAL1R_REQUIRED(int, do_it)\n"
+        "GDExtensionManager *m;\n"
+        "GodotInstance *instance;\n"
+        "#define GODOT_VERSION 4\n"
+    )
     tokens = gm.scan_text(text)
-    assert {"GDCLASS", "GDVIRTUAL1R_REQUIRED", "GDExtensionManager", "GODOT_VERSION"} <= tokens
+    assert {"GDCLASS", "GDVIRTUAL1R_REQUIRED", "GDExtensionManager", "GodotInstance", "GODOT_VERSION"} <= tokens
 
 
 def test_seed_context_inference():
@@ -133,6 +145,13 @@ def test_exclusion_drops_generated_row():
     seed = [_row("GDScriptDocGen", gm.EXCLUDE_MARKER)]
     merged = gm.merge_seed(generated, seed)
     assert not any(r["from"] == "GDScriptDocGen" for r in merged)
+
+
+def test_seed_renames_generate_nupkgs_versions_family():
+    rows = gm.load_seed(os.path.join(gm.HERE, "seed.tsv"))
+    replacements = {row["from"]: row["to"] for row in rows}
+    assert replacements["GenerateGodotNupkgsVersions"] == "GenerateFoundryNupkgsVersions"
+    assert replacements["GeneratedGodotNupkgsVersions"] == "GeneratedFoundryNupkgsVersions"
 
 
 def test_output_sorted_longest_source_first():

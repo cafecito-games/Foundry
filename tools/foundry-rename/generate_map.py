@@ -4,10 +4,10 @@
 """Generate the Foundry naming map.
 
 Scans the frozen Godot source tree for the families of identifiers that the
-Foundry rebrand renames (GDScript*, GDExtension*, the GD* object macros and the
-GODOT_* macro/define family), turns each discovered identifier into a concrete
-``from -> to`` row, then merges the hand-curated ``seed.tsv`` on top of the
-generated rows.
+Foundry rebrand renames (GDScript*, GDExtension*, the GD* object macros, the
+GODOT_* macro/define family, and CamelCase Godot* symbols), turns each
+discovered identifier into a concrete ``from -> to`` row, then merges the
+hand-curated ``seed.tsv`` on top of the generated rows.
 
 The merge rules:
   * Generated rows always carry ``context = code`` (they are C/C++/Python
@@ -61,6 +61,7 @@ TOKEN_RE = re.compile(
     r"|GDSOFTCLASS"
     r"|GDCLASS"
     r"|GODOT_[A-Za-z0-9_]+"
+    r"|Godot[A-Za-z0-9_]+"
     r")"
     r"(?![A-Za-z0-9_])"
 )
@@ -70,8 +71,9 @@ def classify_token(token):
     """Map a discovered token to its replacement and rename category.
 
     Categories: A = GDScript family, B = GDExtension family, C = GD* macros,
-    D = GODOT_* family. Raises ``ValueError`` for anything that is not a member
-    of a known family (which should never happen for a ``TOKEN_RE`` match).
+    D = GODOT_* / Godot* family. Raises ``ValueError`` for anything that is not
+    a member of a known family (which should never happen for a ``TOKEN_RE``
+    match).
     """
     if token == "GDScript":
         return ("FoundryScript", "A")
@@ -89,6 +91,8 @@ def classify_token(token):
         return ("FOUNDRY_REGISTER_" + token[len("GDREGISTER_") :], "C")
     if token.startswith("GODOT_"):
         return ("FOUNDRY_" + token[len("GODOT_") :], "D")
+    if token.startswith("Godot"):
+        return ("Foundry" + token[len("Godot") :], "D")
     raise ValueError("unclassifiable token: %r" % (token,))
 
 

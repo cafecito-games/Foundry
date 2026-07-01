@@ -29,7 +29,7 @@
 /**************************************************************************/
 
 #include "display_server_web.h"
-#include "godot_js.h"
+#include "foundry_js.h"
 #include "os_web.h"
 
 #include "core/config/engine.h"
@@ -103,13 +103,13 @@ void main_loop_callback() {
 	if (os->main_loop_iterate()) {
 		emscripten_cancel_main_loop(); // Cancel current loop and set the cleanup one.
 		emscripten_set_main_loop(exit_callback, -1, false);
-		godot_js_os_finish_async(cleanup_after_sync);
+		foundry_js_os_finish_async(cleanup_after_sync);
 	}
 }
 
 void print_web_header() {
 	// Emscripten.
-	char *emscripten_version_char = godot_js_emscripten_get_version();
+	char *emscripten_version_char = foundry_js_emscripten_get_version();
 	String emscripten_version = vformat("Emscripten %s", emscripten_version_char);
 	// `free()` is used here because it's not memory that was allocated by Godot.
 	free(emscripten_version_char);
@@ -145,7 +145,7 @@ extern EMSCRIPTEN_KEEPALIVE int godot_web_main(int argc, char *argv[]) {
 	if (err != OK) {
 		// Will only exit after sync.
 		emscripten_set_main_loop(exit_callback, -1, false);
-		godot_js_os_finish_async(cleanup_after_sync);
+		foundry_js_os_finish_async(cleanup_after_sync);
 		if (err == ERR_HELP) { // Returned by --help and --version, so success.
 			return EXIT_SUCCESS;
 		}

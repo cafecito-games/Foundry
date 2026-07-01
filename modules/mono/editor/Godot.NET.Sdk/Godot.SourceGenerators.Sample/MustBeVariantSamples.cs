@@ -39,7 +39,7 @@ public class MustBeVariantMethods
         Method<Plane>();
         Method<Callable>();
         Method<Signal>();
-        Method<GodotObject>();
+        Method<FoundryObject>();
         Method<StringName>();
         Method<NodePath>();
         Method<Rid>();
@@ -54,7 +54,7 @@ public class MustBeVariantMethods
         Method<Vector2[]>();
         Method<Vector3[]>();
         Method<Color[]>();
-        Method<GodotObject[]>();
+        Method<FoundryObject[]>();
         Method<StringName[]>();
         Method<NodePath[]>();
         Method<Rid[]>();
@@ -100,7 +100,7 @@ public class MustBeVariantMethods
         new ClassWithGenericVariant<Plane>();
         new ClassWithGenericVariant<Callable>();
         new ClassWithGenericVariant<Signal>();
-        new ClassWithGenericVariant<GodotObject>();
+        new ClassWithGenericVariant<FoundryObject>();
         new ClassWithGenericVariant<StringName>();
         new ClassWithGenericVariant<NodePath>();
         new ClassWithGenericVariant<Rid>();
@@ -115,7 +115,7 @@ public class MustBeVariantMethods
         new ClassWithGenericVariant<Vector2[]>();
         new ClassWithGenericVariant<Vector3[]>();
         new ClassWithGenericVariant<Color[]>();
-        new ClassWithGenericVariant<GodotObject[]>();
+        new ClassWithGenericVariant<FoundryObject[]>();
         new ClassWithGenericVariant<StringName[]>();
         new ClassWithGenericVariant<NodePath[]>();
         new ClassWithGenericVariant<Rid[]>();
@@ -286,7 +286,7 @@ public class MustBeVariantAnnotatedMethods
     {
     }
 
-    [GenericTypeAttribute<GodotObject>()]
+    [GenericTypeAttribute<FoundryObject>()]
     public void MethodWithAttributeGodotObject()
     {
     }
@@ -361,7 +361,7 @@ public class MustBeVariantAnnotatedMethods
     {
     }
 
-    [GenericTypeAttribute<GodotObject[]>()]
+    [GenericTypeAttribute<FoundryObject[]>()]
     public void MethodWithAttributeGodotObjectArray()
     {
     }
@@ -545,7 +545,7 @@ public class ClassVariantAnnotatedSignal
 {
 }
 
-[GenericTypeAttribute<GodotObject>()]
+[GenericTypeAttribute<FoundryObject>()]
 public class ClassVariantAnnotatedGodotObject
 {
 }
@@ -620,7 +620,7 @@ public class ClassVariantAnnotatedColorArray
 {
 }
 
-[GenericTypeAttribute<GodotObject[]>()]
+[GenericTypeAttribute<FoundryObject[]>()]
 public class ClassVariantAnnotatedGodotObjectArray
 {
 }

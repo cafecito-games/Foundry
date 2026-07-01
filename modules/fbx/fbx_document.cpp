@@ -416,11 +416,11 @@ Error FBXDocument::_parse_nodes(Ref<FBXState> p_state) {
 				}
 			}
 
-			Transform3D godot_rest_xform = node->transform;
+			Transform3D foundry_rest_xform = node->transform;
 			if (found_rest_xform && !bad_rest_xform) {
-				godot_rest_xform = candidate_rest_xform;
+				foundry_rest_xform = candidate_rest_xform;
 			}
-			node->set_additional_data("GODOT_rest_transform", godot_rest_xform);
+			node->set_additional_data("GODOT_rest_transform", foundry_rest_xform);
 		}
 
 		for (const ufbx_node *child : fbx_node->children) {

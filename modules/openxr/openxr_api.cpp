@@ -171,7 +171,7 @@ void OpenXRAPI::OpenXRSwapChainInfo::free() {
 }
 
 bool OpenXRAPI::OpenXRSwapChainInfo::acquire(bool &p_should_render) {
-	GodotProfileZone("OpenXR: acquire swapchain");
+	FoundryProfileZone("OpenXR: acquire swapchain");
 	ERR_FAIL_COND_V(image_acquired, true); // This was not released when it should be, error out and reuse...
 
 	OpenXRAPI *openxr_api = OpenXRAPI::get_singleton();
@@ -2298,8 +2298,8 @@ bool OpenXRAPI::process() {
 		return false;
 	}
 
-	GodotProfileZone("OpenXRAPI::process");
-	GodotProfileZoneGroupedFirst(_profile_zone, "xrWaitFrame");
+	FoundryProfileZone("OpenXRAPI::process");
+	FoundryProfileZoneGroupedFirst(_profile_zone, "xrWaitFrame");
 
 	// We call xrWaitFrame as early as possible, this will allow OpenXR to get
 	// proper timing info between this point, and when we're ready to start rendering.
@@ -2340,24 +2340,24 @@ bool OpenXRAPI::process() {
 		frame_state.predictedDisplayPeriod = 0;
 	}
 
-	GodotProfileZoneGrouped(_profile_zone, "set_render_display_info");
+	FoundryProfileZoneGrouped(_profile_zone, "set_render_display_info");
 	set_render_display_info(frame_state.predictedDisplayTime, frame_state.shouldRender);
 
 	// This is before setup_play_space() to ensure that it happens on the frame after
 	// the play space has been created.
 	if (unlikely(local_floor_emulation.should_reset_floor_height && !play_space_is_dirty)) {
-		GodotProfileZoneGrouped(_profile_zone, "reset_emulated_floor_height");
+		FoundryProfileZoneGrouped(_profile_zone, "reset_emulated_floor_height");
 		reset_emulated_floor_height();
 		local_floor_emulation.should_reset_floor_height = false;
 	}
 
 	if (unlikely(play_space_is_dirty)) {
-		GodotProfileZoneGrouped(_profile_zone, "setup_play_space");
+		FoundryProfileZoneGrouped(_profile_zone, "setup_play_space");
 		setup_play_space();
 		play_space_is_dirty = false;
 	}
 
-	GodotProfileZoneGrouped(_profile_zone, "extension wrappers on_process");
+	FoundryProfileZoneGrouped(_profile_zone, "extension wrappers on_process");
 	for (OpenXRExtensionWrapper *wrapper : registered_extension_wrappers) {
 		wrapper->on_process();
 	}

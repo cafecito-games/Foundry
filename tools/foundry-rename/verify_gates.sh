@@ -66,7 +66,7 @@ gate2_stragglers() {
 
   # GODOT_* / project.godot residuals — only the documented intentional set is
   # allowed. We assert membership in that allow-list rather than a raw count.
-  local allow='libgodot\.h|emscripten_helpers\.py|eslint\.config\.cjs|editor\.html|service-worker\.js|export_plugin\.cpp|bindings_generator\.cpp|register_types\.cpp|fsr2\.cpp|motion_vector_inc\.glsl|CMakeLists\.txt|org\.godotengine\.Godot\.xml|editor_import_blend_runner\.cpp|project_settings\.cpp|SConstruct|\.po$|\.pot$'
+  local allow='libfoundry\.h|emscripten_helpers\.py|eslint\.config\.cjs|editor\.html|service-worker\.js|export_plugin\.cpp|bindings_generator\.cpp|register_types\.cpp|fsr2\.cpp|motion_vector_inc\.glsl|CMakeLists\.txt|org\.godotengine\.Godot\.xml|editor_import_blend_runner\.cpp|project_settings\.cpp|SConstruct|\.po$|\.pot$'
   local unexpected
   unexpected=$(git grep -lE 'GODOT_[A-Z]|project\.godot' -- "${EXCLUDE_CODE[@]}" \
                  | "$GREP" -vE "$allow" || true)

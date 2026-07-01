@@ -7,7 +7,7 @@ partial class AllReadOnly
     /// <summary>
     /// Cached StringNames for the properties and fields contained in this class, for fast lookup.
     /// </summary>
-    public new class PropertyName : global::Godot.GodotObject.PropertyName {
+    public new class PropertyName : global::Godot.FoundryObject.PropertyName {
         /// <summary>
         /// Cached name for the 'ReadOnlyAutoProperty' property.
         /// </summary>

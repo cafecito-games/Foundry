@@ -30,7 +30,7 @@
 
 package org.godotengine.godot.input;
 
-import org.godotengine.godot.GodotLib;
+import org.godotengine.godot.FoundryLib;
 
 import android.hardware.Sensor;
 import android.util.Log;
@@ -165,8 +165,8 @@ final class InputEventRunnable implements Runnable {
 			positions[i * 6 + 1] = event.getX(i);
 			positions[i * 6 + 2] = event.getY(i);
 			positions[i * 6 + 3] = event.getPressure(i);
-			positions[i * 6 + 4] = GodotInputHandler.getEventTiltX(event);
-			positions[i * 6 + 5] = GodotInputHandler.getEventTiltY(event);
+			positions[i * 6 + 4] = FoundryInputHandler.getEventTiltX(event);
+			positions[i * 6 + 5] = FoundryInputHandler.getEventTiltY(event);
 		}
 	}
 
@@ -267,7 +267,7 @@ final class InputEventRunnable implements Runnable {
 
 			switch (currentEventType) {
 				case MOUSE:
-					GodotLib.dispatchMouseEvent(
+					FoundryLib.dispatchMouseEvent(
 							eventAction,
 							buttonsMask,
 							eventX,
@@ -282,7 +282,7 @@ final class InputEventRunnable implements Runnable {
 					break;
 
 				case TOUCH:
-					GodotLib.dispatchTouchEvent(
+					FoundryLib.dispatchTouchEvent(
 							eventAction,
 							actionPointerId,
 							pointerCount,
@@ -291,49 +291,49 @@ final class InputEventRunnable implements Runnable {
 					break;
 
 				case MAGNIFY:
-					GodotLib.magnify(eventX, eventY, magnifyFactor);
+					FoundryLib.magnify(eventX, eventY, magnifyFactor);
 					break;
 
 				case PAN:
-					GodotLib.pan(eventX, eventY, eventDeltaX, eventDeltaY);
+					FoundryLib.pan(eventX, eventY, eventDeltaX, eventDeltaY);
 					break;
 
 				case JOYSTICK_BUTTON:
-					GodotLib.joybutton(joystickDevice, button, eventPressed);
+					FoundryLib.joybutton(joystickDevice, button, eventPressed);
 					break;
 
 				case JOYSTICK_AXIS:
-					GodotLib.joyaxis(joystickDevice, axis, value);
+					FoundryLib.joyaxis(joystickDevice, axis, value);
 					break;
 
 				case JOYSTICK_HAT:
-					GodotLib.joyhat(joystickDevice, hatX, hatY);
+					FoundryLib.joyhat(joystickDevice, hatX, hatY);
 					break;
 
 				case JOYSTICK_CONNECTION_CHANGED:
-					GodotLib.joyconnectionchanged(joystickDevice, connected, joystickName);
+					FoundryLib.joyconnectionchanged(joystickDevice, connected, joystickName);
 					break;
 
 				case KEY:
-					GodotLib.key(physicalKeycode, unicode, keyLabel, eventPressed, echo);
+					FoundryLib.key(physicalKeycode, unicode, keyLabel, eventPressed, echo);
 					break;
 
 				case SENSOR:
 					switch (sensorType) {
 						case Sensor.TYPE_ACCELEROMETER:
-							GodotLib.accelerometer(-rotatedValue0, -rotatedValue1, -rotatedValue2);
+							FoundryLib.accelerometer(-rotatedValue0, -rotatedValue1, -rotatedValue2);
 							break;
 
 						case Sensor.TYPE_GRAVITY:
-							GodotLib.gravity(-rotatedValue0, -rotatedValue1, -rotatedValue2);
+							FoundryLib.gravity(-rotatedValue0, -rotatedValue1, -rotatedValue2);
 							break;
 
 						case Sensor.TYPE_MAGNETIC_FIELD:
-							GodotLib.magnetometer(-rotatedValue0, -rotatedValue1, -rotatedValue2);
+							FoundryLib.magnetometer(-rotatedValue0, -rotatedValue1, -rotatedValue2);
 							break;
 
 						case Sensor.TYPE_GYROSCOPE:
-							GodotLib.gyroscope(rotatedValue0, rotatedValue1, rotatedValue2);
+							FoundryLib.gyroscope(rotatedValue0, rotatedValue1, rotatedValue2);
 							break;
 					}
 					break;

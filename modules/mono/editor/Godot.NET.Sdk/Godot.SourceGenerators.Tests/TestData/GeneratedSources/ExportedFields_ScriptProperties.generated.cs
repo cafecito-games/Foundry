@@ -7,7 +7,7 @@ partial class ExportedFields
     /// <summary>
     /// Cached StringNames for the properties and fields contained in this class, for fast lookup.
     /// </summary>
-    public new class PropertyName : global::Godot.GodotObject.PropertyName {
+    public new class PropertyName : global::Godot.FoundryObject.PropertyName {
         /// <summary>
         /// Cached name for the '_fieldBoolean' field.
         /// </summary>
@@ -438,7 +438,7 @@ partial class ExportedFields
             return true;
         }
         if (name == PropertyName.@_fieldGodotObjectOrDerivedArray) {
-            this.@_fieldGodotObjectOrDerivedArray = global::Godot.NativeInterop.VariantUtils.ConvertToSystemArrayOfGodotObject<global::Godot.GodotObject>(value);
+            this.@_fieldGodotObjectOrDerivedArray = global::Godot.NativeInterop.VariantUtils.ConvertToSystemArrayOfGodotObject<global::Godot.FoundryObject>(value);
             return true;
         }
         if (name == PropertyName.@_fieldStringNameArray) {
@@ -466,7 +466,7 @@ partial class ExportedFields
             return true;
         }
         if (name == PropertyName.@_fieldGodotObjectOrDerived) {
-            this.@_fieldGodotObjectOrDerived = global::Godot.NativeInterop.VariantUtils.ConvertTo<global::Godot.GodotObject>(value);
+            this.@_fieldGodotObjectOrDerived = global::Godot.NativeInterop.VariantUtils.ConvertTo<global::Godot.FoundryObject>(value);
             return true;
         }
         if (name == PropertyName.@_fieldGodotResourceTexture) {
@@ -720,7 +720,7 @@ partial class ExportedFields
             return true;
         }
         if (name == PropertyName.@_fieldGodotObjectOrDerived) {
-            value = global::Godot.NativeInterop.VariantUtils.CreateFrom<global::Godot.GodotObject>(this.@_fieldGodotObjectOrDerived);
+            value = global::Godot.NativeInterop.VariantUtils.CreateFrom<global::Godot.FoundryObject>(this.@_fieldGodotObjectOrDerived);
             return true;
         }
         if (name == PropertyName.@_fieldGodotResourceTexture) {

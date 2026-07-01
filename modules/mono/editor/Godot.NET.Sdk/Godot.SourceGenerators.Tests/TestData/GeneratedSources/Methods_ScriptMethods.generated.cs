@@ -7,7 +7,7 @@ partial class Methods
     /// <summary>
     /// Cached StringNames for the methods contained in this class, for fast lookup.
     /// </summary>
-    public new class MethodName : global::Godot.GodotObject.MethodName {
+    public new class MethodName : global::Godot.FoundryObject.MethodName {
         /// <summary>
         /// Cached name for the 'MethodWithOverload' method.
         /// </summary>

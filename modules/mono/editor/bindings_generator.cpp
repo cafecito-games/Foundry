@@ -823,7 +823,7 @@ void BindingsGenerator::_append_text_method(StringBuilder &p_output, const TypeI
 	} else if (!p_target_itype || !p_target_itype->is_object_type) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve method reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve method reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from method reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -891,7 +891,7 @@ void BindingsGenerator::_append_text_member(StringBuilder &p_output, const TypeI
 	} else if (!p_target_itype || !p_target_itype->is_object_type) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve member reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve member reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from member reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -930,7 +930,7 @@ void BindingsGenerator::_append_text_signal(StringBuilder &p_output, const TypeI
 	if (!p_target_itype || !p_target_itype->is_object_type) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve signal reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve signal reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from signal reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -993,7 +993,7 @@ void BindingsGenerator::_append_text_constant(StringBuilder &p_output, const Typ
 
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve constant reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve constant reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from constant reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -1105,7 +1105,7 @@ void BindingsGenerator::_append_xml_method(StringBuilder &p_xml_output, const Ty
 	} else if (!p_target_itype || !p_target_itype->is_object_type) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve method reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve method reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from method reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -1178,7 +1178,7 @@ void BindingsGenerator::_append_xml_member(StringBuilder &p_xml_output, const Ty
 	} else if (!p_target_itype || !p_target_itype->is_object_type) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve member reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve member reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from member reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -1220,7 +1220,7 @@ void BindingsGenerator::_append_xml_signal(StringBuilder &p_xml_output, const Ty
 	if (!p_target_itype || !p_target_itype->is_object_type) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve signal reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve signal reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from signal reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -1290,7 +1290,7 @@ void BindingsGenerator::_append_xml_constant(StringBuilder &p_xml_output, const 
 
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			if (p_target_itype) {
-				OS::get_singleton()->print("Cannot resolve constant reference for non-GodotObject type in documentation: %s\n", p_link_target.utf8().get_data());
+				OS::get_singleton()->print("Cannot resolve constant reference for non-FoundryObject type in documentation: %s\n", p_link_target.utf8().get_data());
 			} else {
 				OS::get_singleton()->print("Cannot resolve type from constant reference in documentation: %s\n", p_link_target.utf8().get_data());
 			}
@@ -1751,10 +1751,10 @@ Error BindingsGenerator::generate_cs_core_project(const String &p_proj_dir) {
 
 	da->change_dir(p_proj_dir);
 	da->make_dir("Generated");
-	da->make_dir("Generated/GodotObjects");
+	da->make_dir("Generated/FoundryObjects");
 
 	String base_gen_dir = Path::join(p_proj_dir, "Generated");
-	String godot_objects_gen_dir = Path::join(base_gen_dir, "GodotObjects");
+	String godot_objects_gen_dir = Path::join(base_gen_dir, "FoundryObjects");
 
 	Vector<String> compile_items;
 
@@ -1816,9 +1816,9 @@ Error BindingsGenerator::generate_cs_core_project(const String &p_proj_dir) {
 										 "\n");
 		cs_built_in_ctors_content.append("internal static class " BINDINGS_CLASS_CONSTRUCTOR "\n{");
 
-		cs_built_in_ctors_content.append(MEMBER_BEGIN "internal static readonly Dictionary<string, Func<IntPtr, GodotObject>> " BINDINGS_CLASS_CONSTRUCTOR_DICTIONARY ";\n");
+		cs_built_in_ctors_content.append(MEMBER_BEGIN "internal static readonly Dictionary<string, Func<IntPtr, FoundryObject>> " BINDINGS_CLASS_CONSTRUCTOR_DICTIONARY ";\n");
 
-		cs_built_in_ctors_content.append(MEMBER_BEGIN "public static GodotObject Invoke(string nativeTypeNameStr, IntPtr nativeObjectPtr)\n");
+		cs_built_in_ctors_content.append(MEMBER_BEGIN "public static FoundryObject Invoke(string nativeTypeNameStr, IntPtr nativeObjectPtr)\n");
 		cs_built_in_ctors_content.append(INDENT1 OPEN_BLOCK);
 		cs_built_in_ctors_content.append(INDENT2 "if (!" BINDINGS_CLASS_CONSTRUCTOR_DICTIONARY ".TryGetValue(nativeTypeNameStr, out var constructor))\n");
 		cs_built_in_ctors_content.append(INDENT3 "throw new InvalidOperationException(\"Wrapper class not found for type: \" + nativeTypeNameStr);\n");
@@ -1947,10 +1947,10 @@ Error BindingsGenerator::generate_cs_editor_project(const String &p_proj_dir) {
 
 	da->change_dir(p_proj_dir);
 	da->make_dir("Generated");
-	da->make_dir("Generated/GodotObjects");
+	da->make_dir("Generated/FoundryObjects");
 
 	String base_gen_dir = Path::join(p_proj_dir, "Generated");
-	String godot_objects_gen_dir = Path::join(base_gen_dir, "GodotObjects");
+	String godot_objects_gen_dir = Path::join(base_gen_dir, "FoundryObjects");
 
 	Vector<String> compile_items;
 
@@ -2109,7 +2109,7 @@ Error BindingsGenerator::generate_cs_api(const String &p_output_dir) {
 
 	Error proj_err;
 
-	// Generate GodotSharp source files
+	// Generate FoundrySharp source files
 
 	String core_proj_dir = output_dir.path_join(CORE_API_ASSEMBLY_NAME);
 
@@ -2119,7 +2119,7 @@ Error BindingsGenerator::generate_cs_api(const String &p_output_dir) {
 		return proj_err;
 	}
 
-	// Generate GodotSharpEditor source files
+	// Generate FoundrySharpEditor source files
 
 	String editor_proj_dir = output_dir.path_join(EDITOR_API_ASSEMBLY_NAME);
 
@@ -2147,7 +2147,7 @@ Error BindingsGenerator::_generate_cs_type(const TypeInterface &itype, const Str
 	bool is_derived_type = itype.base_name != StringName();
 
 	if (!is_derived_type) {
-		// Some GodotObject assertions
+		// Some FoundryObject assertions
 		CRASH_COND(itype.cname != name_cache.type_Object);
 		CRASH_COND(!itype.is_instantiable);
 		CRASH_COND(itype.api_type != ClassDB::API_CORE);
@@ -2193,11 +2193,11 @@ Error BindingsGenerator::_generate_cs_type(const TypeInterface &itype, const Str
 		output.append("\")]\n");
 	}
 
-	// We generate a `GodotClassName` attribute if the engine class name is not the same as the
+	// We generate a `FoundryClassName` attribute if the engine class name is not the same as the
 	// generated C# class name. This allows introspection code to find the name associated with
 	// the class. If the attribute is not present, the C# class name can be used instead.
 	if (itype.name != itype.proxy_name) {
-		output << "[GodotClassName(\"" << itype.name << "\")]\n";
+		output << "[FoundryClassName(\"" << itype.name << "\")]\n";
 	}
 
 	output.append("public ");
@@ -2343,7 +2343,7 @@ Error BindingsGenerator::_generate_cs_type(const TypeInterface &itype, const Str
 			StringName instance_name = itype.name + CS_SINGLETON_INSTANCE_SUFFIX;
 			instance_type_name = obj_types.has(instance_name)
 					? obj_types[instance_name].proxy_name
-					: "GodotObject";
+					: "FoundryObject";
 		} else {
 			instance_type_name = itype.proxy_name;
 		}
@@ -2356,8 +2356,8 @@ Error BindingsGenerator::_generate_cs_type(const TypeInterface &itype, const Str
 	}
 
 	if (!itype.is_singleton) {
-		// IMPORTANT: We also generate the static fields for GodotObject instead of declaring
-		// them manually in the `GodotObject.base.cs` partial class declaration, because they're
+		// IMPORTANT: We also generate the static fields for FoundryObject instead of declaring
+		// them manually in the `FoundryObject.base.cs` partial class declaration, because they're
 		// required by other static fields in this generated partial class declaration.
 		// Static fields are initialized in order of declaration, but when they're in different
 		// partial class declarations then it becomes harder to tell (Rider warns about this).
@@ -3058,9 +3058,9 @@ Error BindingsGenerator::_generate_cs_method(const BindingsGenerator::TypeInterf
 					 << INDENT1 "private static readonly IntPtr " << method_bind_field << " = ";
 
 			if (p_itype.is_singleton) {
-				// Singletons are static classes. They don't derive GodotObject,
+				// Singletons are static classes. They don't derive FoundryObject,
 				// so we need to specify the type to call the static method.
-				p_output << "GodotObject.";
+				p_output << "FoundryObject.";
 			}
 
 			p_output << ICALL_CLASSDB_GET_METHOD_WITH_COMPATIBILITY "(" BINDINGS_NATIVE_NAME_FIELD ", MethodName."
@@ -3707,7 +3707,7 @@ const String BindingsGenerator::_get_generic_type_parameters(const TypeInterface
 	return params;
 }
 
-StringName BindingsGenerator::_get_type_name_from_meta(Variant::Type p_type, GodotTypeInfo::Metadata p_meta) {
+StringName BindingsGenerator::_get_type_name_from_meta(Variant::Type p_type, FoundryTypeInfo::Metadata p_meta) {
 	if (p_type == Variant::INT) {
 		return _get_int_type_name_from_meta(p_meta);
 	} else if (p_type == Variant::FLOAT) {
@@ -3717,36 +3717,36 @@ StringName BindingsGenerator::_get_type_name_from_meta(Variant::Type p_type, God
 	}
 }
 
-StringName BindingsGenerator::_get_int_type_name_from_meta(GodotTypeInfo::Metadata p_meta) {
+StringName BindingsGenerator::_get_int_type_name_from_meta(FoundryTypeInfo::Metadata p_meta) {
 	switch (p_meta) {
-		case GodotTypeInfo::METADATA_INT_IS_INT8:
+		case FoundryTypeInfo::METADATA_INT_IS_INT8:
 			return "sbyte";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_INT16:
+		case FoundryTypeInfo::METADATA_INT_IS_INT16:
 			return "short";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_INT32:
+		case FoundryTypeInfo::METADATA_INT_IS_INT32:
 			return "int";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_INT64:
+		case FoundryTypeInfo::METADATA_INT_IS_INT64:
 			return "long";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_UINT8:
+		case FoundryTypeInfo::METADATA_INT_IS_UINT8:
 			return "byte";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_UINT16:
+		case FoundryTypeInfo::METADATA_INT_IS_UINT16:
 			return "ushort";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_UINT32:
+		case FoundryTypeInfo::METADATA_INT_IS_UINT32:
 			return "uint";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_UINT64:
+		case FoundryTypeInfo::METADATA_INT_IS_UINT64:
 			return "ulong";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_CHAR16:
+		case FoundryTypeInfo::METADATA_INT_IS_CHAR16:
 			return "char";
 			break;
-		case GodotTypeInfo::METADATA_INT_IS_CHAR32:
+		case FoundryTypeInfo::METADATA_INT_IS_CHAR32:
 			// To prevent breaking compatibility, C# bindings need to keep using `long`.
 			return "long";
 		default:
@@ -3755,12 +3755,12 @@ StringName BindingsGenerator::_get_int_type_name_from_meta(GodotTypeInfo::Metada
 	}
 }
 
-StringName BindingsGenerator::_get_float_type_name_from_meta(GodotTypeInfo::Metadata p_meta) {
+StringName BindingsGenerator::_get_float_type_name_from_meta(FoundryTypeInfo::Metadata p_meta) {
 	switch (p_meta) {
-		case GodotTypeInfo::METADATA_REAL_IS_FLOAT:
+		case FoundryTypeInfo::METADATA_REAL_IS_FLOAT:
 			return "float";
 			break;
-		case GodotTypeInfo::METADATA_REAL_IS_DOUBLE:
+		case FoundryTypeInfo::METADATA_REAL_IS_DOUBLE:
 			return "double";
 			break;
 		default:
@@ -3932,14 +3932,14 @@ bool BindingsGenerator::_populate_object_type_interfaces() {
 
 		itype.cs_type = itype.proxy_name;
 
-		itype.cs_in_expr = "GodotObject." CS_STATIC_METHOD_GETINSTANCE "(%0)";
+		itype.cs_in_expr = "FoundryObject." CS_STATIC_METHOD_GETINSTANCE "(%0)";
 
 		itype.cs_out = "%5return (%2)%0(%1);";
 
 		itype.c_arg_in = "&%s";
 		itype.c_type = "IntPtr";
 		itype.c_type_in = itype.c_type;
-		itype.c_type_out = "GodotObject";
+		itype.c_type_out = "FoundryObject";
 
 		// Populate properties
 
@@ -4120,7 +4120,7 @@ bool BindingsGenerator::_populate_object_type_interfaces() {
 			} else if (return_info.type == Variant::NIL) {
 				imethod.return_type.cname = name_cache.type_void;
 			} else {
-				imethod.return_type.cname = _get_type_name_from_meta(return_info.type, m ? m->get_argument_meta(-1) : (GodotTypeInfo::Metadata)method_info.return_val_metadata);
+				imethod.return_type.cname = _get_type_name_from_meta(return_info.type, m ? m->get_argument_meta(-1) : (FoundryTypeInfo::Metadata)method_info.return_val_metadata);
 			}
 
 			for (int64_t idx = 0; idx < method_info.arguments.size(); ++idx) {
@@ -4149,7 +4149,7 @@ bool BindingsGenerator::_populate_object_type_interfaces() {
 				} else if (arginfo.type == Variant::NIL) {
 					iarg.type.cname = name_cache.type_Variant;
 				} else {
-					iarg.type.cname = _get_type_name_from_meta(arginfo.type, m ? m->get_argument_meta(idx) : (GodotTypeInfo::Metadata)method_info.get_argument_meta(idx));
+					iarg.type.cname = _get_type_name_from_meta(arginfo.type, m ? m->get_argument_meta(idx) : (FoundryTypeInfo::Metadata)method_info.get_argument_meta(idx));
 				}
 
 				iarg.name = escape_csharp_keyword(snake_to_camel_case(iarg.name));
@@ -4297,7 +4297,7 @@ bool BindingsGenerator::_populate_object_type_interfaces() {
 				} else if (arginfo.type == Variant::NIL) {
 					iarg.type.cname = name_cache.type_Variant;
 				} else {
-					iarg.type.cname = _get_type_name_from_meta(arginfo.type, (GodotTypeInfo::Metadata)method_info.get_argument_meta(idx));
+					iarg.type.cname = _get_type_name_from_meta(arginfo.type, (FoundryTypeInfo::Metadata)method_info.get_argument_meta(idx));
 				}
 
 				iarg.name = escape_csharp_keyword(snake_to_camel_case(iarg.name));

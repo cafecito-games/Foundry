@@ -1288,7 +1288,7 @@ def generate_vs_project(env, original_args, project_name="foundry"):
                 vsconf = f"{target}|{a['platform']}"
                 break
 
-        condition = "'$(GodotConfiguration)|$(GodotPlatform)'=='" + vsconf + "'"
+        condition = "'$(FoundryConfiguration)|$(FoundryPlatform)'=='" + vsconf + "'"
         itemlist = {}
         for item in activeItems:
             key = os.path.dirname(item).replace("\\", "_")
@@ -1436,8 +1436,8 @@ def generate_vs_project(env, original_args, project_name="foundry"):
 
                 properties += [
                     f"<PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='editor|{proj_plat}'\">",
-                    "  <GodotConfiguration>editor</GodotConfiguration>",
-                    f"  <GodotPlatform>{proj_plat}</GodotPlatform>",
+                    "  <FoundryConfiguration>editor</FoundryConfiguration>",
+                    f"  <FoundryPlatform>{proj_plat}</FoundryPlatform>",
                     "</PropertyGroup>",
                 ]
 
@@ -1457,8 +1457,8 @@ def generate_vs_project(env, original_args, project_name="foundry"):
 
                 properties += [
                     f"<PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='{godot_target}|{proj_plat}'\">",
-                    f"  <GodotConfiguration>{godot_target}</GodotConfiguration>",
-                    f"  <GodotPlatform>{proj_plat}</GodotPlatform>",
+                    f"  <FoundryConfiguration>{godot_target}</FoundryConfiguration>",
+                    f"  <FoundryPlatform>{proj_plat}</FoundryPlatform>",
                     "</PropertyGroup>",
                 ]
 

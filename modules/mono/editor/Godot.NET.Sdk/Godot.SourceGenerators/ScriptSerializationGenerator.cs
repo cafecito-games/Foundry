@@ -137,7 +137,7 @@ namespace Godot.SourceGenerators
                 .Where(s => s.GetAttributes()
                     .Any(a => a.AttributeClass?.IsGodotSignalAttribute() ?? false));
 
-            List<GodotSignalDelegateData> godotSignalDelegates = new();
+            List<FoundrySignalDelegateData> godotSignalDelegates = new();
 
             foreach (var signalDelegateSymbol in signalDelegateSymbols)
             {
@@ -160,7 +160,7 @@ namespace Godot.SourceGenerators
             source.Append("    /// <inheritdoc/>\n");
             source.Append("    [global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]\n");
             source.Append(
-                "    protected override void SaveGodotObjectData(global::Godot.Bridge.GodotSerializationInfo info)\n    {\n");
+                "    protected override void SaveGodotObjectData(global::Godot.Bridge.FoundrySerializationInfo info)\n    {\n");
             source.Append("        base.SaveGodotObjectData(info);\n");
 
             // Save properties
@@ -209,7 +209,7 @@ namespace Godot.SourceGenerators
             source.Append("    /// <inheritdoc/>\n");
             source.Append("    [global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]\n");
             source.Append(
-                "    protected override void RestoreGodotObjectData(global::Godot.Bridge.GodotSerializationInfo info)\n    {\n");
+                "    protected override void RestoreGodotObjectData(global::Godot.Bridge.FoundrySerializationInfo info)\n    {\n");
             source.Append("        base.RestoreGodotObjectData(info);\n");
 
             // Restore properties

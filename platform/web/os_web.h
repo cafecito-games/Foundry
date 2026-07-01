@@ -33,7 +33,7 @@
 #include "audio_driver_web.h"
 #include "webmidi_driver.h"
 
-#include "godot_js.h"
+#include "foundry_js.h"
 
 #include "core/input/input.h"
 #include "drivers/unix/os_unix.h"

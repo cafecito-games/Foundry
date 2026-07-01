@@ -31,6 +31,6 @@
 #pragma once
 
 #import "app_delegate_service.h"
-#import "godot_app_delegate.h"
-#import "godot_view_apple_embedded.h"
-#import "godot_view_controller.h"
+#import "foundry_app_delegate.h"
+#import "foundry_view_apple_embedded.h"
+#import "foundry_view_controller.h"

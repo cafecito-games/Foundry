@@ -37,7 +37,7 @@
 #include "thirdparty/misc/smolv.h"
 
 #if defined(ANDROID_ENABLED)
-#include "platform/android/java_godot_wrapper.h"
+#include "platform/android/java_foundry_wrapper.h"
 #include "platform/android/os_android.h"
 #include "platform/android/thread_jandroid.h"
 #endif

@@ -86,7 +86,7 @@ const PackedStringArray ProjectSettings::get_required_features() {
 const PackedStringArray ProjectSettings::_get_supported_features() {
 	PackedStringArray features = get_required_features();
 
-#ifdef LIBGODOT_ENABLED
+#ifdef LIBFOUNDRY_ENABLED
 	features.append("LibGodot");
 #endif
 

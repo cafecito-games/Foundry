@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-	<style name="GodotEditorTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+	<style name="FoundryEditorTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
 	</style>
 
-	<style name="GodotGameTheme" parent="GodotEditorTheme">
+	<style name="FoundryGameTheme" parent="FoundryEditorTheme">
 		<item name="android:windowIsTranslucent">true</item>
 	</style>
 
-	<style name="GodotEditorSplashScreenTheme" parent="Theme.SplashScreen.IconBackground">
+	<style name="FoundryEditorSplashScreenTheme" parent="Theme.SplashScreen.IconBackground">
 		<!-- Set the theme of the Activity that directly follows your splash
 		screen. This is required. -->
-		<item name="postSplashScreenTheme">@style/GodotEditorTheme</item>
+		<item name="postSplashScreenTheme">@style/FoundryEditorTheme</item>
 	</style>
 
-	<style name="GodotEmbeddedGameTheme" parent="@android:style/Theme.DeviceDefault.Panel">
+	<style name="FoundryEmbeddedGameTheme" parent="@android:style/Theme.DeviceDefault.Panel">
 	</style>
 </resources>

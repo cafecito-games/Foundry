@@ -33,8 +33,8 @@ package org.godotengine.godot.vulkan
 
 import android.util.Log
 import android.view.Surface
-import org.godotengine.godot.GodotLib
-import org.godotengine.godot.plugin.GodotPluginRegistry
+import org.godotengine.godot.FoundryLib
+import org.godotengine.godot.plugin.FoundryPluginRegistry
 
 /**
  * Responsible to setting up and driving the Vulkan rendering logic.
@@ -55,13 +55,13 @@ internal class VkRenderer {
 		private val TAG = VkRenderer::class.java.simpleName
 	}
 
-	private val pluginRegistry: GodotPluginRegistry = GodotPluginRegistry.getPluginRegistry()
+	private val pluginRegistry: FoundryPluginRegistry = FoundryPluginRegistry.getPluginRegistry()
 
 	/**
 	 * Called when the surface is created and signals the beginning of rendering.
 	 */
 	fun onVkSurfaceCreated(surface: Surface) {
-		GodotLib.newcontext(surface)
+		FoundryLib.newcontext(surface)
 
 		for (plugin in pluginRegistry.getAllPlugins()) {
 			plugin.onVkSurfaceCreated(surface)
@@ -72,7 +72,7 @@ internal class VkRenderer {
 	 * Called after the surface is created and whenever its size changes.
 	 */
 	fun onVkSurfaceChanged(surface: Surface, width: Int, height: Int) {
-		GodotLib.resize(surface, width, height)
+		FoundryLib.resize(surface, width, height)
 
 		for (plugin in pluginRegistry.getAllPlugins()) {
 			plugin.onVkSurfaceChanged(surface, width, height)
@@ -83,7 +83,7 @@ internal class VkRenderer {
 	 * Called to draw the current frame.
 	 */
 	fun onVkDrawFrame() {
-		GodotLib.step()
+		FoundryLib.step()
 		for (plugin in pluginRegistry.getAllPlugins()) {
 			plugin.onVkDrawFrame()
 		}
@@ -93,14 +93,14 @@ internal class VkRenderer {
 	 * Called when the rendering thread is resumed.
 	 */
 	fun onVkResume() {
-		GodotLib.onRendererResumed()
+		FoundryLib.onRendererResumed()
 	}
 
 	/**
 	 * Called when the rendering thread is paused.
 	 */
 	fun onVkPause() {
-		GodotLib.onRendererPaused()
+		FoundryLib.onRendererPaused()
 	}
 
 	/**
@@ -108,6 +108,6 @@ internal class VkRenderer {
 	 */
 	fun onRenderThreadExiting() {
 		Log.d(TAG, "Destroying Godot Engine")
-		GodotLib.ondestroy()
+		FoundryLib.ondestroy()
 	}
 }

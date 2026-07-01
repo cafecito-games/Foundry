@@ -164,7 +164,7 @@ Update `is_resolvable_code_action_kind()` so the new refactor resolves lazily:
 			return true;
 ```
 
-No change is needed in `modules/foundry_script/language_server/godot_lsp.h` because `CodeActionOptions` already advertises `refactor.rewrite`.
+No change is needed in `modules/foundry_script/language_server/foundry_lsp.h` because `CodeActionOptions` already advertises `refactor.rewrite`.
 
 - [ ] **Step 6: Run the test to verify it passes**
 

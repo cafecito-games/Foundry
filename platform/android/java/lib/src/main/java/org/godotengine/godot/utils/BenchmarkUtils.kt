@@ -47,7 +47,7 @@ import java.util.Collections
 /**
  * Contains benchmark related utilities methods
  */
-private const val TAG = "GodotBenchmark"
+private const val TAG = "FoundryBenchmark"
 
 var useBenchmark = false
 var benchmarkFile = ""

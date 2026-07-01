@@ -7,21 +7,21 @@ Import("env")
 
 files = [
     "os_macos.mm",
-    "godot_application.mm",
-    "godot_application_delegate.mm",
+    "foundry_application.mm",
+    "foundry_application_delegate.mm",
     "crash_handler_macos.mm",
     "display_server_macos_base.mm",
     "display_server_macos.mm",
-    "godot_button_view.mm",
-    "godot_content_view.mm",
-    "godot_core_cursor.mm",
-    "godot_status_item.mm",
-    "godot_window_delegate.mm",
-    "godot_window.mm",
+    "foundry_button_view.mm",
+    "foundry_content_view.mm",
+    "foundry_core_cursor.mm",
+    "foundry_status_item.mm",
+    "foundry_window_delegate.mm",
+    "foundry_window.mm",
     "key_mapping_macos.mm",
-    "godot_menu_delegate.mm",
-    "godot_menu_item.mm",
-    "godot_open_save_delegate.mm",
+    "foundry_menu_delegate.mm",
+    "foundry_menu_item.mm",
+    "foundry_open_save_delegate.mm",
     "native_menu_macos.mm",
     "dir_access_macos.mm",
     "tts_macos.mm",
@@ -45,9 +45,9 @@ if env["library_type"] == "executable":
         # the FoundryScript fuzzing harness in fuzz_foundry_script_macos.mm.
         files += ["fuzz_foundry_script_macos.mm"]
     else:
-        files += ["godot_main_macos.mm"]
+        files += ["foundry_main_macos.mm"]
 else:
-    files += ["libgodot_macos.mm"]
+    files += ["libfoundry_macos.mm"]
 
 if env["library_type"] == "static_library":
     prog = env.add_library("#bin/foundry", files)

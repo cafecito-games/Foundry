@@ -30,8 +30,8 @@
 
 #import "app_delegate_service.h"
 
-#import "godot_view_apple_embedded.h"
-#import "godot_view_controller.h"
+#import "foundry_view_apple_embedded.h"
+#import "foundry_view_controller.h"
 #import "os_apple_embedded.h"
 
 #include "core/config/project_settings.h"
@@ -72,7 +72,7 @@ static GDTViewController *mainViewController = nil;
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 	// TODO: might be required to make an early return, so app wouldn't crash because of timeout.
 	// TODO: logo screen is not displayed while shaders are compiling
-	// DummyViewController(Splash/LoadingViewController) -> setup -> GodotViewController
+	// DummyViewController(Splash/LoadingViewController) -> setup -> FoundryViewController
 
 	// Fetch the command-line arguments from NSProcessInfo
 	NSArray *arguments = [[NSProcessInfo processInfo] arguments];

@@ -53,7 +53,7 @@ namespace Godot.SourceGenerators
         Vector3Array,
         Vector4Array,
         ColorArray,
-        GodotObjectOrDerivedArray,
+        FoundryObjectOrDerivedArray,
         SystemArrayOfStringName,
         SystemArrayOfNodePath,
         SystemArrayOfRid,
@@ -62,13 +62,13 @@ namespace Godot.SourceGenerators
         Variant,
 
         // Classes
-        GodotObjectOrDerived,
+        FoundryObjectOrDerived,
         StringName,
         NodePath,
         Rid,
-        GodotDictionary,
-        GodotArray,
-        GodotGenericDictionary,
-        GodotGenericArray,
+        FoundryDictionary,
+        FoundryArray,
+        FoundryGenericDictionary,
+        FoundryGenericArray,
     }
 }

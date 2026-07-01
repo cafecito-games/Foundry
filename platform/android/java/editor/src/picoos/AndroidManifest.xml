@@ -15,14 +15,14 @@
     <application>
 
         <activity
-            android:name=".GodotEditor"
+            android:name=".FoundryEditor"
             android:exported="false"
             android:screenOrientation="landscape"
             tools:node="merge"
             tools:replace="android:screenOrientation"/>
 
         <activity
-            android:name=".GodotXRGame"
+            android:name=".FoundryXRGame"
             android:exported="false"
             tools:node="merge">
             <intent-filter>

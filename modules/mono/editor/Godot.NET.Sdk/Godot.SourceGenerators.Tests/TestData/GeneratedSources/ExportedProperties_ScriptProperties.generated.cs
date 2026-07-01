@@ -7,7 +7,7 @@ partial class ExportedProperties
     /// <summary>
     /// Cached StringNames for the properties and fields contained in this class, for fast lookup.
     /// </summary>
-    public new class PropertyName : global::Godot.GodotObject.PropertyName {
+    public new class PropertyName : global::Godot.FoundryObject.PropertyName {
         /// <summary>
         /// Cached name for the 'NotGenerateComplexLamdaProperty' property.
         /// </summary>
@@ -550,7 +550,7 @@ partial class ExportedProperties
             return true;
         }
         if (name == PropertyName.@PropertyGodotObjectOrDerivedArray) {
-            this.@PropertyGodotObjectOrDerivedArray = global::Godot.NativeInterop.VariantUtils.ConvertToSystemArrayOfGodotObject<global::Godot.GodotObject>(value);
+            this.@PropertyGodotObjectOrDerivedArray = global::Godot.NativeInterop.VariantUtils.ConvertToSystemArrayOfGodotObject<global::Godot.FoundryObject>(value);
             return true;
         }
         if (name == PropertyName.@field_StringNameArray) {
@@ -570,7 +570,7 @@ partial class ExportedProperties
             return true;
         }
         if (name == PropertyName.@PropertyGodotObjectOrDerived) {
-            this.@PropertyGodotObjectOrDerived = global::Godot.NativeInterop.VariantUtils.ConvertTo<global::Godot.GodotObject>(value);
+            this.@PropertyGodotObjectOrDerived = global::Godot.NativeInterop.VariantUtils.ConvertTo<global::Godot.FoundryObject>(value);
             return true;
         }
         if (name == PropertyName.@PropertyGodotResourceTexture) {
@@ -888,7 +888,7 @@ partial class ExportedProperties
             return true;
         }
         if (name == PropertyName.@PropertyGodotObjectOrDerived) {
-            value = global::Godot.NativeInterop.VariantUtils.CreateFrom<global::Godot.GodotObject>(this.@PropertyGodotObjectOrDerived);
+            value = global::Godot.NativeInterop.VariantUtils.CreateFrom<global::Godot.FoundryObject>(this.@PropertyGodotObjectOrDerived);
             return true;
         }
         if (name == PropertyName.@PropertyGodotResourceTexture) {

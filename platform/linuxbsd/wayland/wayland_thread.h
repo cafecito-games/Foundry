@@ -73,7 +73,7 @@
 #include "wayland/protocol/xdg_system_bell.gen.h"
 #include "wayland/protocol/xdg_toplevel_icon.gen.h"
 
-#include "wayland/protocol/godot_embedding_compositor.gen.h"
+#include "wayland/protocol/foundry_embedding_compositor.gen.h"
 
 // NOTE: Deprecated.
 #include "wayland/protocol/xdg_foreign_v1.gen.h"
@@ -234,8 +234,8 @@ public:
 		// whether it's available.
 		uint32_t wp_fifo_manager_name = 0;
 
-		struct godot_embedding_compositor *godot_embedding_compositor = nullptr;
-		uint32_t godot_embedding_compositor_name = 0;
+		struct foundry_embedding_compositor *foundry_embedding_compositor = nullptr;
+		uint32_t foundry_embedding_compositor_name = 0;
 	};
 
 	// General Wayland-specific states. Shouldn't be accessed directly.
@@ -562,16 +562,16 @@ public:
 	};
 
 	struct EmbeddingCompositorState {
-		LocalVector<struct godot_embedded_client *> clients;
+		LocalVector<struct foundry_embedded_client *> clients;
 
 		// Only a client per PID can create a window.
-		HashMap<int, struct godot_embedded_client *> mapped_clients;
+		HashMap<int, struct foundry_embedded_client *> mapped_clients;
 
 		OS::ProcessID focused_pid = -1;
 	};
 
 	struct EmbeddedClientState {
-		struct godot_embedding_compositor *embedding_compositor = nullptr;
+		struct foundry_embedding_compositor *embedding_compositor = nullptr;
 
 		uint32_t pid = 0;
 		bool window_mapped = false;
@@ -796,12 +796,12 @@ private:
 
 	static void _xdg_activation_token_on_done(void *data, struct xdg_activation_token_v1 *xdg_activation_token, const char *token);
 
-	static void _godot_embedding_compositor_on_client(void *data, struct godot_embedding_compositor *godot_embedding_compositor, struct godot_embedded_client *godot_embedded_client, int32_t pid);
+	static void _foundry_embedding_compositor_on_client(void *data, struct foundry_embedding_compositor *foundry_embedding_compositor, struct foundry_embedded_client *foundry_embedded_client, int32_t pid);
 
-	static void _godot_embedded_client_on_disconnected(void *data, struct godot_embedded_client *godot_embedded_client);
-	static void _godot_embedded_client_on_window_embedded(void *data, struct godot_embedded_client *godot_embedded_client);
-	static void _godot_embedded_client_on_window_focus_in(void *data, struct godot_embedded_client *godot_embedded_client);
-	static void _godot_embedded_client_on_window_focus_out(void *data, struct godot_embedded_client *godot_embedded_client);
+	static void _foundry_embedded_client_on_disconnected(void *data, struct foundry_embedded_client *foundry_embedded_client);
+	static void _foundry_embedded_client_on_window_embedded(void *data, struct foundry_embedded_client *foundry_embedded_client);
+	static void _foundry_embedded_client_on_window_focus_in(void *data, struct foundry_embedded_client *foundry_embedded_client);
+	static void _foundry_embedded_client_on_window_focus_out(void *data, struct foundry_embedded_client *foundry_embedded_client);
 
 	// Core Wayland event listeners.
 	static constexpr struct wl_registry_listener wl_registry_listener = {
@@ -991,15 +991,15 @@ private:
 	};
 
 	// Godot interfaces.
-	static constexpr struct godot_embedding_compositor_listener godot_embedding_compositor_listener = {
-		.client = _godot_embedding_compositor_on_client,
+	static constexpr struct foundry_embedding_compositor_listener foundry_embedding_compositor_listener = {
+		.client = _foundry_embedding_compositor_on_client,
 	};
 
-	static constexpr struct godot_embedded_client_listener godot_embedded_client_listener = {
-		.disconnected = _godot_embedded_client_on_disconnected,
-		.window_embedded = _godot_embedded_client_on_window_embedded,
-		.window_focus_in = _godot_embedded_client_on_window_focus_in,
-		.window_focus_out = _godot_embedded_client_on_window_focus_out,
+	static constexpr struct foundry_embedded_client_listener foundry_embedded_client_listener = {
+		.disconnected = _foundry_embedded_client_on_disconnected,
+		.window_embedded = _foundry_embedded_client_on_window_embedded,
+		.window_focus_in = _foundry_embedded_client_on_window_focus_in,
+		.window_focus_out = _foundry_embedded_client_on_window_focus_out,
 	};
 
 #ifdef LIBDECOR_ENABLED
@@ -1087,7 +1087,7 @@ public:
 
 	static OfferState *wp_primary_selection_offer_get_offer_state(struct zwp_primary_selection_offer_v1 *p_offer);
 
-	static EmbeddingCompositorState *godot_embedding_compositor_get_state(struct godot_embedding_compositor *p_compositor);
+	static EmbeddingCompositorState *foundry_embedding_compositor_get_state(struct foundry_embedding_compositor *p_compositor);
 
 	void seat_state_unlock_pointer(SeatState *p_ss);
 	void seat_state_lock_pointer(SeatState *p_ss);
@@ -1204,7 +1204,7 @@ public:
 
 	bool window_wait_ready(DisplayServer::WindowID p_window_id, int p_timeout_ms);
 
-	struct godot_embedding_compositor *get_embedding_compositor();
+	struct foundry_embedding_compositor *get_embedding_compositor();
 
 	OS::ProcessID embedded_compositor_get_focused_pid();
 

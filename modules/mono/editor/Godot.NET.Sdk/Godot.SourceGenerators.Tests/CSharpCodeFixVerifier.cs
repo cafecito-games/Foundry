@@ -20,7 +20,7 @@ public static class CSharpCodeFixVerifier<TCodeFix, TAnalyzer>
             SolutionTransforms.Add((Solution solution, ProjectId projectId) =>
             {
                 Project project = solution.GetProject(projectId)!
-                    .AddMetadataReference(Constants.GodotSharpAssembly.CreateMetadataReference());
+                    .AddMetadataReference(Constants.FoundrySharpAssembly.CreateMetadataReference());
                 return project.Solution;
             });
         }
@@ -40,7 +40,7 @@ public static class CSharpCodeFixVerifier<TCodeFix, TAnalyzer>
 
         verifier.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", $"""
         is_global = true
-        build_property.GodotProjectDir = {Constants.ExecutingAssemblyPath}
+        build_property.FoundryProjectDir = {Constants.ExecutingAssemblyPath}
         """));
 
         return verifier;

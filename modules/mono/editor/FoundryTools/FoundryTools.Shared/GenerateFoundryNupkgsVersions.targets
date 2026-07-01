@@ -1,0 +1,39 @@
+<Project>
+  <!-- Generate C# file with the version of all the nupkgs bundled with Foundry -->
+
+  <Target Name="SetPropertiesForGenerateFoundryNupkgsVersions">
+    <PropertyGroup>
+      <GeneratedFoundryNupkgsVersionsFile>$(IntermediateOutputPath)FoundryNupkgsVersions.g.cs</GeneratedFoundryNupkgsVersionsFile>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="GenerateFoundryNupkgsVersionsFile"
+          DependsOnTargets="_GenerateFoundryNupkgsVersionsFile"
+          BeforeTargets="PrepareForBuild;CompileDesignTime;BeforeCompile;CoreCompile">
+    <ItemGroup>
+      <Compile Include="$(GeneratedFoundryNupkgsVersionsFile)" />
+      <FileWrites Include="$(GeneratedFoundryNupkgsVersionsFile)" />
+    </ItemGroup>
+  </Target>
+  <Target Name="_GenerateFoundryNupkgsVersionsFile"
+          DependsOnTargets="SetPropertiesForGenerateFoundryNupkgsVersions"
+          Inputs="$(MSBuildProjectFile);$(MSBuildThisFileDirectory);$(MSBuildProjectFile)\..\..\..\SdkPackageVersions.props"
+          Outputs="$(GeneratedFoundryNupkgsVersionsFile)">
+    <PropertyGroup>
+      <GenerateFoundryNupkgsVersionsCode><![CDATA[
+namespace $(RootNamespace)
+{
+    public class GeneratedFoundryNupkgsVersions
+    {
+        public const string FoundryNETSdk = "$(PackageVersion_Godot_NET_Sdk)"%3b
+        public const string FoundrySourceGenerators = "$(PackageVersion_Godot_SourceGenerators)"%3b
+        public const string FoundrySharp = "$(PackageVersion_GodotSharp)"%3b
+    }
+}
+]]></GenerateFoundryNupkgsVersionsCode>
+    </PropertyGroup>
+    <WriteLinesToFile Lines="$(GenerateFoundryNupkgsVersionsCode)"
+                      File="$(GeneratedFoundryNupkgsVersionsFile)"
+                      Overwrite="True" WriteOnlyWhenDifferent="True" />
+  </Target>
+</Project>

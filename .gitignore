@@ -32,7 +32,7 @@
 bin
 *.gen.*
 compile_commands.json
-platform/windows/godot_res.res
+platform/windows/foundry_res.res
 
 # Ninja build files
 *.ninja

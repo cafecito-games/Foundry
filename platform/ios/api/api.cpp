@@ -33,11 +33,11 @@
 #if defined(IOS_ENABLED)
 
 void register_ios_api() {
-	godot_apple_embedded_plugins_initialize();
+	foundry_apple_embedded_plugins_initialize();
 }
 
 void unregister_ios_api() {
-	godot_apple_embedded_plugins_deinitialize();
+	foundry_apple_embedded_plugins_deinitialize();
 }
 
 #else

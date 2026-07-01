@@ -19,9 +19,9 @@ if env["library_type"] == "executable":
         # the FoundryScript fuzzing harness in fuzz_foundry_script_linuxbsd.cpp.
         common_linuxbsd += ["fuzz_foundry_script_linuxbsd.cpp"]
     else:
-        common_linuxbsd += ["godot_linuxbsd.cpp"]
+        common_linuxbsd += ["foundry_linuxbsd.cpp"]
 else:
-    common_linuxbsd += ["libgodot_linuxbsd.cpp"]
+    common_linuxbsd += ["libfoundry_linuxbsd.cpp"]
 
 if env["use_sowrap"]:
     common_linuxbsd.append("xkbcommon-so_wrap.c")

@@ -2,7 +2,7 @@ using Godot;
 using System;
 using static Godot.Mathf;
 
-public partial class ExportedProperties(string primaryCtorParameter) : GodotObject
+public partial class ExportedProperties(string primaryCtorParameter) : FoundryObject
 {
     // Do not generate default value
     private String _notGeneratePropertyString = new string("not generate");
@@ -196,7 +196,7 @@ public partial class ExportedProperties(string primaryCtorParameter) : GodotObje
     [Export] private Vector2[] PropertyVector2Array { get; set; } = { Vector2.Up, Vector2.Down, Vector2.Left, Vector2.Right };
     [Export] private Vector3[] PropertyVector3Array { get; set; } = { Vector3.Up, Vector3.Down, Vector3.Left, Vector3.Right };
     [Export] private Color[] PropertyColorArray { get; set; } = { Colors.Aqua, Colors.Aquamarine, Colors.Azure, Colors.Beige };
-    [Export] private GodotObject[] PropertyGodotObjectOrDerivedArray { get; set; } = { null };
+    [Export] private FoundryObject[] PropertyGodotObjectOrDerivedArray { get; set; } = { null };
     [Export] private StringName[] field_StringNameArray { get; set; } = { "foo", "bar" };
     [Export] private NodePath[] field_NodePathArray { get; set; } = { "foo", "bar" };
     [Export] private Rid[] field_RidArray { get; set; } = { default, default, default };
@@ -205,7 +205,7 @@ public partial class ExportedProperties(string primaryCtorParameter) : GodotObje
     [Export] private Variant PropertyVariant { get; set; } = "foo";
 
     // Classes
-    [Export] private GodotObject PropertyGodotObjectOrDerived { get; set; }
+    [Export] private FoundryObject PropertyGodotObjectOrDerived { get; set; }
     [Export] private Godot.Texture PropertyGodotResourceTexture { get; set; }
     [Export] private Godot.Texture PropertyGodotResourceTextureWithInitializer { get; set; } = new() { ResourceName = "" };
     [Export] private StringName PropertyStringName { get; set; } = new StringName("foo");

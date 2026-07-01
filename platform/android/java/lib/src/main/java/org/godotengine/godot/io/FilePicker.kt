@@ -40,7 +40,7 @@ import android.provider.DocumentsContract
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
-import org.godotengine.godot.GodotLib
+import org.godotengine.godot.FoundryLib
 import java.io.File
 
 /**
@@ -73,7 +73,7 @@ internal class FilePicker {
 			if (requestCode == FILE_PICKER_REQUEST) {
 				if (resultCode == Activity.RESULT_CANCELED) {
 					Log.d(TAG, "File picker canceled")
-					GodotLib.filePickerCallback(false, emptyArray())
+					FoundryLib.filePickerCallback(false, emptyArray())
 					return
 				}
 				if (resultCode == Activity.RESULT_OK) {
@@ -95,9 +95,9 @@ internal class FilePicker {
 						}
 					}
 					if (selectedFiles.isNotEmpty()) {
-						GodotLib.filePickerCallback(true, selectedFiles.toTypedArray())
+						FoundryLib.filePickerCallback(true, selectedFiles.toTypedArray())
 					} else {
-						GodotLib.filePickerCallback(false, emptyArray())
+						FoundryLib.filePickerCallback(false, emptyArray())
 					}
 				}
 			}

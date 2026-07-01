@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-class GodotPositionReportingProcessor extends AudioWorkletProcessor {
+class FoundryPositionReportingProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
 		return [
 			{
@@ -63,4 +63,4 @@ class GodotPositionReportingProcessor extends AudioWorkletProcessor {
 	}
 }
 
-registerProcessor('godot-position-reporting-processor', GodotPositionReportingProcessor);
+registerProcessor('godot-position-reporting-processor', FoundryPositionReportingProcessor);

@@ -573,7 +573,7 @@ void SceneTree::set_group(const StringName &p_group, const String &p_name, const
 }
 
 void SceneTree::initialize() {
-	GodotProfileZone("SceneTree::initialize");
+	FoundryProfileZone("SceneTree::initialize");
 	ERR_FAIL_NULL(root);
 	MainLoop::initialize();
 	root->_set_tree(this);

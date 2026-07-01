@@ -42,7 +42,7 @@
 #include "editor/file_system/editor_paths.h"
 #endif
 
-namespace GodotSharpDirs {
+namespace FoundrySharpDirs {
 
 String _get_expected_build_config() {
 #ifdef TOOLS_ENABLED
@@ -92,7 +92,7 @@ String _get_mono_user_dir() {
 }
 
 #if !TOOLS_ENABLED
-// This should be the equivalent of GodotTools.Utils.OS.PlatformNameMap.
+// This should be the equivalent of FoundryTools.Utils.OS.PlatformNameMap.
 static const char *platform_name_map[][2] = {
 	{ "Windows", "windows" },
 	{ "macOS", "macos" },
@@ -151,16 +151,16 @@ private:
 		String res_dir = OS::get_singleton()->get_bundle_resource_dir();
 
 #ifdef TOOLS_ENABLED
-		String data_dir_root = exe_dir.path_join("GodotSharp");
+		String data_dir_root = exe_dir.path_join("FoundrySharp");
 		data_editor_tools_dir = data_dir_root.path_join("Tools");
 		String api_assemblies_base_dir = data_dir_root.path_join("Api");
 		build_logs_dir = mono_user_dir.path_join("build_logs");
 #ifdef MACOS_ENABLED
 		if (!DirAccess::exists(data_editor_tools_dir)) {
-			data_editor_tools_dir = res_dir.path_join("GodotSharp").path_join("Tools");
+			data_editor_tools_dir = res_dir.path_join("FoundrySharp").path_join("Tools");
 		}
 		if (!DirAccess::exists(api_assemblies_base_dir)) {
-			api_assemblies_base_dir = res_dir.path_join("GodotSharp").path_join("Api");
+			api_assemblies_base_dir = res_dir.path_join("FoundrySharp").path_join("Api");
 		}
 #endif
 		api_assemblies_dir = api_assemblies_base_dir.path_join(GDMono::get_expected_api_build_config());
@@ -255,4 +255,4 @@ String get_data_editor_tools_dir() {
 }
 #endif
 
-} // namespace GodotSharpDirs
+} // namespace FoundrySharpDirs

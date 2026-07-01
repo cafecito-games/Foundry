@@ -1,6 +1,6 @@
 extends Node2D
 
-var _plugin_name = "GodotAppInstrumentedTestPlugin"
+var _plugin_name = "FoundryAppInstrumentedTestPlugin"
 var _android_plugin
 
 func _ready():

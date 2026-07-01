@@ -7,7 +7,7 @@ partial class EventSignals
     /// <summary>
     /// Cached StringNames for the signals contained in this class, for fast lookup.
     /// </summary>
-    public new class SignalName : global::Godot.GodotObject.SignalName {
+    public new class SignalName : global::Godot.FoundryObject.SignalName {
         /// <summary>
         /// Cached name for the 'MySignal' signal.
         /// </summary>

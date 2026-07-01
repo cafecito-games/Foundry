@@ -31,7 +31,7 @@
 #pragma once
 
 #ifndef DISABLE_DEPRECATED
-#include "godot_plugin_config.h"
+#include "foundry_plugin_config.h"
 #endif // DISABLE_DEPRECATED
 
 #include "gradle_export_util.h"

@@ -22,7 +22,7 @@ def make_editor_icons_action(target, source, env):
 
         if name.endswith("MediumThumb"):
             icons_med.append(str(idx))
-        elif name.endswith(("BigThumb", "GodotFile")):
+        elif name.endswith(("BigThumb", "FoundryFile")):
             icons_big.append(str(idx))
 
     icons_names_str = ",\n\t".join(icons_names)

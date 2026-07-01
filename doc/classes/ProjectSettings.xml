@@ -2400,8 +2400,8 @@
 		</member>
 		<member name="navigation/2d/navigation_engine" type="String" setter="" getter="" default="&quot;DEFAULT&quot;">
 			Sets which navigation engine to use for 2D navigation.
-			[b]DEFAULT[/b] is equivalent to [b]GodotNavigation2D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
-			[b]GodotNavigation2D[/b] is Godot's internal 2D navigation engine.
+			[b]DEFAULT[/b] is equivalent to [b]FoundryNavigation2D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
+			[b]FoundryNavigation2D[/b] is Godot's internal 2D navigation engine.
 			[b]Dummy[/b] is a 2D navigation server that does nothing and returns only dummy values, effectively disabling all 2D navigation functionality.
 			Third-party modules can add other navigation engines to select with this setting.
 		</member>
@@ -2434,8 +2434,8 @@
 		</member>
 		<member name="navigation/3d/navigation_engine" type="String" setter="" getter="" default="&quot;DEFAULT&quot;">
 			Sets which navigation engine to use for 3D navigation.
-			[b]DEFAULT[/b] is equivalent to [b]GodotNavigation3D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
-			[b]GodotNavigation3D[/b] is Godot's internal 3D navigation engine.
+			[b]DEFAULT[/b] is equivalent to [b]FoundryNavigation3D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
+			[b]FoundryNavigation3D[/b] is Godot's internal 3D navigation engine.
 			[b]Dummy[/b] is a 3D navigation server that does nothing and returns only dummy values, effectively disabling all 3D navigation functionality.
 			Third-party modules can add other navigation engines to select with this setting.
 		</member>
@@ -2548,8 +2548,8 @@
 		</member>
 		<member name="physics/2d/physics_engine" type="String" setter="" getter="" default="&quot;DEFAULT&quot;" keywords="godotphysics">
 			Sets which physics engine to use for 2D physics.
-			[b]DEFAULT[/b] is currently equivalent to [b]GodotPhysics2D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
-			[b]GodotPhysics2D[/b] is Godot's internal 2D physics engine.
+			[b]DEFAULT[/b] is currently equivalent to [b]FoundryPhysics2D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
+			[b]FoundryPhysics2D[/b] is Godot's internal 2D physics engine.
 			[b]Dummy[/b] is a 2D physics server that does nothing and returns only dummy values, effectively disabling all 2D physics functionality.
 			Third-party extensions and modules can add other physics engines to select with this setting.
 		</member>
@@ -2629,9 +2629,9 @@
 		</member>
 		<member name="physics/3d/physics_engine" type="String" setter="" getter="" default="&quot;DEFAULT&quot;" keywords="godotphysics, jolt">
 			Sets which physics engine to use for 3D physics.
-			[b]DEFAULT[/b] is currently equivalent to [b]GodotPhysics3D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
-			[b]GodotPhysics3D[/b] is Godot's internal 3D physics engine.
-			[b]Jolt Physics[/b] is an alternative physics engine that is generally faster and more reliable than [b]GodotPhysics3D[/b]. Jolt Physics is the default for projects created starting in Godot 4.6.
+			[b]DEFAULT[/b] is currently equivalent to [b]FoundryPhysics3D[/b], but may change in future releases. Select an explicit implementation if you want to ensure that your project stays on the same engine.
+			[b]FoundryPhysics3D[/b] is Godot's internal 3D physics engine.
+			[b]Jolt Physics[/b] is an alternative physics engine that is generally faster and more reliable than [b]FoundryPhysics3D[/b]. Jolt Physics is the default for projects created starting in Godot 4.6.
 			[b]Dummy[/b] is a 3D physics server that does nothing and returns only dummy values, effectively disabling all 3D physics functionality.
 			Third-party extensions and modules can add other physics engines to select with this setting.
 		</member>

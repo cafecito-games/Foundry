@@ -1,6 +1,6 @@
 using Godot;
 
-public partial class Foo : GodotObject
+public partial class Foo : FoundryObject
 {
 }
 

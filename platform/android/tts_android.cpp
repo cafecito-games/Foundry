@@ -30,7 +30,7 @@
 
 #include "tts_android.h"
 
-#include "java_godot_wrapper.h"
+#include "java_foundry_wrapper.h"
 #include "os_android.h"
 #include "thread_jandroid.h"
 

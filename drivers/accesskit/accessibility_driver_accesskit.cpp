@@ -1721,7 +1721,7 @@ Error AccessibilityDriverAccessKit::init() {
 	}
 #endif
 #ifdef MACOS_ENABLED
-	//accesskit_macos_add_focus_forwarder_to_window_class("GodotWindow");
+	//accesskit_macos_add_focus_forwarder_to_window_class("FoundryWindow");
 #endif
 	return OK;
 }

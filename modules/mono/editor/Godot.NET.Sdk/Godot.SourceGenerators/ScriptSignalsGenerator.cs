@@ -121,7 +121,7 @@ namespace Godot.SourceGenerators
                 .Where(s => s.GetAttributes()
                     .Any(a => a.AttributeClass?.IsGodotSignalAttribute() ?? false));
 
-            List<GodotSignalDelegateData> godotSignalDelegates = new();
+            List<FoundrySignalDelegateData> godotSignalDelegates = new();
 
             foreach (var signalDelegateSymbol in signalDelegateSymbols)
             {
@@ -212,7 +212,7 @@ namespace Godot.SourceGenerators
                 source.Append("\";\n");
             }
 
-            source.Append("    }\n"); // class GodotInternal
+            source.Append("    }\n"); // class FoundryInternal
 
             // Generate GetGodotSignalList
 
@@ -438,7 +438,7 @@ namespace Godot.SourceGenerators
             source.Append(")");
         }
 
-        private static MethodInfo DetermineMethodInfo(GodotSignalDelegateData signalDelegateData)
+        private static MethodInfo DetermineMethodInfo(FoundrySignalDelegateData signalDelegateData)
         {
             var invokeMethodData = signalDelegateData.InvokeMethodData;
 
@@ -511,7 +511,7 @@ namespace Godot.SourceGenerators
         }
 
         private static void GenerateSignalEventInvoker(
-            GodotSignalDelegateData signal,
+            FoundrySignalDelegateData signal,
             StringBuilder source
         )
         {

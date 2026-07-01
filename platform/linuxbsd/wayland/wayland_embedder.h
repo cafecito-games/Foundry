@@ -51,8 +51,8 @@
 #include "protocol/commit_timing_v1.gen.h"
 #include "protocol/cursor_shape.gen.h"
 #include "protocol/fifo_v1.gen.h"
+#include "protocol/foundry_embedding_compositor.gen.h"
 #include "protocol/fractional_scale.gen.h"
-#include "protocol/godot_embedding_compositor.gen.h"
 #include "protocol/idle_inhibit.gen.h"
 #include "protocol/linux_drm_syncobj_v1.gen.h"
 #include "protocol/linux_explicit_synchronization_unstable_v1.gen.h"
@@ -452,8 +452,8 @@ class WaylandEmbedder {
 		&wp_tearing_control_v1_interface,
 
 		// Our custom things.
-		&godot_embedding_compositor_interface,
-		&godot_embedded_client_interface,
+		&foundry_embedding_compositor_interface,
+		&foundry_embedded_client_interface,
 	};
 
 	// These interfaces will not be reported to embedded clients. This includes
@@ -465,7 +465,7 @@ class WaylandEmbedder {
 			&zxdg_exporter_v1_interface,
 			&zxdg_exporter_v2_interface,
 			&xdg_toplevel_icon_manager_v1_interface,
-			&godot_embedding_compositor_interface,
+			&foundry_embedding_compositor_interface,
 	});
 
 	static constexpr uint32_t INVALID_ID = 0;
@@ -499,7 +499,7 @@ class WaylandEmbedder {
 	HashMap<uint32_t, RegistryGlobalInfo> registry_globals;
 	uint32_t registry_globals_counter = 0;
 
-	uint32_t godot_embedding_compositor_name = 0;
+	uint32_t foundry_embedding_compositor_name = 0;
 
 	LocalVector<uint32_t> wl_seat_names;
 

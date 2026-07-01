@@ -49,14 +49,14 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.RequiresApi
 import androidx.fragment.app.Fragment
-import org.godotengine.godot.GodotHost
+import org.godotengine.godot.FoundryHost
 import org.godotengine.godot.R
-import org.godotengine.godot.service.GodotService.EngineStatus.*
-import org.godotengine.godot.service.GodotService.EngineError.*
+import org.godotengine.godot.service.FoundryService.EngineStatus.*
+import org.godotengine.godot.service.FoundryService.EngineError.*
 import java.lang.ref.WeakReference
 
 /**
- * Godot [Fragment] component showcasing how to drive rendering from another process using a [GodotService] instance.
+ * Godot [Fragment] component showcasing how to drive rendering from another process using a [FoundryService] instance.
  */
 @RequiresApi(Build.VERSION_CODES.R)
 class RemoteGodotFragment: Fragment() {
@@ -71,7 +71,7 @@ class RemoteGodotFragment: Fragment() {
 	private val messengerForReply = Messenger(IncomingHandler(WeakReference<RemoteGodotFragment>(this)))
 
 	/**
-	 * Messenger for sending messages to the [GodotService] implementation.
+	 * Messenger for sending messages to the [FoundryService] implementation.
 	 */
 	private var serviceMessenger: Messenger? = null
 
@@ -82,7 +82,7 @@ class RemoteGodotFragment: Fragment() {
 	private var serviceBound = false
 	private var remoteGameArgs = arrayOf<String>()
 
-	private var godotHost : GodotHost? = null
+	private var godotHost : FoundryHost? = null
 
 	private val serviceConnection = object : ServiceConnection {
 		override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -100,7 +100,7 @@ class RemoteGodotFragment: Fragment() {
 	}
 
 	/**
-	 * Handler of incoming messages from [GodotService] implementations.
+	 * Handler of incoming messages from [FoundryService] implementations.
 	 */
 	private class IncomingHandler(private val fragmentRef: WeakReference<RemoteGodotFragment>) : Handler() {
 
@@ -111,10 +111,10 @@ class RemoteGodotFragment: Fragment() {
 				Log.d(TAG, "HandleMessage: $msg")
 
 				when (msg.what) {
-					GodotService.MSG_ENGINE_STATUS_UPDATE -> {
+					FoundryService.MSG_ENGINE_STATUS_UPDATE -> {
 						try {
-							val engineStatus = GodotService.EngineStatus.valueOf(
-								msg.data.getString(GodotService.KEY_ENGINE_STATUS, "")
+							val engineStatus = FoundryService.EngineStatus.valueOf(
+								msg.data.getString(FoundryService.KEY_ENGINE_STATUS, "")
 							)
 							Log.d(TAG, "Received engine status $engineStatus")
 
@@ -126,12 +126,12 @@ class RemoteGodotFragment: Fragment() {
 										Log.i(TAG, "Creating SurfaceControlViewHost...")
 										fragment.remoteSurface?.let {
 											fragment.serviceMessenger?.send(Message.obtain().apply {
-												what = GodotService.MSG_WRAP_ENGINE_WITH_SCVH
+												what = FoundryService.MSG_WRAP_ENGINE_WITH_SCVH
 												data.apply {
-													putBinder(GodotService.KEY_HOST_TOKEN, it.hostToken)
-													putInt(GodotService.KEY_DISPLAY_ID, it.display.displayId)
-													putInt(GodotService.KEY_WIDTH, it.width)
-													putInt(GodotService.KEY_HEIGHT, it.height)
+													putBinder(FoundryService.KEY_HOST_TOKEN, it.hostToken)
+													putInt(FoundryService.KEY_DISPLAY_ID, it.display.displayId)
+													putInt(FoundryService.KEY_WIDTH, it.width)
+													putInt(FoundryService.KEY_HEIGHT, it.height)
 												}
 												replyTo = fragment.messengerForReply
 											})
@@ -158,9 +158,9 @@ class RemoteGodotFragment: Fragment() {
 									Log.d(TAG, "SurfaceControlViewHost created!")
 
 									val surfacePackage = msg.data.getParcelable<SurfaceControlViewHost.SurfacePackage>(
-										GodotService.KEY_SURFACE_PACKAGE)
+										FoundryService.KEY_SURFACE_PACKAGE)
 									if (surfacePackage == null) {
-										Log.e(TAG, "Unable to retrieve surface package from GodotService")
+										Log.e(TAG, "Unable to retrieve surface package from FoundryService")
 									} else {
 										fragment.remoteSurface?.setChildSurfacePackage(surfacePackage)
 										fragment.engineInitialized = true
@@ -173,10 +173,10 @@ class RemoteGodotFragment: Fragment() {
 						}
 					}
 
-					GodotService.MSG_ENGINE_ERROR -> {
+					FoundryService.MSG_ENGINE_ERROR -> {
 						try {
-							val engineError = GodotService.EngineError.valueOf(
-								msg.data.getString(GodotService.KEY_ENGINE_ERROR, "")
+							val engineError = FoundryService.EngineError.valueOf(
+								msg.data.getString(FoundryService.KEY_ENGINE_ERROR, "")
 							)
 							Log.d(TAG, "Received engine error $engineError")
 
@@ -199,7 +199,7 @@ class RemoteGodotFragment: Fragment() {
 						}
 					}
 
-					GodotService.MSG_ENGINE_RESTART_REQUESTED -> {
+					FoundryService.MSG_ENGINE_RESTART_REQUESTED -> {
 						Log.d(TAG, "Engine restart requested")
 						// Validate the engine is actually running
 						if (!fragment.serviceBound || !fragment.engineInitialized) {
@@ -227,11 +227,11 @@ class RemoteGodotFragment: Fragment() {
 	override fun onAttach(context: Context) {
 		super.onAttach(context)
 		val parentActivity = activity
-		if (parentActivity is GodotHost) {
+		if (parentActivity is FoundryHost) {
 			godotHost = parentActivity
 		} else {
 			val parentFragment = parentFragment
-			if (parentFragment is GodotHost) {
+			if (parentFragment is FoundryHost) {
 				godotHost = parentFragment
 			}
 		}
@@ -243,12 +243,12 @@ class RemoteGodotFragment: Fragment() {
 	}
 
 	override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, bundle: Bundle?): View? {
-		return inflater.inflate(R.layout.remote_godot_fragment_layout, container, false)
+		return inflater.inflate(R.layout.remote_foundry_fragment_layout, container, false)
 	}
 
 	override fun onViewCreated(view: View, bundle: Bundle?) {
 		super.onViewCreated(view, bundle)
-		remoteSurface = view.findViewById(R.id.remote_godot_window_surface)
+		remoteSurface = view.findViewById(R.id.remote_foundry_window_surface)
 		remoteSurface?.setZOrderOnTop(false)
 
 		initGodotEngine()
@@ -259,7 +259,7 @@ class RemoteGodotFragment: Fragment() {
 		remoteSurface?.setZOrderOnTop(true)
 		remoteGameArgs = args
 		context?.bindService(
-			Intent(context, GodotService::class.java),
+			Intent(context, FoundryService::class.java),
 			serviceConnection,
 			Context.BIND_AUTO_CREATE
 		)
@@ -274,7 +274,7 @@ class RemoteGodotFragment: Fragment() {
 		if (serviceBound) {
 			if (destroyEngine) {
 				serviceMessenger?.send(Message.obtain().apply {
-					what = GodotService.MSG_DESTROY_ENGINE
+					what = FoundryService.MSG_DESTROY_ENGINE
 					replyTo = messengerForReply
 				})
 			}
@@ -290,9 +290,9 @@ class RemoteGodotFragment: Fragment() {
 
 		try {
 			serviceMessenger?.send(Message.obtain().apply {
-				what = GodotService.MSG_INIT_ENGINE
+				what = FoundryService.MSG_INIT_ENGINE
 				data.apply {
-					putStringArray(GodotService.KEY_COMMAND_LINE_PARAMETERS, remoteGameArgs)
+					putStringArray(FoundryService.KEY_COMMAND_LINE_PARAMETERS, remoteGameArgs)
 				}
 				replyTo = messengerForReply
 			})
@@ -307,7 +307,7 @@ class RemoteGodotFragment: Fragment() {
 		}
 		try {
 			serviceMessenger?.send(Message.obtain().apply {
-				what = GodotService.MSG_START_ENGINE
+				what = FoundryService.MSG_START_ENGINE
 				replyTo = messengerForReply
 			})
 		} catch (e: RemoteException) {
@@ -321,7 +321,7 @@ class RemoteGodotFragment: Fragment() {
 		}
 		try {
 			serviceMessenger?.send(Message.obtain().apply {
-				what = GodotService.MSG_STOP_ENGINE
+				what = FoundryService.MSG_STOP_ENGINE
 				replyTo = messengerForReply
 			})
 		} catch (e: RemoteException) {

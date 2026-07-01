@@ -32,9 +32,9 @@
 
 #import "app_delegate_service.h"
 #import "apple_embedded.h"
-#import "godot_keyboard_input_view.h"
-#import "godot_view_apple_embedded.h"
-#import "godot_view_controller.h"
+#import "foundry_keyboard_input_view.h"
+#import "foundry_view_apple_embedded.h"
+#import "foundry_view_controller.h"
 #import "key_mapping_apple_embedded.h"
 #import "os_apple_embedded.h"
 #import "tts_apple_embedded.h"

@@ -3,7 +3,7 @@
 namespace Godot.SourceGenerators.Sample
 {
     // Generic again but different generic parameters
-    public partial class Generic2T<T, R> : GodotObject
+    public partial class Generic2T<T, R> : FoundryObject
     {
         private int _field;
     }

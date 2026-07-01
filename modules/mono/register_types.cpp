@@ -38,7 +38,7 @@ CSharpLanguage *script_language_cs = nullptr;
 Ref<ResourceFormatLoaderCSharpScript> resource_loader_cs;
 Ref<ResourceFormatSaverCSharpScript> resource_saver_cs;
 
-MonoBind::GodotSharp *_godotsharp = nullptr;
+MonoBind::FoundrySharp *_godotsharp = nullptr;
 
 void initialize_mono_module(ModuleInitializationLevel p_level) {
 	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
@@ -47,7 +47,7 @@ void initialize_mono_module(ModuleInitializationLevel p_level) {
 
 	FOUNDRY_REGISTER_CLASS(CSharpScript);
 
-	_godotsharp = memnew(MonoBind::GodotSharp);
+	_godotsharp = memnew(MonoBind::FoundrySharp);
 
 	script_language_cs = memnew(CSharpLanguage);
 	script_language_cs->set_language_index(ScriptServer::get_language_count());

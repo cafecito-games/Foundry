@@ -11,7 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Godot.SourceGenerators.Samp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Godot.SourceGenerators.Tests", "Godot.SourceGenerators.Tests\Godot.SourceGenerators.Tests.csproj", "{07E6D201-35C9-4463-9B29-D16621EA733D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GodotSharp", "..\..\glue\GodotSharp\GodotSharp\GodotSharp.csproj", "{AEBF0036-DA76-4341-B651-A3F2856AB2FA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FoundrySharp", "..\..\glue\FoundrySharp\FoundrySharp\FoundrySharp.csproj", "{AEBF0036-DA76-4341-B651-A3F2856AB2FA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

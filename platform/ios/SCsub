@@ -11,7 +11,7 @@ ios_lib = [
     "device_metrics.mm",
     "display_layer_ios.mm",
     "display_server_ios.mm",
-    "godot_view_ios.mm",
+    "foundry_view_ios.mm",
     "main_ios.mm",
     "os_ios.mm",
 ]
@@ -23,7 +23,7 @@ ios_lib = env_ios.add_library("ios", ios_lib)
 env_ios.Append(CCFLAGS=["-fmodules", "-fcxx-modules"])
 
 combine_command = env_ios.CommandNoCache(
-    "#bin/libgodot" + env_ios["LIBSUFFIX"], [ios_lib] + env_ios["LIBS"], env.Run(combine_libs_apple_embedded)
+    "#bin/libfoundry" + env_ios["LIBSUFFIX"], [ios_lib] + env_ios["LIBS"], env.Run(combine_libs_apple_embedded)
 )
 
 if env["generate_bundle"]:

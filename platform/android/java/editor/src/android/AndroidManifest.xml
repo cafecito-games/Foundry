@@ -24,7 +24,7 @@
             android:value="XR_BOUNDARY_TYPE_NO_RECOMMENDATION" />
 
         <activity
-            android:name=".GodotXRGame"
+            android:name=".FoundryXRGame"
             android:exported="false"
             tools:node="merge">
             <intent-filter>

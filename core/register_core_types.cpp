@@ -39,7 +39,7 @@
 #include "core/debugger/engine_profiler.h"
 #include "core/extension/foundry_extension.h"
 #include "core/extension/foundry_extension_manager.h"
-#include "core/extension/godot_instance.h"
+#include "core/extension/foundry_instance.h"
 #include "core/input/input.h"
 #include "core/input/input_map.h"
 #include "core/input/shortcut.h"
@@ -289,7 +289,7 @@ void register_core_types() {
 
 	FOUNDRY_REGISTER_CLASS(FoundryExtension);
 
-	FOUNDRY_REGISTER_ABSTRACT_CLASS(GodotInstance);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(FoundryInstance);
 
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(FoundryExtensionManager);
 

@@ -1561,22 +1561,22 @@ bool DisplayServerWayland::get_swap_cancel_ok() {
 Error DisplayServerWayland::embed_process(WindowID p_window, OS::ProcessID p_pid, const Rect2i &p_rect, bool p_visible, bool p_grab_focus) {
 	MutexLock mutex_lock(wayland_thread.mutex);
 
-	struct godot_embedding_compositor *ec = wayland_thread.get_embedding_compositor();
+	struct foundry_embedding_compositor *ec = wayland_thread.get_embedding_compositor();
 	ERR_FAIL_NULL_V_MSG(ec, ERR_BUG, "Missing embedded compositor interface");
 
-	struct WaylandThread::EmbeddingCompositorState *ecs = WaylandThread::godot_embedding_compositor_get_state(ec);
+	struct WaylandThread::EmbeddingCompositorState *ecs = WaylandThread::foundry_embedding_compositor_get_state(ec);
 	ERR_FAIL_NULL_V(ecs, ERR_BUG);
 
 	if (!ecs->mapped_clients.has(p_pid)) {
 		return ERR_DOES_NOT_EXIST;
 	}
 
-	struct godot_embedded_client *embedded_client = ecs->mapped_clients[p_pid];
-	WaylandThread::EmbeddedClientState *client_data = (WaylandThread::EmbeddedClientState *)godot_embedded_client_get_user_data(embedded_client);
+	struct foundry_embedded_client *embedded_client = ecs->mapped_clients[p_pid];
+	WaylandThread::EmbeddedClientState *client_data = (WaylandThread::EmbeddedClientState *)foundry_embedded_client_get_user_data(embedded_client);
 	ERR_FAIL_NULL_V(client_data, ERR_BUG);
 
 	if (p_grab_focus) {
-		godot_embedded_client_focus_window(embedded_client);
+		foundry_embedded_client_focus_window(embedded_client);
 	}
 
 	if (p_visible) {
@@ -1592,7 +1592,7 @@ Error DisplayServerWayland::embed_process(WindowID p_window, OS::ProcessID p_pid
 
 		ERR_FAIL_NULL_V(toplevel, ERR_CANT_CREATE);
 
-		godot_embedded_client_set_embedded_window_parent(embedded_client, toplevel);
+		foundry_embedded_client_set_embedded_window_parent(embedded_client, toplevel);
 
 		double window_scale = WaylandThread::window_state_get_scale_factor(ws);
 
@@ -1602,9 +1602,9 @@ Error DisplayServerWayland::embed_process(WindowID p_window, OS::ProcessID p_pid
 
 		print_verbose(vformat("Scaling embedded rect down by %f from %s to %s.", window_scale, p_rect, scaled_rect));
 
-		godot_embedded_client_set_embedded_window_rect(embedded_client, scaled_rect.position.x, scaled_rect.position.y, scaled_rect.size.width, scaled_rect.size.height);
+		foundry_embedded_client_set_embedded_window_rect(embedded_client, scaled_rect.position.x, scaled_rect.position.y, scaled_rect.size.width, scaled_rect.size.height);
 	} else {
-		godot_embedded_client_set_embedded_window_parent(embedded_client, nullptr);
+		foundry_embedded_client_set_embedded_window_parent(embedded_client, nullptr);
 	}
 
 	return OK;
@@ -1613,21 +1613,21 @@ Error DisplayServerWayland::embed_process(WindowID p_window, OS::ProcessID p_pid
 Error DisplayServerWayland::request_close_embedded_process(OS::ProcessID p_pid) {
 	MutexLock mutex_lock(wayland_thread.mutex);
 
-	struct godot_embedding_compositor *ec = wayland_thread.get_embedding_compositor();
+	struct foundry_embedding_compositor *ec = wayland_thread.get_embedding_compositor();
 	ERR_FAIL_NULL_V_MSG(ec, ERR_BUG, "Missing embedded compositor interface");
 
-	struct WaylandThread::EmbeddingCompositorState *ecs = WaylandThread::godot_embedding_compositor_get_state(ec);
+	struct WaylandThread::EmbeddingCompositorState *ecs = WaylandThread::foundry_embedding_compositor_get_state(ec);
 	ERR_FAIL_NULL_V(ecs, ERR_BUG);
 
 	if (!ecs->mapped_clients.has(p_pid)) {
 		return ERR_DOES_NOT_EXIST;
 	}
 
-	struct godot_embedded_client *embedded_client = ecs->mapped_clients[p_pid];
-	WaylandThread::EmbeddedClientState *client_data = (WaylandThread::EmbeddedClientState *)godot_embedded_client_get_user_data(embedded_client);
+	struct foundry_embedded_client *embedded_client = ecs->mapped_clients[p_pid];
+	WaylandThread::EmbeddedClientState *client_data = (WaylandThread::EmbeddedClientState *)foundry_embedded_client_get_user_data(embedded_client);
 	ERR_FAIL_NULL_V(client_data, ERR_BUG);
 
-	godot_embedded_client_embedded_window_request_close(embedded_client);
+	foundry_embedded_client_embedded_window_request_close(embedded_client);
 	return OK;
 }
 

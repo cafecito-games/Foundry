@@ -2,7 +2,7 @@ using Godot;
 using System;
 
 [Tool]
-public partial class ExportedToolButtons : GodotObject
+public partial class ExportedToolButtons : FoundryObject
 {
     [ExportToolButton("Click me!")]
     public Callable MyButton1 => Callable.From(() => { GD.Print("Clicked MyButton1!"); });

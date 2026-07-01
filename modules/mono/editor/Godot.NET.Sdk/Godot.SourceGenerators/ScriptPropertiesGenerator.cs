@@ -171,7 +171,7 @@ namespace Godot.SourceGenerators
                 source.Append("\";\n");
             }
 
-            source.Append("    }\n"); // class GodotInternal
+            source.Append("    }\n"); // class FoundryInternal
 
             if (godotClassProperties.Length > 0 || godotClassFields.Length > 0)
             {
@@ -262,9 +262,9 @@ namespace Godot.SourceGenerators
 
                 // To retain the definition order (and display categories correctly), we want to
                 //  iterate over fields and properties at the same time, sorted by line number.
-                var godotClassPropertiesAndFields = Enumerable.Empty<GodotPropertyOrFieldData>()
-                    .Concat(godotClassProperties.Select(propertyData => new GodotPropertyOrFieldData(propertyData)))
-                    .Concat(godotClassFields.Select(fieldData => new GodotPropertyOrFieldData(fieldData)))
+                var godotClassPropertiesAndFields = Enumerable.Empty<FoundryPropertyOrFieldData>()
+                    .Concat(godotClassProperties.Select(propertyData => new FoundryPropertyOrFieldData(propertyData)))
+                    .Concat(godotClassFields.Select(fieldData => new FoundryPropertyOrFieldData(fieldData)))
                     .OrderBy(data => data.Symbol.Locations[0].Path())
                     .ThenBy(data => data.Symbol.Locations[0].StartLine());
 
@@ -399,9 +399,9 @@ namespace Godot.SourceGenerators
             {
                 PropertyUsageFlags? propertyUsage = attr.AttributeClass?.FullQualifiedNameOmitGlobal() switch
                 {
-                    GodotClasses.ExportCategoryAttr => PropertyUsageFlags.Category,
-                    GodotClasses.ExportGroupAttr => PropertyUsageFlags.Group,
-                    GodotClasses.ExportSubgroupAttr => PropertyUsageFlags.Subgroup,
+                    FoundryClasses.ExportCategoryAttr => PropertyUsageFlags.Category,
+                    FoundryClasses.ExportGroupAttr => PropertyUsageFlags.Group,
+                    FoundryClasses.ExportSubgroupAttr => PropertyUsageFlags.Subgroup,
                     _ => null
                 };
 
@@ -537,7 +537,7 @@ namespace Godot.SourceGenerators
                             var typeSymbol = semanticModel.GetSymbolInfo(creationExpression.Type).Symbol as ITypeSymbol;
                             if (typeSymbol != null)
                             {
-                                return typeSymbol.FullQualifiedNameOmitGlobal() == GodotClasses.Callable;
+                                return typeSymbol.FullQualifiedNameOmitGlobal() == FoundryClasses.Callable;
                             }
                             break;
 
@@ -545,7 +545,7 @@ namespace Godot.SourceGenerators
                             var methodSymbol = semanticModel.GetSymbolInfo(invocationExpression).Symbol as IMethodSymbol;
                             if (methodSymbol != null && methodSymbol.Name == "From")
                             {
-                                return methodSymbol.ContainingType.FullQualifiedNameOmitGlobal() == GodotClasses.Callable;
+                                return methodSymbol.ContainingType.FullQualifiedNameOmitGlobal() == FoundryClasses.Callable;
                             }
                             break;
                     }
@@ -716,7 +716,7 @@ namespace Godot.SourceGenerators
                     return true;
                 }
 
-                if (memberNamedType.InheritsFrom("GodotSharp", "Godot.Resource"))
+                if (memberNamedType.InheritsFrom("FoundrySharp", "Godot.Resource"))
                 {
                     hint = PropertyHint.ResourceType;
                     hintString = GetTypeName(memberNamedType);
@@ -724,7 +724,7 @@ namespace Godot.SourceGenerators
                     return true;
                 }
 
-                if (memberNamedType.InheritsFrom("GodotSharp", "Godot.Node"))
+                if (memberNamedType.InheritsFrom("FoundrySharp", "Godot.Node"))
                 {
                     hint = PropertyHint.NodeType;
                     hintString = GetTypeName(memberNamedType);

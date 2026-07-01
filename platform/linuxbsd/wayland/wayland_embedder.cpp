@@ -600,7 +600,7 @@ void WaylandEmbedder::cleanup_socket(int p_socket) {
 		ERR_FAIL_NULL(eclient_data);
 
 		if (!eclient_data->disconnected) {
-			// godot_embedded_client::disconnected
+			// foundry_embedded_client::disconnected
 			send_wayland_message(main_client->socket, eclient_id, 0, {});
 		}
 
@@ -975,7 +975,7 @@ void WaylandEmbedder::seat_name_enter_surface(uint32_t p_seat_name, uint32_t p_w
 	}
 
 	if (client->socket != main_client->socket) {
-		// godot_embedded_client::window_focus_in
+		// foundry_embedded_client::window_focus_in
 		send_wayland_message(main_client->socket, client->embedded_client_id, 2, {});
 	}
 }
@@ -1009,7 +1009,7 @@ void WaylandEmbedder::seat_name_leave_surface(uint32_t p_seat_name, uint32_t p_w
 	}
 
 	if (client != main_client) {
-		// godot_embedded_client::window_focus_out
+		// foundry_embedded_client::window_focus_out
 		send_wayland_message(main_client->socket, client->embedded_client_id, 3, {});
 	}
 }
@@ -1280,7 +1280,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 
 			version = MIN(global_info.version, version);
 
-			if (global_info.interface == &godot_embedding_compositor_interface) {
+			if (global_info.interface == &foundry_embedding_compositor_interface) {
 				if (!client->registry_globals_instances.has(global_name)) {
 					client->registry_globals_instances[global_name] = {};
 				}
@@ -1288,7 +1288,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 				client->registry_globals_instances[global_name].insert(new_local_id);
 				++global_info.instance_counter;
 				DEBUG_LOG_WAYLAND_EMBED("Bound embedded compositor interface.");
-				client->new_fake_object(new_local_id, &godot_embedding_compositor_interface, 1);
+				client->new_fake_object(new_local_id, &foundry_embedding_compositor_interface, 1);
 				return MessageStatus::HANDLED;
 			}
 
@@ -1598,7 +1598,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 				client->new_fake_object(new_local_id, &xdg_toplevel_interface, object->version, data);
 				client->embedded_window_id = new_local_id;
 
-				// godot_embedded_client::window_embedded()
+				// foundry_embedded_client::window_embedded()
 				send_wayland_message(main_client->socket, client->embedded_client_id, 1, {});
 			} else {
 				uint32_t new_global_id = client->new_object(new_local_id, &xdg_toplevel_interface, object->version, data);
@@ -1758,14 +1758,14 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 		}
 	}
 
-	if (interface == &godot_embedded_client_interface) {
+	if (interface == &foundry_embedded_client_interface) {
 		EmbeddedClientData *eclient_data = (EmbeddedClientData *)object->data;
 		ERR_FAIL_NULL_V(eclient_data, MessageStatus::ERROR);
 
 		Client *eclient = eclient_data->client;
 		ERR_FAIL_NULL_V(eclient, MessageStatus::ERROR);
 
-		if (p_opcode == GODOT_EMBEDDED_CLIENT_DESTROY) {
+		if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_DESTROY) {
 			if (!eclient_data->disconnected) {
 				close(eclient->socket);
 			}
@@ -1785,7 +1785,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 		XdgToplevelData *toplevel_data = (XdgToplevelData *)eclient->get_object(eclient->embedded_window_id)->data;
 		ERR_FAIL_NULL_V(toplevel_data, MessageStatus::ERROR);
 
-		if (p_opcode == GODOT_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_RECT && toplevel_data->wl_subsurface_id != INVALID_ID) {
+		if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_RECT && toplevel_data->wl_subsurface_id != INVALID_ID) {
 			uint32_t x = body[0];
 			uint32_t y = body[1];
 			uint32_t width = body[2];
@@ -1810,7 +1810,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 			send_wayland_message(eclient->socket, toplevel_data->xdg_surface_handle.get_local_id(), 0, { configure_serial_counter++ });
 
 			return MessageStatus::HANDLED;
-		} else if (p_opcode == GODOT_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_PARENT) {
+		} else if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_SET_EMBEDDED_WINDOW_PARENT) {
 			uint32_t main_client_parent_id = body[0];
 
 			if (toplevel_data->parent_handle.get_local_id() == main_client_parent_id) {
@@ -1860,7 +1860,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 			send_wayland_message(compositor_socket, new_sub_id, 5, {});
 
 			return MessageStatus::HANDLED;
-		} else if (p_opcode == GODOT_EMBEDDED_CLIENT_FOCUS_WINDOW) {
+		} else if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_FOCUS_WINDOW) {
 			XdgSurfaceData *xdg_surf_data = (XdgSurfaceData *)toplevel_data->xdg_surface_handle.get()->data;
 			ERR_FAIL_NULL_V(xdg_surf_data, MessageStatus::ERROR);
 
@@ -1875,7 +1875,7 @@ WaylandEmbedder::MessageStatus WaylandEmbedder::handle_request(LocalObjectHandle
 
 				seat_name_enter_surface(wl_seat_name, xdg_surf_data->wl_surface_id);
 			}
-		} else if (p_opcode == GODOT_EMBEDDED_CLIENT_EMBEDDED_WINDOW_REQUEST_CLOSE) {
+		} else if (p_opcode == FOUNDRY_EMBEDDED_CLIENT_EMBEDDED_WINDOW_REQUEST_CLOSE) {
 			// xdg_toplevel::close
 			send_wayland_message(eclient->socket, eclient->embedded_window_id, 1, {});
 
@@ -2823,11 +2823,11 @@ Error WaylandEmbedder::init() {
 	pollfds.push_back({ compositor_socket, POLLIN, 0 });
 
 	RegistryGlobalInfo control_global_info = {};
-	control_global_info.interface = &godot_embedding_compositor_interface;
-	control_global_info.version = godot_embedding_compositor_interface.version;
+	control_global_info.interface = &foundry_embedding_compositor_interface;
+	control_global_info.version = foundry_embedding_compositor_interface.version;
 
-	godot_embedding_compositor_name = registry_globals_counter++;
-	registry_globals[godot_embedding_compositor_name] = control_global_info;
+	foundry_embedding_compositor_name = registry_globals_counter++;
+	registry_globals[foundry_embedding_compositor_name] = control_global_info;
 
 	{
 		uint32_t invalid_id = INVALID_ID;
@@ -2885,18 +2885,18 @@ void WaylandEmbedder::handle_fd(int p_fd, int p_revents) {
 			main_client = &client;
 		}
 
-		if (new_fd != main_client->socket && main_client->registry_globals_instances.has(godot_embedding_compositor_name)) {
+		if (new_fd != main_client->socket && main_client->registry_globals_instances.has(foundry_embedding_compositor_name)) {
 			uint32_t new_local_id = main_client->allocate_server_id();
 
 			client.embedded_client_id = new_local_id;
 
-			for (uint32_t local_id : main_client->registry_globals_instances[godot_embedding_compositor_name]) {
+			for (uint32_t local_id : main_client->registry_globals_instances[foundry_embedding_compositor_name]) {
 				EmbeddedClientData *eclient_data = memnew(EmbeddedClientData);
 				eclient_data->client = &client;
 
-				main_client->new_fake_object(new_local_id, &godot_embedded_client_interface, 1, eclient_data);
+				main_client->new_fake_object(new_local_id, &foundry_embedded_client_interface, 1, eclient_data);
 
-				// godot_embedding_compositor::client(nu)
+				// foundry_embedding_compositor::client(nu)
 				send_wayland_message(main_client->socket, local_id, 0, { new_local_id, (uint32_t)cred.pid });
 			}
 		}

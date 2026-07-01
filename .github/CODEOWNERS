@@ -137,8 +137,8 @@
 /modules/websocket/editor/                    @godotengine/network @godotengine/editor
 
 ## Physics
-/modules/godot_physics_2d/                    @godotengine/physics
-/modules/godot_physics_3d/                    @godotengine/physics
+/modules/foundry_physics_2d/                    @godotengine/physics
+/modules/foundry_physics_3d/                    @godotengine/physics
 /modules/jolt_physics/                        @godotengine/physics @godotengine/jolt-physics
 
 ## Rendering

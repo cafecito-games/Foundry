@@ -60,19 +60,19 @@ extern "C" {
 #endif
 
 void godot_icall_GodotSharpDirs_ResMetadataDir(godot_string *r_dest) {
-	memnew_placement(r_dest, String(GodotSharpDirs::get_res_metadata_dir()));
+	memnew_placement(r_dest, String(FoundrySharpDirs::get_res_metadata_dir()));
 }
 
 void godot_icall_GodotSharpDirs_MonoUserDir(godot_string *r_dest) {
-	memnew_placement(r_dest, String(GodotSharpDirs::get_mono_user_dir()));
+	memnew_placement(r_dest, String(FoundrySharpDirs::get_mono_user_dir()));
 }
 
 void godot_icall_GodotSharpDirs_BuildLogsDirs(godot_string *r_dest) {
-	memnew_placement(r_dest, String(GodotSharpDirs::get_build_logs_dir()));
+	memnew_placement(r_dest, String(FoundrySharpDirs::get_build_logs_dir()));
 }
 
 void godot_icall_GodotSharpDirs_DataEditorToolsDir(godot_string *r_dest) {
-	memnew_placement(r_dest, String(GodotSharpDirs::get_data_editor_tools_dir()));
+	memnew_placement(r_dest, String(FoundrySharpDirs::get_data_editor_tools_dir()));
 }
 
 void godot_icall_GodotSharpDirs_CSharpProjectName(godot_string *r_dest) {
@@ -144,7 +144,7 @@ bool godot_icall_Internal_IsAssembliesReloadingNeeded() {
 
 void godot_icall_Internal_ReloadAssemblies(bool p_soft_reload) {
 #ifdef GD_MONO_HOT_RELOAD
-	callable_mp(MonoBind::GodotSharp::get_singleton(), &MonoBind::GodotSharp::reload_assemblies).call_deferred(p_soft_reload);
+	callable_mp(MonoBind::FoundrySharp::get_singleton(), &MonoBind::FoundrySharp::reload_assemblies).call_deferred(p_soft_reload);
 #endif
 }
 
@@ -247,7 +247,7 @@ bool godot_icall_Utils_OS_UnixFileHasExecutableAccess(const godot_string *p_file
 #endif
 
 // The order in this array must match the declaration order of
-// the methods in 'GodotTools/Internals/Internal.cs'.
+// the methods in 'FoundryTools/Internals/Internal.cs'.
 static const void *unmanaged_callbacks[]{
 	(void *)godot_icall_GodotSharpDirs_ResMetadataDir,
 	(void *)godot_icall_GodotSharpDirs_MonoUserDir,

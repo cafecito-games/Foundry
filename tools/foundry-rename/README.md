@@ -20,7 +20,7 @@ Every rule carries a **category** and a **context**:
 | A | GDScript family | `GDScriptParser -> FSParser`, `GDScript -> FoundryScript` |
 | B | GDExtension family | `GDExtensionManager -> FoundryExtensionManager` |
 | C | GD* object macros | `GDCLASS -> FOUNDRY_CLASS`, `GDVIRTUAL0 -> FOUNDRY_VIRTUAL0` |
-| D | GODOT_* / branding | `GODOT_VERSION -> FOUNDRY_VERSION`, `Godot Engine -> Foundry` |
+| D | GODOT_* / Godot* / branding | `GODOT_VERSION -> FOUNDRY_VERSION`, `GodotInstance -> FoundryInstance`, `Godot Engine -> Foundry` |
 
 | Context | Meaning |
 | --- | --- |
@@ -44,7 +44,7 @@ Rules are always applied **longest-source-first**, so `GDScriptParser` becomes
 - `GDCLASS` -> `FOUNDRY_CLASS`; `GDSOFTCLASS` -> `FOUNDRY_SOFTCLASS`;
   `GDVIRTUAL<suffix>` -> `FOUNDRY_VIRTUAL<suffix>`;
   `GDREGISTER_<NAME>` -> `FOUNDRY_REGISTER_<NAME>` (C)
-- `GODOT_<NAME>` -> `FOUNDRY_<NAME>` (D)
+- `GODOT_<NAME>` -> `FOUNDRY_<NAME>`; `Godot<Rest>` -> `Foundry<Rest>` (D)
 
 Only source-code file types are scanned (see `SOURCE_EXTENSIONS`). Prose and
 translation files (`.po`, `.md`, doc `.xml`, ...) are deliberately skipped: they

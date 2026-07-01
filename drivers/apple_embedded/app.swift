@@ -31,7 +31,7 @@
 import SwiftUI
 import UIKit
 
-struct GodotSwiftUIViewController: UIViewControllerRepresentable {
+struct FoundrySwiftUIViewController: UIViewControllerRepresentable {
 
 	func makeUIViewController(context: Context) -> GDTViewController {
 		let viewController = GDTViewController()
@@ -51,7 +51,7 @@ struct SwiftUIApp: App {
 
 	var body: some Scene {
 		WindowGroup {
-			GodotSwiftUIViewController()
+			FoundrySwiftUIViewController()
 				.ignoresSafeArea()
 		}
 	}

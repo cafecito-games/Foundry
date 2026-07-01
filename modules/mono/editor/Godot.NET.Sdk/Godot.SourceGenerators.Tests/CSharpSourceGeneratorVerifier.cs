@@ -22,7 +22,7 @@ where TSourceGenerator : ISourceGenerator, new()
             SolutionTransforms.Add((Solution solution, ProjectId projectId) =>
             {
                 Project project = solution.GetProject(projectId)!
-                    .AddMetadataReference(Constants.GodotSharpAssembly.CreateMetadataReference());
+                    .AddMetadataReference(Constants.FoundrySharpAssembly.CreateMetadataReference());
 
                 return project.Solution;
             });
@@ -57,7 +57,7 @@ where TSourceGenerator : ISourceGenerator, new()
 
         verifier.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", $"""
         is_global = true
-        build_property.GodotProjectDir = {Constants.ExecutingAssemblyPath}
+        build_property.FoundryProjectDir = {Constants.ExecutingAssemblyPath}
         """));
 
         verifier.TestState.Sources.AddRange(sources.Select(source => (

@@ -44,7 +44,7 @@ Files extracted from upstream source:
 Patches:
 
 - `0001-build-fixes.patch` ([GH-81197](https://github.com/godotengine/godot/pull/81197))
-- `0002-godot-fsr2-options.patch` ([GH-81197](https://github.com/godotengine/godot/pull/81197))
+- `0002-foundry-fsr2-options.patch` ([GH-81197](https://github.com/godotengine/godot/pull/81197))
 
 
 ## angle
@@ -222,21 +222,21 @@ Files extracted from upstream source:
 
 Files extracted from upstream:
 
-- All `.cpp` files listed in `modules/raycast/godot_update_embree.py`
-- All header files in the directories listed in `modules/raycast/godot_update_embree.py`
-- All config files listed in `modules/raycast/godot_update_embree.py`
+- All `.cpp` files listed in `modules/raycast/foundry_update_embree.py`
+- All header files in the directories listed in `modules/raycast/foundry_update_embree.py`
+- All config files listed in `modules/raycast/foundry_update_embree.py`
 - `LICENSE.txt`
 
 Patches:
 
 - `0001-disable-exceptions.patch` ([GH-48050](https://github.com/godotengine/godot/pull/48050))
-- `0002-godot-config.patch` ([GH-88783](https://github.com/godotengine/godot/pull/88783))
+- `0002-foundry-config.patch` ([GH-88783](https://github.com/godotengine/godot/pull/88783))
 - `0003-emscripten-nthreads.patch` ([GH-69799](https://github.com/godotengine/godot/pull/69799))
 - `0004-mingw-no-cpuidex.patch` ([GH-92488](https://github.com/godotengine/godot/pull/92488))
 - `0005-mingw-llvm-arm64.patch` ([GH-93364](https://github.com/godotengine/godot/pull/93364))
 - `0006-explicit-includes.patch` ([GH-111557](https://github.com/godotengine/godot/pull/111557))
 
-The `modules/raycast/godot_update_embree.py` script can be used to pull the
+The `modules/raycast/foundry_update_embree.py` script can be used to pull the
 relevant files from the latest Embree release and apply patches automatically.
 
 
@@ -251,12 +251,12 @@ Files extracted from upstream source:
 - All `.c` files in the main directory (except `unix.c` and `win32.c`)
 - The `include/enet/` folder as `enet/` (except `unix.h` and `win32.h`)
 - `LICENSE` file
-- Added 3 files `enet_godot.cpp`, `enet/enet_godot.h`, and `enet/enet_godot_ext.h`,
+- Added 3 files `enet_godot.cpp`, `enet/enet_godot.h`, and `enet/enet_foundry_ext.h`,
   providing ENet socket implementation using Godot classes, allowing IPv6 and DTLS.
 
 Patches:
 
-- `0001-godot-socket.patch` ([GH-7985](https://github.com/godotengine/godot/pull/7985))
+- `0001-foundry-socket.patch` ([GH-7985](https://github.com/godotengine/godot/pull/7985))
 
 Important: Building against a system wide ENet is possible, but will limit its
 functionality to IPv4 only and no DTLS. We recommend against it.
@@ -445,7 +445,7 @@ Files extracted from upstream source:
 
 Patches:
 
-- `0001-godot-changes.patch` ([GH-98750](https://github.com/godotengine/godot/pull/98750))
+- `0001-foundry-changes.patch` ([GH-98750](https://github.com/godotengine/godot/pull/98750))
 
 
 ## harfbuzz
@@ -477,7 +477,7 @@ Files extracted from upstream source:
 
 Files generated from upstream source:
 
-- The `icudt_godot.dat` built with the provided `godot_data.json` config file (see
+- The `icudt_godot.dat` built with the provided `foundry_data.json` config file (see
   https://github.com/unicode-org/icu/blob/master/docs/userguide/icu_data/buildtool.md
   for instructions).
 
@@ -485,7 +485,7 @@ Files generated from upstream source:
   (replace `data` subfolder from the main source archive)
 2. Build ICU with default options: `./runConfigureICU {PLATFORM} && make`
 3. Reconfigure ICU with custom data config:
-   `ICU_DATA_FILTER_FILE={GODOT_SOURCE}/thirdparty/icu4c/godot_data.json ./runConfigureICU {PLATFORM} --with-data-packaging=common`
+   `ICU_DATA_FILTER_FILE={GODOT_SOURCE}/thirdparty/icu4c/foundry_data.json ./runConfigureICU {PLATFORM} --with-data-packaging=common`
 4. Delete `data/out` folder and rebuild data: `cd data && rm -rf ./out && make`
 5. Copy `source/data/out/icudt{ICU_VERSION}l.dat` to the `{GODOT_SOURCE}/thirdparty/icu4c/icudt_godot.dat`
 
@@ -677,9 +677,9 @@ File extracted from upstream release tarball:
   - Except `bignum_mod.c`, `block_cipher.c`, `ecp_curves_new.c`, `lmots.c`,
     `lms.c`
 - The `LICENSE` file (edited to keep only the Apache 2.0 variant)
-- Added 2 files `godot_core_mbedtls_platform.c` and `godot_core_mbedtls_config.h`
+- Added 2 files `foundry_core_mbedtls_platform.c` and `foundry_core_mbedtls_config.h`
   providing configuration for light bundling with core
-- Added 2 files `godot_module_mbedtls_config.h` and `threading_alt.h`
+- Added 2 files `foundry_module_mbedtls_config.h` and `threading_alt.h`
   to customize the build configuration when bundling the full library
 
 Patches:
@@ -752,7 +752,7 @@ Files extracted from the upstream source:
 
 Patches:
 
-- `0001-godot-seek.patch` ([GH-10428](https://github.com/godotengine/godot/pull/10428))
+- `0001-foundry-seek.patch` ([GH-10428](https://github.com/godotengine/godot/pull/10428))
 
 
 ## misc
@@ -810,7 +810,7 @@ Collection of single-file libraries used in Godot components.
   * Version: git (7bdffb428b2b19ad1c43aa44c714dcc104177e84, 2021)
   * License: MIT
   * Patches:
-    - `polypartition-0001-godot-types.patch` (2185c018f)
+    - `polypartition-0001-foundry-types.patch` (2185c018f)
     - `polypartition-0002-shadow-warning.patch` ([GH-66808](https://github.com/godotengine/godot/pull/66808))
 - `qoa.{c,h}`
   * Upstream: https://github.com/phoboslab/qoa
@@ -1159,8 +1159,8 @@ Version: 3.1.0 (009ecd192c1289c7529bff248a16cfe896254816, 2024)
 
 Patches:
 
-- `0001-VKEnumStringHelper-godot-vulkan.patch` ([GH-97510](https://github.com/godotengine/godot/pull/97510))
-- `0002-VMA-godot-vulkan.patch` ([GH-97510](https://github.com/godotengine/godot/pull/97510))
+- `0001-VKEnumStringHelper-foundry-vulkan.patch` ([GH-97510](https://github.com/godotengine/godot/pull/97510))
+- `0002-VMA-foundry-vulkan.patch` ([GH-97510](https://github.com/godotengine/godot/pull/97510))
 - `0003-VMA-add-vmaCalculateLazilyAllocatedBytes.patch` ([GH-99257](https://github.com/godotengine/godot/pull/99257))
 
 

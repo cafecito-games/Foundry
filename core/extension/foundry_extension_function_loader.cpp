@@ -33,7 +33,7 @@
 #include "foundry_extension.h"
 
 Error FoundryExtensionFunctionLoader::open_library(const String &p_path) {
-	ERR_FAIL_COND_V_MSG(!p_path.begins_with("libgodot://"), ERR_FILE_NOT_FOUND, "Function based FoundryExtensions should have a path starting with libgodot://");
+	ERR_FAIL_COND_V_MSG(!p_path.begins_with("libfoundry://"), ERR_FILE_NOT_FOUND, "Function based FoundryExtensions should have a path starting with libfoundry://");
 	ERR_FAIL_COND_V_MSG(!initialization_function, ERR_DOES_NOT_EXIST, "Initialization function is required for function based FoundryExtensions.");
 
 	library_path = p_path;

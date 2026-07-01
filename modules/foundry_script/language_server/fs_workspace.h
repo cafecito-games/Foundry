@@ -32,8 +32,8 @@
 
 #include "core/config/project_build_pipeline_status.h"
 #include "core/error/error_macros.h"
+#include "foundry_lsp.h"
 #include "fs_extend_parser.h"
-#include "godot_lsp.h"
 
 #include "core/variant/variant.h"
 #include "editor/file_system/editor_file_system.h"
