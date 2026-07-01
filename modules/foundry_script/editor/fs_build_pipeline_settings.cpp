@@ -933,6 +933,10 @@ void FSBuildPipelineSettingsDialog::_clear_cached_state() {
 FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	set_title(TTR("Build Pipeline"));
 	set_ok_button_text(TTR("Save"));
+	// Not exclusive: running a task rescans the filesystem, which can raise the editor's own
+	// reimport/reload dialogs. An exclusive parent would block those with a "parent already has an
+	// exclusive child" error, so allow other editor dialogs to appear over this one.
+	set_exclusive(false);
 	// Keep the dialog open on OK so _save_to_project() can report (and preserve edits through) a save
 	// or read failure; it hides itself only after a successful write.
 	set_hide_on_ok(false);
