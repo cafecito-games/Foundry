@@ -4,7 +4,9 @@
 		Base class for script-backed Foundry build task providers.
 	</brief_description>
 	<description>
-		Build task provider scripts listed in project or addon build metadata must declare a [code]class_name[/code] that extends [FoundryBuildTask]. Build-task bootstrap loading instantiates these scripts with dependencies restricted to the build API and provider-local or addon-local helper scripts.
+		Build task provider scripts listed in project or addon build metadata must declare a [code]class_name[/code] that extends [FoundryBuildTask].
+		Build-task bootstrap loading instantiates these scripts with dependencies restricted to the build API and provider-local or addon-local helper scripts.
+		Native build tooling invokes provider hooks through script dispatch so Foundry Script subclasses can implement them.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -12,7 +14,9 @@
 		<method name="get_config_schema" qualifiers="const">
 			<return type="FoundryBuildTaskConfigSchema" />
 			<description>
-				Returns the provider-specific configuration schema. Schema loading is intended for trusted providers and is not required when listing untrusted providers.
+				Returns the provider-specific configuration schema.
+				Schema loading is intended for trusted providers and is not required when listing untrusted providers.
+				Foundry Script providers may override this hook.
 			</description>
 		</method>
 		<method name="run">
@@ -20,6 +24,7 @@
 			<param index="0" name="context" type="FoundryBuildContext" />
 			<description>
 				Runs the build task for [param context] and returns the task result.
+				Foundry Script providers may override this hook.
 			</description>
 		</method>
 	</methods>

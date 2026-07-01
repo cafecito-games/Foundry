@@ -170,6 +170,11 @@ protected:
 	static void _bind_methods();
 
 public:
+	static Ref<FoundryBuildTaskConfigSchema> call_get_config_schema_script_hook(
+			const Ref<FoundryBuildTask> &p_provider);
+	static Ref<FoundryBuildResult> call_run_script_hook(
+			const Ref<FoundryBuildTask> &p_provider, const Ref<FoundryBuildContext> &p_context);
+
 	virtual Ref<FoundryBuildTaskConfigSchema> get_config_schema() const;
 	virtual Ref<FoundryBuildResult> run(const Ref<FoundryBuildContext> &p_context);
 };

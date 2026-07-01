@@ -348,6 +348,38 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads provider schema af
 	CHECK_EQ(String(properties["target"]), "String");
 }
 
+TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads command subclass provider schema after explicit trust") {
+	ScopedBuildTaskProject project("build_task_bootstrap_command_subclass_schema");
+	const String script_path = project.write_script(
+			"res://addons/bootstrap/command_subclass_schema_provider.fs",
+			"class_name BootstrapCommandSubclassSchemaProvider extends FoundryCommandBuildTask\n"
+			"\n"
+			"func get_config_schema() -> FoundryBuildTaskConfigSchema:\n"
+			"\tvar schema := FoundryBuildTaskConfigSchema.new()\n"
+			"\tschema.properties = { \"mode\": \"String\" }\n"
+			"\treturn schema\n");
+
+	FoundryBuildTaskRegistry registry;
+	registry.register_provider_descriptor(
+			make_bootstrap_provider("bootstrap.command_subclass_schema", script_path,
+					"BootstrapCommandSubclassSchemaProvider"),
+			make_bootstrap_source("bootstrap.command_subclass_schema"));
+
+	FoundryBuildTaskBootstrapLoader loader;
+	CHECK_EQ(loader.load_registered_providers(registry), OK);
+	CHECK_MESSAGE(loader.get_diagnostics().is_empty(), bootstrap_diagnostics_to_string(loader.get_diagnostics()));
+
+	Ref<FoundryBuildTaskConfigSchema> schema;
+	CHECK_EQ(loader.load_provider_schema("bootstrap.command_subclass_schema", schema), OK);
+	CHECK(schema.is_valid());
+	if (schema.is_null()) {
+		return;
+	}
+
+	Dictionary properties = schema->get_properties();
+	CHECK_EQ(String(properties["mode"]), "String");
+}
+
 TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Provider load does not require schema evaluation") {
 	ScopedBuildTaskProject project("build_task_bootstrap_lazy_schema");
 	const String script_path = project.write_script(

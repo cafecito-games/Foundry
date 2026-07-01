@@ -20,6 +20,20 @@ Follow `.editorconfig`: UTF-8, LF line endings, final newline, 120-column limit,
 
 The Foundry Script grammar is documented exhaustively in `modules/foundry_script/GRAMMAR.md` (ISO 14977 EBNF plus the Pratt-parser precedence table). It is a normative spec used to re-implement the front-end (tokenizer + Pratt parser) in other languages. Any change to the scripting language that affects its grammar — adding/removing/renaming tokens or keywords, changing operator precedence or associativity, altering statement/declaration/type/expression/pattern syntax, or changing the built-in annotation set (typically edits to `modules/foundry_script/fs_tokenizer.{h,cpp}` or `modules/foundry_script/fs_parser.{h,cpp}`) — must be reflected in `modules/foundry_script/GRAMMAR.md` in the same change so it stays authoritative.
 
+## Script-Extensible Native APIs
+
+When adding a native class intended for Foundry Script users to extend, do not rely on C++ virtual
+dispatch for script overrides. Bound native methods can be called from scripts, but native callers
+holding a C++ pointer must use `Object::call()`/`callp()` through a centralized helper when invoking
+user-overridable hooks.
+
+For each script-extensible hook, document the method as script-dispatched near `_bind_methods()` and
+in class docs, add it to `FSScriptExtensibleNativeHooks` so `NATIVE_METHOD_OVERRIDE` is not emitted
+for intentional hooks, provide one native helper/invoker instead of scattering raw `call("hook")`
+call sites, and add regression tests proving script subclasses can override the hook without analyzer
+warnings and that native runtime code dispatches to the script method. Include coverage for native
+subclasses of the extensible base and for unrelated native method overrides continuing to warn/error.
+
 ## Testing Guidelines
 
 Add or update tests with behavior changes. C++ tests use doctest macros from `tests/test_macros.h` and are included through `tests/test_main.cpp`. New C++ test skeletons can be created with `python tests/create_test.py Name path`, where `path` is relative to `tests/`. Foundry Script integration, completion, LSP, and refactor fixtures belong under `modules/foundry_script/tests/scripts/`; pair `.fs` fixtures with expected-output config files where the local test runner expects them.

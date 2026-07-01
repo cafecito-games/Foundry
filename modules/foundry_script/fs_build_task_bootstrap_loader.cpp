@@ -453,8 +453,8 @@ Error FoundryBuildTaskBootstrapLoader::load_provider_schema(
 		return ERR_DOES_NOT_EXIST;
 	}
 
-	Variant schema_value = provider->instance->call(SNAME("get_config_schema"));
-	Ref<FoundryBuildTaskConfigSchema> schema = schema_value;
+	Ref<FoundryBuildTaskConfigSchema> schema =
+			FoundryBuildTask::call_get_config_schema_script_hook(provider->instance);
 	if (schema.is_null()) {
 		_add_diagnostic(FoundryBuildTaskRegistry::DIAGNOSTIC_LOADER_FAILURE, provider->descriptor, "class_name",
 				vformat("Provider class '%s' returned an invalid build task config schema.",
