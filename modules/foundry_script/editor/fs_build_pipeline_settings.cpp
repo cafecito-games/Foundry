@@ -72,15 +72,59 @@ PackedStringArray FSBuildPipelineSettingsDialog::_lines_to_string_array(const St
 	return result;
 }
 
-PackedStringArray FSBuildPipelineSettingsDialog::_lines_to_argv(const String &p_text) {
-	// argv entries are preserved verbatim: leading/trailing whitespace and empty entries (including a
-	// trailing one) can be meaningful, so one line maps to exactly one argument. Empty text is no
-	// arguments rather than a single empty argument. This round-trips exactly with
-	// _string_array_to_lines() for every argv except the pathological single empty-string argument.
-	if (p_text.is_empty()) {
-		return PackedStringArray();
+PackedStringArray FSBuildPipelineSettingsDialog::_parse_argv(const String &p_text) {
+	// Split a command line into arguments on whitespace. Double quotes group an argument that contains
+	// spaces (and `""` yields an explicit empty argument). This round-trips with _argv_to_string().
+	PackedStringArray argv;
+	String current;
+	bool in_token = false;
+	bool in_quotes = false;
+	for (int i = 0; i < p_text.length(); i++) {
+		const char32_t c = p_text[i];
+		if (in_quotes) {
+			if (c == '"') {
+				in_quotes = false;
+			} else {
+				current += String::chr(c);
+			}
+			continue;
+		}
+		if (c == '"') {
+			in_quotes = true;
+			in_token = true;
+		} else if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+			if (in_token) {
+				argv.push_back(current);
+				current = String();
+				in_token = false;
+			}
+		} else {
+			current += String::chr(c);
+			in_token = true;
+		}
 	}
-	return p_text.split("\n");
+	if (in_token) {
+		argv.push_back(current);
+	}
+	return argv;
+}
+
+String FSBuildPipelineSettingsDialog::_argv_to_string(const PackedStringArray &p_array) {
+	// Join arguments with spaces, quoting any argument that is empty or contains whitespace so it
+	// survives a _parse_argv() round-trip as a single argument.
+	String result;
+	for (int i = 0; i < p_array.size(); i++) {
+		if (i > 0) {
+			result += " ";
+		}
+		const String arg = p_array[i];
+		if (arg.is_empty() || arg.contains(" ") || arg.contains("\t") || arg.contains("\"")) {
+			result += "\"" + arg.replace("\"", "") + "\"";
+		} else {
+			result += arg;
+		}
+	}
+	return result;
 }
 
 String FSBuildPipelineSettingsDialog::_string_array_to_lines(const PackedStringArray &p_array) {
@@ -191,7 +235,7 @@ void FSBuildPipelineSettingsDialog::_refresh_all() {
 	_refresh_stage_lists();
 	_refresh_provider_select();
 	_refresh_details();
-	_refresh_validation_and_preview();
+	_refresh_validation();
 	_refresh_actions();
 }
 
@@ -320,8 +364,8 @@ void FSBuildPipelineSettingsDialog::_refresh_details() {
 	timeout_spin->set_editable(task->has_timeout_seconds);
 
 	command_edit->set_text(task->command);
-	args_edit->set_text(_string_array_to_lines(task->args));
-	tool_version_edit->set_text(_string_array_to_lines(task->tool_version_command));
+	args_edit->set_text(_argv_to_string(task->args));
+	tool_version_edit->set_text(_argv_to_string(task->tool_version_command));
 
 	const bool is_command = task->provider == COMMAND_PROVIDER_ID;
 	command_fields->set_visible(is_command);
@@ -373,7 +417,7 @@ void FSBuildPipelineSettingsDialog::_refresh_options_editor() {
 	updating_ui = false;
 }
 
-void FSBuildPipelineSettingsDialog::_refresh_validation_and_preview() {
+void FSBuildPipelineSettingsDialog::_refresh_validation() {
 	FoundryBuildTaskRegistry registry;
 	_build_available_registry(registry);
 	const Vector<ProjectBuildPipelineConfig::ValidationError> errors = working_config.validate(&registry);
@@ -411,8 +455,6 @@ void FSBuildPipelineSettingsDialog::_refresh_validation_and_preview() {
 		validation_label->add_theme_color_override(SceneStringName(font_color), Color(0.94, 0.42, 0.42));
 	}
 
-	preview_text->set_text(working_config.generate_preview());
-
 	// Editing changes dirtiness, which gates the run actions; keep their enabled state in sync.
 	_refresh_actions();
 }
@@ -436,9 +478,16 @@ void FSBuildPipelineSettingsDialog::_refresh_actions() {
 	const bool can_run = project_trusted && pipeline_enabled && !_has_unsaved_changes();
 	run_task_button->set_disabled(!can_run || !has_task || (selected != nullptr && !selected->enabled));
 	run_stage_button->set_disabled(!can_run);
-	const String run_hint = _has_unsaved_changes() ? TTR("Save changes before running.") : String();
-	run_task_button->set_tooltip_text(run_hint);
-	run_stage_button->set_tooltip_text(run_hint);
+	String run_hint;
+	if (!project_trusted) {
+		run_hint = TTR("Trust the project's build tasks to enable run actions.");
+	} else if (!pipeline_enabled) {
+		run_hint = TTR("Enable the build pipeline to run tasks.");
+	} else if (_has_unsaved_changes()) {
+		run_hint = TTR("Save changes before running.");
+	}
+	run_task_button->set_tooltip_text(run_hint.is_empty() ? TTR("Runs the selected task now and records its build state.") : run_hint);
+	run_stage_button->set_tooltip_text(run_hint.is_empty() ? TTR("Runs every enabled task in the selected stage, in order, stopping on the first failure.") : run_hint);
 	clear_state_button->set_disabled(false);
 	duplicate_button->set_disabled(!has_task);
 	remove_button->set_disabled(!has_task);
@@ -481,7 +530,7 @@ void FSBuildPipelineSettingsDialog::_enabled_toggled(bool p_pressed) {
 		return;
 	}
 	working_config.set_enabled(p_pressed);
-	_refresh_validation_and_preview();
+	_refresh_validation();
 }
 
 void FSBuildPipelineSettingsDialog::_trust_pressed() {
@@ -515,7 +564,7 @@ void FSBuildPipelineSettingsDialog::_add_task(int p_stage) {
 	selected_task = name;
 	_refresh_stage_lists();
 	_refresh_details();
-	_refresh_validation_and_preview();
+	_refresh_validation();
 	_refresh_actions();
 }
 
@@ -539,7 +588,7 @@ void FSBuildPipelineSettingsDialog::_duplicate_task() {
 	selected_task = copy;
 	_refresh_stage_lists();
 	_refresh_details();
-	_refresh_validation_and_preview();
+	_refresh_validation();
 	_refresh_actions();
 }
 
@@ -551,7 +600,7 @@ void FSBuildPipelineSettingsDialog::_remove_task() {
 	selected_task = String();
 	_refresh_stage_lists();
 	_refresh_details();
-	_refresh_validation_and_preview();
+	_refresh_validation();
 	_refresh_actions();
 }
 
@@ -566,7 +615,7 @@ void FSBuildPipelineSettingsDialog::_move_task(int p_delta) {
 	}
 	if (working_config.move_stage_task(selected_stage, index, index + p_delta)) {
 		_refresh_stage_lists();
-		_refresh_validation_and_preview();
+		_refresh_validation();
 	}
 }
 
@@ -598,7 +647,7 @@ void FSBuildPipelineSettingsDialog::_provider_selected(int p_index) {
 
 	_refresh_stage_lists();
 	_refresh_details();
-	_refresh_validation_and_preview();
+	_refresh_validation();
 }
 
 ProjectBuildPipelineConfig::TaskDefinition FSBuildPipelineSettingsDialog::_read_details_into_task(const String &p_name) const {
@@ -622,8 +671,8 @@ ProjectBuildPipelineConfig::TaskDefinition FSBuildPipelineSettingsDialog::_read_
 
 	if (task.provider == COMMAND_PROVIDER_ID) {
 		task.command = command_edit->get_text().strip_edges();
-		task.args = _lines_to_argv(args_edit->get_text());
-		task.tool_version_command = _lines_to_argv(tool_version_edit->get_text());
+		task.args = _parse_argv(args_edit->get_text());
+		task.tool_version_command = _parse_argv(tool_version_edit->get_text());
 	} else {
 		// The generic editor is text-only, so it would coerce every value to a String. Preserve the
 		// original typed Variant for any key whose textual form is unchanged; only keys the user
@@ -655,7 +704,7 @@ void FSBuildPipelineSettingsDialog::_commit_details() {
 	}
 	working_config.set_task(_read_details_into_task(selected_task));
 	_refresh_stage_lists();
-	_refresh_validation_and_preview();
+	_refresh_validation();
 }
 
 void FSBuildPipelineSettingsDialog::_details_changed() {
@@ -668,7 +717,7 @@ void FSBuildPipelineSettingsDialog::_task_enabled_toggled(bool p_pressed) {
 	}
 	working_config.set_task_enabled(selected_task, p_pressed);
 	_refresh_stage_lists();
-	_refresh_validation_and_preview();
+	_refresh_validation();
 }
 
 void FSBuildPipelineSettingsDialog::_timeout_toggled(bool p_pressed) {
@@ -690,7 +739,7 @@ void FSBuildPipelineSettingsDialog::_name_submitted() {
 	if (working_config.rename_task(selected_task, new_name)) {
 		selected_task = new_name;
 		_refresh_stage_lists();
-		_refresh_validation_and_preview();
+		_refresh_validation();
 		_refresh_actions();
 	} else {
 		// Reject the rename (empty, unchanged, or a name collision) and restore the field.
@@ -930,6 +979,26 @@ void FSBuildPipelineSettingsDialog::_clear_cached_state() {
 	run_output->set_text(TTR("Cleared cached build state."));
 }
 
+void FSBuildPipelineSettingsDialog::_add_field(BoxContainer *p_parent, const String &p_label, Control *p_control, const String &p_tooltip) {
+	HBoxContainer *row = memnew(HBoxContainer);
+	Label *label = memnew(Label);
+	label->set_text(p_label);
+	row->add_child(label);
+
+	Label *help = memnew(Label);
+	help->set_text("[?]");
+	help->set_tooltip_text(p_tooltip);
+	// Labels ignore the mouse by default, which would suppress the tooltip; let this one receive hover.
+	help->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	help->add_theme_color_override(SceneStringName(font_color), Color(0.6, 0.6, 0.6));
+	row->add_child(help);
+
+	p_parent->add_child(row);
+
+	p_control->set_tooltip_text(p_tooltip);
+	p_parent->add_child(p_control);
+}
+
 FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	set_title(TTR("Build Pipeline"));
 	set_ok_button_text(TTR("Save"));
@@ -950,6 +1019,7 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 
 	enabled_toggle = memnew(CheckButton);
 	enabled_toggle->set_text(TTR("Enable build pipeline"));
+	enabled_toggle->set_tooltip_text(TTR("Master switch for the project's build pipeline. When off, no build tasks run for this project."));
 	enabled_toggle->connect(SceneStringName(toggled), callable_mp(this, &FSBuildPipelineSettingsDialog::_enabled_toggled));
 	header->add_child(enabled_toggle);
 
@@ -959,6 +1029,7 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	header->add_child(trust_label);
 
 	trust_button = memnew(Button);
+	trust_button->set_tooltip_text(TTR("Build tasks run project-authored code and external commands, so they must be trusted before run actions are enabled. Trust is stored locally, not in the project."));
 	trust_button->connect(SceneStringName(pressed), callable_mp(this, &FSBuildPipelineSettingsDialog::_trust_pressed));
 	header->add_child(trust_button);
 
@@ -1047,24 +1118,20 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	details_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	details_scroll->add_child(details_container);
 
-	auto add_labeled = [&](const String &p_label, Control *p_control) {
-		Label *label = memnew(Label);
-		label->set_text(p_label);
-		details_container->add_child(label);
-		details_container->add_child(p_control);
-	};
-
 	name_edit = memnew(LineEdit);
 	name_edit->connect(SceneStringName(text_submitted), callable_mp(this, &FSBuildPipelineSettingsDialog::_name_submitted).unbind(1));
 	name_edit->connect("focus_exited", callable_mp(this, &FSBuildPipelineSettingsDialog::_name_submitted));
-	add_labeled(TTR("Task name"), name_edit);
+	_add_field(details_container, TTR("Task name"), name_edit,
+			TTR("Unique name for this task. Used in the stage lists and as the [build/tasks/<name>] section in project.foundry."));
 
 	provider_select = memnew(OptionButton);
 	provider_select->connect("item_selected", callable_mp(this, &FSBuildPipelineSettingsDialog::_provider_selected));
-	add_labeled(TTR("Provider"), provider_select);
+	_add_field(details_container, TTR("Provider"), provider_select,
+			TTR("The build provider that runs this task. 'command' runs an executable; other providers are supplied by addons or project scripts."));
 
 	task_enabled_toggle = memnew(CheckButton);
 	task_enabled_toggle->set_text(TTR("Task enabled"));
+	task_enabled_toggle->set_tooltip_text(TTR("When off, the task stays in its stage list but is skipped when the stage runs."));
 	task_enabled_toggle->connect(SceneStringName(toggled), callable_mp(this, &FSBuildPipelineSettingsDialog::_task_enabled_toggled));
 	details_container->add_child(task_enabled_toggle);
 
@@ -1073,33 +1140,22 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	details_container->add_child(command_fields);
 
 	command_edit = memnew(LineEdit);
+	command_edit->set_placeholder("foundryproto");
 	command_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed).unbind(1));
-	{
-		Label *label = memnew(Label);
-		label->set_text(TTR("Command"));
-		command_fields->add_child(label);
-		command_fields->add_child(command_edit);
-	}
+	_add_field(command_fields, TTR("Command"), command_edit,
+			TTR("Executable to run. Resolved on the system PATH unless it is an absolute or res:// path."));
 
-	args_edit = memnew(TextEdit);
-	args_edit->set_custom_minimum_size(Size2(0, 60) * EDSCALE);
-	args_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed));
-	{
-		Label *label = memnew(Label);
-		label->set_text(TTR("Arguments (one per line)"));
-		command_fields->add_child(label);
-		command_fields->add_child(args_edit);
-	}
+	args_edit = memnew(LineEdit);
+	args_edit->set_placeholder("--input proto/ --output generated/");
+	args_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed).unbind(1));
+	_add_field(command_fields, TTR("Arguments"), args_edit,
+			TTR("Command arguments separated by spaces. Wrap an argument in double quotes to include spaces, e.g. \"my file.txt\"."));
 
-	tool_version_edit = memnew(TextEdit);
-	tool_version_edit->set_custom_minimum_size(Size2(0, 50) * EDSCALE);
-	tool_version_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed));
-	{
-		Label *label = memnew(Label);
-		label->set_text(TTR("Tool version command (one arg per line)"));
-		command_fields->add_child(label);
-		command_fields->add_child(tool_version_edit);
-	}
+	tool_version_edit = memnew(LineEdit);
+	tool_version_edit->set_placeholder("foundryproto --version");
+	tool_version_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed).unbind(1));
+	_add_field(command_fields, TTR("Tool version command"), tool_version_edit,
+			TTR("Optional command (space-separated) whose output is folded into the task fingerprint so a tool upgrade re-triggers the task."));
 
 	options_section = memnew(VBoxContainer);
 	options_section->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1111,32 +1167,41 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 
 	generic_options_edit = memnew(TextEdit);
 	generic_options_edit->set_custom_minimum_size(Size2(0, 70) * EDSCALE);
+	generic_options_edit->set_tooltip_text(TTR("Provider-specific options as key=value lines. Trusted providers may declare a schema listing the expected keys."));
 	generic_options_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed));
 	options_section->add_child(generic_options_edit);
 
 	working_directory_edit = memnew(LineEdit);
 	working_directory_edit->set_placeholder("res://");
 	working_directory_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed).unbind(1));
-	add_labeled(TTR("Working directory"), working_directory_edit);
+	_add_field(details_container, TTR("Working directory"), working_directory_edit,
+			TTR("Directory the command runs in, as a res:// path. res:// is the project root. Defaults to res:// when left empty."));
 
 	inputs_edit = memnew(TextEdit);
-	inputs_edit->set_custom_minimum_size(Size2(0, 60) * EDSCALE);
+	inputs_edit->set_custom_minimum_size(Size2(0, 55) * EDSCALE);
+	inputs_edit->set_placeholder("res://proto/**/*.proto");
 	inputs_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed));
-	add_labeled(TTR("Inputs (one path or glob per line)"), inputs_edit);
+	_add_field(details_container, TTR("Inputs"), inputs_edit,
+			TTR("Files or globs that re-trigger the task when they change. One res:// path or glob per line, e.g. res://proto/**/*.proto."));
 
 	outputs_edit = memnew(TextEdit);
-	outputs_edit->set_custom_minimum_size(Size2(0, 60) * EDSCALE);
+	outputs_edit->set_custom_minimum_size(Size2(0, 55) * EDSCALE);
+	outputs_edit->set_placeholder("res://generated/");
 	outputs_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed));
-	add_labeled(TTR("Outputs (one path or glob per line)"), outputs_edit);
+	_add_field(details_container, TTR("Outputs"), outputs_edit,
+			TTR("Files, directories, or globs the task produces. One res:// path per line, e.g. res://generated/. At least one output is required."));
 
 	environment_edit = memnew(TextEdit);
 	environment_edit->set_custom_minimum_size(Size2(0, 50) * EDSCALE);
+	environment_edit->set_placeholder("KEY=VALUE");
 	environment_edit->connect(SceneStringName(text_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed));
-	add_labeled(TTR("Environment (KEY=VALUE per line)"), environment_edit);
+	_add_field(details_container, TTR("Environment"), environment_edit,
+			TTR("Extra environment variables for the command. One KEY=VALUE per line."));
 
 	HBoxContainer *timeout_row = memnew(HBoxContainer);
 	timeout_toggle = memnew(CheckButton);
 	timeout_toggle->set_text(TTR("Override timeout"));
+	timeout_toggle->set_tooltip_text(TTR("Maximum seconds the command may run before it is terminated. When off, the pipeline default is used."));
 	timeout_toggle->connect(SceneStringName(toggled), callable_mp(this, &FSBuildPipelineSettingsDialog::_timeout_toggled));
 	timeout_row->add_child(timeout_toggle);
 	timeout_spin = memnew(SpinBox);
@@ -1144,6 +1209,7 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	timeout_spin->set_max(86400);
 	timeout_spin->set_value(60);
 	timeout_spin->set_suffix(TTR("s"));
+	timeout_spin->set_tooltip_text(TTR("Maximum seconds the command may run before it is terminated."));
 	timeout_spin->connect(SceneStringName(value_changed), callable_mp(this, &FSBuildPipelineSettingsDialog::_details_changed).unbind(1));
 	timeout_row->add_child(timeout_spin);
 	details_container->add_child(timeout_row);
@@ -1153,15 +1219,6 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	validation_label = memnew(Label);
 	validation_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	root->add_child(validation_label);
-
-	Label *preview_label = memnew(Label);
-	preview_label->set_text(TTR("project.foundry preview"));
-	root->add_child(preview_label);
-
-	preview_text = memnew(TextEdit);
-	preview_text->set_editable(false);
-	preview_text->set_custom_minimum_size(Size2(0, 140) * EDSCALE);
-	root->add_child(preview_text);
 
 	HBoxContainer *actions = memnew(HBoxContainer);
 	root->add_child(actions);
@@ -1178,6 +1235,7 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 
 	clear_state_button = memnew(Button);
 	clear_state_button->set_text(TTR("Clear Cached Build State"));
+	clear_state_button->set_tooltip_text(TTR("Discards the persisted build fingerprints so every task is treated as dirty and re-runs on the next build."));
 	clear_state_button->connect(SceneStringName(pressed), callable_mp(this, &FSBuildPipelineSettingsDialog::_clear_cached_state));
 	actions->add_child(clear_state_button);
 
