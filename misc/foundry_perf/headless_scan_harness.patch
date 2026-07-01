@@ -1,0 +1,90 @@
+diff --git a/editor/file_system/editor_file_system.cpp b/editor/file_system/editor_file_system.cpp
+index cbb0377302..a39c0ac31e 100644
+--- a/editor/file_system/editor_file_system.cpp
++++ b/editor/file_system/editor_file_system.cpp
+@@ -67,6 +67,40 @@ EditorFileSystem::ScannedDirectory *EditorFileSystem::first_scan_root_dir = null
+ //the name is the version, to keep compatibility with different versions of Godot
+ #define CACHE_FILE_NAME "filesystem_cache11"
+ 
++// TEMP PERF INSTRUMENTATION (env-gated via FOUNDRY_PERF). Applied from
++// misc/foundry_perf/headless_scan_harness.patch to measure the watcher headless. Not committed.
++static bool _efs_perf() {
++	static int c = -1;
++	if (c == -1) {
++		c = (OS::get_singleton() && OS::get_singleton()->has_environment("FOUNDRY_PERF")) ? 1 : 0;
++	}
++	return c == 1;
++}
++static int _efs_perf_scan_remaining = -1;
++static void _efs_perf_advance(EditorFileSystem *p_efs) {
++	if (_efs_perf_scan_remaining <= 0) {
++		return;
++	}
++	_efs_perf_scan_remaining--;
++	if (_efs_perf_scan_remaining > 0) {
++		if (OS::get_singleton()->has_environment("FOUNDRY_PERF_TOUCH")) {
++			const String tmp = "res://.__perf_touch_tmp";
++			{
++				Ref<FileAccess> f = FileAccess::open(tmp, FileAccess::WRITE);
++				if (f.is_valid()) {
++					f->store_8(0);
++				}
++			}
++			DirAccess::remove_absolute(tmp);
++		}
++		p_efs->call_deferred("scan_sources");
++		p_efs->set_process(true);
++	} else if (p_efs->get_tree()) {
++		print_line("[PERF][scan_changes] harness done, quitting");
++		p_efs->get_tree()->quit();
++	}
++}
++
+ int EditorFileSystemDirectory::find_file_index(const String &p_file) const {
+ 	for (int i = 0; i < files.size(); i++) {
+ 		if (files[i]->file == p_file) {
+@@ -1684,7 +1718,11 @@ void EditorFileSystem::_thread_func_sources(void *_userdata) {
+ 		ScanProgress sp;
+ 		sp.progress = &pr;
+ 		sp.hi = efs->nb_files_total;
++		const uint64_t _t0 = _efs_perf() ? OS::get_singleton()->get_ticks_usec() : 0;
+ 		efs->_scan_fs_changes(efs->filesystem, sp);
++		if (_efs_perf()) {
++			print_line(vformat("[PERF][scan_changes] mode=SCAN files=%d elapsed_ms=%.3f", efs->nb_files_total, (OS::get_singleton()->get_ticks_usec() - _t0) / 1000.0));
++		}
+ 	}
+ 	efs->scanning_changes_done.set();
+ }
+@@ -1937,7 +1975,11 @@ void EditorFileSystem::scan_changes() {
+ 		if (!_fs_watch_poll()) {
+ 			// The directory watcher has observed no changes since the last scan, so the full
+ 			// O(number of files) rescan can be skipped entirely.
++			if (_efs_perf()) {
++				print_line("[PERF][scan_changes] mode=SKIP");
++			}
+ 			emit_signal(SNAME("sources_changed"), false);
++			_efs_perf_advance(this);
+ 			return;
+ 		}
+ 		_fs_watch_mark_scanned(); // Consume; the scan below re-detects every change.
+@@ -2038,6 +2080,7 @@ void EditorFileSystem::_notification(int p_what) {
+ #ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+ 						_fs_watch_sync_tree(filesystem); // Watch any directories added by this scan.
+ #endif
++						_efs_perf_advance(this);
+ 					}
+ 				} else if (!scanning && thread.is_started()) {
+ 					set_process(false);
+@@ -2062,6 +2105,12 @@ void EditorFileSystem::_notification(int p_what) {
+ 					_fs_watch_init();
+ 					_fs_watch_sync_tree(filesystem);
+ #endif
++					if (_efs_perf() && _efs_perf_scan_remaining < 0 && OS::get_singleton()->has_environment("FOUNDRY_PERF_TRIGGER_SCAN")) {
++						const int n = OS::get_singleton()->get_environment("FOUNDRY_PERF_TRIGGER_SCAN").to_int();
++						_efs_perf_scan_remaining = n > 0 ? n : 4;
++						call_deferred("scan_sources");
++						set_process(true);
++					}
+ 				}
+ 
+ 				if (done_importing && scan_changes_pending) {
