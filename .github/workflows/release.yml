@@ -219,6 +219,26 @@ jobs:
           strip bin/foundry.*
           chmod +x bin/foundry.*
 
+      - name: Generate API artifact bundle
+        if: matrix.target == 'editor'
+        env:
+          VERSION: ${{ needs.resolve.outputs.release_version }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          python3 misc/scripts/package_foundry_api_artifacts.py \
+            --binary bin/foundry.linuxbsd.editor.x86_64 \
+            --output-dir api-artifacts \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --commit "$(git rev-parse HEAD)"
+
+      - name: Upload API artifact
+        if: matrix.target == 'editor'
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-api
+          path: api-artifacts/*
+
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
@@ -777,6 +797,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist templates
+
+          # API artifacts for language bindings and other external generators.
+          cp artifacts/release-api/*.zip dist/
 
           # --- Export templates package (.tpz) ------------------------------
           # The editor expects a single top-level "templates/" directory holding
