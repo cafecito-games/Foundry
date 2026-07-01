@@ -3109,6 +3109,19 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 		return;
 	}
 
+	if (kind == RefactorKind::OVERRIDE_METHOD) {
+		const RefactorOverrideMethodsResult candidates = FSRefactoring::get_override_method_candidates(ctx, loc);
+		if (!candidates.ok || candidates.candidates.is_empty()) {
+			EditorToaster::get_singleton()->popup_str(
+					!candidates.error_message.is_empty() ? candidates.error_message : TTR("No overridable methods found."),
+					EditorToaster::SEVERITY_WARNING);
+			return;
+		}
+
+		_show_override_method_dialog(loc, candidates.candidates);
+		return;
+	}
+
 	RefactorParams params;
 	const RefactorResult result = FSRefactoring::prepare(ctx, loc, kind, params);
 	if (!result.ok) {
@@ -3554,6 +3567,103 @@ void ScriptTextEditor::_on_extract_method_text_changed(const String &p_text) {
 	extract_method_dialog->get_ok_button()->set_disabled(!valid);
 }
 
+void ScriptTextEditor::_show_override_method_dialog(
+		const RefactorLocation &p_location,
+		const Vector<RefactorOverrideMethodCandidate> &p_candidates) {
+	override_method_location = p_location;
+	override_method_candidates = p_candidates;
+	override_method_filter->set_text(String());
+	_populate_override_method_list(String());
+	override_method_dialog->popup_centered();
+	override_method_filter->grab_focus();
+}
+
+void ScriptTextEditor::_populate_override_method_list(const String &p_filter) {
+	override_method_filtered_indices.clear();
+	override_method_list->clear();
+
+	for (int i = 0; i < override_method_candidates.size(); i++) {
+		const RefactorOverrideMethodCandidate &candidate = override_method_candidates[i];
+		const String haystack = candidate.name + "\n" + candidate.signature + "\n" + candidate.detail;
+		if (!p_filter.is_empty() && haystack.findn(p_filter) == -1) {
+			continue;
+		}
+
+		const int item_index = override_method_list->add_item(
+				!candidate.detail.is_empty() ? candidate.detail : candidate.signature);
+		override_method_list->set_item_tooltip(item_index, candidate.detail);
+		override_method_filtered_indices.push_back(i);
+	}
+
+	if (!override_method_filtered_indices.is_empty()) {
+		override_method_list->select(0);
+	}
+	_update_override_method_confirm_state();
+}
+
+void ScriptTextEditor::_on_override_method_confirmed() {
+	const Vector<int> selected_items = override_method_list->get_selected_items();
+	if (selected_items.size() != 1) {
+		_update_override_method_confirm_state();
+		return;
+	}
+	const int filtered_index = selected_items[0];
+	if (filtered_index < 0 || filtered_index >= override_method_filtered_indices.size()) {
+		_update_override_method_confirm_state();
+		return;
+	}
+	const int candidate_index = override_method_filtered_indices[filtered_index];
+	if (candidate_index < 0 || candidate_index >= override_method_candidates.size()) {
+		_update_override_method_confirm_state();
+		return;
+	}
+
+	RefactorContext ctx = _make_refactor_context();
+	RefactorParams params;
+	params.override_method_id = override_method_candidates[candidate_index].id;
+	const RefactorResult result = FSRefactoring::prepare(
+			ctx,
+			override_method_location,
+			RefactorKind::OVERRIDE_METHOD,
+			params);
+	override_method_dialog->hide();
+	_on_override_method_canceled();
+
+	if (!result.ok) {
+		EditorToaster::get_singleton()->popup_str(
+				!result.error_message.is_empty() ? result.error_message : TTR("Selected override method is no longer available."),
+				EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+
+	_apply_refactor_result(result, ctx.source);
+}
+
+void ScriptTextEditor::_on_override_method_canceled() {
+	override_method_candidates.clear();
+	override_method_filtered_indices.clear();
+	override_method_location = RefactorLocation();
+}
+
+void ScriptTextEditor::_on_override_method_filter_changed(const String &p_text) {
+	_populate_override_method_list(p_text);
+}
+
+void ScriptTextEditor::_on_override_method_item_activated(int p_index) {
+	override_method_list->select(p_index);
+	_update_override_method_confirm_state();
+	_on_override_method_confirmed();
+}
+
+void ScriptTextEditor::_update_override_method_confirm_state() {
+	const Vector<int> selected_items = override_method_list->get_selected_items();
+	const bool valid_selection = selected_items.size() == 1 &&
+			selected_items[0] >= 0 &&
+			selected_items[0] < override_method_filtered_indices.size();
+	override_method_error_label->set_text(valid_selection ? String() : TTR("Select a method to override."));
+	override_method_dialog->get_ok_button()->set_disabled(!valid_selection);
+}
+
 void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos) {
 	context_menu->clear();
 	if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_EMOJI_AND_SYMBOL_PICKER)) {
@@ -3693,6 +3803,37 @@ void ScriptTextEditor::_enable_code_editor() {
 			SNAME("canceled"),
 			callable_mp(this, &ScriptTextEditor::_on_extract_method_canceled));
 	add_child(extract_method_dialog);
+
+	override_method_dialog = memnew(ConfirmationDialog);
+	override_method_dialog->set_title(TTRC("Override Method"));
+	VBoxContainer *override_method_vbox = memnew(VBoxContainer);
+	override_method_dialog->add_child(override_method_vbox);
+	override_method_filter = memnew(LineEdit);
+	override_method_filter->set_placeholder(TTRC("Filter methods"));
+	override_method_filter->connect(
+			SceneStringName(text_changed),
+			callable_mp(this, &ScriptTextEditor::_on_override_method_filter_changed));
+	override_method_vbox->add_child(override_method_filter);
+	override_method_dialog->register_text_enter(override_method_filter);
+	override_method_list = memnew(ItemList);
+	override_method_list->set_custom_minimum_size(Size2(520, 260) * EDSCALE);
+	override_method_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	override_method_list->connect(
+			SceneStringName(item_selected),
+			callable_mp(this, &ScriptTextEditor::_update_override_method_confirm_state).unbind(1));
+	override_method_list->connect(
+			"item_activated",
+			callable_mp(this, &ScriptTextEditor::_on_override_method_item_activated));
+	override_method_vbox->add_child(override_method_list);
+	override_method_error_label = memnew(Label);
+	override_method_vbox->add_child(override_method_error_label);
+	override_method_dialog->connect(
+			SceneStringName(confirmed),
+			callable_mp(this, &ScriptTextEditor::_on_override_method_confirmed));
+	override_method_dialog->connect(
+			SNAME("canceled"),
+			callable_mp(this, &ScriptTextEditor::_on_override_method_canceled));
+	add_child(override_method_dialog);
 
 	add_child(color_panel);
 
