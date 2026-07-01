@@ -6278,6 +6278,70 @@ bool is_constructor_like_override_method(const StringName &p_name) {
 	return p_name == SNAME("_init") || p_name == SNAME("_static_init");
 }
 
+void collect_method_type_parameter_names(
+		const FSParser::FunctionNode *p_function,
+		HashSet<StringName> &r_names) {
+	if (p_function == nullptr) {
+		return;
+	}
+	for (const FSParser::TypeParameterNode *type_parameter : p_function->type_parameters) {
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			r_names.insert(type_parameter->identifier->name);
+		}
+	}
+}
+
+void collect_method_type_parameters_referenced_by_type(
+		const FSParser::DataType &p_type,
+		const HashSet<StringName> &p_method_type_parameters,
+		HashSet<StringName> &r_referenced) {
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER &&
+			p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD &&
+			p_method_type_parameters.has(p_type.type_parameter_name)) {
+		r_referenced.insert(p_type.type_parameter_name);
+	}
+	for (const FSParser::DataType &element_type : p_type.container_element_types) {
+		collect_method_type_parameters_referenced_by_type(element_type, p_method_type_parameters, r_referenced);
+	}
+	for (const FSParser::DataType &type_argument : p_type.type_arguments) {
+		collect_method_type_parameters_referenced_by_type(type_argument, p_method_type_parameters, r_referenced);
+	}
+	for (const FSParser::DataType &parameter_type : p_type.method_parameter_types) {
+		collect_method_type_parameters_referenced_by_type(parameter_type, p_method_type_parameters, r_referenced);
+	}
+	for (const FSParser::DataType &return_type : p_type.method_return_type) {
+		collect_method_type_parameters_referenced_by_type(return_type, p_method_type_parameters, r_referenced);
+	}
+	for (const FSParser::DataType &bound_type : p_type.type_parameter_bound) {
+		collect_method_type_parameters_referenced_by_type(bound_type, p_method_type_parameters, r_referenced);
+	}
+}
+
+bool generic_method_type_parameters_are_inferable_from_regular_parameters(const FSParser::FunctionNode *p_function) {
+	HashSet<StringName> method_type_parameters;
+	collect_method_type_parameter_names(p_function, method_type_parameters);
+	if (method_type_parameters.is_empty()) {
+		return true;
+	}
+
+	HashSet<StringName> referenced_type_parameters;
+	for (const FSParser::ParameterNode *parameter : p_function->parameters) {
+		if (parameter != nullptr) {
+			collect_method_type_parameters_referenced_by_type(
+					parameter->get_datatype(),
+					method_type_parameters,
+					referenced_type_parameters);
+		}
+	}
+
+	for (const StringName &type_parameter : method_type_parameters) {
+		if (!referenced_type_parameters.has(type_parameter)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 int find_class_method_insertion_line(
 		const FSParser::ClassNode *p_target,
 		const FSParser::ClassNode *p_tree,
@@ -6480,7 +6544,8 @@ void add_script_override_candidate(
 		Vector<OverrideMethodCandidate> &r_candidates) {
 	if (p_function == nullptr || p_function->identifier == nullptr || p_function->is_final || p_function->is_abstract ||
 			p_function->rest_parameter != nullptr ||
-			is_constructor_like_override_method(p_function->identifier->name)) {
+			is_constructor_like_override_method(p_function->identifier->name) ||
+			!generic_method_type_parameters_are_inferable_from_regular_parameters(p_function)) {
 		return;
 	}
 	const Vector<String> empty_lines;

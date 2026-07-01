@@ -445,6 +445,42 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(FSTests::find_override_candidate(result.candidates, "setup") != nullptr);
 	}
 
+	TEST_CASE("Override method skips generic script base methods with non-inferable type parameters") {
+		const String source =
+				"class Base:\n"
+				"\tfunc make[T]() -> Array[T]:\n"
+				"\t\treturn []\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "make") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method keeps generic script base methods with inferable type parameters") {
+		const String source =
+				"class Base:\n"
+				"\tfunc identity[T](value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "identity");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc identity[T](value: T) -> T:\n"));
+		CHECK(out.contains("\t\treturn super.identity(value)\n"));
+	}
+
 	TEST_CASE("Override method renders async script base stub with awaited super call") {
 		const String source =
 				"class Base:\n"
