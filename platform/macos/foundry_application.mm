@@ -52,7 +52,7 @@ FoundryApplication *FoundryApp = nil;
 	return self;
 }
 
-- (FoundryApplicationDelegate *)godotDelegate {
+- (FoundryApplicationDelegate *)foundryDelegate {
 	return (FoundryApplicationDelegate *)self.delegate;
 }
 

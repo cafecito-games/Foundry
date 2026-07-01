@@ -40,7 +40,7 @@
 #define FSR2_BIND_CB_FSR2									11
 #define FSR2_BIND_CB_REACTIVE                               12
 
-#if FFX_FSR2_OPTION_GODOT_DERIVE_INVALID_MOTION_VECTORS
+#if FFX_FSR2_OPTION_FOUNDRY_DERIVE_INVALID_MOTION_VECTORS
 #define FSR2_BIND_SRV_INPUT_DEPTH                           13
 #endif
 

@@ -44,7 +44,7 @@
 #include "enet/enet.h"
 
 /// Abstract ENet interface for UDP/DTLS.
-class ENetGodotSocket {
+class ENetFoundrySocket {
 public:
 	virtual Error bind(IPAddress p_ip, uint16_t p_port) = 0;
 	virtual Error get_socket_address(IPAddress *r_ip, uint16_t *r_port) = 0;
@@ -54,14 +54,14 @@ public:
 	virtual void close() = 0;
 	virtual void set_refuse_new_connections(bool p_enable) {} /* Only used by dtls server */
 	virtual bool can_upgrade() { return false; } /* Only true in ENetUDP */
-	virtual ~ENetGodotSocket() {}
+	virtual ~ENetFoundrySocket() {}
 };
 
 class ENetDTLSClient;
 class ENetDTLSServer;
 
 /// NetSocket interface
-class ENetUDP : public ENetGodotSocket {
+class ENetUDP : public ENetFoundrySocket {
 	friend class ENetDTLSClient;
 	friend class ENetDTLSServer;
 
@@ -164,7 +164,7 @@ public:
 };
 
 /// DTLS Client ENet interface
-class ENetDTLSClient : public ENetGodotSocket {
+class ENetDTLSClient : public ENetFoundrySocket {
 	bool connected = false;
 	Ref<PacketPeerUDP> udp;
 	Ref<PacketPeerDTLS> dtls;
@@ -259,7 +259,7 @@ public:
 };
 
 /// DTLSServer - ENet interface
-class ENetDTLSServer : public ENetGodotSocket {
+class ENetDTLSServer : public ENetFoundrySocket {
 	Ref<DTLSServer> server;
 	Ref<UDPServer> udp_server;
 	HashMap<String, Ref<PacketPeerDTLS>> peers;
@@ -450,7 +450,7 @@ ENetSocket enet_socket_create(ENetSocketType type) {
 
 int enet_host_dtls_server_setup(ENetHost *host, void *p_options) {
 	ERR_FAIL_COND_V_MSG(!DTLSServer::is_available(), -1, "DTLS server is not available in this build.");
-	ENetGodotSocket *sock = (ENetGodotSocket *)host->socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)host->socket;
 	if (!sock->can_upgrade()) {
 		return -1;
 	}
@@ -461,7 +461,7 @@ int enet_host_dtls_server_setup(ENetHost *host, void *p_options) {
 
 int enet_host_dtls_client_setup(ENetHost *host, const char *p_for_hostname, void *p_options) {
 	ERR_FAIL_COND_V_MSG(!PacketPeerDTLS::is_available(), -1, "DTLS is not available in this build.");
-	ENetGodotSocket *sock = (ENetGodotSocket *)host->socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)host->socket;
 	if (!sock->can_upgrade()) {
 		return -1;
 	}
@@ -472,7 +472,7 @@ int enet_host_dtls_client_setup(ENetHost *host, const char *p_for_hostname, void
 
 void enet_host_refuse_new_connections(ENetHost *host, int p_refuse) {
 	ERR_FAIL_NULL(host->socket);
-	((ENetGodotSocket *)host->socket)->set_refuse_new_connections(p_refuse);
+	((ENetFoundrySocket *)host->socket)->set_refuse_new_connections(p_refuse);
 }
 
 int enet_socket_bind(ENetSocket socket, const ENetAddress *address) {
@@ -483,7 +483,7 @@ int enet_socket_bind(ENetSocket socket, const ENetAddress *address) {
 		ip.set_ipv6(address->host);
 	}
 
-	ENetGodotSocket *sock = (ENetGodotSocket *)socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)socket;
 	if (sock->bind(ip, address->port) != OK) {
 		return -1;
 	}
@@ -491,7 +491,7 @@ int enet_socket_bind(ENetSocket socket, const ENetAddress *address) {
 }
 
 void enet_socket_destroy(ENetSocket socket) {
-	ENetGodotSocket *sock = (ENetGodotSocket *)socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)socket;
 	sock->close();
 	memdelete(sock);
 }
@@ -499,7 +499,7 @@ void enet_socket_destroy(ENetSocket socket) {
 int enet_socket_send(ENetSocket socket, const ENetAddress *address, const ENetBuffer *buffers, size_t bufferCount) {
 	ERR_FAIL_NULL_V(address, -1);
 
-	ENetGodotSocket *sock = (ENetGodotSocket *)socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)socket;
 	IPAddress dest;
 	Error err;
 	size_t i = 0;
@@ -539,7 +539,7 @@ int enet_socket_send(ENetSocket socket, const ENetAddress *address, const ENetBu
 int enet_socket_receive(ENetSocket socket, ENetAddress *address, ENetBuffer *buffers, size_t bufferCount) {
 	ERR_FAIL_COND_V(bufferCount != 1, -1);
 
-	ENetGodotSocket *sock = (ENetGodotSocket *)socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)socket;
 
 	int read;
 	IPAddress ip;
@@ -565,7 +565,7 @@ int enet_socket_receive(ENetSocket socket, ENetAddress *address, ENetBuffer *buf
 int enet_socket_get_address(ENetSocket socket, ENetAddress *address) {
 	IPAddress ip;
 	uint16_t port;
-	ENetGodotSocket *sock = (ENetGodotSocket *)socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)socket;
 
 	if (sock->get_socket_address(&ip, &port) != OK) {
 		return -1;
@@ -591,7 +591,7 @@ int enet_socket_listen(ENetSocket socket, int backlog) {
 }
 
 int enet_socket_set_option(ENetSocket socket, ENetSocketOption option, int value) {
-	ENetGodotSocket *sock = (ENetGodotSocket *)socket;
+	ENetFoundrySocket *sock = (ENetFoundrySocket *)socket;
 	return sock->set_option(option, value);
 }
 

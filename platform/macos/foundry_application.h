@@ -42,7 +42,7 @@
 
 extern "C" FoundryApplication *FoundryApp;
 
-@property(readonly, nonatomic) FoundryApplicationDelegate *godotDelegate;
+@property(readonly, nonatomic) FoundryApplicationDelegate *foundryDelegate;
 
 - (FoundryApplication *)init;
 

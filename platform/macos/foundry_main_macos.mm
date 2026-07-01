@@ -40,7 +40,7 @@
 #endif
 
 int main(int argc, char **argv) {
-	godot_init_profiler();
+	foundry_init_profiler();
 
 #if defined(VULKAN_ENABLED)
 	setenv("MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE", "1", 1); // MoltenVK - enable full component swizzling support.
@@ -138,6 +138,6 @@ int main(int argc, char **argv) {
 
 	memdelete(os);
 
-	godot_cleanup_profiler();
+	foundry_cleanup_profiler();
 	return exit_code;
 }

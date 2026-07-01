@@ -67,7 +67,7 @@ char *wc_to_utf8(const wchar_t *wc) {
 }
 
 int widechar_main(int argc, wchar_t **argv) {
-	godot_init_profiler();
+	foundry_init_profiler();
 
 	OS_Windows os(nullptr);
 
@@ -107,7 +107,7 @@ int widechar_main(int argc, wchar_t **argv) {
 	}
 	delete[] argv_utf8;
 
-	godot_cleanup_profiler();
+	foundry_cleanup_profiler();
 	return os.get_exit_code();
 }
 

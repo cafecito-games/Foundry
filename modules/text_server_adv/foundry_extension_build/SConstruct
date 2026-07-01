@@ -402,7 +402,7 @@ env_harfbuzz.Append(
     CPPDEFINES=[
         "U_STATIC_IMPLEMENTATION",
         ("U_HAVE_LIB_SUFFIX", 1),
-        ("U_LIB_SUFFIX_C_NAME", "_godot"),
+        ("U_LIB_SUFFIX_C_NAME", "_foundry"),
         "HAVE_ICU_BUILTIN",
         "HAVE_ICU",
     ]
@@ -701,9 +701,9 @@ thirdparty_icu_sources = [
 thirdparty_icu_sources = [thirdparty_icu_dir + file for file in thirdparty_icu_sources]
 
 if env["static_icu_data"]:
-    env_icu.Depends("../../../thirdparty/icu4c/icudata.gen.h", "../../../thirdparty/icu4c/icudt_godot.dat")
+    env_icu.Depends("../../../thirdparty/icu4c/icudata.gen.h", "../../../thirdparty/icu4c/icudt_foundry.dat")
     env_icu.Command(
-        "../../../thirdparty/icu4c/icudata.gen.h", "../../../thirdparty/icu4c/icudt_godot.dat", methods.make_icu_data
+        "../../../thirdparty/icu4c/icudata.gen.h", "../../../thirdparty/icu4c/icudt_foundry.dat", methods.make_icu_data
     )
     env.Append(CPPDEFINES=["ICU_STATIC_DATA"])
     env.Append(CPPPATH=["../../../thirdparty/icu4c/"])
@@ -725,14 +725,14 @@ env_icu.Append(
         ("PKGDATA_MODE", "static"),
         ("U_ENABLE_DYLOAD", 0),
         ("U_HAVE_LIB_SUFFIX", 1),
-        ("U_LIB_SUFFIX_C_NAME", "_godot"),
+        ("U_LIB_SUFFIX_C_NAME", "_foundry"),
     ]
 )
 env.Append(
     CPPDEFINES=[
         "U_STATIC_IMPLEMENTATION",
         ("U_HAVE_LIB_SUFFIX", 1),
-        ("U_LIB_SUFFIX_C_NAME", "_godot"),
+        ("U_LIB_SUFFIX_C_NAME", "_foundry"),
     ]
 )
 env.Append(CPPPATH=["../../../thirdparty/icu4c/common/", "../../../thirdparty/icu4c/i18n/"])

@@ -5893,7 +5893,7 @@ String EditorNode::_get_system_info() const {
 	}
 	const String distribution_version = OS::get_singleton()->get_version_alias();
 
-	String godot_version = "Godot v" + String(FOUNDRY_VERSION_FULL_CONFIG);
+	String godot_version = "Foundry v" + String(FOUNDRY_VERSION_FULL_CONFIG);
 	if (String(FOUNDRY_VERSION_BUILD) != "official") {
 		String hash = String(FOUNDRY_VERSION_HASH);
 		hash = hash.is_empty() ? String("unknown") : vformat("(%s)", hash.left(9));

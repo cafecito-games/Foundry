@@ -2628,8 +2628,8 @@ func f():
 		CHECK_EQ(LSP::marked_documentation("[param delta]"), "`delta`");
 
 		// Markdown links
-		CHECK_EQ(LSP::marked_documentation("[url=https://godotengine.org]link to Godot Engine[/url]"),
-				"[link to Godot Engine](https://godotengine.org)");
+		CHECK_EQ(LSP::marked_documentation("[url=https://docs.cafecito.games/foundry]link to Foundry[/url]"),
+				"[link to Foundry](https://docs.cafecito.games/foundry)");
 		CHECK_EQ(LSP::marked_documentation("[url]https://godotengine.org/[/url]"),
 				"[https://godotengine.org/](https://godotengine.org/)");
 

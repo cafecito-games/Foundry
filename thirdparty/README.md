@@ -477,7 +477,7 @@ Files extracted from upstream source:
 
 Files generated from upstream source:
 
-- The `icudt_godot.dat` built with the provided `foundry_data.json` config file (see
+- The `icudt_foundry.dat` built with the provided `foundry_data.json` config file (see
   https://github.com/unicode-org/icu/blob/master/docs/userguide/icu_data/buildtool.md
   for instructions).
 
@@ -485,9 +485,9 @@ Files generated from upstream source:
   (replace `data` subfolder from the main source archive)
 2. Build ICU with default options: `./runConfigureICU {PLATFORM} && make`
 3. Reconfigure ICU with custom data config:
-   `ICU_DATA_FILTER_FILE={GODOT_SOURCE}/thirdparty/icu4c/foundry_data.json ./runConfigureICU {PLATFORM} --with-data-packaging=common`
+   `ICU_DATA_FILTER_FILE={FOUNDRY_SOURCE}/thirdparty/icu4c/foundry_data.json ./runConfigureICU {PLATFORM} --with-data-packaging=common`
 4. Delete `data/out` folder and rebuild data: `cd data && rm -rf ./out && make`
-5. Copy `source/data/out/icudt{ICU_VERSION}l.dat` to the `{GODOT_SOURCE}/thirdparty/icu4c/icudt_godot.dat`
+5. Copy `source/data/out/icudt{ICU_VERSION}l.dat` to the `{FOUNDRY_SOURCE}/thirdparty/icu4c/icudt_foundry.dat`
 
 
 ## jolt_physics

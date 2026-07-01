@@ -235,7 +235,7 @@ TEST_CASE("[RegEx] Number Expression") {
 }
 
 TEST_CASE("[RegEx] Invalid end position") {
-	const String s = "Godot";
+	const String s = "Foobar";
 
 	RegEx re("o");
 	REQUIRE(re.is_valid());
@@ -251,19 +251,19 @@ TEST_CASE("[RegEx] Invalid end position") {
 	REQUIRE(match.is_valid());
 	CHECK(match->get_string(0) == String("o"));
 
-	CHECK(re.sub(s, "", true, 0, 10) == "Gdt");
+	CHECK(re.sub(s, "", true, 0, 10) == "Fbar");
 }
 
 TEST_CASE("[RegEx] Get match string list") {
-	const String s = "Godot Engine";
+	const String s = "Foobar";
 
-	RegEx re("(Go)(dot)");
+	RegEx re("(Foo)(bar)");
 	Ref<RegExMatch> match = re.search(s);
 	REQUIRE(match.is_valid());
 	PackedStringArray result;
-	result.append("Godot");
-	result.append("Go");
-	result.append("dot");
+	result.append("Foobar");
+	result.append("Foo");
+	result.append("bar");
 	CHECK(match->get_strings() == result);
 }
 
@@ -286,7 +286,7 @@ TEST_CASE("[RegEx] Match start and end positions") {
 }
 
 TEST_CASE("[RegEx] Asterisk search all") {
-	const String s = "Godot Engine";
+	const String s = "Robot Engine";
 
 	RegEx re("o*");
 	REQUIRE(re.is_valid());
@@ -310,7 +310,7 @@ TEST_CASE("[RegEx] Asterisk search all") {
 }
 
 TEST_CASE("[RegEx] Simple lookahead") {
-	const String s = "Godot Engine";
+	const String s = "Robot";
 
 	RegEx re("o(?=t)");
 	REQUIRE(re.is_valid());
@@ -344,7 +344,7 @@ TEST_CASE("[RegEx] Lookahead groups empty matches") {
 }
 
 TEST_CASE("[RegEx] Simple lookbehind") {
-	const String s = "Godot Engine";
+	const String s = "Redox";
 
 	RegEx re("(?<=d)o");
 	REQUIRE(re.is_valid());
