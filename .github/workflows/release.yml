@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       status:
-        description: Release status, e.g. alpha, beta, rc, stable.
+        description: Release channel, e.g. alpha, beta, rc, stable.
         required: true
         default: alpha
         type: choice
@@ -31,8 +31,8 @@ concurrency:
 
 jobs:
   # Resolve the version/status strings and whether to publish or leave a draft.
-  # - Tag push (refs/tags/vX.Y.Z or refs/tags/vX.Y.Z-alpha) -> auto-published.
-  # - Manual dispatch -> version/status from inputs, left as a draft for review.
+  # - Tag push (refs/tags/vX.Y.Z or refs/tags/vX.Y.Z-alpha.N) -> auto-published.
+  # - Manual dispatch -> version/channel from inputs, prerelease number auto-incremented, left as a draft.
   resolve:
     runs-on: ubuntu-24.04
     outputs:
@@ -55,22 +55,56 @@ jobs:
           # of interpolating them into the script body, to avoid shell injection.
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
           VERSION_INPUT: ${{ inputs.version }}
           STATUS_INPUT: ${{ inputs.status }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          next_prerelease_number() {
+            local base_version="$1"
+            local channel="$2"
+            local version_regex="${base_version//./\\.}"
+            local max_number=0
+            local tag_name number
+
+            while IFS= read -r tag_name; do
+              number="$(printf '%s\n' "$tag_name" | sed -nE "s/^v${version_regex}-${channel}\.([1-9][0-9]*)$/\1/p")"
+              if [ -n "$number" ] && [ "$number" -gt "$max_number" ]; then
+                max_number="$number"
+              fi
+            done < <(
+              {
+                git ls-remote --tags origin "refs/tags/v${base_version}-${channel}.*" \
+                  | awk '{ print $2 }' \
+                  | sed -E 's#^refs/tags/##; s#\^\{\}$##'
+                gh release list -R "$REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName'
+              } | sort -u
+            )
+
+            echo "$((max_number + 1))"
+          }
+
           if [ "$EVENT_NAME" = "push" ]; then
             tag="$REF_NAME"
             release_version="${tag#v}"
-            version="${release_version%%-*}"
-            if [ "$release_version" = "$version" ]; then
-              status="stable"
-            else
-              status="${release_version#"$version"-}"
-            fi
             draft="false"
+
+            if printf '%s' "$release_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              version="$release_version"
+              status="stable"
+              prerelease_number=""
+            elif printf '%s' "$release_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$'; then
+              version="$(printf '%s' "$release_version" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-.*/\1/')"
+              channel="$(printf '%s' "$release_version" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$/\1/')"
+              prerelease_number="$(printf '%s' "$release_version" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.([1-9][0-9]*)$/\2/')"
+              status="${channel}${prerelease_number}"
+            else
+              echo "::error::Invalid release tag '$tag'; expected vX.Y.Z or vX.Y.Z-alpha.N, vX.Y.Z-beta.N, vX.Y.Z-rc.N."
+              exit 1
+            fi
           else
             version="$VERSION_INPUT"
-            status="$STATUS_INPUT"
+            channel="$STATUS_INPUT"
             draft="true"
           fi
 
@@ -80,20 +114,31 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s' "$status" | grep -Eq '^(alpha|beta|rc|stable)$'; then
-            echo "::error::Invalid release status '$status'; expected alpha, beta, rc, or stable."
-            exit 1
+          if [ "$EVENT_NAME" != "push" ]; then
+            if ! printf '%s' "$channel" | grep -Eq '^(alpha|beta|rc|stable)$'; then
+              echo "::error::Invalid release channel '$channel'; expected alpha, beta, rc, or stable."
+              exit 1
+            fi
+
+            if [ "$channel" = "stable" ]; then
+              release_version="$version"
+              tag="v${version}"
+              status="stable"
+              prerelease_number=""
+            else
+              prerelease_number="$(next_prerelease_number "$version" "$channel")"
+              release_version="${version}-${channel}.${prerelease_number}"
+              tag="v${release_version}"
+              status="${channel}${prerelease_number}"
+            fi
           fi
 
           if [ "$status" = "stable" ]; then
-            release_version="$version"
-            tag="v${version}"
             prerelease="false"
           else
-            release_version="${version}-${status}"
-            tag="v${release_version}"
             prerelease="true"
           fi
+
           release_name="Foundry ${release_version}"
 
           # Sanity-check the requested version matches version.py.
@@ -111,6 +156,7 @@ jobs:
             echo "version=$version"
             echo "tag=$tag"
             echo "status=$status"
+            echo "prerelease_number=$prerelease_number"
             echo "release_version=$release_version"
             echo "release_name=$release_name"
             echo "template_version=$template_version"
@@ -118,7 +164,7 @@ jobs:
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Releasing $release_version (tag $tag, template dir $template_version, draft=$draft, prerelease=$prerelease)"
+          echo "Releasing $release_version (tag $tag, engine status $status, template dir $template_version, draft=$draft, prerelease=$prerelease)"
 
   build-linux:
     needs: resolve
