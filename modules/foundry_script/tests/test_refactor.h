@@ -413,6 +413,38 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
 	}
 
+	TEST_CASE("Override method skips script base constructors") {
+		const String source =
+				"class Base:\n"
+				"\tfunc _init(value: int = 0) -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_init") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method skips script base static constructors") {
+		const String source =
+				"class Base:\n"
+				"\tstatic func _static_init() -> void:\n"
+				"\t\tpass\n"
+				"\tstatic func setup() -> void:\n"
+				"\t\tpass\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_static_init") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "setup") != nullptr);
+	}
+
 	TEST_CASE("Override method renders async script base stub with awaited super call") {
 		const String source =
 				"class Base:\n"

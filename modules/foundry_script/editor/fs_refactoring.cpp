@@ -6274,6 +6274,10 @@ void collect_declared_override_member_names(const FSParser::ClassNode *p_target,
 	}
 }
 
+bool is_constructor_like_override_method(const StringName &p_name) {
+	return p_name == SNAME("_init") || p_name == SNAME("_static_init");
+}
+
 int find_class_method_insertion_line(
 		const FSParser::ClassNode *p_target,
 		const FSParser::ClassNode *p_tree,
@@ -6475,7 +6479,8 @@ void add_script_override_candidate(
 		int p_insertion_line,
 		Vector<OverrideMethodCandidate> &r_candidates) {
 	if (p_function == nullptr || p_function->identifier == nullptr || p_function->is_final || p_function->is_abstract ||
-			p_function->rest_parameter != nullptr) {
+			p_function->rest_parameter != nullptr ||
+			is_constructor_like_override_method(p_function->identifier->name)) {
 		return;
 	}
 	const Vector<String> empty_lines;
