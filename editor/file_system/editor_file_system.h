@@ -346,6 +346,24 @@ class EditorFileSystem : public Node {
 
 	bool using_fat32_or_exfat; // Workaround for projects in FAT32 or exFAT filesystem (pendrives, most of the time)
 
+#if defined(__linux__) && !defined(__ANDROID__)
+	// Optional OS directory watcher (inotify). Used only as a conservative fast-path: when the
+	// watcher is healthy and has observed no events since the last scan, the O(number of files)
+	// focus-in rescan can be skipped. Any uncertainty (watch failure, queue overflow) disables
+	// the watcher and falls back to a full scan, so no change can ever be missed.
+	int fs_watch_inotify_fd = -1;
+	bool fs_watch_initialized = false;
+	bool fs_watch_healthy = false;
+	bool fs_watch_dirty = true;
+	HashMap<int, String> fs_watch_wd_to_dir;
+	HashSet<String> fs_watch_dirs;
+	void _fs_watch_init();
+	void _fs_watch_shutdown();
+	void _fs_watch_add_dir(const String &p_res_dir);
+	void _fs_watch_sync_tree(EditorFileSystemDirectory *p_dir);
+	bool _fs_watch_poll();
+#endif
+
 	void _find_group_files(EditorFileSystemDirectory *efd, HashMap<String, Vector<String>> &group_files, HashSet<String> &groups_to_reimport);
 
 	void _move_group_files(EditorFileSystemDirectory *efd, const String &p_group_file, const String &p_new_location);

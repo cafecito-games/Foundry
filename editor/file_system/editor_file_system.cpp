@@ -51,6 +51,12 @@
 #include "modules/foundry_script/foundry_script.h"
 #endif
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <errno.h>
+#include <sys/inotify.h>
+#include <unistd.h>
+#endif
+
 EditorFileSystem *EditorFileSystem::singleton = nullptr;
 int EditorFileSystem::nb_files_total = 0;
 EditorFileSystem::ScannedDirectory *EditorFileSystem::first_scan_root_dir = nullptr;
@@ -1711,6 +1717,103 @@ String EditorFileSystem::_get_file_by_class_name(EditorFileSystemDirectory *p_di
 	return "";
 }
 
+#if defined(__linux__) && !defined(__ANDROID__)
+void EditorFileSystem::_fs_watch_init() {
+	if (fs_watch_initialized) {
+		return;
+	}
+	fs_watch_initialized = true;
+	if (!bool(EDITOR_GET("docks/filesystem/use_directory_watcher"))) {
+		return;
+	}
+	// FAT32/exFAT already force a directory relist every scan; don't bother watching them.
+	if (using_fat32_or_exfat) {
+		return;
+	}
+	fs_watch_inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (fs_watch_inotify_fd < 0) {
+		return;
+	}
+	fs_watch_healthy = true;
+	fs_watch_dirty = true; // Force the first changes scan to run for real.
+}
+
+void EditorFileSystem::_fs_watch_shutdown() {
+	if (fs_watch_inotify_fd >= 0) {
+		close(fs_watch_inotify_fd);
+		fs_watch_inotify_fd = -1;
+	}
+	fs_watch_wd_to_dir.clear();
+	fs_watch_dirs.clear();
+	fs_watch_healthy = false;
+}
+
+void EditorFileSystem::_fs_watch_add_dir(const String &p_res_dir) {
+	if (!fs_watch_healthy || fs_watch_inotify_fd < 0 || fs_watch_dirs.has(p_res_dir)) {
+		return;
+	}
+	const String gpath = ProjectSettings::get_singleton()->globalize_path(p_res_dir);
+	const CharString utf = gpath.utf8();
+	const uint32_t mask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_FROM | IN_MOVED_TO | IN_MOVE_SELF | IN_DELETE_SELF | IN_ATTRIB;
+	const int wd = inotify_add_watch(fs_watch_inotify_fd, utf.get_data(), mask);
+	if (wd < 0) {
+		// A directory could not be watched (e.g. inotify watch limit reached). Disable the
+		// watcher entirely and force full scans so that no change can be silently missed.
+		fs_watch_healthy = false;
+		fs_watch_dirty = true;
+		return;
+	}
+	fs_watch_wd_to_dir[wd] = p_res_dir;
+	fs_watch_dirs.insert(p_res_dir);
+}
+
+void EditorFileSystem::_fs_watch_sync_tree(EditorFileSystemDirectory *p_dir) {
+	if (!fs_watch_healthy || p_dir == nullptr) {
+		return;
+	}
+	_fs_watch_add_dir(p_dir->get_path());
+	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
+		_fs_watch_sync_tree(p_dir->get_subdir(i));
+	}
+}
+
+bool EditorFileSystem::_fs_watch_poll() {
+	if (!fs_watch_healthy || fs_watch_inotify_fd < 0) {
+		return true; // Uncertain: force a scan.
+	}
+	// Drain all pending events. We only need to know whether anything changed and to keep the
+	// watch set in sync with newly created directories; the subsequent full scan detects the
+	// actual changes, so being conservative here is safe.
+	alignas(struct inotify_event) char buf[8192];
+	Vector<String> new_dirs;
+	while (true) {
+		const ssize_t len = read(fs_watch_inotify_fd, buf, sizeof(buf));
+		if (len <= 0) {
+			if (len < 0 && errno == EINTR) {
+				continue;
+			}
+			break; // EAGAIN (drained) or unexpected error.
+		}
+		fs_watch_dirty = true;
+		ssize_t off = 0;
+		while (off < len) {
+			const struct inotify_event *ev = (const struct inotify_event *)(buf + off);
+			if ((ev->mask & IN_ISDIR) && (ev->mask & (IN_CREATE | IN_MOVED_TO)) && ev->len > 0) {
+				const HashMap<int, String>::Iterator it = fs_watch_wd_to_dir.find(ev->wd);
+				if (it) {
+					new_dirs.push_back(it->value.path_join(String::utf8(ev->name)));
+				}
+			}
+			off += (ssize_t)sizeof(struct inotify_event) + (ssize_t)ev->len;
+		}
+	}
+	for (const String &d : new_dirs) {
+		_fs_watch_add_dir(d);
+	}
+	return fs_watch_dirty;
+}
+#endif // __linux__ && !__ANDROID__
+
 void EditorFileSystem::scan_changes() {
 	if (first_scan || // Prevent a premature changes scan from inhibiting the first full scan
 			scanning || scanning_changes || thread.is_started()) {
@@ -1718,6 +1821,18 @@ void EditorFileSystem::scan_changes() {
 		set_process(true);
 		return;
 	}
+
+#if defined(__linux__) && !defined(__ANDROID__)
+	if (fs_watch_healthy) {
+		if (!_fs_watch_poll()) {
+			// The directory watcher has observed no changes since the last scan, so the full
+			// O(number of files) rescan can be skipped entirely.
+			emit_signal(SNAME("sources_changed"), false);
+			return;
+		}
+		fs_watch_dirty = false; // Consume; the scan below re-detects every change.
+	}
+#endif
 
 	_update_extensions();
 	sources_changed.clear();
@@ -1752,6 +1867,9 @@ void EditorFileSystem::scan_changes() {
 void EditorFileSystem::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_EXIT_TREE: {
+#if defined(__linux__) && !defined(__ANDROID__)
+			_fs_watch_shutdown();
+#endif
 			Thread &active_thread = thread.is_started() ? thread : thread_sources;
 			if (use_threads && active_thread.is_started()) {
 				while (scanning) {
@@ -1807,6 +1925,9 @@ void EditorFileSystem::_notification(int p_what) {
 							emit_signal(SNAME("filesystem_changed"));
 						}
 						emit_signal(SNAME("sources_changed"), sources_changed.size() > 0);
+#if defined(__linux__) && !defined(__ANDROID__)
+						_fs_watch_sync_tree(filesystem); // Watch any directories added by this scan.
+#endif
 					}
 				} else if (!scanning && thread.is_started()) {
 					set_process(false);
@@ -1826,6 +1947,11 @@ void EditorFileSystem::_notification(int p_what) {
 					ResourceImporter::load_on_startup = nullptr;
 					emit_signal(SNAME("filesystem_changed"));
 					emit_signal(SNAME("sources_changed"), sources_changed.size() > 0);
+#if defined(__linux__) && !defined(__ANDROID__)
+					// The full directory tree now exists: start the watcher and register watches.
+					_fs_watch_init();
+					_fs_watch_sync_tree(filesystem);
+#endif
 				}
 
 				if (done_importing && scan_changes_pending) {
