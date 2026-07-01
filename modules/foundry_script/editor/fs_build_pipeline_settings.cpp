@@ -72,6 +72,17 @@ PackedStringArray FSBuildPipelineSettingsDialog::_lines_to_string_array(const St
 	return result;
 }
 
+PackedStringArray FSBuildPipelineSettingsDialog::_lines_to_argv(const String &p_text) {
+	// argv entries must be preserved verbatim: empty entries and leading/trailing whitespace can be
+	// meaningful. Keep every line as-is, dropping only the single trailing empty produced by the
+	// editor's final newline.
+	PackedStringArray lines = p_text.split("\n");
+	if (lines.size() > 0 && lines[lines.size() - 1].is_empty()) {
+		lines.remove_at(lines.size() - 1);
+	}
+	return lines;
+}
+
 String FSBuildPipelineSettingsDialog::_string_array_to_lines(const PackedStringArray &p_array) {
 	return String("\n").join(p_array);
 }
@@ -134,6 +145,11 @@ void FSBuildPipelineSettingsDialog::_load_from_project() {
 
 	selected_task = String();
 	selected_stage = ProjectBuildPipelineConfig::STAGE_PRE_COMPILE;
+	saved_preview_snapshot = working_config.generate_preview();
+}
+
+bool FSBuildPipelineSettingsDialog::_has_unsaved_changes() const {
+	return working_config.generate_preview() != saved_preview_snapshot;
 }
 
 void FSBuildPipelineSettingsDialog::_save_to_project() {
@@ -156,6 +172,7 @@ void FSBuildPipelineSettingsDialog::_save_to_project() {
 		run_output->set_text(vformat(TTR("Failed to save %s (error %d). Your edits are still open."), PROJECT_CONFIG_PATH, err));
 		return;
 	}
+	saved_preview_snapshot = working_config.generate_preview();
 	// The dialog does not hide on OK, so it can stay open to report a save failure; hide only on success.
 	hide();
 }
@@ -382,6 +399,9 @@ void FSBuildPipelineSettingsDialog::_refresh_validation_and_preview() {
 	}
 
 	preview_text->set_text(working_config.generate_preview());
+
+	// Editing changes dirtiness, which gates the run actions; keep their enabled state in sync.
+	_refresh_actions();
 }
 
 void FSBuildPipelineSettingsDialog::_refresh_actions() {
@@ -393,9 +413,15 @@ void FSBuildPipelineSettingsDialog::_refresh_actions() {
 		trust_button->set_text(TTR("Trust Project Build Tasks"));
 	}
 
+	// Run actions execute the persisted project.foundry, so they are only enabled while the editor has
+	// no unsaved changes; otherwise a run would record build state for a config that is not on disk.
 	const bool has_task = !selected_task.is_empty() && working_config.get_task(selected_task) != nullptr;
-	run_task_button->set_disabled(!project_trusted || !has_task);
-	run_stage_button->set_disabled(!project_trusted);
+	const bool can_run = project_trusted && !_has_unsaved_changes();
+	run_task_button->set_disabled(!can_run || !has_task);
+	run_stage_button->set_disabled(!can_run);
+	const String run_hint = _has_unsaved_changes() ? TTR("Save changes before running.") : String();
+	run_task_button->set_tooltip_text(run_hint);
+	run_stage_button->set_tooltip_text(run_hint);
 	clear_state_button->set_disabled(false);
 	duplicate_button->set_disabled(!has_task);
 	remove_button->set_disabled(!has_task);
@@ -577,8 +603,8 @@ ProjectBuildPipelineConfig::TaskDefinition FSBuildPipelineSettingsDialog::_read_
 
 	if (task.provider == COMMAND_PROVIDER_ID) {
 		task.command = command_edit->get_text().strip_edges();
-		task.args = _lines_to_string_array(args_edit->get_text());
-		task.tool_version_command = _lines_to_string_array(tool_version_edit->get_text());
+		task.args = _lines_to_argv(args_edit->get_text());
+		task.tool_version_command = _lines_to_argv(tool_version_edit->get_text());
 	} else {
 		// The generic editor is text-only, so it would coerce every value to a String. Preserve the
 		// original typed Variant for any key whose textual form is unchanged; only keys the user
@@ -777,7 +803,7 @@ static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
 }
 
 void FSBuildPipelineSettingsDialog::_run_selected_task() {
-	if (!project_trusted || selected_task.is_empty()) {
+	if (!project_trusted || selected_task.is_empty() || _has_unsaved_changes()) {
 		return;
 	}
 	const ProjectBuildPipelineConfig::TaskDefinition *task = working_config.get_task(selected_task);
@@ -811,7 +837,7 @@ void FSBuildPipelineSettingsDialog::_run_selected_task() {
 }
 
 void FSBuildPipelineSettingsDialog::_run_selected_stage() {
-	if (!project_trusted) {
+	if (!project_trusted || _has_unsaved_changes()) {
 		return;
 	}
 	FoundryBuildTaskRegistry registry;

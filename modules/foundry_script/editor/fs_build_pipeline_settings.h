@@ -63,6 +63,9 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 	ProjectBuildPipelineConfig working_config;
 	ProjectBuildPipelineConfig::Stage selected_stage = ProjectBuildPipelineConfig::STAGE_PRE_COMPILE;
 	String selected_task;
+	// Snapshot of the configuration as last loaded from or saved to project.foundry. Run actions
+	// operate on the persisted project, so they are only allowed while the editor matches this.
+	String saved_preview_snapshot;
 	bool project_trusted = false;
 	// Guards widget-population against the change signals it would otherwise re-trigger.
 	bool updating_ui = false;
@@ -144,7 +147,9 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 	void _clear_cached_state();
 
 	static PackedStringArray _lines_to_string_array(const String &p_text);
+	static PackedStringArray _lines_to_argv(const String &p_text);
 	static String _string_array_to_lines(const PackedStringArray &p_array);
+	bool _has_unsaved_changes() const;
 	static Dictionary _lines_to_string_dictionary(const String &p_text);
 	static String _string_dictionary_to_lines(const Dictionary &p_dictionary);
 
