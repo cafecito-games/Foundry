@@ -140,7 +140,14 @@ void FSBuildPipelineSettingsDialog::_save_to_project() {
 	Ref<ConfigFile> config;
 	config.instantiate();
 	if (FileAccess::exists(PROJECT_CONFIG_PATH)) {
-		config->load(PROJECT_CONFIG_PATH);
+		// Refuse to overwrite a project file we could not read: writing the build sections onto an empty
+		// ConfigFile would drop every unrelated section the existing file already holds.
+		const Error load_err = config->load(PROJECT_CONFIG_PATH);
+		if (load_err != OK) {
+			ERR_PRINT(vformat("Could not read '%s' (error %d); build pipeline configuration was not saved to avoid overwriting existing project settings.", PROJECT_CONFIG_PATH, load_err));
+			run_output->set_text(vformat(TTR("Could not read %s; nothing was saved."), PROJECT_CONFIG_PATH));
+			return;
+		}
 	}
 	working_config.write_to_config_file(config);
 	const Error err = config->save(PROJECT_CONFIG_PATH);
@@ -600,7 +607,15 @@ void FSBuildPipelineSettingsDialog::_name_submitted() {
 	}
 }
 
-Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineConfig::TaskDefinition &p_task,
+static Ref<FoundryBuildResult> _make_failure_result(const String &p_message) {
+	Ref<FoundryBuildResult> result;
+	result.instantiate();
+	result->set_success(false);
+	result->set_message(p_message);
+	return result;
+}
+
+static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineConfig::TaskDefinition &p_task,
 		const FoundryBuildTaskRegistry &p_registry) {
 	Ref<FoundryBuildContext> context;
 	context.instantiate();
@@ -609,24 +624,33 @@ Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineConfig::T
 	context->set_project_config_path(PROJECT_CONFIG_PATH);
 	context->set_trusted_execution(true);
 
+	// Every provider receives the declared task fields through the context options, matching what the
+	// command runner reads. Provider-specific `options` entries are merged on top for non-command
+	// providers so a provider still sees its own configuration.
+	Dictionary options;
+	options["working_directory"] = p_task.working_directory;
+	options["environment"] = p_task.environment;
+	options["timeout_seconds"] = p_task.timeout_seconds;
+	options["inputs"] = p_task.inputs;
+	options["outputs"] = p_task.outputs;
+
 	if (p_task.provider == COMMAND_PROVIDER_ID) {
-		Dictionary options;
 		options["command"] = p_task.command;
 		options["args"] = p_task.args;
-		options["working_directory"] = p_task.working_directory;
-		options["environment"] = p_task.environment;
-		options["timeout_seconds"] = p_task.timeout_seconds;
-		options["inputs"] = p_task.inputs;
-		options["outputs"] = p_task.outputs;
 		options["tool_version_command"] = p_task.tool_version_command;
 		context->set_options(options);
 
 		Ref<FoundryCommandBuildTask> command_task;
 		command_task.instantiate();
-		return command_task->run(context);
+		const Ref<FoundryBuildResult> result = command_task->run(context);
+		return result.is_valid() ? result : _make_failure_result(vformat("Command task '%s' returned no result.", p_task.name));
 	}
 
-	context->set_options(p_task.options);
+	const Array option_keys = p_task.options.keys();
+	for (int i = 0; i < option_keys.size(); i++) {
+		options[option_keys[i]] = p_task.options[option_keys[i]];
+	}
+	context->set_options(options);
 
 	FoundryBuildTaskBootstrapLoader loader;
 	loader.set_trusted_execution(true);
@@ -635,13 +659,10 @@ Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineConfig::T
 	loader.load_registered_providers(p_registry, ids);
 	const FoundryBuildTaskBootstrapLoader::LoadedProvider *provider = loader.get_loaded_provider(p_task.provider);
 	if (provider == nullptr || provider->instance.is_null()) {
-		Ref<FoundryBuildResult> result;
-		result.instantiate();
-		result->set_success(false);
-		result->set_message(vformat("Provider '%s' could not be loaded.", p_task.provider));
-		return result;
+		return _make_failure_result(vformat("Provider '%s' could not be loaded.", p_task.provider));
 	}
-	return provider->instance->run(context);
+	const Ref<FoundryBuildResult> result = provider->instance->run(context);
+	return result.is_valid() ? result : _make_failure_result(vformat("Provider '%s' returned no result.", p_task.provider));
 }
 
 static String _format_run_output(const String &p_task_name, const Ref<FoundryBuildResult> &p_result) {
