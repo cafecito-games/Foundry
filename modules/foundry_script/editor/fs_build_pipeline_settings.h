@@ -45,6 +45,7 @@ class OptionButton;
 class RichTextLabel;
 class SpinBox;
 class TextEdit;
+class TextureRect;
 class VBoxContainer;
 
 // The editor authoring UI for the project build pipeline. It is the GUI counterpart to hand-editing
@@ -91,8 +92,8 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 
 	VBoxContainer *command_fields = nullptr;
 	LineEdit *command_edit = nullptr;
-	TextEdit *args_edit = nullptr;
-	TextEdit *tool_version_edit = nullptr;
+	LineEdit *args_edit = nullptr;
+	LineEdit *tool_version_edit = nullptr;
 
 	LineEdit *working_directory_edit = nullptr;
 	TextEdit *inputs_edit = nullptr;
@@ -106,8 +107,9 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 	TextEdit *generic_options_edit = nullptr;
 
 	Label *validation_label = nullptr;
-	TextEdit *preview_text = nullptr;
 	RichTextLabel *run_output = nullptr;
+	// Per-field info badges; their icon is (re)assigned from the editor theme on theme changes.
+	Vector<TextureRect *> help_badges;
 	Button *run_task_button = nullptr;
 	Button *run_stage_button = nullptr;
 	Button *clear_state_button = nullptr;
@@ -122,8 +124,12 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 	void _refresh_provider_select();
 	void _refresh_details();
 	void _refresh_options_editor();
-	void _refresh_validation_and_preview();
+	void _refresh_validation();
 	void _refresh_actions();
+
+	// Adds a "<label> [?]" row (the [?] carries an explanatory tooltip) followed by the control, and
+	// mirrors the tooltip onto the control itself.
+	void _add_field(class BoxContainer *p_parent, const String &p_label, class Control *p_control, const String &p_tooltip);
 
 	void _select_stage_task(ProjectBuildPipelineConfig::Stage p_stage, const String &p_task);
 	ProjectBuildPipelineConfig::TaskDefinition _read_details_into_task(const String &p_name) const;
@@ -148,11 +154,15 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 	void _clear_cached_state();
 
 	static PackedStringArray _lines_to_string_array(const String &p_text);
-	static PackedStringArray _lines_to_argv(const String &p_text);
+	static PackedStringArray _parse_argv(const String &p_text);
+	static String _argv_to_string(const PackedStringArray &p_array);
 	static String _string_array_to_lines(const PackedStringArray &p_array);
 	bool _has_unsaved_changes() const;
 	static Dictionary _lines_to_string_dictionary(const String &p_text);
 	static String _string_dictionary_to_lines(const Dictionary &p_dictionary);
+
+protected:
+	void _notification(int p_what);
 
 public:
 	void popup_settings();
