@@ -562,6 +562,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads configured project
 	CHECK_FALSE(project_config_path.is_empty());
 
 	FoundryBuildTaskBootstrapLoader loader;
+	loader.set_trusted_execution(true);
 	CHECK_EQ(loader.load_project_bootstrap_providers("res://project.foundry"), OK);
 	CHECK_MESSAGE(loader.get_diagnostics().is_empty(), bootstrap_diagnostics_to_string(loader.get_diagnostics()));
 	CHECK(loader.has_loaded_provider("bootstrap.configured"));
@@ -572,6 +573,32 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads configured project
 		CHECK_EQ(loaded->descriptor.source.type, FoundryBuildTaskRegistry::SOURCE_PROJECT);
 		CHECK_EQ(loaded->descriptor.script, script_path);
 	}
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Blocks automatic project providers before trust") {
+	ScopedBuildTaskProject project("build_task_bootstrap_project_loader_untrusted");
+	const String script_path = project.write_script(
+			"res://build/untrusted_project_provider.fs",
+			"class_name BootstrapUntrustedProjectProvider extends FoundryBuildTask\n");
+	CHECK_FALSE(script_path.is_empty());
+	const String project_config_path = project.write_script(
+			"res://project.foundry",
+			"[build]\n"
+			"enabled=true\n"
+			"\n"
+			"[build/providers/bootstrap.untrusted]\n"
+			"script=\"res://build/untrusted_project_provider.fs\"\n"
+			"class_name=\"BootstrapUntrustedProjectProvider\"\n");
+	CHECK_FALSE(project_config_path.is_empty());
+
+	FoundryBuildTaskBootstrapLoader loader;
+	CHECK_EQ(loader.load_project_bootstrap_providers("res://project.foundry"), ERR_UNAUTHORIZED);
+	CHECK_FALSE(loader.has_loaded_provider("bootstrap.untrusted"));
+	REQUIRE_EQ(loader.get_diagnostics().size(), 1);
+	CHECK_EQ(loader.get_diagnostics()[0].kind, FoundryBuildTaskRegistry::DIAGNOSTIC_UNTRUSTED_PROVIDER);
+	CHECK_EQ(loader.get_diagnostics()[0].provider_id, "bootstrap.untrusted");
+	CHECK_EQ(loader.get_diagnostics()[0].source.type, FoundryBuildTaskRegistry::SOURCE_PROJECT);
+	CHECK(loader.get_diagnostics()[0].message.contains("trust"));
 }
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Rejects invalid project provider script paths") {

@@ -111,6 +111,7 @@ static Ref<FoundryBuildResult> run_command_task(const Dictionary &p_options) {
 	context.instantiate();
 	context->set_provider_id("command");
 	context->set_task_name("test_command");
+	context->set_trusted_execution(true);
 	context->set_options(p_options);
 
 	Ref<FoundryCommandBuildTask> task;
@@ -168,6 +169,53 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports null context as a 
 	CHECK_FALSE(result->is_success());
 	CHECK_EQ(result->get_exit_code(), -1);
 	CHECK_FALSE(result->get_launch_error().is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Trust mutation is reserved for native callers") {
+	Ref<FoundryBuildContext> context;
+	context.instantiate();
+
+	CHECK_FALSE(context->has_method("set_trusted_execution"));
+	List<PropertyInfo> properties;
+	context->get_property_list(&properties);
+	for (const PropertyInfo &property : properties) {
+		CHECK_NE(property.name, StringName("trusted_execution"));
+	}
+
+	context->set_trusted_execution(true);
+	CHECK(context->is_trusted_execution());
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Refuses external commands without explicit trust") {
+	Ref<FoundryBuildContext> context;
+	context.instantiate();
+	context->set_provider_id("command");
+	context->set_task_name("untrusted_command");
+
+	Dictionary options;
+	options["command"] = "python3";
+	options["args"] = make_args("-c", "print('should-not-run')\n");
+	options["outputs"] = make_args("res://generated/untrusted.txt");
+	context->set_options(options);
+
+	Ref<FoundryCommandBuildTask> task;
+	task.instantiate();
+	Ref<FoundryBuildResult> result = task->run(context);
+	CHECK(result.is_valid());
+	if (result.is_null()) {
+		return;
+	}
+	CHECK_FALSE(result->is_success());
+	CHECK_EQ(result->get_exit_code(), -1);
+	CHECK_FALSE(result->get_diagnostics().is_empty());
+	if (result->get_diagnostics().is_empty()) {
+		return;
+	}
+	Dictionary diagnostic = result->get_diagnostics()[0];
+	CHECK_EQ(String(diagnostic["task_name"]), "untrusted_command");
+	CHECK_EQ(String(diagnostic["provider_id"]), "command");
+	CHECK(String(diagnostic["message"]).contains("trust"));
+	CHECK_FALSE(String(diagnostic["stdout"]).contains("should-not-run"));
 }
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Runs PATH command with argv and project path normalization") {
@@ -544,9 +592,12 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Captures stdout stderr and
 		return;
 	}
 	Dictionary diagnostic = result->get_diagnostics()[0];
+	CHECK_EQ(String(diagnostic["task_name"]), "test_command");
+	CHECK_EQ(String(diagnostic["provider_id"]), "command");
+	CHECK_EQ(String(diagnostic["command"]), "python3");
 	CHECK_EQ(int(diagnostic["exit_code"]), 7);
-	CHECK(String(diagnostic["stdout"]).contains("stdout-line"));
-	CHECK(String(diagnostic["stderr"]).contains("stderr-line"));
+	CHECK(String(diagnostic["stdout_tail"]).contains("stdout-line"));
+	CHECK(String(diagnostic["stderr_tail"]).contains("stderr-line"));
 }
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports timeout diagnostics") {

@@ -35,6 +35,7 @@
 #include "fs_parser.h"
 
 #include "core/config/project_build_pipeline_config.h"
+#include "core/config/project_build_pipeline_status.h"
 #include "core/config/project_settings.h"
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
@@ -299,6 +300,14 @@ void FoundryBuildTaskBootstrapLoader::clear() {
 	diagnostics.clear();
 }
 
+void FoundryBuildTaskBootstrapLoader::set_trusted_execution(bool p_trusted_execution) {
+	trusted_execution = p_trusted_execution;
+}
+
+bool FoundryBuildTaskBootstrapLoader::is_trusted_execution() const {
+	return trusted_execution || ProjectBuildTrustStore::is_cli_trusted_execution();
+}
+
 Error FoundryBuildTaskBootstrapLoader::load_registered_providers(const FoundryBuildTaskRegistry &p_registry) {
 	clear();
 
@@ -378,7 +387,35 @@ Error FoundryBuildTaskBootstrapLoader::load_project_bootstrap_providers(const St
 	}
 
 	const Vector<FoundryBuildTaskRegistry::Diagnostic> registry_diagnostics = registry.get_diagnostics();
-	const Error result = load_registered_providers(registry);
+	ProjectBuildTrustStore trust_store;
+	trust_store.load();
+	const bool can_load_script_providers = is_trusted_execution() || trust_store.is_project_trusted();
+
+	Error result = OK;
+	if (can_load_script_providers) {
+		result = load_registered_providers(registry);
+	} else {
+		clear();
+		for (const String &provider_id : registry.get_provider_order()) {
+			const FoundryBuildTaskRegistry::ProviderEntry *provider = registry.get_provider(provider_id);
+			if (provider == nullptr) {
+				continue;
+			}
+			if (provider->source.type == FoundryBuildTaskRegistry::SOURCE_NATIVE) {
+				result = _merge_error(result, _load_provider(*provider));
+				continue;
+			}
+
+			FoundryBuildTaskRegistry::Diagnostic diagnostic;
+			diagnostic.kind = FoundryBuildTaskRegistry::DIAGNOSTIC_UNTRUSTED_PROVIDER;
+			diagnostic.provider_id = provider->id;
+			diagnostic.source = provider->source;
+			diagnostic.message = vformat("Build task provider '%s' requires trusted execution before it can be loaded automatically.",
+					provider->id);
+			diagnostics.push_back(diagnostic);
+			result = _merge_error(result, ERR_UNAUTHORIZED);
+		}
+	}
 	for (const FoundryBuildTaskRegistry::Diagnostic &diagnostic : registry_diagnostics) {
 		diagnostics.push_back(diagnostic);
 	}

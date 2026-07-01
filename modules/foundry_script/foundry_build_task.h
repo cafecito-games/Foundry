@@ -141,6 +141,7 @@ class FoundryBuildContext : public RefCounted {
 	String task_name;
 	String project_config_path = "res://project.foundry";
 	Dictionary options;
+	bool trusted_execution = false;
 
 protected:
 	static void _bind_methods();
@@ -157,6 +158,9 @@ public:
 
 	void set_options(const Dictionary &p_options);
 	Dictionary get_options() const;
+
+	void set_trusted_execution(bool p_trusted_execution);
+	bool is_trusted_execution() const;
 };
 
 class FoundryBuildTask : public RefCounted {
