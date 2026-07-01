@@ -74,23 +74,23 @@ PackedStringArray FSBuildPipelineSettingsDialog::_lines_to_string_array(const St
 
 PackedStringArray FSBuildPipelineSettingsDialog::_parse_argv(const String &p_text) {
 	// Split a command line into arguments on whitespace. Double quotes group an argument that contains
-	// spaces (and `""` yields an explicit empty argument). A backslash escapes the next character, so
-	// a literal double quote is `\"` and a literal backslash is `\\`. Round-trips with _argv_to_string().
+	// spaces (and `""` on its own yields an explicit empty argument). A literal double quote inside a
+	// quoted argument is written as a doubled quote (`""`), CSV-style, so backslashes are never special
+	// and Windows paths/regexes pass through untouched. Round-trips with _argv_to_string().
 	PackedStringArray argv;
 	String current;
 	bool in_token = false;
 	bool in_quotes = false;
 	for (int i = 0; i < p_text.length(); i++) {
 		const char32_t c = p_text[i];
-		if (c == '\\' && i + 1 < p_text.length()) {
-			current += String::chr(p_text[i + 1]);
-			in_token = true;
-			i++;
-			continue;
-		}
 		if (in_quotes) {
 			if (c == '"') {
-				in_quotes = false;
+				if (i + 1 < p_text.length() && p_text[i + 1] == '"') {
+					current += String::chr('"');
+					i++;
+				} else {
+					in_quotes = false;
+				}
 			} else {
 				current += String::chr(c);
 			}
@@ -117,9 +117,9 @@ PackedStringArray FSBuildPipelineSettingsDialog::_parse_argv(const String &p_tex
 }
 
 String FSBuildPipelineSettingsDialog::_argv_to_string(const PackedStringArray &p_array) {
-	// Join arguments with spaces. Quote any argument that is empty or contains whitespace, a quote, or
-	// a backslash, escaping backslashes and quotes inside, so it survives a _parse_argv() round-trip
-	// as a single argument without losing literal characters.
+	// Join arguments with spaces. Quote any argument that is empty or contains whitespace or a quote,
+	// doubling interior quotes, so it survives a _parse_argv() round-trip as a single argument.
+	// Backslashes are literal and never escaped.
 	String result;
 	for (int i = 0; i < p_array.size(); i++) {
 		if (i > 0) {
@@ -127,9 +127,9 @@ String FSBuildPipelineSettingsDialog::_argv_to_string(const PackedStringArray &p
 		}
 		const String arg = p_array[i];
 		const bool needs_quote = arg.is_empty() || arg.contains(" ") || arg.contains("\t") ||
-				arg.contains("\n") || arg.contains("\"") || arg.contains("\\");
+				arg.contains("\n") || arg.contains("\"");
 		if (needs_quote) {
-			result += "\"" + arg.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+			result += "\"" + arg.replace("\"", "\"\"") + "\"";
 		} else {
 			result += arg;
 		}
