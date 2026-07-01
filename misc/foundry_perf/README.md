@@ -4,6 +4,10 @@ This directory contains everything needed to **build and verify the editor perfo
 optimizations on macOS**. The implementation lives in the branch these files ship on; a macOS
 agent (or you) only needs to check out the branch, build, and run the checks below.
 
+> Status: the Foundry Script load optimizations (#760) and the **Linux** `inotify` watcher (#762)
+> are already merged to `develop`. This branch adds the **macOS FSEvents backend** (plus the
+> cross-platform refactor of the watcher) and needs macOS build + runtime verification.
+
 ## What was optimized
 
 1. **Lazy Foundry Script documentation generation** — `FoundryScript::reload()` no longer runs
