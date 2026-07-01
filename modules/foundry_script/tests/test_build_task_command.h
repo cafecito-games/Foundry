@@ -37,10 +37,13 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
-#include "editor/file_system/editor_file_system.h"
 #include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
+
+#ifdef TOOLS_ENABLED
+#include "editor/file_system/editor_file_system.h"
+#endif // TOOLS_ENABLED
 
 namespace FSTests {
 
@@ -819,6 +822,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports non-zero tool vers
 	CHECK(String(diagnostic["stdout"]).contains("bad-version"));
 }
 
+#ifdef TOOLS_ENABLED
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Successful res outputs request an editor filesystem scan") {
 	ScopedCommandTaskProject project("build_task_command_scan_changes");
 	EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
@@ -846,6 +850,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Successful res outputs req
 
 	memdelete(editor_file_system);
 }
+#endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Globalizes inputs and outputs before fingerprinting") {
 	ScopedCommandTaskProject project("build_task_command_fingerprint_paths");

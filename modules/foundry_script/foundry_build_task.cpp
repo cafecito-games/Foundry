@@ -89,6 +89,7 @@ static PackedStringArray _globalize_project_paths(const PackedStringArray &p_pat
 	return globalized;
 }
 
+#ifdef TOOLS_ENABLED
 static bool _declared_outputs_include_res_root(const PackedStringArray &p_outputs) {
 	for (int i = 0; i < p_outputs.size(); i++) {
 		const String output = String(p_outputs[i]).strip_edges().replace_char('\\', '/');
@@ -98,6 +99,7 @@ static bool _declared_outputs_include_res_root(const PackedStringArray &p_output
 	}
 	return false;
 }
+#endif // TOOLS_ENABLED
 
 static void _notify_successful_outputs_changed(const PackedStringArray &p_outputs) {
 #ifdef TOOLS_ENABLED
