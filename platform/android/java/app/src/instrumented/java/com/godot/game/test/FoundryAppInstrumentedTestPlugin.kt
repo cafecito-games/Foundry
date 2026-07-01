@@ -32,10 +32,10 @@ package com.godot.game.test
 
 import android.util.Log
 import android.widget.Toast
-import org.godotengine.godot.Godot
-import org.godotengine.godot.plugin.FoundryPlugin
-import org.godotengine.godot.plugin.UsedByGodot
-import org.godotengine.godot.plugin.SignalInfo
+import games.cafecito.foundry.Godot
+import games.cafecito.foundry.plugin.FoundryPlugin
+import games.cafecito.foundry.plugin.UsedByGodot
+import games.cafecito.foundry.plugin.SignalInfo
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit

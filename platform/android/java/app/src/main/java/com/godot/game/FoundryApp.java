@@ -30,14 +30,14 @@
 
 package com.godot.game;
 
-import org.godotengine.godot.FoundryActivity;
-import org.godotengine.godot.Godot;
-
 import android.os.Bundle;
 import android.util.Log;
 
 import androidx.activity.EdgeToEdge;
 import androidx.core.splashscreen.SplashScreen;
+
+import games.cafecito.foundry.FoundryActivity;
+import games.cafecito.foundry.Godot;
 
 /**
  * Template activity for Godot Android builds.
