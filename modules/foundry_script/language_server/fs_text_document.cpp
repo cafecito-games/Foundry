@@ -53,6 +53,7 @@ String refactor_kind_to_lsp_kind(RefactorKind p_kind) {
 			return "refactor.extract";
 		case RefactorKind::ADD_TYPE_ANNOTATION:
 		case RefactorKind::IMPLEMENT_ABSTRACT_METHODS:
+		case RefactorKind::OVERRIDE_METHOD:
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 		case RefactorKind::WIDEN_TO_NULLABLE:
 		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
@@ -87,6 +88,7 @@ bool is_resolvable_code_action_kind(RefactorKind p_kind) {
 		case RefactorKind::WIDEN_TO_NULLABLE:
 		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
 			return true;
+		case RefactorKind::OVERRIDE_METHOD:
 		case RefactorKind::RENAME:
 			return false;
 	}
@@ -474,7 +476,8 @@ Array FSTextDocument::codeAction(const Dictionary &p_params) {
 	const RefactorLocation loc = refactor_location_from_lsp(params.range);
 	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, loc);
 	for (const RefactorAvailability &availability : available) {
-		if (!availability.enabled || availability.kind == RefactorKind::RENAME) {
+		if (!availability.enabled || availability.kind == RefactorKind::RENAME ||
+				availability.kind == RefactorKind::OVERRIDE_METHOD) {
 			continue;
 		}
 

@@ -397,6 +397,53 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn super.configure(speed)\n"));
 	}
 
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+	TEST_CASE("Override method resolves a concrete base defined in another file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/override_method_xfile_base.fs";
+		const String child_path = "res://refactor/override_method_xfile_child.fs";
+		FSTests::assert_no_errors_in(base_path);
+
+		RefactorContext ctx = make_context(child_path);
+		RefactorOverrideMethodsResult candidates = FSRefactoring::get_override_method_candidates(ctx, caret(2, 1));
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "configure");
+		REQUIRE(candidate != nullptr);
+
+		RefactorParams params;
+		params.override_method_id = candidate->id;
+		RefactorResult r = FSRefactoring::prepare(ctx, caret(2, 1), RefactorKind::OVERRIDE_METHOD, params);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func configure(speed: float = 1.0) -> int:"));
+		CHECK(out.contains("return super.configure(speed)"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+#endif
+
+	TEST_CASE("Override method stale selected identity fails without edits") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, "script|Missing|configure", out);
+		CHECK_FALSE(r.ok);
+		CHECK_EQ(r.error_message, String("Selected override method is no longer available."));
+		CHECK(r.edits.is_empty());
+		CHECK(out.is_empty());
+	}
+
 	TEST_CASE("Override method lists native virtual methods") {
 		const String source =
 				"extends Control\n"
