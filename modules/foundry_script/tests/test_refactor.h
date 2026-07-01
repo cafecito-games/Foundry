@@ -397,6 +397,77 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn super.configure(speed)\n"));
 	}
 
+	TEST_CASE("Override method includes abstract methods as selectable candidates") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "area");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("push_error(\"Not implemented: area\")"));
+		CHECK(out.contains("return 0.0"));
+	}
+
+	TEST_CASE("Override method includes abstract candidates in abstract target classes") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"abstract class Shape extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "area") != nullptr);
+	}
+
+	TEST_CASE("Override method skips already declared methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"\tfunc available() -> int:\n"
+				"\t\treturn 2\n"
+				"class Child extends Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 3\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 7, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "available") != nullptr);
+	}
+
+	TEST_CASE("Override method skips final base methods") {
+		const String source =
+				"class Base:\n"
+				"\tfinal func locked() -> int:\n"
+				"\t\treturn 1\n"
+				"\tfunc available() -> int:\n"
+				"\t\treturn 2\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "locked") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "available") != nullptr);
+	}
+
 	TEST_CASE("Override method skips rest-parameter script base methods") {
 		const String source =
 				"class Base:\n"

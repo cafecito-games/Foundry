@@ -6772,6 +6772,39 @@ void add_script_override_candidate(
 	r_candidates.push_back(candidate);
 }
 
+void add_abstract_override_candidate(
+		const OwedAbstractMethod &p_owed,
+		const String &p_class_indent,
+		int p_insertion_line,
+		Vector<OverrideMethodCandidate> &r_candidates) {
+	if (p_owed.function == nullptr || p_owed.function->identifier == nullptr ||
+			p_owed.function->rest_parameter != nullptr ||
+			is_constructor_like_override_method(p_owed.function->identifier->name)) {
+		return;
+	}
+	Vector<FSParser::DataType> parameter_types;
+	for (const FSParser::ParameterNode *parameter : p_owed.function->parameters) {
+		parameter_types.push_back(parameter != nullptr ? parameter->get_datatype() : FSParser::DataType());
+	}
+	if (!generic_method_type_parameters_are_inferable_from_parameter_types(p_owed.function, parameter_types)) {
+		return;
+	}
+
+	const Vector<String> empty_lines;
+	const Vector<String> &lines = p_owed.declaring_lines != nullptr ? *p_owed.declaring_lines : empty_lines;
+	OverrideMethodCandidate candidate;
+	candidate.enabled = true;
+	candidate.rendered_block = render_abstract_stub(p_owed.function, lines, p_class_indent);
+	candidate.insertion_line = p_insertion_line;
+	const String name = String(p_owed.function->identifier->name);
+	candidate.public_candidate.name = name;
+	candidate.public_candidate.signature = render_function_signature(p_owed.function, lines, "");
+	candidate.public_candidate.origin = "abstract requirement";
+	candidate.public_candidate.detail = candidate.public_candidate.signature + " - abstract requirement";
+	candidate.public_candidate.id = make_override_method_id("abstract", candidate.public_candidate.origin, p_owed.function->identifier->name);
+	r_candidates.push_back(candidate);
+}
+
 void collect_script_base_override_candidates(
 		const FSParser::ClassNode *p_target,
 		const String &p_target_path,
@@ -6831,6 +6864,16 @@ void collect_script_base_override_candidates(
 	}
 }
 
+void collect_override_candidate_names(
+		const Vector<OverrideMethodCandidate> &p_candidates,
+		HashSet<StringName> &r_names) {
+	for (const OverrideMethodCandidate &candidate : p_candidates) {
+		if (!candidate.public_candidate.name.is_empty()) {
+			r_names.insert(StringName(candidate.public_candidate.name));
+		}
+	}
+}
+
 OverrideMethodCollection collect_override_methods_in_tree(
 		const RefactorLocation &p_location,
 		const String &p_path,
@@ -6865,6 +6908,23 @@ OverrideMethodCollection collect_override_methods_in_tree(
 			class_indent,
 			insertion_line,
 			collection.candidates);
+
+	HashSet<StringName> abstract_decided_names = declared_names;
+	collect_override_candidate_names(collection.candidates, abstract_decided_names);
+	Vector<OwedAbstractMethod> owed_abstract_methods;
+	bool depends_on_external_declarations = false;
+	collect_owed_abstract_methods(target, p_tree, p_path, p_lines, owed_abstract_methods, &depends_on_external_declarations, p_parse_results);
+	for (const OwedAbstractMethod &owed : owed_abstract_methods) {
+		if (owed.function == nullptr || owed.function->identifier == nullptr) {
+			continue;
+		}
+		const StringName name = owed.function->identifier->name;
+		if (abstract_decided_names.has(name)) {
+			continue;
+		}
+		add_abstract_override_candidate(owed, class_indent, insertion_line, collection.candidates);
+		abstract_decided_names.insert(name);
+	}
 
 	collection.ok = !collection.candidates.is_empty();
 	if (!collection.ok) {
