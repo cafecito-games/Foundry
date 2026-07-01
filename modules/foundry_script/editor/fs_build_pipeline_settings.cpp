@@ -502,14 +502,16 @@ void FSBuildPipelineSettingsDialog::_trust_pressed() {
 	_refresh_actions();
 }
 
-void FSBuildPipelineSettingsDialog::_add_task() {
+void FSBuildPipelineSettingsDialog::_add_task(int p_stage) {
+	const ProjectBuildPipelineConfig::Stage stage = (ProjectBuildPipelineConfig::Stage)p_stage;
 	const String name = working_config.make_unique_task_name("task");
 	ProjectBuildPipelineConfig::TaskDefinition task;
 	task.name = name;
 	task.provider = COMMAND_PROVIDER_ID;
 	working_config.set_task(task);
-	working_config.add_task_to_stage(selected_stage, name);
+	working_config.add_task_to_stage(stage, name);
 
+	selected_stage = stage;
 	selected_task = name;
 	_refresh_stage_lists();
 	_refresh_details();
@@ -716,9 +718,16 @@ static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineCo
 	context->set_trusted_execution(true);
 
 	// Every provider receives the declared task fields through the context options, matching what the
-	// command runner reads. Provider-specific `options` entries are merged on top for non-command
-	// providers so a provider still sees its own configuration.
+	// command runner reads. For non-command providers the provider-specific `options` are applied
+	// first and the declared task fields override them, so a reserved key like `outputs` in `options`
+	// can never shadow the task's declared inputs/outputs/working directory/etc.
 	Dictionary options;
+	if (p_task.provider != COMMAND_PROVIDER_ID) {
+		const Array option_keys = p_task.options.keys();
+		for (int i = 0; i < option_keys.size(); i++) {
+			options[option_keys[i]] = p_task.options[option_keys[i]];
+		}
+	}
 	options["working_directory"] = p_task.working_directory;
 	options["environment"] = p_task.environment;
 	options["inputs"] = p_task.inputs;
@@ -741,10 +750,6 @@ static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineCo
 		return result.is_valid() ? result : _make_failure_result(vformat("Command task '%s' returned no result.", p_task.name));
 	}
 
-	const Array option_keys = p_task.options.keys();
-	for (int i = 0; i < option_keys.size(); i++) {
-		options[option_keys[i]] = p_task.options[option_keys[i]];
-	}
 	context->set_options(options);
 
 	FoundryBuildTaskBootstrapLoader loader;
@@ -953,13 +958,9 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	stages_column->set_custom_minimum_size(Size2(320, 0) * EDSCALE);
 	split->add_child(stages_column);
 
+	// Task-scoped controls act on whichever stage list has the current selection.
 	HBoxContainer *toolbar = memnew(HBoxContainer);
 	stages_column->add_child(toolbar);
-
-	add_button = memnew(Button);
-	add_button->set_text(TTR("Add"));
-	add_button->connect(SceneStringName(pressed), callable_mp(this, &FSBuildPipelineSettingsDialog::_add_task));
-	toolbar->add_child(add_button);
 
 	duplicate_button = memnew(Button);
 	duplicate_button->set_text(TTR("Duplicate"));
@@ -981,18 +982,33 @@ FSBuildPipelineSettingsDialog::FSBuildPipelineSettingsDialog() {
 	move_down_button->connect(SceneStringName(pressed), callable_mp(this, &FSBuildPipelineSettingsDialog::_move_task).bind(1));
 	toolbar->add_child(move_down_button);
 
+	// Each stage has its own Add button so the first task in an empty stage can be created directly.
+	HBoxContainer *pre_header = memnew(HBoxContainer);
+	stages_column->add_child(pre_header);
 	Label *pre_label = memnew(Label);
 	pre_label->set_text(TTR("Pre-compile"));
-	stages_column->add_child(pre_label);
+	pre_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pre_header->add_child(pre_label);
+	add_pre_button = memnew(Button);
+	add_pre_button->set_text(TTR("Add"));
+	add_pre_button->connect(SceneStringName(pressed), callable_mp(this, &FSBuildPipelineSettingsDialog::_add_task).bind(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE));
+	pre_header->add_child(add_pre_button);
 
 	pre_compile_list = memnew(ItemList);
 	pre_compile_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	pre_compile_list->connect("item_selected", callable_mp(this, &FSBuildPipelineSettingsDialog::_pre_list_selected));
 	stages_column->add_child(pre_compile_list);
 
+	HBoxContainer *post_header = memnew(HBoxContainer);
+	stages_column->add_child(post_header);
 	Label *post_label = memnew(Label);
 	post_label->set_text(TTR("Post-compile"));
-	stages_column->add_child(post_label);
+	post_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	post_header->add_child(post_label);
+	add_post_button = memnew(Button);
+	add_post_button->set_text(TTR("Add"));
+	add_post_button->connect(SceneStringName(pressed), callable_mp(this, &FSBuildPipelineSettingsDialog::_add_task).bind(ProjectBuildPipelineConfig::STAGE_POST_COMPILE));
+	post_header->add_child(add_post_button);
 
 	post_compile_list = memnew(ItemList);
 	post_compile_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);

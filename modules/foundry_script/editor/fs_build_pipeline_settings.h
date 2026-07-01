@@ -76,7 +76,8 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 
 	ItemList *pre_compile_list = nullptr;
 	ItemList *post_compile_list = nullptr;
-	Button *add_button = nullptr;
+	Button *add_pre_button = nullptr;
+	Button *add_post_button = nullptr;
 	Button *duplicate_button = nullptr;
 	Button *remove_button = nullptr;
 	Button *move_up_button = nullptr;
@@ -132,7 +133,7 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 	void _trust_pressed();
 	void _pre_list_selected(int p_index);
 	void _post_list_selected(int p_index);
-	void _add_task();
+	void _add_task(int p_stage);
 	void _duplicate_task();
 	void _remove_task();
 	void _move_task(int p_delta);
