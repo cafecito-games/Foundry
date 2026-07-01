@@ -361,6 +361,42 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK_EQ(available[6].disabled_reason, String("Place the caret inside a class."));
 	}
 
+	TEST_CASE("Override method lists concrete script base methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure(speed: float = 1.0) -> int:\n"
+				"\t\treturn int(speed)\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "configure");
+		REQUIRE(candidate != nullptr);
+		CHECK(candidate->signature.contains("configure(speed: float = 1.0) -> int"));
+		CHECK(candidate->origin.contains("Base"));
+	}
+
+	TEST_CASE("Override method renders concrete script base stub with super call") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure(speed: float = 1.0) -> int:\n"
+				"\t\treturn int(speed)\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "configure");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc configure(speed: float = 1.0) -> int:\n"));
+		CHECK(out.contains("\t\treturn super.configure(speed)\n"));
+	}
+
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
 		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));

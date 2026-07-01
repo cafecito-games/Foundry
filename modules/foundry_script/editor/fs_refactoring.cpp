@@ -211,6 +211,21 @@ struct ImplementAbstractCandidate {
 	String rendered_block;
 };
 
+struct OverrideMethodCandidate {
+	bool enabled = false;
+	String disabled_reason;
+	RefactorOverrideMethodCandidate public_candidate;
+	String rendered_block;
+	int insertion_line = -1;
+	bool depends_on_external_declarations = false;
+};
+
+struct OverrideMethodCollection {
+	bool ok = false;
+	String error_message;
+	Vector<OverrideMethodCandidate> candidates;
+};
+
 enum class StyleOrderBucket {
 	SIGNAL,
 	ENUM,
@@ -5982,15 +5997,10 @@ bool default_return_literal(const FSParser::DataType &p_type, String &r_literal)
 	}
 }
 
-// Renders a concrete stub for an inherited abstract method: a faithful signature
-// (preserving `static`, parameter names, annotated parameter/return types and base
-// default values where recoverable) plus a body that reports the missing
-// implementation and either returns a literal default or falls through to `pass`.
-String render_abstract_stub(
+String render_function_signature(
 		const FSParser::FunctionNode *p_function,
 		const Vector<String> &p_lines,
 		const String &p_class_indent) {
-	const String body_indent = p_class_indent + "\t";
 	const String name = String(p_function->identifier->name);
 
 	// An abstract method on a class cannot be static, but a trait may declare an
@@ -6098,6 +6108,30 @@ String render_abstract_stub(
 	} else if (has_typed_return) {
 		result += " -> " + rendered_return;
 	}
+	return result;
+}
+
+// Renders a concrete stub for an inherited abstract method: a faithful signature
+// (preserving `static`, parameter names, annotated parameter/return types and base
+// default values where recoverable) plus a body that reports the missing
+// implementation and either returns a literal default or falls through to `pass`.
+String render_abstract_stub(
+		const FSParser::FunctionNode *p_function,
+		const Vector<String> &p_lines,
+		const String &p_class_indent) {
+	const String body_indent = p_class_indent + "\t";
+	const String name = String(p_function->identifier->name);
+	const FSParser::DataType return_type = p_function->get_datatype();
+	// A void return type is set but stringifies as a NIL builtin, which
+	// render_annotatable_type rejects; treat it as an explicit `-> void` with no
+	// return statement.
+	const bool is_void = return_type.is_set() && !return_type.is_variant() &&
+			return_type.kind == FSParser::DataType::BUILTIN &&
+			return_type.builtin_type == Variant::NIL;
+	String rendered_return;
+	const bool has_typed_return = !is_void && FSRefactorTypes::render_annotatable_type(return_type, rendered_return);
+
+	String result = render_function_signature(p_function, p_lines, p_class_indent);
 	result += ":\n";
 	result += body_indent + "push_error(\"Not implemented: " + name + "\")\n";
 
@@ -6112,6 +6146,45 @@ String render_abstract_stub(
 		}
 	}
 	return result;
+}
+
+String render_super_call_body(const FSParser::FunctionNode *p_function, const String &p_class_indent) {
+	const String body_indent = p_class_indent + "\t";
+	const String name = String(p_function->identifier->name);
+	String call = "super." + name + "(";
+	bool first_argument = true;
+	for (int i = 0; i < p_function->parameters.size(); i++) {
+		const FSParser::ParameterNode *parameter = p_function->parameters[i];
+		if (parameter == nullptr || parameter->identifier == nullptr) {
+			continue;
+		}
+		if (!first_argument) {
+			call += ", ";
+		}
+		first_argument = false;
+		call += String(parameter->identifier->name);
+	}
+	if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr) {
+		if (!first_argument) {
+			call += ", ";
+		}
+		call += "..." + String(p_function->rest_parameter->identifier->name);
+	}
+	call += ")";
+
+	const FSParser::DataType return_type = p_function->get_datatype();
+	const bool is_void = return_type.is_set() && !return_type.is_variant() &&
+			return_type.kind == FSParser::DataType::BUILTIN &&
+			return_type.builtin_type == Variant::NIL;
+	return body_indent + (is_void ? call : "return " + call) + "\n";
+}
+
+String render_concrete_script_override_stub(
+		const FSParser::FunctionNode *p_function,
+		const Vector<String> &p_lines,
+		const String &p_class_indent) {
+	return render_function_signature(p_function, p_lines, p_class_indent) + ":\n" +
+			render_super_call_body(p_function, p_class_indent);
 }
 
 // Per-member indentation of the target class. When the class has members, mirror the
@@ -6162,6 +6235,59 @@ int trait_use_end_line(const FSParser::ClassNode::TraitUse &p_trait_use) {
 		}
 	}
 	return end_line;
+}
+
+String make_override_method_id(const char *p_kind, const String &p_origin, const StringName &p_name) {
+	return String(p_kind) + "|" + p_origin + "|" + String(p_name);
+}
+
+void collect_declared_override_names(const FSParser::ClassNode *p_target, HashSet<StringName> &r_names) {
+	if (p_target == nullptr) {
+		return;
+	}
+	for (const FSParser::ClassNode::Member &member : p_target->members) {
+		if (member.type == FSParser::ClassNode::Member::FUNCTION &&
+				member.function != nullptr &&
+				member.function->identifier != nullptr) {
+			r_names.insert(member.function->identifier->name);
+		}
+	}
+}
+
+int find_class_method_insertion_line(
+		const FSParser::ClassNode *p_target,
+		const FSParser::ClassNode *p_tree,
+		const Vector<String> &p_lines) {
+	int insertion_line = p_target != nullptr ? p_target->start_line : 0;
+	bool has_member_line = false;
+	if (p_target == nullptr) {
+		return insertion_line;
+	}
+	for (const FSParser::ClassNode::Member &member : p_target->members) {
+		const FSParser::Node *node = member.get_source_node();
+		if (node != nullptr && node->end_line > 0) {
+			has_member_line = true;
+			if (node->end_line > insertion_line) {
+				insertion_line = node->end_line;
+			}
+		}
+	}
+	for (const FSParser::ClassNode::TraitUse &trait_use : p_target->used_traits) {
+		const int trait_end = trait_use_end_line(trait_use);
+		if (trait_end > p_target->start_line && trait_end > insertion_line) {
+			insertion_line = trait_end;
+		}
+	}
+	if (!has_member_line && p_target == p_tree) {
+		insertion_line = p_lines.size();
+		if (insertion_line > 0 && p_lines[insertion_line - 1].is_empty()) {
+			insertion_line -= 1;
+		}
+	}
+	if (insertion_line > p_lines.size()) {
+		insertion_line = p_lines.size();
+	}
+	return insertion_line;
 }
 
 ImplementAbstractCandidate find_implement_abstract_in_tree(
@@ -6216,41 +6342,7 @@ ImplementAbstractCandidate find_implement_abstract_in_tree(
 		block += render_abstract_stub(owed.function, method_lines, class_indent);
 	}
 	candidate.rendered_block = block;
-	// The class end_line overshoots the buffer for a whole-file root class, so derive
-	// the insertion point from the last member's end_line (a real line) instead, and
-	// clamp it to the available lines as a final guard.
-	int insertion_line = target->start_line;
-	bool has_member_line = false;
-	for (const FSParser::ClassNode::Member &member : target->members) {
-		const FSParser::Node *node = member.get_source_node();
-		if (node != nullptr && node->end_line > 0) {
-			has_member_line = true;
-			if (node->end_line > insertion_line) {
-				insertion_line = node->end_line;
-			}
-		}
-	}
-	for (const FSParser::ClassNode::TraitUse &trait_use : target->used_traits) {
-		const int trait_end_line = trait_use_end_line(trait_use);
-		if (trait_end_line > target->start_line && trait_end_line > insertion_line) {
-			insertion_line = trait_end_line;
-		}
-	}
-	// A root class with no members spans only its header lines (e.g. `@tool`,
-	// `class_name X`, `extends Y`). Its start_line is the first header line, so
-	// inserting there would land mid-header and break the file; append at end instead.
-	// A trailing newline yields an empty final split element; the insertion point is the
-	// last line that actually carries content so the stub is appended after it.
-	if (!has_member_line && target == p_tree) {
-		insertion_line = p_lines.size();
-		if (insertion_line > 0 && p_lines[insertion_line - 1].is_empty()) {
-			insertion_line -= 1;
-		}
-	}
-	if (insertion_line > p_lines.size()) {
-		insertion_line = p_lines.size();
-	}
-	candidate.insertion_line = insertion_line;
+	candidate.insertion_line = find_class_method_insertion_line(target, p_tree, p_lines);
 	candidate.abstract_methods.clear(); // Do not cache live pointers.
 	candidate.matched = true;
 	candidate.enabled = true;
@@ -6355,17 +6447,172 @@ RefactorResult prepare_implement_abstract(
 	return result;
 }
 
+void add_script_override_candidate(
+		const FSParser::FunctionNode *p_function,
+		const FSParser::ClassNode *p_declaring_class,
+		const Vector<String> *p_declaring_lines,
+		const String &p_class_indent,
+		int p_insertion_line,
+		Vector<OverrideMethodCandidate> &r_candidates) {
+	if (p_function == nullptr || p_function->identifier == nullptr || p_function->is_final || p_function->is_abstract) {
+		return;
+	}
+	const Vector<String> empty_lines;
+	const Vector<String> &lines = p_declaring_lines != nullptr ? *p_declaring_lines : empty_lines;
+	OverrideMethodCandidate candidate;
+	candidate.enabled = true;
+	candidate.rendered_block = render_concrete_script_override_stub(p_function, lines, p_class_indent);
+	candidate.insertion_line = p_insertion_line;
+	const String origin = p_declaring_class != nullptr && p_declaring_class->identifier != nullptr
+			? String(p_declaring_class->identifier->name)
+			: String("base class");
+	candidate.public_candidate.name = String(p_function->identifier->name);
+	candidate.public_candidate.signature = render_function_signature(p_function, lines, "");
+	candidate.public_candidate.origin = origin;
+	candidate.public_candidate.detail = candidate.public_candidate.signature + " - " + origin;
+	candidate.public_candidate.id = make_override_method_id("script", origin, p_function->identifier->name);
+	r_candidates.push_back(candidate);
+}
+
+void collect_script_base_override_candidates(
+		const FSParser::ClassNode *p_target,
+		const String &p_target_path,
+		const Vector<String> &p_target_lines,
+		const FSParseResultProvider *p_parse_results,
+		HashSet<StringName> p_decided_names,
+		const String &p_class_indent,
+		int p_insertion_line,
+		Vector<OverrideMethodCandidate> &r_candidates) {
+	if (p_target == nullptr) {
+		return;
+	}
+
+	HashSet<const FSParser::ClassNode *> visited;
+	visited.insert(p_target);
+	const FSParser::ClassNode *current = p_target;
+	String current_path = p_target_path;
+	const Vector<String> *current_lines = &p_target_lines;
+
+	while (current != nullptr) {
+		String base_path;
+		const Vector<String> *base_lines = nullptr;
+		const FSParser::ClassNode *base = resolve_base_class(current, p_parse_results, current_path, current_lines, base_path, &base_lines);
+		if (base == nullptr || visited.has(base)) {
+			break;
+		}
+		visited.insert(base);
+		current = base;
+		current_path = base_path;
+		current_lines = base_lines;
+
+		for (const FSParser::ClassNode::Member &member : current->members) {
+			if (member.type != FSParser::ClassNode::Member::FUNCTION) {
+				continue;
+			}
+			const FSParser::FunctionNode *function = member.function;
+			if (function == nullptr || function->identifier == nullptr) {
+				continue;
+			}
+			const StringName name = function->identifier->name;
+			if (p_decided_names.has(name)) {
+				continue;
+			}
+			p_decided_names.insert(name);
+			add_script_override_candidate(function, current, current_lines, p_class_indent, p_insertion_line, r_candidates);
+		}
+	}
+}
+
+OverrideMethodCollection collect_override_methods_in_tree(
+		const RefactorLocation &p_location,
+		const String &p_path,
+		const Vector<String> &p_lines,
+		const FSParser::ClassNode *p_tree,
+		const FSParseResultProvider *p_parse_results) {
+	OverrideMethodCollection collection;
+	const FSParser::ClassNode *target = find_enclosing_class(p_tree, p_location.start_line);
+	const bool is_implicit_root_without_script_base = target == p_tree &&
+			target->identifier == nullptr &&
+			target->base_type.kind != FSParser::DataType::CLASS &&
+			target->base_type.kind != FSParser::DataType::SCRIPT;
+	if (target == nullptr || is_implicit_root_without_script_base) {
+		collection.error_message = "Place the caret inside a class.";
+		return collection;
+	}
+	if (target->is_trait) {
+		collection.error_message = "Traits cannot override methods.";
+		return collection;
+	}
+
+	HashSet<StringName> declared_names;
+	collect_declared_override_names(target, declared_names);
+	const String class_indent = class_member_indent(target, p_lines, target == p_tree);
+	const int insertion_line = find_class_method_insertion_line(target, p_tree, p_lines);
+	collect_script_base_override_candidates(
+			target,
+			p_path,
+			p_lines,
+			p_parse_results,
+			declared_names,
+			class_indent,
+			insertion_line,
+			collection.candidates);
+
+	collection.ok = !collection.candidates.is_empty();
+	if (!collection.ok) {
+		collection.error_message = "No overridable methods found.";
+	}
+	return collection;
+}
+
+OverrideMethodCollection find_override_method_collection_uncached(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const Vector<String> &p_lines,
+		const FSParseResultProvider *p_parse_results) {
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+	if (p_parse_results != nullptr) {
+		const ExtendFSParser *lsp_parser = p_parse_results->get_parse_result(p_context.path);
+		if (lsp_parser != nullptr && source_lines_match(lsp_parser->get_lines(), p_lines)) {
+			const FSParser::ClassNode *tree = lsp_parser->get_tree();
+			if (tree == nullptr) {
+				OverrideMethodCollection collection;
+				collection.error_message = "Cannot analyze this script.";
+				return collection;
+			}
+			return collect_override_methods_in_tree(p_location, p_context.path, p_lines, tree, p_parse_results);
+		}
+	}
+#endif // FOUNDRY_SCRIPT_NO_LSP
+
+	FSParser parser;
+	Error err = parser.parse(p_context.source, p_context.path, false);
+	if (err != OK) {
+		OverrideMethodCollection collection;
+		collection.error_message = "Cannot analyze this script.";
+		return collection;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	return collect_override_methods_in_tree(p_location, p_context.path, p_lines, parser.get_tree(), p_parse_results);
+}
+
 RefactorOverrideMethodsResult find_override_method_candidates(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
 		const FSParseResultProvider *p_parse_results) {
-	(void)p_context;
-	(void)p_location;
-	(void)p_parse_results;
-
+	const Vector<String> lines = p_context.source.split("\n");
+	const OverrideMethodCollection collection = find_override_method_collection_uncached(p_context, p_location, lines, p_parse_results);
 	RefactorOverrideMethodsResult result;
-	result.ok = false;
-	result.error_message = "Place the caret inside a class.";
+	result.ok = collection.ok;
+	result.error_message = collection.error_message;
+	for (const OverrideMethodCandidate &candidate : collection.candidates) {
+		if (candidate.enabled) {
+			result.candidates.push_back(candidate.public_candidate);
+		}
+	}
 	return result;
 }
 
@@ -6374,12 +6621,39 @@ RefactorResult prepare_override_method(
 		const RefactorLocation &p_location,
 		const RefactorParams &p_params,
 		const FSParseResultProvider *p_parse_results) {
-	(void)p_context;
-	(void)p_location;
-	(void)p_params;
-	(void)p_parse_results;
-
 	RefactorResult result;
+	const Vector<String> lines = p_context.source.split("\n");
+	const OverrideMethodCollection collection = find_override_method_collection_uncached(p_context, p_location, lines, p_parse_results);
+	if (!collection.ok) {
+		result.ok = false;
+		result.error_message = collection.error_message;
+		return result;
+	}
+
+	const bool has_final_newline = p_context.source.ends_with("\n");
+	for (const OverrideMethodCandidate &candidate : collection.candidates) {
+		if (!candidate.enabled || candidate.public_candidate.id != p_params.override_method_id) {
+			continue;
+		}
+
+		RefactorTextEdit edit;
+		set_extract_method_insertion(edit, lines, has_final_newline, candidate.insertion_line, candidate.rendered_block);
+
+		int leading_newlines = 0;
+		while (leading_newlines < edit.new_text.length() && edit.new_text[leading_newlines] == '\n') {
+			leading_newlines++;
+		}
+		result.rename_anchor_line = edit.start_line + leading_newlines;
+		int caret_column = 0;
+		while (caret_column < candidate.rendered_block.length() && candidate.rendered_block[caret_column] == '\t') {
+			caret_column++;
+		}
+		result.rename_anchor_column = caret_column;
+		result.ok = true;
+		result.edits.push_back(edit);
+		return result;
+	}
+
 	result.ok = false;
 	result.error_message = "Selected override method is no longer available.";
 	return result;
