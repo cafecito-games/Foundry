@@ -73,14 +73,14 @@ PackedStringArray FSBuildPipelineSettingsDialog::_lines_to_string_array(const St
 }
 
 PackedStringArray FSBuildPipelineSettingsDialog::_lines_to_argv(const String &p_text) {
-	// argv entries must be preserved verbatim: empty entries and leading/trailing whitespace can be
-	// meaningful. Keep every line as-is, dropping only the single trailing empty produced by the
-	// editor's final newline.
-	PackedStringArray lines = p_text.split("\n");
-	if (lines.size() > 0 && lines[lines.size() - 1].is_empty()) {
-		lines.remove_at(lines.size() - 1);
+	// argv entries are preserved verbatim: leading/trailing whitespace and empty entries (including a
+	// trailing one) can be meaningful, so one line maps to exactly one argument. Empty text is no
+	// arguments rather than a single empty argument. This round-trips exactly with
+	// _string_array_to_lines() for every argv except the pathological single empty-string argument.
+	if (p_text.is_empty()) {
+		return PackedStringArray();
 	}
-	return lines;
+	return p_text.split("\n");
 }
 
 String FSBuildPipelineSettingsDialog::_string_array_to_lines(const PackedStringArray &p_array) {
@@ -772,12 +772,14 @@ static String _provider_run_block_reason(const FoundryBuildTaskRegistry &p_regis
 }
 
 // The full reason a task must not be run: a blocking registry diagnostic, or any pipeline validation
-// error. The pipeline validates the whole configuration and blocks the stage before executing any
-// task, so a stage-level error (duplicate task, a task listed in two stages) or an unrelated invalid
-// task must stop manual runs too. Task/provider-scoped errors are reported first for a clearer
-// message.
+// error for the requested stage. The pipeline validates the stage-filtered configuration and blocks
+// that stage before executing any task, so a stage-level error (duplicate task, a task listed in
+// both stages) or another invalid task in the same stage must stop manual runs too — but an invalid
+// task in the *other* stage must not, matching the pipeline's per-stage gating. Task/provider-scoped
+// errors are reported first for a clearer message.
 static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
-		const FoundryBuildTaskRegistry &p_registry, const ProjectBuildPipelineConfig::TaskDefinition &p_task) {
+		const FoundryBuildTaskRegistry &p_registry, ProjectBuildPipelineConfig::Stage p_stage,
+		const ProjectBuildPipelineConfig::TaskDefinition &p_task) {
 	const String provider_reason = _provider_run_block_reason(p_registry, p_task.provider);
 	if (!provider_reason.is_empty()) {
 		return provider_reason;
@@ -785,7 +787,8 @@ static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
 
 	const String task_section = "build/tasks/" + p_task.name;
 	const String provider_section = "build/providers/" + p_task.provider;
-	const Vector<ProjectBuildPipelineConfig::ValidationError> errors = p_config.validate(&p_registry);
+	const ProjectBuildPipelineConfig filtered = p_config.filtered_for_stage(p_stage);
+	const Vector<ProjectBuildPipelineConfig::ValidationError> errors = filtered.validate(&p_registry);
 	for (const ProjectBuildPipelineConfig::ValidationError &error : errors) {
 		if (error.section == task_section || error.section == provider_section) {
 			return vformat("%s/%s: %s", error.section, error.key, error.message);
@@ -814,7 +817,7 @@ void FSBuildPipelineSettingsDialog::_run_selected_task() {
 	FoundryBuildTaskRegistry registry;
 	_build_available_registry(registry);
 
-	const String block_reason = _task_run_block_reason(working_config, registry, *task);
+	const String block_reason = _task_run_block_reason(working_config, registry, selected_stage, *task);
 	if (!block_reason.is_empty()) {
 		run_output->set_text(vformat(TTR("Cannot run task '%s': %s"), task->name, block_reason));
 		return;
@@ -854,7 +857,7 @@ void FSBuildPipelineSettingsDialog::_run_selected_stage() {
 		if (task == nullptr) {
 			continue;
 		}
-		const String block_reason = _task_run_block_reason(working_config, registry, *task);
+		const String block_reason = _task_run_block_reason(working_config, registry, selected_stage, *task);
 		if (!block_reason.is_empty()) {
 			output += vformat(TTR("%s: cannot run – %s\n"), task->name, block_reason);
 			output += TTR("Stage stopped: task is blocked.") + String("\n");
