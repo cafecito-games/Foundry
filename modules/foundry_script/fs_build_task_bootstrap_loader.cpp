@@ -324,6 +324,28 @@ Error FoundryBuildTaskBootstrapLoader::load_registered_providers(const FoundryBu
 	return result;
 }
 
+Error FoundryBuildTaskBootstrapLoader::load_registered_providers(
+		const FoundryBuildTaskRegistry &p_registry, const PackedStringArray &p_provider_ids) {
+	clear();
+
+	Error result = OK;
+	for (int i = 0; i < p_provider_ids.size(); i++) {
+		const String provider_id = p_provider_ids[i];
+		if (has_loaded_provider(provider_id)) {
+			continue;
+		}
+
+		const FoundryBuildTaskRegistry::ProviderEntry *provider = p_registry.get_provider(provider_id);
+		if (provider == nullptr) {
+			continue;
+		}
+
+		result = _merge_error(result, _load_provider(*provider));
+	}
+
+	return result;
+}
+
 Error FoundryBuildTaskBootstrapLoader::load_project_bootstrap_providers(const String &p_project_config_path) {
 	FoundryBuildTaskRegistry registry;
 	registry.register_builtin_providers();

@@ -1815,6 +1815,10 @@ bool EditorFileSystem::_fs_watch_poll() {
 #endif // __linux__ && !__ANDROID__
 
 void EditorFileSystem::scan_changes() {
+#ifdef TESTS_ENABLED
+	scan_changes_call_count++;
+#endif
+
 	if (first_scan || // Prevent a premature changes scan from inhibiting the first full scan
 			scanning || scanning_changes || thread.is_started()) {
 		scan_changes_pending = true;

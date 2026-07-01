@@ -131,6 +131,7 @@ public:
 	void write_to_config_file(const Ref<ConfigFile> &p_config) const;
 	ProjectSettings::CustomMap to_project_settings_custom_map() const;
 
+	ProjectBuildPipelineConfig filtered_for_stage(Stage p_stage) const;
 	Vector<ValidationError> validate(const FoundryBuildTaskRegistry *p_provider_registry = nullptr) const;
 	Status get_status() const;
 

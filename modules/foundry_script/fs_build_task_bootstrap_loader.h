@@ -75,6 +75,7 @@ public:
 	bool is_trusted_execution() const;
 
 	Error load_registered_providers(const FoundryBuildTaskRegistry &p_registry);
+	Error load_registered_providers(const FoundryBuildTaskRegistry &p_registry, const PackedStringArray &p_provider_ids);
 	Error load_project_bootstrap_providers(const String &p_project_config_path = "res://project.foundry");
 	Error load_provider_schema(const String &p_provider_id, Ref<FoundryBuildTaskConfigSchema> &r_schema);
 

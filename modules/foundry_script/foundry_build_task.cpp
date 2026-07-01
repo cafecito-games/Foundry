@@ -37,6 +37,14 @@
 #include "core/os/os.h"
 #include "core/string/string_builder.h"
 
+#ifdef TOOLS_ENABLED
+#include "editor/file_system/editor_file_system.h"
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+#include "language_server/fs_language_protocol.h"
+#include "language_server/fs_workspace.h"
+#endif
+#endif
+
 #if defined(UNIX_ENABLED) && !defined(WEB_ENABLED)
 #include <signal.h>
 #include <unistd.h>
@@ -79,6 +87,35 @@ static PackedStringArray _globalize_project_paths(const PackedStringArray &p_pat
 		globalized.push_back(_globalize_project_path(p_paths[i]));
 	}
 	return globalized;
+}
+
+static bool _declared_outputs_include_res_root(const PackedStringArray &p_outputs) {
+	for (int i = 0; i < p_outputs.size(); i++) {
+		const String output = String(p_outputs[i]).strip_edges().replace_char('\\', '/');
+		if (output.begins_with("res://") && output.length() > String("res://").length()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void _notify_successful_outputs_changed(const PackedStringArray &p_outputs) {
+#ifdef TOOLS_ENABLED
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
+	if (protocol != nullptr && protocol->get_workspace().is_valid() &&
+			protocol->get_workspace()->refresh_after_successful_build_outputs(p_outputs)) {
+		return;
+	}
+#endif
+
+	if (_declared_outputs_include_res_root(p_outputs)) {
+		EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton();
+		if (editor_file_system != nullptr) {
+			editor_file_system->scan_changes();
+		}
+	}
+#endif
 }
 
 static bool _has_glob_wildcard(const String &p_path) {
@@ -968,6 +1005,65 @@ Ref<FoundryBuildTaskConfigSchema> FoundryCommandBuildTask::get_config_schema() c
 	return schema;
 }
 
+String FoundryCommandBuildTask::compute_fingerprint(const Ref<FoundryBuildContext> &p_context, String *r_error) const {
+	if (r_error != nullptr) {
+		*r_error = String();
+	}
+
+	if (p_context.is_null()) {
+		if (r_error != nullptr) {
+			*r_error = "Command provider fingerprinting requires a build context.";
+		}
+		return String();
+	}
+
+	const Dictionary options = p_context->get_options();
+	const String command_text = options.has("command") ? String(options["command"]) : String();
+	if (!p_context->is_trusted_execution()) {
+		if (r_error != nullptr) {
+			*r_error = vformat("Build task '%s' requires trusted execution before fingerprinting external command '%s'.",
+					p_context->get_task_name(), command_text);
+		}
+		return String();
+	}
+
+	const PackedStringArray args = _string_array_from_options(options, "args");
+	const String working_directory = options.has("working_directory") ? String(options["working_directory"]) : "res://";
+	const Dictionary environment = _dictionary_from_options(options, "environment");
+	const int timeout_seconds = _int_from_options(options, "timeout_seconds", 60);
+	const PackedStringArray inputs = _string_array_from_options(options, "inputs");
+	const PackedStringArray outputs = _string_array_from_options(options, "outputs");
+	const PackedStringArray tool_version_command = _string_array_from_options(options, "tool_version_command");
+
+	CommandInvocation invocation;
+	String invocation_error;
+	if (!_make_invocation(command_text, args, working_directory, environment, timeout_seconds, invocation, invocation_error)) {
+		if (r_error != nullptr) {
+			*r_error = invocation_error;
+		}
+		return String();
+	}
+
+	CommandRunData tool_version_data;
+	if (!tool_version_command.is_empty()) {
+		PackedStringArray tool_args;
+		for (int i = 1; i < tool_version_command.size(); i++) {
+			tool_args.push_back(tool_version_command[i]);
+		}
+
+		CommandInvocation tool_invocation;
+		String tool_invocation_error;
+		if (_make_invocation(tool_version_command[0], tool_args, working_directory, environment, timeout_seconds, tool_invocation, tool_invocation_error)) {
+			tool_version_data = _run_invocation(tool_invocation);
+		} else {
+			tool_version_data.exit_code = -1;
+			tool_version_data.launch_error = tool_invocation_error;
+		}
+	}
+
+	return _fingerprint_for_invocation(invocation, inputs, outputs, tool_version_data);
+}
+
 Ref<FoundryBuildResult> FoundryCommandBuildTask::run(const Ref<FoundryBuildContext> &p_context) {
 	Ref<FoundryBuildResult> result;
 	result.instantiate();
@@ -1069,6 +1165,8 @@ Ref<FoundryBuildResult> FoundryCommandBuildTask::run(const Ref<FoundryBuildConte
 		result->set_message(message);
 		result->add_diagnostic(_make_command_diagnostic(message, run_data,
 				p_context->get_task_name(), p_context->get_provider_id(), command_text));
+	} else {
+		_notify_successful_outputs_changed(outputs);
 	}
 
 	return result;

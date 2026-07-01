@@ -37,6 +37,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
+#include "editor/file_system/editor_file_system.h"
 #include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
@@ -816,6 +817,34 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports non-zero tool vers
 	Dictionary diagnostic = result->get_diagnostics()[0];
 	CHECK_EQ(int(diagnostic["exit_code"]), 9);
 	CHECK(String(diagnostic["stdout"]).contains("bad-version"));
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Successful res outputs request an editor filesystem scan") {
+	ScopedCommandTaskProject project("build_task_command_scan_changes");
+	EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+
+	const String script =
+			"import pathlib, sys\n"
+			"path = pathlib.Path(sys.argv[1])\n"
+			"path.parent.mkdir(parents=True, exist_ok=True)\n"
+			"path.write_text('generated\\n')\n";
+
+	Dictionary options;
+	options["command"] = "python3";
+	options["args"] = make_args("-c", script, "res://generated/scan_changes.txt");
+	options["outputs"] = make_args("res://generated/scan_changes.txt");
+
+	const int before_scan_count = editor_file_system->get_scan_changes_call_count_for_tests();
+	Ref<FoundryBuildResult> result = run_command_task(options);
+	CHECK(result.is_valid());
+	if (result.is_valid()) {
+		CHECK_MESSAGE(result->is_success(),
+				vformat("message=%s\nstdout=%s\nstderr=%s\nlaunch_error=%s",
+						result->get_message(), result->get_stdout(), result->get_stderr(), result->get_launch_error()));
+	}
+	CHECK_GT(editor_file_system->get_scan_changes_call_count_for_tests(), before_scan_count);
+
+	memdelete(editor_file_system);
 }
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Globalizes inputs and outputs before fingerprinting") {
