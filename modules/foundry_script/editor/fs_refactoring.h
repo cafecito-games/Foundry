@@ -67,6 +67,7 @@ enum class RefactorKind {
 	ADD_TYPE_ANNOTATION,
 	INLINE_VARIABLE,
 	IMPLEMENT_ABSTRACT_METHODS,
+	OVERRIDE_METHOD,
 	INSERT_EXPLICIT_CAST,
 	WIDEN_TO_NULLABLE,
 	SORT_MEMBERS_BY_STYLE_GUIDE,
@@ -98,6 +99,20 @@ struct RefactorCandidatesResult {
 	bool ok = false;
 	String error_message; // Set only when the file cannot be analyzed at all.
 	Vector<RefactorCandidate> candidates;
+};
+
+struct RefactorOverrideMethodCandidate {
+	String id;
+	String name;
+	String signature;
+	String origin;
+	String detail;
+};
+
+struct RefactorOverrideMethodsResult {
+	bool ok = false;
+	String error_message;
+	Vector<RefactorOverrideMethodCandidate> candidates;
 };
 
 struct RefactorResult {
@@ -138,6 +153,7 @@ struct RefactorLocation {
 // Refactor-specific input gathered by the UI before `prepare`.
 struct RefactorParams {
 	String new_name;
+	String override_method_id;
 };
 
 // Everything a refactor needs about the target file.
@@ -159,6 +175,9 @@ public:
 	static Vector<RefactorAvailability> get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location);
 	static RefactorResult prepare(const RefactorContext &p_context, const RefactorLocation &p_location, RefactorKind p_kind, const RefactorParams &p_params);
 	static RefactorCandidatesResult find_candidates(const RefactorContext &p_context, RefactorKind p_kind);
+	static RefactorOverrideMethodsResult get_override_method_candidates(
+			const RefactorContext &p_context,
+			const RefactorLocation &p_location);
 	static bool validate_extract_method_name(
 			const Vector<String> &p_existing_member_names,
 			const String &p_name,

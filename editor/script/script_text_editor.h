@@ -37,6 +37,7 @@
 #include "editor/gui/code_editor.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/item_list.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/tree.h"
@@ -96,6 +97,14 @@ class ScriptTextEditor : public ScriptEditorBase {
 	LineEdit *extract_method_line_edit = nullptr;
 	Label *extract_method_error_label = nullptr;
 	ExtractMethodNamePromptModel extract_method_name_prompt;
+	ConfirmationDialog *override_method_dialog = nullptr;
+	LineEdit *override_method_filter = nullptr;
+	ItemList *override_method_list = nullptr;
+	Label *override_method_error_label = nullptr;
+	Vector<RefactorOverrideMethodCandidate> override_method_candidates;
+	Vector<int> override_method_filtered_indices;
+	RefactorLocation override_method_location;
+	String override_method_source;
 	RefactorDiffPreviewDialog *refactor_diff_preview_dialog = nullptr;
 	int pending_refactor_anchor_line = -1;
 	int pending_refactor_anchor_column = -1;
@@ -209,6 +218,7 @@ class ScriptTextEditor : public ScriptEditorBase {
 		EDIT_REFACTOR_ADD_TYPE_ANNOTATION,
 		EDIT_REFACTOR_INLINE_VARIABLE,
 		EDIT_REFACTOR_IMPLEMENT_ABSTRACT_METHODS,
+		EDIT_REFACTOR_OVERRIDE_METHOD,
 		EDIT_REFACTOR_INSERT_EXPLICIT_CAST,
 		EDIT_REFACTOR_WIDEN_TO_NULLABLE,
 		EDIT_REFACTOR_SORT_MEMBERS_BY_STYLE_GUIDE,
@@ -313,6 +323,15 @@ protected:
 	void _on_extract_method_confirmed();
 	void _on_extract_method_canceled();
 	void _on_extract_method_text_changed(const String &p_text);
+	void _show_override_method_dialog(
+			const RefactorLocation &p_location,
+			const Vector<RefactorOverrideMethodCandidate> &p_candidates);
+	void _populate_override_method_list(const String &p_filter);
+	void _on_override_method_confirmed();
+	void _on_override_method_canceled();
+	void _on_override_method_filter_changed(const String &p_text);
+	void _on_override_method_item_activated(int p_index);
+	void _update_override_method_confirm_state();
 	RefactorContext _make_refactor_context() const;
 	RefactorLocation _make_refactor_location() const;
 	void _text_edit_gui_input(const Ref<InputEvent> &ev);

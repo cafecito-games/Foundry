@@ -1625,6 +1625,21 @@ func f():
 			CHECK(action.is_empty());
 		}
 
+		SUBCASE("does not list Override Method as a generic code action") {
+			const String source =
+					"extends Control\n"
+					"\n"
+					"var marker := 0\n";
+			const String uri = workspace->get_file_uri("res://lsp/code_action_override_method.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Array actions = text_document->codeAction(make_code_action_params(uri, range(pos(2, 1), pos(2, 1))));
+			for (int i = 0; i < actions.size(); i++) {
+				Dictionary action = actions[i];
+				CHECK_NE(String(action["title"]), "Override Method...");
+			}
+		}
+
 		SUBCASE("filters code actions by requested kind") {
 			const String source = "var score = 1\n";
 			const String uri = workspace->get_file_uri("res://lsp/code_action_filter.fs");

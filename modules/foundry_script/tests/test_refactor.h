@@ -38,6 +38,7 @@
 #include "../editor/fs_refactoring_edits.h"
 #include "../editor/fs_refactoring_names.h"
 #include "../editor/fs_refactoring_types.h"
+#include "../fs_analyzer.h"
 #include "../fs_cache.h"
 
 #include "core/config/project_settings.h"
@@ -51,6 +52,25 @@
 #endif
 
 namespace FSTests {
+
+class RefactorIgnoreWarningsScope {
+#ifdef DEBUG_ENABLED
+	bool previous_ignore = false;
+#endif
+
+public:
+	RefactorIgnoreWarningsScope() {
+#ifdef DEBUG_ENABLED
+		previous_ignore = FSParser::is_ignoring_warnings();
+		FSParser::set_ignoring_warnings(true);
+#endif
+	}
+	~RefactorIgnoreWarningsScope() {
+#ifdef DEBUG_ENABLED
+		FSParser::set_ignoring_warnings(previous_ignore);
+#endif
+	}
+};
 
 inline RefactorContext make_context(const String &p_path) {
 	Error err = OK;
@@ -195,6 +215,54 @@ inline RefactorResult run_implement_abstract(const String &p_source, int p_line,
 	return r;
 }
 
+inline RefactorOverrideMethodsResult override_method_candidates(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://override_method_refactor.fs";
+	ctx.source = p_source;
+	return FSRefactoring::get_override_method_candidates(ctx, caret(p_line, p_column));
+}
+
+inline Error analyze_refactored_source(const String &p_source) {
+	RefactorIgnoreWarningsScope ignore_warnings;
+	FSParser parser;
+	Error err = parser.parse(p_source, "user://override_method_refactor_result.fs", false);
+	if (err != OK) {
+		return err;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	return analyzer.analyze();
+}
+
+inline const RefactorOverrideMethodCandidate *find_override_candidate(
+		const Vector<RefactorOverrideMethodCandidate> &p_candidates,
+		const String &p_name) {
+	for (const RefactorOverrideMethodCandidate &candidate : p_candidates) {
+		if (candidate.name == p_name) {
+			return &candidate;
+		}
+	}
+	return nullptr;
+}
+
+inline RefactorResult run_override_method(
+		const String &p_source,
+		int p_line,
+		int p_column,
+		const String &p_candidate_id,
+		String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://override_method_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	params.override_method_id = p_candidate_id;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::OVERRIDE_METHOD, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 inline RefactorResult run_insert_cast(const String &p_source, int p_line, int p_column, String &r_out) {
 	RefactorContext ctx;
 	ctx.path = "user://insert_cast_refactor.fs";
@@ -276,8 +344,8 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 9);
-		if (available.size() < 9) {
+		CHECK_EQ(available.size(), 10);
+		if (available.size() < 10) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -298,15 +366,827 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK_EQ(available[5].kind, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
 		CHECK_FALSE(available[5].enabled);
 		CHECK_FALSE(available[5].disabled_reason.is_empty());
-		CHECK_EQ(available[6].kind, RefactorKind::INSERT_EXPLICIT_CAST);
+		CHECK_EQ(available[6].kind, RefactorKind::OVERRIDE_METHOD);
 		CHECK_FALSE(available[6].enabled);
 		CHECK_FALSE(available[6].disabled_reason.is_empty());
-		CHECK_EQ(available[7].kind, RefactorKind::WIDEN_TO_NULLABLE);
+		CHECK_EQ(available[7].kind, RefactorKind::INSERT_EXPLICIT_CAST);
 		CHECK_FALSE(available[7].enabled);
 		CHECK_FALSE(available[7].disabled_reason.is_empty());
-		CHECK_EQ(available[8].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_EQ(available[8].kind, RefactorKind::WIDEN_TO_NULLABLE);
 		CHECK_FALSE(available[8].enabled);
 		CHECK_FALSE(available[8].disabled_reason.is_empty());
+		CHECK_EQ(available[9].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_FALSE(available[9].enabled);
+		CHECK_FALSE(available[9].disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Override method is listed and disabled outside a class") {
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
+		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
+		CHECK_EQ(available.size(), 10);
+		if (available.size() < 10) {
+			return;
+		}
+		CHECK_EQ(available[6].kind, RefactorKind::OVERRIDE_METHOD);
+		CHECK_EQ(available[6].title, String("Override Method..."));
+		CHECK_FALSE(available[6].enabled);
+		CHECK_EQ(available[6].disabled_reason, String("Place the caret inside a class."));
+	}
+
+	TEST_CASE("Override method lists concrete script base methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure(speed: float = 1.0) -> int:\n"
+				"\t\treturn int(speed)\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "configure");
+		REQUIRE(candidate != nullptr);
+		CHECK(candidate->signature.contains("configure(speed: float = 1.0) -> int"));
+		CHECK(candidate->origin.contains("Base"));
+	}
+
+	TEST_CASE("Override method renders concrete script base stub with super call") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure(speed: float = 1.0) -> int:\n"
+				"\t\treturn int(speed)\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "configure");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc configure(speed: float = 1.0) -> int:\n"));
+		CHECK(out.contains("\t\treturn super.configure(speed)\n"));
+	}
+
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+	TEST_CASE("Override method resolves a concrete base defined in another file") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const String base_path = "res://refactor/override_method_xfile_base.fs";
+		const String child_path = "res://refactor/override_method_xfile_child.fs";
+		FSTests::assert_no_errors_in(base_path);
+
+		RefactorContext ctx = make_context(child_path);
+		RefactorOverrideMethodsResult candidates = FSRefactoring::get_override_method_candidates(ctx, caret(2, 1));
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "configure");
+		REQUIRE(candidate != nullptr);
+
+		RefactorParams params;
+		params.override_method_id = candidate->id;
+		RefactorResult r = FSRefactoring::prepare(ctx, caret(2, 1), RefactorKind::OVERRIDE_METHOD, params);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+
+		String out;
+		REQUIRE(FSRefactorEdits::apply(ctx.source, r.edits, out));
+		CHECK(out.contains("func configure(speed: float = 1.0) -> int:"));
+		CHECK(out.contains("return super.configure(speed)"));
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+#endif
+
+	TEST_CASE("Override method stale selected identity fails without edits") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, "script|Missing|configure", out);
+		CHECK_FALSE(r.ok);
+		CHECK_EQ(r.error_message, String("Selected override method is no longer available."));
+		CHECK(r.edits.is_empty());
+		CHECK(out.is_empty());
+	}
+
+	TEST_CASE("Override method stale selected identity fails when signature changes") {
+		const String old_source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		RefactorOverrideMethodsResult old_candidates = FSTests::override_method_candidates(old_source, 4, 1);
+		REQUIRE_MESSAGE(old_candidates.ok, old_candidates.error_message);
+		const RefactorOverrideMethodCandidate *old_candidate =
+				FSTests::find_override_candidate(old_candidates.candidates, "configure");
+		REQUIRE(old_candidate != nullptr);
+
+		const String changed_source =
+				"class Base:\n"
+				"\tfunc configure(speed: float) -> int:\n"
+				"\t\treturn int(speed)\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(changed_source, 4, 1, old_candidate->id, out);
+		CHECK_FALSE(r.ok);
+		CHECK_EQ(r.error_message, String("Selected override method is no longer available."));
+		CHECK(r.edits.is_empty());
+		CHECK(out.is_empty());
+	}
+
+	TEST_CASE("Override method lists native virtual methods") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(result.candidates, "_draw");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("_draw() -> void"));
+		CHECK(candidate->origin.contains("Control"));
+	}
+
+	TEST_CASE("Override method renders native virtual stub with pass body") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE(candidates.ok);
+		if (!candidates.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_draw");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("func _draw() -> void:\n"));
+		CHECK(out.contains("\tpass\n"));
+		CHECK_FALSE(out.contains("super._draw()"));
+	}
+
+	TEST_CASE("Override method native virtual stub analyzes without invalid super call") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_draw");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
+	TEST_CASE("Override method skips non-virtual native methods") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "free") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_draw") != nullptr);
+	}
+
+	TEST_CASE("Override method sanitizes native virtual reserved argument names") {
+		const String source =
+				"extends ScriptLanguageExtension\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		if (!candidates.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_make_template");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("template: String"));
+		CHECK(candidate->signature.contains("class_name_arg: String"));
+		CHECK(candidate->signature.contains("base_class_name: String"));
+		CHECK_FALSE(candidate->signature.contains("template: String, class_name: String"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("class_name_arg: String"));
+		CHECK_FALSE(out.contains("super._make_template"));
+		CHECK(out.contains("\tpass\n"));
+	}
+
+	TEST_CASE("Override method renders native virtual Dictionary return with literal default") {
+		const String source =
+				"extends AnimationNode\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_get_child_nodes");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("func _get_child_nodes() -> Dictionary:\n"));
+		CHECK_FALSE(out.contains("super._get_child_nodes"));
+		CHECK(out.contains("\treturn {}\n"));
+	}
+
+	TEST_CASE("Override method skips native virtual hidden by final script base method") {
+		const String source =
+				"class Base extends Control:\n"
+				"\tfinal func _draw() -> void:\n"
+				"\t\tpass\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		if (result.ok) {
+			CHECK(FSTests::find_override_candidate(result.candidates, "_draw") == nullptr);
+		} else {
+			CHECK_EQ(result.error_message, String("No overridable methods found."));
+		}
+	}
+
+	TEST_CASE("Override method skips already declared native virtual methods") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"func _draw() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_draw") == nullptr);
+	}
+
+	TEST_CASE("Override method includes abstract methods as selectable candidates") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"class Circle extends Base:\n"
+				"\tvar radius := 1.0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "area");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("func area() -> float:"));
+		CHECK(out.contains("push_error(\"Not implemented: area\")"));
+		CHECK(out.contains("return 0.0"));
+	}
+
+	TEST_CASE("Override method includes abstract candidates in abstract target classes") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func area() -> float\n"
+				"abstract class Shape extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "area") != nullptr);
+	}
+
+	TEST_CASE("Override method specializes abstract generic base signatures") {
+		const String source =
+				"abstract class Base[T]:\n"
+				"\tabstract func id(value: T) -> T\n"
+				"class Child extends Base[int]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "id");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func id(value: int) -> int"));
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value: int) -> int:\n"));
+		CHECK_FALSE(out.contains("\tfunc id(value: T) -> T:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: id\")\n"));
+		CHECK(out.contains("\t\treturn 0\n"));
+	}
+
+	TEST_CASE("Override method specializes abstract generic trait signatures") {
+		const String source =
+				"trait Holder[T]:\n"
+				"\tabstract func take(value: T) -> T\n"
+				"class IntBox uses Holder[int]:\n"
+				"\tpass\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "take");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func take(value: int) -> int"));
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc take(value: int) -> int:\n"));
+		CHECK_FALSE(out.contains("\tfunc take(value: T) -> T:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: take\")\n"));
+		CHECK(out.contains("\t\treturn 0\n"));
+	}
+
+	TEST_CASE("Override method includes abstract rest parameter methods") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func record(...args: Array) -> void\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "record");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func record(...args: Array) -> void"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc record(...args: Array) -> void:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: record\")\n"));
+		CHECK_FALSE(out.contains("super.record"));
+	}
+
+	TEST_CASE("Override method skips already declared methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"\tfunc available() -> int:\n"
+				"\t\treturn 2\n"
+				"class Child extends Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 3\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 7, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "available") != nullptr);
+	}
+
+	TEST_CASE("Override method skips final base methods") {
+		const String source =
+				"class Base:\n"
+				"\tfinal func locked() -> int:\n"
+				"\t\treturn 1\n"
+				"\tfunc available() -> int:\n"
+				"\t\treturn 2\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "locked") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "available") != nullptr);
+	}
+
+	TEST_CASE("Override method skips rest-parameter script base methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc record(...args: Array) -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "record") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method skips script base constructors") {
+		const String source =
+				"class Base:\n"
+				"\tfunc _init(value: int = 0) -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_init") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method skips script base static constructors") {
+		const String source =
+				"class Base:\n"
+				"\tstatic func _static_init() -> void:\n"
+				"\t\tpass\n"
+				"\tstatic func setup() -> void:\n"
+				"\t\tpass\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_static_init") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "setup") != nullptr);
+	}
+
+	TEST_CASE("Override method skips generic script base methods with non-inferable type parameters") {
+		const String source =
+				"class Base:\n"
+				"\tfunc make[T]() -> Array[T]:\n"
+				"\t\treturn []\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "make") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method skips generic script base methods inferred only through Callable signatures") {
+		const String source =
+				"class Base:\n"
+				"\tfunc apply[T](cb: Callable[[T], void]) -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "apply") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method skips generic script base methods inferred only through method bounds") {
+		const String source =
+				"class Base:\n"
+				"\tfunc constrained[T, U: T](value: U) -> U:\n"
+				"\t\treturn value\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "constrained") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method keeps generic script base methods with inferable type parameters") {
+		const String source =
+				"class Base:\n"
+				"\tfunc identity[T](value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "identity");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc identity[T](value: T) -> T:\n"));
+		CHECK(out.contains("\t\treturn super.identity(value)\n"));
+	}
+
+	TEST_CASE("Override method specializes generic script base class method signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc id(value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Child extends Base[int]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "id");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value: int) -> int:\n"));
+		CHECK(out.contains("\t\treturn super.id(value)\n"));
+	}
+
+	TEST_CASE("Override method erases raw generic script base method signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc id(value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "id");
+		REQUIRE(candidate != nullptr);
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value):\n"));
+		CHECK_FALSE(out.contains("\tfunc id(value: T) -> T:\n\t\treturn super.id(value)\n"));
+		CHECK(out.contains("\t\treturn super.id(value)\n"));
+	}
+
+	TEST_CASE("Override method erases raw generic script base container signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc items(values: Array[T]) -> Array[T]:\n"
+				"\t\treturn values\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "items");
+		REQUIRE(candidate != nullptr);
+		CHECK_FALSE(candidate->signature.contains("Array[T]"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc items(values: Array) -> Array:\n"));
+		CHECK_FALSE(out.contains("\tfunc items(values: Array[T]) -> Array[T]:\n\t\treturn super.items(values)\n"));
+		CHECK(out.contains("\t\treturn super.items(values)\n"));
+	}
+
+	TEST_CASE("Override method preserves forwarded child generic base method signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc id(value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Child[U] extends Base[U]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "id");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value: U) -> U:\n"));
+		CHECK(out.contains("\t\treturn super.id(value)\n"));
+	}
+
+	TEST_CASE("Override method skips methods made non-inferable by raw generic erasure") {
+		const String source =
+				"class Pair[A, B]:\n"
+				"\tpass\n"
+				"class Base[T]:\n"
+				"\tfunc choose[U](pair: Pair[T, U]) -> U:\n"
+				"\t\treturn null\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 8, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "choose") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method erases raw intermediate generic base signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc id(value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Mid[T] extends Base[T]:\n"
+				"\tpass\n"
+				"class Child extends Mid:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "id");
+		REQUIRE(candidate != nullptr);
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 6, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value):\n"));
+		CHECK_FALSE(out.contains("\tfunc id(value: T) -> T:\n\t\treturn super.id(value)\n"));
+		CHECK(out.contains("\t\treturn super.id(value)\n"));
+	}
+
+	TEST_CASE("Override method preserves forwarded child generic through intermediate base signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc id(value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Mid[T] extends Base[T]:\n"
+				"\tpass\n"
+				"class Child[U] extends Mid[U]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "id");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 6, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value: U) -> U:\n"));
+		CHECK(out.contains("\t\treturn super.id(value)\n"));
+	}
+
+	TEST_CASE("Override method preserves method generics on specialized generic script base classes") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc identity[U](value: U) -> U:\n"
+				"\t\treturn value\n"
+				"class Child extends Base[int]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "identity");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc identity[U](value: U) -> U:\n"));
+		CHECK(out.contains("\t\treturn super.identity(value)\n"));
+	}
+
+	TEST_CASE("Override method specializes method generic bounds on specialized script base classes") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc keep[U: T](value: U) -> U:\n"
+				"\t\treturn value\n"
+				"class Child extends Base[RefCounted]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "keep");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc keep[U: RefCounted](value: U) -> U:\n"));
+		CHECK(out.contains("\t\treturn super.keep(value)\n"));
+	}
+
+	TEST_CASE("Override method renders async script base stub with awaited super call") {
+		const String source =
+				"class Base:\n"
+				"\tasync func load(id: int) -> int:\n"
+				"\t\treturn id\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "load");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tasync func load(id: int) -> int:\n"));
+		CHECK(out.contains("\t\treturn await super.load(id)\n"));
+	}
+
+	TEST_CASE("Override method renders body-inferred coroutine script base stub with awaited super call") {
+		const String source =
+				"class Base:\n"
+				"\tsignal done\n"
+				"\tfunc load() -> int:\n"
+				"\t\tawait done\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "load");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 6, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc load() -> int:\n"));
+		CHECK(out.contains("\t\treturn await super.load()\n"));
+	}
+
+	TEST_CASE("Override method skips script base methods that conflict with target non-function members") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"\tfunc available() -> int:\n"
+				"\t\treturn 2\n"
+				"class Child extends Base:\n"
+				"\tvar configure := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "available") != nullptr);
+	}
+
+	TEST_CASE("Override method keeps script base methods that match target export group labels") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\t@export_group(\"configure\")\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
 	}
 
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
@@ -1917,7 +2797,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 9);
+		REQUIRE_EQ(available.size(), 10);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -2270,7 +3150,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 9);
+		REQUIRE_EQ(available.size(), 10);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -2279,7 +3159,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = FSRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 9);
+		REQUIRE_EQ(text_selection_available.size(), 10);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -2589,7 +3469,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 9);
+		REQUIRE_EQ(available.size(), 10);
 		if (available.size() >= 5) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
@@ -4241,7 +5121,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.fs";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 9);
+			REQUIRE_EQ(available.size(), 10);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -4269,7 +5149,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.fs";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 9);
+			REQUIRE_EQ(available.size(), 10);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
