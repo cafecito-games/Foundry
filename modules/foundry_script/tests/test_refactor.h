@@ -397,6 +397,63 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn super.configure(speed)\n"));
 	}
 
+	TEST_CASE("Override method lists native virtual methods") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(result.candidates, "_draw");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("_draw() -> void"));
+		CHECK(candidate->origin.contains("Control"));
+	}
+
+	TEST_CASE("Override method renders native virtual stub with super call") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE(candidates.ok);
+		if (!candidates.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_draw");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("func _draw() -> void:\n"));
+		CHECK(out.contains("\tsuper._draw()\n"));
+	}
+
+	TEST_CASE("Override method skips already declared native virtual methods") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"func _draw() -> void:\n"
+				"\tpass\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_draw") == nullptr);
+	}
+
 	TEST_CASE("Override method includes abstract methods as selectable candidates") {
 		const String source =
 				"abstract class Base:\n"

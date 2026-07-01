@@ -6389,6 +6389,12 @@ bool is_constructor_like_override_method(const StringName &p_name) {
 	return p_name == SNAME("_init") || p_name == SNAME("_static_init");
 }
 
+bool is_void_datatype(const FSParser::DataType &p_type) {
+	return p_type.is_set() && !p_type.is_variant() &&
+			p_type.kind == FSParser::DataType::BUILTIN &&
+			p_type.builtin_type == Variant::NIL;
+}
+
 void collect_method_type_parameter_names(
 		const FSParser::FunctionNode *p_function,
 		HashSet<StringName> &r_names) {
@@ -7005,6 +7011,238 @@ void collect_script_base_override_candidates(
 	}
 }
 
+StringName native_base_name_for_class(
+		const FSParser::ClassNode *p_target,
+		const String &p_target_path,
+		const Vector<String> &p_target_lines,
+		const FSParseResultProvider *p_parse_results) {
+	if (p_target == nullptr) {
+		return StringName();
+	}
+
+	HashSet<const FSParser::ClassNode *> visited;
+	const FSParser::ClassNode *current = p_target;
+	String current_path = p_target_path;
+	const Vector<String> *current_lines = &p_target_lines;
+
+	while (current != nullptr) {
+		if (visited.has(current)) {
+			return StringName();
+		}
+		visited.insert(current);
+
+		const FSParser::DataType &base_type = current->base_type;
+		switch (base_type.kind) {
+			case FSParser::DataType::NATIVE:
+				return base_type.native_type;
+			case FSParser::DataType::SCRIPT: {
+				Ref<Script> base_script = base_type.script_type;
+				StringName native_type = base_type.native_type;
+				while (base_script.is_valid()) {
+					if (native_type == StringName()) {
+						native_type = base_script->get_instance_base_type();
+					}
+					base_script = base_script->get_base_script();
+				}
+				return native_type;
+			}
+			case FSParser::DataType::CLASS: {
+				String base_path;
+				const Vector<String> *base_lines = nullptr;
+				const FSParser::ClassNode *base = resolve_base_class(
+						current,
+						p_parse_results,
+						current_path,
+						current_lines,
+						base_path,
+						&base_lines);
+				if (base == nullptr) {
+					return base_type.native_type;
+				}
+				current = base;
+				current_path = base_path;
+				current_lines = base_lines;
+				continue;
+			}
+			case FSParser::DataType::BUILTIN:
+			case FSParser::DataType::ENUM:
+			case FSParser::DataType::TYPE_PARAMETER:
+			case FSParser::DataType::VARIANT:
+			case FSParser::DataType::RESOLVING:
+			case FSParser::DataType::UNRESOLVED:
+				return StringName();
+		}
+	}
+
+	return StringName();
+}
+
+FSParser::DataType native_datatype_from_property(const PropertyInfo &p_property, bool p_is_argument) {
+	FSParser::DataType result;
+	result.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	result.is_read_only = false;
+	if (p_property.type == Variant::NIL &&
+			(p_is_argument || (p_property.usage & PROPERTY_USAGE_NIL_IS_VARIANT))) {
+		result.kind = FSParser::DataType::VARIANT;
+		return result;
+	}
+	if (p_property.type == Variant::OBJECT) {
+		StringName class_name = p_property.class_name;
+		if (String(class_name).ends_with("?")) {
+			String nullable_class_name = class_name;
+			nullable_class_name = nullable_class_name.substr(0, nullable_class_name.length() - 1);
+			class_name = nullable_class_name;
+			result.is_nullable = true;
+		}
+		result.kind = FSParser::DataType::NATIVE;
+		result.native_type = class_name == StringName() ? SNAME("Object") : class_name;
+		return result;
+	}
+
+	result.kind = FSParser::DataType::BUILTIN;
+	result.builtin_type = p_property.type;
+	return result;
+}
+
+bool native_argument_name(const PropertyInfo &p_argument, int p_index, String &r_name) {
+	r_name = p_argument.name;
+	if (r_name.is_empty()) {
+		r_name = "arg" + itos(p_index + 1);
+	}
+
+	String reason;
+	return FSRefactorNames::validate_identifier(r_name, reason);
+}
+
+bool render_native_method_signature(
+		const MethodInfo &p_method,
+		const String &p_class_indent,
+		Vector<String> &r_argument_names,
+		FSParser::DataType &r_return_type,
+		String &r_signature) {
+	String reason;
+	if (p_method.name.is_empty() || !FSRefactorNames::validate_identifier(p_method.name, reason)) {
+		return false;
+	}
+
+	String signature = p_class_indent + "func " + p_method.name + "(";
+	for (int i = 0; i < p_method.arguments.size(); i++) {
+		if (i > 0) {
+			signature += ", ";
+		}
+		String argument_name;
+		if (!native_argument_name(p_method.arguments[i], i, argument_name)) {
+			return false;
+		}
+		r_argument_names.push_back(argument_name);
+		signature += argument_name;
+
+		const FSParser::DataType argument_type = native_datatype_from_property(p_method.arguments[i], true);
+		String rendered_type;
+		if (FSRefactorTypes::render_annotatable_type(argument_type, rendered_type)) {
+			signature += ": " + rendered_type;
+		}
+	}
+	signature += ")";
+
+	r_return_type = native_datatype_from_property(p_method.return_val, false);
+	if (is_void_datatype(r_return_type)) {
+		signature += " -> void";
+	} else {
+		String rendered_return;
+		if (FSRefactorTypes::render_annotatable_type(r_return_type, rendered_return)) {
+			signature += " -> " + rendered_return;
+		}
+	}
+
+	r_signature = signature;
+	return true;
+}
+
+String render_native_super_call_body(
+		const String &p_method_name,
+		const Vector<String> &p_argument_names,
+		const FSParser::DataType &p_return_type,
+		const String &p_class_indent) {
+	const String body_indent = p_class_indent + "\t";
+	String call = "super." + p_method_name + "(";
+	for (int i = 0; i < p_argument_names.size(); i++) {
+		if (i > 0) {
+			call += ", ";
+		}
+		call += p_argument_names[i];
+	}
+	call += ")";
+	return body_indent + (is_void_datatype(p_return_type) ? call : "return " + call) + "\n";
+}
+
+void add_native_override_candidate(
+		const StringName &p_native_class,
+		const MethodInfo &p_method,
+		const String &p_class_indent,
+		int p_insertion_line,
+		Vector<OverrideMethodCandidate> &r_candidates) {
+	if ((p_method.flags & METHOD_FLAG_VARARG) != 0 || (p_method.flags & METHOD_FLAG_STATIC) != 0 ||
+			is_constructor_like_override_method(StringName(p_method.name))) {
+		return;
+	}
+
+	Vector<String> argument_names;
+	FSParser::DataType return_type;
+	String signature;
+	if (!render_native_method_signature(p_method, "", argument_names, return_type, signature)) {
+		return;
+	}
+
+	OverrideMethodCandidate candidate;
+	candidate.enabled = true;
+	candidate.rendered_block = p_class_indent + signature + ":\n" +
+			render_native_super_call_body(p_method.name, argument_names, return_type, p_class_indent);
+	candidate.insertion_line = p_insertion_line;
+	candidate.public_candidate.name = p_method.name;
+	candidate.public_candidate.signature = signature;
+	candidate.public_candidate.origin = String(p_native_class);
+	candidate.public_candidate.detail =
+			candidate.public_candidate.signature + " - " + candidate.public_candidate.origin;
+	candidate.public_candidate.id =
+			make_override_method_id("native", String(p_native_class), StringName(p_method.name));
+	r_candidates.push_back(candidate);
+}
+
+void collect_native_base_override_candidates(
+		const FSParser::ClassNode *p_target,
+		const String &p_target_path,
+		const Vector<String> &p_target_lines,
+		const FSParseResultProvider *p_parse_results,
+		HashSet<StringName> p_decided_names,
+		const String &p_class_indent,
+		int p_insertion_line,
+		Vector<OverrideMethodCandidate> &r_candidates) {
+	const StringName native_base =
+			native_base_name_for_class(p_target, p_target_path, p_target_lines, p_parse_results);
+	if (native_base == StringName() || !ClassDB::class_exists(native_base)) {
+		return;
+	}
+
+	List<MethodInfo> methods;
+	ClassDB::get_virtual_methods(native_base, &methods);
+	HashSet<StringName> native_seen_names;
+	for (const MethodInfo &method : methods) {
+		const StringName name = StringName(method.name);
+		if (name == StringName() || p_decided_names.has(name) || native_seen_names.has(name)) {
+			continue;
+		}
+		native_seen_names.insert(name);
+		add_native_override_candidate(
+				native_base,
+				method,
+				p_class_indent,
+				p_insertion_line,
+				r_candidates);
+		p_decided_names.insert(name);
+	}
+}
+
 void collect_override_candidate_names(
 		const Vector<OverrideMethodCandidate> &p_candidates,
 		HashSet<StringName> &r_names) {
@@ -7025,6 +7263,7 @@ OverrideMethodCollection collect_override_methods_in_tree(
 	const FSParser::ClassNode *target = find_enclosing_class(p_tree, p_location.start_line);
 	const bool is_implicit_root_without_script_base = target == p_tree &&
 			target->identifier == nullptr &&
+			(!target->extends_used || p_location.start_line <= 0) &&
 			target->base_type.kind != FSParser::DataType::CLASS &&
 			target->base_type.kind != FSParser::DataType::SCRIPT;
 	if (target == nullptr || is_implicit_root_without_script_base) {
@@ -7066,6 +7305,18 @@ OverrideMethodCollection collect_override_methods_in_tree(
 		add_abstract_override_candidate(owed, class_indent, insertion_line, collection.candidates);
 		abstract_decided_names.insert(name);
 	}
+
+	HashSet<StringName> native_decided_names = abstract_decided_names;
+	collect_override_candidate_names(collection.candidates, native_decided_names);
+	collect_native_base_override_candidates(
+			target,
+			p_path,
+			p_lines,
+			p_parse_results,
+			native_decided_names,
+			class_indent,
+			insertion_line,
+			collection.candidates);
 
 	collection.ok = !collection.candidates.is_empty();
 	if (!collection.ok) {
