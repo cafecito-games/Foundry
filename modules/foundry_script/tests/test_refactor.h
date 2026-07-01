@@ -435,6 +435,63 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(FSTests::find_override_candidate(result.candidates, "area") != nullptr);
 	}
 
+	TEST_CASE("Override method specializes abstract generic base signatures") {
+		const String source =
+				"abstract class Base[T]:\n"
+				"\tabstract func id(value: T) -> T\n"
+				"class Child extends Base[int]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "id");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func id(value: int) -> int"));
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value: int) -> int:\n"));
+		CHECK_FALSE(out.contains("\tfunc id(value: T) -> T:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: id\")\n"));
+		CHECK(out.contains("\t\treturn 0\n"));
+	}
+
+	TEST_CASE("Override method includes abstract rest parameter methods") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func record(...args: Array) -> void\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "record");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func record(...args: Array) -> void"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc record(...args: Array) -> void:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: record\")\n"));
+		CHECK_FALSE(out.contains("super.record"));
+	}
+
 	TEST_CASE("Override method skips already declared methods") {
 		const String source =
 				"class Base:\n"

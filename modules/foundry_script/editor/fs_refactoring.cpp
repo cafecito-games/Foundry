@@ -192,6 +192,8 @@ struct InlineVariableCandidate {
 struct OwedAbstractMethod {
 	const FSParser::FunctionNode *function = nullptr;
 	const Vector<String> *declaring_lines = nullptr;
+	const FSParser::ClassNode *declaring_class = nullptr;
+	FSParser::DataType specialized_base;
 };
 
 struct ImplementAbstractCandidate {
@@ -5886,10 +5888,19 @@ void collect_owed_trait_abstract_methods(
 			OwedAbstractMethod owed;
 			owed.function = function;
 			owed.declaring_lines = trait_lines;
+			owed.declaring_class = trait;
 			r_owed.push_back(owed);
 		}
 	}
 }
+
+FSParser::DataType specialize_override_parent_type(
+		const FSParser::ClassNode *p_current_class,
+		const FSParser::DataType &p_current_specialized_type);
+
+FSParser::DataType align_specialized_override_type_to_class(
+		const FSParser::DataType &p_type,
+		const FSParser::ClassNode *p_class);
 
 // Collect abstract methods the target class still owes, most-derived-first.
 // Walks {target, base, base-of-base, ...}; for each method name the FIRST
@@ -5909,6 +5920,7 @@ void collect_owed_abstract_methods(
 	// may be malformed or self-referential; track visited classes to avoid looping.
 	HashSet<const FSParser::ClassNode *> visited;
 	const FSParser::ClassNode *current = p_target;
+	FSParser::DataType current_specialized_type;
 	String current_path = p_target_path;
 	const Vector<String> *current_lines = &p_target_lines;
 	bool is_target = true;
@@ -5942,15 +5954,21 @@ void collect_owed_abstract_methods(
 				OwedAbstractMethod owed;
 				owed.function = function;
 				owed.declaring_lines = current_lines;
+				owed.declaring_class = current;
+				owed.specialized_base = current_specialized_type;
 				r_owed.push_back(owed);
 			}
 		}
 		String base_path;
 		const Vector<String> *base_lines = nullptr;
-		current = resolve_base_class(current, p_parse_results, current_path, current_lines, base_path, &base_lines);
+		FSParser::DataType specialized_base = specialize_override_parent_type(current, current_specialized_type);
+		const FSParser::ClassNode *base = resolve_base_class(current, p_parse_results, current_path, current_lines, base_path, &base_lines);
 		if (!base_path.is_empty() && base_path != current_path && r_depends_on_external_declarations != nullptr) {
 			*r_depends_on_external_declarations = true;
 		}
+		specialized_base = align_specialized_override_type_to_class(specialized_base, base);
+		current = base;
+		current_specialized_type = specialized_base;
 		current_path = base_path;
 		current_lines = base_lines;
 		is_target = false;
@@ -6001,7 +6019,8 @@ String render_function_signature(
 		const String &p_class_indent,
 		const Vector<FSParser::DataType> *p_parameter_types = nullptr,
 		const FSParser::DataType *p_return_type_override = nullptr,
-		const Vector<FSParser::DataType> *p_type_parameter_bounds = nullptr) {
+		const Vector<FSParser::DataType> *p_type_parameter_bounds = nullptr,
+		const FSParser::DataType *p_rest_parameter_type = nullptr) {
 	const String name = String(p_function->identifier->name);
 
 	// An abstract method on a class cannot be static, but a trait may declare an
@@ -6093,8 +6112,12 @@ String render_function_signature(
 			signature += ", ";
 		}
 		signature += "..." + String(p_function->rest_parameter->identifier->name);
+		FSParser::DataType rest_parameter_type = p_function->rest_parameter->get_datatype();
+		if (p_rest_parameter_type != nullptr) {
+			rest_parameter_type = *p_rest_parameter_type;
+		}
 		String rendered_rest_type;
-		if (FSRefactorTypes::render_annotatable_type(p_function->rest_parameter->get_datatype(), rendered_rest_type)) {
+		if (FSRefactorTypes::render_annotatable_type(rest_parameter_type, rendered_rest_type)) {
 			signature += ": " + rendered_rest_type;
 		}
 	}
@@ -6126,10 +6149,14 @@ String render_function_signature(
 String render_abstract_stub(
 		const FSParser::FunctionNode *p_function,
 		const Vector<String> &p_lines,
-		const String &p_class_indent) {
+		const String &p_class_indent,
+		const Vector<FSParser::DataType> *p_parameter_types = nullptr,
+		const FSParser::DataType *p_return_type_override = nullptr,
+		const Vector<FSParser::DataType> *p_type_parameter_bounds = nullptr,
+		const FSParser::DataType *p_rest_parameter_type = nullptr) {
 	const String body_indent = p_class_indent + "\t";
 	const String name = String(p_function->identifier->name);
-	const FSParser::DataType return_type = p_function->get_datatype();
+	const FSParser::DataType return_type = p_return_type_override != nullptr ? *p_return_type_override : p_function->get_datatype();
 	// A void return type is set but stringifies as a NIL builtin, which
 	// render_annotatable_type rejects; treat it as an explicit `-> void` with no
 	// return statement.
@@ -6139,7 +6166,14 @@ String render_abstract_stub(
 	String rendered_return;
 	const bool has_typed_return = !is_void && FSRefactorTypes::render_annotatable_type(return_type, rendered_return);
 
-	String result = render_function_signature(p_function, p_lines, p_class_indent);
+	String result = render_function_signature(
+			p_function,
+			p_lines,
+			p_class_indent,
+			p_parameter_types,
+			&return_type,
+			p_type_parameter_bounds,
+			p_rest_parameter_type);
 	result += ":\n";
 	result += body_indent + "push_error(\"Not implemented: " + name + "\")\n";
 
@@ -6778,27 +6812,70 @@ void add_abstract_override_candidate(
 		int p_insertion_line,
 		Vector<OverrideMethodCandidate> &r_candidates) {
 	if (p_owed.function == nullptr || p_owed.function->identifier == nullptr ||
-			p_owed.function->rest_parameter != nullptr ||
 			is_constructor_like_override_method(p_owed.function->identifier->name)) {
 		return;
 	}
 	Vector<FSParser::DataType> parameter_types;
 	for (const FSParser::ParameterNode *parameter : p_owed.function->parameters) {
-		parameter_types.push_back(parameter != nullptr ? parameter->get_datatype() : FSParser::DataType());
+		FSParser::DataType parameter_type;
+		if (parameter != nullptr) {
+			parameter_type = substitute_override_member_type(parameter->get_datatype(), p_owed.specialized_base, p_owed.declaring_class, p_owed.function);
+		}
+		parameter_types.push_back(parameter_type);
 	}
 	if (!generic_method_type_parameters_are_inferable_from_parameter_types(p_owed.function, parameter_types)) {
 		return;
+	}
+	FSParser::DataType rest_parameter_type;
+	const FSParser::DataType *rest_parameter_type_ptr = nullptr;
+	if (p_owed.function->rest_parameter != nullptr) {
+		rest_parameter_type = substitute_override_member_type(
+				p_owed.function->rest_parameter->get_datatype(),
+				p_owed.specialized_base,
+				p_owed.declaring_class,
+				p_owed.function);
+		rest_parameter_type_ptr = &rest_parameter_type;
+	}
+	const FSParser::DataType return_type =
+			substitute_override_member_type(p_owed.function->get_datatype(), p_owed.specialized_base, p_owed.declaring_class, p_owed.function);
+	Vector<FSParser::DataType> type_parameter_bounds;
+	for (const FSParser::TypeParameterNode *type_parameter : p_owed.function->type_parameters) {
+		FSParser::DataType bound_type;
+		if (type_parameter != nullptr && type_parameter->bound != nullptr) {
+			if (type_parameter->resolved_bound.is_set()) {
+				bound_type = type_parameter->resolved_bound;
+			} else {
+				bound_type = type_parameter->bound->get_datatype();
+				bound_type.is_meta_type = false;
+			}
+			bound_type = substitute_override_member_type(bound_type, p_owed.specialized_base, p_owed.declaring_class, p_owed.function);
+		}
+		type_parameter_bounds.push_back(bound_type);
 	}
 
 	const Vector<String> empty_lines;
 	const Vector<String> &lines = p_owed.declaring_lines != nullptr ? *p_owed.declaring_lines : empty_lines;
 	OverrideMethodCandidate candidate;
 	candidate.enabled = true;
-	candidate.rendered_block = render_abstract_stub(p_owed.function, lines, p_class_indent);
+	candidate.rendered_block = render_abstract_stub(
+			p_owed.function,
+			lines,
+			p_class_indent,
+			&parameter_types,
+			&return_type,
+			&type_parameter_bounds,
+			rest_parameter_type_ptr);
 	candidate.insertion_line = p_insertion_line;
 	const String name = String(p_owed.function->identifier->name);
 	candidate.public_candidate.name = name;
-	candidate.public_candidate.signature = render_function_signature(p_owed.function, lines, "");
+	candidate.public_candidate.signature = render_function_signature(
+			p_owed.function,
+			lines,
+			"",
+			&parameter_types,
+			&return_type,
+			&type_parameter_bounds,
+			rest_parameter_type_ptr);
 	candidate.public_candidate.origin = "abstract requirement";
 	candidate.public_candidate.detail = candidate.public_candidate.signature + " - abstract requirement";
 	candidate.public_candidate.id = make_override_method_id("abstract", candidate.public_candidate.origin, p_owed.function->identifier->name);
