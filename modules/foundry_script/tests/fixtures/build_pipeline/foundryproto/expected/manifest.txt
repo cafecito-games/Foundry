@@ -1,0 +1,3 @@
+package=game.net
+messages=Player
+outputs=player_proto.fs
