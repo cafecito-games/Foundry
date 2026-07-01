@@ -6355,6 +6355,36 @@ RefactorResult prepare_implement_abstract(
 	return result;
 }
 
+RefactorOverrideMethodsResult find_override_method_candidates(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const FSParseResultProvider *p_parse_results) {
+	(void)p_context;
+	(void)p_location;
+	(void)p_parse_results;
+
+	RefactorOverrideMethodsResult result;
+	result.ok = false;
+	result.error_message = "Place the caret inside a class.";
+	return result;
+}
+
+RefactorResult prepare_override_method(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location,
+		const RefactorParams &p_params,
+		const FSParseResultProvider *p_parse_results) {
+	(void)p_context;
+	(void)p_location;
+	(void)p_params;
+	(void)p_parse_results;
+
+	RefactorResult result;
+	result.ok = false;
+	result.error_message = "Selected override method is no longer available.";
+	return result;
+}
+
 RefactorResult prepare_type_annotation(
 		const RefactorContext &p_context,
 		const RefactorLocation &p_location,
@@ -7472,6 +7502,19 @@ RefactorResult prepare_sort_members_by_style_guide(const RefactorContext &p_cont
 	return result;
 }
 
+RefactorOverrideMethodsResult FSRefactoring::get_override_method_candidates(
+		const RefactorContext &p_context,
+		const RefactorLocation &p_location) {
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+	RefactorParseResultProviderScope parse_results(p_context);
+	const FSParseResultProvider *parse_result_provider = parse_results.get();
+#else
+	const FSParseResultProvider *parse_result_provider = nullptr;
+#endif // FOUNDRY_SCRIPT_NO_LSP
+
+	return find_override_method_candidates(p_context, p_location, parse_result_provider);
+}
+
 Vector<RefactorAvailability> FSRefactoring::get_available_refactors(const RefactorContext &p_context, const RefactorLocation &p_location) {
 	Vector<RefactorAvailability> result;
 
@@ -7561,6 +7604,18 @@ Vector<RefactorAvailability> FSRefactoring::get_available_refactors(const Refact
 	}
 	result.push_back(implement_abstract);
 
+	RefactorAvailability override_method;
+	override_method.kind = RefactorKind::OVERRIDE_METHOD;
+	override_method.title = "Override Method...";
+	const RefactorOverrideMethodsResult override_candidates = find_override_method_candidates(p_context, p_location, parse_result_provider);
+	override_method.enabled = override_candidates.ok && !override_candidates.candidates.is_empty();
+	if (!override_method.enabled) {
+		override_method.disabled_reason = !override_candidates.error_message.is_empty()
+				? override_candidates.error_message
+				: String("No overridable methods found.");
+	}
+	result.push_back(override_method);
+
 	RefactorAvailability insert_cast;
 	insert_cast.kind = RefactorKind::INSERT_EXPLICIT_CAST;
 	insert_cast.title = "Insert Explicit Cast";
@@ -7615,6 +7670,8 @@ RefactorResult FSRefactoring::prepare(const RefactorContext &p_context, const Re
 			return prepare_inline_variable(p_context, p_location, parse_result_provider);
 		case RefactorKind::IMPLEMENT_ABSTRACT_METHODS:
 			return prepare_implement_abstract(p_context, p_location, parse_result_provider);
+		case RefactorKind::OVERRIDE_METHOD:
+			return prepare_override_method(p_context, p_location, p_params, parse_result_provider);
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 			return prepare_explicit_cast(p_context, p_location);
 		case RefactorKind::WIDEN_TO_NULLABLE:

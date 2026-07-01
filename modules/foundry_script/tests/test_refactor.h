@@ -195,6 +195,42 @@ inline RefactorResult run_implement_abstract(const String &p_source, int p_line,
 	return r;
 }
 
+inline RefactorOverrideMethodsResult override_method_candidates(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://override_method_refactor.fs";
+	ctx.source = p_source;
+	return FSRefactoring::get_override_method_candidates(ctx, caret(p_line, p_column));
+}
+
+inline const RefactorOverrideMethodCandidate *find_override_candidate(
+		const Vector<RefactorOverrideMethodCandidate> &p_candidates,
+		const String &p_name) {
+	for (const RefactorOverrideMethodCandidate &candidate : p_candidates) {
+		if (candidate.name == p_name) {
+			return &candidate;
+		}
+	}
+	return nullptr;
+}
+
+inline RefactorResult run_override_method(
+		const String &p_source,
+		int p_line,
+		int p_column,
+		const String &p_candidate_id,
+		String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://override_method_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	params.override_method_id = p_candidate_id;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::OVERRIDE_METHOD, params);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
 inline RefactorResult run_insert_cast(const String &p_source, int p_line, int p_column, String &r_out) {
 	RefactorContext ctx;
 	ctx.path = "user://insert_cast_refactor.fs";
@@ -276,8 +312,8 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 9);
-		if (available.size() < 9) {
+		CHECK_EQ(available.size(), 10);
+		if (available.size() < 10) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -298,15 +334,31 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK_EQ(available[5].kind, RefactorKind::IMPLEMENT_ABSTRACT_METHODS);
 		CHECK_FALSE(available[5].enabled);
 		CHECK_FALSE(available[5].disabled_reason.is_empty());
-		CHECK_EQ(available[6].kind, RefactorKind::INSERT_EXPLICIT_CAST);
+		CHECK_EQ(available[6].kind, RefactorKind::OVERRIDE_METHOD);
 		CHECK_FALSE(available[6].enabled);
 		CHECK_FALSE(available[6].disabled_reason.is_empty());
-		CHECK_EQ(available[7].kind, RefactorKind::WIDEN_TO_NULLABLE);
+		CHECK_EQ(available[7].kind, RefactorKind::INSERT_EXPLICIT_CAST);
 		CHECK_FALSE(available[7].enabled);
 		CHECK_FALSE(available[7].disabled_reason.is_empty());
-		CHECK_EQ(available[8].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_EQ(available[8].kind, RefactorKind::WIDEN_TO_NULLABLE);
 		CHECK_FALSE(available[8].enabled);
 		CHECK_FALSE(available[8].disabled_reason.is_empty());
+		CHECK_EQ(available[9].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
+		CHECK_FALSE(available[9].enabled);
+		CHECK_FALSE(available[9].disabled_reason.is_empty());
+	}
+
+	TEST_CASE("Override method is listed and disabled outside a class") {
+		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
+		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
+		CHECK_EQ(available.size(), 10);
+		if (available.size() < 10) {
+			return;
+		}
+		CHECK_EQ(available[6].kind, RefactorKind::OVERRIDE_METHOD);
+		CHECK_EQ(available[6].title, String("Override Method..."));
+		CHECK_FALSE(available[6].enabled);
+		CHECK_EQ(available[6].disabled_reason, String("Place the caret inside a class."));
 	}
 
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
@@ -1917,7 +1969,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 9);
+		REQUIRE_EQ(available.size(), 10);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -2270,7 +2322,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 9);
+		REQUIRE_EQ(available.size(), 10);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -2279,7 +2331,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = FSRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 9);
+		REQUIRE_EQ(text_selection_available.size(), 10);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -2589,7 +2641,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 9);
+		REQUIRE_EQ(available.size(), 10);
 		if (available.size() >= 5) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
@@ -4241,7 +4293,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.fs";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 9);
+			REQUIRE_EQ(available.size(), 10);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -4269,7 +4321,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.fs";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 9);
+			REQUIRE_EQ(available.size(), 10);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
