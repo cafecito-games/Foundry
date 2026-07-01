@@ -378,22 +378,35 @@ void FSBuildPipelineSettingsDialog::_refresh_validation_and_preview() {
 	_build_available_registry(registry);
 	const Vector<ProjectBuildPipelineConfig::ValidationError> errors = working_config.validate(&registry);
 
-	if (errors.is_empty()) {
+	String text;
+	for (int i = 0; i < errors.size(); i++) {
+		if (!text.is_empty()) {
+			text += "\n";
+		}
+		const ProjectBuildPipelineConfig::ValidationError &error = errors[i];
+		if (error.section.is_empty()) {
+			text += error.message;
+		} else {
+			text += vformat("%s/%s: %s", error.section, error.key, error.message);
+		}
+	}
+	// Registry diagnostics (e.g. provider ID collisions) are blocking for the pipeline even when the
+	// config parses, so surface them here too instead of reporting the configuration as valid.
+	for (const FoundryBuildTaskRegistry::Diagnostic &diagnostic : registry.get_diagnostics()) {
+		if (!text.is_empty()) {
+			text += "\n";
+		}
+		if (!diagnostic.provider_id.is_empty()) {
+			text += vformat("provider '%s': %s", diagnostic.provider_id, diagnostic.message);
+		} else {
+			text += diagnostic.message;
+		}
+	}
+
+	if (text.is_empty()) {
 		validation_label->set_text(TTR("Configuration is valid."));
 		validation_label->remove_theme_color_override(SceneStringName(font_color));
 	} else {
-		String text;
-		for (int i = 0; i < errors.size(); i++) {
-			if (i > 0) {
-				text += "\n";
-			}
-			const ProjectBuildPipelineConfig::ValidationError &error = errors[i];
-			if (error.section.is_empty()) {
-				text += error.message;
-			} else {
-				text += vformat("%s/%s: %s", error.section, error.key, error.message);
-			}
-		}
 		validation_label->set_text(text);
 		validation_label->add_theme_color_override(SceneStringName(font_color), Color(0.94, 0.42, 0.42));
 	}
@@ -415,9 +428,13 @@ void FSBuildPipelineSettingsDialog::_refresh_actions() {
 
 	// Run actions execute the persisted project.foundry, so they are only enabled while the editor has
 	// no unsaved changes; otherwise a run would record build state for a config that is not on disk.
-	const bool has_task = !selected_task.is_empty() && working_config.get_task(selected_task) != nullptr;
-	const bool can_run = project_trusted && !_has_unsaved_changes();
-	run_task_button->set_disabled(!can_run || !has_task);
+	// A disabled task (or a globally disabled pipeline) is skipped by stage execution, so it must not
+	// be runnable here either.
+	const ProjectBuildPipelineConfig::TaskDefinition *selected = selected_task.is_empty() ? nullptr : working_config.get_task(selected_task);
+	const bool has_task = selected != nullptr;
+	const bool pipeline_enabled = working_config.is_enabled();
+	const bool can_run = project_trusted && pipeline_enabled && !_has_unsaved_changes();
+	run_task_button->set_disabled(!can_run || !has_task || (selected != nullptr && !selected->enabled));
 	run_stage_button->set_disabled(!can_run);
 	const String run_hint = _has_unsaved_changes() ? TTR("Save changes before running.") : String();
 	run_task_button->set_tooltip_text(run_hint);
@@ -806,11 +823,11 @@ static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
 }
 
 void FSBuildPipelineSettingsDialog::_run_selected_task() {
-	if (!project_trusted || selected_task.is_empty() || _has_unsaved_changes()) {
+	if (!project_trusted || selected_task.is_empty() || _has_unsaved_changes() || !working_config.is_enabled()) {
 		return;
 	}
 	const ProjectBuildPipelineConfig::TaskDefinition *task = working_config.get_task(selected_task);
-	if (task == nullptr) {
+	if (task == nullptr || !task->enabled) {
 		return;
 	}
 
@@ -840,7 +857,7 @@ void FSBuildPipelineSettingsDialog::_run_selected_task() {
 }
 
 void FSBuildPipelineSettingsDialog::_run_selected_stage() {
-	if (!project_trusted || _has_unsaved_changes()) {
+	if (!project_trusted || _has_unsaved_changes() || !working_config.is_enabled()) {
 		return;
 	}
 	FoundryBuildTaskRegistry registry;
