@@ -28,9 +28,7 @@ scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu
 # CI-like (warnings-as-errors): add dev_mode=yes
 ```
 Binary: `bin/foundry.macos.editor.dev.<arch>` (`arm64` or `x86_64`). The build links the
-`CoreServices` framework (added in `platform/macos/detect.py`). If the FSEvents code fails to
-compile, fix the API usage in the `#elif defined(__APPLE__)` block of `editor/file_system/editor_file_system.cpp`
-(check whether the macOS editor TU is built with ARC — if so, drop the `dispatch_release` calls).
+`CoreServices` framework (added in `platform/macos/detect.py`) for the FSEvents backend.
 
 ## Verify
 

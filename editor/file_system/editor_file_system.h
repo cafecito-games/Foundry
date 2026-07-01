@@ -357,7 +357,9 @@ class EditorFileSystem : public Node {
 	// healthy and has observed no events since the last scan, the O(number of files) focus-in
 	// rescan can be skipped. Any uncertainty (watch failure, queue overflow, or the setting being
 	// disabled) keeps the watcher unhealthy and falls back to a full scan, so no change is ever
-	// missed. Linux is backed by inotify, macOS by FSEvents; other platforms keep polling.
+	// missed. A clean poll schedules one short recheck so asynchronous watcher callbacks that
+	// arrive just after focus-in still trigger a scan. Linux is backed by inotify, macOS by
+	// FSEvents; platforms without a backend do not enter this fast-path.
 	bool fs_watch_initialized = false;
 	bool fs_watch_healthy = false;
 	bool fs_watch_clean_poll_recheck_pending = false;

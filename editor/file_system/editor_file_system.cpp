@@ -1882,14 +1882,10 @@ bool EditorFileSystem::_fs_watch_poll() {
 // ---- macOS backend (FSEvents) ----
 //
 // FSEvents is recursive from a single root, so unlike inotify there is no per-directory watch to
-// manage. Events are delivered on a serial dispatch queue (another thread), so the shared
-// SafeFlag is set from the callback. Before reading the flag on a focus-in scan, the stream is
-// flushed synchronously so no buffered event is missed (matching inotify's synchronous drain).
-//
-// NOTE FOR THE macOS BUILD: this backend has been implemented but could not be compiled or run in
-// the Linux CI/dev environment where it was written. Verify it builds (add `-framework
-// CoreServices`, see platform/macos/detect.py) and passes the checks described in
-// misc/foundry_perf/README.md before relying on it.
+// manage. Events are delivered asynchronously on a serial dispatch queue, so the callback only
+// marks the shared SafeFlag dirty. Polling flushes events already accepted by the stream before
+// reading that flag; the shared clean-poll recheck handles callbacks that arrive just after a
+// focus-in poll.
 
 static void _fs_watch_fsevents_callback(ConstFSEventStreamRef p_stream, void *p_info, size_t p_num_events, void *p_event_paths, const FSEventStreamEventFlags *p_flags, const FSEventStreamEventId *p_ids) {
 	// Any event -- including dropped/must-rescan flags -- means "something changed": mark dirty and
@@ -1972,8 +1968,9 @@ bool EditorFileSystem::_fs_watch_poll() {
 	if (!fs_watch_healthy || fs_watch_stream == nullptr) {
 		return true; // Uncertain: force a scan.
 	}
-	// Force delivery of any events buffered by the stream latency so the flag reflects everything
-	// that has happened up to now before we decide whether to skip the scan.
+	// Drain events already buffered by the stream before deciding whether this focus-in scan can
+	// be skipped. If a callback is delivered just after this clean poll, the shared delayed
+	// recheck will observe it and trigger a scan.
 	FSEventStreamFlushSync((FSEventStreamRef)fs_watch_stream);
 	return fs_watch_dirty.is_set();
 }
