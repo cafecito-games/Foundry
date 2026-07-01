@@ -439,8 +439,16 @@ void FSBuildPipelineSettingsDialog::_trust_pressed() {
 	ProjectBuildTrustStore trust_store;
 	trust_store.load();
 	trust_store.set_project_trusted(!trust_store.is_project_trusted());
-	trust_store.save();
-	project_trusted = trust_store.is_project_trusted();
+	if (trust_store.save() != OK) {
+		// Reflect on-disk reality: if the change did not persist, do not let the UI claim a new trust
+		// state that a future session will not honor.
+		ProjectBuildTrustStore persisted;
+		persisted.load();
+		project_trusted = persisted.is_project_trusted();
+		run_output->set_text(TTR("Failed to update the project trust decision; the trust file could not be written."));
+	} else {
+		project_trusted = trust_store.is_project_trusted();
+	}
 	_refresh_options_editor();
 	_refresh_actions();
 }
@@ -511,6 +519,19 @@ void FSBuildPipelineSettingsDialog::_move_task(int p_delta) {
 	}
 }
 
+// Drops fields the selected provider does not use, so switching a task's provider never leaves stale
+// hidden data (command args on a script provider, or provider options on the command provider) that
+// write_to_config_file() would still persist.
+static void _strip_inapplicable_fields(ProjectBuildPipelineConfig::TaskDefinition &r_task) {
+	if (r_task.provider == COMMAND_PROVIDER_ID) {
+		r_task.options.clear();
+	} else {
+		r_task.command = String();
+		r_task.args = PackedStringArray();
+		r_task.tool_version_command = PackedStringArray();
+	}
+}
+
 void FSBuildPipelineSettingsDialog::_provider_selected(int p_index) {
 	if (updating_ui || selected_task.is_empty()) {
 		return;
@@ -521,6 +542,7 @@ void FSBuildPipelineSettingsDialog::_provider_selected(int p_index) {
 	}
 	ProjectBuildPipelineConfig::TaskDefinition task = *existing;
 	task.provider = provider_select->get_item_metadata(p_index);
+	_strip_inapplicable_fields(task);
 	working_config.set_task(task);
 
 	_refresh_stage_lists();
@@ -569,6 +591,7 @@ ProjectBuildPipelineConfig::TaskDefinition FSBuildPipelineSettingsDialog::_read_
 		}
 		task.options = options;
 	}
+	_strip_inapplicable_fields(task);
 	return task;
 }
 
@@ -716,9 +739,11 @@ static String _provider_run_block_reason(const FoundryBuildTaskRegistry &p_regis
 	return String();
 }
 
-// The full reason a task must not be run: a blocking registry diagnostic, or a pipeline validation
-// error touching the task or its provider descriptor. Mirrors the pipeline's refusal to run invalid
-// or blocked configuration.
+// The full reason a task must not be run: a blocking registry diagnostic, or any pipeline validation
+// error. The pipeline validates the whole configuration and blocks the stage before executing any
+// task, so a stage-level error (duplicate task, a task listed in two stages) or an unrelated invalid
+// task must stop manual runs too. Task/provider-scoped errors are reported first for a clearer
+// message.
 static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
 		const FoundryBuildTaskRegistry &p_registry, const ProjectBuildPipelineConfig::TaskDefinition &p_task) {
 	const String provider_reason = _provider_run_block_reason(p_registry, p_task.provider);
@@ -733,6 +758,14 @@ static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
 		if (error.section == task_section || error.section == provider_section) {
 			return vformat("%s/%s: %s", error.section, error.key, error.message);
 		}
+	}
+	// Any other validation error still blocks execution, mirroring the pipeline.
+	if (!errors.is_empty()) {
+		const ProjectBuildPipelineConfig::ValidationError &error = errors[0];
+		if (error.section.is_empty()) {
+			return error.message;
+		}
+		return vformat("%s/%s: %s", error.section, error.key, error.message);
 	}
 	return String();
 }
