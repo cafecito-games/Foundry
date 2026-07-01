@@ -533,6 +533,71 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn super.id(value)\n"));
 	}
 
+	TEST_CASE("Override method erases raw generic script base method signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc id(value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "id");
+		REQUIRE(candidate != nullptr);
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value):\n"));
+		CHECK_FALSE(out.contains("\tfunc id(value: T) -> T:\n\t\treturn super.id(value)\n"));
+		CHECK(out.contains("\t\treturn super.id(value)\n"));
+	}
+
+	TEST_CASE("Override method erases raw generic script base container signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc items(values: Array[T]) -> Array[T]:\n"
+				"\t\treturn values\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "items");
+		REQUIRE(candidate != nullptr);
+		CHECK_FALSE(candidate->signature.contains("Array[T]"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc items(values: Array) -> Array:\n"));
+		CHECK_FALSE(out.contains("\tfunc items(values: Array[T]) -> Array[T]:\n\t\treturn super.items(values)\n"));
+		CHECK(out.contains("\t\treturn super.items(values)\n"));
+	}
+
+	TEST_CASE("Override method preserves forwarded child generic base method signatures") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc id(value: T) -> T:\n"
+				"\t\treturn value\n"
+				"class Child[U] extends Base[U]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "id");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc id(value: U) -> U:\n"));
+		CHECK(out.contains("\t\treturn super.id(value)\n"));
+	}
+
 	TEST_CASE("Override method preserves method generics on specialized generic script base classes") {
 		const String source =
 				"class Base[T]:\n"

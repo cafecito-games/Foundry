@@ -6035,17 +6035,15 @@ String render_function_signature(
 
 			if (type_parameter->bound != nullptr) {
 				String rendered_bound;
-				bool has_rendered_bound = false;
-				if (p_type_parameter_bounds != nullptr && i < p_type_parameter_bounds->size()) {
-					has_rendered_bound = FSRefactorTypes::render_annotatable_type((*p_type_parameter_bounds)[i], rendered_bound);
-				}
-				// Prefer the eagerly-resolved (non-meta) bound. Otherwise fall back to the bound
-				// TypeNode's own datatype, which is populated even when the eager pass has not run in
-				// this analysis context — but in type position it is a metatype handle (especially for
-				// a user-class bound like `T: MyClass`), so strip the meta flag to render the instance
-				// type rather than have render_annotatable_type reject it and silently drop the bound.
-				if (!has_rendered_bound &&
-						!FSRefactorTypes::render_annotatable_type(type_parameter->resolved_bound, rendered_bound)) {
+				const bool has_bound_override = p_type_parameter_bounds != nullptr && i < p_type_parameter_bounds->size();
+				if (has_bound_override) {
+					FSRefactorTypes::render_annotatable_type((*p_type_parameter_bounds)[i], rendered_bound);
+				} else if (!FSRefactorTypes::render_annotatable_type(type_parameter->resolved_bound, rendered_bound)) {
+					// Prefer the eagerly-resolved (non-meta) bound. Otherwise fall back to the bound
+					// TypeNode's own datatype, which is populated even when the eager pass has not run in
+					// this analysis context — but in type position it is a metatype handle (especially for
+					// a user-class bound like `T: MyClass`), so strip the meta flag to render the instance
+					// type rather than have render_annotatable_type reject it and silently drop the bound.
 					FSParser::DataType bound_type = type_parameter->bound->get_datatype();
 					bound_type.is_meta_type = false;
 					FSRefactorTypes::render_annotatable_type(bound_type, rendered_bound);
@@ -6357,6 +6355,19 @@ bool override_class_type_matches(const FSParser::DataType &p_type, const FSParse
 	return p_type.class_type == p_class || p_type.class_type->fqcn == p_class->fqcn;
 }
 
+void collect_override_class_type_parameter_names(
+		const FSParser::ClassNode *p_class,
+		HashSet<StringName> &r_names) {
+	if (p_class == nullptr) {
+		return;
+	}
+	for (const FSParser::TypeParameterNode *type_parameter : p_class->type_parameters) {
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			r_names.insert(type_parameter->identifier->name);
+		}
+	}
+}
+
 FSParser::DataType specialize_override_parent_type(
 		const FSParser::ClassNode *p_current_class,
 		const FSParser::DataType &p_current_specialized_type) {
@@ -6395,35 +6406,105 @@ FSParser::DataType align_specialized_override_type_to_class(
 	return result;
 }
 
+bool erase_raw_override_class_type_parameters(
+		FSParser::DataType &r_type,
+		const HashSet<StringName> &p_raw_class_type_parameters) {
+	if (r_type.kind == FSParser::DataType::TYPE_PARAMETER &&
+			r_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS &&
+			p_raw_class_type_parameters.has(r_type.type_parameter_name)) {
+		r_type = FSParser::DataType::get_variant_type();
+		return true;
+	}
+
+	bool clear_container_elements = false;
+	for (int i = 0; i < r_type.container_element_types.size(); i++) {
+		if (erase_raw_override_class_type_parameters(r_type.container_element_types.write[i], p_raw_class_type_parameters)) {
+			clear_container_elements = true;
+		}
+	}
+	if (clear_container_elements) {
+		r_type.container_element_types.clear();
+	}
+
+	bool clear_type_arguments = false;
+	for (int i = 0; i < r_type.type_arguments.size(); i++) {
+		if (erase_raw_override_class_type_parameters(r_type.type_arguments.write[i], p_raw_class_type_parameters)) {
+			clear_type_arguments = true;
+		}
+	}
+	if (clear_type_arguments) {
+		r_type.type_arguments.clear();
+	}
+
+	bool clear_method_signature = false;
+	for (int i = 0; i < r_type.method_parameter_types.size(); i++) {
+		if (erase_raw_override_class_type_parameters(r_type.method_parameter_types.write[i], p_raw_class_type_parameters)) {
+			clear_method_signature = true;
+		}
+	}
+	for (int i = 0; i < r_type.method_return_type.size(); i++) {
+		if (erase_raw_override_class_type_parameters(r_type.method_return_type.write[i], p_raw_class_type_parameters)) {
+			clear_method_signature = true;
+		}
+	}
+	if (clear_method_signature) {
+		r_type.has_method_signature = false;
+		r_type.has_explicit_method_signature = false;
+		r_type.method_parameter_types.clear();
+		r_type.method_return_type.clear();
+	}
+
+	bool clear_bound = false;
+	for (int i = 0; i < r_type.type_parameter_bound.size(); i++) {
+		if (erase_raw_override_class_type_parameters(r_type.type_parameter_bound.write[i], p_raw_class_type_parameters)) {
+			clear_bound = true;
+		}
+	}
+	if (clear_bound) {
+		r_type.type_parameter_bound.clear();
+	}
+
+	return false;
+}
+
 FSParser::DataType substitute_override_member_type(
 		const FSParser::DataType &p_member_type,
 		const FSParser::DataType &p_specialized_base,
 		const FSParser::ClassNode *p_declaring_class,
 		const FSParser::FunctionNode *p_shadowing_method) {
-	if (p_declaring_class == nullptr || p_specialized_base.type_arguments.is_empty()) {
+	if (p_declaring_class == nullptr) {
 		return p_member_type;
 	}
 
+	FSParser::DataType member_type = p_member_type;
 	HashMap<StringName, FSParser::DataType> bindings;
-	const Vector<FSParser::TypeParameterNode *> &type_parameters = p_declaring_class->type_parameters;
-	const int binding_count = MIN(type_parameters.size(), p_specialized_base.type_arguments.size());
-	for (int i = 0; i < binding_count; i++) {
-		const FSParser::TypeParameterNode *type_parameter = type_parameters[i];
-		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-			bindings.insert(type_parameter->identifier->name, p_specialized_base.type_arguments[i]);
-		}
-	}
-	if (p_shadowing_method != nullptr) {
-		for (const FSParser::TypeParameterNode *type_parameter : p_shadowing_method->type_parameters) {
+	if (!p_specialized_base.type_arguments.is_empty()) {
+		const Vector<FSParser::TypeParameterNode *> &type_parameters = p_declaring_class->type_parameters;
+		const int binding_count = MIN(type_parameters.size(), p_specialized_base.type_arguments.size());
+		for (int i = 0; i < binding_count; i++) {
+			const FSParser::TypeParameterNode *type_parameter = type_parameters[i];
 			if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
-				bindings.erase(type_parameter->identifier->name);
+				bindings.insert(type_parameter->identifier->name, p_specialized_base.type_arguments[i]);
 			}
 		}
+		if (p_shadowing_method != nullptr) {
+			for (const FSParser::TypeParameterNode *type_parameter : p_shadowing_method->type_parameters) {
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					bindings.erase(type_parameter->identifier->name);
+				}
+			}
+		}
+		if (!bindings.is_empty()) {
+			member_type = FSParser::DataType::substitute(member_type, bindings);
+		}
 	}
-	if (bindings.is_empty()) {
-		return p_member_type;
+
+	if (p_specialized_base.type_arguments.is_empty()) {
+		HashSet<StringName> raw_class_type_parameters;
+		collect_override_class_type_parameter_names(p_declaring_class, raw_class_type_parameters);
+		erase_raw_override_class_type_parameters(member_type, raw_class_type_parameters);
 	}
-	return FSParser::DataType::substitute(p_member_type, bindings);
+	return member_type;
 }
 
 int find_class_method_insertion_line(
