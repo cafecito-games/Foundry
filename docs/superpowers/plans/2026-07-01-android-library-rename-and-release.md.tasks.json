@@ -1,0 +1,68 @@
+{
+  "planPath": "docs/superpowers/plans/2026-07-01-android-library-rename-and-release.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Rename lib JVM package to games.cafecito.foundry",
+      "status": "pending",
+      "description": "Move ~82 lib source files (main+test) org.godotengine.godot -> games.cafecito.foundry; update package/import decls, namespace (lib/build.gradle:35), manifest.\n\n```json:metadata\n{\"files\":[\"platform/android/java/lib\"],\"verifyCommand\":\"grep -rIl 'org.godotengine.godot' platform/android/java/lib/src\",\"acceptanceCriteria\":[\"no files under lib/src/**/java/org/godotengine\",\"package games.cafecito.foundry\",\"namespace games.cafecito.foundry\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Rename editor JVM package to games.cafecito.foundry.editor",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Move editor sources org.godotengine.editor -> games.cafecito.foundry.editor; namespace (editor/build.gradle:77), manifest, lib imports.\n\n```json:metadata\n{\"files\":[\"platform/android/java/editor\"],\"verifyCommand\":\"grep -rIl 'org.godotengine' platform/android/java/editor/src\",\"acceptanceCriteria\":[\"no files under editor/src/**/java/org/godotengine\",\"namespace games.cafecito.foundry.editor\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Rename app-module + nativeSrcsConfigs references",
+      "status": "pending",
+      "blockedBy": [1],
+      "description": "Update app/demo module + nativeSrcsConfigs imports to games.cafecito.foundry(.editor). Keep com.godot.game applicationId.\n\n```json:metadata\n{\"files\":[\"platform/android/java/app\",\"platform/android/java/nativeSrcsConfigs\"],\"verifyCommand\":\"grep -rIn 'org.godotengine' platform/android/java/app platform/android/java/nativeSrcsConfigs\",\"acceptanceCriteria\":[\"no org.godotengine refs\",\"com.godot.game preserved\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Rename C++ JNI symbols + FindClass literals (GodotLib->FoundryLib)",
+      "status": "pending",
+      "blockedBy": [2],
+      "description": "Rename Java_org_godotengine_godot_* -> Java_games_cafecito_foundry_* (GodotLib stem -> FoundryLib) and all FindClass/dotted literals. Native lib links + resolves.\n\n```json:metadata\n{\"files\":[\"platform/android\"],\"verifyCommand\":\"scons platform=android target=template_debug arch=arm64 -j$(nproc)\",\"acceptanceCriteria\":[\"no Java_org_godotengine symbols\",\"no org/godotengine string literals\",\"links successfully\",\"FoundryLib_initialize symbol present\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Update export pipeline package references",
+      "status": "pending",
+      "blockedBy": [3],
+      "description": "Update export_plugin.cpp + gradle_export_util.{cpp,h} so exports reference games.cafecito.foundry. Editor builds.\n\n```json:metadata\n{\"files\":[\"platform/android/export\"],\"verifyCommand\":\"scons platform=android target=editor arch=arm64 -j$(nproc)\",\"acceptanceCriteria\":[\"no org.godotengine.godot in export\",\"editor builds\",\"export manifest uses games.cafecito.foundry\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Rename AAR output artifacts godot-lib -> foundry-lib",
+      "status": "pending",
+      "blockedBy": [4],
+      "description": "Rename generated AAR file names + all Gradle copy/delete refs + export + release.yml.\n\n```json:metadata\n{\"files\":[\"platform/android/java/lib/build.gradle\",\"platform/android/java/build.gradle\",\".github/workflows/release.yml\"],\"verifyCommand\":\"grep -rIn 'godot-lib' platform/android .github/workflows/release.yml\",\"acceptanceCriteria\":[\"no godot-lib refs\",\"emits foundry-lib.*.aar\",\"assembleTemplateDebug produces foundry-lib.template_debug.aar\"]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Set Maven coordinates + POM metadata (games.cafecito.foundry)",
+      "status": "pending",
+      "blockedBy": [5],
+      "description": "Artifact ids foundry/foundry-debug/foundry-tools; POM metadata; keep PGP signing. Validate via publishToMavenLocal.\n\n```json:metadata\n{\"files\":[\"platform/android/java/lib/build.gradle\",\"platform/android/java/scripts/publish-module.gradle\"],\"verifyCommand\":\"cd platform/android/java && OSSRH_GROUP_ID=games.cafecito.foundry ./gradlew :lib:publishToMavenLocal\",\"acceptanceCriteria\":[\"artifact ids foundry/-debug/-tools\",\"POM url/scm/license updated\",\"publishToMavenLocal writes games/cafecito/foundry artifacts\"]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Wire Maven Central publish job into release.yml",
+      "status": "pending",
+      "blockedBy": [5, 6],
+      "description": "Publish 3 publications on release; stable -> close+release staging, dev -> snapshot only. Secrets via env, gated on non-draft release.\n\n```json:metadata\n{\"files\":[\".github/workflows/release.yml\"],\"verifyCommand\":\"actionlint .github/workflows/release.yml\",\"acceptanceCriteria\":[\"publish gated on release (non-draft)\",\"secrets as env\",\"stable close+release, snapshot publish-only\",\"workflow lints\"]}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Rebrand remaining Godot identifiers in Android build layer",
+      "status": "pending",
+      "blockedBy": [7],
+      "description": "Rename getGodotLibraryVersion*/getGodotPublishVersion/generateGodot* helpers+tasks, godotLibraryVersion placeholder, any Godot-branded Gradle symbol -> Foundry, across gradle+manifests+both CI workflows. Exclude com.godot.game + godotengine.org URLs.\n\n```json:metadata\n{\"files\":[\"platform/android/java/build.gradle\",\"platform/android/java/lib/build.gradle\",\"platform/android/java/editor/build.gradle\",\"platform/android/java/app/config.gradle\",\".github/workflows/release.yml\",\".github/workflows/android_builds.yml\"],\"verifyCommand\":\"grep -rIn 'generateGodot|godotLibraryVersion|getGodotLibrary|getGodotPublish' platform/android/java .github/workflows\",\"acceptanceCriteria\":[\"helpers/tasks/placeholder renamed to Foundry\",\"generateFoundryTemplates resolves\",\"both workflows updated\",\"com.godot.game untouched\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-07-01"
+}
