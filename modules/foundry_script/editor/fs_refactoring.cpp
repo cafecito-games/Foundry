@@ -5839,6 +5839,69 @@ const Vector<String> *resolve_trait_declaring_lines(
 	return nullptr;
 }
 
+HashMap<StringName, FSParser::DataType> trait_type_argument_substitution(
+		const FSParser::ClassNode *p_class,
+		FSParser::ClassNode *p_trait) {
+	HashMap<StringName, FSParser::DataType> bindings;
+	if (p_class == nullptr || p_trait == nullptr || p_trait->type_parameters.is_empty()) {
+		return bindings;
+	}
+
+	for (const FSParser::ClassNode::TraitUse &trait_use : p_class->used_traits) {
+		FSParser::ClassNode *used_trait = trait_use.resolved_trait;
+		if (used_trait == nullptr) {
+			continue;
+		}
+		if (used_trait == p_trait) {
+			const int count = MIN(p_trait->type_parameters.size(), trait_use.resolved_type_arguments.size());
+			for (int i = 0; i < count; i++) {
+				const FSParser::TypeParameterNode *type_parameter = p_trait->type_parameters[i];
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					bindings.insert(type_parameter->identifier->name, trait_use.resolved_type_arguments[i]);
+				}
+			}
+			return bindings;
+		}
+		if (used_trait->resolved_traits.has(p_trait)) {
+			const HashMap<StringName, FSParser::DataType> inner = trait_type_argument_substitution(used_trait, p_trait);
+			if (inner.is_empty()) {
+				continue;
+			}
+			const HashMap<StringName, FSParser::DataType> outer = trait_type_argument_substitution(p_class, used_trait);
+			for (const KeyValue<StringName, FSParser::DataType> &binding : inner) {
+				bindings.insert(binding.key, FSParser::DataType::substitute(binding.value, outer));
+			}
+			return bindings;
+		}
+	}
+	return bindings;
+}
+
+FSParser::DataType specialize_trait_requirement_type(
+		const FSParser::ClassNode *p_target,
+		FSParser::ClassNode *p_trait) {
+	FSParser::DataType specialized_trait;
+	if (p_trait == nullptr) {
+		return specialized_trait;
+	}
+	specialized_trait = p_trait->get_datatype();
+	const HashMap<StringName, FSParser::DataType> bindings = trait_type_argument_substitution(p_target, p_trait);
+	if (bindings.is_empty()) {
+		return specialized_trait;
+	}
+	for (const FSParser::TypeParameterNode *type_parameter : p_trait->type_parameters) {
+		FSParser::DataType type_argument;
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			const FSParser::DataType *binding = bindings.getptr(type_parameter->identifier->name);
+			if (binding != nullptr) {
+				type_argument = *binding;
+			}
+		}
+		specialized_trait.type_arguments.push_back(type_argument);
+	}
+	return specialized_trait;
+}
+
 // Collect the abstract methods required by the traits the target class uses but does
 // not implement, mirroring the analyzer's `validate_trait_requirements`. `resolved_traits`
 // is the flattened set of directly and transitively used traits, so the same `decided`
@@ -5854,7 +5917,7 @@ void collect_owed_trait_abstract_methods(
 		Vector<OwedAbstractMethod> &r_owed,
 		bool *r_depends_on_external_declarations,
 		const FSParseResultProvider *p_parse_results) {
-	for (const FSParser::ClassNode *trait : p_target->resolved_traits) {
+	for (FSParser::ClassNode *trait : p_target->resolved_traits) {
 		if (trait == nullptr) {
 			continue;
 		}
@@ -5889,6 +5952,7 @@ void collect_owed_trait_abstract_methods(
 			owed.function = function;
 			owed.declaring_lines = trait_lines;
 			owed.declaring_class = trait;
+			owed.specialized_base = specialize_trait_requirement_type(p_target, trait);
 			r_owed.push_back(owed);
 		}
 	}

@@ -465,6 +465,36 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn 0\n"));
 	}
 
+	TEST_CASE("Override method specializes abstract generic trait signatures") {
+		const String source =
+				"trait Holder[T]:\n"
+				"\tabstract func take(value: T) -> T\n"
+				"class IntBox uses Holder[int]:\n"
+				"\tpass\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "take");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("func take(value: int) -> int"));
+		CHECK_FALSE(candidate->signature.contains("value: T"));
+		CHECK_FALSE(candidate->signature.contains("-> T"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc take(value: int) -> int:\n"));
+		CHECK_FALSE(out.contains("\tfunc take(value: T) -> T:\n"));
+		CHECK(out.contains("\t\tpush_error(\"Not implemented: take\")\n"));
+		CHECK(out.contains("\t\treturn 0\n"));
+	}
+
 	TEST_CASE("Override method includes abstract rest parameter methods") {
 		const String source =
 				"abstract class Base:\n"
