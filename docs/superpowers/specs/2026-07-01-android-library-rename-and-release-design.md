@@ -54,6 +54,10 @@ as a consumable Maven artifact:
 | PGP signing | Keep |
 | Publish trigger | On tagged release (`vX.Y.Z`), matching existing `release.yml` gating |
 
+**No backwards compatibility required.** Foundry is a standalone engine with no other consumers,
+so nothing must preserve old names for compatibility — AAR output file names, Gradle helper names,
+and task names may be renamed freely toward the Foundry brand.
+
 Out of scope: the app/demo module `applicationId` `com.godot.game` (not the published library),
 third-party `com.google.android.vending.*` licensing/expansion code (leave untouched).
 
@@ -72,9 +76,13 @@ domain (namespace `games.cafecito`) on the Sonatype Central Portal, and provisio
 - Update `namespace = "org.godotengine.godot"` → `"games.cafecito.foundry"` in `lib/build.gradle`
   and `"org.godotengine.editor"` → `"games.cafecito.foundry.editor"` in `editor/build.gradle`.
 - Update `AndroidManifest.xml` files (lib, editor, app instrumented) for any fully-qualified references.
-- Reconcile the lingering `GodotLib` naming in gradle/proguard/keep-rules if any reference the class
-  (the `getGodotLibraryVersion*` helper names are unrelated build helpers — leave those; renaming them
-  is cosmetic and out of scope).
+- Rename the AAR output file names `godot-lib.*.aar` → `foundry-lib.*.aar` in `lib/build.gradle`,
+  and update the `generateGodotTemplates` template-copy logic and `release.yml` steps that reference
+  those file names.
+- Optional consistency cleanup (permitted, no compat constraint): rename the `getGodotLibraryVersion*`
+  Gradle helpers and the `generateGodotTemplates`/`generateGodotEditor` task names to Foundry
+  equivalents, updating their `release.yml` call sites. Keep this a separate, clearly-scoped step so
+  it doesn't obscure the functional rename.
 
 ### A2. C++ JNI layer
 - Rename all static export symbols: `Java_org_godotengine_godot_GodotLib_*` →
@@ -144,8 +152,6 @@ domain (namespace `games.cafecito`) on the Sonatype Central Portal, and provisio
   the code can be merged and dry-run (`publishToMavenLocal`) before the account side is ready.
 - Reflection / string-based class lookups (plugin loading, `Class.forName`, manifest `<meta-data>`
   plugin class names) may hardcode the old package — grep for string forms, not just symbols.
-- Gradle `generateGodotTemplates` currently expects specific AAR output names (`godot-lib.*.aar`);
-  keep those file names unless a downstream consumer depends on them, to avoid unrelated breakage.
 
 ## Testing Strategy
 
