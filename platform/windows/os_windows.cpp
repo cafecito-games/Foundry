@@ -60,6 +60,7 @@
 #include <psapi.h>
 #include <regstr.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 #include <wbemcli.h>
 #include <wincrypt.h>
 #include <winternl.h>
@@ -132,6 +133,32 @@ static String fix_path(const String &p_path) {
 		path = R"(\\?\)" + path;
 	}
 	return path;
+}
+
+static void _terminate_child_processes(DWORD p_parent_pid) {
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snapshot == INVALID_HANDLE_VALUE) {
+		return;
+	}
+
+	PROCESSENTRY32W process_entry = {};
+	process_entry.dwSize = sizeof(process_entry);
+	if (Process32FirstW(snapshot, &process_entry)) {
+		do {
+			if (process_entry.th32ParentProcessID != p_parent_pid) {
+				continue;
+			}
+
+			HANDLE child_process = OpenProcess(PROCESS_TERMINATE, false, process_entry.th32ProcessID);
+			if (child_process) {
+				TerminateProcess(child_process, 0);
+				CloseHandle(child_process);
+			}
+			_terminate_child_processes(process_entry.th32ProcessID);
+		} while (Process32NextW(snapshot, &process_entry));
+	}
+
+	CloseHandle(snapshot);
 }
 
 static String format_error_message(DWORD id) {
@@ -1015,13 +1042,33 @@ uint64_t OS_Windows::get_ticks_usec() const {
 }
 
 String OS_Windows::_quote_command_line_argument(const String &p_text) const {
+	String quoted = "\"";
+	int backslash_count = 0;
 	for (int i = 0; i < p_text.size(); i++) {
-		char32_t c = p_text[i];
-		if (c == ' ' || c == '&' || c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == '^' || c == '=' || c == ';' || c == '!' || c == '\'' || c == '+' || c == ',' || c == '`' || c == '~') {
-			return "\"" + p_text + "\"";
+		const char32_t c = p_text[i];
+		if (c == '\\') {
+			backslash_count++;
+			continue;
 		}
+
+		if (c == '"') {
+			quoted += String("\\").repeat(backslash_count * 2 + 1);
+			quoted += '"';
+			backslash_count = 0;
+			continue;
+		}
+
+		if (backslash_count > 0) {
+			quoted += String("\\").repeat(backslash_count);
+			backslash_count = 0;
+		}
+		quoted += c;
 	}
-	return p_text;
+	if (backslash_count > 0) {
+		quoted += String("\\").repeat(backslash_count * 2);
+	}
+	quoted += '"';
+	return quoted;
 }
 
 static void _append_to_pipe(char *p_bytes, int p_size, String *r_pipe, Mutex *p_pipe_mutex) {
@@ -1284,7 +1331,7 @@ Dictionary OS_Windows::get_memory_info() const {
 	return meminfo;
 }
 
-Dictionary OS_Windows::execute_with_pipe(const String &p_path, const List<String> &p_arguments, bool p_blocking) {
+Dictionary OS_Windows::execute_with_pipe(const String &p_path, const List<String> &p_arguments, bool p_blocking, const String &p_working_directory, const Dictionary &p_environment, bool p_pipe_stdin) {
 #define CLEAN_PIPES               \
 	if (pipe_in[0] != 0) {        \
 		CloseHandle(pipe_in[0]);  \
@@ -1370,9 +1417,14 @@ Dictionary OS_Windows::execute_with_pipe(const String &p_path, const List<String
 	DWORD creation_flags = NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
 
 	Char16String current_dir_name;
-	size_t str_len = GetCurrentDirectoryW(0, nullptr);
-	current_dir_name.resize_uninitialized(str_len + 1);
-	GetCurrentDirectoryW(current_dir_name.size(), (LPWSTR)current_dir_name.ptrw());
+	size_t str_len = 0;
+	if (p_working_directory.is_empty()) {
+		str_len = GetCurrentDirectoryW(0, nullptr);
+		current_dir_name.resize_uninitialized(str_len + 1);
+		GetCurrentDirectoryW(current_dir_name.size(), (LPWSTR)current_dir_name.ptrw());
+	} else {
+		current_dir_name = fix_path(p_working_directory).utf16();
+	}
 	if (current_dir_name.size() >= MAX_PATH) {
 		Char16String current_short_dir_name;
 		str_len = GetShortPathNameW((LPCWSTR)current_dir_name.ptr(), nullptr, 0);
@@ -1381,15 +1433,106 @@ Dictionary OS_Windows::execute_with_pipe(const String &p_path, const List<String
 		current_dir_name = current_short_dir_name;
 	}
 
-	if (!CreateProcessW(nullptr, (LPWSTR)(command.utf16().ptrw()), nullptr, nullptr, true, creation_flags, nullptr, (LPWSTR)current_dir_name.ptr(), si_w, &pi.pi)) {
+	Vector<char16_t> environment_block;
+	if (!p_environment.is_empty()) {
+		Dictionary merged_environment;
+		Dictionary merged_environment_casing;
+		LPWCH raw_environment = GetEnvironmentStringsW();
+		if (raw_environment) {
+			for (LPWCH raw_entry = raw_environment; *raw_entry; raw_entry += wcslen(raw_entry) + 1) {
+				const String entry = String::utf16((const char16_t *)raw_entry);
+				const int separator = entry.find("=", entry.begins_with("=") ? 1 : 0);
+				if (separator > 0) {
+					const String key = entry.substr(0, separator);
+					merged_environment[key] = entry.substr(separator + 1);
+					merged_environment_casing[key.to_lower()] = key;
+				}
+			}
+			FreeEnvironmentStringsW(raw_environment);
+		}
+
+		Array environment_keys = p_environment.keys();
+		for (int i = 0; i < environment_keys.size(); i++) {
+			const String key = environment_keys[i];
+			if (!key.is_empty()) {
+				const String normalized_key = key.to_lower();
+				if (merged_environment_casing.has(normalized_key)) {
+					const String inherited_key = merged_environment_casing[normalized_key];
+					if (inherited_key != key) {
+						merged_environment.erase(inherited_key);
+					}
+				}
+				merged_environment[key] = String(p_environment[key]);
+				merged_environment_casing[normalized_key] = key;
+			}
+		}
+
+		Array merged_keys = merged_environment.keys();
+		merged_keys.sort();
+		for (int i = 0; i < merged_keys.size(); i++) {
+			const String key = merged_keys[i];
+			const Char16String entry = (key + "=" + String(merged_environment[key])).utf16();
+			for (int j = 0; j < entry.length(); j++) {
+				environment_block.push_back(entry[j]);
+			}
+			environment_block.push_back(0);
+		}
+		environment_block.push_back(0);
+		creation_flags |= CREATE_UNICODE_ENVIRONMENT;
+	}
+
+	HANDLE job_handle = CreateJobObjectW(nullptr, nullptr);
+	if (job_handle) {
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_limit_info;
+		ZeroMemory(&job_limit_info, sizeof(job_limit_info));
+		job_limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		if (!SetInformationJobObject(job_handle, JobObjectExtendedLimitInformation, &job_limit_info, sizeof(job_limit_info))) {
+			CloseHandle(job_handle);
+			job_handle = nullptr;
+		}
+	}
+
+	creation_flags |= CREATE_SUSPENDED;
+
+	if (!CreateProcessW(nullptr, (LPWSTR)(command.utf16().ptrw()), nullptr, nullptr, true, creation_flags, environment_block.is_empty() ? nullptr : environment_block.ptrw(), (LPWSTR)current_dir_name.ptr(), si_w, &pi.pi)) {
 		CLEAN_PIPES
 		DeleteProcThreadAttributeList(pi.si.lpAttributeList);
+		if (job_handle) {
+			CloseHandle(job_handle);
+		}
 		ERR_FAIL_V_MSG(ret, "Could not create child process: " + command);
 	}
+
+	if (job_handle && !AssignProcessToJobObject(job_handle, pi.pi.hProcess)) {
+		CloseHandle(job_handle);
+		job_handle = nullptr;
+	}
+
+	if (ResumeThread(pi.pi.hThread) == (DWORD)-1) {
+		if (job_handle) {
+			TerminateJobObject(job_handle, 0);
+		} else {
+			TerminateProcess(pi.pi.hProcess, 0);
+		}
+		CLEAN_PIPES
+		DeleteProcThreadAttributeList(pi.si.lpAttributeList);
+		CloseHandle(pi.pi.hProcess);
+		CloseHandle(pi.pi.hThread);
+		if (job_handle) {
+			CloseHandle(job_handle);
+		}
+		ERR_FAIL_V_MSG(ret, "Could not resume child process: " + command);
+	}
+
 	CloseHandle(pipe_in[0]);
 	CloseHandle(pipe_out[1]);
 	CloseHandle(pipe_err[1]);
+	if (!p_pipe_stdin) {
+		CloseHandle(pipe_in[1]);
+		pipe_in[1] = nullptr;
+	}
 	DeleteProcThreadAttributeList(pi.si.lpAttributeList);
+	pi.job_handle = job_handle;
 
 	ProcessID pid = pi.pi.dwProcessId;
 	process_map_mutex.lock();
@@ -1398,7 +1541,7 @@ Dictionary OS_Windows::execute_with_pipe(const String &p_path, const List<String
 
 	Ref<FileAccessWindowsPipe> main_pipe;
 	main_pipe.instantiate();
-	main_pipe->open_existing(pipe_out[0], pipe_in[1], p_blocking);
+	main_pipe->open_existing(pipe_out[0], p_pipe_stdin ? pipe_in[1] : nullptr, p_blocking);
 
 	Ref<FileAccessWindowsPipe> err_pipe;
 	err_pipe.instantiate();
@@ -1604,13 +1747,19 @@ Error OS_Windows::kill(const ProcessID &p_pid) {
 	int ret = 0;
 	MutexLock lock(process_map_mutex);
 	if (process_map->has(p_pid)) {
-		const PROCESS_INFORMATION pi = (*process_map)[p_pid].pi;
+		const ProcessInfo info = (*process_map)[p_pid];
 		process_map->erase(p_pid);
 
-		ret = TerminateProcess(pi.hProcess, 0);
+		if (info.job_handle) {
+			ret = TerminateJobObject(info.job_handle, 0);
+			CloseHandle(info.job_handle);
+		} else {
+			ret = TerminateProcess(info.pi.hProcess, 0);
+			_terminate_child_processes((DWORD)p_pid);
+		}
 
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
+		CloseHandle(info.pi.hProcess);
+		CloseHandle(info.pi.hThread);
 	} else {
 		HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, false, (DWORD)p_pid);
 		if (hProcess != nullptr) {

@@ -169,6 +169,7 @@ protected:
 	struct ProcessInfo {
 		STARTUPINFOEX si;
 		PROCESS_INFORMATION pi;
+		HANDLE job_handle = nullptr;
 		mutable bool is_running = true;
 		mutable int exit_code = -1;
 	};
@@ -210,7 +211,7 @@ public:
 	virtual Dictionary get_memory_info() const override;
 
 	virtual Error execute(const String &p_path, const List<String> &p_arguments, String *r_pipe = nullptr, int *r_exitcode = nullptr, bool read_stderr = false, Mutex *p_pipe_mutex = nullptr, bool p_open_console = false) override;
-	virtual Dictionary execute_with_pipe(const String &p_path, const List<String> &p_arguments, bool p_blocking = true) override;
+	virtual Dictionary execute_with_pipe(const String &p_path, const List<String> &p_arguments, bool p_blocking = true, const String &p_working_directory = String(), const Dictionary &p_environment = Dictionary(), bool p_pipe_stdin = true) override;
 	virtual Error create_process(const String &p_path, const List<String> &p_arguments, ProcessID *r_child_id = nullptr, bool p_open_console = false) override;
 	virtual Error kill(const ProcessID &p_pid) override;
 	virtual int get_process_id() const override;

@@ -47,7 +47,9 @@ Error FileAccessWindowsPipe::open_existing(HANDLE p_rfd, HANDLE p_wfd, bool p_bl
 	if (!p_blocking) {
 		DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
 		SetNamedPipeHandleState(fd[0], &mode, nullptr, nullptr);
-		SetNamedPipeHandleState(fd[1], &mode, nullptr, nullptr);
+		if (fd[1] != nullptr) {
+			SetNamedPipeHandleState(fd[1], &mode, nullptr, nullptr);
+		}
 	}
 
 	last_error = OK;
@@ -82,7 +84,7 @@ void FileAccessWindowsPipe::_close() {
 	if (fd[0] == nullptr) {
 		return;
 	}
-	if (fd[1] != fd[0]) {
+	if (fd[1] != nullptr && fd[1] != fd[0]) {
 		CloseHandle(fd[1]);
 	}
 	CloseHandle(fd[0]);

@@ -87,6 +87,13 @@ class FoundryBuildResult : public RefCounted {
 	bool success = true;
 	String message;
 	Array commands;
+	String stdout_text;
+	String stderr_text;
+	int exit_code = 0;
+	bool timed_out = false;
+	String launch_error;
+	Array diagnostics;
+	String fingerprint;
 
 protected:
 	static void _bind_methods();
@@ -102,6 +109,29 @@ public:
 	Array get_commands() const;
 
 	void add_command(const Ref<FoundryBuildCommand> &p_command);
+
+	void set_stdout(const String &p_stdout);
+	String get_stdout() const;
+
+	void set_stderr(const String &p_stderr);
+	String get_stderr() const;
+
+	void set_exit_code(int p_exit_code);
+	int get_exit_code() const;
+
+	void set_timed_out(bool p_timed_out);
+	bool has_timed_out() const;
+
+	void set_launch_error(const String &p_launch_error);
+	String get_launch_error() const;
+
+	void set_diagnostics(const Array &p_diagnostics);
+	Array get_diagnostics() const;
+
+	void add_diagnostic(const Dictionary &p_diagnostic);
+
+	void set_fingerprint(const String &p_fingerprint);
+	String get_fingerprint() const;
 };
 
 class FoundryBuildContext : public RefCounted {
@@ -148,4 +178,5 @@ protected:
 
 public:
 	virtual Ref<FoundryBuildTaskConfigSchema> get_config_schema() const override;
+	virtual Ref<FoundryBuildResult> run(const Ref<FoundryBuildContext> &p_context) override;
 };

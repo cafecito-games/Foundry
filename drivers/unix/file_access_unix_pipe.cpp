@@ -59,7 +59,9 @@ Error FileAccessUnixPipe::open_existing(int p_rfd, int p_wfd, bool p_blocking) {
 
 	if (!p_blocking) {
 		fcntl(fd[0], F_SETFL, fcntl(fd[0], F_GETFL) | O_NONBLOCK);
-		fcntl(fd[1], F_SETFL, fcntl(fd[1], F_GETFL) | O_NONBLOCK);
+		if (fd[1] >= 0) {
+			fcntl(fd[1], F_SETFL, fcntl(fd[1], F_GETFL) | O_NONBLOCK);
+		}
 	}
 
 	last_error = OK;
@@ -113,7 +115,7 @@ void FileAccessUnixPipe::_close() {
 		return;
 	}
 
-	if (fd[1] != fd[0]) {
+	if (fd[1] >= 0 && fd[1] != fd[0]) {
 		::close(fd[1]);
 	}
 	::close(fd[0]);

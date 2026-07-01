@@ -19,7 +19,7 @@
 			<return type="FoundryBuildResult" />
 			<param index="0" name="context" type="FoundryBuildContext" />
 			<description>
-				Runs the build task for [param context]. The initial build-task API exposes this method for providers; command execution and full pipeline integration are handled outside bootstrap discovery.
+				Runs the build task for [param context] and returns the task result.
 			</description>
 		</method>
 	</methods>
