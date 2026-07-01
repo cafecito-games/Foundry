@@ -930,7 +930,7 @@ Variant FSFunction::call_witness(const Variant &p_self, const Variant **p_args, 
 }
 
 Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state, const Variant *p_self_override) {
-	GodotProfileZoneScript(this, source, name, name, _initial_line);
+	FoundryProfileZoneScript(this, source, name, name, _initial_line);
 
 	OPCODES_TABLE;
 
@@ -2725,7 +2725,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(methodname_idx < 0 || methodname_idx >= _global_names_count);
 				const StringName *methodname = &_global_names_ptr[methodname_idx];
 
-				GodotProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
+				FoundryProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
 
 				GET_INSTRUCTION_ARG(base, argc);
 				Vector<Variant> erased_arg_storage;
@@ -2870,7 +2870,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(_code_ptr[ip + 2] < 0 || _code_ptr[ip + 2] >= _methods_count);
 				MethodBind *method = _methods_ptr[_code_ptr[ip + 2]];
 
-				GodotProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
+				FoundryProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
 
 				GET_INSTRUCTION_ARG(base, argc);
 
@@ -2957,7 +2957,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(methodname_idx < 0 || methodname_idx >= _global_names_count);
 				const StringName *methodname = &_global_names_ptr[methodname_idx];
 
-				GodotProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
+				FoundryProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
 
 				int argc = _code_ptr[ip + 3];
 				GD_ERR_BREAK(argc < 0);
@@ -2989,7 +2989,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(_code_ptr[ip + 1] < 0 || _code_ptr[ip + 1] >= _methods_count);
 				MethodBind *method = _methods_ptr[_code_ptr[ip + 1]];
 
-				GodotProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
+				FoundryProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
 
 				int argc = _code_ptr[ip + 2];
 				GD_ERR_BREAK(argc < 0);
@@ -3037,7 +3037,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(_code_ptr[ip + 2] < 0 || _code_ptr[ip + 2] >= _methods_count);
 				MethodBind *method = _methods_ptr[_code_ptr[ip + 2]];
 
-				GodotProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
+				FoundryProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
 
 				Variant **argptrs = instruction_args;
 
@@ -3075,7 +3075,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(_code_ptr[ip + 2] < 0 || _code_ptr[ip + 2] >= _methods_count);
 				MethodBind *method = _methods_ptr[_code_ptr[ip + 2]];
 
-				GodotProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
+				FoundryProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
 
 				Variant **argptrs = instruction_args;
 #ifdef DEBUG_ENABLED
@@ -3113,7 +3113,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(_code_ptr[ip + 2] < 0 || _code_ptr[ip + 2] >= _methods_count);
 				MethodBind *method = _methods_ptr[_code_ptr[ip + 2]];
 
-				GodotProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
+				FoundryProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
 
 				GET_INSTRUCTION_ARG(base, argc);
 
@@ -3167,7 +3167,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(_code_ptr[ip + 2] < 0 || _code_ptr[ip + 2] >= _methods_count);
 				MethodBind *method = _methods_ptr[_code_ptr[ip + 2]];
 
-				GodotProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
+				FoundryProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
 
 				GET_INSTRUCTION_ARG(base, argc);
 #ifdef DEBUG_ENABLED
@@ -3345,7 +3345,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 #endif
 				const StringName *methodname = &_global_names_ptr[self_fun];
 
-				GodotProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
+				FoundryProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
 
 				Variant **argptrs = instruction_args;
 

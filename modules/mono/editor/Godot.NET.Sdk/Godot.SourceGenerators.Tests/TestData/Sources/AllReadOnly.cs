@@ -1,6 +1,6 @@
 using Godot;
 
-public partial class AllReadOnly : GodotObject
+public partial class AllReadOnly : FoundryObject
 {
     public readonly string ReadOnlyField = "foo";
     public string ReadOnlyAutoProperty { get; } = "foo";

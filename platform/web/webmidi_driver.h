@@ -32,8 +32,8 @@
 
 #include "core/os/midi_driver.h"
 
-#include "godot_js.h"
-#include "godot_midi.h"
+#include "foundry_js.h"
+#include "foundry_midi.h"
 
 class MIDIDriverWebMidi : public MIDIDriver {
 private:

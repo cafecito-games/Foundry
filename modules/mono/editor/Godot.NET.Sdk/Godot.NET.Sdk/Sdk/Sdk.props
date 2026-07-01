@@ -5,39 +5,39 @@
     <UsingGodotNETSdk>true</UsingGodotNETSdk>
 
     <!-- Determines if we should import Microsoft.NET.Sdk, if it wasn't already imported. -->
-    <GodotSdkImportsMicrosoftNetSdk Condition=" '$(UsingMicrosoftNETSdk)' != 'true' ">true</GodotSdkImportsMicrosoftNetSdk>
+    <FoundrySdkImportsMicrosoftNetSdk Condition=" '$(UsingMicrosoftNETSdk)' != 'true' ">true</FoundrySdkImportsMicrosoftNetSdk>
   </PropertyGroup>
 
   <PropertyGroup>
     <Configurations>Debug;ExportDebug;ExportRelease</Configurations>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
 
-    <GodotProjectDir Condition=" '$(GodotProjectDir)' == '' ">$(MSBuildProjectDirectory)</GodotProjectDir>
-    <GodotProjectDir>$([MSBuild]::EnsureTrailingSlash('$(GodotProjectDir)'))</GodotProjectDir>
-    <GodotProjectDirBase64 Condition=" $([MSBuild]::VersionGreaterThanOrEquals($(MSBuildAssemblyVersion), '17.3')) ">$([MSBuild]::ConvertToBase64('$(GodotProjectDir)'))</GodotProjectDirBase64>
+    <FoundryProjectDir Condition=" '$(FoundryProjectDir)' == '' ">$(MSBuildProjectDirectory)</FoundryProjectDir>
+    <FoundryProjectDir>$([MSBuild]::EnsureTrailingSlash('$(FoundryProjectDir)'))</FoundryProjectDir>
+    <FoundryProjectDirBase64 Condition=" $([MSBuild]::VersionGreaterThanOrEquals($(MSBuildAssemblyVersion), '17.3')) ">$([MSBuild]::ConvertToBase64('$(FoundryProjectDir)'))</FoundryProjectDirBase64>
 
-    <!-- Custom output paths for Godot projects. In brief, 'bin\' and 'obj\' are moved to '$(GodotProjectDir)\.godot\mono\temp\'. -->
-    <BaseOutputPath>$(GodotProjectDir).godot\mono\temp\bin\</BaseOutputPath>
-    <OutputPath>$(GodotProjectDir).godot\mono\temp\bin\$(Configuration)\</OutputPath>
+    <!-- Custom output paths for Godot projects. In brief, 'bin\' and 'obj\' are moved to '$(FoundryProjectDir)\.godot\mono\temp\'. -->
+    <BaseOutputPath>$(FoundryProjectDir).godot\mono\temp\bin\</BaseOutputPath>
+    <OutputPath>$(FoundryProjectDir).godot\mono\temp\bin\$(Configuration)\</OutputPath>
     <!--
     Use custom IntermediateOutputPath and BaseIntermediateOutputPath only if it wasn't already set.
     Otherwise the old values may have already been changed by MSBuild which can cause problems with NuGet.
     -->
-    <IntermediateOutputPath Condition=" '$(IntermediateOutputPath)' == '' ">$(GodotProjectDir).godot\mono\temp\obj\$(Configuration)\</IntermediateOutputPath>
-    <BaseIntermediateOutputPath Condition=" '$(BaseIntermediateOutputPath)' == '' ">$(GodotProjectDir).godot\mono\temp\obj\</BaseIntermediateOutputPath>
+    <IntermediateOutputPath Condition=" '$(IntermediateOutputPath)' == '' ">$(FoundryProjectDir).godot\mono\temp\obj\$(Configuration)\</IntermediateOutputPath>
+    <BaseIntermediateOutputPath Condition=" '$(BaseIntermediateOutputPath)' == '' ">$(FoundryProjectDir).godot\mono\temp\obj\</BaseIntermediateOutputPath>
 
     <!-- Do not append the target framework name to the output path. -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 
-  <Target Condition=" $([MSBuild]::VersionLessThan($(MSBuildAssemblyVersion), '17.3')) " Name="GodotProjectDir" BeforeTargets="Build">
-    <Error Text="Cannot build from path containing '%23', move your project or update dotnet to the latest version." Condition="$(GodotProjectDir.Contains('%23'))" /> <!-- # -->
-    <Error Text="Cannot build from path containing '%3B', move your project or update dotnet to the latest version." Condition="$(GodotProjectDir.Contains('%3B'))" /> <!-- ; -->
-    <Error Text="Cannot build from path containing newlines, move your project or update dotnet to the latest version." Condition="$(GodotProjectDir.Contains('%0A'))" /> <!-- \n -->
-    <Error Text="Cannot build from path containing newlines, move your project or update dotnet to the latest version." Condition="$(GodotProjectDir.Contains('%0D'))" /> <!-- \r -->
+  <Target Condition=" $([MSBuild]::VersionLessThan($(MSBuildAssemblyVersion), '17.3')) " Name="FoundryProjectDir" BeforeTargets="Build">
+    <Error Text="Cannot build from path containing '%23', move your project or update dotnet to the latest version." Condition="$(FoundryProjectDir.Contains('%23'))" /> <!-- # -->
+    <Error Text="Cannot build from path containing '%3B', move your project or update dotnet to the latest version." Condition="$(FoundryProjectDir.Contains('%3B'))" /> <!-- ; -->
+    <Error Text="Cannot build from path containing newlines, move your project or update dotnet to the latest version." Condition="$(FoundryProjectDir.Contains('%0A'))" /> <!-- \n -->
+    <Error Text="Cannot build from path containing newlines, move your project or update dotnet to the latest version." Condition="$(FoundryProjectDir.Contains('%0D'))" /> <!-- \r -->
   </Target>
 
-  <Import Sdk="Microsoft.NET.Sdk" Project="Sdk.props" Condition=" '$(GodotSdkImportsMicrosoftNetSdk)' == 'true' " />
+  <Import Sdk="Microsoft.NET.Sdk" Project="Sdk.props" Condition=" '$(FoundrySdkImportsMicrosoftNetSdk)' == 'true' " />
 
   <PropertyGroup>
     <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
@@ -56,53 +56,53 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <GodotApiConfiguration Condition=" '$(Configuration)' != 'ExportRelease' ">Debug</GodotApiConfiguration>
-    <GodotApiConfiguration Condition=" '$(Configuration)' == 'ExportRelease' ">Release</GodotApiConfiguration>
+    <FoundryApiConfiguration Condition=" '$(Configuration)' != 'ExportRelease' ">Debug</FoundryApiConfiguration>
+    <FoundryApiConfiguration Condition=" '$(Configuration)' == 'ExportRelease' ">Release</FoundryApiConfiguration>
   </PropertyGroup>
 
   <!-- Auto-detect the target Godot platform if it was not specified. -->
-  <PropertyGroup Condition=" '$(GodotTargetPlatform)' == '' ">
-    <GodotTargetPlatform Condition=" $(RuntimeIdentifier.StartsWith('ios')) ">ios</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$(GodotTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('android')) ">android</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$(GodotTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('browser')) ">web</GodotTargetPlatform>
+  <PropertyGroup Condition=" '$(FoundryTargetPlatform)' == '' ">
+    <FoundryTargetPlatform Condition=" $(RuntimeIdentifier.StartsWith('ios')) ">ios</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$(FoundryTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('android')) ">android</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$(FoundryTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('browser')) ">web</FoundryTargetPlatform>
 
-    <GodotTargetPlatform Condition=" '$(GodotTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('linux')) ">linuxbsd</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$(GodotTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('freebsd')) ">linuxbsd</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$(GodotTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('osx')) ">macos</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$(GodotTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('win')) ">windows</GodotTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$(FoundryTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('linux')) ">linuxbsd</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$(FoundryTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('freebsd')) ">linuxbsd</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$(FoundryTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('osx')) ">macos</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$(FoundryTargetPlatform)' == '' and $(RuntimeIdentifier.StartsWith('win')) ">windows</FoundryTargetPlatform>
   </PropertyGroup>
 
   <!-- Auto-detect the target Godot platform if it was not specified and there's no runtime identifier information. -->
-  <PropertyGroup Condition=" '$(GodotTargetPlatform)' == '' ">
-    <GodotTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(Linux))' ">linuxbsd</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(FreeBSD))' ">linuxbsd</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(OSX))' ">macos</GodotTargetPlatform>
-    <GodotTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(Windows))' ">windows</GodotTargetPlatform>
+  <PropertyGroup Condition=" '$(FoundryTargetPlatform)' == '' ">
+    <FoundryTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(Linux))' ">linuxbsd</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(FreeBSD))' ">linuxbsd</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(OSX))' ">macos</FoundryTargetPlatform>
+    <FoundryTargetPlatform Condition=" '$([MSBuild]::IsOsPlatform(Windows))' ">windows</FoundryTargetPlatform>
   </PropertyGroup>
 
   <PropertyGroup>
-    <GodotFloat64 Condition=" '$(GodotFloat64)' == '' ">false</GodotFloat64>
+    <FoundryFloat64 Condition=" '$(FoundryFloat64)' == '' ">false</FoundryFloat64>
   </PropertyGroup>
 
   <!-- Godot DefineConstants. -->
   <PropertyGroup>
     <!-- Define constants to identify Godot builds. -->
-    <GodotDefineConstants>GODOT</GodotDefineConstants>
+    <FoundryDefineConstants>GODOT</FoundryDefineConstants>
 
     <!--
     Define constant to determine the target Godot platform. This includes the
     recognized platform names and the platform category (PC, MOBILE or WEB).
     -->
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'windows' ">FOUNDRY_WINDOWS;FOUNDRY_PC</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'linuxbsd' ">FOUNDRY_LINUXBSD;FOUNDRY_PC</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'macos' ">FOUNDRY_OSX;FOUNDRY_MACOS;FOUNDRY_PC</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'android' ">FOUNDRY_ANDROID;FOUNDRY_MOBILE</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'ios' ">FOUNDRY_IPHONE;FOUNDRY_IOS;FOUNDRY_MOBILE</GodotPlatformConstants>
-    <GodotPlatformConstants Condition=" '$(GodotTargetPlatform)' == 'web' ">FOUNDRY_JAVASCRIPT;FOUNDRY_HTML5;FOUNDRY_WASM;FOUNDRY_WEB</GodotPlatformConstants>
+    <FoundryPlatformConstants Condition=" '$(FoundryTargetPlatform)' == 'windows' ">FOUNDRY_WINDOWS;FOUNDRY_PC</FoundryPlatformConstants>
+    <FoundryPlatformConstants Condition=" '$(FoundryTargetPlatform)' == 'linuxbsd' ">FOUNDRY_LINUXBSD;FOUNDRY_PC</FoundryPlatformConstants>
+    <FoundryPlatformConstants Condition=" '$(FoundryTargetPlatform)' == 'macos' ">FOUNDRY_OSX;FOUNDRY_MACOS;FOUNDRY_PC</FoundryPlatformConstants>
+    <FoundryPlatformConstants Condition=" '$(FoundryTargetPlatform)' == 'android' ">FOUNDRY_ANDROID;FOUNDRY_MOBILE</FoundryPlatformConstants>
+    <FoundryPlatformConstants Condition=" '$(FoundryTargetPlatform)' == 'ios' ">FOUNDRY_IPHONE;FOUNDRY_IOS;FOUNDRY_MOBILE</FoundryPlatformConstants>
+    <FoundryPlatformConstants Condition=" '$(FoundryTargetPlatform)' == 'web' ">FOUNDRY_JAVASCRIPT;FOUNDRY_HTML5;FOUNDRY_WASM;FOUNDRY_WEB</FoundryPlatformConstants>
 
-    <GodotDefineConstants>$(GodotDefineConstants);$(GodotPlatformConstants);$(GodotVersionConstants)</GodotDefineConstants>
+    <FoundryDefineConstants>$(FoundryDefineConstants);$(FoundryPlatformConstants);$(FoundryVersionConstants)</FoundryDefineConstants>
   </PropertyGroup>
 
-  <Import Project="$(MSBuildThisFileDirectory)\Android.props" Condition=" '$(GodotTargetPlatform)' == 'android' " />
-  <Import Project="$(MSBuildThisFileDirectory)\iOSNativeAOT.props" Condition=" '$(GodotTargetPlatform)' == 'ios' " />
+  <Import Project="$(MSBuildThisFileDirectory)\Android.props" Condition=" '$(FoundryTargetPlatform)' == 'android' " />
+  <Import Project="$(MSBuildThisFileDirectory)\iOSNativeAOT.props" Condition=" '$(FoundryTargetPlatform)' == 'ios' " />
 </Project>

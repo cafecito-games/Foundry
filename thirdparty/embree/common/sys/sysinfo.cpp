@@ -661,7 +661,7 @@ namespace embree
 #include <emscripten.h>
 
 extern "C" {
-extern int godot_js_os_hw_concurrency_get();
+extern int foundry_js_os_hw_concurrency_get();
 }
 #endif
 
@@ -676,7 +676,7 @@ namespace embree
     nThreads = sysconf(_SC_NPROCESSORS_ONLN); // does not work in Linux LXC container
     assert(nThreads);
 #elif defined(__EMSCRIPTEN__)
-    nThreads = godot_js_os_hw_concurrency_get();
+    nThreads = foundry_js_os_hw_concurrency_get();
 #if 0
     // WebAssembly supports pthreads, but not pthread_getaffinity_np. Get the number of logical
     // threads from the browser or Node.js using JavaScript.

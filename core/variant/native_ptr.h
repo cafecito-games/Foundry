@@ -122,7 +122,7 @@ struct FoundryExtensionPtr {
 template <typename T>
 struct GetTypeInfo<FoundryExtensionConstPtr<T>> {
 	static const Variant::Type VARIANT_TYPE = Variant::INT;
-	static const GodotTypeInfo::Metadata METADATA = GodotTypeInfo::METADATA_NONE;
+	static const FoundryTypeInfo::Metadata METADATA = FoundryTypeInfo::METADATA_NONE;
 	static inline PropertyInfo get_class_info() {
 		return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_INT_IS_POINTER, FoundryExtensionConstPtr<T>::get_name());
 	}
@@ -131,7 +131,7 @@ struct GetTypeInfo<FoundryExtensionConstPtr<T>> {
 template <typename T>
 struct GetTypeInfo<FoundryExtensionPtr<T>> {
 	static const Variant::Type VARIANT_TYPE = Variant::INT;
-	static const GodotTypeInfo::Metadata METADATA = GodotTypeInfo::METADATA_NONE;
+	static const FoundryTypeInfo::Metadata METADATA = FoundryTypeInfo::METADATA_NONE;
 	static inline PropertyInfo get_class_info() {
 		return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_INT_IS_POINTER, FoundryExtensionPtr<T>::get_name());
 	}

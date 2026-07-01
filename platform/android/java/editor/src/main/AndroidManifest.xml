@@ -40,7 +40,7 @@
         android:icon="@mipmap/themed_icon"
         android:label="${editorAppName}${editorBuildSuffix}"
         android:requestLegacyExternalStorage="true"
-        android:theme="@style/GodotEditorSplashScreenTheme"
+        android:theme="@style/FoundryEditorSplashScreenTheme"
         tools:ignore="GoogleAppIndexingWarning">
         <profileable
             android:shell="true"
@@ -48,7 +48,7 @@
             tools:targetApi="29" />
 
         <activity
-            android:name=".GodotEditor"
+            android:name=".FoundryEditor"
             android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
             android:exported="false"
             android:icon="@mipmap/themed_icon"
@@ -78,7 +78,7 @@
             android:name=".ProjectManager"
             android:exported="true"
             android:icon="@mipmap/themed_icon"
-            android:targetActivity=".GodotEditor">
+            android:targetActivity=".FoundryEditor">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -87,15 +87,15 @@
             </intent-filter>
         </activity-alias>
         <activity
-            android:name=".GodotGame"
+            android:name=".FoundryGame"
             android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
             android:exported="false"
             android:icon="@mipmap/ic_play_window"
             android:label="@string/godot_game_activity_name"
             android:launchMode="singleTask"
-            android:process=":GodotGame"
+            android:process=":FoundryGame"
             android:autoRemoveFromRecents="true"
-            android:theme="@style/GodotGameTheme"
+            android:theme="@style/FoundryGameTheme"
             android:supportsPictureInPicture="true"
             android:screenOrientation="userLandscape">
             <layout
@@ -108,16 +108,16 @@
             android:exported="false"
             android:icon="@mipmap/ic_play_window"
             android:label="@string/godot_game_activity_name"
-            android:theme="@style/GodotEmbeddedGameTheme"
+            android:theme="@style/FoundryEmbeddedGameTheme"
             android:taskAffinity=":embed"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
             android:process=":EmbeddedGodotGame"
             android:supportsPictureInPicture="true" />
         <activity
-            android:name=".GodotXRGame"
+            android:name=".FoundryXRGame"
             android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
-            android:process=":GodotXRGame"
+            android:process=":FoundryXRGame"
             android:launchMode="singleTask"
             android:taskAffinity=":xr"
             android:icon="@mipmap/ic_play_window"

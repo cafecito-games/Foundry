@@ -339,8 +339,8 @@ int test_main(int argc, char *argv[]) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct GodotTestCaseListener : public doctest::IReporter {
-	GodotTestCaseListener(const doctest::ContextOptions &p_in) {}
+struct FoundryTestCaseListener : public doctest::IReporter {
+	FoundryTestCaseListener(const doctest::ContextOptions &p_in) {}
 
 	SignalWatcher *signal_watcher = nullptr;
 
@@ -583,4 +583,4 @@ private:
 	}
 };
 
-REGISTER_LISTENER("GodotTestCaseListener", 1, GodotTestCaseListener);
+REGISTER_LISTENER("FoundryTestCaseListener", 1, FoundryTestCaseListener);

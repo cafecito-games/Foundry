@@ -640,7 +640,7 @@ void call_get_argument_type_info(int p_arg, PropertyInfo &info) {
 
 #ifdef DEBUG_ENABLED
 template <typename Q>
-void call_get_argument_metadata_helper(int p_arg, int &index, GodotTypeInfo::Metadata &md) {
+void call_get_argument_metadata_helper(int p_arg, int &index, FoundryTypeInfo::Metadata &md) {
 	if (p_arg == index) {
 		md = GetTypeInfo<Q>::METADATA;
 	}
@@ -648,8 +648,8 @@ void call_get_argument_metadata_helper(int p_arg, int &index, GodotTypeInfo::Met
 }
 
 template <typename... P>
-GodotTypeInfo::Metadata call_get_argument_metadata(int p_arg) {
-	GodotTypeInfo::Metadata md = GodotTypeInfo::METADATA_NONE;
+FoundryTypeInfo::Metadata call_get_argument_metadata(int p_arg) {
+	FoundryTypeInfo::Metadata md = FoundryTypeInfo::METADATA_NONE;
 
 	int index = 0;
 	// I think rocket science is simpler than modern C++.

@@ -124,7 +124,7 @@ partial class ExportedProperties
         values.Add(PropertyName.@PropertyVector3Array, global::Godot.Variant.From<global::Godot.Vector3[]>(__PropertyVector3Array_default_value));
         global::Godot.Color[] __PropertyColorArray_default_value = { global::Godot.Colors.Aqua, global::Godot.Colors.Aquamarine, global::Godot.Colors.Azure, global::Godot.Colors.Beige   };
         values.Add(PropertyName.@PropertyColorArray, global::Godot.Variant.From<global::Godot.Color[]>(__PropertyColorArray_default_value));
-        global::Godot.GodotObject[] __PropertyGodotObjectOrDerivedArray_default_value = { null  };
+        global::Godot.FoundryObject[] __PropertyGodotObjectOrDerivedArray_default_value = { null  };
         values.Add(PropertyName.@PropertyGodotObjectOrDerivedArray, global::Godot.Variant.CreateFrom(__PropertyGodotObjectOrDerivedArray_default_value));
         global::Godot.StringName[] __field_StringNameArray_default_value = { "foo", "bar"  };
         values.Add(PropertyName.@field_StringNameArray, global::Godot.Variant.From<global::Godot.StringName[]>(__field_StringNameArray_default_value));
@@ -134,8 +134,8 @@ partial class ExportedProperties
         values.Add(PropertyName.@field_RidArray, global::Godot.Variant.From<global::Godot.Rid[]>(__field_RidArray_default_value));
         global::Godot.Variant __PropertyVariant_default_value = "foo";
         values.Add(PropertyName.@PropertyVariant, global::Godot.Variant.From<global::Godot.Variant>(__PropertyVariant_default_value));
-        global::Godot.GodotObject __PropertyGodotObjectOrDerived_default_value = default;
-        values.Add(PropertyName.@PropertyGodotObjectOrDerived, global::Godot.Variant.From<global::Godot.GodotObject>(__PropertyGodotObjectOrDerived_default_value));
+        global::Godot.FoundryObject __PropertyGodotObjectOrDerived_default_value = default;
+        values.Add(PropertyName.@PropertyGodotObjectOrDerived, global::Godot.Variant.From<global::Godot.FoundryObject>(__PropertyGodotObjectOrDerived_default_value));
         global::Godot.Texture __PropertyGodotResourceTexture_default_value = default;
         values.Add(PropertyName.@PropertyGodotResourceTexture, global::Godot.Variant.From<global::Godot.Texture>(__PropertyGodotResourceTexture_default_value));
         global::Godot.Texture __PropertyGodotResourceTextureWithInitializer_default_value = new()  { ResourceName  = ""   };

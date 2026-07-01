@@ -349,9 +349,9 @@ def generate_scu_files(max_includes_per_scu):
     process_folder(["modules/openxr/editor"])
     # process_folder(["modules/openxr/extensions"])  # Sensitive include order for platform code.
     process_folder(["modules/openxr/scene"])
-    process_folder(["modules/godot_physics_2d"])
-    process_folder(["modules/godot_physics_3d"])
-    process_folder(["modules/godot_physics_3d/joints"])
+    process_folder(["modules/foundry_physics_2d"])
+    process_folder(["modules/foundry_physics_3d"])
+    process_folder(["modules/foundry_physics_3d/joints"])
 
     process_folder(["modules/csg"])
     process_folder(["modules/foundry_script"])

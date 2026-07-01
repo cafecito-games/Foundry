@@ -66,7 +66,7 @@ def create_template_zip(env, js, wasm, side):
         opt_cache = ["foundry.editor.wasm"]
         subst_dict = {
             "___GODOT_VERSION___": get_build_version(False),
-            "___GODOT_NAME___": "GodotEngine",
+            "___GODOT_NAME___": "FoundryEngine",
             "___GODOT_CACHE___": json.dumps(cache),
             "___GODOT_OPT_CACHE___": json.dumps(opt_cache),
             "___GODOT_OFFLINE_PAGE___": "offline.html",

@@ -9,22 +9,22 @@ namespace Godot.SourceGenerators
 
         internal static readonly DiagnosticDescriptor ClassPartialModifierRule =
             new DiagnosticDescriptor(id: "GD0001",
-                title: $"Missing partial modifier on declaration of type that derives from '{GodotClasses.GodotObject}'",
-                messageFormat: $"Missing partial modifier on declaration of type '{{0}}' that derives from '{GodotClasses.GodotObject}'",
+                title: $"Missing partial modifier on declaration of type that derives from '{FoundryClasses.FoundryObject}'",
+                messageFormat: $"Missing partial modifier on declaration of type '{{0}}' that derives from '{FoundryClasses.FoundryObject}'",
                 category: "Usage",
                 DiagnosticSeverity.Error,
                 isEnabledByDefault: true,
-                $"Classes that derive from '{GodotClasses.GodotObject}' must be declared with the partial modifier.",
+                $"Classes that derive from '{FoundryClasses.FoundryObject}' must be declared with the partial modifier.",
                 helpLinkUri: string.Format(_helpLinkFormat, "GD0001"));
 
         internal static readonly DiagnosticDescriptor OuterClassPartialModifierRule =
             new DiagnosticDescriptor(id: "GD0002",
-                title: $"Missing partial modifier on declaration of type which contains nested classes that derive from '{GodotClasses.GodotObject}'",
-                messageFormat: $"Missing partial modifier on declaration of type '{{0}}' which contains nested classes that derive from '{GodotClasses.GodotObject}'",
+                title: $"Missing partial modifier on declaration of type which contains nested classes that derive from '{FoundryClasses.FoundryObject}'",
+                messageFormat: $"Missing partial modifier on declaration of type '{{0}}' which contains nested classes that derive from '{FoundryClasses.FoundryObject}'",
                 category: "Usage",
                 DiagnosticSeverity.Error,
                 isEnabledByDefault: true,
-                $"Classes that derive from '{GodotClasses.GodotObject}' and their containing types must be declared with the partial modifier.",
+                $"Classes that derive from '{FoundryClasses.FoundryObject}' and their containing types must be declared with the partial modifier.",
                 helpLinkUri: string.Format(_helpLinkFormat, "GD0002"));
 
         public static readonly DiagnosticDescriptor MultipleClassesInGodotScriptRule =
@@ -209,12 +209,12 @@ namespace Godot.SourceGenerators
 
         public static readonly DiagnosticDescriptor GlobalClassMustDeriveFromGodotObjectRule =
             new DiagnosticDescriptor(id: "GD0401",
-                title: $"The class must derive from {GodotClasses.GodotObject} or a derived class",
-                messageFormat: $"The class '{{0}}' must derive from {GodotClasses.GodotObject} or a derived class",
+                title: $"The class must derive from {FoundryClasses.FoundryObject} or a derived class",
+                messageFormat: $"The class '{{0}}' must derive from {FoundryClasses.FoundryObject} or a derived class",
                 category: "Usage",
                 DiagnosticSeverity.Error,
                 isEnabledByDefault: true,
-                $"The class must derive from {GodotClasses.GodotObject} or a derived class. Change the base type, or remove the '[GlobalClass]' attribute.",
+                $"The class must derive from {FoundryClasses.FoundryObject} or a derived class. Change the base type, or remove the '[GlobalClass]' attribute.",
                 helpLinkUri: string.Format(_helpLinkFormat, "GD0401"));
 
         public static readonly DiagnosticDescriptor GlobalClassMustNotBeGenericRule =

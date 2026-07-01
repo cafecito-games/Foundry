@@ -39,7 +39,7 @@
 
 #include "core/io/file_access.h"
 
-LSP::Position GodotPosition::to_lsp(const Vector<String> &p_lines) const {
+LSP::Position FoundryPosition::to_lsp(const Vector<String> &p_lines) const {
 	LSP::Position res;
 
 	// Special case: `line = 0` -> root class (range covers everything).
@@ -63,8 +63,8 @@ LSP::Position GodotPosition::to_lsp(const Vector<String> &p_lines) const {
 	return res;
 }
 
-GodotPosition GodotPosition::from_lsp(const LSP::Position p_pos, const Vector<String> &p_lines) {
-	GodotPosition res(p_pos.line + 1, p_pos.character + 1);
+FoundryPosition FoundryPosition::from_lsp(const LSP::Position p_pos, const Vector<String> &p_lines) {
+	FoundryPosition res(p_pos.line + 1, p_pos.character + 1);
 
 	// Line outside of actual text is valid (-> pos/cursor at end of text).
 	if (res.line > p_lines.size()) {
@@ -76,17 +76,17 @@ GodotPosition GodotPosition::from_lsp(const LSP::Position p_pos, const Vector<St
 	return res;
 }
 
-LSP::Range GodotRange::to_lsp(const Vector<String> &p_lines) const {
+LSP::Range FoundryRange::to_lsp(const Vector<String> &p_lines) const {
 	LSP::Range res;
 	res.start = start.to_lsp(p_lines);
 	res.end = end.to_lsp(p_lines);
 	return res;
 }
 
-GodotRange GodotRange::from_lsp(const LSP::Range &p_range, const Vector<String> &p_lines) {
-	GodotPosition start = GodotPosition::from_lsp(p_range.start, p_lines);
-	GodotPosition end = GodotPosition::from_lsp(p_range.end, p_lines);
-	return GodotRange(start, end);
+FoundryRange FoundryRange::from_lsp(const LSP::Range &p_range, const Vector<String> &p_lines) {
+	FoundryPosition start = FoundryPosition::from_lsp(p_range.start, p_lines);
+	FoundryPosition end = FoundryPosition::from_lsp(p_range.end, p_lines);
+	return FoundryRange(start, end);
 }
 
 void ExtendFSParser::update_diagnostics() {
@@ -187,7 +187,7 @@ void ExtendFSParser::update_document_links(const String &p_code) {
 					String value = const_val;
 					LSP::DocumentLink link;
 					link.target = FSLanguageProtocol::get_singleton()->get_workspace()->get_file_uri(scr_path);
-					link.range = GodotRange(GodotPosition(token.start_line, token.start_column), GodotPosition(token.end_line, token.end_column)).to_lsp(lines);
+					link.range = FoundryRange(FoundryPosition(token.start_line, token.start_column), FoundryPosition(token.end_line, token.end_column)).to_lsp(lines);
 					document_links.push_back(link);
 				}
 			}
@@ -196,9 +196,9 @@ void ExtendFSParser::update_document_links(const String &p_code) {
 }
 
 LSP::Range ExtendFSParser::range_of_node(const FSParser::Node *p_node) const {
-	GodotPosition start(p_node->start_line, p_node->start_column);
-	GodotPosition end(p_node->end_line, p_node->end_column);
-	return GodotRange(start, end).to_lsp(lines);
+	FoundryPosition start(p_node->start_line, p_node->start_column);
+	FoundryPosition end(p_node->end_line, p_node->end_column);
+	return FoundryRange(start, end).to_lsp(lines);
 }
 
 void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP::DocumentSymbol &r_symbol) {
@@ -261,8 +261,8 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 			child.name = value.identifier->name;
 			child.kind = LSP::SymbolKind::EnumMember;
 			child.deprecated = false;
-			child.range.start = GodotPosition(value.line, value.start_column).to_lsp(lines);
-			child.range.end = GodotPosition(value.line, value.end_column).to_lsp(lines);
+			child.range.start = FoundryPosition(value.line, value.start_column).to_lsp(lines);
+			child.range.end = FoundryPosition(value.line, value.end_column).to_lsp(lines);
 			child.selectionRange = range_of_node(value.identifier);
 			child.documentation = value.doc_data.description;
 			child.uri = uri;
@@ -425,8 +425,8 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 				symbol.name = m.enum_value.identifier->name;
 				symbol.kind = LSP::SymbolKind::EnumMember;
 				symbol.deprecated = false;
-				symbol.range.start = GodotPosition(m.enum_value.line, m.enum_value.start_column).to_lsp(lines);
-				symbol.range.end = GodotPosition(m.enum_value.line, m.enum_value.end_column).to_lsp(lines);
+				symbol.range.start = FoundryPosition(m.enum_value.line, m.enum_value.start_column).to_lsp(lines);
+				symbol.range.end = FoundryPosition(m.enum_value.line, m.enum_value.end_column).to_lsp(lines);
 				symbol.selectionRange = range_of_node(m.enum_value.identifier);
 				symbol.documentation = m.enum_value.doc_data.description;
 				symbol.uri = uri;
@@ -461,8 +461,8 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 					child.name = value.identifier->name;
 					child.kind = LSP::SymbolKind::EnumMember;
 					child.deprecated = false;
-					child.range.start = GodotPosition(value.line, value.start_column).to_lsp(lines);
-					child.range.end = GodotPosition(value.line, value.end_column).to_lsp(lines);
+					child.range.start = FoundryPosition(value.line, value.start_column).to_lsp(lines);
+					child.range.end = FoundryPosition(value.line, value.end_column).to_lsp(lines);
 					child.selectionRange = range_of_node(value.identifier);
 					child.documentation = value.doc_data.description;
 					child.uri = uri;
@@ -695,8 +695,8 @@ void ExtendFSParser::parse_function_symbol(const FSParser::FunctionNode *p_func,
 					break;
 				default:
 					// Fallback.
-					symbol.range.start = GodotPosition(local.start_line, local.start_column).to_lsp(get_lines());
-					symbol.range.end = GodotPosition(local.end_line, local.end_column).to_lsp(get_lines());
+					symbol.range.start = FoundryPosition(local.start_line, local.start_column).to_lsp(get_lines());
+					symbol.range.end = FoundryPosition(local.end_line, local.end_column).to_lsp(get_lines());
 					symbol.selectionRange = symbol.range;
 					break;
 			}

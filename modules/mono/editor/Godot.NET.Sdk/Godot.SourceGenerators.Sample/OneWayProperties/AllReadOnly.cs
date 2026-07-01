@@ -1,6 +1,6 @@
 namespace Godot.SourceGenerators.Sample
 {
-    public partial class AllReadOnly : GodotObject
+    public partial class AllReadOnly : FoundryObject
     {
         public readonly string ReadonlyField = "foo";
         public string ReadonlyAutoProperty { get; } = "foo";

@@ -55,12 +55,12 @@ namespace Godot.SourceGenerators
             }
         }
 
-        private class MethodOverloadEqualityComparer : IEqualityComparer<GodotMethodData>
+        private class MethodOverloadEqualityComparer : IEqualityComparer<FoundryMethodData>
         {
-            public bool Equals(GodotMethodData x, GodotMethodData y)
+            public bool Equals(FoundryMethodData x, FoundryMethodData y)
                 => x.ParamTypes.Length == y.ParamTypes.Length && x.Method.Name == y.Method.Name;
 
-            public int GetHashCode(GodotMethodData obj)
+            public int GetHashCode(FoundryMethodData obj)
             {
                 unchecked
                 {
@@ -165,7 +165,7 @@ namespace Godot.SourceGenerators
                 source.Append("\";\n");
             }
 
-            source.Append("    }\n"); // class GodotInternal
+            source.Append("    }\n"); // class FoundryInternal
 
             // Generate GetGodotMethodList
 
@@ -342,7 +342,7 @@ namespace Godot.SourceGenerators
             source.Append(")");
         }
 
-        private static MethodInfo DetermineMethodInfo(GodotMethodData method)
+        private static MethodInfo DetermineMethodInfo(FoundryMethodData method)
         {
             PropertyInfo returnVal;
 
@@ -420,7 +420,7 @@ namespace Godot.SourceGenerators
         }
 
         private static void GenerateMethodInvoker(
-            GodotMethodData method,
+            FoundryMethodData method,
             StringBuilder source
         )
         {

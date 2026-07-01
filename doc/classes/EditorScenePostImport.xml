@@ -32,7 +32,7 @@
 		[Tool]
 		public partial class NodeRenamer : EditorScenePostImport
 		{
-			public override GodotObject _PostImport(Node scene)
+			public override FoundryObject _PostImport(Node scene)
 			{
 				// Change all node names to "modified_[oldnodename]"
 				Iterate(scene);

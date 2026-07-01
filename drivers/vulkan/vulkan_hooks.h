@@ -32,7 +32,7 @@
 
 #include "core/math/vector2i.h"
 #include "core/templates/local_vector.h"
-#include "drivers/vulkan/godot_vulkan.h"
+#include "drivers/vulkan/foundry_vulkan.h"
 
 class VulkanHooks {
 private:

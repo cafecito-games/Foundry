@@ -57,37 +57,37 @@ const SourceLocationData *intern_source_location(const void *p_function_ptr, con
 } //namespace tracy
 
 // Define tracing macros.
-#define GodotProfileFrameMark FrameMark
-#define GodotProfileZone(m_zone_name) ZoneNamedN(GD_UNIQUE_NAME(__godot_tracy_szone_), m_zone_name, true)
-#define GodotProfileZoneGroupedFirst(m_group_name, m_zone_name) ZoneNamedN(__godot_tracy_zone_##m_group_name, m_zone_name, true)
-#define GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name) __godot_tracy_zone_##m_group_name.~ScopedZone();
+#define FoundryProfileFrameMark FrameMark
+#define FoundryProfileZone(m_zone_name) ZoneNamedN(GD_UNIQUE_NAME(__godot_tracy_szone_), m_zone_name, true)
+#define FoundryProfileZoneGroupedFirst(m_group_name, m_zone_name) ZoneNamedN(__godot_tracy_zone_##m_group_name, m_zone_name, true)
+#define FoundryProfileZoneGroupedEndEarly(m_group_name, m_zone_name) __godot_tracy_zone_##m_group_name.~ScopedZone();
 #ifndef TRACY_CALLSTACK
-#define GodotProfileZoneGrouped(m_group_name, m_zone_name)                                                                                                       \
-	GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name);                                                                                                  \
+#define FoundryProfileZoneGrouped(m_group_name, m_zone_name)                                                                                                     \
+	FoundryProfileZoneGroupedEndEarly(m_group_name, m_zone_name);                                                                                                \
 	static constexpr tracy::SourceLocationData TracyConcat(__tracy_source_location, TracyLine){ m_zone_name, TracyFunction, TracyFile, (uint32_t)TracyLine, 0 }; \
 	new (&__godot_tracy_zone_##m_group_name) tracy::ScopedZone(&TracyConcat(__tracy_source_location, TracyLine), true)
 #else
-#define GodotProfileZoneGrouped(m_group_name, m_zone_name)                                                                                                       \
-	GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name);                                                                                                  \
+#define FoundryProfileZoneGrouped(m_group_name, m_zone_name)                                                                                                     \
+	FoundryProfileZoneGroupedEndEarly(m_group_name, m_zone_name);                                                                                                \
 	static constexpr tracy::SourceLocationData TracyConcat(__tracy_source_location, TracyLine){ m_zone_name, TracyFunction, TracyFile, (uint32_t)TracyLine, 0 }; \
 	new (&__godot_tracy_zone_##m_group_name) tracy::ScopedZone(&TracyConcat(__tracy_source_location, TracyLine), TRACY_CALLSTACK, true)
 #endif
 
-#define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line) \
+#define FoundryProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line) \
 	tracy::ScopedZone __godot_tracy_script(tracy::intern_source_location(m_ptr, m_file, m_function, m_name, m_line, true))
-#define GodotProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line) \
+#define FoundryProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line) \
 	tracy::ScopedZone __godot_tracy_zone_system_call(tracy::intern_source_location(m_ptr, m_file, m_function, m_name, m_line, false))
 
 // Memory allocation
 #ifdef FOUNDRY_PROFILER_TRACK_MEMORY
-#define GodotProfileAlloc(m_ptr, m_size)                         \
+#define FoundryProfileAlloc(m_ptr, m_size)                       \
 	FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wmaybe-uninitialized") \
 	TracyAlloc(m_ptr, m_size);                                   \
 	FOUNDRY_GCC_WARNING_POP
-#define GodotProfileFree(m_ptr) TracyFree(m_ptr)
+#define FoundryProfileFree(m_ptr) TracyFree(m_ptr)
 #else
-#define GodotProfileAlloc(m_ptr, m_size)
-#define GodotProfileFree(m_ptr)
+#define FoundryProfileAlloc(m_ptr, m_size)
+#define FoundryProfileFree(m_ptr)
 #endif
 
 void godot_init_profiler();
@@ -115,21 +115,21 @@ struct PerfettoGroupedEventEnder {
 	}
 };
 
-#define GodotProfileFrameMark // TODO
-#define GodotProfileZone(m_zone_name) TRACE_EVENT("godot", m_zone_name);
-#define GodotProfileZoneGroupedFirst(m_group_name, m_zone_name) \
-	TRACE_EVENT_BEGIN("godot", m_zone_name);                    \
+#define FoundryProfileFrameMark // TODO
+#define FoundryProfileZone(m_zone_name) TRACE_EVENT("godot", m_zone_name);
+#define FoundryProfileZoneGroupedFirst(m_group_name, m_zone_name) \
+	TRACE_EVENT_BEGIN("godot", m_zone_name);                      \
 	PerfettoGroupedEventEnder __godot_perfetto_zone_##m_group_name
-#define GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name) __godot_perfetto_zone_##m_group_name.~PerfettoGroupedEventEnder()
-#define GodotProfileZoneGrouped(m_group_name, m_zone_name) \
-	__godot_perfetto_zone_##m_group_name._end_now();       \
+#define FoundryProfileZoneGroupedEndEarly(m_group_name, m_zone_name) __godot_perfetto_zone_##m_group_name.~PerfettoGroupedEventEnder()
+#define FoundryProfileZoneGrouped(m_group_name, m_zone_name) \
+	__godot_perfetto_zone_##m_group_name._end_now();         \
 	TRACE_EVENT_BEGIN("godot", m_zone_name);
 
-#define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
-#define GodotProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
+#define FoundryProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
+#define FoundryProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
 
-#define GodotProfileAlloc(m_ptr, m_size)
-#define GodotProfileFree(m_ptr)
+#define FoundryProfileAlloc(m_ptr, m_size)
+#define FoundryProfileFree(m_ptr)
 
 void godot_init_profiler();
 void godot_cleanup_profiler();
@@ -160,36 +160,36 @@ private:
 
 } // namespace apple::instruments
 
-#define GodotProfileFrameMark \
+#define FoundryProfileFrameMark \
 	os_signpost_event_emit(apple::instruments::LOG, OS_SIGNPOST_ID_EXCLUSIVE, "Frame");
 
-#define GodotProfileZoneGroupedFirst(m_group_name, m_zone_name)                                           \
+#define FoundryProfileZoneGroupedFirst(m_group_name, m_zone_name)                                         \
 	os_signpost_interval_begin(apple::instruments::LOG_TRACING, OS_SIGNPOST_ID_EXCLUSIVE, m_zone_name);   \
 	apple::instruments::DeferFunc _GD_VARNAME_CONCAT_(defer__fn, _, m_group_name) = []() {                \
 		os_signpost_interval_end(apple::instruments::LOG_TRACING, OS_SIGNPOST_ID_EXCLUSIVE, m_zone_name); \
 	};                                                                                                    \
 	apple::instruments::Defer _GD_VARNAME_CONCAT_(__instruments_defer_zone_end__, _, m_group_name)(_GD_VARNAME_CONCAT_(defer__fn, _, m_group_name));
 
-#define GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name) \
+#define FoundryProfileZoneGroupedEndEarly(m_group_name, m_zone_name) \
 	_GD_VARNAME_CONCAT_(__instruments_defer_zone_end__, _, m_group_name).~Defer();
 
-#define GodotProfileZoneGrouped(m_group_name, m_zone_name)                                                \
-	GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name);                                           \
+#define FoundryProfileZoneGrouped(m_group_name, m_zone_name)                                              \
+	FoundryProfileZoneGroupedEndEarly(m_group_name, m_zone_name);                                         \
 	os_signpost_interval_begin(apple::instruments::LOG_TRACING, OS_SIGNPOST_ID_EXCLUSIVE, m_zone_name);   \
 	_GD_VARNAME_CONCAT_(defer__fn, _, m_group_name) = []() {                                              \
 		os_signpost_interval_end(apple::instruments::LOG_TRACING, OS_SIGNPOST_ID_EXCLUSIVE, m_zone_name); \
 	};                                                                                                    \
 	new (&_GD_VARNAME_CONCAT_(__instruments_defer_zone_end__, _, m_group_name)) apple::instruments::Defer(_GD_VARNAME_CONCAT_(defer__fn, _, m_group_name));
 
-#define GodotProfileZone(m_zone_name) \
-	GodotProfileZoneGroupedFirst(__COUNTER__, m_zone_name)
+#define FoundryProfileZone(m_zone_name) \
+	FoundryProfileZoneGroupedFirst(__COUNTER__, m_zone_name)
 
-#define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
-#define GodotProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
+#define FoundryProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
+#define FoundryProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
 
 // Instruments has its own memory profiling, so these are no-ops.
-#define GodotProfileAlloc(m_ptr, m_size)
-#define GodotProfileFree(m_ptr)
+#define FoundryProfileAlloc(m_ptr, m_size)
+#define FoundryProfileFree(m_ptr)
 
 void godot_init_profiler();
 void godot_cleanup_profiler();
@@ -201,28 +201,28 @@ void godot_init_profiler();
 void godot_cleanup_profiler();
 
 // Tell the profiling backend that a new frame has started.
-#define GodotProfileFrameMark
+#define FoundryProfileFrameMark
 // Defines a profile zone from here to the end of the scope.
-#define GodotProfileZone(m_zone_name)
+#define FoundryProfileZone(m_zone_name)
 // Defines a profile zone group. The first profile zone starts immediately,
 // and ends either when the next zone starts, or when the scope ends.
-#define GodotProfileZoneGroupedFirst(m_group_name, m_zone_name)
+#define FoundryProfileZoneGroupedFirst(m_group_name, m_zone_name)
 // End the profile zone group's current profile zone now.
-#define GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name)
+#define FoundryProfileZoneGroupedEndEarly(m_group_name, m_zone_name)
 // Replace the profile zone group's current profile zone.
 // The new zone ends either when the next zone starts, or when the scope ends.
-#define GodotProfileZoneGrouped(m_group_name, m_zone_name)
+#define FoundryProfileZoneGrouped(m_group_name, m_zone_name)
 // Tell the profiling backend that an allocation happened, with its location and size.
-#define GodotProfileAlloc(m_ptr, m_size)
+#define FoundryProfileAlloc(m_ptr, m_size)
 // Tell the profiling backend that an allocation was freed.
-// There must be a one to one correspondence of GodotProfileAlloc and GodotProfileFree calls.
-#define GodotProfileFree(m_ptr)
+// There must be a one to one correspondence of FoundryProfileAlloc and FoundryProfileFree calls.
+#define FoundryProfileFree(m_ptr)
 
 // Define a zone for a script call (dynamic source location).
 // m_ptr is a pointer to the function instance, which will be used for the lookup.
 // m_file, m_function, m_name are StringNames, and m_line is uint32_t
-#define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
+#define FoundryProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
 // Define a zone for a system call from a script (dynamic source location).
-#define GodotProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
+#define FoundryProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
 
 #endif

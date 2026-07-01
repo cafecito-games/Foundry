@@ -1,6 +1,6 @@
 namespace Godot.SourceGenerators.Sample
 {
-    public partial class MixedReadonlyWriteOnly : GodotObject
+    public partial class MixedReadonlyWriteOnly : FoundryObject
     {
         public readonly string ReadOnlyField = "foo";
         public string ReadOnlyAutoProperty { get; } = "foo";

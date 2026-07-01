@@ -111,7 +111,7 @@ generated_sources = [
         "tearing_control_v1", "#thirdparty/wayland-protocols/staging/tearing-control/tearing-control-v1.xml"
     ),
     generate_from_xml("wayland-drm", "#thirdparty/wayland-protocols/mesa/wayland-drm.xml"),
-    generate_from_xml("godot_embedding_compositor", "godot-embedding-compositor.xml"),
+    generate_from_xml("foundry_embedding_compositor", "foundry-embedding-compositor.xml"),
 ]
 
 source_files = generated_sources + [

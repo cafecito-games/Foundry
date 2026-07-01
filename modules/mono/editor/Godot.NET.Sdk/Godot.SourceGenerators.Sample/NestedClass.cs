@@ -2,11 +2,11 @@ using System;
 
 namespace Godot.SourceGenerators.Sample;
 
-public partial class NestedClass : GodotObject
+public partial class NestedClass : FoundryObject
 {
-    public partial class NestedClass2 : GodotObject
+    public partial class NestedClass2 : FoundryObject
     {
-        public partial class NestedClass3 : GodotObject
+        public partial class NestedClass3 : FoundryObject
         {
             [Signal]
             public delegate void MySignalEventHandler(string str, int num);

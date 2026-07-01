@@ -823,9 +823,9 @@ class BindingsGenerator {
 
 	const String _get_generic_type_parameters(const TypeInterface &p_itype, const List<TypeReference> &p_generic_type_parameters);
 
-	StringName _get_type_name_from_meta(Variant::Type p_type, GodotTypeInfo::Metadata p_meta);
-	StringName _get_int_type_name_from_meta(GodotTypeInfo::Metadata p_meta);
-	StringName _get_float_type_name_from_meta(GodotTypeInfo::Metadata p_meta);
+	StringName _get_type_name_from_meta(Variant::Type p_type, FoundryTypeInfo::Metadata p_meta);
+	StringName _get_int_type_name_from_meta(FoundryTypeInfo::Metadata p_meta);
+	StringName _get_float_type_name_from_meta(FoundryTypeInfo::Metadata p_meta);
 
 	bool _arg_default_value_from_variant(const Variant &p_val, ArgumentInterface &r_iarg);
 	bool _arg_default_value_is_assignable_to_type(const Variant &p_val, const TypeInterface &p_arg_type);

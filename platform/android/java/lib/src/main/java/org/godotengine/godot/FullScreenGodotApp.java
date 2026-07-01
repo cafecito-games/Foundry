@@ -33,7 +33,7 @@ package org.godotengine.godot;
 /**
  * Base abstract activity for Android apps intending to use Godot as the primary screen.
  *
- * @deprecated Use {@link GodotActivity}
+ * @deprecated Use {@link FoundryActivity}
  */
 @Deprecated
-public abstract class FullScreenGodotApp extends GodotActivity {}
+public abstract class FullScreenGodotApp extends FoundryActivity {}

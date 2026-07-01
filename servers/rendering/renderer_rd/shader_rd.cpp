@@ -148,9 +148,9 @@ void ShaderRD::setup(const char *p_vertex_code, const char *p_fragment_code, con
 	}
 
 	StringBuilder tohash;
-	tohash.append("[GodotVersionNumber]");
+	tohash.append("[FoundryVersionNumber]");
 	tohash.append(FOUNDRY_VERSION_NUMBER);
-	tohash.append("[GodotVersionHash]");
+	tohash.append("[FoundryVersionHash]");
 	tohash.append(FOUNDRY_VERSION_HASH);
 	tohash.append("[Vertex]");
 	tohash.append(p_vertex_code ? p_vertex_code : "");

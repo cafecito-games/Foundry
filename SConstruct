@@ -593,7 +593,7 @@ if env["library_type"] != "executable":
     if "library" not in env.get("supported", []):
         print_error(f"Library builds unsupported for {env['platform']}")
         Exit(255)
-    env.Append(CPPDEFINES=["LIBGODOT_ENABLED"])
+    env.Append(CPPDEFINES=["LIBFOUNDRY_ENABLED"])
 
 # Default num_jobs to local cpu count if not user specified.
 # SCons has a peculiarity where user-specified options won't be overridden

@@ -31,7 +31,7 @@
 #import "native_menu_macos.h"
 
 #import "display_server_macos.h"
-#import "godot_menu_item.h"
+#import "foundry_menu_item.h"
 #import "key_mapping_macos.h"
 
 #include "scene/resources/image_texture.h"
@@ -416,7 +416,7 @@ int NativeMenuMacOS::add_submenu_item(const RID &p_rid, const String &p_label, c
 	}
 	menu_item = [md->menu insertItemWithTitle:[NSString stringWithUTF8String:p_label.utf8().get_data()] action:nil keyEquivalent:@"" atIndex:p_index];
 
-	GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+	FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 	obj->meta = p_tag;
 	[menu_item setRepresentedObject:obj];
 
@@ -452,7 +452,7 @@ int NativeMenuMacOS::add_item(const RID &p_rid, const String &p_label, const Cal
 	int out = -1;
 	NSMenuItem *menu_item = _menu_add_item(md->menu, p_label, p_accel, p_index, &out);
 	if (menu_item) {
-		GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+		FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 		obj->callback = p_callback;
 		obj->key_callback = p_key_callback;
 		obj->meta = p_tag;
@@ -470,7 +470,7 @@ int NativeMenuMacOS::add_check_item(const RID &p_rid, const String &p_label, con
 	int out = -1;
 	NSMenuItem *menu_item = _menu_add_item(md->menu, p_label, p_accel, p_index, &out);
 	if (menu_item) {
-		GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+		FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 		obj->callback = p_callback;
 		obj->key_callback = p_key_callback;
 		obj->meta = p_tag;
@@ -489,7 +489,7 @@ int NativeMenuMacOS::add_icon_item(const RID &p_rid, const Ref<Texture2D> &p_ico
 	int out = -1;
 	NSMenuItem *menu_item = _menu_add_item(md->menu, p_label, p_accel, p_index, &out);
 	if (menu_item) {
-		GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+		FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 		obj->callback = p_callback;
 		obj->key_callback = p_key_callback;
 		obj->meta = p_tag;
@@ -518,7 +518,7 @@ int NativeMenuMacOS::add_icon_check_item(const RID &p_rid, const Ref<Texture2D> 
 	int out = -1;
 	NSMenuItem *menu_item = _menu_add_item(md->menu, p_label, p_accel, p_index, &out);
 	if (menu_item) {
-		GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+		FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 		obj->callback = p_callback;
 		obj->key_callback = p_key_callback;
 		obj->meta = p_tag;
@@ -548,7 +548,7 @@ int NativeMenuMacOS::add_radio_check_item(const RID &p_rid, const String &p_labe
 	int out = -1;
 	NSMenuItem *menu_item = _menu_add_item(md->menu, p_label, p_accel, p_index, &out);
 	if (menu_item) {
-		GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+		FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 		obj->callback = p_callback;
 		obj->key_callback = p_key_callback;
 		obj->meta = p_tag;
@@ -567,7 +567,7 @@ int NativeMenuMacOS::add_icon_radio_check_item(const RID &p_rid, const Ref<Textu
 	int out = -1;
 	NSMenuItem *menu_item = _menu_add_item(md->menu, p_label, p_accel, p_index, &out);
 	if (menu_item) {
-		GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+		FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 		obj->callback = p_callback;
 		obj->key_callback = p_key_callback;
 		obj->meta = p_tag;
@@ -597,7 +597,7 @@ int NativeMenuMacOS::add_multistate_item(const RID &p_rid, const String &p_label
 	int out = -1;
 	NSMenuItem *menu_item = _menu_add_item(md->menu, p_label, p_accel, p_index, &out);
 	if (menu_item) {
-		GodotMenuItem *obj = [[GodotMenuItem alloc] init];
+		FoundryMenuItem *obj = [[FoundryMenuItem alloc] init];
 		obj->callback = p_callback;
 		obj->key_callback = p_key_callback;
 		obj->meta = p_tag;
@@ -650,7 +650,7 @@ int NativeMenuMacOS::find_item_index_with_tag(const RID &p_rid, const Variant &p
 	for (NSInteger i = item_start; i < item_start + item_count; i++) {
 		const NSMenuItem *menu_item = [md->menu itemAtIndex:i];
 		if (menu_item) {
-			const GodotMenuItem *obj = [menu_item representedObject];
+			const FoundryMenuItem *obj = [menu_item representedObject];
 			if (obj && obj->meta == p_tag) {
 				return i - item_start;
 			}
@@ -671,7 +671,7 @@ bool NativeMenuMacOS::is_item_checked(const RID &p_rid, int p_idx) const {
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, false);
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		const GodotMenuItem *obj = [menu_item representedObject];
+		const FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->checked;
 		}
@@ -691,7 +691,7 @@ bool NativeMenuMacOS::is_item_checkable(const RID &p_rid, int p_idx) const {
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, false);
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->checkable_type == CHECKABLE_TYPE_CHECK_BOX;
 		}
@@ -711,7 +711,7 @@ bool NativeMenuMacOS::is_item_radio_checkable(const RID &p_rid, int p_idx) const
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, false);
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->checkable_type == CHECKABLE_TYPE_RADIO_BUTTON;
 		}
@@ -731,7 +731,7 @@ Callable NativeMenuMacOS::get_item_callback(const RID &p_rid, int p_idx) const {
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, Callable());
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->callback;
 		}
@@ -751,7 +751,7 @@ Callable NativeMenuMacOS::get_item_key_callback(const RID &p_rid, int p_idx) con
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, Callable());
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->key_callback;
 		}
@@ -771,7 +771,7 @@ Variant NativeMenuMacOS::get_item_tag(const RID &p_rid, int p_idx) const {
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, Variant());
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->meta;
 		}
@@ -914,7 +914,7 @@ int NativeMenuMacOS::get_item_state(const RID &p_rid, int p_idx) const {
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, 0);
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->state;
 		}
@@ -934,7 +934,7 @@ int NativeMenuMacOS::get_item_max_states(const RID &p_rid, int p_idx) const {
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, 0);
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			return obj->max_states;
 		}
@@ -954,7 +954,7 @@ Ref<Texture2D> NativeMenuMacOS::get_item_icon(const RID &p_rid, int p_idx) const
 	ERR_FAIL_COND_V(p_idx >= item_start + item_count, Ref<Texture2D>());
 	const NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			if (obj->img.is_valid()) {
 				return ImageTexture::create_from_image(obj->img);
@@ -992,7 +992,7 @@ void NativeMenuMacOS::set_item_checked(const RID &p_rid, int p_idx, bool p_check
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		if (obj) {
 			obj->checked = p_checked;
 			if (p_checked) {
@@ -1015,7 +1015,7 @@ void NativeMenuMacOS::set_item_checkable(const RID &p_rid, int p_idx, bool p_che
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->checkable_type = (p_checkable) ? CHECKABLE_TYPE_CHECK_BOX : CHECKABLE_TYPE_NONE;
 	}
@@ -1032,7 +1032,7 @@ void NativeMenuMacOS::set_item_radio_checkable(const RID &p_rid, int p_idx, bool
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->checkable_type = (p_checkable) ? CHECKABLE_TYPE_RADIO_BUTTON : CHECKABLE_TYPE_NONE;
 	}
@@ -1049,7 +1049,7 @@ void NativeMenuMacOS::set_item_callback(const RID &p_rid, int p_idx, const Calla
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->callback = p_callback;
 	}
@@ -1066,7 +1066,7 @@ void NativeMenuMacOS::set_item_key_callback(const RID &p_rid, int p_idx, const C
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->key_callback = p_key_callback;
 	}
@@ -1083,7 +1083,7 @@ void NativeMenuMacOS::set_item_hover_callbacks(const RID &p_rid, int p_idx, cons
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->hover_callback = p_callback;
 	}
@@ -1100,7 +1100,7 @@ void NativeMenuMacOS::set_item_tag(const RID &p_rid, int p_idx, const Variant &p
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->meta = p_tag;
 	}
@@ -1158,7 +1158,7 @@ void NativeMenuMacOS::set_item_submenu(const RID &p_rid, int p_idx, const RID &p
 				ERR_PRINT("Can't remove open menu!");
 				return;
 			}
-			GodotMenuItem *obj = [menu_item representedObject];
+			FoundryMenuItem *obj = [menu_item representedObject];
 			String keycode = KeyMappingMacOS::keycode_get_native_string(obj->accel & KeyModifierMask::CODE_MASK);
 			[md->menu setSubmenu:nil forItem:menu_item];
 			[menu_item setAction:@selector(globalMenuCallback:)];
@@ -1178,7 +1178,7 @@ void NativeMenuMacOS::set_item_accelerator(const RID &p_rid, int p_idx, Key p_ke
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		obj->accel = p_keycode;
 		NSMenu *sub_menu = [menu_item submenu];
 		if (!sub_menu) {
@@ -1204,7 +1204,7 @@ void NativeMenuMacOS::set_item_disabled(const RID &p_rid, int p_idx, bool p_disa
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		obj->enabled = !p_disabled;
 		[menu_item setEnabled:(!p_disabled)];
 	}
@@ -1251,7 +1251,7 @@ void NativeMenuMacOS::set_item_state(const RID &p_rid, int p_idx, int p_state) {
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->state = p_state;
 	}
@@ -1268,7 +1268,7 @@ void NativeMenuMacOS::set_item_max_states(const RID &p_rid, int p_idx, int p_max
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		obj->max_states = p_max_states;
 	}
@@ -1285,7 +1285,7 @@ void NativeMenuMacOS::set_item_icon(const RID &p_rid, int p_idx, const Ref<Textu
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
-		GodotMenuItem *obj = [menu_item representedObject];
+		FoundryMenuItem *obj = [menu_item representedObject];
 		ERR_FAIL_NULL(obj);
 		DisplayServerMacOS *ds = (DisplayServerMacOS *)DisplayServer::get_singleton();
 		if (ds && p_icon.is_valid() && p_icon->get_width() > 0 && p_icon->get_height() > 0 && p_icon->get_image().is_valid()) {

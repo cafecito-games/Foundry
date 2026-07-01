@@ -34,8 +34,8 @@
 #include "display_server_android.h"
 #include "file_access_android.h"
 #include "file_access_filesystem_jandroid.h"
-#include "java_godot_io_wrapper.h"
-#include "java_godot_wrapper.h"
+#include "java_foundry_io_wrapper.h"
+#include "java_foundry_wrapper.h"
 #include "net_socket_android.h"
 
 #include "core/config/project_settings.h"
@@ -158,11 +158,11 @@ OS_Android *OS_Android::get_singleton() {
 	return static_cast<OS_Android *>(OS::get_singleton());
 }
 
-GodotJavaWrapper *OS_Android::get_godot_java() {
+FoundryJavaWrapper *OS_Android::get_godot_java() {
 	return godot_java;
 }
 
-GodotIOJavaWrapper *OS_Android::get_godot_io_java() {
+FoundryIOJavaWrapper *OS_Android::get_godot_io_java() {
 	return godot_io_java;
 }
 
@@ -367,8 +367,8 @@ void OS_Android::main_loop_begin() {
 }
 
 bool OS_Android::main_loop_iterate(bool *r_should_swap_buffers) {
-	GodotProfileFrameMark;
-	GodotProfileZone("OS_Android::main_loop_iterate");
+	FoundryProfileFrameMark;
+	FoundryProfileZone("OS_Android::main_loop_iterate");
 	if (!main_loop) {
 		return false;
 	}
@@ -887,7 +887,7 @@ bool OS_Android::_check_internal_feature_support(const String &p_feature) {
 	return false;
 }
 
-OS_Android::OS_Android(GodotJavaWrapper *p_godot_java, GodotIOJavaWrapper *p_godot_io_java, bool p_use_apk_expansion) {
+OS_Android::OS_Android(FoundryJavaWrapper *p_godot_java, FoundryIOJavaWrapper *p_godot_io_java, bool p_use_apk_expansion) {
 	display_size.width = DEFAULT_WINDOW_WIDTH;
 	display_size.height = DEFAULT_WINDOW_HEIGHT;
 
@@ -932,7 +932,7 @@ Error OS_Android::create_process(const String &p_path, const List<String> &p_arg
 }
 
 Error OS_Android::create_instance(const List<String> &p_arguments, ProcessID *r_child_id) {
-	int instance_id = godot_java->create_new_godot_instance(p_arguments);
+	int instance_id = godot_java->create_new_foundry_instance(p_arguments);
 	if (instance_id == -1) {
 		return FAILED;
 	}

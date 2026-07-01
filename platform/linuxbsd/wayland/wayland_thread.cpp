@@ -745,11 +745,11 @@ void WaylandThread::_wl_registry_on_global(void *data, struct wl_registry *wl_re
 		registry->wp_fifo_manager_name = name;
 	}
 
-	if (strcmp(interface, godot_embedding_compositor_interface.name) == 0) {
-		registry->godot_embedding_compositor = (struct godot_embedding_compositor *)wl_registry_bind(wl_registry, name, &godot_embedding_compositor_interface, 1);
-		registry->godot_embedding_compositor_name = name;
+	if (strcmp(interface, foundry_embedding_compositor_interface.name) == 0) {
+		registry->foundry_embedding_compositor = (struct foundry_embedding_compositor *)wl_registry_bind(wl_registry, name, &foundry_embedding_compositor_interface, 1);
+		registry->foundry_embedding_compositor_name = name;
 
-		godot_embedding_compositor_add_listener(registry->godot_embedding_compositor, &godot_embedding_compositor_listener, memnew(EmbeddingCompositorState));
+		foundry_embedding_compositor_add_listener(registry->foundry_embedding_compositor, &foundry_embedding_compositor_listener, memnew(EmbeddingCompositorState));
 	}
 }
 
@@ -1182,23 +1182,23 @@ void WaylandThread::_wl_registry_on_global_remove(void *data, struct wl_registry
 		registry->wp_fifo_manager_name = 0;
 	}
 
-	if (name == registry->godot_embedding_compositor_name) {
-		registry->godot_embedding_compositor_name = 0;
+	if (name == registry->foundry_embedding_compositor_name) {
+		registry->foundry_embedding_compositor_name = 0;
 
-		EmbeddingCompositorState *es = godot_embedding_compositor_get_state(registry->godot_embedding_compositor);
+		EmbeddingCompositorState *es = foundry_embedding_compositor_get_state(registry->foundry_embedding_compositor);
 		ERR_FAIL_NULL(es);
 
 		es->mapped_clients.clear();
 
-		for (struct godot_embedded_client *client : es->clients) {
-			godot_embedded_client_destroy(client);
+		for (struct foundry_embedded_client *client : es->clients) {
+			foundry_embedded_client_destroy(client);
 		}
 		es->clients.clear();
 
 		memdelete(es);
 
-		godot_embedding_compositor_destroy(registry->godot_embedding_compositor);
-		registry->godot_embedding_compositor = nullptr;
+		foundry_embedding_compositor_destroy(registry->foundry_embedding_compositor);
+		registry->foundry_embedding_compositor = nullptr;
 	}
 }
 
@@ -3236,65 +3236,65 @@ void WaylandThread::_xdg_activation_token_on_done(void *data, struct xdg_activat
 	DEBUG_LOG_WAYLAND_THREAD(vformat("Received activation token and requested window activation."));
 }
 
-void WaylandThread::_godot_embedding_compositor_on_client(void *data, struct godot_embedding_compositor *godot_embedding_compositor, struct godot_embedded_client *godot_embedded_client, int32_t pid) {
+void WaylandThread::_foundry_embedding_compositor_on_client(void *data, struct foundry_embedding_compositor *foundry_embedding_compositor, struct foundry_embedded_client *foundry_embedded_client, int32_t pid) {
 	EmbeddingCompositorState *state = (EmbeddingCompositorState *)data;
 	ERR_FAIL_NULL(state);
 
 	EmbeddedClientState *client_state = memnew(EmbeddedClientState);
-	client_state->embedding_compositor = godot_embedding_compositor;
+	client_state->embedding_compositor = foundry_embedding_compositor;
 	client_state->pid = pid;
-	godot_embedded_client_add_listener(godot_embedded_client, &godot_embedded_client_listener, client_state);
+	foundry_embedded_client_add_listener(foundry_embedded_client, &foundry_embedded_client_listener, client_state);
 
 	DEBUG_LOG_WAYLAND_THREAD(vformat("New client %d.", pid));
-	state->clients.push_back(godot_embedded_client);
+	state->clients.push_back(foundry_embedded_client);
 }
 
-void WaylandThread::_godot_embedded_client_on_disconnected(void *data, struct godot_embedded_client *godot_embedded_client) {
+void WaylandThread::_foundry_embedded_client_on_disconnected(void *data, struct foundry_embedded_client *foundry_embedded_client) {
 	EmbeddedClientState *state = (EmbeddedClientState *)data;
 	ERR_FAIL_NULL(state);
 
-	EmbeddingCompositorState *ecomp_state = godot_embedding_compositor_get_state(state->embedding_compositor);
+	EmbeddingCompositorState *ecomp_state = foundry_embedding_compositor_get_state(state->embedding_compositor);
 	ERR_FAIL_NULL(ecomp_state);
 
-	ecomp_state->clients.erase_unordered(godot_embedded_client);
+	ecomp_state->clients.erase_unordered(foundry_embedded_client);
 	ecomp_state->mapped_clients.erase(state->pid);
 
 	memfree(state);
-	godot_embedded_client_destroy(godot_embedded_client);
+	foundry_embedded_client_destroy(foundry_embedded_client);
 
 	DEBUG_LOG_WAYLAND_THREAD(vformat("Client %d disconnected.", state->pid));
 }
 
-void WaylandThread::_godot_embedded_client_on_window_embedded(void *data, struct godot_embedded_client *godot_embedded_client) {
+void WaylandThread::_foundry_embedded_client_on_window_embedded(void *data, struct foundry_embedded_client *foundry_embedded_client) {
 	EmbeddedClientState *state = (EmbeddedClientState *)data;
 	ERR_FAIL_NULL(state);
 
-	EmbeddingCompositorState *ecomp_state = godot_embedding_compositor_get_state(state->embedding_compositor);
+	EmbeddingCompositorState *ecomp_state = foundry_embedding_compositor_get_state(state->embedding_compositor);
 	ERR_FAIL_NULL(ecomp_state);
 
 	state->window_mapped = true;
 
 	ERR_FAIL_COND_MSG(ecomp_state->mapped_clients.has(state->pid), "More than one Wayland client per PID tried to create a window.");
 
-	ecomp_state->mapped_clients[state->pid] = godot_embedded_client;
+	ecomp_state->mapped_clients[state->pid] = foundry_embedded_client;
 }
 
-void WaylandThread::_godot_embedded_client_on_window_focus_in(void *data, struct godot_embedded_client *godot_embedded_client) {
+void WaylandThread::_foundry_embedded_client_on_window_focus_in(void *data, struct foundry_embedded_client *foundry_embedded_client) {
 	EmbeddedClientState *state = (EmbeddedClientState *)data;
 	ERR_FAIL_NULL(state);
 
-	EmbeddingCompositorState *ecomp_state = godot_embedding_compositor_get_state(state->embedding_compositor);
+	EmbeddingCompositorState *ecomp_state = foundry_embedding_compositor_get_state(state->embedding_compositor);
 	ERR_FAIL_NULL(ecomp_state);
 
 	ecomp_state->focused_pid = state->pid;
 	DEBUG_LOG_WAYLAND_THREAD(vformat("Embedded client pid %d focus in", state->pid));
 }
 
-void WaylandThread::_godot_embedded_client_on_window_focus_out(void *data, struct godot_embedded_client *godot_embedded_client) {
+void WaylandThread::_foundry_embedded_client_on_window_focus_out(void *data, struct foundry_embedded_client *foundry_embedded_client) {
 	EmbeddedClientState *state = (EmbeddedClientState *)data;
 	ERR_FAIL_NULL(state);
 
-	EmbeddingCompositorState *ecomp_state = godot_embedding_compositor_get_state(state->embedding_compositor);
+	EmbeddingCompositorState *ecomp_state = foundry_embedding_compositor_get_state(state->embedding_compositor);
 	ERR_FAIL_NULL(ecomp_state);
 
 	ecomp_state->focused_pid = -1;
@@ -3470,10 +3470,10 @@ WaylandThread::OfferState *WaylandThread::wp_primary_selection_offer_get_offer_s
 	return nullptr;
 }
 
-WaylandThread::EmbeddingCompositorState *WaylandThread::godot_embedding_compositor_get_state(struct godot_embedding_compositor *p_compositor) {
+WaylandThread::EmbeddingCompositorState *WaylandThread::foundry_embedding_compositor_get_state(struct foundry_embedding_compositor *p_compositor) {
 	// NOTE: No need for tag check as it's a "fake" interface - nothing else exposes it.
 	if (p_compositor) {
-		return (EmbeddingCompositorState *)godot_embedding_compositor_get_user_data(p_compositor);
+		return (EmbeddingCompositorState *)foundry_embedding_compositor_get_user_data(p_compositor);
 	}
 
 	return nullptr;
@@ -5469,12 +5469,12 @@ bool WaylandThread::window_wait_ready(DisplayServer::WindowID p_window_id, int p
 	return false;
 }
 
-struct godot_embedding_compositor *WaylandThread::get_embedding_compositor() {
-	return registry.godot_embedding_compositor;
+struct foundry_embedding_compositor *WaylandThread::get_embedding_compositor() {
+	return registry.foundry_embedding_compositor;
 }
 
 OS::ProcessID WaylandThread::embedded_compositor_get_focused_pid() {
-	EmbeddingCompositorState *ecomp_state = godot_embedding_compositor_get_state(registry.godot_embedding_compositor);
+	EmbeddingCompositorState *ecomp_state = foundry_embedding_compositor_get_state(registry.foundry_embedding_compositor);
 	ERR_FAIL_NULL_V(ecomp_state, -1);
 
 	return ecomp_state->focused_pid;
@@ -5620,20 +5620,20 @@ void WaylandThread::destroy() {
 		wl_output_destroy(wl_output);
 	}
 
-	if (registry.godot_embedding_compositor) {
-		EmbeddingCompositorState *es = godot_embedding_compositor_get_state(registry.godot_embedding_compositor);
+	if (registry.foundry_embedding_compositor) {
+		EmbeddingCompositorState *es = foundry_embedding_compositor_get_state(registry.foundry_embedding_compositor);
 		ERR_FAIL_NULL(es);
 
 		es->mapped_clients.clear();
 
-		for (struct godot_embedded_client *client : es->clients) {
-			godot_embedded_client_destroy(client);
+		for (struct foundry_embedded_client *client : es->clients) {
+			foundry_embedded_client_destroy(client);
 		}
 		es->clients.clear();
 
 		memdelete(es);
 
-		godot_embedding_compositor_destroy(registry.godot_embedding_compositor);
+		foundry_embedding_compositor_destroy(registry.foundry_embedding_compositor);
 	}
 
 	if (wl_cursor_theme) {

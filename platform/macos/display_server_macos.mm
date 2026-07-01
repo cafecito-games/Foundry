@@ -30,17 +30,17 @@
 
 #import "display_server_macos.h"
 
-#import "godot_application.h"
-#import "godot_application_delegate.h"
-#import "godot_button_view.h"
-#import "godot_content_view.h"
-#import "godot_core_cursor.h"
-#import "godot_menu_delegate.h"
-#import "godot_menu_item.h"
-#import "godot_open_save_delegate.h"
-#import "godot_status_item.h"
-#import "godot_window.h"
-#import "godot_window_delegate.h"
+#import "foundry_application.h"
+#import "foundry_application_delegate.h"
+#import "foundry_button_view.h"
+#import "foundry_content_view.h"
+#import "foundry_core_cursor.h"
+#import "foundry_menu_delegate.h"
+#import "foundry_menu_item.h"
+#import "foundry_open_save_delegate.h"
+#import "foundry_status_item.h"
+#import "foundry_window.h"
+#import "foundry_window_delegate.h"
 #import "key_mapping_macos.h"
 #import "os_macos.h"
 
@@ -93,7 +93,7 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 	{
 		WindowData &wd = windows[id];
 
-		wd.window_delegate = [[GodotWindowDelegate alloc] initWithDisplayServer:this];
+		wd.window_delegate = [[FoundryWindowDelegate alloc] initWithDisplayServer:this];
 		ERR_FAIL_NULL_V_MSG(wd.window_delegate, INVALID_WINDOW_ID, "Can't create a window delegate");
 		[wd.window_delegate setWindowID:id];
 
@@ -114,7 +114,7 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 		wpos /= scale;
 
 		// initWithContentRect uses bottom-left corner of the window’s frame as origin.
-		wd.window_object = [[GodotWindow alloc]
+		wd.window_object = [[FoundryWindow alloc]
 				initWithContentRect:NSMakeRect(100, 100, MAX(1, p_rect.size.width / scale), MAX(1, p_rect.size.height / scale))
 						  styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
 							backing:NSBackingStoreBuffered
@@ -123,7 +123,7 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 		[wd.window_object setWindowID:id];
 		[wd.window_object setReleasedWhenClosed:NO];
 
-		wd.window_view = [[GodotContentView alloc] init];
+		wd.window_view = [[FoundryContentView alloc] init];
 		if (wd.window_view == nil) {
 			windows.erase(id);
 			ERR_FAIL_V_MSG(INVALID_WINDOW_ID, "Can't create a window view");
@@ -602,7 +602,7 @@ void DisplayServerMacOS::menu_callback(id p_sender) {
 		return;
 	}
 
-	GodotMenuItem *value = [p_sender representedObject];
+	FoundryMenuItem *value = [p_sender representedObject];
 	if (value) {
 		if (value->callback.is_valid()) {
 			MenuCall mc;
@@ -930,7 +930,7 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 		nswindow = windows[p_window_id].window_object;
 	}
 
-	GodotOpenSaveDelegate *panel_delegate = [[GodotOpenSaveDelegate alloc] init];
+	FoundryOpenSaveDelegate *panel_delegate = [[FoundryOpenSaveDelegate alloc] init];
 	if (p_root.length() > 0) {
 		[panel_delegate setRootPath:p_root];
 	}
@@ -1788,7 +1788,7 @@ void DisplayServerMacOS::show_window(WindowID p_id) {
 	WindowData &wd = windows[p_id];
 
 	if (p_id == MAIN_WINDOW_ID) {
-		[GodotApp activateApplication];
+		[FoundryApp activateApplication];
 	}
 
 	popup_open(p_id);
@@ -2491,7 +2491,7 @@ void DisplayServerMacOS::window_set_custom_window_buttons(WindowData &p_wd, bool
 		[[p_wd.window_object standardWindowButton:NSWindowMiniaturizeButton] setHidden:YES];
 		[[p_wd.window_object standardWindowButton:NSWindowCloseButton] setHidden:YES];
 
-		p_wd.window_button_view = [[GodotButtonView alloc] initWithFrame:NSZeroRect];
+		p_wd.window_button_view = [[FoundryButtonView alloc] initWithFrame:NSZeroRect];
 		[p_wd.window_button_view initButtons:window_buttons_spacing offset:NSMakePoint(p_wd.wb_offset.x, p_wd.wb_offset.y) rtl:is_rtl];
 		[p_wd.window_view addSubview:p_wd.window_button_view];
 
@@ -2908,19 +2908,19 @@ DisplayServer::VSyncMode DisplayServerMacOS::window_get_vsync_mode(WindowID p_wi
 }
 
 int DisplayServerMacOS::accessibility_should_increase_contrast() const {
-	return [(GodotApplicationDelegate *)[[NSApplication sharedApplication] delegate] getHighContrast];
+	return [(FoundryApplicationDelegate *)[[NSApplication sharedApplication] delegate] getHighContrast];
 }
 
 int DisplayServerMacOS::accessibility_should_reduce_animation() const {
-	return [(GodotApplicationDelegate *)[[NSApplication sharedApplication] delegate] getReduceMotion];
+	return [(FoundryApplicationDelegate *)[[NSApplication sharedApplication] delegate] getReduceMotion];
 }
 
 int DisplayServerMacOS::accessibility_should_reduce_transparency() const {
-	return [(GodotApplicationDelegate *)[[NSApplication sharedApplication] delegate] getReduceTransparency];
+	return [(FoundryApplicationDelegate *)[[NSApplication sharedApplication] delegate] getReduceTransparency];
 }
 
 int DisplayServerMacOS::accessibility_screen_reader_active() const {
-	return [(GodotApplicationDelegate *)[[NSApplication sharedApplication] delegate] getVoiceOver];
+	return [(FoundryApplicationDelegate *)[[NSApplication sharedApplication] delegate] getVoiceOver];
 }
 
 Point2i DisplayServerMacOS::ime_get_selection() const {
@@ -2978,7 +2978,7 @@ void DisplayServerMacOS::cursor_update_shape() {
 				[_cursor_from_selector(@selector(_windowResizeNorthWestSouthEastCursor)) set];
 				break;
 			case CURSOR_MOVE:
-				[[[GodotCoreCursor alloc] initWithType:GDCoreCursorWindowMove] set];
+				[[[FoundryCoreCursor alloc] initWithType:GDCoreCursorWindowMove] set];
 				break;
 			case CURSOR_VSPLIT:
 				[[NSCursor resizeUpDownCursor] set];
@@ -3384,7 +3384,7 @@ DisplayServer::IndicatorID DisplayServerMacOS::create_status_indicator(const Ref
 
 	NSStatusItem *item = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
 	idat.item = item;
-	idat.delegate = [[GodotStatusItemDelegate alloc] init];
+	idat.delegate = [[FoundryStatusItemDelegate alloc] init];
 	[idat.delegate setCallback:p_callback];
 
 	item.button.image = nsimg;
@@ -3719,7 +3719,7 @@ DisplayServerMacOS::DisplayServerMacOS(const String &p_rendering_driver, WindowM
 		nsappname = [[NSProcessInfo processInfo] processName];
 	}
 
-	menu_delegate = [[GodotMenuDelegate alloc] init];
+	menu_delegate = [[FoundryMenuDelegate alloc] init];
 
 	// Setup Dock menu.
 	NSMenu *dock_menu = [[NSMenu alloc] initWithTitle:@"_dock"];

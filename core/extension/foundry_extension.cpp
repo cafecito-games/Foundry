@@ -54,9 +54,9 @@ class FoundryExtensionMethodBind : public MethodBind {
 	bool vararg;
 	uint32_t argument_count;
 	PropertyInfo return_value_info;
-	GodotTypeInfo::Metadata return_value_metadata;
+	FoundryTypeInfo::Metadata return_value_metadata;
 	List<PropertyInfo> arguments_info;
-	List<GodotTypeInfo::Metadata> arguments_metadata;
+	List<FoundryTypeInfo::Metadata> arguments_metadata;
 
 #ifdef TOOLS_ENABLED
 	friend class FoundryExtension;
@@ -88,7 +88,7 @@ public:
 #endif
 
 #ifdef DEBUG_ENABLED
-	virtual GodotTypeInfo::Metadata get_argument_meta(int p_arg) const override {
+	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		if (p_arg < 0) {
 			return return_value_metadata;
 		} else {
@@ -203,14 +203,14 @@ public:
 
 		if (p_method_info->has_return_value) {
 			return_value_info = PropertyInfo(*p_method_info->return_value_info);
-			return_value_metadata = GodotTypeInfo::Metadata(p_method_info->return_value_metadata);
+			return_value_metadata = FoundryTypeInfo::Metadata(p_method_info->return_value_metadata);
 		}
 
 		arguments_info.clear();
 		arguments_metadata.clear();
 		for (uint32_t i = 0; i < p_method_info->argument_count; i++) {
 			arguments_info.push_back(PropertyInfo(p_method_info->arguments_info[i]));
-			arguments_metadata.push_back(GodotTypeInfo::Metadata(p_method_info->arguments_metadata[i]));
+			arguments_metadata.push_back(FoundryTypeInfo::Metadata(p_method_info->arguments_metadata[i]));
 		}
 
 		set_hint_flags(p_method_info->method_flags);

@@ -2,7 +2,7 @@ using Godot;
 
 namespace @namespace
 {
-    partial class @class : GodotObject
+    partial class @class : FoundryObject
     {
     }
 }

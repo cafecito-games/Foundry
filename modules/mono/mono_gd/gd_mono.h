@@ -163,19 +163,19 @@ public:
 
 namespace MonoBind {
 
-class GodotSharp : public Object {
-	FOUNDRY_CLASS(GodotSharp, Object);
+class FoundrySharp : public Object {
+	FOUNDRY_CLASS(FoundrySharp, Object);
 
 protected:
-	static GodotSharp *singleton;
+	static FoundrySharp *singleton;
 
 public:
-	static GodotSharp *get_singleton() { return singleton; }
+	static FoundrySharp *get_singleton() { return singleton; }
 
 	void reload_assemblies(bool p_soft_reload);
 
-	GodotSharp();
-	~GodotSharp();
+	FoundrySharp();
+	~FoundrySharp();
 };
 
 } // namespace MonoBind

@@ -32,12 +32,12 @@ package org.godotengine.editor.buildprovider
 
 import android.content.Context
 import org.godotengine.godot.BuildProvider
-import org.godotengine.godot.GodotHost
+import org.godotengine.godot.FoundryHost
 import org.godotengine.godot.variant.Callable
 
 internal class GradleBuildProvider(
 	val context: Context,
-	val host: GodotHost,
+	val host: FoundryHost,
 ) : BuildProvider {
 
 	val gradleBuildEnvironmentClient = GradleBuildEnvironmentClient(context)

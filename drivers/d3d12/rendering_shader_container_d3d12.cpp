@@ -467,7 +467,7 @@ bool RenderingShaderContainerD3D12::_convert_spirv_to_nir(Span<ReflectShaderStag
 	return true;
 }
 
-struct GodotNirCallbackUserData {
+struct FoundryNirCallbackUserData {
 	RenderingShaderContainerD3D12 *container;
 	RenderingDeviceCommons::ShaderStage stage;
 };
@@ -484,11 +484,11 @@ bool RenderingShaderContainerD3D12::_convert_nir_to_dxil(const HashMap<int, nir_
 	// Translate NIR to DXIL.
 	for (KeyValue<int, nir_shader *> it : p_stages_nir_shaders) {
 		RenderingDeviceCommons::ShaderStage stage = (RenderingDeviceCommons::ShaderStage)(it.key);
-		GodotNirCallbackUserData godot_nir_callback_user_data;
+		FoundryNirCallbackUserData godot_nir_callback_user_data;
 		godot_nir_callback_user_data.container = this;
 		godot_nir_callback_user_data.stage = stage;
 
-		GodotNirCallbacks godot_nir_callbacks = {};
+		FoundryNirCallbacks godot_nir_callbacks = {};
 		godot_nir_callbacks.data = &godot_nir_callback_user_data;
 		godot_nir_callbacks.report_resource = _nir_report_resource;
 		godot_nir_callbacks.report_sc_bit_offset_fn = _nir_report_sc_bit_offset;
@@ -811,7 +811,7 @@ bool RenderingShaderContainerD3D12::_generate_root_signature(BitField<RenderingD
 }
 
 void RenderingShaderContainerD3D12::_nir_report_resource(uint32_t p_register, uint32_t p_space, uint32_t p_dxil_type, void *p_data) {
-	const GodotNirCallbackUserData &user_data = *(GodotNirCallbackUserData *)p_data;
+	const FoundryNirCallbackUserData &user_data = *(FoundryNirCallbackUserData *)p_data;
 
 	// Types based on Mesa's dxil_container.h.
 	static const uint32_t DXIL_RES_SAMPLER = 1;
@@ -875,7 +875,7 @@ void RenderingShaderContainerD3D12::_nir_report_resource(uint32_t p_register, ui
 }
 
 void RenderingShaderContainerD3D12::_nir_report_sc_bit_offset(uint32_t p_sc_id, uint64_t p_bit_offset, void *p_data) {
-	const GodotNirCallbackUserData &user_data = *(GodotNirCallbackUserData *)p_data;
+	const FoundryNirCallbackUserData &user_data = *(FoundryNirCallbackUserData *)p_data;
 	[[maybe_unused]] bool found = false;
 	for (int64_t i = 0; i < user_data.container->reflection_specialization_data.size(); i++) {
 		const ReflectionSpecializationData &sc = user_data.container->reflection_specialization_data[i];
@@ -897,7 +897,7 @@ void RenderingShaderContainerD3D12::_nir_report_sc_bit_offset(uint32_t p_sc_id, 
 void RenderingShaderContainerD3D12::_nir_report_bitcode_bit_offset(uint64_t p_bit_offset, void *p_data) {
 	DEV_ASSERT(p_bit_offset % 8 == 0);
 
-	const GodotNirCallbackUserData &user_data = *(GodotNirCallbackUserData *)p_data;
+	const FoundryNirCallbackUserData &user_data = *(FoundryNirCallbackUserData *)p_data;
 	uint32_t offset_idx = SHADER_STAGES_BIT_OFFSET_INDICES[user_data.stage];
 	for (int64_t i = 0; i < user_data.container->reflection_specialization_data.size(); i++) {
 		ReflectionSpecializationDataD3D12 &sc_d3d12 = user_data.container->reflection_specialization_data_d3d12.ptrw()[i];

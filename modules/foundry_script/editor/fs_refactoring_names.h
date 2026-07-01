@@ -35,7 +35,7 @@
 #include "core/string/ustring.h"
 
 #ifndef FOUNDRY_SCRIPT_NO_LSP
-#include "../language_server/godot_lsp.h"
+#include "../language_server/foundry_lsp.h"
 #endif
 
 namespace FSRefactorNames {

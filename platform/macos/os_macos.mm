@@ -35,8 +35,8 @@
 #import "display_server_embedded.h"
 #endif
 #import "display_server_macos.h"
-#import "godot_application.h"
-#import "godot_application_delegate.h"
+#import "foundry_application.h"
+#import "foundry_application_delegate.h"
 
 #include "core/crypto/crypto_core.h"
 #include "core/io/file_access.h"
@@ -1125,8 +1125,8 @@ void OS_MacOS_NSApp::start_main() {
 				pre_wait_observer = CFRunLoopObserverCreateWithHandler(kCFAllocatorDefault, kCFRunLoopBeforeWaiting, true, 0, ^(CFRunLoopObserverRef observer, CFRunLoopActivity activity) {
 					@autoreleasepool {
 						@try {
-							GodotProfileFrameMark;
-							GodotProfileZone("macOS main loop");
+							FoundryProfileFrameMark;
+							FoundryProfileZone("macOS main loop");
 
 							if (ds_mac) {
 								ds_mac->_process_events(false);
@@ -1192,7 +1192,7 @@ void OS_MacOS_NSApp::cleanup() {
 OS_MacOS_NSApp::OS_MacOS_NSApp(const char *p_execpath, int p_argc, char **p_argv) :
 		OS_MacOS(p_execpath, p_argc, p_argv) {
 	// Implicitly create shared NSApplication instance.
-	[GodotApplication sharedApplication];
+	[FoundryApplication sharedApplication];
 
 	// In case we are unbundled, make us a proper UI application.
 	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -1204,7 +1204,7 @@ OS_MacOS_NSApp::OS_MacOS_NSApp(const char *p_execpath, int p_argc, char **p_argv
 	NSMenu *main_menu = [[NSMenu alloc] initWithTitle:@""];
 	[NSApp setMainMenu:main_menu];
 
-	delegate = [[GodotApplicationDelegate alloc] initWithOS:this];
+	delegate = [[FoundryApplicationDelegate alloc] initWithOS:this];
 	ERR_FAIL_NULL(delegate);
 	[NSApp setDelegate:delegate];
 	[NSApp registerUserInterfaceItemSearchHandler:delegate];
@@ -1303,8 +1303,8 @@ void OS_MacOS_Embedded::run() {
 		while (true) {
 			@autoreleasepool {
 				@try {
-					GodotProfileFrameMark;
-					GodotProfileZone("macOS embedded main loop");
+					FoundryProfileFrameMark;
+					FoundryProfileZone("macOS embedded main loop");
 
 					ds->process_events();
 

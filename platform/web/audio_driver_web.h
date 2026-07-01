@@ -30,8 +30,8 @@
 
 #pragma once
 
-#include "godot_audio.h"
-#include "godot_js.h"
+#include "foundry_audio.h"
+#include "foundry_js.h"
 
 #include "core/os/mutex.h"
 #include "core/os/thread.h"

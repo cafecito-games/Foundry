@@ -43,7 +43,7 @@ def generate_bundle(target, source, env):
         if target_bin != "":
             shutil.copy(target_bin, app_dir + "/Contents/MacOS/Foundry")
         if "mono" in env.module_version_string:
-            shutil.copytree(env.Dir("#bin/GodotSharp").abspath, app_dir + "/Contents/Resources/GodotSharp")
+            shutil.copytree(env.Dir("#bin/FoundrySharp").abspath, app_dir + "/Contents/Resources/FoundrySharp")
         version = get_build_version(False)
         short_version = get_build_version(True)
         with open(env.Dir("#misc/dist/macos").abspath + "/editor_info_plist.template", "rt", encoding="utf-8") as fin:

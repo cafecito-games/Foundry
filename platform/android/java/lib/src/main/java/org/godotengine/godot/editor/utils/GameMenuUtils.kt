@@ -31,7 +31,7 @@
 package org.godotengine.godot.editor.utils
 
 import android.util.Log
-import org.godotengine.godot.GodotLib
+import org.godotengine.godot.FoundryLib
 
 /**
  * Utility class for accessing and using game menu APIs.
@@ -109,7 +109,7 @@ object GameMenuUtils {
 	 */
 	fun fetchGameEmbedMode(): GameEmbedMode {
 		try {
-			val gameEmbedModeValue = Integer.parseInt(GodotLib.getEditorSetting(GameEmbedMode.SETTING_KEY))
+			val gameEmbedModeValue = Integer.parseInt(FoundryLib.getEditorSetting(GameEmbedMode.SETTING_KEY))
 			val gameEmbedMode = GameEmbedMode.fromNativeValue(gameEmbedModeValue) ?: GameEmbedMode.AUTO
 			return gameEmbedMode
 		} catch (e: Exception) {
@@ -124,6 +124,6 @@ object GameMenuUtils {
 	 * Must be called on the render thread.
 	 */
 	fun saveGameEmbedMode(gameEmbedMode: GameEmbedMode) {
-		GodotLib.setEditorSetting(GameEmbedMode.SETTING_KEY, gameEmbedMode.nativeValue)
+		FoundryLib.setEditorSetting(GameEmbedMode.SETTING_KEY, gameEmbedMode.nativeValue)
 	}
 }

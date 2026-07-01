@@ -225,7 +225,7 @@ def configure(env: "SConsEnvironment"):
 
     env.Append(LINKFLAGS=["-Wl,--gc-sections", "-Wl,--no-undefined", "-Wl,-z,now"])
     env.Append(LINKFLAGS=["-Wl,--build-id"])
-    env.Append(LINKFLAGS=["-Wl,-soname,libgodot_android.so"])
+    env.Append(LINKFLAGS=["-Wl,-soname,libfoundry_android.so"])
 
     env.Prepend(CPPPATH=["#platform/android"])
     env.Append(CPPDEFINES=["ANDROID_ENABLED", "UNIX_ENABLED"])

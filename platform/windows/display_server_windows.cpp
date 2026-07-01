@@ -807,7 +807,7 @@ Error DisplayServerWindows::_file_dialog_with_options_show(const String &p_title
 
 	String appname;
 	if (Engine::get_singleton()->is_editor_hint()) {
-		appname = "Godot.GodotEditor." + String(FOUNDRY_VERSION_BRANCH);
+		appname = "Godot.FoundryEditor." + String(FOUNDRY_VERSION_BRANCH);
 	} else {
 		String name = GLOBAL_GET("application/config/name");
 		String version = GLOBAL_GET("application/config/version");
@@ -6596,7 +6596,7 @@ Error DisplayServerWindows::_create_window(WindowID p_window_id, WindowMode p_mo
 			PROPVARIANT val;
 			String appname;
 			if (Engine::get_singleton()->is_editor_hint()) {
-				appname = "Godot.GodotEditor." + String(FOUNDRY_VERSION_FULL_CONFIG);
+				appname = "Godot.FoundryEditor." + String(FOUNDRY_VERSION_FULL_CONFIG);
 			} else {
 				String name = GLOBAL_GET("application/config/name");
 				String version = GLOBAL_GET("application/config/version");
@@ -7180,7 +7180,7 @@ DisplayServerWindows::DisplayServerWindows(const String &p_rendering_driver, Win
 
 	String appname;
 	if (Engine::get_singleton()->is_editor_hint()) {
-		appname = "Godot.GodotEditor." + String(FOUNDRY_VERSION_FULL_CONFIG);
+		appname = "Godot.FoundryEditor." + String(FOUNDRY_VERSION_FULL_CONFIG);
 	} else {
 		String name = GLOBAL_GET("application/config/name");
 		String version = GLOBAL_GET("application/config/version");

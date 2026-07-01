@@ -36,10 +36,10 @@
 
 #include "tests/test_macros.h"
 
+#include "../language_server/foundry_lsp.h"
 #include "../language_server/fs_extend_parser.h"
 #include "../language_server/fs_language_protocol.h"
 #include "../language_server/fs_workspace.h"
-#include "../language_server/godot_lsp.h"
 
 #include "core/config/project_build_pipeline_status.h"
 #include "core/config/project_settings.h"
@@ -118,8 +118,8 @@ struct doctest::StringMaker<LSP::Range> {
 };
 
 template <>
-struct doctest::StringMaker<GodotPosition> {
-	static doctest::String convert(const GodotPosition &p_val) {
+struct doctest::StringMaker<FoundryPosition> {
+	static doctest::String convert(const FoundryPosition &p_val) {
 		return p_val.to_string().utf8().get_data();
 	}
 };
@@ -608,8 +608,8 @@ inline LSP::Position lsp_pos(int line, int character) {
 	return p;
 }
 
-void test_position_roundtrip(LSP::Position p_lsp, GodotPosition p_gd, const PackedStringArray &p_lines) {
-	GodotPosition actual_gd = GodotPosition::from_lsp(p_lsp, p_lines);
+void test_position_roundtrip(LSP::Position p_lsp, FoundryPosition p_gd, const PackedStringArray &p_lines) {
+	FoundryPosition actual_gd = FoundryPosition::from_lsp(p_lsp, p_lines);
 	CHECK_EQ(p_gd, actual_gd);
 	LSP::Position actual_lsp = p_gd.to_lsp(p_lines);
 	CHECK_EQ(p_lsp, actual_lsp);
@@ -637,58 +637,58 @@ func f():
 
 		SUBCASE("line after end") {
 			LSP::Position lsp = lsp_pos(7, 0);
-			GodotPosition gd(8, 1);
+			FoundryPosition gd(8, 1);
 			test_position_roundtrip(lsp, gd, lines);
 		}
 		SUBCASE("first char in first line") {
 			LSP::Position lsp = lsp_pos(0, 0);
-			GodotPosition gd(1, 1);
+			FoundryPosition gd(1, 1);
 			test_position_roundtrip(lsp, gd, lines);
 		}
 
 		SUBCASE("with tabs") {
 			// On `v` in `value` in `var value := ...`.
 			LSP::Position lsp = lsp_pos(5, 6);
-			GodotPosition gd(6, 13);
+			FoundryPosition gd(6, 13);
 			test_position_roundtrip(lsp, gd, lines);
 		}
 
 		SUBCASE("doesn't fail with column outside of character length") {
 			LSP::Position lsp = lsp_pos(2, 100);
-			GodotPosition::from_lsp(lsp, lines);
+			FoundryPosition::from_lsp(lsp, lines);
 
-			GodotPosition gd(3, 100);
+			FoundryPosition gd(3, 100);
 			gd.to_lsp(lines);
 		}
 
 		SUBCASE("doesn't fail with line outside of line length") {
 			LSP::Position lsp = lsp_pos(200, 100);
-			GodotPosition::from_lsp(lsp, lines);
+			FoundryPosition::from_lsp(lsp, lines);
 
-			GodotPosition gd(300, 100);
+			FoundryPosition gd(300, 100);
 			gd.to_lsp(lines);
 		}
 
 		SUBCASE("special case: zero column for root class") {
-			GodotPosition gd(1, 0);
+			FoundryPosition gd(1, 0);
 			LSP::Position expected = lsp_pos(0, 0);
 			LSP::Position actual = gd.to_lsp(lines);
 			CHECK_EQ(actual, expected);
 		}
 		SUBCASE("special case: zero line and column for root class") {
-			GodotPosition gd(0, 0);
+			FoundryPosition gd(0, 0);
 			LSP::Position expected = lsp_pos(0, 0);
 			LSP::Position actual = gd.to_lsp(lines);
 			CHECK_EQ(actual, expected);
 		}
 		SUBCASE("special case: negative line for root class") {
-			GodotPosition gd(-1, 0);
+			FoundryPosition gd(-1, 0);
 			LSP::Position expected = lsp_pos(0, 0);
 			LSP::Position actual = gd.to_lsp(lines);
 			CHECK_EQ(actual, expected);
 		}
 		SUBCASE("special case: lines.length() + 1 for root class") {
-			GodotPosition gd(lines.size() + 1, 0);
+			FoundryPosition gd(lines.size() + 1, 0);
 			LSP::Position expected = lsp_pos(lines.size(), 0);
 			LSP::Position actual = gd.to_lsp(lines);
 			CHECK_EQ(actual, expected);

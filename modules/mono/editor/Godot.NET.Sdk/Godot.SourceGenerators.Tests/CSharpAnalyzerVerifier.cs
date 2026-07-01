@@ -25,7 +25,7 @@ public static class CSharpAnalyzerVerifier<TAnalyzer>
             SolutionTransforms.Add((Solution solution, ProjectId projectId) =>
             {
                 Project project =
-                    solution.GetProject(projectId)!.AddMetadataReference(Constants.GodotSharpAssembly
+                    solution.GetProject(projectId)!.AddMetadataReference(Constants.FoundrySharpAssembly
                         .CreateMetadataReference()).WithParseOptions(new CSharpParseOptions(LangVersion));
 
                 return project.Solution;
@@ -44,7 +44,7 @@ public static class CSharpAnalyzerVerifier<TAnalyzer>
 
         verifier.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", $"""
         is_global = true
-        build_property.GodotProjectDir = {Constants.ExecutingAssemblyPath}
+        build_property.FoundryProjectDir = {Constants.ExecutingAssemblyPath}
         """));
 
         verifier.TestState.Sources.AddRange(sources.Select(source =>

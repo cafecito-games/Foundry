@@ -32,7 +32,7 @@ namespace Godot.SourceGenerators
             if (context.ContainingSymbol is not INamedTypeSymbol typeSymbol)
                 return;
 
-            if (!typeSymbol.InheritsFrom("GodotSharp", GodotClasses.GodotObject))
+            if (!typeSymbol.InheritsFrom("FoundrySharp", FoundryClasses.FoundryObject))
                 return;
 
             if (!classDeclaration.IsPartial())

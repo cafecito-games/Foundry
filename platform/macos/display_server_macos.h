@@ -60,12 +60,12 @@
 #import <Foundation/Foundation.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
 
-@class GodotWindow;
-@class GodotContentView;
-@class GodotWindowDelegate;
-@class GodotButtonView;
+@class FoundryWindow;
+@class FoundryContentView;
+@class FoundryWindowDelegate;
+@class FoundryButtonView;
 #ifdef TOOLS_ENABLED
-@class GodotEmbeddedView;
+@class FoundryEmbeddedView;
 @class CALayerHost;
 #endif
 
@@ -95,10 +95,10 @@ public:
 	};
 
 	struct WindowData {
-		GodotWindowDelegate *window_delegate;
-		GodotWindow *window_object;
-		GodotContentView *window_view;
-		GodotButtonView *window_button_view;
+		FoundryWindowDelegate *window_delegate;
+		FoundryWindow *window_object;
+		FoundryContentView *window_view;
+		FoundryButtonView *window_button_view;
 
 		Vector<Vector2> mpath;
 

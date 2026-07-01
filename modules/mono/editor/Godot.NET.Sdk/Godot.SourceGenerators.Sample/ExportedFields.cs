@@ -11,7 +11,7 @@ namespace Godot.SourceGenerators.Sample
     [SuppressMessage("ReSharper", "RedundantNameQualifier")]
     [SuppressMessage("ReSharper", "ArrangeObjectCreationWhenTypeEvident")]
     [SuppressMessage("ReSharper", "InconsistentNaming")]
-    public partial class ExportedFields : GodotObject
+    public partial class ExportedFields : FoundryObject
     {
         [Export] private Boolean _fieldBoolean = true;
         [Export] private Char _fieldChar = 'f';
@@ -80,7 +80,7 @@ namespace Godot.SourceGenerators.Sample
         [Export] private Vector2[] _fieldVector2Array = { Vector2.Up, Vector2.Down, Vector2.Left, Vector2.Right };
         [Export] private Vector3[] _fieldVector3Array = { Vector3.Up, Vector3.Down, Vector3.Left, Vector3.Right };
         [Export] private Color[] _fieldColorArray = { Colors.Aqua, Colors.Aquamarine, Colors.Azure, Colors.Beige };
-        [Export] private GodotObject[] _fieldGodotObjectOrDerivedArray = { null };
+        [Export] private FoundryObject[] _fieldGodotObjectOrDerivedArray = { null };
         [Export] private StringName[] _fieldStringNameArray = { "foo", "bar" };
         [Export] private NodePath[] _fieldNodePathArray = { "foo", "bar" };
         [Export] private Rid[] _fieldRidArray = { default, default, default };
@@ -93,7 +93,7 @@ namespace Godot.SourceGenerators.Sample
         [Export] private Variant _fieldVariant = "foo";
 
         // Classes
-        [Export] private GodotObject _fieldGodotObjectOrDerived;
+        [Export] private FoundryObject _fieldGodotObjectOrDerived;
         [Export] private Godot.Texture _fieldGodotResourceTexture;
         [Export] private StringName _fieldStringName = new StringName("foo");
         [Export] private NodePath _fieldNodePath = new NodePath("foo");

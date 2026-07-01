@@ -60,7 +60,7 @@
 #endif
 
 #ifdef ANDROID_ENABLED
-#include "../java_godot_wrapper.h"
+#include "../java_foundry_wrapper.h"
 #include "../os_android.h"
 #include "android_editor_gradle_runner.h"
 #endif
@@ -1087,7 +1087,7 @@ void EditorExportPlatformAndroid::_fix_themes_xml(const Ref<EditorExportPreset> 
 	Dictionary splash_theme_attributes;
 	splash_theme_attributes["android:windowSplashScreenBackground"] = "@mipmap/icon_background";
 	splash_theme_attributes["windowSplashScreenAnimatedIcon"] = "@mipmap/icon_foreground";
-	splash_theme_attributes["postSplashScreenTheme"] = "@style/GodotAppMainTheme";
+	splash_theme_attributes["postSplashScreenTheme"] = "@style/FoundryAppMainTheme";
 	splash_theme_attributes["android:windowIsTranslucent"] = bool_to_string(transparency_allowed);
 
 	PackedStringArray reserved_splash_keys;
@@ -1127,18 +1127,18 @@ void EditorExportPlatformAndroid::_fix_themes_xml(const Ref<EditorExportPreset> 
 	for (int i = 0; i < lines.size(); i++) {
 		String line = lines[i];
 
-		if (line.contains("<style name=\"GodotAppMainTheme\"")) {
+		if (line.contains("<style name=\"FoundryAppMainTheme\"")) {
 			inside_main_theme = true;
 			new_lines.append(line);
 			continue;
 		}
-		if (line.contains("<style name=\"GodotAppSplashTheme\"")) {
+		if (line.contains("<style name=\"FoundryAppSplashTheme\"")) {
 			inside_splash_theme = true;
 			new_lines.append(line);
 			continue;
 		}
 
-		// Inject GodotAppMainTheme attributes.
+		// Inject FoundryAppMainTheme attributes.
 		if (inside_main_theme && line.contains("</style>")) {
 			for (const Variant &attribute : main_theme_attributes.keys()) {
 				String value = main_theme_attributes[attribute];
@@ -1150,7 +1150,7 @@ void EditorExportPlatformAndroid::_fix_themes_xml(const Ref<EditorExportPreset> 
 			continue;
 		}
 
-		// Inject GodotAppSplashTheme attributes.
+		// Inject FoundryAppSplashTheme attributes.
 		if (inside_splash_theme && line.contains("</style>")) {
 			for (const Variant &attribute : splash_theme_attributes.keys()) {
 				String value = splash_theme_attributes[attribute];
@@ -2580,7 +2580,7 @@ Error EditorExportPlatformAndroid::run(const Ref<EditorExportPreset> &p_preset, 
 		print_verbose(output);
 		if (err || rv != 0 || output.contains("Error: Activity not started")) {
 			// The implicit launch failed, let's try an explicit launch by specifying the component name before giving up.
-			const String component_name = get_package_name(p_preset, package_name) + "/com.godot.game.GodotAppLauncher";
+			const String component_name = get_package_name(p_preset, package_name) + "/com.godot.game.FoundryAppLauncher";
 			print_line("Implicit launch failed... Trying explicit launch using", component_name);
 			args.erase(get_package_name(p_preset, package_name));
 			args.push_back("-n");
@@ -2825,7 +2825,7 @@ bool _validate_dotnet_tfm(const String &required_tfm, String &r_error) {
 		List<String> args;
 		args.push_back("build");
 		args.push_back(project_path);
-		args.push_back("/p:GodotTargetPlatform=android");
+		args.push_back("/p:FoundryTargetPlatform=android");
 		args.push_back("--getProperty:TargetFramework");
 
 		int exitcode;

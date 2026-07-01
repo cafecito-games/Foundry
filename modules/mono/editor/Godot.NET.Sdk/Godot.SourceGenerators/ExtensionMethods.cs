@@ -17,7 +17,7 @@ namespace Godot.SourceGenerators
             .TryGetValue("build_property." + property, out value);
 
         public static bool AreGodotSourceGeneratorsDisabled(this GeneratorExecutionContext context)
-            => context.TryGetGlobalAnalyzerProperty("GodotSourceGenerators", out string? toggle) &&
+            => context.TryGetGlobalAnalyzerProperty("FoundrySourceGenerators", out string? toggle) &&
                toggle != null &&
                toggle.Equals("disabled", StringComparison.OrdinalIgnoreCase);
 
@@ -28,7 +28,7 @@ namespace Godot.SourceGenerators
 
         public static bool IsGodotSourceGeneratorDisabled(this GeneratorExecutionContext context, string generatorName) =>
             AreGodotSourceGeneratorsDisabled(context) ||
-            (context.TryGetGlobalAnalyzerProperty("GodotDisabledSourceGenerators", out string? disabledGenerators) &&
+            (context.TryGetGlobalAnalyzerProperty("FoundryDisabledSourceGenerators", out string? disabledGenerators) &&
             disabledGenerators != null &&
             disabledGenerators.Split(';').Contains(generatorName));
 
@@ -54,7 +54,7 @@ namespace Godot.SourceGenerators
 
             while (symbol != null)
             {
-                if (symbol.ContainingAssembly?.Name == "GodotSharp")
+                if (symbol.ContainingAssembly?.Name == "FoundrySharp")
                     return symbol;
 
                 symbol = symbol.BaseType;
@@ -91,7 +91,7 @@ namespace Godot.SourceGenerators
             var classTypeSymbol = sm.GetDeclaredSymbol(cds);
 
             if (classTypeSymbol?.BaseType == null
-                || !classTypeSymbol.BaseType.InheritsFrom("GodotSharp", GodotClasses.GodotObject))
+                || !classTypeSymbol.BaseType.InheritsFrom("FoundrySharp", FoundryClasses.FoundryObject))
             {
                 symbol = null;
                 return false;
@@ -276,30 +276,30 @@ namespace Godot.SourceGenerators
                 .Replace(">", ")");
 
         public static bool IsGodotExportAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.ExportAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.ExportAttr;
 
         public static bool IsGodotSignalAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.SignalAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.SignalAttr;
 
         public static bool IsGodotMustBeVariantAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.MustBeVariantAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.MustBeVariantAttr;
 
         public static bool IsGodotClassNameAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.GodotClassNameAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.FoundryClassNameAttr;
 
         public static bool IsGodotGlobalClassAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.GlobalClassAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.GlobalClassAttr;
 
         public static bool IsGodotExportToolButtonAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.ExportToolButtonAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.ExportToolButtonAttr;
 
         public static bool IsGodotToolAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.ToolAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.ToolAttr;
 
         public static bool IsSystemFlagsAttribute(this INamedTypeSymbol symbol)
-            => symbol.FullQualifiedNameOmitGlobal() == GodotClasses.SystemFlagsAttr;
+            => symbol.FullQualifiedNameOmitGlobal() == FoundryClasses.SystemFlagsAttr;
 
-        public static GodotMethodData? HasGodotCompatibleSignature(
+        public static FoundryMethodData? HasGodotCompatibleSignature(
             this IMethodSymbol method,
             MarshalUtils.TypeCache typeCache
         )
@@ -329,12 +329,12 @@ namespace Godot.SourceGenerators
             if (parameters.Length > paramTypes.Length)
                 return null; // Ignore incompatible method
 
-            return new GodotMethodData(method, paramTypes,
+            return new FoundryMethodData(method, paramTypes,
                 parameters.Select(p => p.Type).ToImmutableArray(),
                 retType != null ? (retType.Value, retSymbol) : null);
         }
 
-        public static IEnumerable<GodotMethodData> WhereHasGodotCompatibleSignature(
+        public static IEnumerable<FoundryMethodData> WhereHasGodotCompatibleSignature(
             this IEnumerable<IMethodSymbol> methods,
             MarshalUtils.TypeCache typeCache
         )
@@ -348,7 +348,7 @@ namespace Godot.SourceGenerators
             }
         }
 
-        public static IEnumerable<GodotPropertyData> WhereIsGodotCompatibleType(
+        public static IEnumerable<FoundryPropertyData> WhereIsGodotCompatibleType(
             this IEnumerable<IPropertySymbol> properties,
             MarshalUtils.TypeCache typeCache
         )
@@ -360,11 +360,11 @@ namespace Godot.SourceGenerators
                 if (marshalType == null)
                     continue;
 
-                yield return new GodotPropertyData(property, marshalType.Value);
+                yield return new FoundryPropertyData(property, marshalType.Value);
             }
         }
 
-        public static IEnumerable<GodotFieldData> WhereIsGodotCompatibleType(
+        public static IEnumerable<FoundryFieldData> WhereIsGodotCompatibleType(
             this IEnumerable<IFieldSymbol> fields,
             MarshalUtils.TypeCache typeCache
         )
@@ -377,7 +377,7 @@ namespace Godot.SourceGenerators
                 if (marshalType == null)
                     continue;
 
-                yield return new GodotFieldData(field, marshalType.Value);
+                yield return new FoundryFieldData(field, marshalType.Value);
             }
         }
 

@@ -30,7 +30,7 @@
 
 #pragma once
 
-#include "godot_lsp.h"
+#include "foundry_lsp.h"
 
 #include "core/io/file_access.h"
 #include "core/object/ref_counted.h"

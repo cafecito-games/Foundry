@@ -38,14 +38,14 @@ import android.view.WindowManager
 import android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND
 import android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
 import android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
-import org.godotengine.editor.GodotGame
+import org.godotengine.editor.FoundryGame
 import org.godotengine.editor.R
 import org.godotengine.godot.editor.utils.GameMenuUtils
 
 /**
  * Host the Godot game from the editor when the embedded mode is enabled.
  */
-class EmbeddedGodotGame : GodotGame() {
+class EmbeddedGodotGame : FoundryGame() {
 
 	companion object {
 		private val TAG = EmbeddedGodotGame::class.java.simpleName

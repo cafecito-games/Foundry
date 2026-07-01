@@ -37,7 +37,7 @@
 #include "servers/rendering/rendering_device.h"
 #include "thirdparty/zlib/zlib.h"
 
-#include "d3d12_godot_nir_bridge.h"
+#include "d3d12_foundry_nir_bridge.h"
 #include "rendering_context_driver_d3d12.h"
 
 FOUNDRY_GCC_WARNING_PUSH

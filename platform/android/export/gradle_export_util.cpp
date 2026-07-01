@@ -210,7 +210,7 @@ Error _create_project_name_strings_files(const Ref<EditorExportPreset> &p_preset
 	print_verbose("Creating strings resources for supported locales for project " + p_project_name);
 	// Stores the string into the default values directory.
 	String processed_default_xml_string = vformat(FOUNDRY_PROJECT_NAME_XML_STRING, _android_xml_escape(p_project_name));
-	store_string_at_path(p_gradle_build_dir.path_join("res/values/godot_project_name_string.xml"), processed_default_xml_string);
+	store_string_at_path(p_gradle_build_dir.path_join("res/values/foundry_project_name_string.xml"), processed_default_xml_string);
 
 	// Searches the Gradle project res/ directory to find all supported locales
 	Ref<DirAccess> da = DirAccess::open(p_gradle_build_dir.path_join("res"));
@@ -237,7 +237,7 @@ Error _create_project_name_strings_files(const Ref<EditorExportPreset> &p_preset
 			continue;
 		}
 		String locale = file.replace("values-", "").replace("-r", "_");
-		String locale_directory = p_gradle_build_dir.path_join("res/" + file + "/godot_project_name_string.xml");
+		String locale_directory = p_gradle_build_dir.path_join("res/" + file + "/foundry_project_name_string.xml");
 
 		String locale_project_name;
 		if (p_appnames.is_empty()) {
@@ -300,10 +300,10 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 		}
 	}
 
-	// Update the GodotApp activity tag.
+	// Update the FoundryApp activity tag.
 	String orientation = _get_android_orientation_label(DisplayServer::ScreenOrientation(int(p_export_platform->get_project_setting(p_preset, "display/window/handheld/orientation"))));
 	String manifest_activity_text = vformat(
-			"        <activity android:name=\".GodotApp\" "
+			"        <activity android:name=\".FoundryApp\" "
 			"tools:replace=\"android:screenOrientation,android:excludeFromRecents,android:resizeableActivity\" "
 			"tools:node=\"mergeOnlyAttributes\" "
 			"android:excludeFromRecents=\"%s\" "
@@ -320,11 +320,11 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 
 	manifest_activity_text += "        </activity>\n";
 
-	// Update the GodotAppLauncher activity tag.
+	// Update the FoundryAppLauncher activity tag.
 	manifest_activity_text += "        <activity-alias\n"
 							  "            tools:node=\"mergeOnlyAttributes\"\n"
-							  "            android:name=\".GodotAppLauncher\"\n"
-							  "            android:targetActivity=\".GodotApp\"\n"
+							  "            android:name=\".FoundryAppLauncher\"\n"
+							  "            android:targetActivity=\".FoundryApp\"\n"
 							  "            android:exported=\"true\">\n";
 
 	manifest_activity_text += "            <intent-filter>\n"
@@ -348,7 +348,7 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 
 	manifest_activity_text += "            </intent-filter>\n";
 
-	// Hybrid categories should only go to the actual 'GodotApp' activity.
+	// Hybrid categories should only go to the actual 'FoundryApp' activity.
 	Ref<RegEx> activity_alias_content_to_remove_regex = RegEx::create_from_string(R"delim(<category\s+android:name\s*=\s*"org.godotengine.xr.hybrid.(IMMERSIVE|PANEL)"\s*\/>)delim");
 	String updated_export_plugins_activity_alias_element_contents = activity_alias_content_to_remove_regex->sub(export_plugins_activity_element_contents, "", true);
 	manifest_activity_text += updated_export_plugins_activity_alias_element_contents;
@@ -362,7 +362,7 @@ String _get_application_tag(const Ref<EditorExportPlatform> &p_export_platform, 
 	bool is_game = app_category_index == APP_CATEGORY_GAME;
 
 	String manifest_application_text = vformat(
-			"    <application android:label=\"@string/godot_project_name_string\"\n"
+			"    <application android:label=\"@string/foundry_project_name_string\"\n"
 			"        android:allowBackup=\"%s\"\n"
 			"        android:icon=\"@mipmap/icon\"\n"
 			"        android:isGame=\"%s\"\n"

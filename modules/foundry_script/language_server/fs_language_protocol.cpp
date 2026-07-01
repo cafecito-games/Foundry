@@ -39,7 +39,7 @@
 #include "editor/editor_log.h"
 #include "editor/editor_node.h"
 #include "editor/settings/editor_settings.h"
-#include "modules/foundry_script/language_server/godot_lsp.h"
+#include "modules/foundry_script/language_server/foundry_lsp.h"
 
 #define LSP_CLIENT_V(m_ret_val)                                    \
 	ERR_FAIL_COND_V(latest_client_id == LSP_NO_CLIENT, m_ret_val); \
@@ -262,11 +262,11 @@ bool FSLanguageProtocol::complete_initialization_if_workspace_ready() {
 }
 
 void FSLanguageProtocol::initialized(const Variant &p_params) {
-	LSP::GodotCapabilities capabilities;
+	LSP::FoundryCapabilities capabilities;
 
 	DocTools *doc = EditorHelp::get_doc_data();
 	for (const KeyValue<String, DocData::ClassDoc> &E : doc->class_list) {
-		LSP::GodotNativeClassInfo gdclass;
+		LSP::FoundryNativeClassInfo gdclass;
 		gdclass.name = E.value.name;
 		gdclass.class_doc = &(E.value);
 		if (ClassDB::ClassInfo *ptr = ClassDB::classes.getptr(StringName(E.value.name))) {

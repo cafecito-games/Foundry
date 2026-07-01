@@ -51,10 +51,10 @@
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
 
+#include "../language_server/foundry_lsp.h"
 #include "../language_server/fs_extend_parser.h"
 #include "../language_server/fs_language_protocol.h"
 #include "../language_server/fs_workspace.h"
-#include "../language_server/godot_lsp.h"
 #endif // FOUNDRY_SCRIPT_NO_LSP
 
 #ifdef FOUNDRY_SCRIPT_NO_LSP
@@ -1477,7 +1477,7 @@ bool call_resolves_to_symbol(
 
 	LSP::TextDocumentPositionParams doc_position;
 	doc_position.textDocument.uri = p_workspace->get_file_uri(p_path);
-	doc_position.position = GodotPosition(identifier->start_line, identifier->start_column).to_lsp(p_parser->get_lines());
+	doc_position.position = FoundryPosition(identifier->start_line, identifier->start_column).to_lsp(p_parser->get_lines());
 	return p_workspace->resolve_symbol(doc_position, String(), true, p_parse_results) == p_target_symbol;
 }
 

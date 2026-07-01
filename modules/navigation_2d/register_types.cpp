@@ -30,7 +30,7 @@
 
 #include "register_types.h"
 
-#include "2d/godot_navigation_server_2d.h"
+#include "2d/foundry_navigation_server_2d.h"
 
 #include "core/config/engine.h"
 #include "servers/navigation_2d/navigation_server_2d.h"
@@ -42,13 +42,13 @@
 #endif
 
 static NavigationServer2D *_createGodotNavigation2DCallback() {
-	return memnew(GodotNavigationServer2D);
+	return memnew(FoundryNavigationServer2D);
 }
 
 void initialize_navigation_2d_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
-		NavigationServer2DManager::get_singleton()->register_server("GodotNavigation2D", callable_mp_static(_createGodotNavigation2DCallback));
-		NavigationServer2DManager::get_singleton()->set_default_server("GodotNavigation2D");
+		NavigationServer2DManager::get_singleton()->register_server("FoundryNavigation2D", callable_mp_static(_createGodotNavigation2DCallback));
+		NavigationServer2DManager::get_singleton()->set_default_server("FoundryNavigation2D");
 	}
 
 #ifdef TOOLS_ENABLED

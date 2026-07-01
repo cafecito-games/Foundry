@@ -22,11 +22,11 @@ namespace Godot.SourceGenerators
 
             // NOTE: NotNullWhen diagnostics don't work on projects targeting .NET Standard 2.0
             // ReSharper disable once ReplaceWithStringIsNullOrEmpty
-            if (!context.TryGetGlobalAnalyzerProperty("GodotProjectDirBase64", out string? godotProjectDir) || godotProjectDir!.Length == 0)
+            if (!context.TryGetGlobalAnalyzerProperty("FoundryProjectDirBase64", out string? godotProjectDir) || godotProjectDir!.Length == 0)
             {
-                if (!context.TryGetGlobalAnalyzerProperty("GodotProjectDir", out godotProjectDir) || godotProjectDir!.Length == 0)
+                if (!context.TryGetGlobalAnalyzerProperty("FoundryProjectDir", out godotProjectDir) || godotProjectDir!.Length == 0)
                 {
-                    throw new InvalidOperationException("Property 'GodotProjectDir' is null or empty.");
+                    throw new InvalidOperationException("Property 'FoundryProjectDir' is null or empty.");
                 }
             }
             else
@@ -155,7 +155,7 @@ namespace Godot.SourceGenerators
             var sourceBuilder = new StringBuilder();
 
             sourceBuilder.Append("[assembly:");
-            sourceBuilder.Append(GodotClasses.AssemblyHasScriptsAttr);
+            sourceBuilder.Append(FoundryClasses.AssemblyHasScriptsAttr);
             sourceBuilder.Append("(new System.Type[] {");
 
             bool first = true;

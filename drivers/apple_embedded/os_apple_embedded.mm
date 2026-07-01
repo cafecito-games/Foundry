@@ -34,8 +34,8 @@
 
 #import "app_delegate_service.h"
 #import "display_server_apple_embedded.h"
-#import "godot_view_apple_embedded.h"
-#import "godot_view_controller.h"
+#import "foundry_view_apple_embedded.h"
+#import "foundry_view_controller.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -57,7 +57,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 
 #if defined(VULKAN_ENABLED)
-#include "drivers/vulkan/godot_vulkan.h"
+#include "drivers/vulkan/foundry_vulkan.h"
 #endif // VULKAN_ENABLED
 #endif
 
@@ -206,8 +206,8 @@ bool OS_AppleEmbedded::iterate() {
 		return true;
 	}
 
-	GodotProfileFrameMark;
-	GodotProfileZone("OS_AppleEmbedded::iterate");
+	FoundryProfileFrameMark;
+	FoundryProfileZone("OS_AppleEmbedded::iterate");
 
 	if (DisplayServer::get_singleton()) {
 		DisplayServer::get_singleton()->process_events();

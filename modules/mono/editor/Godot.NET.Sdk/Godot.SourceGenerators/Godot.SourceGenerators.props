@@ -1,10 +1,10 @@
 <Project>
   <ItemGroup>
-    <!-- $(GodotProjectDir) is defined by Godot.NET.Sdk -->
-    <CompilerVisibleProperty Include="GodotDisabledSourceGenerators" />
-    <CompilerVisibleProperty Include="GodotProjectDir" />
-    <CompilerVisibleProperty Include="GodotProjectDirBase64" />
-    <CompilerVisibleProperty Include="GodotSourceGenerators" />
+    <!-- $(FoundryProjectDir) is defined by Godot.NET.Sdk -->
+    <CompilerVisibleProperty Include="FoundryDisabledSourceGenerators" />
+    <CompilerVisibleProperty Include="FoundryProjectDir" />
+    <CompilerVisibleProperty Include="FoundryProjectDirBase64" />
+    <CompilerVisibleProperty Include="FoundrySourceGenerators" />
     <CompilerVisibleProperty Include="IsGodotToolsProject" />
   </ItemGroup>
 </Project>

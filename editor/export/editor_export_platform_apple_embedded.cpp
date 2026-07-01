@@ -1583,15 +1583,15 @@ Error EditorExportPlatformAppleEmbedded::_export_apple_embedded_plugins(const Re
 		plugin_format["deinitialization"] = plugin_deinitialization_cpp_code;
 
 		String plugin_cpp_code = "\n// Godot Plugins\n"
-								 "void godot_apple_embedded_plugins_initialize();\n"
-								 "void godot_apple_embedded_plugins_deinitialize();\n"
+								 "void foundry_apple_embedded_plugins_initialize();\n"
+								 "void foundry_apple_embedded_plugins_deinitialize();\n"
 								 "// Exported Plugins\n\n"
 								 "$definition"
 								 "// Use Plugins\n"
-								 "void godot_apple_embedded_plugins_initialize() {\n"
+								 "void foundry_apple_embedded_plugins_initialize() {\n"
 								 "$initialization"
 								 "}\n\n"
-								 "void godot_apple_embedded_plugins_deinitialize() {\n"
+								 "void foundry_apple_embedded_plugins_deinitialize() {\n"
 								 "$deinitialization"
 								 "}\n";
 
@@ -1757,7 +1757,7 @@ Error EditorExportPlatformAppleEmbedded::_export_project_helper(const Ref<Editor
 		return ERR_SKIP;
 	}
 
-	String library_to_use = "libgodot." + get_platform_name() + "." + String(p_debug ? "debug" : "release") + ".xcframework";
+	String library_to_use = "libfoundry." + get_platform_name() + "." + String(p_debug ? "debug" : "release") + ".xcframework";
 
 	print_line("Static framework: " + library_to_use);
 	String pkg_name;
@@ -1770,15 +1770,15 @@ Error EditorExportPlatformAppleEmbedded::_export_project_helper(const Ref<Editor
 	bool found_library = false;
 
 	HashSet<String> files_to_parse;
-	const String project_file = "godot_apple_embedded.xcodeproj/project.pbxproj";
+	const String project_file = "foundry_apple_embedded.xcodeproj/project.pbxproj";
 	files_to_parse.insert(project_file);
-	files_to_parse.insert("godot_apple_embedded.xcodeproj/project.xcworkspace/contents.xcworkspacedata");
-	files_to_parse.insert("godot_apple_embedded.xcodeproj/xcshareddata/xcschemes/godot_apple_embedded.xcscheme");
-	files_to_parse.insert("godot_apple_embedded/godot_apple_embedded-Info.plist");
-	files_to_parse.insert("godot_apple_embedded/godot_apple_embedded.entitlements");
-	files_to_parse.insert("godot_apple_embedded/export_options.plist");
-	files_to_parse.insert("godot_apple_embedded/dummy.cpp");
-	files_to_parse.insert("godot_apple_embedded/Launch Screen.storyboard");
+	files_to_parse.insert("foundry_apple_embedded.xcodeproj/project.xcworkspace/contents.xcworkspacedata");
+	files_to_parse.insert("foundry_apple_embedded.xcodeproj/xcshareddata/xcschemes/foundry_apple_embedded.xcscheme");
+	files_to_parse.insert("foundry_apple_embedded/foundry_apple_embedded-Info.plist");
+	files_to_parse.insert("foundry_apple_embedded/foundry_apple_embedded.entitlements");
+	files_to_parse.insert("foundry_apple_embedded/export_options.plist");
+	files_to_parse.insert("foundry_apple_embedded/dummy.cpp");
+	files_to_parse.insert("foundry_apple_embedded/Launch Screen.storyboard");
 	files_to_parse.insert("PrivacyInfo.xcprivacy");
 
 	AppleEmbeddedConfigData config_data = {
@@ -1854,7 +1854,7 @@ Error EditorExportPlatformAppleEmbedded::_export_project_helper(const Ref<Editor
 
 		if (files_to_parse.has(file)) {
 			_fix_config_file(p_preset, data, config_data, p_debug);
-		} else if (file.begins_with("libgodot." + get_platform_name())) {
+		} else if (file.begins_with("libfoundry." + get_platform_name())) {
 			if (!file.begins_with(library_to_use) || file.ends_with(String("/empty"))) {
 				ret = unzGoToNextFile(src_pkg_zip);
 				continue; //ignore!
@@ -1873,7 +1873,7 @@ Error EditorExportPlatformAppleEmbedded::_export_project_helper(const Ref<Editor
 		///@TODO need to parse logo files
 
 		if (data.size() > 0) {
-			file = file.replace("godot_apple_embedded", binary_name);
+			file = file.replace("foundry_apple_embedded", binary_name);
 
 			print_line("ADDING: " + file + " size: " + itos(data.size()));
 

@@ -23,7 +23,7 @@
 		// Godot also provides a Variant type that works like a union of all the Variant-compatible types.
 		Variant fooVar = 2; // fooVar is dynamically an integer (stored as a `long` in the Variant type).
 		fooVar = "Now fooVar is a string!";
-		fooVar = new RefCounted(); // fooVar is a GodotObject.
+		fooVar = new RefCounted(); // fooVar is a FoundryObject.
 		[/csharp]
 		[/codeblocks]
 		Godot tracks all scripting API variables within Variants. Without even realizing it, you use Variants all the time. When a particular language enforces its own rules for keeping data typed, then that language is applying its own custom logic over the base Variant scripting API.
@@ -57,7 +57,7 @@
 				break;
 			case Variant.Type.Object:
 				// Note that Objects are their own special category.
-				// You can convert a Variant to a GodotObject and use reflection to get its name.
+				// You can convert a Variant to a FoundryObject and use reflection to get its name.
 				GD.Print($"foo is a(n) {foo.AsGodotObject().GetType().Name}");
 				break;
 		}

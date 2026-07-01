@@ -2,7 +2,7 @@ using Godot;
 
 namespace NamespaceA
 {
-    partial class SameName : GodotObject
+    partial class SameName : FoundryObject
     {
         private int _field;
     }
@@ -11,7 +11,7 @@ namespace NamespaceA
 // SameName again but different namespace
 namespace NamespaceB
 {
-    partial class {|GD0003:SameName|} : GodotObject
+    partial class {|GD0003:SameName|} : FoundryObject
     {
         private int _field;
     }

@@ -30,7 +30,7 @@
 
 #include "register_types.h"
 
-#include "3d/godot_navigation_server_3d.h"
+#include "3d/foundry_navigation_server_3d.h"
 
 #ifndef DISABLE_DEPRECATED
 #include "3d/navigation_mesh_generator.h"
@@ -50,13 +50,13 @@ NavigationMeshGenerator *_nav_mesh_generator = nullptr;
 #endif // DISABLE_DEPRECATED
 
 static NavigationServer3D *_createGodotNavigation3DCallback() {
-	return memnew(GodotNavigationServer3D);
+	return memnew(FoundryNavigationServer3D);
 }
 
 void initialize_navigation_3d_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
-		NavigationServer3DManager::get_singleton()->register_server("GodotNavigation3D", callable_mp_static(_createGodotNavigation3DCallback));
-		NavigationServer3DManager::get_singleton()->set_default_server("GodotNavigation3D");
+		NavigationServer3DManager::get_singleton()->register_server("FoundryNavigation3D", callable_mp_static(_createGodotNavigation3DCallback));
+		NavigationServer3DManager::get_singleton()->set_default_server("FoundryNavigation3D");
 
 #ifndef DISABLE_DEPRECATED
 		_nav_mesh_generator = memnew(NavigationMeshGenerator);

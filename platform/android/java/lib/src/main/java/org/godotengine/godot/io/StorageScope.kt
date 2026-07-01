@@ -36,7 +36,7 @@ import android.os.Build
 import android.os.Environment
 import androidx.core.net.toUri
 import java.io.File
-import org.godotengine.godot.GodotLib
+import org.godotengine.godot.FoundryLib
 
 /**
  * Represents the different storage scopes.
@@ -109,7 +109,7 @@ internal enum class StorageScope {
 
 			var pathFile = File(path)
 			if (!pathFile.isAbsolute) {
-				pathFile = File(GodotLib.getProjectResourceDir(), path)
+				pathFile = File(FoundryLib.getProjectResourceDir(), path)
 				if (!pathFile.isAbsolute) {
 					return UNKNOWN
 				}

@@ -9,7 +9,7 @@ partial class @class
     /// <summary>
     /// Cached StringNames for the methods contained in this class, for fast lookup.
     /// </summary>
-    public new class MethodName : global::Godot.GodotObject.MethodName {
+    public new class MethodName : global::Godot.FoundryObject.MethodName {
     }
 #pragma warning restore CS0109
 }

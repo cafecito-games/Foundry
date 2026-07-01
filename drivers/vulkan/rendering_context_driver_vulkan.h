@@ -39,7 +39,7 @@
 #define VK_TRACK_DEVICE_MEMORY
 #endif
 
-#include "drivers/vulkan/godot_vulkan.h"
+#include "drivers/vulkan/foundry_vulkan.h"
 
 class RenderingContextDriverVulkan : public RenderingContextDriver {
 public:

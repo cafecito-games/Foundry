@@ -1622,7 +1622,7 @@ void godotsharp_request_fatal_termination() {
 }
 
 // The order in this array must match the declaration order of
-// the methods in 'GodotSharp/Core/NativeInterop/NativeFuncs.cs'.
+// the methods in 'FoundrySharp/Core/NativeInterop/NativeFuncs.cs'.
 static const void *unmanaged_callbacks[]{
 	(void *)godotsharp_dotnet_module_is_initialized,
 	(void *)godotsharp_method_bind_get_method,

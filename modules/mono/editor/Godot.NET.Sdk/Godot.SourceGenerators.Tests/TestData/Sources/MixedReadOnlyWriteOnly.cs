@@ -1,6 +1,6 @@
 using Godot;
 
-public partial class MixedReadOnlyWriteOnly : GodotObject
+public partial class MixedReadOnlyWriteOnly : FoundryObject
 {
     public readonly string ReadOnlyField = "foo";
     public string ReadOnlyAutoProperty { get; } = "foo";

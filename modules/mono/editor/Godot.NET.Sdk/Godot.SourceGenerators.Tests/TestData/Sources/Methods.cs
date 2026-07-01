@@ -1,6 +1,6 @@
 using Godot;
 
-public partial class Methods : GodotObject
+public partial class Methods : FoundryObject
 {
     private void MethodWithOverload()
     {

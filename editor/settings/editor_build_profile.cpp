@@ -62,9 +62,9 @@ const char *EditorBuildProfile::build_option_identifiers[BUILD_OPTION_MAX] = {
 	"metal",
 	"opengl3",
 	"disable_physics_2d",
-	"module_godot_physics_2d_enabled",
+	"module_foundry_physics_2d_enabled",
 	"disable_physics_3d",
-	"module_godot_physics_3d_enabled",
+	"module_foundry_physics_3d_enabled",
 	"module_jolt_physics_enabled",
 	"module_text_server_fb_enabled",
 	"module_text_server_adv_enabled",
@@ -685,7 +685,7 @@ EditorBuildProfile::EditorBuildProfile() {
 	build_option_settings.insert(BUILD_OPTION_OPENGL, settings_opengl);
 
 	HashMap<String, LocalVector<Variant>> settings_phy_godot_3d = {
-		{ "physics/3d/physics_engine", { "DEFAULT", "GodotPhysics3D" } },
+		{ "physics/3d/physics_engine", { "DEFAULT", "FoundryPhysics3D" } },
 	};
 	build_option_settings.insert(BUILD_OPTION_PHYSICS_GODOT_3D, settings_phy_godot_3d);
 

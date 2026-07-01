@@ -102,7 +102,7 @@ Error EMWSPeer::connect_to_url(const String &p_url, const Ref<TLSOptions> &p_tls
 		requested_url += path;
 	}
 
-	peer_sock = godot_js_websocket_create(this, requested_url.utf8().get_data(), proto_string.utf8().get_data(), &_esws_on_connect, &_esws_on_message, &_esws_on_error, &_esws_on_close);
+	peer_sock = foundry_js_websocket_create(this, requested_url.utf8().get_data(), proto_string.utf8().get_data(), &_esws_on_connect, &_esws_on_message, &_esws_on_error, &_esws_on_close);
 	if (peer_sock == -1) {
 		return FAILED;
 	}
@@ -120,7 +120,7 @@ Error EMWSPeer::accept_stream(const Ref<StreamPeer> &p_stream) {
 Error EMWSPeer::_send(const uint8_t *p_buffer, int p_buffer_size, bool p_binary) {
 	ERR_FAIL_COND_V(outbound_buffer_size > 0 && (get_current_outbound_buffered_amount() + p_buffer_size >= outbound_buffer_size), ERR_OUT_OF_MEMORY);
 
-	if (godot_js_websocket_send(peer_sock, p_buffer, p_buffer_size, p_binary ? 1 : 0) != 0) {
+	if (foundry_js_websocket_send(peer_sock, p_buffer, p_buffer_size, p_binary ? 1 : 0) != 0) {
 		return FAILED;
 	}
 	return OK;
@@ -155,7 +155,7 @@ int EMWSPeer::get_available_packet_count() const {
 
 int EMWSPeer::get_current_outbound_buffered_amount() const {
 	if (peer_sock != -1) {
-		return godot_js_websocket_buffered_amount(peer_sock);
+		return foundry_js_websocket_buffered_amount(peer_sock);
 	}
 	return 0;
 }
@@ -166,7 +166,7 @@ bool EMWSPeer::was_string_packet() const {
 
 void EMWSPeer::_clear() {
 	if (peer_sock != -1) {
-		godot_js_websocket_destroy(peer_sock);
+		foundry_js_websocket_destroy(peer_sock);
 		peer_sock = -1;
 	}
 	ready_state = STATE_CLOSED;
@@ -182,7 +182,7 @@ void EMWSPeer::_clear() {
 void EMWSPeer::close(int p_code, const String &p_reason) {
 	if (p_code < 0) {
 		if (peer_sock != -1) {
-			godot_js_websocket_destroy(peer_sock);
+			foundry_js_websocket_destroy(peer_sock);
 			peer_sock = -1;
 		}
 		ready_state = STATE_CLOSED;
@@ -190,7 +190,7 @@ void EMWSPeer::close(int p_code, const String &p_reason) {
 	if (ready_state == STATE_CONNECTING || ready_state == STATE_OPEN) {
 		ready_state = STATE_CLOSING;
 		if (peer_sock != -1) {
-			godot_js_websocket_close(peer_sock, p_code, p_reason.utf8().get_data());
+			foundry_js_websocket_close(peer_sock, p_code, p_reason.utf8().get_data());
 		} else {
 			ready_state = STATE_CLOSED;
 		}
