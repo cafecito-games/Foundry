@@ -4,9 +4,9 @@ plugins {
 }
 
 ext {
-    DEBUG_PUBLISH_ARTIFACT_ID = 'godot-debug'
-    PUBLISH_ARTIFACT_ID = 'godot'
-    TOOLS_PUBLISH_ARTIFACT_ID = 'godot-tools'
+    DEBUG_PUBLISH_ARTIFACT_ID = 'foundry-debug'
+    PUBLISH_ARTIFACT_ID = 'foundry'
+    TOOLS_PUBLISH_ARTIFACT_ID = 'foundry-tools'
 }
 
 apply from: "../scripts/publish-module.gradle"
