@@ -74,7 +74,7 @@ android {
     buildToolsVersion versions.buildTools
     ndkVersion versions.ndkVersion
 
-    namespace = "org.godotengine.editor"
+    namespace = "games.cafecito.foundry.editor"
 
     defaultConfig {
         // The 'applicationId' suffix allows to install Godot 3.x(v3) and 4.x(v4) on the same device
