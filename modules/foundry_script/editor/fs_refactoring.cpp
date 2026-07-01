@@ -7104,14 +7104,41 @@ FSParser::DataType native_datatype_from_property(const PropertyInfo &p_property,
 	return result;
 }
 
-bool native_argument_name(const PropertyInfo &p_argument, int p_index, String &r_name) {
-	r_name = p_argument.name;
-	if (r_name.is_empty()) {
-		r_name = "arg" + itos(p_index + 1);
+bool is_available_native_argument_name(const String &p_name, const HashSet<StringName> &p_used_names) {
+	String reason;
+	return FSRefactorNames::validate_identifier(p_name, reason) && !p_used_names.has(StringName(p_name));
+}
+
+String native_argument_name(const PropertyInfo &p_argument, int p_index, HashSet<StringName> &r_used_names) {
+	const String original_name = p_argument.name;
+	if (is_available_native_argument_name(original_name, r_used_names)) {
+		r_used_names.insert(StringName(original_name));
+		return original_name;
 	}
 
-	String reason;
-	return FSRefactorNames::validate_identifier(r_name, reason);
+	if (!original_name.is_empty()) {
+		const String suffixed_name = original_name + "_arg";
+		if (is_available_native_argument_name(suffixed_name, r_used_names)) {
+			r_used_names.insert(StringName(suffixed_name));
+			return suffixed_name;
+		}
+	}
+
+	const String base_name = "arg" + itos(p_index + 1);
+	if (is_available_native_argument_name(base_name, r_used_names)) {
+		r_used_names.insert(StringName(base_name));
+		return base_name;
+	}
+
+	int suffix = 2;
+	while (true) {
+		const String candidate_name = base_name + "_" + itos(suffix);
+		if (is_available_native_argument_name(candidate_name, r_used_names)) {
+			r_used_names.insert(StringName(candidate_name));
+			return candidate_name;
+		}
+		suffix++;
+	}
 }
 
 bool render_native_method_signature(
@@ -7126,14 +7153,12 @@ bool render_native_method_signature(
 	}
 
 	String signature = p_class_indent + "func " + p_method.name + "(";
+	HashSet<StringName> used_argument_names;
 	for (int i = 0; i < p_method.arguments.size(); i++) {
 		if (i > 0) {
 			signature += ", ";
 		}
-		String argument_name;
-		if (!native_argument_name(p_method.arguments[i], i, argument_name)) {
-			return false;
-		}
+		const String argument_name = native_argument_name(p_method.arguments[i], i, used_argument_names);
 		r_argument_names.push_back(argument_name);
 		signature += argument_name;
 
@@ -7182,7 +7207,8 @@ void add_native_override_candidate(
 		const String &p_class_indent,
 		int p_insertion_line,
 		Vector<OverrideMethodCandidate> &r_candidates) {
-	if ((p_method.flags & METHOD_FLAG_VARARG) != 0 || (p_method.flags & METHOD_FLAG_STATIC) != 0 ||
+	if ((p_method.flags & METHOD_FLAG_VIRTUAL) == 0 ||
+			(p_method.flags & METHOD_FLAG_VARARG) != 0 || (p_method.flags & METHOD_FLAG_STATIC) != 0 ||
 			is_constructor_like_override_method(StringName(p_method.name))) {
 		return;
 	}

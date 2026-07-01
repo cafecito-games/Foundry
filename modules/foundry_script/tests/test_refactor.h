@@ -441,6 +441,46 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\tsuper._draw()\n"));
 	}
 
+	TEST_CASE("Override method skips non-virtual native methods") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "free") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "_draw") != nullptr);
+	}
+
+	TEST_CASE("Override method sanitizes native virtual reserved argument names") {
+		const String source =
+				"extends ScriptLanguageExtension\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		if (!candidates.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_make_template");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+		CHECK(candidate->signature.contains("template: String"));
+		CHECK(candidate->signature.contains("class_name_arg: String"));
+		CHECK(candidate->signature.contains("base_class_name: String"));
+		CHECK_FALSE(candidate->signature.contains("template: String, class_name: String"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("class_name_arg: String"));
+		CHECK_FALSE(out.contains("super._make_template(template, class_name,"));
+		CHECK(out.contains("return super._make_template(template, class_name_arg, base_class_name)"));
+	}
+
 	TEST_CASE("Override method skips already declared native virtual methods") {
 		const String source =
 				"extends Control\n"
