@@ -30,14 +30,12 @@
 
 #include "fs_workspace.h"
 
-#include "../foundry_build_task.h"
 #include "../foundry_script.h"
-#include "../fs_build_task_bootstrap_loader.h"
+#include "../fs_build_pipeline_runner.h"
 #include "../fs_parser.h"
 #include "fs_language_protocol.h"
 
 #include "core/config/project_settings.h"
-#include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/object/script_language.h"
 #include "editor/doc/doc_tools.h"
@@ -309,108 +307,6 @@ bool FSWorkspace::_output_may_include_foundry_scripts(const String &p_output) {
 	return output.ends_with("/") || output.contains("*") || output.contains("?") || output.get_extension().is_empty();
 }
 
-static PackedStringArray _current_pipeline_fingerprints(const ProjectBuildPipelineConfig &p_config,
-		const ProjectBuildState &p_state, const ProjectBuildTrustStore &p_trust);
-
-static void _register_available_build_task_providers(const ProjectBuildPipelineConfig &p_config,
-		FoundryBuildTaskRegistry &r_registry) {
-	r_registry.register_builtin_providers();
-	ProjectSettings *project_settings = ProjectSettings::get_singleton();
-	if (project_settings != nullptr && project_settings->has_setting("editor_plugins/enabled")) {
-		r_registry.register_enabled_addon_metadata(project_settings->get("editor_plugins/enabled"));
-	}
-	r_registry.register_project_providers(p_config);
-}
-
-static PackedStringArray _enabled_stage_task_provider_ids(const ProjectBuildPipelineConfig &p_config,
-		ProjectBuildPipelineConfig::Stage p_stage) {
-	PackedStringArray provider_ids;
-	const PackedStringArray stage_tasks = p_config.get_enabled_stage_tasks(p_stage);
-	for (int i = 0; i < stage_tasks.size(); i++) {
-		const ProjectBuildPipelineConfig::TaskDefinition *task = p_config.get_task(stage_tasks[i]);
-		if (task == nullptr || task->provider.is_empty() || provider_ids.has(task->provider)) {
-			continue;
-		}
-		provider_ids.push_back(task->provider);
-	}
-	return provider_ids;
-}
-
-static void _register_stage_task_providers(const ProjectBuildPipelineConfig &p_config,
-		const FoundryBuildTaskRegistry &p_available_registry, ProjectBuildPipelineConfig::Stage p_stage,
-		FoundryBuildTaskRegistry &r_registry) {
-	r_registry.register_builtin_providers();
-
-	const PackedStringArray provider_ids = _enabled_stage_task_provider_ids(p_config, p_stage);
-	for (int i = 0; i < provider_ids.size(); i++) {
-		const String provider_id = provider_ids[i];
-		if (provider_id == "command" || r_registry.has_provider(provider_id)) {
-			continue;
-		}
-
-		const FoundryBuildTaskRegistry::ProviderEntry *entry = p_available_registry.get_provider(provider_id);
-		if (entry == nullptr) {
-			continue;
-		}
-
-		ProjectBuildPipelineConfig::ProviderDescriptor descriptor;
-		descriptor.id = entry->id;
-		descriptor.script = entry->script;
-		descriptor.class_name = entry->class_name;
-		descriptor.display_name = entry->display_name;
-		descriptor.description = entry->description;
-		descriptor.addon = entry->addon;
-		r_registry.register_provider_descriptor(descriptor, entry->source);
-	}
-}
-
-static Vector<FoundryBuildTaskRegistry::Diagnostic> _provider_diagnostics_for_stage(
-		const FoundryBuildTaskRegistry &p_available_registry, const ProjectBuildPipelineConfig &p_config,
-		ProjectBuildPipelineConfig::Stage p_stage) {
-	Vector<FoundryBuildTaskRegistry::Diagnostic> diagnostics;
-	HashSet<String> stage_tasks;
-	const PackedStringArray task_names = p_config.get_enabled_stage_tasks(p_stage);
-	for (int i = 0; i < task_names.size(); i++) {
-		stage_tasks.insert(task_names[i]);
-	}
-
-	HashSet<String> stage_providers;
-	const PackedStringArray provider_ids = _enabled_stage_task_provider_ids(p_config, p_stage);
-	for (int i = 0; i < provider_ids.size(); i++) {
-		stage_providers.insert(provider_ids[i]);
-	}
-
-	for (const FoundryBuildTaskRegistry::Diagnostic &diagnostic : p_available_registry.get_diagnostics()) {
-		if ((!diagnostic.task_name.is_empty() && stage_tasks.has(diagnostic.task_name)) ||
-				(!diagnostic.provider_id.is_empty() && stage_providers.has(diagnostic.provider_id))) {
-			diagnostics.push_back(diagnostic);
-		}
-	}
-	return diagnostics;
-}
-
-static ProjectBuildPipelineStatusSnapshot _blocked_config_validation_snapshot(
-		const Vector<ProjectBuildPipelineConfig::ValidationError> &p_errors) {
-	ProjectBuildPipelineStatusSnapshot snapshot;
-	snapshot.state = ProjectBuildPipelineStatus::STATE_BLOCKED;
-	snapshot.blocks_downstream_indexing = true;
-
-	for (const ProjectBuildPipelineConfig::ValidationError &error : p_errors) {
-		ProjectBuildPipelineDiagnostic diagnostic;
-		diagnostic.kind = ProjectBuildPipelineDiagnostic::KIND_TASK;
-		diagnostic.file = "res://project.foundry";
-		diagnostic.provider_source_section = error.section;
-		diagnostic.provider_source_key = error.key;
-		diagnostic.message = error.message;
-		if (!error.section.is_empty()) {
-			diagnostic.message = vformat("%s/%s: %s", error.section, error.key, error.message);
-		}
-		snapshot.diagnostics.push_back(diagnostic);
-	}
-
-	return snapshot;
-}
-
 ProjectBuildPipelineStatusSnapshot FSWorkspace::_get_build_pipeline_status_snapshot(bool p_compute_current_fingerprints) const {
 #ifdef TESTS_ENABLED
 	if (build_pipeline_status_override_enabled) {
@@ -418,262 +314,11 @@ ProjectBuildPipelineStatusSnapshot FSWorkspace::_get_build_pipeline_status_snaps
 	}
 #endif
 
-	ProjectBuildPipelineConfig build_config;
-	if (!FileAccess::exists("res://project.foundry")) {
-		return ProjectBuildPipelineStatusSnapshot();
-	}
-
-	Ref<ConfigFile> config;
-	config.instantiate();
-	const Error config_err = config->load("res://project.foundry");
-	if (config_err != OK || build_config.load_from_config_file(config) != OK) {
-		ProjectBuildPipelineStatusSnapshot snapshot;
-		snapshot.state = ProjectBuildPipelineStatus::STATE_BLOCKED;
-		snapshot.blocks_downstream_indexing = true;
-
-		ProjectBuildPipelineDiagnostic diagnostic;
-		diagnostic.kind = ProjectBuildPipelineDiagnostic::KIND_TASK;
-		diagnostic.file = "res://project.foundry";
-		diagnostic.message = "Project build pipeline configuration could not be loaded.";
-		snapshot.diagnostics.push_back(diagnostic);
-		return snapshot;
-	}
-
-	const ProjectBuildPipelineConfig pre_compile_config =
-			build_config.filtered_for_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
-	if (pre_compile_config.get_status() == ProjectBuildPipelineConfig::STATUS_DISABLED) {
-		return ProjectBuildPipelineStatusSnapshot();
-	}
-
-	FoundryBuildTaskRegistry available_registry;
-	_register_available_build_task_providers(build_config, available_registry);
-
-	FoundryBuildTaskRegistry registry;
-	_register_stage_task_providers(pre_compile_config, available_registry,
-			ProjectBuildPipelineConfig::STAGE_PRE_COMPILE, registry);
-
-	const Vector<ProjectBuildPipelineConfig::ValidationError> validation_errors = pre_compile_config.validate(&registry);
-	if (!validation_errors.is_empty()) {
-		return _blocked_config_validation_snapshot(validation_errors);
-	}
-
-	ProjectBuildState state;
-	state.load();
-
-	ProjectBuildTrustStore trust;
-	trust.load();
-
-	const PackedStringArray current_fingerprints = p_compute_current_fingerprints ? _current_pipeline_fingerprints(pre_compile_config, state, trust) : PackedStringArray();
-	return ProjectBuildPipelineStatus::evaluate(pre_compile_config, registry, state, trust, false,
-			current_fingerprints, _provider_diagnostics_for_stage(available_registry, pre_compile_config, ProjectBuildPipelineConfig::STAGE_PRE_COMPILE));
-}
-
-static Dictionary _build_task_options(const ProjectBuildPipelineConfig::TaskDefinition &p_task) {
-	Dictionary options = p_task.options.duplicate(true);
-	if (!p_task.command.is_empty()) {
-		options["command"] = p_task.command;
-	}
-	if (!p_task.args.is_empty()) {
-		options["args"] = p_task.args;
-	}
-	if (!p_task.working_directory.is_empty()) {
-		options["working_directory"] = p_task.working_directory;
-	}
-	if (!p_task.environment.is_empty()) {
-		options["environment"] = p_task.environment;
-	}
-	if (!p_task.inputs.is_empty()) {
-		options["inputs"] = p_task.inputs;
-	}
-	if (!p_task.outputs.is_empty()) {
-		options["outputs"] = p_task.outputs;
-	}
-	if (p_task.has_timeout_seconds) {
-		options["timeout_seconds"] = p_task.timeout_seconds;
-	}
-	if (!p_task.tool_version_command.is_empty()) {
-		options["tool_version_command"] = p_task.tool_version_command;
-	}
-	return options;
-}
-
-static Ref<FoundryBuildContext> _build_task_context(const ProjectBuildPipelineConfig::TaskDefinition &p_task,
-		bool p_trusted_execution) {
-	Ref<FoundryBuildContext> context;
-	context.instantiate();
-	context->set_provider_id(p_task.provider);
-	context->set_task_name(p_task.name);
-	context->set_project_config_path("res://project.foundry");
-	context->set_trusted_execution(p_trusted_execution);
-	context->set_options(_build_task_options(p_task));
-	return context;
-}
-
-static String _current_task_fingerprint(const ProjectBuildPipelineConfig::TaskDefinition &p_task,
-		const ProjectBuildState &p_state, const ProjectBuildTrustStore &p_trust) {
-	const ProjectBuildState::TaskRecord *record = p_state.get_task_record(p_task.name);
-	String fingerprint = record != nullptr ? record->fingerprint : String();
-	if (p_task.provider == "command" && p_trust.is_project_trusted()) {
-		Ref<FoundryCommandBuildTask> command_task;
-		command_task.instantiate();
-
-		String fingerprint_error;
-		const String current_fingerprint = command_task->compute_fingerprint(
-				_build_task_context(p_task, p_trust.is_project_trusted()), &fingerprint_error);
-		fingerprint = current_fingerprint;
-	}
-	return fingerprint;
-}
-
-static void _append_stage_task_fingerprints(const ProjectBuildPipelineConfig &p_config,
-		const ProjectBuildState &p_state, const ProjectBuildTrustStore &p_trust,
-		ProjectBuildPipelineConfig::Stage p_stage, PackedStringArray &r_fingerprints) {
-	const PackedStringArray stage_tasks = p_config.get_enabled_stage_tasks(p_stage);
-
-	for (int i = 0; i < stage_tasks.size(); i++) {
-		const ProjectBuildPipelineConfig::TaskDefinition *task = p_config.get_task(stage_tasks[i]);
-		const String fingerprint = task != nullptr ? _current_task_fingerprint(*task, p_state, p_trust) : String();
-		r_fingerprints.push_back(fingerprint);
-	}
-}
-
-static PackedStringArray _current_pipeline_fingerprints(const ProjectBuildPipelineConfig &p_config,
-		const ProjectBuildState &p_state, const ProjectBuildTrustStore &p_trust) {
-	PackedStringArray fingerprints;
-	_append_stage_task_fingerprints(p_config, p_state, p_trust,
-			ProjectBuildPipelineConfig::STAGE_PRE_COMPILE, fingerprints);
-	_append_stage_task_fingerprints(p_config, p_state, p_trust,
-			ProjectBuildPipelineConfig::STAGE_POST_COMPILE, fingerprints);
-	return fingerprints;
-}
-
-static bool _dirty_reason_allows_automatic_pre_compile_run(ProjectBuildState::DirtyReason p_reason) {
-	return p_reason != ProjectBuildState::DIRTY_PREVIOUS_FAILURE &&
-			p_reason != ProjectBuildState::DIRTY_UNREADABLE_STATE;
-}
-
-static bool _build_status_has_automatically_runnable_pre_compile_task(
-		const ProjectBuildPipelineStatusSnapshot &p_snapshot) {
-	if (!p_snapshot.blocks_downstream_indexing) {
-		return false;
-	}
-
-	bool has_runnable_dirty_task = false;
-	for (const ProjectBuildPipelineDiagnostic &diagnostic : p_snapshot.diagnostics) {
-		if (diagnostic.kind != ProjectBuildPipelineDiagnostic::KIND_DIRTY ||
-				diagnostic.dirty_reason == ProjectBuildState::DIRTY_NONE) {
-			continue;
-		}
-		if (_dirty_reason_allows_automatic_pre_compile_run(diagnostic.dirty_reason)) {
-			has_runnable_dirty_task = true;
-		}
-	}
-	return has_runnable_dirty_task;
-}
-
-static bool _has_runnable_dirty_pre_compile_tasks(const ProjectBuildPipelineConfig &p_config,
-		const ProjectBuildState &p_state, const PackedStringArray &p_current_fingerprints) {
-	bool has_runnable_dirty_task = false;
-	const PackedStringArray pre_compile_tasks = p_config.get_enabled_stage_tasks(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
-	for (int i = 0; i < pre_compile_tasks.size(); i++) {
-		const ProjectBuildPipelineConfig::TaskDefinition *task = p_config.get_task(pre_compile_tasks[i]);
-		if (task == nullptr) {
-			continue;
-		}
-
-		const String fingerprint = i < p_current_fingerprints.size() ? p_current_fingerprints[i] : String();
-		const ProjectBuildState::DirtyStatus task_status =
-				p_state.get_task_dirty_status(task->name, fingerprint, task->outputs);
-		if (!task_status.dirty) {
-			continue;
-		}
-		if (!_dirty_reason_allows_automatic_pre_compile_run(task_status.reason)) {
-			return false;
-		}
-		has_runnable_dirty_task = true;
-	}
-	return has_runnable_dirty_task;
-}
-
-static ProjectBuildPipelineStatusSnapshot _blocked_task_snapshot(
-		const ProjectBuildPipelineConfig::TaskDefinition &p_task,
-		const String &p_message,
-		const Ref<FoundryBuildResult> &p_result = Ref<FoundryBuildResult>()) {
-	ProjectBuildPipelineStatusSnapshot snapshot;
-	snapshot.state = ProjectBuildPipelineStatus::STATE_BLOCKED;
-	snapshot.blocks_downstream_indexing = true;
-
-	ProjectBuildPipelineDiagnostic diagnostic;
-	diagnostic.kind = ProjectBuildPipelineDiagnostic::KIND_TASK;
-	diagnostic.task_name = p_task.name;
-	diagnostic.provider_id = p_task.provider;
-	diagnostic.command = p_task.command;
-	diagnostic.message = p_message;
-	if (p_result.is_valid()) {
-		diagnostic.exit_code = p_result->get_exit_code();
-		diagnostic.stdout_tail = p_result->get_stdout();
-		diagnostic.stderr_tail = p_result->get_stderr();
-	}
-	snapshot.diagnostics.push_back(diagnostic);
-	return snapshot;
+	return FoundryBuildPipelineRunner::get_stage_status(
+			ProjectBuildPipelineConfig::STAGE_PRE_COMPILE, p_compute_current_fingerprints);
 }
 
 ProjectBuildPipelineStatusSnapshot FSWorkspace::_run_dirty_pre_compile_tasks() {
-	ProjectBuildPipelineConfig build_config;
-	if (!FileAccess::exists("res://project.foundry")) {
-		return ProjectBuildPipelineStatusSnapshot();
-	}
-
-	Ref<ConfigFile> config;
-	config.instantiate();
-	if (config->load("res://project.foundry") != OK || build_config.load_from_config_file(config) != OK) {
-		return _get_build_pipeline_status_snapshot();
-	}
-
-	const ProjectBuildPipelineConfig pre_compile_config =
-			build_config.filtered_for_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
-	if (pre_compile_config.get_status() == ProjectBuildPipelineConfig::STATUS_DISABLED) {
-		return ProjectBuildPipelineStatusSnapshot();
-	}
-
-	FoundryBuildTaskRegistry available_registry;
-	_register_available_build_task_providers(build_config, available_registry);
-
-	FoundryBuildTaskRegistry registry;
-	_register_stage_task_providers(pre_compile_config, available_registry,
-			ProjectBuildPipelineConfig::STAGE_PRE_COMPILE, registry);
-
-	const Vector<ProjectBuildPipelineConfig::ValidationError> validation_errors = pre_compile_config.validate(&registry);
-	if (!validation_errors.is_empty()) {
-		return _blocked_config_validation_snapshot(validation_errors);
-	}
-
-	ProjectBuildState state;
-	state.load();
-
-	ProjectBuildTrustStore trust;
-	trust.load();
-
-	const PackedStringArray current_fingerprints = _current_pipeline_fingerprints(pre_compile_config, state, trust);
-	const Vector<FoundryBuildTaskRegistry::Diagnostic> provider_diagnostics =
-			_provider_diagnostics_for_stage(available_registry, pre_compile_config, ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
-	ProjectBuildPipelineStatusSnapshot snapshot = ProjectBuildPipelineStatus::evaluate(pre_compile_config, registry, state, trust, false,
-			current_fingerprints, provider_diagnostics);
-	if (!snapshot.blocks_downstream_indexing ||
-			snapshot.state == ProjectBuildPipelineStatus::STATE_UNTRUSTED ||
-			!_has_runnable_dirty_pre_compile_tasks(pre_compile_config, state, current_fingerprints)) {
-		return snapshot;
-	}
-
-	FoundryBuildTaskBootstrapLoader loader;
-	loader.set_trusted_execution(trust.is_project_trusted());
-	const Error loader_err = loader.load_registered_providers(registry,
-			_enabled_stage_task_provider_ids(pre_compile_config, ProjectBuildPipelineConfig::STAGE_PRE_COMPILE));
-	if (loader_err != OK) {
-		return ProjectBuildPipelineStatus::evaluate(pre_compile_config, registry, state, trust, false,
-				PackedStringArray(), loader.get_diagnostics());
-	}
-
 	struct ScopedPreCompileRunFlag {
 		FSWorkspace *workspace = nullptr;
 		bool previous = false;
@@ -690,57 +335,15 @@ ProjectBuildPipelineStatusSnapshot FSWorkspace::_run_dirty_pre_compile_tasks() {
 	};
 	ScopedPreCompileRunFlag pre_compile_run_flag(this);
 
-	const PackedStringArray pre_compile_tasks = pre_compile_config.get_enabled_stage_tasks(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
-	for (int i = 0; i < pre_compile_tasks.size(); i++) {
-		const ProjectBuildPipelineConfig::TaskDefinition *task = pre_compile_config.get_task(pre_compile_tasks[i]);
-		if (task == nullptr) {
-			continue;
-		}
-
-		const String task_fingerprint = _current_task_fingerprint(*task, state, trust);
-		const ProjectBuildState::DirtyStatus task_status =
-				state.get_task_dirty_status(task->name, task_fingerprint, task->outputs);
-		if (!task_status.dirty) {
-			continue;
-		}
-		if (!_dirty_reason_allows_automatic_pre_compile_run(task_status.reason)) {
-			return ProjectBuildPipelineStatus::evaluate(pre_compile_config, registry, state, trust, false,
-					_current_pipeline_fingerprints(pre_compile_config, state, trust), provider_diagnostics);
-		}
-
-		const FoundryBuildTaskBootstrapLoader::LoadedProvider *provider = loader.get_loaded_provider(task->provider);
-		if (provider == nullptr || provider->instance.is_null()) {
-			state.record_task_result(task->name, String(), task->outputs, false);
-			const Error save_err = state.save();
-			if (save_err != OK) {
-				return _blocked_task_snapshot(*task,
-						vformat("Build task '%s' result could not be persisted (error %d).", task->name, int(save_err)));
-			}
-			return _blocked_task_snapshot(*task, vformat("Build task '%s' could not load provider '%s'.", task->name, task->provider));
-		}
-
-		Ref<FoundryBuildContext> context = _build_task_context(*task, trust.is_project_trusted());
-
-		Ref<FoundryBuildResult> result = provider->instance->run(context);
-		const bool success = result.is_valid() && result->is_success();
-		const String fingerprint = result.is_valid() ? result->get_fingerprint() : String();
-		state.record_task_result(task->name, fingerprint, task->outputs, success);
-		const Error save_err = state.save();
-		if (save_err != OK) {
-			return _blocked_task_snapshot(*task,
-					vformat("Build task '%s' result could not be persisted (error %d).", task->name, int(save_err)), result);
-		}
-
-		if (!success) {
-			const String message = result.is_valid() && !result->get_message().is_empty() ? result->get_message() : vformat("Build task '%s' failed.", task->name);
-			return _blocked_task_snapshot(*task, message, result);
-		}
-
-		refresh_after_successful_build_outputs(task->outputs);
-	}
-
-	return ProjectBuildPipelineStatus::evaluate(pre_compile_config, registry, state, trust, false,
-			_current_pipeline_fingerprints(pre_compile_config, state, trust), provider_diagnostics);
+	const FoundryBuildPipelineRunner::OutputCallback output_callback(
+			[](void *p_userdata, const PackedStringArray &p_outputs) {
+				static_cast<FSWorkspace *>(p_userdata)->refresh_after_successful_build_outputs(p_outputs);
+			},
+			this);
+	const FoundryBuildPipelineRunner::StageRunResult result =
+			FoundryBuildPipelineRunner::run_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
+					FoundryBuildPipelineRunner::RUN_AUTOMATIC_DIRTY_TASKS, output_callback);
+	return result.snapshot;
 }
 
 void FSWorkspace::_publish_diagnostics_array(const String &p_path, const Array &p_errors) {
@@ -950,7 +553,13 @@ Error FSWorkspace::initialize() {
 	}
 
 	ProjectBuildPipelineStatusSnapshot build_status = _get_build_pipeline_status_snapshot();
-	if (_build_status_has_automatically_runnable_pre_compile_task(build_status)) {
+	bool should_run_pre_compile_tasks = FoundryBuildPipelineRunner::status_blocks_flow(build_status);
+#ifdef TESTS_ENABLED
+	if (build_pipeline_status_override_enabled) {
+		should_run_pre_compile_tasks = false;
+	}
+#endif
+	if (should_run_pre_compile_tasks) {
 		build_status = _run_dirty_pre_compile_tasks();
 	}
 	_connect_editor_signals();

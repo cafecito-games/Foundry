@@ -1259,6 +1259,8 @@ void OS_MacOS_Headless::run() {
 		}
 
 		main_loop->finalize();
+	} else if (ret != EXIT_SUCCESS) {
+		set_exit_code(EXIT_FAILURE);
 	}
 
 	Main::cleanup();
@@ -1325,6 +1327,8 @@ void OS_MacOS_Embedded::run() {
 		}
 
 		main_loop->finalize();
+	} else if (ret != EXIT_SUCCESS) {
+		set_exit_code(EXIT_FAILURE);
 	}
 
 	Main::cleanup();
