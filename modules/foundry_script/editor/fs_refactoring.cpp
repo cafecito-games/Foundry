@@ -5998,7 +5998,9 @@ bool default_return_literal(const FSParser::DataType &p_type, String &r_literal)
 String render_function_signature(
 		const FSParser::FunctionNode *p_function,
 		const Vector<String> &p_lines,
-		const String &p_class_indent) {
+		const String &p_class_indent,
+		const Vector<FSParser::DataType> *p_parameter_types = nullptr,
+		const FSParser::DataType *p_return_type_override = nullptr) {
 	const String name = String(p_function->identifier->name);
 
 	// An abstract method on a class cannot be static, but a trait may declare an
@@ -6061,8 +6063,12 @@ String render_function_signature(
 		const FSParser::ParameterNode *parameter = p_function->parameters[i];
 		signature += String(parameter->identifier->name);
 
+		FSParser::DataType parameter_type = parameter->get_datatype();
+		if (p_parameter_types != nullptr && i < p_parameter_types->size()) {
+			parameter_type = (*p_parameter_types)[i];
+		}
 		String rendered_type;
-		if (FSRefactorTypes::render_annotatable_type(parameter->get_datatype(), rendered_type)) {
+		if (FSRefactorTypes::render_annotatable_type(parameter_type, rendered_type)) {
 			signature += ": " + rendered_type;
 		}
 
@@ -6090,7 +6096,7 @@ String render_function_signature(
 	}
 	signature += ")";
 
-	const FSParser::DataType return_type = p_function->get_datatype();
+	const FSParser::DataType return_type = p_return_type_override != nullptr ? *p_return_type_override : p_function->get_datatype();
 	// A void return type is set but stringifies as a NIL builtin, which
 	// render_annotatable_type rejects; treat it as an explicit `-> void` with no
 	// return statement.
@@ -6175,8 +6181,10 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 String render_concrete_script_override_stub(
 		const FSParser::FunctionNode *p_function,
 		const Vector<String> &p_lines,
-		const String &p_class_indent) {
-	return render_function_signature(p_function, p_lines, p_class_indent) + ":\n" +
+		const String &p_class_indent,
+		const Vector<FSParser::DataType> *p_parameter_types = nullptr,
+		const FSParser::DataType *p_return_type_override = nullptr) {
+	return render_function_signature(p_function, p_lines, p_class_indent, p_parameter_types, p_return_type_override) + ":\n" +
 			render_super_call_body(p_function, p_class_indent);
 }
 
@@ -6340,6 +6348,82 @@ bool generic_method_type_parameters_are_inferable_from_regular_parameters(const 
 		}
 	}
 	return true;
+}
+
+bool override_class_type_matches(const FSParser::DataType &p_type, const FSParser::ClassNode *p_class) {
+	if (p_type.class_type == nullptr || p_class == nullptr) {
+		return false;
+	}
+	return p_type.class_type == p_class || p_type.class_type->fqcn == p_class->fqcn;
+}
+
+FSParser::DataType specialize_override_parent_type(
+		const FSParser::ClassNode *p_current_class,
+		const FSParser::DataType &p_current_specialized_type) {
+	if (p_current_class == nullptr) {
+		return FSParser::DataType();
+	}
+
+	FSParser::DataType parent_type = p_current_class->base_type;
+	if (!p_current_specialized_type.has_type_arguments() ||
+			!override_class_type_matches(p_current_specialized_type, p_current_class)) {
+		return parent_type;
+	}
+
+	HashMap<StringName, FSParser::DataType> bindings;
+	const Vector<FSParser::TypeParameterNode *> &type_parameters = p_current_class->type_parameters;
+	const int binding_count = MIN(type_parameters.size(), p_current_specialized_type.type_arguments.size());
+	for (int i = 0; i < binding_count; i++) {
+		const FSParser::TypeParameterNode *type_parameter = type_parameters[i];
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			bindings.insert(type_parameter->identifier->name, p_current_specialized_type.type_arguments[i]);
+		}
+	}
+	if (!bindings.is_empty()) {
+		parent_type = FSParser::DataType::substitute(parent_type, bindings);
+	}
+	return parent_type;
+}
+
+FSParser::DataType align_specialized_override_type_to_class(
+		const FSParser::DataType &p_type,
+		const FSParser::ClassNode *p_class) {
+	FSParser::DataType result = p_type;
+	if (p_class != nullptr && (result.class_type == nullptr || override_class_type_matches(result, p_class))) {
+		result.class_type = const_cast<FSParser::ClassNode *>(p_class);
+	}
+	return result;
+}
+
+FSParser::DataType substitute_override_member_type(
+		const FSParser::DataType &p_member_type,
+		const FSParser::DataType &p_specialized_base,
+		const FSParser::ClassNode *p_declaring_class,
+		const FSParser::FunctionNode *p_shadowing_method) {
+	if (p_declaring_class == nullptr || p_specialized_base.type_arguments.is_empty()) {
+		return p_member_type;
+	}
+
+	HashMap<StringName, FSParser::DataType> bindings;
+	const Vector<FSParser::TypeParameterNode *> &type_parameters = p_declaring_class->type_parameters;
+	const int binding_count = MIN(type_parameters.size(), p_specialized_base.type_arguments.size());
+	for (int i = 0; i < binding_count; i++) {
+		const FSParser::TypeParameterNode *type_parameter = type_parameters[i];
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			bindings.insert(type_parameter->identifier->name, p_specialized_base.type_arguments[i]);
+		}
+	}
+	if (p_shadowing_method != nullptr) {
+		for (const FSParser::TypeParameterNode *type_parameter : p_shadowing_method->type_parameters) {
+			if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+				bindings.erase(type_parameter->identifier->name);
+			}
+		}
+	}
+	if (bindings.is_empty()) {
+		return p_member_type;
+	}
+	return FSParser::DataType::substitute(p_member_type, bindings);
 }
 
 int find_class_method_insertion_line(
@@ -6539,6 +6623,7 @@ void add_script_override_candidate(
 		const FSParser::FunctionNode *p_function,
 		const FSParser::ClassNode *p_declaring_class,
 		const Vector<String> *p_declaring_lines,
+		const FSParser::DataType &p_specialized_base,
 		const String &p_class_indent,
 		int p_insertion_line,
 		Vector<OverrideMethodCandidate> &r_candidates) {
@@ -6550,15 +6635,30 @@ void add_script_override_candidate(
 	}
 	const Vector<String> empty_lines;
 	const Vector<String> &lines = p_declaring_lines != nullptr ? *p_declaring_lines : empty_lines;
+	Vector<FSParser::DataType> parameter_types;
+	for (const FSParser::ParameterNode *parameter : p_function->parameters) {
+		FSParser::DataType parameter_type;
+		if (parameter != nullptr) {
+			parameter_type = substitute_override_member_type(parameter->get_datatype(), p_specialized_base, p_declaring_class, p_function);
+		}
+		parameter_types.push_back(parameter_type);
+	}
+	const FSParser::DataType return_type =
+			substitute_override_member_type(p_function->get_datatype(), p_specialized_base, p_declaring_class, p_function);
 	OverrideMethodCandidate candidate;
 	candidate.enabled = true;
-	candidate.rendered_block = render_concrete_script_override_stub(p_function, lines, p_class_indent);
+	candidate.rendered_block = render_concrete_script_override_stub(
+			p_function,
+			lines,
+			p_class_indent,
+			&parameter_types,
+			&return_type);
 	candidate.insertion_line = p_insertion_line;
 	const String origin = p_declaring_class != nullptr && p_declaring_class->identifier != nullptr
 			? String(p_declaring_class->identifier->name)
 			: String("base class");
 	candidate.public_candidate.name = String(p_function->identifier->name);
-	candidate.public_candidate.signature = render_function_signature(p_function, lines, "");
+	candidate.public_candidate.signature = render_function_signature(p_function, lines, "", &parameter_types, &return_type);
 	candidate.public_candidate.origin = origin;
 	candidate.public_candidate.detail = candidate.public_candidate.signature + " - " + origin;
 	candidate.public_candidate.id = make_override_method_id("script", origin, p_function->identifier->name);
@@ -6581,18 +6681,22 @@ void collect_script_base_override_candidates(
 	HashSet<const FSParser::ClassNode *> visited;
 	visited.insert(p_target);
 	const FSParser::ClassNode *current = p_target;
+	FSParser::DataType current_specialized_type;
 	String current_path = p_target_path;
 	const Vector<String> *current_lines = &p_target_lines;
 
 	while (current != nullptr) {
 		String base_path;
 		const Vector<String> *base_lines = nullptr;
+		FSParser::DataType specialized_base = specialize_override_parent_type(current, current_specialized_type);
 		const FSParser::ClassNode *base = resolve_base_class(current, p_parse_results, current_path, current_lines, base_path, &base_lines);
 		if (base == nullptr || visited.has(base)) {
 			break;
 		}
+		specialized_base = align_specialized_override_type_to_class(specialized_base, base);
 		visited.insert(base);
 		current = base;
+		current_specialized_type = specialized_base;
 		current_path = base_path;
 		current_lines = base_lines;
 
@@ -6605,7 +6709,14 @@ void collect_script_base_override_candidates(
 			if (!already_decided && member.type == FSParser::ClassNode::Member::FUNCTION) {
 				const FSParser::FunctionNode *function = member.function;
 				if (function != nullptr) {
-					add_script_override_candidate(function, current, current_lines, p_class_indent, p_insertion_line, r_candidates);
+					add_script_override_candidate(
+							function,
+							current,
+							current_lines,
+							current_specialized_type,
+							p_class_indent,
+							p_insertion_line,
+							r_candidates);
 				}
 			}
 			p_decided_names.insert(name);
