@@ -1043,6 +1043,7 @@ bool ProjectBuildPipelineConfig::set_task_enabled(const String &p_name, bool p_e
 		return false;
 	}
 	task->enabled = p_enabled;
+	_clear_parse_errors_for(_nested_section(TASK_SECTION_PREFIX, p_name), "enabled");
 	return true;
 }
 
