@@ -673,7 +673,7 @@ jobs:
         if: matrix.target != 'editor'
         run: |
           cd platform/android/java
-          ./gradlew generateGodotTemplates
+          ./gradlew generateFoundryTemplates
           cd ../../..
           ls -l bin/
 
@@ -681,7 +681,7 @@ jobs:
         if: matrix.target == 'editor'
         run: |
           cd platform/android/java
-          ./gradlew generateGodotEditor
+          ./gradlew generateFoundryEditor
           cd ../../..
           ls -l bin/android_editor_builds/
 

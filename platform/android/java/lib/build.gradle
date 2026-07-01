@@ -29,7 +29,7 @@ android {
         minSdkVersion versions.minSdk
         targetSdkVersion versions.targetSdk
 
-        manifestPlaceholders = [godotLibraryVersion: getGodotLibraryVersionName()]
+        manifestPlaceholders = [foundryLibraryVersion: getFoundryLibraryVersionName()]
     }
 
     namespace = "games.cafecito.foundry"
