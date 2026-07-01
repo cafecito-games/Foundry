@@ -397,6 +397,58 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn super.configure(speed)\n"));
 	}
 
+	TEST_CASE("Override method skips rest-parameter script base methods") {
+		const String source =
+				"class Base:\n"
+				"\tfunc record(...args: Array) -> void:\n"
+				"\t\tpass\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "record") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+	}
+
+	TEST_CASE("Override method renders async script base stub with awaited super call") {
+		const String source =
+				"class Base:\n"
+				"\tasync func load(id: int) -> int:\n"
+				"\t\treturn id\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "load");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tasync func load(id: int) -> int:\n"));
+		CHECK(out.contains("\t\treturn await super.load(id)\n"));
+	}
+
+	TEST_CASE("Override method skips script base methods that conflict with target non-function members") {
+		const String source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"\tfunc available() -> int:\n"
+				"\t\treturn 2\n"
+				"class Child extends Base:\n"
+				"\tvar configure := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "configure") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "available") != nullptr);
+	}
+
 	TEST_CASE("Implement abstract methods is listed and disabled with no abstract base") {
 		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));

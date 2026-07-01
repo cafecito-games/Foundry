@@ -213,11 +213,9 @@ struct ImplementAbstractCandidate {
 
 struct OverrideMethodCandidate {
 	bool enabled = false;
-	String disabled_reason;
 	RefactorOverrideMethodCandidate public_candidate;
 	String rendered_block;
 	int insertion_line = -1;
-	bool depends_on_external_declarations = false;
 };
 
 struct OverrideMethodCollection {
@@ -6164,19 +6162,14 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 		first_argument = false;
 		call += String(parameter->identifier->name);
 	}
-	if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr) {
-		if (!first_argument) {
-			call += ", ";
-		}
-		call += "..." + String(p_function->rest_parameter->identifier->name);
-	}
 	call += ")";
+	const String expression = p_function->is_declared_async ? "await " + call : call;
 
 	const FSParser::DataType return_type = p_function->get_datatype();
 	const bool is_void = return_type.is_set() && !return_type.is_variant() &&
 			return_type.kind == FSParser::DataType::BUILTIN &&
 			return_type.builtin_type == Variant::NIL;
-	return body_indent + (is_void ? call : "return " + call) + "\n";
+	return body_indent + (is_void ? expression : "return " + expression) + "\n";
 }
 
 String render_concrete_script_override_stub(
@@ -6241,15 +6234,44 @@ String make_override_method_id(const char *p_kind, const String &p_origin, const
 	return String(p_kind) + "|" + p_origin + "|" + String(p_name);
 }
 
-void collect_declared_override_names(const FSParser::ClassNode *p_target, HashSet<StringName> &r_names) {
+StringName get_identifier_name_or_empty(const FSParser::IdentifierNode *p_identifier) {
+	return p_identifier != nullptr ? p_identifier->name : StringName();
+}
+
+StringName get_override_member_name(const FSParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case FSParser::ClassNode::Member::CLASS:
+			return p_member.m_class != nullptr ? get_identifier_name_or_empty(p_member.m_class->identifier) : StringName();
+		case FSParser::ClassNode::Member::CONSTANT:
+			return p_member.constant != nullptr ? get_identifier_name_or_empty(p_member.constant->identifier) : StringName();
+		case FSParser::ClassNode::Member::FUNCTION:
+			return p_member.function != nullptr ? get_identifier_name_or_empty(p_member.function->identifier) : StringName();
+		case FSParser::ClassNode::Member::SIGNAL:
+			return p_member.signal != nullptr ? get_identifier_name_or_empty(p_member.signal->identifier) : StringName();
+		case FSParser::ClassNode::Member::VARIABLE:
+			return p_member.variable != nullptr ? get_identifier_name_or_empty(p_member.variable->identifier) : StringName();
+		case FSParser::ClassNode::Member::ENUM:
+			return p_member.m_enum != nullptr ? get_identifier_name_or_empty(p_member.m_enum->identifier) : StringName();
+		case FSParser::ClassNode::Member::ENUM_VALUE:
+			return get_identifier_name_or_empty(p_member.enum_value.identifier);
+		case FSParser::ClassNode::Member::GROUP:
+			return p_member.annotation != nullptr && !p_member.annotation->export_info.name.is_empty()
+					? StringName(p_member.annotation->export_info.name)
+					: StringName();
+		case FSParser::ClassNode::Member::UNDEFINED:
+			return StringName();
+	}
+	return StringName();
+}
+
+void collect_declared_override_member_names(const FSParser::ClassNode *p_target, HashSet<StringName> &r_names) {
 	if (p_target == nullptr) {
 		return;
 	}
 	for (const FSParser::ClassNode::Member &member : p_target->members) {
-		if (member.type == FSParser::ClassNode::Member::FUNCTION &&
-				member.function != nullptr &&
-				member.function->identifier != nullptr) {
-			r_names.insert(member.function->identifier->name);
+		const StringName name = get_override_member_name(member);
+		if (name != StringName()) {
+			r_names.insert(name);
 		}
 	}
 }
@@ -6454,7 +6476,8 @@ void add_script_override_candidate(
 		const String &p_class_indent,
 		int p_insertion_line,
 		Vector<OverrideMethodCandidate> &r_candidates) {
-	if (p_function == nullptr || p_function->identifier == nullptr || p_function->is_final || p_function->is_abstract) {
+	if (p_function == nullptr || p_function->identifier == nullptr || p_function->is_final || p_function->is_abstract ||
+			p_function->rest_parameter != nullptr) {
 		return;
 	}
 	const Vector<String> empty_lines;
@@ -6506,19 +6529,18 @@ void collect_script_base_override_candidates(
 		current_lines = base_lines;
 
 		for (const FSParser::ClassNode::Member &member : current->members) {
-			if (member.type != FSParser::ClassNode::Member::FUNCTION) {
+			const StringName name = get_override_member_name(member);
+			if (name == StringName()) {
 				continue;
 			}
-			const FSParser::FunctionNode *function = member.function;
-			if (function == nullptr || function->identifier == nullptr) {
-				continue;
-			}
-			const StringName name = function->identifier->name;
-			if (p_decided_names.has(name)) {
-				continue;
+			const bool already_decided = p_decided_names.has(name);
+			if (!already_decided && member.type == FSParser::ClassNode::Member::FUNCTION) {
+				const FSParser::FunctionNode *function = member.function;
+				if (function != nullptr) {
+					add_script_override_candidate(function, current, current_lines, p_class_indent, p_insertion_line, r_candidates);
+				}
 			}
 			p_decided_names.insert(name);
-			add_script_override_candidate(function, current, current_lines, p_class_indent, p_insertion_line, r_candidates);
 		}
 	}
 }
@@ -6545,7 +6567,7 @@ OverrideMethodCollection collect_override_methods_in_tree(
 	}
 
 	HashSet<StringName> declared_names;
-	collect_declared_override_names(target, declared_names);
+	collect_declared_override_member_names(target, declared_names);
 	const String class_indent = class_member_indent(target, p_lines, target == p_tree);
 	const int insertion_line = find_class_method_insertion_line(target, p_tree, p_lines);
 	collect_script_base_override_candidates(
