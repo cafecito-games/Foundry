@@ -720,7 +720,8 @@ static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineCo
 	// Every provider receives the declared task fields through the context options, matching what the
 	// command runner reads. For non-command providers the provider-specific `options` are applied
 	// first and the declared task fields override them, so a reserved key like `outputs` in `options`
-	// can never shadow the task's declared inputs/outputs/working directory/etc.
+	// can never shadow the task's declared fields. Empty declared fields are omitted so they neither
+	// clobber a provider option nor change options.has() behavior versus the saved pipeline.
 	Dictionary options;
 	if (p_task.provider != COMMAND_PROVIDER_ID) {
 		const Array option_keys = p_task.options.keys();
@@ -728,10 +729,18 @@ static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineCo
 			options[option_keys[i]] = p_task.options[option_keys[i]];
 		}
 	}
-	options["working_directory"] = p_task.working_directory;
-	options["environment"] = p_task.environment;
-	options["inputs"] = p_task.inputs;
-	options["outputs"] = p_task.outputs;
+	if (!p_task.working_directory.is_empty()) {
+		options["working_directory"] = p_task.working_directory;
+	}
+	if (!p_task.environment.is_empty()) {
+		options["environment"] = p_task.environment;
+	}
+	if (!p_task.inputs.is_empty()) {
+		options["inputs"] = p_task.inputs;
+	}
+	if (!p_task.outputs.is_empty()) {
+		options["outputs"] = p_task.outputs;
+	}
 	// Only forward the timeout when the task actually overrides it, so a manual run uses the same
 	// default the saved pipeline would when the override is off.
 	if (p_task.has_timeout_seconds) {
@@ -741,7 +750,9 @@ static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineCo
 	if (p_task.provider == COMMAND_PROVIDER_ID) {
 		options["command"] = p_task.command;
 		options["args"] = p_task.args;
-		options["tool_version_command"] = p_task.tool_version_command;
+		if (!p_task.tool_version_command.is_empty()) {
+			options["tool_version_command"] = p_task.tool_version_command;
+		}
 		context->set_options(options);
 
 		Ref<FoundryCommandBuildTask> command_task;

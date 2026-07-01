@@ -987,6 +987,7 @@ bool ProjectBuildPipelineConfig::add_task_to_stage(Stage p_stage, const String &
 		return false;
 	}
 	stage->push_back(p_name);
+	_clear_parse_errors_for(BUILD_SECTION, p_stage == STAGE_PRE_COMPILE ? "pre_compile" : "post_compile");
 	return true;
 }
 
@@ -1001,6 +1002,9 @@ bool ProjectBuildPipelineConfig::remove_task_from_stage(Stage p_stage, const Str
 		stage->remove_at(index);
 		removed = true;
 		index = stage->find(p_name);
+	}
+	if (removed) {
+		_clear_parse_errors_for(BUILD_SECTION, p_stage == STAGE_PRE_COMPILE ? "pre_compile" : "post_compile");
 	}
 	return removed;
 }
@@ -1020,6 +1024,7 @@ bool ProjectBuildPipelineConfig::move_stage_task(Stage p_stage, int p_from_index
 	const String name = (*stage)[p_from_index];
 	stage->remove_at(p_from_index);
 	stage->insert(p_to_index, name);
+	_clear_parse_errors_for(BUILD_SECTION, p_stage == STAGE_PRE_COMPILE ? "pre_compile" : "post_compile");
 	return true;
 }
 
