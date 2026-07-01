@@ -45,6 +45,7 @@ class OptionButton;
 class RichTextLabel;
 class SpinBox;
 class TextEdit;
+class TextureRect;
 class VBoxContainer;
 
 // The editor authoring UI for the project build pipeline. It is the GUI counterpart to hand-editing
@@ -107,6 +108,8 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 
 	Label *validation_label = nullptr;
 	RichTextLabel *run_output = nullptr;
+	// Per-field info badges; their icon is (re)assigned from the editor theme on theme changes.
+	Vector<TextureRect *> help_badges;
 	Button *run_task_button = nullptr;
 	Button *run_stage_button = nullptr;
 	Button *clear_state_button = nullptr;
@@ -157,6 +160,9 @@ class FSBuildPipelineSettingsDialog : public ConfirmationDialog {
 	bool _has_unsaved_changes() const;
 	static Dictionary _lines_to_string_dictionary(const String &p_text);
 	static String _string_dictionary_to_lines(const Dictionary &p_dictionary);
+
+protected:
+	void _notification(int p_what);
 
 public:
 	void popup_settings();

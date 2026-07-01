@@ -56,6 +56,7 @@
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/text_edit.h"
+#include "scene/gui/texture_rect.h"
 
 static const char *PROJECT_CONFIG_PATH = "res://project.foundry";
 static const char *COMMAND_PROVIDER_ID = "command";
@@ -989,18 +990,31 @@ void FSBuildPipelineSettingsDialog::_clear_cached_state() {
 	run_output->set_text(TTR("Cleared cached build state."));
 }
 
+void FSBuildPipelineSettingsDialog::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_THEME_CHANGED: {
+			const Ref<Texture2D> icon = get_editor_theme_icon(SNAME("NodeInfo"));
+			for (TextureRect *badge : help_badges) {
+				badge->set_texture(icon);
+			}
+		} break;
+	}
+}
+
 void FSBuildPipelineSettingsDialog::_add_field(BoxContainer *p_parent, const String &p_label, Control *p_control, const String &p_tooltip) {
 	HBoxContainer *row = memnew(HBoxContainer);
 	Label *label = memnew(Label);
 	label->set_text(p_label);
 	row->add_child(label);
 
-	Label *help = memnew(Label);
-	help->set_text("[?]");
+	TextureRect *help = memnew(TextureRect);
 	help->set_tooltip_text(p_tooltip);
-	// Labels ignore the mouse by default, which would suppress the tooltip; let this one receive hover.
+	// The icon is assigned from the editor theme on NOTIFICATION_THEME_CHANGED; stop mouse events so the
+	// badge shows its tooltip on hover.
 	help->set_mouse_filter(Control::MOUSE_FILTER_STOP);
-	help->add_theme_color_override(SceneStringName(font_color), Color(0.6, 0.6, 0.6));
+	help->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+	help->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	help_badges.push_back(help);
 	row->add_child(help);
 
 	p_parent->add_child(row);
