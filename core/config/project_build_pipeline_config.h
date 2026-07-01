@@ -144,6 +144,26 @@ public:
 	const ProviderDescriptor *get_provider(const String &p_id) const;
 	const TaskDefinition *get_task(const String &p_name) const;
 
+	// Authoring API used by the build configuration editor. These mutate the in-memory model; callers
+	// persist changes with write_to_config_file()/to_project_settings_custom_map() and preview them with
+	// generate_preview().
+	void set_provider(const ProviderDescriptor &p_provider);
+	bool remove_provider(const String &p_id);
+
+	void set_task(const TaskDefinition &p_task);
+	bool remove_task(const String &p_name);
+	bool rename_task(const String &p_old_name, const String &p_new_name);
+	String duplicate_task(const String &p_name);
+	String make_unique_task_name(const String &p_base) const;
+
+	bool add_task_to_stage(Stage p_stage, const String &p_name);
+	bool remove_task_from_stage(Stage p_stage, const String &p_name);
+	bool move_stage_task(Stage p_stage, int p_from_index, int p_to_index);
+	void set_stage_tasks(Stage p_stage, const PackedStringArray &p_tasks);
+	bool set_task_enabled(const String &p_name, bool p_enabled);
+
+	String generate_preview() const;
+
 	const HashMap<String, ProviderDescriptor> &get_providers() const { return providers; }
 	const HashMap<String, TaskDefinition> &get_tasks() const { return tasks; }
 	const Vector<String> &get_provider_order() const { return provider_order; }
