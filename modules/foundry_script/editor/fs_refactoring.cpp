@@ -6163,7 +6163,7 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 		call += String(parameter->identifier->name);
 	}
 	call += ")";
-	const String expression = p_function->is_declared_async ? "await " + call : call;
+	const String expression = p_function->is_coroutine ? "await " + call : call;
 
 	const FSParser::DataType return_type = p_function->get_datatype();
 	const bool is_void = return_type.is_set() && !return_type.is_variant() &&
@@ -6255,9 +6255,7 @@ StringName get_override_member_name(const FSParser::ClassNode::Member &p_member)
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 			return get_identifier_name_or_empty(p_member.enum_value.identifier);
 		case FSParser::ClassNode::Member::GROUP:
-			return p_member.annotation != nullptr && !p_member.annotation->export_info.name.is_empty()
-					? StringName(p_member.annotation->export_info.name)
-					: StringName();
+			return StringName();
 		case FSParser::ClassNode::Member::UNDEFINED:
 			return StringName();
 	}
